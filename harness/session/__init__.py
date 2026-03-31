@@ -297,7 +297,15 @@ class ClaudeCodeSession(Session):
     def send(self, message: Message) -> str:
         import subprocess
         import os
+        import json as _json
 
+        has_images = self._has_images(message)
+
+        if has_images:
+            # Use stream-json mode for multimodal input
+            return self._send_stream_json(message)
+
+        # Plain text mode
         text = self._extract_text(message)
 
         cmd = ["claude", "--print", f"--permission-mode={self._permission_mode}"]
@@ -314,7 +322,6 @@ class ClaudeCodeSession(Session):
         if self._max_turns:
             cmd.extend(["--max-turns", str(self._max_turns)])
         if self._system_prompt and self._turn_count == 0:
-            # System prompt only on first call (already in session after that)
             cmd.extend(["--system-prompt", self._system_prompt])
         if self._allowed_tools:
             for tool in self._allowed_tools:
@@ -335,6 +342,70 @@ class ClaudeCodeSession(Session):
         self._turn_count += 1
         return result.stdout.strip()
 
+    def _send_stream_json(self, message: Message) -> str:
+        """Send multimodal message via stream-json input format."""
+        import subprocess
+        import os
+        import json as _json
+
+        content = self._to_anthropic_content(message)
+
+        # Build stream-json input
+        stream_msg = _json.dumps({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": content,
+            }
+        })
+
+        cmd = [
+            "claude", "--print",
+            f"--permission-mode={self._permission_mode}",
+            "--input-format", "stream-json",
+            "--output-format", "stream-json",
+            "--verbose",
+        ]
+
+        if self._session_id:
+            if self._turn_count > 0:
+                cmd.extend(["--resume", "--session-id", self._session_id])
+            else:
+                cmd.extend(["--session-id", self._session_id])
+
+        if self._model:
+            cmd.extend(["--model", self._model])
+        if self._max_turns:
+            cmd.extend(["--max-turns", str(self._max_turns)])
+        if self._system_prompt and self._turn_count == 0:
+            cmd.extend(["--system-prompt", self._system_prompt])
+        if self._allowed_tools:
+            for tool in self._allowed_tools:
+                cmd.extend(["--allowedTools", tool])
+
+        result = subprocess.run(
+            cmd, input=stream_msg, capture_output=True, text=True,
+            timeout=self._timeout, env=os.environ,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Claude Code failed (exit {result.returncode}): {result.stderr[:500]}"
+            )
+
+        # Parse stream-json output: find the result line
+        for line in result.stdout.strip().split("\n"):
+            try:
+                data = _json.loads(line)
+                if data.get("type") == "result":
+                    self._turn_count += 1
+                    return data.get("result", "")
+            except _json.JSONDecodeError:
+                continue
+
+        self._turn_count += 1
+        return result.stdout.strip()
+
     def reset(self):
         """Start a new session (new session ID)."""
         self._session_id = f"harness-{uuid.uuid4().hex[:12]}"
@@ -343,6 +414,55 @@ class ClaudeCodeSession(Session):
     @property
     def history_length(self) -> int:
         return self._turn_count
+
+    @staticmethod
+    def _has_images(message: Message) -> bool:
+        """Check if message contains image data."""
+        if isinstance(message, dict):
+            return bool(message.get("images"))
+        if isinstance(message, list):
+            return any(
+                isinstance(p, dict) and p.get("type") in ("image", "image_url")
+                for p in message
+            )
+        return False
+
+    @staticmethod
+    def _to_anthropic_content(message: Message) -> list:
+        """Convert message to Anthropic content format for stream-json."""
+        import base64 as _b64
+
+        if isinstance(message, str):
+            return [{"type": "text", "text": message}]
+
+        if isinstance(message, list):
+            return message  # assume already in Anthropic format
+
+        if isinstance(message, dict):
+            parts = []
+            if "text" in message:
+                parts.append({"type": "text", "text": message["text"]})
+            if "images" in message:
+                for img_path in message["images"]:
+                    with open(img_path, "rb") as f:
+                        data = _b64.standard_b64encode(f.read()).decode()
+                    ext = img_path.rsplit(".", 1)[-1].lower()
+                    media_type = {
+                        "png": "image/png", "jpg": "image/jpeg",
+                        "jpeg": "image/jpeg", "gif": "image/gif",
+                        "webp": "image/webp",
+                    }.get(ext, "image/png")
+                    parts.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": data,
+                        }
+                    })
+            return parts if parts else [{"type": "text", "text": str(message)}]
+
+        return [{"type": "text", "text": str(message)}]
 
     @staticmethod
     def _extract_text(message: Message) -> str:
@@ -518,30 +638,48 @@ class CLISession(Session):
 
 class OpenClawSession(Session):
     """
-    Routes messages through an OpenClaw gateway.
+    Routes messages through an OpenClaw gateway's OpenAI-compatible endpoint.
 
-    Persistent by default — uses session_id to maintain conversation.
+    Uses /v1/chat/completions (must be enabled in gateway config).
+    Supports text and images via the OpenAI content format.
+    Maintains conversation history for session continuity.
 
     Args:
-        gateway_url:    OpenClaw gateway URL
-        session_id:     Session identifier (auto-generated if "auto")
+        gateway_url:    OpenClaw gateway URL (default: http://localhost:18789)
+        auth_token:     Gateway auth token (or OPENCLAW_GATEWAY_TOKEN env var)
+        agent_id:       Agent to target (default: "default")
+        model_override: Override the backend model
+        session_key:    Session key for routing (auto-generated if "auto")
+        max_tokens:     Max reply tokens
         timeout:        Request timeout in seconds
     """
 
     def __init__(
         self,
         gateway_url: str = "http://localhost:18789",
-        session_id: str = "auto",
+        auth_token: str = None,
+        agent_id: str = "default",
+        model_override: str = None,
+        session_key: str = "auto",
+        max_tokens: int = 4096,
         timeout: float = 120.0,
     ):
-        self._gateway_url = gateway_url
+        self._gateway_url = gateway_url.rstrip("/")
+        self._agent_id = agent_id
+        self._model_override = model_override
+        self._max_tokens = max_tokens
         self._timeout = timeout
         self._turn_count = 0
+        self._history: list[dict] = []
 
-        if session_id == "auto":
-            self._session_id = f"harness-{uuid.uuid4().hex[:12]}"
+        if session_key == "auto":
+            self._session_key = f"harness-{uuid.uuid4().hex[:12]}"
         else:
-            self._session_id = session_id
+            self._session_key = session_key
+
+        # Auth
+        import os
+        self._auth_token = auth_token or os.environ.get("OPENCLAW_GATEWAY_TOKEN", "")
 
     def send(self, message: Message) -> str:
         try:
@@ -549,27 +687,74 @@ class OpenClawSession(Session):
         except ImportError:
             raise ImportError("httpx package required: pip install httpx")
 
-        text = message if isinstance(message, str) else (
-            message.get("text", str(message)) if isinstance(message, dict) else str(message)
-        )
+        content = self._to_openai_content(message)
+        self._history.append({"role": "user", "content": content})
 
-        payload = {"message": text, "session_id": self._session_id}
+        # Build request
+        headers = {}
+        if self._auth_token:
+            headers["Authorization"] = f"Bearer {self._auth_token}"
+        if self._model_override:
+            headers["x-openclaw-model"] = self._model_override
+        if self._session_key:
+            headers["x-openclaw-session-key"] = self._session_key
+
+        payload = {
+            "model": f"openclaw/{self._agent_id}",
+            "messages": self._history,
+            "max_tokens": self._max_tokens,
+        }
 
         response = httpx.post(
-            f"{self._gateway_url}/message",
+            f"{self._gateway_url}/v1/chat/completions",
             json=payload,
+            headers=headers,
             timeout=self._timeout,
         )
         response.raise_for_status()
 
+        data = response.json()
+        reply = data["choices"][0]["message"]["content"]
+        self._history.append({"role": "assistant", "content": reply})
+
         self._turn_count += 1
-        return response.json()["reply"]
+        return reply
 
     def reset(self):
         """Start a new session."""
-        self._session_id = f"harness-{uuid.uuid4().hex[:12]}"
+        self._session_key = f"harness-{uuid.uuid4().hex[:12]}"
+        self._history = []
         self._turn_count = 0
 
     @property
     def history_length(self) -> int:
         return self._turn_count
+
+    @staticmethod
+    def _to_openai_content(message: Message):
+        """Convert to OpenAI content format (same as OpenAISession)."""
+        if isinstance(message, str):
+            return message
+        if isinstance(message, list):
+            return message
+        if isinstance(message, dict):
+            parts = []
+            if "text" in message:
+                parts.append({"type": "text", "text": message["text"]})
+            if "images" in message:
+                import base64
+                for img_path in message["images"]:
+                    with open(img_path, "rb") as f:
+                        data = base64.standard_b64encode(f.read()).decode()
+                    ext = img_path.rsplit(".", 1)[-1].lower()
+                    media_type = {
+                        "png": "image/png", "jpg": "image/jpeg",
+                        "jpeg": "image/jpeg", "gif": "image/gif",
+                        "webp": "image/webp",
+                    }.get(ext, "image/png")
+                    parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{media_type};base64,{data}"}
+                    })
+            return parts if parts else message
+        return message
