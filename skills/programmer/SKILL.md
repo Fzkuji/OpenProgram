@@ -42,6 +42,14 @@ Use when a Function in the pool can handle the next step.
 
 ### create — Create a new Function
 Use when no existing Function fits what you need.
+
+Each Function has a **Scope** that controls what context it can see:
+- `depth`: how many layers up the call stack (0=none, 1=caller, -1=all)
+- `detail`: how much per layer ("io" = input/output only, "full" = complete reasoning)
+- `peer`: visibility of sibling Functions ("none", "io" = their I/O, "full" = shared session)
+
+Common presets: `isolated` (depth=0, peer=none), `chained` (depth=0, peer=io), `full` (depth=-1, peer=full)
+
 ```json
 {
   "action": "create",
@@ -51,6 +59,7 @@ Use when no existing Function fits what you need.
     "docstring": "Extract all visible text from the current screen.",
     "body": "Look at the screenshot and identify all text content...",
     "params": ["task"],
+    "scope": {"depth": 0, "detail": "io", "peer": "none"},
     "return_type_schema": {
       "type": "object",
       "properties": {

@@ -7,7 +7,7 @@ Two modes:
 """
 
 from pydantic import BaseModel
-from harness import Function, Workflow, FunctionCall, Programmer, Runtime
+from harness import Function, Scope, Workflow, FunctionCall, Programmer, Runtime
 from harness.session import AnthropicSession
 
 
@@ -45,6 +45,7 @@ observe = Function(
     body=open("examples/skills/observe/SKILL.md").read(),
     return_type=ObserveResult,
     params=["task"],
+    scope=Scope.isolated(),       # pure observation, no prior context needed
 )
 
 learn = Function(
@@ -53,6 +54,7 @@ learn = Function(
     body=open("examples/skills/learn/SKILL.md").read(),
     return_type=LearnResult,
     params=["task", "observe"],
+    scope=Scope.chained(),        # sees observe's I/O summary
 )
 
 act = Function(
@@ -61,6 +63,7 @@ act = Function(
     body=open("examples/skills/act/SKILL.md").read(),
     return_type=ActResult,
     params=["task", "observe", "learn"],
+    scope=Scope.chained(),        # sees observe + learn I/O
 )
 
 verify = Function(
@@ -69,6 +72,7 @@ verify = Function(
     body=open("examples/skills/verify/SKILL.md").read(),
     return_type=VerifyResult,
     params=["task", "act"],
+    scope=Scope.isolated(),       # independent verification, clean context
 )
 
 
