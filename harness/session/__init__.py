@@ -519,19 +519,18 @@ class CodexSession(Session):
         import os
 
         text = self._extract_text(message)
+        images = self._extract_images(message)
 
-        cmd = ["codex", "--approval-mode", "full-auto"]
+        cmd = ["codex", "exec", "--full-auto"]
 
-        if self._quiet:
-            cmd.append("--quiet")
         if self._model:
             cmd.extend(["--model", self._model])
         if self._provider:
-            cmd.extend(["--provider", self._provider])
+            cmd.extend(["-c", f"model_provider={self._provider}"])
 
-        # Session persistence
-        if self._session_id:
-            cmd.extend(["--session-id", self._session_id])
+        # Image support via --image flag
+        for img_path in images:
+            cmd.extend(["--image", img_path])
 
         cmd.append(text)
 
@@ -568,6 +567,13 @@ class CodexSession(Session):
                      if isinstance(p, dict) and p.get("type") == "text"]
             return "\n".join(texts) if texts else str(message)
         return str(message)
+
+    @staticmethod
+    def _extract_images(message: Message) -> list[str]:
+        """Extract image file paths from message."""
+        if isinstance(message, dict):
+            return message.get("images", [])
+        return []
 
 
 # ==================================================================
