@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from harness.function import Function
 from harness.session import Session
 from harness.scope import Scope
+from harness.memory import Memory
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -35,8 +36,9 @@ class Runtime:
         session_factory:  Creates a new Session when needed.
     """
 
-    def __init__(self, session_factory: Callable[[], Session]):
+    def __init__(self, session_factory: Callable[[], Session], memory: Memory = None):
         self._session_factory = session_factory
+        self.memory = memory
 
     # ------------------------------------------------------------------
     # Single execution (always isolated)
@@ -45,7 +47,38 @@ class Runtime:
     def execute(self, function: Function, context: dict) -> T:
         """Execute a single Function in a fresh Session."""
         session = self._session_factory()
-        return function.call(session=session, context=context)
+
+        if self.memory:
+            import time
+            start = time.time()
+            scope_str = str(function.scope) if function.scope else None
+            session_type = type(session).__name__
+            self.memory.log_function_call(
+                function.name,
+                params=function._extract_arguments(context),
+                scope=scope_str,
+                session_type=session_type,
+            )
+
+        try:
+            result = function.call(session=session, context=context)
+            if self.memory:
+                self.memory.log_function_return(
+                    function.name,
+                    result=result.model_dump(),
+                    status="success",
+                    duration_ms=(time.time() - start) * 1000,
+                )
+            return result
+        except Exception as e:
+            if self.memory:
+                self.memory.log_function_return(
+                    function.name,
+                    status="error",
+                    error=str(e),
+                    duration_ms=(time.time() - start) * 1000,
+                )
+            raise
 
     # ------------------------------------------------------------------
     # Chain execution (respects Scope)
