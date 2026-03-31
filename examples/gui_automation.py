@@ -1,21 +1,20 @@
 """
 Example: GUI automation workflow using LLM Agent Harness
 
-This example shows a 4-step workflow for GUI automation:
-    OBSERVE → LEARN → ACT → VERIFY
+This example shows a 4-function workflow for GUI automation:
+    observe() → learn() → act() → verify()
 
-Each step is a typed function executed by an LLM session.
-The framework guarantees each step produces valid structured output
-before the next step begins.
+Each function is executed by an LLM Session.
+The workflow guarantees each function returns a valid typed result
+before the next function is called.
 """
 
 from pydantic import BaseModel
-from harness import Step, Workflow
+from harness import Function, Workflow, FunctionCall
 from harness.session import AnthropicSession
-from harness.workflow import StepConfig
 
 
-# --- Output schemas (the "return types" of each Step) ---
+# --- Return types ---
 
 class ObserveResult(BaseModel):
     current_state: str
@@ -41,57 +40,38 @@ class VerifyResult(BaseModel):
     notes: str
 
 
-# --- Step definitions ---
+# --- Function definitions ---
 
-observe_step = Step(
+observe = Function(
     name="observe",
-    description="Observe the current screen state and identify UI elements.",
-    instructions="""
-Take a screenshot and analyze what you see on the screen.
-Identify all visible UI elements (buttons, input fields, menus, text).
-Determine whether the target element for the task is currently visible.
-Be precise about element locations and states.
-""",
-    output_schema=ObserveResult,
+    docstring="Observe the current screen state and identify UI elements.",
+    body=open("skills/observe/SKILL.md").read(),
+    return_type=ObserveResult,
+    params=["task"],
 )
 
-learn_step = Step(
+learn = Function(
     name="learn",
-    description="Analyze the observation and determine the best action to take.",
-    instructions="""
-Based on the current screen state and the task, determine:
-1. What type of application is being used
-2. Which specific element should be interacted with
-3. What action should be performed (click, type, scroll, etc.)
-
-Use any prior knowledge about this application if available.
-""",
-    output_schema=LearnResult,
-    reads=["task", "observe"],  # Only reads what it needs
+    docstring="Analyze the observation and determine the best action to take.",
+    body=open("skills/learn/SKILL.md").read(),
+    return_type=LearnResult,
+    params=["task", "observe"],
 )
 
-act_step = Step(
+act = Function(
     name="act",
-    description="Execute the determined action on the target UI element.",
-    instructions="""
-Execute the recommended action on the target element.
-Use the available GUI tools to perform the action.
-Record exactly what was done and where.
-""",
-    output_schema=ActResult,
-    reads=["task", "observe", "learn"],
+    docstring="Execute the determined action on the target UI element.",
+    body=open("skills/act/SKILL.md").read(),
+    return_type=ActResult,
+    params=["task", "observe", "learn"],
 )
 
-verify_step = Step(
+verify = Function(
     name="verify",
-    description="Take a screenshot and verify the action was completed successfully.",
-    instructions="""
-Take a new screenshot and compare with the previous state.
-Confirm whether the intended action was completed successfully.
-Note any changes in the UI state.
-""",
-    output_schema=VerifyResult,
-    reads=["task", "act"],
+    docstring="Take a screenshot and verify the action was completed successfully.",
+    body=open("skills/verify/SKILL.md").read(),
+    return_type=VerifyResult,
+    params=["task", "act"],
 )
 
 
@@ -101,11 +81,11 @@ def main():
     session = AnthropicSession()
 
     workflow = Workflow(
-        steps=[
-            StepConfig(step=observe_step),
-            StepConfig(step=learn_step),
-            StepConfig(step=act_step),
-            StepConfig(step=verify_step),
+        calls=[
+            FunctionCall(function=observe),
+            FunctionCall(function=learn),
+            FunctionCall(function=act),
+            FunctionCall(function=verify),
         ],
         default_session=session,
     )
@@ -114,9 +94,11 @@ def main():
 
     if result.success:
         print("Workflow completed successfully")
-        print(f"Final state: {result.context.get('verify', {}).get('current_state')}")
+        verify_result = result.context.get("verify", {})
+        print(f"Final state: {verify_result.get('current_state')}")
+        print(f"Action confirmed: {verify_result.get('action_confirmed')}")
     else:
-        print(f"Workflow failed at step: {result.failed_step}")
+        print(f"Workflow failed at: {result.failed_function}")
         print(f"Error: {result.error}")
 
 

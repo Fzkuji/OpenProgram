@@ -1,83 +1,100 @@
 """
-Workflow — ordered execution of Steps.
+Workflow — ordered execution of Functions.
 
-A Workflow is a sequence of Steps where:
-    - Steps execute in order
-    - Each Step's output is added to the shared context
-    - The next Step reads from that updated context
-    - If any Step fails, the Workflow stops and reports which Step failed
+A Workflow is a sequence of Functions where:
+    - Functions execute in order
+    - Each Function's return value is added to the shared context
+    - The next Function reads from that updated context
+    - If any Function raises FunctionError, the Workflow stops
 
-Each Step can use a different Session — mix and match platforms freely.
+Each Function can use a different Session — mix and match platforms freely.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
-from harness.step import Step, StepFailure
+
+from harness.function import Function, FunctionError
 from harness.session import Session
 
 
 @dataclass
-class StepConfig:
+class FunctionCall:
     """
-    Binds a Step to a Session for execution within a Workflow.
+    Binds a Function to a Session for execution within a Workflow.
+
+    Analogous to a function call in a program — it specifies which
+    function to call and which runtime (Session) to use.
 
     Args:
-        step:     The Step to execute
-        session:  The Session to use as runtime for this step
-                  (if None, uses the Workflow's default session)
+        function:  The Function to call
+        session:   The Session to use as runtime
+                   (if None, uses the Workflow's default session)
     """
-    step: Step
+    function: Function
     session: Optional[Session] = None
 
 
 @dataclass
 class WorkflowResult:
-    """The result of a completed Workflow execution."""
+    """
+    The result of a completed Workflow execution.
+
+    Attributes:
+        success:         True if all Functions returned successfully
+        context:         The final accumulated context
+        failed_function: Name of the Function that failed (if any)
+        error:           Error message (if any)
+    """
     success: bool
     context: dict
-    failed_step: Optional[str] = None
+    failed_function: Optional[str] = None
     error: Optional[str] = None
 
 
 class Workflow:
     """
-    Executes an ordered sequence of Steps.
+    Executes an ordered sequence of Functions.
+
+    Each Function's return value is stored in context under its name,
+    making it available to all subsequent Functions.
 
     Example:
         workflow = Workflow(
-            steps=[
-                StepConfig(step=observe_step, session=anthropic_session),
-                StepConfig(step=learn_step,   session=openclaw_session),
-                StepConfig(step=act_step,      session=anthropic_session),
-                StepConfig(step=verify_step,   session=anthropic_session),
+            calls=[
+                FunctionCall(function=observe, session=anthropic_session),
+                FunctionCall(function=learn,   session=openclaw_session),
+                FunctionCall(function=act,     session=anthropic_session),
+                FunctionCall(function=verify,  session=anthropic_session),
             ],
             default_session=anthropic_session,
         )
         result = workflow.run(task="Click the login button")
+        # result.context["observe"] → ObserveResult dict
+        # result.context["learn"]   → LearnResult dict
     """
 
     def __init__(
         self,
-        steps: list[StepConfig],
+        calls: list[FunctionCall],
         default_session: Optional[Session] = None,
     ):
         """
         Args:
-            steps:            Ordered list of StepConfig (step + optional session)
-            default_session:  Fallback session for steps without an explicit session
+            calls:            Ordered list of FunctionCalls
+            default_session:  Fallback session for calls without an explicit session
         """
-        self.steps = steps
+        self.calls = calls
         self.default_session = default_session
 
     def run(self, task: str, initial_context: Optional[dict] = None) -> WorkflowResult:
         """
-        Execute the workflow.
+        Run the workflow.
 
         Args:
-            task:             The task description passed to every Step
-            initial_context:  Optional starting context (merged with task)
+            task:             The task description, added to context as "task"
+            initial_context:  Optional starting context
 
         Returns:
             WorkflowResult with success status and final context
@@ -85,25 +102,25 @@ class Workflow:
         context = dict(initial_context or {})
         context["task"] = task
 
-        for config in self.steps:
-            step = config.step
-            session = config.session or self.default_session
+        for call in self.calls:
+            function = call.function
+            session = call.session or self.default_session
 
             if session is None:
                 raise ValueError(
-                    f"Step '{step.name}' has no session. "
-                    f"Either set a session in StepConfig or provide a default_session."
+                    f"Function '{function.name}' has no session. "
+                    f"Provide a session in FunctionCall or set a default_session."
                 )
 
             try:
-                result = step.run(session=session, context=context)
-                # Write step output back into context
-                context[step.name] = result.model_dump()
-            except StepFailure as e:
+                return_value = function.call(session=session, context=context)
+                # Store return value in context under the function's name
+                context[function.name] = return_value.model_dump()
+            except FunctionError as e:
                 return WorkflowResult(
                     success=False,
                     context=context,
-                    failed_step=e.step_name,
+                    failed_function=e.function_name,
                     error=str(e),
                 )
 

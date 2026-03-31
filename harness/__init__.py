@@ -1,5 +1,12 @@
-from harness.step import Step, StepFailure
+from harness.function import Function, FunctionError
 from harness.session import Session
-from harness.workflow import Workflow
+from harness.workflow import Workflow, FunctionCall, WorkflowResult
 
-__all__ = ["Step", "StepFailure", "Session", "Workflow"]
+__all__ = [
+    "Function",
+    "FunctionError",
+    "Session",
+    "Workflow",
+    "FunctionCall",
+    "WorkflowResult",
+]

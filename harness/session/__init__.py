@@ -1,15 +1,22 @@
 """
-Session — the pluggable runtime for Step execution.
+Session — the pluggable runtime for Function execution.
 
-Any class that implements send(message: str) -> str can be a Session.
-The framework has no opinion on which LLM or platform you use.
+Analogous to a language runtime (CPython, JVM, V8):
+    - The Session is what actually "runs" a Function
+    - Any class that implements send(message: str) -> str can be a Session
+    - The framework has no opinion on which LLM or platform you use
 
 Built-in implementations:
     - AnthropicSession   direct Anthropic API
     - OpenClawSession    routes through OpenClaw agent
     - NanobotSession     routes through nanobot agent
 
-To add a new platform, just implement the Session interface.
+To add a new platform, implement the Session interface:
+
+    class MySession(Session):
+        def send(self, message: str) -> str:
+            # call your platform here
+            return reply
 """
 
 from __future__ import annotations
@@ -18,7 +25,7 @@ from abc import ABC, abstractmethod
 
 class Session(ABC):
     """
-    The runtime interface for Step execution.
+    The runtime interface for Function execution.
 
     A Session is anything that can:
         1. Receive a message (string)
@@ -26,13 +33,13 @@ class Session(ABC):
 
     The Session is responsible for:
         - Maintaining its own conversation history
-        - Managing its own connection/authentication
+        - Managing its own connection and authentication
         - Returning complete (not streamed) replies
 
     The Session is NOT responsible for:
-        - Structured output parsing (the Step handles that)
+        - Parsing return values (Function handles that)
         - Tool execution (the Session's environment handles that)
-        - Retry logic (the Step handles that)
+        - Retry logic (Function handles that)
     """
 
     @abstractmethod
@@ -41,7 +48,7 @@ class Session(ABC):
         Send a message and return the reply.
 
         Args:
-            message: The assembled Step message
+            message: The assembled Function call message
 
         Returns:
             The LLM's reply as a plain string
@@ -52,14 +59,16 @@ class Session(ABC):
 class AnthropicSession(Session):
     """
     Direct Anthropic API session.
-    Full control — best for steps that need force_tool or strict output control.
+
+    Full control over the LLM call — best for Functions that need
+    precise output control or access to tool_choice.
     """
 
     def __init__(
         self,
         model: str = "claude-sonnet-4-6",
         max_tokens: int = 4096,
-        system_prompt: str = "You are a helpful assistant that follows instructions precisely.",
+        system_prompt: str = "You are a helpful assistant that follows instructions precisely and always returns valid JSON when asked.",
         api_key: str = None,
     ):
         try:
@@ -88,17 +97,20 @@ class AnthropicSession(Session):
         return reply
 
     def reset(self):
-        """Clear conversation history."""
+        """Clear conversation history to start a fresh session."""
         self._history = []
 
 
 class OpenClawSession(Session):
     """
     Routes messages through an OpenClaw agent.
-    Benefits from OpenClaw's memory, tools, and context.
+
+    Benefits from OpenClaw's persistent memory, tools, and context.
+    Useful for Functions that need access to prior conversation history
+    or OpenClaw's built-in capabilities.
 
     Requires OpenClaw gateway to be running:
-        nanobot gateway  (or openclaw gateway)
+        openclaw gateway
     """
 
     def __init__(
@@ -127,7 +139,11 @@ class OpenClawSession(Session):
 class NanobotSession(Session):
     """
     Routes messages through a nanobot agent.
+
     Lightweight alternative to OpenClaw.
+
+    Requires nanobot gateway to be running:
+        nanobot gateway
     """
 
     def __init__(
