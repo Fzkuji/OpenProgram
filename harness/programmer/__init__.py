@@ -1,23 +1,15 @@
 """
 Programmer — the planning and decision-making agent.
 
-In traditional programming:
-    - A programmer reads requirements
-    - Looks at available libraries/functions
+Like a human programmer:
+    - Reads requirements (the task)
+    - Browses available libraries (the Function pool)
     - Writes new functions if needed
-    - Calls functions in the right order
-    - Checks results, handles errors, iterates
+    - Calls functions and checks results
+    - Maintains a mental model of what happened (Context with call stack + log)
 
-In Agentic Programming:
-    - The Programmer (an LLM with a persistent Session) does the same thing
-    - It sees the task, browses the Function pool, selects or creates Functions
-    - It hands Functions to the Runtime for execution
-    - It only sees structured return values — never the execution details
-    - It iterates until the task is done or it determines it can't be done
-
-The Programmer is itself driven by a Function (the programmer_fn), which defines
-how it thinks and what decisions it can make. This keeps even the Programmer
-within the typed, structured paradigm.
+The Programmer has a persistent Session (remembers across iterations).
+Each Function it calls runs in an ephemeral Runtime Session (isolated).
 """
 
 from __future__ import annotations
@@ -29,10 +21,11 @@ from pydantic import BaseModel
 from harness.function import Function, FunctionError
 from harness.session import Session
 from harness.runtime import Runtime
+from harness.context import Context
 
 
 # ------------------------------------------------------------------
-# Decision schema — what the Programmer returns each iteration
+# Decision schema
 # ------------------------------------------------------------------
 
 class NewFunctionSpec(BaseModel):
@@ -50,25 +43,17 @@ class ProgrammerDecision(BaseModel):
 
     action:
         - "call"   → call an existing Function
-        - "create" → create a new Function, then (optionally) call it
+        - "create" → create a new Function
         - "reply"  → send a message back to the user
         - "done"   → task is complete
         - "fail"   → task cannot be completed
     """
     action: str
     reasoning: str
-
-    # for action == "call"
     function_name: Optional[str] = None
     function_args: Optional[dict] = None
-
-    # for action == "create"
     new_function: Optional[NewFunctionSpec] = None
-
-    # for action == "reply"
     reply_text: Optional[str] = None
-
-    # for action == "fail"
     failure_reason: Optional[str] = None
 
 
@@ -80,6 +65,7 @@ class ProgrammerResult(BaseModel):
     """Final result of a Programmer run."""
     success: bool
     context: dict
+    log: list = []
     reply: Optional[str] = None
     failure_reason: Optional[str] = None
     iterations: int = 0
@@ -91,22 +77,14 @@ class ProgrammerResult(BaseModel):
 
 class Programmer:
     """
-    The planning agent. Like a human programmer:
-    - Reads the task
-    - Selects or writes Functions
-    - Sends them to the Runtime for execution
-    - Checks results, iterates
-
-    The Programmer has a persistent Session (it remembers what it tried).
-    The Runtime has ephemeral Sessions (each execution is isolated).
+    The planning agent.
 
     Args:
-        session:          Persistent LLM Session for the Programmer's thinking
-        runtime:          Runtime that executes Functions (ephemeral Sessions)
-        functions:        Initial pool of available Functions
-        programmer_fn:    The Function that defines how the Programmer thinks
-                          (if None, a default is used)
-        max_iterations:   Safety limit on how many iterations to run
+        session:          Persistent LLM Session for thinking
+        runtime:          Runtime for executing Functions (ephemeral Sessions)
+        functions:        Initial Function pool
+        programmer_fn:    How the Programmer thinks (default provided)
+        max_iterations:   Safety limit
     """
 
     def __init__(
@@ -130,63 +108,44 @@ class Programmer:
         """
         Run the Programmer on a task.
 
-        The Programmer loops: think → decide → execute → observe result → repeat.
-
-        Args:
-            task:             The task description
-            initial_context:  Optional starting context
-
-        Returns:
-            ProgrammerResult with success status, context, and optional reply
+        Loop: think → decide → execute → log → repeat.
         """
-        context = dict(initial_context or {})
-        context["task"] = task
-        context["history"] = []
+        ctx = Context(task=task)
+        if initial_context:
+            ctx.update(initial_context)
 
         for iteration in range(1, self.max_iterations + 1):
-            # Build the Programmer's input
-            programmer_context = self._build_programmer_context(context)
+            # Build scoped input for the Programmer Function
+            programmer_input = self._build_input(ctx)
 
-            # Ask the Programmer what to do next
+            # Ask the Programmer what to do
             try:
                 decision = self.programmer_fn.call(
                     session=self.session,
-                    context=programmer_context,
+                    context=programmer_input,
                 )
             except FunctionError as e:
                 return ProgrammerResult(
                     success=False,
-                    context=context,
-                    failure_reason=f"Programmer failed to make a decision: {e}",
+                    context=ctx.to_dict(),
+                    log=[str(entry) for entry in ctx.log],
+                    failure_reason=f"Programmer failed to decide: {e}",
                     iterations=iteration,
                 )
 
-            # Execute the decision
             action = decision.action
 
             if action == "call":
-                result = self._execute_call(decision, context)
-                context["history"].append({
-                    "iteration": iteration,
-                    "action": "call",
-                    "function": decision.function_name,
-                    "reasoning": decision.reasoning,
-                    "result": result,
-                })
+                self._do_call(decision, ctx)
 
             elif action == "create":
-                fn_name = self._execute_create(decision)
-                context["history"].append({
-                    "iteration": iteration,
-                    "action": "create",
-                    "function": fn_name,
-                    "reasoning": decision.reasoning,
-                })
+                self._do_create(decision, ctx)
 
             elif action == "reply":
                 return ProgrammerResult(
                     success=True,
-                    context=context,
+                    context=ctx.to_dict(),
+                    log=[str(entry) for entry in ctx.log],
                     reply=decision.reply_text,
                     iterations=iteration,
                 )
@@ -194,38 +153,88 @@ class Programmer:
             elif action == "done":
                 return ProgrammerResult(
                     success=True,
-                    context=context,
+                    context=ctx.to_dict(),
+                    log=[str(entry) for entry in ctx.log],
                     iterations=iteration,
                 )
 
             elif action == "fail":
                 return ProgrammerResult(
                     success=False,
-                    context=context,
+                    context=ctx.to_dict(),
+                    log=[str(entry) for entry in ctx.log],
                     failure_reason=decision.failure_reason or decision.reasoning,
                     iterations=iteration,
                 )
 
-            else:
-                context["history"].append({
-                    "iteration": iteration,
-                    "action": "unknown",
-                    "reasoning": f"Unknown action: {decision.action}",
-                })
-
         return ProgrammerResult(
             success=False,
-            context=context,
+            context=ctx.to_dict(),
+            log=[str(entry) for entry in ctx.log],
             failure_reason=f"Max iterations ({self.max_iterations}) reached",
             iterations=self.max_iterations,
         )
 
     # ------------------------------------------------------------------
-    # Private methods
+    # Actions
     # ------------------------------------------------------------------
 
-    def _build_programmer_context(self, context: dict) -> dict:
-        """Build the context that the Programmer Function sees."""
+    def _do_call(self, decision: ProgrammerDecision, ctx: Context):
+        """Execute a Function call with call stack tracking."""
+        fn_name = decision.function_name
+        if fn_name not in self.functions:
+            ctx.push("programmer", fn_name or "unknown", reason=decision.reasoning)
+            ctx.pop(status="error", error=f"Function '{fn_name}' not found")
+            return
+
+        fn = self.functions[fn_name]
+
+        # Push frame onto call stack
+        ctx.push("programmer", fn_name, reason=decision.reasoning)
+
+        # Build scoped context for this Function (only its declared params)
+        call_context = ctx.scope_for(fn.params)
+        if decision.function_args:
+            call_context.update(decision.function_args)
+
+        try:
+            result = self.runtime.execute(fn, call_context)
+            result_dict = result.model_dump()
+            ctx[fn_name] = result_dict
+            ctx.pop(status="success", output=result_dict)
+        except FunctionError as e:
+            ctx.pop(status="error", error=str(e))
+
+    def _do_create(self, decision: ProgrammerDecision, ctx: Context):
+        """Create a new Function and add to pool."""
+        spec = decision.new_function
+        if spec is None:
+            ctx.push("programmer", "create", reason=decision.reasoning)
+            ctx.pop(status="error", error="No function spec provided")
+            return
+
+        ctx.push("programmer", f"create:{spec.name}", reason=decision.reasoning)
+
+        try:
+            return_type = self._schema_to_model(spec.name, spec.return_type_schema)
+            new_fn = Function(
+                name=spec.name,
+                docstring=spec.docstring,
+                body=spec.body,
+                return_type=return_type,
+                params=spec.params,
+            )
+            self.functions[new_fn.name] = new_fn
+            ctx.pop(status="success", output={"created": spec.name})
+        except Exception as e:
+            ctx.pop(status="error", error=str(e))
+
+    # ------------------------------------------------------------------
+    # Input building
+    # ------------------------------------------------------------------
+
+    def _build_input(self, ctx: Context) -> dict:
+        """Build the input the Programmer Function sees."""
         available_functions = []
         for name, fn in self.functions.items():
             available_functions.append({
@@ -235,58 +244,22 @@ class Programmer:
                 "return_type": fn.return_type.model_json_schema(),
             })
 
+        # Include recent log entries as history (compressed)
+        history = [str(entry) for entry in ctx.log[-20:]]  # last 20 entries
+
         return {
-            "task": context["task"],
-            "history": context.get("history", []),
+            "task": ctx.get("task", ""),
+            "history": history,
             "available_functions": available_functions,
         }
 
-    def _execute_call(self, decision: ProgrammerDecision, context: dict) -> dict:
-        """Execute a Function call via the Runtime."""
-        fn_name = decision.function_name
-        if fn_name not in self.functions:
-            return {"error": f"Function '{fn_name}' not found in pool"}
-
-        fn = self.functions[fn_name]
-
-        # Merge function_args into context for param extraction
-        call_context = dict(context)
-        if decision.function_args:
-            call_context.update(decision.function_args)
-
-        try:
-            result = self.runtime.execute(fn, call_context)
-            return result.model_dump()
-        except FunctionError as e:
-            return {"error": str(e)}
-
-    def _execute_create(self, decision: ProgrammerDecision) -> str:
-        """Create a new Function and add it to the pool."""
-        spec = decision.new_function
-        if spec is None:
-            return "(no spec provided)"
-
-        # Build a dynamic Pydantic model from the JSON schema
-        return_type = self._schema_to_model(spec.name, spec.return_type_schema)
-
-        new_fn = Function(
-            name=spec.name,
-            docstring=spec.docstring,
-            body=spec.body,
-            return_type=return_type,
-            params=spec.params,
-        )
-        self.functions[new_fn.name] = new_fn
-        return new_fn.name
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _schema_to_model(name: str, schema: dict) -> type:
-        """
-        Build a Pydantic model from a JSON Schema dict.
-
-        Simple implementation that handles basic types.
-        For complex schemas, consider using pydantic's schema-based construction.
-        """
+        """Build a Pydantic model from a JSON Schema dict."""
         from pydantic import create_model
 
         type_map = {
@@ -315,8 +288,7 @@ class Programmer:
             else:
                 fields[field_name] = (Optional[field_type], None)
 
-        model_name = f"Dynamic_{name}"
-        return create_model(model_name, **fields)
+        return create_model(f"Dynamic_{name}", **fields)
 
     @staticmethod
     def _default_programmer_fn() -> Function:
@@ -330,24 +302,24 @@ by selecting and calling available Functions, or creating new ones when needed.
 2. Look at the available functions — is there one that helps with the next step?
 3. If yes → call it
 4. If no → create a new function that does what you need
-5. After each function returns, check the result
+5. After each function returns, check the result in history
 6. Decide: continue? try something else? done? give up?
 
 ## Rules
 
-- You NEVER execute tasks yourself. You ALWAYS delegate to Functions via the Runtime.
-- You only see structured return values from Functions, not their internal execution.
-- Think step by step. Don't try to do everything at once.
+- You NEVER execute tasks yourself. You ALWAYS delegate to Functions.
+- You only see structured return values, not execution details.
+- Think step by step. One Function at a time.
 - If a Function fails, analyze why and try a different approach.
-- If the task is impossible, say so clearly (action: "fail").
+- If the task is impossible, say so (action: "fail").
 
-## Available actions
+## Actions
 
-- "call": call an existing Function from the pool
-- "create": define a new Function and add it to the pool
-- "reply": send a message back to the user
-- "done": task is complete
-- "fail": task cannot be completed
+- "call": call an existing Function
+- "create": define a new Function
+- "reply": send a message to the user
+- "done": task complete
+- "fail": task impossible
 """
         return Function(
             name="programmer",

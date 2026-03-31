@@ -18,7 +18,7 @@ class SequentialSession(Session):
     def __init__(self, replies: list[str]):
         self._replies = iter(replies)
 
-    def send(self, message: str) -> str:
+    def send(self, message) -> str:
         return next(self._replies)
 
 
@@ -30,7 +30,6 @@ class SimpleResult(BaseModel):
 
 def test_programmer_calls_function_and_finishes():
     """Programmer calls a function, gets result, then says done."""
-    # Programmer session: first call → call fn1, second call → done
     programmer_replies = [
         json.dumps({
             "action": "call",
@@ -44,7 +43,6 @@ def test_programmer_calls_function_and_finishes():
         }),
     ]
 
-    # Runtime session: fn1 returns data
     runtime_reply = '{"data": "fn1 result"}'
 
     programmer = Programmer(
@@ -56,8 +54,8 @@ def test_programmer_calls_function_and_finishes():
     result = programmer.run("test task")
     assert result.success is True
     assert result.iterations == 2
-    assert len(result.context["history"]) == 1
-    assert result.context["history"][0]["function"] == "fn1"
+    assert len(result.log) == 1  # one function call logged
+    assert "fn1()" in result.log[0]
 
 
 def test_programmer_fails_gracefully():
@@ -85,7 +83,6 @@ def test_programmer_fails_gracefully():
 def test_programmer_creates_new_function():
     """Programmer creates a new function and then calls it."""
     programmer_replies = [
-        # Step 1: create a new function
         json.dumps({
             "action": "create",
             "reasoning": "Need a custom function",
@@ -103,14 +100,12 @@ def test_programmer_creates_new_function():
                 }
             }
         }),
-        # Step 2: call the new function
         json.dumps({
             "action": "call",
             "reasoning": "Now call the new function",
             "function_name": "custom_fn",
             "function_args": {"task": "test"},
         }),
-        # Step 3: done
         json.dumps({
             "action": "done",
             "reasoning": "Task complete",
@@ -122,13 +117,14 @@ def test_programmer_creates_new_function():
     programmer = Programmer(
         session=SequentialSession(programmer_replies),
         runtime=Runtime(session_factory=lambda: SequentialSession([runtime_reply])),
-        functions=[],  # start with no functions
+        functions=[],
     )
 
     result = programmer.run("do custom thing")
     assert result.success is True
     assert "custom_fn" in programmer.functions
     assert result.iterations == 3
+    assert len(result.log) == 2  # create + call
 
 
 def test_programmer_handles_missing_function():
@@ -155,13 +151,12 @@ def test_programmer_handles_missing_function():
     result = programmer.run("test")
     assert result.success is False
     assert result.iterations == 2
-    # History should show the failed call
-    assert "error" in result.context["history"][0]["result"]
+    # Log should show the failed call
+    assert any("error" in entry.lower() or "✗" in entry for entry in result.log)
 
 
 def test_programmer_max_iterations():
     """Programmer stops after max_iterations."""
-    # Always calls fn1, never says done
     def make_call_reply():
         return json.dumps({
             "action": "call",
@@ -183,3 +178,4 @@ def test_programmer_max_iterations():
     assert result.success is False
     assert "Max iterations" in result.failure_reason
     assert result.iterations == 5
+    assert len(result.log) == 5  # 5 function calls logged
