@@ -46,10 +46,10 @@ def test_session_subclass_with_send_works():
 # --- ClaudeCodeSession ---
 
 def test_claude_code_session_id_auto():
-    """Auto session ID is generated."""
+    """Auto session ID is generated as UUID."""
     s = ClaudeCodeSession()
-    assert s._session_id.startswith("harness-")
-    assert len(s._session_id) > 10
+    assert len(s._session_id) == 36  # UUID format
+    assert s._session_id.count("-") == 4
 
 
 def test_claude_code_session_id_custom():
