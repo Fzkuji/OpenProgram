@@ -6,102 +6,55 @@
 
 ## 1. Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     User / Application                       │
-│                                                              │
-│   result = observe(session, task="find login")               │
-│   if result.target_visible:                                  │
-│       click(session, target="login button")                  │
-│                                                              │
-│   — or —                                                     │
-│                                                              │
-│   programmer.run("open Safari and search hello world")       │
-└──────────────────┬───────────────────────┬───────────────────┘
-                   │                       │
-            Static Mode              Dynamic Mode
-         (human writes flow)     (Programmer decides flow)
-                   │                       │
-                   ▼                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Function Layer                          │
-│                                                              │
-│   @function(return_type=ObserveResult)                        │
-│   def observe(session, task: str):                           │
-│       '''Docstring = prompt. Change it, change behavior.'''  │
-│                                                              │
-│   Built-ins: ask, extract, summarize, classify, decide       │
-│                                                              │
-│   Responsibilities:                                          │
-│   • Assemble prompt from docstring + args + schema           │
-│   • Send to Session                                          │
-│   • Validate output against return_type                      │
-│   • Retry on invalid output                                  │
-│   • Return guaranteed Pydantic object                        │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Session Layer                           │
-│                                                              │
-│   session.send(message) → reply                              │
-│                                                              │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│   │ API Sessions │  │ CLI Sessions │  │   Gateway    │      │
-│   │              │  │              │  │              │      │
-│   │ Anthropic    │  │ Claude Code  │  │ OpenClaw     │      │
-│   │ OpenAI       │  │ Codex        │  │              │      │
-│   │              │  │              │  │              │      │
-│   │ We manage    │  │ Built-in     │  │ Server-side  │      │
-│   │ _history     │  │ memory via   │  │ memory       │      │
-│   │              │  │ --session-id │  │              │      │
-│   └──────────────┘  └──────────────┘  └──────────────┘      │
-│                                                              │
-│   Responsibilities:                                          │
-│   • Send message to LLM, receive reply                       │
-│   • Maintain conversation history                            │
-│   • Handle multimodal input (text + images)                  │
-│   • Apply Scope (context injection / compaction)             │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                        LLM                                   │
-│                   (the actual runtime)                        │
-│                                                              │
-│   Claude, GPT, Gemini, local models, ...                     │
-│   Executes the natural language instructions                 │
-│   Returns structured JSON output                             │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph User["User / Application"]
+        Static["Static Mode<br/>(human writes flow)"]
+        Dynamic["Dynamic Mode<br/>(Programmer decides flow)"]
+    end
 
-Cross-cutting concerns (optional, any layer can use):
+    subgraph Functions["Function Layer"]
+        Decorator["@function decorator<br/>docstring = prompt"]
+        Builtins["Built-ins: ask, extract,<br/>summarize, classify, decide"]
+    end
 
-┌─────────────────────────┐  ┌─────────────────────────┐
-│        Scope             │  │        Memory            │
-│                          │  │                          │
-│ Context visibility       │  │ Execution log            │
-│ rules. Sessions read     │  │ (JSONL + Markdown +      │
-│ what they understand.    │  │  media files)            │
-└─────────────────────────┘  └─────────────────────────┘
+    subgraph Sessions["Session Layer"]
+        API["API Sessions<br/>Anthropic, OpenAI<br/>(we manage history)"]
+        CLI["CLI Sessions<br/>Claude Code, Codex<br/>(built-in memory)"]
+        GW["Gateway<br/>OpenClaw<br/>(server-side memory)"]
+    end
+
+    LLM["LLM<br/>(the actual runtime)<br/>Claude, GPT, Gemini, ..."]
+
+    Static --> Functions
+    Dynamic --> Functions
+    Functions --> Sessions
+    API --> LLM
+    CLI --> LLM
+    GW --> LLM
+
+    Scope["Scope<br/>Context visibility rules"]
+    Memory["Memory<br/>Execution log"]
+
+    Scope -.-> Sessions
+    Memory -.-> Functions
 ```
 
 ---
 
 ## 2. Core Analogy
 
-```
-  Traditional Programming          Agentic Programming
-  ────────────────────────         ────────────────────────
-  CPU executes code          →     LLM executes instructions
-  Function body = code       →     Function body = docstring
-  Type signature             →     return_type (Pydantic)
-  result = fn(args)          →     result = fn(session, args)
-  Standard library           →     Built-in functions
-  Class with methods         →     Python class with LLM methods
-  if / for / while           →     Same (Python is control flow)
-  Runtime / interpreter      →     Session (LLM interface)
-  Debug log                  →     Memory
-```
+| Traditional Programming | Agentic Programming |
+|-------------------------|---------------------|
+| CPU executes code | LLM executes instructions |
+| Function body = code | Function body = docstring |
+| Type signature | return_type (Pydantic) |
+| `result = fn(args)` | `result = fn(session, args)` |
+| Standard library | Built-in functions |
+| Class with methods | Python class with LLM methods |
+| `if / for / while` | Same — Python is control flow |
+| Runtime / interpreter | Session (LLM interface) |
+| Debug log | Memory |
 
 **There is no Runtime class.** The LLM *is* the runtime, accessed through Session.
 
@@ -111,54 +64,29 @@ Cross-cutting concerns (optional, any layer can use):
 
 ### What is a Function?
 
-A Python function whose logic is described in natural language (the docstring)
-and executed by an LLM (via a Session).
+A Python function whose logic is described in natural language (the docstring) and executed by an LLM (via a Session).
 
-```
-┌──────────────────────────────────────────────┐
-│              @function decorator              │
-│                                              │
-│  def observe(session, task: str):            │
-│      '''Look at the screen.                  │  ← Docstring = LLM instructions
-│      Find all buttons and text fields.       │    (change this = change behavior)
-│      Report what's visible.'''               │
-│                                              │
-│          │                                   │
-│          ▼                                   │
-│  ┌─────────────────────┐                     │
-│  │  Assemble prompt    │                     │
-│  │  from:              │                     │
-│  │  • docstring        │                     │
-│  │  • arguments        │                     │
-│  │  • return schema    │                     │
-│  │  • examples (opt)   │                     │
-│  └────────┬────────────┘                     │
-│           ▼                                  │
-│  ┌─────────────────────┐                     │
-│  │  session.send(      │                     │
-│  │    prompt)          │  → LLM processes    │
-│  │                     │  ← JSON reply       │
-│  └────────┬────────────┘                     │
-│           ▼                                  │
-│  ┌─────────────────────┐                     │
-│  │  Parse JSON         │                     │
-│  │  Validate against   │                     │
-│  │  return_type        │                     │
-│  │  (Pydantic model)   │                     │
-│  └────────┬────────────┘                     │
-│           │                                  │
-│     Valid? ─── No ──→ Retry (up to N times)  │
-│           │                                  │
-│          Yes                                 │
-│           │                                  │
-│           ▼                                  │
-│  Return Pydantic object (guaranteed type)    │
-└──────────────────────────────────────────────┘
+**The docstring IS the prompt.** Change the docstring → change the behavior.
+
+### How it works
+
+```mermaid
+flowchart TD
+    A["Call: observe(session, task='find login')"] --> B["Assemble prompt from:<br/>• docstring (instructions)<br/>• arguments (input)<br/>• return schema (output format)<br/>• examples (optional)"]
+    B --> C["session.send(prompt)"]
+    C --> D["LLM processes"]
+    D --> E["Parse JSON reply"]
+    E --> F{Valid against<br/>return_type?}
+    F -- Yes --> G["Return Pydantic object ✓"]
+    F -- No --> H{Retries left?}
+    H -- Yes --> I["Send error + schema<br/>as retry prompt"]
+    I --> C
+    H -- No --> J["Raise FunctionError ✗"]
 ```
 
 ### Two ways to define
 
-**With decorator** (recommended — docstring = prompt):
+**With decorator** (recommended):
 
 ```python
 @function(return_type=ObserveResult)
@@ -180,15 +108,13 @@ def observe(session: Session, task: str) -> ObserveResult:
 
 ### Built-in functions
 
-Ready-to-use functions for common operations:
-
-```
-ask(session, question)              → str           Plain text Q&A
-extract(session, text, schema)      → Pydantic      Structured extraction
-summarize(session, text)            → str           Text summarization
-classify(session, text, categories) → str           Classification
-decide(session, question, options)  → str           Decision making
-```
+| Function | Input | Output | Description |
+|----------|-------|--------|-------------|
+| `ask` | question | str | Plain text Q&A |
+| `extract` | text, schema | Pydantic model | Structured data extraction |
+| `summarize` | text | str | Text summarization |
+| `classify` | text, categories | str | Classification |
+| `decide` | question, options | str | Decision making |
 
 ---
 
@@ -196,85 +122,99 @@ decide(session, question, options)  → str           Decision making
 
 ### What is a Session?
 
-The interface to the LLM. Like a CPU's instruction set — you send an instruction,
-get back a result. Sessions also manage conversation history for context reuse.
+The interface to the LLM. You send a message, get a reply. Sessions also manage conversation history for context reuse.
 
+```mermaid
+classDiagram
+    class Session {
+        <<abstract>>
+        +send(message) str
+        +apply_scope(scope, context)
+        +post_execution(scope)
+        +reset()
+        +has_memory bool
+        +history_length int
+    }
+
+    class AnthropicSession {
+        _history: list
+        _client: Anthropic
+        +send(message) str
+        +apply_scope() injects context
+        +post_execution() can compact
+    }
+
+    class OpenAISession {
+        _history: list
+        _client: OpenAI
+        +send(message) str
+        +apply_scope() injects context
+        +post_execution() can compact
+    }
+
+    class ClaudeCodeSession {
+        _session_id: str
+        +send(message) str
+        +has_memory = True
+        +post_execution() forks session
+    }
+
+    class CodexSession {
+        _session_id: str
+        +send(message) str
+        +has_memory = True
+        +post_execution() forks session
+    }
+
+    class OpenClawSession {
+        _session_key: str
+        _history: list
+        +send(message) str
+    }
+
+    class CLISession {
+        _command: str
+        +send(message) str
+    }
+
+    Session <|-- AnthropicSession
+    Session <|-- OpenAISession
+    Session <|-- ClaudeCodeSession
+    Session <|-- CodexSession
+    Session <|-- OpenClawSession
+    Session <|-- CLISession
 ```
-┌──────────────────────────────────────────────┐
-│                 Session                       │
-│                                              │
-│  send(message) → str     Core: send & reply  │
-│  apply_scope(scope, ctx) Handle Scope        │
-│  post_execution(scope)   Post-processing     │
-│  reset()                 Clear history        │
-│  has_memory → bool       Built-in memory?     │
-│  history_length → int    Turn count           │
-└──────────────────────────────────────────────┘
+
+### Session types
+
+| Session | Backend | Images | History managed by | Auth |
+|---------|---------|--------|--------------------|------|
+| AnthropicSession | Anthropic API | ✅ base64 | Us (`_history`) | API key |
+| OpenAISession | OpenAI API | ✅ base64 | Us (`_history`) | API key |
+| ClaudeCodeSession | Claude Code CLI | ✅ stream-json | CLI (`--session-id`) | Subscription |
+| CodexSession | Codex CLI | ✅ `--image` | CLI (`--session-id`) | Subscription |
+| OpenClawSession | OpenClaw gateway | ✅ OpenAI format | Server-side | Gateway token |
+| CLISession | Any CLI command | ❌ | None (stateless) | Depends |
+
+### Context sharing
+
+```mermaid
+graph LR
+    subgraph Shared["Shared Session (context flows)"]
+        direction LR
+        O1["observe()"] --> L1["learn()"] --> A1["act()"]
+        S1["Session<br/>(0 turns → 1 turn → 2 turns)"]
+    end
+
+    subgraph Isolated["Separate Sessions (isolated)"]
+        direction LR
+        O2["observe()"] ~~~ L2["learn()"] ~~~ A2["act()"]
+        SA["Session A"] ~~~ SB["Session B"] ~~~ SC["Session C"]
+    end
 ```
 
-### Implementations
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        Session Types                             │
-│                                                                  │
-│  API Sessions (we control history)                               │
-│  ┌────────────────────┐  ┌────────────────────┐                  │
-│  │ AnthropicSession   │  │ OpenAISession      │                  │
-│  │ • API key auth     │  │ • API key auth     │                  │
-│  │ • Text + images    │  │ • Text + images    │                  │
-│  │ • _history in RAM  │  │ • _history in RAM  │                  │
-│  │ • Can compact ✅   │  │ • Can compact ✅   │                  │
-│  └────────────────────┘  └────────────────────┘                  │
-│                                                                  │
-│  CLI Sessions (built-in memory)                                  │
-│  ┌────────────────────┐  ┌────────────────────┐                  │
-│  │ ClaudeCodeSession  │  │ CodexSession       │                  │
-│  │ • Subscription     │  │ • Subscription     │                  │
-│  │ • Text + images    │  │ • Text + images    │                  │
-│  │ • --session-id     │  │ • --session-id     │                  │
-│  │ • Can't edit ❌    │  │ • Can't edit ❌    │                  │
-│  │ • Compact = fork   │  │ • Compact = fork   │                  │
-│  └────────────────────┘  └────────────────────┘                  │
-│                                                                  │
-│  Gateway Session                                                 │
-│  ┌────────────────────┐  ┌────────────────────┐                  │
-│  │ OpenClawSession    │  │ CLISession         │                  │
-│  │ • /v1/chat/compl.  │  │ • Any CLI command  │                  │
-│  │ • Gateway token    │  │ • Stateless        │                  │
-│  │ • Server memory    │  │ • Text only        │                  │
-│  └────────────────────┘  └────────────────────┘                  │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-### Context sharing via Session reuse
-
-```
-Shared Session (context flows between functions):
-
-  session = AnthropicSession()
-  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-  │  observe()  │ →  │   learn()   │ →  │    act()    │
-  │             │    │             │    │             │
-  │  Session    │    │  Session    │    │  Session    │
-  │  has 0 turns│    │  has 1 turn │    │  has 2 turns│
-  │  (fresh)    │    │  (sees r1)  │    │  (sees r1+r2)
-  └─────────────┘    └─────────────┘    └─────────────┘
-       All three share the same Session object.
-       Each call sees all prior conversation.
-       KV cache prefix preserved → cheaper inference.
-
-Separate Sessions (isolated):
-
-  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-  │  observe()  │    │   learn()   │    │    act()    │
-  │             │    │             │    │             │
-  │  Session A  │    │  Session B  │    │  Session C  │
-  │  (fresh)    │    │  (fresh)    │    │  (fresh)    │
-  └─────────────┘    └─────────────┘    └─────────────┘
-       Each function has its own Session.
-       No shared context. Clean slate each time.
-```
+- **Shared Session**: each function sees all prior conversation. KV cache prefix preserved.
+- **Separate Sessions**: each function starts fresh. No shared context.
 
 ---
 
@@ -282,59 +222,37 @@ Separate Sessions (isolated):
 
 ### What is Scope?
 
-An intent declaration for context visibility. Attached to a function,
-read by the Session. Each Session type handles only the parameters it
-understands — no if/else in framework code.
+An intent declaration for context visibility. Attached to a function, read by the Session. Each Session type handles only the parameters it understands.
 
-```
-                    Scope
-                 ┌─────────────────────────────────────┐
-                 │  depth:   Optional[int]              │
-                 │  detail:  Optional[str]   "io"|"full"│
-  API Sessions   │  peer:    Optional[str]   "none"|    │
-  read these  ←──│                           "io"|"full"│
-                 │─────────────────────────────────────│
-                 │  compact: Optional[bool]             │
-  CLI Sessions   │                                      │
-  read this   ←──│                                      │
-                 └─────────────────────────────────────┘
+### Parameters
 
-  All parameters Optional. None = "no opinion, use default."
-```
+| Parameter | Type | Read by | Description |
+|-----------|------|---------|-------------|
+| `depth` | Optional[int] | API Sessions | Call stack layers visible (0=none, -1=all) |
+| `detail` | Optional[str] | API Sessions | "io" (summary) or "full" (reasoning) |
+| `peer` | Optional[str] | API Sessions | Sibling visibility: "none", "io", "full" |
+| `compact` | Optional[bool] | CLI Sessions | Compress after execution |
 
-### How each Session type handles Scope
+All parameters are **Optional**. `None` = "no opinion, use default."
 
-```
-  API Session + Scope(peer="io"):
-  ┌──────────────────────────────────────┐
-  │  apply_scope():                      │
-  │    Inject prior results into         │
-  │    _history as summary messages      │
-  │                                      │
-  │  post_execution(compact=True):       │
-  │    Replace last exchange in          │
-  │    _history with a summary           │
-  └──────────────────────────────────────┘
+### How Sessions handle Scope
 
-  CLI Session + Scope(compact=True):
-  ┌──────────────────────────────────────┐
-  │  apply_scope():                      │
-  │    No-op (has built-in memory)       │
-  │                                      │
-  │  post_execution(compact=True):       │
-  │    Fork to new --session-id          │
-  │    (old session abandoned)           │
-  └──────────────────────────────────────┘
+```mermaid
+flowchart LR
+    S["Scope<br/>(depth, detail, peer, compact)"]
+
+    S --> API["API Session<br/>• Reads depth/detail/peer<br/>• Injects context into _history<br/>• compact → compress history"]
+    S --> CLI_S["CLI Session<br/>• Ignores depth/detail/peer<br/>  (has built-in memory)<br/>• compact → fork to new session"]
 ```
 
 ### Presets
 
-```python
-Scope.isolated()   # depth=0, peer="none"   Pure function, no context
-Scope.chained()    # depth=0, peer="io"     Sees sibling I/O summaries
-Scope.aware()      # depth=1, peer="io"     Sees caller + siblings
-Scope.full()       # depth=-1, peer="full"  Sees everything (shared session)
-```
+| Preset | depth | detail | peer | Use case |
+|--------|-------|--------|------|----------|
+| `Scope.isolated()` | 0 | "io" | "none" | Pure function, no context |
+| `Scope.chained()` | 0 | "io" | "io" | Sees sibling I/O summaries |
+| `Scope.aware()` | 1 | "io" | "io" | Sees caller + siblings |
+| `Scope.full()` | -1 | "full" | "full" | Sees everything |
 
 ---
 
@@ -342,42 +260,34 @@ Scope.full()       # depth=-1, peer="full"  Sees everything (shared session)
 
 ### What is Memory?
 
-A persistent execution log. Like a program's debug log, but structured.
-Records everything that happened during a run.
+A persistent execution log. Records every function call, result, decision, and media file during a run.
+
+```mermaid
+flowchart TD
+    subgraph Run["Run: click login button"]
+        RS["run_start"] --> FC1["function_call: observe"]
+        FC1 --> MS1["message_sent"]
+        MS1 --> MR1["message_received"]
+        MR1 --> MD1["media: screenshot.png"]
+        MD1 --> FR1["function_return ✓ 150ms"]
+        FR1 --> D1["decision: call click"]
+        D1 --> FC2["function_call: click"]
+        FC2 --> FR2["function_return ✓ 200ms"]
+        FR2 --> FC3["function_call: verify"]
+        FC3 --> ERR["error: element not found"]
+        ERR --> FR3["function_return ✗ 50ms"]
+        FR3 --> RE["run_end: partial"]
+    end
+```
+
+### Output format
 
 ```
-  memory = Memory(base_dir="./logs")
-  memory.start_run(task="Click login button")
-
-  ┌─────────────────────────────────────────────────────────────┐
-  │                        Run Timeline                         │
-  │                                                             │
-  │  [run_start] task="Click login button"                      │
-  │    │                                                        │
-  │    ├── [function_call] observe(task="find button")           │
-  │    │     ├── [message_sent] "## observe ..."                │
-  │    │     ├── [message_received] '{"elements": [...]}'       │
-  │    │     ├── [media] screenshot.png saved                   │
-  │    │     └── [function_return] ✓ 150ms                      │
-  │    │                                                        │
-  │    ├── [decision] action=call, target=click                 │
-  │    │                                                        │
-  │    ├── [function_call] click(target="login")                │
-  │    │     ├── [function_return] ✓ 200ms                      │
-  │    │                                                        │
-  │    ├── [function_call] verify(expected="login page")        │
-  │    │     ├── [error] "element not found"                    │
-  │    │     └── [function_return] ✗ 50ms                       │
-  │    │                                                        │
-  │  [run_end] status=partial, duration=400ms                   │
-  └─────────────────────────────────────────────────────────────┘
-
-  Output:
-  logs/run_20260401_130000_abc123/
-  ├── run.jsonl      Machine-readable (one JSON event per line)
-  ├── run.md         Human-readable (Markdown with ✓/✗, timing, links)
-  └── media/
-      └── 001_screenshot.png
+logs/run_20260401_130000_abc123/
+├── run.jsonl      ← Machine-readable (one JSON event per line)
+├── run.md         ← Human-readable (Markdown with ✓/✗, timing, media links)
+└── media/
+    └── 001_screenshot.png
 ```
 
 ---
@@ -386,107 +296,73 @@ Records everything that happened during a run.
 
 ### What is the Programmer?
 
-An LLM that decides what functions to call and in what order.
-It sees function signatures (docstrings), calls them, sees results,
-and decides the next step.
+An LLM that decides what functions to call and in what order. It sees function signatures (docstrings = capabilities), calls them, sees results, and decides the next step.
 
-```
-  ┌─────────────────────────────────────────────────────────────┐
-  │                      Programmer                             │
-  │                                                             │
-  │  Has: persistent Session (remembers across decisions)       │
-  │  Sees: function list with docstrings                        │
-  │  Does: decides what to call, with what arguments            │
-  │                                                             │
-  │  ┌─────────────────────────────────────────────────────┐    │
-  │  │ Programmer Session (planning)                       │    │
-  │  │                                                     │    │
-  │  │ "Task: open Safari and search hello world"          │    │
-  │  │ "Available: observe, click, type, verify"           │    │
-  │  │                                                     │    │
-  │  │  Decision: call observe(task="find Safari")         │    │
-  │  │  Result: {app_visible: true, location: [100, 50]}   │    │
-  │  │                                                     │    │
-  │  │  Decision: call click(target="Safari icon")         │    │
-  │  │  Result: {success: true}                            │    │
-  │  │                                                     │    │
-  │  │  Decision: call type(text="hello world")            │    │
-  │  │  Result: {typed: true}                              │    │
-  │  │                                                     │    │
-  │  │  Decision: done                                     │    │
-  │  └─────────────────────────────────────────────────────┘    │
-  │         │              ▲                                    │
-  │    call │              │ structured result only             │
-  │         ▼              │ (never sees execution details)     │
-  │  ┌──────────────┐      │                                    │
-  │  │ observe()    │──────┘                                    │
-  │  │ (own Session)│    Each function runs in its own Session  │
-  │  └──────────────┘    Programmer only sees the return value  │
-  └─────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant User
+    participant Programmer as Programmer Session<br/>(planning LLM)
+    participant Fn as Function<br/>(execution LLM)
+
+    User->>Programmer: "open Safari and search hello world"
+    Note over Programmer: Sees: observe, click, type, verify
+
+    Programmer->>Fn: observe(task="find Safari")
+    Fn-->>Programmer: {app_visible: true, location: [100,50]}
+
+    Programmer->>Fn: click(target="Safari icon")
+    Fn-->>Programmer: {success: true}
+
+    Programmer->>Fn: type(text="hello world", target="search bar")
+    Fn-->>Programmer: {typed: true}
+
+    Programmer->>Fn: verify(expected="search results")
+    Fn-->>Programmer: {verified: true}
+
+    Programmer-->>User: Done ✓
+
+    Note over Programmer: Only sees structured results<br/>Never sees execution details
+    Note over Fn: Each call may use a different Session<br/>Context isolated from Programmer
 ```
 
 **Key design:**
-- Programmer Session accumulates **decisions and result summaries** (grows slowly)
+- Programmer Session accumulates **decisions + result summaries** (grows slowly)
 - Function Sessions accumulate **execution details** (isolated, then destroyed)
 - Programmer never sees function execution details → context stays small
 
 **Programmer vs MCP / tool-calling:**
-Both let an LLM decide what to call. The difference: MCP tools contain Python
-code executed by a CPU. Our functions contain natural language executed by an LLM.
-A Programmer could be implemented on top of MCP by registering functions as tools.
+Both let an LLM decide what to call. The difference: MCP tools contain Python code executed by a CPU. Our functions contain natural language executed by an LLM.
 
-**Status:** Design finalized. Implementation deferred — the Function layer
-comes first, Programmer builds on top of it.
+**Status:** Design finalized. Implementation deferred — Function layer first.
 
 ---
 
 ## 8. Execution Modes
 
+```mermaid
+graph TB
+    subgraph Mode1["Mode 1: Static"]
+        H["Human writes code"] --> F1["observe()"] --> F2["click()"] --> F3["verify()"]
+    end
+
+    subgraph Mode2["Mode 2: Dynamic"]
+        P["Programmer LLM"] --> |decides| FF1["observe()"]
+        P --> |decides| FF2["click()"]
+        P --> |decides| FF3["verify()"]
+    end
+
+    subgraph Mode3["Mode 3: Hybrid"]
+        CL["Python class"] --> |pattern| FFF1["observe()"]
+        CL --> |if/else| FFF2["click()"]
+        CL --> |fallback| D["decide()"]
+    end
 ```
-  Mode 1: Static (human writes the flow)
-  ─────────────────────────────────────────
 
-  session = ClaudeCodeSession()
-
-  screen = observe(session, task="find login")     # call 1
-  if screen.target_visible:                         # Python logic
-      click(session, target="login button")         # call 2
-      verify(session, expected="login page")        # call 3
-
-  → Human controls the flow. LLM executes each step.
-  → Good for: known workflows, scripts, automation.
-
-
-  Mode 2: Dynamic (Programmer decides the flow)
-  ─────────────────────────────────────────
-
-  programmer = Programmer(session=AnthropicSession())
-  programmer.register(observe, click, type, verify)
-  programmer.run("open Safari and search hello world")
-
-  → LLM controls the flow. LLM executes each step.
-  → Good for: open-ended tasks, exploration, complex goals.
-
-
-  Mode 3: Hybrid (human defines structure, LLM fills gaps)
-  ─────────────────────────────────────────
-
-  class GUIAgent:
-      def __init__(self, session):
-          self.session = session
-
-      def find_and_click(self, target: str):
-          screen = observe(self.session, task=f"find {target}")
-          if screen.target_visible:
-              return click(self.session, target=target)
-          else:
-              return decide(self.session,
-                  f"Can't find {target}, what should I try?",
-                  ["scroll down", "go back", "try different name"])
-
-  → Human defines the pattern. LLM handles decisions within it.
-  → Good for: robust automation with fallback logic.
-```
+| Mode | Who controls flow | Good for |
+|------|-------------------|----------|
+| **Static** | Human (Python code) | Known workflows, scripts |
+| **Dynamic** | Programmer (LLM) | Open-ended tasks, exploration |
+| **Hybrid** | Human structure + LLM decisions | Robust automation with fallbacks |
 
 ---
 
@@ -494,7 +370,7 @@ comes first, Programmer builds on top of it.
 
 | Principle | Description |
 |-----------|-------------|
-| **Functions are functions** | Call them, get results. No Runtime class. |
+| **Functions are functions** | Call them, get results. No Runtime class needed. |
 | **Docstring = prompt** | Change the docstring, change the behavior. |
 | **LLM is the runtime** | Session.send() is the "CPU instruction". |
 | **Python is the control flow** | if/for/while/async — not a custom DSL. |
@@ -505,28 +381,27 @@ comes first, Programmer builds on top of it.
 
 ---
 
-## 10. Comparison with Other Approaches
+## 10. Comparison
 
+```mermaid
+graph LR
+    subgraph TC["Tool-calling (Pydantic AI, MCP)"]
+        direction TB
+        LLM1["LLM decides"] --> Py["Python function<br/>(CPU executes)"] --> LLM2["Result back to LLM"]
+    end
+
+    subgraph AP["Agentic Programming (ours)"]
+        direction TB
+        Py2["Python code decides"] --> LLM3["LLM function<br/>(LLM executes)"] --> Py3["Result back to Python"]
+    end
 ```
-  Tool-calling (Pydantic AI, MCP)         Agentic Programming (ours)
-  ───────────────────────────────         ──────────────────────────
 
-  LLM decides what to call                Python code decides what to call
-       │                                       │
-       ▼                                       ▼
-  Python function (CPU executes)          LLM function (LLM executes)
-       │                                       │
-       ▼                                       ▼
-  Result back to LLM                      Result back to Python
-       │                                       │
-       ▼                                       ▼
-  LLM decides next step                  Python decides next step
-                                          (or Programmer LLM decides)
-
-  Direction: LLM → Python → LLM          Direction: Python → LLM → Python
-  Functions: contain code                 Functions: contain instructions
-  Good for: data retrieval, APIs          Good for: reasoning, perception, analysis
-```
+| | Tool-calling | Agentic Programming |
+|---|---|---|
+| Direction | LLM → Python → LLM | Python → LLM → Python |
+| Who decides | LLM decides what tools to use | Program decides what to execute |
+| Functions contain | Python code | Natural language instructions |
+| Good for | Data retrieval, APIs, calculations | Reasoning, perception, analysis |
 
 ---
 
