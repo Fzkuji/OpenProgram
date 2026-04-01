@@ -158,25 +158,12 @@ def test_media_in_markdown(memory, tmp_path):
     assert "screenshot.png" in summary
 
 
-def test_runtime_with_memory(memory):
-    """Runtime logs to Memory when provided."""
-    from pydantic import BaseModel
-    from harness.function import Function
-    from harness.session import Session
-    from harness.runtime import Runtime
-
-    class Result(BaseModel):
-        status: str
-
-    class MockSession(Session):
-        def send(self, message):
-            return '{"status": "ok"}'
-
+def test_memory_with_function(memory):
+    """Memory can log function calls manually."""
     run_id = memory.start_run(task="test")
-    runtime = Runtime(session_factory=lambda: MockSession(), memory=memory)
 
-    fn = Function("test_fn", "Test", "Do it", Result)
-    result = runtime.execute(fn, {"task": "test"})
+    memory.log_function_call("test_fn", params={"task": "test"}, scope="isolated")
+    memory.log_function_return("test_fn", result={"status": "ok"}, status="success", duration_ms=100)
 
     memory.end_run()
 

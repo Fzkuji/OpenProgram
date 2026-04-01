@@ -4,236 +4,236 @@ A programming paradigm where LLM sessions are the compute units.
 
 ## Core Idea
 
-Current agent frameworks let the LLM decide everything — what to do, in what order, when to stop — all in one conversation with unbounded context growth.
+```
+Python:     result = my_func(x, y)              → CPU executes → returns result
+Agentic:    result = observe(session, task="…")  → LLM executes → returns result
+```
 
-**Agentic Programming** structures LLM execution the same way programming languages structure CPU execution:
-
-- **Programmer** (LLM): like a human developer — understands the task, selects or writes Functions, checks results, iterates
-- **Function**: like source code — has a name, typed inputs/outputs, natural language instructions, and a **Scope** controlling what it can see
-- **Runtime** (LLM Session): like a CPU — executes a single Function, returns a typed result
-
-The Programmer never executes. The Runtime never plans. Context visibility is controlled by Scope.
-
-## The Programming Analogy
-
-| Programming | Agentic Programming |
-|-------------|---------------------|
-| Programmer | Programmer (LLM with persistent Session) |
-| Function / source code | Function (name + body + return_type + scope) |
-| Type signature | return_type (Pydantic schema) |
-| Variable scope (LEGB) | Scope (depth + detail + peer) |
-| CPU / interpreter | Runtime (ephemeral LLM Sessions) |
-| Call stack + logging | Context (Frame stack + ExecutionLog) |
-| Standard library | Function Pool (pre-built Skills) |
-| Type checker | Schema Validator |
-
-## Four Primitives
-
-| Concept | Description |
-|---------|-------------|
-| **Function** | Typed unit of execution — name, docstring, body, params, return_type, scope |
-| **Scope** | What a Function can see — call stack depth, detail level, peer visibility |
-| **Runtime** | Executes Functions — isolated, chained, or parallel |
-| **Programmer** | Plans and iterates — selects/creates Functions, sends to Runtime, checks results |
-
-Plus convenience layers:
-
-| Concept | Description |
-|---------|-------------|
-| **Context** | Call stack + execution log (like Python's runtime state) |
-| **Workflow** | Static mode — fixed sequence of Functions, no Programmer needed |
+Functions are functions. You call them, you get results. The only difference: an LLM executes the logic instead of a CPU.
 
 ## Quick Start
 
-### Define Functions
-
 ```python
-from harness import Function, Scope
+from harness import function, Session
+from harness.session import AnthropicSession
 from pydantic import BaseModel
 
+# 1. Define return type
 class ObserveResult(BaseModel):
     elements: list[str]
     target_visible: bool
 
-observe = Function(
-    name="observe",
-    docstring="Observe the current screen state.",
-    body="Take a screenshot and identify all visible UI elements...",
-    params=["task"],
-    return_type=ObserveResult,
-    scope=Scope.isolated(),       # sees nothing — pure function
-)
+# 2. Define function (docstring = LLM instructions)
+@function(return_type=ObserveResult)
+def observe(session: Session, task: str) -> ObserveResult:
+    """Observe the current screen state.
+    Take a screenshot and identify all visible UI elements.
+    Report whether the target described in 'task' is visible."""
 
-act = Function(
-    name="act",
-    docstring="Perform an action on screen.",
-    body="Execute the planned action...",
-    params=["task", "action"],
-    return_type=ActResult,
-    scope=Scope.chained(),        # sees prior siblings' I/O
-)
+# 3. Call it — just like any Python function
+session = AnthropicSession(model="claude-sonnet-4-6")
+result = observe(session, task="find the login button")
 
-analyze = Function(
-    name="analyze",
-    docstring="Analyze full execution context.",
-    body="Review the complete reasoning chain...",
-    return_type=AnalysisResult,
-    scope=Scope.full(),           # sees everything (shared Session)
-)
+print(result.elements)        # ["Login button", "Username field", ...]
+print(result.target_visible)  # True
 ```
 
-### Scope: Control Context Visibility
+That's it. The `@function` decorator handles prompt assembly, output validation, and retries. You just write the function.
 
-Three dimensions, any combination:
+## Built-in Functions
+
+Basic operations every agent needs, ready to use:
 
 ```python
+from harness import ask, extract, summarize, classify, decide
+
+# Plain text Q&A
+answer = ask(session, "What is the capital of France?")
+
+# Extract structured data
+info = extract(session, "John is 30 years old", PersonInfo)
+
+# Summarize
+summary = summarize(session, long_text, max_length=50)
+
+# Classify
+sentiment = classify(session, "I love this!", ["positive", "negative", "neutral"])
+
+# Choose from options
+choice = decide(session, "Which approach?", ["Option A", "Option B"])
+```
+
+## Sessions
+
+A Session is the LLM interface. Any class with `send(message) -> str`:
+
+```python
+from harness.session import (
+    AnthropicSession,       # Anthropic API (text + images)
+    OpenAISession,          # OpenAI API (text + images)
+    ClaudeCodeSession,      # Claude Code CLI (subscription, images via stream-json)
+    CodexSession,           # Codex CLI (subscription, images via --image)
+    OpenClawSession,        # OpenClaw gateway (/v1/chat/completions)
+    CLISession,             # Any CLI agent
+)
+
+# API (needs key)
+session = AnthropicSession(model="claude-sonnet-4-6")
+
+# CLI (uses subscription, no key needed)
+session = ClaudeCodeSession()
+
+# All Sessions maintain conversation history for reuse
+result1 = observe(session, task="find button")
+result2 = click(session, target="login")  # same session, remembers context
+```
+
+## Scope
+
+Controls what context a function can see. Optional — only use when you need fine-grained control.
+
+```python
+from harness import Scope
+
+# Parameters (all optional, None = don't care):
 Scope(
-    depth=0,         # call stack: 0=none, 1=caller, -1=all
-    detail="io",     # per layer: "io" (summary) or "full" (reasoning)
-    peer="none",     # siblings: "none", "io" (summary), "full" (shared session)
+    depth=None,      # Call stack: 0=none, 1=caller, -1=all
+    detail=None,     # Per layer: "io" or "full"
+    peer=None,       # Siblings: "none", "io", "full"
+    compact=None,    # Compress after execution: True/False
+)
+
+# Presets
+Scope.isolated()   # No context
+Scope.chained()    # Sees sibling I/O
+Scope.full()       # Sees everything
+```
+
+Sessions handle Scope via polymorphism:
+- API Sessions read `depth/detail/peer` → inject context into history
+- CLI Sessions read `compact` → fork session after execution
+- No if/else needed — each Session does what makes sense for it
+
+## Memory
+
+Persistent execution log. Records everything that happens:
+
+```python
+from harness import Memory
+
+memory = Memory(base_dir="./logs")
+run_id = memory.start_run(task="Click login button")
+
+# Log events
+memory.log_function_call("observe", params={"task": "find button"})
+memory.log_function_return("observe", result={"found": True}, duration_ms=150)
+
+# Save media (screenshots, etc.)
+path = memory.save_media("screenshot.png", source_path="/tmp/screen.png")
+
+memory.end_run(status="success")
+
+# Each run generates:
+# logs/run_<timestamp>/
+# ├── run.jsonl    ← machine-readable events
+# ├── run.md       ← human-readable summary with ✓/✗ and media links
+# └── media/       ← saved images
+```
+
+## Writing Your Own Functions
+
+Two ways:
+
+### With decorator (recommended)
+
+```python
+@function(return_type=ClickResult, max_retries=5)
+def click(session: Session, target: str, method: str = "single") -> ClickResult:
+    """Click a UI element on screen.
+    Find the element described by 'target' and click it.
+    Use the specified click method (single, double, right)."""
+
+result = click(session, target="Login button")
+```
+
+### Manual (full control)
+
+```python
+def click(session: Session, target: str) -> ClickResult:
+    prompt = f"Click the element: {target}. Return JSON with coordinates and success."
+    reply = session.send(prompt)
+    return ClickResult.model_validate_json(reply)
+
+result = click(session, target="Login button")
+```
+
+## Chaining Functions
+
+Just call them in sequence. Python is the control flow:
+
+```python
+session = AnthropicSession()
+
+# Sequential — same session, context preserved
+screen = observe(session, task="find login form")
+result = click(session, target=screen.elements[0])
+status = verify(session, expected="login page loaded")
+
+# Parallel — different sessions, isolated
+import asyncio
+s1, s2 = AnthropicSession(), AnthropicSession()
+r1, r2 = await asyncio.gather(
+    observe(s1, task="check screen A"),
+    observe(s2, task="check screen B"),
 )
 ```
 
-Presets:
+## Using Python Classes
+
+Organize related functions with plain Python classes:
 
 ```python
-Scope.isolated()   # depth=0, peer="none"  — pure function, sees nothing
-Scope.chained()    # depth=0, peer="io"    — sees sibling I/O summaries
-Scope.aware()      # depth=1, peer="io"    — sees caller + sibling I/O
-Scope.full()       # depth=-1, peer="full" — sees everything, shared Session
-```
+class GUIAgent:
+    def __init__(self, session: Session):
+        self.session = session
 
-**Why this matters (KV cache):** `peer="full"` shares a Session → LLM KV cache prefix is preserved → cheaper inference. `peer="io"` gives clean context but no cache hits. Choose based on the cost/isolation trade-off.
+    @function(return_type=ObserveResult)
+    def observe(self, session: Session, task: str) -> ObserveResult:
+        """Observe the screen."""
 
-### Static Mode (Workflow)
+    @function(return_type=ClickResult)
+    def click(self, session: Session, target: str) -> ClickResult:
+        """Click a target element."""
 
-For tasks where the execution order is known:
+    def find_and_click(self, target: str):
+        """High-level: find something and click it."""
+        screen = self.observe(self.session, task=f"find {target}")
+        if screen.target_visible:
+            return self.click(self.session, target=target)
 
-```python
-from harness import Workflow, FunctionCall
-from harness.session import AnthropicSession
-
-workflow = Workflow(
-    calls=[
-        FunctionCall(function=observe),
-        FunctionCall(function=learn),
-        FunctionCall(function=act),
-        FunctionCall(function=verify),
-    ],
-    default_session=AnthropicSession(),
-)
-result = workflow.run(task="Click the login button")
-```
-
-### Dynamic Mode (Programmer + Runtime)
-
-For complex tasks where the plan isn't known upfront:
-
-```python
-from harness import Programmer, Runtime
-from harness.session import AnthropicSession
-
-programmer = Programmer(
-    session=AnthropicSession(model="claude-sonnet-4-6"),    # persistent
-    runtime=Runtime(
-        session_factory=lambda: AnthropicSession(model="claude-haiku")  # ephemeral
-    ),
-    functions=[observe, learn, act, verify],
-)
-
-result = programmer.run("Open Safari and search for 'hello world'")
-```
-
-The Programmer:
-1. Sees the task + available Functions
-2. Decides what to call (or creates new Functions)
-3. Runtime executes → returns typed result
-4. Programmer sees the summary, decides next step
-5. Repeats until done or failed
-
-### Chain Mode
-
-Sequential Functions with Scope-controlled context:
-
-```python
-results = runtime.execute_chain(
-    [observe, learn, act],   # each has its own Scope
-    context={"task": "click login"},
-)
-```
-
-### Parallel Mode
-
-Independent Functions concurrently:
-
-```python
-results = await runtime.execute_parallel([
-    (observe, {"task": "check screen A"}),
-    (observe, {"task": "check screen B"}),
-])
-```
-
-## Context Isolation
-
-The key mechanism — what the Programmer sees vs what the Runtime sees:
-
-```
-Programmer Session (persistent):
-  "observe returned: {target_visible: true}"     ← structured summary
-  "act returned: {success: true}"                ← structured summary
-  → Grows slowly. Only I/O. Never the reasoning.
-
-Runtime Session A (ephemeral):
-  "Function: observe. Take a screenshot..."
-  → Full reasoning. Created, executed, destroyed.
-
-Runtime Session B (ephemeral):
-  "Function: act. Click the login button..."
-  → Full reasoning. Created, executed, destroyed.
+agent = GUIAgent(session)
+agent.find_and_click("login button")
 ```
 
 ## Project Structure
 
 ```
 harness/
-├── function/      # Function definition and execution
-├── session/       # Session interface (Anthropic, OpenAI, CLI, etc.)
-├── scope/         # Scope: context visibility rules (depth, detail, peer)
-├── context/       # Context: call stack + execution log
-├── runtime/       # Runtime: isolated, chained, parallel execution
-├── programmer/    # Programmer: decision loop + dynamic Function creation
-└── workflow/      # Workflow: static execution (convenience)
+├── function/    # @function decorator + built-in functions
+├── session/     # Session interface + implementations
+├── scope/       # Scope: context visibility rules
+└── memory/      # Memory: persistent execution log
 
-skills/
-└── programmer/SKILL.md   # Default Programmer instructions
-
-examples/
-├── gui_automation.py     # GUI automation example
-└── skills/               # Example Function body files
-
-tests/                    # 41 tests covering all components
+tests/           # 53 tests
 docs/
-└── DESIGN.md             # Full design specification
+└── DESIGN.md    # Full design specification
 ```
-
-## Sessions
-
-Any class with `send(message) -> str` is a valid Session:
-
-| Session | Backend | Multimodal |
-|---------|---------|------------|
-| `AnthropicSession` | Anthropic API | Text + images |
-| `OpenAISession` | OpenAI API | Text + images |
-| `ClaudeCodeSession` | Claude Code CLI | Text + tools |
-| `CodexSession` | Codex CLI | Code execution |
-| `OpenClawSession` | OpenClaw gateway | Memory + tools |
-| `CLISession` | Any CLI | Depends |
 
 ## Install & Test
 
 ```bash
 pip install -e .
-pytest tests/ -v   # 41 tests
+pytest tests/ -v   # 53 tests
 ```
 
 ## Design

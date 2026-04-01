@@ -1,153 +1,179 @@
 """
-Tests for the Function class.
-
-Run with:
-    pip install pytest
-    pytest tests/
+Tests for @function decorator and built-in functions.
 """
 
+import json
 import pytest
 from pydantic import BaseModel
-from harness.function import Function, FunctionError
-from harness.session import Session
+
+from harness import function, FunctionError, ask, extract, summarize, classify, decide
+from harness.session import Session, Message
 
 
-# --- Mock session for testing ---
+# --- Mock Session ---
 
 class MockSession(Session):
-    """A session that returns predefined replies in order."""
+    """Returns pre-configured replies."""
 
-    def __init__(self, replies: list[str]):
-        self._replies = iter(replies)
+    def __init__(self, replies: list[str] = None):
+        self._replies = list(replies) if replies else []
+        self._messages = []
+        self._call_count = 0
 
-    def send(self, message: str) -> str:
-        return next(self._replies)
+    def send(self, message: Message) -> str:
+        self._messages.append(message if isinstance(message, str) else str(message))
+        self._call_count += 1
+        if self._replies:
+            return self._replies.pop(0)
+        return '{"status": "ok"}'
 
 
 # --- Return types ---
 
+class ObserveResult(BaseModel):
+    elements: list[str]
+    target_visible: bool
+
+
 class SimpleResult(BaseModel):
     status: str
-    value: str
 
 
-# --- Tests ---
+# --- @function decorator ---
 
-def test_function_returns_valid_output():
-    """Function returns typed result when session gives valid JSON."""
-    session = MockSession([
-        '{"status": "ok", "value": "hello"}'
-    ])
-    fn = Function(
-        name="test",
-        docstring="A test function",
-        body="Do the thing",
-        return_type=SimpleResult,
-    )
-    result = fn.call(session=session, context={"task": "test task"})
-    assert isinstance(result, SimpleResult)
-    assert result.status == "ok"
-    assert result.value == "hello"
+def test_function_basic():
+    """Decorated function calls LLM and returns typed result."""
+    session = MockSession(replies=['{"elements": ["button", "input"], "target_visible": true}'])
+
+    @function(return_type=ObserveResult)
+    def observe(session: Session, task: str) -> ObserveResult:
+        """Observe the screen and find UI elements."""
+
+    result = observe(session, task="find login")
+    assert isinstance(result, ObserveResult)
+    assert result.target_visible is True
+    assert "button" in result.elements
 
 
-def test_function_retries_on_invalid_return_value():
-    """Function retries when session gives invalid JSON, succeeds on second try."""
-    session = MockSession([
-        "I don't know what to do",                   # invalid — retry
-        '{"status": "ok", "value": "retry worked"}'  # valid
-    ])
-    fn = Function(
-        name="test",
-        docstring="A test function",
-        body="Do the thing",
-        return_type=SimpleResult,
-        max_retries=2,
-    )
-    result = fn.call(session=session, context={"task": "test task"})
-    assert result.status == "ok"
-
-
-def test_function_raises_after_max_retries():
-    """Function raises FunctionError after exhausting retries."""
-    session = MockSession([
+def test_function_retries_on_invalid_json():
+    """Function retries when LLM returns invalid JSON."""
+    session = MockSession(replies=[
         "not json",
-        "still not json",
-        "nope",
+        '{"status": "ok"}',
     ])
-    fn = Function(
-        name="test",
-        docstring="A test function",
-        body="Do the thing",
+
+    @function(return_type=SimpleResult)
+    def simple(session: Session) -> SimpleResult:
+        """Do something simple."""
+
+    result = simple(session)
+    assert result.status == "ok"
+    assert session._call_count == 2  # retried once
+
+
+def test_function_fails_after_max_retries():
+    """Function raises FunctionError after max retries."""
+    session = MockSession(replies=["bad", "bad", "bad"])
+
+    @function(return_type=SimpleResult, max_retries=3)
+    def failing(session: Session) -> SimpleResult:
+        """Always fails."""
+
+    with pytest.raises(FunctionError, match="failing"):
+        failing(session)
+
+
+def test_function_strips_markdown():
+    """Function handles markdown-wrapped JSON."""
+    session = MockSession(replies=['```json\n{"status": "ok"}\n```'])
+
+    @function(return_type=SimpleResult)
+    def simple(session: Session) -> SimpleResult:
+        """Do it."""
+
+    result = simple(session)
+    assert result.status == "ok"
+
+
+def test_function_with_examples():
+    """Function includes examples in prompt."""
+    session = MockSession(replies=['{"status": "ok"}'])
+
+    @function(
         return_type=SimpleResult,
-        max_retries=3,
+        examples=[{"input": {"task": "test"}, "output": {"status": "done"}}]
     )
-    with pytest.raises(FunctionError) as exc_info:
-        fn.call(session=session, context={"task": "test task"})
-    assert exc_info.value.function_name == "test"
-    assert exc_info.value.attempts == 3
+    def with_examples(session: Session, task: str) -> SimpleResult:
+        """Do something."""
+
+    result = with_examples(session, task="test")
+    assert result.status == "ok"
+    # Check examples were in the prompt
+    assert "Examples" in session._messages[0]
 
 
-def test_function_extracts_only_declared_params():
-    """Function only passes declared params from context as arguments."""
-    received_messages = []
+def test_function_metadata():
+    """Decorated function has metadata attached."""
+    @function(return_type=SimpleResult, max_retries=5)
+    def my_func(session: Session) -> SimpleResult:
+        """My docstring."""
 
-    class CapturingSession(Session):
-        def send(self, message: str) -> str:
-            received_messages.append(message)
-            return '{"status": "ok", "value": "done"}'
-
-    fn = Function(
-        name="test",
-        docstring="A test function",
-        body="Do the thing",
-        return_type=SimpleResult,
-        params=["task", "previous_result"],
-    )
-    context = {
-        "task": "my task",
-        "previous_result": "something",
-        "secret_data": "should not appear",
-    }
-    fn.call(session=CapturingSession(), context=context)
-
-    message = received_messages[0]
-    assert "my task" in message
-    assert "something" in message
-    assert "secret_data" not in message
+    assert my_func._is_function is True
+    assert my_func._return_type == SimpleResult
+    assert my_func._max_retries == 5
+    assert my_func._fn_name == "my_func"
+    assert "My docstring" in my_func._fn_doc
 
 
-def test_function_parses_json_in_markdown_block():
-    """Function handles return values wrapped in markdown code blocks."""
-    session = MockSession([
-        '```json\n{"status": "ok", "value": "from markdown"}\n```'
-    ])
-    fn = Function(
-        name="test",
-        docstring="A test function",
-        body="Do the thing",
-        return_type=SimpleResult,
-    )
-    result = fn.call(session=session, context={"task": "test task"})
-    assert result.value == "from markdown"
+def test_function_preserves_name():
+    """Decorated function preserves original name."""
+    @function(return_type=SimpleResult)
+    def my_function(session: Session) -> SimpleResult:
+        """Doc."""
+
+    assert my_function.__name__ == "my_function"
+    assert "Doc" in my_function.__doc__
 
 
-def test_function_includes_examples_in_call_message():
-    """Function includes examples in the assembled call message."""
-    received_messages = []
+# --- Built-in functions ---
 
-    class CapturingSession(Session):
-        def send(self, message: str) -> str:
-            received_messages.append(message)
-            return '{"status": "ok", "value": "done"}'
+def test_ask():
+    """ask() returns plain text."""
+    session = MockSession(replies=["The answer is 42"])
+    result = ask(session, "What is the answer?")
+    assert result == "The answer is 42"
 
-    fn = Function(
-        name="test",
-        docstring="A test function",
-        body="Do the thing",
-        return_type=SimpleResult,
-        examples=[
-            {"input": {"task": "example"}, "output": {"status": "ok", "value": "example"}}
-        ]
-    )
-    fn.call(session=CapturingSession(), context={"task": "real task"})
-    assert "Examples" in received_messages[0]
+
+def test_extract():
+    """extract() returns a Pydantic model."""
+    session = MockSession(replies=['{"status": "extracted"}'])
+    result = extract(session, "some text", SimpleResult)
+    assert result.status == "extracted"
+
+
+def test_summarize():
+    """summarize() returns text."""
+    session = MockSession(replies=["Short summary"])
+    result = summarize(session, "Very long text " * 100)
+    assert result == "Short summary"
+
+
+def test_classify():
+    """classify() returns a category."""
+    session = MockSession(replies=["positive"])
+    result = classify(session, "I love this!", ["positive", "negative", "neutral"])
+    assert result == "positive"
+
+
+def test_classify_case_insensitive():
+    """classify() matches case-insensitively."""
+    session = MockSession(replies=["Positive"])
+    result = classify(session, "great", ["positive", "negative"])
+    assert result == "positive"
+
+
+def test_decide():
+    """decide() returns chosen option."""
+    session = MockSession(replies=["Option B"])
+    result = decide(session, "Which one?", ["Option A", "Option B", "Option C"])
+    assert result == "Option B"

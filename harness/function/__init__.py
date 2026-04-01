@@ -1,224 +1,260 @@
 """
-Function — the fundamental unit of execution in Agentic Programming.
+Function — the core unit of Agentic Programming.
 
-A Function is like a function in any programming language:
-    - It has a name, docstring, body (instructions), params, and return_type
-    - Calling it sends it to a Session (the Runtime) and returns a typed result
-    - It does not return until its output matches the return_type
+A Function is a Python function whose body is executed by an LLM.
+Just like a normal Python function, you call it and get a result.
+The difference: instead of a CPU executing the logic, an LLM does.
 
-    # Python function:
-    def observe(task: str) -> ObserveResult:
-        \"\"\"Observe the current screen state.\"\"\"
-        ...
+    Python:     result = my_func(x, y)     → CPU executes → returns result
+    Agentic:    result = observe(session, task="...")  → LLM executes → returns result
 
-    # Agentic Programming Function:
-    observe = Function(
-        name="observe",
-        docstring="Observe the current screen state.",
-        body="Take a screenshot and analyze...",
-        params=["task"],
-        return_type=ObserveResult,
-    )
-    result = observe.call(session, context)  # returns ObserveResult — guaranteed
+Usage:
 
-Execution flow:
-    1. Extract params from context
-    2. Assemble call message (docstring + body + params + return_type schema)
-    3. Send to Session
-    4. Parse and validate reply against return_type
-    5. If valid   → return typed result
-    6. If invalid → retry (up to max_retries), then raise FunctionError
+    from harness import function, Session
+    from pydantic import BaseModel
+
+    class ObserveResult(BaseModel):
+        elements: list[str]
+        target_visible: bool
+
+    @function(return_type=ObserveResult)
+    def observe(session: Session, task: str) -> ObserveResult:
+        '''Observe the current screen state and identify UI elements.'''
+
+    # Call it like any function
+    result = observe(session, task="find the login button")
+    # result is ObserveResult — guaranteed
+
+The decorator handles:
+    - Assembling the prompt from the function's docstring + arguments
+    - Sending it to the Session (LLM)
+    - Parsing and validating the output against return_type
+    - Retrying if the output doesn't match
+    - Logging to Memory (if provided)
+
+You can also write functions manually without the decorator:
+
+    def observe(session: Session, task: str) -> ObserveResult:
+        reply = session.send(f"Observe the screen. Task: {task}")
+        return ObserveResult.model_validate_json(reply)
 """
 
 from __future__ import annotations
 
+import functools
 import json
-from typing import Type, TypeVar, Optional, Union
+import time
+from typing import Type, TypeVar, Optional, Callable, Any, get_type_hints
 from pydantic import BaseModel
 
-from harness.scope import Scope
+from harness.session import Session
 
 T = TypeVar("T", bound=BaseModel)
 
 
 class FunctionError(Exception):
-    """
-    Raised when a Function fails to return valid output after all retries.
-
-    Analogous to a RuntimeError in a regular function call.
-    """
-
-    def __init__(self, function_name: str, last_reply: str, attempts: int):
+    """Raised when a Function fails after all retries."""
+    def __init__(self, function_name: str, message: str):
         self.function_name = function_name
-        self.last_reply = last_reply
-        self.attempts = attempts
-        super().__init__(
-            f"Function '{function_name}' failed to return valid output "
-            f"after {attempts} attempts. "
-            f"Last reply: {last_reply[:200]}..."
-        )
+        super().__init__(f"{function_name}: {message}")
 
 
-class Function:
+def function(
+    return_type: Type[T],
+    max_retries: int = 3,
+    examples: list[dict] = None,
+) -> Callable:
     """
-    A typed function executed by an LLM Session.
+    Decorator that turns a Python function into an LLM-executed Function.
 
-    The LLM Session is the runtime. The Function is the definition.
-    The Session is pluggable — any Session implementation works.
+    The decorated function must have:
+        - First parameter: session (Session)
+        - A docstring (used as instructions for the LLM)
+        - Other parameters become the function's input
 
-    Attributes:
-        name        Identifier, e.g. "observe"
-        docstring   What this function does (1-2 sentences)
-        body        How to do it — the Skill content (natural language)
-        params      Which context keys this function reads as input
-                    (None = pass full context)
-        return_type Pydantic model this function MUST return
-        examples    Optional list of {"input": ..., "output": ...} dicts
-        max_retries How many times to retry if output is invalid
-        scope       Scope object defining what this Function can see.
-                    Controls call stack visibility, detail level, and peer access.
-                    Use Scope presets: Scope.isolated(), Scope.chained(),
-                    Scope.aware(), Scope.full(), or custom Scope(depth, detail, peer).
+    Args:
+        return_type:  Pydantic model the LLM must return
+        max_retries:  How many times to retry on invalid output
+        examples:     Optional list of {"input": ..., "output": ...} dicts
+
+    Returns:
+        A wrapper that calls the LLM and returns a validated Pydantic object
+
+    Example:
+        @function(return_type=ObserveResult)
+        def observe(session: Session, task: str) -> ObserveResult:
+            '''Observe the current screen state.'''
+
+        result = observe(session, task="find login button")
     """
+    def decorator(fn: Callable) -> Callable:
+        fn_name = fn.__name__
+        fn_doc = fn.__doc__ or ""
 
-    def __init__(
-        self,
-        name: str,
-        docstring: str,
-        body: str,
-        return_type: Type[T],
-        params: Optional[list[str]] = None,
-        examples: Optional[list[dict]] = None,
-        max_retries: int = 3,
-        scope: Union[Scope, None] = None,
-    ):
-        self.name = name
-        self.docstring = docstring
-        self.body = body
-        self.return_type = return_type
-        self.params = params
-        self.examples = examples or []
-        self.max_retries = max_retries
-        self.scope = scope or Scope.isolated()
+        @functools.wraps(fn)
+        def wrapper(session: Session, **kwargs) -> T:
+            # Assemble prompt
+            prompt = _assemble_prompt(fn_name, fn_doc, kwargs, return_type, examples)
 
-    def call(self, session: "Session", context: dict) -> T:
-        """
-        Call this function using the given session as runtime.
+            # Try up to max_retries times
+            last_error = None
+            for attempt in range(max_retries):
+                reply = session.send(prompt)
 
-        Args:
-            session:  The LLM Session to use as runtime
-            context:  The current workflow context
+                try:
+                    result = _parse_output(reply, return_type)
+                    return result
+                except (json.JSONDecodeError, Exception) as e:
+                    last_error = str(e)
+                    # Add retry hint to next attempt
+                    prompt = (
+                        f"Your previous response was invalid: {last_error}\n"
+                        f"Please try again. Return ONLY valid JSON matching the schema.\n"
+                        f"Schema: {json.dumps(return_type.model_json_schema(), indent=2)}"
+                    )
 
-        Returns:
-            A validated instance of return_type
+            raise FunctionError(fn_name, f"Failed after {max_retries} attempts. Last error: {last_error}")
 
-        Raises:
-            FunctionError: if the function cannot return valid output
-        """
-        arguments = self._extract_arguments(context)
-        message = self._assemble_call_message(arguments)
+        # Attach metadata for introspection
+        wrapper._is_function = True
+        wrapper._return_type = return_type
+        wrapper._max_retries = max_retries
+        wrapper._examples = examples or []
+        wrapper._fn_name = fn_name
+        wrapper._fn_doc = fn_doc
 
-        last_reply = ""
-        for attempt in range(1, self.max_retries + 1):
-            if attempt == 1:
-                reply = session.send(message)
-            else:
-                retry_message = (
-                    f"Your previous response could not be parsed as a valid return value.\n"
-                    f"You MUST return a JSON object matching this schema exactly:\n"
-                    f"{json.dumps(self.return_type.model_json_schema(), indent=2)}\n\n"
-                    f"Previous response was:\n{last_reply}\n\n"
-                    f"Please try again."
-                )
-                reply = session.send(retry_message)
+        return wrapper
 
-            last_reply = reply
-            result = self._parse_return_value(reply)
-            if result is not None:
-                return result
+    return decorator
 
-        raise FunctionError(
-            function_name=self.name,
-            last_reply=last_reply,
-            attempts=self.max_retries,
-        )
 
-    # ------------------------------------------------------------------
-    # Private methods
-    # ------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Built-in Functions — basic operations every agent needs
+# ------------------------------------------------------------------
 
-    def _extract_arguments(self, context: dict) -> dict:
-        """Extract declared params from context to use as function arguments.
+def ask(session: Session, question: str) -> str:
+    """Ask the LLM a question, get a plain text answer."""
+    return session.send(question)
 
-        Framework-injected keys (prefixed with _) are always included
-        regardless of params, since they are Scope-level context
-        (call stack, prior results, etc.), not user-level data.
-        """
-        if self.params is None:
-            return context
 
-        result = {k: context[k] for k in self.params if k in context}
+def extract(session: Session, text: str, schema: Type[T]) -> T:
+    """Extract structured data from text.
 
-        # Always include framework-injected context
-        for k, v in context.items():
-            if k.startswith("_"):
-                result[k] = v
+    Args:
+        session:  LLM session
+        text:     Text to extract from
+        schema:   Pydantic model defining what to extract
 
-        return result
+    Returns:
+        Validated Pydantic object
+    """
+    prompt = (
+        f"Extract the following information from the text below.\n\n"
+        f"Text:\n{text}\n\n"
+        f"Return ONLY valid JSON matching this schema:\n"
+        f"{json.dumps(schema.model_json_schema(), indent=2)}"
+    )
+    reply = session.send(prompt)
+    return _parse_output(reply, schema)
 
-    def _assemble_call_message(self, arguments: dict) -> str:
-        """Assemble the call message to send to the session."""
-        parts = [
-            f"## Function: {self.name}",
-            "",
-            "### Docstring",
-            self.docstring,
-            "",
-            "### Body",
-            self.body,
-        ]
 
-        if arguments:
-            parts += [
-                "",
-                "### Arguments",
-                json.dumps(arguments, ensure_ascii=False, indent=2),
-            ]
+def summarize(session: Session, text: str, max_length: int = None) -> str:
+    """Summarize text."""
+    prompt = f"Summarize the following text"
+    if max_length:
+        prompt += f" in {max_length} words or less"
+    prompt += f":\n\n{text}"
+    return session.send(prompt)
 
-        if self.examples:
-            parts += ["", "### Examples"]
-            for ex in self.examples:
-                parts.append(json.dumps(ex, ensure_ascii=False, indent=2))
 
-        parts += [
-            "",
-            "### Return type",
-            "You MUST respond with a JSON object matching this schema exactly.",
-            "Do not add extra fields. Do not wrap in markdown code blocks.",
-            json.dumps(self.return_type.model_json_schema(), indent=2),
-        ]
+def classify(session: Session, text: str, categories: list[str]) -> str:
+    """Classify text into one of the given categories.
 
-        return "\n".join(parts)
+    Returns the category name (one of the provided options).
+    """
+    cats = ", ".join(f'"{c}"' for c in categories)
+    prompt = (
+        f"Classify the following text into exactly one of these categories: {cats}\n\n"
+        f"Text: {text}\n\n"
+        f"Reply with ONLY the category name, nothing else."
+    )
+    reply = session.send(prompt).strip().strip('"')
+    # Fuzzy match to closest category
+    for cat in categories:
+        if cat.lower() == reply.lower():
+            return cat
+    return reply  # return as-is if no exact match
 
-    def _parse_return_value(self, reply: str) -> Optional[T]:
-        """Try to parse the session's reply into return_type."""
-        # Strip markdown code blocks if present
-        text = reply.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1]).strip()
 
-        try:
-            data = json.loads(text)
-            return self.return_type(**data)
-        except Exception:
-            pass
+def decide(session: Session, question: str, options: list[str]) -> str:
+    """Ask the LLM to choose from a list of options.
 
-        # Try to find a JSON object anywhere in the reply
-        try:
-            start = reply.index("{")
-            end = reply.rindex("}") + 1
-            data = json.loads(reply[start:end])
-            return self.return_type(**data)
-        except Exception:
-            return None
+    Returns the chosen option.
+    """
+    opts = "\n".join(f"  {i+1}. {o}" for i, o in enumerate(options))
+    prompt = (
+        f"Question: {question}\n\n"
+        f"Options:\n{opts}\n\n"
+        f"Reply with ONLY the option text (not the number)."
+    )
+    reply = session.send(prompt).strip()
+    for opt in options:
+        if opt.lower() == reply.lower():
+            return opt
+    return reply
+
+
+# ------------------------------------------------------------------
+# Internal helpers
+# ------------------------------------------------------------------
+
+def _assemble_prompt(
+    fn_name: str,
+    fn_doc: str,
+    kwargs: dict,
+    return_type: Type[T],
+    examples: list[dict] = None,
+) -> str:
+    """Assemble the prompt sent to the LLM."""
+    parts = []
+
+    parts.append(f"## Function: {fn_name}")
+    parts.append("")
+
+    if fn_doc:
+        parts.append(f"### Instructions")
+        parts.append(fn_doc.strip())
+        parts.append("")
+
+    if kwargs:
+        parts.append(f"### Arguments")
+        parts.append(json.dumps(kwargs, indent=2, ensure_ascii=False, default=str))
+        parts.append("")
+
+    if examples:
+        parts.append("### Examples")
+        for ex in examples:
+            parts.append(f"Input: {json.dumps(ex.get('input', {}), ensure_ascii=False)}")
+            parts.append(f"Output: {json.dumps(ex.get('output', {}), ensure_ascii=False)}")
+            parts.append("")
+
+    parts.append("### Return format")
+    parts.append("You MUST respond with a JSON object matching this schema exactly.")
+    parts.append("Do not add extra fields. Do not wrap in markdown code blocks.")
+    parts.append(json.dumps(return_type.model_json_schema(), indent=2))
+
+    return "\n".join(parts)
+
+
+def _parse_output(reply: str, return_type: Type[T]) -> T:
+    """Parse LLM reply into a Pydantic model."""
+    text = reply.strip()
+
+    # Strip markdown code blocks if present
+    if text.startswith("```"):
+        lines = text.split("\n")
+        # Remove first and last lines (```json and ```)
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+
+    return return_type.model_validate_json(text)
