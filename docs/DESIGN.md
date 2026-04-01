@@ -10,7 +10,7 @@
 graph TB
     subgraph User["User / Application"]
         Static["Static Mode<br/>(human writes flow)"]
-        Dynamic["Dynamic Mode<br/>(Programmer decides flow)"]
+        Dynamic["Dynamic Mode<br/>(Agentic Programmer decides flow)"]
     end
 
     subgraph Functions["Function Layer"]
@@ -361,7 +361,7 @@ graph TB
 | Mode | Who controls flow | Good for |
 |------|-------------------|----------|
 | **Static** | Human (Python code) | Known workflows, scripts |
-| **Dynamic** | Programmer (LLM) | Open-ended tasks, exploration |
+| **Dynamic** | Agentic Programmer (LLM) | Open-ended tasks, exploration |
 | **Hybrid** | Human structure + LLM decisions | Robust automation with fallbacks |
 
 ---
