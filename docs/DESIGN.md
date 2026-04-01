@@ -1,78 +1,93 @@
 # Agentic Programming — Design Specification
 
-> A programming paradigm where LLM sessions are the compute units.
+> A programming paradigm where LLM and Python co-execute functions.
 
 ---
 
-## 1. Architecture Overview
+## 1. Core Concepts
+
+The entire framework has only two concepts:
+
+| Concept | Definition |
+|---------|-----------|
+| **Agentic Function** | A function executed by Python Runtime + Agentic Runtime together. Docstring = prompt. |
+| **Meta Agentic Function** | An Agentic Function that creates other Agentic Functions. The bootstrap point of the system. |
+
+Everything else is infrastructure:
+
+| Infrastructure | Purpose |
+|----------------|---------|
+| **Agentic Session** | Interface to the Agentic Runtime (LLM). Manages history, context, images. |
+| **Agentic Scope** | Controls what a Session can see (context visibility). |
+| **Agentic Memory** | Persistent execution log (calls, results, media). |
+| **Agentic Type** | Pydantic model that guarantees output format. |
+| **MCP Server** | Single entry point — all functions registered as MCP tools. |
+
+---
+
+## 2. Architecture Overview
 
 ```mermaid
 graph TB
-    subgraph User["User / Application"]
-        Static["Static Mode<br/>(human writes flow)"]
-        Dynamic["Dynamic Mode<br/>(Agentic Programmer decides flow)"]
+    subgraph Caller["Human or LLM Agent"]
+        Human["Human (writes Python)"]
+        Agent["LLM Agent (Claude Code, Codex, OpenClaw)"]
     end
 
-    subgraph Functions["Function Layer"]
-        Decorator["@function decorator<br/>docstring = prompt"]
-        Builtins["Built-ins: ask, extract,<br/>summarize, classify, decide"]
+    subgraph MCP["MCP Server"]
+        Meta["Meta Agentic Function<br/>(creates other functions)"]
+        FnA["Agentic Function A"]
+        FnB["Agentic Function B"]
+        FnC["Agentic Function C"]
+        Meta -.->|creates| FnA
+        Meta -.->|creates| FnB
+        Meta -.->|creates| FnC
     end
 
-    subgraph Sessions["Session Layer"]
-        API["API Sessions<br/>Anthropic, OpenAI<br/>(we manage history)"]
-        CLI["CLI Sessions<br/>Claude Code, Codex<br/>(built-in memory)"]
-        GW["Gateway<br/>OpenClaw<br/>(server-side memory)"]
+    subgraph Execution["Dual Runtime Execution"]
+        PyRT["Python Runtime<br/>(OCR, click, file I/O)"]
+        AgRT["Agentic Runtime<br/>(LLM reasoning)"]
     end
 
-    LLM["LLM<br/>(the actual runtime)<br/>Claude, GPT, Gemini, ..."]
+    subgraph Sessions["Agentic Session Layer"]
+        API["API Sessions<br/>Anthropic, OpenAI"]
+        CLI["CLI Sessions<br/>Claude Code, Codex"]
+        GW["Gateway<br/>OpenClaw"]
+    end
 
-    Static --> Functions
-    Dynamic --> Functions
-    Functions --> Sessions
+    LLM["LLM<br/>Claude / GPT / Gemini"]
+
+    Human -->|"Python call"| MCP
+    Agent -->|"MCP JSON-RPC"| MCP
+    MCP --> Execution
+    AgRT --> Sessions
     API --> LLM
     CLI --> LLM
     GW --> LLM
 
-    Scope["Scope<br/>Context visibility rules"]
-    Memory["Memory<br/>Execution log"]
-
+    Scope["Scope<br/>(context visibility)"]
+    Memory["Memory<br/>(execution log)"]
     Scope -.-> Sessions
-    Memory -.-> Functions
+    Memory -.-> MCP
 ```
 
 ---
 
-## 2. Core Analogy
+## 3. Agentic Function
 
-| Traditional Programming | Agentic Programming |
-|-------------------------|---------------------|
-| CPU executes code | LLM executes instructions |
-| Function body = code | Function body = docstring |
-| Type signature | return_type (Pydantic) |
-| `result = fn(args)` | `result = fn(session, args)` |
-| Standard library | Built-in functions |
-| Class with methods | Python class with LLM methods |
-| `if / for / while` | Same — Python is control flow |
-| Runtime / interpreter | Session (LLM interface) |
-| Debug log | Memory |
+### What is it?
 
-**There is no Runtime class.** The LLM *is* the runtime, accessed through Session.
+A Python function whose logic is split between two Runtimes:
+- **Python Runtime**: deterministic code (screenshots, OCR, detection, clicking)
+- **Agentic Runtime**: LLM reasoning (understanding, finding targets, deciding)
 
----
+The **docstring IS the prompt**. Change the docstring → change the behavior.
 
-## 3. Function
-
-### What is a Function?
-
-A Python function whose logic is described in natural language (the docstring) and executed by an LLM (via a Session).
-
-**The docstring IS the prompt.** Change the docstring → change the behavior.
-
-### How it works
+### Execution Flow
 
 ```mermaid
 flowchart TD
-    A["Call: observe(session, task='find login')"] --> B["Assemble prompt from:<br/>• docstring (instructions)<br/>• arguments (input)<br/>• return schema (output format)<br/>• examples (optional)"]
+    A["Call: observe(session, task='find login')"] --> B["Assemble prompt:<br/>• docstring (instructions)<br/>• arguments (input)<br/>• return schema (output format)"]
     B --> C["session.send(prompt)"]
     C --> D["LLM processes"]
     D --> E["Parse JSON reply"]
@@ -84,7 +99,30 @@ flowchart TD
     H -- No --> J["Raise FunctionError ✗"]
 ```
 
-### Two ways to define
+### Dual Runtime Cooperation
+
+```python
+def observe(programmer, task: str) -> ObserveResult:
+    """Look at the screen and find all visible UI elements."""
+
+    # ── Python Runtime (deterministic) ──
+    screenshot = take_screenshot()        # Python: capture screen
+    ocr_data = run_ocr(screenshot.path)   # Python: extract text
+    elements = detect_all(screenshot.path) # Python: detect UI elements
+
+    # ── Agentic Runtime (reasoning) ──
+    worker = create_session(model="sonnet")
+    reply = worker.send({
+        "text": f"Analyze this screen. Task: {task}\nOCR: {ocr_data}\nElements: {elements}",
+        "images": [screenshot.path]
+    })
+
+    # ── Python Runtime (parse + validate) ──
+    result = ObserveResult.parse(reply)
+    return result
+```
+
+### Two Ways to Define
 
 **With decorator** (recommended):
 
@@ -92,21 +130,19 @@ flowchart TD
 @function(return_type=ObserveResult)
 def observe(session: Session, task: str) -> ObserveResult:
     """Look at the screen and find all visible UI elements.
-    Check if the target described in 'task' is visible.
-    List every element you can see."""
-
-result = observe(session, task="find the login button")
+    Check if the target described in 'task' is visible."""
 ```
 
-**Manual** (full control):
+**Manual** (full control over both Runtimes):
 
 ```python
 def observe(session: Session, task: str) -> ObserveResult:
-    reply = session.send(f"Observe the screen. Task: {task}")
-    return ObserveResult.model_validate_json(reply)
+    screenshot = take_screenshot()  # Python Runtime
+    reply = session.send(...)       # Agentic Runtime
+    return ObserveResult.parse(reply)
 ```
 
-### Built-in functions
+### Built-in Functions
 
 | Function | Input | Output | Description |
 |----------|-------|--------|-------------|
@@ -118,11 +154,61 @@ def observe(session: Session, task: str) -> ObserveResult:
 
 ---
 
-## 4. Session
+## 4. Meta Agentic Function
 
-### What is a Session?
+### What is it?
 
-The interface to the LLM. You send a message, get a reply. Sessions also manage conversation history for context reuse.
+The only "hardcoded" function in the system. It creates all other Agentic Functions and registers them as MCP tools. Both humans and LLMs call it the same way.
+
+### Why it matters
+
+- **Self-evolving**: LLM encounters a new task → calls Meta → new function exists → reuses it
+- **Unified bootstrap**: the entire system grows from this one function
+- **No Programmer role needed**: any LLM agent + MCP + Meta = complete system
+
+### How it works
+
+```mermaid
+sequenceDiagram
+    participant Caller as Human or LLM
+    participant Meta as Meta Agentic Function
+    participant MCP as MCP Server
+    participant New as New Agentic Function
+
+    Caller->>Meta: create(name, docstring, params, returns)
+    Meta->>Meta: Generate Python code
+    Meta->>Meta: Write to file
+    Meta->>MCP: Register as MCP tool
+    Meta-->>Caller: "Function {name} created ✓"
+
+    Note over Caller,New: Now the new function is callable:
+    Caller->>New: new_function(args...)
+    New-->>Caller: result
+```
+
+### Bootstrap Sequence
+
+```
+System start:
+  1. MCP Server starts with only Meta Agentic Function
+  2. Human or LLM calls Meta to create domain functions
+  3. Domain functions become available as MCP tools
+  4. Human or LLM calls domain functions to do work
+
+Self-evolving:
+  1. LLM encounters unknown task
+  2. LLM calls Meta to create a new function for it
+  3. LLM calls the new function
+  4. Next time, function already exists — no Meta call needed
+```
+
+---
+
+## 5. Agentic Session
+
+### What is it?
+
+The interface to the Agentic Runtime (LLM). You send a message, get a reply. Sessions manage conversation history for context reuse.
 
 ```mermaid
 classDiagram
@@ -133,48 +219,36 @@ classDiagram
         +post_execution(scope)
         +reset()
         +has_memory bool
-        +history_length int
     }
 
     class AnthropicSession {
         _history: list
-        _client: Anthropic
-        +send(message) str
-        +apply_scope() injects context
-        +post_execution() can compact
+        +send() → Anthropic API
     }
 
     class OpenAISession {
         _history: list
-        _client: OpenAI
-        +send(message) str
-        +apply_scope() injects context
-        +post_execution() can compact
+        +send() → OpenAI API
     }
 
     class ClaudeCodeSession {
         _session_id: str
-        +send(message) str
-        +has_memory = True
-        +post_execution() forks session
+        +send() → Claude Code CLI
     }
 
     class CodexSession {
         _session_id: str
-        +send(message) str
-        +has_memory = True
-        +post_execution() forks session
+        +send() → Codex CLI
     }
 
     class OpenClawSession {
         _session_key: str
-        _history: list
-        +send(message) str
+        +send() → OpenClaw gateway
     }
 
     class CLISession {
         _command: str
-        +send(message) str
+        +send() → any CLI
     }
 
     Session <|-- AnthropicSession
@@ -185,7 +259,7 @@ classDiagram
     Session <|-- CLISession
 ```
 
-### Session types
+### Session Types
 
 | Session | Backend | Images | History managed by | Auth |
 |---------|---------|--------|--------------------|------|
@@ -196,31 +270,36 @@ classDiagram
 | OpenClawSession | OpenClaw gateway | ✅ OpenAI format | Server-side | Gateway token |
 | CLISession | Any CLI command | ❌ | None (stateless) | Depends |
 
-### Context sharing
+### Two-Layer Session Design
 
 ```mermaid
-graph LR
-    subgraph Shared["Shared Session (context flows)"]
-        direction LR
-        O1["observe()"] --> L1["learn()"] --> A1["act()"]
-        S1["Session<br/>(0 turns → 1 turn → 2 turns)"]
+graph TB
+    subgraph Caller["Caller's Session (summaries only)"]
+        S1["observe → {app: Discord, found: true}"]
+        S2["act → {clicked: login, success: true}"]
+        S3["verify → {verified: true}"]
     end
 
-    subgraph Isolated["Separate Sessions (isolated)"]
-        direction LR
-        O2["observe()"] ~~~ L2["learn()"] ~~~ A2["act()"]
-        SA["Session A"] ~~~ SB["Session B"] ~~~ SC["Session C"]
+    subgraph Workers["Worker Sessions (full data, destroyed)"]
+        W1["Worker A: 77 OCR texts, 106 elements, screenshot"]
+        W2["Worker B: template match, coordinate calc, click"]
+        W3["Worker C: screenshot + OCR, judgment"]
     end
+
+    Caller --> W1
+    Caller --> W2
+    Caller --> W3
 ```
 
-- **Shared Session**: each function sees all prior conversation. KV cache prefix preserved.
-- **Separate Sessions**: each function starts fresh. No shared context.
+- **Caller's Session** grows slowly (only result summaries)
+- **Worker Sessions** have full data but are destroyed after each function call
+- Like Python's local variables: function returns → locals gone, only return value survives
 
 ---
 
-## 5. Scope
+## 6. Agentic Scope
 
-### What is Scope?
+### What is it?
 
 An intent declaration for context visibility. Attached to a function, read by the Session. Each Session type handles only the parameters it understands.
 
@@ -235,12 +314,11 @@ An intent declaration for context visibility. Attached to a function, read by th
 
 All parameters are **Optional**. `None` = "no opinion, use default."
 
-### How Sessions handle Scope
+### How Sessions Handle Scope
 
 ```mermaid
 flowchart LR
     S["Scope<br/>(depth, detail, peer, compact)"]
-
     S --> API["API Session<br/>• Reads depth/detail/peer<br/>• Injects context into _history<br/>• compact → compress history"]
     S --> CLI_S["CLI Session<br/>• Ignores depth/detail/peer<br/>  (has built-in memory)<br/>• compact → fork to new session"]
 ```
@@ -256,34 +334,32 @@ flowchart LR
 
 ---
 
-## 6. Memory
+## 7. Agentic Memory
 
-### What is Memory?
+### What is it?
 
 A persistent execution log. Records every function call, result, decision, and media file during a run.
 
+### Event Flow
+
 ```mermaid
 flowchart TD
-    subgraph Run["Run: click login button"]
-        RS["run_start"] --> FC1["function_call: observe"]
-        FC1 --> MS1["message_sent"]
-        MS1 --> MR1["message_received"]
-        MR1 --> MD1["media: screenshot.png"]
-        MD1 --> FR1["function_return ✓ 150ms"]
-        FR1 --> D1["decision: call click"]
-        D1 --> FC2["function_call: click"]
-        FC2 --> FR2["function_return ✓ 200ms"]
-        FR2 --> FC3["function_call: verify"]
-        FC3 --> ERR["error: element not found"]
-        ERR --> FR3["function_return ✗ 50ms"]
-        FR3 --> RE["run_end: partial"]
-    end
+    RS["run_start"] --> FC1["function_call: observe"]
+    FC1 --> MS1["message_sent"]
+    MS1 --> MR1["message_received"]
+    MR1 --> MD1["media: screenshot.png"]
+    MD1 --> FR1["function_return ✓ 150ms"]
+    FR1 --> FC2["function_call: act"]
+    FC2 --> FR2["function_return ✓ 200ms"]
+    FR2 --> FC3["function_call: verify"]
+    FC3 --> FR3["function_return ✓ 50ms"]
+    FR3 --> RE["run_end: success"]
 ```
 
-### Output format
+### Output Format
 
 ```
-logs/run_20260401_130000_abc123/
+logs/run_<timestamp>/
 ├── run.jsonl      ← Machine-readable (one JSON event per line)
 ├── run.md         ← Human-readable (Markdown with ✓/✗, timing, media links)
 └── media/
@@ -292,128 +368,130 @@ logs/run_20260401_130000_abc123/
 
 ---
 
-## 7. Programmer
+## 8. MCP Integration
 
-### What is the Programmer?
+### Why MCP?
 
-An LLM that decides what functions to call and in what order. It sees function signatures (docstrings = capabilities), calls them, sees results, and decides the next step.
+MCP is the **transport protocol** (how to call). Agentic Programming is the **execution model** (how functions run). They are orthogonal — our functions are exposed via MCP.
+
+### How it works
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Programmer as Programmer Session<br/>(planning LLM)
-    participant Fn as Function<br/>(execution LLM)
+    participant Agent as LLM Agent
+    participant Platform as Claude Code / OpenClaw
+    participant MCP as Our MCP Server
+    participant Fn as Agentic Function
 
-    User->>Programmer: "open Safari and search hello world"
-    Note over Programmer: Sees: observe, click, type, verify
+    Note over Agent,Platform: Startup: platform asks MCP for tool list
+    Platform->>MCP: tools/list
+    MCP-->>Platform: [{name: "observe", ...}, {name: "act", ...}, ...]
+    Platform->>Agent: Inject tools into system prompt
 
-    Programmer->>Fn: observe(task="find Safari")
-    Fn-->>Programmer: {app_visible: true, location: [100,50]}
-
-    Programmer->>Fn: click(target="Safari icon")
-    Fn-->>Programmer: {success: true}
-
-    Programmer->>Fn: type(text="hello world", target="search bar")
-    Fn-->>Programmer: {typed: true}
-
-    Programmer->>Fn: verify(expected="search results")
-    Fn-->>Programmer: {verified: true}
-
-    Programmer-->>User: Done ✓
-
-    Note over Programmer: Only sees structured results<br/>Never sees execution details
-    Note over Fn: Each call may use a different Session<br/>Context isolated from Programmer
+    Note over Agent,Fn: Runtime: agent calls a function
+    Agent->>Platform: tool_use: observe(task="find button")
+    Platform->>MCP: JSON-RPC call
+    MCP->>Fn: Execute (Python + LLM)
+    Fn-->>MCP: Result JSON
+    MCP-->>Platform: tool_result
+    Platform-->>Agent: Show result
 ```
 
-**Key design:**
-- Programmer Session accumulates **decisions + result summaries** (grows slowly)
-- Function Sessions accumulate **execution details** (isolated, then destroyed)
-- Programmer never sees function execution details → context stays small
+### Configuration
 
-**Programmer vs MCP / tool-calling:**
-Both let an LLM decide what to call. The difference: MCP tools contain Python code executed by a CPU. Our functions contain natural language executed by an LLM.
-
-**Status:** Design finalized. Implementation deferred — Function layer first.
+```json
+// .mcp.json — one file, any MCP client can connect
+{
+  "mcpServers": {
+    "gui-agent": {
+      "command": "python3",
+      "args": ["mcp_server.py"]
+    }
+  }
+}
+```
 
 ---
 
-## 8. Execution Modes
+## 9. Execution Modes
+
+| Mode | Who controls flow | How | Good for |
+|------|-------------------|-----|----------|
+| **Static** | Human writes Python | `observe()` → `act()` → `verify()` | Known workflows |
+| **Dynamic** | LLM agent via MCP | Agent decides which tools to call | Open-ended tasks |
+| **Self-evolving** | LLM + Meta Function | Agent creates new functions as needed | Unknown tasks |
 
 ```mermaid
 graph TB
-    subgraph Mode1["Mode 1: Static"]
-        H["Human writes code"] --> F1["observe()"] --> F2["click()"] --> F3["verify()"]
+    subgraph Mode1["Static: Human writes code"]
+        H["Python script"] --> F1["observe()"] --> F2["act()"] --> F3["verify()"]
     end
 
-    subgraph Mode2["Mode 2: Dynamic"]
-        P["Programmer LLM"] --> |decides| FF1["observe()"]
-        P --> |decides| FF2["click()"]
-        P --> |decides| FF3["verify()"]
+    subgraph Mode2["Dynamic: LLM decides"]
+        A["LLM Agent"] -->|MCP| FF1["observe()"]
+        A -->|MCP| FF2["act()"]
+        A -->|MCP| FF3["verify()"]
     end
 
-    subgraph Mode3["Mode 3: Hybrid"]
-        CL["Python class"] --> |pattern| FFF1["observe()"]
-        CL --> |if/else| FFF2["click()"]
-        CL --> |fallback| D["decide()"]
+    subgraph Mode3["Self-evolving: LLM creates + calls"]
+        B["LLM Agent"] -->|MCP| Meta["meta_create()"]
+        Meta -->|creates| New["new_function()"]
+        B -->|MCP| New
     end
 ```
 
-| Mode | Who controls flow | Good for |
-|------|-------------------|----------|
-| **Static** | Human (Python code) | Known workflows, scripts |
-| **Dynamic** | Agentic Programmer (LLM) | Open-ended tasks, exploration |
-| **Hybrid** | Human structure + LLM decisions | Robust automation with fallbacks |
-
 ---
 
-## 9. Design Principles
+## 10. Design Principles
 
 | Principle | Description |
 |-----------|-------------|
 | **Functions are functions** | Call them, get results. No Runtime class needed. |
 | **Docstring = prompt** | Change the docstring, change the behavior. |
-| **LLM is the runtime** | Session.send() is the "CPU instruction". |
-| **Python is the control flow** | if/for/while/async — not a custom DSL. |
+| **Dual runtime** | Every function uses Python + LLM together. |
+| **Python is the control flow** | if/for/while — not a custom DSL. |
 | **Scope is intent** | Declare what you want, Session handles how. |
 | **Sessions are pluggable** | Same function works with any LLM backend. |
-| **Memory is optional** | Log everything or nothing — your choice. |
-| **Programmer is deferred** | Function layer first, planning layer later. |
+| **Meta bootstraps everything** | One function creates the entire system. |
+| **MCP is transport** | How functions are called. Orthogonal to execution. |
 
 ---
 
-## 10. Comparison
+## 11. Comparison
 
 ```mermaid
 graph LR
-    subgraph TC["Tool-calling (Pydantic AI, MCP)"]
+    subgraph TC["Tool-calling / MCP"]
         direction TB
         LLM1["LLM decides"] --> Py["Python function<br/>(CPU executes)"] --> LLM2["Result back to LLM"]
     end
 
-    subgraph AP["Agentic Programming (ours)"]
+    subgraph AP["Agentic Programming"]
         direction TB
-        Py2["Python code decides"] --> LLM3["LLM function<br/>(LLM executes)"] --> Py3["Result back to Python"]
+        Py2["Python + LLM cooperate"] --> Both["Dual Runtime execution<br/>(Python does OCR/click,<br/>LLM does reasoning)"] --> Py3["Structured result"]
     end
 ```
 
-| | Tool-calling | Agentic Programming |
+| | Tool-calling / MCP | Agentic Programming |
 |---|---|---|
-| Direction | LLM → Python → LLM | Python → LLM → Python |
-| Who decides | LLM decides what tools to use | Program decides what to execute |
-| Functions contain | Python code | Natural language instructions |
-| Good for | Data retrieval, APIs, calculations | Reasoning, perception, analysis |
+| **Direction** | LLM → Python → LLM (give LLM hands) | Python + LLM → cooperate (give Python a brain) |
+| **Functions contain** | Python code (CPU executes) | Docstring (Python + LLM execute) |
+| **Execution** | Single runtime (CPU) | Dual runtime (Python + LLM) |
+| **Context** | Implicit (one conversation) | Explicit (Agentic Scope) |
+| **Self-evolving** | No | Yes (Meta Agentic Function) |
+| **Prompt optimization** | Manual | Programmatic (change docstring, iterate) |
 
 ---
 
-## 11. Project Structure
+## 12. Project Structure
 
 ```
 harness/
 ├── __init__.py      Exports: function, ask, extract, classify, ...
-├── function/        @function decorator + built-in functions
-├── session/         Session interface + 6 implementations
-├── scope/           Scope: context visibility rules
-└── memory/          Memory: persistent execution log
+├── function/        @function decorator + built-in Agentic Functions
+├── session/         Agentic Session interface + 6 implementations
+├── scope/           Agentic Scope: context visibility rules
+└── memory/          Agentic Memory: persistent execution log
 
 tests/               53 tests covering all components
 docs/
