@@ -486,14 +486,13 @@ graph LR
 ## 12. Project Structure
 
 ```
-harness/
-├── __init__.py      Exports: function, ask, extract, classify, ...
-├── function/        @function decorator + built-in Agentic Functions
-├── session/         Agentic Session interface + 6 implementations
-├── scope/           Agentic Scope: context visibility rules
-└── memory/          Agentic Memory: persistent execution log
+agentic/
+├── __init__.py      Exports: agentic_function, runtime, Context, ...
+├── context.py       Context: execution record + summarize() + tree/traceback/save
+├── function.py      @agentic_function decorator (auto context tracking)
+└── runtime.py       Agentic Runtime: runtime.exec() — LLM call + auto recording
 
-tests/               53 tests covering all components
 docs/
-└── DESIGN.md        This file
+├── DESIGN.md        This file (architecture overview)
+└── CONTEXT-v3.md    Context system design (current)
 ```

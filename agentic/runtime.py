@@ -1,20 +1,20 @@
 """
-agent — wraps any LLM call with automatic context recording.
+runtime — Agentic Runtime interface.
 
-Automatically:
-1. Generates context summary from the current Context tree (if not provided)
-2. Records input, media, and raw_reply to the current Context
+Wraps any LLM call with automatic context recording.
 
 Usage:
-    # Wrap your own LLM call:
-    reply = agent.invoke(
-        call=lambda msgs: session.send(msgs),
+    from agentic import runtime
+
+    # With custom LLM call:
+    reply = runtime.exec(
         prompt="Look at the screen...",
         input={"task": task},
+        call=lambda msgs, model: session.send(msgs),
     )
     
-    # Or use the convenience function:
-    reply = agent.invoke(
+    # With default provider (must be configured):
+    reply = runtime.exec(
         prompt="Look at the screen...",
         input={"task": task},
         model="sonnet",

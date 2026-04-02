@@ -3,7 +3,7 @@ Agentic Programming — a programming paradigm where Python and LLM co-execute f
 
 Core exports:
     agentic_function    Decorator to mark an Agentic Function (auto context tracking)
-    llm_call            LLM API call with auto context recording
+    runtime             Agentic Runtime module — use runtime.exec() to call LLM
     Context             Execution record for one function
     get_context         Get current Context inside a function
     get_root_context    Get the root of the Context tree

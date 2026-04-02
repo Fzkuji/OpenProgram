@@ -24,7 +24,7 @@ class Context:
     end_time: float = 0          # 结束时间
     expose: str = "summary"      # 对外暴露粒度
     
-    # === 由 llm_call 自动记录 ===
+    # === 由 runtime.exec 自动记录 ===
     input: dict = None           # 发给 LLM 的文本数据
     media: list[str] = None      # 发给 LLM 的媒体文件路径
     raw_reply: str = ""          # LLM 原始回复
@@ -46,12 +46,18 @@ class Context:
 ## @agentic_function
 
 ```python
+from agentic import agentic_function, runtime
+
 @agentic_function
 def observe(task):
     """Look at the screen and find all visible UI elements."""
     img = take_screenshot()
     ocr = run_ocr(img)
-    reply = llm_call(observe.__doc__, input={"task": task, "ocr": ocr}, images=[img])
+    reply = runtime.exec(
+        prompt=observe.__doc__,
+        input={"task": task, "ocr": ocr},
+        images=[img],
+    )
     return parse(reply)
 ```
 
@@ -65,42 +71,33 @@ def observe(task):
 
 ---
 
-## llm_call
+## runtime.exec
 
-框架提供的 LLM 调用接口。自动把调用信息记录到当前 Context。
+框架提供的 Agentic Runtime 调用接口。自动把调用信息记录到当前 Context。
 
 ```python
-def llm_call(
-    prompt: str,                 # 指令（通常是 docstring）
-    input: dict = None,          # 数据
-    images: list[str] = None,    # 图片路径
-    context: str = None,         # 上下文摘要（自动从 ctx.summarize() 生成）
-    schema: dict = None,         # 输出格式
-    model: str = "sonnet",       # 模型
-) -> str:
-    """
-    调用 LLM API。
-    
-    自动做两件事：
-    1. 如果没传 context，自动调 ctx.summarize() 生成
-    2. 把 input、images、raw_reply 记录到当前 Context
-    """
-    ctx = _current_ctx.get(None)
-    
-    # 自动生成上下文
-    if context is None and ctx:
-        context = ctx.summarize()
-    
-    # 组装 messages → 调用 API → 拿到回复
-    reply = api_call(prompt, input, images, context, schema, model)
-    
-    # 自动记录到 Context
-    if ctx:
-        ctx.input = input
-        ctx.media = images
-        ctx.raw_reply = reply
-    
-    return reply
+from agentic import runtime
+
+reply = runtime.exec(
+    prompt="Look at the screen...",    # 指令（通常是 docstring）
+    input={"task": task},              # 数据
+    images=["screenshot.png"],         # 图片路径
+    model="sonnet",                    # 模型
+    call=my_api_fn,                    # 自定义 LLM 调用函数（可选）
+)
+```
+
+自动做两件事：
+1. 如果没传 `context` 参数，自动调 `ctx.summarize()` 生成上下文摘要
+2. 把 `input`、`images`、LLM 原始回复记录到当前 Context
+
+`call` 参数让你用任何 LLM provider：
+```python
+# 用自己的 session
+runtime.exec(prompt=..., call=lambda msgs, model: session.send(msgs))
+
+# 用 OpenAI
+runtime.exec(prompt=..., call=lambda msgs, model: openai_call(msgs, model))
 ```
 
 ---
@@ -133,7 +130,7 @@ def internal_helper(x): ...
 ## 完整示例
 
 ```python
-from agentic import agentic_function, llm_call
+from agentic import agentic_function, runtime
 
 @agentic_function
 def run_ocr(img):
@@ -154,7 +151,7 @@ def observe(task):
     img = take_screenshot()
     ocr = run_ocr(img)                 # 自动成为 observe 的 child
     elements = detect_all(img)          # 自动成为 observe 的 child
-    reply = llm_call(                   # 自动记录 input/media/reply
+    reply = runtime.exec(               # 自动记录 input/media/reply
         prompt=observe.__doc__,
         input={"task": task, "ocr": ocr, "elements": elements},
         images=[img],
@@ -220,6 +217,6 @@ root.save("logs/run.md")       # 人类可读
 ## 总结
 
 1. **`@agentic_function`** — 装饰器，自动追踪调用栈（name, params, output, error, timing, children）
-2. **`llm_call`** — LLM 调用接口，自动记录 input/media/reply，自动注入上下文摘要
+2. **`runtime.exec`** — Agentic Runtime 调用，自动记录 input/media/reply，自动注入上下文摘要
 3. **`expose`** — 控制对外暴露粒度（trace/detail/summary/result/silent）
 4. **用户写普通 Python** — 不需要知道 Context 的存在
