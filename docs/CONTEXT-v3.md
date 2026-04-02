@@ -1,57 +1,43 @@
 # Agentic Context
 
-> 用 `@agentic_function` 装饰器自动追踪调用栈。层级由 Python 调用关系强制决定，不可能传错。
+> 用 `@agentic_function` 装饰器自动追踪调用栈。用户写普通 Python，框架在后台全部自动记录。
 
 ---
 
 ## Context
 
-一个函数的执行记录。
+一个函数的执行记录。**所有字段自动管理，用户不需要手动设置。**
 
 ```python
 @dataclass
 class Context:
-    # === 自动管理（用户不需要动） ===
-    name: str                    # 函数名（自动从 __name__ 取）
-    prompt: str = ""             # docstring（自动从 __doc__ 取）
-    params: dict = None          # 函数调用参数（自动从 *args/**kwargs 记录）
-    output: Any = None           # 返回值（自动记录）
-    error: str = ""              # 错误信息（自动捕获）
-    status: str = "running"      # running / success / error（自动管理）
+    # === 由 @agentic_function 自动记录 ===
+    name: str                    # 函数名（从 __name__）
+    prompt: str = ""             # docstring（从 __doc__）
+    params: dict = None          # 调用参数（从 *args/**kwargs）
+    output: Any = None           # 返回值（从 return）
+    error: str = ""              # 错误信息（从异常）
+    status: str = "running"      # running / success / error
     children: list = None        # 子函数的 Context（自动挂载）
     parent: Context = None       # 父 Context（自动设置）
-    start_time: float = 0        # 开始时间（自动记录）
-    end_time: float = 0          # 结束时间（自动记录）
+    start_time: float = 0        # 开始时间
+    end_time: float = 0          # 结束时间
+    expose: str = "summary"      # 对外暴露粒度
     
-    # === 用户可设置 ===
-    input: dict = None           # 发给 LLM 的数据（用户手动设置）
-    media: list[str] = None      # 媒体文件路径（截图等，存引用不存内容）
-    expose: str = "summary"      # 对外暴露粒度（可通过 decorator 或运行时设置）
-    summary_fn: Callable = None  # 自定义摘要生成函数（可选）
+    # === 由 llm_call 自动记录 ===
+    input: dict = None           # 发给 LLM 的文本数据
+    media: list[str] = None      # 发给 LLM 的媒体文件路径
+    raw_reply: str = ""          # LLM 原始回复
     
     # === 方法 ===
     
     def summarize(
-        self,
-        level: str = None,       # 覆盖默认粒度（trace/detail/summary/result）
+        level: str = None,       # 覆盖粒度
         max_tokens: int = None,  # token 预算限制
-        max_siblings: int = None,# 最多包含几个兄弟的信息
-        include_parent: bool = True,  # 是否包含父节点信息
+        max_siblings: int = None,# 最多包含几个兄弟
+        include_parent: bool = True,
     ) -> str:
-        """
-        生成到目前为止的上下文摘要。
-        
-        包含：
-        - 父节点信息（谁调用了我）
-        - 之前兄弟的结果（按兄弟的 expose level 裁剪）
-        - 当前函数的 prompt 和 input
-        
-        参数可以覆盖默认行为：
-        - level: 强制指定粒度（忽略兄弟的 expose 设置）
-        - max_tokens: 限制总 token 数（超出时截断最早的兄弟）
-        - max_siblings: 只看最近 N 个兄弟
-        - include_parent: 是否包含父节点
-        """
+        """生成到目前为止的上下文摘要。"""
         ...
 ```
 
@@ -59,150 +45,138 @@ class Context:
 
 ## @agentic_function
 
-装饰器自动做五件事：
-1. 从 `__name__` 取函数名，从 `__doc__` 取 prompt
-2. 创建 Context 节点，挂到当前父节点的 children
-3. 设为当前活跃 Context（子函数自动成为 child）
-4. 函数结束后记录 output / error / 耗时
-5. 恢复父节点为当前活跃 Context
-
 ```python
-from agentic import agentic_function, get_context
-
 @agentic_function
 def observe(task):
-    """Look at the screen and find all visible UI elements.
-    Check if the target described in task is visible."""
-    
-    ctx = get_context()              # 需要时才取
-    ctx.input = {"task": task}       # 手动设置输入
-    
+    """Look at the screen and find all visible UI elements."""
     img = take_screenshot()
-    ocr = run_ocr(img)               # 自动成为 observe 的 child
-    elements = detect_all(img)        # 自动成为 observe 的 child
-    
-    reply = llm_call(
-        prompt=ctx.prompt,            # = observe.__doc__
-        input=ctx.input,
-        context=ctx.summarize(),      # 到目前为止的上下文摘要
-    )
-    return parse(reply)               # 自动记录为 ctx.output
+    ocr = run_ocr(img)
+    reply = llm_call(observe.__doc__, input={"task": task, "ocr": ocr}, images=[img])
+    return parse(reply)
 ```
 
-**用户不需要传 ctx 参数。层级由 Python 调用关系强制决定。**
+装饰器自动做：
+1. 记录 `name`（= `observe`）、`prompt`（= docstring）、`params`（= `{"task": task}`）
+2. 创建 Context 节点，挂到当前父节点
+3. 函数结束后记录 `output` / `error` / `status` / 耗时
+4. 恢复父节点为当前层
+
+**用户不需要知道 Context 的存在。写普通 Python 就行。**
+
+---
+
+## llm_call
+
+框架提供的 LLM 调用接口。自动把调用信息记录到当前 Context。
+
+```python
+def llm_call(
+    prompt: str,                 # 指令（通常是 docstring）
+    input: dict = None,          # 数据
+    images: list[str] = None,    # 图片路径
+    context: str = None,         # 上下文摘要（自动从 ctx.summarize() 生成）
+    schema: dict = None,         # 输出格式
+    model: str = "sonnet",       # 模型
+) -> str:
+    """
+    调用 LLM API。
+    
+    自动做两件事：
+    1. 如果没传 context，自动调 ctx.summarize() 生成
+    2. 把 input、images、raw_reply 记录到当前 Context
+    """
+    ctx = _current_ctx.get(None)
+    
+    # 自动生成上下文
+    if context is None and ctx:
+        context = ctx.summarize()
+    
+    # 组装 messages → 调用 API → 拿到回复
+    reply = api_call(prompt, input, images, context, schema, model)
+    
+    # 自动记录到 Context
+    if ctx:
+        ctx.input = input
+        ctx.media = images
+        ctx.raw_reply = reply
+    
+    return reply
+```
 
 ---
 
 ## expose（暴露粒度）
 
-控制 `sibling_summaries()` 返回这个函数时的粒度。通过 decorator 参数设置：
+控制 `summarize()` 中这个函数的信息量。通过 decorator 设置：
 
 ```python
 @agentic_function                      # 默认 expose="summary"
-def observe(task):
-    ...
+def observe(task): ...
 
-@agentic_function(expose="detail")     # 兄弟能看到完整输入输出
-def observe(task):
-    ...
+@agentic_function(expose="detail")     # 暴露完整输入输出
+def observe(task): ...
 
-@agentic_function(expose="silent")     # 兄弟完全看不到
-def internal_helper(x):
-    ...
+@agentic_function(expose="silent")     # 不出现在摘要中
+def internal_helper(x): ...
 ```
 
-| expose | `sibling_summaries()` 返回的内容 |
-|--------|--------------------------------|
+| expose | summarize() 中的内容 |
+|--------|---------------------|
 | `"trace"` | prompt + 完整输入输出 + LLM 原始回复 |
 | `"detail"` | 完整输入和输出 |
 | `"summary"` | 一句话摘要（默认） |
 | `"result"` | 只有返回值 |
-| `"silent"` | 不出现在兄弟摘要中 |
-
----
-
-## get_context()
-
-在函数内部获取当前 Context。用于：
-- 设置 `ctx.input`（告诉 Context 你发了什么给 LLM）
-- 调用 `ctx.summarize()`（获取到目前为止的上下文摘要）
-- 读取 `ctx.prompt`（= 函数的 docstring）
-
-```python
-@agentic_function
-def act(target, location):
-    """Click the specified target at the given location."""
-    ctx = get_context()
-    ctx.input = {"target": target, "location": location}
-    
-    # 获取到目前为止的上下文摘要
-    summary = ctx.summarize()
-    # → "navigate 调用了 observe(find login) → 找到目标在 (347,291)"
-    
-    click(location)
-    return {"clicked": True}
-```
-
-**不调 `get_context()` 也完全没问题** — Context 照样自动追踪，只是你没手动设置 input。
-
-## ctx.summarize()
-
-返回到目前为止跟当前函数相关的所有上下文摘要：
-
-- 父节点信息（谁调用了我）
-- 之前兄弟的结果（按 expose level 裁剪）
-- 当前函数的 prompt 和 input
-
-摘要的详略程度由兄弟的 `expose` 设置决定。
+| `"silent"` | 不出现 |
 
 ---
 
 ## 完整示例
 
 ```python
-from agentic import agentic_function, get_context
+from agentic import agentic_function, llm_call
 
 @agentic_function
 def run_ocr(img):
     """Extract text from screenshot using OCR."""
-    return {"texts": ["Login", "Password", "Submit"], "count": 3}
+    texts = ocr_engine.detect(img)
+    return {"texts": texts, "count": len(texts)}
 
 @agentic_function
 def detect_all(img):
     """Detect all UI elements in screenshot."""
-    return {"elements": ["button", "input", "link"], "count": 3}
+    elements = detector.detect(img)
+    return {"elements": elements, "count": len(elements)}
 
 @agentic_function
 def observe(task):
-    """Look at the screen and find all visible UI elements."""
-    ctx = get_context()
-    ctx.input = {"task": task}
-    
+    """Look at the screen and find all visible UI elements.
+    Check if the target described in task is visible."""
     img = take_screenshot()
-    ocr = run_ocr(img)           # 自动是 observe 的 child
-    elements = detect_all(img)    # 自动是 observe 的 child
-    
-    reply = llm_call(ctx.prompt, input=ctx.input, context=ctx.summarize())
+    ocr = run_ocr(img)                 # 自动成为 observe 的 child
+    elements = detect_all(img)          # 自动成为 observe 的 child
+    reply = llm_call(                   # 自动记录 input/media/reply
+        prompt=observe.__doc__,
+        input={"task": task, "ocr": ocr, "elements": elements},
+        images=[img],
+    )
     return parse(reply)
 
 @agentic_function
 def act(target, location):
     """Click the specified target at the given location."""
-    ctx = get_context()
-    ctx.input = {"target": target, "location": location}
     click(location)
-    return {"clicked": True}
+    return {"clicked": True, "target": target}
 
 @agentic_function
 def navigate(target):
     """Navigate to the target by observing and acting."""
-    obs = observe(task=f"find {target}")
+    obs = observe(task=f"find {target}")        # 自动成为 navigate 的 child
     if obs["target_visible"]:
-        result = act(target=target, location=obs["location"])
+        result = act(target=target, location=obs["location"])  # 自动成为 child
         return {"success": True}
     return {"success": False}
 
-# 运行
+# 运行 — 就是普通的函数调用
 navigate("login")
 ```
 
@@ -220,7 +194,7 @@ navigate ✓ 3200ms → {success: True}
 
 ## Traceback
 
-报错时自动生成调用链：
+报错时自动生成：
 
 ```
 Agentic Traceback:
@@ -234,14 +208,18 @@ Agentic Traceback:
 ## 持久化
 
 ```python
-root_ctx.save("logs/run.jsonl")    # 机器可读
-root_ctx.save("logs/run.md")       # 人类可读
+from agentic import get_root_context
+
+root = get_root_context()
+root.save("logs/run.jsonl")    # 机器可读
+root.save("logs/run.md")       # 人类可读
 ```
 
 ---
 
-## 核心就三件事
+## 总结
 
-1. **`@agentic_function` 自动追踪调用栈**（层级由 Python 调用关系强制决定）
-2. **`expose` 控制对外暴露粒度**（默认 summary）
-3. **`ctx.summarize()` 获取上下文摘要**（父节点 + 兄弟结果 + 当前 prompt/input）
+1. **`@agentic_function`** — 装饰器，自动追踪调用栈（name, params, output, error, timing, children）
+2. **`llm_call`** — LLM 调用接口，自动记录 input/media/reply，自动注入上下文摘要
+3. **`expose`** — 控制对外暴露粒度（trace/detail/summary/result/silent）
+4. **用户写普通 Python** — 不需要知道 Context 的存在
