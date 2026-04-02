@@ -29,7 +29,7 @@ from typing import Any, Optional
 from agentic.context import _current_ctx
 
 
-def run(
+def exec(
     prompt: str,
     input: dict = None,
     images: list[str] = None,
