@@ -603,6 +603,283 @@ Session at step 15 sees:
 
 ---
 
+---
+
+## Part 5: Cache-Aware Context Design (Cost Optimization)
+
+### 5.1 Prompt Caching Pricing Model
+
+Using Claude Opus 4.6 as reference:
+
+| Token Type | Price / MTok | Relative Cost |
+|---|---|---|
+| Base input | $5.00 | 1x |
+| 5-min cache write | $6.25 | 1.25x (premium to establish cache) |
+| 1-hour cache write | $10.00 | 2x (longer TTL, higher upfront) |
+| **Cache hit** | **$0.50** | **0.1x (10x cheaper than base!)** |
+| Output | $25.00 | 5x |
+
+The key insight: **cache hits are 10x cheaper than base input.**
+If we can structure our messages so the PREFIX stays stable across calls,
+subsequent calls pay $0.50/MTok instead of $5.00/MTok for the cached portion.
+
+### 5.2 How Prompt Caching Works
+
+Anthropic's prompt caching is **prefix-matching**:
+
+```
+Call 1: [system][context_A][context_B][prompt_1]  ← all base price ($5/MTok)
+Call 2: [system][context_A][context_B][prompt_2]  ← [system][A][B] = cache hit ($0.50)
+                                      ^^^^^^^^      only this is base price
+Call 3: [system][context_A][context_C][prompt_3]  ← [system][A] = cache hit
+                           ^^^^^^^^^ ^^^^^^^^        these are base price
+```
+
+**Rule: the moment a token differs from the cached prefix, everything after is a cache miss.**
+
+This means:
+- ✅ Stable content at the FRONT → cached
+- ✅ Dynamic content at the END → only the changing part pays full price
+- ❌ Changing content in the middle → BREAKS the cache for everything after
+
+### 5.3 Cache-Optimal Message Layout
+
+Design principle: **sort by stability. Most stable first, most volatile last.**
+
+```
+┌─────────────────────────────────────┐
+│  Layer 1: System prompt             │ ← Never changes. Always cached.
+│  (role, instructions, tools)        │    Cost after 1st call: $0.50/MTok
+├─────────────────────────────────────┤
+│  Layer 2: Ancestor chain            │ ← Changes rarely (only when
+│  (root → parent goals/params)       │    entering a new function).
+│                                     │    Cached across sibling calls.
+├─────────────────────────────────────┤
+│  Layer 3: Historical siblings       │ ← Grows monotonically (append-only).
+│  (older results, compressed)        │    Previously injected siblings
+│                                     │    stay in same position → cached.
+├─────────────────────────────────────┤
+│  Layer 4: Recent siblings           │ ← The newest sibling is new content.
+│  (last 1-3, detailed)              │    But older ones in this section
+│                                     │    are cached from last call.
+├─────────────────────────────────────┤
+│  Layer 5: Current prompt + input    │ ← Always new. Always base price.
+│  (task, images, schema)             │    This is the only part that
+│                                     │    MUST be paid at full rate.
+└─────────────────────────────────────┘
+
+Cache boundary moves DOWN with each call:
+  Call 1: Layers 1-2 cached from prior functions
+  Call 2: Layers 1-3 cached (siblings from call 1 are now stable prefix)
+  Call 3: Layers 1-3+part of 4 cached (sibling from call 2 joined the prefix)
+```
+
+### 5.4 Cache-Aware summarize() Implementation
+
+The critical rule: **never reorder or rewrite historical siblings.**
+
+If `observe[0]` was rendered as `observe: {"found": true} 1200ms` in call 1,
+it MUST appear as exactly the same string in call 2, 3, ... N.
+Any change (even whitespace) breaks the prefix cache.
+
+```python
+def summarize_cache_aware(self, ctx: Context) -> list[dict]:
+    """Build messages optimized for prompt caching.
+    
+    Returns a list of message dicts (not a single string) so that
+    stable sections can be grouped into cacheable blocks.
+    """
+    messages = []
+    
+    # --- Layer 2: Ancestors (stable within a function's execution) ---
+    ancestor_parts = []
+    node = ctx.parent
+    while node and node.name:
+        ancestor_parts.append(f"[Ancestor: {node.name}({_fmt_params(node.params)})]")
+        node = node.parent
+    if ancestor_parts:
+        messages.append({
+            "role": "user",
+            "content": "\n".join(reversed(ancestor_parts)),
+            # Anthropic: add cache_control to mark this as cacheable block
+            "cache_control": {"type": "ephemeral"},
+        })
+        messages.append({"role": "assistant", "content": "Understood."})
+    
+    # --- Layer 3+4: Siblings (append-only, most stable first) ---
+    sibling_text = []
+    siblings = [c for c in ctx.parent.children if c is not ctx and c.status != "running"]
+    
+    for i, s in enumerate(siblings):
+        # Key: render EXACTLY the same way every time
+        # Do NOT change older siblings' rendering between calls
+        sibling_text.append(s._render(s.expose))
+    
+    if sibling_text:
+        messages.append({
+            "role": "user",
+            "content": "[Previous steps]\n" + "\n".join(sibling_text),
+            # This block grows (appended to), but the prefix is stable
+            "cache_control": {"type": "ephemeral"},
+        })
+        messages.append({"role": "assistant", "content": "Noted."})
+    
+    # --- Layer 5: Current prompt (always new, always full price) ---
+    # This is added by runtime.exec(), not by summarize()
+    
+    return messages
+```
+
+### 5.5 Cost Analysis: With vs Without Cache Optimization
+
+Scenario: `observe()` called 20 times in a navigate loop.
+Each call injects ~1000 tokens of context.
+
+#### Without cache awareness (rewritten context each call):
+```
+Call  1: 1000 tokens × $5.00/MTok = $0.005
+Call  2: 2000 tokens × $5.00/MTok = $0.010  (all re-rendered)
+Call  3: 3000 tokens × $5.00/MTok = $0.015
+...
+Call 20: 20000 tokens × $5.00/MTok = $0.100
+Total: ~$1.05 for input tokens alone
+```
+
+#### With cache-aware layout (stable prefix cached):
+```
+Call  1: 1000 tokens × $5.00/MTok  = $0.005  (cache write)
+Call  2: 1000 cached × $0.50/MTok  = $0.0005
+       + 1000 new    × $5.00/MTok  = $0.005   (new sibling + prompt)
+Call  3: 2000 cached × $0.50/MTok  = $0.001
+       + 1000 new    × $5.00/MTok  = $0.005
+...
+Call 20: 19000 cached × $0.50/MTok = $0.0095
+       +  1000 new    × $5.00/MTok = $0.005
+Total: ~$0.22 for input tokens
+```
+
+**~5x cost reduction** just from ordering context correctly.
+(Real savings depend on cache TTL, but the principle holds.)
+
+### 5.6 Cache-Aware Compression Strategy
+
+Compression is the enemy of caching. When you compress old messages,
+you rewrite the prefix → all cached content is invalidated.
+
+**Rule: delay compression as long as possible.**
+
+```
+Without compression:
+  [system][sib_0][sib_1]...[sib_19][prompt]  ← sib_0..18 all cached
+  Cost for sib_0..18: $0.50/MTok (cache hit)
+
+With premature compression:
+  [system][COMPRESSED_SUMMARY][sib_18][sib_19][prompt]  ← cache broken!
+  Cost for everything after system: $5.00/MTok (cache miss)
+```
+
+Optimal compression timing:
+1. **Never compress if within context window.** Cache savings > compression savings.
+2. **Compress at natural boundaries** (function return, checkpoint) not mid-execution.
+3. **When you must compress, compress EVERYTHING old at once.**
+   Don't partially compress — it breaks the prefix without saving much.
+4. **After compression, the new summary becomes the new stable prefix.**
+   Subsequent calls cache against it.
+
+```python
+def should_compress(self, token_count: int, window_limit: int) -> bool:
+    """Compression decision that accounts for caching economics."""
+    headroom = window_limit - token_count
+    
+    if headroom > 10000:
+        return False  # Plenty of room, caching is saving money
+    
+    if headroom < 2000:
+        return True  # Must compress, about to hit the wall
+    
+    # In the middle: compress only if cache hit rate is low
+    # (i.e., we're already paying base price anyway)
+    cached_fraction = self._estimate_cached_fraction()
+    return cached_fraction < 0.3  # Less than 30% cached → compress
+```
+
+### 5.7 Cache-Aware Context Policy
+
+Extend ContextPolicy with cache hints:
+
+```python
+@dataclass
+class ContextPolicy:
+    # ... existing fields ...
+    
+    # Cache optimization
+    cache_aware: bool = True              # Enable cache-optimal ordering
+    stable_render: bool = True            # Never change how a sibling is rendered
+    compress_threshold: float = 0.8       # Compress at 80% of context window
+    cache_ttl: str = "5m"                 # "5m" or "1h" — affects write pricing
+```
+
+### 5.8 Impact on recency decay
+
+Recency decay (showing fewer old siblings) has a cache trade-off:
+
+```
+# Scenario: decay drops sibling[3] from "detail" to "result" at call 10
+
+Call 9:  [sib_3_detail][sib_4]...[sib_9][prompt]   ← sib_3 is in the prefix
+Call 10: [sib_3_result][sib_4]...[sib_10][prompt]   ← sib_3 CHANGED → cache broken!
+```
+
+**Solution: render level is fixed at creation time, not at query time.**
+
+When a sibling is first rendered, its expose level determines the rendering.
+Subsequent calls always use that same rendering, even if the decay policy
+would normally show less detail. This preserves the cache prefix.
+
+```python
+# In Context:
+_cached_render: Optional[str] = None  # Frozen rendering for cache stability
+
+def render_stable(self) -> str:
+    """Render once, cache forever. For prompt cache optimization."""
+    if self._cached_render is None:
+        self._cached_render = self._render(self.expose)
+    return self._cached_render
+```
+
+Decay is still useful: it controls **whether to include** the sibling at all.
+But once included, its rendering never changes.
+
+```
+Call 9:  [sib_3_detail][sib_4]...[sib_9]   ← sib_3 rendered as detail
+Call 10: [sib_3_detail][sib_4]...[sib_10]  ← same! cache preserved ✅
+Call 15: [sib_4]...[sib_15]                 ← sib_3 dropped entirely (decay)
+                                               prefix shortened but still stable ✅
+```
+
+### 5.9 Provider-Specific Cache Considerations
+
+| Provider | Cache mechanism | Prefix? | TTL | Implications |
+|---|---|---|---|---|
+| Anthropic | Explicit `cache_control` | Yes | 5min / 1hr | Mark cacheable blocks explicitly |
+| OpenAI | Automatic prefix caching | Yes | ~5-10min | Just keep prefix stable, it works |
+| Google | Context caching API | Configurable | Custom | Separate API call to create cache |
+| Local (vLLM) | Prefix caching | Yes | Session | KV cache reuse for shared prefixes |
+
+Our framework should be cache-strategy-agnostic but expose hooks:
+
+```python
+runtime.exec(
+    prompt=...,
+    cache_policy="auto",  # "auto" | "aggressive" | "none"
+    # auto: framework decides based on provider capabilities
+    # aggressive: mark maximum cacheable, use 1hr TTL
+    # none: no caching hints (for testing, or unsupported providers)
+)
+```
+
+---
+
 ## Design Lessons (from building this system)
 
 1. **v1 mistake: Session was the center of everything.** We had 6 Session implementations
