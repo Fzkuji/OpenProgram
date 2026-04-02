@@ -1,0 +1,36 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#e8f4fd', 'primaryTextColor': '#1a1a1a', 'primaryBorderColor': '#4a90d9', 'lineColor': '#666'}}}%%
+graph TD
+    classDef active fill:#4a90d9,stroke:#2c6fad,color:#fff,stroke-width:2px
+    classDef visible fill:#c8e6c9,stroke:#43a047,color:#1a1a1a,stroke-width:2px
+    classDef dim fill:#f5f5f5,stroke:#ccc,color:#999
+
+    root["🌳 root"]:::dim
+
+    subgraph nav0["root/navigate_0"]
+        obs0["observe_0"]:::dim
+        obs1["observe_1"]:::visible
+        ocr["run_ocr_0"]:::visible
+        det["detect_all_0"]:::visible
+        act0["⭐ act_0 (当前)"]:::active
+        verify0["verify_0"]:::dim
+
+        obs1 --> ocr
+        obs1 --> det
+    end
+
+    subgraph nav1["root/navigate_1"]
+        obs1b["observe_0"]:::dim
+        act1b["act_0"]:::dim
+    end
+
+    root --> nav0
+    root --> nav1
+    nav0 --> obs0
+    nav0 --> obs1
+    nav0 --> act0
+    nav0 --> verify0
+    nav1 --> obs1b
+    nav1 --> act1b
+
+    style nav0 fill:#f9f9f9,stroke:#4a90d9
+    style nav1 fill:#fafafa,stroke:#ccc,stroke-dasharray: 5 5

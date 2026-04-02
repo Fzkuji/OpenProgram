@@ -219,9 +219,50 @@ ctx.summarize(
 
 ---
 
-## 路径寻址 — 精确定位任意节点
+## 场景 6：路径寻址 — 精确定位任意节点
 
-每个 Context 节点有自动计算的路径（`ctx.path`），格式：`父路径/函数名_序号`
+当树结构复杂、有多个同名节点时，用路径精确定位。每个 Context 节点有自动计算的路径（`ctx.path`），格式：`父路径/函数名_序号`
+
+```python
+# act 想精确看第 2 个 observe 及其子节点
+ctx.summarize(include=["root/navigate_0/observe_1", "root/navigate_0/observe_1/*"])
+```
+
+```mermaid
+graph TD
+    classDef active fill:#4a90d9,stroke:#2c6fad,color:#fff
+    classDef visible fill:#c8e6c9,stroke:#43a047
+    classDef dim fill:#f5f5f5,stroke:#ccc,color:#999
+
+    root["🌳 root"]:::dim
+
+    subgraph nav0["root/navigate_0"]
+        obs0["observe_0"]:::dim
+        obs1["observe_1 ✓"]:::visible
+        ocr["run_ocr_0 ✓"]:::visible
+        det["detect_all_0 ✓"]:::visible
+        act0["⭐ act_0"]:::active
+        verify0["verify_0"]:::dim
+        obs1 --> ocr
+        obs1 --> det
+    end
+
+    subgraph nav1["root/navigate_1"]
+        obs1b["observe_0"]:::dim
+        act1b["act_0"]:::dim
+    end
+
+    root --> nav0
+    root --> nav1
+    nav0 --> obs0
+    nav0 --> obs1
+    nav0 --> act0
+    nav0 --> verify0
+    nav1 --> obs1b
+    nav1 --> act1b
+```
+
+路径树结构：
 
 ```
 root/
@@ -237,7 +278,7 @@ root/
     └── act_0              → root/navigate_1/act_0
 ```
 
-精确查询：
+支持通配符：
 
 ```python
 ctx.summarize(
@@ -249,7 +290,15 @@ ctx.summarize(
 )
 ```
 
-路径不需要存储，从 parent/children 关系自动计算。
+路径不需要存储，从 parent/children 关系自动计算（`ctx.path` 是计算属性）。用户也可以自定义 id：
+
+```python
+@agentic_function(id="login_check")
+def observe(task): ...
+# → root/navigate_0/login_check
+```
+
+[Mermaid 源文件](07-path-addressing.mmd)
 
 ---
 
