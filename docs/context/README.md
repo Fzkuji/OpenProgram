@@ -217,4 +217,46 @@ ctx.summarize(
 
 ---
 
-**核心原则：树是完整的事实记录，summarize 是灵活的视图查询。记录和查询完全分离。**
+---
+
+## 路径寻址 — 精确定位任意节点
+
+每个 Context 节点有自动计算的路径（`ctx.path`），格式：`父路径/函数名_序号`
+
+```
+root/
+├── navigate_0/
+│   ├── observe_0          → root/navigate_0/observe_0
+│   ├── observe_1          → root/navigate_0/observe_1
+│   │   ├── run_ocr_0      → root/navigate_0/observe_1/run_ocr_0
+│   │   └── detect_all_0   → root/navigate_0/observe_1/detect_all_0
+│   ├── act_0              → root/navigate_0/act_0
+│   └── verify_0           → root/navigate_0/verify_0
+└── navigate_1/
+    ├── observe_0          → root/navigate_1/observe_0
+    └── act_0              → root/navigate_1/act_0
+```
+
+精确查询：
+
+```python
+ctx.summarize(
+    include=[
+        "root/navigate_0/observe_1",                # 精确一个节点
+        "root/navigate_0/observe_1/run_ocr_0",      # 精确子节点
+        "root/navigate_1/*",                         # 某分支全部
+    ]
+)
+```
+
+路径不需要存储，从 parent/children 关系自动计算。
+
+---
+
+## 核心原则
+
+**一棵树，记录一切。输入 LLM 时，按需查询。**
+
+- Context 树是完整的事实记录 — 所有函数调用都挂到同一棵树上
+- `summarize()` 是灵活的视图查询 — 每个函数选择看到树的哪些部分
+- 记录和使用完全分离 — 记什么不受查询影响，查什么不影响记录
