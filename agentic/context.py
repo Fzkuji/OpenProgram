@@ -47,6 +47,24 @@ class Context:
     summary_fn: Optional[Callable] = field(default=None, repr=False)
 
     # ------------------------------------------------------------------
+    # Path (auto-computed from tree structure)
+    # ------------------------------------------------------------------
+
+    @property
+    def path(self) -> str:
+        """Auto-computed path like 'root/navigate_0/observe_1'. No storage needed."""
+        if not self.parent:
+            return self.name
+        # Count same-name siblings before me
+        idx = 0
+        for c in self.parent.children:
+            if c is self:
+                break
+            if c.name == self.name:
+                idx += 1
+        return f"{self.parent.path}/{self.name}_{idx}"
+
+    # ------------------------------------------------------------------
     # Core methods
     # ------------------------------------------------------------------
 
