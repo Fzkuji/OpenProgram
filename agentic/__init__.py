@@ -42,7 +42,10 @@ Design history:
     old concepts (Session, Scope, Memory) — those are now aspirational, not implemented.
 """
 
-from agentic.context import Context, get_context, get_root_context, init_root
+from agentic.context import (
+    Context, ContextPolicy, get_context, get_root_context, init_root,
+    ORCHESTRATOR, PLANNER, WORKER, LEAF, FOCUSED,
+)
 from agentic.function import agentic_function
 from agentic import runtime  # use runtime.exec()
 
@@ -50,7 +53,14 @@ __all__ = [
     "agentic_function",
     "runtime",
     "Context",
+    "ContextPolicy",
     "get_context",
     "get_root_context",
     "init_root",
+    # Preset policies
+    "ORCHESTRATOR",
+    "PLANNER",
+    "WORKER",
+    "LEAF",
+    "FOCUSED",
 ]

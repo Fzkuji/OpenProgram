@@ -63,6 +63,329 @@ from contextvars import ContextVar
 _current_ctx: ContextVar[Optional["Context"]] = ContextVar("_current_ctx", default=None)
 
 
+# ======================================================================
+# ContextPolicy — controls what context gets injected into LLM calls
+# ======================================================================
+#
+# The core problem: every function in the tree needs DIFFERENT context.
+#   - Orchestrator: sees all children's results (big picture)
+#   - Planner: sees recent observations + parent goal
+#   - Worker (observe/act): sees last few siblings, not ancient history
+#   - Leaf (OCR): sees nothing — pure computation
+#
+# Two additional concerns beyond "how much":
+#   1. FRESHNESS: When called 20 times, old siblings become stale.
+#      Recency decay controls this — more siblings → fewer visible.
+#   2. CACHE STABILITY: For prompt caching ($0.50 vs $5.00/MTok),
+#      the rendered text of old siblings must NEVER change.
+#      Once rendered, it's frozen — even if decay would change the level.
+#
+# Design evolution:
+#   v1: No policy — summarize() always showed everything. Expensive, noisy.
+#   v2: Manual summarize() params per call-site. Flexible but tedious.
+#   v3: ContextPolicy object — declare once on the decorator, auto-applied.
+#       Presets for common patterns (ORCHESTRATOR, PLANNER, WORKER, LEAF).
+
+@dataclass
+class ContextPolicy:
+    """
+    Controls what context gets injected into LLM calls for a function.
+    
+    Attach to @agentic_function:
+        @agentic_function(context_policy=WORKER)
+        def observe(task): ...
+    
+    Or use directly:
+        policy = ContextPolicy(depth=1, siblings=3)
+        context_str = policy.apply(ctx)
+    
+    The policy answers THREE questions:
+        1. How many ancestors to show? (depth)
+        2. How many siblings to show? (siblings / decay)
+        3. At what detail level? (level / progressive_detail)
+    """
+    
+    # --- Ancestor visibility ---
+    depth: int = -1
+    # How many ancestor levels to include.
+    # -1 = all ancestors from root to parent
+    #  0 = none (fully isolated from parent chain)
+    #  1 = parent only
+    #  2 = parent + grandparent
+    # Ancestors give the function "why am I being called?" context.
+    
+    # --- Sibling visibility ---
+    siblings: int = -1
+    # How many previous siblings to include (most recent first).
+    # -1 = all siblings
+    #  0 = none (each call is isolated)
+    #  N = last N siblings
+    # Overridden by decay when decay=True.
+    
+    # --- Detail level ---
+    level: str = "summary"
+    # Default expose level for rendering siblings.
+    # trace / detail / summary / result / silent
+    # Can be overridden per-node by progressive_detail.
+    
+    # --- Recency decay ---
+    # When a function is called many times (e.g. observe in a 20-step loop),
+    # old siblings become irrelevant. Decay automatically reduces visibility.
+    #
+    # How it works: thresholds are checked in order. The FIRST matching
+    # threshold determines the window and level.
+    #
+    # Example with default thresholds:
+    #   Call #1:  n_siblings=0  → <5,  show all at "detail"
+    #   Call #5:  n_siblings=4  → <5,  show all at "detail"
+    #   Call #6:  n_siblings=5  → <15, show last 3 at "summary"
+    #   Call #20: n_siblings=19 → >=15, show last 1 at "result"
+    decay: bool = False
+    decay_thresholds: list = field(default_factory=lambda: [
+        # (max_n_siblings, window, level)
+        # Read as: "when there are fewer than N siblings, show WINDOW at LEVEL"
+        (5,  -1, "detail"),    # Few siblings: show all, full detail
+        (15,  3, "summary"),   # Medium: show last 3, one-line summaries
+        # (implicit) >=15: show last 1, result only
+    ])
+    # The final fallback (when n_siblings exceeds all thresholds):
+    decay_fallback_window: int = 1
+    decay_fallback_level: str = "result"
+    
+    # --- Progressive detail ---
+    # Even within the visible window, closer siblings get more detail.
+    # This maximizes cache hit rate: old siblings keep their rendering,
+    # only the newest ones get full detail.
+    #
+    # Format: list of (recency, level)
+    #   recency = how many siblings ago (1 = most recent, 2 = second most recent)
+    #   level = expose level for that sibling
+    #
+    # Example: [(1, "detail"), (3, "summary")]
+    #   Most recent sibling → detail
+    #   2nd and 3rd most recent → summary
+    #   Older → use self.level as default
+    progressive_detail: Optional[list] = None
+    
+    # --- Cache optimization ---
+    cache_stable: bool = True
+    # When True, a sibling's rendering is frozen the first time it appears.
+    # Subsequent calls always see the same text, even if decay would change
+    # the level. This preserves prompt cache prefixes.
+    #
+    # Without this: observe[5] rendered as "detail" in call 6, then changes
+    # to "summary" in call 10 when decay kicks in → cache prefix broken!
+    #
+    # With this: observe[5] stays as "detail" forever. In call 10, it's
+    # either still shown as "detail" (cache hit) or dropped entirely (decay).
+    # The rendering itself never mutates.
+    
+    # --- Filtering ---
+    include: Optional[list] = None   # Path whitelist (supports * wildcard)
+    exclude: Optional[list] = None   # Path blacklist (supports * wildcard)
+    branch: Optional[list] = None    # Show entire subtree of named nodes
+    
+    # --- Token budget ---
+    max_tokens: Optional[int] = None  # Hard budget. Drops oldest siblings first.
+    
+    def apply(self, ctx: "Context") -> str:
+        """
+        Apply this policy to a Context node and return the context string.
+        
+        This is the main entry point. runtime.exec() calls this automatically
+        when a context_policy is set on the function's decorator.
+        
+        The logic:
+            1. Count siblings to determine decay window
+            2. Resolve effective window + level
+            3. Render siblings with progressive detail
+            4. Respect cache stability (frozen renders)
+            5. Apply token budget
+            6. Prepend ancestor chain
+        """
+        if ctx.parent is None:
+            return ""
+        
+        # --- Step 1: Determine effective window and level ---
+        all_siblings = [c for c in ctx.parent.children
+                        if c is not ctx and c.status != "running"]
+        n = len(all_siblings)
+        
+        if self.decay:
+            eff_window, eff_level = self._resolve_decay(n)
+        else:
+            eff_window = self.siblings
+            eff_level = self.level
+        
+        # --- Step 2: Select visible siblings ---
+        if eff_window == 0:
+            visible = []
+        elif eff_window == -1:
+            visible = list(all_siblings)  # All
+        else:
+            visible = all_siblings[-eff_window:]  # Last N
+        
+        # --- Step 3: Apply include/exclude filters ---
+        if self.include is not None:
+            visible = [s for s in visible
+                       if any(_path_matches(s.path, p) for p in self.include)]
+        if self.exclude is not None:
+            visible = [s for s in visible
+                       if not any(_path_matches(s.path, p) for p in self.exclude)]
+        
+        # --- Step 4: Render each sibling ---
+        sibling_parts = []
+        for i, s in enumerate(visible):
+            # Determine render level for this specific sibling
+            render_level = self._resolve_sibling_level(s, i, len(visible), eff_level)
+            
+            if render_level == "silent":
+                continue
+            
+            # Cache-stable rendering: use frozen render if available
+            if self.cache_stable and s._cached_render is not None:
+                rendered = s._cached_render
+            else:
+                rendered = s._render(render_level)
+                if self.cache_stable:
+                    s._cached_render = rendered
+            
+            # Branch mode: append children
+            if self.branch and s.name in self.branch:
+                rendered += "\n" + s._render_branch(render_level)
+            
+            sibling_parts.append(rendered)
+        
+        # --- Step 5: Apply token budget ---
+        if self.max_tokens is not None:
+            total = sum(len(s) for s in sibling_parts)
+            while sibling_parts and total > self.max_tokens * 4:
+                removed = sibling_parts.pop(0)
+                total -= len(removed)
+        
+        # --- Step 6: Build ancestor chain ---
+        parts = []
+        if self.depth != 0 and ctx.parent and ctx.parent.name:
+            ancestors = []
+            node = ctx.parent
+            while node and node.name:
+                ancestors.append(node)
+                node = node.parent
+                if self.depth > 0 and len(ancestors) >= self.depth:
+                    break
+            for a in reversed(ancestors):
+                if self.include and not any(_path_matches(a.path, p) for p in self.include):
+                    continue
+                if self.exclude and any(_path_matches(a.path, p) for p in self.exclude):
+                    continue
+                parts.append(f"[Ancestor: {a.name}({_fmt_params(a.params)})]")
+        
+        parts.extend(sibling_parts)
+        return "\n".join(parts)
+    
+    def _resolve_decay(self, n_siblings: int) -> tuple:
+        """
+        Given the number of siblings, return (window, level) based on decay thresholds.
+        
+        Thresholds are checked in order. First match wins.
+        If no threshold matches, use the fallback.
+        """
+        for max_n, window, level in self.decay_thresholds:
+            if n_siblings < max_n:
+                return (window, level)
+        return (self.decay_fallback_window, self.decay_fallback_level)
+    
+    def _resolve_sibling_level(
+        self, sibling: "Context", index_in_visible: int,
+        total_visible: int, default_level: str,
+    ) -> str:
+        """
+        Determine the render level for a specific sibling.
+        
+        If progressive_detail is set, closer siblings get more detail.
+        Otherwise, use the default level.
+        
+        Args:
+            sibling: The sibling Context node
+            index_in_visible: Position in the visible list (0 = oldest visible)
+            total_visible: Total number of visible siblings
+            default_level: The level from decay resolution
+        """
+        if not self.progressive_detail:
+            return default_level
+        
+        # recency = 1 means most recent, 2 means second most recent, etc.
+        recency = total_visible - index_in_visible
+        
+        for threshold_recency, level in self.progressive_detail:
+            if recency <= threshold_recency:
+                return level
+        
+        return default_level
+
+
+# --- Preset policies ---
+# These cover the most common patterns. Users can customize or create their own.
+
+ORCHESTRATOR = ContextPolicy(
+    level="result",      # Only see return values, not details
+    siblings=-1,         # See ALL children's results
+    depth=0,             # Orchestrator IS the top — no ancestors needed
+    cache_stable=True,
+)
+"""For top-level orchestrators (navigate, main_loop).
+Sees all children's results but no details. Big picture only."""
+
+PLANNER = ContextPolicy(
+    level="summary",     # One-line summaries
+    siblings=5,          # Last 5 siblings
+    depth=1,             # Parent's goal
+    cache_stable=True,
+    progressive_detail=[
+        (1, "detail"),   # Most recent sibling: full detail
+        (3, "summary"),  # 2nd-3rd: summary
+        # 4th-5th: default (summary)
+    ],
+)
+"""For planning/reasoning functions.
+Sees parent goal + recent history with progressive detail."""
+
+WORKER = ContextPolicy(
+    level="summary",
+    depth=1,             # Parent's goal
+    decay=True,          # Recency decay based on sibling count
+    decay_thresholds=[
+        (5,  -1, "detail"),    # <5 calls: see all, full detail
+        (15,  3, "summary"),   # 5-14 calls: last 3, summary
+    ],
+    decay_fallback_window=1,
+    decay_fallback_level="result",  # 15+ calls: only the most recent
+    cache_stable=True,
+)
+"""For worker functions (observe, act) called repeatedly in loops.
+Automatically reduces context as call count grows.
+Saves tokens when iterating many steps."""
+
+LEAF = ContextPolicy(
+    level="result",
+    depth=0,             # No ancestors
+    siblings=0,          # No siblings
+    cache_stable=False,  # Nothing to cache
+)
+"""For leaf computation (OCR, detection, parsing).
+Zero context overhead — just do the task."""
+
+FOCUSED = ContextPolicy(
+    level="detail",
+    siblings=1,          # Only the most recent sibling
+    depth=1,             # Only parent
+    cache_stable=True,
+)
+"""For functions that only need the immediately preceding result.
+Common for act() after observe() — "I just saw X, now click it."""
+
+
+
 @dataclass
 class Context:
     """
@@ -105,6 +428,19 @@ class Context:
     # === Optional user override ===
     summary_fn: Optional[Callable] = field(default=None, repr=False)
     # Custom function to render this node's summary. Bypasses expose levels.
+
+    # === Context policy (set by @agentic_function) ===
+    _policy: Optional["ContextPolicy"] = field(default=None, repr=False)
+    # The ContextPolicy attached to this function via @agentic_function.
+    # runtime.exec() checks this: if set, uses policy.apply(ctx) instead
+    # of the default summarize().
+
+    # === Cache stability ===
+    _cached_render: Optional[str] = field(default=None, repr=False)
+    # Frozen rendering for prompt cache optimization.
+    # Once set by ContextPolicy.apply(), this never changes.
+    # This ensures the same text appears in subsequent calls,
+    # preserving the prompt cache prefix ($0.50 vs $5.00/MTok).
 
     # ------------------------------------------------------------------
     # Path — auto-computed address for precise node selection

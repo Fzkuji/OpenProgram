@@ -110,10 +110,20 @@ def exec(
 
     # --- Auto-generate context from the tree ---
     # This is where the "tree records everything, summarize queries selectively" 
-    # principle comes to life. The current function's Context.summarize() is
-    # called to build a context string from ancestor/sibling information.
+    # principle comes to life.
+    #
+    # Priority:
+    #   1. Explicit `context` string passed to exec() → use as-is
+    #   2. ContextPolicy on the @agentic_function → policy.apply(ctx)
+    #   3. Default → ctx.summarize() (all ancestors + all siblings)
+    #
+    # ContextPolicy handles: depth, siblings, decay, progressive detail,
+    # cache stability, token budget, path filtering.
     if context is None and ctx is not None:
-        context = ctx.summarize()
+        if ctx._policy is not None:
+            context = ctx._policy.apply(ctx)
+        else:
+            context = ctx.summarize()
 
     # --- Record what we're sending to the LLM ---
     # NOTE: This overwrites previous values if exec() is called multiple times

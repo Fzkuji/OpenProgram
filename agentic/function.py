@@ -50,7 +50,7 @@ import inspect
 import time
 from typing import Callable, Optional
 
-from agentic.context import Context, _current_ctx
+from agentic.context import Context, ContextPolicy, _current_ctx
 
 
 def agentic_function(
@@ -58,6 +58,7 @@ def agentic_function(
     *,
     expose: str = "summary",
     context: str = "auto",
+    context_policy: Optional[ContextPolicy] = None,
 ):
     """
     Decorator: marks a function as an Agentic Function.
@@ -72,18 +73,26 @@ def agentic_function(
     
     Args:
         expose:  Visibility level for summarize() rendering.
+                 How OTHER functions see MY results.
                  trace / detail / summary (default) / result / silent
+        
         context: How to attach to the Context tree:
                  - "auto":    attach to parent if exists, else create root (default)
-                 - "new":     always create an independent tree
+                 - "new":     always create an independent tree (background tasks)
                  - "inherit": must have parent, raises RuntimeError if none
                  - "none":    skip context tracking entirely (pure Python)
+        
+        context_policy: How I see OTHERS' results when runtime.exec() is called.
+                 Controls what context gets auto-injected into my LLM calls.
+                 Use presets: ORCHESTRATOR, PLANNER, WORKER, LEAF, FOCUSED.
+                 Or create a custom ContextPolicy.
+                 If None, uses default summarize() (all ancestors + all siblings).
     
     Usage:
         @agentic_function
         def observe(task): ...
         
-        @agentic_function(expose="detail", context="inherit")
+        @agentic_function(expose="detail", context="inherit", context_policy=WORKER)
         def observe(task): ...
     """
     def decorator(fn: Callable) -> Callable:
@@ -138,6 +147,7 @@ def agentic_function(
                 parent=parent,
                 expose=expose,
                 start_time=time.time(),
+                _policy=context_policy,  # Stored for runtime.exec() to use
             )
             if parent is not None:
                 parent.children.append(ctx)
@@ -164,6 +174,7 @@ def agentic_function(
         wrapper._is_agentic = True
         wrapper._expose = expose
         wrapper._context_mode = context
+        wrapper._context_policy = context_policy
         return wrapper
 
     # Support both @agentic_function and @agentic_function(expose="detail")
