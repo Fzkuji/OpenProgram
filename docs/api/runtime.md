@@ -1,4 +1,4 @@
-# runtime.exec
+# agentic.runtime
 
 ```python
 agentic.runtime.exec(prompt, input=None, images=None, context=None, schema=None, model="sonnet", call=None) -> str

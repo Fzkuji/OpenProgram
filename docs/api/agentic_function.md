@@ -1,7 +1,7 @@
-# agentic_function
+# agentic.agentic_function
 
 ```python
-agentic.agentic_function(fn=None, *, render="summary", summarize=None, compress=False)
+class agentic.agentic_function(fn=None, *, render="summary", summarize=None, compress=False)
 ```
 
 Decorator that records function execution into the [Context](context.md) tree.
