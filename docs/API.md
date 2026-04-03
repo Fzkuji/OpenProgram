@@ -10,6 +10,14 @@ The `agentic` package provides three core components for building LLM-powered fu
 |-----|-------------|
 | [agentic_function](api/agentic_function.md) | Records function execution into the Context tree. |
 
+### Runtime
+
+| API | Description |
+|-----|-------------|
+| [Runtime](api/runtime.md) | LLM runtime class. Handles context injection and recording. |
+| [Runtime.exec](api/runtime.md#exec) | Call an LLM with automatic context integration. |
+| [Runtime.async_exec](api/runtime.md#async_exec) | Async version of exec. |
+
 ### Context
 
 | API | Description |
@@ -20,16 +28,9 @@ The `agentic` package provides three core components for building LLM-powered fu
 | [Context.traceback](api/context.md#traceback) | Error traceback. |
 | [Context.save](api/context.md#save) | Save tree to file. |
 
-### Runtime
-
-| API | Description |
-|-----|-------------|
-| [runtime.exec](api/runtime.md) | Calls an LLM with automatic context injection and recording. |
-
 ### Utilities
 
 | API | Description |
 |-----|-------------|
 | get_context | Get the current Context node. Returns `None` if outside any `@agentic_function`. |
-| get_root_context | Get the root of the Context tree. Walks up from the current node. |
-| init_root | Manually create a root Context node. Usually not needed. |
+| get_root_context | Get the root of the last completed Context tree. |

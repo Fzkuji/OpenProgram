@@ -24,9 +24,7 @@ Each `Context` node stores the function's name, arguments, return value, timing,
 | `compress` | `bool` | [@agentic_function](agentic_function.md) | Hide children after completion (see [agentic_function](agentic_function.md)) |
 | `start_time` | `float` | [@agentic_function](agentic_function.md) | Start timestamp |
 | `end_time` | `float` | [@agentic_function](agentic_function.md) | End timestamp |
-| `input` | `dict` | [runtime.exec()](runtime.md) | Data sent to LLM |
-| `media` | `list[str]` | [runtime.exec()](runtime.md) | Image/file paths sent to LLM |
-| `raw_reply` | `str` | [runtime.exec()](runtime.md) | LLM response text |
+| `raw_reply` | `str` | [Runtime.exec()](runtime.md) | LLM response text |
 
 ### Properties
 
@@ -41,7 +39,7 @@ Auto-computed tree address. Format: `{parent_path}/{name}_{index}`.
 The index counts same-name siblings under the same parent: `observe_0` is the first `observe`, `observe_1` is the second, etc.
 
 ```
-"root/navigate_0/observe_1/run_ocr_0"
+"navigate_0/observe_1/run_ocr_0"
 ```
 
 #### duration_ms

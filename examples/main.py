@@ -5,45 +5,36 @@ This example shows a simple GUI automation flow:
 observe → click → verify, orchestrated by a top-level login_flow.
 
 Usage:
-    python examples/main.py
+    GEMINI_API_KEY=your_key python examples/main.py
 """
 
-import openai
+import os
+import google.generativeai as genai
 from agentic import agentic_function, Runtime, get_root_context
 
 
 # ── LLM Provider ────────────────────────────────────────────────
-# Implement _call() or pass a `call` function to Runtime.
 
-client = openai.OpenAI()  # reads OPENAI_API_KEY from env
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 
-def openai_call(content, model="gpt-4o-mini", response_format=None):
-    """Convert content list → OpenAI messages → API call → reply text."""
-    messages_content = []
+def gemini_call(content, model="gemini-2.5-flash", response_format=None):
+    """Convert content list → Gemini API call → reply text."""
+    parts = []
     for block in content:
         if block["type"] == "text":
-            messages_content.append({"type": "text", "text": block["text"]})
+            parts.append(block["text"])
         elif block["type"] == "image":
-            # For real usage: encode image as base64 and use image_url
-            messages_content.append({"type": "text", "text": f"[Image: {block['path']}]"})
+            # For real usage: load image bytes and pass as PIL Image
+            parts.append(f"[Image: {block['path']}]")
 
-    kwargs = {
-        "model": model,
-        "max_tokens": 512,
-        "messages": [{"role": "user", "content": messages_content}],
-    }
-    if response_format:
-        kwargs["response_format"] = {"type": "json_object"}
-
-    response = client.chat.completions.create(**kwargs)
-    return response.choices[0].message.content
+    response = genai.GenerativeModel(model).generate_content("\n".join(parts))
+    return response.text
 
 
 # ── Runtime ─────────────────────────────────────────────────────
-# Create once, use everywhere.
 
-rt = Runtime(call=openai_call, model="gpt-4o-mini")
+rt = Runtime(call=gemini_call, model="gemini-2.5-flash")
 
 
 # ── Agentic Functions ──────────────────────────────────────────

@@ -1,76 +1,127 @@
-# agentic.runtime
+# agentic.Runtime
 
 ```python
-agentic.runtime.exec(prompt, input=None, images=None, context=None, schema=None, model="sonnet", call=None) -> str
+class agentic.Runtime(call=None, model="default")
 ```
 
-Call an LLM and auto-record to the current [Context](context.md) node.
+LLM runtime. Wraps a provider and handles Context integration.
 
-When called inside an [@agentic_function](agentic_function.md):
+Create once, use everywhere. When `exec()` is called inside an [@agentic_function](agentic_function.md):
 
-1. **Reads** from the Context tree — calls [Context.summarize()](context.md#summarize) using the function's `summarize` config to build context text.
-2. **Calls** the LLM — builds a message list and passes it to the `call` function.
-3. **Records** to the Context node — stores `input`, `media`, and `raw_reply`.
+1. **Reads** from the Context tree — calls [Context.summarize()](context.md#summarize) to build context text.
+2. **Prepends** context as the first text block in the content list.
+3. **Calls** `_call()` with the full content list.
+4. **Records** `raw_reply` on the current Context node.
 
 When called outside any `@agentic_function`, works as a plain LLM call with no context injection or recording.
 
-### Parameters
-
-- **prompt** (`str`) — Instructions for the LLM.
-
-- **input** (`dict | None`, default `None`) — Structured data to include. Serialized as JSON under an `[Input]` header.
-
-- **images** (`list[str] | None`, default `None`) — Image file paths to include. Currently passed as text placeholders; actual encoding depends on the `call` provider.
-
-- **context** (`str | None`, default `None`) — Override auto-generated context. If `None`, auto-generates from the Context tree using the function's `summarize` config. If provided, used as-is.
-
-- **schema** (`dict | None`, default `None`) — Expected JSON output schema. Appended as a "return only valid JSON" instruction.
-
-- **model** (`str`, default `"sonnet"`) — Model name or alias. Passed to the `call` function.
-
-- **call** (`Callable | None`, default `None`) — LLM provider function. Signature: `fn(messages: list[dict], model: str) -> str`. If `None`, raises `NotImplementedError`.
-
-### Returns
-
-`str` — the LLM's reply text.
-
-### Context injection
-
-When `context=None` (default):
+### Constructor
 
 ```python
-# If the function has summarize config:
-context = ctx.summarize(**decorator_summarize_dict)
-
-# Otherwise:
-context = ctx.summarize()  # all ancestors + all siblings
+Runtime(call=None, model="default")
 ```
 
-To skip auto-injection, pass `context=""`.
+- **call** (`Callable | None`) — LLM provider function. Signature: `fn(content: list[dict], model: str, response_format: dict) -> str`. If `None`, subclass and override `_call()`.
 
-### What gets recorded
+- **model** (`str`, default `"default"`) — Default model name. Can be overridden per-call.
 
-On the current [Context](context.md) node:
+### Two ways to use
 
-| Field | Source |
-|-------|--------|
-| `input` | the `input` parameter |
-| `media` | the `images` parameter |
-| `raw_reply` | the LLM's response |
+**1. Pass a call function:**
+
+```python
+rt = Runtime(call=my_func, model="gemini-2.5-flash")
+```
+
+**2. Subclass and override `_call()`:**
+
+```python
+class GeminiRuntime(Runtime):
+    def _call(self, content, model="default", response_format=None):
+        # convert content list → Gemini API format
+        # return reply text
+```
+
+---
+
+### exec
+
+```python
+Runtime.exec(content, context=None, response_format=None, model=None) -> str
+```
+
+Call the LLM with automatic Context integration.
+
+**Parameters:**
+
+- **content** (`list[dict]`) — List of content blocks:
+  ```python
+  {"type": "text", "text": "Find the login button."}
+  {"type": "image", "path": "screenshot.png"}
+  {"type": "audio", "path": "recording.wav"}
+  {"type": "file", "path": "data.csv"}
+  ```
+
+- **context** (`str | None`, default `None`) — Override auto-generated context. If `None`, auto-generates from the Context tree.
+
+- **response_format** (`dict | None`, default `None`) — Output format constraint (JSON schema). Passed to `_call()` for provider-native handling.
+
+- **model** (`str | None`, default `None`) — Override the default model for this call.
+
+**Returns:** `str` — the LLM's reply text.
+
+**Guard:** Raises `RuntimeError` if called twice in the same `@agentic_function`.
+
+---
+
+### async_exec
+
+```python
+Runtime.async_exec(content, context=None, response_format=None, model=None) -> str
+```
+
+Async version of `exec()`. Calls `_async_call()` instead of `_call()`.
+
+---
+
+### _call
+
+```python
+Runtime._call(content, model="default", response_format=None) -> str
+```
+
+Override this in subclasses. Receives the full content list (context + user content) and returns reply text.
+
+### _async_call
+
+```python
+Runtime._async_call(content, model="default", response_format=None) -> str
+```
+
+Async version of `_call()`.
+
+---
 
 ### Example
 
 ```python
-from agentic import agentic_function, runtime
+import google.generativeai as genai
+from agentic import agentic_function, Runtime
 
-@agentic_function(summarize={"depth": 1, "siblings": 1})
+genai.configure(api_key="...")
+
+def gemini_call(content, model="gemini-2.5-flash", response_format=None):
+    text_parts = [b["text"] for b in content if b["type"] == "text"]
+    response = genai.GenerativeModel(model).generate_content("\n".join(text_parts))
+    return response.text
+
+rt = Runtime(call=gemini_call, model="gemini-2.5-flash")
+
+@agentic_function
 def observe(task):
     """Look at the screen and describe what you see."""
-    img = take_screenshot()
-    return runtime.exec(
-        prompt=observe.__doc__,
-        input={"task": task},
-        images=[img],
-        call=my_llm_provider,
-    )
+    return rt.exec(content=[
+        {"type": "text", "text": f"Find: {task}"},
+        {"type": "image", "path": "screenshot.png"},
+    ])
 ```
