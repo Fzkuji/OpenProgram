@@ -27,6 +27,8 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 from typing import Any, Optional
 
@@ -170,7 +172,18 @@ class Runtime:
             str — the LLM's reply text.
         """
         if self._call_fn is not None:
-            return self._call_fn(content, model=model, response_format=response_format)
+            if inspect.iscoroutinefunction(self._call_fn):
+                raise TypeError(
+                    "exec() received an async call function. "
+                    "Use async_exec() for async providers, or pass a sync function."
+                )
+            result = self._call_fn(content, model=model, response_format=response_format)
+            if asyncio.iscoroutine(result):
+                raise TypeError(
+                    "call function returned a coroutine. "
+                    "Use async_exec() for async providers, or pass a sync function."
+                )
+            return result
         raise NotImplementedError(
             "No LLM provider configured. Either pass `call=your_function` to Runtime(), "
             "or subclass Runtime and override _call()."
@@ -179,7 +192,11 @@ class Runtime:
     async def _async_call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """Async version of _call(). Override for async providers."""
         if self._call_fn is not None:
-            return await self._call_fn(content, model=model, response_format=response_format)
+            result = self._call_fn(content, model=model, response_format=response_format)
+            if asyncio.iscoroutine(result):
+                return await result
+            # Sync function passed to async_exec — just return it
+            return result
         raise NotImplementedError(
             "No async LLM provider configured. Either pass an async `call` to Runtime(), "
             "or subclass Runtime and override _async_call()."

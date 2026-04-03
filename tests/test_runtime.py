@@ -235,6 +235,55 @@ def test_multiple_runtimes():
     assert "from rt2" in result
 
 
+def test_sync_exec_with_async_call_raises():
+    """exec() with an async call function raises TypeError."""
+    async def async_call(content, model="test", response_format=None):
+        return "async reply"
+
+    runtime = Runtime(call=async_call)
+
+    @agentic_function
+    def func():
+        return runtime.exec(content=[{"type": "text", "text": "test"}])
+
+    with pytest.raises(TypeError, match="async"):
+        func()
+
+
+def test_async_exec_with_sync_call_works():
+    """async_exec() with a sync call function should work (auto-adapts)."""
+    import asyncio
+
+    def sync_call(content, model="test", response_format=None):
+        return "sync reply"
+
+    runtime = Runtime(call=sync_call)
+
+    @agentic_function
+    async def func():
+        return await runtime.async_exec(content=[{"type": "text", "text": "test"}])
+
+    result = asyncio.run(func())
+    assert result == "sync reply"
+
+
+def test_async_exec_with_async_call_works():
+    """async_exec() with an async call function works normally."""
+    import asyncio
+
+    async def async_call(content, model="test", response_format=None):
+        return "async reply"
+
+    runtime = Runtime(call=async_call)
+
+    @agentic_function
+    async def func():
+        return await runtime.async_exec(content=[{"type": "text", "text": "test"}])
+
+    result = asyncio.run(func())
+    assert result == "async reply"
+
+
 def test_content_types():
     """Different content types are passed through."""
     received = []
