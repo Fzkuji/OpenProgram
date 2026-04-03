@@ -137,7 +137,7 @@ class Context:
     # show the complete structure.
 
     # --- LLM call record (set by runtime.exec()) ---
-    raw_reply: str = ""             # Raw LLM response text
+    raw_reply: str = None            # Raw LLM response text (None = not called yet)
 
     # --- Internal: decorator config ---
     _summarize_kwargs: Optional[dict] = field(default=None, repr=False)
@@ -376,7 +376,7 @@ class Context:
         lines.append(f"{indent}    Status: {self.status}{dur}")
 
         # detail adds LLM interaction
-        if level == "detail" and self.raw_reply:
+        if level == "detail" and self.raw_reply is not None:
             lines.append(f"{indent}    LLM reply: {self.raw_reply[:500]}")
 
         return "\n".join(lines)

@@ -92,7 +92,7 @@ class Runtime:
         use_model = model or self.model
 
         # --- Guard: one exec() per function ---
-        if ctx is not None and ctx.raw_reply:
+        if ctx is not None and ctx.raw_reply is not None:
             raise RuntimeError(
                 f"exec() called twice in {ctx.name}(). "
                 f"Each @agentic_function should call exec() at most once. "
@@ -132,7 +132,7 @@ class Runtime:
         ctx = _current_ctx.get(None)
         use_model = model or self.model
 
-        if ctx is not None and ctx.raw_reply:
+        if ctx is not None and ctx.raw_reply is not None:
             raise RuntimeError(
                 f"async_exec() called twice in {ctx.name}(). "
                 f"Each @agentic_function should call exec/async_exec at most once. "

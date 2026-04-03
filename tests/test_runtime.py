@@ -99,16 +99,30 @@ def test_runtime_no_context_outside_function():
 
 def test_runtime_double_exec_raises():
     """Calling exec() twice in one function raises RuntimeError."""
-    rt = Runtime(call=echo_call)
+    runtime = Runtime(call=echo_call)
 
     @agentic_function
     def double():
         """Bad function."""
-        rt.exec(content=[{"type": "text", "text": "first"}])
-        rt.exec(content=[{"type": "text", "text": "second"}])
+        runtime.exec(content=[{"type": "text", "text": "first"}])
+        runtime.exec(content=[{"type": "text", "text": "second"}])
 
     with pytest.raises(RuntimeError, match="exec.*twice"):
         double()
+
+
+def test_runtime_double_exec_empty_reply():
+    """Double exec guard works even when first reply is empty string."""
+    runtime = Runtime(call=lambda content, model="test", response_format=None: "")
+
+    @agentic_function
+    def double_empty():
+        """Bad function with empty reply."""
+        runtime.exec(content=[{"type": "text", "text": "first"}])
+        runtime.exec(content=[{"type": "text", "text": "second"}])
+
+    with pytest.raises(RuntimeError, match="exec.*twice"):
+        double_empty()
 
 
 def test_runtime_model_override():
