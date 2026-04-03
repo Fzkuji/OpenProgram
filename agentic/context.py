@@ -547,19 +547,29 @@ def init_root(name: str = "root") -> Context:
 # ======================================================================
 
 def _node_allowed(node: Context, include: Optional[list], exclude: Optional[list]) -> bool:
-    """Check if a node passes include/exclude path filters."""
+    """Check if a node passes include/exclude path filters.
+    
+    include and exclude are applied together:
+    1. If include is set, node must match at least one include pattern
+    2. If exclude is set, node must not match any exclude pattern
+    Both conditions must be satisfied.
+    """
+    allowed = True
     if include is not None:
-        return any(_path_matches(node.path, p) for p in include)
-    if exclude is not None:
-        return not any(_path_matches(node.path, p) for p in exclude)
-    return True
+        allowed = any(_path_matches(node.path, p) for p in include)
+    if allowed and exclude is not None:
+        allowed = not any(_path_matches(node.path, p) for p in exclude)
+    return allowed
 
 
 def _path_matches(path: str, pattern: str) -> bool:
-    """Match a node path against a pattern. Supports * wildcard and /* suffix."""
+    """Match a node path against a pattern. Supports * wildcard and /* suffix.
+    
+    foo/* matches children of foo (e.g. foo/bar_0), NOT foo itself.
+    """
     if pattern.endswith("/*"):
         prefix = pattern[:-2]
-        return path.startswith(prefix + "/") or path == prefix
+        return path.startswith(prefix + "/")
     if "*" in pattern:
         import fnmatch
         return fnmatch.fnmatch(path, pattern)
