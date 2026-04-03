@@ -10,7 +10,7 @@ Usage:
 
 import os
 import google.generativeai as genai
-from agentic import agentic_function, Runtime, get_root_context
+from agentic import agentic_function, Runtime
 
 
 # ── LLM Provider ────────────────────────────────────────────────
@@ -80,4 +80,4 @@ if __name__ == "__main__":
     print(result)
 
     print("\n── Context Tree ──")
-    print(get_root_context().tree())
+    print(login_flow.context.tree())

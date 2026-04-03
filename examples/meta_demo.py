@@ -7,7 +7,7 @@ Usage:
 
 import subprocess
 import json
-from agentic import agentic_function, Runtime, get_root_context
+from agentic import agentic_function, Runtime
 from agentic.meta import create
 
 
@@ -65,4 +65,4 @@ if __name__ == "__main__":
 
     # 5. Show the full context tree
     print("🌳 Context Tree:")
-    print(get_root_context().tree())
+    print(rate.context.tree())

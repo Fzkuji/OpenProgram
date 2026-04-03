@@ -58,10 +58,7 @@ _current_ctx: ContextVar[Optional["Context"]] = ContextVar(
     "_current_ctx", default=None
 )
 
-# The last completed top-level Context tree. Set when a top-level
-# @agentic_function finishes (parent=None). Allows get_root_context()
-# to return the tree after execution completes.
-_last_root: Optional["Context"] = None
+
 
 
 # ---------------------------------------------------------------------------
@@ -505,41 +502,6 @@ class Context:
         for c in self.children:
             records.extend(c._to_records(tree_depth + 1))
         return records
-
-
-# ======================================================================
-# Module-level convenience functions
-# ======================================================================
-
-def get_context() -> Optional[Context]:
-    """Get the currently active Context node. None if outside any @agentic_function."""
-    return _current_ctx.get(None)
-
-
-def get_root_context() -> Optional[Context]:
-    """Get the root of the current Context tree.
-    
-    If called inside an @agentic_function, walks up to the root.
-    If called after execution, returns the last completed tree.
-    """
-    ctx = _current_ctx.get(None)
-    if ctx is not None:
-        while ctx.parent is not None:
-            ctx = ctx.parent
-        return ctx
-    return _last_root
-
-
-def init_root(name: str = "root") -> Context:
-    """
-    Manually create a root Context node.
-
-    Usually not needed — @agentic_function creates the root automatically
-    when the first decorated function is called.
-    """
-    root = Context(name=name, start_time=time.time(), status="running")
-    _current_ctx.set(root)
-    return root
 
 
 # ======================================================================

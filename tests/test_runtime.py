@@ -3,7 +3,7 @@ Tests for Runtime class.
 """
 
 import pytest
-from agentic import agentic_function, Runtime, get_root_context
+from agentic import agentic_function, Runtime
 
 
 def mock_call(content, model="test", response_format=None):
@@ -48,8 +48,7 @@ def test_runtime_records_raw_reply():
         ])
 
     func()
-    root = get_root_context()
-    assert root.raw_reply == "test reply"
+    assert func.context.raw_reply == "test reply"
 
 
 def test_runtime_context_injection():
@@ -213,8 +212,8 @@ def test_runtime_subclass():
 
 def test_multiple_runtimes():
     """Multiple Runtime instances can coexist."""
-    rt1 = Runtime(call=lambda c, **kw: "from rt1", model="model-1")
-    rt2 = Runtime(call=lambda c, **kw: "from rt2", model="model-2")
+    runtime1 = Runtime(call=lambda c, **kw: "from runtime1", model="model-1")
+    runtime2 = Runtime(call=lambda c, **kw: "from runtime2", model="model-2")
 
     @agentic_function
     def parent():
@@ -224,15 +223,15 @@ def test_multiple_runtimes():
 
     @agentic_function
     def func_a():
-        return rt1.exec(content=[{"type": "text", "text": "a"}])
+        return runtime1.exec(content=[{"type": "text", "text": "a"}])
 
     @agentic_function
     def func_b():
-        return rt2.exec(content=[{"type": "text", "text": "b"}])
+        return runtime2.exec(content=[{"type": "text", "text": "b"}])
 
     result = parent()
-    assert "from rt1" in result
-    assert "from rt2" in result
+    assert "from runtime1" in result
+    assert "from runtime2" in result
 
 
 def test_sync_exec_with_async_call_raises():

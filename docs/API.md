@@ -28,10 +28,8 @@ The `agentic` package provides three core components for building LLM-powered fu
 | [Context.traceback](api/context.md#traceback) | Error traceback. |
 | [Context.save](api/context.md#save) | Save tree to file. |
 
-### Utilities
+### Meta
 
 | API | Description |
 |-----|-------------|
-| get_context | Get the current Context node. Returns `None` if outside any `@agentic_function`. |
-| get_root_context | Get the root of the last completed Context tree. |
-| init_root | Manually create a root Context node (rarely needed). |
+| [create](api/meta.md) | Generate a new @agentic_function from a natural language description. |

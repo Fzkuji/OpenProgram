@@ -83,6 +83,8 @@ class agentic_function:
         self.summarize_kwargs = summarize
         self.compress = compress
 
+        self.context = None  # Last executed Context tree (set after top-level call)
+
         if fn is not None:
             # Used as @agentic_function without parentheses
             self._fn = fn
@@ -120,6 +122,7 @@ class agentic_function:
         return self._make_sync_wrapper(fn, sig)
 
     def _make_async_wrapper(self, fn: Callable, sig: inspect.Signature) -> Callable:
+        self_ref = self
         render = self.render
         compress = self.compress
         summarize = self.summarize_kwargs
@@ -159,13 +162,14 @@ class agentic_function:
                 ctx.end_time = time.time()
                 _current_ctx.reset(token)
                 if parent is None:
-                    _ctx_module._last_root = ctx
+                    self_ref.context = ctx
                     _auto_save(ctx)
 
         wrapper._is_agentic = True
         return wrapper
 
     def _make_sync_wrapper(self, fn: Callable, sig: inspect.Signature) -> Callable:
+        self_ref = self
         render = self.render
         compress = self.compress
         summarize = self.summarize_kwargs
@@ -209,7 +213,7 @@ class agentic_function:
                 _current_ctx.reset(token)
                 # If this was a top-level call (no parent), save and close
                 if parent is None:
-                    _ctx_module._last_root = ctx
+                    self_ref.context = ctx
                     _auto_save(ctx)
 
         wrapper._is_agentic = True

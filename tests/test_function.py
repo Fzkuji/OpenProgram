@@ -3,7 +3,7 @@ Tests for @agentic_function decorator.
 """
 
 import pytest
-from agentic import agentic_function, get_root_context
+from agentic import agentic_function
 from agentic.context import _current_ctx
 
 
@@ -32,7 +32,7 @@ def test_context_tree():
         return "inner done"
 
     outer()
-    root = get_root_context()
+    root = outer.context
     assert root.name == "outer"
     assert root.status == "success"
     assert root.output == "done"
@@ -49,7 +49,7 @@ def test_params_recorded():
         return "observed"
 
     observe(task="find button", detail=False)
-    root = get_root_context()
+    root = observe.context
     assert root.params == {"task": "find button", "detail": False}
 
 
@@ -63,7 +63,7 @@ def test_error_recorded():
     with pytest.raises(ValueError, match="test error"):
         failing()
 
-    root = get_root_context()
+    root = failing.context
     assert root.status == "error"
     assert "test error" in root.error
 
@@ -76,8 +76,7 @@ def test_timing():
         return "fast"
 
     quick()
-    root = get_root_context()
-    assert root.duration_ms >= 0
+    assert quick.context.duration_ms >= 0
 
 
 def test_nested_three_levels():
@@ -99,7 +98,7 @@ def test_nested_three_levels():
 
     result = level1()
     assert result == "deep"
-    root = get_root_context()
+    root = level1.context
     assert root.name == "level1"
     assert root.children[0].name == "level2"
     assert root.children[0].children[0].name == "level3"
@@ -128,7 +127,7 @@ def test_multiple_children():
         return "c"
 
     parent()
-    root = get_root_context()
+    root = parent.context
     assert len(root.children) == 3
     assert [c.name for c in root.children] == ["child_a", "child_b", "child_c"]
     assert [c.output for c in root.children] == ["a", "b", "c"]
@@ -142,8 +141,7 @@ def test_compress_flag():
         return "done"
 
     compressed()
-    root = get_root_context()
-    assert root.compress is True
+    assert compressed.context.compress is True
 
 
 def test_docstring_as_prompt():
@@ -154,8 +152,7 @@ def test_docstring_as_prompt():
         return "ok"
 
     my_func()
-    root = get_root_context()
-    assert root.prompt == "This is the prompt."
+    assert my_func.context.prompt == "This is the prompt."
 
 
 def test_no_docstring():
@@ -165,8 +162,7 @@ def test_no_docstring():
         return "ok"
 
     no_doc()
-    root = get_root_context()
-    assert root.prompt == ""
+    assert no_doc.context.prompt == ""
 
 
 def test_context_cleared_after_top_level():
@@ -190,10 +186,7 @@ def test_separate_trees():
         return "b"
 
     task_a()
-    root_a = get_root_context()
-
     task_b()
-    root_b = get_root_context()
 
-    assert root_a.name == "task_a"
-    assert root_b.name == "task_b"
+    assert task_a.context.name == "task_a"
+    assert task_b.context.name == "task_b"

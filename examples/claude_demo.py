@@ -10,7 +10,7 @@ Usage:
 
 import subprocess
 import json
-from agentic import agentic_function, Runtime, get_root_context
+from agentic import agentic_function, Runtime
 
 
 # ── LLM Provider: Claude Code CLI ───────────────────────────────
@@ -96,4 +96,4 @@ if __name__ == "__main__":
 
     print(f"\n📝 Summary:\n{result}")
     print(f"\n🌳 Context Tree:")
-    print(get_root_context().tree())
+    print(run_task.context.tree())

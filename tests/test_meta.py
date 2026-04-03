@@ -3,7 +3,7 @@ Tests for meta.create() — generating agentic functions from descriptions.
 """
 
 import pytest
-from agentic import Runtime, get_root_context
+from agentic import Runtime
 from agentic.meta import create, _extract_code, _make_safe_builtins
 
 

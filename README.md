@@ -44,7 +44,7 @@ def observe(task):
 ## Quick Start
 
 ```python
-from agentic import agentic_function, Runtime, get_root_context
+from agentic import agentic_function, Runtime
 
 # 1. Create a Runtime (once)
 runtime = Runtime(call=my_llm_func, model="gemini-2.5-flash")
@@ -75,7 +75,7 @@ def login_flow(username, password):
 login_flow(username="admin", password="secret")
 
 # 4. Inspect
-print(get_root_context().tree())
+print(login_flow.context.tree())
 ```
 
 Output:
@@ -146,9 +146,8 @@ navigate ✓ 3200ms → {success: True}
 Every function call creates a Context node. The tree is inspectable, serializable, and debuggable.
 
 ```python
-from agentic import get_root_context
 
-root = get_root_context()
+root = login_flow.context
 print(root.tree())           # human-readable tree
 print(root.traceback())      # error chain
 root.save("logs/run.jsonl")  # machine-readable

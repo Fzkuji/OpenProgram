@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from agentic import agentic_function, Runtime, get_root_context
+from agentic import agentic_function, Runtime
 
 
 def mock_call(content, model="test", response_format=None):
@@ -32,7 +32,7 @@ def test_tree_output():
         return "child done"
 
     parent()
-    tree = get_root_context().tree()
+    tree = parent.context.tree()
     assert "parent" in tree
     assert "child" in tree
     assert "✓" in tree
@@ -54,7 +54,7 @@ def test_summarize_default():
         return runtime.exec(content=[{"type": "text", "text": "result_b"}])
 
     outer()
-    root = get_root_context()
+    root = outer.context
     # inner_b should have seen inner_a in its context
     assert root.children[1].raw_reply is not None
 
@@ -71,7 +71,7 @@ def test_summarize_depth_0():
 
     outer()
     # Should still work, just less context
-    root = get_root_context()
+    root = outer.context
     assert root.children[0].raw_reply is not None
 
 
@@ -96,7 +96,7 @@ def test_compress_hides_children():
         return runtime.exec(content=[{"type": "text", "text": "checking"}])
 
     outer()
-    root = get_root_context()
+    root = outer.context
     # compressed's children exist in tree
     assert len(root.children[0].children) == 1
     assert root.children[0].children[0].name == "sub"
@@ -115,7 +115,7 @@ def test_save_jsonl(tmp_path):
 
     task()
     path = str(tmp_path / "test.jsonl")
-    get_root_context().save(path)
+    task.context.save(path)
 
     lines = Path(path).read_text().strip().split("\n")
     assert len(lines) >= 2  # at least task + step
@@ -133,7 +133,7 @@ def test_save_md(tmp_path):
 
     task()
     path = str(tmp_path / "test.md")
-    get_root_context().save(path)
+    task.context.save(path)
 
     content = Path(path).read_text()
     assert "task" in content
@@ -152,7 +152,7 @@ def test_traceback_on_error():
     with pytest.raises(ValueError):
         outer()
 
-    root = get_root_context()
+    root = outer.context
     tb = root.traceback()
     assert "outer" in tb
     assert "inner" in tb
@@ -170,7 +170,7 @@ def test_path_property():
         return "done"
 
     root_fn()
-    root = get_root_context()
+    root = root_fn.context
     assert "root_fn" in root.path
     assert "child_fn" in root.children[0].path
 
@@ -182,5 +182,4 @@ def test_duration():
         return "done"
 
     timed()
-    root = get_root_context()
-    assert root.duration_ms >= 0
+    assert timed.context.duration_ms >= 0
