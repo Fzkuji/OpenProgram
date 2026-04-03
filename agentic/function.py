@@ -20,6 +20,7 @@ import inspect
 import time
 from typing import Callable, Optional
 
+import agentic.context as _ctx_module
 from agentic.context import Context, _current_ctx
 
 
@@ -122,15 +123,7 @@ class agentic_function:
             bound.apply_defaults()
             params = dict(bound.arguments)
 
-            # Find or create parent node
             parent = _current_ctx.get(None)
-            if parent is None:
-                parent = Context(
-                    name="root",
-                    start_time=time.time(),
-                    status="running",
-                )
-                _current_ctx.set(parent)
 
             # Create this call's node
             ctx = Context(
@@ -143,7 +136,8 @@ class agentic_function:
                 start_time=time.time(),
                 _summarize_kwargs=summarize,
             )
-            parent.children.append(ctx)
+            if parent is not None:
+                parent.children.append(ctx)
 
             # Set as current context for the duration of the call
             token = _current_ctx.set(ctx)
@@ -159,6 +153,9 @@ class agentic_function:
             finally:
                 ctx.end_time = time.time()
                 _current_ctx.reset(token)
+                # If this was a top-level call (no parent), save as last root
+                if parent is None:
+                    _ctx_module._last_root = ctx
 
         wrapper._is_agentic = True
         return wrapper
