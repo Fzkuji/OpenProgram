@@ -572,7 +572,7 @@ def _fmt_params(params: dict) -> str:
         return ""
     parts = []
     for k, v in params.items():
-        v_str = json.dumps(v, ensure_ascii=False, default=str) if not isinstance(v, str) else f'"{v}"'
+        v_str = repr(v) if isinstance(v, str) else json.dumps(v, ensure_ascii=False, default=str)
         if len(v_str) > 50:
             v_str = v_str[:47] + "..."
         parts.append(f"{k}={v_str}")
