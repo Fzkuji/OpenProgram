@@ -51,16 +51,19 @@ class Runtime:
                 return reply_text
     """
 
-    def __init__(self, call=None, model: str = "default"):
+    def __init__(self, call=None, model: str = "default", max_retries: int = 2):
         """
         Args:
-            call:   LLM provider function.
-                    Signature: fn(content: list[dict], model: str, response_format: dict) -> str
-                    If None, you must subclass and override _call().
-            model:  Default model name. Passed to _call().
+            call:        LLM provider function.
+                         Signature: fn(content: list[dict], model: str, response_format: dict) -> str
+                         If None, you must subclass and override _call().
+            model:       Default model name. Passed to _call().
+            max_retries: Maximum number of exec() attempts before raising.
+                         Default 2 (try once, retry once on failure).
         """
         self._call_fn = call
         self.model = model
+        self.max_retries = max_retries
 
     def exec(
         self,
@@ -114,14 +117,27 @@ class Runtime:
             full_content.append({"type": "text", "text": context})
         full_content.extend(content)
 
-        # --- Call the LLM ---
-        reply = self._call(full_content, model=use_model, response_format=response_format)
-
-        # --- Write: record what we got back ---
-        if ctx is not None:
-            ctx.raw_reply = reply
-
-        return reply
+        # --- Call the LLM (with retry) ---
+        errors = []
+        for attempt in range(self.max_retries):
+            try:
+                reply = self._call(full_content, model=use_model, response_format=response_format)
+                # --- Write: record what we got back ---
+                if ctx is not None:
+                    ctx.raw_reply = reply
+                return reply
+            except (TypeError, NotImplementedError):
+                raise  # Programming errors — don't retry
+            except Exception as e:
+                errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
+                if attempt == self.max_retries - 1:
+                    # All retries exhausted
+                    error_report = "\n".join(errors)
+                    if ctx is not None:
+                        ctx.raw_reply = None  # Keep None so error is visible
+                    raise RuntimeError(
+                        f"exec() failed after {self.max_retries} attempts in {ctx.name if ctx else 'unknown'}():\n{error_report}"
+                    ) from e
 
     async def async_exec(
         self,
@@ -152,12 +168,24 @@ class Runtime:
             full_content.append({"type": "text", "text": context})
         full_content.extend(content)
 
-        reply = await self._async_call(full_content, model=use_model, response_format=response_format)
-
-        if ctx is not None:
-            ctx.raw_reply = reply
-
-        return reply
+        errors = []
+        for attempt in range(self.max_retries):
+            try:
+                reply = await self._async_call(full_content, model=use_model, response_format=response_format)
+                if ctx is not None:
+                    ctx.raw_reply = reply
+                return reply
+            except (TypeError, NotImplementedError):
+                raise
+            except Exception as e:
+                errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
+                if attempt == self.max_retries - 1:
+                    error_report = "\n".join(errors)
+                    if ctx is not None:
+                        ctx.raw_reply = None
+                    raise RuntimeError(
+                        f"async_exec() failed after {self.max_retries} attempts in {ctx.name if ctx else 'unknown'}():\n{error_report}"
+                    ) from e
 
     def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """

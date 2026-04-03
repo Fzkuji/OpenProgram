@@ -33,11 +33,12 @@ Quick start:
 from agentic.context import Context
 from agentic.function import agentic_function
 from agentic.runtime import Runtime
-from agentic.meta_function import create
+from agentic.meta_function import create, fix
 
 __all__ = [
     "agentic_function",
     "Runtime",
     "Context",
     "create",
+    "fix",
 ]
