@@ -51,28 +51,31 @@ def exec(
     """
     Call an LLM and auto-record to the current Context.
 
+    Builds a structured prompt that tells the LLM:
+    - Where it is in the call tree (function name, docstring, params)
+    - What happened before (ancestors + siblings' execution records)
+    - What it needs to do now (prompt + input + schema)
+
     Args:
         prompt:   Instructions for the LLM.
 
         input:    Structured data to include in the prompt.
-                  Serialized as JSON under an [Input] header.
+                  Serialized as JSON.
 
         images:   Image file paths to include.
-                  Currently passed as text placeholders — actual image
-                  encoding depends on the `call` provider.
+                  Passed to the `call` function for provider-specific handling.
 
         context:  Override auto-generated context string.
-                  If None (default): auto-generates from the Context tree
-                  using the function's summarize config.
+                  If None (default): auto-generates from the Context tree.
                   If provided: used as-is, no tree query.
 
         schema:   Expected JSON output schema.
-                  Appended as a "return only valid JSON" instruction.
+                  Appended as an output format constraint.
 
         model:    Model name or alias. Passed to the `call` function.
 
         call:     LLM provider function.
-                  Signature: fn(messages: list[dict], model: str) -> str
+                  Signature: fn(prompt: str, model: str, images: list[str]) -> str
                   If None, raises NotImplementedError.
 
     Returns:
@@ -100,13 +103,22 @@ def exec(
         ctx.input = input
         ctx.media = images
 
-    # --- Call the LLM ---
-    messages = _build_messages(prompt, input, images, context, schema)
+    # --- Build prompt ---
+    full_prompt = _build_prompt(
+        context=context,
+        prompt=prompt,
+        input=input,
+        schema=schema,
+    )
 
+    # --- Call the LLM ---
     if call is not None:
-        reply = call(messages, model=model)
+        reply = call(full_prompt, model=model, images=images or [])
     else:
-        reply = _default_api_call(messages, model=model)
+        raise NotImplementedError(
+            "No LLM API configured. Pass `call=your_function` to runtime.exec().\n"
+            "Signature: fn(prompt: str, model: str, images: list[str]) -> str"
+        )
 
     # --- Write: record what we got back ---
     if ctx is not None:
@@ -116,53 +128,48 @@ def exec(
 
 
 # ======================================================================
-# Message building
+# Prompt building
 # ======================================================================
 
-def _build_messages(prompt, input=None, images=None, context=None, schema=None):
+def _build_prompt(
+    context: Optional[str] = None,
+    prompt: str = "",
+    input: Optional[dict] = None,
+    schema: Optional[dict] = None,
+) -> str:
     """
-    Build the message list for the LLM API.
+    Build the final prompt for the LLM.
 
-    Message layout (optimized for prompt cache hit rate):
+    The context string already contains the full execution context in
+    traceback format (from summarize()), including:
+    - Call stack with ancestors
+    - Sibling functions' name, purpose, input, output, status
+    - Current function marked with <-- Current Call
 
-        1. [Context] block     — from summarize(), stable prefix across calls
-        2. [Assistant ack]     — "Understood." (keeps context as cacheable prefix)
-        3. Prompt + [Input]    — the actual task (new content each call)
-        4. [Schema]            — JSON output constraint (if any)
-
-    The context block is placed FIRST because it's the most stable part.
-    Each successive call appends new siblings to the context, so the prefix
-    grows monotonically — maximizing prompt cache hits.
+    This function appends the task and output format.
     """
-    messages = []
+    sections = []
 
-    # Context as stable prefix
+    # Execution context (already formatted by summarize)
     if context:
-        messages.append({"role": "user", "content": f"[Context]\n{context}"})
-        messages.append({"role": "assistant", "content": "Understood."})
+        sections.append(context)
 
-    # Prompt + input (new each call)
-    content_parts = [{"type": "text", "text": prompt}]
-
+    # Task
+    task_parts = [f"Task: {prompt}"]
     if input:
-        input_str = json.dumps(input, ensure_ascii=False, default=str)
-        content_parts.append({"type": "text", "text": f"\n[Input]\n{input_str}"})
+        input_str = json.dumps(input, ensure_ascii=False, default=str, indent=2)
+        task_parts.append(f"\nInput:\n{input_str}")
+    sections.append("\n".join(task_parts))
 
-    if images:
-        for img_path in images:
-            content_parts.append({"type": "text", "text": f"\n[Image: {img_path}]"})
-
-    messages.append({"role": "user", "content": content_parts})
-
-    # Schema constraint
+    # Output format
     if schema:
         schema_str = json.dumps(schema, indent=2)
-        messages.append({
-            "role": "user",
-            "content": f"Return ONLY valid JSON matching this schema:\n{schema_str}",
-        })
+        sections.append(
+            f"Output Format:\n"
+            f"Return ONLY valid JSON matching this schema:\n{schema_str}"
+        )
 
-    return messages
+    return "\n\n".join(sections)
 
 
 async def async_exec(
@@ -177,7 +184,8 @@ async def async_exec(
     """
     Async version of exec(). Same behavior, but awaits the call function.
 
-    The `call` function must be async: async fn(messages, model) -> str
+    The `call` function must be async:
+        async fn(prompt: str, model: str, images: list[str]) -> str
     """
     ctx = _current_ctx.get(None)
 
@@ -198,25 +206,22 @@ async def async_exec(
         ctx.input = input
         ctx.media = images
 
-    messages = _build_messages(prompt, input, images, context, schema)
+    full_prompt = _build_prompt(
+        context=context,
+        prompt=prompt,
+        input=input,
+        schema=schema,
+    )
 
     if call is not None:
-        reply = await call(messages, model=model)
+        reply = await call(full_prompt, model=model, images=images or [])
     else:
         raise NotImplementedError(
             "No async LLM API configured. Pass `call=your_async_function` to runtime.async_exec().\n"
-            "The call function should have signature: async fn(messages, model) -> str"
+            "Signature: async fn(prompt: str, model: str, images: list[str]) -> str"
         )
 
     if ctx is not None:
         ctx.raw_reply = reply
 
     return reply
-
-
-def _default_api_call(messages, model="sonnet"):
-    """Placeholder. Users must provide a `call` function."""
-    raise NotImplementedError(
-        "No LLM API configured. Pass `call=your_function` to runtime.exec().\n"
-        "The call function should have signature: fn(messages, model) -> str"
-    )

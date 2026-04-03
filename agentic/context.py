@@ -177,6 +177,24 @@ class Context:
                 idx += 1
         return f"{self.parent.path}/{self.name}_{idx}"
 
+    def _depth(self) -> int:
+        """How deep this node is in the tree. Root = 1."""
+        d = 1
+        node = self.parent
+        while node:
+            d += 1
+            node = node.parent
+        return d
+
+    def _call_path(self) -> str:
+        """Full call path like login_flow.navigate_to.observe_screen."""
+        parts = []
+        node = self
+        while node:
+            parts.append(node.name)
+            node = node.parent
+        return ".".join(reversed(parts))
+
     @property
     def duration_ms(self) -> float:
         """Execution time in milliseconds. 0 if still running."""
@@ -254,7 +272,7 @@ class Context:
             ctx.summarize(branch=["observe"])             # expand observe's children
             ctx.summarize(max_tokens=1000)               # with token budget
         """
-        parts = []
+        lines = ["Execution Context (most recent call last):"]
 
         # --- Ancestors: root → ... → parent ---
         if depth != 0 and self.parent and self.parent.name:
@@ -268,14 +286,18 @@ class Context:
             for a in reversed(ancestors):
                 if not _node_allowed(a, include, exclude):
                     continue
-                parts.append(f"[Ancestor: {a.name}({_fmt_params(a.params)})]")
+                indent = "  " * (len(ancestors) - ancestors.index(a))
+                lines.append(a._render_traceback(indent, level))
 
         # --- Siblings: previous same-level nodes ---
         if self.parent:
+            # Calculate indent for siblings (same level as self)
+            sibling_indent = "  " * self._depth()
+
             sibling_parts = []
             for c in self.parent.children:
                 if c is self:
-                    break  # Only show siblings BEFORE me
+                    break
                 if c.status == "running":
                     continue
                 if not _node_allowed(c, include, exclude):
@@ -285,98 +307,113 @@ class Context:
                 if render_level == "silent":
                     continue
 
-                rendered = c._render(render_level)
+                rendered = c._render_traceback(sibling_indent, render_level)
 
-                # Expand children if requested via branch — but not if compressed
+                # Expand children if requested via branch
                 if branch and c.name in branch:
                     if not (c.compress and c.status != "running"):
-                        rendered += "\n" + c._render_branch(level, include=include, exclude=exclude)
+                        rendered += "\n" + c._render_branch_traceback(
+                            render_level, c._depth() + 1, include, exclude
+                        )
 
                 sibling_parts.append(rendered)
 
-            # Apply sibling limit (keep most recent)
             if siblings >= 0:
                 sibling_parts = sibling_parts[-siblings:] if siblings > 0 else []
 
-            # Apply token budget (drop oldest first)
             if max_tokens is not None:
                 total = sum(len(s) for s in sibling_parts)
                 while sibling_parts and total > max_tokens * 4:
                     removed = sibling_parts.pop(0)
                     total -= len(removed)
 
-            parts.extend(sibling_parts)
+            lines.extend(sibling_parts)
 
-        return "\n".join(parts)
+        # --- Current call ---
+        self_indent = "  " * self._depth()
+        lines.append(f"{self_indent}in {self._call_path()}  <-- Current Call")
+        lines.append(f"{self_indent}  {self.name}({_fmt_params(self.params)})")
+        if self.prompt:
+            lines.append(f"{self_indent}  Purpose: {self.prompt}")
+
+        return "\n".join(lines)
 
     # ==================================================================
     # RENDERING — format a single node as text
     # ==================================================================
 
-    def _render(self, level: str) -> str:
+    def _render_traceback(self, indent: str, level: str) -> str:
         """
-        Render this single node at the given detail level.
+        Render this node in traceback format.
 
-        This is called by summarize() for each visible node.
-        If summary_fn is set, delegates to it entirely.
+        Level controls how much detail:
+          - "summary" (default): name, purpose, input, output, status
+          - "detail": summary + LLM raw_reply
+          - "result": just name and output
+          - "silent": empty string
         """
         if self.summary_fn:
             return self.summary_fn(self)
 
-        dur = f" {self.duration_ms:.0f}ms" if self.end_time else ""
+        if level == "silent":
+            return ""
 
-        if level == "trace":
-            # Most verbose: everything we have
-            lines = [f"{self.name}({_fmt_params(self.params)}) → {self.status}{dur}"]
-            if self.prompt:
-                lines.append(f"  prompt: {self.prompt[:200]}")
-            if self.input:
-                lines.append(f"  input: {_json(self.input, 500)}")
-            if self.media:
-                lines.append(f"  media: {self.media}")
-            if self.raw_reply:
-                lines.append(f"  raw_reply: {self.raw_reply[:500]}")
+        dur = f", {self.duration_ms:.0f}ms" if self.end_time else ""
+        lines = [f"{indent}in {self._call_path()}"]
+        lines.append(f"{indent}  {self.name}({_fmt_params(self.params)})")
+
+        if level == "result":
             if self.output is not None:
-                lines.append(f"  output: {_json(self.output, 500)}")
-            if self.error:
-                lines.append(f"  error: {self.error}")
+                lines.append(f"{indent}  Output: {_json(self.output, 200)}")
             return "\n".join(lines)
 
-        elif level == "detail":
-            # Function signature + I/O on one line
-            inp = _json(self.input, 200) if self.input else ""
-            out = _json(self.output, 200) if self.output is not None else ""
-            return f"{self.name}({_fmt_params(self.params)}) → {self.status}{dur} | input: {inp} | output: {out}"
+        # summary and detail both show these basics
+        if self.prompt:
+            lines.append(f"{indent}  Purpose: {self.prompt}")
+        if self.input:
+            lines.append(f"{indent}  Input: {_json(self.input, 300)}")
+        if self.media:
+            lines.append(f"{indent}  Media: {self.media}")
+        if self.output is not None:
+            lines.append(f"{indent}  Output: {_json(self.output, 300)}")
+        if self.error:
+            lines.append(f"{indent}  Error: {self.error}")
+        lines.append(f"{indent}  Status: {self.status}{dur}")
 
-        elif level == "summary":
-            # One-liner: name + output snippet
-            out = _json(self.output, 100) if self.output is not None else ""
-            err = f" error: {self.error}" if self.error else ""
-            return f"{self.name}: {out}{err}{dur}"
+        # detail adds LLM interaction
+        if level == "detail" and self.raw_reply:
+            lines.append(f"{indent}  LLM reply: {self.raw_reply[:500]}")
 
-        elif level == "result":
-            # Just the return value
-            return _json(self.output) if self.output is not None else ""
+        return "\n".join(lines)
 
-        # "silent" or unknown → empty
-        return ""
-
-    def _render_branch(
-        self, level: Optional[str], indent: int = 1,
+    def _render_branch_traceback(
+        self, level: Optional[str], depth: int = 1,
         include: Optional[list] = None, exclude: Optional[list] = None,
     ) -> str:
-        """Render children recursively (used by branch= in summarize)."""
+        """Render children recursively in traceback format."""
         lines = []
         for c in self.children:
             if not _node_allowed(c, include, exclude):
                 continue
             render_level = level or c.render
             if render_level != "silent":
-                prefix = "  " * indent
-                lines.append(f"{prefix}{c._render(render_level)}")
+                indent = "  " * depth
+                lines.append(c._render_traceback(indent, render_level))
                 if c.children and not (c.compress and c.status != "running"):
-                    lines.append(c._render_branch(level, indent + 1, include, exclude))
+                    lines.append(c._render_branch_traceback(render_level, depth + 1, include, exclude))
         return "\n".join(lines)
+
+    # --- Legacy _render for tree()/traceback() compatibility ---
+    def _render(self, level: str) -> str:
+        """Legacy render for backward compat. Delegates to _render_traceback."""
+        return self._render_traceback("", level)
+
+    def _render_branch(
+        self, level: Optional[str], indent: int = 1,
+        include: Optional[list] = None, exclude: Optional[list] = None,
+    ) -> str:
+        """Legacy branch render for backward compat."""
+        return self._render_branch_traceback(level, indent, include, exclude)
 
     # ==================================================================
     # TREE INSPECTION — human-readable views
