@@ -20,6 +20,9 @@ import inspect
 import time
 from typing import Callable, Optional
 
+import os
+from datetime import datetime
+
 import agentic.context as _ctx_module
 from agentic.context import Context, _current_ctx
 
@@ -153,9 +156,22 @@ class agentic_function:
             finally:
                 ctx.end_time = time.time()
                 _current_ctx.reset(token)
-                # If this was a top-level call (no parent), save as last root
+                # If this was a top-level call (no parent), save and close
                 if parent is None:
                     _ctx_module._last_root = ctx
+                    _auto_save(ctx)
 
         wrapper._is_agentic = True
         return wrapper
+
+
+def _auto_save(ctx: Context):
+    """Auto-save the completed Context tree to the logs directory."""
+    try:
+        logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{ctx.name}_{timestamp}.jsonl"
+        ctx.save(os.path.join(logs_dir, filename))
+    except Exception:
+        pass  # Never fail the user's function because of logging
