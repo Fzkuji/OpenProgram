@@ -13,7 +13,7 @@
   </p>
 </p>
 
-> ⚠️ **This is a paradigm proposal, not a production framework.** We're proposing a new way to think about LLM-powered programming — where Python controls the flow and LLMs handle the reasoning. The reference implementation here demonstrates the core ideas. We encourage you to build your own implementation based on these concepts.
+> 🚀 **This is a paradigm proposal.** We're sharing a new way to think about LLM-powered programming. The code here is a reference implementation — we'd love to see you take these ideas and build your own version, in any language, for any use case.
 
 ---
 
