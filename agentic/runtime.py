@@ -51,7 +51,7 @@ class Runtime:
                 return reply_text
     """
 
-    def __init__(self, call=None, model: str = "default", max_retries: int = 2):
+    def __init__(self, call: Optional[callable] = None, model: str = "default", max_retries: int = 2):
         """
         Args:
             call:        LLM provider function.

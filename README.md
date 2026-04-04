@@ -94,6 +94,104 @@ login_flow ✓ 8800ms → ...
 
 ---
 
+## How Context Works
+
+Every `@agentic_function` call creates a **Context** node. Nodes form a tree that mirrors your call hierarchy:
+
+```
+root (implicit)
+├── login_flow(username="admin")          ← top-level call
+│   ├── observe(task="find login form")   ← child #1
+│   │   ├── run_ocr(img)                  ← grandchild
+│   │   └── detect_all(img)               ← grandchild
+│   ├── click(element="login button")     ← child #2
+│   └── observe(task="verify dashboard")  ← child #3
+└── (next top-level call...)
+```
+
+**Automatic context injection:** When `runtime.exec()` is called inside an `@agentic_function`, it automatically reads the tree via `ctx.summarize()` and prepends the execution history to the LLM prompt. This means:
+
+- Each function **sees what happened before it** (ancestors + siblings)
+- **Siblings' children are hidden** by default (one-line summaries)
+- The context grows **incrementally** — maximizing prompt cache hits
+
+```python
+# What the LLM sees when observe() calls runtime.exec():
+#
+# Execution Context (most recent call last):
+#     - login_flow(username="admin")
+#         """Complete login flow."""
+#         - login_flow.observe(task="find login form")
+#             return {"found": true}
+#             Status: success, 1200ms
+#         - login_flow.click(element="login button")
+#             return {"clicked": true}
+#             Status: success, 820ms
+#         - login_flow.observe(task="verify dashboard")  <-- Current Call
+#             """Look at the screen."""
+```
+
+Control what each function sees with `summarize=` and what others see with `render=`:
+
+```python
+@agentic_function(summarize={"depth": 1, "siblings": 3})
+def focused_task():  # sees only parent + last 3 siblings
+    ...
+
+@agentic_function(compress=True)
+def high_level():    # others see only this node's result, not its children
+    ...
+```
+
+---
+
+## Error Recovery
+
+Agentic Programming has built-in error recovery at two levels:
+
+### Level 1: `exec()` Retry
+
+`Runtime.exec()` automatically retries on transient failures (network errors, rate limits). Programming errors (`TypeError`, `NotImplementedError`) are never retried.
+
+```python
+# Retry up to 3 times on transient errors
+runtime = Runtime(call=my_llm, model="gpt-4o", max_retries=3)
+
+@agentic_function
+def analyze(data):
+    """Analyze data."""
+    return runtime.exec(content=[...])  # auto-retries on failure
+```
+
+### Level 2: `fix()` — Code-Level Recovery
+
+When a `create()`-generated function fails repeatedly, `fix()` sends the broken code + error log to the LLM and gets a rewritten version:
+
+```python
+from agentic.meta_function import create, fix
+
+# 1. Generate a function
+summarize = create("Summarize text into 3 bullets", runtime=runtime)
+
+# 2. Call it — might fail
+try:
+    result = summarize(text=data)
+except Exception as e:
+    # 3. Fix it
+    summarize = fix(
+        description="Summarize text into 3 bullets",
+        code=original_code,
+        error_log=str(e),
+        runtime=runtime,
+    )
+    # 4. Try again with the fixed version
+    result = summarize(text=data)
+```
+
+The flow: **create → call → fail → fix → call again → succeed**.
+
+---
+
 ## Core Components
 
 ### `Runtime` — LLM Connection
@@ -249,10 +347,29 @@ rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
 
 ---
 
-## Install
+## Installation
 
 ```bash
+# Basic install (core only, no provider dependencies)
 pip install -e .
+
+# With a specific provider
+pip install -e ".[anthropic]"   # AnthropicRuntime (Claude)
+pip install -e ".[openai]"      # OpenAIRuntime (GPT)
+pip install -e ".[gemini]"      # GeminiRuntime (Gemini)
+
+# All providers
+pip install -e ".[all]"
+
+# With dev tools (pytest)
+pip install -e ".[dev]"
+```
+
+Or install providers separately:
+```bash
+pip install anthropic   # >= 0.30.0
+pip install openai      # >= 1.30.0
+pip install google-genai # >= 1.0.0
 ```
 
 ## Project Structure
