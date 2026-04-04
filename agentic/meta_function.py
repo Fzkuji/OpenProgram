@@ -33,8 +33,6 @@ from agentic.runtime import Runtime
 
 # ── Prompts ─────────────────────────────────────────────────────
 
-# _FIX_PROMPT removed — rules are in fix() docstring, data passed via content
-
 
 # ── Safety ──────────────────────────────────────────────────────
 
@@ -176,7 +174,7 @@ def _save_function(code: str, fn_name: str, description: str = None) -> str:
     return filepath
 
 
-# _CREATE_SKILL_PROMPT removed — rules are in create_skill() docstring, data passed via content
+
 
 
 def _save_skill_template(fn_name: str, description: str, code: str) -> str:
