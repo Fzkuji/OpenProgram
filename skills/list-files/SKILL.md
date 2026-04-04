@@ -7,11 +7,6 @@ description: "List files and folders in a directory with sizes. Use when: user a
 
 List files and folders in a directory.
 
-## Setup
-
-```bash
-pip install -e /path/to/Agentic-Programming
-```
 
 ## Usage
 

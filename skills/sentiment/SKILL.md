@@ -7,13 +7,6 @@ description: "Analyze text sentiment using LLM. Returns positive, negative, or n
 
 Analyze text sentiment using LLM reasoning.
 
-## Setup
-
-```bash
-pip install -e /path/to/Agentic-Programming
-```
-
-Requires Claude Code CLI (`claude`) for LLM calls.
 
 ## Usage
 

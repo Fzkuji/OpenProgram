@@ -7,11 +7,6 @@ description: "Create, fix, or publish Python functions using Agentic Programming
 
 Create, fix, and publish Python functions using LLM.
 
-## Setup
-
-```bash
-pip install -e /path/to/Agentic-Programming
-```
 
 ## Create a new function
 
