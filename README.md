@@ -27,7 +27,7 @@
 
 | Project | Description |
 |---------|-------------|
-| [🖥️&nbsp;GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Autonomous GUI agent that operates desktop apps via vision detection + agentic functions. |
+| [GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | 🖥️ Autonomous GUI agent — operates desktop apps via vision detection + agentic functions |
 
 ---
 
