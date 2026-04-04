@@ -67,48 +67,45 @@ def observe(task):
 
 ## Quick Start
 
+### Option 1: Claude Code CLI (no API key)
+
 ```bash
+# 1. Install Claude Code if you haven't
+npm install -g @anthropic-ai/claude-code && claude login
+
+# 2. Clone and install
 git clone https://github.com/Fzkuji/Agentic-Programming.git
-cd Agentic-Programming
-pip install -e .
-```
+cd Agentic-Programming && pip install -e .
 
-### With Claude Code (no API key needed)
-
-```bash
-# Install Claude Code CLI first: npm install -g @anthropic-ai/claude-code && claude login
+# 3. Run
 python examples/quickstart.py
 ```
 
-### With OpenClaw
+### Option 2: API Key (Anthropic / OpenAI / Gemini)
 
 ```bash
-# Install as a dependency in your OpenClaw workspace
-pip install -e /path/to/Agentic-Programming
-
-# Use in your skills or scripts
-from agentic import agentic_function
-from agentic.providers import ClaudeCodeRuntime
-
-runtime = ClaudeCodeRuntime()
-
-# Create functions with create(), use them later
-from agentic.meta_function import create
-summarize = create("Summarize text into 3 bullet points", runtime=runtime)
-result = summarize(text="Your text here...")
-```
-
-### With API Key (Anthropic / OpenAI / Gemini)
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...    # or OPENAI_API_KEY / GEMINI_API_KEY
+export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY / GEMINI_API_KEY
+pip install -e ".[anthropic]"          # or .[openai] / .[gemini]
 python examples/quickstart.py
 ```
 
-```python
-from agentic.providers import AnthropicRuntime   # or OpenAIRuntime, GeminiRuntime
-runtime = AnthropicRuntime(model="claude-sonnet-4-20250514")
+### Option 3: As an OpenClaw Skill
+
+```bash
+cd ~/.openclaw/workspace
+git clone https://github.com/Fzkuji/Agentic-Programming.git skills/agentic-programming
+pip install -e skills/agentic-programming
 ```
+
+Once installed, just tell your OpenClaw agent what to do:
+
+> "Create a function that summarizes text into 3 bullet points"
+
+> "Fix this function — it should use bullet points, not numbered lists"
+
+> "Run a multi-step analysis on this code"
+
+The agent picks up the skill, calls `create()` / `fix()` / `@agentic_function` behind the scenes, and returns the result. See the [SKILL.md](skill/SKILL.md) for details.
 
 > 📖 Full guides: [Getting Started](docs/GETTING_STARTED.md) • [Claude Code](docs/INTEGRATION_CLAUDE_CODE.md) • [OpenClaw](docs/INTEGRATION_OPENCLAW.md)
 
