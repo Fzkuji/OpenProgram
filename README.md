@@ -23,7 +23,11 @@
 
 > 🚀 **This is a paradigm proposal.** We're sharing a new way to think about LLM-powered programming. The code here is a reference implementation — we'd love to see you take these ideas and build your own version, in any language, for any use case.
 
-**Projects built with Agentic Programming:** [🖥️ GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness) — Autonomous GUI agent that operates desktop apps via vision detection + agentic functions.
+**Projects built with Agentic Programming:**
+
+| Project | Description |
+|---------|-------------|
+| [🖥️&nbsp;GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Autonomous GUI agent that operates desktop apps via vision detection + agentic functions. |
 
 ---
 
