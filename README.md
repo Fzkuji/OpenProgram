@@ -75,7 +75,7 @@ def observe(task):
 
 ## Quick Start
 
-### Install
+### Install as Skills
 
 ```bash
 # 1. Clone the repository
