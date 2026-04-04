@@ -12,8 +12,7 @@
     <a href="examples/">Examples</a>
   </p>
   <p align="center">
-    <a href="docs/README_CN.md">🇨🇳 中文</a> •
-    <a href="docs/README_JA.md">🇯🇵 日本語</a>
+    <a href="docs/README_CN.md">🇨🇳 中文</a>
   </p>
 </p>
 
