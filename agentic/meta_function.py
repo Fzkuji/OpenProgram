@@ -3,7 +3,7 @@ meta_function — Generate and fix agentic functions from natural language.
 
 Two primitives:
     create()  — LLM writes a new @agentic_function from a description
-    fix()     — LLM analyzes errors and rewrites a broken function
+    fix()     — LLM analyzes and rewrites an existing function
 
 Usage:
     from agentic import Runtime
@@ -11,22 +11,21 @@ Usage:
 
     runtime = Runtime(call=my_llm, model="sonnet")
 
-    # Create a function
+    # Create a function from scratch
     summarize = create("Summarize text into 3 bullet points", runtime=runtime)
 
-    # If it fails, fix it
-    fixed = fix(
-        description="Summarize text into 3 bullet points",
-        code=original_code,
-        error_log="Attempt 1: ValueError: ...",
-        runtime=runtime,
-    )
+    # Fix a function (auto-detects code + errors from context)
+    fixed = fix(fn=summarize, runtime=runtime)
+
+    # Fix with manual instruction
+    fixed = fix(fn=summarize, runtime=runtime, instruction="Use bullet points, not numbered list")
 """
 
 from __future__ import annotations
 
+import inspect
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 from agentic.function import agentic_function
 from agentic.runtime import Runtime
@@ -55,20 +54,17 @@ Start with @agentic_function and end with the return statement.
 """
 
 _FIX_PROMPT = """\
-The following agentic function was generated but failed during execution.
+Fix the following agentic function.
 
-Original description: {description}
+Function description: {description}
 
-Generated code:
+Current code:
 ```python
 {code}
 ```
-
-Error log:
-{error_log}
-
-Analyze the errors and rewrite the function to fix them.
-Keep the same purpose but fix the logic that caused the failures.
+{error_section}
+{instruction_section}
+Rewrite the function to fix the issues.
 
 Rules:
 1. Decorate with @agentic_function
@@ -81,7 +77,9 @@ Rules:
 
 `agentic_function` and `runtime` are already available in scope.
 
-Write ONLY the fixed function definition. No imports, no explanation.
+If you are unsure about anything and need clarification, respond with
+ONLY a question starting with "QUESTION:" (no code). Otherwise, respond
+with ONLY the fixed function definition (no explanation).
 """
 
 
@@ -185,6 +183,44 @@ def _find_function(namespace: dict) -> Optional[callable]:
     return None
 
 
+def _get_source(fn) -> str:
+    """Get source code of a function. Falls back to docstring if unavailable."""
+    try:
+        return inspect.getsource(fn)
+    except (OSError, TypeError):
+        doc = getattr(fn, '__doc__', '') or ''
+        name = getattr(fn, '__name__', 'unknown')
+        return f"# Source not available for {name}\n# Docstring: {doc}"
+
+
+def _get_error_log(fn) -> str:
+    """Build error log from function's Context (attempts + errors)."""
+    ctx = getattr(fn, 'context', None)
+    if ctx is None:
+        return ""
+
+    lines = []
+    _collect_attempt_info(ctx, lines)
+    return "\n".join(lines) if lines else ""
+
+
+def _collect_attempt_info(ctx, lines: list, depth: int = 0):
+    """Recursively collect attempt info from Context tree."""
+    prefix = "  " * depth
+    if ctx.attempts:
+        for a in ctx.attempts:
+            status = "OK" if a["error"] is None else "FAILED"
+            lines.append(f"{prefix}{ctx.name} attempt {a['attempt']}: {status}")
+            if a["error"]:
+                lines.append(f"{prefix}  Error: {a['error']}")
+            if a.get("reply") and a["error"]:
+                lines.append(f"{prefix}  Reply was: {str(a['reply'])[:300]}")
+    elif ctx.error:
+        lines.append(f"{prefix}{ctx.name}: error: {ctx.error}")
+    for child in ctx.children:
+        _collect_attempt_info(child, lines, depth + 1)
+
+
 # ── Core: create() ──────────────────────────────────────────────
 
 @agentic_function
@@ -210,133 +246,85 @@ def create(description: str, runtime: Runtime, name: str = None) -> callable:
 # ── Core: fix() ─────────────────────────────────────────────────
 
 @agentic_function
-def fix(description: str, code: str, error_log: str, runtime: Runtime, name: str = None) -> callable:
-    """Fix a broken @agentic_function by analyzing errors and rewriting.
+def fix(
+    fn,
+    runtime: Runtime,
+    instruction: str = None,
+    name: str = None,
+    on_question: Callable[[str], str] = None,
+    max_rounds: int = 5,
+) -> callable:
+    """Fix an existing @agentic_function by letting LLM analyze and rewrite it.
 
-    Called when a generated function fails repeatedly. Sends the original
-    code and error log to the LLM, gets a rewritten version.
+    Automatically extracts source code, docstring, and error context from fn.
+    Supports interactive mode: if LLM has questions, it calls on_question.
 
     Args:
-        description:  Original task description.
-        code:         The generated code that failed.
-        error_log:    Error messages from failed attempts.
+        fn:           The function to fix.
         runtime:      Runtime instance for LLM calls.
-        name:         Optional name override.
+        instruction:  Optional manual instruction ("change X to Y").
+                      If None, LLM auto-analyzes errors from fn.context.
+        name:         Optional name override for the fixed function.
+        on_question:  Optional callback for interactive fixing.
+                      Signature: fn(question: str) -> str (your answer).
+                      If None, LLM must produce code without asking.
+        max_rounds:   Maximum interaction rounds (default 5).
 
     Returns:
         A new callable @agentic_function with fixes applied.
     """
-    response = runtime.exec(content=[
-        {"type": "text", "text": _FIX_PROMPT.format(
+    # Auto-extract everything from fn
+    description = getattr(fn, '__doc__', '') or getattr(fn, '__name__', 'unknown')
+    code = _get_source(fn)
+    error_log = _get_error_log(fn)
+    fn_name = name or getattr(fn, '__name__', 'fixed')
+
+    # Build prompt sections
+    error_section = ""
+    if error_log:
+        error_section = f"\nError log from previous execution:\n{error_log}\n"
+
+    instruction_section = ""
+    if instruction:
+        instruction_section = f"\nUser instruction: {instruction}\n"
+
+    # Interaction loop
+    extra_context = ""
+    for round_num in range(max_rounds):
+        prompt = _FIX_PROMPT.format(
             description=description,
             code=code,
-            error_log=error_log,
-        )},
-    ])
-    fixed_code = _extract_code(response)
-    _validate_code(fixed_code, response)
-    return _compile_function(fixed_code, runtime, name)
-
-
-# ── Core: run_with_fix() ───────────────────────────────────────────
-
-@agentic_function
-def run_with_fix(fn, args: dict, runtime: Runtime, description: str = None, code: str = None):
-    """Execute a function with automatic error recovery via fix().
-
-    Flow:
-        1. Execute fn(**args)
-        2. If it fails (after exec retries), call fix() to rewrite the function
-        3. Execute the fixed function
-        4. If still fails, raise with full error report
-
-    Everything is recorded in one Context tree:
-        run_with_fix ✓
-        ├── execute (attempt 1) ✗  ← failed, with attempts details
-        ├── fix ✓                   ← LLM rewrites the function
-        └── execute (attempt 2) ✓  ← fixed version succeeds
-
-    Args:
-        fn:           The @agentic_function to execute.
-        args:         Arguments to pass to fn.
-        runtime:      Runtime instance (for fix() LLM calls).
-        description:  What the function is supposed to do (for fix prompt).
-                      Defaults to fn's docstring.
-        code:         Source code of fn (for fix prompt).
-                      Auto-detected via inspect.getsource() if not provided.
-
-    Returns:
-        The result of fn (or the fixed version of fn).
-
-    Raises:
-        RuntimeError: If fix also fails.
-    """
-    import inspect
-
-    # Resolve defaults
-    if description is None:
-        description = getattr(fn, '__doc__', '') or str(fn)
-    if code is None:
-        try:
-            code = inspect.getsource(fn)
-        except (OSError, TypeError):
-            code = f"# Source not available for {getattr(fn, '__name__', 'unknown')}"
-
-    # Attempt 1: run the original function
-    try:
-        return fn(**args)
-    except (TypeError, NotImplementedError):
-        raise  # Programming errors — don't fix
-    except Exception as first_error:
-        # Build error log from Context attempts if available
-        error_log = _build_error_log(fn, first_error)
-
-        # Fix: let LLM rewrite the function
-        fixed_fn = fix(
-            description=description,
-            code=code,
-            error_log=error_log,
-            runtime=runtime,
-            name=getattr(fn, '__name__', 'fixed'),
+            error_section=error_section,
+            instruction_section=instruction_section + extra_context,
         )
 
-        # Attempt 2: run the fixed function
-        try:
-            return fixed_fn(**args)
-        except Exception as second_error:
-            raise RuntimeError(
-                f"run_with_fix failed: original and fixed versions both failed.\n"
-                f"Original error: {first_error}\n"
-                f"Fixed error: {second_error}\n"
-                f"Original code:\n{code}"
-            ) from second_error
+        # Only the first round uses runtime.exec() (one exec per agentic_function)
+        # Subsequent rounds use runtime._call() directly since we need multiple LLM calls
+        if round_num == 0:
+            response = runtime.exec(content=[
+                {"type": "text", "text": prompt},
+            ])
+        else:
+            response = runtime._call(
+                [{"type": "text", "text": prompt}],
+                model=runtime.model,
+            )
 
+        # Check if LLM is asking a question
+        if response.strip().startswith("QUESTION:"):
+            question = response.strip()[len("QUESTION:"):].strip()
+            if on_question is None:
+                # No callback — LLM must produce code, retry without question
+                extra_context += f"\nNote: You cannot ask questions. Produce the fixed code directly.\n"
+                continue
+            else:
+                answer = on_question(question)
+                extra_context += f"\nQ: {question}\nA: {answer}\n"
+                continue
 
-def _build_error_log(fn, error: Exception) -> str:
-    """Build detailed error log from function's Context and exception."""
-    lines = [f"Exception: {type(error).__name__}: {error}"]
+        # Got code — extract, validate, compile
+        fixed_code = _extract_code(response)
+        _validate_code(fixed_code, response)
+        return _compile_function(fixed_code, runtime, fn_name)
 
-    # Try to get attempts from Context
-    ctx = getattr(fn, 'context', None)
-    if ctx is not None:
-        # Walk the tree to find nodes with failed attempts
-        _collect_attempt_info(ctx, lines)
-
-    return "\n".join(lines)
-
-
-def _collect_attempt_info(ctx, lines: list, depth: int = 0):
-    """Recursively collect attempt info from Context tree."""
-    prefix = "  " * depth
-    if ctx.attempts:
-        for a in ctx.attempts:
-            status = "OK" if a["error"] is None else "FAILED"
-            lines.append(f"{prefix}{ctx.name} attempt {a['attempt']}: {status}")
-            if a["error"]:
-                lines.append(f"{prefix}  Error: {a['error']}")
-            if a.get("reply") and a["error"]:
-                lines.append(f"{prefix}  Reply was: {str(a['reply'])[:300]}")
-    elif ctx.error:
-        lines.append(f"{prefix}{ctx.name}: {ctx.error}")
-    for child in ctx.children:
-        _collect_attempt_info(child, lines, depth + 1)
+    raise RuntimeError(f"fix() exceeded max_rounds ({max_rounds}) without producing valid code.")

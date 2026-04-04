@@ -33,7 +33,7 @@ Quick start:
 from agentic.context import Context
 from agentic.function import agentic_function
 from agentic.runtime import Runtime
-from agentic.meta_function import create, fix, run_with_fix
+from agentic.meta_function import create, fix
 
 __all__ = [
     "agentic_function",
@@ -41,5 +41,4 @@ __all__ = [
     "Context",
     "create",
     "fix",
-    "run_with_fix",
 ]

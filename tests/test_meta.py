@@ -144,10 +144,10 @@ def generated():
     assert fn() == "ok"
 
 
-# ── fix() tests ───────────────────────────────────────────────
+# ── fix() tests (new API: fn-based) ────────────────────────────
 
 def test_fix_rewrites_function():
-    """fix() generates a new function based on error analysis."""
+    """fix() auto-extracts code and fixes the function."""
     def mock_call(content, model="test", response_format=None):
         return '''@agentic_function
 def fixed_add(a, b):
@@ -155,13 +155,13 @@ def fixed_add(a, b):
     return str(int(a) + int(b))'''
 
     runtime = Runtime(call=mock_call)
-    fn = fix(
-        description="Add two numbers",
-        code='def broken(): return 1/0',
-        error_log="Attempt 1: ZeroDivisionError: division by zero",
-        runtime=runtime,
-    )
 
+    @agentic_function
+    def broken(a, b):
+        """Add two numbers."""
+        return 1 / 0  # broken
+
+    fn = fix(fn=broken, runtime=runtime)
     assert callable(fn)
     assert fn(a="2", b="3") == "5"
 
@@ -175,14 +175,13 @@ def repaired():
     return "fixed"'''
 
     runtime = Runtime(call=mock_call)
-    fn = fix(
-        description="do something",
-        code='def broken(): raise Exception()',
-        error_log="Attempt 1: Exception",
-        runtime=runtime,
-        name="my_fixed_fn",
-    )
 
+    @agentic_function
+    def broken():
+        """Do something."""
+        raise Exception()
+
+    fn = fix(fn=broken, runtime=runtime, name="my_fixed_fn")
     assert fn.__name__ == "my_fixed_fn"
     assert fn() == "fixed"
 

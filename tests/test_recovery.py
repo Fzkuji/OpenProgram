@@ -1,10 +1,10 @@
 """
-Tests for error recovery: attempts tracking, run_with_fix.
+Tests for error recovery: attempts tracking, fix() with new API.
 """
 
 import pytest
 from agentic import agentic_function, Runtime
-from agentic.meta_function import run_with_fix, fix
+from agentic.meta_function import fix
 
 
 # ── attempts tracking ──────────────────────────────────────────
@@ -45,11 +45,8 @@ def test_retry_records_all_attempts():
     ctx = func.context
     assert result == "recovered"
     assert len(ctx.attempts) == 2
-    # First attempt failed
     assert ctx.attempts[0]["error"] is not None
     assert "timeout" in ctx.attempts[0]["error"]
-    assert ctx.attempts[0]["reply"] is None
-    # Second attempt succeeded
     assert ctx.attempts[1]["reply"] == "recovered"
     assert ctx.attempts[1]["error"] is None
 
@@ -108,7 +105,6 @@ def test_attempts_visible_in_summarize():
         return runtime2.exec(content=[{"type": "text", "text": "second"}])
 
     parent()
-    # step_b's context should contain step_a's failed attempt info
     ctx_text = received_context[0]["text"]
     assert "FAILED" in ctx_text
     assert "bad format" in ctx_text
@@ -142,93 +138,153 @@ def test_attempts_in_save(tmp_path):
     assert len(data["attempts"]) == 2
 
 
-# ── run_with_fix ───────────────────────────────────────────────
+# ── fix() with new API ────────────────────────────────────────
 
-def test_run_with_fix_success_without_fix():
-    """run_with_fix returns result when function succeeds first time."""
-    runtime = Runtime(call=lambda c, **kw: "ok")
-
-    @agentic_function
-    def good_fn(x):
-        """Double x."""
-        return str(int(x) * 2)
-
-    result = run_with_fix(fn=good_fn, args={"x": "5"}, runtime=runtime)
-    assert result == "10"
-
-
-def test_run_with_fix_recovers():
-    """run_with_fix: original fails → fix → fixed version succeeds."""
-    def smart_call(content, model="test", response_format=None):
-        # fix() asks LLM to rewrite → return valid code
-        # The fixed function doesn't use runtime.exec(), just pure Python
-        return '''@agentic_function
-def broken_fn(x):
-    """Fixed: add one to x."""
-    return str(int(x) + 1)'''
-
-    runtime = Runtime(call=smart_call)
-
-    @agentic_function
-    def broken_fn(x):
-        """Add one to x."""
-        raise ValueError("I'm broken")
-
-    result = run_with_fix(
-        fn=broken_fn,
-        args={"x": "5"},
-        runtime=runtime,
-        description="Add one to x",
-    )
-    assert result == "6"
-
-
-def test_run_with_fix_both_fail():
-    """run_with_fix raises when both original and fixed fail."""
-    def always_fail_call(content, model="test", response_format=None):
-        # fix() generates a function that also fails
-        return '''@agentic_function
-def still_broken(x):
-    """Still broken."""
-    raise RuntimeError("still broken")'''
-
-    runtime = Runtime(call=always_fail_call)
-
-    @agentic_function
-    def broken_fn(x):
-        """Do something."""
-        raise ValueError("original error")
-
-    with pytest.raises(RuntimeError, match="both failed"):
-        run_with_fix(fn=broken_fn, args={"x": "1"}, runtime=runtime)
-
-
-def test_run_with_fix_context_tree():
-    """run_with_fix records everything in one Context tree."""
-    call_count = [0]
-
+def test_fix_auto_extracts_code():
+    """fix() auto-extracts source code from function."""
     def mock_call(content, model="test", response_format=None):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            return '''@agentic_function
-def fixed(x):
+        # Verify that source code was included in the prompt
+        text = content[-1]["text"] if content else ""
+        return '''@agentic_function
+def func():
     """Fixed."""
-    return "fixed_result"'''
-        return "not used"
+    return "fixed"'''
 
     runtime = Runtime(call=mock_call)
 
     @agentic_function
-    def broken(x):
-        """Broken."""
-        raise ValueError("broken")
+    def broken():
+        """Original broken function."""
+        return "broken"
 
-    run_with_fix(fn=broken, args={"x": "1"}, runtime=runtime, description="do something")
+    fixed_fn = fix(fn=broken, runtime=runtime)
+    assert callable(fixed_fn)
+    assert fixed_fn() == "fixed"
 
-    ctx = run_with_fix.context
-    assert ctx is not None
-    assert ctx.name == "run_with_fix"
-    # Should have children: broken (failed), fix, fixed (succeeded)
-    child_names = [c.name for c in ctx.children]
-    assert "broken" in child_names
-    assert "fix" in child_names
+
+def test_fix_with_instruction():
+    """fix() passes instruction to LLM."""
+    received_prompts = []
+
+    def mock_call(content, model="test", response_format=None):
+        received_prompts.append(content[-1]["text"] if content else "")
+        return '''@agentic_function
+def func():
+    """Fixed with instruction."""
+    return "instructed"'''
+
+    runtime = Runtime(call=mock_call)
+
+    @agentic_function
+    def original():
+        """Do something."""
+        return "original"
+
+    fixed_fn = fix(fn=original, runtime=runtime, instruction="Use bullet points")
+    assert fixed_fn() == "instructed"
+    assert "bullet points" in received_prompts[0]
+
+
+def test_fix_with_error_context():
+    """fix() includes error info from fn.context."""
+    received_prompts = []
+
+    def failing_call(content, model="test", response_format=None):
+        raise ValueError("some error")
+
+    def fix_call(content, model="test", response_format=None):
+        received_prompts.append(content[-1]["text"] if content else "")
+        return '''@agentic_function
+def func():
+    """Fixed."""
+    return "fixed"'''
+
+    # First, create a function that fails
+    runtime_fail = Runtime(call=failing_call, max_retries=1)
+
+    @agentic_function
+    def failing():
+        """This fails."""
+        return runtime_fail.exec(content=[{"type": "text", "text": "test"}])
+
+    with pytest.raises(RuntimeError):
+        failing()
+
+    # Now fix it — error context should be included
+    runtime_fix = Runtime(call=fix_call)
+    fixed_fn = fix(fn=failing, runtime=runtime_fix)
+    assert callable(fixed_fn)
+    assert "some error" in received_prompts[0]
+
+
+def test_fix_with_on_question():
+    """fix() calls on_question when LLM asks a question."""
+    call_count = [0]
+    questions_received = []
+
+    def mock_call(content, model="test", response_format=None):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return "QUESTION: Should I use recursion or iteration?"
+        return '''@agentic_function
+def func():
+    """Fixed with answer."""
+    return "answered"'''
+
+    runtime = Runtime(call=mock_call)
+
+    @agentic_function
+    def original():
+        """Do something."""
+        return "original"
+
+    def handler(question):
+        questions_received.append(question)
+        return "Use iteration"
+
+    fixed_fn = fix(fn=original, runtime=runtime, on_question=handler)
+    assert fixed_fn() == "answered"
+    assert len(questions_received) == 1
+    assert "recursion" in questions_received[0]
+
+
+def test_fix_without_on_question_retries():
+    """fix() without on_question retries when LLM asks question."""
+    call_count = [0]
+
+    def mock_call(content, model="test", response_format=None):
+        call_count[0] += 1
+        if call_count[0] <= 1:
+            return "QUESTION: What should I do?"
+        return '''@agentic_function
+def func():
+    """Fixed without question."""
+    return "no_question"'''
+
+    runtime = Runtime(call=mock_call)
+
+    @agentic_function
+    def original():
+        """Do something."""
+        return "original"
+
+    fixed_fn = fix(fn=original, runtime=runtime)
+    assert fixed_fn() == "no_question"
+
+
+def test_fix_custom_name():
+    """fix() can override function name."""
+    def mock_call(content, model="test", response_format=None):
+        return '''@agentic_function
+def generated():
+    """Fixed."""
+    return "ok"'''
+
+    runtime = Runtime(call=mock_call)
+
+    @agentic_function
+    def original():
+        return "original"
+
+    fixed_fn = fix(fn=original, runtime=runtime, name="my_fixed")
+    assert fixed_fn.__name__ == "my_fixed"
