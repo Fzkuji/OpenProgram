@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentic-programming"
@@ -48,10 +48,16 @@ all = [
     "google-genai>=1.0.0",
 ]
 
+[project.scripts]
+agentic = "agentic.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/Fzkuji/Agentic-Programming"
 Repository = "https://github.com/Fzkuji/Agentic-Programming"
 Documentation = "https://github.com/Fzkuji/Agentic-Programming/tree/main/docs"
+
+[tool.setuptools.packages.find]
+include = ["agentic*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
