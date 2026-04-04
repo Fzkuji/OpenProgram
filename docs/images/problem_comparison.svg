@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
+  <!-- Background -->
+  <rect width="960" height="520" fill="#fafafa" rx="12"/>
+  
+  <!-- LEFT: Traditional -->
+  <rect x="20" y="20" width="445" height="480" rx="10" fill="#fff" stroke="#e0e0e0"/>
+  <rect x="20" y="20" width="445" height="48" rx="10" fill="#ff6b6b"/>
+  <rect x="20" y="48" width="445" height="20" fill="#ff6b6b"/>
+  <text x="242" y="50" text-anchor="middle" font-size="16" font-weight="bold" fill="white">❌ Traditional: LLM as Scheduler</text>
+  
+  <!-- LLM Brain -->
+  <rect x="160" y="85" width="150" height="40" rx="8" fill="#ffe0e0" stroke="#ff6b6b" stroke-width="2"/>
+  <text x="235" y="110" text-anchor="middle" font-size="14" fill="#cc0000">🧠 LLM (thinks)</text>
+  
+  <!-- Zigzag arrows -->
+  <path d="M235,125 L235,145 L140,160 L140,180" stroke="#ff6b6b" fill="none" stroke-width="2" marker-end="url(#arrow-red)"/>
+  <path d="M140,200 L140,215 L235,230 L235,245" stroke="#ff9999" fill="none" stroke-width="1.5"/>
+  <path d="M235,245 L235,260 L330,275 L330,290" stroke="#ff6b6b" fill="none" stroke-width="2" marker-end="url(#arrow-red)"/>
+  <path d="M330,310 L330,325 L235,340 L235,350" stroke="#ff9999" fill="none" stroke-width="1.5"/>
+  <path d="M235,350 L235,365 L140,375 L140,385" stroke="#ff6b6b" fill="none" stroke-width="2" marker-end="url(#arrow-red)"/>
+  
+  <!-- Tool boxes -->
+  <rect x="95" y="160" width="90" height="35" rx="5" fill="#fff0f0" stroke="#ffaaaa"/>
+  <text x="140" y="182" text-anchor="middle" font-size="11" fill="#cc4444">📸 screenshot</text>
+  
+  <rect x="285" y="275" width="90" height="35" rx="5" fill="#fff0f0" stroke="#ffaaaa"/>
+  <text x="330" y="297" text-anchor="middle" font-size="11" fill="#cc4444">🖱️ click</text>
+  
+  <rect x="95" y="370" width="90" height="35" rx="5" fill="#fff0f0" stroke="#ffaaaa"/>
+  <text x="140" y="392" text-anchor="middle" font-size="11" fill="#cc4444">📸 screenshot</text>
+  
+  <!-- Labels -->
+  <text x="80" y="145" font-size="10" fill="#ff6b6b">think...</text>
+  <text x="280" y="260" font-size="10" fill="#ff6b6b">think...</text>
+  <text x="80" y="365" font-size="10" fill="#ff6b6b">think...</text>
+  <text x="260" y="370" font-size="10" fill="#999">...×10 rounds</text>
+  
+  <!-- Problem labels -->
+  <rect x="50" y="425" width="140" height="28" rx="14" fill="#ffe0e0"/>
+  <text x="120" y="444" text-anchor="middle" font-size="12" fill="#cc0000">🎰 Unpredictable</text>
+  
+  <rect x="205" y="425" width="140" height="28" rx="14" fill="#ffe0e0"/>
+  <text x="275" y="444" text-anchor="middle" font-size="12" fill="#cc0000">📈 50K context</text>
+  
+  <rect x="130" y="460" width="140" height="28" rx="14" fill="#ffe0e0"/>
+  <text x="200" y="479" text-anchor="middle" font-size="12" fill="#cc0000">🎯 No guarantees</text>
+  
+  <!-- Divider -->
+  <line x1="480" y1="40" x2="480" y2="490" stroke="#ddd" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="480" y="260" text-anchor="middle" font-size="14" font-weight="bold" fill="#aaa">VS</text>
+  
+  <!-- RIGHT: Agentic Programming -->
+  <rect x="495" y="20" width="445" height="480" rx="10" fill="#fff" stroke="#e0e0e0"/>
+  <rect x="495" y="20" width="445" height="48" rx="10" fill="#4ecdc4"/>
+  <rect x="495" y="48" width="445" height="20" fill="#4ecdc4"/>
+  <text x="717" y="50" text-anchor="middle" font-size="16" font-weight="bold" fill="white">✅ Agentic: Python as Scheduler</text>
+  
+  <!-- Python Controller -->
+  <rect x="635" y="85" width="160" height="40" rx="8" fill="#e0f7f5" stroke="#4ecdc4" stroke-width="2"/>
+  <text x="715" y="110" text-anchor="middle" font-size="14" fill="#0a8f85">🐍 Python (controls)</text>
+  
+  <!-- Deterministic steps -->
+  <rect x="540" y="150" width="130" height="32" rx="5" fill="#f0faf9" stroke="#b2e0dc"/>
+  <text x="605" y="171" text-anchor="middle" font-size="11" fill="#0a8f85">📸 screenshot + OCR</text>
+  
+  <!-- Arrow to LLM -->
+  <path d="M670,182 L715,200 L760,218" stroke="#4ecdc4" fill="none" stroke-width="2" marker-end="url(#arrow-green)"/>
+  
+  <!-- LLM reasoning (small) -->
+  <rect x="700" y="218" width="160" height="32" rx="5" fill="#e8f8f5" stroke="#4ecdc4" stroke-width="2"/>
+  <text x="780" y="239" text-anchor="middle" font-size="11" fill="#0a8f85">🧠 "button at (200,300)"</text>
+  
+  <!-- More deterministic steps -->
+  <rect x="540" y="270" width="130" height="32" rx="5" fill="#f0faf9" stroke="#b2e0dc"/>
+  <text x="605" y="291" text-anchor="middle" font-size="11" fill="#0a8f85">🖱️ click (200, 300)</text>
+  
+  <!-- Arrow to LLM -->
+  <path d="M670,302 L715,315 L760,328" stroke="#4ecdc4" fill="none" stroke-width="2" marker-end="url(#arrow-green)"/>
+  
+  <!-- LLM reasoning (small) -->
+  <rect x="700" y="328" width="160" height="32" rx="5" fill="#e8f8f5" stroke="#4ecdc4" stroke-width="2"/>
+  <text x="780" y="349" text-anchor="middle" font-size="11" fill="#0a8f85">🧠 "dashboard confirmed"</text>
+  
+  <!-- Done label -->
+  <rect x="620" y="380" width="180" height="28" rx="5" fill="#e0f7f5" stroke="#4ecdc4"/>
+  <text x="710" y="399" text-anchor="middle" font-size="12" fill="#0a8f85">✓ Done. 2 LLM calls.</text>
+  
+  <!-- Benefit labels -->
+  <rect x="530" y="425" width="140" height="28" rx="14" fill="#e0f7f5"/>
+  <text x="600" y="444" text-anchor="middle" font-size="12" fill="#0a8f85">🎯 Deterministic</text>
+  
+  <rect x="685" y="425" width="160" height="28" rx="14" fill="#e0f7f5"/>
+  <text x="765" y="444" text-anchor="middle" font-size="12" fill="#0a8f85">📊 Structured context</text>
+  
+  <rect x="610" y="460" width="180" height="28" rx="14" fill="#e0f7f5"/>
+  <text x="700" y="479" text-anchor="middle" font-size="12" fill="#0a8f85">⚡ Fewer LLM calls</text>
+  
+  <!-- Arrow markers -->
+  <defs>
+    <marker id="arrow-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#ff6b6b"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#4ecdc4"/>
+    </marker>
+  </defs>
+</svg>

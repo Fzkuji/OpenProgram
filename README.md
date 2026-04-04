@@ -22,6 +22,10 @@
 
 ## The Problem
 
+<p align="center">
+  <img src="docs/images/problem_comparison.svg" alt="Traditional vs Agentic Programming" width="800">
+</p>
+
 Today's LLM agents work like this:
 
 ```
