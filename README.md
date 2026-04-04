@@ -75,52 +75,43 @@ def observe(task):
 
 ## Quick Start
 
+### Install
+
 ```bash
+# 1. Clone the repository
 git clone https://github.com/Fzkuji/Agentic-Programming.git
-cd Agentic-Programming && pip install -e .
+cd Agentic-Programming
+
+# 2. Install the Python package
+pip install -e .
+
+# 3. Install skills (for Claude Code / OpenClaw / Gemini CLI)
+mkdir -p ~/.claude/skills/                          # Claude Code
+cp -r skills/* ~/.claude/skills/
+mkdir -p ~/.openclaw/workspace/skills/               # OpenClaw
+cp -r skills/* ~/.openclaw/workspace/skills/
+mkdir -p ~/.gemini/skills/                           # Gemini CLI
+cp -r skills/* ~/.gemini/skills/
 ```
+
+### Use
 
 Once installed, there are **three entry points** — but they all do the same thing: once triggered, **the function takes control**, not the LLM.
 
-### Entry 1: Command Line
-
-The simplest way. Tell your LLM (or run directly) to execute a Python script:
+**Entry 1: CLI** — Run directly from the command line:
 
 ```bash
-python examples/quickstart.py
+agentic create "Summarize text into 3 bullet points" --name summarize
+agentic run summarize --arg text="Your article here..."
 ```
 
-Or inline:
-
-```bash
-python -c "
-from agentic.meta_function import create
-from agentic.providers import ClaudeCodeRuntime
-runtime = ClaudeCodeRuntime()
-fn = create('Summarize text into 3 bullet points', runtime=runtime)
-print(fn(text='Your article text here...'))
-"
-```
-
-No configuration needed. If you have Claude Code CLI installed (`claude`), it just works.
-
-### Entry 2: Skill
-
-For LLM agents that support skills (OpenClaw, etc.). Install as a skill:
-
-```bash
-cp -r skill/ ~/.openclaw/workspace/skills/agentic-programming/
-```
-
-Then just talk to your agent:
+**Entry 2: Skill** — Talk to your LLM agent (Claude Code, OpenClaw, Gemini CLI):
 
 > "Create a function that analyzes code quality"
 
-The agent reads the [SKILL.md](skill/SKILL.md), calls `create()`, and the function handles everything from there. The agent doesn't control the execution — the function does.
+The agent picks up the installed skill, calls `create()`, and the function handles everything from there.
 
-### Entry 3: MCP Tool *(coming soon)*
-
-For MCP-compatible clients. `create()` and `fix()` exposed as MCP tools.
+**Entry 3: MCP Tool** *(coming soon)* — For MCP-compatible clients.
 
 ---
 
