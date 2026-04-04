@@ -153,6 +153,7 @@ class ClaudeCodeRuntime(Runtime):
             "--permission-mode", "bypassPermissions",
             "--input-format", "stream-json",
             "--output-format", "stream-json",
+            "--verbose",  # Required for stream-json output in print mode
         ]
 
         if self._session_id:
