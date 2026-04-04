@@ -85,13 +85,10 @@ cd Agentic-Programming
 # 2. Install the Python package
 pip install -e .
 
-# 3. Install skills (for Claude Code / OpenClaw / Gemini CLI)
-mkdir -p ~/.claude/skills/                          # Claude Code
-cp -r skills/* ~/.claude/skills/
-mkdir -p ~/.openclaw/workspace/skills/               # OpenClaw
-cp -r skills/* ~/.openclaw/workspace/skills/
-mkdir -p ~/.gemini/skills/                           # Gemini CLI
-cp -r skills/* ~/.gemini/skills/
+# 3. Install skills (choose your platform)
+cp -r skills/* ~/.claude/skills/                     # Claude Code
+cp -r skills/* ~/.openclaw/workspace/skills/         # OpenClaw
+cp -r skills/* ~/.gemini/skills/                     # Gemini CLI
 ```
 
 ### Use
