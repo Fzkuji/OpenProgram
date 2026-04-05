@@ -76,6 +76,7 @@ class ClaudeCodeRuntime(Runtime):
         timeout: int = 300,
         cli_path: str = None,
         session_id: str = "auto",
+        max_turns_per_process: int = 5,
     ):
         super().__init__(model=model)
         self.timeout = timeout
@@ -83,6 +84,7 @@ class ClaudeCodeRuntime(Runtime):
         self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._turn_count = 0
+        self._max_turns = max_turns_per_process
 
         if self.cli_path is None:
             raise FileNotFoundError(
@@ -93,9 +95,17 @@ class ClaudeCodeRuntime(Runtime):
             )
 
     def _ensure_process(self):
-        """Start the persistent claude process if not already running."""
+        """Start the persistent claude process if not already running.
+
+        Also restarts the process every max_turns_per_process turns to
+        prevent context window overflow from accumulated conversation
+        history (especially with images).
+        """
         if self._proc is not None and self._proc.poll() is None:
-            return  # Still alive
+            if self._turn_count < self._max_turns:
+                return  # Still alive and under turn limit
+            # Turn limit reached — restart to clear context
+            self.reset()
 
         cmd = [
             self.cli_path, "-p",
@@ -103,6 +113,7 @@ class ClaudeCodeRuntime(Runtime):
             "--input-format", "stream-json",
             "--output-format", "stream-json",
             "--verbose",  # required for stream-json output in print mode
+            "--no-session-persistence",  # don't save to disk (process-only context)
         ]
 
         if self.model and self.model != "sonnet":
