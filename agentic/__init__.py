@@ -33,7 +33,7 @@ Quick start:
 from agentic.context import Context
 from agentic.function import agentic_function
 from agentic.runtime import Runtime
-from agentic.meta_function import create, fix, create_skill
+from agentic.meta_functions import create, create_app, fix, create_skill
 from agentic.providers import detect_provider, create_runtime
 
 __all__ = [
@@ -41,6 +41,7 @@ __all__ = [
     "Runtime",
     "Context",
     "create",
+    "create_app",
     "fix",
     "detect_provider",
     "create_runtime",

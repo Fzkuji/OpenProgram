@@ -60,6 +60,12 @@ def main():
     # list
     sub.add_parser("list", help="List all saved functions")
 
+    # create-app
+    p_app = sub.add_parser("create-app", help="Create a complete runnable app (runtime + functions + main)")
+    p_app.add_argument("description", help="What the app should do")
+    p_app.add_argument("--name", "-n", default="app", help="App name (default: app)")
+    _add_provider_args(p_app)
+
     # create-skill
     p_skill = sub.add_parser("create-skill", help="Create a SKILL.md for a function")
     p_skill.add_argument("name", help="Function name")
@@ -81,6 +87,8 @@ def main():
         _cmd_providers()
     elif args.command == "create":
         _cmd_create(args.description, args.name, args.as_skill, args.provider, args.model)
+    elif args.command == "create-app":
+        _cmd_create_app(args.description, args.name, args.provider, args.model)
     elif args.command == "fix":
         _cmd_fix(args.name, args.instruction, args.provider, args.model)
     elif args.command == "run":
@@ -197,7 +205,7 @@ def _cmd_list():
 
 def _cmd_create(description, name, as_skill, provider=None, model=None):
     """Create a new function."""
-    from agentic.meta_function import create
+    from agentic.meta_functions import create
     runtime = _get_runtime(provider, model)
 
     print(f"Creating '{name}' (provider: {runtime.__class__.__name__})...")
@@ -207,10 +215,21 @@ def _cmd_create(description, name, as_skill, provider=None, model=None):
         print(f"  Skill created at skills/{name}/SKILL.md")
 
 
+def _cmd_create_app(description, name, provider=None, model=None):
+    """Create a complete runnable app."""
+    from agentic.meta_functions import create_app
+    runtime = _get_runtime(provider, model)
+
+    print(f"Creating app '{name}' (provider: {runtime.__class__.__name__})...")
+    filepath = create_app(description=description, runtime=runtime, name=name)
+    print(f"  Saved to {filepath}")
+    print(f"  Run with: python {filepath}")
+
+
 def _cmd_fix(name, instruction, provider=None, model=None):
     """Fix an existing function."""
     import importlib
-    from agentic.meta_function import fix
+    from agentic.meta_functions import fix
     runtime = _get_runtime(provider, model)
 
     try:
@@ -270,7 +289,7 @@ def _cmd_create_skill(name, provider=None, model=None):
     """Create a SKILL.md for a function."""
     import importlib
     import inspect
-    from agentic.meta_function import create_skill
+    from agentic.meta_functions import create_skill
     runtime = _get_runtime(provider, model)
 
     try:
