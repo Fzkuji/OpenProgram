@@ -93,6 +93,12 @@ def observe(task):
 ## 快速开始
 
 ```bash
+pip install agentic-programming
+```
+
+或从源码安装用于开发：
+
+```bash
 git clone https://github.com/Fzkuji/Agentic-Programming.git
 cd Agentic-Programming
 pip install -e .

@@ -94,6 +94,12 @@ def observe(task):
 ## Quick Start
 
 ```bash
+pip install agentic-programming
+```
+
+Or install from source for development:
+
+```bash
 git clone https://github.com/Fzkuji/Agentic-Programming.git
 cd Agentic-Programming
 pip install -e .
