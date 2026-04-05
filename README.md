@@ -9,9 +9,10 @@
     A programming paradigm where Python and LLM co-execute functions.
   </p>
   <p align="center">
-    <a href="#quick-start">Quick Start</a> •
+    <a href="#install">Install</a> •
+    <a href="#usage">Usage</a> •
     <a href="#how-it-works">How It Works</a> •
-    <a href="#api">API</a> •
+    <a href="#api-reference">API</a> •
     <a href="#integration">Integration</a> •
     <a href="docs/API.md">Docs</a> •
     <a href="examples/">Examples</a>
@@ -73,68 +74,154 @@ def observe(task):
 
 ---
 
-## Quick Start
-
-### Install
+## Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/Fzkuji/Agentic-Programming.git
-cd Agentic-Programming
-
-# Core package (no provider SDKs)
 pip install -e .
+```
 
-# Optional providers
+That's it. Zero required dependencies. Provider SDKs are optional:
+
+```bash
 pip install -e ".[anthropic]"   # Anthropic Claude API
-pip install -e ".[openai]"      # OpenAI Responses API
+pip install -e ".[openai]"      # OpenAI API
 pip install -e ".[gemini]"      # Google Gemini API
-pip install -e ".[all]"         # everything
+pip install -e ".[all]"         # all provider SDKs
 ```
 
 ### Provider setup
 
-Pick one runtime and configure its credential or CLI:
+You need at least one LLM provider. Pick whichever you already have:
 
-| Runtime | Install | Auth / setup |
-|---------|---------|--------------|
-| `ClaudeCodeRuntime` | `npm install -g @anthropic-ai/claude-code` | `claude login` |
-| `CodexRuntime` | install Codex CLI | `codex login` |
-| `GeminiCLIRuntime` | install Gemini CLI | sign in with `gemini` |
-| `AnthropicRuntime` | `pip install -e ".[anthropic]"` | `export ANTHROPIC_API_KEY=...` |
-| `OpenAIRuntime` | `pip install -e ".[openai]"` | `export OPENAI_API_KEY=...` |
-| `GeminiRuntime` | `pip install -e ".[gemini]"` | `export GOOGLE_API_KEY=...` |
+| Provider | Type | Setup | Cost |
+|----------|------|-------|------|
+| Claude Code CLI | CLI | `npm i -g @anthropic-ai/claude-code && claude login` | Subscription |
+| Codex CLI | CLI | `npm i -g @openai/codex && codex auth` | Subscription |
+| Gemini CLI | CLI | `npm i -g @anthropic-ai/gemini-cli` | Free |
+| Anthropic API | API | `export ANTHROPIC_API_KEY=sk-ant-...` | Per token |
+| OpenAI API | API | `export OPENAI_API_KEY=sk-...` | Per token |
+| Gemini API | API | `export GOOGLE_API_KEY=...` | Per token |
 
-### Optional: install skills
-
-```bash
-cp -r skills/* ~/.claude/skills/             # Claude Code
-cp -r skills/* ~/.openclaw/workspace/skills/ # OpenClaw
-cp -r skills/* ~/.gemini/skills/             # Gemini CLI
-```
-
-### Use
-
-Once installed, there are **three entry points** — but they all do the same thing: once triggered, **the function takes control**, not the LLM.
-
-**Entry 1: CLI** — Run directly from the command line:
+Check what's available on your machine:
 
 ```bash
-agentic create "Summarize text into 3 bullet points" --name summarize
-agentic run summarize --arg text="Your article here..."
+agentic providers
 ```
 
-**Entry 2: Skill** — Talk to your LLM agent (Claude Code, OpenClaw, Gemini CLI):
+```
+Available LLM providers:
 
-> "Create a function that analyzes code quality"
-
-The agent picks up the installed skill, calls `create()`, and the function handles everything from there.
-
-**Entry 3: MCP Tool** *(coming soon)* — For MCP-compatible clients.
+  [+] claude-code     (Claude Code CLI )  model: sonnet            [ready] <-- auto-detected
+  [+] codex           (Codex CLI       )  model: o4-mini           [ready]
+  [-] anthropic       (Anthropic API   )  model: claude-sonnet-4   [not set]
+  [+] openai          (OpenAI API      )  model: gpt-4o            [ready]
+  ...
+```
 
 ---
 
-**The key insight:** regardless of how you trigger it, once an `@agentic_function` starts running, **Python controls the flow**. The LLM is only called when the function explicitly asks for reasoning via `runtime.exec()`.
+## Usage
+
+Three ways to use — all equally powerful:
+
+### 1. Python import (recommended)
+
+```python
+from agentic import agentic_function, create_runtime
+
+runtime = create_runtime()  # auto-detects best available provider
+
+@agentic_function
+def summarize(text: str) -> str:
+    """Summarize the given text into 3 bullet points."""
+    return runtime.exec(content=[
+        {"type": "text", "text": text},
+    ])
+
+result = summarize(text="Your long article here...")
+```
+
+Override the provider if needed:
+
+```python
+runtime = create_runtime(provider="openai", model="gpt-4o")
+```
+
+Or use a specific provider class directly:
+
+```python
+from agentic.providers import AnthropicRuntime
+runtime = AnthropicRuntime(model="claude-sonnet-4-20250514")
+```
+
+**Meta functions** — generate and fix code with LLMs:
+
+```python
+from agentic.meta_functions import create, create_app, fix
+
+# Generate a single function
+sentiment = create("Analyze text sentiment", runtime=runtime, name="sentiment")
+sentiment(text="I love this!")  # → "positive"
+
+# Generate a complete app (with runtime setup, argparse, main)
+create_app("A CLI that summarizes articles from URLs", runtime=runtime, name="summarizer")
+# → saves to apps/summarizer.py, runnable with: python apps/summarizer.py <url>
+
+# Fix a broken function
+fixed = fix(fn=broken_fn, runtime=runtime, instruction="return JSON, not plain text")
+```
+
+### 2. CLI commands
+
+```bash
+# Create a function
+agentic create "Analyze text sentiment" --name sentiment
+
+# Create a complete app (with runtime + main + argparse)
+agentic create-app "A tool that summarizes articles" --name summarizer
+
+# Run a saved function
+agentic run sentiment --arg text="I love this project"
+
+# Fix a function
+agentic fix sentiment --instruction "return JSON with score"
+
+# List all functions
+agentic list
+
+# Use a specific provider
+agentic create "..." --name foo --provider openai --model gpt-4o
+```
+
+### 3. Skills (Claude Code / Gemini CLI)
+
+Install skills so your LLM agent can use agentic functions directly:
+
+```bash
+# Claude Code
+cp -r skills/* ~/.claude/skills/
+
+# Gemini CLI
+cp -r skills/* ~/.gemini/skills/
+```
+
+Then just talk to your agent:
+
+> "Create a function that extracts emails from text"
+
+The agent picks up the `meta-function` skill, calls `agentic create`, and the function handles everything from there. Once created, you can also ask:
+
+> "Run sentiment on 'This is amazing'"
+
+The agent calls `agentic run sentiment --arg text="This is amazing"`.
+
+**Create your own skills:**
+
+```bash
+agentic create "Extract key dates from text" --name extract_dates --as-skill
+# → saves function to agentic/functions/extract_dates.py
+# → saves skill to skills/extract_dates/SKILL.md
+```
 
 ---
 
@@ -195,28 +282,41 @@ fixed_fn = fix(
 
 ---
 
-## API
+## API Reference
 
-| Component | What it does |
-|-----------|-------------|
-| [`@agentic_function`](docs/api/agentic_function.md) | Decorator. Records execution into Context tree |
-| [`Runtime`](docs/api/runtime.md) | LLM connection. `exec()` calls the LLM with auto-context |
-| [`Context`](docs/api/context.md) | Execution tree. `tree()`, `save()`, `traceback()` |
-| [`create()`](docs/api/meta_function.md) | Generate new functions from descriptions |
-| [`fix()`](docs/api/meta_function.md) | Fix broken functions with LLM analysis |
+### Core
 
-### Built-in Providers
+| Import | What it does |
+|--------|-------------|
+| `from agentic import agentic_function` | Decorator. Records execution into Context tree |
+| `from agentic import Runtime` | LLM connection. `exec()` calls the LLM with auto-context |
+| `from agentic import Context` | Execution tree. `tree()`, `save()`, `traceback()` |
+| `from agentic import create_runtime` | Create a Runtime with auto-detection or explicit provider |
+| `from agentic import detect_provider` | Detect best available provider (returns name + model) |
+
+### Meta Functions
+
+| Import | What it does |
+|--------|-------------|
+| `from agentic.meta_functions import create` | Generate a new `@agentic_function` from description |
+| `from agentic.meta_functions import create_app` | Generate a complete runnable app with `main()` |
+| `from agentic.meta_functions import fix` | Fix broken functions with LLM analysis |
+| `from agentic.meta_functions import create_skill` | Generate a SKILL.md for agent discovery |
+
+### Providers
 
 ```python
-from agentic.providers import AnthropicRuntime    # Claude (+ prompt caching)
-from agentic.providers import OpenAIRuntime       # GPT (+ response_format)
-from agentic.providers import GeminiRuntime       # Gemini API
-from agentic.providers import ClaudeCodeRuntime   # Claude Code CLI (no API key)
-from agentic.providers import CodexRuntime        # Codex CLI (no API key in Python)
-from agentic.providers import GeminiCLIRuntime    # Gemini CLI (no API key in Python)
+from agentic.providers import AnthropicRuntime    # Claude API (+ prompt caching)
+from agentic.providers import OpenAIRuntime       # OpenAI API (+ response_format)
+from agentic.providers import GeminiRuntime       # Gemini API (text + image + video)
+from agentic.providers import ClaudeCodeRuntime   # Claude Code CLI (subscription)
+from agentic.providers import CodexRuntime        # Codex CLI (subscription)
+from agentic.providers import GeminiCLIRuntime    # Gemini CLI (free)
 ```
 
-See [Provider docs](docs/api/providers.md) for setup.
+All CLI providers maintain **session continuity** — context accumulates across `runtime.exec()` calls within the same Runtime instance.
+
+See [Provider docs](docs/api/providers.md) for detailed setup.
 
 ---
 
@@ -233,83 +333,30 @@ MCP is the *transport*. Agentic Programming is the *execution model*. They're or
 
 ---
 
-## Install & Configuration
-
-### Minimal install
-
-```bash
-pip install -e .
-```
-
-### Provider-specific installs
-
-```bash
-pip install -e ".[anthropic]"  # Anthropic Claude API
-pip install -e ".[openai]"     # OpenAI GPT / Responses API
-pip install -e ".[gemini]"     # Google Gemini API
-pip install -e ".[all]"        # install all provider SDKs
-```
-
-### Runtime selection
-
-```python
-from agentic.providers import ClaudeCodeRuntime, AnthropicRuntime
-from agentic.providers import OpenAIRuntime, GeminiRuntime
-from agentic.providers import CodexRuntime, GeminiCLIRuntime
-
-local = ClaudeCodeRuntime(model="sonnet")
-strong = AnthropicRuntime(model="claude-sonnet-4-20250514")
-json_rt = OpenAIRuntime(model="gpt-4o")
-fast = GeminiRuntime(model="gemini-2.5-flash")
-codex = CodexRuntime(model="o4-mini")
-gemini_cli = GeminiCLIRuntime()
-```
-
-### Retry + `fix()` workflow
-
-```python
-from agentic import agentic_function, Runtime
-from agentic.meta_functions import create, fix
-
-runtime = Runtime(call=my_llm, max_retries=3)
-extract = create(
-    "Extract company name and price from text. Return JSON with keys company and price.",
-    runtime=runtime,
-    name="extract_quote",
-)
-
-try:
-    result = extract(text="Acme closed at $42.50 today")
-except Exception:
-    extract = fix(
-        fn=extract,
-        runtime=runtime,
-        instruction="Validate missing prices and always return valid JSON.",
-    )
-    result = extract(text="Acme closed at $42.50 today")
-```
-
-`fix()` infers the source code and prior error history from `fn`, so you only pass the function object plus any extra guidance.
-
 ## Project Structure
 
 ```
 agentic/
-├── __init__.py          # agentic_function, Runtime, Context, create, fix
-├── context.py           # Context tree
-├── function.py          # @agentic_function decorator
-├── runtime.py           # Runtime class (exec + retry)
-├── meta_function.py     # create() + fix()
-└── providers/           # Anthropic, OpenAI, Gemini, Claude Code CLI
+├── __init__.py              # agentic_function, Runtime, Context, create_runtime, ...
+├── context.py               # Context tree
+├── function.py              # @agentic_function decorator
+├── runtime.py               # Runtime class (exec + retry)
+├── meta_functions/          # LLM-powered code generation
+│   ├── create.py            # create() — generate a single function
+│   ├── create_app.py        # create_app() — generate a complete app
+│   ├── fix.py               # fix() — rewrite broken functions
+│   └── create_skill.py      # create_skill() — generate SKILL.md
+├── providers/               # Anthropic, OpenAI, Gemini, Claude Code, Codex, Gemini CLI
+└── functions/               # saved generated functions
 
-examples/                # runnable demos and provider examples
-docs/api/                # API reference
-tests/                   # pytest suite for core/runtime/provider behavior
+apps/                        # generated apps (from create_app)
+skills/                      # SKILL.md files for agent integration
+examples/                    # runnable demos
+docs/                        # API reference and guides
+tests/                       # pytest suite
 ```
 
 ## Integration
-
-Use Agentic Programming with your existing tools:
 
 | Guide | Description |
 |-------|-------------|
@@ -328,6 +375,8 @@ This project is a **paradigm proposal** with a reference implementation. We welc
 - 🔧 **Alternative implementations** in other languages or frameworks
 - 📝 **Use cases** that validate or challenge the approach
 - 🐛 **Bug reports** on the reference implementation
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 If you build something based on Agentic Programming, let us know!
 
