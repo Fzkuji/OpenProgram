@@ -9,18 +9,26 @@
     A programming paradigm where Python and LLM co-execute functions.
   </p>
   <p align="center">
-    <a href="#install">Install</a> •
-    <a href="#usage">Usage</a> •
-    <a href="#how-it-works">How It Works</a> •
-    <a href="#api-reference">API</a> •
-    <a href="#integration">Integration</a> •
-    <a href="docs/API.md">Docs</a> •
-    <a href="examples/">Examples</a>
-  </p>
-  <p align="center">
     <a href="docs/README_CN.md">🇨🇳 中文</a>
   </p>
 </p>
+
+## Table of Contents
+
+- [Motivation](#motivation)
+- [The Idea](#the-idea)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+  - [Python](#1-python--write-agentic-code-directly)
+  - [Skills](#2-skills--let-your-llm-agent-use-it)
+- [How It Works](#how-it-works)
+- [API Reference](#api-reference)
+- [vs Tool-Calling](#vs-tool-calling)
+- [Project Structure](#project-structure)
+- [Integration](#integration)
+- [Contributing](#contributing)
+
+---
 
 > 🚀 **This is a paradigm proposal.** We're sharing a new way to think about LLM-powered programming. The code here is a reference implementation — we'd love to see you take these ideas and build your own version, in any language, for any use case.
 
@@ -74,55 +82,45 @@ def observe(task):
 
 ---
 
-## Install
+## Quick Start
+
+### 1. Install
 
 ```bash
+git clone https://github.com/Fzkuji/Agentic-Programming.git
+cd Agentic-Programming
 pip install -e .
 ```
 
-That's it. Zero required dependencies. Provider SDKs are optional:
-
-```bash
-pip install -e ".[anthropic]"   # Anthropic Claude API
-pip install -e ".[openai]"      # OpenAI API
-pip install -e ".[gemini]"      # Google Gemini API
-pip install -e ".[all]"         # all provider SDKs
-```
-
-### Provider setup
+### 2. Set up a provider
 
 You need at least one LLM provider. Pick whichever you already have:
 
-| Provider | Type | Setup | Cost |
-|----------|------|-------|------|
-| Claude Code CLI | CLI | `npm i -g @anthropic-ai/claude-code && claude login` | Subscription |
-| Codex CLI | CLI | `npm i -g @openai/codex && codex auth` | Subscription |
-| Gemini CLI | CLI | `npm i -g @anthropic-ai/gemini-cli` | Free |
-| Anthropic API | API | `export ANTHROPIC_API_KEY=sk-ant-...` | Per token |
-| OpenAI API | API | `export OPENAI_API_KEY=sk-...` | Per token |
-| Gemini API | API | `export GOOGLE_API_KEY=...` | Per token |
+| Provider | Setup |
+|----------|-------|
+| Claude Code CLI | `npm i -g @anthropic-ai/claude-code && claude login` |
+| Codex CLI | `npm i -g @openai/codex && codex auth` |
+| Gemini CLI | `npm i -g @anthropic-ai/gemini-cli` |
+| Anthropic API | `pip install -e ".[anthropic]"` and `export ANTHROPIC_API_KEY=...` |
+| OpenAI API | `pip install -e ".[openai]"` and `export OPENAI_API_KEY=...` |
+| Gemini API | `pip install -e ".[gemini]"` and `export GOOGLE_API_KEY=...` |
 
-Check what's available on your machine:
+### 3. Verify
 
 ```bash
-agentic providers
+agentic providers   # shows which providers are ready
 ```
 
-```
-Available LLM providers:
+### 4. (Optional) Install skills for your agent
 
-  [+] claude-code     (Claude Code CLI )  model: sonnet            [ready] <-- auto-detected
-  [+] codex           (Codex CLI       )  model: o4-mini           [ready]
-  [-] anthropic       (Anthropic API   )  model: claude-sonnet-4   [not set]
-  [+] openai          (OpenAI API      )  model: gpt-4o            [ready]
-  ...
+```bash
+cp -r skills/* ~/.claude/skills/    # Claude Code
+cp -r skills/* ~/.gemini/skills/    # Gemini CLI
 ```
 
 ---
 
 ## Usage
-
-Two ways to use:
 
 ### 1. Python — write agentic code directly
 
@@ -141,17 +139,10 @@ def summarize(text: str) -> str:
 result = summarize(text="Your long article here...")
 ```
 
-Override the provider if needed:
+Override the provider:
 
 ```python
 runtime = create_runtime(provider="openai", model="gpt-4o")
-```
-
-Or use a specific provider class directly:
-
-```python
-from agentic.providers import AnthropicRuntime
-runtime = AnthropicRuntime(model="claude-sonnet-4-20250514")
 ```
 
 **Meta functions** — generate and fix code with LLMs:
@@ -173,17 +164,7 @@ fixed = fix(fn=broken_fn, runtime=runtime, instruction="return JSON, not plain t
 
 ### 2. Skills — let your LLM agent use it
 
-Install skills so your LLM agent (Claude Code, Gemini CLI, etc.) can use agentic functions through natural language:
-
-```bash
-# Claude Code
-cp -r skills/* ~/.claude/skills/
-
-# Gemini CLI
-cp -r skills/* ~/.gemini/skills/
-```
-
-Then just talk to your agent:
+After installing skills ([step 4](#4-optional-install-skills-for-your-agent)), talk to your agent in natural language:
 
 > "Create a function that extracts emails from text"
 
@@ -268,7 +249,6 @@ fixed_fn = fix(
 | `from agentic import Runtime` | LLM connection. `exec()` calls the LLM with auto-context |
 | `from agentic import Context` | Execution tree. `tree()`, `save()`, `traceback()` |
 | `from agentic import create_runtime` | Create a Runtime with auto-detection or explicit provider |
-| `from agentic import detect_provider` | Detect best available provider (returns name + model) |
 
 ### Meta Functions
 
@@ -281,18 +261,7 @@ fixed_fn = fix(
 
 ### Providers
 
-```python
-from agentic.providers import AnthropicRuntime    # Claude API (+ prompt caching)
-from agentic.providers import OpenAIRuntime       # OpenAI API (+ response_format)
-from agentic.providers import GeminiRuntime       # Gemini API (text + image + video)
-from agentic.providers import ClaudeCodeRuntime   # Claude Code CLI (subscription)
-from agentic.providers import CodexRuntime        # Codex CLI (subscription)
-from agentic.providers import GeminiCLIRuntime    # Gemini CLI (free)
-```
-
-All CLI providers maintain **session continuity** — context accumulates across `runtime.exec()` calls within the same Runtime instance.
-
-See [Provider docs](docs/api/providers.md) for detailed setup.
+All CLI providers maintain **session continuity** across calls. See [Provider docs](docs/api/providers.md) for details.
 
 ---
 
@@ -313,7 +282,7 @@ MCP is the *transport*. Agentic Programming is the *execution model*. They're or
 
 ```
 agentic/
-├── __init__.py              # agentic_function, Runtime, Context, create_runtime, ...
+├── __init__.py              # agentic_function, Runtime, Context, create_runtime
 ├── context.py               # Context tree
 ├── function.py              # @agentic_function decorator
 ├── runtime.py               # Runtime class (exec + retry)
@@ -353,8 +322,6 @@ This project is a **paradigm proposal** with a reference implementation. We welc
 - 🐛 **Bug reports** on the reference implementation
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
-
-If you build something based on Agentic Programming, let us know!
 
 ## License
 
