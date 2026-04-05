@@ -21,6 +21,7 @@
 - [Usage](#usage)
   - [Python](#1-python--write-agentic-code)
   - [Skills](#2-skills--agent-integration)
+  - [MCP](#3-mcp--any-mcp-client)
 - [Core Concepts](#core-concepts)
   - [Agentic Functions](#agentic-functions)
   - [Automatic Context](#automatic-context)
@@ -155,6 +156,29 @@ The agent picks up the skill, calls `agentic create`, and the generated function
 
 > "Run sentiment on 'This is amazing'"
 
+### 3. MCP — any MCP client
+
+Run the built-in MCP server so any MCP-compatible client (Claude Desktop, Cursor, etc.) can use agentic functions:
+
+```bash
+pip install -e ".[mcp]"
+```
+
+Add to your MCP client config:
+
+```json
+{
+    "mcpServers": {
+        "agentic": {
+            "command": "python",
+            "args": ["-m", "agentic.mcp"]
+        }
+    }
+}
+```
+
+Exposes five tools: `list_functions`, `run_function`, `create_function`, `create_application`, `fix_function`.
+
 ---
 
 ## Core Concepts
@@ -278,6 +302,7 @@ agentic/
 │   ├── fix.py               #   fix() — rewrite broken functions
 │   └── create_skill.py      #   create_skill() — generate SKILL.md
 ├── providers/               # Anthropic, OpenAI, Gemini, Claude Code, Codex, Gemini CLI
+├── mcp/                     # MCP server (python -m agentic.mcp)
 ├── functions/               # saved generated functions
 └── apps/                    # generated apps (from create_app)
 skills/                      # SKILL.md files for agent integration

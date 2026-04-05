@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentic-programming"
-version = "0.3.0"
+version = "0.4.0"
 description = "Agentic Programming — Python functions that call LLMs with automatic context tracking."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -42,10 +42,14 @@ openai = [
 gemini = [
     "google-genai>=1.0.0",
 ]
+mcp = [
+    "mcp[cli]>=1.0.0",
+]
 all = [
     "anthropic>=0.30.0",
     "openai>=1.30.0",
     "google-genai>=1.0.0",
+    "mcp[cli]>=1.0.0",
 ]
 
 [project.scripts]
