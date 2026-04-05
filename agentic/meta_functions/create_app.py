@@ -122,9 +122,9 @@ def create_app(description: str, runtime: Runtime, name: str = "app") -> str:
             f"Generated app has syntax errors:\n{code}\n\nError: {e}"
         ) from e
 
-    # Save to apps/ directory
+    # Save to agentic/apps/ directory
     if not os.environ.get("PYTEST_CURRENT_TEST"):
-        apps_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "apps")
+        apps_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "apps")
         os.makedirs(apps_dir, exist_ok=True)
         filepath = os.path.join(apps_dir, f"{name}.py")
         with open(filepath, "w") as f:

@@ -198,7 +198,7 @@ sentiment(text="I love this!")  # → "positive"
 
 # Generate a complete app (runtime + argparse + main)
 create_app("Summarize articles from URLs", runtime=runtime, name="summarizer")
-# → apps/summarizer.py — runnable with: python apps/summarizer.py <url>
+# → agentic/apps/summarizer.py — runnable with: python agentic/apps/summarizer.py <url>
 
 # Fix a broken function — auto-reads source & error history
 fixed = fix(fn=broken_fn, runtime=runtime, instruction="return JSON, not plain text")
@@ -278,9 +278,8 @@ agentic/
 │   ├── fix.py               #   fix() — rewrite broken functions
 │   └── create_skill.py      #   create_skill() — generate SKILL.md
 ├── providers/               # Anthropic, OpenAI, Gemini, Claude Code, Codex, Gemini CLI
-└── functions/               # saved generated functions
-
-apps/                        # generated apps (from create_app)
+├── functions/               # saved generated functions
+└── apps/                    # generated apps (from create_app)
 skills/                      # SKILL.md files for agent integration
 examples/                    # runnable demos
 tests/                       # pytest suite
