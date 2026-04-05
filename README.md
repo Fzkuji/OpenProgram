@@ -122,9 +122,9 @@ Available LLM providers:
 
 ## Usage
 
-Three ways to use — all equally powerful:
+Two ways to use:
 
-### 1. Python import (recommended)
+### 1. Python — write agentic code directly
 
 ```python
 from agentic import agentic_function, create_runtime
@@ -171,31 +171,9 @@ create_app("A CLI that summarizes articles from URLs", runtime=runtime, name="su
 fixed = fix(fn=broken_fn, runtime=runtime, instruction="return JSON, not plain text")
 ```
 
-### 2. CLI commands
+### 2. Skills — let your LLM agent use it
 
-```bash
-# Create a function
-agentic create "Analyze text sentiment" --name sentiment
-
-# Create a complete app (with runtime + main + argparse)
-agentic create-app "A tool that summarizes articles" --name summarizer
-
-# Run a saved function
-agentic run sentiment --arg text="I love this project"
-
-# Fix a function
-agentic fix sentiment --instruction "return JSON with score"
-
-# List all functions
-agentic list
-
-# Use a specific provider
-agentic create "..." --name foo --provider openai --model gpt-4o
-```
-
-### 3. Skills (Claude Code / Gemini CLI)
-
-Install skills so your LLM agent can use agentic functions directly:
+Install skills so your LLM agent (Claude Code, Gemini CLI, etc.) can use agentic functions through natural language:
 
 ```bash
 # Claude Code
@@ -209,11 +187,9 @@ Then just talk to your agent:
 
 > "Create a function that extracts emails from text"
 
-The agent picks up the `meta-function` skill, calls `agentic create`, and the function handles everything from there. Once created, you can also ask:
+The agent picks up the `meta-function` skill, calls `agentic create`, and the generated function handles everything from there. Once created:
 
 > "Run sentiment on 'This is amazing'"
-
-The agent calls `agentic run sentiment --arg text="This is amazing"`.
 
 **Create your own skills:**
 
