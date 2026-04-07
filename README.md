@@ -1,114 +1,49 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="Agentic Programming: Redefining Agent Flow Control" width="900">
+  <img src="docs/images/banner.png" alt="Agentic Programming" width="800">
+</p>
+
+<h1 align="center">Agentic Programming</h1>
+
+<p align="center">
+  <strong>Python functions that think.</strong><br>
+  A programming paradigm where Python controls flow and LLM handles reasoning.
 </p>
 
 <p align="center">
-  <h1 align="center">🧬 Agentic Programming</h1>
-  <p align="center">
-    <strong>Python functions that think.</strong><br>
-    A programming paradigm where Python and LLM co-execute functions.
-  </p>
-  <p align="center">
-    <a href="https://pypi.org/project/agentic-programming/"><img src="https://img.shields.io/pypi/v/agentic-programming?color=blue" alt="PyPI"></a>
-    <a href="https://github.com/Fzkuji/Agentic-Programming/actions/workflows/ci.yml"><img src="https://github.com/Fzkuji/Agentic-Programming/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <a href="https://github.com/Fzkuji/Agentic-Programming/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Fzkuji/Agentic-Programming" alt="License"></a>
-    <a href="https://www.python.org/"><img src="https://img.shields.io/pypi/pyversions/agentic-programming" alt="Python"></a>
-  </p>
-  <p align="center">
-    <a href="docs/README_CN.md">🇨🇳 中文</a>
-  </p>
+  <a href="https://pypi.org/project/agentic-programming/"><img src="https://img.shields.io/pypi/v/agentic-programming?color=blue" alt="PyPI"></a>
+  <a href="https://pepy.tech/project/agentic-programming"><img src="https://static.pepy.tech/badge/agentic-programming" alt="Downloads"></a>
+  <a href="https://github.com/Fzkuji/Agentic-Programming/actions/workflows/ci.yml"><img src="https://github.com/Fzkuji/Agentic-Programming/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Fzkuji/Agentic-Programming/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Fzkuji/Agentic-Programming" alt="License"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/pypi/pyversions/agentic-programming" alt="Python"></a>
 </p>
-
-## Table of Contents
-
-- [Motivation](#motivation)
-- [Core Idea](#core-idea)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
-  - [Python](#1-python--write-agentic-code)
-  - [Skills](#2-skills--agent-integration)
-  - [MCP](#3-mcp--any-mcp-client)
-- [Core Concepts](#core-concepts)
-  - [Agentic Functions](#agentic-functions)
-  - [Automatic Context](#automatic-context)
-  - [Self-Evolving Code](#self-evolving-code)
-  - [Error Recovery](#error-recovery)
-- [API Reference](#api-reference)
-- [Comparison](#comparison)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-
----
-
-> 🚀 **This is a paradigm proposal.** We're sharing a new way to think about LLM-powered programming. The code here is a reference implementation — we'd love to see you take these ideas and build your own version, in any language, for any use case.
-
-**Projects built with Agentic Programming:**
-
-| Project | Description |
-|---------|-------------|
-| [🖥️&nbsp;GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Autonomous GUI agent that operates desktop apps via vision + agentic functions. Python controls observe→plan→act→verify loops; the LLM only reasons when asked. |
-
----
-
-## Motivation
-
-Current LLM agent frameworks place the LLM as the central scheduler — it decides what to do, when, and how. This creates three fundamental problems:
-
-- **Unpredictable execution** — the LLM may skip, repeat, or invent steps regardless of defined workflows
-- **Context explosion** — each tool-call round-trip accumulates history
-- **No output guarantees** — the LLM interprets instructions rather than executing them
 
 <p align="center">
-  <img src="docs/images/the_problem.png" alt="The Problem: LLM as Scheduler" width="800">
+  <a href="docs/GETTING_STARTED.md">Getting Started</a> &middot;
+  <a href="docs/API.md">API Reference</a> &middot;
+  <a href="docs/README_CN.md">中文</a>
 </p>
-
-The core issue: **the LLM controls the flow, but nothing enforces it.** Skills, prompts, and system messages are suggestions, not guarantees.
 
 ---
 
-## Core Idea
-
-<p align="center">
-  <img src="docs/images/the_idea.png" alt="The Paradigm: Python controls flow, LLM reasons" width="800">
-</p>
-
-**Give the flow back to Python. Let the LLM focus on reasoning.**
-
-| Principle | How |
-|-----------|-----|
-| **Deterministic flow** | Python controls `if/else/for/while`. The execution path is guaranteed, not suggested. |
-| **Minimal LLM calls** | The LLM is called only when reasoning is needed. 2 calls instead of 10. |
-| **Docstring = Prompt** | Change the function's docstring, change the LLM's behavior. No separate prompt files. |
-| **Self-evolving** | Functions generate, fix, and improve themselves at runtime via meta functions. |
+> **This is a paradigm proposal.** Current LLM agent frameworks let the LLM control everything — what to do, when, and how. The result? Unpredictable execution, context explosion, and no output guarantees. We flip this: **Python controls the flow, LLM only reasons when asked.**
 
 ```python
-@agentic_function
-def observe(task):
-    """Look at the screen and describe what you see."""
-    
-    img = take_screenshot()       # Python: deterministic
-    ocr = run_ocr(img)            # Python: deterministic
-    
-    return runtime.exec(content=[ # LLM: reasoning
-        {"type": "text", "text": f"Task: {task}\nOCR: {ocr}"},
-        {"type": "image", "path": img},
-    ])
-```
+from agentic import agentic_function, create_runtime
 
----
+runtime = create_runtime()  # auto-detects best provider
+
+@agentic_function
+def summarize(text: str) -> str:
+    """Summarize the given text into 3 bullet points."""
+    return runtime.exec(content=[{"type": "text", "text": text}])
+
+result = summarize(text="Your long article here...")
+```
 
 ## Quick Start
 
 ```bash
 pip install agentic-programming
-```
-
-Or install from source for development:
-
-```bash
-git clone https://github.com/Fzkuji/Agentic-Programming.git
-cd Agentic-Programming
-pip install -e .
 ```
 
 Set up at least one LLM provider:
@@ -118,40 +53,77 @@ Set up at least one LLM provider:
 | Claude Code CLI | `npm i -g @anthropic-ai/claude-code && claude login` |
 | Codex CLI | `npm i -g @openai/codex && codex auth` |
 | Gemini CLI | `npm i -g @google/gemini-cli` |
-| Anthropic API | `pip install -e ".[anthropic]"` then `export ANTHROPIC_API_KEY=...` |
-| OpenAI API | `pip install -e ".[openai]"` then `export OPENAI_API_KEY=...` |
-| Gemini API | `pip install -e ".[gemini]"` then `export GOOGLE_API_KEY=...` (or `export GOOGLE_GENERATIVE_AI_API_KEY=...`) |
+| Anthropic API | `pip install "agentic-programming[anthropic]"` then `export ANTHROPIC_API_KEY=...` |
+| OpenAI API | `pip install "agentic-programming[openai]"` then `export OPENAI_API_KEY=...` |
+| Gemini API | `pip install "agentic-programming[gemini]"` then `export GOOGLE_API_KEY=...` |
 
 Verify with `agentic providers`.
 
----
+## Why Agentic Programming?
+
+<p align="center">
+  <img src="docs/images/the_idea.png" alt="Python controls flow, LLM reasons" width="800">
+</p>
+
+| Principle | How |
+|-----------|-----|
+| **Deterministic flow** | Python controls `if/else/for/while`. Execution is guaranteed, not suggested. |
+| **Minimal LLM calls** | Call the LLM only when reasoning is needed. 2 calls, not 10. |
+| **Docstring = Prompt** | Change the docstring, change the LLM's behavior. No separate prompt files. |
+| **Self-evolving** | Functions generate, fix, and improve themselves at runtime. |
+
+<details>
+<summary><strong>The problem with current frameworks</strong></summary>
+
+<p align="center">
+  <img src="docs/images/the_problem.png" alt="LLM as Scheduler" width="800">
+</p>
+
+Current LLM agent frameworks place the LLM as the central scheduler. This creates three fundamental problems:
+
+- **Unpredictable execution** — the LLM may skip, repeat, or invent steps regardless of defined workflows
+- **Context explosion** — each tool-call round-trip accumulates history
+- **No output guarantees** — the LLM interprets instructions rather than executing them
+
+The core issue: **the LLM controls the flow, but nothing enforces it.** Skills, prompts, and system messages are suggestions, not guarantees.
+
+</details>
+
+|  | Tool-Calling / MCP | Agentic Programming |
+|--|---------------------|---------------------|
+| **Who schedules?** | LLM decides | Python decides |
+| **Functions contain** | Code only | Code + LLM reasoning |
+| **Context** | Flat conversation | Structured tree |
+| **Prompt** | Hidden in agent config | Docstring = prompt |
+| **Self-improvement** | Not built-in | `create` → `fix` → evolve |
+
+MCP is the *transport*. Agentic Programming is the *execution model*. They're orthogonal.
 
 ## Usage
 
-### 1. Python — write agentic code
+### Python
 
 ```python
-from agentic import agentic_function, create_runtime
-
-runtime = create_runtime()  # auto-detects best available provider
-
 @agentic_function
-def summarize(text: str) -> str:
-    """Summarize the given text into 3 bullet points."""
-    return runtime.exec(content=[
-        {"type": "text", "text": text},
-    ])
-
-result = summarize(text="Your long article here...")
+def login_flow(username, password):
+    """Complete login flow."""
+    observe(task="find login form")       # Python decides what to do
+    click(element="login button")         # Python decides the order
+    return verify(expected="dashboard")   # Python decides when to stop
 ```
 
-Override the provider when needed:
+Every call creates a **Context** node. Nodes form a tree that is automatically injected into LLM calls:
 
-```python
-runtime = create_runtime(provider="openai", model="gpt-4o")
+```
+login_flow ✓ 8.8s
+├── observe ✓ 3.1s → "found login form at (200, 300)"
+├── click ✓ 2.5s → "clicked login button"
+└── verify ✓ 3.2s → "dashboard confirmed"
 ```
 
-### 2. Skills — agent integration
+When `verify` calls the LLM, it automatically sees what `observe` and `click` returned. No manual context management.
+
+### Skills — agent integration
 
 Install skills so your LLM agent can use agentic functions through natural language:
 
@@ -164,16 +136,10 @@ Then talk to your agent:
 
 > "Create a function that extracts emails from text"
 
-The agent picks up the skill, calls `agentic create`, and the generated function handles everything from there. Once created:
-
-> "Run sentiment on 'This is amazing'"
-
-### 3. MCP — any MCP client
-
-Run the built-in MCP server so any MCP-compatible client (Claude Desktop, Cursor, etc.) can use agentic functions:
+### MCP — any MCP client
 
 ```bash
-pip install -e ".[mcp]"
+pip install "agentic-programming[mcp]"
 ```
 
 Add to your MCP client config:
@@ -191,36 +157,6 @@ Add to your MCP client config:
 
 Exposes five tools: `list_functions`, `run_function`, `create_function`, `create_application`, `fix_function`.
 
----
-
-## Core Concepts
-
-### Agentic Functions
-
-Every `@agentic_function` can call `runtime.exec()` to invoke an LLM. The framework auto-injects execution context into the prompt. Python controls the flow — the LLM only reasons when explicitly asked.
-
-```python
-@agentic_function
-def login_flow(username, password):
-    """Complete login flow."""
-    observe(task="find login form")       # Python decides what to do
-    click(element="login button")         # Python decides the order
-    return verify(expected="dashboard")   # Python decides when to stop
-```
-
-### Automatic Context
-
-Every call creates a **Context** node. Nodes form a tree that is automatically injected into LLM calls:
-
-```
-login_flow ✓ 8.8s
-├── observe ✓ 3.1s → "found login form at (200, 300)"
-├── click ✓ 2.5s → "clicked login button"
-└── verify ✓ 3.2s → "dashboard confirmed"
-```
-
-When `verify` calls the LLM, it automatically sees what `observe` and `click` returned. No manual context management.
-
 ### Self-Evolving Code
 
 Functions can generate new functions, fix broken ones, and scaffold complete apps — all at runtime:
@@ -234,7 +170,7 @@ sentiment(text="I love this!")  # → "positive"
 
 # Generate a complete app (runtime + argparse + main)
 create_app("Summarize articles from URLs", runtime=runtime, name="summarizer")
-# → agentic/apps/summarizer.py — runnable with: python agentic/apps/summarizer.py <url>
+# → agentic/apps/summarizer.py
 
 # Fix a broken function — auto-reads source & error history
 fixed = fix(fn=broken_fn, runtime=runtime, instruction="return JSON, not plain text")
@@ -242,23 +178,12 @@ fixed = fix(fn=broken_fn, runtime=runtime, instruction="return JSON, not plain t
 
 The `create → run → fail → fix → run` cycle means programs improve themselves through use.
 
-### Error Recovery
+## Ecosystem
 
-`Runtime` retries transient failures automatically. For deeper issues, `fix()` rewrites the function:
-
-```python
-runtime = create_runtime(max_retries=3)
-
-try:
-    result = extract(text="Acme closed at $42.50")
-except Exception:
-    extract = fix(fn=extract, runtime=runtime)  # LLM analyzes errors and rewrites
-    result = extract(text="Acme closed at $42.50")
-```
-
-Every attempt is recorded in the Context tree — `fix()` reads the full error history to diagnose the root cause, not just the symptom.
-
----
+| Project | Description |
+|---------|-------------|
+| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Autonomous GUI agent that operates desktop apps via vision + agentic functions. Python controls observe→plan→act→verify loops; the LLM only reasons when asked. |
+| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Autonomous research agent: literature survey → idea → experiments → paper writing → cross-model review. Full pipeline from topic to submission-ready paper. |
 
 ## API Reference
 
@@ -284,23 +209,17 @@ Every attempt is recorded in the Context tree — `fix()` reads the full error h
 
 Six built-in providers: Anthropic, OpenAI, Gemini (API), Claude Code, Codex, Gemini (CLI). All CLI providers maintain **session continuity** across calls. See [Provider docs](docs/api/providers.md) for details.
 
----
+## Integration
 
-## Comparison
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](docs/GETTING_STARTED.md) | 3-minute setup and runnable examples |
+| [Claude Code](docs/INTEGRATION_CLAUDE_CODE.md) | Use without API key via Claude Code CLI |
+| [OpenClaw](docs/INTEGRATION_OPENCLAW.md) | Use as OpenClaw skill |
+| [API Reference](docs/API.md) | Full API documentation |
 
-|  | Tool-Calling / MCP | Agentic Programming |
-|--|---------------------|---------------------|
-| **Who schedules?** | LLM decides | Python decides |
-| **Functions contain** | Code only | Code + LLM reasoning |
-| **Context** | Flat conversation | Structured tree |
-| **Prompt** | Hidden in agent config | Docstring = prompt |
-| **Self-improvement** | Not built-in | `create` → `fix` → evolve |
-
-MCP is the *transport*. Agentic Programming is the *execution model*. They're orthogonal.
-
----
-
-## Project Structure
+<details>
+<summary><strong>Project Structure</strong></summary>
 
 ```
 agentic/
@@ -322,16 +241,7 @@ examples/                    # runnable demos
 tests/                       # pytest suite
 ```
 
-## Integration
-
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](docs/GETTING_STARTED.md) | 3-minute setup and runnable examples |
-| [Claude Code](docs/INTEGRATION_CLAUDE_CODE.md) | Use without API key via Claude Code CLI |
-| [OpenClaw](docs/INTEGRATION_OPENCLAW.md) | Use as OpenClaw skill |
-| [API Reference](docs/API.md) | Full API documentation |
-
----
+</details>
 
 ## Contributing
 
