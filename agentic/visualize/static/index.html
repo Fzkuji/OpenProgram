@@ -3,20 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agentic Visualizer</title>
+<title>Agentic</title>
 <style>
 /* ===== Reset & Base ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   --bg-primary: #1a1d23;
-  --bg-secondary: #21252b;
-  --bg-tertiary: #282c34;
+  --bg-secondary: #15171c;
+  --bg-tertiary: #1e2128;
   --bg-hover: #2c313a;
-  --border: #3e4451;
+  --bg-input: #21252b;
+  --border: #2d3139;
+  --border-light: #3e4451;
   --text-primary: #abb2bf;
   --text-secondary: #636d83;
   --text-bright: #d7dae0;
+  --text-muted: #4b5263;
   --accent-blue: #61afef;
   --accent-green: #98c379;
   --accent-red: #e06c75;
@@ -24,83 +27,266 @@
   --accent-purple: #c678dd;
   --accent-cyan: #56b6c2;
   --accent-orange: #d19a66;
-  --radius: 6px;
+  --user-msg-bg: #2b3a4e;
+  --assistant-msg-bg: #1e2128;
+  --radius: 8px;
+  --radius-lg: 12px;
   --transition: 0.2s ease;
   --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --sidebar-width: 280px;
+  --detail-width: 380px;
+  --font-mono: 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
 }
 
 html, body {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-/* ===== Layout ===== */
+/* ===== Layout: 3-column ===== */
 .app {
   display: flex;
-  flex-direction: column;
   height: 100vh;
+  width: 100vw;
 }
 
-.header {
+/* ===== Left Sidebar ===== */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 0.3s ease, min-width 0.3s ease;
+}
+
+.sidebar.collapsed {
+  width: 0;
+  min-width: 0;
+  border-right: none;
+}
+
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 20px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  z-index: 10;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .logo {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-bright);
   letter-spacing: -0.3px;
+  white-space: nowrap;
 }
 
-.logo span {
-  color: var(--accent-blue);
+.logo-accent { color: var(--accent-blue); }
+
+.sidebar-toggle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px;
+  border-radius: 4px;
+  line-height: 1;
 }
 
-.status-badge {
+.sidebar-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.new-chat-btn {
+  margin: 12px 16px;
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: center;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.new-chat-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-blue);
+  color: var(--text-bright);
+}
+
+/* Sidebar sections */
+.sidebar-section {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.sidebar-section-title {
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: rgba(97, 175, 239, 0.15);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  padding: 12px 16px 6px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+  z-index: 1;
+}
+
+/* Conversation list */
+.conv-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background var(--transition);
+  border-left: 3px solid transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.conv-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.conv-item.active { background: rgba(97,175,239,0.08); border-left-color: var(--accent-blue); color: var(--text-bright); }
+
+/* Functions section */
+.sidebar-functions {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.fn-category {
+  padding: 4px 16px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.fn-item {
+  padding: 6px 16px 6px 24px;
+  cursor: pointer;
+  transition: background var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.fn-item:hover { background: var(--bg-hover); }
+
+.fn-icon {
+  font-size: 12px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.fn-icon.meta { color: var(--accent-purple); }
+.fn-icon.builtin { color: var(--accent-cyan); }
+.fn-icon.user { color: var(--accent-orange); }
+
+.fn-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--accent-blue);
-  border: 1px solid rgba(97, 175, 239, 0.3);
+  flex-shrink: 0;
 }
 
-.status-badge.disconnected {
-  background: rgba(224, 108, 117, 0.15);
-  color: var(--accent-red);
-  border-color: rgba(224, 108, 117, 0.3);
+.fn-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.status-badge.paused {
-  background: rgba(229, 192, 123, 0.15);
-  color: var(--accent-yellow);
-  border-color: rgba(229, 192, 123, 0.3);
+/* ===== Main Chat Area ===== */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
 }
 
-.header-right {
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-primary);
+  z-index: 5;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-right {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
+.menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 20px;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.menu-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.status-badge {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: rgba(97, 175, 239, 0.12);
+  color: var(--accent-blue);
+  border: 1px solid rgba(97, 175, 239, 0.25);
+}
+
+.status-badge.disconnected {
+  background: rgba(224, 108, 117, 0.12);
+  color: var(--accent-red);
+  border-color: rgba(224, 108, 117, 0.25);
+}
+
+.status-badge.paused {
+  background: rgba(229, 192, 123, 0.12);
+  color: var(--accent-yellow);
+  border-color: rgba(229, 192, 123, 0.25);
+}
+
 .btn {
-  padding: 5px 14px;
+  padding: 5px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-tertiary);
@@ -109,78 +295,448 @@ html, body {
   cursor: pointer;
   transition: all var(--transition);
   outline: none;
+  white-space: nowrap;
 }
 
-.btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent-blue);
-  color: var(--text-bright);
-}
-
-.btn.active {
-  background: rgba(97, 175, 239, 0.15);
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
-}
-
-.btn-pause {
-  padding: 5px 14px;
-}
+.btn:hover { background: var(--bg-hover); border-color: var(--accent-blue); color: var(--text-bright); }
+.btn.active { background: rgba(97,175,239,0.12); border-color: var(--accent-blue); color: var(--accent-blue); }
 
 .btn-pause.paused {
-  background: rgba(229, 192, 123, 0.15);
+  background: rgba(229,192,123,0.12);
   border-color: var(--accent-yellow);
   color: var(--accent-yellow);
 }
 
-/* ===== Main Content ===== */
-.main {
-  display: flex;
+/* Chat messages */
+.chat-area {
   flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-messages {
+  flex: 1;
+  padding: 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.message {
+  padding: 16px 24px;
+  max-width: 100%;
+  animation: msgAppear 0.3s ease forwards;
+}
+
+@keyframes msgAppear {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message.user {
+  background: var(--user-msg-bg);
+}
+
+.message.assistant {
+  background: var(--bg-primary);
+}
+
+.message.system {
+  background: var(--bg-primary);
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.message-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.message-avatar.user-avatar {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.message-avatar.bot-avatar {
+  background: var(--accent-green);
+  color: #fff;
+}
+
+.message-sender {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.message-content {
+  padding-left: 36px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  word-wrap: break-word;
+}
+
+.message-content pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-content code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-secondary);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Status message */
+.message-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 36px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Context tree card (inline in chat) */
+.context-card {
+  margin: 12px 0;
+  margin-left: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
   overflow: hidden;
 }
 
-/* ===== View Toggle ===== */
-.view-tabs {
+.context-card-header {
   display: flex;
-  gap: 2px;
-  background: var(--bg-primary);
-  border-radius: var(--radius);
-  padding: 2px;
-  border: 1px solid var(--border);
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  user-select: none;
 }
 
-.view-tab {
-  padding: 4px 12px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
+.context-card-header:hover { background: var(--bg-hover); }
+
+.context-card-title {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.context-card-toggle {
   color: var(--text-secondary);
   font-size: 12px;
+  transition: transform var(--transition);
+}
+
+.context-card-toggle.expanded { transform: rotate(90deg); }
+
+.context-card-body {
+  padding: 8px;
+  display: none;
+}
+
+.context-card-body.expanded { display: block; }
+
+/* Error card */
+.error-content {
+  background: rgba(224,108,117,0.08);
+  border: 1px solid rgba(224,108,117,0.2);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 8px 0;
+  margin-left: 36px;
+  color: var(--accent-red);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Welcome screen */
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--text-secondary);
+  padding: 40px;
+}
+
+.welcome-logo {
+  font-size: 48px;
+  color: var(--accent-blue);
+  opacity: 0.3;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.welcome-title {
+  font-size: 20px;
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.welcome-text {
+  font-size: 14px;
+  text-align: center;
+  max-width: 500px;
+  line-height: 1.6;
+}
+
+.welcome-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: center;
+}
+
+.welcome-example {
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-primary);
   cursor: pointer;
   transition: all var(--transition);
 }
 
-.view-tab:hover { color: var(--text-primary); }
-.view-tab.active {
-  background: var(--bg-tertiary);
+.welcome-example:hover {
+  border-color: var(--accent-blue);
+  background: var(--bg-hover);
   color: var(--text-bright);
 }
 
-/* ===== Tree View ===== */
-.tree-panel {
-  flex: 1;
-  overflow: auto;
-  padding: 16px;
+/* Input area */
+.input-area {
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  flex-shrink: 0;
 }
 
-.tree-node {
-  margin-left: 0;
-  animation: nodeAppear 0.3s ease forwards;
+.input-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 800px;
+  margin: 0 auto;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 8px 12px;
+  transition: border-color var(--transition);
 }
+
+.input-wrapper:focus-within {
+  border-color: var(--accent-blue);
+}
+
+.chat-input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-bright);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  outline: none;
+  resize: none;
+  min-height: 24px;
+  max-height: 200px;
+  line-height: 1.5;
+  padding: 4px 0;
+}
+
+.chat-input::placeholder {
+  color: var(--text-muted);
+}
+
+.send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent-blue);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+  transition: all var(--transition);
+  opacity: 0.7;
+}
+
+.send-btn:hover { opacity: 1; transform: scale(1.05); }
+.send-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+.input-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 6px;
+}
+
+/* ===== Right Panel (Detail) ===== */
+.detail-panel {
+  width: var(--detail-width);
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  flex-shrink: 0;
+  transition: width 0.3s ease;
+}
+
+.detail-panel.collapsed {
+  width: 0;
+  overflow: hidden;
+  border-left: none;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+  z-index: 1;
+}
+
+.detail-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+}
+
+.detail-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.detail-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.detail-body { padding: 16px; }
+
+.detail-section { margin-bottom: 16px; }
+
+.detail-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.detail-field { margin-bottom: 8px; }
+
+.detail-field-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.detail-field-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.detail-code {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
+.detail-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.detail-badge.running { background: rgba(97,175,239,0.12); color: var(--accent-blue); }
+.detail-badge.success { background: rgba(152,195,121,0.12); color: var(--accent-green); }
+.detail-badge.error { background: rgba(224,108,117,0.12); color: var(--accent-red); }
+
+/* ===== Inline tree node styles ===== */
+.tree-node { animation: nodeAppear 0.3s ease forwards; }
 
 @keyframes nodeAppear {
-  from { opacity: 0; transform: translateY(-6px); }
+  from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -188,20 +744,16 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: var(--radius);
+  padding: 3px 6px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background var(--transition);
   user-select: none;
+  font-size: 13px;
 }
 
-.node-row:hover {
-  background: var(--bg-hover);
-}
-
-.node-row.selected {
-  background: rgba(97, 175, 239, 0.1);
-}
+.node-row:hover { background: var(--bg-hover); }
+.node-row.selected { background: rgba(97,175,239,0.1); }
 
 .node-toggle {
   width: 16px;
@@ -218,396 +770,170 @@ html, body {
 .node-toggle.expanded { transform: rotate(90deg); }
 .node-toggle.leaf { visibility: hidden; }
 
-.node-icon {
-  font-size: 13px;
-  flex-shrink: 0;
-  width: 18px;
-  text-align: center;
-}
-
-.node-name {
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 13px;
-  color: var(--accent-blue);
-  font-weight: 500;
-}
-
-.node-status {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-.node-status.running {
-  background: rgba(97, 175, 239, 0.15);
-  color: var(--accent-blue);
-}
-
-.node-status.success {
-  background: rgba(152, 195, 121, 0.15);
-  color: var(--accent-green);
-}
-
-.node-status.error {
-  background: rgba(224, 108, 117, 0.15);
-  color: var(--accent-red);
-}
-
-.node-duration {
-  font-size: 11px;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.node-output-preview {
-  font-size: 11px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 300px;
-}
+.node-icon { font-size: 12px; flex-shrink: 0; width: 16px; text-align: center; }
+.node-name { font-family: var(--font-mono); font-size: 12px; color: var(--accent-blue); font-weight: 500; }
+.node-status { font-size: 10px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+.node-status.running { background: rgba(97,175,239,0.12); color: var(--accent-blue); }
+.node-status.success { background: rgba(152,195,121,0.12); color: var(--accent-green); }
+.node-status.error { background: rgba(224,108,117,0.12); color: var(--accent-red); }
+.node-duration { font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
+.node-output-preview { font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 
 .node-children {
-  margin-left: 20px;
+  margin-left: 18px;
   border-left: 1px solid var(--border);
   padding-left: 4px;
   overflow: hidden;
   transition: max-height 0.3s ease;
 }
 
-.node-children.collapsed {
-  max-height: 0;
-  overflow: hidden;
-}
+.node-children.collapsed { max-height: 0; overflow: hidden; }
 
-/* Status change animation */
-.node-row.status-changed {
-  animation: statusPulse 0.6s ease;
-}
-
-@keyframes statusPulse {
-  0% { background: rgba(97, 175, 239, 0.2); }
-  100% { background: transparent; }
-}
-
-/* ===== Flow View ===== */
-.flow-panel {
-  flex: 1;
-  overflow: auto;
-  padding: 20px;
-  display: none;
-}
-
-.flow-panel.active {
-  display: block;
-}
-
-.flow-container {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  min-width: fit-content;
-}
-
-.flow-level {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.flow-level-label {
-  font-size: 11px;
-  color: var(--text-secondary);
-  width: 80px;
-  flex-shrink: 0;
-  padding-top: 12px;
-  text-align: right;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-}
-
-.flow-nodes {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: flex-start;
-}
-
-.flow-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  min-width: 140px;
-  max-width: 220px;
-  cursor: pointer;
-  transition: all var(--transition);
-  animation: nodeAppear 0.3s ease forwards;
-  position: relative;
-}
-
-.flow-card:hover {
-  border-color: var(--accent-blue);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow);
-}
-
-.flow-card.running { border-left: 3px solid var(--accent-blue); }
-.flow-card.success { border-left: 3px solid var(--accent-green); }
-.flow-card.error { border-left: 3px solid var(--accent-red); }
-
-.flow-card-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.flow-card-name {
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-bright);
-}
-
-.flow-card-icon {
-  font-size: 12px;
-}
-
-.flow-card-meta {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.flow-card-output {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.flow-arrow {
-  display: flex;
-  align-items: center;
-  color: var(--text-secondary);
-  font-size: 14px;
-  flex-shrink: 0;
-  padding-top: 10px;
-}
-
-/* ===== Detail Panel ===== */
-.detail-panel {
-  width: 380px;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border);
-  overflow-y: auto;
-  flex-shrink: 0;
-  transition: width var(--transition);
-}
-
-.detail-panel.collapsed {
-  width: 0;
-  overflow: hidden;
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.detail-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-bright);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-}
-
-.detail-close {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 16px;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.detail-close:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.detail-body {
-  padding: 16px;
-}
-
-.detail-section {
-  margin-bottom: 16px;
-}
-
-.detail-section-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-}
-
-.detail-field {
-  margin-bottom: 8px;
-}
-
-.detail-field-label {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-bottom: 2px;
-}
-
-.detail-field-value {
-  font-size: 13px;
-  color: var(--text-primary);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  word-break: break-all;
-}
-
-.detail-code {
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px;
-  font-size: 12px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 300px;
-  overflow-y: auto;
-  line-height: 1.5;
-}
-
-.detail-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.detail-badge.running {
-  background: rgba(97, 175, 239, 0.15);
-  color: var(--accent-blue);
-}
-.detail-badge.success {
-  background: rgba(152, 195, 121, 0.15);
-  color: var(--accent-green);
-}
-.detail-badge.error {
-  background: rgba(224, 108, 117, 0.15);
-  color: var(--accent-red);
-}
-
-/* ===== Empty State ===== */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--text-secondary);
-  gap: 12px;
-}
-
-.empty-state-icon {
-  font-size: 48px;
-  opacity: 0.3;
-}
-
-.empty-state-text {
-  font-size: 14px;
-}
-
-.empty-state-hint {
-  font-size: 12px;
-  color: var(--text-secondary);
-  opacity: 0.6;
+.pulse { animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 /* ===== Scrollbar ===== */
-::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-}
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
-/* ===== Loading pulse ===== */
-.pulse {
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
 /* ===== Responsive ===== */
-@media (max-width: 768px) {
-  .detail-panel { width: 100%; position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; }
+@media (max-width: 900px) {
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+  .sidebar.collapsed { width: 0; }
+  .menu-btn { display: block; }
+  .detail-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 100; box-shadow: -4px 0 20px rgba(0,0,0,0.5); }
   .detail-panel.collapsed { width: 0; }
-  .header { padding: 8px 12px; }
-  .tree-panel { padding: 8px; }
-  .node-output-preview { max-width: 120px; }
 }
+
+@media (max-width: 600px) {
+  .message { padding: 12px 16px; }
+  .input-area { padding: 12px 16px 16px; }
+  .welcome-examples { flex-direction: column; }
+}
+
+/* Function item with actions */
+.fn-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-radius: var(--radius); cursor: pointer; transition: background var(--transition); }
+.fn-item:hover { background: var(--bg-hover); }
+.fn-item-main { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.fn-actions { display: none; gap: 2px; flex-shrink: 0; }
+.fn-item:hover .fn-actions { display: flex; }
+.fn-action-btn { background: none; border: 1px solid var(--border); color: var(--text-secondary); border-radius: 4px; width: 26px; height: 26px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; transition: all var(--transition); }
+.fn-action-btn:hover { background: var(--bg-tertiary); color: var(--text-bright); border-color: var(--accent-blue); }
+.fn-action-delete:hover { border-color: var(--accent-red); color: var(--accent-red); }
+
+/* Code viewer modal */
+.code-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+.code-modal-overlay.active { opacity: 1; pointer-events: auto; }
+.code-modal { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-lg); width: 90%; max-width: 900px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+.code-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.code-modal-title { font-family: var(--font-mono); font-size: 15px; color: var(--accent-blue); font-weight: 600; }
+.code-modal-close { background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+.code-modal-close:hover { background: var(--bg-hover); color: var(--text-bright); }
+.code-modal-body { overflow: auto; flex: 1; }
+.code-modal-body pre { margin: 0; padding: 20px; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; color: var(--text-primary); white-space: pre; overflow-x: auto; }
+.code-modal-body .line-num { color: var(--text-muted); margin-right: 16px; user-select: none; display: inline-block; text-align: right; width: 30px; }
+.code-modal-actions { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); }
+.code-modal-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 13px; transition: all var(--transition); }
+.code-modal-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+.code-modal-btn.primary { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+.code-modal-btn.primary:hover { opacity: 0.85; }
+
+/* Syntax highlighting */
+.syn-keyword { color: var(--accent-purple); }
+.syn-decorator { color: var(--accent-blue); }
+.syn-function { color: var(--accent-blue); }
+.syn-string { color: var(--accent-green); }
+.syn-comment { color: var(--text-muted); font-style: italic; }
+.syn-number { color: var(--accent-orange); }
+.syn-builtin { color: var(--accent-yellow); }
+.syn-self { color: var(--accent-red); }
+
+/* Running node pulse animation */
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.node-running { animation: pulse 1.5s ease-in-out infinite; }
+.node-just-completed { animation: flashGreen 0.5s ease; }
+@keyframes flashGreen { 0% { background: rgba(152,195,121,0.3); } 100% { background: transparent; } }
 </style>
 </head>
 <body>
 <div class="app">
-  <!-- Header -->
-  <div class="header">
-    <div class="header-left">
-      <div class="logo"><span>{ }</span> Agentic Visualizer</div>
-      <div id="statusBadge" class="status-badge">connecting...</div>
+  <!-- Left Sidebar -->
+  <div id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo"><span class="logo-accent">{ }</span> Agentic</div>
+      <button class="sidebar-toggle" onclick="toggleSidebar()" title="Collapse sidebar">&#9776;</button>
     </div>
-    <div class="header-right">
-      <div class="view-tabs">
-        <button class="view-tab active" data-view="tree" onclick="switchView('tree')">Tree</button>
-        <button class="view-tab" data-view="flow" onclick="switchView('flow')">Flow</button>
-      </div>
-      <button id="btnPause" class="btn btn-pause" onclick="togglePause()">Pause</button>
-      <button class="btn" onclick="refreshTree()">Refresh</button>
+    <div class="new-chat-btn" onclick="newConversation()">+ New conversation</div>
+
+    <!-- Conversations -->
+    <div class="sidebar-section" id="convList">
+      <div class="sidebar-section-title">Conversations</div>
+    </div>
+
+    <!-- Functions -->
+    <div class="sidebar-functions" id="fnList">
+      <div class="sidebar-section-title">Functions</div>
     </div>
   </div>
 
-  <!-- Main -->
+  <!-- Main Area -->
   <div class="main">
-    <!-- Tree View -->
-    <div id="treePanel" class="tree-panel">
-      <div id="treeContainer"></div>
-    </div>
-
-    <!-- Flow View -->
-    <div id="flowPanel" class="flow-panel">
-      <div id="flowContainer" class="flow-container"></div>
-    </div>
-
-    <!-- Detail Panel -->
-    <div id="detailPanel" class="detail-panel collapsed">
-      <div class="detail-header">
-        <div id="detailTitle" class="detail-title">Node</div>
-        <button class="detail-close" onclick="closeDetail()">&times;</button>
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="menu-btn" onclick="toggleSidebar()">&#9776;</button>
+        <span id="statusBadge" class="status-badge">connecting...</span>
       </div>
-      <div id="detailBody" class="detail-body"></div>
+      <div class="topbar-right">
+        <button id="btnPause" class="btn btn-pause" onclick="togglePause()">Pause</button>
+        <button class="btn" onclick="toggleDetail()" id="btnDetail">Detail Panel</button>
+      </div>
     </div>
+
+    <!-- Chat area -->
+    <div class="chat-area" id="chatArea">
+      <div class="chat-messages" id="chatMessages">
+        <!-- Welcome screen (shown when no messages) -->
+        <div class="welcome" id="welcomeScreen">
+          <div class="welcome-logo">{ }</div>
+          <div class="welcome-title">Agentic Programming</div>
+          <div class="welcome-text">
+            Run agentic functions, create new ones, or ask questions.
+            Type a command or natural language below.
+          </div>
+          <div class="welcome-examples">
+            <div class="welcome-example" onclick="setInput('run word_count text=&quot;Hello world&quot;')">run word_count text="Hello world"</div>
+            <div class="welcome-example" onclick="setInput('run sentiment text=&quot;I love this product&quot;')">run sentiment</div>
+            <div class="welcome-example" onclick="setInput('create a function that extracts emails from text --name extract_emails')">create a function</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="input-area">
+      <div class="input-wrapper">
+        <textarea id="chatInput" class="chat-input" placeholder="Type a message... (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send message">&#9654;</button>
+      </div>
+      <div class="input-hint">
+        <span style="color:var(--accent-purple)">create</span> / <span style="color:var(--accent-cyan)">run</span> / <span style="color:var(--accent-orange)">fix</span> &nbsp;or ask anything
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Detail Panel -->
+  <div id="detailPanel" class="detail-panel collapsed">
+    <div class="detail-header">
+      <div id="detailTitle" class="detail-title">Node Detail</div>
+      <button class="detail-close" onclick="closeDetail()">&times;</button>
+    </div>
+    <div id="detailBody" class="detail-body"></div>
   </div>
 </div>
 
@@ -617,14 +943,18 @@ let ws = null;
 let trees = [];
 let selectedPath = null;
 let isPaused = false;
-let currentView = 'tree';
 let expandedNodes = new Set();
 let reconnectTimer = null;
+let currentConvId = null;
+let conversations = {};
+let availableFunctions = [];
+let pendingResponses = {};  // msg_id -> element
+let sidebarOpen = true;
 
 // ===== WebSocket =====
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws = new WebSocket(proto + '//' + location.host + '/ws');
 
   ws.onopen = () => {
     updateStatus('connected');
@@ -632,8 +962,10 @@ function connect() {
   };
 
   ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    handleMessage(msg);
+    try {
+      const msg = JSON.parse(e.data);
+      handleMessage(msg);
+    } catch(err) {}
   };
 
   ws.onclose = () => {
@@ -641,19 +973,41 @@ function connect() {
     reconnectTimer = setTimeout(connect, 2000);
   };
 
-  ws.onerror = () => {
-    ws.close();
-  };
+  ws.onerror = () => { ws.close(); };
 }
 
 function handleMessage(msg) {
   switch (msg.type) {
     case 'full_tree':
       trees = msg.data || [];
-      render();
       break;
     case 'event':
-      handleEvent(msg.event, msg.data);
+      handleContextEvent(msg.event, msg.data);
+      break;
+    case 'functions_list':
+      availableFunctions = msg.data || [];
+      renderFunctions();
+      break;
+    case 'history_list':
+      (msg.data || []).forEach(c => {
+        conversations[c.id] = conversations[c.id] || { id: c.id, title: c.title, messages: [] };
+      });
+      renderConversations();
+      break;
+    case 'chat_ack':
+      if (!currentConvId && msg.data.conv_id) {
+        currentConvId = msg.data.conv_id;
+        if (!conversations[currentConvId]) {
+          conversations[currentConvId] = { id: currentConvId, title: 'New conversation', messages: [] };
+        }
+        renderConversations();
+      }
+      break;
+    case 'chat_response':
+      handleChatResponse(msg.data);
+      break;
+    case 'conversation_loaded':
+      loadConversationData(msg.data);
       break;
     case 'status':
       isPaused = msg.paused;
@@ -664,26 +1018,16 @@ function handleMessage(msg) {
   }
 }
 
-function handleEvent(eventType, data) {
-  // Update tree data by merging the event
+function handleContextEvent(eventType, data) {
   updateTreeData(data);
-  render();
-
-  // If we have a selected node and it was updated, refresh detail
-  if (selectedPath && data.path === selectedPath) {
-    showDetail(data);
-  }
 }
 
 function updateTreeData(nodeData) {
   const path = nodeData.path || '';
   const parts = path.split('/');
-
   if (parts.length === 1) {
-    // Root node
     const idx = trees.findIndex(t => t.path === path || t.name === nodeData.name);
     if (idx >= 0) {
-      // Merge: keep existing children structure if new data has none
       trees[idx] = mergeNode(trees[idx], nodeData);
     } else {
       trees.push(nodeData);
@@ -691,15 +1035,9 @@ function updateTreeData(nodeData) {
     }
     return;
   }
-
-  // Find and update within tree
   for (let i = 0; i < trees.length; i++) {
     if (updateNodeInTree(trees[i], nodeData)) return;
   }
-
-  // If not found in any tree, it might be a root we haven't seen yet
-  // Refresh the full tree
-  refreshTree();
 }
 
 function updateNodeInTree(tree, nodeData) {
@@ -710,11 +1048,9 @@ function updateNodeInTree(tree, nodeData) {
   for (let i = 0; i < (tree.children || []).length; i++) {
     if (updateNodeInTree(tree.children[i], nodeData)) return true;
   }
-  // Check if this node should be a child
   if (nodeData.path && nodeData.path.startsWith(tree.path + '/')) {
     const depth = nodeData.path.split('/').length - tree.path.split('/').length;
     if (depth === 1) {
-      // Direct child
       const existIdx = (tree.children || []).findIndex(c => c.path === nodeData.path);
       if (existIdx >= 0) {
         tree.children[existIdx] = mergeNode(tree.children[existIdx], nodeData);
@@ -730,137 +1066,254 @@ function updateNodeInTree(tree, nodeData) {
 }
 
 function mergeNode(existing, incoming) {
-  return {
-    ...existing,
-    ...incoming,
-    children: mergeChildren(existing.children, incoming.children),
-  };
+  return { ...existing, ...incoming, children: mergeChildren(existing.children, incoming.children) };
 }
 
 function mergeChildren(existing, incoming) {
   if (!incoming || incoming.length === 0) return existing || [];
   if (!existing || existing.length === 0) return incoming;
-  // Merge by path
   const merged = [...existing];
   for (const inc of incoming) {
     const idx = merged.findIndex(m => m.path === inc.path);
-    if (idx >= 0) {
-      merged[idx] = mergeNode(merged[idx], inc);
-    } else {
-      merged.push(inc);
-    }
+    if (idx >= 0) merged[idx] = mergeNode(merged[idx], inc);
+    else merged.push(inc);
   }
   return merged;
 }
 
-// ===== Rendering =====
-function render() {
-  if (currentView === 'tree') renderTree();
-  else renderFlow();
+// ===== Chat =====
+function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  // Hide welcome
+  const welcome = document.getElementById('welcomeScreen');
+  if (welcome) welcome.style.display = 'none';
+
+  // Add user message to UI
+  addUserMessage(text);
+  input.value = '';
+  autoResize(input);
+
+  // Send to server
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      action: 'chat',
+      text: text,
+      conv_id: currentConvId
+    }));
+  }
+
+  // Add a pending assistant message placeholder
+  const msgId = 'pending_' + Date.now();
+  addAssistantPlaceholder(msgId);
 }
 
-function renderTree() {
-  const container = document.getElementById('treeContainer');
-  if (trees.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">{ }</div>
-        <div class="empty-state-text">Waiting for agentic function calls...</div>
-        <div class="empty-state-hint">Decorate functions with @agentic_function to see them here</div>
-      </div>`;
+function addUserMessage(text) {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'message user';
+  div.innerHTML =
+    '<div class="message-header">' +
+      '<div class="message-avatar user-avatar">U</div>' +
+      '<div class="message-sender">You</div>' +
+    '</div>' +
+    '<div class="message-content">' + escHtml(text) + '</div>';
+  container.appendChild(div);
+  scrollToBottom();
+
+  // Store
+  if (currentConvId && conversations[currentConvId]) {
+    conversations[currentConvId].messages.push({ role: 'user', content: text });
+  }
+}
+
+function addAssistantPlaceholder(id) {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'message assistant';
+  div.id = 'msg_' + id;
+  div.innerHTML =
+    '<div class="message-header">' +
+      '<div class="message-avatar bot-avatar">A</div>' +
+      '<div class="message-sender">Agentic</div>' +
+    '</div>' +
+    '<div class="message-status"><div class="spinner"></div> Processing...</div>';
+  container.appendChild(div);
+  pendingResponses[id] = div;
+  scrollToBottom();
+}
+
+function handleChatResponse(data) {
+  // Find or create response element
+  // Remove any pending placeholders
+  const pendingKeys = Object.keys(pendingResponses);
+  let targetEl = null;
+  if (pendingKeys.length > 0) {
+    const key = pendingKeys[0];
+    targetEl = pendingResponses[key];
+    delete pendingResponses[key];
+  }
+
+  if (!targetEl) {
+    // Create new message element
+    const container = document.getElementById('chatMessages');
+    targetEl = document.createElement('div');
+    targetEl.className = 'message assistant';
+    container.appendChild(targetEl);
+  }
+
+  const type = data.type;
+
+  if (type === 'status') {
+    // Update placeholder with status
+    targetEl.innerHTML =
+      '<div class="message-header">' +
+        '<div class="message-avatar bot-avatar">A</div>' +
+        '<div class="message-sender">Agentic</div>' +
+      '</div>' +
+      '<div class="message-status"><div class="spinner"></div> ' + escHtml(data.content) + '</div>';
+    // Put it back as pending
+    const newKey = 'pending_' + Date.now();
+    pendingResponses[newKey] = targetEl;
+    scrollToBottom();
     return;
   }
-  container.innerHTML = trees.map(t => renderTreeNode(t)).join('');
+
+  let contentHtml = '';
+
+  if (type === 'error') {
+    contentHtml = '<div class="error-content">' + escHtml(data.content) + '</div>';
+  } else if (type === 'result') {
+    const content = data.content || '';
+    contentHtml = '<div class="message-content">';
+
+    if (data.function) {
+      contentHtml += '<div style="margin-bottom:4px"><span style="font-family:var(--font-mono);color:var(--accent-green);font-size:12px">' +
+        escHtml(data.function) + '()</span> completed</div>';
+    }
+
+    contentHtml += '<pre>' + escHtml(content) + '</pre>';
+    contentHtml += '</div>';
+
+    // Add context tree card if available
+    if (data.context_tree) {
+      const treeId = 'tree_' + Date.now();
+      contentHtml += renderContextCard(data.context_tree, treeId);
+    }
+  }
+
+  targetEl.innerHTML =
+    '<div class="message-header">' +
+      '<div class="message-avatar bot-avatar">A</div>' +
+      '<div class="message-sender">Agentic</div>' +
+    '</div>' +
+    contentHtml;
+
+  scrollToBottom();
+
+  // Update conversation
+  if (currentConvId && conversations[currentConvId]) {
+    if (!conversations[currentConvId].title || conversations[currentConvId].title === 'New conversation') {
+      const msgs = conversations[currentConvId].messages;
+      if (msgs.length > 0) {
+        conversations[currentConvId].title = msgs[0].content.slice(0, 50);
+        renderConversations();
+      }
+    }
+  }
 }
 
+function renderContextCard(tree, treeId) {
+  const id = treeId || 'ctx_' + Date.now();
+  // Auto-expand root
+  expandedNodes.add(tree.path);
+
+  return '<div class="context-card">' +
+    '<div class="context-card-header" onclick="toggleContextCard(\'' + id + '\')">' +
+      '<span class="context-card-title">' +
+        '<span style="color:var(--accent-cyan)">&#9670;</span> Execution Tree: ' + escHtml(tree.name) +
+      '</span>' +
+      '<span class="context-card-toggle" id="toggle_' + id + '">&#9654;</span>' +
+    '</div>' +
+    '<div class="context-card-body" id="body_' + id + '">' +
+      renderTreeNode(tree) +
+    '</div>' +
+  '</div>';
+}
+
+function toggleContextCard(id) {
+  const body = document.getElementById('body_' + id);
+  const toggle = document.getElementById('toggle_' + id);
+  if (body && toggle) {
+    const expanded = body.classList.toggle('expanded');
+    toggle.classList.toggle('expanded', expanded);
+  }
+}
+
+// ===== Tree rendering (reused from original) =====
 function renderTreeNode(node) {
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = expandedNodes.has(node.path);
   const isSelected = node.path === selectedPath;
 
-  const icon = node.status === 'success' ? '<span style="color:var(--accent-green)">&#10003;</span>'
-    : node.status === 'error' ? '<span style="color:var(--accent-red)">&#10007;</span>'
+  const icon = node.status === 'success'
+    ? '<span style="color:var(--accent-green)">&#10003;</span>'
+    : node.status === 'error'
+    ? '<span style="color:var(--accent-red)">&#10007;</span>'
     : '<span class="pulse" style="color:var(--accent-blue)">&#9679;</span>';
 
-  const dur = node.duration_ms > 0 ? `${Math.round(node.duration_ms)}ms` : '';
-  const output = node.output != null ? truncate(JSON.stringify(node.output), 40) : '';
-
+  const dur = node.duration_ms > 0 ? Math.round(node.duration_ms) + 'ms' : '';
+  const output = node.output != null ? truncate(JSON.stringify(node.output), 30) : '';
   const toggleClass = hasChildren ? (isExpanded ? 'expanded' : '') : 'leaf';
   const childrenClass = isExpanded ? '' : 'collapsed';
 
-  let html = `<div class="tree-node">
-    <div class="node-row${isSelected ? ' selected' : ''}" data-path="${esc(node.path)}" onclick="selectNode(event, ${esc(JSON.stringify(JSON.stringify(node)))})">
-      <span class="node-toggle ${toggleClass}" onclick="toggleExpand(event, '${esc(node.path)}')">&#9654;</span>
-      <span class="node-icon">${icon}</span>
-      <span class="node-name">${esc(node.name)}</span>
-      <span class="node-status ${node.status}">${node.status}</span>
-      ${dur ? `<span class="node-duration">${dur}</span>` : ''}
-      ${output ? `<span class="node-output-preview">${esc(output)}</span>` : ''}
-    </div>`;
+  let html = '<div class="tree-node">' +
+    '<div class="node-row' + (isSelected ? ' selected' : '') + '" onclick="selectTreeNode(event, ' + escAttr(JSON.stringify(node)) + ')">' +
+      '<span class="node-toggle ' + toggleClass + '" onclick="toggleExpand(event, \'' + escAttr(node.path) + '\')">&#9654;</span>' +
+      '<span class="node-icon">' + icon + '</span>' +
+      '<span class="node-name">' + escHtml(node.name) + '</span>' +
+      '<span class="node-status ' + node.status + '">' + node.status + '</span>' +
+      (dur ? '<span class="node-duration">' + dur + '</span>' : '') +
+      (output ? '<span class="node-output-preview">' + escHtml(output) + '</span>' : '') +
+    '</div>';
 
   if (hasChildren) {
-    html += `<div class="node-children ${childrenClass}">`;
+    html += '<div class="node-children ' + childrenClass + '">';
     html += node.children.map(c => renderTreeNode(c)).join('');
-    html += `</div>`;
+    html += '</div>';
   }
 
-  html += `</div>`;
+  html += '</div>';
   return html;
 }
 
-function renderFlow() {
-  const container = document.getElementById('flowContainer');
-  if (trees.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">{ }</div>
-        <div class="empty-state-text">Waiting for agentic function calls...</div>
-        <div class="empty-state-hint">Decorate functions with @agentic_function to see them here</div>
-      </div>`;
-    return;
-  }
-
-  // Group nodes by depth level
-  const levels = {};
-  for (const tree of trees) {
-    collectByDepth(tree, 0, levels);
-  }
-
-  let html = '';
-  const depths = Object.keys(levels).map(Number).sort((a, b) => a - b);
-  for (const depth of depths) {
-    const nodes = levels[depth];
-    html += `<div class="flow-level">
-      <div class="flow-level-label">depth ${depth}</div>
-      <div class="flow-nodes">`;
-    nodes.forEach((n, i) => {
-      if (i > 0) html += `<div class="flow-arrow">&#8594;</div>`;
-      const icon = n.status === 'success' ? '&#10003;'
-        : n.status === 'error' ? '&#10007;'
-        : '<span class="pulse">&#9679;</span>';
-      const dur = n.duration_ms > 0 ? `${Math.round(n.duration_ms)}ms` : 'running...';
-      const output = n.output != null ? truncate(JSON.stringify(n.output), 30) : '';
-
-      html += `<div class="flow-card ${n.status}" onclick='selectNode(event, ${esc(JSON.stringify(JSON.stringify(n)))})'>
-        <div class="flow-card-header">
-          <span class="flow-card-icon">${icon}</span>
-          <span class="flow-card-name">${esc(n.name)}</span>
-        </div>
-        <div class="flow-card-meta">${dur}</div>
-        ${output ? `<div class="flow-card-output">${esc(output)}</div>` : ''}
-      </div>`;
-    });
-    html += `</div></div>`;
-  }
-
-  container.innerHTML = html;
+function selectTreeNode(event, nodeData) {
+  event.stopPropagation();
+  showDetail(typeof nodeData === 'string' ? JSON.parse(nodeData) : nodeData);
 }
 
-function collectByDepth(node, depth, levels) {
-  if (!levels[depth]) levels[depth] = [];
-  levels[depth].push(node);
-  for (const child of (node.children || [])) {
-    collectByDepth(child, depth + 1, levels);
+function toggleExpand(event, path) {
+  event.stopPropagation();
+  if (expandedNodes.has(path)) expandedNodes.delete(path);
+  else expandedNodes.add(path);
+  // Re-render any context cards that contain this path
+  // For simplicity, just re-render via DOM manipulation on the specific card
+  // Find parent context-card-body and re-render
+  const el = event.target.closest('.context-card-body') || event.target.closest('.tree-node');
+  if (el) {
+    // Find root tree data for this card
+    // Simple approach: toggle visibility of children container
+    const row = event.target.closest('.node-row');
+    if (row) {
+      const children = row.nextElementSibling;
+      if (children && children.classList.contains('node-children')) {
+        children.classList.toggle('collapsed');
+      }
+      const toggle = row.querySelector('.node-toggle');
+      if (toggle) toggle.classList.toggle('expanded');
+    }
   }
 }
 
@@ -875,109 +1328,263 @@ function showDetail(node) {
   title.textContent = node.name;
 
   const statusIcon = node.status === 'success' ? '&#10003;' : node.status === 'error' ? '&#10007;' : '&#9679;';
-  const dur = node.duration_ms > 0 ? `${Math.round(node.duration_ms)}ms` : 'running...';
+  const dur = node.duration_ms > 0 ? Math.round(node.duration_ms) + 'ms' : 'running...';
 
-  let html = `
-    <div class="detail-section">
-      <div class="detail-section-title">Status</div>
-      <div class="detail-badge ${node.status}">${statusIcon} ${node.status} &middot; ${dur}</div>
-    </div>
+  let html = '<div class="detail-section">' +
+    '<div class="detail-section-title">Status</div>' +
+    '<div class="detail-badge ' + node.status + '">' + statusIcon + ' ' + node.status + ' &middot; ' + dur + '</div>' +
+  '</div>';
 
-    <div class="detail-section">
-      <div class="detail-section-title">Path</div>
-      <div class="detail-field-value">${esc(node.path)}</div>
-    </div>`;
+  html += '<div class="detail-section">' +
+    '<div class="detail-section-title">Path</div>' +
+    '<div class="detail-field-value">' + escHtml(node.path) + '</div>' +
+  '</div>';
 
   if (node.prompt) {
-    html += `
-    <div class="detail-section">
-      <div class="detail-section-title">Prompt / Docstring</div>
-      <div class="detail-code">${esc(node.prompt)}</div>
-    </div>`;
+    html += '<div class="detail-section">' +
+      '<div class="detail-section-title">Prompt / Docstring</div>' +
+      '<div class="detail-code">' + escHtml(node.prompt) + '</div>' +
+    '</div>';
   }
 
   if (node.params && Object.keys(node.params).length > 0) {
-    html += `
-    <div class="detail-section">
-      <div class="detail-section-title">Parameters</div>
-      <div class="detail-code">${esc(JSON.stringify(node.params, null, 2))}</div>
-    </div>`;
+    html += '<div class="detail-section">' +
+      '<div class="detail-section-title">Parameters</div>' +
+      '<div class="detail-code">' + escHtml(JSON.stringify(node.params, null, 2)) + '</div>' +
+    '</div>';
   }
 
   if (node.output != null) {
-    html += `
-    <div class="detail-section">
-      <div class="detail-section-title">Output</div>
-      <div class="detail-code">${esc(typeof node.output === 'string' ? node.output : JSON.stringify(node.output, null, 2))}</div>
-    </div>`;
+    html += '<div class="detail-section">' +
+      '<div class="detail-section-title">Output</div>' +
+      '<div class="detail-code">' + escHtml(typeof node.output === 'string' ? node.output : JSON.stringify(node.output, null, 2)) + '</div>' +
+    '</div>';
   }
 
   if (node.error) {
-    html += `
-    <div class="detail-section">
-      <div class="detail-section-title">Error</div>
-      <div class="detail-code" style="color:var(--accent-red)">${esc(node.error)}</div>
-    </div>`;
+    html += '<div class="detail-section">' +
+      '<div class="detail-section-title">Error</div>' +
+      '<div class="detail-code" style="color:var(--accent-red)">' + escHtml(node.error) + '</div>' +
+    '</div>';
   }
 
   if (node.raw_reply != null) {
-    html += `
-    <div class="detail-section">
-      <div class="detail-section-title">Raw LLM Reply</div>
-      <div class="detail-code">${esc(node.raw_reply)}</div>
-    </div>`;
+    html += '<div class="detail-section">' +
+      '<div class="detail-section-title">Raw LLM Reply</div>' +
+      '<div class="detail-code">' + escHtml(node.raw_reply) + '</div>' +
+    '</div>';
   }
 
   if (node.attempts && node.attempts.length > 0) {
-    html += `
-    <div class="detail-section">
-      <div class="detail-section-title">Attempts (${node.attempts.length})</div>
-      <div class="detail-code">${esc(JSON.stringify(node.attempts, null, 2))}</div>
-    </div>`;
+    html += '<div class="detail-section">' +
+      '<div class="detail-section-title">Attempts (' + node.attempts.length + ')</div>' +
+      '<div class="detail-code">' + escHtml(JSON.stringify(node.attempts, null, 2)) + '</div>' +
+    '</div>';
   }
 
-  html += `
-    <div class="detail-section">
-      <div class="detail-section-title">Render / Compress</div>
-      <div class="detail-field-value">render: ${esc(node.render || 'summary')} | compress: ${node.compress ? 'true' : 'false'}</div>
-    </div>`;
+  html += '<div class="detail-section">' +
+    '<div class="detail-section-title">Render / Compress</div>' +
+    '<div class="detail-field-value">render: ' + escHtml(node.render || 'summary') + ' | compress: ' + (node.compress ? 'true' : 'false') + '</div>' +
+  '</div>';
 
   body.innerHTML = html;
-  render(); // re-render to update selection highlighting
 }
 
 function closeDetail() {
   selectedPath = null;
   document.getElementById('detailPanel').classList.add('collapsed');
-  render();
 }
 
-// ===== Interactions =====
-function selectNode(event, nodeJson) {
-  event.stopPropagation();
-  const node = JSON.parse(nodeJson);
-  showDetail(node);
+function toggleDetail() {
+  document.getElementById('detailPanel').classList.toggle('collapsed');
 }
 
-function toggleExpand(event, path) {
-  event.stopPropagation();
-  if (expandedNodes.has(path)) {
-    expandedNodes.delete(path);
+// ===== Sidebar =====
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  sidebarOpen = !sidebarOpen;
+  sb.classList.toggle('collapsed', !sidebarOpen);
+}
+
+function renderConversations() {
+  const container = document.getElementById('convList');
+  let html = '<div class="sidebar-section-title">Conversations</div>';
+  const convs = Object.values(conversations).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  if (convs.length === 0) {
+    html += '<div style="padding:8px 16px;font-size:12px;color:var(--text-muted)">No conversations yet</div>';
   } else {
-    expandedNodes.add(path);
+    for (const c of convs) {
+      const active = c.id === currentConvId ? ' active' : '';
+      html += '<div class="conv-item' + active + '" onclick="switchConversation(\'' + c.id + '\')" title="' + escAttr(c.title || 'Untitled') + '">' +
+        escHtml(c.title || 'Untitled') + '</div>';
+    }
   }
-  render();
+  container.innerHTML = html;
 }
 
-function switchView(view) {
-  currentView = view;
-  document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
-  document.getElementById('treePanel').style.display = view === 'tree' ? 'block' : 'none';
-  document.getElementById('flowPanel').style.display = view === 'flow' ? 'block' : 'none';
-  document.getElementById('flowPanel').classList.toggle('active', view === 'flow');
-  render();
+function renderFunctions() {
+  const container = document.getElementById('fnList');
+  let html = '<div class="sidebar-section-title">Functions</div>';
+
+  const categories = { meta: [], builtin: [], user: [] };
+  for (const f of availableFunctions) {
+    const cat = f.category || 'user';
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push(f);
+  }
+
+  const catLabels = { meta: 'Meta Functions', builtin: 'Built-in Functions', user: 'User Functions' };
+  const catIcons = { meta: '&#9733;', builtin: '&#9881;', user: '&#9998;' };
+
+  for (const cat of ['meta', 'builtin', 'user']) {
+    const fns = categories[cat];
+    if (!fns || fns.length === 0) continue;
+    html += '<div class="fn-category">' + catLabels[cat] + '</div>';
+    for (const f of fns) {
+      const desc = f.description ? f.description.split('.')[0] : '';
+      const isUserFn = cat !== 'meta';
+      html += '<div class="fn-item" title="' + escAttr(desc) + '">' +
+        '<div class="fn-item-main" onclick="clickFunction(\'' + escAttr(f.name) + '\', \'' + escAttr(f.category) + '\')">' +
+          '<span class="fn-icon ' + f.category + '">' + catIcons[cat] + '</span>' +
+          '<span class="fn-name">' + escHtml(f.name) + '</span>' +
+          '<span class="fn-desc">' + escHtml(truncate(desc, 30)) + '</span>' +
+        '</div>' +
+        '<div class="fn-actions">' +
+          '<button class="fn-action-btn" onclick="viewSource(\'' + escAttr(f.name) + '\')" title="View source">&#128196;</button>' +
+          (isUserFn ? '<button class="fn-action-btn" onclick="fixFunction(\'' + escAttr(f.name) + '\')" title="Fix with LLM">&#128295;</button>' : '') +
+          (isUserFn && cat !== 'builtin' ? '<button class="fn-action-btn fn-action-delete" onclick="deleteFunction(\'' + escAttr(f.name) + '\')" title="Delete">&#128465;</button>' : '') +
+        '</div>' +
+      '</div>';
+    }
+  }
+
+  container.innerHTML = html;
 }
 
+function clickFunction(name, category) {
+  const input = document.getElementById('chatInput');
+  if (category === 'meta') {
+    if (name === 'create') {
+      input.value = 'create a function that ';
+    } else if (name === 'fix') {
+      input.value = 'fix ';
+    } else if (name === 'create_app') {
+      input.value = 'create app ';
+    } else if (name === 'create_skill') {
+      input.value = 'create skill ';
+    } else {
+      input.value = 'run ' + name + ' ';
+    }
+  } else {
+    // Find function params
+    const fn = availableFunctions.find(f => f.name === name);
+    if (fn && fn.params && fn.params.length > 0) {
+      const paramStr = fn.params.filter(p => p !== 'runtime' && p !== 'callback').map(p => p + '=').join(' ');
+      input.value = 'run ' + name + ' ' + paramStr;
+    } else {
+      input.value = 'run ' + name + ' ';
+    }
+  }
+  input.focus();
+  autoResize(input);
+}
+
+function switchConversation(convId) {
+  currentConvId = convId;
+  renderConversations();
+  // Load conversation from server
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'load_conversation', conv_id: convId }));
+  }
+  // Or load from local cache
+  if (conversations[convId]) {
+    renderConversationMessages(conversations[convId]);
+  }
+}
+
+function loadConversationData(data) {
+  conversations[data.id] = data;
+  if (data.id === currentConvId) {
+    renderConversationMessages(data);
+  }
+}
+
+function renderConversationMessages(conv) {
+  const container = document.getElementById('chatMessages');
+  const welcome = document.getElementById('welcomeScreen');
+
+  if (!conv.messages || conv.messages.length === 0) {
+    container.innerHTML = '';
+    if (welcome) {
+      container.appendChild(welcome);
+      welcome.style.display = '';
+    }
+    return;
+  }
+
+  if (welcome) welcome.style.display = 'none';
+  container.innerHTML = '';
+
+  for (const msg of conv.messages) {
+    const div = document.createElement('div');
+    if (msg.role === 'user') {
+      div.className = 'message user';
+      div.innerHTML =
+        '<div class="message-header">' +
+          '<div class="message-avatar user-avatar">U</div>' +
+          '<div class="message-sender">You</div>' +
+        '</div>' +
+        '<div class="message-content">' + escHtml(msg.content || '') + '</div>';
+    } else {
+      div.className = 'message assistant';
+      let contentHtml = '';
+      if (msg.type === 'error') {
+        contentHtml = '<div class="error-content">' + escHtml(msg.content || '') + '</div>';
+      } else {
+        contentHtml = '<div class="message-content"><pre>' + escHtml(msg.content || '') + '</pre></div>';
+      }
+      div.innerHTML =
+        '<div class="message-header">' +
+          '<div class="message-avatar bot-avatar">A</div>' +
+          '<div class="message-sender">Agentic</div>' +
+        '</div>' +
+        contentHtml;
+    }
+    container.appendChild(div);
+  }
+  scrollToBottom();
+}
+
+function newConversation() {
+  currentConvId = null;
+  pendingResponses = {};
+  const container = document.getElementById('chatMessages');
+  container.innerHTML = '';
+  // Re-add welcome
+  const welcome = document.createElement('div');
+  welcome.className = 'welcome';
+  welcome.id = 'welcomeScreen';
+  welcome.innerHTML =
+    '<div class="welcome-logo">{ }</div>' +
+    '<div class="welcome-title">Agentic Programming</div>' +
+    '<div class="welcome-text">Run agentic functions, create new ones, or ask questions. Type a command or natural language below.</div>' +
+    '<div class="welcome-examples">' +
+      '<div class="welcome-example" onclick="setInput(\'run word_count text=&quot;Hello world&quot;\')">run word_count text="Hello world"</div>' +
+      '<div class="welcome-example" onclick="setInput(\'run sentiment text=&quot;I love this product&quot;\')">run sentiment</div>' +
+      '<div class="welcome-example" onclick="setInput(\'create a function that extracts emails from text --name extract_emails\')">create a function</div>' +
+    '</div>';
+  container.appendChild(welcome);
+  renderConversations();
+}
+
+function setInput(text) {
+  const input = document.getElementById('chatInput');
+  input.value = text;
+  input.focus();
+  autoResize(input);
+}
+
+// ===== Pause/Resume =====
 function togglePause() {
   const endpoint = isPaused ? '/api/resume' : '/api/pause';
   fetch(endpoint, { method: 'POST' })
@@ -993,7 +1600,6 @@ function updatePauseBtn() {
   const btn = document.getElementById('btnPause');
   btn.textContent = isPaused ? 'Resume' : 'Pause';
   btn.classList.toggle('paused', isPaused);
-
   const badge = document.getElementById('statusBadge');
   if (isPaused) {
     badge.textContent = 'paused';
@@ -1015,29 +1621,48 @@ function updateStatus(status) {
   }
 }
 
-function refreshTree() {
-  fetch('/api/tree')
-    .then(r => r.json())
-    .then(data => {
-      trees = data;
-      // Auto-expand all root nodes
-      trees.forEach(t => expandedNodes.add(t.path));
-      render();
-    })
-    .catch(() => {});
+// ===== Input handling =====
+const chatInput = document.getElementById('chatInput');
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+chatInput.addEventListener('input', () => {
+  autoResize(chatInput);
+});
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 200) + 'px';
 }
 
 // ===== Helpers =====
+function scrollToBottom() {
+  const area = document.getElementById('chatArea');
+  requestAnimationFrame(() => {
+    area.scrollTop = area.scrollHeight;
+  });
+}
+
 function truncate(s, len) {
   if (!s) return '';
   return s.length > len ? s.slice(0, len - 3) + '...' : s;
 }
 
-function esc(s) {
-  if (typeof s !== 'string') return s;
+function escHtml(s) {
+  if (typeof s !== 'string') s = String(s || '');
   const div = document.createElement('div');
   div.textContent = s;
   return div.innerHTML;
+}
+
+function escAttr(s) {
+  if (typeof s !== 'string') s = String(s || '');
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ===== Keepalive =====
@@ -1046,6 +1671,111 @@ setInterval(() => {
     ws.send('ping');
   }
 }, 30000);
+
+// ===== Code Viewer =====
+
+async function viewSource(name) {
+  try {
+    const resp = await fetch('/api/function/' + encodeURIComponent(name) + '/source');
+    const data = await resp.json();
+    if (data.error) { alert(data.error); return; }
+    showCodeModal(name, data.source, data.category);
+  } catch(e) { alert('Failed to load source: ' + e.message); }
+}
+
+function showCodeModal(name, source, category) {
+  let modal = document.getElementById('codeModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'codeModal';
+    modal.className = 'code-modal-overlay';
+    modal.innerHTML = '<div class="code-modal">' +
+      '<div class="code-modal-header"><span class="code-modal-title" id="codeModalTitle"></span><button class="code-modal-close" onclick="closeCodeModal()">&times;</button></div>' +
+      '<div class="code-modal-body"><pre id="codeModalPre"></pre></div>' +
+      '<div class="code-modal-actions" id="codeModalActions"></div>' +
+    '</div>';
+    modal.addEventListener('click', function(e) { if (e.target === modal) closeCodeModal(); });
+    document.body.appendChild(modal);
+  }
+  document.getElementById('codeModalTitle').textContent = name + '.py';
+  document.getElementById('codeModalPre').innerHTML = highlightPython(source);
+
+  let actions = '<button class="code-modal-btn" onclick="closeCodeModal()">Close</button>';
+  if (category !== 'meta') {
+    actions += '<button class="code-modal-btn" onclick="editInModal(\'' + escAttr(name) + '\')">Edit</button>';
+    actions += '<button class="code-modal-btn" onclick="fixFromModal(\'' + escAttr(name) + '\')">Fix with LLM</button>';
+  }
+  document.getElementById('codeModalActions').innerHTML = actions;
+
+  requestAnimationFrame(() => modal.classList.add('active'));
+}
+
+function closeCodeModal() {
+  const modal = document.getElementById('codeModal');
+  if (modal) modal.classList.remove('active');
+}
+
+function highlightPython(code) {
+  const lines = code.split('\n');
+  return lines.map((line, i) => {
+    const num = '<span class="line-num">' + (i+1) + '</span>';
+    let hl = escHtml(line);
+    // Keywords
+    hl = hl.replace(/\b(from|import|def|class|return|if|else|elif|for|while|try|except|finally|with|as|raise|yield|pass|break|continue|and|or|not|in|is|lambda|True|False|None)\b/g, '<span class="syn-keyword">$1</span>');
+    // Decorators
+    hl = hl.replace(/^(\s*)(@\w+)/gm, '$1<span class="syn-decorator">$2</span>');
+    // Strings (simple)
+    hl = hl.replace(/("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"[^"]*"|\'[^\']*\')/g, '<span class="syn-string">$1</span>');
+    // Comments
+    hl = hl.replace(/(#.*)$/gm, '<span class="syn-comment">$1</span>');
+    // Numbers
+    hl = hl.replace(/\b(\d+\.?\d*)\b/g, '<span class="syn-number">$1</span>');
+    // self
+    hl = hl.replace(/\b(self)\b/g, '<span class="syn-self">$1</span>');
+    return num + hl;
+  }).join('\n');
+}
+
+function editInModal(name) {
+  closeCodeModal();
+  const input = document.getElementById('chatInput');
+  input.value = 'I want to edit function ' + name;
+  input.focus();
+}
+
+function fixFromModal(name) {
+  const instruction = prompt('What should be fixed in ' + name + '?');
+  if (!instruction) return;
+  closeCodeModal();
+  const input = document.getElementById('chatInput');
+  input.value = 'fix ' + name + ' ' + instruction;
+  sendMessage();
+}
+
+async function fixFunction(name) {
+  const instruction = prompt('What should be fixed in ' + name + '?');
+  if (!instruction) return;
+  const input = document.getElementById('chatInput');
+  input.value = 'fix ' + name + ' ' + instruction;
+  sendMessage();
+}
+
+async function deleteFunction(name) {
+  if (!confirm('Delete function "' + name + '"?')) return;
+  try {
+    const resp = await fetch('/api/function/' + encodeURIComponent(name), { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.deleted) {
+      addAssistantMessage('Deleted function "' + name + '".');
+      // Refresh function list
+      const fResp = await fetch('/api/functions');
+      availableFunctions = await fResp.json();
+      renderFunctions();
+    } else {
+      addAssistantMessage('Cannot delete: ' + (data.error || 'unknown error'));
+    }
+  } catch(e) { alert('Delete failed: ' + e.message); }
+}
 
 // ===== Init =====
 connect();
