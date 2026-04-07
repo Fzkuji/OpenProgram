@@ -57,7 +57,41 @@ pip install agentic-programming
 | OpenAI API | `pip install "agentic-programming[openai]"` 然后 `export OPENAI_API_KEY=...` |
 | Gemini API | `pip install "agentic-programming[gemini]"` 然后 `export GOOGLE_API_KEY=...` |
 
-使用 `agentic providers` 验证配置。
+使用 `agentic providers` 验证配置。然后选择你的使用方式：
+
+### Python — 编写 agentic 代码
+
+```python
+@agentic_function
+def login_flow(username, password):
+    """完成登录流程。"""
+    observe(task="find login form")       # Python 决定做什么
+    click(element="login button")         # Python 决定顺序
+    return verify(expected="dashboard")   # Python 决定何时停止
+```
+
+### Skills — 让你的 LLM agent 使用
+
+```bash
+cp -r skills/* ~/.claude/skills/    # Claude Code
+cp -r skills/* ~/.gemini/skills/    # Gemini CLI
+```
+
+然后与 agent 对话：*"创建一个从文本中提取邮箱地址的函数"*
+
+### MCP — 连接任意 MCP 客户端
+
+```json
+{
+    "mcpServers": {
+        "agentic": { "command": "python", "args": ["-m", "agentic.mcp"] }
+    }
+}
+```
+
+> 需要 `pip install "agentic-programming[mcp]"`。暴露：`list_functions`、`run_function`、`create_function`、`create_application`、`fix_function`。
+
+---
 
 ## 为什么选择 Agentic Programming?
 
@@ -99,20 +133,13 @@ pip install agentic-programming
 
 MCP 是*传输层*。Agentic Programming 是*执行模型*。两者正交。
 
-## 用法
+---
 
-### Python
+## 核心特性
 
-```python
-@agentic_function
-def login_flow(username, password):
-    """完成登录流程。"""
-    observe(task="find login form")       # Python 决定做什么
-    click(element="login button")         # Python 决定顺序
-    return verify(expected="dashboard")   # Python 决定何时停止
-```
+### 自动上下文
 
-每次调用创建一个 **Context** 节点。节点组成树，自动注入到 LLM 调用中：
+每个 `@agentic_function` 调用会创建一个 **Context** 节点。节点组成树，自动注入到 LLM 调用中：
 
 ```
 login_flow ✓ 8.8s
@@ -123,39 +150,21 @@ login_flow ✓ 8.8s
 
 当 `verify` 调用 LLM 时，它自动看到 `observe` 和 `click` 的返回结果。不需要手动管理上下文。
 
-### Skills — agent 集成
+### Deep Work — 自主质量循环
 
-安装 skills，让你的 LLM agent 能够通过自然语言使用 agentic 函数：
+对于需要持续努力和高标准的复杂任务，`deep_work` 会运行一个自主的 计划-执行-评估 循环，直到输出达到指定的质量水平：
 
-```bash
-cp -r skills/* ~/.claude/skills/    # Claude Code
-cp -r skills/* ~/.gemini/skills/    # Gemini CLI
+```python
+from agentic.functions.deep_work import deep_work
+
+result = deep_work(
+    task="写一篇关于 LLM agent 中上下文管理的综述论文。",
+    level="phd",        # high_school → bachelor → master → phd → professor
+    runtime=runtime,
+)
 ```
 
-然后与你的 agent 对话：
-
-> "创建一个从文本中提取邮箱地址的函数"
-
-### MCP — 任意 MCP 客户端
-
-```bash
-pip install "agentic-programming[mcp]"
-```
-
-添加到你的 MCP 客户端配置：
-
-```json
-{
-    "mcpServers": {
-        "agentic": {
-            "command": "python",
-            "args": ["-m", "agentic.mcp"]
-        }
-    }
-}
-```
-
-暴露五个工具：`list_functions`、`run_function`、`create_function`、`create_application`、`fix_function`。
+Agent 先确认需求，然后完全自主工作——执行、自我评估、修订，直到通过质量审查。状态持久化到磁盘，中断的工作可以从断点恢复。
 
 ### 自我演化代码
 
@@ -205,6 +214,15 @@ fixed = fix(fn=broken_fn, runtime=runtime, instruction="return JSON, not plain t
 | `from agentic.meta_functions import fix` | 通过 LLM 分析修复损坏的函数 |
 | `from agentic.meta_functions import create_skill` | 生成用于 agent 发现的 SKILL.md |
 
+### 内置函数
+
+| 导入 | 功能 |
+|------|------|
+| `from agentic.functions.deep_work import deep_work` | 自主计划-执行-评估循环，支持质量等级 |
+| `from agentic.functions.agent_loop import agent_loop` | 通用自主 agent 循环 |
+| `from agentic.functions.general_action import general_action` | 给 LLM 完全自由完成单个任务 |
+| `from agentic.functions.wait import wait` | LLM 根据上下文决定等待时长 |
+
 ### 提供方
 
 六个内置提供方：Anthropic、OpenAI、Gemini (API)、Claude Code、Codex、Gemini (CLI)。所有 CLI 提供方在调用之间维持**会话连续性**。详见 [Provider 文档](api/providers.md)。
@@ -234,7 +252,11 @@ agentic/
 │   └── create_skill.py      #   create_skill() — generate SKILL.md
 ├── providers/               # Anthropic, OpenAI, Gemini, Claude Code, Codex, Gemini CLI
 ├── mcp/                     # MCP server (python -m agentic.mcp)
-├── functions/               # saved generated functions
+├── functions/               # Built-in agentic functions
+│   ├── deep_work.py         #   Autonomous quality loop
+│   ├── agent_loop.py        #   General agent loop
+│   ├── general_action.py    #   Single-task action
+│   └── wait.py              #   Context-aware waiting
 └── apps/                    # generated apps (from create_app)
 skills/                      # SKILL.md files for agent integration
 examples/                    # runnable demos
@@ -243,12 +265,12 @@ tests/                       # pytest suite
 
 </details>
 
-## 贡献
+## Contributing
 
-这是一个**范式提案**及其参考实现。我们欢迎讨论、其他语言的替代实现、验证或挑战该方法的用例，以及 bug 报告。
+This is a **paradigm proposal** with a reference implementation. We welcome discussions, alternative implementations in other languages, use cases that validate or challenge the approach, and bug reports.
 
-详见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for details.
 
-## 许可证
+## License
 
 MIT

@@ -57,7 +57,41 @@ Set up at least one LLM provider:
 | OpenAI API | `pip install "agentic-programming[openai]"` then `export OPENAI_API_KEY=...` |
 | Gemini API | `pip install "agentic-programming[gemini]"` then `export GOOGLE_API_KEY=...` |
 
-Verify with `agentic providers`.
+Verify with `agentic providers`. Then pick how you want to use it:
+
+### Python — write agentic code
+
+```python
+@agentic_function
+def login_flow(username, password):
+    """Complete login flow."""
+    observe(task="find login form")       # Python decides what to do
+    click(element="login button")         # Python decides the order
+    return verify(expected="dashboard")   # Python decides when to stop
+```
+
+### Skills — let your LLM agent use it
+
+```bash
+cp -r skills/* ~/.claude/skills/    # Claude Code
+cp -r skills/* ~/.gemini/skills/    # Gemini CLI
+```
+
+Then talk to your agent: *"Create a function that extracts emails from text"*
+
+### MCP — connect any MCP client
+
+```json
+{
+    "mcpServers": {
+        "agentic": { "command": "python", "args": ["-m", "agentic.mcp"] }
+    }
+}
+```
+
+> Requires `pip install "agentic-programming[mcp]"`. Exposes: `list_functions`, `run_function`, `create_function`, `create_application`, `fix_function`.
+
+---
 
 ## Why Agentic Programming?
 
@@ -99,20 +133,13 @@ The core issue: **the LLM controls the flow, but nothing enforces it.** Skills, 
 
 MCP is the *transport*. Agentic Programming is the *execution model*. They're orthogonal.
 
-## Usage
+---
 
-### Python
+## Key Features
 
-```python
-@agentic_function
-def login_flow(username, password):
-    """Complete login flow."""
-    observe(task="find login form")       # Python decides what to do
-    click(element="login button")         # Python decides the order
-    return verify(expected="dashboard")   # Python decides when to stop
-```
+### Automatic Context
 
-Every call creates a **Context** node. Nodes form a tree that is automatically injected into LLM calls:
+Every `@agentic_function` call creates a **Context** node. Nodes form a tree that is automatically injected into LLM calls:
 
 ```
 login_flow ✓ 8.8s
@@ -123,39 +150,21 @@ login_flow ✓ 8.8s
 
 When `verify` calls the LLM, it automatically sees what `observe` and `click` returned. No manual context management.
 
-### Skills — agent integration
+### Deep Work — Autonomous Quality Loop
 
-Install skills so your LLM agent can use agentic functions through natural language:
+For complex tasks that demand sustained effort and high standards, `deep_work` runs an autonomous plan-execute-evaluate loop until the result meets the specified quality level:
 
-```bash
-cp -r skills/* ~/.claude/skills/    # Claude Code
-cp -r skills/* ~/.gemini/skills/    # Gemini CLI
+```python
+from agentic.functions.deep_work import deep_work
+
+result = deep_work(
+    task="Write a survey on context management in LLM agents.",
+    level="phd",        # high_school → bachelor → master → phd → professor
+    runtime=runtime,
+)
 ```
 
-Then talk to your agent:
-
-> "Create a function that extracts emails from text"
-
-### MCP — any MCP client
-
-```bash
-pip install "agentic-programming[mcp]"
-```
-
-Add to your MCP client config:
-
-```json
-{
-    "mcpServers": {
-        "agentic": {
-            "command": "python",
-            "args": ["-m", "agentic.mcp"]
-        }
-    }
-}
-```
-
-Exposes five tools: `list_functions`, `run_function`, `create_function`, `create_application`, `fix_function`.
+The agent clarifies requirements upfront, then works fully autonomously — executing, self-evaluating, and revising until the output passes quality review. State is persisted to disk, so interrupted work resumes where it left off.
 
 ### Self-Evolving Code
 
@@ -205,6 +214,15 @@ The `create → run → fail → fix → run` cycle means programs improve thems
 | `from agentic.meta_functions import fix` | Fix broken functions via LLM analysis |
 | `from agentic.meta_functions import create_skill` | Generate a SKILL.md for agent discovery |
 
+### Built-in Functions
+
+| Import | What it does |
+|--------|-------------|
+| `from agentic.functions.deep_work import deep_work` | Autonomous plan-execute-evaluate loop with quality levels |
+| `from agentic.functions.agent_loop import agent_loop` | General-purpose autonomous agent loop |
+| `from agentic.functions.general_action import general_action` | Give the LLM full freedom to complete a single task |
+| `from agentic.functions.wait import wait` | LLM decides how long to wait based on context |
+
 ### Providers
 
 Six built-in providers: Anthropic, OpenAI, Gemini (API), Claude Code, Codex, Gemini (CLI). All CLI providers maintain **session continuity** across calls. See [Provider docs](docs/api/providers.md) for details.
@@ -234,7 +252,11 @@ agentic/
 │   └── create_skill.py      #   create_skill() — generate SKILL.md
 ├── providers/               # Anthropic, OpenAI, Gemini, Claude Code, Codex, Gemini CLI
 ├── mcp/                     # MCP server (python -m agentic.mcp)
-├── functions/               # saved generated functions
+├── functions/               # Built-in agentic functions
+│   ├── deep_work.py         #   Autonomous quality loop
+│   ├── agent_loop.py        #   General agent loop
+│   ├── general_action.py    #   Single-task action
+│   └── wait.py              #   Context-aware waiting
 └── apps/                    # generated apps (from create_app)
 skills/                      # SKILL.md files for agent integration
 examples/                    # runnable demos
