@@ -28,23 +28,17 @@
 > **This is a paradigm proposal.** Current LLM agent frameworks let the LLM control everything — what to do, when, and how. The result? Unpredictable execution, context explosion, and no output guarantees. We flip this: **Python controls the flow, LLM only reasons when asked.**
 
 ```python
-from agentic import agentic_function, create_runtime
-
-runtime = create_runtime()  # auto-detects best provider
-
 @agentic_function
 def summarize(text: str) -> str:
-    """Summarize the given text into 3 bullet points."""
-    return runtime.exec(content=[{"type": "text", "text": text}])
-
-result = summarize(text="Your long article here...")
+    """Summarize the given text into 3 bullet points."""  # ← docstring IS the prompt
+    return runtime.exec(content=[{"type": "text", "text": text}])  # ← LLM reasons here
 ```
 
 ## Quick Start
 
 ### Prerequisites
 
-Agentic Programming requires at least one LLM provider. Set up any of the following:
+Agentic Programming requires at least one LLM provider. Set up any one:
 
 | Provider | Setup |
 |----------|-------|
@@ -55,19 +49,22 @@ Agentic Programming requires at least one LLM provider. Set up any of the follow
 | OpenAI API | `export OPENAI_API_KEY=...` |
 | Gemini API | `export GOOGLE_API_KEY=...` |
 
-### Install
+Then choose how you want to use it:
+
+### Option A: Python — write agentic code
+
+Install the package and start coding:
 
 ```bash
-pip install agentic-programming
+pip install agentic-programming          # core package
+pip install "agentic-programming[openai]" # add API provider (or [anthropic], [gemini])
 ```
 
-> For API providers, install with extras: `pip install "agentic-programming[anthropic]"`, `"[openai]"`, or `"[gemini]"`.
-
-Verify with `agentic providers`. Then pick how you want to use it:
-
-### Python — write agentic code
-
 ```python
+from agentic import agentic_function, create_runtime
+
+runtime = create_runtime()
+
 @agentic_function
 def login_flow(username, password):
     """Complete login flow."""
@@ -76,26 +73,42 @@ def login_flow(username, password):
     return verify(expected="dashboard")   # Python decides when to stop
 ```
 
-### Skills — let your LLM agent use it
+### Option B: Skills — let your LLM agent use it
+
+Skills files are not included in the pip package — clone the repo and copy them to your CLI tool:
 
 ```bash
-cp -r skills/* ~/.claude/skills/    # Claude Code
-cp -r skills/* ~/.gemini/skills/    # Gemini CLI
+git clone https://github.com/Fzkuji/Agentic-Programming.git
+cp -r Agentic-Programming/skills/* ~/.claude/skills/    # Claude Code
+cp -r Agentic-Programming/skills/* ~/.gemini/skills/    # Gemini CLI
 ```
 
 Then talk to your agent: *"Create a function that extracts emails from text"*
 
-### MCP — connect any MCP client
+The agent picks up the skill, calls `agentic create`, and the generated function handles everything from there.
+
+### Option C: MCP — connect any MCP client
+
+Install with the MCP extra, then add to your client config:
+
+```bash
+pip install "agentic-programming[mcp]"
+```
 
 ```json
 {
     "mcpServers": {
-        "agentic": { "command": "python", "args": ["-m", "agentic.mcp"] }
+        "agentic": {
+            "command": "python",
+            "args": ["-m", "agentic.mcp"]
+        }
     }
 }
 ```
 
-> Requires `pip install "agentic-programming[mcp]"`. Exposes: `list_functions`, `run_function`, `create_function`, `create_application`, `fix_function`.
+This starts a local MCP server that any compatible client (Claude Desktop, Cursor, VS Code, etc.) can connect to. Exposes: `list_functions`, `run_function`, `create_function`, `create_application`, `fix_function`.
+
+Verify your setup with `agentic providers`.
 
 ---
 
