@@ -506,13 +506,9 @@ def _run_general_query(query: str, conv_id: str, msg_id: str):
                 if history_lines:
                     history_prompt = "Previous conversation:\n" + "\n".join(history_lines) + "\n\n"
 
-        # CLI providers (codex, claude-code, gemini-cli) maintain their own
-        # session context, so injecting conversation history would conflict.
-        is_cli = type(runtime).__name__ in ('CodexRuntime', 'ClaudeCodeRuntime', 'GeminiCLIRuntime')
-        if is_cli:
-            full_query = query  # CLI maintains its own session
-        else:
-            full_query = history_prompt + "User: " + query if history_prompt else query
+        # Always inject chat history so the LLM sees our web UI context,
+        # regardless of provider type (CLI session context != our chat context)
+        full_query = history_prompt + "User: " + query if history_prompt else query
         result = runtime.exec(full_query)
 
         _broadcast_chat_response(conv_id, msg_id, {
