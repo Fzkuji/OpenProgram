@@ -1623,10 +1623,10 @@ function renderFunctions() {
     categories[cat].push(f);
   }
 
-  const catLabels = { meta: 'Meta Functions', builtin: 'Built-in Functions', user: 'User Functions' };
-  const catIcons = { meta: '&#9733;', builtin: '&#9881;', user: '&#9998;' };
+  const catLabels = { meta: 'Meta Functions', builtin: 'Built-in Functions', generated: 'Generated Functions', user: 'User Functions' };
+  const catIcons = { meta: '&#9733;', builtin: '&#9881;', generated: '&#10024;', user: '&#9998;' };
 
-  for (const cat of ['meta', 'builtin', 'user']) {
+  for (const cat of ['meta', 'builtin', 'generated', 'user']) {
     const fns = categories[cat];
     if (!fns || fns.length === 0) continue;
     html += '<div class="fn-category">' + catLabels[cat] + '</div>';
@@ -1669,7 +1669,8 @@ function clickFunction(name, category) {
     // Find function params
     const fn = availableFunctions.find(f => f.name === name);
     if (fn && fn.params && fn.params.length > 0) {
-      const paramStr = fn.params.filter(p => p !== 'runtime' && p !== 'callback').map(p => p + '=').join(' ');
+      const filtered = fn.params.filter(p => p !== 'runtime' && p !== 'callback');
+      const paramStr = filtered.map(p => p + '=""').join(' ');
       input.value = 'run ' + name + ' ' + paramStr;
     } else {
       input.value = 'run ' + name + ' ';
@@ -1677,6 +1678,12 @@ function clickFunction(name, category) {
   }
   input.focus();
   autoResize(input);
+  // Place cursor inside the first empty quotes
+  const firstQuote = input.value.indexOf('=""');
+  if (firstQuote !== -1) {
+    const pos = firstQuote + 2; // position between the two quotes
+    input.setSelectionRange(pos, pos);
+  }
 }
 
 function switchConversation(convId) {
