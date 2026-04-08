@@ -69,21 +69,12 @@ html, body {
 }
 
 .sidebar.collapsed {
-  width: 48px;
-  min-width: 48px;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border-right: none;
 }
-.sidebar.collapsed .sidebar-section,
-.sidebar.collapsed .sidebar-section-title,
-.sidebar.collapsed .new-chat-btn span,
-.sidebar.collapsed .fn-category,
-.sidebar.collapsed .fn-item-main .fn-name,
-.sidebar.collapsed .fn-item-main .fn-desc,
-.sidebar.collapsed .fn-actions,
-.sidebar.collapsed .conv-title,
-.sidebar.collapsed .provider-selector { display: none; }
-.sidebar.collapsed .new-chat-btn { justify-content: center; padding: 8px; font-size: 18px; }
-.sidebar.collapsed .sidebar-header { justify-content: center; padding: 8px; }
-.sidebar.collapsed .sidebar-header .sidebar-title { display: none; }
 
 .sidebar-header {
   padding: 16px;
@@ -966,7 +957,7 @@ html, body {
     <!-- Top bar -->
     <div class="topbar">
       <div class="topbar-left">
-        <button class="menu-btn" onclick="toggleSidebar()">&#9776;</button>
+        <button class="menu-btn" id="menuBtn" onclick="toggleSidebar()">&#9776;</button>
         <span id="statusBadge" class="status-badge">connecting...</span>
         <span id="runtimeBadge" class="runtime-badge" style="display:none"></span>
       </div>
@@ -1520,8 +1511,10 @@ function toggleDetail() {
 // ===== Sidebar =====
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
+  const menuBtn = document.getElementById('menuBtn');
   sidebarOpen = !sidebarOpen;
   sb.classList.toggle('collapsed', !sidebarOpen);
+  if (menuBtn) menuBtn.style.display = sidebarOpen ? 'none' : 'block';
 }
 
 function renderConversations() {
