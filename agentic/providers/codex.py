@@ -111,6 +111,10 @@ class CodexRuntime(Runtime):
         image_paths = []
         temp_files = []
 
+        # Handle plain string input
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+
         try:
             for block in content:
                 btype = block.get("type", "text")

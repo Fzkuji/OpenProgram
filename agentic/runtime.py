@@ -96,6 +96,10 @@ class Runtime:
         Returns:
             str — the LLM's reply text.
         """
+        # Handle plain string input
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+
         ctx = _current_ctx.get(None)
         use_model = model or self.model
 
