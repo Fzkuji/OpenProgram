@@ -1882,45 +1882,50 @@ setInterval(() => {
 function togglePanel(name) {
   const panel = document.querySelector('[data-panel="' + name + '"]');
   if (!panel) return;
+  const wasCollapsed = panel.classList.contains('panel-collapsed');
   panel.classList.toggle('panel-collapsed');
+  if (wasCollapsed) {
+    // Expanding: if it had a fixed height, keep it; otherwise let flex handle it
+    if (!panel.style.height) {
+      panel.style.flex = '';
+    }
+  }
 }
 
 // Drag-to-resize panels
 (function() {
-  let dragging = null;
+  let dragPanel = null;
   let startY = 0;
-  let startHeight = 0;
+  let startH = 0;
+  const MIN_H = 60;
 
   document.addEventListener('mousedown', function(e) {
     const handle = e.target.closest('.panel-resize');
     if (!handle) return;
     e.preventDefault();
-    dragging = handle.closest('.sidebar-panel');
+    dragPanel = handle.closest('.sidebar-panel');
+    if (!dragPanel || dragPanel.classList.contains('panel-collapsed')) return;
     startY = e.clientY;
-    const body = dragging.querySelector('.panel-body');
-    startHeight = body ? body.offsetHeight : 100;
+    startH = dragPanel.offsetHeight;
     handle.classList.add('dragging');
     document.body.style.cursor = 'ns-resize';
     document.body.style.userSelect = 'none';
   });
 
   document.addEventListener('mousemove', function(e) {
-    if (!dragging) return;
+    if (!dragPanel) return;
+    e.preventDefault();
     const dy = e.clientY - startY;
-    const body = dragging.querySelector('.panel-body');
-    if (body) {
-      const newH = Math.max(40, startHeight + dy);
-      body.style.maxHeight = newH + 'px';
-      body.style.flex = 'none';
-      body.style.height = newH + 'px';
-    }
+    const newH = Math.max(MIN_H, startH + dy);
+    dragPanel.style.flex = 'none';
+    dragPanel.style.height = newH + 'px';
   });
 
   document.addEventListener('mouseup', function() {
-    if (!dragging) return;
-    const handle = dragging.querySelector('.panel-resize');
+    if (!dragPanel) return;
+    const handle = dragPanel.querySelector('.panel-resize');
     if (handle) handle.classList.remove('dragging');
-    dragging = null;
+    dragPanel = null;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
   });
