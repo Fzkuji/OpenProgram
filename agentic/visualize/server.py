@@ -396,6 +396,16 @@ def _run_function_in_thread(func_name: str, kwargs: dict, conv_id: str, msg_id: 
         # Format result
         if isinstance(result, str):
             content = result
+        elif callable(result):
+            # Meta function returned a function object (e.g., create())
+            fn_name = getattr(result, '__name__', 'unknown')
+            fn_doc = (getattr(result, '__doc__', '') or '').strip().split('\n')[0]
+            content = f"Created function `{fn_name}`.\n\nUsage: `run {fn_name} ...`"
+            if fn_doc:
+                content += f"\n\nDescription: {fn_doc}"
+            # Refresh function list for all clients
+            functions = _discover_functions()
+            _broadcast(json.dumps({"type": "functions_list", "data": functions}, default=str))
         else:
             try:
                 content = json.dumps(result, indent=2, default=str)
@@ -418,7 +428,7 @@ def _run_function_in_thread(func_name: str, kwargs: dict, conv_id: str, msg_id: 
 
 
 def _run_general_query(query: str, conv_id: str, msg_id: str):
-    """Run a general LLM query."""
+    """Run a general LLM query with conversation history for context."""
     try:
         runtime = _get_runtime(conv_id=conv_id, msg_id=msg_id)
 
@@ -427,7 +437,24 @@ def _run_general_query(query: str, conv_id: str, msg_id: str):
             "content": "Thinking...",
         })
 
-        result = runtime.exec(query)
+        # Build prompt with recent conversation history
+        history_prompt = ""
+        with _conversations_lock:
+            conv = _conversations.get(conv_id)
+            if conv and conv["messages"]:
+                recent = [m for m in conv["messages"]
+                          if m.get("type") != "status"][-10:]  # last 10 messages
+                history_lines = []
+                for m in recent:
+                    role = m.get("role", "user")
+                    content = m.get("content", "")
+                    if content and len(content) < 500:
+                        history_lines.append(f"{role}: {content}")
+                if history_lines:
+                    history_prompt = "Previous conversation:\n" + "\n".join(history_lines) + "\n\n"
+
+        full_query = history_prompt + "User: " + query if history_prompt else query
+        result = runtime.exec(full_query)
 
         _broadcast_chat_response(conv_id, msg_id, {
             "type": "result",
