@@ -1915,13 +1915,42 @@ function handleChatResponse(data) {
   var type = data.type;
 
   if (type === 'status') {
-    // Tree handles real-time status -- just keep the typing dots visible
+    // Update tree and chat if rollback data is included (e.g. retry)
+    if (data.context_tree) {
+      var ct = data.context_tree;
+      var rootKey = ct.path || ct.name;
+      var idx = trees.findIndex(function(t) { return t.path === rootKey || t.name === ct.name; });
+      if (idx >= 0) { trees[idx] = ct; } else { trees.push(ct); }
+      renderLiveTree();
+      // Rebuild chat to remove retried node's messages
+      if (currentConvId && conversations[currentConvId]) {
+        var rebuilt = extractMessagesFromTree(ct);
+        conversations[currentConvId].messages = rebuilt;
+        renderConversationMessages(conversations[currentConvId]);
+      }
+    }
     scrollToBottom();
     return;
   }
 
   // Final response (result or error) -- task done
   setRunning(false);
+
+  // Retry result: rebuild entire chat from tree and skip normal append
+  if (data.is_retry && data.context_tree && currentConvId && conversations[currentConvId]) {
+    var ct = data.context_tree;
+    var rootKey = ct.path || ct.name;
+    var idx = trees.findIndex(function(t) { return t.path === rootKey || t.name === ct.name; });
+    if (idx >= 0) { trees[idx] = ct; } else { trees.push(ct); }
+    expandedNodes.add(rootKey);
+    renderLiveTree();
+    var rebuilt = extractMessagesFromTree(ct);
+    conversations[currentConvId].messages = rebuilt;
+    renderConversationMessages(conversations[currentConvId]);
+    pendingResponses = {};
+    scrollToBottom();
+    return;
+  }
 
   // Remove status line and pending placeholder
   var statusLine = document.getElementById('currentStatusLine');
@@ -1970,6 +1999,7 @@ function handleChatResponse(data) {
       if (idx >= 0) { trees[idx] = ct; } else { trees.push(ct); }
       expandedNodes.add(rootKey);
       renderLiveTree();
+
     }
   }
 

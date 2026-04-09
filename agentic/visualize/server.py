@@ -578,12 +578,12 @@ def _retry_node(conv_id: str, msg_id: str, node_path: str, params_override: dict
             _broadcast_chat_response(conv_id, msg_id, {"type": "error", "content": "Cannot retry root node"})
             return
 
-        # Rollback: remove all siblings after the target node
+        # Rollback: remove the target node AND all siblings after it
         target_idx = next((i for i, c in enumerate(parent.children) if c is target), None)
-        if target_idx is not None and target_idx + 1 < len(parent.children):
-            removed = [c.name for c in parent.children[target_idx + 1:]]
-            parent.children = parent.children[:target_idx + 1]
-            _log(f"[retry] rolled back {len(removed)} siblings: {removed}")
+        if target_idx is not None:
+            removed = [c.name for c in parent.children[target_idx:]]
+            parent.children = parent.children[:target_idx]
+            _log(f"[retry] rolled back {len(removed)} nodes (including target): {removed}")
 
         func_name = target.name
         # Use overridden params if provided, otherwise original (minus internal keys)
@@ -635,6 +635,7 @@ def _retry_node(conv_id: str, msg_id: str, node_path: str, params_override: dict
                 "content": result_str,
                 "function": func_name,
                 "context_tree": root_ctx._to_dict(),
+                "is_retry": True,
             })
         finally:
             _current_ctx.reset(token)
