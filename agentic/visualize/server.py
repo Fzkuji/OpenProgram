@@ -71,7 +71,8 @@ def _create_runtime_for_visualizer(provider: str):
     """Create a runtime appropriate for the visualizer.
 
     Strategy per provider:
-      - Codex CLI:       session_id=None → stateless, Context tree injects history
+      - Codex CLI:       session_id=None + search=True → stateless, Context tree
+                         injects history, Codex handles current-info lookups
       - Claude Code CLI: default (persistent process), has_session=True → process
                          manages its own context, summarize() skipped
       - Gemini CLI:      default → session auto-managed by CLI
@@ -79,8 +80,8 @@ def _create_runtime_for_visualizer(provider: str):
     """
     from agentic.providers import create_runtime
     if provider == "codex":
-        # Codex: disable session, let Context tree manage history
-        return create_runtime(provider=provider, session_id=None)
+        # Keep visualizer chat stateless so Context tree stays source of truth.
+        return create_runtime(provider=provider, session_id=None, search=True)
     # Claude Code, Gemini CLI, APIs: use default behavior
     return create_runtime(provider=provider)
 
@@ -188,14 +189,16 @@ def _get_provider_info(conv_id: str = None) -> dict:
             provider_name = conv.get("provider_name", _default_provider)
 
     if runtime is None:
-        return {"provider": None, "type": None, "model": None, "runtime": None}
+        return {"provider": None, "type": None, "model": None, "runtime": None, "session_id": None}
 
     provider_type = "CLI" if provider_name in _CLI_PROVIDERS else "API"
+    session_id = getattr(runtime, '_session_id', None)
     return {
         "provider": provider_name,
         "type": provider_type,
         "model": runtime.model,
         "runtime": type(runtime).__name__,
+        "session_id": session_id,
     }
 
 
@@ -785,6 +788,10 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
             _current_ctx.reset(token)
             root_ctx.status = "idle"
 
+        # Broadcast updated provider info (session_id may have been set)
+        info = _get_provider_info(conv_id)
+        _broadcast(json.dumps({"type": "provider_changed", "data": info}))
+
         # Update conversation title from first user message
         if not conv.get("_titled"):
             title = (query or func_name or "")[:50]
@@ -1042,20 +1049,15 @@ async def _handle_ws_command(ws, cmd: dict):
         conv_id = cmd.get("conv_id")
         if conv_id:
             with _conversations_lock:
-                _conversations.pop(conv_id, None)
+                conv = _conversations.pop(conv_id, None)
+            if conv and conv.get("runtime") and hasattr(conv["runtime"], 'reset'):
+                conv["runtime"].reset()
 
     elif action == "clear_conversations":
         with _conversations_lock:
-            _conversations.clear()
-
-    elif action == "delete_conversation":
-        conv_id = cmd.get("conv_id")
-        if conv_id:
-            with _conversations_lock:
-                _conversations.pop(conv_id, None)
-
-    elif action == "clear_conversations":
-        with _conversations_lock:
+            for conv in _conversations.values():
+                if conv.get("runtime") and hasattr(conv["runtime"], 'reset'):
+                    conv["runtime"].reset()
             _conversations.clear()
 
     elif action == "load_conversation":
@@ -1329,12 +1331,17 @@ def create_app():
                 conv = _conversations.get(conv_id)
             if conv and conv.get("runtime"):
                 conv["runtime"].model = model
+                # Reset session — Codex threads are bound to a model
+                if hasattr(conv["runtime"], 'reset'):
+                    conv["runtime"].reset()
                 info = _get_provider_info(conv_id)
                 _broadcast(json.dumps({"type": "provider_changed", "data": info}))
                 return JSONResponse(content={"switched": True, "model": model})
         # Update default runtime
         if _default_runtime:
             _default_runtime.model = model
+            if hasattr(_default_runtime, 'reset'):
+                _default_runtime.reset()
             info = _get_provider_info()
             _broadcast(json.dumps({"type": "provider_changed", "data": info}))
             return JSONResponse(content={"switched": True, "model": model})

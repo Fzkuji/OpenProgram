@@ -235,33 +235,33 @@ class CodexRuntime(Runtime):
         is_resume = bool(self._session_id and self._turn_count > 0)
 
         cmd = [self.cli_path]
-        if self.search:
-            cmd.append("--search")
-        if self.approval_policy:
-            cmd.extend(["-a", self.approval_policy])
 
         if is_resume:
+            # `exec resume` has a limited set of flags
             cmd.extend(["exec", "resume", self._session_id])
+            if model:
+                cmd.extend(["--model", model])
+            if self.full_auto:
+                cmd.append("--full-auto")
+            cmd.append("--skip-git-repo-check")
+            # Image flags
+            for img_path in image_paths:
+                cmd.extend(["-i", img_path])
         else:
             cmd.append("exec")
-
-        # Common flags
-        if model:
-            cmd.extend(["--model", model])
-
-        if self.full_auto:
-            cmd.append("--full-auto")
-        elif self.sandbox:
-            cmd.extend(["--sandbox", self.sandbox])
-
-        if self.workdir:
-            cmd.extend(["--cd", self.workdir])
-
-        cmd.append("--skip-git-repo-check")
-
-        # Image flags
-        for img_path in image_paths:
-            cmd.extend(["-i", img_path])
+            if model:
+                cmd.extend(["--model", model])
+            if self.full_auto:
+                cmd.append("--full-auto")
+            else:
+                if self.sandbox:
+                    cmd.extend(["--sandbox", self.sandbox])
+            if self.workdir:
+                cmd.extend(["--cd", self.workdir])
+            cmd.append("--skip-git-repo-check")
+            # Image flags
+            for img_path in image_paths:
+                cmd.extend(["-i", img_path])
 
         # Output: capture last message to a temp file for reliable extraction
         fd, output_file = tempfile.mkstemp(suffix=".txt", prefix="codex_out_")
@@ -270,14 +270,16 @@ class CodexRuntime(Runtime):
             cmd.append("--json")
             cmd.extend(["-o", output_file])
 
-            # Pass prompt via stdin for long prompts (CLI arg has OS limits),
-            # use "-" to signal stdin mode.
-            cmd.append("-")
+            # Pass prompt: resume uses positional arg, exec uses stdin via "-"
+            if is_resume:
+                cmd.append(prompt)
+            else:
+                cmd.append("-")
 
             try:
                 proc = subprocess.run(
                     cmd,
-                    input=prompt,
+                    input=prompt if not is_resume else None,
                     capture_output=True,
                     text=True,
                     timeout=self.timeout,

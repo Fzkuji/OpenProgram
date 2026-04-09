@@ -699,6 +699,12 @@ html, body {
   border: 1px solid rgba(152,195,121,0.25);
   white-space: nowrap;
 }
+.runtime-badge.session {
+  background: rgba(86,182,194,0.12);
+  color: #56b6c2;
+  font-family: monospace;
+  font-size: 10px;
+}
 .runtime-badge.model {
   background: rgba(198,120,221,0.12);
   color: var(--accent-purple);
@@ -1233,7 +1239,8 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
 .provider-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--radius); cursor: pointer; font-size: 12px; color: var(--text-secondary); transition: all var(--transition); }
 .provider-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .provider-item.active { color: var(--accent-green); }
-.provider-item.unavailable { opacity: 0.4; cursor: pointer; }
+.provider-item.unavailable { opacity: 0.4; cursor: not-allowed; }
+.provider-item.locked { opacity: 0.4; cursor: not-allowed; }
 .provider-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; margin-left: 5px; margin-right: 5px; }
 .provider-item.active .provider-dot { background: var(--accent-green); }
 .provider-item.available .provider-dot { background: var(--accent-blue); }
@@ -1299,6 +1306,7 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
         <button class="menu-btn" id="menuBtn" onclick="toggleSidebar()">&#9776;</button>
         <span id="statusBadge" class="status-badge">connecting...</span>
         <span id="providerBadge" class="runtime-badge" style="display:none"></span>
+        <span id="sessionBadge" class="runtime-badge session" style="display:none" title="Codex session ID"></span>
         <span id="modelBadge" class="runtime-badge model" style="display:none"></span>
       </div>
       <div class="topbar-right">
@@ -1375,6 +1383,7 @@ var isRunning = false;
 var execLogStartTime = 0;
 var _modelList = [];
 var _currentModel = '';
+var _hasActiveSession = false;
 var programsMeta = { favorites: [], folders: {} };
 
 // ===== WebSocket =====
@@ -2528,6 +2537,11 @@ function newConversation() {
     '</div>';
   container.appendChild(welcome);
   renderConversations();
+  // Reset session badge for new conversation (no session yet)
+  _hasActiveSession = false;
+  var sessBadge = document.getElementById('sessionBadge');
+  if (sessBadge) { sessBadge.textContent = 'no session'; sessBadge.title = ''; }
+  loadModelPills();
 }
 
 function setInput(text) {
@@ -2762,13 +2776,30 @@ function formatProviderLabel(info) {
 
 function updateProviderBadge(info) {
   var provBadge = document.getElementById('providerBadge');
+  var sessBadge = document.getElementById('sessionBadge');
   if (!provBadge) return;
   if (!info || !info.provider) {
     provBadge.style.display = 'none';
+    if (sessBadge) sessBadge.style.display = 'none';
     return;
   }
-  provBadge.textContent = info.provider + (info.type ? ' \u00b7 ' + info.type : '');
+  provBadge.textContent = info.provider + (info.type ? ' \u00b7 ' + info.type : '') + (_hasActiveSession ? ' \ud83d\udd12' : '');
   provBadge.style.display = '';
+  // Show session ID badge (short form)
+  var hadSession = _hasActiveSession;
+  _hasActiveSession = !!info.session_id;
+  if (hadSession !== _hasActiveSession) loadProviders();
+  if (sessBadge) {
+    if (info.session_id) {
+      var short = info.session_id.split('-').pop() || info.session_id.slice(-8);
+      sessBadge.textContent = 'session:' + short;
+      sessBadge.title = info.session_id;
+      sessBadge.style.display = '';
+    } else {
+      sessBadge.textContent = 'no session';
+      sessBadge.style.display = '';
+    }
+  }
   loadModelPills();
 }
 
@@ -2784,7 +2815,17 @@ async function loadModelPills() {
   if (!_currentModel && _modelList.length === 0) { badge.style.display = 'none'; return; }
   badge.textContent = _currentModel || 'default';
   badge.style.display = '';
-  badge.onclick = function(e) { toggleModelDropdown(e); };
+  if (_hasActiveSession) {
+    badge.onclick = null;
+    badge.style.cursor = 'not-allowed';
+    badge.style.opacity = '0.5';
+    badge.title = 'Cannot change model while session is active';
+  } else {
+    badge.onclick = function(e) { toggleModelDropdown(e); };
+    badge.style.cursor = 'pointer';
+    badge.style.opacity = '1';
+    badge.title = '';
+  }
 }
 
 function toggleModelDropdown(event) {
@@ -2859,9 +2900,10 @@ function renderProviders(providers) {
   var el = document.getElementById('providerList');
   if (!el) return;
   el.innerHTML = providers.map(function(p) {
-    var cls = p.active ? 'provider-item active' : (p.available ? 'provider-item available' : 'provider-item unavailable');
+    var locked = _hasActiveSession && !p.active;
+    var cls = p.active ? 'provider-item active' : (locked ? 'provider-item unavailable' : (p.available ? 'provider-item available' : 'provider-item unavailable'));
     var typeTag = p.configurable ? 'API' : 'CLI';
-    var clickAction = (p.available && !p.active) ? "switchProvider('" + p.name + "')" : "";
+    var clickAction = (p.available && !p.active && !_hasActiveSession) ? "switchProvider('" + p.name + "')" : "";
     var isConfigured = p.configurable ? p.configured : p.available;
     var badgeCls = isConfigured ? 'config-badge configured' : 'config-badge';
     var badgeText = isConfigured ? 'Configured' : 'Set up';
