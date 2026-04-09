@@ -157,11 +157,19 @@ html, body {
 .sidebar-panel {
   display: flex;
   flex-direction: column;
-  min-height: 32px;
+  min-height: 0;
   overflow: hidden;
-  position: relative;
-  flex: 0 0 auto;
 }
+
+/* Split.js gutter */
+.gutter.gutter-vertical {
+  flex-shrink: 0;
+  height: 4px !important;
+  cursor: ns-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+.gutter.gutter-vertical:hover { background: var(--accent-blue); }
 
 .panel-header {
   display: flex;
@@ -186,7 +194,6 @@ html, body {
 
 .panel-collapsed .panel-chevron { transform: rotate(-90deg); }
 .panel-collapsed .panel-body { display: none; }
-.panel-collapsed .panel-resize { display: none; }
 .panel-collapsed { flex: none !important; height: auto !important; min-height: auto; }
 
 .panel-body {
@@ -230,7 +237,7 @@ html, body {
 
 /* Conversation list */
 .conv-item {
-  padding: 10px 16px;
+  padding: 6px 12px;
   cursor: pointer;
   transition: background var(--transition);
   border-left: 3px solid transparent;
@@ -1221,11 +1228,11 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
 
 /* Provider selector */
 .provider-selector { padding: 8px 12px; border-top: 1px solid var(--border); margin-top: auto; }
-.provider-item { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: var(--radius); cursor: pointer; font-size: 12px; color: var(--text-secondary); transition: all var(--transition); }
+.provider-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--radius); cursor: pointer; font-size: 12px; color: var(--text-secondary); transition: all var(--transition); }
 .provider-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .provider-item.active { color: var(--accent-green); }
 .provider-item.unavailable { opacity: 0.4; cursor: pointer; }
-.provider-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.provider-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; margin-left: 5px; margin-right: 5px; }
 .provider-item.active .provider-dot { background: var(--accent-green); }
 .provider-item.available .provider-dot { background: var(--accent-blue); }
 .provider-type-tag { font-size: 10px; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
@@ -1253,33 +1260,30 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
 
     <div class="sidebar-panels">
       <!-- Conversations -->
-      <div class="sidebar-panel" id="convPanel" data-panel="conv" style="height:40%">
+      <div class="sidebar-panel" id="convPanel" data-panel="conv">
         <div class="panel-header" onclick="togglePanel('conv')">
           <span class="panel-chevron" id="convChevron">&#9660;</span>
           <span class="sidebar-section-title" style="padding:0">Conversations</span>
         </div>
         <div class="panel-body" id="convList"></div>
-        <div class="panel-resize" data-resize="conv"></div>
       </div>
 
       <!-- Programs -->
-      <div class="sidebar-panel" id="fnPanel" data-panel="fn" style="height:30%">
+      <div class="sidebar-panel" id="fnPanel" data-panel="fn">
         <div class="panel-header" onclick="togglePanel('fn')">
           <span class="panel-chevron" id="fnChevron">&#9660;</span>
           <span class="sidebar-section-title" style="padding:0">Programs</span>
         </div>
         <div class="panel-body" id="fnList"></div>
-        <div class="panel-resize" data-resize="fn"></div>
       </div>
 
       <!-- Provider Selector -->
-      <div class="sidebar-panel" id="provPanel" data-panel="prov" style="height:30%">
+      <div class="sidebar-panel" id="provPanel" data-panel="prov">
         <div class="panel-header" onclick="togglePanel('prov')">
           <span class="panel-chevron" id="provChevron">&#9660;</span>
           <span class="sidebar-section-title" style="padding:0">Provider</span>
         </div>
         <div class="panel-body" id="providerList"></div>
-        <div class="panel-resize" data-resize="prov"></div>
       </div>
     </div>
   </div>
@@ -1348,6 +1352,7 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/split.js/1.6.5/split.min.js"></script>
 <script>
 // ===== State =====
 var ws = null;
@@ -2661,72 +2666,56 @@ setInterval(function() {
   }
 }, 30000);
 
-// ===== Panel Collapse & Resize =====
+// ===== Panel Collapse & Resize (Split.js) =====
+var _splitInstance = null;
+var _savedSizes = [40, 30, 30]; // remember sizes for restore
+
+function _initSplit() {
+  if (_splitInstance) _splitInstance.destroy();
+  var ids = [];
+  var sizes = [];
+  var panels = document.querySelectorAll('.sidebar-panels > .sidebar-panel');
+  var expandedCount = 0;
+  for (var i = 0; i < panels.length; i++) {
+    if (!panels[i].classList.contains('panel-collapsed')) {
+      ids.push('#' + panels[i].id);
+      sizes.push(_savedSizes[i]);
+      expandedCount++;
+    }
+  }
+  if (expandedCount < 2) { _splitInstance = null; return; }
+  // Normalize sizes to 100
+  var total = 0;
+  for (var s = 0; s < sizes.length; s++) total += sizes[s];
+  for (var s2 = 0; s2 < sizes.length; s2++) sizes[s2] = sizes[s2] / total * 100;
+
+  _splitInstance = Split(ids, {
+    direction: 'vertical',
+    sizes: sizes,
+    minSize: 40,
+    gutterSize: 4,
+    onDragEnd: function(newSizes) {
+      // Save sizes back to _savedSizes for expanded panels
+      var si = 0;
+      for (var pi = 0; pi < panels.length; pi++) {
+        if (!panels[pi].classList.contains('panel-collapsed')) {
+          _savedSizes[pi] = newSizes[si];
+          si++;
+        }
+      }
+    }
+  });
+}
+
 function togglePanel(name) {
   var panel = document.querySelector('[data-panel="' + name + '"]');
   if (!panel) return;
   panel.classList.toggle('panel-collapsed');
+  _initSplit();
 }
 
-// Drag-to-resize panels (split-pane: handle adjusts two adjacent panels)
-(function() {
-  var dragPanel = null;   // the panel ABOVE the handle
-  var siblingPanel = null; // the panel BELOW the handle
-  var startY = 0;
-  var startH = 0;
-  var sibStartH = 0;
-  var MIN_H = 60;
-
-  // On first load, convert % heights to px so they don't recalculate
-  window.addEventListener('DOMContentLoaded', function() {
-    var panels = document.querySelectorAll('.sidebar-panel');
-    for (var i = 0; i < panels.length; i++) {
-      panels[i].style.height = panels[i].offsetHeight + 'px';
-    }
-  });
-
-  document.addEventListener('mousedown', function(e) {
-    var handle = e.target.closest('.panel-resize');
-    if (!handle) return;
-    e.preventDefault();
-    dragPanel = handle.closest('.sidebar-panel');
-    if (!dragPanel || dragPanel.classList.contains('panel-collapsed')) { dragPanel = null; return; }
-    // Find the next visible sibling panel
-    var next = dragPanel.nextElementSibling;
-    while (next && !next.classList.contains('sidebar-panel')) next = next.nextElementSibling;
-    if (!next || next.classList.contains('panel-collapsed')) { dragPanel = null; return; }
-    siblingPanel = next;
-    startY = e.clientY;
-    startH = dragPanel.offsetHeight;
-    sibStartH = siblingPanel.offsetHeight;
-    handle.classList.add('dragging');
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-  });
-
-  document.addEventListener('mousemove', function(e) {
-    if (!dragPanel || !siblingPanel) return;
-    e.preventDefault();
-    var dy = e.clientY - startY;
-    var newH = startH + dy;
-    var newSibH = sibStartH - dy;
-    // Clamp both to minimum
-    if (newH < MIN_H) { dy = MIN_H - startH; newH = MIN_H; newSibH = sibStartH - dy; }
-    if (newSibH < MIN_H) { dy = sibStartH - MIN_H; newH = startH + dy; newSibH = MIN_H; }
-    dragPanel.style.height = newH + 'px';
-    siblingPanel.style.height = newSibH + 'px';
-  });
-
-  document.addEventListener('mouseup', function() {
-    if (!dragPanel) return;
-    var handle = dragPanel.querySelector('.panel-resize');
-    if (handle) handle.classList.remove('dragging');
-    dragPanel = null;
-    siblingPanel = null;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-  });
-})();
+// Init on load
+window.addEventListener('DOMContentLoaded', function() { _initSplit(); });
 
 // ===== Provider Info =====
 function formatProviderLabel(info) {
