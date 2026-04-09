@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Programs — Agentic</title>
+<style>
+:root {
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #181825;
+  --bg-tertiary: #252537;
+  --bg-hover: rgba(255,255,255,0.04);
+  --border: #313244;
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --text-muted: #6c7086;
+  --text-bright: #ffffff;
+  --accent-blue: #89b4fa;
+  --accent-green: #a6e3a1;
+  --accent-purple: #cba6f7;
+  --accent-cyan: #89dceb;
+  --accent-orange: #fab387;
+  --accent-red: #f38ba8;
+  --accent-yellow: #f9e2af;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --transition: 0.15s ease;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px; border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary); flex-shrink: 0;
+}
+.header-inner { display: flex; align-items: flex-start; gap: 12px; }
+.back-btn {
+  color: var(--text-secondary); text-decoration: none;
+  font-size: 13px; transition: color var(--transition); flex-shrink: 0;
+  line-height: calc(22px * 1.3);
+}
+.back-btn:hover { color: var(--accent-blue); }
+.header-text {}
+.header-title { font-size: 22px; font-weight: 600; color: var(--text-bright); margin-bottom: 6px; line-height: 1.3; }
+.header-subtitle { color: var(--text-secondary); font-size: 13px; }
+.header-subtitle code {
+  font-family: var(--font-mono); background: var(--bg-tertiary);
+  padding: 1px 5px; border-radius: 3px; font-size: 12px;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 24px; border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary); flex-shrink: 0;
+}
+.search-box {
+  flex: 1; max-width: 360px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-primary); color: var(--text-primary);
+  font-size: 13px; outline: none; transition: border-color var(--transition);
+}
+.search-box:focus { border-color: var(--accent-blue); }
+.search-box::placeholder { color: var(--text-muted); }
+.tb-select {
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  font-size: 12px; cursor: pointer; outline: none;
+}
+.tb-btn {
+  padding: 5px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  font-size: 12px; cursor: pointer; transition: all var(--transition); white-space: nowrap;
+}
+.tb-btn:hover { border-color: var(--accent-blue); color: var(--text-bright); }
+
+/* Main layout */
+.main-layout { flex: 1; display: flex; overflow: hidden; }
+
+/* Folder sidebar */
+.folder-sidebar {
+  width: 220px; border-right: 1px solid var(--border);
+  background: var(--bg-secondary); display: flex;
+  flex-direction: column; flex-shrink: 0; overflow: hidden;
+}
+.folder-sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--text-muted);
+}
+.folder-sidebar-header button {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px;
+  transition: color var(--transition);
+}
+.folder-sidebar-header button:hover { color: var(--accent-blue); }
+.folder-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.folder-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; cursor: pointer; font-size: 13px;
+  color: var(--text-secondary); transition: all var(--transition);
+  border-left: 3px solid transparent;
+}
+.folder-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.folder-item.active { background: rgba(137,180,250,0.06); border-left-color: var(--accent-blue); color: var(--text-bright); }
+.folder-item.drag-over { background: rgba(166,227,161,0.08); border-left-color: var(--accent-green); }
+.folder-item-icon { font-size: 14px; flex-shrink: 0; }
+.folder-item-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-item-count {
+  font-size: 11px; color: var(--text-muted);
+  background: var(--bg-primary); padding: 1px 6px;
+  border-radius: 10px; flex-shrink: 0;
+}
+.folder-item-actions { display: none; gap: 2px; flex-shrink: 0; }
+.folder-item:hover .folder-item-actions { display: flex; }
+.folder-action {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 12px; padding: 2px;
+  transition: color var(--transition);
+}
+.folder-action:hover { color: var(--accent-red); }
+
+/* Content area */
+.content-area { flex: 1; overflow-y: auto; padding: 20px 24px; }
+
+/* Grid/List */
+.programs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.category-section { margin-bottom: 20px; }
+.category-header {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--text-muted);
+  margin-bottom: 10px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Program card */
+.program-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius-lg); background: var(--bg-secondary);
+  cursor: pointer; transition: all var(--transition); position: relative;
+}
+.program-card:hover { border-color: var(--accent-blue); background: var(--bg-tertiary); }
+.program-icon {
+  font-size: 18px; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; border-radius: var(--radius); background: var(--bg-primary);
+}
+.program-icon.cat-app { color: var(--accent-green); }
+.program-icon.cat-meta { color: var(--accent-purple); }
+.program-icon.cat-builtin { color: var(--accent-cyan); }
+.program-icon.cat-generated { color: var(--accent-yellow); }
+.program-icon.cat-user { color: var(--accent-orange); }
+.program-info { flex: 1; min-width: 0; }
+.program-name {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--accent-blue); margin-bottom: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.program-desc {
+  font-size: 11px; color: var(--text-secondary); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+.program-meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+.fav-btn {
+  position: absolute; top: 8px; right: 8px;
+  background: none; border: none; font-size: 14px;
+  cursor: pointer; color: var(--text-muted);
+  transition: all var(--transition); padding: 2px; line-height: 1;
+}
+.fav-btn:hover { color: var(--accent-yellow); }
+.fav-btn.favorited { color: var(--accent-yellow); }
+
+/* List mode */
+.programs-list .program-card { border-radius: var(--radius); padding: 8px 14px; align-items: center; }
+.programs-list .program-icon { font-size: 14px; width: 22px; height: 22px; }
+.programs-list .program-desc { -webkit-line-clamp: 1; }
+.programs-list .program-meta { display: none; }
+
+/* Empty */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+.empty-state-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state-text { font-size: 14px; }
+.empty-state-hint { margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+
+/* Context menu */
+.ctx-menu {
+  position: fixed; background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 4px 0; z-index: 999;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4); min-width: 160px;
+}
+.ctx-item {
+  padding: 6px 14px; font-size: 13px; cursor: pointer;
+  color: var(--text-primary); transition: background var(--transition);
+}
+.ctx-item:hover { background: var(--bg-hover); }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* Confirm dialog */
+.confirm-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5); z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+}
+.confirm-box {
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 24px;
+  min-width: 320px; max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.confirm-title {
+  font-size: 15px; font-weight: 600; color: var(--text-bright);
+  margin-bottom: 8px;
+}
+.confirm-msg {
+  font-size: 13px; color: var(--text-secondary);
+  margin-bottom: 20px; line-height: 1.5;
+}
+.confirm-msg code {
+  font-family: var(--font-mono); background: var(--bg-primary);
+  padding: 1px 5px; border-radius: 3px; font-size: 12px;
+}
+.confirm-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+.confirm-btn {
+  padding: 7px 18px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-secondary);
+  color: var(--text-primary); font-size: 13px;
+  cursor: pointer; transition: all var(--transition);
+}
+.confirm-btn:hover { border-color: var(--accent-blue); color: var(--text-bright); }
+.confirm-btn.danger {
+  background: var(--accent-red); color: #fff;
+  border-color: var(--accent-red);
+}
+.confirm-btn.danger:hover { opacity: 0.85; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <a class="back-btn" href="/">&larr; Back</a>
+    <div class="header-text">
+      <div class="header-title">Programs</div>
+      <div class="header-subtitle">Program metadata saved locally to <code>~/.agentic/programs_meta.json</code></div>
+    </div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <input type="text" class="search-box" id="searchBox" placeholder="Search programs..." oninput="render()">
+  <select class="tb-select" id="sortSelect" onchange="render()">
+    <option value="category">Sort: Category</option>
+    <option value="name">Sort: Name</option>
+    <option value="recent">Sort: Recent</option>
+  </select>
+  <select class="tb-select" id="filterSelect" onchange="render()">
+    <option value="all">All</option>
+    <option value="app">Applications</option>
+    <option value="meta">Meta Functions</option>
+    <option value="builtin">Built-in</option>
+    <option value="favorites">Favorites</option>
+  </select>
+  <button class="tb-btn" id="viewToggle" onclick="toggleView()">List</button>
+</div>
+
+<div class="main-layout">
+  <div class="folder-sidebar">
+    <div class="folder-sidebar-header">
+      <span>Folders</span>
+    </div>
+    <div class="folder-list" id="folderList" oncontextmenu="sidebarCtx(event)"></div>
+  </div>
+  <div class="content-area" id="contentArea" oncontextmenu="contentCtx(event)"></div>
+</div>
+
+<script>
+let allPrograms = [];
+let meta = { favorites: [], folders: {} };
+let currentFolder = '__all__';
+let viewMode = 'grid';
+let draggedProgram = null;
+
+const catIcons = { app: '\u{1F4E6}', meta: '\u{1F6E0}', builtin: '\u2699', generated: '\u2699', user: '\u270E' };
+const catLabels = { app: 'Applications', meta: 'Meta Functions', builtin: 'Built-in', generated: 'Generated', user: 'User' };
+const catOrder = { app: 0, generated: 1, user: 2, meta: 3, builtin: 4 };
+
+async function init() {
+  const [fResp, mResp] = await Promise.all([
+    fetch('/api/functions'),
+    fetch('/api/programs/meta')
+  ]);
+  allPrograms = await fResp.json();
+  meta = await mResp.json();
+  if (!meta.favorites) meta.favorites = [];
+  if (!meta.folders) meta.folders = {};
+  render();
+}
+
+async function saveMeta() {
+  await fetch('/api/programs/meta', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(meta)
+  });
+}
+
+function toggleView() {
+  viewMode = viewMode === 'grid' ? 'list' : 'grid';
+  document.getElementById('viewToggle').textContent = viewMode === 'grid' ? 'List' : 'Grid';
+  render();
+}
+
+// ===== Helpers =====
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function escAttr(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+function isFavorite(name) { return (meta.favorites || []).includes(name); }
+
+function formatDate(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts * 1000;
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  if (diff < 604800000) return Math.floor(diff / 86400000) + 'd ago';
+  return new Date(ts * 1000).toLocaleDateString();
+}
+
+function getFolderForProgram(name) {
+  for (const [folder, items] of Object.entries(meta.folders)) {
+    if (items.includes(name)) return folder;
+  }
+  return null;
+}
+
+function getProgramsInFolder(folder) {
+  if (folder === '__all__') return allPrograms;
+  if (folder === '__uncategorized__') {
+    const assigned = new Set();
+    for (const items of Object.values(meta.folders)) items.forEach(n => assigned.add(n));
+    return allPrograms.filter(p => !assigned.has(p.name));
+  }
+  if (folder === '__favorites__') {
+    const favSet = new Set(meta.favorites);
+    return allPrograms.filter(p => favSet.has(p.name));
+  }
+  const nameSet = new Set(meta.folders[folder] || []);
+  return allPrograms.filter(p => nameSet.has(p.name));
+}
+
+// ===== Render =====
+function render() {
+  renderFolders();
+  renderContent();
+}
+
+function renderFolders() {
+  const el = document.getElementById('folderList');
+  let html = '';
+  const vf = [
+    { id: '__all__', name: 'All Programs', icon: '\u{1F4CB}', count: allPrograms.length },
+    { id: '__favorites__', name: 'Favorites', icon: '\u2605', count: (meta.favorites || []).length },
+    { id: '__uncategorized__', name: 'Uncategorized', icon: '\u{1F4C2}', count: getProgramsInFolder('__uncategorized__').length },
+  ];
+  for (const f of vf) {
+    html += '<div class="folder-item' + (currentFolder === f.id ? ' active' : '') + '" ' +
+      'onclick="selectFolder(\'' + f.id + '\')" ' +
+      'ondragover="onFolderDragOver(event)" ondragleave="onFolderDragLeave(event)" ' +
+      'ondrop="onFolderDrop(event,\'' + escAttr(f.id) + '\')">' +
+      '<span class="folder-item-icon">' + f.icon + '</span>' +
+      '<span class="folder-item-name">' + escHtml(f.name) + '</span>' +
+      '<span class="folder-item-count">' + f.count + '</span></div>';
+  }
+  html += '<div style="height:1px;background:var(--border);margin:6px 0"></div>';
+  for (const name of Object.keys(meta.folders).sort()) {
+    const count = (meta.folders[name] || []).length;
+    html += '<div class="folder-item' + (currentFolder === name ? ' active' : '') + '" ' +
+      'data-folder="' + escAttr(name) + '" ' +
+      'onclick="selectFolder(\'' + escAttr(name) + '\')" ' +
+      'ondragover="onFolderDragOver(event)" ondragleave="onFolderDragLeave(event)" ' +
+      'ondrop="onFolderDrop(event,\'' + escAttr(name) + '\')" ' +
+      'oncontextmenu="folderCtx(event,\'' + escAttr(name) + '\')">' +
+      '<span class="folder-item-icon">\u{1F4C1}</span>' +
+      '<span class="folder-item-name">' + escHtml(name) + '</span>' +
+      '<span class="folder-item-count">' + count + '</span>' +
+    '</div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderContent() {
+  const el = document.getElementById('contentArea');
+  let programs = getProgramsInFolder(currentFolder);
+
+  // Search
+  const q = (document.getElementById('searchBox').value || '').toLowerCase();
+  if (q) programs = programs.filter(p => p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q));
+
+  // Filter
+  const filter = document.getElementById('filterSelect').value;
+  if (filter === 'favorites') {
+    const favSet = new Set(meta.favorites);
+    programs = programs.filter(p => favSet.has(p.name));
+  } else if (filter !== 'all') {
+    programs = programs.filter(p => p.category === filter);
+  }
+
+  // Sort
+  const sort = document.getElementById('sortSelect').value;
+  if (sort === 'recent') programs.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+  else if (sort === 'category') programs.sort((a, b) => (catOrder[a.category] || 9) - (catOrder[b.category] || 9));
+  else programs.sort((a, b) => a.name.localeCompare(b.name));
+
+  if (programs.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">\u{1F4C2}</div>' +
+      '<div class="empty-state-text">' + (q ? 'No matching programs' : 'This folder is empty') + '</div>' +
+      '<div class="empty-state-hint">Drag programs here to organize</div></div>';
+    return;
+  }
+
+  let html = '';
+  if (sort === 'category') {
+    const groups = {};
+    for (const p of programs) { const c = p.category || 'user'; (groups[c] = groups[c] || []).push(p); }
+    for (const cat of ['app', 'generated', 'user', 'meta', 'builtin']) {
+      if (!groups[cat]) continue;
+      html += '<div class="category-section"><div class="category-header">' +
+        escHtml(catLabels[cat] || cat) + ' (' + groups[cat].length + ')</div>' +
+        '<div class="' + (viewMode === 'grid' ? 'programs-grid' : 'programs-list') + '">';
+      for (const p of groups[cat]) html += renderCard(p);
+      html += '</div></div>';
+    }
+  } else {
+    html += '<div class="' + (viewMode === 'grid' ? 'programs-grid' : 'programs-list') + '">';
+    for (const p of programs) html += renderCard(p);
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderCard(p) {
+  const cat = p.category || 'user';
+  const fav = isFavorite(p.name);
+  const desc = p.description ? p.description.split('.')[0] : '';
+  const folder = getFolderForProgram(p.name);
+  return '<div class="program-card" draggable="true" ' +
+    'ondragstart="onDragStart(event,\'' + escAttr(p.name) + '\')" ' +
+    'onclick="goRun(\'' + escAttr(p.name) + '\',\'' + escAttr(cat) + '\')" ' +
+    'oncontextmenu="programCtx(event,\'' + escAttr(p.name) + '\')">' +
+    '<div class="program-icon cat-' + cat + '">' + (catIcons[cat] || '\u270E') + '</div>' +
+    '<div class="program-info">' +
+      '<div class="program-name">' + escHtml(p.name) + '</div>' +
+      '<div class="program-desc">' + escHtml(desc) + '</div>' +
+      '<div class="program-meta">' + escHtml(cat) +
+        (folder ? ' \u00b7 \u{1F4C1} ' + escHtml(folder) : '') +
+        ' \u00b7 ' + formatDate(p.mtime) + '</div>' +
+    '</div>' +
+    '<button class="fav-btn ' + (fav ? 'favorited' : '') + '" onclick="toggleFav(\'' + escAttr(p.name) + '\',event)">' +
+      (fav ? '\u2605' : '\u2606') + '</button></div>';
+}
+
+// ===== Favorites =====
+async function toggleFav(name, e) {
+  e.stopPropagation();
+  const idx = meta.favorites.indexOf(name);
+  if (idx >= 0) meta.favorites.splice(idx, 1);
+  else meta.favorites.push(name);
+  await saveMeta();
+  render();
+}
+
+// ===== Folders =====
+function selectFolder(id) { currentFolder = id; render(); }
+
+function createFolder() {
+  // Add a temporary inline input at the bottom of the folder list
+  const list = document.getElementById('folderList');
+  const item = document.createElement('div');
+  item.className = 'folder-item active';
+  item.innerHTML = '<span class="folder-item-icon">\u{1F4C1}</span>' +
+    '<input class="rename-input" type="text" placeholder="New folder" autofocus>';
+  list.appendChild(item);
+  const input = item.querySelector('input');
+  input.focus();
+
+  function commit() {
+    const name = input.value.trim();
+    if (!name) { item.remove(); return; }
+    if (meta.folders[name]) { input.style.borderColor = 'var(--accent-red)'; return; }
+    meta.folders[name] = [];
+    currentFolder = name;
+    saveMeta().then(() => render());
+  }
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { item.remove(); }
+  });
+  input.addEventListener('blur', commit);
+}
+
+function renameFolder(oldName) {
+  // Find the folder item by data attribute
+  const items = document.querySelectorAll('.folder-item[data-folder]');
+  let item = null;
+  for (const el of items) {
+    if (el.dataset.folder === oldName) { item = el; break; }
+  }
+  if (!item) return;
+  const nameEl = item.querySelector('.folder-item-name');
+  if (!nameEl) return;
+
+  const input = document.createElement('input');
+  input.className = 'rename-input';
+  input.type = 'text';
+  input.value = oldName;
+  nameEl.style.display = 'none';
+  nameEl.parentNode.insertBefore(input, nameEl.nextSibling);
+
+  // Remove onclick to prevent selectFolder during editing
+  item.removeAttribute('onclick');
+  item.removeAttribute('oncontextmenu');
+
+  let done = false;
+  function commit() {
+    if (done) return;
+    done = true;
+    const newName = input.value.trim();
+    if (!newName || newName === oldName) { render(); return; }
+    if (meta.folders[newName]) { done = false; input.style.borderColor = 'var(--accent-red)'; return; }
+    meta.folders[newName] = meta.folders[oldName] || [];
+    delete meta.folders[oldName];
+    if (currentFolder === oldName) currentFolder = newName;
+    saveMeta().then(() => render());
+  }
+
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { done = true; render(); }
+  });
+  input.addEventListener('blur', () => setTimeout(commit, 50));
+
+  setTimeout(() => { input.focus(); input.select(); }, 100);
+}
+
+function deleteFolder(name) {
+  showConfirm(
+    'Delete folder',
+    'Are you sure you want to delete <code>' + escHtml(name) + '</code>? Programs inside will be moved to Uncategorized.',
+    'Delete',
+    async () => {
+      delete meta.folders[name];
+      if (currentFolder === name) currentFolder = '__all__';
+      await saveMeta();
+      render();
+    }
+  );
+}
+
+function showConfirm(title, msg, actionLabel, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML =
+    '<div class="confirm-box">' +
+      '<div class="confirm-title">' + escHtml(title) + '</div>' +
+      '<div class="confirm-msg">' + msg + '</div>' +
+      '<div class="confirm-actions">' +
+        '<button class="confirm-btn" id="confirmCancel">Cancel</button>' +
+        '<button class="confirm-btn danger" id="confirmOk">' + escHtml(actionLabel) + '</button>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#confirmCancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#confirmOk').addEventListener('click', () => { overlay.remove(); onConfirm(); });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.addEventListener('keydown', function handler(e) {
+    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', handler); }
+  });
+}
+
+// ===== Drag & Drop =====
+function goRun(name, category) {
+  window.location.href = '/?run=' + encodeURIComponent(name) + '&cat=' + encodeURIComponent(category);
+}
+
+function onDragStart(e, name) {
+  draggedProgram = name;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', name);
+}
+
+function onFolderDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onFolderDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+
+async function onFolderDrop(e, folder) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (!draggedProgram) return;
+  const name = draggedProgram;
+  draggedProgram = null;
+  for (const items of Object.values(meta.folders)) {
+    const idx = items.indexOf(name);
+    if (idx >= 0) items.splice(idx, 1);
+  }
+  if (folder !== '__all__' && folder !== '__uncategorized__' && folder !== '__favorites__') {
+    if (!meta.folders[folder]) meta.folders[folder] = [];
+    meta.folders[folder].push(name);
+  }
+  await saveMeta();
+  render();
+}
+
+// ===== Context Menus =====
+function removeCtx() { const m = document.getElementById('ctxMenu'); if (m) m.remove(); }
+
+function showCtx(e, items) {
+  removeCtx();
+  const menu = document.createElement('div');
+  menu.id = 'ctxMenu';
+  menu.className = 'ctx-menu';
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  for (const it of items) {
+    if (it === '---') {
+      const sep = document.createElement('div');
+      sep.className = 'ctx-sep';
+      menu.appendChild(sep);
+      continue;
+    }
+    const div = document.createElement('div');
+    div.className = 'ctx-item';
+    div.textContent = it.label;
+    div.addEventListener('click', () => { removeCtx(); it.action(); });
+    menu.appendChild(div);
+  }
+  document.body.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  if (r.right > window.innerWidth) menu.style.left = (window.innerWidth - r.width - 4) + 'px';
+  if (r.bottom > window.innerHeight) menu.style.top = (window.innerHeight - r.height - 4) + 'px';
+}
+
+document.addEventListener('click', removeCtx);
+
+function programCtx(e, name) {
+  e.preventDefault(); e.stopPropagation();
+  const fav = isFavorite(name);
+  const items = [
+    { label: fav ? '\u2605 Unfavorite' : '\u2606 Favorite', action: () => toggleFav(name, { stopPropagation(){} }) },
+    '---',
+  ];
+  for (const f of Object.keys(meta.folders).sort()) {
+    items.push({ label: '\u{1F4C1} Move to ' + f, action: async () => {
+      for (const arr of Object.values(meta.folders)) { const i = arr.indexOf(name); if (i >= 0) arr.splice(i, 1); }
+      meta.folders[f].push(name);
+      await saveMeta(); render();
+    }});
+  }
+  if (getFolderForProgram(name)) {
+    items.push({ label: '\u{1F4C2} Remove from folder', action: async () => {
+      for (const arr of Object.values(meta.folders)) { const i = arr.indexOf(name); if (i >= 0) arr.splice(i, 1); }
+      await saveMeta(); render();
+    }});
+  }
+  showCtx(e, items);
+}
+
+function folderCtx(e, name) {
+  e.preventDefault(); e.stopPropagation();
+  showCtx(e, [
+    { label: 'Rename', action: () => renameFolder(name) },
+    { label: 'Delete', action: () => deleteFolder(name) },
+    '---',
+    { label: '\u{1F4C1} New folder', action: () => createFolder() },
+  ]);
+}
+
+function sidebarCtx(e) {
+  if (e.target.closest('.folder-item')) return; // let folder-specific ctx handle it
+  e.preventDefault();
+  showCtx(e, [
+    { label: '\u{1F4C1} New folder', action: () => createFolder() },
+  ]);
+}
+
+function contentCtx(e) {
+  if (e.target.closest('.program-card')) return; // let card-specific ctx handle it
+  e.preventDefault();
+  showCtx(e, [
+    { label: '\u{1F4C1} New folder', action: () => createFolder() },
+  ]);
+}
+
+init();
+</script>
+</body>
+</html>

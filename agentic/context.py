@@ -224,6 +224,16 @@ class Context:
                 idx += 1
         return f"{self.parent.path}/{self.name}_{idx}"
 
+    def find_by_path(self, target_path: str) -> Optional["Context"]:
+        """Find a descendant Context by its path. Returns None if not found."""
+        if self.path == target_path:
+            return self
+        for child in self.children:
+            result = child.find_by_path(target_path)
+            if result is not None:
+                return result
+        return None
+
     def _depth(self) -> int:
         """How deep this node is in the tree. Root = 1."""
         d = 1
@@ -629,7 +639,8 @@ class Context:
             "path": self.path,
             "name": self.name,
             "prompt": self.prompt,
-            "params": self.params,
+            "params": {k: v for k, v in (self.params or {}).items()
+                       if k not in ("runtime", "callback")} if self.params else {},
             "output": self.output,
             "raw_reply": self.raw_reply,
             "attempts": self.attempts,

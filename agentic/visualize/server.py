@@ -86,10 +86,18 @@ def _create_runtime_for_visualizer(provider: str):
 
 
 def _detect_default_provider() -> tuple:
-    """Auto-detect best provider, return (provider_name, runtime)."""
+    """Auto-detect best provider, return (provider_name, runtime).
+
+    Tries each provider in order. For CLI providers, runs a quick health
+    check (a trivial LLM call) to verify the provider is actually usable
+    (not just installed). This catches quota exhaustion, auth expiry, etc.
+    """
     for p in ("codex", "claude-code", "gemini-cli", "gemini", "anthropic", "openai"):
         try:
             rt = _create_runtime_for_visualizer(p)
+            # Health check for CLI providers — verify they can actually respond
+            if p in _CLI_PROVIDERS:
+                rt._call([{"type": "text", "text": "Reply with OK"}])
             return p, rt
         except Exception:
             continue
@@ -272,6 +280,7 @@ def _find_root(ctx_data: dict) -> Optional[dict]:
 
 def _on_context_event(event_type: str, data: dict):
     """Callback registered with the Context event system."""
+    _log(f"[event] {event_type}: {data.get('path', '?')} status={data.get('status', '?')}")
     # If we're paused and a node just got created, wait
     if event_type == "node_created":
         wait_if_paused()
@@ -309,6 +318,26 @@ def _broadcast(msg: str):
             pass
 
 
+def _log(text: str):
+    """Print to terminal AND broadcast to frontend as a visible log."""
+    print(text)
+    try:
+        msg = json.dumps({"type": "server_log", "text": text}, default=str)
+        _broadcast(msg)
+    except Exception:
+        pass
+
+
+def _log(text: str):
+    """Print to terminal AND broadcast to frontend as a visible log."""
+    print(text)
+    try:
+        msg = json.dumps({"type": "server_log", "text": text}, default=str)
+        _broadcast(msg)
+    except Exception:
+        pass
+
+
 def _get_full_tree() -> list[dict]:
     """Get current root-level context trees by walking active contexts."""
     # First check if there's a currently running context
@@ -343,7 +372,13 @@ def _find_node_by_path(tree: dict, path: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 def _discover_functions() -> list[dict]:
-    """Scan agentic/functions/ and agentic/meta_functions/ to build function list."""
+    """Scan agentic/functions/ and agentic/meta_functions/ to build function list.
+
+    Supports three kinds of entries in functions/:
+      1. Single .py files (e.g. sentiment.py)
+      2. Subdirectories with a main.py entry point (e.g. Research-Agent-Harness/main.py)
+         The function name is extracted from the @agentic_function in main.py.
+    """
     result = []
     base = os.path.dirname(os.path.dirname(__file__))
 
@@ -356,23 +391,52 @@ def _discover_functions() -> list[dict]:
                 if info:
                     result.append(info)
 
-    # Built-in functions
+    # Built-in functions (single files + subdirectory projects)
     fn_dir = os.path.join(base, "functions")
     if os.path.isdir(fn_dir):
         for f in sorted(os.listdir(fn_dir)):
+            full_path = os.path.join(fn_dir, f)
             if f.endswith(".py") and not f.startswith("_"):
-                info = _extract_function_info(os.path.join(fn_dir, f), f[:-3], "builtin")
+                info = _extract_function_info(full_path, f[:-3], "builtin")
                 if info:
                     result.append(info)
+            elif os.path.isdir(full_path) and not f.startswith("_"):
+                # Subdirectory project — find main.py at any depth
+                for root, dirs, files in os.walk(full_path):
+                    dirs[:] = [d for d in dirs if not d.startswith(("_", "."))]
+                    if "main.py" in files:
+                        main_py = os.path.join(root, "main.py")
+                        info = _extract_function_info(main_py, None, "app")
+                        if info:
+                            result.append(info)
+                        break  # one entry point per subdirectory project
 
     return result
 
 
-def _extract_function_info(filepath: str, name: str, category: str) -> Optional[dict]:
-    """Extract function name and docstring from a .py file."""
+def _extract_function_info(filepath: str, name: Optional[str], category: str) -> Optional[dict]:
+    """Extract function name and docstring from a .py file.
+
+    Args:
+        filepath: Path to the .py file.
+        name:     Function name. If None, auto-detect from @agentic_function.
+        category: "meta", "builtin", "app", etc.
+    """
     try:
+        import re
+
         with open(filepath) as f:
             content = f.read()
+
+        # If name not given, find the first @agentic_function decorated function
+        if name is None:
+            match = re.search(
+                r"@agentic_function[^\n]*\s*def\s+(\w+)\s*\(",
+                content,
+            )
+            if not match:
+                return None
+            name = match.group(1)
 
         doc = ""
         if '"""' in content:
@@ -387,8 +451,6 @@ def _extract_function_info(filepath: str, name: str, category: str) -> Optional[
 
         # Try to extract parameter names from function signature
         params = []
-        # Look for def <name>(...)
-        import re
         pattern = rf"def\s+{re.escape(name)}\s*\(([^)]*)\)"
         match = re.search(pattern, content)
         if match:
@@ -406,6 +468,7 @@ def _extract_function_info(filepath: str, name: str, category: str) -> Optional[
             "description": doc,
             "params": params,
             "filepath": filepath,
+            "mtime": os.path.getmtime(filepath),
         }
     except Exception:
         return None
@@ -476,8 +539,116 @@ def _run_user_function(func_name: str, kwargs: dict, runtime: Runtime) -> str:
             return str(result)
 
 
+def _retry_node(conv_id: str, msg_id: str, node_path: str, params_override: dict = None):
+    """Re-execute a function at a specific node, creating a new sibling under the same parent.
+
+    Removes all sibling nodes that came AFTER the target (rollback),
+    then re-runs the function with original or overridden params.
+    """
+    try:
+        _log(f"[retry] _retry_node started: conv_id={conv_id}, node_path={node_path}")
+        conv = _conversations.get(conv_id)
+        if not conv:
+            _log(f"[retry] conversation not found: {conv_id}")
+            _log(f"[retry] available conversations: {list(_conversations.keys())}")
+            _broadcast_chat_response(conv_id, msg_id, {"type": "error", "content": f"Conversation not found: {conv_id}. Try sending a message first."})
+            return
+
+        root_ctx = conv["root_context"]
+        _log(f"[retry] root context: {root_ctx.name}, path: {root_ctx.path}, children: {[c.name for c in root_ctx.children]}")
+        target = root_ctx.find_by_path(node_path)
+        if not target:
+            # Debug: list all paths in tree
+            all_paths = []
+            def _collect_paths(node):
+                all_paths.append(node.path)
+                for c in node.children:
+                    _collect_paths(c)
+            _collect_paths(root_ctx)
+            _log(f"[retry] node not found: {node_path}")
+            _log(f"[retry] available paths: {all_paths}")
+            _broadcast_chat_response(conv_id, msg_id, {"type": "error", "content": f"Node not found: {node_path}\nAvailable: {', '.join(all_paths[:10])}"})
+            return
+
+        parent = target.parent
+        if parent is None:
+            _log(f"[retry] cannot retry root node")
+            _broadcast_chat_response(conv_id, msg_id, {"type": "error", "content": "Cannot retry root node"})
+            return
+
+        # Rollback: remove all siblings after the target node
+        target_idx = next((i for i, c in enumerate(parent.children) if c is target), None)
+        if target_idx is not None and target_idx + 1 < len(parent.children):
+            removed = [c.name for c in parent.children[target_idx + 1:]]
+            parent.children = parent.children[:target_idx + 1]
+            _log(f"[retry] rolled back {len(removed)} siblings: {removed}")
+
+        func_name = target.name
+        # Use overridden params if provided, otherwise original (minus internal keys)
+        if params_override:
+            params = {k: v for k, v in params_override.items() if k not in ("runtime", "callback")}
+        else:
+            params = {k: v for k, v in (target.params or {}).items() if k not in ("runtime", "callback")}
+        _log(f"[retry] func_name={func_name}, params keys={list(params.keys())}")
+        runtime = _get_conv_runtime(conv_id, msg_id=msg_id)
+
+        root_ctx.status = "running"
+
+        # Broadcast the tree state AFTER rollback so frontend is in sync
+        _broadcast_chat_response(conv_id, msg_id, {
+            "type": "status",
+            "content": f"Retrying {func_name}...",
+            "context_tree": root_ctx._to_dict(),
+        })
+        token = _current_ctx.set(parent)
+        try:
+            # Look up function: user functions first, then server-internal ones
+            fn = _load_function(func_name)
+            if fn is None:
+                fn = globals().get(func_name)
+            if fn is None or not callable(fn):
+                _log(f"[retry] function not found: {func_name}")
+                _broadcast_chat_response(conv_id, msg_id, {"type": "error", "content": f"Function '{func_name}' not found."})
+                return
+
+            _log(f"[retry] found function: {fn}, calling with {list(params.keys())}")
+
+            # Inject runtime (same logic as _run_user_function)
+            inner = fn._fn if hasattr(fn, '_fn') else fn
+            try:
+                src = inspect.getsource(inner)
+            except (OSError, TypeError):
+                src = ""
+            if "runtime" in src:
+                sig = inspect.signature(inner)
+                if "runtime" in sig.parameters:
+                    params["runtime"] = runtime
+
+            result = fn(**params)
+            result_str = str(result) if isinstance(result, str) else json.dumps(result, indent=2, default=str)
+            _log(f"[retry] function completed successfully, result length: {len(result_str)}")
+
+            _broadcast_chat_response(conv_id, msg_id, {
+                "type": "result",
+                "content": result_str,
+                "function": func_name,
+                "context_tree": root_ctx._to_dict(),
+            })
+        finally:
+            _current_ctx.reset(token)
+            root_ctx.status = "idle"
+
+    except Exception as e:
+        import traceback
+        _log(f"[retry] exception: {e}\n{traceback.format_exc()}")
+        _broadcast_chat_response(conv_id, msg_id, {
+            "type": "error",
+            "content": f"Retry failed: {e}\n\n{traceback.format_exc()}",
+        })
+
+
 def _load_function(func_name: str):
-    """Load a function by name from meta_functions or functions."""
+    """Load a function by name from meta_functions, functions, or subdirectory apps."""
     meta_names = ["create", "fix", "create_app", "create_skill"]
     if func_name in meta_names:
         try:
@@ -485,11 +656,26 @@ def _load_function(func_name: str):
             return getattr(mod, func_name)
         except (ImportError, AttributeError):
             pass
+    # Try single-file function
     try:
         mod = importlib.import_module(f"agentic.functions.{func_name}")
         return getattr(mod, func_name)
     except (ImportError, AttributeError):
-        return None
+        pass
+    # Try subdirectory apps — scan functions/ for dirs with main.py
+    import importlib.util as _imputil
+    fn_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "functions")
+    if os.path.isdir(fn_dir):
+        for d in os.listdir(fn_dir):
+            main_py = os.path.join(fn_dir, d, "main.py")
+            if os.path.isfile(main_py):
+                spec = _imputil.spec_from_file_location(f"agentic.functions.{d}.main", main_py)
+                mod = _imputil.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                fn = getattr(mod, func_name, None)
+                if fn is not None:
+                    return fn
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -535,10 +721,12 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
         try:
             if action == "query":
                 # Chat query — @agentic_function with auto context
+                _log(f"[exec] query: {query[:80]}...")
                 _broadcast_chat_response(conv_id, msg_id, {
                     "type": "status", "content": "Thinking...",
                 })
                 result = _chat_query(query=query, runtime=runtime)
+                _log(f"[exec] query completed, result length: {len(str(result))}")
                 _broadcast_chat_response(conv_id, msg_id, {
                     "type": "result",
                     "content": str(result),
@@ -573,6 +761,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     except Exception:
                         pass
 
+                _log(f"[exec] running function: {func_name}({', '.join(f'{k}=...' for k in (kwargs or {}))})")
                 _broadcast_chat_response(conv_id, msg_id, {
                     "type": "status",
                     "content": f"Running {func_name}...",
@@ -584,6 +773,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     kwargs=kwargs or {},
                     runtime=runtime,
                 )
+                _log(f"[exec] {func_name} completed, result length: {len(str(result))}")
 
                 _broadcast_chat_response(conv_id, msg_id, {
                     "type": "result",
@@ -673,12 +863,19 @@ def _parse_chat_input(text: str) -> dict:
     # "run func_name key=val ..." -> direct run
     if lower.startswith("run "):
         rest = text[4:].strip()
-        parts = rest.split()
+        try:
+            import shlex
+            parts = shlex.split(rest)
+        except ValueError:
+            parts = rest.split()
         func_name = parts[0] if parts else ""
         kwargs = {}
         for p in parts[1:]:
             if "=" in p:
                 k, v = p.split("=", 1)
+                # Strip surrounding quotes that shlex preserves on values
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in ('"', "'"):
+                    v = v[1:-1]
                 # Try to parse as JSON value
                 try:
                     v = json.loads(v)
@@ -818,6 +1015,50 @@ async def _handle_ws_command(ws, cmd: dict):
                 daemon=True,
             ).start()
 
+    elif action == "retry_node":
+        node_path = cmd.get("node_path")
+        conv_id = cmd.get("conv_id")
+        params_override = cmd.get("params")  # optional edited params
+        _log(f"[retry] received retry_node: conv_id={conv_id}, node_path={node_path}")
+        if not node_path or not conv_id:
+            _log(f"[retry] missing node_path or conv_id, aborting")
+            await ws.send_text(json.dumps({
+                "type": "chat_response",
+                "data": {"type": "error", "content": "Retry failed: missing node_path or conv_id", "conv_id": conv_id or "", "msg_id": "err"},
+            }))
+            return
+        msg_id = str(uuid.uuid4())[:8]
+        await ws.send_text(json.dumps({
+            "type": "chat_ack",
+            "data": {"conv_id": conv_id, "msg_id": msg_id},
+        }))
+        _log(f"[retry] starting retry thread msg_id={msg_id}")
+        threading.Thread(
+            target=_retry_node,
+            args=(conv_id, msg_id, node_path, params_override),
+            daemon=True,
+        ).start()
+
+    elif action == "delete_conversation":
+        conv_id = cmd.get("conv_id")
+        if conv_id:
+            with _conversations_lock:
+                _conversations.pop(conv_id, None)
+
+    elif action == "clear_conversations":
+        with _conversations_lock:
+            _conversations.clear()
+
+    elif action == "delete_conversation":
+        conv_id = cmd.get("conv_id")
+        if conv_id:
+            with _conversations_lock:
+                _conversations.pop(conv_id, None)
+
+    elif action == "clear_conversations":
+        with _conversations_lock:
+            _conversations.clear()
+
     elif action == "load_conversation":
         conv_id = cmd.get("conv_id")
         with _conversations_lock:
@@ -890,6 +1131,22 @@ def create_app():
             },
         )
 
+    @app.get("/programs", response_class=HTMLResponse)
+    async def programs_page():
+        from starlette.responses import Response
+        html_path = os.path.join(os.path.dirname(__file__), "static", "programs.html")
+        with open(html_path) as f:
+            content = f.read()
+        return Response(
+            content=content,
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
     # WebSocket — use Starlette's raw WebSocketRoute to avoid FastAPI routing issues
     from starlette.routing import WebSocketRoute
     app.routes.insert(0, WebSocketRoute("/ws", _websocket_handler))
@@ -902,6 +1159,21 @@ def create_app():
     @app.get("/api/functions")
     async def get_functions():
         return JSONResponse(content=_discover_functions())
+
+    @app.get("/api/programs/meta")
+    async def get_programs_meta():
+        meta_path = os.path.join(os.path.dirname(__file__), "programs_meta.json")
+        if os.path.isfile(meta_path):
+            with open(meta_path) as f:
+                return JSONResponse(content=json.load(f))
+        return JSONResponse(content={"favorites": [], "folders": {}})
+
+    @app.post("/api/programs/meta")
+    async def save_programs_meta(body: dict = None):
+        meta_path = os.path.join(os.path.dirname(__file__), "programs_meta.json")
+        with open(meta_path, "w") as f:
+            json.dump(body, f, indent=2)
+        return JSONResponse(content={"ok": True})
 
     @app.post("/api/chat")
     async def post_chat(body: dict = None):
@@ -1019,9 +1291,8 @@ def create_app():
     @app.get("/api/models")
     async def list_models():
         """List available models for the current provider."""
-        # Models per provider (newest first)
-        models = {
-            "codex": ["o3-pro", "o3", "o4-mini", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"],
+        # Static fallback lists for providers without auto-detection
+        static_models = {
             "claude-code": ["sonnet", "opus", "haiku"],
             "gemini-cli": ["gemini-3.1-pro", "gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash"],
             "anthropic": [
@@ -1030,6 +1301,12 @@ def create_app():
             "openai": ["o3-pro", "o3", "o4-mini", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"],
             "gemini": ["gemini-3.1-pro", "gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash"],
         }
+        # Ensure runtime is initialized
+        global _default_provider, _default_runtime
+        with _runtime_lock:
+            if _default_runtime is None:
+                _default_provider, _default_runtime = _detect_default_provider()
+
         conv_id = None  # Could be passed as query param in future
         provider = _default_provider or "unknown"
         current_model = _default_runtime.model if _default_runtime else "default"
@@ -1042,7 +1319,15 @@ def create_app():
                 current_model = conv["runtime"].model
                 provider = conv.get("provider_name", provider)
 
-        model_list = models.get(provider, [])
+        # Auto-detect models if the runtime supports it
+        runtime = _default_runtime
+        if hasattr(runtime, 'list_models'):
+            try:
+                model_list = runtime.list_models()
+            except Exception:
+                model_list = static_models.get(provider, [])
+        else:
+            model_list = static_models.get(provider, [])
         # Ensure current model is in the list
         if current_model and current_model not in model_list:
             model_list = [current_model] + model_list
@@ -1182,6 +1467,61 @@ def create_app():
                     "filepath": filepath,
                     "category": "meta" if subdir == "meta_functions" else "builtin",
                 })
+        # Search subdirectory projects (app category)
+        fn_dir = os.path.join(base, "functions")
+        if os.path.isdir(fn_dir):
+            for d in os.listdir(fn_dir):
+                full_path = os.path.join(fn_dir, d)
+                if os.path.isdir(full_path) and not d.startswith("_"):
+                    for root, dirs, files in os.walk(full_path):
+                        dirs[:] = [x for x in dirs if not x.startswith(("_", "."))]
+                        if "main.py" in files:
+                            main_py = os.path.join(root, "main.py")
+                            with open(main_py) as f:
+                                source = f.read()
+                            info = _extract_function_info(main_py, None, "app")
+                            if info and info["name"] == name:
+                                return JSONResponse(content={
+                                    "name": name,
+                                    "source": source,
+                                    "filepath": main_py,
+                                    "category": "app",
+                                })
+                            break
+        # Fallback: try to find as an internal function via inspect
+        fn = _load_function(name)
+        if fn is None:
+            # Check server-module globals (e.g. _chat_query)
+            fn = globals().get(name)
+        if fn is not None and callable(fn):
+            try:
+                inner = getattr(fn, '_fn', fn)
+                source = inspect.getsource(inner)
+                return JSONResponse(content={
+                    "name": name,
+                    "source": source,
+                    "filepath": inspect.getfile(inner),
+                    "category": "internal",
+                })
+            except (OSError, TypeError):
+                pass
+        # Fallback: try to find as an internal function via inspect
+        fn = _load_function(name)
+        if fn is None:
+            # Check server-module globals (e.g. _chat_query)
+            fn = globals().get(name)
+        if fn is not None and callable(fn):
+            try:
+                inner = getattr(fn, '_fn', fn)
+                source = inspect.getsource(inner)
+                return JSONResponse(content={
+                    "name": name,
+                    "source": source,
+                    "filepath": inspect.getfile(inner),
+                    "category": "internal",
+                })
+            except (OSError, TypeError):
+                pass
         return JSONResponse(content={"error": f"Function '{name}' not found"}, status_code=404)
 
     @app.post("/api/function/{name}/edit")

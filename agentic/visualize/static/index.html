@@ -33,8 +33,8 @@
   --radius-lg: 12px;
   --transition: 0.2s ease;
   --shadow: 0 2px 8px rgba(0,0,0,0.3);
-  --sidebar-width: 280px;
-  --detail-width: 380px;
+  --sidebar-width: 300px;
+  --detail-width: 300px;
   --font-mono: 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
 }
@@ -54,6 +54,20 @@ html, body {
   display: flex;
   height: 100vh;
   width: 100vw;
+}
+
+/* Column resize handle */
+.col-resize {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  position: relative;
+  z-index: 10;
+}
+.col-resize:hover, .col-resize.dragging {
+  background: var(--accent-blue);
 }
 
 /* ===== Left Sidebar ===== */
@@ -88,11 +102,12 @@ html, body {
 }
 
 .logo {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--text-bright);
   letter-spacing: -0.3px;
   white-space: nowrap;
+  margin-left: 4px;
 }
 
 .logo-accent { color: var(--accent-blue); }
@@ -133,22 +148,19 @@ html, body {
 /* Sidebar panels (collapsible + resizable) */
 .sidebar-panels {
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  position: relative;
   overflow: hidden;
   min-height: 0;
 }
 
 .sidebar-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
-  min-height: 32px;
   overflow: hidden;
-  position: relative;
-}
-
-.sidebar-panel:not(.panel-collapsed) {
-  flex: 1;
+  min-height: 32px;
 }
 
 .panel-header {
@@ -178,9 +190,11 @@ html, body {
 .panel-collapsed { flex: none !important; height: auto !important; min-height: auto; }
 
 .panel-body {
-  flex: 1;
   overflow-y: auto;
   min-height: 0;
+}
+#convPanel .panel-body {
+  flex: 1;
 }
 
 .panel-resize {
@@ -225,10 +239,26 @@ html, body {
   text-overflow: ellipsis;
   font-size: 13px;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  position: relative;
 }
+.conv-item .conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.conv-item .conv-del {
+  display: none; flex-shrink: 0; width: 18px; height: 18px;
+  text-align: center; line-height: 18px; font-size: 12px;
+  border-radius: 3px; color: var(--text-muted); margin-left: 4px;
+}
+.conv-item:hover .conv-del { display: block; }
+.conv-item .conv-del:hover { background: var(--accent-red); color: #fff; }
 
 .conv-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .conv-item.active { background: rgba(97,175,239,0.08); border-left-color: var(--accent-blue); color: var(--text-bright); }
+.conv-clear-all {
+  padding: 6px 16px; font-size: 11px; color: var(--text-muted);
+  cursor: pointer; text-align: center; border-top: 1px solid var(--border);
+}
+.conv-clear-all:hover { color: var(--accent-red); }
 
 /* Functions section */
 .sidebar-functions {
@@ -247,13 +277,20 @@ html, body {
   color: var(--text-muted);
   margin-top: 4px;
 }
+.fn-subcategory {
+  padding: 2px 24px 1px;
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
 
 .fn-item {
   padding: 6px 16px 6px 24px;
   cursor: pointer;
   transition: background var(--transition);
-  display: flex;
-  align-items: center;
   gap: 8px;
   font-size: 13px;
 }
@@ -267,9 +304,11 @@ html, body {
   flex-shrink: 0;
 }
 
-.fn-icon.meta { color: var(--accent-purple); }
-.fn-icon.builtin { color: var(--accent-cyan); }
-.fn-icon.user { color: var(--accent-orange); }
+.fn-icon.fn-cat-app { color: var(--accent-green); }
+.fn-icon.fn-cat-meta { color: var(--accent-purple); }
+.fn-icon.fn-cat-builtin { color: var(--accent-cyan); }
+.fn-icon.fn-cat-generated { color: var(--accent-yellow); }
+.fn-icon.fn-cat-user { color: var(--accent-orange); }
 
 .fn-name {
   font-family: var(--font-mono);
@@ -384,9 +423,53 @@ html, body {
   flex-direction: column;
 }
 
+/* Live execution tree */
+.live-exec-tree {
+  margin: 8px 24px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.live-exec-tree .tree-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  color: var(--text-secondary); user-select: none; cursor: pointer;
+}
+.live-exec-tree .tree-header:hover { background: var(--bg-hover); }
+.live-exec-tree .tree-header .spinner-sm {
+  width: 12px; height: 12px;
+  border: 1.5px solid var(--border); border-top-color: var(--accent-blue);
+  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+}
+.live-exec-tree .tree-title {
+  flex: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.live-exec-tree .tree-body { padding: 6px 8px; }
+.live-exec-tree .tree-chevron { font-size: 10px; transition: transform 0.2s; }
+.live-exec-tree.collapsed .tree-body { display: none; }
+.live-exec-tree.collapsed .tree-chevron { transform: rotate(-90deg); }
+
+/* Running node status bar */
+.node-live-status {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 8px; margin: 2px 0;
+  color: var(--text-muted); font-size: 11px;
+  animation: msgAppear 0.2s ease forwards;
+}
+.node-live-status .spinner-sm {
+  width: 10px; height: 10px;
+  border: 1.5px solid var(--border); border-top-color: var(--accent-blue);
+  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+}
+
 .chat-messages {
   flex: 1;
-  padding: 24px 0;
+  padding: 24px 0 40vh 0;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -524,6 +607,52 @@ html, body {
   flex-shrink: 0;
 }
 
+/* Execution log */
+.exec-log {
+  margin: 4px 24px 4px 48px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  animation: msgAppear 0.2s ease forwards;
+}
+.exec-log-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer;
+  color: var(--text-secondary); user-select: none;
+  border-bottom: 1px solid var(--border);
+}
+.exec-log-header:hover { background: var(--bg-hover); }
+.exec-log-header .spinner-sm { width: 12px; height: 12px; border: 1.5px solid var(--border); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+.exec-log-title { flex: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.exec-log-chevron { font-size: 10px; transition: transform 0.2s; }
+.exec-log.collapsed .exec-log-body { display: none; }
+.exec-log.collapsed .exec-log-chevron { transform: rotate(-90deg); }
+.exec-log-body {
+  max-height: 400px; overflow-y: auto; padding: 6px 0;
+}
+.exec-log-entry {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 3px 12px; line-height: 1.5;
+  animation: logSlide 0.15s ease forwards;
+}
+@keyframes logSlide {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.exec-log-indent { flex-shrink: 0; }
+.exec-log-icon { flex-shrink: 0; width: 14px; text-align: center; font-size: 11px; }
+.exec-log-icon.running { color: var(--accent-blue); }
+.exec-log-icon.done { color: var(--accent-green); }
+.exec-log-icon.error { color: var(--accent-red); }
+.exec-log-name { color: var(--accent-cyan); cursor: pointer; }
+.exec-log-name:hover { text-decoration: underline; }
+.exec-log-params { color: var(--text-muted); }
+.exec-log-time { color: var(--text-muted); margin-left: auto; flex-shrink: 0; font-size: 11px; }
+.exec-log-output { color: var(--text-secondary); padding-left: 20px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; }
+
 .system-message {
   text-align: center;
   color: var(--text-muted);
@@ -608,6 +737,7 @@ html, body {
   background: var(--bg-secondary);
   overflow: hidden;
 }
+#liveExecTree { margin: 12px 24px 16px; }
 
 .context-card-header {
   display: flex;
@@ -793,6 +923,15 @@ html, body {
 
 .send-btn:hover { opacity: 1; transform: scale(1.05); }
 .send-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+.send-btn.paused-state { background: var(--accent-green); }
+
+.stop-btn {
+  width: 32px; height: 32px; border-radius: 8px; border: none;
+  background: var(--accent-red); color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; flex-shrink: 0; transition: all var(--transition); opacity: 0.8;
+}
+.stop-btn:hover { opacity: 1; transform: scale(1.05); }
 
 .input-hint {
   font-size: 11px;
@@ -924,6 +1063,7 @@ html, body {
   transition: background var(--transition);
   user-select: none;
   font-size: 13px;
+  overflow: hidden;
 }
 
 .node-row:hover { background: var(--bg-hover); }
@@ -945,13 +1085,61 @@ html, body {
 .node-toggle.leaf { visibility: hidden; }
 
 .node-icon { font-size: 12px; flex-shrink: 0; width: 16px; text-align: center; }
-.node-name { font-family: var(--font-mono); font-size: 12px; color: var(--accent-blue); font-weight: 500; }
+.node-name { font-family: var(--font-mono); font-size: 12px; color: var(--accent-blue); font-weight: 500; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-name:hover { text-decoration: underline; }
 .node-status { font-size: 10px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
 .node-status.running { background: rgba(97,175,239,0.12); color: var(--accent-blue); }
 .node-status.success { background: rgba(152,195,121,0.12); color: var(--accent-green); }
 .node-status.error { background: rgba(224,108,117,0.12); color: var(--accent-red); }
 .node-duration { font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
 .node-output-preview { font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+
+.rerun-btn {
+  margin-top: 8px; padding: 4px 12px; font-size: 12px;
+  background: var(--bg-hover); border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text-secondary); cursor: pointer; font-family: var(--font-sans);
+}
+.rerun-btn:hover { color: var(--accent-blue); border-color: var(--accent-blue); }
+
+/* Inline retry panel in execution tree */
+.retry-icon {
+  font-size: 10px; color: var(--text-muted); cursor: pointer;
+  flex-shrink: 0; padding: 1px 6px; border-radius: 3px;
+  border: 1px solid var(--border); background: var(--bg-tertiary);
+  opacity: 0; transition: opacity 0.15s;
+}
+.node-row:hover .retry-icon { opacity: 1; }
+.retry-icon:hover { color: var(--accent-blue); border-color: var(--accent-blue); background: rgba(97,175,239,0.08); }
+
+.retry-panel {
+  margin: 4px 0 4px 36px; padding: 8px 10px;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 12px;
+}
+.retry-field { margin-bottom: 8px; }
+.retry-field-label {
+  display: block; font-size: 11px; color: var(--accent-cyan);
+  font-family: var(--font-mono); margin-bottom: 3px; font-weight: 600;
+}
+.retry-field-group {
+  border-left: 2px solid var(--border); padding-left: 24px; margin-top: 2px;
+}
+.retry-field-input {
+  width: 100%; background: var(--bg-input); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 6px 10px; font-family: var(--font-mono); font-size: 12px;
+}
+textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertical; }
+.retry-field-input:focus { outline: none; border-color: var(--accent-blue); }
+.retry-panel-actions { display: flex; gap: 6px; margin-top: 2px; }
+.retry-panel-actions button {
+  padding: 4px 12px; font-size: 11px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--border); font-family: var(--font-sans);
+}
+.retry-exec-btn { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+.retry-exec-btn:hover { opacity: 0.9; }
+.retry-cancel-btn { background: var(--bg-hover); color: var(--text-secondary); }
+.retry-cancel-btn:hover { color: var(--text-primary); }
 
 .node-children {
   margin-left: 18px;
@@ -989,6 +1177,10 @@ html, body {
   .input-area { padding: 12px 16px 16px; }
   .welcome-examples { flex-direction: column; }
 }
+
+/* Manage all link */
+.manage-link { display: block; padding: 6px 16px; font-size: 12px; color: var(--text-muted); text-decoration: none; border-top: 1px solid var(--border); margin-top: 4px; transition: color var(--transition); }
+.manage-link:hover { color: var(--accent-blue); }
 
 /* Function item with actions */
 .fn-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-radius: var(--radius); cursor: pointer; transition: background var(--transition); }
@@ -1044,7 +1236,6 @@ html, body {
 .config-badge:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
 
 /* Running node pulse animation */
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .node-running { animation: pulse 1.5s ease-in-out infinite; }
 .node-just-completed { animation: flashGreen 0.5s ease; }
 @keyframes flashGreen { 0% { background: rgba(152,195,121,0.3); } 100% { background: transparent; } }
@@ -1071,11 +1262,11 @@ html, body {
         <div class="panel-resize" data-resize="conv"></div>
       </div>
 
-      <!-- Functions -->
+      <!-- Programs -->
       <div class="sidebar-panel" id="fnPanel" data-panel="fn">
         <div class="panel-header" onclick="togglePanel('fn')">
           <span class="panel-chevron" id="fnChevron">&#9660;</span>
-          <span class="sidebar-section-title" style="padding:0">Functions</span>
+          <span class="sidebar-section-title" style="padding:0">Programs</span>
         </div>
         <div class="panel-body" id="fnList"></div>
         <div class="panel-resize" data-resize="fn"></div>
@@ -1088,10 +1279,12 @@ html, body {
           <span class="sidebar-section-title" style="padding:0">Provider</span>
         </div>
         <div class="panel-body" id="providerList"></div>
+        <div class="panel-resize" data-resize="prov"></div>
       </div>
     </div>
   </div>
 
+  <div class="col-resize" id="sidebarResize"></div>
   <!-- Main Area -->
   <div class="main">
     <!-- Top bar -->
@@ -1103,7 +1296,6 @@ html, body {
         <span id="modelBadge" class="runtime-badge model" style="display:none"></span>
       </div>
       <div class="topbar-right">
-        <button id="btnPause" class="btn btn-pause" onclick="togglePause()">Pause</button>
         <button class="btn" onclick="toggleDetail()" id="btnDetail">Detail Panel</button>
       </div>
     </div>
@@ -1136,7 +1328,8 @@ html, body {
     <div class="input-area">
       <div class="input-wrapper">
         <textarea id="chatInput" class="chat-input" placeholder="Type a message... (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
-        <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send message">&#9654;</button>
+        <button class="stop-btn" id="stopBtn" onclick="stopExecution()" title="Stop" style="display:none">&#9632;</button>
+        <button class="send-btn" id="sendBtn" onclick="onSendBtnClick()" title="Send message">&#9654;</button>
       </div>
       <div class="input-hint">
         <span style="color:var(--accent-purple)">create</span> / <span style="color:var(--accent-cyan)">run</span> / <span style="color:var(--accent-orange)">fix</span> &nbsp;or ask anything
@@ -1144,6 +1337,7 @@ html, body {
     </div>
   </div>
 
+  <div class="col-resize" id="detailResize"></div>
   <!-- Right Detail Panel -->
   <div id="detailPanel" class="detail-panel collapsed">
     <div class="detail-header">
@@ -1156,65 +1350,74 @@ html, body {
 
 <script>
 // ===== State =====
-let ws = null;
-let trees = [];
-let selectedPath = null;
-let isPaused = false;
-let expandedNodes = new Set();
-let reconnectTimer = null;
-let currentConvId = localStorage.getItem('agentic_conv_id') || null;
-let conversations = {};
-let availableFunctions = [];
-let pendingResponses = {};  // msg_id -> element
-let sidebarOpen = true;
+var ws = null;
+var trees = [];
+var selectedPath = null;
+var isPaused = false;
+var expandedNodes = new Set();
+var reconnectTimer = null;
+var currentConvId = localStorage.getItem('agentic_conv_id') || null;
+var conversations = {};
+var availableFunctions = [];
+var pendingResponses = {};  // msg_id -> element
+var sidebarOpen = true;
+var _nodeCache = {};  // path -> node data
+var _liveTreeCollapsed = false;
+var _lastRunCommand = null;
+var isRunning = false;
+var execLogStartTime = 0;
+var _modelList = [];
+var _currentModel = '';
+var programsMeta = { favorites: [], folders: {} };
 
 // ===== WebSocket =====
 function connect() {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(proto + '//' + location.host + '/ws');
 
-  ws.onopen = () => {
+  ws.onopen = function() {
     updateStatus('connected');
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     // Restore conversation from localStorage on reconnect
-    const savedId = localStorage.getItem('agentic_conv_id');
+    var savedId = localStorage.getItem('agentic_conv_id');
     if (savedId) {
       currentConvId = savedId;
       ws.send(JSON.stringify({ action: 'load_conversation', conv_id: savedId }));
     }
   };
 
-  ws.onmessage = (e) => {
+  ws.onmessage = function(e) {
     try {
-      const msg = JSON.parse(e.data);
+      var msg = JSON.parse(e.data);
       handleMessage(msg);
     } catch(err) {
       console.error('[ws.onmessage] error:', err);
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = function() {
     updateStatus('disconnected');
     reconnectTimer = setTimeout(connect, 2000);
   };
 
-  ws.onerror = () => { ws.close(); };
+  ws.onerror = function() { ws.close(); };
 }
 
 function handleMessage(msg) {
   switch (msg.type) {
     case 'full_tree':
       trees = msg.data || [];
+      renderLiveTree();
       break;
     case 'event':
       handleContextEvent(msg.event, msg.data);
       break;
     case 'functions_list':
       availableFunctions = msg.data || [];
-      renderFunctions();
+      loadProgramsMeta().then(function() { renderFunctions(); });
       break;
     case 'history_list':
-      (msg.data || []).forEach(c => {
+      (msg.data || []).forEach(function(c) {
         conversations[c.id] = conversations[c.id] || { id: c.id, title: c.title, messages: [] };
       });
       renderConversations();
@@ -1254,13 +1457,92 @@ function handleMessage(msg) {
 
 function handleContextEvent(eventType, data) {
   updateTreeData(data);
+  renderLiveTree();
+}
+
+/* Insert element into chatMessages, always before the persistent live tree */
+function appendToChat(el) {
+  var container = document.getElementById('chatMessages');
+  if (!container) return;
+  var tree = document.getElementById('liveExecTree');
+  if (tree && tree.parentNode === container) {
+    container.insertBefore(el, tree);
+  } else {
+    container.appendChild(el);
+  }
+}
+
+function renderLiveTree() {
+  if (trees.length === 0) {
+    var old = document.getElementById('liveExecTree');
+    if (old) old.remove();
+    return;
+  }
+
+  var chatContainer = document.getElementById('chatMessages');
+  if (!chatContainer) return;
+  var container = document.getElementById('liveExecTree');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'liveExecTree';
+    container.className = 'context-card';
+    chatContainer.appendChild(container);
+  }
+  if (container !== chatContainer.lastElementChild) {
+    chatContainer.appendChild(container);
+  }
+
+  var hasRunning = trees.some(function(t) { return _treeHasRunning(t); });
+  var bodyExpanded = !_liveTreeCollapsed;
+
+  // Auto-expand root nodes
+  trees.forEach(function(t) { expandedNodes.add(t.path); });
+
+  var treeContent = '';
+  for (var i = 0; i < trees.length; i++) {
+    treeContent += renderTreeNode(trees[i]);
+  }
+
+  container.innerHTML =
+    '<div class="context-card-header" onclick="toggleLiveTree()">' +
+      '<span class="context-card-title">' +
+        (hasRunning
+          ? '<span class="pulse" style="color:var(--accent-blue)">&#9679;</span> '
+          : '<span style="color:var(--accent-cyan)">&#9670;</span> ') +
+        'Execution Tree' +
+      '</span>' +
+      '<span class="context-card-toggle' + (bodyExpanded ? ' expanded' : '') + '" id="toggle_liveExecTreeCard">&#9654;</span>' +
+    '</div>' +
+    '<div class="context-card-body' + (bodyExpanded ? ' expanded' : '') + '" id="body_liveExecTreeCard">' +
+      treeContent +
+    '</div>';
+
+  scrollToBottom();
+}
+
+function _treeHasRunning(node) {
+  if (node.status === 'running') return true;
+  if (node.children) {
+    for (var i = 0; i < node.children.length; i++) {
+      if (_treeHasRunning(node.children[i])) return true;
+    }
+  }
+  return false;
+}
+
+function toggleLiveTree() {
+  _liveTreeCollapsed = !_liveTreeCollapsed;
+  var body = document.getElementById('body_liveExecTreeCard');
+  var toggle = document.getElementById('toggle_liveExecTreeCard');
+  if (body) body.classList.toggle('expanded', !_liveTreeCollapsed);
+  if (toggle) toggle.classList.toggle('expanded', !_liveTreeCollapsed);
 }
 
 function updateTreeData(nodeData) {
-  const path = nodeData.path || '';
-  const parts = path.split('/');
+  var path = nodeData.path || '';
+  var parts = path.split('/');
   if (parts.length === 1) {
-    const idx = trees.findIndex(t => t.path === path || t.name === nodeData.name);
+    var idx = trees.findIndex(function(t) { return t.path === path || t.name === nodeData.name; });
     if (idx >= 0) {
       trees[idx] = mergeNode(trees[idx], nodeData);
     } else {
@@ -1269,8 +1551,22 @@ function updateTreeData(nodeData) {
     }
     return;
   }
-  for (let i = 0; i < trees.length; i++) {
+  for (var i = 0; i < trees.length; i++) {
     if (updateNodeInTree(trees[i], nodeData)) return;
+  }
+  // Orphan node -- create or find synthetic root from path prefix
+  var rootName = parts[0];
+  var rootIdx = trees.findIndex(function(t) { return t.path === rootName || t.name === rootName; });
+  if (rootIdx >= 0) {
+    if (!trees[rootIdx].children) trees[rootIdx].children = [];
+    trees[rootIdx].children.push(nodeData);
+    expandedNodes.add(trees[rootIdx].path);
+  } else {
+    trees.push({
+      name: rootName, path: rootName, status: 'running',
+      children: [nodeData], duration_ms: 0
+    });
+    expandedNodes.add(rootName);
   }
 }
 
@@ -1279,13 +1575,13 @@ function updateNodeInTree(tree, nodeData) {
     Object.assign(tree, nodeData, { children: mergeChildren(tree.children, nodeData.children) });
     return true;
   }
-  for (let i = 0; i < (tree.children || []).length; i++) {
+  for (var i = 0; i < (tree.children || []).length; i++) {
     if (updateNodeInTree(tree.children[i], nodeData)) return true;
   }
   if (nodeData.path && nodeData.path.startsWith(tree.path + '/')) {
-    const depth = nodeData.path.split('/').length - tree.path.split('/').length;
+    var depth = nodeData.path.split('/').length - tree.path.split('/').length;
     if (depth === 1) {
-      const existIdx = (tree.children || []).findIndex(c => c.path === nodeData.path);
+      var existIdx = (tree.children || []).findIndex(function(c) { return c.path === nodeData.path; });
       if (existIdx >= 0) {
         tree.children[existIdx] = mergeNode(tree.children[existIdx], nodeData);
       } else {
@@ -1300,29 +1596,243 @@ function updateNodeInTree(tree, nodeData) {
 }
 
 function mergeNode(existing, incoming) {
-  return { ...existing, ...incoming, children: mergeChildren(existing.children, incoming.children) };
+  return Object.assign({}, existing, incoming, { children: mergeChildren(existing.children, incoming.children) });
 }
 
 function mergeChildren(existing, incoming) {
   if (!incoming || incoming.length === 0) return existing || [];
   if (!existing || existing.length === 0) return incoming;
-  const merged = [...existing];
-  for (const inc of incoming) {
-    const idx = merged.findIndex(m => m.path === inc.path);
+  var merged = existing.slice();
+  for (var j = 0; j < incoming.length; j++) {
+    var inc = incoming[j];
+    var idx = merged.findIndex(function(m) { return m.path === inc.path; });
     if (idx >= 0) merged[idx] = mergeNode(merged[idx], inc);
     else merged.push(inc);
   }
   return merged;
 }
 
+// ===== Execution Log =====
+function createExecLog() {
+  var old = document.getElementById('currentExecLog');
+  if (old) { old.id = ''; old.classList.add('collapsed'); }
+
+  var log = document.createElement('div');
+  log.id = 'currentExecLog';
+  log.className = 'exec-log';
+  log.innerHTML =
+    '<div class="exec-log-header" onclick="this.parentElement.classList.toggle(\'collapsed\')">' +
+      '<div class="spinner-sm"></div>' +
+      '<span class="exec-log-title">Executing...</span>' +
+      '<span class="exec-log-chevron">&#9660;</span>' +
+    '</div>' +
+    '<div class="exec-log-body"></div>';
+  appendToChat(log);
+  execLogStartTime = Date.now();
+  scrollToBottom();
+}
+
+function addExecLogEntry(eventType, data) {
+  var log = document.getElementById('currentExecLog');
+  if (!log) return;
+  var body = log.querySelector('.exec-log-body');
+  if (!body) return;
+
+  var path = data.path || '';
+  var depth = path.split('/').length - 1;
+  var name = data.name || path.split('/').pop() || '?';
+  var indent = '';
+  for (var d = 0; d < Math.min(depth, 6); d++) indent += '\u00a0\u00a0';
+
+  if (eventType === 'node_created') {
+    var entry = document.createElement('div');
+    entry.className = 'exec-log-entry';
+    entry.id = 'elog-' + path.replace(/[^a-zA-Z0-9_]/g, '-');
+
+    var paramsStr = '';
+    if (data.params) {
+      var p = data.params;
+      var keys = Object.keys(p).filter(function(k) { return k !== 'runtime' && k !== 'callback'; });
+      if (keys.length > 0) {
+        paramsStr = '(' + keys.map(function(k) {
+          var v = String(p[k] || '');
+          if (v.length > 30) v = v.slice(0, 27) + '...';
+          return k + '=' + v;
+        }).join(', ') + ')';
+      }
+    }
+
+    entry.innerHTML =
+      '<span class="exec-log-indent">' + indent + '</span>' +
+      '<span class="exec-log-icon running">&#9654;</span>' +
+      '<span class="exec-log-name" onclick="viewSource(\'' + escAttr(name) + '\')" title="View source">' + escHtml(name) + '</span>' +
+      (paramsStr ? '<span class="exec-log-params">' + escHtml(paramsStr) + '</span>' : '') +
+      '<span class="exec-log-time"></span>';
+    body.appendChild(entry);
+    body.scrollTop = body.scrollHeight;
+    scrollToBottom();
+  }
+
+  if (eventType === 'node_completed') {
+    var entryId = 'elog-' + path.replace(/[^a-zA-Z0-9_]/g, '-');
+    var entryEl = document.getElementById(entryId);
+    if (entryEl) {
+      var icon = entryEl.querySelector('.exec-log-icon');
+      var timeEl = entryEl.querySelector('.exec-log-time');
+      var hasError = data.error || data.status === 'error';
+      if (icon) {
+        icon.className = 'exec-log-icon ' + (hasError ? 'error' : 'done');
+        icon.innerHTML = hasError ? '&#10007;' : '&#10003;';
+      }
+      if (timeEl && data.duration_ms) {
+        var ms = data.duration_ms;
+        timeEl.textContent = ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's';
+      }
+      if (data.output && !hasError) {
+        var outStr = String(data.output);
+        if (outStr.length > 80) outStr = outStr.slice(0, 77) + '...';
+        if (outStr && outStr !== 'None' && outStr !== 'null') {
+          var outDiv = document.createElement('div');
+          outDiv.className = 'exec-log-entry';
+          outDiv.innerHTML = '<span class="exec-log-indent">' + indent + '\u00a0\u00a0</span>' +
+            '<span class="exec-log-output">\u2192 ' + escHtml(outStr) + '</span>';
+          entryEl.after(outDiv);
+        }
+      }
+    }
+  }
+}
+
+function finalizeExecLog() {
+  var log = document.getElementById('currentExecLog');
+  if (!log) return;
+  var spinner = log.querySelector('.spinner-sm');
+  if (spinner) {
+    spinner.outerHTML = '<span style="color:var(--accent-green);font-size:12px">&#10003;</span>';
+  }
+  var title = log.querySelector('.exec-log-title');
+  if (title) {
+    var elapsed = Date.now() - execLogStartTime;
+    var timeStr = elapsed < 1000 ? elapsed + 'ms' : (elapsed / 1000).toFixed(1) + 's';
+    title.textContent = 'Completed in ' + timeStr;
+  }
+  setTimeout(function() {
+    if (log.id === 'currentExecLog') {
+      log.id = '';
+      log.classList.add('collapsed');
+    }
+  }, 2000);
+}
+
 // ===== Chat =====
+function rerunFunction() {
+  if (!_lastRunCommand) return;
+  var input = document.getElementById('chatInput');
+  input.value = _lastRunCommand;
+  input.focus();
+  autoResize(input);
+}
+
+function rerunFromNode(path) {
+  executeRetry(path);
+}
+
+function _buildRetryFields(params, prefix, nodePath) {
+  var html = '';
+  var keys = Object.keys(params);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var v = params[k];
+    var fullKey = prefix ? prefix + '.' + k : k;
+    if (k === 'runtime' || k === 'callback') continue;
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      html += '<div class="retry-field">' +
+        '<label class="retry-field-label">' + escHtml(k) + '</label>' +
+        '<div class="retry-field-group">' + _buildRetryFields(v, fullKey, nodePath) + '</div>' +
+      '</div>';
+    } else {
+      var vs = typeof v === 'string' ? v : JSON.stringify(v);
+      var isLong = vs.length > 60 || vs.indexOf('\n') >= 0;
+      html += '<div class="retry-field">' +
+        '<label class="retry-field-label">' + escHtml(k) + '</label>';
+      if (isLong) {
+        html += '<textarea class="retry-field-input" data-param="' + escAttr(fullKey) + '" data-path="' + escAttr(nodePath) + '">' + escHtml(vs) + '</textarea>';
+      } else {
+        html += '<input class="retry-field-input" data-param="' + escAttr(fullKey) + '" data-path="' + escAttr(nodePath) + '" value="' + escAttr(vs) + '" />';
+      }
+      html += '</div>';
+    }
+  }
+  return html;
+}
+
+function toggleRetryPanel(path) {
+  var id = 'retryPanel_' + path.replace(/[^a-zA-Z0-9]/g, '_');
+  var panel = document.getElementById(id);
+  if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function executeRetry(path, paramsOverride) {
+  var node = _nodeCache[path] || _findNodeByPath(path);
+  if (!node) {
+    addSystemMessage('Retry failed: node not found in tree. Try refreshing.');
+    return;
+  }
+  if (node.status === 'running') return;
+
+  // Collect params from individual field inputs
+  var params = paramsOverride || null;
+  if (!params) {
+    params = {};
+    var fields = document.querySelectorAll('.retry-field-input[data-path="' + path + '"]');
+    for (var i = 0; i < fields.length; i++) {
+      var key = fields[i].getAttribute('data-param');
+      var val = fields[i].value;
+      var parsed;
+      try { parsed = JSON.parse(val); } catch(e) { parsed = val; }
+      var parts = key.split('.');
+      var obj = params;
+      for (var j = 0; j < parts.length - 1; j++) {
+        if (!obj[parts[j]] || typeof obj[parts[j]] !== 'object') obj[parts[j]] = {};
+        obj = obj[parts[j]];
+      }
+      obj[parts[parts.length - 1]] = parsed;
+    }
+  }
+
+  toggleRetryPanel(path);
+
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    addSystemMessage('Retry failed: not connected to server. Try refreshing.');
+    return;
+  }
+  if (!currentConvId) {
+    addSystemMessage('Retry failed: no active conversation. Send a message first.');
+    return;
+  }
+
+  var msgId = 'retry_' + Date.now();
+  addAssistantPlaceholder(msgId);
+  setRunning(true);
+
+  ws.send(JSON.stringify({
+    action: 'retry_node',
+    node_path: path,
+    conv_id: currentConvId,
+    params: params
+  }));
+}
+
 function sendMessage() {
-  const input = document.getElementById('chatInput');
-  const text = input.value.trim();
+  var input = document.getElementById('chatInput');
+  var text = input.value.trim();
   if (!text) return;
 
+  // Track last run command for re-run
+  if (text.toLowerCase().startsWith('run ')) _lastRunCommand = text;
+
   // Hide welcome
-  const welcome = document.getElementById('welcomeScreen');
+  var welcome = document.getElementById('welcomeScreen');
   if (welcome) welcome.style.display = 'none';
 
   // Add user message to UI
@@ -1331,6 +1841,7 @@ function sendMessage() {
   autoResize(input);
 
   // Send to server
+  setRunning(true);
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       action: 'chat',
@@ -1338,22 +1849,20 @@ function sendMessage() {
       conv_id: currentConvId
     }));
   } else {
-    const container = document.getElementById('chatMessages');
-    const errDiv = document.createElement('div');
+    var errDiv = document.createElement('div');
     errDiv.className = 'message assistant';
     errDiv.innerHTML = '<div class="error-content">WebSocket disconnected. Reconnecting...</div>';
-    container.appendChild(errDiv);
+    appendToChat(errDiv);
     return;
   }
 
   // Add a pending assistant message placeholder
-  const msgId = 'pending_' + Date.now();
+  var msgId = 'pending_' + Date.now();
   addAssistantPlaceholder(msgId);
 }
 
 function addUserMessage(text) {
-  const container = document.getElementById('chatMessages');
-  const div = document.createElement('div');
+  var div = document.createElement('div');
   div.className = 'message user';
   div.innerHTML =
     '<div class="message-header">' +
@@ -1361,7 +1870,7 @@ function addUserMessage(text) {
       '<div class="message-sender">You</div>' +
     '</div>' +
     '<div class="message-content">' + escHtml(text) + '</div>';
-  container.appendChild(div);
+  appendToChat(div);
   scrollToBottom();
 
   // Store
@@ -1372,8 +1881,7 @@ function addUserMessage(text) {
 }
 
 function addAssistantPlaceholder(id) {
-  const container = document.getElementById('chatMessages');
-  const div = document.createElement('div');
+  var div = document.createElement('div');
   div.className = 'message assistant';
   div.id = 'msg_' + id;
   div.innerHTML =
@@ -1382,54 +1890,47 @@ function addAssistantPlaceholder(id) {
       '<div class="message-sender">Agentic</div>' +
     '</div>' +
     '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
-  container.appendChild(div);
+  appendToChat(div);
   pendingResponses[id] = div;
   scrollToBottom();
 }
 
 function handleChatResponse(data) {
-  const type = data.type;
+  var type = data.type;
 
   if (type === 'status') {
-    // Show as subtle inline status line; replace previous status if any
-    const container = document.getElementById('chatMessages');
-    let statusLine = document.getElementById('currentStatusLine');
-    if (!statusLine) {
-      statusLine = document.createElement('div');
-      statusLine.id = 'currentStatusLine';
-      statusLine.className = 'status-line';
-      container.appendChild(statusLine);
-    }
-    statusLine.innerHTML = '<div class="spinner-sm"></div> ' + escHtml(data.content);
+    // Tree handles real-time status -- just keep the typing dots visible
     scrollToBottom();
     return;
   }
 
-  // Final response (result or error) -- remove status line and pending placeholder
-  const statusLine = document.getElementById('currentStatusLine');
+  // Final response (result or error) -- task done
+  setRunning(false);
+
+  // Remove status line and pending placeholder
+  var statusLine = document.getElementById('currentStatusLine');
   if (statusLine) statusLine.remove();
 
-  const pendingKeys = Object.keys(pendingResponses);
-  let targetEl = null;
+  var pendingKeys = Object.keys(pendingResponses);
+  var targetEl = null;
   if (pendingKeys.length > 0) {
-    const key = pendingKeys[0];
+    var key = pendingKeys[0];
     targetEl = pendingResponses[key];
     delete pendingResponses[key];
   }
 
   if (!targetEl) {
-    const container = document.getElementById('chatMessages');
     targetEl = document.createElement('div');
     targetEl.className = 'message assistant';
-    container.appendChild(targetEl);
+    appendToChat(targetEl);
   }
 
-  let contentHtml = '';
+  var contentHtml = '';
 
   if (type === 'error') {
     contentHtml = '<div class="error-content">' + escHtml(data.content) + '</div>';
   } else if (type === 'result') {
-    const content = data.content || '';
+    var content = data.content || '';
     contentHtml = '<div class="message-content">';
 
     if (data.function) {
@@ -1440,10 +1941,19 @@ function handleChatResponse(data) {
     contentHtml += '<pre>' + escHtml(content) + '</pre>';
     contentHtml += '</div>';
 
-    // Add context tree card if available
+    // Add Re-run button for non-chat functions
+    if (data.function && data.function !== 'chat') {
+      contentHtml += '<button class="rerun-btn" onclick="rerunFunction()">&#8634; Re-run</button>';
+    }
+
+    // Replace tree with authoritative state from server
     if (data.context_tree) {
-      const treeId = 'tree_' + Date.now();
-      contentHtml += renderContextCard(data.context_tree, treeId);
+      var ct = data.context_tree;
+      var rootKey = ct.path || ct.name;
+      var idx = trees.findIndex(function(t) { return t.path === rootKey || t.name === ct.name; });
+      if (idx >= 0) { trees[idx] = ct; } else { trees.push(ct); }
+      expandedNodes.add(rootKey);
+      renderLiveTree();
     }
   }
 
@@ -1463,14 +1973,14 @@ function handleChatResponse(data) {
       role: 'assistant',
       content: data.content || '',
       type: type,
-      function: data.function || null,
+      function: data.function || null
     });
   }
 
   // Update conversation title
   if (currentConvId && conversations[currentConvId]) {
     if (!conversations[currentConvId].title || conversations[currentConvId].title === 'New conversation') {
-      const msgs = conversations[currentConvId].messages;
+      var msgs = conversations[currentConvId].messages;
       if (msgs.length > 0) {
         conversations[currentConvId].title = msgs[0].content.slice(0, 50);
         renderConversations();
@@ -1480,10 +1990,9 @@ function handleChatResponse(data) {
 }
 
 function addAssistantMessage(text) {
-  const container = document.getElementById('chatMessages');
-  const welcome = document.getElementById('welcomeScreen');
+  var welcome = document.getElementById('welcomeScreen');
   if (welcome) welcome.style.display = 'none';
-  const div = document.createElement('div');
+  var div = document.createElement('div');
   div.className = 'message assistant';
   div.innerHTML =
     '<div class="message-header">' +
@@ -1491,12 +2000,12 @@ function addAssistantMessage(text) {
       '<div class="message-sender">Agentic</div>' +
     '</div>' +
     '<div class="message-content">' + escHtml(text) + '</div>';
-  container.appendChild(div);
+  appendToChat(div);
   scrollToBottom();
 }
 
 function renderContextCard(tree, treeId) {
-  const id = treeId || 'ctx_' + Date.now();
+  var id = treeId || 'ctx_' + Date.now();
   // Auto-expand root
   expandedNodes.add(tree.path);
 
@@ -1514,44 +2023,71 @@ function renderContextCard(tree, treeId) {
 }
 
 function toggleContextCard(id) {
-  const body = document.getElementById('body_' + id);
-  const toggle = document.getElementById('toggle_' + id);
+  var body = document.getElementById('body_' + id);
+  var toggle = document.getElementById('toggle_' + id);
   if (body && toggle) {
-    const expanded = body.classList.toggle('expanded');
+    var expanded = body.classList.toggle('expanded');
     toggle.classList.toggle('expanded', expanded);
   }
 }
 
-// ===== Tree rendering (reused from original) =====
+// ===== Tree rendering =====
 function renderTreeNode(node) {
-  const hasChildren = node.children && node.children.length > 0;
-  const isExpanded = expandedNodes.has(node.path);
-  const isSelected = node.path === selectedPath;
+  _nodeCache[node.path] = node;
+  var hasChildren = node.children && node.children.length > 0;
+  var isExpanded = expandedNodes.has(node.path);
+  var isSelected = node.path === selectedPath;
 
-  const icon = node.status === 'success'
+  var icon = node.status === 'success'
     ? '<span style="color:var(--accent-green)">&#10003;</span>'
     : node.status === 'error'
     ? '<span style="color:var(--accent-red)">&#10007;</span>'
     : '<span class="pulse" style="color:var(--accent-blue)">&#9679;</span>';
 
-  const dur = node.duration_ms > 0 ? Math.round(node.duration_ms) + 'ms' : '';
-  const output = node.output != null ? truncate(JSON.stringify(node.output), 30) : '';
-  const toggleClass = hasChildren ? (isExpanded ? 'expanded' : '') : 'leaf';
-  const childrenClass = isExpanded ? '' : 'collapsed';
+  var dur = node.duration_ms > 0 ? Math.round(node.duration_ms) + 'ms' : '';
+  var output = node.output != null ? truncate(JSON.stringify(node.output), 30) : '';
+  var toggleClass = hasChildren ? (isExpanded ? 'expanded' : '') : 'leaf';
+  var childrenClass = isExpanded ? '' : 'collapsed';
 
-  let html = '<div class="tree-node">' +
-    '<div class="node-row' + (isSelected ? ' selected' : '') + '" onclick="selectTreeNode(event, ' + escAttr(JSON.stringify(node)) + ')">' +
+  var canRetry = node.name !== 'chat_session' && node.status !== 'running';
+  var filteredParams = {};
+  if (node.params) {
+    for (var k in node.params) { if (k !== 'runtime' && k !== 'callback') filteredParams[k] = node.params[k]; }
+  }
+
+  var html = '<div class="tree-node">' +
+    '<div class="node-row' + (isSelected ? ' selected' : '') + '" onclick="selectTreeNode(event, \'' + escAttr(node.path) + '\')">' +
       '<span class="node-toggle ' + toggleClass + '" onclick="toggleExpand(event, \'' + escAttr(node.path) + '\')">&#9654;</span>' +
       '<span class="node-icon">' + icon + '</span>' +
-      '<span class="node-name">' + escHtml(node.name) + '</span>' +
+      '<span class="node-name" onclick="event.stopPropagation();viewSource(\'' + escAttr(node.name) + '\')" title="View source" style="cursor:pointer">' + escHtml(node.name) + '</span>' +
       '<span class="node-status ' + node.status + '">' + node.status + '</span>' +
       (dur ? '<span class="node-duration">' + dur + '</span>' : '') +
       (output ? '<span class="node-output-preview">' + escHtml(output) + '</span>' : '') +
+      (canRetry ? '<span class="retry-icon" onclick="event.stopPropagation();toggleRetryPanel(\'' + escAttr(node.path) + '\')" title="Retry">retry</span>' : '') +
     '</div>';
+
+  // Inline retry panel with per-field inputs
+  if (canRetry) {
+    var panelId = 'retryPanel_' + node.path.replace(/[^a-zA-Z0-9]/g, '_');
+    var paramKeys = Object.keys(filteredParams);
+    html += '<div class="retry-panel" id="' + panelId + '" style="display:none">';
+    html += '<div style="margin-bottom:6px;color:var(--text-secondary);font-size:11px">Retry <b>' + escHtml(node.name) + '</b> with:</div>';
+    if (paramKeys.length === 0) {
+      html += '<div style="color:var(--text-muted);font-size:11px;margin-bottom:6px">No editable parameters</div>';
+    } else {
+      html += _buildRetryFields(filteredParams, '', node.path);
+    }
+    html += '<div class="retry-panel-actions">' +
+      '<button class="retry-exec-btn" onclick="executeRetry(\'' + escAttr(node.path) + '\')">&#9654; Execute</button>' +
+      '<button class="retry-cancel-btn" onclick="toggleRetryPanel(\'' + escAttr(node.path) + '\')">Cancel</button>' +
+    '</div></div>';
+  }
 
   if (hasChildren) {
     html += '<div class="node-children ' + childrenClass + '">';
-    html += node.children.map(c => renderTreeNode(c)).join('');
+    for (var ci = 0; ci < node.children.length; ci++) {
+      html += renderTreeNode(node.children[ci]);
+    }
     html += '</div>';
   }
 
@@ -1559,48 +2095,64 @@ function renderTreeNode(node) {
   return html;
 }
 
-function selectTreeNode(event, nodeData) {
+function selectTreeNode(event, pathOrData) {
   event.stopPropagation();
-  showDetail(typeof nodeData === 'string' ? JSON.parse(nodeData) : nodeData);
+  var node;
+  if (typeof pathOrData === 'string') {
+    node = _nodeCache[pathOrData] || _findNodeByPath(pathOrData);
+  } else {
+    node = pathOrData;
+  }
+  if (node) showDetail(node);
 }
 
 function toggleExpand(event, path) {
   event.stopPropagation();
   if (expandedNodes.has(path)) expandedNodes.delete(path);
   else expandedNodes.add(path);
-  // Re-render any context cards that contain this path
-  // For simplicity, just re-render via DOM manipulation on the specific card
-  // Find parent context-card-body and re-render
-  const el = event.target.closest('.context-card-body') || event.target.closest('.tree-node');
-  if (el) {
-    // Find root tree data for this card
-    // Simple approach: toggle visibility of children container
-    const row = event.target.closest('.node-row');
-    if (row) {
-      const children = row.nextElementSibling;
-      if (children && children.classList.contains('node-children')) {
-        children.classList.toggle('collapsed');
-      }
-      const toggle = row.querySelector('.node-toggle');
-      if (toggle) toggle.classList.toggle('expanded');
+  var row = event.target.closest('.node-row');
+  if (row) {
+    var treeNode = row.closest('.tree-node');
+    var children = treeNode ? treeNode.querySelector(':scope > .node-children') : null;
+    if (children) children.classList.toggle('collapsed');
+    var toggle = row.querySelector('.node-toggle');
+    if (toggle) toggle.classList.toggle('expanded');
+  }
+}
+
+function _findNodeByPath(path) {
+  for (var i = 0; i < trees.length; i++) {
+    var found = _findInTree(trees[i], path);
+    if (found) return found;
+  }
+  return null;
+}
+
+function _findInTree(node, path) {
+  if (node.path === path) return node;
+  if (node.children) {
+    for (var i = 0; i < node.children.length; i++) {
+      var found = _findInTree(node.children[i], path);
+      if (found) return found;
     }
   }
+  return null;
 }
 
 // ===== Detail Panel =====
 function showDetail(node) {
   selectedPath = node.path;
-  const panel = document.getElementById('detailPanel');
-  const title = document.getElementById('detailTitle');
-  const body = document.getElementById('detailBody');
+  var panel = document.getElementById('detailPanel');
+  var title = document.getElementById('detailTitle');
+  var body = document.getElementById('detailBody');
 
   panel.classList.remove('collapsed');
   title.textContent = node.name;
 
-  const statusIcon = node.status === 'success' ? '&#10003;' : node.status === 'error' ? '&#10007;' : '&#9679;';
-  const dur = node.duration_ms > 0 ? Math.round(node.duration_ms) + 'ms' : 'running...';
+  var statusIcon = node.status === 'success' ? '&#10003;' : node.status === 'error' ? '&#10007;' : '&#9679;';
+  var dur = node.duration_ms > 0 ? Math.round(node.duration_ms) + 'ms' : 'running...';
 
-  let html = '<div class="detail-section">' +
+  var html = '<div class="detail-section">' +
     '<div class="detail-section-title">Status</div>' +
     '<div class="detail-badge ' + node.status + '">' + statusIcon + ' ' + node.status + ' &middot; ' + dur + '</div>' +
   '</div>';
@@ -1618,10 +2170,14 @@ function showDetail(node) {
   }
 
   if (node.params && Object.keys(node.params).length > 0) {
-    html += '<div class="detail-section">' +
-      '<div class="detail-section-title">Parameters</div>' +
-      '<div class="detail-code">' + escHtml(JSON.stringify(node.params, null, 2)) + '</div>' +
-    '</div>';
+    var _dp = {};
+    for (var _dk in node.params) { if (_dk !== 'runtime' && _dk !== 'callback') _dp[_dk] = node.params[_dk]; }
+    if (Object.keys(_dp).length > 0) {
+      html += '<div class="detail-section">' +
+        '<div class="detail-section-title">Parameters</div>' +
+        '<div class="detail-code">' + escHtml(JSON.stringify(_dp, null, 2)) + '</div>' +
+      '</div>';
+    }
   }
 
   if (node.output != null) {
@@ -1657,6 +2213,13 @@ function showDetail(node) {
     '<div class="detail-field-value">render: ' + escHtml(node.render || 'summary') + ' | compress: ' + (node.compress ? 'true' : 'false') + '</div>' +
   '</div>';
 
+  // Re-run button for non-internal functions
+  if (node.name !== 'chat_session') {
+    html += '<div class="detail-section">' +
+      '<button class="rerun-btn" onclick="rerunFromNode(\'' + escAttr(node.path) + '\')">&#8634; Retry ' + escHtml(node.name) + '</button>' +
+    '</div>';
+  }
+
   body.innerHTML = html;
 }
 
@@ -1671,68 +2234,114 @@ function toggleDetail() {
 
 // ===== Sidebar =====
 function toggleSidebar() {
-  const sb = document.getElementById('sidebar');
+  var sb = document.getElementById('sidebar');
   sidebarOpen = !sidebarOpen;
   sb.classList.toggle('collapsed', !sidebarOpen);
 }
 
 function renderConversations() {
-  const container = document.getElementById('convList');
-  let html = '';
-  const convs = Object.values(conversations).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  var container = document.getElementById('convList');
+  var html = '';
+  var convs = Object.values(conversations).sort(function(a, b) { return (b.created_at || 0) - (a.created_at || 0); });
   if (convs.length === 0) {
     html += '<div style="padding:8px 16px;font-size:12px;color:var(--text-muted)">No conversations yet</div>';
   } else {
-    for (const c of convs) {
-      const active = c.id === currentConvId ? ' active' : '';
+    for (var ci = 0; ci < convs.length; ci++) {
+      var c = convs[ci];
+      var active = c.id === currentConvId ? ' active' : '';
       html += '<div class="conv-item' + active + '" onclick="switchConversation(\'' + c.id + '\')" title="' + escAttr(c.title || 'Untitled') + '">' +
-        escHtml(c.title || 'Untitled') + '</div>';
+        '<span class="conv-title">' + escHtml(c.title || 'Untitled') + '</span>' +
+        '<span class="conv-del" onclick="event.stopPropagation();deleteConversation(\'' + c.id + '\')" title="Delete">&times;</span>' +
+      '</div>';
     }
+    html += '<div class="conv-clear-all" onclick="clearAllConversations()">Clear all</div>';
   }
   container.innerHTML = html;
+}
+
+function deleteConversation(convId) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'delete_conversation', conv_id: convId }));
+  }
+  delete conversations[convId];
+  if (currentConvId === convId) {
+    newConversation();
+  }
+  renderConversations();
+}
+
+function clearAllConversations() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'clear_conversations' }));
+  }
+  conversations = {};
+  newConversation();
+  renderConversations();
+}
+
+// ===== Programs Meta =====
+async function loadProgramsMeta() {
+  try {
+    var resp = await fetch('/api/programs/meta');
+    var data = await resp.json();
+    programsMeta = data || { favorites: [], folders: {} };
+  } catch(e) {
+    programsMeta = { favorites: [], folders: {} };
+  }
 }
 
 function renderFunctions() {
-  const container = document.getElementById('fnList');
-  let html = '';
+  var container = document.getElementById('fnList');
+  var catIcons = { app: '\u{1F4E6}', meta: '\u{1F6E0}', builtin: '\u2699', generated: '\u2699', user: '\u270E' };
+  var html = '';
 
-  const categories = { meta: [], builtin: [], user: [] };
-  for (const f of availableFunctions) {
-    const cat = f.category || 'user';
-    if (!categories[cat]) categories[cat] = [];
-    categories[cat].push(f);
-  }
-
-  const catLabels = { meta: 'Meta Functions', builtin: 'Built-in Functions', generated: 'Generated Functions', user: 'User Functions' };
-  const catIcons = { meta: '&#9733;', builtin: '&#9881;', generated: '&#10024;', user: '&#9998;' };
-
-  for (const cat of ['meta', 'builtin', 'generated', 'user']) {
-    const fns = categories[cat];
-    if (!fns || fns.length === 0) continue;
-    html += '<div class="fn-category">' + catLabels[cat] + '</div>';
-    for (const f of fns) {
-      const desc = f.description ? f.description.split('.')[0] : '';
-      const isUserFn = cat !== 'meta';
-      html += '<div class="fn-item" title="' + escAttr(desc) + '">' +
-        '<div class="fn-item-main" onclick="clickFunction(\'' + escAttr(f.name) + '\', \'' + escAttr(f.category) + '\')">' +
-          '<span class="fn-icon ' + f.category + '">' + catIcons[cat] + '</span>' +
-          '<span class="fn-name">' + escHtml(f.name) + '</span>' +
-          '<span class="fn-desc">' + escHtml(truncate(desc, 30)) + '</span>' +
-        '</div>' +
-        '<div class="fn-actions">' +
-          '<button class="fn-action-btn" onclick="viewSource(\'' + escAttr(f.name) + '\')" title="View source">&#128196;</button>' +
-          (isUserFn ? '<button class="fn-action-btn" onclick="fixFunction(\'' + escAttr(f.name) + '\')" title="Fix with LLM">&#128295;</button>' : '') +
-          (isUserFn && cat !== 'builtin' ? '<button class="fn-action-btn fn-action-delete" onclick="deleteFunction(\'' + escAttr(f.name) + '\')" title="Delete">&#128465;</button>' : '') +
-        '</div>' +
-      '</div>';
+  // Show only favorited items in sidebar, ordered: app → generated → user → meta → builtin
+  var favSet = new Set(programsMeta.favorites || []);
+  var favFiltered = availableFunctions.filter(function(f) { return favSet.has(f.name); });
+  var catOrder = ['app', 'generated', 'user', 'meta', 'builtin'];
+  var favFns = [];
+  for (var ci = 0; ci < catOrder.length; ci++) {
+    for (var fi = 0; fi < favFiltered.length; fi++) {
+      if ((favFiltered[fi].category || 'user') === catOrder[ci]) favFns.push(favFiltered[fi]);
     }
   }
+
+  if (favFns.length > 0) {
+    for (var i = 0; i < favFns.length; i++) {
+      var f = favFns[i];
+      var cat = f.category || 'user';
+      var desc = f.description ? f.description.split('.')[0] : '';
+      var icon = catIcons[cat] || '\u270E';
+      html += renderFnItem(f, desc, cat, icon);
+    }
+  } else {
+    html += '<div style="padding:8px 16px;color:var(--text-muted);font-size:12px;">No favorites yet</div>';
+  }
+
+  // Manage all link
+  html += '<a class="manage-link" href="/programs">Manage all programs \u2192</a>';
 
   container.innerHTML = html;
 }
 
+function renderFnItem(f, desc, cat, icon) {
+  var isUserFn = cat !== 'meta';
+  return '<div class="fn-item" title="' + escAttr(desc) + '">' +
+    '<div class="fn-item-main" onclick="clickFunction(\'' + escAttr(f.name) + '\', \'' + escAttr(f.category) + '\')">' +
+      '<span class="fn-icon fn-cat-' + f.category + '">' + icon + '</span>' +
+      '<span class="fn-name">' + escHtml(f.name) + '</span>' +
+      '<span class="fn-desc">' + escHtml(truncate(desc, 30)) + '</span>' +
+    '</div>' +
+    '<div class="fn-actions">' +
+      '<button class="fn-action-btn" onclick="viewSource(\'' + escAttr(f.name) + '\')" title="View source">&#128196;</button>' +
+      (isUserFn ? '<button class="fn-action-btn" onclick="fixFunction(\'' + escAttr(f.name) + '\')" title="Fix with LLM">&#128295;</button>' : '') +
+      (isUserFn && cat !== 'builtin' && cat !== 'app' ? '<button class="fn-action-btn fn-action-delete" onclick="deleteFunction(\'' + escAttr(f.name) + '\')" title="Delete">&#128465;</button>' : '') +
+    '</div>' +
+  '</div>';
+}
+
 function clickFunction(name, category) {
-  const input = document.getElementById('chatInput');
+  var input = document.getElementById('chatInput');
   if (category === 'meta') {
     if (name === 'create') {
       input.value = 'create a function that ';
@@ -1747,10 +2356,10 @@ function clickFunction(name, category) {
     }
   } else {
     // Find function params
-    const fn = availableFunctions.find(f => f.name === name);
+    var fn = availableFunctions.find(function(f) { return f.name === name; });
     if (fn && fn.params && fn.params.length > 0) {
-      const filtered = fn.params.filter(p => p !== 'runtime' && p !== 'callback');
-      const paramStr = filtered.map(p => p + '=""').join(' ');
+      var filtered = fn.params.filter(function(p) { return p !== 'runtime' && p !== 'callback'; });
+      var paramStr = filtered.map(function(p) { return p + '=""'; }).join(' ');
       input.value = 'run ' + name + ' ' + paramStr;
     } else {
       input.value = 'run ' + name + ' ';
@@ -1759,9 +2368,9 @@ function clickFunction(name, category) {
   input.focus();
   autoResize(input);
   // Place cursor inside the first empty quotes
-  const firstQuote = input.value.indexOf('=""');
+  var firstQuote = input.value.indexOf('=""');
   if (firstQuote !== -1) {
-    const pos = firstQuote + 2; // position between the two quotes
+    var pos = firstQuote + 2;
     input.setSelectionRange(pos, pos);
   }
 }
@@ -1770,18 +2379,15 @@ function switchConversation(convId) {
   currentConvId = convId;
   localStorage.setItem('agentic_conv_id', convId);
   renderConversations();
-  // Load conversation from server
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ action: 'load_conversation', conv_id: convId }));
   }
-  // Or load from local cache
   if (conversations[convId]) {
     renderConversationMessages(conversations[convId]);
   }
 }
 
 function loadConversationData(data) {
-  // Extract messages from context_tree if no messages stored locally
   if (!data.messages || data.messages.length === 0) {
     data.messages = extractMessagesFromTree(data.context_tree);
   }
@@ -1789,7 +2395,6 @@ function loadConversationData(data) {
   renderConversations();
   if (data.id === currentConvId) {
     renderConversationMessages(data);
-    // Update provider badge for this conversation
     if (data.provider_info) {
       updateProviderBadge(data.provider_info);
     }
@@ -1798,10 +2403,11 @@ function loadConversationData(data) {
 
 function extractMessagesFromTree(tree) {
   if (!tree || !tree.children) return [];
-  const messages = [];
-  for (const child of tree.children) {
+  var messages = [];
+  for (var ci = 0; ci < tree.children.length; ci++) {
+    var child = tree.children[ci];
     if (child.name === '_chat_query') {
-      const query = child.params && child.params.query;
+      var query = child.params && child.params.query;
       if (query) {
         messages.push({ role: 'user', content: query });
       }
@@ -1809,18 +2415,17 @@ function extractMessagesFromTree(tree) {
         messages.push({ role: 'assistant', content: child.output, type: 'result', function: null });
       }
     } else if (child.name === '_run_user_function') {
-      const funcName = child.params && child.params.func_name;
-      const kwargs = child.params && child.params.kwargs;
-      const argStr = kwargs ? Object.entries(kwargs).map(([k,v]) => k + '=' + JSON.stringify(v)).join(' ') : '';
+      var funcName = child.params && child.params.func_name;
+      var kwargs = child.params && child.params.kwargs;
+      var argStr = kwargs ? Object.entries(kwargs).map(function(e) { return e[0] + '=' + JSON.stringify(e[1]); }).join(' ') : '';
       messages.push({ role: 'user', content: 'run ' + (funcName || '') + (argStr ? ' ' + argStr : '') });
       if (child.output) {
         messages.push({ role: 'assistant', content: child.output, type: 'result', function: funcName });
       }
     }
   }
-  // Attach full context tree to the last assistant message
   if (messages.length > 0) {
-    for (let i = messages.length - 1; i >= 0; i--) {
+    for (var i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === 'assistant') {
         messages[i].context_tree = tree;
         break;
@@ -1831,8 +2436,9 @@ function extractMessagesFromTree(tree) {
 }
 
 function renderConversationMessages(conv) {
-  const container = document.getElementById('chatMessages');
-  const welcome = document.getElementById('welcomeScreen');
+  var container = document.getElementById('chatMessages');
+  var welcome = document.getElementById('welcomeScreen');
+  trees = [];
 
   if (!conv.messages || conv.messages.length === 0) {
     container.innerHTML = '';
@@ -1846,11 +2452,11 @@ function renderConversationMessages(conv) {
   if (welcome) welcome.style.display = 'none';
   container.innerHTML = '';
 
-  for (const msg of conv.messages) {
-    // Skip status messages in history
+  for (var mi = 0; mi < conv.messages.length; mi++) {
+    var msg = conv.messages[mi];
     if (msg.type === 'status') continue;
 
-    const div = document.createElement('div');
+    var div = document.createElement('div');
     if (msg.role === 'user') {
       div.className = 'message user';
       div.innerHTML =
@@ -1861,32 +2467,32 @@ function renderConversationMessages(conv) {
         '<div class="message-content">' + escHtml(msg.content || '') + '</div>';
     } else {
       div.className = 'message assistant';
-      let contentHtml = '';
+      var cHtml = '';
       if (msg.type === 'error') {
-        contentHtml = '<div class="error-content">' + escHtml(msg.content || '') + '</div>';
+        cHtml = '<div class="error-content">' + escHtml(msg.content || '') + '</div>';
       } else if (msg.type === 'result') {
-        contentHtml = '<div class="message-content">';
+        cHtml = '<div class="message-content">';
         if (msg.function) {
-          contentHtml += '<div style="margin-bottom:4px"><span style="font-family:var(--font-mono);color:var(--accent-green);font-size:12px">' +
+          cHtml += '<div style="margin-bottom:4px"><span style="font-family:var(--font-mono);color:var(--accent-green);font-size:12px">' +
             escHtml(msg.function) + '()</span> completed</div>';
         }
-        contentHtml += '<pre>' + escHtml(msg.content || '') + '</pre></div>';
+        cHtml += '<pre>' + escHtml(msg.content || '') + '</pre></div>';
         if (msg.context_tree) {
-          const treeId = 'tree_hist_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-          contentHtml += renderContextCard(msg.context_tree, treeId);
+          updateTreeData(msg.context_tree);
         }
       } else {
-        contentHtml = '<div class="message-content"><pre>' + escHtml(msg.content || '') + '</pre></div>';
+        cHtml = '<div class="message-content"><pre>' + escHtml(msg.content || '') + '</pre></div>';
       }
       div.innerHTML =
         '<div class="message-header">' +
           '<div class="message-avatar bot-avatar">A</div>' +
           '<div class="message-sender">Agentic</div>' +
         '</div>' +
-        contentHtml;
+        cHtml;
     }
     container.appendChild(div);
   }
+  renderLiveTree();
   scrollToBottom();
 }
 
@@ -1894,10 +2500,10 @@ function newConversation() {
   currentConvId = null;
   localStorage.removeItem('agentic_conv_id');
   pendingResponses = {};
-  const container = document.getElementById('chatMessages');
+  trees = [];
+  var container = document.getElementById('chatMessages');
   container.innerHTML = '';
-  // Re-add welcome
-  const welcome = document.createElement('div');
+  var welcome = document.createElement('div');
   welcome.className = 'welcome';
   welcome.id = 'welcomeScreen';
   welcome.innerHTML =
@@ -1918,40 +2524,83 @@ function newConversation() {
 }
 
 function setInput(text) {
-  const input = document.getElementById('chatInput');
+  var input = document.getElementById('chatInput');
   input.value = text;
   input.focus();
   autoResize(input);
 }
 
 // ===== Pause/Resume =====
-function togglePause() {
-  const endpoint = isPaused ? '/api/resume' : '/api/pause';
-  fetch(endpoint, { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-      isPaused = data.paused;
-      updatePauseBtn();
-    })
-    .catch(() => {});
+function onSendBtnClick() {
+  if (isRunning) {
+    togglePause();
+  } else {
+    sendMessage();
+  }
 }
 
-function updatePauseBtn() {
-  const btn = document.getElementById('btnPause');
-  btn.textContent = isPaused ? 'Resume' : 'Pause';
-  btn.classList.toggle('paused', isPaused);
-  const badge = document.getElementById('statusBadge');
-  if (isPaused) {
+function togglePause() {
+  var endpoint = isPaused ? '/api/resume' : '/api/pause';
+  fetch(endpoint, { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      isPaused = data.paused;
+      updateSendBtn();
+    })
+    .catch(function() {});
+}
+
+function stopExecution() {
+  fetch('/api/pause', { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function() {
+      isPaused = false;
+      isRunning = false;
+      updateSendBtn();
+      addSystemMessage('Execution stopped.');
+    })
+    .catch(function() {});
+}
+
+function setRunning(running) {
+  isRunning = running;
+  if (!running) isPaused = false;
+  updateSendBtn();
+}
+
+function updateSendBtn() {
+  var sendBtn = document.getElementById('sendBtn');
+  var stopBtn = document.getElementById('stopBtn');
+  var badge = document.getElementById('statusBadge');
+
+  if (!isRunning) {
+    sendBtn.innerHTML = '&#9654;';
+    sendBtn.title = 'Send message';
+    sendBtn.className = 'send-btn';
+    stopBtn.style.display = 'none';
+  } else if (isPaused) {
+    sendBtn.innerHTML = '&#9654;';
+    sendBtn.title = 'Resume';
+    sendBtn.className = 'send-btn paused-state';
+    stopBtn.style.display = 'flex';
     badge.textContent = 'paused';
     badge.className = 'status-badge paused';
-  } else if (ws && ws.readyState === WebSocket.OPEN) {
-    badge.textContent = 'connected';
+  } else {
+    sendBtn.innerHTML = '&#9646;&#9646;';
+    sendBtn.title = 'Pause';
+    sendBtn.className = 'send-btn';
+    stopBtn.style.display = 'none';
+    badge.textContent = 'running';
     badge.className = 'status-badge';
   }
 }
 
+function updatePauseBtn() {
+  updateSendBtn();
+}
+
 function updateStatus(status) {
-  const badge = document.getElementById('statusBadge');
+  var badge = document.getElementById('statusBadge');
   if (status === 'connected') {
     badge.textContent = 'connected';
     badge.className = 'status-badge';
@@ -1962,16 +2611,16 @@ function updateStatus(status) {
 }
 
 // ===== Input handling =====
-const chatInput = document.getElementById('chatInput');
+var chatInput = document.getElementById('chatInput');
 
-chatInput.addEventListener('keydown', (e) => {
+chatInput.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
   }
 });
 
-chatInput.addEventListener('input', () => {
+chatInput.addEventListener('input', function() {
   autoResize(chatInput);
 });
 
@@ -1982,8 +2631,8 @@ function autoResize(el) {
 
 // ===== Helpers =====
 function scrollToBottom() {
-  const area = document.getElementById('chatArea');
-  requestAnimationFrame(() => {
+  var area = document.getElementById('chatArea');
+  requestAnimationFrame(function() {
     area.scrollTop = area.scrollHeight;
   });
 }
@@ -1995,7 +2644,7 @@ function truncate(s, len) {
 
 function escHtml(s) {
   if (typeof s !== 'string') s = String(s || '');
-  const div = document.createElement('div');
+  var div = document.createElement('div');
   div.textContent = s;
   return div.innerHTML;
 }
@@ -2006,131 +2655,216 @@ function escAttr(s) {
 }
 
 // ===== Keepalive =====
-setInterval(() => {
+setInterval(function() {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send('ping');
   }
 }, 30000);
 
 // ===== Panel Collapse & Resize =====
-
 function togglePanel(name) {
-  const panel = document.querySelector('[data-panel="' + name + '"]');
+  var panel = document.querySelector('[data-panel="' + name + '"]');
   if (!panel) return;
-  const wasCollapsed = panel.classList.contains('panel-collapsed');
   panel.classList.toggle('panel-collapsed');
-  if (wasCollapsed) {
-    // Expanding: if it had a fixed height, keep it; otherwise let flex handle it
-    if (!panel.style.height) {
-      panel.style.flex = '';
-    }
-  }
+  layoutPanels();
 }
 
 // Drag-to-resize panels
 (function() {
-  let dragPanel = null;
-  let startY = 0;
-  let startH = 0;
-  const MIN_H = 60;
+  // Split ratios: [conv, fn, prov] as fractions of total height
+  var splits = [0.5, 0.3, 0.2];
+  var dragIdx = -1; // which divider: 0 = between conv/fn, 1 = between fn/prov
+  var startY = 0;
+  var startSplits = null;
+  var MIN_PX = 40;
+
+  function layoutPanels() {
+    var container = document.querySelector('.sidebar-panels');
+    if (!container) return;
+    var totalH = container.offsetHeight;
+    var handleH = 4;
+    var COLLAPSED_H = 32;
+    var panels = [
+      document.getElementById('convPanel'),
+      document.getElementById('fnPanel'),
+      document.getElementById('provPanel')
+    ];
+    var handles = container.querySelectorAll('.panel-resize[data-divider]');
+
+    // Calculate collapsed panels and available space
+    var collapsedH = 0;
+    var expandedIdxs = [];
+    for (var i = 0; i < 3; i++) {
+      if (panels[i] && panels[i].classList.contains('panel-collapsed')) {
+        collapsedH += COLLAPSED_H;
+      } else {
+        expandedIdxs.push(i);
+      }
+    }
+    // Number of visible dividers = between expanded panels that are adjacent
+    var numHandles = 0;
+    for (var hi = 0; hi < 2; hi++) {
+      var above = panels[hi] && !panels[hi].classList.contains('panel-collapsed');
+      var below = panels[hi+1] && !panels[hi+1].classList.contains('panel-collapsed');
+      if (above && below) numHandles++;
+    }
+    var usable = totalH - collapsedH - numHandles * handleH;
+
+    // Distribute usable among expanded panels by their split ratios
+    var expandedTotal = 0;
+    for (var ei = 0; ei < expandedIdxs.length; ei++) expandedTotal += splits[expandedIdxs[ei]];
+
+    var y = 0;
+    for (var pi = 0; pi < 3; pi++) {
+      var collapsed = panels[pi] && panels[pi].classList.contains('panel-collapsed');
+      var h = collapsed ? COLLAPSED_H : Math.round(usable * splits[pi] / (expandedTotal || 1));
+      if (panels[pi]) {
+        panels[pi].style.top = y + 'px';
+        panels[pi].style.height = h + 'px';
+      }
+      y += h;
+      // Show divider between this panel and next, only if both are expanded
+      if (pi < 2 && handles.length > pi) {
+        var nextCollapsed = panels[pi+1] && panels[pi+1].classList.contains('panel-collapsed');
+        if (!collapsed && !nextCollapsed) {
+          handles[pi].style.display = '';
+          handles[pi].style.position = 'absolute';
+          handles[pi].style.left = '0';
+          handles[pi].style.right = '0';
+          handles[pi].style.top = y + 'px';
+          handles[pi].style.height = handleH + 'px';
+          handles[pi].style.cursor = 'ns-resize';
+          handles[pi].style.zIndex = '5';
+          y += handleH;
+        } else {
+          handles[pi].style.display = 'none';
+        }
+      }
+    }
+  }
+
+  // Move resize handles OUT of panels and into sidebar-panels container
+  (function() {
+    var container = document.querySelector('.sidebar-panels');
+    if (!container) return;
+    // Remove existing handles from inside panels
+    var oldHandles = container.querySelectorAll('.sidebar-panel .panel-resize');
+    for (var i = 0; i < oldHandles.length; i++) oldHandles[i].remove();
+    // Add two handles directly to container
+    for (var j = 0; j < 2; j++) {
+      var h = document.createElement('div');
+      h.className = 'panel-resize';
+      h.setAttribute('data-divider', j);
+      container.appendChild(h);
+    }
+    layoutPanels();
+  })();
+
+  window.addEventListener('resize', layoutPanels);
 
   document.addEventListener('mousedown', function(e) {
-    const handle = e.target.closest('.panel-resize');
+    var handle = e.target.closest('.panel-resize[data-divider]');
     if (!handle) return;
     e.preventDefault();
-    dragPanel = handle.closest('.sidebar-panel');
-    if (!dragPanel || dragPanel.classList.contains('panel-collapsed')) return;
+    dragIdx = parseInt(handle.getAttribute('data-divider'));
     startY = e.clientY;
-    startH = dragPanel.offsetHeight;
+    startSplits = splits.slice();
     handle.classList.add('dragging');
     document.body.style.cursor = 'ns-resize';
     document.body.style.userSelect = 'none';
   });
 
   document.addEventListener('mousemove', function(e) {
-    if (!dragPanel) return;
+    if (dragIdx < 0) return;
     e.preventDefault();
-    const dy = e.clientY - startY;
-    const newH = Math.max(MIN_H, startH + dy);
-    dragPanel.style.flex = 'none';
-    dragPanel.style.height = newH + 'px';
+    var container = document.querySelector('.sidebar-panels');
+    var totalH = container.offsetHeight - 8; // minus two handles
+    var dy = e.clientY - startY;
+    var frac = dy / totalH;
+    var s = startSplits.slice();
+    // Divider dragIdx sits between panel[dragIdx] and panel[dragIdx+1]
+    // Dragging down: panel[dragIdx] grows, panel[dragIdx+1] shrinks
+    var minFrac = MIN_PX / totalH;
+    var newA = s[dragIdx] + frac;
+    var newB = s[dragIdx + 1] - frac;
+    if (newA < minFrac) { newA = minFrac; newB = s[dragIdx] + s[dragIdx + 1] - minFrac; }
+    if (newB < minFrac) { newB = minFrac; newA = s[dragIdx] + s[dragIdx + 1] - minFrac; }
+    splits[dragIdx] = newA;
+    splits[dragIdx + 1] = newB;
+    // Third panel unchanged
+    layoutPanels();
   });
 
   document.addEventListener('mouseup', function() {
-    if (!dragPanel) return;
-    const handle = dragPanel.querySelector('.panel-resize');
-    if (handle) handle.classList.remove('dragging');
-    dragPanel = null;
+    if (dragIdx < 0) return;
+    var handles = document.querySelectorAll('.panel-resize[data-divider]');
+    for (var i = 0; i < handles.length; i++) handles[i].classList.remove('dragging');
+    dragIdx = -1;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
   });
 })();
 
 // ===== Provider Info =====
-
 function formatProviderLabel(info) {
   if (!info || !info.provider) return 'No provider';
-  const parts = [info.provider];
+  var parts = [info.provider];
   if (info.type) parts.push(info.type);
   if (info.model) parts.push(info.model);
-  return parts.join(' · ');
+  return parts.join(' \u00b7 ');
 }
 
 function updateProviderBadge(info) {
-  const provBadge = document.getElementById('providerBadge');
+  var provBadge = document.getElementById('providerBadge');
   if (!provBadge) return;
   if (!info || !info.provider) {
     provBadge.style.display = 'none';
     return;
   }
-  provBadge.textContent = info.provider + (info.type ? ' · ' + info.type : '');
+  provBadge.textContent = info.provider + (info.type ? ' \u00b7 ' + info.type : '');
   provBadge.style.display = '';
   loadModelPills();
 }
 
-let _modelList = [];
-let _currentModel = '';
-
 async function loadModelPills() {
   try {
-    const resp = await fetch('/api/models');
-    const data = await resp.json();
+    var resp = await fetch('/api/models');
+    var data = await resp.json();
     _modelList = data.models || [];
-    _currentModel = data.current || '';
+    _currentModel = data.current || _modelList[0] || '';
   } catch(e) {}
-  const badge = document.getElementById('modelBadge');
+  var badge = document.getElementById('modelBadge');
   if (!badge) return;
-  if (!_currentModel) { badge.style.display = 'none'; return; }
-  badge.textContent = _currentModel;
+  if (!_currentModel && _modelList.length === 0) { badge.style.display = 'none'; return; }
+  badge.textContent = _currentModel || 'default';
   badge.style.display = '';
   badge.onclick = toggleModelDropdown;
 }
 
 function toggleModelDropdown() {
-  const badge = document.getElementById('modelBadge');
-  const existing = document.getElementById('modelDropdown');
+  var badge = document.getElementById('modelBadge');
+  var existing = document.getElementById('modelDropdown');
   if (existing) { existing.remove(); return; }
 
-  const dropdown = document.createElement('div');
+  var dropdown = document.createElement('div');
   dropdown.id = 'modelDropdown';
   dropdown.className = 'model-dropdown';
-  // position handled by CSS
 
-  _modelList.forEach(m => {
-    const item = document.createElement('span');
+  _modelList.forEach(function(m) {
+    var item = document.createElement('span');
     item.className = 'runtime-badge model' + (m === _currentModel ? ' active' : '');
     item.textContent = m;
     item.style.cursor = 'pointer';
-    item.addEventListener('click', async (e) => {
+    item.addEventListener('click', async function(e) {
       e.stopPropagation();
       if (m === _currentModel) { dropdown.remove(); return; }
       try {
-        const resp = await fetch('/api/model', {
+        var resp = await fetch('/api/model', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: m, conv_id: currentConvId }),
+          body: JSON.stringify({ model: m, conv_id: currentConvId })
         });
-        const data = await resp.json();
+        var data = await resp.json();
         if (data.switched) {
           _currentModel = m;
           badge.textContent = m;
@@ -2144,51 +2878,47 @@ function toggleModelDropdown() {
   badge.style.position = 'relative';
   badge.appendChild(dropdown);
 
-  const close = (e) => {
+  var close = function(e) {
     if (!badge.contains(e.target)) {
       dropdown.remove();
       document.removeEventListener('click', close);
     }
   };
-  setTimeout(() => document.addEventListener('click', close), 0);
+  setTimeout(function() { document.addEventListener('click', close); }, 0);
 }
 
 function addSystemMessage(text) {
-  const container = document.getElementById('chatMessages');
+  var container = document.getElementById('chatMessages');
   if (!container) return;
-  // Don't add system messages when welcome screen is showing
-  const welcome = document.getElementById('welcomeScreen');
+  var welcome = document.getElementById('welcomeScreen');
   if (welcome && welcome.style.display !== 'none') return;
-  const div = document.createElement('div');
+  var div = document.createElement('div');
   div.className = 'system-message';
   div.textContent = text;
-  container.appendChild(div);
+  appendToChat(div);
   scrollToBottom();
 }
 
 // ===== Provider Switching =====
-
 async function loadProviders() {
   try {
-    const resp = await fetch('/api/providers');
-    const providers = await resp.json();
+    var resp = await fetch('/api/providers');
+    var providers = await resp.json();
     renderProviders(providers);
   } catch(e) {}
 }
 
 function renderProviders(providers) {
-  const el = document.getElementById('providerList');
+  var el = document.getElementById('providerList');
   if (!el) return;
-  el.innerHTML = providers.map(p => {
-    const cls = p.active ? 'provider-item active' : (p.available ? 'provider-item available' : 'provider-item unavailable');
-    const typeTag = p.configurable ? 'API' : 'CLI';
-    // Click row to switch (only if available and not already active)
-    const clickAction = (p.available && !p.active) ? "switchProvider('" + p.name + "')" : "";
-    // Config badge for all providers
-    const isConfigured = p.configurable ? p.configured : p.available;
-    const badgeCls = isConfigured ? 'config-badge configured' : 'config-badge';
-    const badgeText = isConfigured ? 'Configured' : 'Set up';
-    const configBadge = '<a class="' + badgeCls + '" href="/config" target="_blank" onclick="event.stopPropagation()" title="Configure">' + badgeText + '</a>';
+  el.innerHTML = providers.map(function(p) {
+    var cls = p.active ? 'provider-item active' : (p.available ? 'provider-item available' : 'provider-item unavailable');
+    var typeTag = p.configurable ? 'API' : 'CLI';
+    var clickAction = (p.available && !p.active) ? "switchProvider('" + p.name + "')" : "";
+    var isConfigured = p.configurable ? p.configured : p.available;
+    var badgeCls = isConfigured ? 'config-badge configured' : 'config-badge';
+    var badgeText = isConfigured ? 'Configured' : 'Set up';
+    var configBadge = '<a class="' + badgeCls + '" href="/config" target="_blank" onclick="event.stopPropagation()" title="Configure">' + badgeText + '</a>';
 
     return '<div class="' + cls + '" onclick="' + clickAction + '" title="' + escAttr(p.label) + '">' +
       '<span class="provider-dot"></span>' +
@@ -2201,12 +2931,12 @@ function renderProviders(providers) {
 
 async function switchProvider(name) {
   try {
-    const resp = await fetch('/api/provider/' + encodeURIComponent(name), {
+    var resp = await fetch('/api/provider/' + encodeURIComponent(name), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conv_id: currentConvId }),
+      body: JSON.stringify({ conv_id: currentConvId })
     });
-    const data = await resp.json();
+    var data = await resp.json();
     if (data.switched) {
       loadProviders();
     } else if (data.error) {
@@ -2216,18 +2946,17 @@ async function switchProvider(name) {
 }
 
 // ===== Code Viewer =====
-
 async function viewSource(name) {
   try {
-    const resp = await fetch('/api/function/' + encodeURIComponent(name) + '/source');
-    const data = await resp.json();
-    if (data.error) { alert(data.error); return; }
+    var resp = await fetch('/api/function/' + encodeURIComponent(name) + '/source');
+    var data = await resp.json();
+    if (data.error) return;
     showCodeModal(name, data.source, data.category);
-  } catch(e) { alert('Failed to load source: ' + e.message); }
+  } catch(e) { /* silently ignore */ }
 }
 
 function showCodeModal(name, source, category) {
-  let modal = document.getElementById('codeModal');
+  var modal = document.getElementById('codeModal');
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'codeModal';
@@ -2243,62 +2972,62 @@ function showCodeModal(name, source, category) {
   document.getElementById('codeModalTitle').textContent = name + '.py';
   document.getElementById('codeModalPre').innerHTML = highlightPython(source);
 
-  let actions = '<button class="code-modal-btn" onclick="closeCodeModal()">Close</button>';
+  var actions = '<button class="code-modal-btn" onclick="closeCodeModal()">Close</button>';
   if (category !== 'meta') {
     actions += '<button class="code-modal-btn" onclick="editInModal(\'' + escAttr(name) + '\')">Edit</button>';
     actions += '<button class="code-modal-btn" onclick="fixFromModal(\'' + escAttr(name) + '\')">Fix with LLM</button>';
   }
   document.getElementById('codeModalActions').innerHTML = actions;
 
-  requestAnimationFrame(() => modal.classList.add('active'));
+  requestAnimationFrame(function() { modal.classList.add('active'); });
 }
 
 function closeCodeModal() {
-  const modal = document.getElementById('codeModal');
+  var modal = document.getElementById('codeModal');
   if (modal) modal.classList.remove('active');
 }
 
 function highlightPython(code) {
-  const lines = code.split('\n');
-  return lines.map((line, i) => {
-    const num = '<span class="line-num">' + (i+1) + '</span>';
-    let hl = escHtml(line);
-    // Keywords
+  var lines = code.split('\n');
+  return lines.map(function(line, i) {
+    var num = '<span class="line-num">' + (i+1) + '</span>';
+    var hl = escHtml(line);
+    var tokens = [];
+    hl = hl.replace(/("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"[^"]*"|\'[^\']*\'|#.*$)/gm, function(m) {
+      var idx = tokens.length;
+      var cls = m.startsWith('#') ? 'syn-comment' : 'syn-string';
+      tokens.push('<span class="' + cls + '">' + m + '</span>');
+      return '\x00TOK' + idx + '\x00';
+    });
     hl = hl.replace(/\b(from|import|def|class|return|if|else|elif|for|while|try|except|finally|with|as|raise|yield|pass|break|continue|and|or|not|in|is|lambda|True|False|None)\b/g, '<span class="syn-keyword">$1</span>');
-    // Decorators
     hl = hl.replace(/^(\s*)(@\w+)/gm, '$1<span class="syn-decorator">$2</span>');
-    // Strings (simple)
-    hl = hl.replace(/("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"[^"]*"|\'[^\']*\')/g, '<span class="syn-string">$1</span>');
-    // Comments
-    hl = hl.replace(/(#.*)$/gm, '<span class="syn-comment">$1</span>');
-    // Numbers
     hl = hl.replace(/\b(\d+\.?\d*)\b/g, '<span class="syn-number">$1</span>');
-    // self
     hl = hl.replace(/\b(self)\b/g, '<span class="syn-self">$1</span>');
+    hl = hl.replace(/\x00TOK(\d+)\x00/g, function(_, idx) { return tokens[idx]; });
     return num + hl;
   }).join('\n');
 }
 
 function editInModal(name) {
   closeCodeModal();
-  const input = document.getElementById('chatInput');
+  var input = document.getElementById('chatInput');
   input.value = 'I want to edit function ' + name;
   input.focus();
 }
 
 function fixFromModal(name) {
-  const instruction = prompt('What should be fixed in ' + name + '?');
+  var instruction = prompt('What should be fixed in ' + name + '?');
   if (!instruction) return;
   closeCodeModal();
-  const input = document.getElementById('chatInput');
+  var input = document.getElementById('chatInput');
   input.value = 'fix ' + name + ' ' + instruction;
   sendMessage();
 }
 
 async function fixFunction(name) {
-  const instruction = prompt('What should be fixed in ' + name + '?');
+  var instruction = prompt('What should be fixed in ' + name + '?');
   if (!instruction) return;
-  const input = document.getElementById('chatInput');
+  var input = document.getElementById('chatInput');
   input.value = 'fix ' + name + ' ' + instruction;
   sendMessage();
 }
@@ -2306,12 +3035,11 @@ async function fixFunction(name) {
 async function deleteFunction(name) {
   if (!confirm('Delete function "' + name + '"?')) return;
   try {
-    const resp = await fetch('/api/function/' + encodeURIComponent(name), { method: 'DELETE' });
-    const data = await resp.json();
+    var resp = await fetch('/api/function/' + encodeURIComponent(name), { method: 'DELETE' });
+    var data = await resp.json();
     if (data.deleted) {
       addAssistantMessage('Deleted function "' + name + '".');
-      // Refresh function list
-      const fResp = await fetch('/api/functions');
+      var fResp = await fetch('/api/functions');
       availableFunctions = await fResp.json();
       renderFunctions();
     } else {
@@ -2320,9 +3048,66 @@ async function deleteFunction(name) {
   } catch(e) { alert('Delete failed: ' + e.message); }
 }
 
+// ===== Column Resize =====
+(function() {
+  function setupColResize(handleId, getTarget, setSide, minW) {
+    var handle = document.getElementById(handleId);
+    if (!handle) return;
+    var startX, startW, target;
+
+    handle.addEventListener('mousedown', function(e) {
+      target = getTarget();
+      if (!target) return;
+      e.preventDefault();
+      startX = e.clientX;
+      startW = target.offsetWidth;
+      handle.classList.add('dragging');
+      target.style.transition = 'none';
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      function onMove(ev) {
+        var dx = ev.clientX - startX;
+        var newW = Math.max(minW, startW + dx * setSide);
+        target.style.width = newW + 'px';
+      }
+      function onUp() {
+        handle.classList.remove('dragging');
+        target.style.transition = '';
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  setupColResize('sidebarResize', function() { return document.getElementById('sidebar'); }, 1, 180);
+  setupColResize('detailResize', function() { return document.getElementById('detailPanel'); }, -1, 200);
+})();
+
 // ===== Init =====
 connect();
 loadProviders();
+
+// Check for ?run= parameter from programs page
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var runName = params.get('run');
+  var runCat = params.get('cat');
+  if (runName) {
+    history.replaceState(null, '', '/');
+    var waitForFunctions = setInterval(function() {
+      if (availableFunctions.length > 0) {
+        clearInterval(waitForFunctions);
+        clickFunction(runName, runCat || 'user');
+      }
+    }, 200);
+    setTimeout(function() { clearInterval(waitForFunctions); }, 5000);
+  }
+})();
 </script>
 </body>
 </html>
