@@ -83,29 +83,29 @@ def run_function(name: str, args: str = "{}") -> str:
     """
     try:
         mod = importlib.import_module(f"agentic.functions.{name}")
-        fn = getattr(mod, name)
+        loaded_func = getattr(mod, name)
     except (ImportError, AttributeError):
         return f"Error: function '{name}' not found in agentic/functions/"
 
     kwargs = json.loads(args) if args else {}
 
     # Inject runtime if the function needs one
+    unwrapped_func = loaded_func._fn if hasattr(loaded_func, '_fn') else loaded_func
     source = ""
-    if hasattr(fn, '_fn'):
-        try:
-            source = inspect.getsource(fn._fn)
-        except (OSError, TypeError):
-            pass
+    try:
+        source = inspect.getsource(unwrapped_func)
+    except (OSError, TypeError):
+        pass
 
-    if "runtime.exec" in source or "runtime" in str(getattr(fn, '__globals__', {})):
+    if "runtime.exec" in source or "runtime" in str(getattr(loaded_func, '__globals__', {})):
         from agentic.providers import create_runtime
         runtime = create_runtime()
-        if hasattr(fn, '_fn') and fn._fn:
-            fn._fn.__globals__['runtime'] = runtime
-        elif hasattr(fn, '__globals__'):
-            fn.__globals__['runtime'] = runtime
+        if hasattr(loaded_func, '_fn') and loaded_func._fn:
+            loaded_func._fn.__globals__['runtime'] = runtime
+        elif hasattr(loaded_func, '__globals__'):
+            loaded_func.__globals__['runtime'] = runtime
 
-    result = fn(**kwargs)
+    result = loaded_func(**kwargs)
     return str(result)
 
 

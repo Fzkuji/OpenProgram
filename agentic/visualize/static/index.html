@@ -3002,7 +3002,7 @@ function showCodeModal(name, source, category) {
     modal.addEventListener('click', function(e) { if (e.target === modal) closeCodeModal(); });
     document.body.appendChild(modal);
   }
-  document.getElementById('codeModalTitle').textContent = name + '.py';
+  document.getElementById('codeModalTitle').textContent = name;
   document.getElementById('codeModalPre').innerHTML = highlightPython(source);
 
   var actions = '<button class="code-modal-btn" onclick="closeCodeModal()">Close</button>';

@@ -354,13 +354,13 @@ def _cmd_fix(name, instruction, provider=None, model=None):
 
     try:
         mod = importlib.import_module(f"agentic.functions.{name}")
-        fn = getattr(mod, name)
+        target_func = getattr(mod, name)
     except (ImportError, AttributeError):
         print(f"Error: function '{name}' not found in agentic/functions/")
         sys.exit(1)
 
     print(f"Fixing '{name}' (provider: {runtime.__class__.__name__})...")
-    fixed = fix(fn=fn, runtime=runtime, instruction=instruction)
+    fixed = fix(fn=target_func, runtime=runtime, instruction=instruction)
     print(f"  Fixed and saved to agentic/functions/{name}.py")
 
 
@@ -370,26 +370,26 @@ def _cmd_run(name, arg_list, provider=None, model=None):
 
     try:
         mod = importlib.import_module(f"agentic.functions.{name}")
-        fn = getattr(mod, name)
+        loaded_func = getattr(mod, name)
     except (ImportError, AttributeError):
         print(f"Error: function '{name}' not found in agentic/functions/")
         sys.exit(1)
 
     # Check if it needs runtime
     import inspect
-    source = inspect.getsource(fn) if hasattr(fn, '_fn') else ""
-    if hasattr(fn, '_fn'):
-        try:
-            source = inspect.getsource(fn._fn)
-        except (OSError, TypeError):
-            source = ""
+    unwrapped_func = loaded_func._fn if hasattr(loaded_func, '_fn') else loaded_func
+    source = ""
+    try:
+        source = inspect.getsource(unwrapped_func)
+    except (OSError, TypeError):
+        pass
 
-    if "runtime.exec" in source or "runtime" in str(getattr(fn, '__globals__', {})):
+    if "runtime.exec" in source or "runtime" in str(getattr(loaded_func, '__globals__', {})):
         runtime = _get_runtime(provider, model)
-        if hasattr(fn, '_fn') and fn._fn:
-            fn._fn.__globals__['runtime'] = runtime
-        elif hasattr(fn, '__globals__'):
-            fn.__globals__['runtime'] = runtime
+        if hasattr(loaded_func, '_fn') and loaded_func._fn:
+            loaded_func._fn.__globals__['runtime'] = runtime
+        elif hasattr(loaded_func, '__globals__'):
+            loaded_func.__globals__['runtime'] = runtime
 
     # Parse arguments
     kwargs = {}
@@ -401,7 +401,7 @@ def _cmd_run(name, arg_list, provider=None, model=None):
             print(f"Error: argument must be key=value, got '{a}'")
             sys.exit(1)
 
-    result = fn(**kwargs)
+    result = loaded_func(**kwargs)
     print(result)
 
 
@@ -414,21 +414,19 @@ def _cmd_create_skill(name, provider=None, model=None):
 
     try:
         mod = importlib.import_module(f"agentic.functions.{name}")
-        fn = getattr(mod, name)
+        loaded_func = getattr(mod, name)
     except (ImportError, AttributeError):
         print(f"Error: function '{name}' not found in agentic/functions/")
         sys.exit(1)
 
     # Get source and description
+    unwrapped_func = loaded_func._fn if hasattr(loaded_func, '_fn') else loaded_func
     try:
-        if hasattr(fn, '_fn'):
-            code = inspect.getsource(fn._fn)
-        else:
-            code = inspect.getsource(fn)
+        code = inspect.getsource(unwrapped_func)
     except (OSError, TypeError):
         code = f"# Source not available for {name}"
 
-    description = getattr(fn, '__doc__', '') or name
+    description = getattr(loaded_func, '__doc__', '') or name
 
     print(f"Creating skill for '{name}'...")
     path = create_skill(fn_name=name, description=description, code=code, runtime=runtime)

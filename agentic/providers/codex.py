@@ -236,6 +236,12 @@ class CodexRuntime(Runtime):
 
         cmd = [self.cli_path]
 
+        # Root-level flags (before "exec" subcommand)
+        if self.search:
+            cmd.append("--search")
+        if self.approval_policy:
+            cmd.extend(["-a", self.approval_policy])
+
         if is_resume:
             # `exec resume` has a limited set of flags
             cmd.extend(["exec", "resume", self._session_id])

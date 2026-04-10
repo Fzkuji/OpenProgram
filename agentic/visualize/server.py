@@ -476,9 +476,9 @@ def _discover_functions() -> list[dict]:
         for f in sorted(os.listdir(fn_dir)):
             full_path = os.path.join(fn_dir, f)
             if f.endswith(".py") and not f.startswith("_"):
-                info = _extract_function_info(full_path, f[:-3], "builtin")
-                if info:
-                    result.append(info)
+                # Scan for ALL @agentic_function decorated functions in file
+                infos = _extract_all_functions(full_path, "builtin")
+                result.extend(infos)
             elif os.path.isdir(full_path) and not f.startswith("_"):
                 # Subdirectory project — find main.py at any depth
                 for root, dirs, files in os.walk(full_path):
@@ -533,7 +533,13 @@ def _extract_function_info(filepath: str, name: Optional[str], category: str) ->
             name = match.group(1)
 
         doc = ""
-        if '"""' in content:
+        # Try to find the docstring of the specific function
+        func_doc_pattern = rf'def\s+{re.escape(name)}\s*\([^)]*\)[^:]*:\s*\n\s*(?:\'\'\'|""")(.+?)(?:\'\'\'|""")'
+        func_doc_match = re.search(func_doc_pattern, content, re.DOTALL)
+        if func_doc_match:
+            doc = func_doc_match.group(1).strip().split("\n")[0]
+        elif '"""' in content:
+            # Fallback: first docstring in file (module-level)
             start = content.index('"""') + 3
             end = content.index('"""', start)
             doc = content[start:end].strip().split("\n")[0]
@@ -568,6 +574,38 @@ def _extract_function_info(filepath: str, name: Optional[str], category: str) ->
         return None
 
 
+def _extract_all_functions(filepath: str, category: str) -> list[dict]:
+    """Extract ALL @agentic_function decorated functions from a .py file.
+
+    Unlike _extract_function_info (which finds one function by name),
+    this scans for every @agentic_function in the file.
+    """
+    import re as _re
+    results = []
+    try:
+        with open(filepath) as f:
+            content = f.read()
+
+        # Find all @agentic_function decorated functions (skip private _names)
+        for match in _re.finditer(r"@agentic_function[^\n]*\s*def\s+(\w+)\s*\(", content):
+            name = match.group(1)
+            if name.startswith("_"):
+                continue
+            info = _extract_function_info(filepath, name, category)
+            if info:
+                results.append(info)
+
+        # Fallback: if no @agentic_function found, try file-name match
+        if not results:
+            basename = os.path.splitext(os.path.basename(filepath))[0]
+            info = _extract_function_info(filepath, basename, category)
+            if info:
+                results.append(info)
+    except Exception:
+        pass
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Agentic chat functions — the visualizer eats its own dog food
 # ---------------------------------------------------------------------------
@@ -585,41 +623,41 @@ def _chat_query(query: str, runtime: Runtime) -> str:
 def _run_user_function(func_name: str, kwargs: dict, runtime: Runtime) -> str:
     """Execute a user's agentic function. The result is compressed so the
     chat agent only sees the final output, not internal execution details."""
-    fn = _load_function(func_name)
-    if fn is None:
+    loaded_func = _load_function(func_name)
+    if loaded_func is None:
         return f"Function '{func_name}' not found."
 
     # Inject runtime if needed
     source = ""
-    inner = fn._fn if hasattr(fn, '_fn') else fn
+    unwrapped_func = loaded_func._fn if hasattr(loaded_func, '_fn') else loaded_func
     try:
-        source = inspect.getsource(inner)
+        source = inspect.getsource(unwrapped_func)
     except (OSError, TypeError):
         pass
 
     if "runtime" in source:
-        sig = inspect.signature(inner)
+        sig = inspect.signature(unwrapped_func)
         if "runtime" in sig.parameters and "runtime" not in kwargs:
             kwargs["runtime"] = runtime
-        elif hasattr(fn, '_fn') and fn._fn:
-            fn._fn.__globals__['runtime'] = runtime
+        elif hasattr(loaded_func, '_fn') and loaded_func._fn:
+            loaded_func._fn.__globals__['runtime'] = runtime
 
-    result = fn(**kwargs)
+    result = loaded_func(**kwargs)
 
     # Format result
     if callable(result):
-        fn_name = getattr(result, '__name__', 'unknown')
-        fn_doc = (getattr(result, '__doc__', '') or '').strip().split('\n')[0]
+        result_name = getattr(result, '__name__', 'unknown')
+        result_doc = (getattr(result, '__doc__', '') or '').strip().split('\n')[0]
         try:
-            inner_sig = inspect.signature(result._fn if hasattr(result, '_fn') else result)
-            params = [p for p in inner_sig.parameters if p not in ('runtime', 'callback', 'self')]
+            result_sig = inspect.signature(result._fn if hasattr(result, '_fn') else result)
+            params = [p for p in result_sig.parameters if p not in ('runtime', 'callback', 'self')]
         except (ValueError, TypeError):
             params = []
-        msg = f"Created function `{fn_name}`."
+        msg = f"Created function `{result_name}`."
         if params:
-            msg += f"\nUsage: `run {fn_name} {' '.join(f'{p}=\"...\"' for p in params)}`"
-        if fn_doc:
-            msg += f"\nDescription: {fn_doc}"
+            msg += f"\nUsage: `run {result_name} {' '.join(f'{p}=\"...\"' for p in params)}`"
+        if result_doc:
+            msg += f"\nDescription: {result_doc}"
         # Refresh function list
         functions = _discover_functions()
         _broadcast(json.dumps({"type": "functions_list", "data": functions}, default=str))
@@ -699,26 +737,26 @@ def _retry_node(conv_id: str, msg_id: str, node_path: str, params_override: dict
             # Look up function: user functions first, then server-internal ones
             fn = _load_function(func_name)
             if fn is None:
-                fn = globals().get(func_name)
-            if fn is None or not callable(fn):
+                loaded_func = globals().get(func_name)
+            if loaded_func is None or not callable(loaded_func):
                 _log(f"[retry] function not found: {func_name}")
                 _broadcast_chat_response(conv_id, msg_id, {"type": "error", "content": f"Function '{func_name}' not found."})
                 return
 
-            _log(f"[retry] found function: {fn}, calling with {list(params.keys())}")
+            _log(f"[retry] found function: {loaded_func}, calling with {list(params.keys())}")
 
             # Inject runtime (same logic as _run_user_function)
-            inner = fn._fn if hasattr(fn, '_fn') else fn
+            unwrapped_func = loaded_func._fn if hasattr(loaded_func, '_fn') else loaded_func
             try:
-                src = inspect.getsource(inner)
+                src = inspect.getsource(unwrapped_func)
             except (OSError, TypeError):
                 src = ""
             if "runtime" in src:
-                sig = inspect.signature(inner)
+                sig = inspect.signature(unwrapped_func)
                 if "runtime" in sig.parameters:
                     params["runtime"] = runtime
 
-            result = fn(**params)
+            result = loaded_func(**params)
             result_str = str(result) if isinstance(result, str) else json.dumps(result, indent=2, default=str)
             _log(f"[retry] function completed successfully, result length: {len(result_str)}")
 
@@ -743,23 +781,42 @@ def _retry_node(conv_id: str, msg_id: str, node_path: str, params_override: dict
 
 
 def _load_function(func_name: str):
-    """Load a function by name from meta_functions, functions, or subdirectory apps."""
+    """Load a function by name from meta_functions, functions, or subdirectory apps.
+
+    Always reloads modules to pick up file changes without server restart.
+    """
     meta_names = ["create", "fix", "create_app", "create_skill"]
     if func_name in meta_names:
         try:
             mod = importlib.import_module(f"agentic.meta_functions.{func_name}")
+            importlib.reload(mod)
             return getattr(mod, func_name)
         except (ImportError, AttributeError):
             pass
-    # Try single-file function
+    # Try single-file function: first by module name, then scan all modules
     from agentic.function import auto_trace_module, auto_trace_package
+    fn_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "functions")
     try:
         mod = importlib.import_module(f"agentic.functions.{func_name}")
-        auto_trace_module(mod, trace_pkg=os.path.abspath(
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "functions")))
+        importlib.reload(mod)
+        auto_trace_module(mod, trace_pkg=os.path.abspath(fn_dir))
         return getattr(mod, func_name)
     except (ImportError, AttributeError):
         pass
+    # Scan all .py files in functions/ for the function name
+    if os.path.isdir(fn_dir):
+        for f in sorted(os.listdir(fn_dir)):
+            if f.endswith(".py") and not f.startswith("_"):
+                mod_name = f"agentic.functions.{f[:-3]}"
+                try:
+                    mod = importlib.import_module(mod_name)
+                    importlib.reload(mod)
+                    auto_trace_module(mod, trace_pkg=os.path.abspath(fn_dir))
+                    fn = getattr(mod, func_name, None)
+                    if fn is not None:
+                        return fn
+                except ImportError:
+                    pass
     # Try subdirectory projects — scan functions/ and apps/ for main.py at any depth
     import importlib.util as _imputil
     base = os.path.dirname(os.path.dirname(__file__))
