@@ -127,7 +127,9 @@ def create_function(description: str, name: str) -> str:
     from agentic.providers import create_runtime
 
     runtime = create_runtime()
-    fn = create(description=description, runtime=runtime, name=name)
+    result = create(description=description, runtime=runtime, name=name)
+    if isinstance(result, dict) and result.get("type") == "follow_up":
+        return f"LLM needs more info to create '{name}': {result['question']}"
     return f"Created function '{name}' → agentic/functions/{name}.py"
 
 
@@ -175,7 +177,9 @@ def fix_function(name: str, instruction: str = "") -> str:
     from agentic.providers import create_runtime
 
     runtime = create_runtime()
-    fix(fn=fn, runtime=runtime, instruction=instruction or None, name=name)
+    result = fix(fn=fn, runtime=runtime, instruction=instruction or None, name=name)
+    if isinstance(result, dict) and result.get("type") == "follow_up":
+        return f"LLM needs more info to fix '{name}': {result['question']}"
     return f"Fixed function '{name}' → agentic/functions/{name}.py"
 
 

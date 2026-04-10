@@ -360,8 +360,12 @@ def _cmd_fix(name, instruction, provider=None, model=None):
         sys.exit(1)
 
     print(f"Fixing '{name}' (provider: {runtime.__class__.__name__})...")
-    fixed = fix(fn=target_func, runtime=runtime, instruction=instruction)
-    print(f"  Fixed and saved to agentic/functions/{name}.py")
+    result = fix(fn=target_func, runtime=runtime, instruction=instruction)
+    if isinstance(result, dict) and result.get("type") == "follow_up":
+        print(f"  LLM needs more info: {result['question']}")
+        print(f"  Re-run with: agentic fix {name} --instruction '<your answer>'")
+    else:
+        print(f"  Fixed and saved to agentic/functions/{name}.py")
 
 
 def _cmd_run(name, arg_list, provider=None, model=None):

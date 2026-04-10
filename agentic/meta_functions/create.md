@@ -127,6 +127,22 @@ result = available[action["call"]]["function"](**args)
 | 多余参数 | 过滤掉函数签名里没有的 |
 | 缺少必要参数 | 调 `fix_call_params` 让 LLM 补全 |
 | JSON 解析失败 | 返回 LLM 原始回复 |
+| LLM 信息不足 | 通过 `follow_up()` 向调用方提问 |
+
+### follow_up 机制
+
+当 LLM 判断信息不足以完成任务时，可以通过 function dispatch 调用 `follow_up()`，
+而不是硬猜或输出不完整的代码。
+
+`generate_code()` 的 available 函数中包含 `follow_up`，LLM 可以选择调用它：
+
+```python
+# LLM 输出：
+{"call": "follow_up", "args": {"question": "输入格式是 JSON 还是纯文本？"}}
+```
+
+`generate_code()` 返回 `{"type": "follow_up", "question": "..."}`，
+由调用方（create / fix / improve）向上传递，最终由上层 agent 或用户处理。
 
 ## 代码风格
 
