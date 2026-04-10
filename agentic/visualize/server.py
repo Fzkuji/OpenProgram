@@ -619,22 +619,13 @@ def _chat_query(query: str, runtime: Runtime) -> str:
     return runtime.exec(content=[{"type": "text", "text": query}])
 
 
-@agentic_function(compress=True)
-def _run_user_function(func_name: str, kwargs: dict, runtime: Runtime) -> str:
-    """Execute a user's agentic function. The result is compressed so the
-    chat agent only sees the final output, not internal execution details."""
-    loaded_func = _load_function(func_name)
-    if loaded_func is None:
-        return f"Function '{func_name}' not found."
-
-    # Inject runtime if needed
-    source = ""
+def _inject_runtime(loaded_func, kwargs: dict, runtime: Runtime):
+    """Inject runtime into function kwargs if the function accepts it."""
     unwrapped_func = loaded_func._fn if hasattr(loaded_func, '_fn') else loaded_func
     try:
         source = inspect.getsource(unwrapped_func)
     except (OSError, TypeError):
-        pass
-
+        source = ""
     if "runtime" in source:
         sig = inspect.signature(unwrapped_func)
         if "runtime" in sig.parameters and "runtime" not in kwargs:
@@ -642,9 +633,9 @@ def _run_user_function(func_name: str, kwargs: dict, runtime: Runtime) -> str:
         elif hasattr(loaded_func, '_fn') and loaded_func._fn:
             loaded_func._fn.__globals__['runtime'] = runtime
 
-    result = loaded_func(**kwargs)
 
-    # Format result
+def _format_result(result) -> str:
+    """Format function result for display."""
     if callable(result):
         result_name = getattr(result, '__name__', 'unknown')
         result_doc = (getattr(result, '__doc__', '') or '').strip().split('\n')[0]
@@ -658,7 +649,6 @@ def _run_user_function(func_name: str, kwargs: dict, runtime: Runtime) -> str:
             msg += f"\nUsage: `run {result_name} {' '.join(f'{p}=\"...\"' for p in params)}`"
         if result_doc:
             msg += f"\nDescription: {result_doc}"
-        # Refresh function list
         functions = _discover_functions()
         _broadcast(json.dumps({"type": "functions_list", "data": functions}, default=str))
         return msg
@@ -745,19 +735,9 @@ def _retry_node(conv_id: str, msg_id: str, node_path: str, params_override: dict
 
             _log(f"[retry] found function: {loaded_func}, calling with {list(params.keys())}")
 
-            # Inject runtime (same logic as _run_user_function)
-            unwrapped_func = loaded_func._fn if hasattr(loaded_func, '_fn') else loaded_func
-            try:
-                src = inspect.getsource(unwrapped_func)
-            except (OSError, TypeError):
-                src = ""
-            if "runtime" in src:
-                sig = inspect.signature(unwrapped_func)
-                if "runtime" in sig.parameters:
-                    params["runtime"] = runtime
-
+            _inject_runtime(loaded_func, params, runtime)
             result = loaded_func(**params)
-            result_str = str(result) if isinstance(result, str) else json.dumps(result, indent=2, default=str)
+            result_str = _format_result(result)
             _log(f"[retry] function completed successfully, result length: {len(result_str)}")
 
             _broadcast_chat_response(conv_id, msg_id, {
@@ -935,12 +915,13 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     "content": f"Running {func_name}...",
                 })
 
-                # Execute function under context tree (compress=True via _run_user_function)
-                result = _run_user_function(
-                    func_name=func_name,
-                    kwargs=kwargs or {},
-                    runtime=runtime,
-                )
+                loaded_func = _load_function(func_name)
+                if loaded_func is None:
+                    _broadcast_chat_response(conv_id, msg_id, {"type": "error", "content": f"Function '{func_name}' not found."})
+                    return
+                call_kwargs = dict(kwargs or {})
+                _inject_runtime(loaded_func, call_kwargs, runtime)
+                result = _format_result(loaded_func(**call_kwargs))
                 _log(f"[exec] {func_name} completed, result length: {len(str(result))}")
 
                 _broadcast_chat_response(conv_id, msg_id, {
