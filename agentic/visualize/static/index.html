@@ -1459,7 +1459,13 @@ function handleMessage(msg) {
       loadConversationData(msg.data);
       break;
     case 'conversations_list':
-      // Populate sidebar with server-known conversations
+      // Sync with server: keep only conversations the server knows about
+      var serverIds = new Set((msg.data || []).map(function(c) { return c.id; }));
+      // Remove local conversations not on server
+      Object.keys(conversations).forEach(function(id) {
+        if (!serverIds.has(id)) delete conversations[id];
+      });
+      // Add/update server conversations
       if (msg.data && msg.data.length > 0) {
         for (var ci = 0; ci < msg.data.length; ci++) {
           var c = msg.data[ci];
@@ -1469,16 +1475,20 @@ function handleMessage(msg) {
             conversations[c.id].has_session = c.has_session;
           }
         }
-        renderConversations();
-        // If current conversation has session, update lock state
-        if (currentConvId && conversations[currentConvId] && conversations[currentConvId].has_session) {
-          _hasActiveSession = true;
-          var provBadge = document.getElementById('providerBadge');
-          if (provBadge && provBadge.textContent.indexOf('\ud83d\udd12') === -1) {
-            provBadge.textContent += ' \ud83d\udd12';
-          }
-          loadProviders();
+      }
+      // If current conversation was removed, go to welcome
+      if (currentConvId && !conversations[currentConvId]) {
+        newConversation();
+      }
+      renderConversations();
+      // If current conversation has session, update lock state
+      if (currentConvId && conversations[currentConvId] && conversations[currentConvId].has_session) {
+        _hasActiveSession = true;
+        var provBadge = document.getElementById('providerBadge');
+        if (provBadge && provBadge.textContent.indexOf('\ud83d\udd12') === -1) {
+          provBadge.textContent += ' \ud83d\udd12';
         }
+        loadProviders();
       }
       break;
     case 'status':
@@ -2501,11 +2511,12 @@ function extractMessagesFromTree(tree) {
       if (child.output) {
         messages.push({ role: 'assistant', content: child.output, type: 'result', function: null });
       }
-    } else if (child.name === '_run_user_function') {
-      var funcName = child.params && child.params.func_name;
-      var kwargs = child.params && child.params.kwargs;
-      var argStr = kwargs ? Object.entries(kwargs).map(function(e) { return e[0] + '=' + JSON.stringify(e[1]); }).join(' ') : '';
-      messages.push({ role: 'user', content: 'run ' + (funcName || '') + (argStr ? ' ' + argStr : '') });
+    } else if (child.name && child.name !== '_chat_query' && !child.name.startsWith('_')) {
+      // User function call (e.g. word_count, research_assistant)
+      var funcName = child.name;
+      var kwargs = child.params || {};
+      var argStr = Object.entries(kwargs).filter(function(e) { return e[0] !== 'runtime'; }).map(function(e) { return e[0] + '=' + JSON.stringify(e[1]); }).join(' ');
+      messages.push({ role: 'user', content: 'run ' + funcName + (argStr ? ' ' + argStr : '') });
       if (child.output) {
         messages.push({ role: 'assistant', content: child.output, type: 'result', function: funcName });
       }

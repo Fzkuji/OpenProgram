@@ -1217,13 +1217,14 @@ async def _handle_ws_command(ws, cmd: dict):
         with _conversations_lock:
             conv = _conversations.get(conv_id)
         if conv:
-            # Send conversation with Context tree + provider info
+            # Send conversation with messages + Context tree + provider info
             tree_data = conv["root_context"]._to_dict() if conv.get("root_context") else {}
             await ws.send_text(json.dumps({
                 "type": "conversation_loaded",
                 "data": {
                     "id": conv["id"],
                     "title": conv["title"],
+                    "messages": conv.get("messages", []),
                     "context_tree": tree_data,
                     "provider_info": _get_provider_info(conv_id),
                 },
