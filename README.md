@@ -248,6 +248,14 @@ The `create → run → fail → fix → run` cycle means programs improve thems
 
 Six built-in providers: Anthropic, OpenAI, Gemini (API), Claude Code, Codex, Gemini (CLI). All CLI providers maintain **session continuity** across calls. See [Provider docs](docs/api/providers.md) for details.
 
+### API Docs by Topic
+
+- [agentic_function](docs/api/agentic_function.md) — decorator behavior, context injection, auto-save
+- [Runtime](docs/api/runtime.md) — `exec()`, retries, response formats, provider wiring
+- [Context](docs/api/context.md) — execution tree, `tree()`, `save()`, traceback views
+- [Meta Functions](docs/api/meta_function.md) — `create()`, `create_app()`, `fix()`, `create_skill()`
+- [Providers](docs/api/providers.md) — built-in runtimes, detection order, CLI vs API tradeoffs
+
 ## Integration
 
 | Guide | Description |
