@@ -3,6 +3,14 @@
 from agentic import Context, agentic_function
 
 
+def test_context_from_dict_uses_current_defaults_for_legacy_payloads():
+    """Missing legacy fields should fall back to current Context defaults."""
+    restored = Context.from_dict({"name": "legacy", "children": []})
+
+    assert restored.render == "summary"
+    assert restored.status == "running"
+    assert restored.compress is False
+
 def test_context_json_roundtrip_preserves_attempts_and_render_metadata():
     """Roundtripping via _to_dict()/from_dict() keeps retry and render fields intact."""
 

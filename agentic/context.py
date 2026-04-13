@@ -730,7 +730,7 @@ class Context:
             prompt=data.get("prompt", ""),
             params=data.get("params"),
             parent=parent,
-            render=data.get("render", "default"),
+            render=data.get("render", "summary"),
             compress=data.get("compress", False),
             start_time=data.get("start_time"),
         )
@@ -738,7 +738,7 @@ class Context:
         ctx.raw_reply = data.get("raw_reply")
         ctx.attempts = data.get("attempts", [])
         ctx.error = data.get("error")
-        ctx.status = data.get("status", "idle")
+        ctx.status = data.get("status", "running")
         ctx.end_time = data.get("end_time") or 0.0
         if not ctx.end_time and data.get("duration_ms") is not None and ctx.start_time:
             ctx.end_time = ctx.start_time + data["duration_ms"] / 1000.0
