@@ -189,10 +189,10 @@ The agent clarifies requirements upfront, then works fully autonomously — exec
 
 ### Self-Evolving Code
 
-Functions can generate new functions, fix broken ones, and scaffold complete apps — all at runtime:
+Functions can generate new functions, fix broken ones, improve existing ones, and scaffold complete apps — all at runtime:
 
 ```python
-from agentic.meta_functions import create, create_app, fix
+from agentic.meta_functions import create, create_app, fix, improve
 
 # Generate a function from description
 sentiment = create("Analyze text sentiment", runtime=runtime, name="sentiment")
@@ -202,11 +202,14 @@ sentiment(text="I love this!")  # → "positive"
 create_app("Summarize articles from URLs", runtime=runtime, name="summarizer")
 # → agentic/apps/summarizer.py
 
-# Fix a broken function — auto-reads source & error history
+# Fix a broken function — auto-reads source and error history
 fixed = fix(fn=broken_fn, runtime=runtime, instruction="return JSON, not plain text")
+
+# Improve a working function toward a specific goal
+better = improve(fn=fixed, runtime=runtime, goal="make the JSON schema stricter")
 ```
 
-The `create → run → fail → fix → run` cycle means programs improve themselves through use.
+The `create → run → fail → fix → improve` cycle means programs can evolve through use.
 
 ## Ecosystem
 
@@ -233,6 +236,7 @@ The `create → run → fail → fix → run` cycle means programs improve thems
 | `from agentic.meta_functions import create` | Generate a new `@agentic_function` from description |
 | `from agentic.meta_functions import create_app` | Generate a complete runnable app with `main()` |
 | `from agentic.meta_functions import fix` | Fix broken functions via LLM analysis |
+| `from agentic.meta_functions import improve` | Improve an existing function toward a concrete goal |
 | `from agentic.meta_functions import create_skill` | Generate a SKILL.md for agent discovery |
 
 ### Built-in Functions

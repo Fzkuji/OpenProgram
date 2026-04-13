@@ -12,7 +12,7 @@ build/
 
 # Runtime/generated artifacts
 agentic/logs/
-agentic/functions/
+agentic/functions/*
 
 # But keep built-in functions
 !agentic/functions/__init__.py
@@ -21,6 +21,9 @@ agentic/functions/
 !agentic/functions/agent_loop.py
 !agentic/functions/wait.py
 !agentic/functions/deep_work.py
+!agentic/functions/build_catalog.py
+!agentic/functions/parse_action.py
+!agentic/functions/prepare_args.py
 
 # Internal-only functions (not uploaded)
 !agentic/functions/init_research.py

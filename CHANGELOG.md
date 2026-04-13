@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Split meta-function skill into four focused skills
 - `create_skill` updated with "one skill, one entry function" pattern
 - Context compaction via `/compact` instead of process restart
+- README and `docs/README_CN.md` now include `improve()` in the self-evolving workflow and meta-function API overview
 
 ### Fixed
 - Stderr pipe buffer deadlock in CLI providers
