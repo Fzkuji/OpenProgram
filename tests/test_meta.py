@@ -198,10 +198,11 @@ def test_build_catalog_renders_context_and_llm_inputs():
         }
     })
 
-    assert "- summarize: Summarize text" in catalog
-    assert "text: source=context" in catalog
-    assert "style: source=llm, type=str" in catalog
+    assert "summarize(style: str)" in catalog
+    assert "Summarize text" in catalog
     assert "Summary style" in catalog
+    assert '"brief"' in catalog
+    assert '"detailed"' in catalog
 
 
 def test_prepare_args_merges_context_and_runtime():
