@@ -643,14 +643,20 @@ html, body {
   font-size: 13px;
 }
 .runtime-block-body {
-  padding: 10px 36px;
+  padding: 0;
+}
+.runtime-block-content {
+  margin: 10px 36px;
+}
+.runtime-block-content > * {
+  margin-left: 0;
+  padding-left: 0;
 }
 .runtime-block-body .message-content {
   padding-left: 0;
   padding-right: 0;
 }
-.runtime-block-body .inline-tree { margin-left: 0; }
-.runtime-block-body .runtime-result {
+.runtime-block-content .runtime-result {
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-primary);
@@ -662,8 +668,24 @@ html, body {
   color: var(--accent-purple);
   font-weight: 600;
 }
+.runtime-block-content .inline-tree {
+  margin: 14px 0 14px;
+}
+.runtime-output {
+  padding: 4px 32px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  word-wrap: break-word;
+}
+.runtime-output ul, .runtime-output ol { margin: 4px 0; padding-left: 20px; }
+.runtime-output li { margin: 2px 0; }
+.runtime-block-content .typing-indicator {
+  padding-left: 32px;
+  margin-top: 6px;
+}
 .runtime-block-footer {
-  padding: 10px 36px;
+  padding: 10px 24px;
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -676,9 +698,6 @@ html, body {
   padding-top: 0;
   padding-bottom: 0;
 }
-.runtime-block .inline-tree {
-  margin-top: 6px;
-}
 .runtime-block .rerun-btn {
   margin-top: 6px;
 }
@@ -687,12 +706,7 @@ html, body {
 
 /* Pending runtime block (typing indicator) */
 .runtime-block-pending .typing-indicator {
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-.runtime-block-pending .typing-indicator {
-  display: flex;
-  gap: 4px;
+  padding-left: 0;
 }
 
 /* Status message */
@@ -2429,9 +2443,9 @@ function retryCurrentBlock(funcName) {
           (parsedDisplay.params ? '(<span class="runtime-params">' + escHtml(parsedDisplay.params) + '</span>)' : '()') +
         '</span>' +
       '</div>' +
-      '<div class="runtime-block-body">' +
+      '<div class="runtime-block-body"><div class="runtime-block-content">' +
         '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
-      '</div>';
+      '</div></div>';
   }
 
   setRunning(true);
@@ -2607,9 +2621,9 @@ function addRuntimeBlockPending(rawText, funcName, params) {
     '<span class="runtime-func">' + escHtml(funcName) + (params ? '(<span class="runtime-params">' + escHtml(params) + '</span>)' : '()') + '</span>' +
   '</div>';
   div.innerHTML = headerHtml +
-    '<div class="runtime-block-body">' +
+    '<div class="runtime-block-body"><div class="runtime-block-content">' +
       '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
-    '</div>';
+    '</div></div>';
   appendToChat(div);
   scrollToBottom();
 
@@ -2632,10 +2646,11 @@ function buildRuntimeBlockHtml(funcName, params, contentHtml, treeHtml, attemptN
     '<span class="runtime-func">' + escHtml(funcName) + (params ? '(<span class="runtime-params">' + escHtml(params) + '</span>)' : '()') + '</span>' +
     '<span class="runtime-result-preview">-> ' + escHtml(plainPreview) + '</span>' +
   '</div>';
-  var bodyHtml = '<div class="runtime-block-body">' +
-    '<div class="runtime-result"><span class="runtime-return-label">return:</span> ' + contentHtml + '</div>' +
+  var bodyHtml = '<div class="runtime-block-body"><div class="runtime-block-content">' +
+    '<div class="runtime-result"><span class="runtime-return-label">return:</span></div>' +
+    '<div class="runtime-output">' + contentHtml + '</div>' +
     (treeHtml || '') +
-  '</div>';
+  '</div></div>';
   var footerParts = [];
   if (attemptNavHtml) footerParts.push(attemptNavHtml);
   if (rerunHtml) footerParts.push(rerunHtml);
@@ -2703,12 +2718,16 @@ function handleChatResponse(data) {
     if (data.tree) {
       var pendingBlock = document.getElementById('runtime_pending');
       if (pendingBlock) {
-        var body = pendingBlock.querySelector('.runtime-block-body');
-        if (body) {
+        var content = pendingBlock.querySelector('.runtime-block-content');
+        if (!content) {
+          var body = pendingBlock.querySelector('.runtime-block-body');
+          if (body) { body.innerHTML = '<div class="runtime-block-content"></div>'; content = body.firstChild; }
+        }
+        if (content) {
           var treeId = 'itree_live_' + (data.function || 'run').replace(/[^a-zA-Z0-9]/g, '_');
-          body.innerHTML =
+          content.innerHTML =
             '<div class="runtime-result"><span class="runtime-return-label">return:</span></div>' +
-            '<div class="typing-indicator" style="display:flex;gap:4px;margin-top:6px"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
+            '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
             renderInlineTree(data.tree, treeId);
         }
         scrollToBottom();
@@ -2802,7 +2821,7 @@ function handleChatResponse(data) {
         // Preserve the existing header (function name + params)
         var existingHeader = existingEl.querySelector('.runtime-block-header');
         var headerHtml = existingHeader ? existingHeader.outerHTML : '<div class="runtime-block-header"><span class="runtime-icon">&#9654;</span><span class="runtime-func">' + escHtml(data.function) + '</span>()</div>';
-        var bodyHtml = '<div class="runtime-block-body"><div class="runtime-result">' + resultContentHtml + '</div>' + treeHtml + rerunHtml + '</div>';
+        var bodyHtml = '<div class="runtime-block-body"><div class="runtime-block-content"><div class="runtime-result">' + resultContentHtml + '</div>' + treeHtml + rerunHtml + '</div></div>';
         var footerHtml = attemptNavHtml ? '<div class="runtime-block-footer">' + attemptNavHtml + '</div>' : '';
         existingEl.innerHTML = headerHtml + bodyHtml + footerHtml;
       } else {
