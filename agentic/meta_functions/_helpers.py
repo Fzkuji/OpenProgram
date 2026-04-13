@@ -168,7 +168,16 @@ def find_function(namespace: dict) -> Optional[callable]:
 
 
 def guess_name(code: str) -> Optional[str]:
-    """Guess function name from generated code."""
+    """Guess function name from generated code.
+
+    Prefers the @agentic_function-decorated function name;
+    falls back to the first def.
+    """
+    # Prefer the @agentic_function decorated function
+    match = re.search(r"@agentic_function[^\n]*\s*def\s+(\w+)\s*\(", code)
+    if match:
+        return match.group(1)
+    # Fallback: first def
     match = re.search(r"def\s+(\w+)\s*\(", code)
     return match.group(1) if match else None
 
@@ -289,10 +298,59 @@ def follow_up(question: str, runtime: Runtime) -> str:
     return question
 
 
+# ── Clarify — pre-check before code generation ───────────────
+
+@agentic_function(summarize={"depth": 0, "siblings": 0})
+def clarify(task: str, runtime: Runtime) -> dict:
+    """Judge whether the task description has enough information to generate code.
+
+    Analyze the task and determine if you can proceed to write code,
+    or if you need to ask the user a clarifying question first.
+
+    Return JSON:
+    - {"ready": true} if you have enough information
+    - {"ready": false, "question": "your specific question"} if not
+
+    Be conservative: only ask when genuinely ambiguous or missing critical info.
+    Do NOT ask about things you can reasonably decide yourself.
+
+    Args:
+        task: The full task description (code, errors, instructions, etc.).
+        runtime: LLM runtime instance.
+
+    Returns:
+        dict with "ready" (bool) and optionally "question" (str).
+    """
+    import json as _json
+    import re as _re
+
+    reply = runtime.exec(content=[
+        {"type": "text", "text": task},
+    ])
+
+    # Try to parse JSON from reply
+    try:
+        match = _re.search(r'\{[^{}]*\}', reply)
+        if match:
+            result = _json.loads(match.group())
+            if "ready" in result:
+                return result
+    except (_json.JSONDecodeError, AttributeError):
+        pass
+
+    # Fallback: if reply contains a question marker, treat as not ready
+    lower = reply.lower()
+    if any(w in lower for w in ["question:", "unclear", "need more", "ambiguous", "please provide"]):
+        return {"ready": False, "question": reply[:500]}
+
+    # Default: ready to proceed
+    return {"ready": True}
+
+
 # ── Base meta function ────────────────────────────────────────
 
 @agentic_function
-def generate_code(task: str, runtime: Runtime) -> dict:
+def generate_code(task: str, runtime: Runtime) -> str:
     """Generate or modify Python code following the Agentic Programming specification.
 
     This is the base meta function. All code generation/modification meta functions
@@ -579,8 +637,6 @@ def generate_code(task: str, runtime: Runtime) -> dict:
 
     Respond with ONLY the Python code inside a ```python code fence.
     No explanation, no commentary outside the fence.
-    If you need more information to complete the task, call the follow_up
-    function instead of guessing.
 
     Args:
         task: Complete task description including all necessary data
@@ -588,44 +644,8 @@ def generate_code(task: str, runtime: Runtime) -> dict:
         runtime: LLM runtime instance.
 
     Returns:
-        dict with "type" and payload:
-        - {"type": "code", "content": "..."} when LLM produced code
-        - {"type": "follow_up", "question": "..."} when LLM needs more info
+        str: LLM's raw reply containing the code in a ```python fence.
     """
-    from agentic.functions.build_catalog import build_catalog
-    from agentic.functions.parse_action import parse_action
-    from agentic.functions.prepare_args import prepare_args
-
-    available = {
-        "follow_up": {
-            "function": follow_up,
-            "description": "信息不足时向调用方提问，获取补充信息后再继续",
-            "input": {
-                "question": {
-                    "source": "llm",
-                    "type": str,
-                    "description": "需要调用方回答的具体问题",
-                },
-            },
-            "output": {"question": str},
-        },
-    }
-    catalog = build_catalog(available)
-
-    reply = runtime.exec(content=[
-        {"type": "text", "text": (
-            f"{task}\n\n"
-            "== Available Functions ==\n"
-            "If you need more information, call follow_up.\n"
-            "Otherwise, respond with code directly.\n\n"
-            f"{catalog}"
-        )},
+    return runtime.exec(content=[
+        {"type": "text", "text": task},
     ])
-
-    action = parse_action(reply)
-    if action and action["call"] == "follow_up":
-        args = prepare_args(action, available, runtime, context={})
-        question = available["follow_up"]["function"](**args)
-        return {"type": "follow_up", "question": question}
-
-    return {"type": "code", "content": reply}

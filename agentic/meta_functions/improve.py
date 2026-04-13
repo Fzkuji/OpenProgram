@@ -9,14 +9,14 @@ from agentic.runtime import Runtime
 from agentic.meta_functions._helpers import (
     extract_code, validate_code, compile_function,
     save_function, get_source,
-    generate_code,
+    clarify, generate_code,
 )
 
 
 @agentic_function(input={
     "fn": {
-        "description": "Function name to improve",
-        "placeholder": "e.g. sentiment",
+        "description": "Function to improve",
+        "options_from": "functions",
         "multiline": False,
     },
     "runtime": {"hidden": True},
@@ -62,12 +62,13 @@ def improve(
         f"Respond with ONLY the improved Python code in a ```python fence. "
         f"No explanation, no commentary."
     )
-    result = generate_code(task=task, runtime=runtime)
+    # Step 1: Clarify — enough info?
+    check = clarify(task=task, runtime=runtime)
+    if not check.get("ready", True):
+        return {"type": "follow_up", "question": check.get("question", "Need more information.")}
 
-    if result.get("type") == "follow_up":
-        return result
-
-    response = result["content"]
+    # Step 2: Generate code
+    response = generate_code(task=task, runtime=runtime)
     improved_code = extract_code(response)
     save_function(improved_code, fn_name, f"Improved: {goal}")
     validate_code(improved_code, response)

@@ -34,6 +34,11 @@ _current_runtime: ContextVar = ContextVar('_current_runtime', default=None)
 # Parameter names that receive the runtime injection
 _RUNTIME_PARAMS = {"runtime", "exec_runtime", "review_runtime"}
 
+# Global registry of all @agentic_function-decorated functions.
+# Maps function name → agentic_function instance.
+# Used by the visualizer to look up source code for any decorated function.
+_registry: dict[str, "agentic_function"] = {}
+
 
 def _inject_runtime(sig, args, kwargs):
     """Auto-inject runtime into function call if needed.
@@ -183,6 +188,7 @@ class agentic_function:
             self._fn = fn
             self._wrapper = self._make_wrapper(fn)
             functools.update_wrapper(self, fn)
+            _registry[fn.__name__] = self
         else:
             # Used as @agentic_function(...) with arguments
             self._fn = None
@@ -199,6 +205,7 @@ class agentic_function:
             self._fn = fn
             self._wrapper = self._make_wrapper(fn)
             functools.update_wrapper(self, fn)
+            _registry[fn.__name__] = self
             return self
 
     def __get__(self, obj, objtype=None):

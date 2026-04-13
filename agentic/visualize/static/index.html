@@ -599,7 +599,7 @@ html, body {
 .runtime-block + .message, .message + .runtime-block { margin-top: 20px; }
 .runtime-block-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   padding: 10px 36px 10px 12px;
   background: var(--bg-secondary);
@@ -607,7 +607,6 @@ html, body {
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--text-bright);
-  flex-wrap: wrap;
   cursor: pointer;
   user-select: none;
 }
@@ -685,7 +684,7 @@ html, body {
   margin-top: 6px;
 }
 .runtime-block-footer {
-  padding: 10px 24px;
+  padding: 10px 36px;
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -1840,6 +1839,7 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
         <div class="panel-header" onclick="togglePanel('fn')">
           <span class="panel-chevron" id="fnChevron">&#9660;</span>
           <span class="sidebar-section-title" style="padding:0">Programs</span>
+          <span class="refresh-btn" onclick="event.stopPropagation();refreshFunctions()" title="Refresh function list" style="margin-left:auto;cursor:pointer;font-size:14px;opacity:0.6;padding:2px 6px">&#8635;</span>
         </div>
         <div class="panel-body" id="fnList"></div>
       </div>
@@ -2402,6 +2402,161 @@ function rerunFunction() {
   autoResize(input);
 }
 
+function renderFollowUpIfNeeded(content, funcName) {
+  // If content is a follow_up JSON (or Python dict repr), return Answer UI html.
+  if (!content) return null;
+  var parsed = null;
+  // Try JSON first
+  try { parsed = JSON.parse(content); } catch(e) {}
+  // Fallback: Python dict repr uses single quotes — try replacing
+  if (!parsed) {
+    try { parsed = JSON.parse(content.replace(/'/g, '"')); } catch(e) {}
+  }
+  // Fallback: regex extraction for nested or messy formats
+  if (!parsed) {
+    var typeMatch = content.match(/['"]type['"]\s*:\s*['"]follow_up['"]/);
+    var qMatch = content.match(/['"]question['"]\s*:\s*['"]((?:[^'"\\]|\\.)*)['"]/)
+    if (typeMatch && qMatch) {
+      parsed = {type: 'follow_up', question: qMatch[1]};
+    }
+  }
+  if (parsed && parsed.type === 'follow_up' && parsed.question) {
+    return '<div class="follow-up-result" style="margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary)">' +
+      '<div style="color:var(--accent-yellow);font-weight:600;margin-bottom:8px">&#9888; Follow-up Question</div>' +
+      '<div style="margin-bottom:12px;color:var(--text-primary);font-size:15px">' + escHtml(parsed.question) + '</div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<input type="text" id="followUpResultInput" placeholder="Type your answer..." ' +
+          'style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:14px" ' +
+          'onkeydown="if(event.key===\'Enter\')submitFollowUpAnswer(\'' + escAttr(funcName) + '\')">' +
+        '<button onclick="submitFollowUpAnswer(\'' + escAttr(funcName) + '\')" ' +
+          'style="padding:8px 16px;border:none;border-radius:6px;background:var(--accent-blue);color:white;cursor:pointer;font-size:14px;white-space:nowrap">Answer &amp; Retry</button>' +
+      '</div>' +
+    '</div>';
+  }
+  return null;
+}
+
+function submitFollowUpAnswer(funcName) {
+  var inp = document.getElementById('followUpResultInput');
+  if (!inp) return;
+  var answer = inp.value.trim();
+  if (!answer) return;
+
+  // Extract question text from the UI
+  var question = '';
+  var fuContainer = inp.closest('.follow-up-result');
+  try {
+    if (fuContainer) {
+      var qDiv = fuContainer.querySelectorAll('div')[1];
+      if (qDiv) question = qDiv.textContent;
+    }
+  } catch(e) {}
+
+  // Replace UI with submitted state
+  if (fuContainer) {
+    fuContainer.innerHTML =
+      '<div style="color:var(--accent-cyan);font-weight:600;margin-bottom:4px">&#10003; Answer submitted — re-running...</div>' +
+      '<div style="color:var(--text-secondary)">' + escHtml(answer) + '</div>';
+  }
+
+  // Find the original run command and append Q&A to instruction
+  var runCmd = '';
+  if (currentConvId && conversations[currentConvId]) {
+    var msgs = conversations[currentConvId].messages || [];
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user' && msgs[i].display === 'runtime') {
+        runCmd = msgs[i].content || '';
+        break;
+      }
+    }
+  }
+
+  // Simple approach: parse the command into parts, modify instruction, rebuild
+  var qaText = question
+    ? ('Q: ' + question + ' A: ' + answer)
+    : ('Additional info: ' + answer);
+
+  // Use parseRunCommandForDisplay to get funcName, then rebuild with modified instruction
+  var parsed = parseRunCommandForDisplay(runCmd);
+  if (parsed.funcName) {
+    // Re-parse kwargs from original command (simple key=value extraction)
+    var kwargs = {};
+    var paramStr = runCmd.replace(/^run\s+\S+\s*/, ''); // remove "run funcName"
+    // Parse key=value pairs, respecting quotes
+    var paramRegex = /(\w+)=(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+    var pm;
+    while ((pm = paramRegex.exec(paramStr)) !== null) {
+      kwargs[pm[1]] = pm[2] !== undefined ? pm[2] : (pm[3] !== undefined ? pm[3] : pm[4]);
+    }
+    // Append Q&A to instruction
+    kwargs['instruction'] = (kwargs['instruction'] || '') + ' [' + qaText + ']';
+    // Rebuild command
+    var parts = ['run', parsed.funcName];
+    for (var k in kwargs) {
+      var v = kwargs[k];
+      if (v.indexOf(' ') !== -1 || v.indexOf('"') !== -1) {
+        parts.push(k + '="' + v.replace(/"/g, '\\"') + '"');
+      } else {
+        parts.push(k + '=' + v);
+      }
+    }
+    runCmd = parts.join(' ');
+  } else if (!runCmd) {
+    runCmd = 'run ' + funcName + ' instruction="' + qaText + '"';
+  }
+
+  // Turn the existing block into running state
+  var block = document.querySelector('.runtime-block[data-function="' + funcName + '"]');
+  if (block) {
+    block.className = 'runtime-block runtime-block-pending';
+    block.id = 'runtime_pending';
+    var body = block.querySelector('.runtime-block-body');
+    if (body) {
+      body.innerHTML = '<div class="runtime-block-content">' +
+        '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
+      '</div>';
+    }
+  }
+  setRunning(true);
+
+  // Re-run via retry_overwrite
+  console.log('[followUp] ws ready:', ws && ws.readyState === 1, 'runCmd:', runCmd.substring(0, 100));
+  if (ws && ws.readyState === 1) {
+    var payload = {
+      action: 'retry_overwrite',
+      conv_id: currentConvId,
+      function: funcName,
+      text: runCmd,
+    };
+    console.log('[followUp] sending:', JSON.stringify(payload).substring(0, 200));
+    ws.send(JSON.stringify(payload));
+  } else {
+    console.error('[followUp] ws not connected! readyState:', ws ? ws.readyState : 'null');
+  }
+}
+
+function submitFollowUp() {
+  var inp = document.getElementById('followUpInput');
+  if (!inp) return;
+  var answer = inp.value.trim();
+  if (!answer) return;
+  // Replace the input UI with the submitted answer
+  var container = inp.closest('.follow-up-container');
+  if (container) {
+    container.innerHTML =
+      '<div style="color:var(--accent-cyan);font-weight:600;margin-bottom:4px">&#10003; Answer submitted</div>' +
+      '<div style="color:var(--text-secondary)">' + escHtml(answer) + '</div>';
+  }
+  // Send answer to server
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({
+      action: 'follow_up_answer',
+      conv_id: currentConvId,
+      answer: answer,
+    }));
+  }
+}
+
 function retryCurrentBlock(funcName) {
   // Overwrite retry: replace current error/interrupted block with running state,
   // then backend re-runs and result replaces in-place
@@ -2616,7 +2771,7 @@ function addRuntimeBlockPending(rawText, funcName, params) {
   var div = document.createElement('div');
   div.className = 'runtime-block runtime-block-pending';
   div.id = 'runtime_pending';
-  var headerHtml = '<div class="runtime-block-header">' +
+  var headerHtml = '<div class="runtime-block-header" onclick="toggleRuntimeBlock(this)">' +
     '<span class="runtime-icon">&#9654;</span>' +
     '<span class="runtime-func">' + escHtml(funcName) + (params ? '(<span class="runtime-params">' + escHtml(params) + '</span>)' : '()') + '</span>' +
   '</div>';
@@ -2634,7 +2789,7 @@ function addRuntimeBlockPending(rawText, funcName, params) {
   }
 }
 
-function buildRuntimeBlockHtml(funcName, params, contentHtml, treeHtml, attemptNavHtml, rerunHtml) {
+function buildRuntimeBlockHtml(funcName, params, contentHtml, treeHtml, attemptNavHtml, rerunHtml, followUpHtml) {
   // Extract plain text preview from contentHtml for collapsed state
   var tempDiv = document.createElement('div');
   tempDiv.innerHTML = contentHtml;
@@ -2650,6 +2805,7 @@ function buildRuntimeBlockHtml(funcName, params, contentHtml, treeHtml, attemptN
     '<div class="runtime-result"><span class="runtime-return-label">return:</span></div>' +
     '<div class="runtime-output">' + contentHtml + '</div>' +
     (treeHtml || '') +
+    (followUpHtml || '') +
   '</div></div>';
   var footerParts = [];
   if (attemptNavHtml) footerParts.push(attemptNavHtml);
@@ -2713,9 +2869,47 @@ function handleChatResponse(data) {
     return;
   }
 
+  // Follow-up question from a running function — show input UI
+  if (type === 'follow_up_question') {
+    var pendingBlock = document.getElementById('runtime_pending');
+    if (pendingBlock) {
+      // Insert into runtime-block-content (has margin), not runtime-block-body
+      var contentArea = pendingBlock.querySelector('.runtime-block-content') || pendingBlock.querySelector('.runtime-block-body');
+      if (contentArea) {
+        // Remove any existing follow-up input
+        var existing = contentArea.querySelector('.follow-up-container');
+        if (existing) existing.remove();
+
+        var fuHtml =
+          '<div class="follow-up-container" style="margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary)">' +
+            '<div style="color:var(--accent-yellow);font-weight:600;margin-bottom:8px">&#9888; Follow-up Question</div>' +
+            '<div style="margin-bottom:10px;color:var(--text-primary)">' + escHtml(data.question) + '</div>' +
+            '<div style="display:flex;gap:8px">' +
+              '<input type="text" id="followUpInput" placeholder="Type your answer..." ' +
+                'style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-size:14px" ' +
+                'onkeydown="if(event.key===\'Enter\')submitFollowUp()">' +
+              '<button onclick="submitFollowUp()" ' +
+                'style="padding:8px 16px;border:none;border-radius:6px;background:var(--accent-blue);color:white;cursor:pointer;font-size:14px">Submit</button>' +
+            '</div>' +
+          '</div>';
+        contentArea.insertAdjacentHTML('beforeend', fuHtml);
+        // Focus the input
+        var inp = document.getElementById('followUpInput');
+        if (inp) inp.focus();
+        scrollToBottom();
+      }
+    }
+    return;
+  }
+
   // Real-time tree update during execution — update the pending runtime block body
   if (type === 'tree_update') {
     if (data.tree) {
+      // Skip if tree hasn't changed since last update
+      var treeJson = JSON.stringify(data.tree);
+      if (treeJson === window._lastTreeJson) return;
+      window._lastTreeJson = treeJson;
+
       var pendingBlock = document.getElementById('runtime_pending');
       if (pendingBlock) {
         var content = pendingBlock.querySelector('.runtime-block-content');
@@ -2725,10 +2919,34 @@ function handleChatResponse(data) {
         }
         if (content) {
           var treeId = 'itree_live_' + (data.function || 'run').replace(/[^a-zA-Z0-9]/g, '_');
-          content.innerHTML =
-            '<div class="runtime-result"><span class="runtime-return-label">return:</span></div>' +
-            '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
-            renderInlineTree(data.tree, treeId);
+          // First time: build full structure
+          if (!content.querySelector('.inline-tree')) {
+            content.innerHTML =
+              '<div class="runtime-result"><span class="runtime-return-label">return:</span></div>' +
+              '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
+              renderInlineTree(data.tree, treeId);
+          } else {
+            // Subsequent updates: only update tree body and status icon
+            var treeBody = content.querySelector('.inline-tree-body');
+            if (treeBody) {
+              // Auto-expand new nodes
+              function _expandAll(n) {
+                if (n.path) expandedNodes.add(n.path);
+                if (n.children) n.children.forEach(_expandAll);
+              }
+              _expandAll(data.tree);
+              treeBody.innerHTML = renderTreeNode(data.tree);
+            }
+            // Update status icon (running vs done)
+            var headerSpan = content.querySelector('.inline-tree-header > span:first-child');
+            if (headerSpan) {
+              var hasRunning = _treeHasRunning(data.tree);
+              var statusIcon = hasRunning
+                ? '<span class="pulse" style="color:var(--accent-blue)">&#9679;</span> '
+                : '<span style="color:var(--accent-cyan)">&#9670;</span> ';
+              headerSpan.innerHTML = statusIcon + 'Execution Tree';
+            }
+          }
         }
         scrollToBottom();
       }
@@ -2866,6 +3084,8 @@ function handleChatResponse(data) {
 
   if (isRuntimeResult) {
     // --- Runtime block rendering ---
+    // Clear tree diff cache from live updates
+    window._lastTreeJson = null;
     // Find the pending runtime block, or an existing block for this function (retry_overwrite)
     var pendingBlock = document.getElementById('runtime_pending');
     if (!pendingBlock && data.function) {
@@ -2903,6 +3123,9 @@ function handleChatResponse(data) {
     var attemptNavHtml = '';
     var rerunHtml = (type === 'error') ? '<button class="rerun-btn" onclick="retryCurrentBlock(\'' + escAttr(data.function || '') + '\')">&#8634; Retry</button>' : '';
 
+    // Detect follow_up result — show Answer input (after tree)
+    var followUpHtml = renderFollowUpIfNeeded(content, data.function || '') || '';
+
     // Inline execution tree
     if (data.context_tree && (data.context_tree.path || data.context_tree.name)) {
       var ct = data.context_tree;
@@ -2918,7 +3141,7 @@ function handleChatResponse(data) {
       attemptNavHtml = renderAttemptNav(data.function, data.current_attempt || 0, data.attempts.length);
     }
 
-    var blockHtml = buildRuntimeBlockHtml(data.function, runtimeParams, resultContentHtml, treeHtml, attemptNavHtml, rerunHtml);
+    var blockHtml = buildRuntimeBlockHtml(data.function, runtimeParams, resultContentHtml, treeHtml, attemptNavHtml, rerunHtml, followUpHtml);
     var blockClass = 'runtime-block' + (type === 'error' ? ' error' : '');
 
     if (pendingBlock) {
@@ -3489,6 +3712,17 @@ function showFnForm(fn) {
           '<button type="button" class="fn-form-toggle-btn' + yesActive + '" onclick="toggleBool(\'' + escAttr(p.name) + '\', \'True\', this)">Yes</button>' +
           '<button type="button" class="fn-form-toggle-btn' + noActive + '" onclick="toggleBool(\'' + escAttr(p.name) + '\', \'False\', this)">No</button>' +
         '</div>';
+    } else if (p.options_from === 'functions') {
+      // Dynamic options from available functions (excluding meta/builtin)
+      var fnOpts = availableFunctions.filter(function(f) {
+        var cat = f.category || 'user';
+        return cat !== 'meta' && cat !== 'builtin';
+      });
+      var selectHtml = '<option value="">-- select --</option>';
+      for (var j = 0; j < fnOpts.length; j++) {
+        selectHtml += '<option value="' + escAttr(fnOpts[j].name) + '">' + escHtml(fnOpts[j].name) + '</option>';
+      }
+      inputTag = '<select class="fn-form-input fn-form-select" id="fnField_' + escAttr(p.name) + '">' + selectHtml + '</select>';
     } else if (p.options && p.options.length > 0) {
       // Options → clickable chip group
       var chipsHtml = '';
@@ -3807,6 +4041,8 @@ function renderConversationMessages(conv) {
         }
 
         var resultContentHtml = renderMd(displayContent);
+        // Detect follow_up in restored messages — render after tree
+        var followUpHtml = renderFollowUpIfNeeded(displayContent, nextMsg.function || parsed.funcName) || '';
         var treeHtml = '';
         var attemptNavHtml = '';
         var isError = nextMsg.type === 'error';
@@ -3829,7 +4065,7 @@ function renderConversationMessages(conv) {
         var blockDiv = document.createElement('div');
         blockDiv.className = 'runtime-block' + (isError ? ' error' : '');
         if (nextMsg.function) blockDiv.setAttribute('data-function', nextMsg.function);
-        blockDiv.innerHTML = buildRuntimeBlockHtml(nextMsg.function || parsed.funcName, parsed.params, resultContentHtml, treeHtml, attemptNavHtml, rerunHtml);
+        blockDiv.innerHTML = buildRuntimeBlockHtml(nextMsg.function || parsed.funcName, parsed.params, resultContentHtml, treeHtml, attemptNavHtml, rerunHtml, followUpHtml);
         container.appendChild(blockDiv);
 
         mi++; // skip the assistant message since we already rendered it
@@ -3874,6 +4110,7 @@ function renderConversationMessages(conv) {
           }
         }
         var resultContentHtml = renderMd(displayContent);
+        var followUpHtml = renderFollowUpIfNeeded(displayContent, msg.function || '') || '';
         var treeHtml = '';
         var attemptNavHtml = '';
         var isOrphanError = msg.type === 'error';
@@ -3892,7 +4129,7 @@ function renderConversationMessages(conv) {
         }
         div.className = 'runtime-block' + (isOrphanError ? ' error' : '');
         if (msg.function) div.setAttribute('data-function', msg.function);
-        div.innerHTML = buildRuntimeBlockHtml(msg.function || '', '', resultContentHtml, treeHtml, attemptNavHtml, rerunHtml);
+        div.innerHTML = buildRuntimeBlockHtml(msg.function || '', '', resultContentHtml, treeHtml, attemptNavHtml, rerunHtml, followUpHtml);
       } else {
         div.className = 'message assistant';
         if (msg.function) {
@@ -3917,7 +4154,8 @@ function renderConversationMessages(conv) {
             cHtml += '<div style="margin-bottom:4px"><span style="font-family:var(--font-mono);color:var(--accent-green);font-size:12px">' +
               escHtml(msg.function) + '()</span> completed</div>';
           }
-          cHtml += renderMd(displayContent) + '</div>';
+          var fuHtml = renderFollowUpIfNeeded(displayContent, msg.function || '');
+          cHtml += (fuHtml || renderMd(displayContent)) + '</div>';
 
           if (msg.attempts && msg.attempts.length > 1) {
             cHtml += renderAttemptNav(msg.function, msg.current_attempt || 0, msg.attempts.length);
@@ -4615,9 +4853,14 @@ async function viewSource(name) {
   try {
     var resp = await fetch('/api/function/' + encodeURIComponent(name) + '/source');
     var data = await resp.json();
-    if (data.error) return;
+    if (data.error) {
+      console.warn('[viewSource] ' + name + ': ' + data.error);
+      return;
+    }
     showCodeModal(name, data.source, data.category);
-  } catch(e) { /* silently ignore */ }
+  } catch(e) {
+    console.error('[viewSource] ' + name + ':', e);
+  }
 }
 
 function showCodeModal(name, source, category) {
@@ -4711,6 +4954,14 @@ async function deleteFunction(name) {
       addAssistantMessage('Cannot delete: ' + (data.error || 'unknown error'));
     }
   } catch(e) { alert('Delete failed: ' + e.message); }
+}
+
+async function refreshFunctions() {
+  try {
+    var resp = await fetch('/api/functions');
+    availableFunctions = await resp.json();
+    renderFunctions();
+  } catch(e) { console.error('Refresh failed:', e); }
 }
 
 // ===== Column Resize =====

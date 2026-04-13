@@ -9,7 +9,7 @@ from agentic.runtime import Runtime
 from agentic.meta_functions._helpers import (
     extract_code, validate_code, compile_function,
     save_function, save_skill_template, guess_name,
-    generate_code,
+    clarify, generate_code,
 )
 
 
@@ -51,12 +51,14 @@ def create(description: str, runtime: Runtime, name: str = None, as_skill: bool 
         f"Respond with ONLY the Python code inside a ```python code fence. "
         f"No explanation, no commentary, no markdown outside the fence."
     )
-    result = generate_code(task=task, runtime=runtime)
 
-    if result.get("type") == "follow_up":
-        return result
+    # Step 1: Clarify — enough info?
+    check = clarify(task=task, runtime=runtime)
+    if not check.get("ready", True):
+        return {"type": "follow_up", "question": check.get("question", "Need more information.")}
 
-    response = result["content"]
+    # Step 2: Generate code
+    response = generate_code(task=task, runtime=runtime)
     code = extract_code(response)
     fn_name = name or guess_name(code) or "generated"
 
@@ -64,4 +66,4 @@ def create(description: str, runtime: Runtime, name: str = None, as_skill: bool 
     if as_skill:
         save_skill_template(fn_name, description, code)
     validate_code(code, response)
-    return compile_function(code, runtime, name)
+    return compile_function(code, runtime, fn_name)

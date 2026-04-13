@@ -95,7 +95,10 @@ def test_create_function_with_runtime():
     def mock_call(content, model="test", response_format=None):
         call_count[0] += 1
         if call_count[0] == 1:
-            # First call: generate the function code
+            # First call: clarify — return ready
+            return '{"ready": true}'
+        elif call_count[0] == 2:
+            # Second call: generate the function code
             return '''@agentic_function
 def summarize(text):
     """Summarize the given text into a short sentence."""
@@ -111,7 +114,7 @@ def summarize(text):
 
     result = fn(text="Long article about AI...")
     assert result == "This is a summary."
-    assert call_count[0] == 2  # 1 for create, 1 for the function call
+    assert call_count[0] == 3  # 1 for clarify, 1 for create, 1 for the function call
 
 
 def test_create_invalid_code():

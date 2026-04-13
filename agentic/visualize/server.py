@@ -13,6 +13,7 @@ import importlib
 import inspect
 import json
 import os
+import queue
 import sys
 import threading
 import time
@@ -20,7 +21,7 @@ import traceback
 import uuid
 from typing import Any, Optional
 
-from agentic.context import Context, _current_ctx, on_event, off_event
+from agentic.context import Context, _current_ctx, on_event, off_event, set_ask_user, ask_user
 from agentic.function import agentic_function
 from agentic.runtime import Runtime
 
@@ -66,6 +67,12 @@ _chat_runtime = None  # template for detecting default
 _exec_provider = None
 _exec_model = None
 _runtime_lock = threading.Lock()
+
+# Follow-up answer queues — keyed by conversation ID.
+# When a function calls ask_user(), the handler puts the question on WebSocket
+# and blocks on this queue. The frontend sends the answer back via WebSocket.
+_follow_up_queues: dict[str, queue.Queue] = {}
+_follow_up_lock = threading.Lock()
 
 # Legacy aliases
 _default_provider = None
@@ -742,6 +749,8 @@ def _extract_function_info(filepath: str, name: Optional[str], category: str) ->
                         pd["multiline"] = meta["multiline"]
                     if "options" in meta:
                         pd["options"] = meta["options"]
+                    if "options_from" in meta:
+                        pd["options_from"] = meta["options_from"]
                     if "hidden" in meta:
                         pd["hidden"] = meta["hidden"]
 
@@ -1279,38 +1288,54 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 exec_rt = _get_exec_runtime()
                 _inject_runtime(loaded_func, call_kwargs, exec_rt)
 
-                # Start a polling thread to broadcast tree updates in real-time
-                _tree_poll_stop = threading.Event()
+                # Register event-driven tree updates (replaces polling)
+                def _tree_event_callback(event_type: str, data: dict):
+                    """Broadcast tree update on every node_created/node_completed."""
+                    try:
+                        ctx = _get_last_ctx(loaded_func)
+                        if ctx is None:
+                            ctx = getattr(loaded_func, 'context', None)
+                        if ctx is not None:
+                            partial_tree = ctx._to_dict()
+                            partial_tree["_in_progress"] = True
+                            _broadcast_chat_response(conv_id, msg_id, {
+                                "type": "tree_update",
+                                "tree": partial_tree,
+                                "function": func_name,
+                            })
+                    except Exception:
+                        pass
 
-                def _poll_tree():
-                    """Periodically broadcast the in-progress Context tree."""
-                    while not _tree_poll_stop.is_set():
-                        _tree_poll_stop.wait(2.0)
-                        if _tree_poll_stop.is_set():
-                            break
-                        try:
-                            ctx = _get_last_ctx(loaded_func)
-                            if ctx is None:
-                                ctx = getattr(loaded_func, 'context', None)
-                            if ctx is not None:
-                                partial_tree = ctx._to_dict()
-                                partial_tree["_in_progress"] = True
-                                _broadcast_chat_response(conv_id, msg_id, {
-                                    "type": "tree_update",
-                                    "tree": partial_tree,
-                                    "function": func_name,
-                                })
-                        except Exception:
-                            pass
+                on_event(_tree_event_callback)
 
-                poll_thread = threading.Thread(target=_poll_tree, daemon=True)
-                poll_thread.start()
+                # Register ask_user handler for follow-up questions
+                _fq = queue.Queue()
+                with _follow_up_lock:
+                    _follow_up_queues[conv_id] = _fq
+
+                def _ask_user_handler(question: str) -> str:
+                    """Send follow-up question to frontend, block for answer."""
+                    _broadcast_chat_response(conv_id, msg_id, {
+                        "type": "follow_up_question",
+                        "question": question,
+                        "function": func_name,
+                    })
+                    # Also trigger a tree update so the UI shows current state
+                    _tree_event_callback("follow_up", {})
+                    try:
+                        return _fq.get(timeout=300)  # 5 min timeout
+                    except queue.Empty:
+                        return ""  # Empty = no answer, fix() will stop the loop
+
+                set_ask_user(_ask_user_handler)
 
                 try:
                     result = _format_result(loaded_func(**call_kwargs))
                 finally:
-                    _tree_poll_stop.set()
-                    poll_thread.join(timeout=3)
+                    set_ask_user(None)
+                    off_event(_tree_event_callback)
+                    with _follow_up_lock:
+                        _follow_up_queues.pop(conv_id, None)
                     if hasattr(exec_rt, 'close'):
                         exec_rt.close()
 
@@ -1719,6 +1744,8 @@ async def _handle_ws_command(ws, cmd: dict):
 
         # Parse and execute
         parsed = _parse_chat_input(text)
+        print(f"[retry] text={text[:200]}")
+        print(f"[retry] parsed={parsed}")
         if parsed["action"] == "run":
             threading.Thread(
                 target=_execute_in_context,
@@ -1831,6 +1858,15 @@ async def _handle_ws_command(ws, cmd: dict):
                 },
             }, default=str))
 
+
+    elif action == "follow_up_answer":
+        # User answered a follow-up question from a running function
+        fq_conv_id = data.get("conv_id", "")
+        answer = data.get("answer", "")
+        with _follow_up_lock:
+            fq = _follow_up_queues.get(fq_conv_id)
+        if fq is not None:
+            fq.put(answer)
 
     elif action == "list_conversations":
         conv_list = []
@@ -2349,7 +2385,7 @@ def create_app():
             fn = globals().get(name)
         if fn is not None and callable(fn):
             try:
-                inner = getattr(fn, '_fn', fn)
+                inner = getattr(fn, '__wrapped__', None) or getattr(fn, '_fn', None) or fn
                 source = inspect.getsource(inner)
                 return JSONResponse(content={
                     "name": name,
@@ -2359,23 +2395,50 @@ def create_app():
                 })
             except (OSError, TypeError):
                 pass
-        # Fallback: try to find as an internal function via inspect
-        fn = _load_function(name)
-        if fn is None:
-            # Check server-module globals (e.g. _chat_query)
-            fn = globals().get(name)
-        if fn is not None and callable(fn):
+        # Fallback: check the @agentic_function global registry
+        from agentic.function import _registry
+        if name in _registry:
+            reg_fn = _registry[name]._fn
             try:
-                inner = getattr(fn, '_fn', fn)
-                source = inspect.getsource(inner)
+                source = inspect.getsource(reg_fn)
                 return JSONResponse(content={
                     "name": name,
                     "source": source,
-                    "filepath": inspect.getfile(inner),
-                    "category": "internal",
+                    "filepath": inspect.getfile(reg_fn),
+                    "category": "external",
                 })
             except (OSError, TypeError):
                 pass
+
+        # Fallback: grep for the function definition in app project directories.
+        # This handles external projects loaded via symlinks in agentic/apps/.
+        import re
+        apps_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "apps")
+        func_pattern = re.compile(rf'def\s+{re.escape(name)}\s*\(')
+        if os.path.isdir(apps_dir):
+            for root, dirs, files in os.walk(apps_dir, followlinks=True):
+                dirs[:] = [d for d in dirs if not d.startswith(('.', '_'))
+                           and d not in {'node_modules', 'vendor', '__pycache__',
+                                         'desktop_env', 'libs', 'build', 'dist',
+                                         'benchmarks', 'docs', 'tests', 'memory',
+                                         'cache', 'skills', 'actions', 'platforms'}]
+                for f in files:
+                    if not f.endswith('.py'):
+                        continue
+                    filepath = os.path.join(root, f)
+                    try:
+                        with open(filepath) as fh:
+                            source = fh.read()
+                        if func_pattern.search(source):
+                            return JSONResponse(content={
+                                "name": name,
+                                "source": source,
+                                "filepath": filepath,
+                                "category": "external",
+                            })
+                    except (OSError, UnicodeDecodeError):
+                        continue
+
         return JSONResponse(content={"error": f"Function '{name}' not found"}, status_code=404)
 
     @app.post("/api/function/{name}/edit")

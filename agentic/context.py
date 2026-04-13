@@ -109,6 +109,45 @@ def _emit_event(event_type: str, ctx: "Context") -> None:
 
 
 
+# ---------------------------------------------------------------------------
+# User interaction — ask_user for follow-up questions during execution
+# ---------------------------------------------------------------------------
+import threading as _ask_threading
+
+_ask_user_handler_global: Optional[Callable] = None
+_ask_user_lock = _ask_threading.Lock()
+
+
+def set_ask_user(handler: Optional[Callable[[str], str]]):
+    """Register a global handler for ask_user() calls.
+
+    The handler receives a question string and must return the user's answer.
+    It may block (e.g. waiting for WebSocket response).
+    Thread-safe — works across threads (unlike ContextVar).
+    """
+    global _ask_user_handler_global
+    with _ask_user_lock:
+        _ask_user_handler_global = handler
+
+
+def ask_user(question: str) -> Optional[str]:
+    """Ask the user a question during function execution.
+
+    If a handler is registered (e.g. by the visualizer server), blocks until
+    the user responds. If no handler is registered, returns None.
+
+    Args:
+        question: The question to ask the user.
+
+    Returns:
+        The user's answer, or None if no handler is available.
+    """
+    with _ask_user_lock:
+        handler = _ask_user_handler_global
+    if handler is None:
+        return None
+    return handler(question)
+
 
 # ---------------------------------------------------------------------------
 # Context — one node in the execution tree
@@ -172,6 +211,11 @@ class Context:
     compress: bool = False
     # When True: after this function completes, summarize() renders only
     # this node's own result — its children are NOT expanded.
+
+    source_file: str = ""
+    # Absolute path to the source file where this function is defined.
+    # Set automatically by @agentic_function. Used by the visualizer
+    # to show source code even after server restart (when modules aren't loaded).
     #
     # Use for high-level orchestrating functions. Example:
     #   navigate(compress=True) has children observe, act, verify.

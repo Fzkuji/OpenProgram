@@ -218,9 +218,10 @@ def func():
 
 
 def test_fix_follow_up():
-    """fix() returns follow_up when LLM needs more info."""
+    """fix() returns follow_up when clarify says info is insufficient."""
     def mock_call(content, model="test", response_format=None):
-        return '{"call": "follow_up", "args": {"question": "Should I use recursion or iteration?"}}'
+        # clarify returns not-ready with a question
+        return '{"ready": false, "question": "Should I use recursion or iteration?"}'
 
     runtime = Runtime(call=mock_call)
 
