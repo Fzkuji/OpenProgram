@@ -239,6 +239,9 @@ class agentic_function:
             )
             if parent is not None:
                 parent.children.append(ctx)
+            if parent is None:
+                self_ref.context = ctx
+            wrapper._last_ctx = ctx
 
             ctx_token = _current_ctx.set(ctx)
             _emit_event("node_created", ctx)
@@ -298,6 +301,11 @@ class agentic_function:
             )
             if parent is not None:
                 parent.children.append(ctx)
+            # Expose context immediately so external observers (e.g. visualizer
+            # polling thread) can read the in-progress tree.
+            if parent is None:
+                self_ref.context = ctx
+            wrapper._last_ctx = ctx
 
             # Set as current context for the duration of the call
             ctx_token = _current_ctx.set(ctx)

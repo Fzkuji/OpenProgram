@@ -2701,7 +2701,52 @@ function handleChatResponse(data) {
     return;
   }
 
+  // Real-time tree update during execution
+  if (type === 'tree_update') {
+    if (data.tree) {
+      var ct = data.tree;
+      // Update the pending response area with a live tree preview
+      var liveTreeEl = document.getElementById('liveTreePreview');
+      if (!liveTreeEl) {
+        // Create a live tree preview container
+        var chatArea = document.getElementById('chatMessages');
+        if (chatArea) {
+          var div = document.createElement('div');
+          div.id = 'liveTreePreview';
+          div.className = 'runtime-block';
+          div.style.borderLeft = '2px solid var(--accent-blue)';
+          div.style.opacity = '0.85';
+          chatArea.appendChild(div);
+        }
+        liveTreeEl = document.getElementById('liveTreePreview');
+      }
+      if (liveTreeEl) {
+        // Expand all nodes for the live preview
+        function _expandLive(n) {
+          if (n.path) expandedNodes.add(n.path);
+          if (n.children) n.children.forEach(_expandLive);
+        }
+        _expandLive(ct);
+        var childCount = (ct.children || []).length;
+        var lastChild = childCount > 0 ? ct.children[childCount - 1] : null;
+        var stepName = lastChild ? (lastChild.name || lastChild.path || '...') : '...';
+        var headerHtml = '<div class="runtime-block-header" style="cursor:default">' +
+          '<span class="pulse" style="color:var(--accent-blue)">&#9679;</span> ' +
+          '<strong>' + escHtml(data.function || 'Running') + '</strong>' +
+          ' &mdash; step ' + childCount + ' (' + escHtml(stepName) + ')' +
+          '</div>';
+        liveTreeEl.innerHTML = headerHtml + '<div class="inline-tree-body">' + renderTreeNode(ct) + '</div>';
+        scrollToBottom();
+      }
+    }
+    return;
+  }
+
   // Final response (result or error) -- task done
+  // Remove live tree preview if present
+  var livePreview = document.getElementById('liveTreePreview');
+  if (livePreview) livePreview.remove();
+
   setRunning(false);
   loadAgentSettings();
 

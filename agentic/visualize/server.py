@@ -1279,9 +1279,38 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 exec_rt = _get_exec_runtime()
                 _inject_runtime(loaded_func, call_kwargs, exec_rt)
 
+                # Start a polling thread to broadcast tree updates in real-time
+                _tree_poll_stop = threading.Event()
+
+                def _poll_tree():
+                    """Periodically broadcast the in-progress Context tree."""
+                    while not _tree_poll_stop.is_set():
+                        _tree_poll_stop.wait(2.0)
+                        if _tree_poll_stop.is_set():
+                            break
+                        try:
+                            ctx = _get_last_ctx(loaded_func)
+                            if ctx is None:
+                                ctx = getattr(loaded_func, 'context', None)
+                            if ctx is not None:
+                                partial_tree = ctx._to_dict()
+                                partial_tree["_in_progress"] = True
+                                _broadcast_chat_response(conv_id, msg_id, {
+                                    "type": "tree_update",
+                                    "tree": partial_tree,
+                                    "function": func_name,
+                                })
+                        except Exception:
+                            pass
+
+                poll_thread = threading.Thread(target=_poll_tree, daemon=True)
+                poll_thread.start()
+
                 try:
                     result = _format_result(loaded_func(**call_kwargs))
                 finally:
+                    _tree_poll_stop.set()
+                    poll_thread.join(timeout=3)
                     if hasattr(exec_rt, 'close'):
                         exec_rt.close()
 
