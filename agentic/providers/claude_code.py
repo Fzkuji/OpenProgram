@@ -350,11 +350,21 @@ class ClaudeCodeRuntime(Runtime):
                                               "text": block["text"][:200]}
                                 events.append(event_text)
                                 result_text = block["text"]
+                                if self.on_stream:
+                                    try:
+                                        self.on_stream(event_text)
+                                    except Exception:
+                                        pass
                             elif block.get("type") == "tool_use":
                                 event_tool = {"type": "tool_use", "elapsed": elapsed,
                                               "tool": block.get("name", "?"),
                                               "input": str(block.get("input", {}))[:100]}
                                 events.append(event_tool)
+                                if self.on_stream:
+                                    try:
+                                        self.on_stream(event_tool)
+                                    except Exception:
+                                        pass
                     continue
 
             # Other events (rate_limit, system, etc.)

@@ -1417,6 +1417,15 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 exec_rt = _get_exec_runtime()
                 _inject_runtime(loaded_func, call_kwargs, exec_rt)
 
+                # Register streaming callback for real-time LLM output
+                def _on_stream(event: dict):
+                    _broadcast_chat_response(conv_id, msg_id, {
+                        "type": "stream_event",
+                        "event": event,
+                        "function": func_name,
+                    })
+                exec_rt.on_stream = _on_stream
+
                 # Register event-driven tree updates (replaces polling)
                 def _tree_event_callback(event_type: str, data: dict):
                     """Broadcast tree update on every node_created/node_completed."""

@@ -34,6 +34,11 @@ _FOLLOW_UP_QA_RE = re.compile(
     re.DOTALL,
 )
 
+_FIX_GENERATION_SUFFIX = (
+    "\n\nFix the root cause, not just the symptom. "
+    "Respond with ONLY the fixed Python code in a ```python fence."
+)
+
 
 def _split_follow_up_instruction(instruction: str | None) -> tuple[str, Optional[str]]:
     """Split a trailing inline follow-up block off an instruction string.
@@ -110,12 +115,14 @@ def _fix_round(
         Dict with status and round-specific data.
     """
     # Step 1: Clarify — do we have enough info?
+    # Keep the clarification prompt free of final output-format instructions so
+    # vague tasks can be judged on intent instead of the response wrapper.
     check = clarify(task=task, runtime=runtime)
     if not check.get("ready", True):
         return {"status": "follow_up", "question": check.get("question", "Need more information.")}
 
     # Step 2: Generate fix attempt
-    response = generate_code(task=task, runtime=runtime)
+    response = generate_code(task=f"{task}{_FIX_GENERATION_SUFFIX}", runtime=runtime)
 
     # Step 3: Extract, validate, compile
     try:
@@ -286,7 +293,8 @@ def fix(
     except (TypeError, OSError):
         fn_filepath = getattr(fn, '__file__', None)
 
-    # Base task — fixed context that doesn't change between rounds
+    # Base task — fixed context that doesn't change between rounds.
+    # The per-round generation suffix is appended only when calling generate_code().
     header = f"Function: {fn_name}"
     if fn_filepath:
         header += f"\nFile: {fn_filepath}"
@@ -307,14 +315,10 @@ def fix(
     feedback = None
 
     for round_num in range(max_rounds):
-        # Build task: base context + last round's feedback
+        # Build task: base context + last round's feedback.
         task = base_task
         if feedback:
             task += f"\n\n── Previous attempt feedback ──\n{feedback}"
-        task += (
-            "\n\nFix the root cause, not just the symptom. "
-            "Respond with ONLY the fixed Python code in a ```python fence."
-        )
 
         # Run one round (creates a parent node in execution tree)
         round_result = _fix_round(

@@ -72,6 +72,7 @@ class Runtime:
         self.model = model
         self.max_retries = max_retries
         self.has_session = False  # Subclasses set True if they manage their own context
+        self.on_stream = None  # Optional callback: fn(event_dict) for streaming events
 
     # --- Lifecycle ---
 

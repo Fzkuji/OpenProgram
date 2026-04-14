@@ -1034,6 +1034,26 @@ html, body {
 }
 .inline-tree-body.collapsed { display: none; }
 
+/* Stream terminal */
+.stream-terminal {
+  margin: 4px 8px 8px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 150px;
+  overflow-y: auto;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.stream-terminal .stream-text { color: var(--text-primary); }
+.stream-terminal .stream-tool { color: var(--accent-cyan); }
+.stream-terminal .stream-time { color: var(--text-muted); font-size: 10px; }
+
 /* Error card */
 .error-content {
   background: rgba(224,108,117,0.08);
@@ -2941,6 +2961,32 @@ function handleChatResponse(data) {
       }
     }
     scrollToBottom();
+    return;
+  }
+
+  // Real-time LLM stream event — append to terminal under execution tree
+  if (type === 'stream_event' && data.event) {
+    var pendingBlock = document.getElementById('runtime_pending');
+    if (pendingBlock) {
+      var content = pendingBlock.querySelector('.runtime-block-content');
+      if (content) {
+        var terminal = content.querySelector('.stream-terminal');
+        if (!terminal) {
+          terminal = document.createElement('div');
+          terminal.className = 'stream-terminal';
+          content.appendChild(terminal);
+        }
+        var evt = data.event;
+        var line = document.createElement('div');
+        if (evt.type === 'text') {
+          line.innerHTML = '<span class="stream-time">[' + evt.elapsed + 's]</span> <span class="stream-text">' + escHtml(evt.text || '') + '</span>';
+        } else if (evt.type === 'tool_use') {
+          line.innerHTML = '<span class="stream-time">[' + evt.elapsed + 's]</span> <span class="stream-tool">' + escHtml(evt.tool || '?') + '</span> ' + escHtml(evt.input || '');
+        }
+        terminal.appendChild(line);
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+    }
     return;
   }
 
