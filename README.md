@@ -214,8 +214,10 @@ The `create → run → fail → fix → run` cycle means programs improve thems
 
 ## Ecosystem
 
-| Project | Description |
-|---------|-------------|
+Agentic Programming ships with two built-in apps under `agentic/apps/`:
+
+| App | Description |
+|-----|-------------|
 | [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Autonomous GUI agent that operates desktop apps via vision + agentic functions. Python controls observe→plan→act→verify loops; the LLM only reasons when asked. |
 | [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Autonomous research agent: literature survey → idea → experiments → paper writing → cross-model review. Full pipeline from topic to submission-ready paper. |
 
@@ -290,7 +292,9 @@ agentic/
 │   ├── agent_loop.py        #   General agent loop
 │   ├── general_action.py    #   Single-task action
 │   └── wait.py              #   Context-aware waiting
-└── apps/                    # generated apps (from create_app)
+└── apps/                    # built-in & generated apps
+    ├── GUI-Agent-Harness/   #   autonomous GUI agent (pre-installed)
+    └── Research-Agent-Harness/ # autonomous research agent (pre-installed)
 skills/                      # SKILL.md files for agent integration
 examples/                    # runnable demos
 tests/                       # pytest suite
