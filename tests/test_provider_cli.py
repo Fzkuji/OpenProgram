@@ -14,26 +14,35 @@ class TestCodexRuntime:
 
     @pytest.fixture(autouse=True)
     def setup_mock(self, monkeypatch, tmp_path):
-        """Mock shutil.which and subprocess.run."""
+        """Mock shutil.which and subprocess.Popen."""
         self.tmp_path = tmp_path
         monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/codex" if name == "codex" else None)
 
-        # Default mock: write output to -o file, return success
-        def mock_run(cmd, **kwargs):
-            result = MagicMock()
-            result.returncode = 0
-            result.stdout = "mock codex reply"
-            result.stderr = ""
-            # Find -o flag and write output
+        # Default mock stdout lines (no special events)
+        self._stdout_lines = ["mock codex reply\n"]
+
+        def mock_popen(cmd, **kwargs):
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdin = MagicMock()
+            proc.stderr = MagicMock()
+            proc.stderr.read.return_value = ""
+            proc.stdout = iter(self._stdout_lines)
+            proc.wait.return_value = 0
+            proc.poll.return_value = 0
+            # Write output to -o file
             for i, arg in enumerate(cmd):
                 if arg == "-o" and i + 1 < len(cmd):
                     with open(cmd[i + 1], "w") as f:
                         f.write("mock codex reply")
                     break
-            return result
+            self._last_cmd = cmd
+            self._last_kwargs = kwargs
+            self._last_proc = proc
+            return proc
 
-        self._mock_run = MagicMock(side_effect=mock_run)
-        monkeypatch.setattr("subprocess.run", self._mock_run)
+        self._mock_popen = MagicMock(side_effect=mock_popen)
+        monkeypatch.setattr("subprocess.Popen", self._mock_popen)
 
         yield
 
@@ -46,7 +55,7 @@ class TestCodexRuntime:
         rt = self._make_runtime()
         result = rt._call([{"type": "text", "text": "hello"}])
         assert result == "mock codex reply"
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         assert cmd[0] == "/usr/bin/codex"
         assert "exec" in cmd
         assert "-a" in cmd
@@ -55,14 +64,14 @@ class TestCodexRuntime:
         assert "--skip-git-repo-check" in cmd
         # Prompt passed via stdin, "-" is the stdin marker
         assert cmd[-1] == "-"
-        prompt_input = self._mock_run.call_args[1].get("input", "")
-        assert prompt_input == "hello"
+        # Verify prompt was written to stdin
+        self._last_proc.stdin.write.assert_called_with("hello")
 
     def test_model_flag(self):
         """Model is passed via --model flag."""
         rt = self._make_runtime(model="o3")
         rt._call([{"type": "text", "text": "hi"}], model="o3")
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         idx = cmd.index("--model")
         assert cmd[idx + 1] == "o3"
 
@@ -73,7 +82,7 @@ class TestCodexRuntime:
 
         rt = self._make_runtime()
         rt._call([{"type": "image", "path": str(img_path)}])
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         assert "-i" in cmd
         idx = cmd.index("-i")
         assert cmd[idx + 1] == str(img_path)
@@ -84,7 +93,7 @@ class TestCodexRuntime:
         data = b64.b64encode(b"\x89PNG\x00" * 3).decode()
         rt = self._make_runtime()
         rt._call([{"type": "image", "data": data, "media_type": "image/png"}])
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         assert "-i" in cmd
         idx = cmd.index("-i")
         # Should be a temp file path
@@ -94,45 +103,53 @@ class TestCodexRuntime:
         """Image with URL adds text note since codex CLI doesn't support URLs."""
         rt = self._make_runtime()
         rt._call([{"type": "image", "url": "https://example.com/img.png"}])
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         # No -i flag for URL
         assert "-i" not in cmd
-        # URL should appear in prompt text (passed via stdin)
-        prompt_input = self._mock_run.call_args[1].get("input", "")
+        # URL should appear in prompt written to stdin
+        write_calls = self._last_proc.stdin.write.call_args_list
+        prompt_input = write_calls[0][0][0] if write_calls else ""
         assert "https://example.com/img.png" in prompt_input
 
     def test_session_resume(self):
         """Second call uses 'resume' subcommand."""
         rt = self._make_runtime(session_id="test-session")
         rt._call([{"type": "text", "text": "first"}])
-        cmd1 = self._mock_run.call_args[0][0]
+        cmd1 = self._last_cmd
         assert "resume" not in cmd1
 
         rt._call([{"type": "text", "text": "second"}])
-        cmd2 = self._mock_run.call_args[0][0]
+        cmd2 = self._last_cmd
         assert "resume" in cmd2
         assert "test-session" in cmd2
 
     def test_auto_session_captures_thread_id_and_resumes(self):
         """Auto sessions resume only after Codex reports a real thread id."""
-        replies = iter([
-            '{"type":"thread.started","thread_id":"thread-123"}',
-            '{"type":"thread.resumed","thread_id":"thread-123"}',
-        ])
+        call_count = [0]
 
-        def run_with_thread_id(cmd, **kwargs):
-            result = MagicMock()
-            result.returncode = 0
-            result.stdout = next(replies)
-            result.stderr = ""
+        def popen_with_thread(cmd, **kwargs):
+            call_count[0] += 1
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdin = MagicMock()
+            proc.stderr = MagicMock()
+            proc.stderr.read.return_value = ""
+            proc.wait.return_value = 0
+            proc.poll.return_value = 0
+            if call_count[0] == 1:
+                proc.stdout = iter(['{"type":"thread.started","thread_id":"thread-123"}\n'])
+            else:
+                proc.stdout = iter(['{"type":"thread.resumed","thread_id":"thread-123"}\n'])
             for i, arg in enumerate(cmd):
                 if arg == "-o" and i + 1 < len(cmd):
                     with open(cmd[i + 1], "w") as f:
                         f.write("mock codex reply")
                     break
-            return result
+            self._last_cmd = cmd
+            self._last_proc = proc
+            return proc
 
-        self._mock_run.side_effect = run_with_thread_id
+        self._mock_popen.side_effect = popen_with_thread
         rt = self._make_runtime()
 
         assert rt.has_session is False
@@ -141,11 +158,11 @@ class TestCodexRuntime:
         rt._call([{"type": "text", "text": "first"}])
         assert rt.has_session is True
         assert rt._session_id == "thread-123"
-        cmd1 = self._mock_run.call_args[0][0]
+        cmd1 = self._mock_popen.call_args[0][0]
         assert "resume" not in cmd1
 
         rt._call([{"type": "text", "text": "second"}])
-        cmd2 = self._mock_run.call_args[0][0]
+        cmd2 = self._mock_popen.call_args[0][0]
         assert "resume" in cmd2
         assert "thread-123" in cmd2
 
@@ -158,7 +175,7 @@ class TestCodexRuntime:
 
         rt._call([{"type": "text", "text": "first"}])
         rt._call([{"type": "text", "text": "second"}])
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         assert "resume" not in cmd
         assert rt._session_id is None
 
@@ -167,14 +184,14 @@ class TestCodexRuntime:
         rt = self._make_runtime(session_id=None)
         rt._call([{"type": "text", "text": "first"}])
         rt._call([{"type": "text", "text": "second"}])
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         assert "resume" not in cmd
 
     def test_workdir_flag(self):
         """workdir is passed via --cd flag."""
         rt = self._make_runtime(workdir="/tmp/myproject")
         rt._call([{"type": "text", "text": "hi"}])
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         idx = cmd.index("--cd")
         assert cmd[idx + 1] == "/tmp/myproject"
 
@@ -182,7 +199,7 @@ class TestCodexRuntime:
         """search=True adds the root-level --search flag."""
         rt = self._make_runtime(search=True)
         rt._call([{"type": "text", "text": "weather"}])
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         assert "--search" in cmd
         assert cmd.index("--search") < cmd.index("exec")
 
@@ -190,7 +207,7 @@ class TestCodexRuntime:
         """Custom approval policy is passed as a root-level flag."""
         rt = self._make_runtime(approval_policy="on-request")
         rt._call([{"type": "text", "text": "hi"}])
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         idx = cmd.index("-a")
         assert cmd[idx + 1] == "on-request"
 
@@ -199,8 +216,9 @@ class TestCodexRuntime:
         rt = self._make_runtime()
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
         rt._call([{"type": "text", "text": "test"}], response_format=schema)
-        # Prompt is passed via stdin
-        prompt_input = self._mock_run.call_args[1].get("input", "")
+        # Prompt is written to stdin
+        write_calls = self._last_proc.stdin.write.call_args_list
+        prompt_input = write_calls[0][0][0] if write_calls else ""
         assert "JSON" in prompt_input
 
     def test_cli_not_found(self, monkeypatch):
@@ -212,14 +230,23 @@ class TestCodexRuntime:
 
     def test_cli_error_propagates(self):
         """CLI errors are raised as RuntimeError."""
-        def failing_run(cmd, **kwargs):
-            result = MagicMock()
-            result.returncode = 1
-            result.stderr = "something went wrong"
-            result.stdout = ""
-            return result
+        def failing_popen(cmd, **kwargs):
+            proc = MagicMock()
+            proc.returncode = 1
+            proc.stdin = MagicMock()
+            proc.stderr = MagicMock()
+            proc.stderr.read.return_value = "something went wrong"
+            proc.stdout = iter([])
+            proc.wait.return_value = 1
+            # Write output file so code can read it
+            for i, arg in enumerate(cmd):
+                if arg == "-o" and i + 1 < len(cmd):
+                    with open(cmd[i + 1], "w") as f:
+                        f.write("")
+                    break
+            return proc
 
-        self._mock_run.side_effect = failing_run
+        self._mock_popen.side_effect = failing_popen
         rt = self._make_runtime()
 
         with pytest.raises(RuntimeError, match="Codex CLI error"):
@@ -227,14 +254,22 @@ class TestCodexRuntime:
 
     def test_auth_error(self):
         """Auth errors raise ConnectionError."""
-        def auth_fail(cmd, **kwargs):
-            result = MagicMock()
-            result.returncode = 1
-            result.stderr = "Invalid API key"
-            result.stdout = ""
-            return result
+        def auth_fail_popen(cmd, **kwargs):
+            proc = MagicMock()
+            proc.returncode = 1
+            proc.stdin = MagicMock()
+            proc.stderr = MagicMock()
+            proc.stderr.read.return_value = "Invalid API key"
+            proc.stdout = iter([])
+            proc.wait.return_value = 1
+            for i, arg in enumerate(cmd):
+                if arg == "-o" and i + 1 < len(cmd):
+                    with open(cmd[i + 1], "w") as f:
+                        f.write("")
+                    break
+            return proc
 
-        self._mock_run.side_effect = auth_fail
+        self._mock_popen.side_effect = auth_fail_popen
         rt = self._make_runtime()
 
         with pytest.raises(ConnectionError, match="authentication"):
@@ -242,7 +277,21 @@ class TestCodexRuntime:
 
     def test_timeout(self):
         """Timeout raises TimeoutError."""
-        self._mock_run.side_effect = subprocess.TimeoutExpired(cmd="codex", timeout=10)
+        def timeout_popen(cmd, **kwargs):
+            proc = MagicMock()
+            proc.stdin = MagicMock()
+            proc.stderr = MagicMock()
+            proc.stdout = iter([])
+            proc.wait.side_effect = subprocess.TimeoutExpired(cmd="codex", timeout=10)
+            proc.kill = MagicMock()
+            for i, arg in enumerate(cmd):
+                if arg == "-o" and i + 1 < len(cmd):
+                    with open(cmd[i + 1], "w") as f:
+                        f.write("")
+                    break
+            return proc
+
+        self._mock_popen.side_effect = timeout_popen
         rt = self._make_runtime(timeout=10)
 
         with pytest.raises(TimeoutError, match="timed out"):
@@ -250,19 +299,23 @@ class TestCodexRuntime:
 
     def test_reset(self):
         """reset() creates new session and resets turn count."""
-        def run_with_thread_id(cmd, **kwargs):
-            result = MagicMock()
-            result.returncode = 0
-            result.stdout = '{"type":"thread.started","thread_id":"thread-reset"}'
-            result.stderr = ""
+        def popen_with_thread(cmd, **kwargs):
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdin = MagicMock()
+            proc.stderr = MagicMock()
+            proc.stderr.read.return_value = ""
+            proc.stdout = iter(['{"type":"thread.started","thread_id":"thread-reset"}\n'])
+            proc.wait.return_value = 0
+            proc.poll.return_value = 0
             for i, arg in enumerate(cmd):
                 if arg == "-o" and i + 1 < len(cmd):
                     with open(cmd[i + 1], "w") as f:
                         f.write("mock codex reply")
                     break
-            return result
+            return proc
 
-        self._mock_run.side_effect = run_with_thread_id
+        self._mock_popen.side_effect = popen_with_thread
         rt = self._make_runtime()
         rt._call([{"type": "text", "text": "first"}])
         old_session = rt._session_id
@@ -276,7 +329,7 @@ class TestCodexRuntime:
         """Custom sandbox mode without full_auto."""
         rt = self._make_runtime(full_auto=False, sandbox="read-only")
         rt._call([{"type": "text", "text": "hi"}])
-        cmd = self._mock_run.call_args[0][0]
+        cmd = self._last_cmd
         assert "--full-auto" not in cmd
         idx = cmd.index("--sandbox")
         assert cmd[idx + 1] == "read-only"

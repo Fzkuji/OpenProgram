@@ -234,6 +234,28 @@ class TestGeminiRuntime:
             "cache_create": 0,
         }
 
+    def test_list_models_success(self):
+        """list_models() returns models that support generateContent."""
+        m1 = MagicMock()
+        m1.name = "models/gemini-2.5-flash"
+        m1.supported_generation_methods = ["generateContent"]
+        m2 = MagicMock()
+        m2.name = "models/embedding-001"
+        m2.supported_generation_methods = ["embedContent"]
+        self.mock_client.models.list.return_value = [m1, m2]
+
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert "gemini-2.5-flash" in models
+        assert "embedding-001" not in models
+
+    def test_list_models_fallback(self):
+        """list_models() returns fallback list on error."""
+        self.mock_client.models.list.side_effect = Exception("API error")
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert "gemini-2.5-flash" in models
+
 
 # ══════════════════════════════════════════════════════════════
 # Provider lazy import tests

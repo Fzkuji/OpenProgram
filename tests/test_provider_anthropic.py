@@ -304,3 +304,45 @@ class TestAnthropicRuntime:
         assert len(content) == 1
         assert content[0]["type"] == "text"
 
+    def test_usage_is_normalized(self):
+        """Usage metadata keeps a consistent shape across providers."""
+        usage = MagicMock()
+        usage.input_tokens = 50
+        usage.output_tokens = 30
+        usage.cache_read_input_tokens = 10
+        usage.cache_creation_input_tokens = 5
+        response = self.mock_client.messages.create.return_value
+        response.usage = usage
+
+        rt = self._make_runtime()
+        rt._call([{"type": "text", "text": "hello"}])
+
+        assert rt.last_usage == {
+            "input_tokens": 65,   # 50 + 10 + 5
+            "output_tokens": 30,
+            "cache_read": 10,
+            "cache_create": 5,
+        }
+
+    def test_list_models_success(self):
+        """list_models() returns sorted model IDs from API."""
+        m1 = MagicMock()
+        m1.id = "claude-sonnet-4-6"
+        m2 = MagicMock()
+        m2.id = "claude-opus-4-6"
+        response = MagicMock()
+        response.data = [m1, m2]
+        self.mock_client.models.list.return_value = response
+
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert models == ["claude-opus-4-6", "claude-sonnet-4-6"]
+
+    def test_list_models_fallback(self):
+        """list_models() returns fallback list on error."""
+        self.mock_client.models.list.side_effect = Exception("API error")
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert "claude-opus-4-6" in models
+        assert "claude-sonnet-4-6" in models
+

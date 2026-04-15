@@ -70,6 +70,72 @@ class TestProviderDetection:
         assert statuses["gemini"]["model"] == "gemini-2.5-flash"
 
 
+class TestCreateRuntime:
+    """Tests for create_runtime() factory function."""
+
+    def test_unknown_provider_raises(self, monkeypatch):
+        """Unknown provider name raises ValueError with helpful message."""
+        from agentic import providers
+        importlib.reload(providers)
+        with pytest.raises(ValueError, match="Unknown provider.*not-a-provider"):
+            providers.create_runtime(provider="not-a-provider")
+
+    def test_creates_with_explicit_provider(self, monkeypatch):
+        """create_runtime(provider=...) loads and instantiates the correct class."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+        # Mock the anthropic module
+        mock_anthropic = MagicMock()
+        mock_client = MagicMock()
+        mock_anthropic.Anthropic.return_value = mock_client
+
+        import sys
+        orig = sys.modules.get("anthropic")
+        sys.modules["anthropic"] = mock_anthropic
+        if "agentic.providers.anthropic" in sys.modules:
+            del sys.modules["agentic.providers.anthropic"]
+
+        try:
+            from agentic import providers
+            importlib.reload(providers)
+            rt = providers.create_runtime(provider="anthropic", model="claude-test")
+            assert rt.model == "claude-test"
+            assert type(rt).__name__ == "AnthropicRuntime"
+        finally:
+            if orig is not None:
+                sys.modules["anthropic"] = orig
+            elif "anthropic" in sys.modules:
+                del sys.modules["anthropic"]
+            if "agentic.providers.anthropic" in sys.modules:
+                del sys.modules["agentic.providers.anthropic"]
+
+    def test_uses_default_model_when_not_specified(self, monkeypatch):
+        """create_runtime() uses the registry default model when model=None."""
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+        mock_openai = MagicMock()
+        mock_openai.OpenAI.return_value = MagicMock()
+
+        import sys
+        orig = sys.modules.get("openai")
+        sys.modules["openai"] = mock_openai
+        if "agentic.providers.openai" in sys.modules:
+            del sys.modules["agentic.providers.openai"]
+
+        try:
+            from agentic import providers
+            importlib.reload(providers)
+            rt = providers.create_runtime(provider="openai")
+            assert rt.model == "gpt-4.1"  # default from PROVIDERS registry
+        finally:
+            if orig is not None:
+                sys.modules["openai"] = orig
+            elif "openai" in sys.modules:
+                del sys.modules["openai"]
+            if "agentic.providers.openai" in sys.modules:
+                del sys.modules["agentic.providers.openai"]
+
+
 class TestProviderLazyImport:
     """Test that providers/__init__.py lazy-loads correctly."""
 

@@ -248,4 +248,24 @@ class TestOpenAIRuntime:
             "cache_create": 0,
         }
 
+    def test_list_models_success(self):
+        """list_models() returns sorted GPT/o-series model IDs."""
+        m1 = MagicMock(); m1.id = "gpt-4o"
+        m2 = MagicMock(); m2.id = "o4-mini"
+        m3 = MagicMock(); m3.id = "dall-e-3"  # should be filtered out
+        self.mock_client.models.list.return_value = [m1, m2, m3]
+
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert "gpt-4o" in models
+        assert "o4-mini" in models
+        assert "dall-e-3" not in models
+
+    def test_list_models_fallback(self):
+        """list_models() returns fallback list on error."""
+        self.mock_client.models.list.side_effect = Exception("API error")
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert "gpt-4o" in models
+
 
