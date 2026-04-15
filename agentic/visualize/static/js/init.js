@@ -396,11 +396,13 @@ function togglePanel(name) {
 
 function doRefreshFunctions(btn) {
   if (btn.classList.contains('spinning')) return;
+  var svg = btn.querySelector('svg');
+  if (!svg) return;
   btn.classList.add('spinning');
   refreshFunctions();
-  btn.addEventListener('animationend', function handler() {
+  svg.addEventListener('animationend', function handler() {
+    svg.removeEventListener('animationend', handler);
     btn.classList.remove('spinning');
-    btn.removeEventListener('animationend', handler);
     // Show green checkmark briefly
     var orig = btn.innerHTML;
     btn.innerHTML = '&#10003;';

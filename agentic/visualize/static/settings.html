@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Settings - Agentic</title>
-<link rel="stylesheet" href="/css/style.css?v=36">
+<link rel="stylesheet" href="/css/style.css?v=37">
 <style>
   .main { overflow-y: auto; overflow-x: clip; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent; }
   .settings-view { overflow: visible; height: auto; }
@@ -34,7 +34,7 @@
       <div class="sidebar-panel" id="fnPanel" data-panel="fn">
         <div class="panel-header" onclick="togglePanel('fn')">
           <span class="sidebar-section-title" style="padding:0">Programs</span>
-          <span class="refresh-btn" onclick="event.stopPropagation();doRefreshFunctions(this)" title="Refresh function list" style="cursor:pointer;font-size:14px;opacity:0.6">&#8635;</span>
+          <span class="refresh-btn" onclick="event.stopPropagation();doRefreshFunctions(this)" title="Refresh function list" style="cursor:pointer;opacity:0.6"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5h-1.5A5 5 0 1 1 8 3V1.5z"/><path d="M8 0l3 3-3 3V0z"/></svg></span>
           <span class="panel-hide-hint" id="fnHint">Hide</span>
         </div>
         <div class="panel-body" id="fnList"></div>
@@ -152,11 +152,13 @@ function togglePanel(name) {
 // Refresh button
 function doRefreshFunctions(btn) {
   if (btn.classList.contains('spinning')) return;
+  var svg = btn.querySelector('svg');
+  if (!svg) return;
   btn.classList.add('spinning');
   refreshFunctions();
-  btn.addEventListener('animationend', function handler() {
+  svg.addEventListener('animationend', function handler() {
+    svg.removeEventListener('animationend', handler);
     btn.classList.remove('spinning');
-    btn.removeEventListener('animationend', handler);
     var orig = btn.innerHTML;
     btn.innerHTML = '&#10003;';
     btn.classList.add('done');

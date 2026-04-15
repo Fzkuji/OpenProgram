@@ -295,8 +295,10 @@ html, body {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-.refresh-btn.spinning {
+.refresh-btn.spinning svg {
   animation: spin-refresh 0.6s ease-in-out;
+}
+.refresh-btn.spinning {
   opacity: 1 !important;
 }
 .refresh-btn.done {

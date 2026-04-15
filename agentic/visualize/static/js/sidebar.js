@@ -438,13 +438,13 @@ function renderFunctions() {
 
 function renderFnItem(f, desc, cat, icon) {
   var isUserFn = cat !== 'meta';
-  return '<div class="fn-item" title="' + escAttr(desc) + '">' +
-    '<div class="fn-item-main" onclick="clickFunction(\'' + escAttr(f.name) + '\', \'' + escAttr(f.category) + '\')">' +
+  return '<div class="fn-item" title="' + escAttr(desc) + '" onclick="clickFunction(\'' + escAttr(f.name) + '\', \'' + escAttr(f.category) + '\')">' +
+    '<div class="fn-item-main">' +
       '<span class="fn-icon fn-cat-' + f.category + '">' + icon + '</span>' +
       '<span class="fn-name">' + escHtml(f.name) + '</span>' +
       '<span class="fn-desc">' + escHtml(truncate(desc, 30)) + '</span>' +
     '</div>' +
-    '<div class="fn-actions">' +
+    '<div class="fn-actions" onclick="event.stopPropagation()">' +
       '<button class="fn-action-btn" onclick="viewSource(\'' + escAttr(f.name) + '\')" title="View source">&#128196;</button>' +
       (isUserFn ? '<button class="fn-action-btn" onclick="fixFunction(\'' + escAttr(f.name) + '\')" title="Fix with LLM">&#128295;</button>' : '') +
       (isUserFn && cat !== 'builtin' && cat !== 'app' ? '<button class="fn-action-btn fn-action-delete" onclick="deleteFunction(\'' + escAttr(f.name) + '\')" title="Delete">&#128465;</button>' : '') +
