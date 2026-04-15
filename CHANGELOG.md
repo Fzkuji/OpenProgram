@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Chat history and execution trees persist across page refreshes
 
 ### Fixed
+- Context JSON roundtrips now preserve `source_file`, so visualizer restores can still locate original function source after reload
 - Stderr pipe buffer deadlock in CLI providers
 - Per-call readline thread replaced with persistent queue-based stdout reader
 - Context branch indentation

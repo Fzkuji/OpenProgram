@@ -97,6 +97,14 @@ class CodexRuntime(Runtime):
         # Once a real Codex thread id is known, the CLI manages context.
         self.has_session = self._session_id is not None
 
+        # Always track the last thread_id for external use (e.g. modify/resume)
+        # even when session_id=None (stateless mode). Not used for _call resume.
+        self.last_thread_id = None
+
+        # turn.completed reports session-cumulative usage (total_token_usage),
+        # not per-call usage. Track the cumulative baseline so we can diff.
+        self._session_cumulative = {"input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}
+
         if self.cli_path is None:
             raise FileNotFoundError(
                 "Codex CLI not found. Install it first:\n"
@@ -269,10 +277,10 @@ class CodexRuntime(Runtime):
             for img_path in image_paths:
                 cmd.extend(["-i", img_path])
 
-        # Reasoning effort
+        # Reasoning effort (via config override, not CLI flag)
         effort = getattr(self, '_reasoning_effort', None)
         if effort and effort != "medium":
-            cmd.extend(["--reasoning-effort", effort])
+            cmd.extend(["-c", f'model_reasoning_effort="{effort}"'])
 
         # Output: capture last message to a temp file for reliable extraction
         fd, output_file = tempfile.mkstemp(suffix=".txt", prefix="codex_out_")
@@ -322,8 +330,8 @@ class CodexRuntime(Runtime):
                     line = line.strip()
                     if not line:
                         continue
-                    # Stream events to callback
-                    if self.on_stream and line.startswith("{"):
+                    # Parse JSONL events (always, for usage/session tracking)
+                    if line.startswith("{"):
                         try:
                             event = json.loads(line)
                             elapsed = round(_time.time() - start_time, 1)
@@ -333,11 +341,13 @@ class CodexRuntime(Runtime):
                             if etype in ("thread.started", "thread.resumed"):
                                 thread_id = event.get("thread_id")
                                 if thread_id:
-                                    self._session_id = thread_id
-                                    self.has_session = True
+                                    self.last_thread_id = thread_id  # always track
+                                    if self._auto_session:
+                                        self._session_id = thread_id
+                                        self.has_session = True
 
                             streamed = self._stream_codex_event(event, elapsed)
-                            if streamed:
+                            if streamed and self.on_stream:
                                 self.on_stream(streamed)
                         except json.JSONDecodeError:
                             pass
@@ -359,12 +369,14 @@ class CodexRuntime(Runtime):
                 r.stdout = "".join(stdout_lines)
                 self._handle_error(r)
 
-            # Extract thread_id from stdout if not already captured
-            if not self._session_id:
-                session_id = self._extract_thread_id("".join(stdout_lines))
-                if session_id:
-                    self._session_id = session_id
-                    self.has_session = True
+            # Extract thread_id from stdout (always track, only resume if auto-session)
+            if not self.last_thread_id:
+                tid = self._extract_thread_id("".join(stdout_lines))
+                if tid:
+                    self.last_thread_id = tid
+                    if self._auto_session and not self._session_id:
+                        self._session_id = tid
+                        self.has_session = True
 
             # Read output from the -o file
             try:
@@ -429,6 +441,33 @@ class CodexRuntime(Runtime):
         if etype == "turn.completed":
             usage = event.get("usage", {})
             tokens = usage.get("output_tokens", 0)
+            # turn.completed reports session-cumulative total_token_usage.
+            # Diff against baseline to get per-call usage.
+            if usage:
+                cum_cached = usage.get("cached_input_tokens", 0)
+                cum_in = usage.get("input_tokens", 0)
+                cum_out = usage.get("output_tokens", 0)
+                base = self._session_cumulative
+                call_in = cum_in - base["input_tokens"]
+                call_out = cum_out - base["output_tokens"]
+                call_cached = cum_cached - base["cached_input_tokens"]
+                self.last_usage = {
+                    "input_tokens": call_in,
+                    "output_tokens": call_out,
+                    "cache_read": call_cached,
+                }
+                # Session-level cumulative (for chat context display)
+                self.session_usage = {
+                    "input_tokens": cum_in,
+                    "output_tokens": cum_out,
+                    "cache_read": cum_cached,
+                }
+                # Update cumulative baseline for next call
+                self._session_cumulative = {
+                    "input_tokens": cum_in,
+                    "output_tokens": cum_out,
+                    "cached_input_tokens": cum_cached,
+                }
             if tokens:
                 return {"type": "status", "elapsed": elapsed,
                         "text": f"turn done ({tokens} tokens)"}

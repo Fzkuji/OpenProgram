@@ -438,9 +438,9 @@ async function loadProgramsMeta() {
 }
 
 function renderFunctions() {
-  var container = document.getElementById('fnList');
-  var catIcons = { app: '\u{1F4E6}', meta: '\u{1F6E0}', builtin: '\u2699', generated: '\u2699', user: '\u270E' };
-  var html = '';
+  var container = document.getElementById('favList');
+  var section = document.getElementById('favSection');
+  if (!container || !section) return;
 
   var favSet = new Set(programsMeta.favorites || []);
   var favFiltered = availableFunctions.filter(function(f) { return favSet.has(f.name); });
@@ -452,36 +452,26 @@ function renderFunctions() {
     }
   }
 
-  if (favFns.length > 0) {
-    for (var i = 0; i < favFns.length; i++) {
-      var f = favFns[i];
-      var cat = f.category || 'user';
-      var desc = f.description ? f.description.split('.')[0] : '';
-      var icon = catIcons[cat] || '\u270E';
-      html += renderFnItem(f, desc, cat, icon);
-    }
-  } else {
-    html += '<div style="padding:8px 16px;color:var(--text-muted);font-size:12px;">No favorites yet</div>';
+  if (favFns.length === 0) {
+    section.classList.add('empty');
+    container.innerHTML = '';
+    return;
   }
 
-  html += '<a class="manage-link" href="/programs">Manage all programs \u2192</a>';
+  section.classList.remove('empty');
+  var catIcons = { app: '\u{1F4E6}', meta: '\u{1F6E0}', builtin: '\u2699', generated: '\u2699', user: '\u270E' };
+  var maxShow = 4;
+  var html = '';
+  for (var i = 0; i < Math.min(favFns.length, maxShow); i++) {
+    var f = favFns[i];
+    var cat = f.category || 'user';
+    var icon = catIcons[cat] || '\u270E';
+    html += '<div class="fav-item" onclick="clickFunction(\'' + escAttr(f.name) + '\', \'' + escAttr(cat) + '\')" title="' + escAttr(f.description || '') + '">' +
+      '<span class="fav-icon">' + icon + '</span>' +
+      '<span class="fav-name">' + escHtml(f.name) + '</span>' +
+    '</div>';
+  }
   container.innerHTML = html;
-}
-
-function renderFnItem(f, desc, cat, icon) {
-  var isUserFn = cat !== 'meta';
-  return '<div class="fn-item" title="' + escAttr(desc) + '" onclick="clickFunction(\'' + escAttr(f.name) + '\', \'' + escAttr(f.category) + '\')">' +
-    '<div class="fn-item-main">' +
-      '<span class="fn-icon fn-cat-' + f.category + '">' + icon + '</span>' +
-      '<span class="fn-name">' + escHtml(f.name) + '</span>' +
-      '<span class="fn-desc">' + escHtml(truncate(desc, 30)) + '</span>' +
-    '</div>' +
-    '<div class="fn-actions" onclick="event.stopPropagation()">' +
-      '<button class="fn-action-btn" onclick="viewSource(\'' + escAttr(f.name) + '\')" title="View source">&#128196;</button>' +
-      (isUserFn ? '<button class="fn-action-btn" onclick="fixFunction(\'' + escAttr(f.name) + '\')" title="Fix with LLM">&#128295;</button>' : '') +
-      (isUserFn && cat !== 'builtin' && cat !== 'app' ? '<button class="fn-action-btn fn-action-delete" onclick="deleteFunction(\'' + escAttr(f.name) + '\')" title="Delete">&#128465;</button>' : '') +
-    '</div>' +
-  '</div>';
 }
 
 async function refreshFunctions() {
@@ -618,6 +608,91 @@ function _buildFieldsHtml(fn) {
 }
 
 
+function _buildFormHtml(fn, fieldsHtml, thinkingSelectorHtml) {
+  return '<div class="fn-form-header">' +
+    '<div class="fn-form-title">' +
+      '<span class="fn-form-name"><span style="color:var(--text-secondary);font-weight:400">function </span>' + escHtml(fn.name) + '</span>' +
+      '<span class="fn-form-desc">' + escHtml(fn.description || '') + '</span>' +
+    '</div>' +
+    '<button class="fn-form-close" onclick="closeFnForm()" title="Close">&times;</button>' +
+  '</div>' +
+  '<div class="fn-form-body">' + fieldsHtml + '</div>' +
+  '<div class="fn-form-footer">' +
+    '<div class="fn-form-footer-left">' +
+      '<div class="input-options">' + thinkingSelectorHtml + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function _showFnFormSwitch(fn, wrapper, sendBtn) {
+  var heightBefore = wrapper.offsetHeight;
+
+  // Build new content HTML first
+  var fieldsHtml = _buildFieldsHtml(fn);
+  var thinkingSelectorHtml =
+    '<div class="thinking-selector" id="thinkingSelector" onclick="toggleThinkingMenu(event)">' +
+      '<span id="thinkingLabel">effort: ' + (_execThinkingEffort || 'medium') + '</span>' +
+      '<svg class="thinking-arrow" width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+    '</div>' +
+    '<div class="thinking-menu" id="thinkingMenu"></div>';
+  var formHtml = _buildFormHtml(fn, fieldsHtml, thinkingSelectorHtml);
+
+  // Measure target height with a hidden clone
+  var measure = wrapper.cloneNode(false);
+  measure.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;width:' + wrapper.offsetWidth + 'px;height:auto;overflow:visible;';
+  // Add sendBtn/stopBtn clones + new form content
+  var sendClone = document.getElementById('sendBtn').cloneNode(true);
+  var stopClone = document.getElementById('stopBtn').cloneNode(true);
+  measure.appendChild(sendClone);
+  measure.appendChild(stopClone);
+  measure.insertAdjacentHTML('beforeend', formHtml);
+  wrapper.parentNode.appendChild(measure);
+  var heightAfter = measure.offsetHeight;
+  measure.remove();
+
+  // Lock current height
+  wrapper.style.height = heightBefore + 'px';
+  wrapper.style.overflow = 'hidden';
+  wrapper.style.transition = 'none';
+
+  // Swap content
+  var oldParts = wrapper.querySelectorAll('.fn-form-header, .fn-form-body, .fn-form-footer');
+  for (var i = 0; i < oldParts.length; i++) oldParts[i].remove();
+  var temp = document.createElement('div');
+  temp.innerHTML = formHtml;
+  while (temp.firstChild) wrapper.appendChild(temp.firstChild);
+
+  wrapper.dataset.fnName = fn.name;
+  sendBtn.setAttribute('onclick', "submitFnForm('" + escAttr(fn.name) + "')");
+  if (typeof buildThinkingMenu === 'function') buildThinkingMenu();
+
+  // Animate to target height
+  requestAnimationFrame(function() {
+    wrapper.style.transition = 'height 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)';
+    wrapper.style.height = heightAfter + 'px';
+    wrapper.addEventListener('transitionend', function handler(e) {
+      if (e.target !== wrapper || e.propertyName !== 'height') return;
+      wrapper.style.height = '';
+      wrapper.style.overflow = '';
+      wrapper.style.transition = '';
+      wrapper.removeEventListener('transitionend', handler);
+    });
+  });
+
+  // Setup textarea auto-resize + focus
+  setTimeout(function() {
+    var textareas = wrapper.querySelectorAll('.fn-form-textarea');
+    for (var i = 0; i < textareas.length; i++) {
+      textareas[i].addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+      });
+    }
+    var firstInput = wrapper.querySelector('.fn-form-input');
+    if (firstInput) firstInput.focus();
+  }, 50);
+}
+
 function showFnForm(fn) {
   var wrapper = document.querySelector('.input-wrapper');
   if (!wrapper) return;
@@ -634,6 +709,10 @@ function showFnForm(fn) {
         _inputContentOriginal.push(children[i]);
       }
     }
+  } else {
+    // Already have a form open — switch content in-place
+    _showFnFormSwitch(fn, wrapper, sendBtn);
+    return;
   }
   _fnFormActive = true;
 
@@ -661,7 +740,7 @@ function showFnForm(fn) {
 
   var thinkingSelectorHtml =
     '<div class="thinking-selector" id="thinkingSelector" onclick="toggleThinkingMenu(event)">' +
-      '<span id="thinkingLabel">effort: ' + (_thinkingEffort || 'medium') + '</span>' +
+      '<span id="thinkingLabel">effort: ' + (_execThinkingEffort || 'medium') + '</span>' +
       '<svg class="thinking-arrow" width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
     '</div>' +
     '<div class="thinking-menu" id="thinkingMenu"></div>';
@@ -674,31 +753,15 @@ function showFnForm(fn) {
   _inputContentOriginal.forEach(function(el) { el.remove(); });
 
   // Build form content as DOM
-  var formHtml =
-    '<div class="fn-form-header">' +
-      '<div class="fn-form-title">' +
-        '<span class="fn-form-name"><span style="color:var(--text-secondary);font-weight:400">function </span>' + escHtml(fn.name) + '</span>' +
-        '<span class="fn-form-desc">' + escHtml(fn.description || '') + '</span>' +
-      '</div>' +
-      '<button class="fn-form-close" onclick="closeFnForm()" title="Close">&times;</button>' +
-    '</div>' +
-    '<div class="fn-form-body">' + fieldsHtml + '</div>' +
-    '<div class="fn-form-footer">' +
-      '<div class="fn-form-footer-left">' +
-        '<div class="input-options">' + thinkingSelectorHtml + '</div>' +
-      '</div>' +
-    '</div>';
+  var formHtml = _buildFormHtml(fn, fieldsHtml, thinkingSelectorHtml);
   var temp = document.createElement('div');
   temp.innerHTML = formHtml;
   while (temp.firstChild) wrapper.appendChild(temp.firstChild);
 
   wrapper.className = 'input-wrapper fn-form-mode';
   wrapper.dataset.fnName = fn.name;
-
-  // Update send button for form mode
   sendBtn.setAttribute('onclick', "submitFnForm('" + escAttr(fn.name) + "')");
   sendBtn.title = 'Run';
-
   if (typeof buildThinkingMenu === 'function') buildThinkingMenu();
 
   // --- Set initial opacity for fade-in ---

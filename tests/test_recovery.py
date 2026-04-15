@@ -237,6 +237,58 @@ def test_fix_follow_up():
     assert "recursion" in result["question"]
 
 
+def test_fix_clarify_prompt_omits_generation_suffix():
+    """fix() keeps generation-only instructions out of clarify()."""
+    prompts = []
+
+    class MysteryCallable:
+        __doc__ = str.__doc__
+
+        def __call__(self):
+            return "broken"
+
+    def mock_call(content, model="test", response_format=None):
+        prompts.append(content[-1]["text"] if content else "")
+        return '{"ready": false, "question": "What should change?"}'
+
+    runtime = Runtime(call=mock_call)
+
+    result = fix(
+        fn=MysteryCallable(),
+        runtime=runtime,
+        instruction="Fix the crash when the input is empty.",
+    )
+
+    assert isinstance(result, dict)
+    assert result["type"] == "follow_up"
+    assert "Fix the crash when the input is empty." in prompts[0]
+    assert "Source not available for unknown" in prompts[0]
+    assert "Fix the root cause" not in prompts[0]
+    assert "Respond with ONLY the fixed Python code" not in prompts[0]
+
+
+def test_clarify_flags_vague_chinese_instruction_without_call():
+    """clarify() should short-circuit clearly vague Chinese instructions."""
+    call_count = [0]
+
+    def mock_call(content, model="test", response_format=None):
+        call_count[0] += 1
+        return '{"ready": true}'
+
+    runtime = Runtime(call=mock_call)
+    task = (
+        "Function: fixed\n\n"
+        "Current code:\n```python\nprint('hi')\n```\n\n"
+        "Instruction:\n"
+        "跟我讨论一下这个"
+    )
+
+    result = clarify(task=task, runtime=runtime)
+    assert result["ready"] is False
+    assert result["question"]
+    assert call_count[0] == 0
+
+
 def test_clarify_treats_answered_qna_as_ready():
     """clarify() should not re-ask once a Q/A clarification block exists."""
     call_count = [0]

@@ -175,11 +175,13 @@ class agentic_function:
         summarize: Optional[dict] = None,
         compress: bool = False,
         input: Optional[dict] = None,
+        no_tools: bool = False,
     ):
         self.render = render
         self.summarize_kwargs = summarize
         self.compress = compress
         self.input_meta = input or {}
+        self.no_tools = no_tools
 
         self.context = None  # Last executed Context tree (set after top-level call)
 

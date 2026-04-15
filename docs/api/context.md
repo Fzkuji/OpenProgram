@@ -28,6 +28,7 @@ class Context
 | `children` | `list[Context]` | `[]` | 子节点列表 |
 | `render` | `str` | `"summary"` | 默认渲染级别 |
 | `compress` | `bool` | `False` | 是否隐藏子节点 |
+| `source_file` | `str` | `""` | 定义该函数的源码文件绝对路径，供可视化器重启后继续定位源码 |
 | `start_time` | `float` | `0.0` | 开始时间戳 |
 
 **由 `@agentic_function` 设置（退出时）：**
@@ -191,6 +192,7 @@ Context.save(path: str)
 | 扩展名 | 格式 |
 |--------|------|
 | `.md` | 人类可读（同 `tree()` 输出） |
+| `.json` | 单个嵌套 JSON 对象，适合完整 roundtrip / 可视化恢复 |
 | `.jsonl` | 每行一个 JSON 对象，包含所有字段 |
 
 #### 示例

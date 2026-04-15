@@ -21,4 +21,16 @@ def sentiment(text: str, runtime: Runtime = None) -> str:
     Returns:
         One of 'positive', 'negative', or 'neutral'.
     """
-    return runtime.exec(content=[{"type": "text", "text": text}])
+    if runtime is None:
+        raise ValueError("runtime is required for sentiment()")
+
+    reply = runtime.exec(content=[{
+        "type": "text",
+        "text": (
+            "Classify the sentiment of the following text.\n"
+            "Return exactly one word: positive, negative, or neutral.\n\n"
+            f"Text: {text}"
+        ),
+    }])
+    label = (reply or "").strip().split(maxsplit=1)[0].lower() if (reply or "").strip() else "neutral"
+    return label if label in {"positive", "negative", "neutral"} else "neutral"

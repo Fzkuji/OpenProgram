@@ -2763,6 +2763,7 @@ def create_app():
             "exec": {
                 "provider": _exec_provider,
                 "model": _exec_model,
+                "thinking": _get_thinking_config(_exec_provider),
             },
             "available": _available_providers,
         })

@@ -73,6 +73,8 @@ class Runtime:
         self.max_retries = max_retries
         self.has_session = False  # Subclasses set True if they manage their own context
         self.on_stream = None  # Optional callback: fn(event_dict) for streaming events
+        self.last_usage = None  # Last call's token usage: {input_tokens, output_tokens, ...}
+        self.usage_is_cumulative = False  # True if last_usage accumulates across calls (e.g. Codex CLI)
 
     # --- Lifecycle ---
 

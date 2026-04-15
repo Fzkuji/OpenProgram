@@ -105,6 +105,7 @@ class ClaudeCodeRuntime(Runtime):
         self._tools = tools  # e.g. "" for no tools, "Bash" for bash only
         # Persistent process manages its own context — skip summarize()
         self.has_session = session_id is not None
+        self.last_thread_id = None  # for external session reuse
 
         if self.cli_path is None:
             raise FileNotFoundError(
@@ -328,13 +329,23 @@ class ClaudeCodeRuntime(Runtime):
             if msg_type == "result":
                 result_text = data.get("result", "")
                 usage = data.get("usage", {})
-                event["result"] = result_text[:200]
-                event["usage"] = {
-                    "input_tokens": usage.get("input_tokens", 0),
+                # Anthropic API reports input_tokens as non-cached only.
+                # Normalize to total input (like OpenAI) for consistent display.
+                raw_in = usage.get("input_tokens", 0)
+                cache_read = usage.get("cache_read_input_tokens", 0)
+                cache_create = usage.get("cache_creation_input_tokens", 0)
+                # input_tokens = total input (raw + cache_read + cache_create)
+                # cache_read = only actual cache hits (NOT cache_create,
+                #   which are new tokens written to cache — cost MORE than regular input)
+                usage_dict = {
+                    "input_tokens": raw_in + cache_read + cache_create,
                     "output_tokens": usage.get("output_tokens", 0),
-                    "cache_read": usage.get("cache_read_input_tokens", 0),
-                    "cache_create": usage.get("cache_creation_input_tokens", 0),
+                    "cache_read": cache_read,
+                    "cache_create": cache_create,
                 }
+                self.last_usage = usage_dict
+                event["result"] = result_text[:200]
+                event["usage"] = usage_dict
                 event["duration_ms"] = data.get("duration_ms", 0)
                 event["num_turns"] = data.get("num_turns", 0)
                 events.append(event)

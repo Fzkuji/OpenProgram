@@ -102,6 +102,7 @@ def _fix_round(
       {"status": "rejected", "feedback": "reason"}
       {"status": "error", "feedback": "error message"}
       {"status": "follow_up", "question": "..."}
+      {"status": "exit", "reason": "why the task should stop"}
 
     Args:
         task: The full task string (base context + previous feedback).
@@ -115,11 +116,18 @@ def _fix_round(
         Dict with status and round-specific data.
     """
     # Step 1: Clarify — do we have enough info?
-    # Keep the clarification prompt free of final output-format instructions so
-    # vague tasks can be judged on intent instead of the response wrapper.
+    # On the first round (round_num == 0), always ask a follow-up question
+    # so the user can confirm/clarify what they want fixed before we generate code.
+    # Exit is only allowed on round 1+ (after user has had a chance to respond).
     check = clarify(task=task, runtime=runtime)
+    if round_num == 0:
+        question = check.get("question") or check.get("reason") or "Need more information."
+        return {"status": "follow_up", "question": question}
+    if check.get("exit"):
+        return {"status": "exit", "reason": check.get("reason", "Task cannot proceed.")}
     if not check.get("ready", True):
-        return {"status": "follow_up", "question": check.get("question", "Need more information.")}
+        question = check.get("question") or "Need more information."
+        return {"status": "follow_up", "question": question}
 
     # Step 2: Generate fix attempt
     response = generate_code(task=f"{task}{_FIX_GENERATION_SUFFIX}", runtime=runtime)
@@ -333,6 +341,17 @@ def fix(
 
         status = round_result.get("status")
 
+        if status == "exit":
+            # LLM decided this task should stop (impossible, mismatched, etc.)
+            reason = round_result.get("reason", "Task cannot proceed.")
+            conclude_task = (
+                f"Fix task for '{fn_name}' was stopped by the model.\n"
+                f"Reason: {reason}\n"
+                f"Instruction: {instruction_text or description}\n"
+                "Summarize why the task was stopped."
+            )
+            return conclude_fix(task=conclude_task, runtime=runtime)
+
         if status == "follow_up":
             from agentic.context import ask_user
             answer = ask_user(round_result["question"])
@@ -355,6 +374,7 @@ def fix(
                 fn_name,
                 f"Fixed: {description}",
                 source_path=fn_filepath,
+                action="fix",
             )
             break
 

@@ -31,6 +31,8 @@ def test_context_json_roundtrip_preserves_attempts_and_render_metadata():
     ]
     task.context.error = "temporary failure"
     task.context.status = "success"
+    task.context.source_file = "/tmp/task.py"
+    task.context.children[0].source_file = "/tmp/child.py"
 
     restored = Context.from_dict(task.context._to_dict())
 
@@ -39,8 +41,10 @@ def test_context_json_roundtrip_preserves_attempts_and_render_metadata():
     assert restored.status == "success"
     assert restored.render == "detail"
     assert restored.compress is True
+    assert restored.source_file == "/tmp/task.py"
 
     restored_child = restored.children[0]
     original_child = task.context.children[0]
     assert restored_child.render == original_child.render
     assert restored_child.output == original_child.output
+    assert restored_child.source_file == "/tmp/child.py"

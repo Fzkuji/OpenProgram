@@ -73,7 +73,10 @@ def improve(
         f"{header}\n\n"
         f"Improve the following function:\n\n"
         f"```python\n{code}\n```\n\n"
-        f"Improvement goal: {goal}\n\n"
+        f"Improvement goal: {goal}"
+    )
+    generation_task = (
+        f"{task}\n\n"
         f"Respond with ONLY the improved Python code in a ```python fence. "
         f"No explanation, no commentary."
     )
@@ -83,7 +86,7 @@ def improve(
         return {"type": "follow_up", "question": check.get("question", "Need more information.")}
 
     # Step 2: Generate code
-    response = generate_code(task=task, runtime=runtime)
+    response = generate_code(task=generation_task, runtime=runtime)
     improved_code = extract_code(response)
     improved_code = _canonicalize_function_code(improved_code, fn_name)
     save_function(
@@ -91,6 +94,7 @@ def improve(
         fn_name,
         f"Improved: {goal}",
         source_path=fn_filepath,
+        action="improve",
     )
     validate_code(improved_code, response)
     return compile_function(improved_code, runtime, fn_name)

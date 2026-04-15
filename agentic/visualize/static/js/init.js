@@ -9,13 +9,17 @@ function connect() {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     loadAgentSettings();
     ws.send(JSON.stringify({ action: 'list_conversations' }));
-    // Read conv_id from URL path: /c/{conv_id}
+    // Read conv_id from URL path: /c/{conv_id} — only load on /c/ pages, not /new
     var pathMatch = window.location.pathname.match(/^\/c\/([^/]+)/);
-    var convId = pathMatch ? pathMatch[1] : localStorage.getItem('agentic_conv_id');
-    if (convId) {
+    if (pathMatch) {
+      var convId = pathMatch[1];
       currentConvId = convId;
       localStorage.setItem('agentic_conv_id', convId);
       ws.send(JSON.stringify({ action: 'load_conversation', conv_id: convId }));
+    } else {
+      // On /new — clear stored conv_id
+      currentConvId = null;
+      localStorage.removeItem('agentic_conv_id');
     }
   };
 
@@ -282,20 +286,25 @@ function _handleRunningTask(rt) {
   }
 }
 
-// ===== Panel Collapse =====
-
-function togglePanel(name) {
-  var panel = document.querySelector('[data-panel="' + name + '"]');
-  if (!panel) return;
-  panel.classList.toggle('panel-collapsed');
-
-  // Update hint text
-  var hintId = name === 'conv' ? 'convHint' : 'fnHint';
-  var hint = document.getElementById(hintId);
-  if (hint) {
-    hint.textContent = panel.classList.contains('panel-collapsed') ? 'Show' : 'Hide';
-  }
+// ===== Section collapse =====
+function toggleConvList() {
+  var list = document.getElementById('convList');
+  var hint = document.getElementById('convHint');
+  if (!list) return;
+  var hidden = list.style.display === 'none';
+  list.style.display = hidden ? '' : 'none';
+  if (hint) hint.textContent = hidden ? 'Hide' : 'Show';
 }
+
+function toggleFavList() {
+  var list = document.getElementById('favList');
+  var hint = document.getElementById('favHint');
+  if (!list) return;
+  var hidden = list.style.display === 'none';
+  list.style.display = hidden ? '' : 'none';
+  if (hint) hint.textContent = hidden ? 'Hide' : 'Show';
+}
+function togglePanel() {}
 
 // ===== Column Resize =====
 
@@ -338,59 +347,7 @@ function togglePanel(name) {
   setupColResize('detailResize', function() { return document.getElementById('detailPanel'); }, -1, 200);
 })();
 
-// ===== Panel Resize (vertical drag between Conversations and Programs) =====
-
-(function() {
-  var handle = document.getElementById('panelResize');
-  if (!handle) return;
-
-  handle.addEventListener('mousedown', function(e) {
-    var convPanel = document.getElementById('convPanel');
-    var fnPanel = document.getElementById('fnPanel');
-    var container = document.querySelector('.sidebar-panels');
-    if (!convPanel || !fnPanel || !container) return;
-
-    e.preventDefault();
-    var startY = e.clientY;
-    var startConvH = convPanel.offsetHeight;
-    var startFnH = fnPanel.offsetHeight;
-    var containerH = container.offsetHeight;
-    var handleH = handle.offsetHeight;
-    var availableH = containerH - handleH;
-
-    // Min height = panel header height (just showing the title row)
-    var convHeaderH = convPanel.querySelector('.panel-header').offsetHeight;
-    var fnHeaderH = fnPanel.querySelector('.panel-header').offsetHeight;
-
-    handle.classList.add('dragging');
-    convPanel.style.transition = 'none';
-    fnPanel.style.transition = 'none';
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-
-    function onMove(ev) {
-      var dy = ev.clientY - startY;
-      var newConvH = Math.max(convHeaderH, Math.min(availableH - fnHeaderH, startConvH + dy));
-      var newFnH = availableH - newConvH;
-      convPanel.style.flex = '0 0 ' + newConvH + 'px';
-      fnPanel.style.flex = '0 0 ' + newFnH + 'px';
-      fnPanel.style.maxHeight = 'none';
-    }
-
-    function onUp() {
-      handle.classList.remove('dragging');
-      convPanel.style.transition = '';
-      fnPanel.style.transition = '';
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    }
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  });
-})();
+// (Panel resize removed — single conversations list now)
 
 // ===== Refresh Button with Spin Feedback =====
 
@@ -471,7 +428,10 @@ window.addEventListener('beforeunload', function() {
 // ===== Init =====
 connect();
 loadProviders();
-setWelcomeVisible(true);
+// Only show welcome on /new, not on /c/{id}
+if (!window.location.pathname.match(/^\/c\//)) {
+  setWelcomeVisible(true);
+}
 
 // Check for ?run= parameter from programs page
 (function() {

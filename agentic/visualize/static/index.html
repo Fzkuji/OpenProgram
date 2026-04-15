@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agentic</title>
-<link rel="stylesheet" href="/css/style.css?v=47">
+<link rel="stylesheet" href="/css/style.css?v=58">
 </head>
 <body>
 <div class="app">
@@ -14,30 +14,35 @@
       <div class="logo"><span class="logo-accent">{<span class="logo-l1">L</span><span class="logo-l2">L</span><span class="logo-m">M</span>}</span> Agentic</div>
       <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M16.5 4A1.5 1.5 0 0 1 18 5.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 14.5v-9A1.5 1.5 0 0 1 3.5 4zM7 15h9.5a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5H7zM3.5 5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5H6V5z"/></svg></button>
     </div>
-    <div class="new-chat-btn" onclick="newConversation()"><span class="btn-icon"><svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a.75.75 0 0 1 .75.75v5.5h5.5a.75.75 0 0 1 0 1.5h-5.5v5.5a.75.75 0 0 1-1.5 0v-5.5h-5.5a.75.75 0 0 1 0-1.5h5.5v-5.5A.75.75 0 0 1 10 3"/></svg></span><span>New conversation</span></div>
-
-    <div class="sidebar-panels">
-      <!-- Conversations -->
-      <div class="sidebar-panel" id="convPanel" data-panel="conv">
-        <div class="panel-header" onclick="togglePanel('conv')">
-          <span class="sidebar-section-title" style="padding:0">Conversations</span>
-          <span class="panel-hide-hint" id="convHint">Hide</span>
-        </div>
-        <div class="panel-body" id="convList"></div>
+    <!-- Navigation group 1: Actions + Pages (gap-1px between items, padding-top 8px) -->
+    <div class="sidebar-nav-group">
+      <div class="sidebar-nav-item" onclick="newConversation()" id="navNewChat">
+        <span class="sidebar-nav-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg></span>
+        <span class="sidebar-nav-label">New chat</span>
       </div>
+      <a class="sidebar-nav-item" href="/programs" id="navPrograms">
+        <span class="sidebar-nav-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="6" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.5"/><rect x="2.5" y="11.5" width="6" height="6" rx="1.5"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.5"/></svg></span>
+        <span class="sidebar-nav-label">Programs</span>
+        <span class="sidebar-nav-action refresh-btn" onclick="event.preventDefault();event.stopPropagation();doRefreshFunctions(this)" title="Refresh"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5h-1.5A5 5 0 1 1 8 3V1.5z"/><path d="M8 0l3 3-3 3V0z"/></svg></span>
+      </a>
+    </div>
 
-      <!-- Drag handle between panels -->
-      <div class="panel-resize" id="panelResize"></div>
-
-      <!-- Programs -->
-      <div class="sidebar-panel" id="fnPanel" data-panel="fn">
-        <div class="panel-header" onclick="togglePanel('fn')">
-          <span class="sidebar-section-title" style="padding:0">Programs</span>
-          <span class="refresh-btn" onclick="event.stopPropagation();doRefreshFunctions(this)" title="Refresh function list" style="cursor:pointer;opacity:0.6"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5h-1.5A5 5 0 1 1 8 3V1.5z"/><path d="M8 0l3 3-3 3V0z"/></svg></span>
-          <span class="panel-hide-hint" id="fnHint">Hide</span>
-        </div>
-        <div class="panel-body" id="fnList"></div>
+    <!-- Favorites (like Claude's Starred section) -->
+    <div class="sidebar-favorites empty" id="favSection">
+      <div class="sidebar-section-header" onclick="toggleFavList()">
+        <span class="sidebar-section-title">Favorite Programs</span>
+        <span class="sidebar-section-hint" id="favHint">Hide</span>
       </div>
+      <div class="sidebar-fav-list" id="favList"></div>
+    </div>
+
+    <!-- Conversations (padding-top 16px like Claude's group 2) -->
+    <div class="sidebar-conversations" id="convSection">
+      <div class="sidebar-section-header" onclick="toggleConvList()">
+        <span class="sidebar-section-title">Recents</span>
+        <span class="sidebar-section-hint" id="convHint">Hide</span>
+      </div>
+      <div class="sidebar-conv-list" id="convList"></div>
     </div>
 
     <!-- Sidebar Footer -->
@@ -86,7 +91,7 @@
     <div id="chatView">
       <div class="chat-area" id="chatArea">
         <div class="chat-messages" id="chatMessages">
-          <div class="welcome" id="welcomeScreen">
+          <div class="welcome" id="welcomeScreen" style="display:none">
             <div class="welcome-top">
               <div class="welcome-logo">{<span class="logo-l1">L</span><span class="logo-l2">L</span><span class="logo-m">M</span>}</div>
               <div class="welcome-title">Agentic Programming</div>
@@ -100,7 +105,7 @@
       </div>
 
       <!-- Input area -->
-      <div class="welcome-examples" id="welcomeExamples">
+      <div class="welcome-examples" id="welcomeExamples" style="display:none">
         <div class="welcome-example" onclick="clickFnExample('sentiment')"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216ZM80,108a12,12,0,1,1,12,12A12,12,0,0,1,80,108Zm96,0a12,12,0,1,1-12-12A12,12,0,0,1,176,108Zm-1.07,48c-10.29,17.79-27.4,28-46.93,28s-36.63-10.2-46.92-28a8,8,0,1,1,13.84-8c7.47,12.91,19.21,20,33.08,20s25.61-7.1,33.07-20a8,8,0,0,1,13.86,8Z"/></svg>Run sentiment</div>
         <div class="welcome-example" onclick="clickFnExample('deep_work')"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 256 256"><path d="M231.65,194.55,198.46,36.75a16,16,0,0,0-19-12.39L132.65,34.42a16.08,16.08,0,0,0-12.3,19l33.19,157.8A16,16,0,0,0,169.16,224a16.25,16.25,0,0,0,3.38-.36l46.81-10.06A16.09,16.09,0,0,0,231.65,194.55ZM136,69.28a8,8,0,0,1,9.34-6.37l46.81-10.06a8,8,0,0,1,3.32,15.66L148.7,78.57a8,8,0,0,1-9.34-6.37A7.72,7.72,0,0,1,136,69.28Zm-4.19,19.84a8,8,0,0,1,9.34-6.38l46.81-10.06a8,8,0,0,1,3.32,15.67l-46.81,10.06A8,8,0,0,1,135.16,92,7.72,7.72,0,0,1,131.84,89.12ZM216,208H40a16,16,0,0,1-16-16V64A16,16,0,0,1,40,48H96a8,8,0,0,1,0,16H40V192H216a8,8,0,0,1,0,16Z"/></svg>Deep work</div>
         <div class="welcome-example" onclick="clickFnExample('create')"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 256 256"><path d="M80,64a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,64Zm8,48h80a8,8,0,0,0,0-16H88a8,8,0,0,0,0,16Zm40,16H88a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16ZM216,88V216a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V40A16,16,0,0,1,56,24H168a8,8,0,0,1,5.66,2.34l40,40A8,8,0,0,1,216,72Zm-56-8h28.69L176,67.31V80ZM200,216V96H168a8,8,0,0,1-8-8V56H56V216H200Z"/></svg>Create function</div>
@@ -148,14 +153,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
 
 <!-- Application Scripts (order matters: state → helpers → tree → chat → sidebar → providers → settings → ui → init) -->
-<script src="/js/state.js"></script>
+<script src="/js/state.js?v=2"></script>
 <script src="/js/helpers.js?v=13"></script>
 <script src="/js/tree.js"></script>
 <script src="/js/chat.js?v=9"></script>
-<script src="/js/sidebar.js?v=3"></script>
-<script src="/js/providers.js"></script>
+<script src="/js/sidebar.js?v=7"></script>
+<script src="/js/providers.js?v=2"></script>
 <script src="/js/settings.js?v=5"></script>
-<script src="/js/ui.js"></script>
-<script src="/js/init.js?v=6"></script>
+<script src="/js/ui.js?v=2"></script>
+<script src="/js/init.js?v=7"></script>
 </body>
 </html>

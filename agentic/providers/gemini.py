@@ -153,6 +153,12 @@ class GeminiRuntime(Runtime):
             contents=parts,
             config=config,
         )
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            u = response.usage_metadata
+            self.last_usage = {
+                "input_tokens": getattr(u, 'prompt_token_count', 0),
+                "output_tokens": getattr(u, 'candidates_token_count', 0),
+            }
         return response.text
 
     def _convert_block(self, block: dict) -> Optional[object]:

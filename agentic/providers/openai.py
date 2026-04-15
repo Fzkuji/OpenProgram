@@ -146,6 +146,18 @@ class OpenAIRuntime(Runtime):
             kwargs["response_format"] = response_format
 
         response = self.client.chat.completions.create(**kwargs)
+        if hasattr(response, 'usage') and response.usage:
+            u = response.usage
+            # input_tokens = total input (including cached), consistent across all providers.
+            # Frontend computes new = input_tokens - cache_read.
+            details = getattr(u, 'prompt_tokens_details', None)
+            cached = getattr(details, 'cached_tokens', 0) if details else 0
+            total_in = getattr(u, 'prompt_tokens', 0)
+            self.last_usage = {
+                "input_tokens": total_in,
+                "output_tokens": getattr(u, 'completion_tokens', 0),
+                "cache_read": cached or 0,
+            }
         return response.choices[0].message.content
 
     def _convert_block(self, block: dict) -> Optional[dict]:

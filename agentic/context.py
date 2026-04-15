@@ -751,7 +751,8 @@ class Context:
             "path": self.path,
             "name": self.name,
             "prompt": self.prompt,
-            "params": {k: v for k, v in (self.params or {}).items()
+            "params": {k: (getattr(v, '__name__', None) or str(v)) if callable(v) else v
+                       for k, v in (self.params or {}).items()
                        if k not in ("runtime", "callback")} if self.params else {},
             "output": self.output,
             "raw_reply": self.raw_reply,
@@ -760,6 +761,7 @@ class Context:
             "status": self.status,
             "render": self.render,
             "compress": self.compress,
+            "source_file": self.source_file,
             "start_time": self.start_time,
             "end_time": self.end_time,
             "duration_ms": self.duration_ms,
@@ -783,6 +785,7 @@ class Context:
         ctx.attempts = data.get("attempts", [])
         ctx.error = data.get("error")
         ctx.status = data.get("status", "running")
+        ctx.source_file = data.get("source_file", "")
         ctx.end_time = data.get("end_time") or 0.0
         if not ctx.end_time and data.get("duration_ms") is not None and ctx.start_time:
             ctx.end_time = ctx.start_time + data["duration_ms"] / 1000.0

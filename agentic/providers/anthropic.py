@@ -144,6 +144,22 @@ class AnthropicRuntime(Runtime):
                 kwargs["system"] = self.system
 
         response = self.client.messages.create(**kwargs)
+        if hasattr(response, 'usage') and response.usage:
+            u = response.usage
+            # Anthropic reports input_tokens as non-cached only.
+            # Normalize to total input (like OpenAI) for consistent display.
+            raw_in = getattr(u, 'input_tokens', 0)
+            cache_read = getattr(u, 'cache_read_input_tokens', 0)
+            cache_create = getattr(u, 'cache_creation_input_tokens', 0)
+            # cache_read = actual cache hits only (cheap, 90% discount)
+            # cache_create = new tokens written to cache (25% MORE expensive than regular)
+            # → cache_create is "new", not "cached"
+            self.last_usage = {
+                "input_tokens": raw_in + cache_read + cache_create,
+                "output_tokens": getattr(u, 'output_tokens', 0),
+                "cache_read": cache_read,
+                "cache_create": cache_create,
+            }
         return response.content[0].text
 
     def _convert_block(self, block: dict) -> Optional[dict]:

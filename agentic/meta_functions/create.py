@@ -48,7 +48,10 @@ def create(description: str, runtime: Runtime, name: str = None, as_skill: bool 
     """
     task = (
         f"Write a Python function that does the following:\n\n"
-        f"{description}\n\n"
+        f"{description}"
+    )
+    generation_task = (
+        f"{task}\n\n"
         f"Respond with ONLY the Python code inside a ```python code fence. "
         f"No explanation, no commentary, no markdown outside the fence."
     )
@@ -59,7 +62,7 @@ def create(description: str, runtime: Runtime, name: str = None, as_skill: bool 
         return {"type": "follow_up", "question": check.get("question", "Need more information.")}
 
     # Step 2: Generate code
-    response = generate_code(task=task, runtime=runtime)
+    response = generate_code(task=generation_task, runtime=runtime)
     code = extract_code(response)
     fn_name = name or guess_name(code) or "generated"
     code = _canonicalize_function_code(code, fn_name)

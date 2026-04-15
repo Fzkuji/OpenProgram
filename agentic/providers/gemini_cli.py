@@ -35,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import shutil
 import warnings
@@ -77,6 +78,7 @@ class GeminiCLIRuntime(Runtime):
         self.yolo = yolo
         self._session_id: Optional[str] = None
         self._turn_count = 0
+        self.last_thread_id = None  # for external session reuse
 
         if self.cli_path is None:
             raise FileNotFoundError(
@@ -176,6 +178,7 @@ class GeminiCLIRuntime(Runtime):
             # Capture session_id for future resume
             if "session_id" in data:
                 self._session_id = data["session_id"]
+                self.last_thread_id = data["session_id"]
                 self.has_session = True  # CLI now manages context
             self._turn_count += 1
             return data.get("response", raw)
