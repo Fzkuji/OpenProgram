@@ -234,8 +234,37 @@ class TestGeminiRuntime:
             "cache_create": 0,
         }
 
+    def test_list_models_returns_generate_content_models(self):
+        """list_models() returns models that support generateContent."""
+        model_flash = MagicMock()
+        model_flash.name = "models/gemini-2.5-flash"
+        model_flash.supported_generation_methods = ["generateContent", "countTokens"]
+        model_embed = MagicMock()
+        model_embed.name = "models/text-embedding-004"
+        model_embed.supported_generation_methods = ["embedContent"]
+        self.mock_client.models.list.return_value = [model_flash, model_embed]
 
-# ══════════════════════════════════════════════════════════════
-# Provider lazy import tests
-# ══════════════════════════════════════════════════════════════
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert models == ["gemini-2.5-flash"]
+        assert "text-embedding-004" not in models
+
+    def test_list_models_strips_models_prefix(self):
+        """list_models() strips the 'models/' prefix from model names."""
+        model = MagicMock()
+        model.name = "models/gemini-2.5-pro"
+        model.supported_generation_methods = ["generateContent"]
+        self.mock_client.models.list.return_value = [model]
+
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert models == ["gemini-2.5-pro"]
+
+    def test_list_models_fallback_on_error(self):
+        """list_models() returns hardcoded fallback when API fails."""
+        self.mock_client.models.list.side_effect = Exception("auth error")
+
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert "gemini-2.5-flash" in models
 

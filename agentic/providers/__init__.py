@@ -273,6 +273,7 @@ def __getattr__(name):
 __all__ = [
     "PROVIDERS",
     "detect_provider",
+    "check_providers",
     "create_runtime",
     "AnthropicRuntime",
     "OpenAIRuntime",

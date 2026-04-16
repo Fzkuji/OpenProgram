@@ -248,4 +248,25 @@ class TestOpenAIRuntime:
             "cache_create": 0,
         }
 
+    def test_list_models_returns_chat_models(self):
+        """list_models() returns sorted chat models filtered by prefix."""
+        model_gpt = MagicMock()
+        model_gpt.id = "gpt-4o"
+        model_o4 = MagicMock()
+        model_o4.id = "o4-mini"
+        model_embed = MagicMock()
+        model_embed.id = "text-embedding-3-small"
+        self.mock_client.models.list.return_value = [model_gpt, model_o4, model_embed]
 
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert models == ["gpt-4o", "o4-mini"]
+        assert "text-embedding-3-small" not in models
+
+    def test_list_models_fallback_on_error(self):
+        """list_models() returns hardcoded fallback when API fails."""
+        self.mock_client.models.list.side_effect = Exception("auth error")
+
+        rt = self._make_runtime()
+        models = rt.list_models()
+        assert "gpt-4o" in models
