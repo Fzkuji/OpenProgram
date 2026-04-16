@@ -128,6 +128,65 @@ agentic visualize
 
 This opens `http://localhost:8765` with a chat interface where you can create, run, and fix functions interactively. Supports light/dark themes (Settings → General).
 
+### Provider configuration at a glance
+
+`create_runtime()` auto-detects the first available provider in this order:
+
+1. Anthropic API (`ANTHROPIC_API_KEY`)
+2. OpenAI API (`OPENAI_API_KEY`)
+3. Gemini API (`GOOGLE_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY`)
+4. Claude Code CLI (`claude`)
+5. Codex CLI (`codex`)
+6. Gemini CLI (`gemini`)
+
+You can always override detection explicitly:
+
+```python
+from agentic import create_runtime
+
+runtime = create_runtime(provider="openai", model="gpt-5")
+# or: provider="anthropic" | "gemini" | "claude_code" | "codex" | "gemini_cli"
+```
+
+To inspect what the library can see on your machine:
+
+```bash
+agentic providers
+```
+
+### Retry and recovery
+
+Transient provider failures are handled at the `Runtime` layer, so you can retry just the LLM call instead of restarting the whole workflow:
+
+```python
+from agentic import Runtime
+
+runtime = Runtime(call=my_llm_call, max_retries=3)
+```
+
+That is useful for rate limits, flaky network requests, and temporary provider errors. Retry attempts are recorded in the execution tree, so `context.traceback()` and `context.save("trace.jsonl")` preserve the failure history.
+
+### `fix()` for broken generated functions
+
+When a generated function fails, `fix()` uses the function source plus recent error context to rewrite it:
+
+```python
+from agentic.meta_functions import create, fix
+
+extract_emails = create("Extract all emails from text as a JSON array", runtime=runtime)
+
+try:
+    extract_emails(text="Contact us at hello@example.com")
+except Exception:
+    extract_emails = fix(
+        fn=extract_emails,
+        runtime=runtime,
+        instruction="Always return valid JSON array output.",
+    )
+```
+
+Internally this runs a clarify → generate → verify loop, which makes it a good fit for tightening output formats after real failures instead of regenerating from scratch.
+
 ---
 
 ## Why Agentic Programming?
