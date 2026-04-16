@@ -1733,12 +1733,13 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   background: var(--bg-tertiary);
   border: 0.5px solid var(--border);
   border-radius: 26px;
-  padding: 12px;
+  padding: 12px 12px 54px;
   box-shadow: rgba(0,0,0,0.035) 0px 4px 20px;
   transition: box-shadow var(--transition), border-color var(--transition);
 }
 
-.input-wrapper:focus-within {
+.input-wrapper:focus-within,
+.input-wrapper.fn-form-mode {
   border-color: var(--border-light);
   box-shadow: rgba(0,0,0,0.035) 0px 4px 20px, var(--border) 0px 0px 0px 1px;
 }
@@ -1776,7 +1777,11 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   align-items: center;
   justify-content: space-between;
   min-height: 30px;
-  margin-top: 12px;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px;
 }
 
 .input-actions {
@@ -1798,15 +1803,21 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   box-sizing: border-box;
   white-space: nowrap;
   cursor: default;
+  margin-right: 0;
+  transition: margin-right 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 .context-stats-label:empty {
   display: none;
+}
+/* When fn form is open, push stats left to avoid overlapping the send button */
+.input-wrapper.fn-form-mode .context-stats-label {
+  margin-right: 42px;
 }
 
 .send-btn {
   position: absolute;
   right: 12px;
-  top: 12px;
+  bottom: calc(100% - 42px);
   width: 30px;
   height: 30px;
   border-radius: 50%;
@@ -1818,12 +1829,12 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: top 0.3s cubic-bezier(0.25,0.1,0.25,1), border-color var(--transition), color var(--transition);
+  transition: bottom 0.3s cubic-bezier(0.25, 0.1, 0.25, 1), border-color var(--transition), color var(--transition);
   padding: 0;
   z-index: 2;
 }
 .input-wrapper.fn-form-mode .send-btn {
-  top: calc(100% - 42px);
+  bottom: 12px;
 }
 .send-btn svg { width: 14px; height: 14px; fill: currentColor; }
 
@@ -1887,8 +1898,11 @@ a.user-menu-item { text-decoration: none; color: inherit; }
 
 /* ===== Function Form (replaces input-wrapper content) ===== */
 .input-wrapper.fn-form-mode {
-  padding: 0;
+  padding: 0 0 54px;
   border-color: var(--border-light);
+}
+.input-wrapper.fn-form-mode .input-bottom-row {
+  border-top: 1px solid var(--border);
 }
 .fn-form-header {
   display: flex;

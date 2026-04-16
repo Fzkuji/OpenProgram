@@ -608,7 +608,37 @@ function _buildFieldsHtml(fn) {
 }
 
 
-function _buildFormHtml(fn, fieldsHtml, thinkingSelectorHtml) {
+// Pin bottom-row to its current screen position during height animations
+function _pinBottomRow(bottomRow) {
+  if (!bottomRow) return function(){};
+  var rect = bottomRow.getBoundingClientRect();
+  bottomRow.style.position = 'fixed';
+  bottomRow.style.left = rect.left + 'px';
+  bottomRow.style.top = rect.top + 'px';
+  bottomRow.style.width = rect.width + 'px';
+  bottomRow.style.bottom = 'auto';
+  bottomRow.style.right = 'auto';
+  return function() {
+    bottomRow.style.position = '';
+    bottomRow.style.left = '';
+    bottomRow.style.top = '';
+    bottomRow.style.width = '';
+    bottomRow.style.bottom = '';
+    bottomRow.style.right = '';
+  };
+}
+
+/**
+ * Pin send button at its current visual position (position:fixed) so it
+ * stays put while the wrapper height animates. Returns an unpin function
+ * that uses FLIP to smoothly animate the button to its CSS-determined
+ * final position.
+ */
+/* Send button animation handled purely by CSS transition on `bottom`.
+   Wrapper bottom edge is fixed, so bottom-based positioning is stable. */
+
+function _buildFormHtml(fn, fieldsHtml) {
+  // No footer — .input-bottom-row stays as permanent element in wrapper
   return '<div class="fn-form-header">' +
     '<div class="fn-form-title">' +
       '<span class="fn-form-name"><span style="color:var(--text-secondary);font-weight:400">function </span>' + escHtml(fn.name) + '</span>' +
@@ -616,12 +646,7 @@ function _buildFormHtml(fn, fieldsHtml, thinkingSelectorHtml) {
     '</div>' +
     '<button class="fn-form-close" onclick="closeFnForm()" title="Close">&times;</button>' +
   '</div>' +
-  '<div class="fn-form-body">' + fieldsHtml + '</div>' +
-  '<div class="fn-form-footer">' +
-    '<div class="fn-form-footer-left">' +
-      '<div class="input-options">' + thinkingSelectorHtml + '</div>' +
-    '</div>' +
-  '</div>';
+  '<div class="fn-form-body">' + fieldsHtml + '</div>';
 }
 
 function _showFnFormSwitch(fn, wrapper, sendBtn) {
@@ -629,38 +654,35 @@ function _showFnFormSwitch(fn, wrapper, sendBtn) {
 
   // Build new content HTML first
   var fieldsHtml = _buildFieldsHtml(fn);
-  var thinkingSelectorHtml =
-    '<div class="thinking-selector" id="thinkingSelector" onclick="toggleThinkingMenu(event)">' +
-      '<span id="thinkingLabel">effort: ' + (_thinkingEffort || 'medium') + '</span>' +
-      '<svg class="thinking-arrow" width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-    '</div>' +
-    '<div class="thinking-menu" id="thinkingMenu"></div>';
-  var formHtml = _buildFormHtml(fn, fieldsHtml, thinkingSelectorHtml);
+  var formHtml = _buildFormHtml(fn, fieldsHtml);
 
   // Measure target height with a hidden clone
   var measure = wrapper.cloneNode(false);
   measure.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;width:' + wrapper.offsetWidth + 'px;height:auto;overflow:visible;';
-  // Add sendBtn/stopBtn clones + new form content
   var sendClone = document.getElementById('sendBtn').cloneNode(true);
   var stopClone = document.getElementById('stopBtn').cloneNode(true);
+  var bottomRow = wrapper.querySelector('.input-bottom-row');
   measure.appendChild(sendClone);
   measure.appendChild(stopClone);
   measure.insertAdjacentHTML('beforeend', formHtml);
+  if (bottomRow) measure.appendChild(bottomRow.cloneNode(true));
   wrapper.parentNode.appendChild(measure);
   var heightAfter = measure.offsetHeight;
   measure.remove();
 
-  // Lock current height
+  // Lock current height, pin bottom-row and send button
   wrapper.style.height = heightBefore + 'px';
   wrapper.style.overflow = 'hidden';
   wrapper.style.transition = 'none';
+  var unpinBottomRow = _pinBottomRow(bottomRow);
 
-  // Swap content
-  var oldParts = wrapper.querySelectorAll('.fn-form-header, .fn-form-body, .fn-form-footer');
+
+  // Swap content (insert before bottomRow)
+  var oldParts = wrapper.querySelectorAll('.fn-form-header, .fn-form-body');
   for (var i = 0; i < oldParts.length; i++) oldParts[i].remove();
   var temp = document.createElement('div');
   temp.innerHTML = formHtml;
-  while (temp.firstChild) wrapper.appendChild(temp.firstChild);
+  while (temp.firstChild) wrapper.insertBefore(temp.firstChild, bottomRow);
 
   wrapper.dataset.fnName = fn.name;
   sendBtn.setAttribute('onclick', "submitFnForm('" + escAttr(fn.name) + "')");
@@ -675,6 +697,8 @@ function _showFnFormSwitch(fn, wrapper, sendBtn) {
       wrapper.style.height = '';
       wrapper.style.overflow = '';
       wrapper.style.transition = '';
+      unpinBottomRow();
+
       wrapper.removeEventListener('transitionend', handler);
     });
   });
@@ -697,15 +721,16 @@ function showFnForm(fn) {
   var wrapper = document.querySelector('.input-wrapper');
   if (!wrapper) return;
 
-  // Save only the non-button content (sendBtn & stopBtn stay in wrapper)
+  // Save only the swappable content (sendBtn, stopBtn, input-bottom-row stay in wrapper)
   var sendBtn = document.getElementById('sendBtn');
   var stopBtn = document.getElementById('stopBtn');
+  var bottomRow = wrapper.querySelector('.input-bottom-row');
   if (!_fnFormActive) {
-    // Save children except sendBtn/stopBtn
+    // Save children except permanent elements
     _inputContentOriginal = [];
     var children = wrapper.children;
     for (var i = 0; i < children.length; i++) {
-      if (children[i] !== sendBtn && children[i] !== stopBtn) {
+      if (children[i] !== sendBtn && children[i] !== stopBtn && children[i] !== bottomRow) {
         _inputContentOriginal.push(children[i]);
       }
     }
@@ -738,25 +763,26 @@ function showFnForm(fn) {
   // --- Build form HTML ---
   var fieldsHtml = _buildFieldsHtml(fn);
 
-  var thinkingSelectorHtml =
-    '<div class="thinking-selector" id="thinkingSelector" onclick="toggleThinkingMenu(event)">' +
-      '<span id="thinkingLabel">effort: ' + (_thinkingEffort || 'medium') + '</span>' +
-      '<svg class="thinking-arrow" width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-    '</div>' +
-    '<div class="thinking-menu" id="thinkingMenu"></div>';
-
-  // --- Replace content (keep sendBtn & stopBtn) ---
+  // --- Replace content (keep sendBtn, stopBtn, bottomRow) ---
   wrapper.style.height = wrapperBefore.height + 'px';
   wrapper.style.overflow = 'hidden';
 
-  // Remove old content (not buttons)
+  // Remove old content (not permanent elements)
   _inputContentOriginal.forEach(function(el) { el.remove(); });
 
-  // Build form content as DOM
-  var formHtml = _buildFormHtml(fn, fieldsHtml, thinkingSelectorHtml);
+  // Build form content as DOM (inserted before bottomRow which stays)
+  var formHtml = _buildFormHtml(fn, fieldsHtml);
   var temp = document.createElement('div');
   temp.innerHTML = formHtml;
-  while (temp.firstChild) wrapper.appendChild(temp.firstChild);
+  while (temp.firstChild) wrapper.insertBefore(temp.firstChild, bottomRow);
+
+  // --- Freeze send button + context stats before class change ---
+  var sendBtnBottom = parseFloat(getComputedStyle(sendBtn).bottom);
+  sendBtn.style.transition = 'none';
+  sendBtn.style.bottom = sendBtnBottom + 'px';
+  var ctxStats = wrapper.querySelector('.context-stats-label');
+  if (ctxStats) { ctxStats.style.transition = 'none'; ctxStats.style.marginRight = '0'; }
+  void sendBtn.offsetHeight;
 
   wrapper.className = 'input-wrapper fn-form-mode';
   wrapper.dataset.fnName = fn.name;
@@ -767,31 +793,38 @@ function showFnForm(fn) {
   // --- Set initial opacity for fade-in ---
   var formHeader = wrapper.querySelector('.fn-form-header');
   var formBody = wrapper.querySelector('.fn-form-body');
-  var formFooter = wrapper.querySelector('.fn-form-footer');
   if (formHeader) formHeader.style.opacity = '0';
   if (formBody) formBody.style.opacity = '0';
-  if (formFooter) formFooter.style.opacity = '0';
+  // Bottom separator starts transparent, fades in with header
+  if (bottomRow) { bottomRow.style.transition = 'none'; bottomRow.style.borderTopColor = 'transparent'; void bottomRow.offsetHeight; }
 
   // --- Measure target height ---
   var wrapperAfterHeight = wrapper.scrollHeight;
 
+  // --- Pin bottom-row so it doesn't move during animation ---
+  var unpinBottomRow = _pinBottomRow(bottomRow);
+
+  // --- Release send button + context stats: animate simultaneously ---
+  sendBtn.style.transition = '';
+  sendBtn.style.bottom = '';
+  if (ctxStats) { ctxStats.style.transition = ''; ctxStats.style.marginRight = ''; }
+
   // --- Single rAF: animate height + fade in content ---
   requestAnimationFrame(function() {
-    // Height transition
     wrapper.style.transition = 'height 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)';
     wrapper.style.height = wrapperAfterHeight + 'px';
 
-    // Content fade-in (staggered)
     if (formHeader) { formHeader.style.transition = 'opacity 0.25s ease 0.1s'; formHeader.style.opacity = '1'; }
     if (formBody) { formBody.style.transition = 'opacity 0.25s ease 0.15s'; formBody.style.opacity = '1'; }
-    if (formFooter) { formFooter.style.transition = 'opacity 0.25s ease 0.1s'; formFooter.style.opacity = '1'; }
+    if (bottomRow) { bottomRow.style.transition = 'border-color 0.25s ease 0.1s'; bottomRow.style.borderTopColor = ''; }
 
-    // Clean up after transition
     wrapper.addEventListener('transitionend', function handler(e) {
       if (e.target !== wrapper || e.propertyName !== 'height') return;
       wrapper.style.height = '';
       wrapper.style.overflow = '';
       wrapper.style.transition = '';
+      unpinBottomRow();
+
       wrapper.removeEventListener('transitionend', handler);
     });
   });
@@ -817,26 +850,39 @@ function closeFnForm() {
   var sendBtn = document.getElementById('sendBtn');
   var stopBtn = document.getElementById('stopBtn');
 
-  // Measure target height
+  // Measure target height (include permanent bottomRow)
+  var bottomRow = wrapper.querySelector('.input-bottom-row');
   var measure = wrapper.cloneNode(false);
   measure.className = 'input-wrapper';
   _inputContentOriginal.forEach(function(el) { measure.appendChild(el.cloneNode(true)); });
+  if (bottomRow) measure.appendChild(bottomRow.cloneNode(true));
   measure.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;width:' + wrapper.offsetWidth + 'px';
   wrapper.parentNode.appendChild(measure);
   var targetHeight = measure.offsetHeight;
   wrapper.parentNode.removeChild(measure);
 
-  // Step 1: Fade out form content
-  var formParts = wrapper.querySelectorAll('.fn-form-header, .fn-form-body, .fn-form-footer');
+  // Step 1: Fade out form content + bottom separator
+  var formParts = wrapper.querySelectorAll('.fn-form-header, .fn-form-body');
   formParts.forEach(function(el) {
     el.style.transition = 'opacity 0.12s ease';
     el.style.opacity = '0';
   });
+  if (bottomRow) {
+    bottomRow.style.transition = 'border-color 0.12s ease';
+    bottomRow.style.borderTopColor = 'transparent';
+  }
 
-  // Step 2: Lock height and shrink
+  // Step 2: Lock height, pin bottom-row, then shrink
   var heightBefore = wrapper.offsetHeight;
   wrapper.style.height = heightBefore + 'px';
   wrapper.style.overflow = 'hidden';
+  var unpinBottomRow = _pinBottomRow(bottomRow);
+
+  // Start send button + context stats moving simultaneously with height shrink.
+  var sendBtnTargetBottom = targetHeight - 42;
+  sendBtn.style.bottom = sendBtnTargetBottom + 'px';
+  var ctxStats = wrapper.querySelector('.context-stats-label');
+  if (ctxStats) ctxStats.style.marginRight = '0';
 
   requestAnimationFrame(function() {
     wrapper.style.transition = 'height 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)';
@@ -877,19 +923,29 @@ function closeFnForm() {
       wrapper.style.height = '';
       wrapper.style.overflow = '';
       wrapper.style.transition = '';
+      unpinBottomRow();
 
-      // Remove form content (not buttons)
-      var toRemove = wrapper.querySelectorAll('.fn-form-header, .fn-form-body, .fn-form-footer');
+
+
+      // Remove form content (not permanent elements)
+      var toRemove = wrapper.querySelectorAll('.fn-form-header, .fn-form-body');
       toRemove.forEach(function(el) { el.remove(); });
 
-      // Restore original content
-      _inputContentOriginal.forEach(function(el) { wrapper.appendChild(el); });
+      // Restore original content (before bottomRow)
+      var br = wrapper.querySelector('.input-bottom-row');
+      _inputContentOriginal.forEach(function(el) { wrapper.insertBefore(el, br); });
 
       wrapper.className = 'input-wrapper';
       _fnFormActive = false;
       delete wrapper.dataset.fnName;
+      // Clear inline overrides from close animation
+      var br2 = wrapper.querySelector('.input-bottom-row');
+      if (br2) { br2.style.borderTopColor = ''; br2.style.transition = ''; }
+      var ctx2 = wrapper.querySelector('.context-stats-label');
+      if (ctx2) ctx2.style.marginRight = '';
 
       // Restore send button for chat mode
+      sendBtn.style.bottom = ''; // clear inline, let CSS take over
       sendBtn.setAttribute('onclick', 'onSendBtnClick()');
       sendBtn.title = 'Send message';
 

@@ -231,32 +231,10 @@ def func():
         cleanup()
 
 
-def test_fix_follow_up_auto_answered():
-    """fix() auto-answers follow-up when no human handler, then proceeds."""
-    call_count = [0]
-
+def test_fix_follow_up_returns_question_text():
+    """fix() returns question as plain text when no handler is registered."""
     def mock_call(content, model="test", response_format=None):
-        call_count[0] += 1
-        # Round 0 clarify — forced follow_up
-        if call_count[0] == 1:
-            return '{"ready": false, "question": "Should I use recursion or iteration?"}'
-        # Auto-answer call
-        if call_count[0] == 2:
-            return "Use iteration for simplicity."
-        # Round 1 clarify — ready (has Q/A context now)
-        if call_count[0] == 3:
-            return '{"ready": true}'
-        # Generate code
-        if call_count[0] == 4:
-            return '''@agentic_function
-def original():
-    """Fixed."""
-    return "fixed"'''
-        # Verify
-        if call_count[0] == 5:
-            return '{"approved": true, "reasoning": "ok"}'
-        # Conclude
-        return "Fix completed."
+        return '{"ready": false, "question": "Should I use recursion or iteration?"}'
 
     runtime = Runtime(call=mock_call)
 
@@ -266,10 +244,8 @@ def original():
         return "original"
 
     result = fix(fn=original, runtime=runtime)
-    assert callable(result)
-    assert result() == "fixed"
-    # auto_answer was called (call 2)
-    assert call_count[0] >= 5
+    assert isinstance(result, str)
+    assert "recursion" in result
 
 
 def test_fix_clarify_prompt_omits_generation_suffix():

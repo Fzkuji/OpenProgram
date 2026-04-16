@@ -85,33 +85,6 @@ def _format_follow_up_context(follow_up: str) -> str:
 # Inner functions — each creates a node in the execution tree
 # ---------------------------------------------------------------------------
 
-@agentic_function(summarize={"depth": 0, "siblings": 0})
-def _auto_answer(question: str, task: str, runtime: Runtime) -> str:
-    """Answer a clarifying question automatically when no human is available.
-
-    You are an autonomous agent executing a fix task. A clarifying question
-    was raised, but there is no human to answer it. Based on the full task
-    context, provide the best answer you can so the fix can proceed.
-
-    Be concise and specific. If the question asks about approach, choose
-    the most reasonable default. If the question asks about requirements,
-    infer from the code and error context.
-
-    Args:
-        question: The clarifying question to answer.
-        task: The full task context (code, errors, instructions).
-        runtime: LLM runtime instance.
-
-    Returns:
-        A concise answer to the question.
-    """
-    return runtime.exec(content=[
-        {"type": "text", "text": (
-            f"Question: {question}\n\n"
-            f"Task context:\n{task}\n\n"
-            "Answer this question concisely so the fix can proceed."
-        )},
-    ])
 
 @agentic_function(compress=True, summarize={"siblings": -1})
 def _fix_round(
@@ -387,21 +360,8 @@ def fix(
                 # Got a real answer from user — continue loop
                 feedback = f"Q: {round_result['question']}\nA: {answer}"
                 continue
-            if answer is not None:
-                # Handler exists but returned empty — user declined to answer
-                return {"type": "follow_up", "question": round_result["question"]}
-            # No human handler (answer is None) — let the LLM answer
-            # its own question using the full context it already has.
-            auto_answer = _auto_answer(
-                question=round_result["question"],
-                task=task,
-                runtime=runtime,
-            )
-            if auto_answer and auto_answer.strip():
-                feedback = f"Q: {round_result['question']}\nA: {auto_answer}"
-                continue
-            # Truly stuck — return follow_up for caller to handle
-            return {"type": "follow_up", "question": round_result["question"]}
+            # No handler or no answer — return question as plain text
+            return round_result["question"]
 
         if status == "approved":
             compiled_fn = round_result["compiled"]

@@ -5,6 +5,30 @@ Uses `codex exec` (non-interactive mode) with configurable sandbox,
 approval policy, and optional web search.
 No API key needed in the harness — Codex CLI uses its own auth.
 
+Setup (subscription mode — recommended):
+    Using device auth lets Codex consume your ChatGPT subscription quota
+    instead of burning API credits. Two steps:
+
+    1. Enable device code auth in ChatGPT web settings:
+       Log in to chatgpt.com → Settings → Security →
+       Turn on "为 Codex 应用设备代码授权" (Enable device code authorization for Codex).
+
+    2. Authenticate the CLI:
+       $ codex login --device-auth
+       This opens a browser for OAuth. Once approved, the token is stored
+       in ~/.codex/auth.json and refreshes automatically.
+
+    Note: If OPENAI_API_KEY is set in your environment, Codex CLI will
+    prioritise it over device auth and consume API credits. This provider
+    automatically strips OPENAI_API_KEY from the subprocess environment
+    so that device auth (subscription) is always used.
+
+Setup (API key mode — alternative):
+    $ export OPENAI_API_KEY=sk-...
+    $ codex login --with-api-key
+    This uses your OpenAI API quota directly. Not recommended if you have
+    a ChatGPT subscription.
+
 Supports:
 - Text content blocks
 - Image content blocks (via -i flag for file paths, temp files for base64)
@@ -107,10 +131,14 @@ class CodexRuntime(Runtime):
 
         if self.cli_path is None:
             raise FileNotFoundError(
-                "Codex CLI not found. Install it first:\n"
-                "  npm install -g @openai/codex\n"
-                "Then authenticate:\n"
-                "  codex auth"
+                "Codex CLI not found. Install and authenticate:\n"
+                "  1. Install:  npm install -g @openai/codex\n"
+                "  2. Auth (subscription, recommended):\n"
+                "     - Go to chatgpt.com → Settings → Security\n"
+                "     - Enable 'Device code authorization for Codex'\n"
+                "     - Run:  codex login --device-auth\n"
+                "  3. Auth (API key, alternative):\n"
+                "     - Run:  echo $OPENAI_API_KEY | codex login --with-api-key"
             )
 
     def list_models(self) -> list[str]:
@@ -134,8 +162,8 @@ class CodexRuntime(Runtime):
         except Exception:
             pass
 
-        # Fallback
-        return ["gpt-5.4", "gpt-5.4-mini"]
+        # Fallback — codex-spark models are included in ChatGPT subscriptions
+        return ["gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"]
 
     def _call(self, content: list[dict], model: str = None, response_format: dict = None) -> str:
         """Call Codex CLI with the content list.
@@ -241,6 +269,8 @@ class CodexRuntime(Runtime):
     def _run_codex(self, prompt: str, image_paths: list[str], model: str) -> str:
         """Build and run the codex exec command."""
         is_resume = bool(self._session_id and self._turn_count > 0)
+        import sys
+        print(f"[codex-debug] _turn_count={self._turn_count} _session_id={self._session_id} is_resume={is_resume}", file=sys.stderr, flush=True)
 
         cmd = [self.cli_path]
 
@@ -295,8 +325,11 @@ class CodexRuntime(Runtime):
             else:
                 cmd.append("-")
 
-            # Remove unrelated API keys so CLI doesn't pick up wrong credentials
+            # Remove API keys so CLI uses device-auth (subscription) instead of API credits.
+            # If OPENAI_API_KEY is present, Codex CLI prioritises it over device-auth,
+            # which burns API quota even when the user has an active subscription.
             env = os.environ.copy()
+            env.pop("OPENAI_API_KEY", None)
             env.pop("ANTHROPIC_API_KEY", None)
             env.pop("GEMINI_API_KEY", None)
             env.pop("GOOGLE_API_KEY", None)
@@ -342,7 +375,9 @@ class CodexRuntime(Runtime):
                                 thread_id = event.get("thread_id")
                                 if thread_id:
                                     self.last_thread_id = thread_id  # always track
-                                    if self._auto_session:
+                                    # Only capture session ID once; don't overwrite
+                                    # on resume (CLI may return a new thread_id).
+                                    if self._auto_session and not self._session_id:
                                         self._session_id = thread_id
                                         self.has_session = True
 
@@ -503,19 +538,33 @@ class CodexRuntime(Runtime):
 
         return None
 
+    _AUTH_HINT = (
+        "To authenticate Codex CLI:\n"
+        "  Subscription (recommended):\n"
+        "    1. chatgpt.com → Settings → Security → Enable 'Device code authorization for Codex'\n"
+        "    2. codex login --device-auth\n"
+        "  API key (alternative):\n"
+        "    echo $OPENAI_API_KEY | codex login --with-api-key"
+    )
+
     def _handle_error(self, result):
-        """Handle CLI errors."""
+        """Handle CLI errors with actionable setup instructions."""
         error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
         error_lower = error_msg.lower()
         if "auth" in error_lower or "login" in error_lower or "api key" in error_lower:
             raise ConnectionError(
-                f"Codex CLI authentication error. Run: codex auth\n"
-                f"Error: {error_msg}"
+                f"Codex CLI authentication error.\n"
+                f"{self._AUTH_HINT}\n\n"
+                f"Original error: {error_msg}"
             )
         if "quota" in error_lower or "rate limit" in error_lower:
             raise ConnectionError(
                 f"Codex CLI quota/rate limit exceeded.\n"
-                f"Error: {error_msg}"
+                f"If you're on a ChatGPT subscription, make sure you're using device auth\n"
+                f"(not API key) so requests consume subscription quota:\n"
+                f"  codex login status        # check current auth mode\n"
+                f"  codex login --device-auth  # switch to subscription\n\n"
+                f"Original error: {error_msg}"
             )
         raise RuntimeError(f"Codex CLI error (exit {result.returncode}): {error_msg}")
 

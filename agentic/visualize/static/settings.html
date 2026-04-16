@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Settings - Agentic</title>
-<link rel="stylesheet" href="/css/style.css?v=44">
+<link rel="stylesheet" href="/css/style.css?v=64">
 <style>
   .main { overflow-y: auto; overflow-x: clip; scrollbar-width: thin; scrollbar-color: var(--text-muted) transparent; }
   .settings-view { overflow: visible; height: auto; }
@@ -12,33 +12,28 @@
 </head>
 <body>
 <div class="app">
-  <!-- Left Sidebar -->
+  <!-- Left Sidebar (same structure as index.html) -->
   <div id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <div class="logo"><span class="logo-accent">{<span class="logo-l1">L</span><span class="logo-l2">L</span><span class="logo-m">M</span>}</span> Agentic</div>
       <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M16.5 4A1.5 1.5 0 0 1 18 5.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 14.5v-9A1.5 1.5 0 0 1 3.5 4zM7 15h9.5a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5H7zM3.5 5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5H6V5z"/></svg></button>
     </div>
-    <div class="new-chat-btn" onclick="window.location.href='/new'"><span class="btn-icon"><svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a.75.75 0 0 1 .75.75v5.5h5.5a.75.75 0 0 1 0 1.5h-5.5v5.5a.75.75 0 0 1-1.5 0v-5.5h-5.5a.75.75 0 0 1 0-1.5h5.5v-5.5A.75.75 0 0 1 10 3"/></svg></span><span>New conversation</span></div>
-
-    <div class="sidebar-panels">
-      <div class="sidebar-panel" id="convPanel" data-panel="conv">
-        <div class="panel-header" onclick="togglePanel('conv')">
-          <span class="sidebar-section-title" style="padding:0">Conversations</span>
-          <span class="panel-hide-hint" id="convHint">Hide</span>
-        </div>
-        <div class="panel-body" id="convList"></div>
+    <div class="sidebar-nav-group">
+      <div class="sidebar-nav-item" onclick="window.location.href='/new'" id="navNewChat">
+        <span class="sidebar-nav-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg></span>
+        <span class="sidebar-nav-label">New chat</span>
       </div>
+      <a class="sidebar-nav-item" href="/programs" id="navPrograms">
+        <span class="sidebar-nav-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="6" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.5"/><rect x="2.5" y="11.5" width="6" height="6" rx="1.5"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.5"/></svg></span>
+        <span class="sidebar-nav-label">Programs</span>
+      </a>
+    </div>
 
-      <div class="panel-resize" id="panelResize"></div>
-
-      <div class="sidebar-panel" id="fnPanel" data-panel="fn">
-        <div class="panel-header" onclick="togglePanel('fn')">
-          <span class="sidebar-section-title" style="padding:0">Programs</span>
-          <span class="refresh-btn" onclick="event.stopPropagation();doRefreshFunctions(this)" title="Refresh function list" style="cursor:pointer;opacity:0.6"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5h-1.5A5 5 0 1 1 8 3V1.5z"/><path d="M8 0l3 3-3 3V0z"/></svg></span>
-          <span class="panel-hide-hint" id="fnHint">Hide</span>
-        </div>
-        <div class="panel-body" id="fnList"></div>
+    <div class="sidebar-conversations" id="convSection">
+      <div class="sidebar-section-header">
+        <span class="sidebar-section-title">Recents</span>
       </div>
+      <div class="sidebar-conv-list" id="convList"></div>
     </div>
 
     <!-- Sidebar Footer -->

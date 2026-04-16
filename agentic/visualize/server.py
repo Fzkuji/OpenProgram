@@ -123,10 +123,25 @@ def _detect_default_provider() -> tuple:
     (not just installed). This catches quota exhaustion, auth expiry, etc.
     """
     for p in ("codex", "claude-code", "gemini-cli", "gemini", "anthropic", "openai"):
+        rt = None
         try:
             rt = _create_runtime_for_visualizer(p)
+            # For CLI providers, verify they are installed (not a full LLM call)
+            if p in _CLI_PROVIDERS:
+                import shutil
+                cli_names = {"codex": "codex", "claude-code": "claude", "gemini-cli": "gemini"}
+                cli_bin = cli_names.get(p, p)
+                if not shutil.which(cli_bin):
+                    raise RuntimeError(f"{cli_bin} not installed")
+            _log(f"[detect] {p} OK")
             return p, rt
-        except Exception:
+        except Exception as e:
+            _log(f"[detect] {p} failed: {e}")
+            if rt and hasattr(rt, 'close'):
+                try:
+                    rt.close()
+                except Exception:
+                    pass
             continue
     raise RuntimeError("No provider available")
 
@@ -160,9 +175,15 @@ def _init_providers():
         _default_provider = provider_name
         _default_runtime = rt
 
-        # Probe all providers once at startup
+        # Probe all providers once at startup (only check if installed, no LLM calls)
+        import shutil as _shutil
+        _cli_bins = {"codex": "codex", "claude-code": "claude", "gemini-cli": "gemini"}
         for p_name in ("codex", "claude-code", "gemini-cli", "gemini", "anthropic", "openai"):
             try:
+                # For CLI providers, just check binary exists
+                if p_name in _CLI_PROVIDERS:
+                    if not _shutil.which(_cli_bins.get(p_name, p_name)):
+                        raise RuntimeError(f"{p_name} not installed")
                 probe_rt = _create_runtime_for_visualizer(p_name)
                 models = probe_rt.list_models() if hasattr(probe_rt, 'list_models') else []
                 if probe_rt.model and probe_rt.model not in models:
@@ -170,7 +191,8 @@ def _init_providers():
                 _available_providers[p_name] = {"models": models, "default_model": probe_rt.model}
                 if hasattr(probe_rt, 'close'):
                     probe_rt.close()
-            except Exception:
+            except Exception as e:
+                _log(f"[probe] {p_name} unavailable: {e}")
                 continue
 
 
