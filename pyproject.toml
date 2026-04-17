@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openprogram"
 version = "0.4.0"
-description = "OpenProgram — Agentic Programming as a product: write Python functions that call LLMs with automatic context tracking."
+description = "The Open Source Agent Harness Framework. Any LLM. Any platform. Agentic Programming Paradigm."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}

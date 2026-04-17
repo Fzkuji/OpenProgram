@@ -5,8 +5,8 @@
 <h1 align="center">OpenProgram</h1>
 
 <p align="center">
-  <strong>Python functions that think.</strong><br>
-  The product implementation of <a href="docs/philosophy/agentic-programming.md">Agentic Programming</a> — a paradigm where Python controls flow and LLM handles reasoning.
+  <strong>The Open Source Agent Harness Framework.</strong><br>
+  Any LLM. Any platform. <a href="docs/philosophy/agentic-programming.md">Agentic Programming</a> Paradigm.
 </p>
 
 <p align="center">
