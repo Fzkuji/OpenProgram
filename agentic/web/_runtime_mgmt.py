@@ -102,8 +102,11 @@ def _create_runtime_for_visualizer(provider: str):
 
 
 def _detect_default_provider() -> tuple:
-    """Auto-detect best provider; return (name, runtime) or (None, None)."""
-    for p in ("codex", "claude-code", "gemini-cli", "gemini", "anthropic", "openai"):
+    """Auto-detect best provider; return (name, runtime) or (None, None).
+
+    Order prioritizes Claude Code CLI (sonnet) per project default.
+    """
+    for p in ("claude-code", "codex", "gemini-cli", "anthropic", "gemini", "openai"):
         rt = None
         try:
             rt = _create_runtime_for_visualizer(p)
@@ -153,7 +156,7 @@ def _init_providers():
 
         import shutil as _shutil
         _cli_bins = {"codex": "codex", "claude-code": "claude", "gemini-cli": "gemini"}
-        for p_name in ("codex", "claude-code", "gemini-cli", "gemini", "anthropic", "openai"):
+        for p_name in ("claude-code", "codex", "gemini-cli", "anthropic", "gemini", "openai"):
             try:
                 if p_name in _CLI_PROVIDERS:
                     if not _shutil.which(_cli_bins.get(p_name, p_name)):

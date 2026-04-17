@@ -41,7 +41,7 @@ import shutil
 
 # Maps provider name -> (class_name, module_path, default_model)
 PROVIDERS = {
-    "claude-code":  ("ClaudeCodeRuntime",  "agentic.providers.claude_code",  "haiku"),
+    "claude-code":  ("ClaudeCodeRuntime",  "agentic.providers.claude_code",  "sonnet"),
     "codex":        ("CodexRuntime",       "agentic.providers.codex",        "gpt-5.4-mini"),
     "gemini-cli":   ("GeminiCLIRuntime",   "agentic.providers.gemini_cli",   "gemini-2.5-flash"),
     "anthropic":    ("AnthropicRuntime",    "agentic.providers.anthropic",    "claude-sonnet-4-6"),
@@ -58,7 +58,7 @@ def _detect_caller_env() -> tuple[str, str] | None:
     # Running inside Claude Code?
     if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
         if shutil.which("claude"):
-            return "claude-code", "haiku"
+            return "claude-code", "sonnet"
 
     # Running inside Codex CLI?
     if os.environ.get("CODEX_CLI") or os.environ.get("CODEX_SANDBOX_TYPE"):

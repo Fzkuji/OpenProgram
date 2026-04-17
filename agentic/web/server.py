@@ -56,6 +56,16 @@ _conversations_lock = threading.Lock()
 # Global default providers (used when creating new conversations)
 # (Provider state moved to agentic.web._runtime_mgmt)
 
+# Follow-up answer queues — keyed by conversation ID. When a function calls
+# ask_user(), the handler puts the question on WebSocket and blocks on this
+# queue. The frontend sends the answer back via WebSocket.
+_follow_up_queues: dict = {}
+_follow_up_lock = threading.Lock()
+
+# Track running tasks so refresh can recover them
+_running_tasks: dict = {}  # conv_id → {msg_id, func_name, started_at, ...}
+_running_tasks_lock = threading.Lock()
+
 
 
 # ---------------------------------------------------------------------------
@@ -447,7 +457,7 @@ _THINKING_CONFIGS = {
             {"value": "max", "desc": "Maximum effort"},
             {"value": "auto", "desc": "Adaptive"},
         ],
-        "default": "medium",
+        "default": "auto",
     },
     "codex": {
         "label": "reasoning effort",
