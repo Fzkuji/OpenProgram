@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="../docs/images/banner.png" alt="OpenProgram" width="800">
+  <img src="../docs/images/logo.svg" alt="OpenProgram" width="800">
 </p>
 
 <h1 align="center">OpenProgram</h1>
 
 <p align="center">
-  <strong>会思考的 Python 函数。</strong><br>
-  <a href="philosophy/agentic-programming.md">Agentic Programming</a> 范式的产品化实现——Python 控制流程，LLM 负责推理。
+  <strong>开源 Agent Harness 框架。</strong><br>
+  支持任意 LLM 和平台。Agentic Programming 范式。
 </p>
 
 <p align="center">

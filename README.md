@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="OpenProgram" width="800">
+  <img src="docs/images/logo.svg" alt="OpenProgram" width="800">
 </p>
 
 <h1 align="center">OpenProgram</h1>
 
 <p align="center">
   <strong>The Open Source Agent Harness Framework.</strong><br>
-  Any LLM. Any platform. <a href="docs/philosophy/agentic-programming.md">Agentic Programming</a> Paradigm.
+  Any LLM. Any platform. Agentic Programming Paradigm.
 </p>
 
 <p align="center">
