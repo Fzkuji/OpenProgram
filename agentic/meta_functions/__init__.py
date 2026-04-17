@@ -19,4 +19,7 @@ from agentic.meta_functions.edit import edit
 from agentic.meta_functions.improve import improve
 from agentic.meta_functions.create_skill import create_skill
 
-__all__ = ["create", "create_app", "edit", "improve", "create_skill"]
+# Backward-compatible alias used throughout the docs and examples.
+fix = edit
+
+__all__ = ["create", "create_app", "edit", "fix", "improve", "create_skill"]
