@@ -2,12 +2,7 @@
   <img src="docs/images/logo.svg" alt="OpenProgram" width="800">
 </p>
 
-<h1 align="center">OpenProgram</h1>
-
-<p align="center">
-  <strong>The Open Source Agent Harness Framework.</strong><br>
-  Any LLM. Any platform. Agentic Programming Paradigm.
-</p>
+<p align="center">The Open Source Agent Harness Framework. Any LLM. Any platform. Agentic Programming Paradigm.</p>
 
 <p align="center">
   <a href="https://pypi.org/project/openprogram/"><img src="https://img.shields.io/pypi/v/openprogram?color=blue" alt="PyPI"></a>

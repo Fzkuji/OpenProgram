@@ -2,12 +2,7 @@
   <img src="../docs/images/logo.svg" alt="OpenProgram" width="800">
 </p>
 
-<h1 align="center">OpenProgram</h1>
-
-<p align="center">
-  <strong>开源 Agent Harness 框架。</strong><br>
-  支持任意 LLM 和平台。Agentic Programming 范式。
-</p>
+<p align="center">开源 Agent Harness 框架。支持任意 LLM 和平台。Agentic Programming 范式。</p>
 
 <p align="center">
   <a href="https://pypi.org/project/openprogram/"><img src="https://img.shields.io/pypi/v/openprogram?color=blue" alt="PyPI"></a>
