@@ -162,7 +162,8 @@ class CodexRuntime(Runtime):
         # Fallback — codex-spark models are included in ChatGPT subscriptions
         return ["gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"]
 
-    def _call(self, content: list[dict], model: str = None, response_format: dict = None) -> str:
+    def _call(self, content: list[dict], model: str = None, response_format: dict = None,
+              no_tools: bool = False) -> str:
         """Call Codex CLI with the content list.
 
         Images are passed via -i flag (file paths). Base64 data is
@@ -170,6 +171,10 @@ class CodexRuntime(Runtime):
         text note (Codex CLI only supports local files).
 
         Unsupported block types (audio, video, file) emit warnings and are skipped.
+
+        no_tools=True switches the CLI to `--sandbox read-only` (without
+        --full-auto) for this call, so a dispatcher-mode caller can't fan out
+        into file reads / shell commands the way `workspace-write` allows.
         """
         import warnings
 
@@ -228,7 +233,20 @@ class CodexRuntime(Runtime):
             if response_format:
                 prompt += f"\n\nRespond with ONLY valid JSON matching this schema: {json.dumps(response_format)}"
 
-            result = self._run_codex(prompt, image_paths, model)
+            if no_tools:
+                # Swap full_auto + workspace-write for read-only so the CLI
+                # can't spend minutes editing files during a routing decision.
+                # Save + restore so an ordinary agentic call afterwards still
+                # gets the usual tool set.
+                saved = (self.full_auto, self.sandbox)
+                self.full_auto = False
+                self.sandbox = "read-only"
+                try:
+                    result = self._run_codex(prompt, image_paths, model)
+                finally:
+                    self.full_auto, self.sandbox = saved
+            else:
+                result = self._run_codex(prompt, image_paths, model)
             self._turn_count += 1
             return result
 
