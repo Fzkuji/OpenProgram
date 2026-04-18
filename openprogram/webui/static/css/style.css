@@ -2025,43 +2025,39 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   font-weight: 700;
   font-family: var(--font-mono);
   white-space: nowrap;
-  line-height: 1;
 }
 
 .welcome-logo .logo-l1,
 .welcome-logo .logo-l2,
 .welcome-logo .logo-m {
-  display: inline-block;
-  overflow: hidden;
-  vertical-align: baseline;
-  max-width: 0;
+  font-size: 0;
 }
 .welcome-logo .logo-l1 { animation: logo-type-1 4s steps(1, end) infinite; }
 .welcome-logo .logo-l2 { animation: logo-type-2 4s steps(1, end) infinite; }
 .welcome-logo .logo-m  { animation: logo-type-3 4s steps(1, end) infinite; }
 
 @keyframes logo-type-1 {
-  0%, 12%   { max-width: 0; }
-  15%, 82%  { max-width: 1ch; }
-  85%, 100% { max-width: 0; }
+  0%, 12%   { font-size: 0; }
+  15%, 82%  { font-size: 48px; }
+  85%, 100% { font-size: 0; }
 }
 @keyframes logo-type-2 {
-  0%, 22%   { max-width: 0; }
-  25%, 77%  { max-width: 1ch; }
-  80%, 100% { max-width: 0; }
+  0%, 22%   { font-size: 0; }
+  25%, 77%  { font-size: 48px; }
+  80%, 100% { font-size: 0; }
 }
 @keyframes logo-type-3 {
-  0%, 32%   { max-width: 0; }
-  35%, 72%  { max-width: 1ch; }
-  75%, 100% { max-width: 0; }
+  0%, 32%   { font-size: 0; }
+  35%, 72%  { font-size: 48px; }
+  75%, 100% { font-size: 0; }
 }
 
 .welcome-logo-caret {
   display: inline-block;
   width: 0.08em;
-  height: 0.72em;
+  height: 0.7em;
   background: currentColor;
-  vertical-align: -0.02em;
+  vertical-align: -0.04em;
   margin: 0 0.04em;
   animation: logo-caret-blink 0.9s steps(2) infinite;
 }
