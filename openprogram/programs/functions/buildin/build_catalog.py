@@ -40,15 +40,17 @@ def build_catalog(available: dict) -> str:
         for param_name, param_info in input_spec.items():
             if param_info.get("source") != "llm":
                 continue
-            type_name = param_info.get("type", str).__name__
+            type_obj = param_info.get("type", str)
+            type_name = getattr(type_obj, "__name__", None) or str(type_obj)
             llm_params.append(f"{param_name}: {type_name}")
 
             detail = f"    {param_name}"
             if "description" in param_info:
                 detail += f": {param_info['description']}"
-            if "options" in param_info:
-                opts = ", ".join(f'"{o}"' for o in param_info["options"])
-                detail += f" (可选: {opts})"
+            opts = param_info.get("options")
+            if opts:
+                opts_str = ", ".join(f'"{o}"' for o in opts)
+                detail += f" (options: {opts_str})"
             param_details.append(detail)
 
         # Function signature
@@ -68,9 +70,9 @@ def build_catalog(available: dict) -> str:
             example_args = ", ".join(
                 f'"{p.split(":")[0].strip()}": "..."' for p in llm_params
             )
-            lines.append(f'    调用: {{"call": "{name}", "args": {{{example_args}}}}}')
+            lines.append(f'    call: {{"call": "{name}", "args": {{{example_args}}}}}')
         else:
-            lines.append(f'    调用: {{"call": "{name}"}}')
+            lines.append(f'    call: {{"call": "{name}"}}')
 
         lines.append("")  # blank line
 

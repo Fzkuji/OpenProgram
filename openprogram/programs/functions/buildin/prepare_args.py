@@ -6,7 +6,7 @@ import inspect
 
 from openprogram.agentic_programming.runtime import Runtime
 
-_AUTO_PARAMS = {"runtime", "exec_runtime", "review_runtime"}
+_AUTO_PARAMS = {"runtime", "exec_runtime", "review_runtime", "callback"}
 
 
 def prepare_args(action: dict, available: dict, runtime: Runtime,
@@ -62,9 +62,21 @@ def prepare_args(action: dict, available: dict, runtime: Runtime,
         name for name, param in sig.parameters.items()
         if param.default is inspect.Parameter.empty and name not in args
     ]
-    if missing and fix_fn:
-        extra = fix_fn(func_name=func_name, missing=missing, runtime=runtime)
-        if isinstance(extra, dict):
-            args.update({k: v for k, v in extra.items() if k in valid_params})
+    if missing:
+        if fix_fn:
+            extra = fix_fn(func_name=func_name, missing=missing, runtime=runtime)
+            if isinstance(extra, dict):
+                args.update({k: v for k, v in extra.items() if k in valid_params})
+            still_missing = [n for n in missing if n not in args]
+            if still_missing:
+                raise ValueError(
+                    f"prepare_args: {func_name}() is still missing required "
+                    f"params after fix_fn: {still_missing}"
+                )
+        else:
+            raise ValueError(
+                f"prepare_args: {func_name}() is missing required params "
+                f"{missing} and no fix_fn was provided"
+            )
 
     return args
