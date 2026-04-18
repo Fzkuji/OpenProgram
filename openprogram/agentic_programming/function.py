@@ -35,6 +35,44 @@ _current_runtime: ContextVar = ContextVar('_current_runtime', default=None)
 # Parameter names that receive the runtime injection
 _RUNTIME_PARAMS = {"runtime", "exec_runtime", "review_runtime"}
 
+
+class CancelledError(BaseException):
+    """Raised by a pre-invocation hook to abort an @agentic_function call.
+
+    Inherits from BaseException (not Exception) so user-written except clauses
+    inside @agentic_function bodies don't accidentally swallow cancellation.
+    """
+
+
+# Pre-invocation hooks — called at the top of every @agentic_function wrapper
+# BEFORE the user function runs. Any hook can raise (typically CancelledError)
+# to abort the call; the exception propagates to the caller unchanged.
+_pre_invocation_hooks: list[Callable] = []
+
+
+def add_pre_invocation_hook(hook: Callable) -> None:
+    """Register a hook called at the top of every @agentic_function invocation.
+
+    The hook takes no arguments. It may raise to abort the call (e.g. a
+    webui stop button raising CancelledError).
+    """
+    if hook not in _pre_invocation_hooks:
+        _pre_invocation_hooks.append(hook)
+
+
+def remove_pre_invocation_hook(hook: Callable) -> None:
+    """Unregister a previously added pre-invocation hook."""
+    try:
+        _pre_invocation_hooks.remove(hook)
+    except ValueError:
+        pass
+
+
+def _run_pre_invocation_hooks() -> None:
+    """Run all registered hooks. Exceptions (including CancelledError) propagate."""
+    for hook in list(_pre_invocation_hooks):
+        hook()
+
 # Global registry of all @agentic_function-decorated functions.
 # Maps function name → agentic_function instance.
 # Used by the visualizer to look up source code for any decorated function.
@@ -235,6 +273,9 @@ class agentic_function:
 
         @functools.wraps(fn)
         async def wrapper(*args, **kwargs):
+            # Cancel check / other pre-invocation hooks — may raise to abort.
+            _run_pre_invocation_hooks()
+
             parent = _current_ctx.get(None)
 
             # Auto-inject runtime if needed
@@ -298,6 +339,9 @@ class agentic_function:
 
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
+            # Cancel check / other pre-invocation hooks — may raise to abort.
+            _run_pre_invocation_hooks()
+
             parent = _current_ctx.get(None)
 
             # Auto-inject runtime if needed

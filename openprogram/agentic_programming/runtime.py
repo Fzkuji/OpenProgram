@@ -132,6 +132,10 @@ class Runtime:
         if self._closed:
             raise RuntimeError("Runtime is closed. Create a new runtime instance.")
 
+        # Cancel check — lets long-running loops inside one function also abort.
+        from openprogram.agentic_programming.function import _run_pre_invocation_hooks
+        _run_pre_invocation_hooks()
+
         # Handle plain string input
         if isinstance(content, str):
             content = [{"type": "text", "text": content}]
@@ -232,6 +236,10 @@ class Runtime:
         model: Optional[str] = None,
     ) -> str:
         """Async version of exec(). Creates exec node, calls _async_call()."""
+        # Cancel check — lets long-running loops inside one function also abort.
+        from openprogram.agentic_programming.function import _run_pre_invocation_hooks
+        _run_pre_invocation_hooks()
+
         if isinstance(content, str):
             content = [{"type": "text", "text": content}]
 

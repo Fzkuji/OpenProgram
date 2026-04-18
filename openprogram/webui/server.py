@@ -39,7 +39,10 @@ from openprogram.webui._pause_stop import (
     unregister_active_runtime as _unregister_active_runtime,
     kill_active_runtime as _kill_active_runtime,
     mark_context_cancelled as _mark_context_cancelled,
+    set_current_conv_id as _set_current_conv_id,
+    reset_current_conv_id as _reset_current_conv_id,
 )
+from openprogram.agentic_programming.function import CancelledError as _CancelledError
 
 
 # ---------------------------------------------------------------------------
@@ -575,6 +578,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
     This is the core execution engine. Everything runs under the conversation's
     root Context, so summarize() automatically provides conversation history.
     """
+    _conv_token = _set_current_conv_id(conv_id)
     try:
         conv = _get_or_create_conversation(conv_id)
         runtime = _get_conv_runtime(conv_id, msg_id=msg_id)
@@ -951,15 +955,16 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
         # Persist sessions to disk after each execution
         _save_conversation(conv_id)
 
-    except Exception as e:
+    except (Exception, _CancelledError) as e:
         with _running_tasks_lock:
             _running_tasks.pop(conv_id, None)
         _unregister_active_runtime(conv_id)
 
-        # Cancellation path — the exception came from /api/stop killing the
-        # subprocess. Mark any still-running tree nodes as cancelled and emit
-        # a "stopped" result instead of an error message.
-        if _is_cancelled(conv_id):
+        # Cancellation path — either the exception came from /api/stop killing
+        # the subprocess, or a CancelledError was raised by the cancel hook
+        # (e.g. loops between exec calls). Mark any still-running tree nodes
+        # as cancelled and emit a "stopped" result instead of an error message.
+        if _is_cancelled(conv_id) or isinstance(e, _CancelledError):
             _clear_cancel(conv_id)
             ctx = None
             _lf = locals().get("loaded_func")
@@ -1027,6 +1032,8 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
             "function": func_name,
             "display": "runtime",
         })
+    finally:
+        _reset_current_conv_id(_conv_token)
 
 
 def _broadcast_context_stats(conv_id: str, msg_id: str, chat_runtime=None, exec_runtime=None):

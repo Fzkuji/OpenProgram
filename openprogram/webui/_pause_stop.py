@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import threading
 import time
+from contextvars import ContextVar
 from typing import Any
+
+from openprogram.agentic_programming.function import (
+    CancelledError,
+    add_pre_invocation_hook,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -37,11 +43,16 @@ def wait_if_paused() -> None:
 
 # ---------------------------------------------------------------------------
 # Cancel flags — per-conversation. Set by /api/stop, checked by the exception
-# path in _execute_in_context.
+# path in _execute_in_context and by the pre-invocation hook below.
 # ---------------------------------------------------------------------------
 
 _cancel_flags: dict[str, bool] = {}
 _cancel_flags_lock = threading.Lock()
+
+# Per-thread conv_id so the cancel hook knows whose flag to check.
+# Set by `_execute_in_context` at entry. ContextVars do not propagate across
+# threading.Thread starts, so the value is always set from inside the worker.
+_current_conv_id: ContextVar = ContextVar("_current_conv_id", default=None)
 
 
 def mark_cancelled(conv_id: str) -> None:
@@ -57,6 +68,35 @@ def is_cancelled(conv_id: str) -> bool:
 def clear_cancel(conv_id: str) -> None:
     with _cancel_flags_lock:
         _cancel_flags.pop(conv_id, None)
+
+
+def set_current_conv_id(conv_id: str):
+    """Bind conv_id to the current worker context. Call at the top of
+    _execute_in_context. Returns the token for later reset()."""
+    return _current_conv_id.set(conv_id)
+
+
+def reset_current_conv_id(token) -> None:
+    """Reset the conv_id ContextVar using a token from set_current_conv_id."""
+    try:
+        _current_conv_id.reset(token)
+    except Exception:
+        pass
+
+
+def _cancel_hook() -> None:
+    """Pre-invocation hook: raise CancelledError if the current conv is stopped.
+
+    Registered with agentic_function's hook list, so every @agentic_function
+    entry (and every Runtime.exec call) aborts once /api/stop fires.
+    """
+    cid = _current_conv_id.get(None)
+    if cid and is_cancelled(cid):
+        raise CancelledError(f"Execution stopped by user (conv={cid})")
+
+
+# Register the cancel hook once at import time.
+add_pre_invocation_hook(_cancel_hook)
 
 
 # ---------------------------------------------------------------------------
