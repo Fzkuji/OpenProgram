@@ -174,6 +174,10 @@ html, body {
   display: block;
 }
 
+.logo-l1 { color: #ff6b6b; }
+.logo-l2 { color: #4ecdc4; }
+.logo-m  { color: #ffe66d; }
+
 .sidebar-toggle {
   background: transparent;
   border: none;
@@ -2016,15 +2020,10 @@ a.user-menu-item { text-decoration: none; color: inherit; }
 }
 
 .welcome-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.welcome-logo-img {
-  height: 96px;
-  width: auto;
-  display: block;
+  font-size: 48px;
+  color: var(--accent-blue);
+  font-weight: 700;
+  font-family: var(--font-mono);
 }
 
 .welcome-title {

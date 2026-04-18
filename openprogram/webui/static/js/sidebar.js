@@ -106,7 +106,7 @@ function newConversation() {
   welcome.id = 'welcomeScreen';
   welcome.innerHTML =
     '<div class="welcome-top">' +
-      '<div class="welcome-logo"><img src="/images/logo.svg" alt="OpenProgram" class="welcome-logo-img"></div>' +
+      '<div class="welcome-logo">{<span class="logo-l1">L</span><span class="logo-l2">L</span><span class="logo-m">M</span>}</div>' +
       '<div class="welcome-title">Agentic Programming</div>' +
       '<div class="welcome-text">Run agentic functions, create new ones, or ask questions. Type a command or natural language below.</div>' +
     '</div>';
