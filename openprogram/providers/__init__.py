@@ -14,7 +14,7 @@ Available providers:
 
 Usage:
     from openprogram.providers import AnthropicRuntime
-    rt = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-20250514")
+    rt = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
 
     from openprogram.providers import OpenAIRuntime
     rt = OpenAIRuntime(api_key="sk-...", model="gpt-4o")
@@ -30,7 +30,7 @@ Auto-detection:
 
     provider, model = detect_provider()     # auto-detect best available
     rt = create_runtime()                   # create runtime with auto-detection
-    rt = create_runtime(provider="anthropic", model="claude-sonnet-4-20250514")
+    rt = create_runtime(provider="anthropic", model="claude-sonnet-4-6")
 """
 
 import os
@@ -41,6 +41,7 @@ import shutil
 
 # Maps provider name -> (class_name, module_path, default_model)
 PROVIDERS = {
+    "openclaw":     ("OpenClawRuntime",    "openprogram.providers.openclaw",     "default"),
     "claude-code":  ("ClaudeCodeRuntime",  "openprogram.providers.claude_code",  "claude-sonnet-4-6"),
     "codex":        ("CodexRuntime",       "openprogram.providers.codex",        "gpt-5.4-mini"),
     "gemini-cli":   ("GeminiCLIRuntime",   "openprogram.providers.gemini_cli",   "gemini-2.5-flash"),
@@ -125,6 +126,8 @@ def detect_provider() -> tuple[str, str]:
         return result
 
     # 4. CLI providers (no API key needed)
+    if shutil.which("openclaw"):
+        return "openclaw", "default"
     if shutil.which("claude"):
         return "claude-code", "sonnet"
     if shutil.which("codex"):
@@ -172,6 +175,7 @@ def check_providers() -> dict:
     """
     results = {}
     cli_checks = {
+        "openclaw": "openclaw",
         "claude-code": "claude",
         "codex": "codex",
         "gemini-cli": "gemini",
@@ -216,8 +220,9 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
     """Create a Runtime instance with auto-detection or explicit provider.
 
     Args:
-        provider:  Provider name (e.g. "anthropic", "claude-code", "openai").
-                   If None, auto-detects the best available provider.
+        provider:  Provider name (e.g. "anthropic", "claude-code", "openai",
+                   "openclaw"). Pass "auto" or None to auto-detect the best
+                   available provider via detect_provider().
         model:     Model name override.
         **kwargs:  Forwarded to the provider Runtime constructor.
 
@@ -226,9 +231,9 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
     """
     import importlib
 
-    if provider:
+    if provider and provider != "auto":
         if provider not in PROVIDERS:
-            available = ", ".join(sorted(PROVIDERS.keys()))
+            available = ", ".join(sorted(PROVIDERS.keys()) + ["auto"])
             raise ValueError(
                 f"Unknown provider: {provider!r}. Available: {available}"
             )
@@ -267,6 +272,9 @@ def __getattr__(name):
     if name == "GeminiCLIRuntime":
         from openprogram.providers.gemini_cli import GeminiCLIRuntime
         return GeminiCLIRuntime
+    if name == "OpenClawRuntime":
+        from openprogram.providers.openclaw import OpenClawRuntime
+        return OpenClawRuntime
     raise AttributeError(f"module 'openprogram.providers' has no attribute {name!r}")
 
 
@@ -280,4 +288,5 @@ __all__ = [
     "ClaudeCodeRuntime",
     "CodexRuntime",
     "GeminiCLIRuntime",
+    "OpenClawRuntime",
 ]

@@ -13,7 +13,7 @@ Requires: pip install anthropic
 Usage:
     from openprogram.providers import AnthropicRuntime
 
-    rt = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-20250514")
+    rt = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
 
     @agentic_function
     def analyze(task):
@@ -48,7 +48,7 @@ class AnthropicRuntime(Runtime):
 
     Args:
         api_key:        Anthropic API key. If None, reads from ANTHROPIC_API_KEY env var.
-        model:          Default model name (e.g. "claude-sonnet-4-20250514").
+        model:          Default model name (e.g. "claude-sonnet-4-6").
         max_tokens:     Maximum tokens in the response (default: 4096).
         system:         System prompt. If provided, sent as the system parameter.
         cache_system:   Whether to cache the system prompt (default: True).
@@ -60,7 +60,7 @@ class AnthropicRuntime(Runtime):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "claude-sonnet-4-6",
         max_tokens: int = 4096,
         system: Optional[str] = None,
         cache_system: bool = True,

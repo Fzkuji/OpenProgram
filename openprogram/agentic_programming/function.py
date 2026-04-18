@@ -177,12 +177,14 @@ class agentic_function:
         compress: bool = False,
         input: Optional[dict] = None,
         no_tools: bool = False,
+        system: Optional[str] = None,
     ):
         self.render = render
         self.summarize_kwargs = summarize
         self.compress = compress
         self.input_meta = input or {}
         self.no_tools = no_tools
+        self.system = system
 
         self.context = None  # Last executed Context tree (set after top-level call)
 
@@ -229,6 +231,7 @@ class agentic_function:
         render = self.render
         compress = self.compress
         summarize = self.summarize_kwargs
+        system = self.system
 
         @functools.wraps(fn)
         async def wrapper(*args, **kwargs):
@@ -240,6 +243,7 @@ class agentic_function:
             ctx = Context(
                 name=fn.__name__,
                 prompt=fn.__doc__ or "",
+                system=system or "",
                 params={},
                 parent=parent,
                 render=render,
@@ -290,6 +294,7 @@ class agentic_function:
         render = self.render
         compress = self.compress
         summarize = self.summarize_kwargs
+        system = self.system
 
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
@@ -302,6 +307,7 @@ class agentic_function:
             ctx = Context(
                 name=fn.__name__,
                 prompt=fn.__doc__ or "",
+                system=system or "",
                 params={},
                 parent=parent,
                 render=render,

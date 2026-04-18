@@ -56,7 +56,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime()
         rt._call(
             [{"type": "text", "text": "hello"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         content = call_kwargs["messages"][0]["content"]
@@ -71,7 +71,7 @@ class TestAnthropicRuntime:
                 {"type": "text", "text": "first"},
                 {"type": "text", "text": "second"},
             ],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         content = call_kwargs["messages"][0]["content"]
@@ -83,7 +83,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime()
         rt._call(
             [{"type": "text", "text": "cached", "cache_control": {"type": "ephemeral"}}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         # The block should have cache_control (from both user and auto-injection)
@@ -95,7 +95,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime()
         rt._call(
             [{"type": "image", "data": "abc123", "media_type": "image/jpeg"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         content = call_kwargs["messages"][0]["content"]
@@ -109,7 +109,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime()
         rt._call(
             [{"type": "image", "url": "https://example.com/img.png"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         content = call_kwargs["messages"][0]["content"]
@@ -124,7 +124,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime()
         rt._call(
             [{"type": "image", "path": str(img_path)}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         content = call_kwargs["messages"][0]["content"]
@@ -141,7 +141,7 @@ class TestAnthropicRuntime:
 
         rt._call(
             [{"type": "text", "text": "Return JSON"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             response_format=schema,
         )
 
@@ -158,7 +158,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime(system="You are a helper.", cache_system=True)
         rt._call(
             [{"type": "text", "text": "hello"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         system = call_kwargs["system"]
@@ -170,7 +170,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime(system="You are a helper.", cache_system=False)
         rt._call(
             [{"type": "text", "text": "hello"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         assert call_kwargs["system"] == "You are a helper."
@@ -180,7 +180,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime()
         rt._call(
             [{"type": "custom", "text": "fallback text"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         content = call_kwargs["messages"][0]["content"]
@@ -195,7 +195,7 @@ class TestAnthropicRuntime:
                 {"type": "text", "text": "keep"},
                 {"type": "custom_no_text", "data": "skip"},
             ],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         content = call_kwargs["messages"][0]["content"]
@@ -239,7 +239,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime()
         rt._call(
             [{"type": "file", "data": "abc123", "mime_type": "application/pdf"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         content = call_kwargs["messages"][0]["content"]
@@ -256,7 +256,7 @@ class TestAnthropicRuntime:
         rt = self._make_runtime()
         rt._call(
             [{"type": "file", "path": str(pdf_path)}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
         call_kwargs = self.mock_client.messages.create.call_args[1]
         content = call_kwargs["messages"][0]["content"]
@@ -275,7 +275,7 @@ class TestAnthropicRuntime:
                     {"type": "text", "text": "hello"},
                     {"type": "audio", "path": "test.wav"},
                 ],
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
             )
             audio_warnings = [x for x in w if "audio" in str(x.message).lower()]
             assert len(audio_warnings) == 1
@@ -295,7 +295,7 @@ class TestAnthropicRuntime:
                     {"type": "text", "text": "hello"},
                     {"type": "video", "path": "test.mp4"},
                 ],
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
             )
             video_warnings = [x for x in w if "video" in str(x.message).lower()]
             assert len(video_warnings) == 1

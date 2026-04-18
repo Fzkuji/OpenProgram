@@ -8,7 +8,7 @@ Usage:
     openprogram list
     openprogram create-skill my_func
     agentic providers                     # show available providers
-    openprogram create "desc" --provider anthropic --model claude-sonnet-4-20250514
+    openprogram create "desc" --provider anthropic --model claude-sonnet-4-6
 """
 
 import argparse
@@ -27,7 +27,7 @@ def _add_provider_args(parser):
     parser.add_argument(
         "--model", "-m",
         default=None,
-        help="Model name override (e.g. sonnet, gpt-4o, claude-sonnet-4-20250514).",
+        help="Model name override (e.g. sonnet, gpt-4o, claude-sonnet-4-6).",
     )
 
 

@@ -171,6 +171,11 @@ class Runtime:
         # --- Merge content into context ---
         full_content = _merge_content(context, content, exec_ctx)
 
+        # --- System prompt: walk up for nearest @agentic_function(system=...) ---
+        system_text = _find_system_prompt(parent_ctx)
+        if system_text:
+            full_content.insert(0, {"type": "text", "text": system_text, "role": "system"})
+
         # --- Debug: dump LLM input ---
         if os.environ.get("AGENTIC_DUMP_INPUT"):
             import json as _json
@@ -263,6 +268,11 @@ class Runtime:
         # --- Merge content into context ---
         full_content = _merge_content(context, content, exec_ctx)
 
+        # --- System prompt: walk up for nearest @agentic_function(system=...) ---
+        system_text = _find_system_prompt(parent_ctx)
+        if system_text:
+            full_content.insert(0, {"type": "text", "text": system_text, "role": "system"})
+
         # --- Call the LLM (with retry) ---
         attempts = exec_ctx.attempts if exec_ctx is not None else []
         for attempt in range(self.max_retries):
@@ -343,6 +353,20 @@ class Runtime:
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
+
+def _find_system_prompt(ctx: Optional["Context"]) -> str:
+    """Walk up the Context tree to find the nearest @agentic_function(system=...).
+
+    Returns the first non-empty `system` field encountered, or "" if none.
+    Closer ancestors override farther ones (innermost wins).
+    """
+    node = ctx
+    while node is not None:
+        if getattr(node, "system", ""):
+            return node.system
+        node = node.parent
+    return ""
+
 
 def _merge_content(
     context: Optional[str],

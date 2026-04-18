@@ -98,6 +98,7 @@ class Context:
     # --- Identity & input ---
     name: str = ""              # Function name (from fn.__name__), or "_exec" for exec nodes
     prompt: str = ""            # Docstring (from fn.__doc__) — doubles as LLM prompt
+    system: str = ""            # Optional system prompt (from @agentic_function(system=...))
     params: dict = field(default_factory=dict)  # Call arguments
     node_type: str = "function" # "function" or "exec"
 
