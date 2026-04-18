@@ -51,6 +51,7 @@ __all__ = [
     "create_app",
     "fix",
     "improve",
+    "create_skill",
     "detect_provider",
     "create_runtime",
     "check_providers",

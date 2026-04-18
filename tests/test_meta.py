@@ -4,6 +4,7 @@ Tests for meta.create() — generating agentic functions from descriptions.
 
 import pytest
 from agentic import agentic_function, Runtime
+import agentic
 from agentic.functions.build_catalog import build_catalog
 from agentic.functions.prepare_args import prepare_args
 from agentic.meta_functions import create, fix
@@ -202,6 +203,12 @@ def test_build_catalog_renders_context_and_llm_inputs():
     assert "text: source=context" in catalog
     assert "style: source=llm, type=str" in catalog
     assert "Summary style" in catalog
+
+
+def test_agentic_exports_create_skill_in_public_api():
+    """Top-level package should export create_skill alongside other meta functions."""
+    assert "create_skill" in agentic.__all__
+    assert agentic.create_skill is not None
 
 
 def test_prepare_args_merges_context_and_runtime():
