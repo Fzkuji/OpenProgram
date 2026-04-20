@@ -286,8 +286,8 @@ function _renderProviderDetail(p, models) {
     html += '<div class="provider-detail-section-title"><span>Connectivity check</span></div>';
     html += '<div class="provider-detail-row">';
     html += '<span class="model-count-summary" style="flex:1">Validates API key + base URL with a tiny PING.</span>';
-    html += '<button class="settings-btn" onclick="_testProvider(\'' + escAttr(p.id) + '\', this)">Check</button>';
     html += '<span id="testResult_' + escAttr(p.id) + '" class="test-result"></span>';
+    html += '<button class="settings-btn" onclick="_testProvider(\'' + escAttr(p.id) + '\', this)">Check</button>';
     html += '</div>';
     html += '</div>';
   } else if (p.kind === 'cli') {

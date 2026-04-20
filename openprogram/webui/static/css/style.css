@@ -760,11 +760,11 @@ a.user-menu-item { text-decoration: none; color: inherit; }
 .settings-input {
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0 12px;
-  height: 32px;
-  line-height: 30px;
-  font-size: 13px;
+  border-radius: 6px;
+  padding: 0 10px;
+  height: 28px;
+  line-height: 26px;
+  font-size: 12.5px;
   color: var(--text-primary);
   font-family: var(--font-mono);
   width: 280px;
@@ -780,10 +780,10 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   background: var(--accent-blue);
   color: #fff;
   border: none;
-  padding: 0 14px;
-  height: 32px;
-  border-radius: 8px;
-  font-size: 13px;
+  padding: 0 12px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 75ms;
@@ -3516,16 +3516,16 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
 .test-result.err { color: var(--accent-red); }
 
 .settings-icon-btn {
-  padding: 0 9px;
-  height: 32px;
-  min-width: 32px;
+  padding: 0 8px;
+  height: 28px;
+  min-width: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
   box-sizing: border-box;
