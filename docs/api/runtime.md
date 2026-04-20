@@ -46,7 +46,7 @@ Runtime.exec(content, context=None, response_format=None, model=None) -> str
 
 **在 `@agentic_function` 外部调用时：** 直接调用 LLM，不注入 context，不记录。
 
-**每个 `@agentic_function` 最多调用一次 `exec()`。** 第二次调用会抛 `RuntimeError`。
+**同一个 `@agentic_function` 可以调用多次 `exec()`。** 每次调用都会创建一个新的 `exec` 子节点，并把上一轮交换纳入后续 context。
 
 #### 参数
 
@@ -72,7 +72,7 @@ Runtime.exec(content, context=None, response_format=None, model=None) -> str
 
 #### 异常
 
-- `RuntimeError` — 同一个 `@agentic_function` 内调用了两次
+- `RuntimeError` — 运行时关闭、tool loop 超过限制，或 provider 调用失败等运行期错误
 - `TypeError` — 传入了 async 的 call 函数（应使用 `async_exec()`）
 - `NotImplementedError` — 没有配置 call 函数
 

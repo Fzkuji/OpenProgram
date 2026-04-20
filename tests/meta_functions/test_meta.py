@@ -203,6 +203,31 @@ def generated():
     assert fn() == "ok"
 
 
+def test_create_prompt_allows_multiple_exec_calls():
+    """create() guidance should reflect that multiple exec() calls are valid."""
+    prompts = []
+
+    def mock_call(content, model="test", response_format=None):
+        prompt_text = "\n".join(
+            block["text"] for block in content if block.get("type") == "text"
+        )
+        prompts.append(prompt_text)
+        if len(prompts) == 1:
+            return '{"ready": true}'
+        return '''@agentic_function
+def generated():
+    """Do something."""
+    return "ok"'''
+
+    runtime = Runtime(call=mock_call)
+    _ = create(description="do something", runtime=runtime)
+
+    assert len(prompts) >= 2
+    generation_prompt = prompts[1]
+    assert "MAY call runtime.exec() multiple times" in generation_prompt
+    assert "AT MOST once" not in generation_prompt
+
+
 # ── edit() tests (new API: fn-based) ────────────────────────────
 
 def test_edit_rewrites_function():

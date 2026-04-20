@@ -61,6 +61,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `_loop` not captured when server started via `uvicorn.run()` (broadcast silently failed)
 - Detail panel resize/collapse conflict
 - Codex default model showing as null
+- Runtime docs and meta-function generation guidance now match the implemented multi-`exec()` behavior
 
 ## [0.3.0] - 2025-04-04
 
@@ -105,7 +106,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`Runtime` class**: LLM call interface with Context integration
   - `exec()` and `async_exec()` with automatic context injection
   - Content blocks: text, image, audio, file
-  - One exec() per function guard
+  - Multiple `exec()` calls per function, each recorded as its own exec node
 - **`Context` dataclass**: Execution record tree
   - `summarize()` with depth, siblings, level, include, exclude, branch, max_tokens
   - `tree()` for human-readable view

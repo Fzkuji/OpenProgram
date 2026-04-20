@@ -647,9 +647,9 @@ def generate_code(task: str, runtime: Runtime) -> str:
 
     ── Core rules ──
 
-    - One @agentic_function calls runtime.exec() AT MOST once.
-    - If you need multiple LLM calls, split into multiple @agentic_function
-      and have one function call the others.
+    - One @agentic_function MAY call runtime.exec() multiple times.
+    - Prefer splitting into multiple @agentic_function when it makes the
+      control flow clearer, but multiple exec() calls in one function are valid.
     - `agentic_function` and `runtime` are already available in scope.
     - Standard library imports allowed (os, json, re, pathlib, math, etc.).
     - No async/await.
