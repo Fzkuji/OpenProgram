@@ -284,7 +284,7 @@ def _get_runtime(provider=None, model=None):
     Returns:
         A ready-to-use Runtime instance.
     """
-    from openprogram.providers import create_runtime
+    from openprogram.legacy_providers import create_runtime
     return create_runtime(provider=provider, model=model)
 
 
@@ -297,7 +297,7 @@ def _cmd_providers():
     """Show available providers and which one would be auto-detected."""
     import os
     import shutil
-    from openprogram.providers import PROVIDERS
+    from openprogram.legacy_providers import PROVIDERS
 
     print("Available LLM providers:\n")
 
@@ -358,8 +358,8 @@ def _cmd_providers():
 
 
 def _cmd_configure(provider: str | None):
-    """Interactive provider-setup wizard. Drives openprogram.providers.configuration."""
-    from openprogram.providers import configuration
+    """Interactive provider-setup wizard. Drives openprogram.legacy_providers.configuration."""
+    from openprogram.legacy_providers import configuration
 
     catalog = configuration.list_providers()
     if not catalog:

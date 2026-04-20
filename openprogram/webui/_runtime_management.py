@@ -91,7 +91,7 @@ def _create_runtime_for_visualizer(provider: str):
       - Gemini CLI:      default → session auto-managed by CLI
       - API providers:   default → stateless, Context tree injects history
     """
-    from openprogram.providers import create_runtime
+    from openprogram.legacy_providers import create_runtime
     if provider == "openai-codex":
         return create_runtime(provider=provider, search=True)
     return create_runtime(provider=provider)
@@ -200,13 +200,13 @@ def _get_exec_runtime(no_tools: bool = False):
             "No provider available. Install a CLI (codex/claude/gemini) or set an API key."
         )
     if no_tools and _exec_provider == "openai-codex":
-        from openprogram.providers import create_runtime
+        from openprogram.legacy_providers import create_runtime
         rt = create_runtime(
             provider="openai-codex", session_id=None, search=False,
             full_auto=False, sandbox="read-only",
         )
     elif no_tools and _exec_provider == "claude-code":
-        from openprogram.providers import create_runtime
+        from openprogram.legacy_providers import create_runtime
         rt = create_runtime(provider="claude-code", tools="")
     else:
         rt = _create_runtime_for_visualizer(_exec_provider)

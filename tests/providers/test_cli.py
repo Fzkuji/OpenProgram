@@ -24,7 +24,7 @@ def test_visualizer_codex_runtime_enables_search(monkeypatch):
         captured["kwargs"] = kwargs
         return object()
 
-    monkeypatch.setattr("openprogram.providers.create_runtime", fake_create_runtime)
+    monkeypatch.setattr("openprogram.legacy_providers.create_runtime", fake_create_runtime)
 
     server._create_runtime_for_visualizer("openai-codex")
 
@@ -70,7 +70,7 @@ class TestClaudeCodeRuntimeUnsupported:
         ]
 
     def _make_runtime(self, **kwargs):
-        from openprogram.providers.claude_code import ClaudeCodeRuntime
+        from openprogram.legacy_providers.claude_code import ClaudeCodeRuntime
         return ClaudeCodeRuntime(cli_path="/usr/bin/claude", **kwargs)
 
     def test_audio_block_warns(self):
@@ -147,7 +147,7 @@ class TestGeminiCLIRuntime:
         monkeypatch.setattr("subprocess.Popen", self._mock_run)
 
     def _make_runtime(self, **kwargs):
-        from openprogram.providers.gemini_cli import GeminiCLIRuntime
+        from openprogram.legacy_providers.gemini_cli import GeminiCLIRuntime
         return GeminiCLIRuntime(cli_path="/usr/bin/gemini", **kwargs)
 
     def test_unknown_block_with_text_fallback(self):

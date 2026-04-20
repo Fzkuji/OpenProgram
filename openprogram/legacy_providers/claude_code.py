@@ -23,7 +23,7 @@ Unsupported (with warnings):
 - File/PDF content blocks (Claude CLI does not support document input)
 
 Usage:
-    from openprogram.providers.claude_code import ClaudeCodeRuntime
+    from openprogram.legacy_providers.claude_code import ClaudeCodeRuntime
 
     runtime = ClaudeCodeRuntime(model="sonnet")
 
@@ -137,7 +137,7 @@ class ClaudeCodeRuntime(Runtime):
         function) and auto-restored via `doctor()` if corrupted — see
         `openprogram/providers/claude_models.py` for the full strategy.
         """
-        from openprogram.providers.claude_models import list_model_ids
+        from openprogram.legacy_providers.claude_models import list_model_ids
         return list_model_ids()
 
     def _ensure_process(self):

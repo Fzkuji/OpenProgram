@@ -11,7 +11,7 @@ OpenClaw agent can accumulate context on its side.
 Requires: `openclaw` CLI on PATH (https://github.com/openclaw/openclaw)
 
 Usage:
-    from openprogram.providers import OpenClawRuntime
+    from openprogram.legacy_providers import OpenClawRuntime
 
     rt = OpenClawRuntime(
         model="default",

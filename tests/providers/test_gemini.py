@@ -45,8 +45,8 @@ class TestGeminiRuntime:
 
         monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
 
-        if "openprogram.providers.gemini" in sys.modules:
-            del sys.modules["openprogram.providers.gemini"]
+        if "openprogram.legacy_providers.gemini" in sys.modules:
+            del sys.modules["openprogram.legacy_providers.gemini"]
 
         yield
 
@@ -55,11 +55,11 @@ class TestGeminiRuntime:
                 sys.modules[mod] = orig
             elif mod in sys.modules:
                 del sys.modules[mod]
-        if "openprogram.providers.gemini" in sys.modules:
-            del sys.modules["openprogram.providers.gemini"]
+        if "openprogram.legacy_providers.gemini" in sys.modules:
+            del sys.modules["openprogram.legacy_providers.gemini"]
 
     def _make_runtime(self, **kwargs):
-        from openprogram.providers.gemini import GeminiRuntime
+        from openprogram.legacy_providers.gemini import GeminiRuntime
         return GeminiRuntime(api_key="test-key", **kwargs)
 
     def test_text_block_conversion(self):
@@ -114,7 +114,7 @@ class TestGeminiRuntime:
         """GOOGLE_GENERATIVE_AI_API_KEY is accepted for Gemini API compatibility."""
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.setenv("GOOGLE_GENERATIVE_AI_API_KEY", "fallback-key")
-        from openprogram.providers.gemini import GeminiRuntime
+        from openprogram.legacy_providers.gemini import GeminiRuntime
 
         rt = GeminiRuntime(api_key=None)
         assert rt.client == self.mock_client
@@ -124,7 +124,7 @@ class TestGeminiRuntime:
         """Missing API key raises ValueError."""
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_GENERATIVE_AI_API_KEY", raising=False)
-        from openprogram.providers.gemini import GeminiRuntime
+        from openprogram.legacy_providers.gemini import GeminiRuntime
         with pytest.raises(ValueError, match="API key"):
             GeminiRuntime(api_key=None)
 

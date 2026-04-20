@@ -18,8 +18,8 @@ import time
 
 import pytest
 
-from openprogram.providers.claude_code import ClaudeCodeRuntime
-from openprogram.providers.claude_models import load_claude_models
+from openprogram.legacy_providers.claude_code import ClaudeCodeRuntime
+from openprogram.legacy_providers.claude_models import load_claude_models
 
 
 pytestmark = pytest.mark.slow

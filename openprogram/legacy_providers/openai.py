@@ -12,7 +12,7 @@ Supports:
 Requires: pip install openai
 
 Usage:
-    from openprogram.providers import OpenAIRuntime
+    from openprogram.legacy_providers import OpenAIRuntime
 
     rt = OpenAIRuntime(api_key="sk-...", model="gpt-4o")
 

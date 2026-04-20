@@ -17,7 +17,7 @@ Unsupported (with warnings):
 - Audio/video/file content blocks
 
 Usage:
-    from openprogram.providers.gemini_cli import GeminiCLIRuntime
+    from openprogram.legacy_providers.gemini_cli import GeminiCLIRuntime
 
     runtime = GeminiCLIRuntime()
 

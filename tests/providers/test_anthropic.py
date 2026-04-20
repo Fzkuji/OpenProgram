@@ -34,8 +34,8 @@ class TestAnthropicRuntime:
 
         # Force reimport
         import importlib
-        if "openprogram.providers.anthropic" in sys.modules:
-            del sys.modules["openprogram.providers.anthropic"]
+        if "openprogram.legacy_providers.anthropic" in sys.modules:
+            del sys.modules["openprogram.legacy_providers.anthropic"]
 
         yield
 
@@ -44,11 +44,11 @@ class TestAnthropicRuntime:
             sys.modules["anthropic"] = self._original
         elif "anthropic" in sys.modules:
             del sys.modules["anthropic"]
-        if "openprogram.providers.anthropic" in sys.modules:
-            del sys.modules["openprogram.providers.anthropic"]
+        if "openprogram.legacy_providers.anthropic" in sys.modules:
+            del sys.modules["openprogram.legacy_providers.anthropic"]
 
     def _make_runtime(self, **kwargs):
-        from openprogram.providers.anthropic import AnthropicRuntime
+        from openprogram.legacy_providers.anthropic import AnthropicRuntime
         return AnthropicRuntime(api_key="test-key", **kwargs)
 
     def test_text_block_conversion(self):
@@ -219,7 +219,7 @@ class TestAnthropicRuntime:
     def test_no_api_key_raises(self, monkeypatch):
         """Missing API key raises ValueError."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        from openprogram.providers.anthropic import AnthropicRuntime
+        from openprogram.legacy_providers.anthropic import AnthropicRuntime
         with pytest.raises(ValueError, match="API key"):
             AnthropicRuntime(api_key=None)
 

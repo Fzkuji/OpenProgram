@@ -130,7 +130,7 @@ def review_loop(
     log_path = os.path.join(os.path.dirname(paper_dir), "AUTO_REVIEW.md")
     reviews = []
 
-    from openprogram.providers import create_runtime
+    from openprogram.legacy_providers import create_runtime
 
     for round_num in range(1, max_rounds + 1):
         # Review phase — fresh runtime each round

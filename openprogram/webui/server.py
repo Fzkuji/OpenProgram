@@ -1679,7 +1679,7 @@ def create_app():
         a flaky network never prevents the server from starting."""
         import threading
         try:
-            from openprogram.providers.claude_models import is_stale
+            from openprogram.legacy_providers.claude_models import is_stale
         except Exception:
             return
         if not is_stale(max_age_hours=24):
@@ -1687,8 +1687,8 @@ def create_app():
 
         def _do_refresh():
             try:
-                from openprogram.providers.claude_code import ClaudeCodeRuntime
-                from openprogram.providers.claude_models import _refresh_impl
+                from openprogram.legacy_providers.claude_code import ClaudeCodeRuntime
+                from openprogram.legacy_providers.claude_models import _refresh_impl
                 rt = ClaudeCodeRuntime(model="sonnet")
                 try:
                     _refresh_impl(rt)
@@ -2087,7 +2087,7 @@ def create_app():
     @app.get("/api/providers/{name}/configure")
     async def get_provider_configure(name: str):
         """Return the configuration schema (label + step metadata) for a provider."""
-        from openprogram.providers import configuration as _cfg
+        from openprogram.legacy_providers import configuration as _cfg
         entry = _cfg.get_provider(name)
         if entry is None:
             return JSONResponse(
@@ -2105,7 +2105,7 @@ def create_app():
     @app.post("/api/providers/{name}/configure/step/{step_id}")
     async def run_configure_step(name: str, step_id: str, body: dict = None):
         """Execute one configuration step. Body is the step context (accumulates state)."""
-        from openprogram.providers import configuration as _cfg
+        from openprogram.legacy_providers import configuration as _cfg
         ctx = dict(body or {})
         result = _cfg.run_step(name, step_id, ctx)
         # Return both the result and the updated ctx so the client can keep state
@@ -2512,7 +2512,7 @@ def create_app():
         def _do_edit():
             try:
                 from openprogram.programs.functions.meta import edit
-                from openprogram.providers import create_runtime
+                from openprogram.legacy_providers import create_runtime
                 mod = importlib.import_module(f"openprogram.programs.functions.{name}")
                 fn = getattr(mod, name)
                 runtime = create_runtime()

@@ -1,287 +1,117 @@
 """
-openprogram.providers — Built-in Runtime implementations for popular LLM providers.
+pi_ai — Unified LLM API
+Python mirror of @mariozechner/pi-ai.
 
-Each provider is an optional dependency. Import will give a clear error
-if the required SDK is not installed.
-
-Available providers:
-    AnthropicRuntime    — Anthropic Claude API (text + image, prompt caching)
-    OpenAIRuntime       — OpenAI GPT API (text + image, response_format)
-    GeminiRuntime       — Google Gemini API (text + image)
-    ClaudeCodeRuntime   — Claude Code CLI (no API key, uses subscription)
-    OpenAICodexRuntime  — OpenAI Codex CLI (no API key in harness, uses codex auth)
-    GeminiCLIRuntime    — Gemini CLI (no API key, uses Google account)
-
-Usage:
-    from openprogram.providers import AnthropicRuntime
-    rt = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
-
-    from openprogram.providers import OpenAIRuntime
-    rt = OpenAIRuntime(api_key="sk-...", model="gpt-4o")
-
-    from openprogram.providers import GeminiRuntime
-    rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
-
-    from openprogram.providers import OpenAICodexRuntime
-    rt = OpenAICodexRuntime(model="gpt-5.4-mini")
-
-Auto-detection:
-    from openprogram.providers import detect_provider, create_runtime
-
-    provider, model = detect_provider()     # auto-detect best available
-    rt = create_runtime()                   # create runtime with auto-detection
-    rt = create_runtime(provider="anthropic", model="claude-sonnet-4-6")
+This module also keeps the older ``openprogram.providers`` compatibility
+surface alive, so existing imports like ``detect_provider`` or
+``AnthropicRuntime`` continue to work during the provider refactor.
 """
 
-import os
-import shutil
+# Core types
+from .types import (
+    Api,
+    AssistantMessage,
+    AssistantMessageEvent,
+    AssistantMessageEventStream,
+    CacheRetention,
+    Context,
+    EventDone,
+    EventError,
+    EventStart,
+    EventTextDelta,
+    EventTextEnd,
+    EventTextStart,
+    EventThinkingDelta,
+    EventThinkingEnd,
+    EventThinkingStart,
+    EventToolCallDelta,
+    EventToolCallEnd,
+    EventToolCallStart,
+    ImageContent,
+    KnownApi,
+    KnownProvider,
+    Message,
+    Model,
+    ModelCost,
+    OpenAICompletionsCompat,
+    OpenAIResponsesCompat,
+    OpenRouterRouting,
+    Provider,
+    SimpleStreamOptions,
+    StopReason,
+    StreamOptions,
+    TextContent,
+    ThinkingBudgets,
+    ThinkingContent,
+    ThinkingLevel,
+    Tool,
+    ToolCall,
+    ToolResultMessage,
+    Transport,
+    Usage,
+    UsageCost,
+    UserMessage,
+    VercelGatewayRouting,
+)
 
+# Model registry
+from .models import calculate_cost, get_model, get_models, get_providers, models_are_equal, supports_xhigh
 
-# -- Provider registry -------------------------------------------------------
+# API registry
+from .api_registry import get_api_provider, get_api_providers, register_api_provider, unregister_api_providers, clear_api_providers
 
-# Maps provider name -> (class_name, module_path, default_model)
-PROVIDERS = {
-    "openclaw":     ("OpenClawRuntime",    "openprogram.providers.openclaw",     "default"),
-    "claude-code":  ("ClaudeCodeRuntime",  "openprogram.providers.claude_code",  "claude-sonnet-4-6"),
-    "openai-codex": ("OpenAICodexRuntime", "openprogram.providers.openai_codex", "gpt-5.4-mini"),
-    "gemini-cli":   ("GeminiCLIRuntime",   "openprogram.providers.gemini_cli",   "gemini-2.5-flash"),
-    "anthropic":    ("AnthropicRuntime",    "openprogram.providers.anthropic",    "claude-sonnet-4-6"),
-    "openai":       ("OpenAIRuntime",       "openprogram.providers.openai",       "gpt-4.1"),
-    "gemini":       ("GeminiRuntime",       "openprogram.providers.gemini",       "gemini-2.5-flash"),
-}
+# Environment API keys
+from .env_api_keys import get_env_api_key
 
+# Streaming functions
+from .stream import complete, complete_simple, stream, stream_simple
 
-def _detect_caller_env() -> tuple[str, str] | None:
-    """Detect if we're running inside a known LLM agent environment.
+# Utilities
+from .utils.event_stream import AssistantMessageEventStream as AssistantMessageEventStreamClass, EventStream, create_assistant_message_event_stream
+from .utils.json_parse import parse_partial_json, parse_streaming_json
+from .utils.overflow import is_context_overflow, get_overflow_patterns
+from .utils.validation import validate_tool_arguments, validate_tool_call
+from .utils.sanitize_unicode import sanitize_surrogates
 
-    Returns (provider, model) if detected, None otherwise.
-    """
-    # Running inside Claude Code?
-    if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
-        if shutil.which("claude"):
-            return "claude-code", "sonnet"
-
-    # Running inside Codex CLI?
-    if os.environ.get("CODEX_CLI") or os.environ.get("CODEX_SANDBOX_TYPE"):
-        if shutil.which("codex"):
-            return "openai-codex", None
-
-    return None
-
-
-def _load_provider_config() -> tuple[str, str] | None:
-    """Load provider preference from env vars or ~/.agentic/config.json.
-
-    Priority: env vars > config file.
-    Returns (provider, model) if configured, None otherwise.
-    """
-    # Environment variables
-    provider = os.environ.get("AGENTIC_PROVIDER")
-    model = os.environ.get("AGENTIC_MODEL")
-    if provider:
-        default_model = PROVIDERS.get(provider, (None, None, None))[2]
-        return provider, model or default_model
-
-    # Config file
-    try:
-        config_path = os.path.join(os.path.expanduser("~"), ".agentic", "config.json")
-        import json
-        with open(config_path) as f:
-            config = json.load(f)
-        provider = config.get("default_provider")
-        model = config.get("default_model")
-        if provider:
-            default_model = PROVIDERS.get(provider, (None, None, None))[2]
-            return provider, model or default_model
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        pass
-
-    return None
-
-
-def detect_provider() -> tuple[str, str]:
-    """Auto-detect the best available LLM provider.
-
-    Detection priority:
-      1. Env vars (AGENTIC_PROVIDER / AGENTIC_MODEL)
-      2. Config file (~/.agentic/config.json → default_provider / default_model)
-      3. Caller environment (inside Claude Code? Codex? → use the same)
-      4. Available CLI providers (claude → codex → gemini)
-      5. Available API keys (ANTHROPIC_API_KEY → OPENAI_API_KEY → GOOGLE_API_KEY)
-
-    Returns:
-        (provider_name, default_model) — e.g. ("claude-code", "sonnet")
-
-    Raises:
-        RuntimeError if no provider is found.
-    """
-    # 1-2. User config (env vars or config file)
-    result = _load_provider_config()
-    if result:
-        return result
-
-    # 3. Caller environment detection
-    result = _detect_caller_env()
-    if result:
-        return result
-
-    # 4. CLI providers (no API key needed)
-    if shutil.which("openclaw"):
-        return "openclaw", "default"
-    if shutil.which("claude"):
-        return "claude-code", "sonnet"
-    if shutil.which("codex"):
-        return "openai-codex", None
-    if shutil.which("gemini"):
-        return "gemini-cli", "gemini-2.5-flash"
-
-    # 5. API providers (need keys)
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return "anthropic", "claude-sonnet-4-6"
-    if os.environ.get("OPENAI_API_KEY"):
-        return "openai", "gpt-4.1"
-    if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY"):
-        return "gemini", "gemini-2.5-flash"
-
-    raise RuntimeError(
-        "No LLM provider found. Set up one of the following:\n"
-        "\n"
-        "  CLI providers (no API key needed):\n"
-        "    1. Claude Code CLI:  npm install -g @anthropic-ai/claude-code && claude login\n"
-        "    2. Codex CLI:        npm install -g @openai/codex && codex auth\n"
-        "    3. Gemini CLI:       npm install -g @google/gemini-cli\n"
-        "\n"
-        "  API providers (set environment variable):\n"
-        "    4. Anthropic:  export ANTHROPIC_API_KEY=sk-ant-...\n"
-        "    5. OpenAI:     export OPENAI_API_KEY=sk-...\n"
-        "    6. Gemini:     export GOOGLE_API_KEY=...\n"
-        "                    (or GOOGLE_GENERATIVE_AI_API_KEY=...)\n"
-        "\n"
-        "  Or set explicitly:\n"
-        "    export AGENTIC_PROVIDER=openai\n"
-        "    export AGENTIC_MODEL=gpt-5.4\n"
-    )
-
-
-def check_providers() -> dict:
-    """Check availability of all providers.
-
-    Returns a dict with status of each provider:
-        {
-            "claude-code": {"available": True, "method": "CLI", "model": "sonnet"},
-            "openai": {"available": True, "method": "API", "model": "gpt-4.1"},
-            ...
-        }
-    """
-    results = {}
-    cli_checks = {
-        "openclaw": "openclaw",
-        "claude-code": "claude",
-        "openai-codex": "codex",
-        "gemini-cli": "gemini",
-    }
-    api_checks = {
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "gemini": ["GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
-    }
-
-    for name, binary in cli_checks.items():
-        _, _, default_model = PROVIDERS[name]
-        results[name] = {
-            "available": shutil.which(binary) is not None,
-            "method": "CLI",
-            "model": default_model,
-        }
-
-    for name, env_vars in api_checks.items():
-        _, _, default_model = PROVIDERS[name]
-        if isinstance(env_vars, str):
-            env_vars = [env_vars]
-        has_key = any(os.environ.get(v) for v in env_vars)
-        results[name] = {
-            "available": has_key,
-            "method": "API",
-            "model": default_model,
-        }
-
-    # Mark which one would be auto-selected
-    try:
-        detected, _ = detect_provider()
-        if detected in results:
-            results[detected]["default"] = True
-    except RuntimeError:
-        pass
-
-    return results
-
-
-def create_runtime(provider: str = None, model: str = None, **kwargs):
-    """Create a Runtime instance with auto-detection or explicit provider.
-
-    Args:
-        provider:  Provider name (e.g. "anthropic", "claude-code", "openai",
-                   "openclaw"). Pass "auto" or None to auto-detect the best
-                   available provider via detect_provider().
-        model:     Model name override.
-        **kwargs:  Forwarded to the provider Runtime constructor.
-
-    Returns:
-        A Runtime instance ready to use.
-    """
-    import importlib
-
-    if provider and provider != "auto":
-        if provider not in PROVIDERS:
-            available = ", ".join(sorted(PROVIDERS.keys()) + ["auto"])
-            raise ValueError(
-                f"Unknown provider: {provider!r}. Available: {available}"
-            )
-        class_name, module_path, default_model = PROVIDERS[provider]
-    else:
-        detected, default_model = detect_provider()
-        class_name, module_path, _ = PROVIDERS[detected]
-        provider = detected
-
-    use_model = model or default_model
-
-    mod = importlib.import_module(module_path)
-    cls = getattr(mod, class_name)
-    return cls(model=use_model, **kwargs)
-
-
-# -- Lazy imports for direct class access ------------------------------------
-
-def __getattr__(name):
-    """Lazy imports — only load a provider when accessed."""
-    if name == "AnthropicRuntime":
-        from openprogram.providers.anthropic import AnthropicRuntime
-        return AnthropicRuntime
-    if name == "OpenAIRuntime":
-        from openprogram.providers.openai import OpenAIRuntime
-        return OpenAIRuntime
-    if name == "GeminiRuntime":
-        from openprogram.providers.gemini import GeminiRuntime
-        return GeminiRuntime
-    if name == "ClaudeCodeRuntime":
-        from openprogram.providers.claude_code import ClaudeCodeRuntime
-        return ClaudeCodeRuntime
-    if name == "OpenAICodexRuntime":
-        from openprogram.providers.openai_codex import OpenAICodexRuntime
-        return OpenAICodexRuntime
-    if name == "GeminiCLIRuntime":
-        from openprogram.providers.gemini_cli import GeminiCLIRuntime
-        return GeminiCLIRuntime
-    if name == "OpenClawRuntime":
-        from openprogram.providers.openclaw import OpenClawRuntime
-        return OpenClawRuntime
-    raise AttributeError(f"module 'openprogram.providers' has no attribute {name!r}")
-
+# Backward-compatible provider detection/runtime helpers.
+from openprogram.legacy_providers import PROVIDERS, check_providers, create_runtime, detect_provider
 
 __all__ = [
-    "PROVIDERS",
-    "detect_provider",
-    "create_runtime",
+    # Types
+    "Api", "KnownApi", "KnownProvider", "Provider",
+    "ThinkingLevel", "ThinkingBudgets", "CacheRetention", "Transport", "StopReason",
+    "StreamOptions", "SimpleStreamOptions",
+    "TextContent", "ThinkingContent", "ImageContent", "ToolCall",
+    "Usage", "UsageCost",
+    "UserMessage", "AssistantMessage", "ToolResultMessage", "Message",
+    "Tool", "Context", "Model", "ModelCost",
+    "OpenAICompletionsCompat", "OpenAIResponsesCompat", "OpenRouterRouting", "VercelGatewayRouting",
+    "AssistantMessageEvent", "AssistantMessageEventStream",
+    "EventStart", "EventTextStart", "EventTextDelta", "EventTextEnd",
+    "EventThinkingStart", "EventThinkingDelta", "EventThinkingEnd",
+    "EventToolCallStart", "EventToolCallDelta", "EventToolCallEnd",
+    "EventDone", "EventError",
+    # Models
+    "get_model", "get_providers", "get_models", "calculate_cost", "supports_xhigh", "models_are_equal",
+    # Registry
+    "register_api_provider", "get_api_provider", "get_api_providers", "unregister_api_providers", "clear_api_providers",
+    # Legacy runtime compatibility
+    "PROVIDERS", "detect_provider", "create_runtime", "check_providers",
+    "AnthropicRuntime", "OpenAIRuntime", "GeminiRuntime", "ClaudeCodeRuntime", "OpenAICodexRuntime", "GeminiCLIRuntime", "OpenClawRuntime",
+    # Keys
+    "get_env_api_key",
+    # Streaming
+    "stream", "complete", "stream_simple", "complete_simple",
+    # Utils
+    "EventStream", "AssistantMessageEventStreamClass", "create_assistant_message_event_stream",
+    "parse_partial_json", "parse_streaming_json",
+    "validate_tool_arguments", "validate_tool_call",
+    "is_context_overflow", "get_overflow_patterns",
+    "sanitize_surrogates",
+]
+
+
+_DEFERRABLE_LEGACY_EXPORTS = {
     "AnthropicRuntime",
     "OpenAIRuntime",
     "GeminiRuntime",
@@ -289,4 +119,12 @@ __all__ = [
     "OpenAICodexRuntime",
     "GeminiCLIRuntime",
     "OpenClawRuntime",
-]
+}
+
+
+def __getattr__(name: str):
+    """Lazy-load legacy runtime classes while preserving modern exports."""
+    if name in _DEFERRABLE_LEGACY_EXPORTS:
+        from openprogram import legacy_providers
+        return getattr(legacy_providers, name)
+    raise AttributeError(f"module 'openprogram.providers' has no attribute {name!r}")

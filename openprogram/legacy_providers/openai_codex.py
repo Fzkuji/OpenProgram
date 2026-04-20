@@ -9,7 +9,7 @@ Single route:
            when the access token is close to expiring.
 
 This provider is subscription-only. API-key access to OpenAI models goes
-through OpenAIRuntime (openprogram.providers.openai), which hits
+through OpenAIRuntime (openprogram.legacy_providers.openai), which hits
 api.openai.com with OPENAI_API_KEY. The two are intentionally separate:
 use `openai-codex` when you want to burn ChatGPT subscription credit,
 use `openai` when you want to burn API credit.
@@ -22,7 +22,7 @@ Protocol + OAuth parameters translated from @mariozechner/pi-ai
 packages/ai/src/utils/oauth/openai-codex.ts, MIT license).
 
 Usage:
-    from openprogram.providers.openai_codex import OpenAICodexRuntime
+    from openprogram.legacy_providers.openai_codex import OpenAICodexRuntime
 
     rt = OpenAICodexRuntime(model="gpt-5.4-mini")
     reply = rt.exec(content=[{"type": "text", "text": "hi"}])

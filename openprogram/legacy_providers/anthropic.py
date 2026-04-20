@@ -11,7 +11,7 @@ Supports:
 Requires: pip install anthropic
 
 Usage:
-    from openprogram.providers import AnthropicRuntime
+    from openprogram.legacy_providers import AnthropicRuntime
 
     rt = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
 
