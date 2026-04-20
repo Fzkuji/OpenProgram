@@ -8,7 +8,7 @@ OpenAI Codex, Google (Generative AI + Vertex + Gemini CLI), and Amazon Bedrock.
 from __future__ import annotations
 
 from openprogram.providers.api_registry import register_api_provider
-from openprogram.providers.providers import anthropic, google, openai_completions
+from openprogram.providers import anthropic, google, openai_completions
 
 
 class _StreamFnProvider:
@@ -51,8 +51,8 @@ def register_builtins() -> None:
 
     # OpenAI Responses API
     try:
-        from openprogram.providers.providers.openai_responses import stream_simple_openai_responses
-        from openprogram.providers.providers.openai_responses import stream_openai_responses
+        from openprogram.providers.openai_responses import stream_simple_openai_responses
+        from openprogram.providers.openai_responses import stream_openai_responses
         register_api_provider(
             "openai-responses",
             _StreamFnProvider(stream_openai_responses, stream_simple_openai_responses),
@@ -63,8 +63,8 @@ def register_builtins() -> None:
 
     # OpenAI Codex Responses API
     try:
-        from openprogram.providers.providers.openai_codex_responses import stream_simple_openai_codex_responses
-        from openprogram.providers.providers.openai_codex_responses import stream_openai_codex_responses
+        from openprogram.providers.openai_codex.openai_codex import stream_simple_openai_codex_responses
+        from openprogram.providers.openai_codex.openai_codex import stream_openai_codex_responses
         register_api_provider(
             "openai-codex-responses",
             _StreamFnProvider(stream_openai_codex_responses, stream_simple_openai_codex_responses),
@@ -82,8 +82,8 @@ def register_builtins() -> None:
 
     # Google Vertex AI
     try:
-        from openprogram.providers.providers.google_vertex import stream_google_vertex
-        from openprogram.providers.providers.google_vertex import stream_simple_google_vertex
+        from openprogram.providers.google_vertex import stream_google_vertex
+        from openprogram.providers.google_vertex import stream_simple_google_vertex
         register_api_provider(
             "google-vertex",
             _StreamFnProvider(stream_google_vertex, stream_simple_google_vertex),
@@ -94,8 +94,8 @@ def register_builtins() -> None:
 
     # Google Gemini CLI / Cloud Code Assist
     try:
-        from openprogram.providers.providers.google_gemini_cli import stream_google_gemini_cli
-        from openprogram.providers.providers.google_gemini_cli import stream_simple_google_gemini_cli
+        from openprogram.providers.google_gemini_cli import stream_google_gemini_cli
+        from openprogram.providers.google_gemini_cli import stream_simple_google_gemini_cli
         register_api_provider(
             "google-gemini-cli",
             _StreamFnProvider(stream_google_gemini_cli, stream_simple_google_gemini_cli),
@@ -111,8 +111,8 @@ def register_builtins() -> None:
 
     # Amazon Bedrock Converse Stream
     try:
-        from openprogram.providers.providers.amazon_bedrock import stream_bedrock
-        from openprogram.providers.providers.amazon_bedrock import stream_simple_bedrock
+        from openprogram.providers.amazon_bedrock import stream_bedrock
+        from openprogram.providers.amazon_bedrock import stream_simple_bedrock
         register_api_provider(
             "bedrock-converse-stream",
             _StreamFnProvider(stream_bedrock, stream_simple_bedrock),
@@ -123,8 +123,8 @@ def register_builtins() -> None:
 
     # Azure OpenAI Responses API
     try:
-        from openprogram.providers.providers.azure_openai_responses import stream_simple_azure_openai_responses
-        from openprogram.providers.providers.azure_openai_responses import stream_azure_openai_responses
+        from openprogram.providers.azure_openai_responses import stream_simple_azure_openai_responses
+        from openprogram.providers.azure_openai_responses import stream_azure_openai_responses
         register_api_provider(
             "azure-openai-responses",
             _StreamFnProvider(stream_azure_openai_responses, stream_simple_azure_openai_responses),

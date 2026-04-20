@@ -50,7 +50,7 @@ from ..types import (
 from ..utils.event_stream import EventStream
 from ..utils.json_parse import parse_partial_json, parse_streaming_json
 from ..utils.sanitize_unicode import sanitize_surrogates
-from .transform_messages import transform_messages as _transform_messages
+from .._shared.transform_messages import transform_messages as _transform_messages
 
 # Anthropic beta features
 _BETA_FINE_GRAINED = "fine-grained-tool-streaming-2025-05-14"

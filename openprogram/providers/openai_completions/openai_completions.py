@@ -36,7 +36,7 @@ from ..types import (
     UserMessage,
 )
 from ..utils.json_parse import parse_partial_json
-from .transform_messages import transform_messages as _transform_messages
+from .._shared.transform_messages import transform_messages as _transform_messages
 
 
 def _uses_developer_role(model: Model) -> bool:

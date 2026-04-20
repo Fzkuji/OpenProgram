@@ -29,11 +29,6 @@ from openprogram.providers.utils.oauth.google_gemini_cli import (
     login_gemini_cli,
     refresh_google_cloud_token,
 )
-from openprogram.providers.utils.oauth.openai_codex import (
-    login_openai_codex,
-    openai_codex_oauth_provider,
-    refresh_openai_codex_token,
-)
 from openprogram.providers.utils.oauth.types import (
     OAuthAuthInfo,
     OAuthCredentials,
@@ -71,12 +66,29 @@ _oauth_provider_registry: dict[str, OAuthProviderInterface] = {
     github_copilot_oauth_provider.id: github_copilot_oauth_provider,
     gemini_cli_oauth_provider.id: gemini_cli_oauth_provider,
     antigravity_oauth_provider.id: antigravity_oauth_provider,
-    openai_codex_oauth_provider.id: openai_codex_oauth_provider,
 }
+
+
+def _ensure_openai_codex_registered() -> None:
+    """Lazy: register openai_codex provider. Avoids circular import since
+    openprogram.providers.openai_codex.oauth imports from utils.oauth.pkce."""
+    from openprogram.providers.openai_codex.oauth import openai_codex_oauth_provider
+    _oauth_provider_registry.setdefault(
+        openai_codex_oauth_provider.id, openai_codex_oauth_provider
+    )
+
+
+def __getattr__(name: str):
+    """PEP 562: lazy-expose openai_codex OAuth symbols without circular import."""
+    if name in ("login_openai_codex", "openai_codex_oauth_provider", "refresh_openai_codex_token"):
+        from openprogram.providers.openai_codex import oauth as _oc
+        return getattr(_oc, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_oauth_provider(id_: OAuthProviderId) -> OAuthProviderInterface | None:
     """Get an OAuth provider by ID."""
+    _ensure_openai_codex_registered()
     return _oauth_provider_registry.get(id_)
 
 
@@ -87,6 +99,7 @@ def register_oauth_provider(provider: OAuthProviderInterface) -> None:
 
 def get_oauth_providers() -> list[OAuthProviderInterface]:
     """Get all registered OAuth providers."""
+    _ensure_openai_codex_registered()
     return list(_oauth_provider_registry.values())
 
 

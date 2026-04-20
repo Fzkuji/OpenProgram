@@ -9,7 +9,7 @@ from typing import AsyncGenerator
 
 from .api_registry import get_api_provider
 from .env_api_keys import get_env_api_key
-from .providers import register_builtins
+from .register import register_builtins
 from .types import (
     AssistantMessage,
     AssistantMessageEvent,
@@ -60,10 +60,7 @@ async def complete_simple(
     final_message: AssistantMessage | None = None
 
     async for event in stream_simple(model, context, options):
-        if isinstance(event, EventDone):
-            final_message = event.message
-        elif isinstance(event, EventError):
-            final_message = event.error
+        final_message = _extract_final(event) or final_message
 
     if final_message is None:
         raise RuntimeError("Stream completed without a final message")
@@ -106,12 +103,30 @@ async def complete(
     final_message: AssistantMessage | None = None
 
     async for event in stream(model, context, options):
-        if isinstance(event, EventDone):
-            final_message = event.message
-        elif isinstance(event, EventError):
-            final_message = event.error
+        final_message = _extract_final(event) or final_message
 
     if final_message is None:
         raise RuntimeError("Stream completed without a final message")
 
     return final_message
+
+
+def _extract_final(event) -> AssistantMessage | None:
+    """
+    Pull the AssistantMessage out of a terminal event.
+    Provider implementations sometimes yield dicts rather than BaseModel
+    instances — normalize both shapes.
+    """
+    etype = event["type"] if isinstance(event, dict) else getattr(event, "type", None)
+    if etype == "done":
+        payload = event["message"] if isinstance(event, dict) else event.message
+    elif etype == "error":
+        payload = event["error"] if isinstance(event, dict) else event.error
+    else:
+        return None
+
+    if isinstance(payload, AssistantMessage):
+        return payload
+    if isinstance(payload, dict):
+        return AssistantMessage.model_validate(payload)
+    return payload

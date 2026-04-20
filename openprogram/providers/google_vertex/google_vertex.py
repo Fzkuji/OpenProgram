@@ -15,7 +15,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from openprogram.providers.models import calculate_cost
-from openprogram.providers.providers.google_shared import (
+from openprogram.providers._shared.google import (
     convert_messages,
     convert_tools,
     is_thinking_part,
@@ -23,7 +23,7 @@ from openprogram.providers.providers.google_shared import (
     map_tool_choice,
     retain_thought_signature,
 )
-from openprogram.providers.providers.simple_options import build_base_options, clamp_reasoning
+from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers.utils.event_stream import EventStream
 from openprogram.providers.utils.sanitize_unicode import sanitize_surrogates
 

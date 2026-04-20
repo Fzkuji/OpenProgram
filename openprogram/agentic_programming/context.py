@@ -463,6 +463,65 @@ class Context:
         return "\n".join(lines)
 
     # ==================================================================
+    # RENDER MESSAGES — flatten tree into a multi-turn conversation
+    # ==================================================================
+
+    def render_messages(self) -> list:
+        """
+        Flatten the execution tree into a multi-turn message list, using
+        stack semantics keyed off each function node's ``expose`` field.
+
+        Scope rules (mirror ``render_context``):
+            - Walk the ancestor chain root → self.parent.
+            - At each ancestor, emit pairs for completed children that come
+              before the next ancestor in the chain (or before ``self`` at
+              the innermost level).
+            - ``self`` is the currently-running exec node and always
+              contributes a final UserMessage at the end (no assistant yet).
+
+        Node → message conversion:
+            - exec                    → (UserMessage(input_blocks),
+                                         AssistantMessage(raw_reply))
+            - function + expose="io"  → (UserMessage(call signature),
+                                         AssistantMessage(return value))
+              [stack frame popped — internal pairs collapsed]
+            - function + expose="full"→ recursive expansion of its completed
+                                         children (their own pairs)
+              [stack frame kept open]
+            - function + expose="hidden" → skipped
+
+        Because new exec/function children are appended to ``parent.children``
+        in call order, the resulting message list is strictly append-only
+        across successive calls to ``exec()`` — enabling maximum prompt-cache
+        hit rate under Anthropic / OpenAI automatic caching.
+
+        Returns:
+            list of pi-ai ``Message`` objects, ending in a UserMessage for
+            the current turn.
+        """
+        # Walk ancestor chain: root → self.parent
+        ancestors: list["Context"] = []
+        node = self.parent
+        while node is not None:
+            ancestors.append(node)
+            node = node.parent
+        ancestors.reverse()  # root → parent
+
+        messages: list = []
+        for i, ancestor in enumerate(ancestors):
+            # Boundary = next ancestor in chain, or self at innermost level.
+            boundary = ancestors[i + 1] if i + 1 < len(ancestors) else self
+            for child in ancestor.children:
+                if child is boundary:
+                    break
+                if child.status == "running":
+                    continue
+                messages.extend(_node_as_messages(child))
+
+        messages.append(_exec_as_user_message(self))
+        return messages
+
+    # ==================================================================
     # RENDERING — format a single node as text
     # ==================================================================
 
@@ -805,3 +864,267 @@ def _json(obj: Any, max_len: int = 0) -> str:
     if max_len and len(s) > max_len:
         return s[:max_len - 3] + "..."
     return s
+
+
+# ---------------------------------------------------------------------------
+# Helpers — convert exec Context nodes to pi-ai Messages for render_messages()
+# ---------------------------------------------------------------------------
+
+
+def _exec_blocks_to_content(blocks: list) -> list:
+    """Convert OpenProgram content blocks (list of dicts) to pi-ai content parts.
+
+    Text blocks → TextContent; image blocks (with path or base64 data) →
+    ImageContent. Unsupported block types are skipped. If no usable blocks
+    remain, returns a single empty TextContent so the message is well-formed.
+    """
+    import base64
+    from openprogram.providers.types import ImageContent, TextContent
+
+    parts: list = []
+    for block in blocks or []:
+        btype = block.get("type", "text") if isinstance(block, dict) else "text"
+        # Skip any system-role text block — those belong in system_prompt, not user content.
+        if isinstance(block, dict) and block.get("role") == "system":
+            continue
+        if btype == "text":
+            parts.append(TextContent(type="text", text=block.get("text", "")))
+        elif btype == "image":
+            data = block.get("data")
+            mime = block.get("mime_type")
+            if not data and block.get("path"):
+                path = block["path"]
+                with open(path, "rb") as fh:
+                    data = base64.b64encode(fh.read()).decode()
+                if not mime:
+                    low = path.lower()
+                    if low.endswith(".png"):
+                        mime = "image/png"
+                    elif low.endswith(".jpg") or low.endswith(".jpeg"):
+                        mime = "image/jpeg"
+                    elif low.endswith(".gif"):
+                        mime = "image/gif"
+                    elif low.endswith(".webp"):
+                        mime = "image/webp"
+                    else:
+                        mime = "image/png"
+            if data:
+                parts.append(ImageContent(type="image", data=data, mime_type=mime or "image/png"))
+        # audio/file: skipped until upstream provider adapters accept them
+
+    if not parts:
+        parts.append(TextContent(type="text", text=""))
+    return parts
+
+
+def _exec_as_user_message(exec_node: "Context"):
+    """Build a UserMessage from an exec node's original input blocks."""
+    import time as _time
+    from openprogram.providers.types import TextContent, UserMessage
+
+    params = exec_node.params or {}
+    blocks = list(params.get("_content_blocks") or [])
+    if not blocks:
+        # Older exec nodes only recorded the text-merged form.
+        blocks = [{"type": "text", "text": params.get("_content", "")}]
+
+    parts = _exec_blocks_to_content(blocks)
+    ts = int(exec_node.start_time * 1000) if exec_node.start_time else int(_time.time() * 1000)
+    return UserMessage(role="user", content=parts, timestamp=ts)
+
+
+def _exec_as_assistant_message(exec_node: "Context"):
+    """Build an AssistantMessage from an exec node's raw_reply."""
+    import time as _time
+    from openprogram.providers.types import AssistantMessage, TextContent, Usage
+
+    text = exec_node.raw_reply or ""
+    ts = int(exec_node.end_time * 1000) if exec_node.end_time else int(_time.time() * 1000)
+    # api/provider/model aren't persisted on the Context node — use empty
+    # placeholders since these are only reconstructed-for-context messages.
+    return AssistantMessage(
+        role="assistant",
+        content=[TextContent(type="text", text=text)],
+        api="",
+        provider="",
+        model="",
+        usage=Usage(),
+        stop_reason="stop",
+        timestamp=ts,
+    )
+
+
+def _function_as_user_message(node: "Context"):
+    """UserMessage showing a completed function's call signature + docstring."""
+    import time as _time
+    from openprogram.providers.types import TextContent, UserMessage
+
+    params_str = _fmt_params(node.params)
+    lines = [f"call {node.name}({params_str})"]
+    if node.prompt:
+        lines.append(f'"""{node.prompt}"""')
+    text = "\n".join(lines)
+    ts = int(node.start_time * 1000) if node.start_time else int(_time.time() * 1000)
+    return UserMessage(
+        role="user",
+        content=[TextContent(type="text", text=text)],
+        timestamp=ts,
+    )
+
+
+def _function_as_assistant_message(node: "Context"):
+    """AssistantMessage showing a completed function's return value or error."""
+    import time as _time
+    from openprogram.providers.types import AssistantMessage, TextContent, Usage
+
+    if node.status == "error" and node.error:
+        text = f"raised {node.error}"
+    elif node.output is not None:
+        text = f"returned {_json(node.output, 500)}"
+    else:
+        text = "returned None"
+    ts = int(node.end_time * 1000) if node.end_time else int(_time.time() * 1000)
+    return AssistantMessage(
+        role="assistant",
+        content=[TextContent(type="text", text=text)],
+        api="",
+        provider="",
+        model="",
+        usage=Usage(),
+        stop_reason="stop",
+        timestamp=ts,
+    )
+
+
+def _node_as_messages(node: "Context") -> list:
+    """Recursively convert a completed Context node to message-sequence form.
+
+    Stack semantics driven by ``node.expose``:
+      - exec, "io"           → one pair (input → final reply)      [tool loop collapsed]
+      - exec, "full"         → full tool-loop trace (input, A+toolCalls, TR*, A_final)
+      - function, "io"       → one pair (call → return)            [collapsed]
+      - function, "full"     → flattened messages of completed descendants
+      - any node, "hidden"   → empty list                          [dropped]
+    """
+    if node.node_type == "exec":
+        return _exec_node_as_messages(node)
+
+    if node.node_type in ("tool_call", "assistant_round"):
+        # These live inside an exec subtree and are emitted by
+        # _exec_node_as_messages; at scope-walk level they're inert.
+        return []
+
+    # Function node
+    expose = getattr(node, "expose", "io") or "io"
+    if expose == "hidden":
+        return []
+    if expose == "full":
+        msgs: list = []
+        for child in node.children:
+            if child.status == "running":
+                continue
+            msgs.extend(_node_as_messages(child))
+        return msgs
+
+    # expose == "io" (default): single collapsed pair
+    if node.status == "running":
+        return []
+    return [_function_as_user_message(node), _function_as_assistant_message(node)]
+
+
+def _exec_node_as_messages(exec_node: "Context") -> list:
+    """Render an exec node into messages, respecting its ``expose`` field.
+
+    - ``expose="hidden"`` → []
+    - ``expose="io"`` (default) → ``(UserMessage, AssistantMessage(final_text))``.
+      The tool-loop trace is hidden; the next exec sees only the final reply.
+    - ``expose="full"`` → full tool-loop transcript rebuilt from each
+      ``assistant_round`` child:
+      ``UserMessage → AssistantMessage(thinking+text+ToolCalls) → ToolResultMessage(s) → ...``
+      Round ordering is preserved. Rounds with no tool calls become plain
+      assistant turns (e.g. a final answer or a mid-loop narration).
+    """
+    if exec_node.status != "success" or exec_node.raw_reply is None:
+        return []
+
+    expose = getattr(exec_node, "expose", "io") or "io"
+    if expose == "hidden":
+        return []
+
+    rounds = [c for c in exec_node.children
+              if c.node_type == "assistant_round"
+              and getattr(c, "expose", "io") != "hidden"]
+
+    # Collapsed form — default, or no rounds recorded (no tool loop happened)
+    if expose != "full" or not rounds:
+        return [_exec_as_user_message(exec_node), _exec_as_assistant_message(exec_node)]
+
+    # Full form — expand the precise tool loop round-by-round
+    import time as _time
+    from openprogram.providers.types import (
+        AssistantMessage,
+        TextContent,
+        ThinkingContent,
+        ToolCall,
+        ToolResultMessage,
+        Usage,
+    )
+
+    messages: list = [_exec_as_user_message(exec_node)]
+
+    for round_node in rounds:
+        params = round_node.params or {}
+        thinking = params.get("_thinking") or ""
+        text = params.get("_text") or ""
+        stop_reason = params.get("_stop_reason") or "stop"
+
+        tool_call_children = [c for c in round_node.children
+                              if c.node_type == "tool_call" and c.status != "running"
+                              and getattr(c, "expose", "io") != "hidden"]
+
+        content_blocks: list = []
+        if thinking:
+            content_blocks.append(ThinkingContent(type="thinking", thinking=thinking))
+        if text:
+            content_blocks.append(TextContent(type="text", text=text))
+        for tc_node in tool_call_children:
+            tool_call_id = (tc_node.params or {}).get("_tool_call_id") or f"call_{id(tc_node)}"
+            args = {k: v for k, v in (tc_node.params or {}).items() if not k.startswith("_")}
+            content_blocks.append(ToolCall(
+                type="toolCall",
+                id=tool_call_id,
+                name=tc_node.name,
+                arguments=args,
+            ))
+
+        if not content_blocks:
+            continue
+
+        round_ts = int(round_node.start_time * 1000) if round_node.start_time else int(_time.time() * 1000)
+        messages.append(AssistantMessage(
+            role="assistant",
+            content=content_blocks,
+            api="",
+            provider="",
+            model="",
+            usage=Usage(),
+            stop_reason=stop_reason if stop_reason in ("stop", "length", "toolUse") else "stop",
+            timestamp=round_ts,
+        ))
+
+        for tc_node in tool_call_children:
+            tool_call_id = (tc_node.params or {}).get("_tool_call_id") or f"call_{id(tc_node)}"
+            result_text = tc_node.output if isinstance(tc_node.output, str) else (
+                _json(tc_node.output, 0) if tc_node.output is not None else ""
+            )
+            result_ts = int(tc_node.end_time * 1000) if tc_node.end_time else round_ts
+            messages.append(ToolResultMessage(
+                role="toolResult",
+                tool_call_id=tool_call_id,
+                tool_name=tc_node.name,
+                content=[TextContent(type="text", text=str(result_text))],
+                is_error=(tc_node.status == "error"),
+                timestamp=result_ts,
+            ))
+
+    return messages

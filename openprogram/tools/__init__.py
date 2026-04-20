@@ -3,7 +3,7 @@
 Each tool lives under openprogram/tools/<name>/ with at minimum:
     <name>/__init__.py exporting TOOL = {"spec": {...}, "execute": callable}
 
-Registration is lazy — import only the tools you pass to runtime.exec_with_tools.
+Registration is lazy — import only the tools you pass to runtime.runtime.exec(..., tools=...).
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def get(name: str) -> dict[str, Any]:
 
 
 def get_many(names: list[str]) -> list[dict[str, Any]]:
-    """Look up several tools. Use this when passing to exec_with_tools."""
+    """Look up several tools. Use this when passing tools= to runtime.exec()."""
     return [get(n) for n in names]
 
 

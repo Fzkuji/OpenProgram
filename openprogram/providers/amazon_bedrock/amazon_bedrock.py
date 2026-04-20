@@ -103,7 +103,7 @@ def stream_bedrock(
         except ImportError:
             raise ImportError("boto3 is required for Bedrock provider: pip install boto3")
 
-        from openprogram.providers.providers.transform_messages import transform_messages
+        from openprogram.providers._shared.transform_messages import transform_messages
 
         output: dict[str, Any] = {
             "role": "assistant",
@@ -218,7 +218,7 @@ def stream_simple_bedrock(
     options: "SimpleStreamOptions | None" = None,
 ) -> EventStream:
     """Simple interface for Bedrock streaming."""
-    from openprogram.providers.providers.simple_options import adjust_max_tokens_for_thinking, build_base_options, clamp_reasoning
+    from openprogram.providers._shared.simple_options import adjust_max_tokens_for_thinking, build_base_options, clamp_reasoning
 
     base = build_base_options(model, options)
     base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base)
@@ -260,7 +260,7 @@ def _convert_messages_bedrock(
     model: "Model",
     cache_retention: "CacheRetention",
 ) -> list[dict[str, Any]]:
-    from openprogram.providers.providers.transform_messages import transform_messages
+    from openprogram.providers._shared.transform_messages import transform_messages
 
     result: list[dict[str, Any]] = []
     transformed = transform_messages(context.messages, model, _normalize_tool_call_id)
@@ -431,7 +431,7 @@ def _build_additional_model_request_fields(
         effort = _map_thinking_level_to_effort(reasoning)
         return {"thinking": {"type": "adaptive", "effort": effort}}
     else:
-        from openprogram.providers.providers.simple_options import adjust_max_tokens_for_thinking, clamp_reasoning
+        from openprogram.providers._shared.simple_options import adjust_max_tokens_for_thinking, clamp_reasoning
         budgets = opts.get("thinking_budgets") or {}
         max_t = opts.get("max_tokens", 0) or 0
         _adj_max, budget = adjust_max_tokens_for_thinking(

@@ -62,7 +62,7 @@ def convert_responses_messages(
     include_system_prompt: bool = True,
 ) -> list[dict[str, Any]]:
     """Convert internal messages to OpenAI Responses API input format."""
-    from openprogram.providers.providers.transform_messages import transform_messages
+    from openprogram.providers._shared.transform_messages import transform_messages
 
     if allowed_tool_call_providers is None:
         allowed_tool_call_providers = _RESPONSES_ALLOWED_TOOL_CALL_PROVIDERS

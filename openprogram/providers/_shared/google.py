@@ -77,7 +77,7 @@ def requires_tool_call_id(model_id: str) -> bool:
 
 def convert_messages(model: "Model", context: "Context") -> list[dict[str, Any]]:
     """Convert internal messages to Gemini Content[] format."""
-    from openprogram.providers.providers.transform_messages import transform_messages
+    from openprogram.providers._shared.transform_messages import transform_messages
 
     def normalize_tool_call_id(id_: str) -> str:
         if not requires_tool_call_id(model.id):

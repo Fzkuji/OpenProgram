@@ -15,12 +15,12 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from openprogram.providers.models import supports_xhigh
-from openprogram.providers.providers.openai_responses_shared import (
+from openprogram.providers._shared.openai_responses import (
     convert_responses_messages,
     convert_responses_tools,
     process_responses_stream,
 )
-from openprogram.providers.providers.simple_options import build_base_options, clamp_reasoning
+from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers.utils.event_stream import EventStream
 
 if TYPE_CHECKING:

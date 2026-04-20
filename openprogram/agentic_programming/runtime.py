@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 import json
 import os
@@ -35,6 +36,20 @@ from typing import Any, Optional
 
 from openprogram.agentic_programming.context import Context, _current_ctx
 from openprogram.agentic_programming.events import _emit_event
+
+# Context var for the currently-running exec node. Runtime.exec() and
+# async_exec() set it around the provider call; _call_via_providers() reads
+# it to get the node (and its render_messages() history) without changing
+# the _call() signature subclasses override.
+_current_exec_ctx: contextvars.ContextVar[Optional[Context]] = contextvars.ContextVar(
+    "_current_exec_ctx", default=None,
+)
+
+# Context var for the tools passed into the current exec() call. Set alongside
+# _current_exec_ctx so _call_via_providers can feed them to AgentSession.
+_current_tools: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
+    "_current_tools", default=None,
+)
 
 
 class Runtime:
@@ -53,15 +68,29 @@ class Runtime:
                 return reply_text
     """
 
-    def __init__(self, call: Optional[callable] = None, model: str = "default", max_retries: int = 2):
+    def __init__(
+        self,
+        call: Optional[callable] = None,
+        model: str = "default",
+        max_retries: int = 2,
+        api_key: Optional[str] = None,
+    ):
         """
         Args:
             call:        LLM provider function.
                          Signature: fn(content: list[dict], model: str, response_format: dict) -> str
-                         If None, you must subclass and override _call().
-            model:       Default model name. Passed to _call().
+                         If None, the default pi-ai backend is used (when `model`
+                         is "provider:model_id"). Subclasses may override _call().
+            model:       Default model. Two forms:
+                         - "provider:model_id" (e.g. "anthropic:claude-sonnet-4.5")
+                           → resolved via openprogram.providers; _call() goes
+                           through complete() by default.
+                         - Any other string → legacy path (subclass overrides
+                           _call, or pass a `call` function).
             max_retries: Maximum number of exec() attempts before raising.
                          Default 2 (try once, retry once on failure).
+            api_key:     Optional API key. If omitted, resolved from the
+                         provider's standard env var (OPENAI_API_KEY, etc).
         """
         self._closed = False  # Set early so __del__ is safe even if __init__ raises.
         self._prompted_functions: set[str] = set()  # Functions whose docstrings have been sent
@@ -76,6 +105,37 @@ class Runtime:
         self.on_stream = None  # Optional callback: fn(event_dict) for streaming events
         self.last_usage = None  # Last call's token usage: {input_tokens, output_tokens, ...}
         self.usage_is_cumulative = False  # True if last_usage accumulates across calls (e.g. Codex CLI)
+        self.api_key = api_key
+
+        # Resolve "provider:model_id" form against the pi-ai model registry.
+        self.api_model = None
+        if call is None and isinstance(model, str) and ":" in model:
+            provider, model_id = model.split(":", 1)
+            from openprogram.providers import get_model
+            resolved = get_model(provider, model_id)
+            if resolved is None:
+                raise ValueError(
+                    f"Unknown model {provider!r}:{model_id!r}. "
+                    f"Pass `call=`, subclass Runtime, or use a valid pi-ai model id."
+                )
+            self.api_model = resolved
+
+    # --- Path dispatch ---
+
+    def _uses_legacy_call(self) -> bool:
+        """True if this runtime sends responses through the text-prompt
+        pathway of ``_call()`` rather than the AgentSession + render_messages
+        pathway.
+
+        Legacy providers (ClaudeCodeRuntime, OpenAICodexRuntime, ...) and
+        user-supplied ``call=`` functions expect a text-merged
+        ``full_content`` list. The default Runtime (``model="provider:id"``)
+        builds messages directly from the execution tree and ignores
+        ``full_content``.
+        """
+        if self._call_fn is not None:
+            return True
+        return type(self)._call is not Runtime._call
 
     # --- Working directory ---
 
@@ -172,24 +232,6 @@ class Runtime:
         if isinstance(content, str):
             content = [{"type": "text", "text": content}]
 
-        # --- Tool-use path -------------------------------------------------
-        # Delegate to provider's exec_with_tools. Providers that don't
-        # implement it will raise AttributeError / NotImplementedError.
-        if tools:
-            if not hasattr(self, "exec_with_tools"):
-                raise NotImplementedError(
-                    f"{type(self).__name__} does not support tool use yet. "
-                    "Use a provider like OpenAICodexRuntime, or drop the tools= arg."
-                )
-            return self.exec_with_tools(
-                content=content,
-                tools=tools,
-                tool_choice=tool_choice,
-                parallel_tool_calls=parallel_tool_calls,
-                max_iterations=max_iterations,
-                model=model,
-            )
-
         import time as _time
         parent_ctx = _current_ctx.get(None)
         use_model = model or self.model
@@ -201,7 +243,7 @@ class Runtime:
             exec_ctx = Context(
                 name="_exec",
                 node_type="exec",
-                params={"_content": content_text},
+                params={"_content": content_text, "_content_blocks": list(content)},
                 parent=parent_ctx,
                 start_time=_time.time(),
                 expose="io",
@@ -209,74 +251,71 @@ class Runtime:
             parent_ctx.children.append(exec_ctx)
             _emit_event("node_created", exec_ctx)
 
-        # --- Context: exec node renders context from its own perspective ---
-        if context is None and exec_ctx is not None:
-            if self.has_session:
-                # Session providers manage their own context
-                if parent_ctx.prompt and parent_ctx.name not in self._prompted_functions:
-                    context = parent_ctx.prompt
-                    self._prompted_functions.add(parent_ctx.name)
-            else:
-                # Use parent's render_range config
-                kwargs = dict(parent_ctx.render_range) if parent_ctx.render_range else {}
-                kwargs["prompted_functions"] = self._prompted_functions
-                context = exec_ctx.render_context(**kwargs)
+        # --- Build call input (shape depends on the dispatch path) ---
+        # AgentSession path: _call_via_providers reads exec_ctx directly and
+        # renders its own message history, so we just pass `content` through.
+        # Legacy path (_call_fn or subclass-overridden _call): build the
+        # text-merged full_content list those implementations expect.
+        if self._uses_legacy_call():
+            if context is None and exec_ctx is not None:
+                if self.has_session:
+                    if parent_ctx.prompt and parent_ctx.name not in self._prompted_functions:
+                        context = parent_ctx.prompt
+                        self._prompted_functions.add(parent_ctx.name)
+                else:
+                    kwargs = dict(parent_ctx.render_range) if parent_ctx.render_range else {}
+                    kwargs["prompted_functions"] = self._prompted_functions
+                    context = exec_ctx.render_context(**kwargs)
 
-        # --- Merge content into context ---
-        full_content = _merge_content(context, content, exec_ctx)
+            call_input = _merge_content(context, content, exec_ctx)
+            system_text = _find_system_prompt(parent_ctx)
+            if system_text:
+                call_input.insert(0, {"type": "text", "text": system_text, "role": "system"})
 
-        # --- System prompt: walk up for nearest @agentic_function(system=...) ---
-        system_text = _find_system_prompt(parent_ctx)
-        if system_text:
-            full_content.insert(0, {"type": "text", "text": system_text, "role": "system"})
-
-        # --- Debug: dump LLM input ---
-        if os.environ.get("AGENTIC_DUMP_INPUT"):
-            import json as _json
-            _dump_dir = os.environ.get("AGENTIC_DUMP_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "tmp"))
-            os.makedirs(_dump_dir, exist_ok=True)
-            _call_path = exec_ctx._call_path() if exec_ctx else (parent_ctx._call_path() if parent_ctx else "unknown")
-            _seq = getattr(self, '_dump_seq', 0)
-            self._dump_seq = _seq + 1
-            _dump_path = os.path.join(_dump_dir, f"{_seq:03d}_{_call_path}.txt")
-            with open(_dump_path, "w") as _f:
-                for block in full_content:
-                    if block.get("type") == "text":
-                        _f.write(block["text"])
-                    else:
-                        _f.write(_json.dumps(block, ensure_ascii=False, default=str))
-                    _f.write("\n\n")
-            print(f"[DUMP] {_call_path} -> {_dump_path}")
+            if os.environ.get("AGENTIC_DUMP_INPUT"):
+                _dump_llm_input(call_input, exec_ctx, parent_ctx, self)
+        else:
+            call_input = content
 
         # --- Call the LLM (with retry) ---
-        attempts = exec_ctx.attempts if exec_ctx is not None else []
-        for attempt in range(self.max_retries):
-            try:
-                reply = self._call(full_content, model=use_model, response_format=response_format)
-                attempts.append({"attempt": attempt + 1, "reply": reply, "error": None})
-                if exec_ctx is not None:
-                    exec_ctx.raw_reply = reply
-                    exec_ctx.output = reply
-                    exec_ctx.status = "success"
-                    exec_ctx.end_time = _time.time()
-                    _emit_event("node_completed", exec_ctx)
-                    # Backward compat: parent function also gets latest reply
-                    parent_ctx.raw_reply = reply
-                return reply
-            except (TypeError, NotImplementedError):
-                raise  # Programming errors — don't retry
-            except Exception as e:
-                attempts.append({"attempt": attempt + 1, "reply": None, "error": f"{type(e).__name__}: {e}"})
-                if attempt == self.max_retries - 1:
+        # Publish exec_ctx + tools so _call_via_providers can reach them via
+        # _current_exec_ctx / _current_tools and build the AgentSession.
+        exec_ctx_token = _current_exec_ctx.set(exec_ctx) if exec_ctx is not None else None
+        tools_token = _current_tools.set(tools) if tools else None
+        try:
+            attempts = exec_ctx.attempts if exec_ctx is not None else []
+            for attempt in range(self.max_retries):
+                try:
+                    reply = self._call(call_input, model=use_model, response_format=response_format)
+                    attempts.append({"attempt": attempt + 1, "reply": reply, "error": None})
                     if exec_ctx is not None:
-                        exec_ctx.error = str(e)
-                        exec_ctx.status = "error"
+                        exec_ctx.raw_reply = reply
+                        exec_ctx.output = reply
+                        exec_ctx.status = "success"
                         exec_ctx.end_time = _time.time()
                         _emit_event("node_completed", exec_ctx)
-                    error_report = "\n".join(f"Attempt {a['attempt']}: {a['error']}" for a in attempts)
-                    raise RuntimeError(
-                        f"exec() failed after {self.max_retries} attempts in {parent_ctx.name if parent_ctx else 'unknown'}():\n{error_report}"
-                    ) from e
+                        # Backward compat: parent function also gets latest reply
+                        parent_ctx.raw_reply = reply
+                    return reply
+                except (TypeError, NotImplementedError):
+                    raise  # Programming errors — don't retry
+                except Exception as e:
+                    attempts.append({"attempt": attempt + 1, "reply": None, "error": f"{type(e).__name__}: {e}"})
+                    if attempt == self.max_retries - 1:
+                        if exec_ctx is not None:
+                            exec_ctx.error = str(e)
+                            exec_ctx.status = "error"
+                            exec_ctx.end_time = _time.time()
+                            _emit_event("node_completed", exec_ctx)
+                        error_report = "\n".join(f"Attempt {a['attempt']}: {a['error']}" for a in attempts)
+                        raise RuntimeError(
+                            f"exec() failed after {self.max_retries} attempts in {parent_ctx.name if parent_ctx else 'unknown'}():\n{error_report}"
+                        ) from e
+        finally:
+            if exec_ctx_token is not None:
+                _current_exec_ctx.reset(exec_ctx_token)
+            if tools_token is not None:
+                _current_tools.reset(tools_token)
 
     async def async_exec(
         self,
@@ -307,7 +346,7 @@ class Runtime:
             exec_ctx = Context(
                 name="_exec",
                 node_type="exec",
-                params={"_content": content_text},
+                params={"_content": content_text, "_content_blocks": list(content)},
                 parent=parent_ctx,
                 start_time=_time.time(),
                 expose="io",
@@ -315,53 +354,58 @@ class Runtime:
             parent_ctx.children.append(exec_ctx)
             _emit_event("node_created", exec_ctx)
 
-        # --- Context: exec node renders context from its own perspective ---
-        if context is None and exec_ctx is not None:
-            if self.has_session:
-                if parent_ctx.prompt and parent_ctx.name not in self._prompted_functions:
-                    context = parent_ctx.prompt
-                    self._prompted_functions.add(parent_ctx.name)
-            else:
-                kwargs = dict(parent_ctx.render_range) if parent_ctx.render_range else {}
-                kwargs["prompted_functions"] = self._prompted_functions
-                context = exec_ctx.render_context(**kwargs)
+        # --- Build call input (legacy text-merge only if needed) ---
+        if self._uses_legacy_call():
+            if context is None and exec_ctx is not None:
+                if self.has_session:
+                    if parent_ctx.prompt and parent_ctx.name not in self._prompted_functions:
+                        context = parent_ctx.prompt
+                        self._prompted_functions.add(parent_ctx.name)
+                else:
+                    kwargs = dict(parent_ctx.render_range) if parent_ctx.render_range else {}
+                    kwargs["prompted_functions"] = self._prompted_functions
+                    context = exec_ctx.render_context(**kwargs)
 
-        # --- Merge content into context ---
-        full_content = _merge_content(context, content, exec_ctx)
-
-        # --- System prompt: walk up for nearest @agentic_function(system=...) ---
-        system_text = _find_system_prompt(parent_ctx)
-        if system_text:
-            full_content.insert(0, {"type": "text", "text": system_text, "role": "system"})
+            call_input = _merge_content(context, content, exec_ctx)
+            system_text = _find_system_prompt(parent_ctx)
+            if system_text:
+                call_input.insert(0, {"type": "text", "text": system_text, "role": "system"})
+        else:
+            call_input = content
 
         # --- Call the LLM (with retry) ---
-        attempts = exec_ctx.attempts if exec_ctx is not None else []
-        for attempt in range(self.max_retries):
-            try:
-                reply = await self._async_call(full_content, model=use_model, response_format=response_format)
-                attempts.append({"attempt": attempt + 1, "reply": reply, "error": None})
-                if exec_ctx is not None:
-                    exec_ctx.raw_reply = reply
-                    exec_ctx.output = reply
-                    exec_ctx.status = "success"
-                    exec_ctx.end_time = _time.time()
-                    _emit_event("node_completed", exec_ctx)
-                    parent_ctx.raw_reply = reply
-                return reply
-            except (TypeError, NotImplementedError):
-                raise
-            except Exception as e:
-                attempts.append({"attempt": attempt + 1, "reply": None, "error": f"{type(e).__name__}: {e}"})
-                if attempt == self.max_retries - 1:
+        exec_ctx_token = _current_exec_ctx.set(exec_ctx) if exec_ctx is not None else None
+        try:
+            attempts = exec_ctx.attempts if exec_ctx is not None else []
+            for attempt in range(self.max_retries):
+                try:
+                    reply = await self._async_call(call_input, model=use_model, response_format=response_format)
+                    attempts.append({"attempt": attempt + 1, "reply": reply, "error": None})
                     if exec_ctx is not None:
-                        exec_ctx.error = str(e)
-                        exec_ctx.status = "error"
+                        exec_ctx.raw_reply = reply
+                        exec_ctx.output = reply
+                        exec_ctx.status = "success"
                         exec_ctx.end_time = _time.time()
                         _emit_event("node_completed", exec_ctx)
-                    error_report = "\n".join(f"Attempt {a['attempt']}: {a['error']}" for a in attempts)
-                    raise RuntimeError(
-                        f"async_exec() failed after {self.max_retries} attempts in {parent_ctx.name if parent_ctx else 'unknown'}():\n{error_report}"
-                    ) from e
+                        parent_ctx.raw_reply = reply
+                    return reply
+                except (TypeError, NotImplementedError):
+                    raise
+                except Exception as e:
+                    attempts.append({"attempt": attempt + 1, "reply": None, "error": f"{type(e).__name__}: {e}"})
+                    if attempt == self.max_retries - 1:
+                        if exec_ctx is not None:
+                            exec_ctx.error = str(e)
+                            exec_ctx.status = "error"
+                            exec_ctx.end_time = _time.time()
+                            _emit_event("node_completed", exec_ctx)
+                        error_report = "\n".join(f"Attempt {a['attempt']}: {a['error']}" for a in attempts)
+                        raise RuntimeError(
+                            f"async_exec() failed after {self.max_retries} attempts in {parent_ctx.name if parent_ctx else 'unknown'}():\n{error_report}"
+                        ) from e
+        finally:
+            if exec_ctx_token is not None:
+                _current_exec_ctx.reset(exec_ctx_token)
 
     def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """
@@ -388,10 +432,84 @@ class Runtime:
                     "Use async_exec() for async providers, or pass a sync function."
                 )
             return result
+        if self.api_model is not None:
+            return self._call_via_providers(content, response_format=response_format)
         raise NotImplementedError(
             "No LLM provider configured. Either pass `call=your_function` to Runtime(), "
-            "or subclass Runtime and override _call()."
+            "use model='provider:model_id' form, or subclass Runtime and override _call()."
         )
+
+    # ---- Default backend: openprogram.providers (pi-ai) ---------------------
+
+    def _call_via_providers(
+        self,
+        content: list[dict],
+        response_format: dict = None,
+    ) -> str:
+        """
+        Default _call implementation for ``model="provider:model_id"`` usage.
+
+        When invoked from inside ``Runtime.exec()``, reads the running exec
+        node from ``_current_exec_ctx`` and uses ``exec_ctx.render_messages()``
+        to run a multi-turn conversation through ``AgentSession``. Tools
+        passed to ``exec(tools=...)`` reach the session via ``_current_tools``
+        so the agent loop runs a tool-use cycle automatically. The message
+        prefix stays stable across successive ``exec()`` calls, which is what
+        lets provider prompt caches hit.
+
+        When invoked without an exec node in scope (direct ``_call`` use),
+        wraps ``content`` into a single ``UserMessage`` and calls
+        ``complete_simple`` — single-turn behaviour.
+
+        ``content`` is ignored in the multi-turn path: it was built by
+        ``_merge_content`` for the text-prompt pathway and would duplicate
+        history already present in the message list.
+        """
+        from openprogram.agent import AgentSession
+
+        exec_ctx = _current_exec_ctx.get(None)
+        raw_tools = _current_tools.get(None)
+        agent_tools = _adapt_tools(raw_tools) if raw_tools else None
+
+        if exec_ctx is not None:
+            messages = exec_ctx.render_messages()
+            system_prompt = _find_system_prompt(exec_ctx.parent) or ""
+            history = messages[:-1]
+            current = messages[-1]
+        else:
+            ctx, sp = _build_pi_context(content)
+            system_prompt = sp or ""
+            history = []
+            current = ctx.messages[0]
+
+        session = AgentSession(
+            model=self.api_model,
+            tools=agent_tools,
+            system_prompt=system_prompt,
+            api_key=self.api_key,
+        )
+        try:
+            session.replace_messages(history)
+            pre_run_len = len(session.messages)
+            final = _run_async(session.run(current))
+            new_messages = session.messages[pre_run_len:]
+            if exec_ctx is not None:
+                _record_session_trace(exec_ctx, new_messages)
+        finally:
+            session.close()
+
+        if final is None:
+            raise RuntimeError("Agent session produced no assistant message")
+        if final.stop_reason == "error":
+            raise RuntimeError(final.error_message or "Agent session failed")
+
+        if final.usage is not None:
+            self.last_usage = {
+                "input_tokens": final.usage.input,
+                "output_tokens": final.usage.output,
+                "total_tokens": final.usage.total_tokens,
+            }
+        return _assistant_text(final)
 
     def list_models(self) -> list[str]:
         """Return available models for this runtime. Override in subclasses."""
@@ -427,6 +545,284 @@ def _find_system_prompt(ctx: Optional["Context"]) -> str:
             return node.system
         node = node.parent
     return ""
+
+
+def _run_async(coro):
+    """
+    Run a coroutine from sync code. Safe to call from any context:
+    - No running event loop → asyncio.run
+    - Running event loop (Jupyter, FastAPI, pytest-asyncio) → run in a worker
+      thread so we don't clash with the live loop.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+def _guess_mime(path: str) -> str:
+    """Minimal mime guess for image blocks."""
+    low = path.lower()
+    if low.endswith(".png"):
+        return "image/png"
+    if low.endswith(".jpg") or low.endswith(".jpeg"):
+        return "image/jpeg"
+    if low.endswith(".gif"):
+        return "image/gif"
+    if low.endswith(".webp"):
+        return "image/webp"
+    return "image/png"
+
+
+def _build_pi_context(content: list[dict]):
+    """
+    Convert OpenProgram's ``content: list[dict]`` into a pi-ai Context
+    (one UserMessage with text/image blocks) plus an optional system prompt
+    (drawn from any block with ``role == "system"``).
+    """
+    import base64
+    import time as _time
+    from openprogram.providers import (
+        Context,
+        UserMessage,
+        TextContent,
+        ImageContent,
+    )
+
+    system_text = None
+    parts = []
+
+    for block in content:
+        btype = block.get("type", "text")
+
+        if block.get("role") == "system" and btype == "text":
+            if system_text is None:
+                system_text = block["text"]
+            else:
+                system_text += "\n\n" + block["text"]
+            continue
+
+        if btype == "text":
+            parts.append(TextContent(type="text", text=block["text"]))
+        elif btype == "image":
+            data = block.get("data")
+            mime = block.get("mime_type")
+            if not data:
+                path = block["path"]
+                with open(path, "rb") as f:
+                    data = base64.b64encode(f.read()).decode()
+                mime = mime or _guess_mime(path)
+            parts.append(ImageContent(type="image", data=data, mime_type=mime or "image/png"))
+        # audio / file / other blocks: skipped until upstream providers accept them
+
+    if not parts:
+        parts.append(TextContent(type="text", text=""))
+
+    user_msg = UserMessage(content=parts, timestamp=int(_time.time() * 1000))
+    return Context(messages=[user_msg]), system_text
+
+
+def _assistant_text(message) -> str:
+    """Extract the concatenated text from an AssistantMessage."""
+    out = []
+    for block in message.content:
+        if getattr(block, "type", None) == "text":
+            out.append(block.text)
+    return "".join(out)
+
+
+def _adapt_tools(raw_tools: list) -> list:
+    """Convert OpenProgram's tool entries into pi-agent ``AgentTool`` objects.
+
+    Accepted input forms (per tool entry):
+      - ``{"spec": {...}, "execute": callable}``
+      - object with ``.spec`` and ``.execute``
+      - a plain spec dict (``{"name": ..., "parameters": ...}``) — **requires**
+        an accompanying executor, else we refuse
+
+    The resulting ``AgentTool.execute`` adapts OpenProgram's sync/async
+    ``executor(**args) -> str | dict`` signature to the pi-agent contract
+    ``async (tool_call_id, args, signal, update_cb) -> AgentToolResult``.
+    """
+    from openprogram.agent import AgentTool
+    from openprogram.agent.types import AgentToolResult
+    from openprogram.providers.types import TextContent
+
+    adapted: list = []
+    for entry in raw_tools:
+        if isinstance(entry, dict) and "spec" in entry and "execute" in entry:
+            spec, executor = entry["spec"], entry["execute"]
+        elif hasattr(entry, "spec") and hasattr(entry, "execute"):
+            spec, executor = entry.spec, entry.execute
+        elif isinstance(entry, dict) and "name" in entry:
+            raise ValueError(
+                f"Tool {entry.get('name')!r} has no executor. "
+                "Pass {'spec':..., 'execute':...} or an object with .spec/.execute."
+            )
+        else:
+            raise TypeError(f"Cannot adapt tool entry: {entry!r}")
+
+        captured_executor = executor
+
+        async def _run(tool_call_id: str, args: dict, signal, update_cb,
+                       _exec=captured_executor) -> "AgentToolResult":
+            if inspect.iscoroutinefunction(_exec):
+                try:
+                    result = await _exec(**args)
+                except TypeError:
+                    result = await _exec(args)
+            else:
+                try:
+                    result = await asyncio.to_thread(lambda: _exec(**args))
+                except TypeError:
+                    result = await asyncio.to_thread(lambda: _exec(args))
+
+            if isinstance(result, str):
+                text = result
+            else:
+                try:
+                    text = json.dumps(result, ensure_ascii=False, default=str)
+                except (TypeError, ValueError):
+                    text = str(result)
+            return AgentToolResult(content=[TextContent(type="text", text=text)])
+
+        adapted.append(AgentTool(
+            name=spec["name"],
+            description=spec.get("description", ""),
+            parameters=spec.get("parameters") or {"type": "object", "properties": {}},
+            label=spec.get("label", spec["name"]),
+            execute=_run,
+        ))
+    return adapted
+
+
+def _record_session_trace(exec_ctx: "Context", new_messages: list) -> None:
+    """Attach the agent-loop trace from a completed AgentSession run onto
+    ``exec_ctx`` as a tree of ``assistant_round`` and ``tool_call`` children.
+
+    Structure:
+      exec
+      ├── assistant_round (one per LLM response during the loop)
+      │     params: _thinking, _text, _stop_reason, _round_index
+      │     children:
+      │     ├── tool_call (node_type="tool_call")
+      │     │     params: tool args + _tool_call_id
+      │     │     output/status from the matching ToolResultMessage
+      │     └── ...
+      └── ...
+
+    This preserves the precise "round N: LLM said X + called T1/T2 → results"
+    sequence so ``render_messages`` can reconstruct a faithful tool-loop
+    transcript under ``expose="full"``.
+    """
+    from openprogram.providers.types import (
+        AssistantMessage,
+        TextContent,
+        ThinkingContent,
+        ToolCall,
+        ToolResultMessage,
+    )
+    import time as _time
+
+    results_by_id: dict[str, ToolResultMessage] = {}
+    for msg in new_messages:
+        if isinstance(msg, ToolResultMessage):
+            results_by_id[msg.tool_call_id] = msg
+
+    round_index = 0
+    for msg in new_messages:
+        if not isinstance(msg, AssistantMessage):
+            continue
+
+        thinking_parts: list[str] = []
+        text_parts: list[str] = []
+        tool_call_blocks: list[ToolCall] = []
+        for block in msg.content:
+            if isinstance(block, ToolCall):
+                tool_call_blocks.append(block)
+            elif isinstance(block, ThinkingContent):
+                thinking_parts.append(block.thinking)
+            elif isinstance(block, TextContent):
+                text_parts.append(block.text)
+
+        round_ts = (msg.timestamp / 1000.0) if msg.timestamp else _time.time()
+        round_ctx = Context(
+            name=f"round_{round_index}",
+            node_type="assistant_round",
+            params={
+                "_thinking": "\n".join(thinking_parts),
+                "_text": "\n".join(text_parts),
+                "_stop_reason": msg.stop_reason,
+                "_round_index": round_index,
+            },
+            parent=exec_ctx,
+            start_time=round_ts,
+            end_time=round_ts,
+            status="success",
+            expose="io",
+        )
+        exec_ctx.children.append(round_ctx)
+        _emit_event("node_created", round_ctx)
+
+        for tc_block in tool_call_blocks:
+            result = results_by_id.get(tc_block.id)
+            result_text = ""
+            if result is not None:
+                parts = []
+                for rb in result.content:
+                    if hasattr(rb, "text"):
+                        parts.append(rb.text)
+                result_text = "".join(parts)
+
+            tc_ctx = Context(
+                name=tc_block.name,
+                node_type="tool_call",
+                params={**tc_block.arguments, "_tool_call_id": tc_block.id},
+                parent=round_ctx,
+                start_time=round_ts,
+                end_time=(result.timestamp / 1000.0) if (result and result.timestamp) else round_ts,
+                output=result_text,
+                status="error" if (result and result.is_error) else "success",
+                expose="io",
+            )
+            round_ctx.children.append(tc_ctx)
+            _emit_event("node_created", tc_ctx)
+            _emit_event("node_completed", tc_ctx)
+
+        _emit_event("node_completed", round_ctx)
+        round_index += 1
+
+
+def _dump_llm_input(
+    call_input: list[dict],
+    exec_ctx: Optional["Context"],
+    parent_ctx: Optional["Context"],
+    runtime: "Runtime",
+) -> None:
+    """Write the text-merged LLM input to AGENTIC_DUMP_DIR for debugging."""
+    dump_dir = os.environ.get(
+        "AGENTIC_DUMP_DIR",
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "tmp"),
+    )
+    os.makedirs(dump_dir, exist_ok=True)
+    call_path = (
+        exec_ctx._call_path() if exec_ctx
+        else (parent_ctx._call_path() if parent_ctx else "unknown")
+    )
+    seq = getattr(runtime, "_dump_seq", 0)
+    runtime._dump_seq = seq + 1
+    dump_path = os.path.join(dump_dir, f"{seq:03d}_{call_path}.txt")
+    with open(dump_path, "w") as fh:
+        for block in call_input:
+            if block.get("type") == "text":
+                fh.write(block["text"])
+            else:
+                fh.write(json.dumps(block, ensure_ascii=False, default=str))
+            fh.write("\n\n")
+    print(f"[DUMP] {call_path} -> {dump_path}")
 
 
 def _merge_content(

@@ -14,13 +14,13 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from openprogram.providers.models import calculate_cost, supports_xhigh
-from openprogram.providers.providers.github_copilot_headers import build_copilot_dynamic_headers, has_copilot_vision_input
-from openprogram.providers.providers.openai_responses_shared import (
+from openprogram.providers._shared.github_copilot_headers import build_copilot_dynamic_headers, has_copilot_vision_input
+from openprogram.providers._shared.openai_responses import (
     convert_responses_messages,
     convert_responses_tools,
     process_responses_stream,
 )
-from openprogram.providers.providers.simple_options import build_base_options, clamp_reasoning
+from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers.utils.event_stream import EventStream
 
 if TYPE_CHECKING:
@@ -69,10 +69,7 @@ def stream_openai_responses(
             if opts.get("on_payload"):
                 opts["on_payload"](params)
 
-            openai_stream = client.responses.create(
-                **params,
-                stream=True,
-            )
+            openai_stream = await client.responses.create(**params)
             ev_stream.push({"type": "start", "partial": output})
 
             await process_responses_stream(
