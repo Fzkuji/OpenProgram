@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "last_updated": "2026-04-17T19:30:00Z",
-  "source": "seed",
-  "note": "Claude Code CLI subscription-mode registry. 三个家族（由弱到强）：haiku < sonnet < opus，都必须在列表里。显示顺序：最强在前 opus → sonnet → haiku；家族内新版在前、[1m] 在 200K 前。默认 = Sonnet 4.6（中间档、实际可跑）。注：sonnet 和 opus-4.6 的 1M 变体因需要 extra_usage / 已淘汰而暂不列入。",
+  "last_updated": "2026-04-20T00:00:00Z",
+  "source": "refresh",
+  "note": "Claude Code CLI subscription-mode registry. 三个家族（由弱到强）：haiku < sonnet < opus，都必须在列表里。显示顺序：最强在前 opus → sonnet → haiku；家族内新版在前、[1m] 在 200K 前。默认 = Sonnet 4.6（中间档、实际可跑）。每个家族保留最新代 + 上一代；更旧版本已移除。",
   "models": [
     {
       "id": "claude-opus-4-7[1m]",
@@ -25,6 +25,16 @@
       "recommended": true
     },
     {
+      "id": "claude-opus-4-6[1m]",
+      "display": "Claude Opus 4.6 (1M)",
+      "family": "opus",
+      "generation": "4.6",
+      "context_window": 1000000,
+      "max_output": 64000,
+      "requires_extra_usage": false,
+      "recommended": false
+    },
+    {
       "id": "claude-opus-4-6",
       "display": "Claude Opus 4.6",
       "family": "opus",
@@ -35,6 +45,16 @@
       "recommended": false
     },
     {
+      "id": "claude-sonnet-4-6[1m]",
+      "display": "Claude Sonnet 4.6 (1M)",
+      "family": "sonnet",
+      "generation": "4.6",
+      "context_window": 1000000,
+      "max_output": 32000,
+      "requires_extra_usage": true,
+      "recommended": true
+    },
+    {
       "id": "claude-sonnet-4-6",
       "display": "Claude Sonnet 4.6 — default",
       "family": "sonnet",
@@ -43,6 +63,16 @@
       "max_output": 32000,
       "requires_extra_usage": false,
       "recommended": true
+    },
+    {
+      "id": "claude-sonnet-4-5-20250929",
+      "display": "Claude Sonnet 4.5",
+      "family": "sonnet",
+      "generation": "4.5",
+      "context_window": 200000,
+      "max_output": 32000,
+      "requires_extra_usage": false,
+      "recommended": false
     },
     {
       "id": "claude-haiku-4-5-20251001",

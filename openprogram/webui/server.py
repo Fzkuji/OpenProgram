@@ -2084,6 +2084,43 @@ def create_app():
     async def get_providers():
         return JSONResponse(content=_list_providers())
 
+    # --- Model catalog (LobeChat-style settings) ---------------------------
+
+    @app.get("/api/providers/list")
+    async def api_providers_list():
+        """Unified provider catalog (registry + CLI) with enable / configure
+        status and model counts. Feeds the settings page middle column."""
+        from openprogram.webui import _model_catalog as _mc
+        return JSONResponse(content={"providers": _mc.list_providers()})
+
+    @app.get("/api/providers/{name}/models")
+    async def api_provider_models(name: str):
+        """All models registered under this provider + their enabled flag."""
+        from openprogram.webui import _model_catalog as _mc
+        return JSONResponse(content={
+            "provider": name,
+            "models": _mc.list_models_for_provider(name),
+        })
+
+    @app.post("/api/providers/{name}/toggle")
+    async def api_toggle_provider(name: str, body: dict = None):
+        from openprogram.webui import _model_catalog as _mc
+        enabled = bool((body or {}).get("enabled", False))
+        return JSONResponse(content=_mc.toggle_provider(name, enabled))
+
+    @app.post("/api/providers/{name}/models/{model_id:path}/toggle")
+    async def api_toggle_model(name: str, model_id: str, body: dict = None):
+        from openprogram.webui import _model_catalog as _mc
+        enabled = bool((body or {}).get("enabled", False))
+        return JSONResponse(content=_mc.toggle_model(name, model_id, enabled))
+
+    @app.get("/api/models/enabled")
+    async def api_enabled_models():
+        """Flat list of every enabled model across enabled providers.
+        Used by the chat page model picker."""
+        from openprogram.webui import _model_catalog as _mc
+        return JSONResponse(content={"models": _mc.list_enabled_models()})
+
     @app.get("/api/providers/{name}/configure")
     async def get_provider_configure(name: str):
         """Return the configuration schema (label + step metadata) for a provider."""
@@ -2159,33 +2196,85 @@ def create_app():
 
     @app.post("/api/model")
     async def switch_model(body: dict = None):
-        """Switch model for the current conversation's runtime."""
+        """Switch model (and optionally provider) for the active runtime.
+
+        Body:
+          {
+            "model":    str,  # either bare id ("gpt-4o") or "provider:id"
+            "provider": str,  # optional explicit provider
+            "conv_id":  str,  # optional; target a specific conversation
+          }
+
+        If "provider" is given (or inferred from "provider:id" model string)
+        and differs from the conversation's current provider, we spin up a
+        new runtime for that provider. Otherwise we just rebind the model
+        on the existing runtime.
+        """
         if not body or "model" not in body:
             return JSONResponse(content={"error": "Missing model"}, status_code=400)
         model = body["model"].strip()
+        explicit_provider = (body.get("provider") or "").strip() or None
         conv_id = body.get("conv_id")
+
+        # "provider:id" syntax → split
+        inferred_provider = None
+        bare_model = model
+        if explicit_provider is None and ":" in model:
+            head, tail = model.split(":", 1)
+            # Only treat as provider prefix if head matches a known provider id.
+            from openprogram.providers import get_providers as _get_providers
+            known = set(_get_providers())
+            known.update({"claude-code", "openai-codex", "gemini-cli",
+                          "anthropic", "openai", "gemini", "openclaw"})
+            if head in known:
+                inferred_provider = head
+                bare_model = tail
+        target_provider = explicit_provider or inferred_provider
+
+        def _apply_to_conv(conv):
+            old_rt = conv.get("runtime")
+            cur_prov = conv.get("provider_name", _runtime_management._default_provider)
+            prov = target_provider or cur_prov
+            need_new_rt = (target_provider and target_provider != cur_prov) or (old_rt is None)
+            if need_new_rt:
+                if old_rt and hasattr(old_rt, "close"):
+                    try: old_rt.close()
+                    except Exception: pass
+                new_rt = _create_runtime_for_visualizer(prov, model=bare_model)
+                conv["runtime"] = new_rt
+                conv["provider_name"] = prov
+            else:
+                old_rt.model = bare_model
+            return prov
+
         if conv_id:
             with _conversations_lock:
                 conv = _conversations.get(conv_id)
-            if conv and conv.get("runtime"):
-                # Close old runtime, create new one with new model
-                old_rt = conv["runtime"]
-                provider_name = conv.get("provider_name", _runtime_management._default_provider)
-                if hasattr(old_rt, 'close'):
-                    old_rt.close()
-                new_rt = _create_runtime_for_visualizer(provider_name)
-                new_rt.model = model
-                conv["runtime"] = new_rt
+            if conv:
+                prov = _apply_to_conv(conv)
                 info = _get_provider_info(conv_id)
                 _broadcast(json.dumps({"type": "provider_changed", "data": info}))
-                return JSONResponse(content={"switched": True, "model": model})
-        # Update default runtime
-        if _runtime_management._default_runtime:
-            _runtime_management._default_runtime.model = model
-            info = _get_provider_info()
-            _broadcast(json.dumps({"type": "provider_changed", "data": info}))
-            return JSONResponse(content={"switched": True, "model": model})
-        return JSONResponse(content={"error": "No active runtime"}, status_code=400)
+                return JSONResponse(content={"switched": True, "provider": prov, "model": bare_model})
+
+        # Default runtime path (no conv_id).
+        if target_provider and target_provider != _runtime_management._default_provider:
+            if _runtime_management._default_runtime and hasattr(_runtime_management._default_runtime, "close"):
+                try: _runtime_management._default_runtime.close()
+                except Exception: pass
+            _runtime_management._default_runtime = _create_runtime_for_visualizer(target_provider, model=bare_model)
+            _runtime_management._default_provider = target_provider
+        elif _runtime_management._default_runtime:
+            _runtime_management._default_runtime.model = bare_model
+        else:
+            return JSONResponse(content={"error": "No active runtime"}, status_code=400)
+
+        info = _get_provider_info()
+        _broadcast(json.dumps({"type": "provider_changed", "data": info}))
+        return JSONResponse(content={
+            "switched": True,
+            "provider": target_provider or _runtime_management._default_provider,
+            "model": bare_model,
+        })
 
     @app.get("/api/config")
     async def get_config():
@@ -2284,8 +2373,10 @@ def create_app():
                         old_rt = conv.get("runtime")
                         if old_rt and hasattr(old_rt, 'close'):
                             old_rt.close()
-                        new_rt = _create_runtime_for_visualizer(_runtime_management._chat_provider)
-                        new_rt.model = _runtime_management._chat_model
+                        new_rt = _create_runtime_for_visualizer(
+                            _runtime_management._chat_provider,
+                            model=_runtime_management._chat_model,
+                        )
                         conv["runtime"] = new_rt
                         conv["provider_name"] = _runtime_management._chat_provider
                 changed = True

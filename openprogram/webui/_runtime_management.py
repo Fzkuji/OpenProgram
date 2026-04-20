@@ -79,22 +79,39 @@ def _prev_rt_closed(rt) -> bool:
 # Runtime creation — provider-specific setup
 # ---------------------------------------------------------------------------
 
-def _create_runtime_for_visualizer(provider: str):
+def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     """Create a runtime appropriate for the web UI.
 
-    Strategy per provider:
-      - Codex CLI:       session_id="auto" (default) + search=True → capture
-                         thread id on first call, resume on every subsequent
-                         call so one research run shares one codex thread
-      - Claude Code CLI: default (persistent process), has_session=True → process
-                         manages its own context, summarize() skipped
-      - Gemini CLI:      default → session auto-managed by CLI
-      - API providers:   default → stateless, Context tree injects history
+    Two shapes:
+      - Provider listed in ``legacy_providers.PROVIDERS`` (CLI runtimes + the
+        classic HTTP subclasses like AnthropicRuntime/OpenAIRuntime/...):
+        route through ``legacy_providers.create_runtime`` so their per-provider
+        conventions (Codex search=True, Claude Code has_session, ...) apply.
+      - Any other provider id present in the HTTP model registry (openrouter,
+        groq, cerebras, minimax, mistral, ...): build a plain ``Runtime`` with
+        ``model="<provider>:<id>"``. These go through AgentSession end-to-end.
     """
-    from openprogram.legacy_providers import create_runtime
-    if provider == "openai-codex":
-        return create_runtime(provider=provider, search=True)
-    return create_runtime(provider=provider)
+    from openprogram.legacy_providers import create_runtime, PROVIDERS
+
+    if provider in PROVIDERS:
+        kwargs = {"provider": provider}
+        if provider == "openai-codex":
+            kwargs["search"] = True
+        if model:
+            kwargs["model"] = model
+        return create_runtime(**kwargs)
+
+    # Registry-based provider. Pick a default model if caller didn't specify.
+    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.providers import get_model as _get_model, get_models as _get_models
+    if model is None:
+        models = _get_models(provider)
+        if not models:
+            raise RuntimeError(f"Provider {provider!r} has no models registered")
+        model = models[0].id
+    if _get_model(provider, model) is None:
+        raise RuntimeError(f"Unknown model {provider}:{model}")
+    return Runtime(model=f"{provider}:{model}")
 
 
 def _detect_default_provider() -> tuple:
