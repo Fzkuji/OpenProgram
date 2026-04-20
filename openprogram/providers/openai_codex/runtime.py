@@ -159,6 +159,43 @@ _KNOWN_CODEX_MODELS = [
 ]
 
 
+def _augment_registry_with_codex_models() -> None:
+    """Inject Codex-route model ids into the provider registry if the
+    generated catalog is missing them. The ChatGPT backend has no public
+    model-listing endpoint, so OpenClaw / pi-ai maintain their lists by
+    hand; we mirror that list here and let the registry carry the rest
+    (name, cost, context window) for whichever ids already exist. New
+    entries get a sensible Codex default."""
+    from openprogram.providers.models_generated import MODELS
+    from openprogram.providers.types import Model, ModelCost
+
+    template = next(
+        (m for m in MODELS.values()
+         if m.provider == "openai-codex" and m.api == "openai-codex-responses"),
+        None,
+    )
+    if template is None:
+        return  # registry has no Codex entries at all; nothing to mirror.
+
+    for mid in _KNOWN_CODEX_MODELS:
+        key = f"openai-codex/{mid}"
+        if key in MODELS:
+            continue
+        # Prettify: "gpt-5.4-mini" -> "GPT-5.4 mini", "gpt-5.3-codex-spark" -> "GPT-5.3 Codex Spark"
+        parts = mid.replace("gpt-", "").split("-")
+        head = "GPT-" + parts[0]
+        tail = " ".join(p.capitalize() if p != "codex" else "Codex" for p in parts[1:])
+        display = (head + " " + tail).strip()
+
+        MODELS[key] = template.model_copy(update={
+            "id": mid,
+            "name": display,
+        })
+
+
+_augment_registry_with_codex_models()
+
+
 class OpenAICodexRuntime(Runtime):
     """
     Args:

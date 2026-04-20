@@ -1,5 +1,19 @@
 // ===== Provider, Agent Settings, Model Management =====
 
+// Inline Lucide-style capability icons (linear, currentColor stroke).
+// Shared with settings.js.
+var _CAP_ICONS = {
+  vision:    '<svg class="cap-icon" viewBox="0 0 24 24" stroke="currentColor">' +
+             '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>' +
+             '<circle cx="12" cy="12" r="3"/></svg>',
+  tools:     '<svg class="cap-icon" viewBox="0 0 24 24" stroke="currentColor">' +
+             '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>' +
+             '</svg>',
+  reasoning: '<svg class="cap-icon" viewBox="0 0 24 24" stroke="currentColor">' +
+             '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>' +
+             '<path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>',
+};
+
 function updateProviderBadge(info) {
   var provBadge = document.getElementById('providerBadge');
   var sessBadge = document.getElementById('sessionBadge');
@@ -143,9 +157,9 @@ function toggleModelDropdown(event) {
         var full = pid + ':' + m.id;
         var active = (full === _currentModel || m.id === _currentModel);
         var caps = '';
-        if (m.vision)    caps += '<span class="cap-badge vision" title="Vision">👁</span>';
-        if (m.tools)     caps += '<span class="cap-badge tools" title="Tools">🔧</span>';
-        if (m.reasoning) caps += '<span class="cap-badge reasoning" title="Reasoning">🧠</span>';
+        if (m.vision)    caps += '<span class="cap-badge vision" title="Vision">' + _CAP_ICONS.vision + '</span>';
+        if (m.tools)     caps += '<span class="cap-badge tools" title="Tools">' + _CAP_ICONS.tools + '</span>';
+        if (m.reasoning) caps += '<span class="cap-badge reasoning" title="Reasoning">' + _CAP_ICONS.reasoning + '</span>';
         if (m.context_window) caps += '<span class="cap-badge ctx">' + _fmtCtxShort(m.context_window) + '</span>';
 
         html += '<div class="model-dd-item' + (active ? ' active' : '') +
@@ -312,9 +326,9 @@ async function openAgentSelector(agentType) {
       group.items.forEach(function(m) {
         var active = (current.provider === pid && (current.model === m.id || current.model === pid + ':' + m.id));
         var caps = '';
-        if (m.vision)    caps += '<span class="cap-badge vision" title="Vision">👁</span>';
-        if (m.tools)     caps += '<span class="cap-badge tools" title="Tools">🔧</span>';
-        if (m.reasoning) caps += '<span class="cap-badge reasoning" title="Reasoning">🧠</span>';
+        if (m.vision)    caps += '<span class="cap-badge vision" title="Vision">' + _CAP_ICONS.vision + '</span>';
+        if (m.tools)     caps += '<span class="cap-badge tools" title="Tools">' + _CAP_ICONS.tools + '</span>';
+        if (m.reasoning) caps += '<span class="cap-badge reasoning" title="Reasoning">' + _CAP_ICONS.reasoning + '</span>';
         if (m.context_window) caps += '<span class="cap-badge ctx">' + _fmtCtxShort(m.context_window) + '</span>';
 
         html += '<div class="model-dd-item' + (active ? ' active' : '') +

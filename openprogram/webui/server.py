@@ -2121,6 +2121,34 @@ def create_app():
         from openprogram.webui import _model_catalog as _mc
         return JSONResponse(content={"models": _mc.list_enabled_models()})
 
+    @app.get("/api/providers/{name}/config")
+    async def api_provider_config(name: str):
+        from openprogram.webui import _model_catalog as _mc
+        return JSONResponse(content=_mc.get_provider_config(name))
+
+    @app.post("/api/providers/{name}/config")
+    async def api_set_provider_config(name: str, body: dict = None):
+        from openprogram.webui import _model_catalog as _mc
+        return JSONResponse(content=_mc.set_provider_config(name, body or {}))
+
+    @app.post("/api/providers/{name}/fetch-models")
+    async def api_fetch_models(name: str):
+        """Pull the provider's /v1/models endpoint and merge the result
+        into custom_models. Works for any OpenAI-compatible provider."""
+        from openprogram.webui import _model_catalog as _mc
+        return JSONResponse(content=_mc.fetch_models_remote(name))
+
+    @app.post("/api/providers/{name}/test")
+    async def api_test_provider(name: str, body: dict = None):
+        from openprogram.webui import _model_catalog as _mc
+        model = (body or {}).get("model")
+        return JSONResponse(content=_mc.test_provider(name, model=model))
+
+    @app.delete("/api/providers/{name}/models/{model_id:path}")
+    async def api_delete_custom_model(name: str, model_id: str):
+        from openprogram.webui import _model_catalog as _mc
+        return JSONResponse(content=_mc.remove_custom_model(name, model_id))
+
     @app.get("/api/providers/{name}/configure")
     async def get_provider_configure(name: str):
         """Return the configuration schema (label + step metadata) for a provider."""

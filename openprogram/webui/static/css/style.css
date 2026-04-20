@@ -3449,3 +3449,60 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
   align-items: center;
   flex-shrink: 0;
 }
+
+/* ============================================================
+   Capability-badge icons (Lucide, inline SVG, stroke=currentColor)
+   ============================================================ */
+
+.cap-badge {
+  padding: 0 5px;
+  gap: 3px;
+  font-size: 10.5px;
+}
+
+.cap-badge .cap-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.cap-badge .cap-icon path,
+.cap-badge .cap-icon circle {
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+/* Connectivity-check feedback + icon-button tweaks */
+.test-result {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.test-result.ok  { color: var(--accent-green); }
+.test-result.err { color: var(--accent-red); }
+
+.settings-icon-btn {
+  padding: 3px 6px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+.settings-icon-btn .cap-icon {
+  width: 14px;
+  height: 14px;
+}
+.mini-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.mini-action .cap-icon {
+  width: 12px;
+  height: 12px;
+}
