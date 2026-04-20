@@ -78,6 +78,32 @@ _CLI_PROVIDERS = [
 ]
 
 
+# Providers whose base URL speaks the OpenAI-compatible /v1/models listing
+# (Bearer auth, standard {data:[{id:...}]} response). Everything else either
+# has no public listing or uses a custom auth / response shape.
+_FETCH_MODELS_PROVIDERS = frozenset({
+    # Straight OpenAI-compatible /v1/models, Bearer auth, {data:[{id}]}:
+    "openai",
+    "openrouter",
+    "groq",
+    "cerebras",
+    "mistral",
+    "huggingface",
+    "kimi-coding",
+    "minimax",
+    "minimax-cn",
+    "vercel-ai-gateway",
+    # Excluded deliberately:
+    #   anthropic      — /v1/models uses x-api-key header, not Bearer
+    #   google*        — custom endpoints / OAuth
+    #   azure-*        — needs deployment name not model id
+    #   amazon-bedrock — AWS SigV4
+    #   openai-codex   — ChatGPT backend, no public listing (403)
+    #   github-copilot — private OAuth with custom headers
+    #   opencode       — not verified; add if/when tested
+})
+
+
 _ENV_API_KEYS = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
@@ -173,6 +199,7 @@ def list_providers() -> list[dict[str, Any]]:
             "default_base_url": default_base,
             "base_url": pcfg.get("base_url") or "",
             "use_responses_api": bool(pcfg.get("use_responses_api", False)),
+            "supports_fetch": pid in _FETCH_MODELS_PROVIDERS,
             "model_count": len(models) + len(custom),
             "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
         })
@@ -396,6 +423,12 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     Returns dict: {"fetched": N, "added": N, "models": [ids...]} on success,
     {"error": "..."} on failure.
     """
+    if provider_id not in _FETCH_MODELS_PROVIDERS:
+        return {"error": (
+            f"{_label(provider_id)} has no public /v1/models endpoint. "
+            "Models are curated manually for this provider."
+        )}
+
     import httpx
 
     api_key = _resolve_api_key(provider_id)

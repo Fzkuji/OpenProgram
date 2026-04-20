@@ -47,6 +47,8 @@ function switchSettingsSection(el) {
 }
 
 function _loadSettingsSection(section) {
+  var body = document.querySelector('.settings-body');
+  if (body) body.classList.toggle('providers-active', section === 'providers');
   if (section === 'providers') {
     _loadProvidersSettings();
   } else if (section === 'general') {
@@ -257,17 +259,19 @@ function _renderProviderDetail(p, models) {
             '</div>';
     html += '<div class="provider-detail-row">';
     html += '<input class="settings-input" type="password" id="apikey_' + escAttr(p.api_key_env) +
-            '" placeholder="' + escAttr(p.api_key_env) + '">';
-    html += '<button class="mini-action settings-icon-btn" title="Show/hide" onclick="_toggleKeyVisibility(\'apikey_' + escAttr(p.api_key_env) + '\')">' + _EYE_ICON + '</button>';
+            '" placeholder="' + escAttr(p.api_key_env) +
+            '" oninput="_onApiKeyInput(\'' + escAttr(p.api_key_env) + '\')">';
+    html += '<button class="settings-icon-btn" title="Show/hide" onclick="_toggleKeyVisibility(\'apikey_' + escAttr(p.api_key_env) + '\', \'' + escAttr(p.api_key_env) + '\')">' + _EYE_ICON + '</button>';
     html += '<button class="settings-btn" onclick="_saveApiKey(\'' + escAttr(p.api_key_env) + '\', \'' + escAttr(p.id) + '\')">Save</button>';
     html += '</div>';
     html += '</div>';
 
     // Custom base URL (API proxy)
+    var baseDefault = p.default_base_url ? ('default: ' + p.default_base_url) : '';
     html += '<div class="provider-detail-section">';
     html += '<div class="provider-detail-section-title">' +
               '<span>API Base URL</span>' +
-              '<span class="model-count-summary">default: ' + escHtml(p.default_base_url || '') + '</span>' +
+              '<span class="model-count-summary">' + escHtml(baseDefault) + '</span>' +
             '</div>';
     html += '<div class="provider-detail-row">';
     html += '<input class="settings-input" type="text" id="baseurl_' + escAttr(p.id) +
@@ -306,8 +310,10 @@ function _renderProviderDetail(p, models) {
     html += '<div class="provider-detail-section-title">';
     html +=   '<span>Models <span class="model-count-summary" id="modelCountSummary">' +
               enabledCount + ' / ' + models.length + ' available</span></span>';
-    html +=   '<span style="display:flex;gap:6px;align-items:center">' +
-                '<button class="mini-action" onclick="_fetchRemoteModels(\'' + escAttr(p.id) + '\', this)" title="Fetch from ' + escAttr((p.base_url || p.default_base_url || '') + '/models') + '">' + _REFRESH_ICON + '<span style="margin-left:4px">Fetch models</span></button>' +
+    var fetchBtn = p.supports_fetch
+      ? ('<button class="mini-action" onclick="_fetchRemoteModels(\'' + escAttr(p.id) + '\', this)" title="Fetch from ' + escAttr((p.base_url || p.default_base_url || '') + '/models') + '">' + _REFRESH_ICON + '<span style="margin-left:4px">Fetch models</span></button>')
+      : '';
+    html +=   '<span style="display:flex;gap:6px;align-items:center">' + fetchBtn +
                 '<button class="mini-action" onclick="_bulkToggleModels(\'' + escAttr(p.id) + '\', true)">Enable all</button>' +
                 '<button class="mini-action" onclick="_bulkToggleModels(\'' + escAttr(p.id) + '\', false)">Disable all</button>' +
               '</span>';
@@ -322,6 +328,12 @@ function _renderProviderDetail(p, models) {
   }
 
   detail.innerHTML = html;
+
+  // After the detail pane is in the DOM, prefill the API key preview
+  // if there's already a value saved for this env var.
+  if (p.api_key_env) {
+    _loadApiKeyPreview(p.api_key_env);
+  }
 }
 
 function _modelItemHtml(providerId, m) {
@@ -407,10 +419,60 @@ async function _bulkToggleModels(pid, enable) {
   _selectProvider(pid);
 }
 
-function _toggleKeyVisibility(inputId) {
+async function _loadApiKeyPreview(envVar) {
+  var input = document.getElementById('apikey_' + envVar);
+  if (!input) return;
+  try {
+    var resp = await fetch('/api/config/key/' + encodeURIComponent(envVar));
+    var data = await resp.json();
+    if (data.has_value) {
+      input.value = data.masked;
+      input.dataset.state = 'masked';
+    } else {
+      input.value = '';
+      input.dataset.state = 'empty';
+    }
+  } catch (e) {}
+}
+
+async function _toggleKeyVisibility(inputId, envVar) {
   var el = document.getElementById(inputId);
   if (!el) return;
-  el.type = (el.type === 'password') ? 'text' : 'password';
+  var state = el.dataset.state || 'empty';
+  if (state === 'empty' || state === 'editing') {
+    // Plain password/text swap on a value the user is typing.
+    el.type = (el.type === 'password') ? 'text' : 'password';
+    return;
+  }
+  // state === 'masked' or 'revealed' — fetch from server.
+  if (state === 'masked') {
+    var resp = await fetch('/api/config/key/' + encodeURIComponent(envVar) + '?reveal=1');
+    var data = await resp.json();
+    if (data.has_value) {
+      el.value = data.value;
+      el.type = 'text';
+      el.dataset.state = 'revealed';
+    }
+  } else {  // revealed → mask again
+    var resp = await fetch('/api/config/key/' + encodeURIComponent(envVar));
+    var data = await resp.json();
+    if (data.has_value) {
+      el.value = data.masked;
+      el.type = 'password';
+      el.dataset.state = 'masked';
+    }
+  }
+}
+
+function _onApiKeyInput(envVar) {
+  var el = document.getElementById('apikey_' + envVar);
+  if (!el) return;
+  // Clear masked display the moment the user starts typing.
+  if (el.dataset.state === 'masked' || el.dataset.state === 'revealed') {
+    el.value = '';
+    el.type = 'password';
+  }
+  el.dataset.state = 'editing';
 }
 
 async function _saveProviderBaseUrl(pid) {

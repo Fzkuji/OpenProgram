@@ -2114,6 +2114,24 @@ def create_app():
         enabled = bool((body or {}).get("enabled", False))
         return JSONResponse(content=_mc.toggle_model(name, model_id, enabled))
 
+    @app.get("/api/config/key/{env_var}")
+    async def api_get_api_key(env_var: str, reveal: bool = False):
+        """Return the current value of an API-key env var, masked by
+        default. With ?reveal=1 returns plaintext (only safe because the
+        webui is bound to localhost)."""
+        val = os.environ.get(env_var) or _load_config().get("api_keys", {}).get(env_var, "")
+        if not val:
+            return JSONResponse(content={"has_value": False, "value": "", "masked": ""})
+        if reveal:
+            return JSONResponse(content={"has_value": True, "value": val, "masked": ""})
+        # Show first 4 + last 4, fill middle with bullets (bounded length).
+        if len(val) > 12:
+            mid = "•" * min(max(len(val) - 8, 6), 24)
+            masked = val[:4] + mid + val[-4:]
+        else:
+            masked = "•" * len(val)
+        return JSONResponse(content={"has_value": True, "value": "", "masked": masked})
+
     @app.get("/api/models/enabled")
     async def api_enabled_models():
         """Flat list of every enabled model across enabled providers.
