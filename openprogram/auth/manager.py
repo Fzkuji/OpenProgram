@@ -144,6 +144,33 @@ class AuthManager:
 
     # -- acquire (async) -----------------------------------------------------
 
+    def acquire_sync(self, provider_id: str, profile_id: str = "default") -> Credential:
+        """Sync wrapper around :meth:`acquire` for callers in non-async
+        contexts (legacy runtimes, CLI entry points, subprocess drivers).
+
+        Rules:
+          * if no event loop is running on the current thread, we spin up
+            a private one for the call. Creating one loop per acquire is
+            cheap (refresh involves at most one HTTPS POST) and keeps the
+            code path self-contained.
+          * if a loop IS running on this thread, we refuse — an async
+            caller should use :meth:`acquire` directly rather than
+            nesting loops. The error message names the caller to reduce
+            "wait why doesn't this work" debugging.
+
+        Cross-thread is fine either way: one event loop per thread is
+        independent."""
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is not None:
+            raise RuntimeError(
+                "AuthManager.acquire_sync() called from inside a running "
+                "event loop — use `await acquire(...)` instead"
+            )
+        return asyncio.run(self.acquire(provider_id, profile_id))
+
     async def acquire(self, provider_id: str, profile_id: str = "default") -> Credential:
         """Return a usable credential for ``(provider, profile)``.
 
