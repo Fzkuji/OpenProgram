@@ -415,6 +415,27 @@ def test_doctor_flags_expired_oauth_without_refresh(isolated):
     assert "expired_no_refresh" in codes
 
 
+def test_doctor_flags_missing_source_file(isolated, tmp_path):
+    store, _, _, cap = isolated
+    # Pretend we imported from a file that no longer exists.
+    ghost = tmp_path / "gone.json"
+    store.put_pool(CredentialPool(
+        provider_id="openai-codex", profile_id="default",
+        credentials=[Credential(
+            provider_id="openai-codex", profile_id="default", kind="api_key",
+            payload=ApiKeyPayload(api_key="sk-orphaned-123456"),
+            source="codex_cli_import",
+            metadata={"source_path": str(ghost), "imported_from": "codex_cli"},
+        )],
+    ))
+    rc = dispatch(_parse(["doctor", "--json"]))
+    # Missing source file is only a WARN → exit 0.
+    assert rc == 0
+    body = json.loads(cap.readouterr().out)
+    codes = {f["code"] for f in body["findings"]}
+    assert "missing_source_file" in codes
+
+
 def test_doctor_healthy_api_key_pool_passes(isolated):
     store, _, _, cap = isolated
     store.put_pool(CredentialPool(

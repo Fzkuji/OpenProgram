@@ -785,6 +785,22 @@ def _cmd_doctor(as_json: bool) -> int:
 
         usable = 0
         for c in pool.credentials:
+            # Source-file check — if we imported this from an external
+            # path and that path is gone, the user likely `codex logout`-ed
+            # and our pool is a stale mirror. Flag so `providers doctor`
+            # catches it before the next API call raises a mysterious 401.
+            src_path = (c.metadata or {}).get("source_path")
+            if src_path:
+                from pathlib import Path as _P
+                if not _P(src_path).exists():
+                    add("WARN", "missing_source_file",
+                        f"{pool.provider_id}/{pool.profile_id} was imported "
+                        f"from {src_path} which no longer exists. "
+                        "Consider re-running login if the external CLI logged out.",
+                        provider=pool.provider_id, profile=pool.profile_id,
+                        credential_id=c.credential_id,
+                        source_path=src_path)
+
             # Cooldown check.
             cooldown_until = getattr(c, "cooldown_until_ms", 0) or 0
             if cooldown_until and cooldown_until > now_ms:
