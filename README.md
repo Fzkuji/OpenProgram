@@ -415,6 +415,33 @@ This is a **paradigm proposal** with a reference implementation. We welcome disc
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
+## Acknowledgements
+
+OpenProgram stands on shoulders. The tool framework, provider abstraction, and
+several tool implementations were ported or adapted from the projects below —
+each under its own license. Enormous thanks to their authors.
+
+- [**OpenClaw**](https://github.com/openclaw/openclaw) (MIT) — layout of the
+  tool registry (`name / description / parameters / execute`), provider
+  abstraction with `check_fn` + `requires_env` gating, `TOOLSETS` presets,
+  skill loading via SKILL.md frontmatter + late-bound `read`. Our full clone
+  lives under `references/openclaw/` (gitignored) for browsing.
+- [**hermes-agent**](https://github.com/himanshuishere/hermes-agent)
+  (MIT) — starting point for `execute_code` (we trimmed the
+  Docker / Modal layers), `mixture_of_agents`, and the general shape of the
+  multi-provider `web_search` / `image_generate` / `image_analyze` tools.
+- [**pi-coding-agent**](https://github.com/mariozechner/pi-coding-agent)
+  (MIT) — via OpenClaw's import, the canonical AgentSkill shape
+  (`<available_skills>` XML formatter, name / description / location).
+- [**Claude Code**](https://www.anthropic.com/claude-code) — overall ergonomics
+  of the `DEFAULT_TOOLS` set (bash + read / write / edit + glob / grep / list
+  + apply_patch + todo_read / todo_write) and the `todo` tool's JSON schema.
+- **Anthropic / OpenAI / Google SDKs** — provider HTTP contracts; our
+  providers call the raw HTTP APIs to keep SDK dependencies optional.
+
+Individual tool files call out their direct inspirations in file-level
+docstrings where the lineage is more specific.
+
 ## License
 
 MIT
