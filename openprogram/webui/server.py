@@ -1594,16 +1594,36 @@ async def _handle_ws_command(ws, cmd: dict):
                 head_or_tip,
                 linear_history,
                 sibling_index,
+                siblings as _siblings,
             )
             all_msgs = conv.get("messages", [])
             head = head_or_tip(conv, all_msgs)
             chain = linear_history(all_msgs, head) if head else list(all_msgs)
-            # Annotate each msg with its sibling position so UI can
-            # render < N / M > without a second round-trip.
+            # Annotate each msg with its sibling position + pointers
+            # to the neighbouring siblings. Client doesn't have the
+            # full DAG (we only send the linear chain under HEAD), so
+            # it needs the prev/next ids wired directly onto each
+            # message for < N / M > navigation to work.
             shown = []
             for m in chain:
-                idx, total = sibling_index(all_msgs, m.get("id"))
-                shown.append({**m, "sibling_index": idx, "sibling_total": total})
+                mid = m.get("id")
+                idx, total = sibling_index(all_msgs, mid)
+                prev_id = next_id = None
+                if total > 1:
+                    sibs = _siblings(all_msgs, mid)
+                    ids = [s.get("id") for s in sibs]
+                    i = ids.index(mid) if mid in ids else -1
+                    if i > 0:
+                        prev_id = ids[i - 1]
+                    if 0 <= i < len(ids) - 1:
+                        next_id = ids[i + 1]
+                shown.append({
+                    **m,
+                    "sibling_index": idx,
+                    "sibling_total": total,
+                    "prev_sibling_id": prev_id,
+                    "next_sibling_id": next_id,
+                })
 
             tree_data = conv["root_context"]._to_dict() if conv.get("root_context") else {}
             await ws.send_text(json.dumps({

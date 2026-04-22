@@ -200,7 +200,6 @@
   function doRetry(btn, messageEl) {
     var convId = window.currentConvId;
     var msgId = messageEl.getAttribute('data-msg-id');
-    console.log('[retry] click', { convId: convId, msgId: msgId });
     if (!convId || !msgId) {
       console.warn('[message-actions] retry: missing conv_id or msg_id', convId, msgId);
       return;

@@ -249,6 +249,11 @@ function renderConversationMessages(conv) {
     if (msg.sibling_index && msg.sibling_total) {
       div.setAttribute('data-sibling-index', String(msg.sibling_index));
       div.setAttribute('data-sibling-total', String(msg.sibling_total));
+      // Server provides direct prev/next ids because the client only
+      // holds the linear chain under HEAD — sibling branches aren't
+      // in _allMessages. See server load_conversation handler.
+      if (msg.prev_sibling_id) div.setAttribute('data-prev-sibling', msg.prev_sibling_id);
+      if (msg.next_sibling_id) div.setAttribute('data-next-sibling', msg.next_sibling_id);
     }
     if (msg.timestamp || msg.created_at) {
       var ts = msg.timestamp || msg.created_at;

@@ -69,26 +69,11 @@
   };
 
   function resolveSiblingId(messageEl, dir) {
-    // The server knows the DAG — it has the sibling list. The
-    // simplest, race-free thing to do is ask for "previous" or
-    // "next" via the checkout endpoint and let the server pick.
-    // But our current /api/chat/checkout takes an explicit msg_id,
-    // so we compute locally from window._allMessages (populated by
-    // conversations.js on load).
-    var msgId = messageEl.getAttribute('data-msg-id');
-    var bucket = (window._allMessages || []).filter(function (m) { return m; });
-    var target = bucket.filter(function (m) { return m.id === msgId; })[0];
-    if (!target) return null;
-    var parentId = target.parent_id || null;
-    var sibs = bucket
-      .filter(function (m) { return (m.parent_id || null) === parentId; })
-      .sort(function (a, b) {
-        return (a.created_at || 0) - (b.created_at || 0);
-      });
-    var i = sibs.findIndex(function (m) { return m.id === msgId; });
-    if (i < 0) return null;
-    var next = dir === 'prev' ? sibs[i - 1] : sibs[i + 1];
-    return next ? next.id : null;
+    // Server stamps prev/next sibling ids directly on each message
+    // because the client only holds the linearized history under
+    // HEAD — sibling branches aren't in _allMessages.
+    var attr = dir === 'prev' ? 'data-prev-sibling' : 'data-next-sibling';
+    return messageEl.getAttribute(attr) || null;
   }
 
   function checkout(targetId) {
@@ -112,14 +97,9 @@
 
   document.addEventListener('click', function (e) {
     var btn = e.target.closest ? e.target.closest('.message-nav-btn') : null;
-    if (!btn) return;
-    console.log('[nav] click', { dir: btn.getAttribute('data-nav'), disabled: btn.disabled });
-    if (btn.disabled) return;
+    if (!btn || btn.disabled) return;
     var messageEl = btn.closest('.message');
-    if (!messageEl) {
-      console.warn('[nav] no .message ancestor');
-      return;
-    }
+    if (!messageEl) return;
     // When the user clicks "next" on an ASSISTANT message, they
     // really want to switch versions of the user turn above (the
     // assistant reply is a child of the user turn; siblings of the
@@ -130,7 +110,6 @@
     // granularity already.
     var dir = btn.getAttribute('data-nav');
     var targetId = resolveSiblingId(messageEl, dir);
-    console.log('[nav] resolveSiblingId →', targetId, 'msgId=', messageEl.getAttribute('data-msg-id'));
     if (!targetId) return;
     btn.disabled = true;
     checkout(targetId).catch(function (err) {
