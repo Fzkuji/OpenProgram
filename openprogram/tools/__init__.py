@@ -36,6 +36,7 @@ from .apply_patch import TOOL as APPLY_PATCH
 from .bash import TOOL as BASH
 from .clarify import TOOL as CLARIFY
 from .edit import TOOL as EDIT
+from .execute_code import TOOL as EXECUTE_CODE
 from .glob import TOOL as GLOB
 from .grep import TOOL as GREP
 from .image_analyze import TOOL as IMAGE_ANALYZE
@@ -72,6 +73,7 @@ ALL_TOOLS: dict[str, dict[str, Any]] = {
     "spawn_program": SPAWN_PROGRAM,
     "memory": MEMORY,
     "clarify": CLARIFY,
+    "execute_code": EXECUTE_CODE,
 }
 
 # Default tool set (à la Claude Code): dedicated file ops for safe common
@@ -101,8 +103,8 @@ TOOLSETS: dict[str, list[str]] = {
     "default": DEFAULT_TOOLS,
     "research": _builtin_list(DEFAULT_TOOLS) + [
         "web_fetch", "web_search", "image_generate", "image_analyze",
-        "pdf", "spawn_program", "memory", "clarify",
-    ],  # + skills / execute_code / cron as later steps land
+        "pdf", "spawn_program", "memory", "clarify", "execute_code",
+    ],
     "full": _builtin_list(ALL_TOOLS.keys()),
 }
 
@@ -188,6 +190,7 @@ __all__ = [
     "SPAWN_PROGRAM",
     "MEMORY",
     "CLARIFY",
+    "EXECUTE_CODE",
     "get",
     "get_many",
     "list_available",
