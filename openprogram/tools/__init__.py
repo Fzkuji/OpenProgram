@@ -42,6 +42,7 @@ from .process import TOOL as PROCESS
 from .read import TOOL as READ
 from .todo import READ_TOOL as TODO_READ, WRITE_TOOL as TODO_WRITE
 from .web_fetch import TOOL as WEB_FETCH
+from .web_search import TOOL as WEB_SEARCH
 from .write import TOOL as WRITE
 
 
@@ -58,6 +59,7 @@ ALL_TOOLS: dict[str, dict[str, Any]] = {
     "todo_read": TODO_READ,
     "todo_write": TODO_WRITE,
     "web_fetch": WEB_FETCH,
+    "web_search": WEB_SEARCH,
 }
 
 # Default tool set (à la Claude Code): dedicated file ops for safe common
@@ -85,7 +87,7 @@ DEFAULT_TOOLS: list[str] = [
 # "full"    — every registered tool. Mostly for debugging / listing.
 TOOLSETS: dict[str, list[str]] = {
     "default": DEFAULT_TOOLS,
-    "research": _builtin_list(DEFAULT_TOOLS) + ["web_fetch"],  # + web_search/image/pdf/memory as later steps land
+    "research": _builtin_list(DEFAULT_TOOLS) + ["web_fetch", "web_search"],  # + image/pdf/memory as later steps land
     "full": _builtin_list(ALL_TOOLS.keys()),
 }
 
@@ -164,6 +166,7 @@ __all__ = [
     "TODO_READ",
     "TODO_WRITE",
     "WEB_FETCH",
+    "WEB_SEARCH",
     "get",
     "get_many",
     "list_available",
