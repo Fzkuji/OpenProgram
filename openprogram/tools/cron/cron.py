@@ -45,10 +45,10 @@ DEFAULT_REL_PATH = "cron/schedule.json"
 
 DESCRIPTION = (
     "Register / list / delete recurring agent tasks. Entries are persisted "
-    "to a JSON file; a companion daemon (separate process) fires the `prompt` "
-    "when the `cron` expression matches. Does not run anything itself — "
-    "creating an entry only schedules it. If no daemon is running, entries "
-    "accumulate until one starts."
+    "to a JSON file; the companion `openprogram cron-worker` process fires "
+    "each `prompt` when its `cron` expression matches. Creating an entry "
+    "only schedules it — if no worker is running, entries accumulate until "
+    "one starts."
 )
 
 
@@ -199,8 +199,9 @@ def execute(
             f"Created cron entry `{new_entry['id']}` in `{path}`:\n"
             f"  schedule: {new_entry['cron']}\n"
             f"  prompt:   {prompt[:160]}\n"
-            "Note: no daemon is currently bundled — the entry will fire "
-            "once an OpenProgram cron daemon is running (see docs)."
+            "Start the worker in another shell to fire entries:\n"
+            "  openprogram cron-worker            # run until Ctrl+C\n"
+            "  openprogram cron-worker --list     # show which entries match now"
         )
 
     return f"Error: unknown action {action!r}. Expected create / list / delete / get."

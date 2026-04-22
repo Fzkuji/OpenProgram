@@ -97,6 +97,16 @@ def main():
                           choices=["claude", "gemini"],
                           help="Target CLI tool (default: auto-detect)")
 
+    # cron-worker
+    p_cron = sub.add_parser(
+        "cron-worker",
+        help="Foreground loop that fires scheduled entries from the `cron` tool",
+    )
+    p_cron.add_argument("--once", action="store_true",
+        help="Evaluate one tick and exit (for testing / external schedulers)")
+    p_cron.add_argument("--list", action="store_true",
+        help="Show each entry and whether it matches the current minute")
+
     # web UI
     p_web = sub.add_parser("web", help="Start the web UI")
     p_web.add_argument("--port", type=int, default=8765, help="Port (default: 8765)")
@@ -145,6 +155,9 @@ def main():
         return
     elif args.command in ("web", "visualize"):
         _cmd_web(args.port, not args.no_browser)
+        return
+    elif args.command == "cron-worker":
+        _cmd_cron_worker(args.once, args.list)
         return
     elif args.command == "list":
         _cmd_list()
@@ -542,6 +555,20 @@ def _cmd_create_skill(name, provider=None, model=None):
     print(f"Creating skill for '{name}'...")
     path = create_skill(fn_name=name, description=description, code=code, runtime=runtime)
     print(f"  Skill created at {path}")
+
+
+def _cmd_cron_worker(once: bool, show_list: bool) -> None:
+    """Dispatch cron-worker subcommand."""
+    from openprogram.tools.cron import list_next, run_forever, run_once
+
+    if show_list:
+        list_next()
+        return
+    if once:
+        fired = run_once()
+        print(f"Fired {fired} entr{'y' if fired == 1 else 'ies'}.")
+        return
+    run_forever()
 
 
 def _cmd_web(port, open_browser):
