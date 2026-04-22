@@ -62,14 +62,27 @@
 
     var existing = messageEl.querySelector(':scope > .message-actions');
     if (existing) {
-      // Bar exists but may have been knocked out of last-child
-      // position by a later innerHTML update (chat-ws.js rebuilds
-      // targetEl's body on 'result'). Keep it pinned to the bottom.
       if (existing !== messageEl.lastElementChild) {
         messageEl.appendChild(existing);
       }
-      // Re-run nav — sibling counts may have changed since we last
-      // rendered (a new retry just came in).
+      // If the timestamp arrived after the bar was first built
+      // (assistant replies get stamped on chat_response result), add
+      // it retroactively. Avoids a refresh being needed for the
+      // badge to appear.
+      var ts2 = messageEl.getAttribute('data-created-at');
+      if (ts2 && !existing.querySelector('.message-timestamp')) {
+        var tsMs2 = parseInt(ts2, 10);
+        if (tsMs2 && !isNaN(tsMs2)) {
+          var tsEl2 = document.createElement('span');
+          tsEl2.className = 'message-timestamp';
+          try {
+            var d2 = new Date(tsMs2);
+            tsEl2.title = d2.toLocaleString();
+            tsEl2.textContent = d2.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } catch (e) { /* skip */ }
+          existing.insertBefore(tsEl2, existing.firstChild);
+        }
+      }
       if (typeof window.ensureSiblingNav === 'function') {
         window.ensureSiblingNav(messageEl);
       }
@@ -175,6 +188,7 @@
   function doRetry(btn, messageEl) {
     var convId = window.currentConvId;
     var msgId = messageEl.getAttribute('data-msg-id');
+    console.log('[retry] click', { convId: convId, msgId: msgId });
     if (!convId || !msgId) {
       console.warn('[message-actions] retry: missing conv_id or msg_id', convId, msgId);
       return;
@@ -254,10 +268,20 @@
     if (action === 'branch') return doBranch(btn, messageEl);
   }
 
+  // Document-level click delegation — survives the case where
+  // #chatMessages doesn't exist yet (Next.js PageShell injects the
+  // page HTML asynchronously, so scripts loaded before that can't
+  // bind to the container directly).
+  document.addEventListener('click', onChatClick, true);
+
   function attachObserver() {
     var container = document.getElementById('chatMessages');
-    if (!container) return;
-    container.addEventListener('click', onChatClick, true);
+    if (!container) {
+      // Container not mounted yet — poll briefly. PageShell injects
+      // it within a frame or two after the script runs.
+      setTimeout(attachObserver, 100);
+      return;
+    }
 
     // Attach action bars to anything already rendered, plus future
     // additions. Idempotent: ensureMessageActions is a no-op if the

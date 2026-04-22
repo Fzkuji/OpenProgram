@@ -262,6 +262,9 @@ function retryCurrentBlock(funcName) {
 function addUserMessage(text) {
   var div = document.createElement('div');
   div.className = 'message user';
+  // Stamp the send-time timestamp so the action bar can render the
+  // hover badge without waiting for a server reload.
+  div.setAttribute('data-created-at', String(Date.now()));
   div.innerHTML =
     '<div class="message-header">' +
       '<div class="message-avatar user-avatar">U</div>' +

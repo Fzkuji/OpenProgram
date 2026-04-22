@@ -666,6 +666,11 @@ function _handleChatResult(data, type) {
   // bubble is correct.
   if (data.msg_id) {
     targetEl.setAttribute('data-msg-id', data.msg_id);
+    // Stamp reply time so the action bar's timestamp badge shows up
+    // live, without needing a conversation reload.
+    if (!targetEl.hasAttribute('data-created-at')) {
+      targetEl.setAttribute('data-created-at', String(Date.now()));
+    }
     if (typeof window.ensureMessageActions === 'function') {
       window.ensureMessageActions(targetEl);
     }
