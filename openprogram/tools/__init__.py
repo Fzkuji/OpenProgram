@@ -37,8 +37,10 @@ from .bash import TOOL as BASH
 from .edit import TOOL as EDIT
 from .glob import TOOL as GLOB
 from .grep import TOOL as GREP
+from .image_analyze import TOOL as IMAGE_ANALYZE
 from .image_generate import TOOL as IMAGE_GENERATE
 from .list import TOOL as LIST
+from .pdf import TOOL as PDF
 from .process import TOOL as PROCESS
 from .read import TOOL as READ
 from .spawn_program import TOOL as SPAWN_PROGRAM
@@ -63,6 +65,8 @@ ALL_TOOLS: dict[str, dict[str, Any]] = {
     "web_fetch": WEB_FETCH,
     "web_search": WEB_SEARCH,
     "image_generate": IMAGE_GENERATE,
+    "image_analyze": IMAGE_ANALYZE,
+    "pdf": PDF,
     "spawn_program": SPAWN_PROGRAM,
 }
 
@@ -92,8 +96,9 @@ DEFAULT_TOOLS: list[str] = [
 TOOLSETS: dict[str, list[str]] = {
     "default": DEFAULT_TOOLS,
     "research": _builtin_list(DEFAULT_TOOLS) + [
-        "web_fetch", "web_search", "image_generate", "spawn_program",
-    ],  # + pdf/memory as later steps land
+        "web_fetch", "web_search", "image_generate", "image_analyze",
+        "pdf", "spawn_program",
+    ],  # + memory / clarify / skills as later steps land
     "full": _builtin_list(ALL_TOOLS.keys()),
 }
 
@@ -174,6 +179,8 @@ __all__ = [
     "WEB_FETCH",
     "WEB_SEARCH",
     "IMAGE_GENERATE",
+    "IMAGE_ANALYZE",
+    "PDF",
     "SPAWN_PROGRAM",
     "get",
     "get_many",
