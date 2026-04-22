@@ -158,12 +158,12 @@ class OpenAICodexRuntime(Runtime):
             # instead of crashing on a missing .access_token attribute.
             raise AuthConfigError(
                 f"openai-codex/{self._profile_id} credential is "
-                f"{cred.kind!r}, but this runtime needs OAuth. "
-                "This usually means your ~/.codex/auth.json is in apikey "
-                "mode. Use `providers logout openai-codex --yes` and then "
-                "`providers login openai --method api_key` (or adopt "
-                "env:OPENAI_API_KEY) — your key belongs under the `openai` "
-                "provider, not `openai-codex`.",
+                f"{cred.kind!r}, but this runtime needs OAuth (ChatGPT "
+                "Responses backend). Run `codex login` (don't pick the "
+                "API-key option) to get OAuth tokens into "
+                "~/.codex/auth.json, then `openprogram providers adopt "
+                "codex_cli`. If you only have a bare OpenAI key, switch "
+                "your chat provider to `openai`, not `openai-codex`.",
                 provider_id=auth_adapter.PROVIDER_ID,
                 profile_id=self._profile_id,
             )

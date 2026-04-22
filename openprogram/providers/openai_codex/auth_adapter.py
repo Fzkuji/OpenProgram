@@ -37,7 +37,6 @@ from openprogram.auth.manager import (
     register_provider_config,
 )
 from openprogram.auth.types import (
-    ApiKeyPayload,
     Credential,
     OAuthPayload,
 )
@@ -245,35 +244,21 @@ def import_from_codex_file(
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    # The Codex CLI stores two shapes depending on how the user logged in:
+    # Codex CLI stores two shapes:
     #   1. ChatGPT OAuth  → {"auth_mode": "chatgpt", "tokens": {...}}
     #   2. Bare API key   → {"auth_mode": "apikey", "OPENAI_API_KEY": "sk-..."}
     #
-    # The chatgpt shape matches this runtime's Responses-backend needs,
-    # so we emit a Codex-provider OAuth credential. The apikey shape is
-    # semantically just "use OpenAI directly" — it has no chatgpt_account
-    # id, can't drive the ChatGPT backend, and belongs under the `openai`
-    # provider. We emit it there so the user's key ends up in a pool that
-    # something can actually use.
+    # Only the chatgpt shape drives the Responses backend this runtime
+    # needs. The apikey shape has no chatgpt_account, no refresh path,
+    # and semantically means "use OpenAI directly" — which belongs to
+    # the `openai` provider, not here. We refuse to import it rather
+    # than silently routing it to a different pool: the user asked to
+    # import Codex credentials, and an apikey-mode file isn't one. If
+    # they want OAuth, they need to re-run `codex login` without
+    # --api-key. Matches OpenClaw's codex-cli-auth handling.
     auth_mode = (data.get("auth_mode") or "").lower()
-    if auth_mode == "apikey" or (not data.get("tokens") and data.get("OPENAI_API_KEY")):
-        api_key = (data.get("OPENAI_API_KEY") or "").strip()
-        if not api_key:
-            return None
-        return Credential(
-            provider_id="openai",
-            profile_id=profile_id,
-            kind="api_key",
-            payload=ApiKeyPayload(api_key=api_key),
-            source="codex_cli_import",
-            metadata={
-                "imported_from": "codex_cli",
-                "source_path": str(path),
-                "auth_mode": "apikey",
-                "routed_from": "openai-codex",
-            },
-            read_only=False,
-        )
+    if auth_mode != "chatgpt":
+        return None
 
     tokens = data.get("tokens") or {}
     access = tokens.get("access_token")
