@@ -336,21 +336,24 @@ def _available_login_methods(provider: str) -> list[tuple[str, str]]:
     """Enumerate login methods the CLI can drive for ``provider``.
 
     The ordering matters — the first entry is what ``--method`` defaults
-    to if the user just hits Enter. Provider-specific customizations
-    (e.g. Codex's "import from codex CLI" helper) take precedence over
-    the generic paste-an-api-key method because they almost always
-    produce a better credential."""
-    choices: list[tuple[str, str]] = []
+    to if the user just hits Enter. For providers with a real OAuth
+    flow we offer ONLY that flow (matches OpenClaw / Codex CLI UX —
+    one button, opens a browser). API-key paste / import-from-cli are
+    kept as the default for providers where OAuth isn't available.
+    """
     if provider == "openai-codex":
-        choices.append(("import_from_cli", "Import from ~/.codex/auth.json (run `codex login` first)"))
+        # Codex has a first-class OAuth flow; no reason to show the
+        # clunky "paste your CLI's auth.json" or "paste an api_key"
+        # options. The Codex runtime can't even use an api_key.
+        return [("pkce_oauth", "Sign in with ChatGPT (opens browser)")]
+
+    choices: list[tuple[str, str]] = []
     if provider == "anthropic":
         choices.append(("import_from_cli", "Import from Claude Code's ~/.claude/.credentials.json"))
     if provider == "google-gemini-cli":
         choices.append(("import_from_cli", "Import from ~/.gemini/oauth_creds.json"))
     if provider == "qwen":
         choices.append(("import_from_cli", "Import from ~/.qwen/oauth_creds.json"))
-    # API-key paste is universal — every provider accepts one even if
-    # it's not the recommended path.
     choices.append(("api_key", "Paste a static API key"))
     return choices
 
@@ -360,7 +363,59 @@ def _run_login_method(provider: str, profile: str, method: str) -> Credential:
         return _login_paste_api_key(provider, profile)
     if method == "import_from_cli":
         return _login_import_from_cli(provider, profile)
+    if method == "pkce_oauth":
+        return _login_pkce_oauth(provider, profile)
     raise AuthConfigError(f"unsupported method: {method!r}")
+
+
+# ---------------------------------------------------------------------------
+# Terminal LoginUi — threads PKCE's async flow through stdout/stdin.
+# ---------------------------------------------------------------------------
+
+class _TerminalLoginUi:
+    """LoginUi bound to stdout/stdin + the system browser.
+
+    Used by `providers login` to drive PKCE / device-code flows. The
+    PKCE method runs an asyncio coroutine; we pass this object in so it
+    can open the browser and prompt for a pasted redirect URL when the
+    localhost callback can't reach us (SSH sessions, firewalls).
+    """
+
+    async def open_url(self, url: str) -> None:
+        import webbrowser
+        print(f"\nOpen this URL to continue sign-in:\n  {url}\n")
+        try:
+            webbrowser.open(url)
+        except Exception:
+            # Best-effort — if no browser, user pastes the URL manually.
+            pass
+
+    async def prompt(self, message: str, *, secret: bool = False) -> str:
+        loop = asyncio.get_running_loop()
+        if secret:
+            return (await loop.run_in_executor(None, getpass.getpass, f"{message}: ")).strip()
+        return (await loop.run_in_executor(None, input, f"{message}: ")).strip()
+
+    async def show_progress(self, message: str) -> None:
+        print(message, flush=True)
+
+    async def show_code(self, user_code: str, verification_uri: str) -> None:
+        print(f"\nGo to {verification_uri} and enter code: {user_code}\n", flush=True)
+
+
+def _login_pkce_oauth(provider: str, profile: str) -> Credential:
+    """Run a PKCE OAuth flow for `provider`, blocking the CLI until done."""
+    from openprogram.auth.methods.pkce_oauth import PkceLoginMethod
+
+    if provider == "openai-codex":
+        from openprogram.providers.openai_codex import auth_adapter
+        config = auth_adapter.build_pkce_config()
+    else:
+        raise AuthConfigError(f"no PKCE config registered for {provider!r}")
+
+    method = PkceLoginMethod(provider_id=provider, config=config, profile_id=profile)
+    ui = _TerminalLoginUi()
+    return asyncio.run(method.run(ui))
 
 
 def _login_paste_api_key(provider: str, profile: str) -> Credential:

@@ -44,9 +44,35 @@ from openprogram.auth.types import (
 
 PROVIDER_ID = "openai-codex"
 
+OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 JWT_CLAIM_PATH = "https://api.openai.com/auth"
+
+
+def build_pkce_config():
+    """PKCE OAuth config that matches the Codex CLI's own browser flow.
+
+    Mirrors the authorize URL you get from ``codex login`` (which
+    OpenClaw and the Codex CLI itself use): callback on
+    ``localhost:1455/auth/callback``, ``codex_cli_simplified_flow=true``,
+    ``id_token_add_organizations=true`` so the returned JWT carries
+    the chatgpt_account_id our runtime needs.
+    """
+    from openprogram.auth.methods.pkce_oauth import PkceConfig
+    return PkceConfig(
+        authorize_url=OAUTH_AUTHORIZE_URL,
+        token_url=OAUTH_TOKEN_URL,
+        client_id=OAUTH_CLIENT_ID,
+        scopes=["openid", "profile", "email", "offline_access"],
+        callback_port=1455,
+        callback_path="/auth/callback",
+        extra_authorize_params={
+            "id_token_add_organizations": "true",
+            "codex_cli_simplified_flow": "true",
+            "originator": "openprogram",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

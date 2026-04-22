@@ -306,65 +306,25 @@ def test_profile_create_duplicate(isolated):
     assert rc == 1
 
 
-# ---- codex login via import ---------------------------------------------
+# ---- codex login (browser PKCE only) ------------------------------------
 
-def test_login_import_codex_when_file_exists(isolated, monkeypatch):
-    store, _, tmp, cap = isolated
-    # Seed a fake ~/.codex/auth.json via CODEX_HOME (set in the fixture).
-    codex_dir = tmp / "fake_codex"
-    codex_dir.mkdir()
-    import base64, json as _json, time as _time
-    header = base64.urlsafe_b64encode(b'{"alg":"none"}').rstrip(b"=").decode()
-    body = base64.urlsafe_b64encode(_json.dumps({
-        "exp": int(_time.time()) + 3600,
-        "https://api.openai.com/auth": {"chatgpt_account_id": "acc_xyz"},
-    }).encode()).rstrip(b"=").decode()
-    jwt = f"{header}.{body}.sig"
-    (codex_dir / "auth.json").write_text(_json.dumps({
-        "auth_mode": "chatgpt",
-        "tokens": {
-            "access_token": jwt, "refresh_token": "R-abc",
-            "account_id": "acc_xyz",
-        },
-    }))
-
-    rc = dispatch(_parse(["login", "openai-codex", "--method", "import_from_cli"]))
-    assert rc == 0
-    pool = store.find_pool("openai-codex", "default")
-    assert pool is not None
-    cred = pool.credentials[0]
-    assert cred.kind == "oauth"
-    assert cred.payload.refresh_token == "R-abc"
-    assert cred.metadata["account_id"] == "acc_xyz"
+def test_login_codex_only_offers_pkce(isolated):
+    """Codex has a real OAuth flow, so the CLI deliberately hides the
+    api_key and import_from_cli methods. Matches OpenClaw's setup UX."""
+    from openprogram.auth.cli import _available_login_methods
+    methods = _available_login_methods("openai-codex")
+    assert [m[0] for m in methods] == ["pkce_oauth"]
 
 
-def test_login_import_codex_apikey_refuses(isolated, monkeypatch):
-    """Codex CLI in apikey mode stores a bare OPENAI_API_KEY — not OAuth.
-    That shape can't drive the Codex runtime (no chatgpt_account_id, no
-    JWT). Matching OpenClaw's behavior, the import adapter refuses to
-    accept it rather than silently routing it elsewhere: the user asked
-    to import Codex credentials, and this isn't one. They need to run
-    `codex login` (without --api-key) to get OAuth tokens."""
-    store, _, tmp, cap = isolated
-    codex_dir = tmp / "fake_codex"
-    codex_dir.mkdir()
-    import json as _json
-    (codex_dir / "auth.json").write_text(_json.dumps({
-        "auth_mode": "apikey",
-        "OPENAI_API_KEY": "sk-proj-from-codex-apikey",
-    }))
-    rc = dispatch(_parse(["login", "openai-codex", "--method", "import_from_cli"]))
-    assert rc == 1
-    # Nothing written to either pool.
-    assert store.find_pool("openai-codex", "default") is None
-    assert store.find_pool("openai", "default") is None
-
-
-def test_login_import_codex_when_file_missing(isolated):
+def test_login_codex_rejects_legacy_methods(isolated):
+    """Asking for --method api_key or --method import_from_cli on
+    openai-codex should fail loudly. The ChatGPT Responses backend
+    can't use an api_key, and import_from_cli was a workaround we no
+    longer want to expose."""
     _, _, _, cap = isolated
-    rc = dispatch(_parse(["login", "openai-codex", "--method", "import_from_cli"]))
-    assert rc == 1
-    assert "codex login" in cap.readouterr().err
+    for bad in ("api_key", "import_from_cli"):
+        rc = dispatch(_parse(["login", "openai-codex", "--method", bad]))
+        assert rc == 1, f"expected failure for --method {bad}"
 
 
 # ---- aliases -------------------------------------------------------------
@@ -388,14 +348,17 @@ def test_aliases_json_is_parseable(isolated):
 
 
 def test_login_resolves_alias(isolated, monkeypatch):
+    # Use a provider whose api_key path is still exposed (openai-codex
+    # only offers pkce_oauth now). 'anthropic' accepts api_key via the
+    # universal fallback method.
     store, _, _, cap = isolated
     monkeypatch.setattr("getpass.getpass", lambda prompt: "sk-from-alias-login")
-    # Use the alias 'codex' rather than the canonical id.
-    rc = dispatch(_parse(["login", "codex", "--method", "api_key"]))
+    # Use an alias rather than the canonical id.
+    rc = dispatch(_parse(["login", "claude", "--method", "api_key"]))
     assert rc == 0
     # The pool must be stored under the canonical id, not the alias.
-    assert store.find_pool("codex", "default") is None
-    pool = store.find_pool("openai-codex", "default")
+    assert store.find_pool("claude", "default") is None
+    pool = store.find_pool("anthropic", "default")
     assert pool is not None
     assert pool.credentials[0].payload.api_key == "sk-from-alias-login"
 
