@@ -221,6 +221,18 @@ export const api = {
 
   listProviderAliases: () =>
     jsonFetch<Record<string, string>>("/api/providers/aliases"),
+
+  retryChat: (convId: string, msgId: string) =>
+    jsonFetch<{ conv_id: string; msg_id: string; truncated_from: string }>(
+      "/api/chat/retry",
+      { method: "POST", body: JSON.stringify({ conv_id: convId, msg_id: msgId }) },
+    ),
+
+  branchChat: (convId: string, msgId: string) =>
+    jsonFetch<{ conv_id: string; title: string; branched_from: string }>(
+      "/api/chat/branch",
+      { method: "POST", body: JSON.stringify({ conv_id: convId, msg_id: msgId }) },
+    ),
 };
 
 export interface DoctorFinding {

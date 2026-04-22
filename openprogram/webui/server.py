@@ -1908,6 +1908,144 @@ def create_app():
 
         return JSONResponse(content={"conv_id": conv_id, "msg_id": msg_id})
 
+    @app.post("/api/chat/retry")
+    async def post_chat_retry(body: dict = None):
+        """Regenerate the assistant reply for a given message.
+
+        Accepts a ``msg_id`` pointing at either the assistant message
+        to replace or the user message whose reply should be regenerated
+        — we normalize to "re-run the latest user turn at or before
+        ``msg_id``".
+
+        Destructive by design: truncates the conversation at the
+        chosen user turn (so the old assistant reply is gone) then
+        re-executes that turn. This mirrors ChatGPT/Claude's "retry"
+        semantics in the minimal-code flavour (no sibling versions —
+        that would require a message tree, which is a separate
+        feature).
+        """
+        if body is None:
+            return JSONResponse(content={"error": "no body"}, status_code=400)
+        conv_id = body.get("conv_id")
+        pivot_id = body.get("msg_id")
+        if not conv_id or not pivot_id:
+            return JSONResponse(
+                content={"error": "conv_id and msg_id required"}, status_code=400,
+            )
+        with _conversations_lock:
+            conv = _conversations.get(conv_id)
+            if conv is None:
+                return JSONResponse(content={"error": "unknown conv"}, status_code=404)
+
+            # Locate the pivot; find the nearest user message at or
+            # before it. That's the turn we'll re-run.
+            msgs = conv["messages"]
+            pivot_idx = next(
+                (i for i, m in enumerate(msgs) if m.get("id") == pivot_id), -1,
+            )
+            if pivot_idx < 0:
+                return JSONResponse(content={"error": "unknown msg"}, status_code=404)
+
+            user_idx = pivot_idx
+            while user_idx >= 0 and msgs[user_idx].get("role") != "user":
+                user_idx -= 1
+            if user_idx < 0:
+                return JSONResponse(
+                    content={"error": "no user message to retry from"},
+                    status_code=400,
+                )
+
+            user_msg = msgs[user_idx]
+            # Truncate everything after (and including) the user turn's
+            # assistant reply. We keep the user message itself so
+            # threading it into the re-run is a no-op.
+            conv["messages"] = msgs[: user_idx + 1]
+
+        _save_conversation(conv_id)
+
+        # Re-run. Fresh msg_id so clients correlate the new streaming
+        # response to its own envelope (the old msg_id is gone).
+        new_msg_id = str(uuid.uuid4())[:8]
+        parsed = _parse_chat_input(user_msg.get("content", ""))
+        if parsed["action"] == "run":
+            threading.Thread(
+                target=_execute_in_context,
+                args=(conv_id, new_msg_id, "run"),
+                kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"]},
+                daemon=True,
+            ).start()
+        else:
+            threading.Thread(
+                target=_execute_in_context,
+                args=(conv_id, new_msg_id, "query"),
+                kwargs={"query": parsed["raw"]},
+                daemon=True,
+            ).start()
+        return JSONResponse(content={
+            "conv_id": conv_id,
+            "msg_id": new_msg_id,
+            "truncated_from": user_msg.get("id"),
+        })
+
+    @app.post("/api/chat/branch")
+    async def post_chat_branch(body: dict = None):
+        """Fork a conversation at a specific message.
+
+        Clones every message up to and including ``msg_id`` into a
+        brand new conversation and returns its id. Does not execute
+        anything — the caller navigates the user into the new conv
+        and the next message they send drives the fork forward.
+
+        Keeps things deliberately simple: no lineage tracking, no
+        "branch of" pointer. Two independent conversations that
+        happen to share a prefix. Good enough for the "what if I
+        asked X instead?" workflow without building a git DAG.
+        """
+        if body is None:
+            return JSONResponse(content={"error": "no body"}, status_code=400)
+        conv_id = body.get("conv_id")
+        pivot_id = body.get("msg_id")
+        if not conv_id or not pivot_id:
+            return JSONResponse(
+                content={"error": "conv_id and msg_id required"}, status_code=400,
+            )
+
+        import copy as _copy
+        with _conversations_lock:
+            src = _conversations.get(conv_id)
+            if src is None:
+                return JSONResponse(content={"error": "unknown conv"}, status_code=404)
+            msgs = src["messages"]
+            pivot_idx = next(
+                (i for i, m in enumerate(msgs) if m.get("id") == pivot_id), -1,
+            )
+            if pivot_idx < 0:
+                return JSONResponse(content={"error": "unknown msg"}, status_code=404)
+
+            new_id = str(uuid.uuid4())[:8]
+            new_title = f"{src.get('title', 'branch')} (branch)"
+            _conversations[new_id] = {
+                "id": new_id,
+                "title": new_title,
+                "root_context": Context(
+                    name="chat_session", status="idle", start_time=time.time(),
+                ),
+                "runtime": None,
+                "provider_name": src.get("provider_name"),
+                "messages": _copy.deepcopy(msgs[: pivot_idx + 1]),
+                "function_trees": [],
+                "created_at": time.time(),
+                "branched_from": conv_id,
+                "branched_at_msg": pivot_id,
+            }
+
+        _save_conversation(new_id)
+        return JSONResponse(content={
+            "conv_id": new_id,
+            "title": new_title,
+            "branched_from": conv_id,
+        })
+
     @app.post("/api/run/{function_name}")
     async def run_function(function_name: str, body: dict = None):
         """Directly run a specific function.
