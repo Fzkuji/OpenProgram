@@ -62,7 +62,19 @@
 
     var existing = messageEl.querySelector(':scope > .message-actions');
     if (existing) {
-      if (existing !== messageEl.lastElementChild) {
+      // Pin actions BEFORE .message-nav, which always wants to sit
+      // last. Checking `lastElementChild` here would make actions and
+      // nav fight each other forever via the MutationObserver — each
+      // move triggers another observer pass, each pass tries to move
+      // back. Only re-pin when we're genuinely out of place (i.e.
+      // content was appended after us).
+      var nav = messageEl.querySelector(':scope > .message-nav');
+      if (nav) {
+        // Want actions directly before nav. No-op if already there.
+        if (existing.nextElementSibling !== nav) {
+          messageEl.insertBefore(existing, nav);
+        }
+      } else if (messageEl.lastElementChild !== existing) {
         messageEl.appendChild(existing);
       }
       // If the timestamp arrived after the bar was first built
