@@ -75,7 +75,14 @@ class PkceConfig:
     state_length_bytes: int = 16
     # Callback server binds to loopback only — don't ever advertise on
     # 0.0.0.0, that would let a process on the network intercept codes.
-    callback_host: str = "localhost"
+    # Bind IPv4 loopback explicitly. The OAuth app registers the
+    # redirect_uri as http://localhost:1455/... — browsers typically
+    # resolve `localhost` to 127.0.0.1 first, so we must listen there.
+    # If we used `localhost` directly, aiohttp might resolve to IPv6 ::1
+    # and the browser's IPv4 request would hit whoever else is on
+    # 127.0.0.1:1455 (a stale codex-cli / pi-ai server, for example),
+    # producing a confusing "state mismatch" error from that process.
+    callback_host: str = "127.0.0.1"
     # Maximum time we wait for the browser to come back with a code.
     # Longer than you'd think — the user might get distracted, log in,
     # complete MFA, etc.
@@ -277,7 +284,23 @@ async def _run_callback_server(cfg: PkceConfig, expected_state: str) -> str:
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, cfg.callback_host, cfg.callback_port)
-    await site.start()
+    try:
+        await site.start()
+    except OSError as e:
+        # EADDRINUSE — another process already owns 127.0.0.1:<port>
+        # (stale codex-cli / pi-ai callback server, usually). Surface
+        # this clearly so the user can kill the other process; don't
+        # let the manual-paste arm be the only option without saying
+        # why the callback won't fire.
+        await runner.cleanup()
+        raise RuntimeError(
+            f"Can't bind {cfg.callback_host}:{cfg.callback_port} for the OAuth "
+            f"callback ({e.__class__.__name__}: {e}). Another process is "
+            f"already listening there — likely a stale `codex login` or "
+            f"`pi` process. Find it with "
+            f"`lsof -iTCP:{cfg.callback_port} -sTCP:LISTEN` and kill it, "
+            f"then retry."
+        ) from e
     try:
         return await code_future
     finally:
