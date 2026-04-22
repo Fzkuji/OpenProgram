@@ -172,6 +172,10 @@ def _save_conversation(conv_id: str):
             "_titled": conv.get("_titled", False),
             "_last_exec_session": conv.get("_last_exec_session"),
             "_last_exec_cumulative_usage": conv.get("_last_exec_cumulative_usage"),
+            # ContextGit head pointer — the commit the UI should show on
+            # reload. Old metadata without this field falls back to
+            # "last message" at load time.
+            "head_id": conv.get("head_id"),
         }
         messages = list(conv.get("messages", []))
     try:
@@ -229,6 +233,17 @@ def _restore_sessions():
                 except Exception:
                     pass
 
+            # ContextGit migration: backfill parent_id on legacy
+            # messages and pick a head_id. Old conversations become a
+            # straight linear chain (see docs/design/contextgit.md).
+            from openprogram.contextgit import (
+                normalize_parent_pointers,
+                head_or_tip,
+            )
+            msgs = data.get("messages", [])
+            normalize_parent_pointers(msgs)
+            head_id = data.get("head_id") or head_or_tip({}, msgs)
+
             with _conversations_lock:
                 _conversations[conv_id] = {
                     "id": conv_id,
@@ -236,7 +251,7 @@ def _restore_sessions():
                     "root_context": root_ctx,
                     "runtime": runtime,
                     "provider_name": provider_name,
-                    "messages": data.get("messages", []),
+                    "messages": msgs,
                     "function_trees": data.get("function_trees", []),
                     "created_at": data.get("created_at", time.time()),
                     "_titled": data.get("_titled", True),
@@ -244,6 +259,8 @@ def _restore_sessions():
                     "_last_context_stats": data.get("_last_context_stats"),
                     "_last_exec_session": data.get("_last_exec_session"),
                     "_last_exec_cumulative_usage": data.get("_last_exec_cumulative_usage"),
+                    "head_id": head_id,
+                    "run_active": False,
                 }
             _log(f"[restore] conv {conv_id}: {data.get('title')} (session={session_id})")
         except Exception as e:
@@ -455,8 +472,41 @@ def _get_or_create_conversation(conv_id: str = None) -> dict:
                 "messages": [],
                 "function_trees": [],
                 "created_at": time.time(),
+                # ContextGit — see docs/design/contextgit.md. head_id is
+                # the tip of the DAG (what the UI shows). Every append
+                # extends HEAD; retry/edit create siblings and move HEAD
+                # to the new one; checkout just reassigns HEAD.
+                "head_id": None,
+                "run_active": False,
             }
         return _conversations[conv_id]
+
+
+def _is_run_active(conv_id: str) -> bool:
+    """Is there an in-flight agent run for this conversation?
+
+    Single source of truth for UI gating (Edit / Retry buttons go grey
+    while a run is active). Driven off ``_running_tasks`` — the same
+    dict we use for pause / stop, so we can't drift out of sync.
+    """
+    with _running_tasks_lock:
+        return conv_id in _running_tasks
+
+
+def _append_msg(conv: dict, msg: dict) -> None:
+    """Append ``msg`` to ``conv['messages']`` with ContextGit bookkeeping.
+
+    If ``msg['parent_id']`` is already set (retry / edit / checkout paths
+    that know their own parent), we trust it. Otherwise the append is
+    extending HEAD, so parent_id = current head_id.
+
+    Either way, after the append HEAD moves to the new message id.
+    """
+    if "parent_id" not in msg or msg.get("parent_id") is None:
+        msg["parent_id"] = conv.get("head_id")
+    conv["messages"].append(msg)
+    if msg.get("id"):
+        conv["head_id"] = msg["id"]
 
 
 # Provider-specific thinking effort configurations
@@ -748,9 +798,10 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 # Store assistant reply, including structured blocks so the
                 # thinking/tool folds survive a conversation reload.
                 blocks = list(getattr(runtime, "last_blocks", None) or [])
-                conv["messages"].append({
+                _append_msg(conv, {
                     "role": "assistant",
                     "id": msg_id + "_reply",
+                    "parent_id": msg_id,  # child of the user turn we just ran
                     "content": str(result),
                     "blocks": blocks,
                     "timestamp": time.time(),
@@ -1012,8 +1063,9 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     "attempts": [attempt_entry],
                     "current_attempt": 0,
                     "usage": _func_usage,
+                    "parent_id": msg_id,  # child of this run's user turn
                 }
-                conv["messages"].append(reply_msg)
+                _append_msg(conv, reply_msg)
                 _broadcast_chat_response(conv_id, msg_id, {
                     "type": "result",
                     "content": str(result),
@@ -1107,10 +1159,11 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
             try:
                 conv = _get_or_create_conversation(conv_id)
                 now = time.time()
-                conv["messages"].append({
+                _append_msg(conv, {
                     "role": "assistant",
                     "type": "cancelled",
                     "id": msg_id + "_reply",
+                    "parent_id": msg_id,
                     "content": "Execution stopped by user.",
                     "function": func_name,
                     "display": "runtime",
@@ -1148,7 +1201,8 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
             }
             if not func_name:
                 error_msg["retry_query"] = query
-            conv["messages"].append(error_msg)
+            error_msg["parent_id"] = msg_id
+            _append_msg(conv, error_msg)
             _save_conversation(conv_id)
         except Exception:
             pass
@@ -1480,7 +1534,7 @@ async def _handle_ws_command(ws, cmd: dict):
         }
         if parsed["action"] == "run":
             user_msg["display"] = "runtime"
-        conv["messages"].append(user_msg)
+        _append_msg(conv, user_msg)
 
         # Send acknowledgment with conv_id
         await ws.send_text(json.dumps({
@@ -1574,7 +1628,7 @@ async def _handle_ws_command(ws, cmd: dict):
         original_content = cmd.get("original_content", text)
 
         # Store new user message
-        conv["messages"].append({
+        _append_msg(conv, {
             "role": "user",
             "id": msg_id,
             "content": text,
@@ -1699,18 +1753,41 @@ async def _handle_ws_command(ws, cmd: dict):
         with _conversations_lock:
             conv = _conversations.get(conv_id)
         if conv:
-            # Send conversation with messages + Context tree + provider info
+            # ContextGit: send only the linear path from HEAD back to
+            # root, not the whole DAG. Siblings (retry/edit branches)
+            # stay on disk but are only pulled in on-demand when the
+            # user clicks <N/M>.
+            from openprogram.contextgit import (
+                head_or_tip,
+                linear_history,
+                sibling_index,
+            )
+            all_msgs = conv.get("messages", [])
+            head = head_or_tip(conv, all_msgs)
+            chain = linear_history(all_msgs, head) if head else list(all_msgs)
+            # Annotate each msg with its sibling position so UI can
+            # render < N / M > without a second round-trip.
+            shown = []
+            for m in chain:
+                idx, total = sibling_index(all_msgs, m.get("id"))
+                shown.append({**m, "sibling_index": idx, "sibling_total": total})
+
             tree_data = conv["root_context"]._to_dict() if conv.get("root_context") else {}
             await ws.send_text(json.dumps({
                 "type": "conversation_loaded",
                 "data": {
                     "id": conv["id"],
                     "title": conv["title"],
-                    "messages": conv.get("messages", []),
+                    "messages": shown,
+                    "head_id": head,
                     "context_tree": tree_data,
                     "function_trees": conv.get("function_trees", []),
                     "provider_info": _get_provider_info(conv_id),
                     "context_stats": conv.get("_last_context_stats"),
+                    # run_active drives UI gating for Edit / Retry
+                    # buttons. Derived from the real source of truth
+                    # (_running_tasks) so it can't drift out of sync.
+                    "run_active": _is_run_active(conv["id"]),
                 },
             }, default=str))
             # If a task is currently running for this conversation, notify the client
@@ -1889,7 +1966,7 @@ def create_app():
         }
         if parsed["action"] == "run":
             user_msg["display"] = "runtime"
-        conv["messages"].append(user_msg)
+        _append_msg(conv, user_msg)
 
         if parsed["action"] == "run":
             threading.Thread(
@@ -1908,65 +1985,77 @@ def create_app():
 
         return JSONResponse(content={"conv_id": conv_id, "msg_id": msg_id})
 
-    @app.post("/api/chat/retry")
-    async def post_chat_retry(body: dict = None):
-        """Regenerate the assistant reply for a given message.
+    def _fork_user_turn_and_run(
+        conv_id: str, pivot_id: str, new_content: str | None,
+    ) -> dict:
+        """Shared engine for /api/chat/retry and /api/chat/edit.
 
-        Accepts a ``msg_id`` pointing at either the assistant message
-        to replace or the user message whose reply should be regenerated
-        — we normalize to "re-run the latest user turn at or before
-        ``msg_id``".
+        Creates a sibling user message at the same point in the DAG as
+        ``pivot_id``'s nearest user-message ancestor. ``new_content =
+        None`` means retry (reuse the old content); a string means edit.
 
-        Destructive by design: truncates the conversation at the
-        chosen user turn (so the old assistant reply is gone) then
-        re-executes that turn. This mirrors ChatGPT/Claude's "retry"
-        semantics in the minimal-code flavour (no sibling versions —
-        that would require a message tree, which is a separate
-        feature).
+        Non-destructive: the old user message and its whole assistant
+        subtree stay in ``messages``. HEAD moves to the new user message
+        so the UI shows the fresh run; old branch is accessible via the
+        ``< N / M >`` navigator.
+
+        Returns the dict we'll JSON-encode to the caller.
         """
-        if body is None:
-            return JSONResponse(content={"error": "no body"}, status_code=400)
-        conv_id = body.get("conv_id")
-        pivot_id = body.get("msg_id")
-        if not conv_id or not pivot_id:
-            return JSONResponse(
-                content={"error": "conv_id and msg_id required"}, status_code=400,
-            )
+        # ContextGit: forking while a run is active would orphan the
+        # in-flight assistant reply (it's parented to a commit that's
+        # about to become "old"). Reject with a clear message; UI will
+        # keep buttons greyed during active runs so this is a
+        # belt-and-suspenders check.
+        if _is_run_active(conv_id):
+            return {"__error__": (
+                "a run is currently active — wait for it to finish or stop it first",
+                409,
+            )}
         with _conversations_lock:
             conv = _conversations.get(conv_id)
             if conv is None:
-                return JSONResponse(content={"error": "unknown conv"}, status_code=404)
-
-            # Locate the pivot; find the nearest user message at or
-            # before it. That's the turn we'll re-run.
+                return {"__error__": ("unknown conv", 404)}
             msgs = conv["messages"]
-            pivot_idx = next(
-                (i for i, m in enumerate(msgs) if m.get("id") == pivot_id), -1,
-            )
-            if pivot_idx < 0:
-                return JSONResponse(content={"error": "unknown msg"}, status_code=404)
+            pivot = next((m for m in msgs if m.get("id") == pivot_id), None)
+            if pivot is None:
+                return {"__error__": ("unknown msg", 404)}
 
-            user_idx = pivot_idx
-            while user_idx >= 0 and msgs[user_idx].get("role") != "user":
-                user_idx -= 1
-            if user_idx < 0:
-                return JSONResponse(
-                    content={"error": "no user message to retry from"},
-                    status_code=400,
-                )
+            # Walk up to the nearest user message. For retry clicked on
+            # an assistant reply, this is the user turn above it.
+            cur = pivot
+            by_id = {m.get("id"): m for m in msgs}
+            while cur is not None and cur.get("role") != "user":
+                cur = by_id.get(cur.get("parent_id"))
+            if cur is None:
+                return {"__error__": ("no user message to fork from", 400)}
+            src_user = cur
+            src_parent_id = src_user.get("parent_id")
 
-            user_msg = msgs[user_idx]
-            # Truncate everything after (and including) the user turn's
-            # assistant reply. We keep the user message itself so
-            # threading it into the re-run is a no-op.
-            conv["messages"] = msgs[: user_idx + 1]
+            new_msg_id = str(uuid.uuid4())[:8]
+            new_user = {
+                "role": "user",
+                "id": new_msg_id,
+                "content": new_content if new_content is not None
+                           else src_user.get("content", ""),
+                "timestamp": time.time(),
+                "parent_id": src_parent_id,
+            }
+            # Carry over display-mode flag (runtime vs query) — the new
+            # run should behave the same way the original did.
+            if src_user.get("display"):
+                new_user["display"] = src_user["display"]
+            # Lineage breadcrumb for debugging / later UI.
+            new_user["forked_from"] = src_user.get("id")
+            if new_content is not None:
+                new_user["edit_of"] = src_user.get("id")
+
+            _append_msg(conv, new_user)  # advances HEAD to new_msg_id
 
         _save_conversation(conv_id)
 
-        # Re-run. Fresh msg_id so clients correlate the new streaming
-        # response to its own envelope (the old msg_id is gone).
-        new_msg_id = str(uuid.uuid4())[:8]
-        parsed = _parse_chat_input(user_msg.get("content", ""))
+        # Kick off the run against the new user message. Same dispatch
+        # logic as POST /api/chat.
+        parsed = _parse_chat_input(new_user["content"] or "")
         if parsed["action"] == "run":
             threading.Thread(
                 target=_execute_in_context,
@@ -1981,11 +2070,85 @@ def create_app():
                 kwargs={"query": parsed["raw"]},
                 daemon=True,
             ).start()
-        return JSONResponse(content={
+
+        return {
             "conv_id": conv_id,
             "msg_id": new_msg_id,
-            "truncated_from": user_msg.get("id"),
-        })
+            "forked_from": src_user.get("id"),
+        }
+
+    @app.post("/api/chat/retry")
+    async def post_chat_retry(body: dict = None):
+        """Retry the user turn at or above ``msg_id``.
+
+        Non-destructive: forks a sibling user message with the SAME
+        content, runs it, sets HEAD to the new turn. The old turn and
+        its assistant subtree stay in the DAG, reachable via
+        ``< N / M >``. See docs/design/contextgit.md.
+        """
+        if body is None:
+            return JSONResponse(content={"error": "no body"}, status_code=400)
+        conv_id = body.get("conv_id")
+        pivot_id = body.get("msg_id")
+        if not conv_id or not pivot_id:
+            return JSONResponse(
+                content={"error": "conv_id and msg_id required"}, status_code=400,
+            )
+        result = _fork_user_turn_and_run(conv_id, pivot_id, new_content=None)
+        if "__error__" in result:
+            msg, code = result["__error__"]
+            return JSONResponse(content={"error": msg}, status_code=code)
+        return JSONResponse(content=result)
+
+    @app.post("/api/chat/edit")
+    async def post_chat_edit(body: dict = None):
+        """Edit a user message: fork with NEW content and re-run.
+
+        Same non-destructive behavior as retry — the old turn stays
+        accessible as a sibling. The only difference is the forked
+        message's content is what the user typed into the edit box.
+        """
+        if body is None:
+            return JSONResponse(content={"error": "no body"}, status_code=400)
+        conv_id = body.get("conv_id")
+        pivot_id = body.get("msg_id")
+        new_content = body.get("content")
+        if not conv_id or not pivot_id or new_content is None:
+            return JSONResponse(
+                content={"error": "conv_id, msg_id, content required"},
+                status_code=400,
+            )
+        result = _fork_user_turn_and_run(conv_id, pivot_id, new_content=str(new_content))
+        if "__error__" in result:
+            msg, code = result["__error__"]
+            return JSONResponse(content={"error": msg}, status_code=code)
+        return JSONResponse(content=result)
+
+    @app.post("/api/chat/checkout")
+    async def post_chat_checkout(body: dict = None):
+        """Move the conversation HEAD to a specific commit.
+
+        Pure display op — nothing re-executes. The UI re-renders the
+        linear history from the new HEAD back to root. Used by
+        ``< N / M >`` navigation to switch between sibling versions.
+        """
+        if body is None:
+            return JSONResponse(content={"error": "no body"}, status_code=400)
+        conv_id = body.get("conv_id")
+        target_id = body.get("msg_id")
+        if not conv_id or not target_id:
+            return JSONResponse(
+                content={"error": "conv_id and msg_id required"}, status_code=400,
+            )
+        with _conversations_lock:
+            conv = _conversations.get(conv_id)
+            if conv is None:
+                return JSONResponse(content={"error": "unknown conv"}, status_code=404)
+            if not any(m.get("id") == target_id for m in conv["messages"]):
+                return JSONResponse(content={"error": "unknown msg"}, status_code=404)
+            conv["head_id"] = target_id
+        _save_conversation(conv_id)
+        return JSONResponse(content={"conv_id": conv_id, "head_id": target_id})
 
     @app.post("/api/chat/branch")
     async def post_chat_branch(body: dict = None):
