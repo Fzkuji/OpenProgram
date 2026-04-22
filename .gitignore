@@ -36,6 +36,5 @@ openprogram/logs/
 
 # Full upstream clones kept locally for reference while designing new
 # tools/providers. Not committed — too large and rot against upstream.
-# Curated snippets (e.g. references/openclaw/) stay tracked.
-references/openclaw-full/
+references/openclaw/
 references/hermes-agent/
