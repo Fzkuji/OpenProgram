@@ -6,6 +6,7 @@ that retry / edit / checkout rely on.
 from __future__ import annotations
 
 from openprogram.contextgit import (
+    advance_head,
     children,
     head_or_tip,
     is_ancestor,
@@ -190,3 +191,35 @@ def test_head_or_tip_falls_back_to_last_message():
 
 def test_head_or_tip_empty_conv_returns_none():
     assert head_or_tip({}, []) is None
+
+
+# ---- advance_head -------------------------------------------------------
+
+def test_advance_head_missing_parent_inherits_head():
+    conv = {"head_id": "u1", "messages": [_msg("u1", None)]}
+    advance_head(conv, {"id": "a1", "role": "assistant"})
+    assert conv["messages"][-1]["parent_id"] == "u1"
+    assert conv["head_id"] == "a1"
+
+
+def test_advance_head_explicit_none_is_preserved():
+    # Regression: retry of a root user message forks at parent_id=None.
+    # advance_head must NOT rewrite that to the current HEAD — doing so
+    # collapses the fork into a linear append and breaks the DAG.
+    conv = {"head_id": "a1", "messages": [
+        _msg("u1", None),
+        _msg("a1", "u1"),
+    ]}
+    advance_head(conv, {"id": "u2", "role": "user", "parent_id": None})
+    assert conv["messages"][-1]["parent_id"] is None
+    assert conv["head_id"] == "u2"
+    # u1 and u2 are now siblings at the root.
+    assert [s["id"] for s in siblings(conv["messages"], "u2")] == ["u1", "u2"]
+
+
+def test_advance_head_explicit_parent_is_preserved():
+    conv = {"head_id": "a2", "messages": [
+        _msg("u1", None), _msg("a1", "u1"), _msg("a2", "u1"),
+    ]}
+    advance_head(conv, {"id": "u2", "role": "user", "parent_id": "u1"})
+    assert conv["messages"][-1]["parent_id"] == "u1"

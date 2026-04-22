@@ -120,9 +120,6 @@ function newConversation() {
 
 function loadConversationData(data) {
   if (!data.messages) data.messages = [];
-  console.log('[loadConversationData] id=', data.id, 'currentConvId=', currentConvId,
-    'msgs=', data.messages.length,
-    'siblings=', data.messages.filter(function(m){return m.sibling_total>1;}).map(function(m){return m.id+'('+m.sibling_index+'/'+m.sibling_total+')';}));
   conversations[data.id] = data;
   renderConversations();
   if (data.id === currentConvId) {

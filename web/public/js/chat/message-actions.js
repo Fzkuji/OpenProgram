@@ -188,24 +188,16 @@
     // then ask the server for the linearized view under the new HEAD.
     // load_conversation also carries sibling_index/_total so the
     // navigator shows up correctly.
-    console.log('[retry] POST start', { convId: convId, msgId: msgId });
     fetch('/api/chat/retry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ conv_id: convId, msg_id: msgId }),
     })
-      .then(function (r) {
-        console.log('[retry] POST status', r.status);
-        return r.ok ? r.json() : r.json().then(function (e) { throw new Error(e.error || r.statusText); });
-      })
-      .then(function (res) {
-        console.log('[retry] POST ok, server returned:', res);
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (e) { throw new Error(e.error || r.statusText); }); })
+      .then(function () {
         if (typeof window.setRunActive === 'function') window.setRunActive(true);
         if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-          console.log('[retry] sending load_conversation');
           window.ws.send(JSON.stringify({ action: 'load_conversation', conv_id: convId }));
-        } else {
-          console.warn('[retry] ws not open, cannot reload:', window.ws && window.ws.readyState);
         }
       })
       .catch(function (err) {
