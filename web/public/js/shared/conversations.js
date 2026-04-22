@@ -251,7 +251,15 @@ function renderConversationMessages(conv) {
       div.setAttribute('data-sibling-total', String(msg.sibling_total));
     }
     if (msg.timestamp || msg.created_at) {
-      div.setAttribute('data-created-at', String(msg.timestamp || msg.created_at));
+      var ts = msg.timestamp || msg.created_at;
+      div.setAttribute('data-created-at', String(ts));
+      // Full date on hover (native browser tooltip). Server
+      // timestamps may be seconds (time.time()) or ms — detect and
+      // convert. Ignore bad inputs silently.
+      try {
+        var ms = ts > 1e12 ? ts : ts * 1000;
+        div.title = new Date(ms).toLocaleString();
+      } catch (e) { /* skip */ }
     }
     container.appendChild(div);
     if (typeof window.ensureMessageActions === 'function') {
