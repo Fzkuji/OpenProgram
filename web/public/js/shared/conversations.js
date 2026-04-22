@@ -252,14 +252,12 @@ function renderConversationMessages(conv) {
     }
     if (msg.timestamp || msg.created_at) {
       var ts = msg.timestamp || msg.created_at;
-      div.setAttribute('data-created-at', String(ts));
-      // Full date on hover (native browser tooltip). Server
-      // timestamps may be seconds (time.time()) or ms — detect and
-      // convert. Ignore bad inputs silently.
-      try {
-        var ms = ts > 1e12 ? ts : ts * 1000;
-        div.title = new Date(ms).toLocaleString();
-      } catch (e) { /* skip */ }
+      // Stamp the raw timestamp as a data attr only. The visible
+      // hover target is a small badge rendered by message-actions.js
+      // inside the action bar — NOT `div.title`, which would make
+      // the native browser tooltip fire on the entire bubble.
+      var tsMs = ts > 1e12 ? ts : ts * 1000;
+      div.setAttribute('data-created-at', String(tsMs));
     }
     container.appendChild(div);
     if (typeof window.ensureMessageActions === 'function') {

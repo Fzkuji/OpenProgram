@@ -80,6 +80,25 @@
 
     var bar = document.createElement('div');
     bar.className = 'message-actions';
+
+    // Timestamp badge — sits at the left of the action bar, hoverable
+    // for a full-date tooltip. Keeps the native tooltip off the whole
+    // bubble (which would fire anywhere the mouse moved).
+    var ts = messageEl.getAttribute('data-created-at');
+    if (ts) {
+      var tsMs = parseInt(ts, 10);
+      if (tsMs && !isNaN(tsMs)) {
+        var tsEl = document.createElement('span');
+        tsEl.className = 'message-timestamp';
+        try {
+          var d = new Date(tsMs);
+          tsEl.title = d.toLocaleString();
+          tsEl.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } catch (e) { /* skip */ }
+        bar.appendChild(tsEl);
+      }
+    }
+
     bar.appendChild(makeBtn('copy',  'Copy',            ICON.copy));
     bar.appendChild(makeBtn('retry', 'Retry from here', ICON.retry));
     // User messages get Edit (pencil) — fork the turn with new text.

@@ -238,15 +238,11 @@
   gap: 4px;
   padding-left: 30px;            /* match .message-actions indent */
   margin-top: 2px;
-  opacity: 0;
-  transition: opacity 150ms ease;
   font-size: 12px;
   color: var(--text-muted);
   user-select: none;
-}
-.message:hover .message-nav,
-.message-nav:focus-within {
-  opacity: 1;
+  /* Always visible when the message has siblings — otherwise users
+     never notice a retry created a new version. */
 }
 .message-nav-btn {
   display: inline-flex;
@@ -276,6 +272,20 @@
   font-variant-numeric: tabular-nums;
   min-width: 34px;
   text-align: center;
+}
+
+/* Timestamp badge inside the action bar. Small and unobtrusive;
+   hovering it shows the full date via the native title tooltip. Kept
+   separate from the bubble so the tooltip doesn't fire across the
+   whole message area. */
+.message-timestamp {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
 }
 
 /* Inline edit mode — the bubble's content swaps out for a textarea
