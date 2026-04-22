@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chats — OpenProgram</title>
+<style>
+  .main { overflow-y: auto; overflow-x: clip; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <div class="col-resize" id="sidebarResize"></div>
+
+  <div class="main">
+    <div class="chats-view">
+      <div class="chats-header">
+        <h1 class="chats-title">Chats</h1>
+        <button class="chats-new-btn" onclick="newConversation()">
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/>
+          </svg>
+          New chat
+        </button>
+      </div>
+
+      <div class="chats-search-wrap">
+        <svg class="chats-search-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+          <circle cx="9" cy="9" r="5.5"/><line x1="13" y1="13" x2="17" y2="17"/>
+        </svg>
+        <input type="text" class="chats-search" id="chatsSearchBox" placeholder="Search your chats..." oninput="chatsRender()">
+      </div>
+
+      <div class="chats-meta">Your chats with OpenProgram</div>
+
+      <div class="chats-list" id="chatsList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var _isChatsPage = true;
+
+function connect() {
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/ws');
+  ws.onopen = function() {
+    updateStatus('connected');
+    ws.send(JSON.stringify({ action: 'list_conversations' }));
+  };
+  ws.onclose = function() { updateStatus('disconnected'); setTimeout(connect, 2000); };
+  ws.onerror = function() { ws.close(); };
+  ws.onmessage = function(e) {
+    try {
+      var msg = JSON.parse(e.data);
+      if (msg.type === 'conversations_list' || msg.type === 'history_list') {
+        var data = msg.data || [];
+        data.forEach(function(c) {
+          conversations[c.id] = conversations[c.id] || { id: c.id, title: c.title, messages: [] };
+          conversations[c.id].title = c.title;
+          conversations[c.id].created_at = c.created_at;
+          conversations[c.id].has_session = c.has_session;
+        });
+        if (typeof renderConversations === 'function') renderConversations();
+        chatsRender();
+      }
+    } catch(err) {}
+  };
+}
+
+function formatRelativeTime(ts) {
+  if (!ts) return '';
+  var now = Date.now() / 1000;
+  var diff = Math.max(0, now - ts);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) {
+    var m = Math.floor(diff / 60);
+    return m === 1 ? '1 minute ago' : m + ' minutes ago';
+  }
+  if (diff < 86400) {
+    var h = Math.floor(diff / 3600);
+    return h === 1 ? '1 hour ago' : h + ' hours ago';
+  }
+  if (diff < 86400 * 30) {
+    var d = Math.floor(diff / 86400);
+    return d === 1 ? '1 day ago' : d + ' days ago';
+  }
+  var mo = Math.floor(diff / (86400 * 30));
+  return mo === 1 ? '1 month ago' : mo + ' months ago';
+}
+
+function chatsRender() {
+  var listEl = document.getElementById('chatsList');
+  if (!listEl) return;
+  var searchBox = document.getElementById('chatsSearchBox');
+  var q = (searchBox && searchBox.value || '').trim().toLowerCase();
+
+  var items = Object.values(conversations || {}).sort(function(a, b) {
+    return (b.created_at || 0) - (a.created_at || 0);
+  });
+  if (q) {
+    items = items.filter(function(c) {
+      return (c.title || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="chats-empty">' + (q ? 'No matches' : 'No conversations yet') + '</div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var c = items[i];
+    var title = escHtml(c.title || 'Untitled');
+    var meta = 'Last message ' + formatRelativeTime(c.created_at || 0);
+    html += '<div class="chats-row" onclick="window.__navigate ? window.__navigate(\'/c/' + c.id + '\') : (window.location.href=\'/c/' + c.id + '\')">' +
+      '<div class="chats-row-title">' + title + '</div>' +
+      '<div class="chats-row-meta">' + escHtml(meta) + '</div>' +
+    '</div>';
+  }
+  listEl.innerHTML = html;
+}
+
+connect();
+chatsRender();
+</script>
+</body>
+</html>

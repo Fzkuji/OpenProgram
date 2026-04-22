@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Programs — Agentic</title>
+<link rel="stylesheet" href="/css/style.css?v=107">
+<style>
+  .main { overflow-y: auto; overflow-x: clip; }
+  .settings-view { overflow: visible; height: auto; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+
+  <div class="col-resize" id="sidebarResize"></div>
+
+  <!-- Main Area: Programs -->
+  <div class="main">
+    <div class="settings-view">
+      <div class="settings-topbar">
+        <span class="settings-title">Programs</span>
+        <div class="pg-toolbar-inline">
+          <input type="text" class="pg-search" id="pgSearchBox" placeholder="Search programs..." oninput="pgRender()">
+          <select class="pg-select" id="pgSortSelect" onchange="pgRender()">
+            <option value="category">Sort: Category</option>
+            <option value="name">Sort: Name</option>
+            <option value="recent">Sort: Recent</option>
+          </select>
+          <select class="pg-select" id="pgFilterSelect" onchange="pgRender()">
+            <option value="all">All</option>
+            <option value="app">Applications</option>
+            <option value="meta">Meta Functions</option>
+            <option value="builtin">Built-in</option>
+            <option value="favorites">Favorites</option>
+          </select>
+          <button class="pg-toolbar-btn" id="pgViewToggle" onclick="pgToggleView()">List</button>
+        </div>
+      </div>
+      <div class="settings-body">
+        <!-- Left nav: Folders (220px, same column as settings nav) -->
+        <div class="pg-folders-nav" id="pgFolderList" oncontextmenu="pgSidebarCtx(event)">
+        </div>
+        <!-- Right content: Program cards -->
+        <div class="settings-content" id="pgContentArea" oncontextmenu="pgContentCtx(event)">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Application Scripts -->
+<script src="/js/shared/state.js"></script>
+<script src="/js/shared/helpers.js?v=13"></script>
+<script src="/js/shared/sidebar.js?v=27"></script>
+<script src="/js/shared/providers.js"></script>
+<script src="/js/shared/settings.js?v=7"></script>
+<script src="/js/shared/ui.js?v=6"></script>
+<script src="/js/programs/programs.js?v=6"></script>
+<script src="/js/shared/scrollbar.js?v=2"></script>
+<script>
+// Minimal init for programs page
+var _isProgramsPage = true;
+
+async function loadSidebarData() {
+  try {
+    var resp = await fetch('/api/functions');
+    availableFunctions = await resp.json();
+  } catch(e) { availableFunctions = []; }
+  await loadProgramsMeta();
+  renderFunctions();
+}
+
+function connect() {
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/ws');
+  ws.onopen = function() {
+    updateStatus('connected');
+    ws.send(JSON.stringify({ action: 'list_conversations' }));
+  };
+  ws.onclose = function() { updateStatus('disconnected'); setTimeout(connect, 2000); };
+  ws.onerror = function() { updateStatus('error'); };
+  ws.onmessage = function(e) {
+    try {
+      var msg = JSON.parse(e.data);
+      if (msg.type === 'conversations_list' || msg.type === 'history_list') {
+        var data = msg.data || [];
+        data.forEach(function(c) {
+          if (!conversations[c.id]) conversations[c.id] = { id: c.id, title: c.title, messages: [] };
+        });
+        if (typeof renderConversations === 'function') renderConversations();
+      }
+    } catch(err) {}
+  };
+}
+
+function newConversation() {
+  if (window.__navigate) { window.__navigate('/chat'); return; }
+  window.location.href = '/chat';
+}
+function openSettings() {
+  if (window.__navigate) { window.__navigate('/settings'); return; }
+  window.location.href = '/settings';
+}
+
+// Override pgRunProgram to navigate to main page (uses /chat to preserve query string)
+function pgRunProgram(name, category) {
+  var url = '/chat?run=' + encodeURIComponent(name) + '&cat=' + encodeURIComponent(category);
+  if (window.__navigate) { window.__navigate(url); return; }
+  window.location.href = url;
+}
+
+// Edit: navigate to main page, open `edit` form with target function prefilled
+function pgEditProgram(name) {
+  var url = '/chat?run=edit&fn=' + encodeURIComponent(name);
+  if (window.__navigate) { window.__navigate(url); return; }
+  window.location.href = url;
+}
+
+connect();
+document.addEventListener('DOMContentLoaded', function() {
+  var nav = document.getElementById('navPrograms');
+  if (nav) nav.classList.add('active');
+  loadSidebarData();
+  pgLoadData();
+});
+</script>
+</body>
+</html>

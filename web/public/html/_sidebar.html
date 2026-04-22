@@ -1,0 +1,59 @@
+  <div id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo"><img src="/images/logo.svg" alt="OpenProgram" class="logo-img"></div>
+      <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M16.5 4A1.5 1.5 0 0 1 18 5.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 14.5v-9A1.5 1.5 0 0 1 3.5 4zM7 15h9.5a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5H7zM3.5 5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5H6V5z"/></svg></button>
+    </div>
+    <div class="sidebar-nav-group">
+      <div class="sidebar-nav-item" onclick="newConversation()" id="navNewChat">
+        <span class="sidebar-nav-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg></span>
+        <span class="sidebar-nav-label">New chat</span>
+      </div>
+      <a class="sidebar-nav-item" href="/programs" id="navPrograms">
+        <span class="sidebar-nav-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.25" y="3.25" width="5" height="5" rx="1"/><rect x="11.75" y="3.25" width="5" height="5" rx="1"/><rect x="3.25" y="11.75" width="5" height="5" rx="1"/><rect x="11.75" y="11.75" width="5" height="5" rx="1"/></svg></span>
+        <span class="sidebar-nav-label">Programs</span>
+        <span class="sidebar-nav-action refresh-btn" onclick="event.preventDefault();event.stopPropagation();doRefreshFunctions(this)" title="Refresh"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5h-1.5A5 5 0 1 1 8 3V1.5z"/><path d="M8 0l3 3-3 3V0z"/></svg></span>
+      </a>
+      <a class="sidebar-nav-item sidebar-nav-chats group" href="/chats" id="navChats">
+        <span class="sidebar-nav-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="nav-chats-bubble-l" d="M8.5 2.5a5.5 5.5 0 0 1 0 11H3.25a.25.25 0 0 1-.18-.42l1.43-1.54A5.48 5.48 0 0 1 3 8a5.5 5.5 0 0 1 5.5-5.5z"/><path class="nav-chats-bubble-r" d="M15.5 9.5A4.5 4.5 0 0 1 17 12.88a4.48 4.48 0 0 1-1.25 3.1l1.19 1.28a.25.25 0 0 1-.18.42H11.5a4.5 4.5 0 0 1-4-2.41"/></svg></span>
+        <span class="sidebar-nav-label">Chats</span>
+      </a>
+    </div>
+
+    <div class="sidebar-favorites empty" id="favSection">
+      <div class="sidebar-section-header" onclick="toggleFavList()">
+        <span class="sidebar-section-title">Favorite Programs</span>
+        <span class="sidebar-section-hint" id="favHint">Hide</span>
+      </div>
+      <div class="sidebar-fav-list" id="favList"></div>
+    </div>
+
+    <div class="sidebar-conversations" id="convSection">
+      <div class="sidebar-section-header" onclick="toggleConvList()">
+        <span class="sidebar-section-title">Recents</span>
+        <span class="sidebar-section-hint" id="convHint">Hide</span>
+      </div>
+      <div class="sidebar-conv-list" id="convList"></div>
+    </div>
+
+    <div class="sidebar-footer" onclick="toggleUserMenu(event)">
+      <div class="sidebar-user">
+        <div class="user-avatar">A</div>
+        <div class="user-info">
+          <span class="user-name">Agentic</span>
+          <span class="user-subtitle">Local instance</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="userMenu" class="user-menu" onclick="event.stopPropagation()">
+      <div class="user-menu-item" onclick="openSettings()">
+        <span class="user-menu-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10.549 2C11.35 2 12 2.65 12 3.451c0 .195.138.403.385.501q.102.041.204.085l.09.032c.212.06.415.007.536-.114a1.453 1.453 0 0 1 2.055.001l.774.774.1.11a1.454 1.454 0 0 1-.1 1.945c-.138.138-.187.382-.081.625l.085.205.042.087c.108.192.289.298.459.298C17.35 8 18 8.65 18 9.451v1.098C18 11.35 17.35 12 16.549 12c-.17 0-.35.106-.46.298l-.041.087-.085.204c-.106.243-.057.488.08.626a1.453 1.453 0 0 1 0 2.055l-.773.774a1.453 1.453 0 0 1-2.055 0 .55.55 0 0 0-.535-.114l-.091.033q-.1.044-.203.084c-.247.098-.386.306-.386.5C12 17.35 11.35 18 10.548 18H9.452C8.65 18 8 17.35 8 16.548a.55.55 0 0 0-.298-.46l-.087-.041-.205-.085c-.243-.106-.487-.056-.625.082a1.453 1.453 0 0 1-1.944.1l-.11-.1-.775-.774a1.453 1.453 0 0 1 0-2.055l.047-.057a.56.56 0 0 0 .066-.478l-.032-.091-.085-.204c-.098-.247-.306-.385-.5-.385C2.65 12 2 11.35 2 10.549V9.45C2 8.65 2.65 8 3.451 8c.195 0 .402-.138.5-.385l.086-.205.032-.09a.56.56 0 0 0-.066-.48l-.048-.055a1.453 1.453 0 0 1 0-2.055l.775-.775.11-.1a1.453 1.453 0 0 1 1.945.1c.138.138.382.188.625.082q.102-.045.205-.086c.247-.098.385-.305.385-.5C8 2.65 8.65 2 9.451 2zM10 7a3 3 0 1 1 0 6 3 3 0 0 1 0-6m0 1a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/></svg></span>
+        Settings
+      </div>
+      <div class="user-menu-sep"></div>
+      <a class="user-menu-item" href="https://github.com/Fzkuji/Agentic-Programming" target="_blank" rel="noopener" onclick="closeUserMenu()">
+        <span class="user-menu-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2.5a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15m0 1a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13m.1 5.51a.5.5 0 0 1 .4.49v3h1a.5.5 0 0 1 0 1h-3a.5.5 0 0 1 0-1h1V10h-1a.5.5 0 0 1 0-1H10zM10 6.5A.75.75 0 1 1 10 8a.75.75 0 0 1 0-1.5"/></svg></span>
+        About
+      </a>
+    </div>
+  </div>

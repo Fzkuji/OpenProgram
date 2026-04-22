@@ -1,0 +1,46 @@
+// ===== Global State =====
+var ws = null;
+var trees = [];
+var selectedPath = null;
+var isPaused = false;
+var expandedNodes = new Set();
+var reconnectTimer = null;
+// Drive conv_id from URL (source of truth). localStorage is no longer used —
+// it caused stale values when opening /new while an old id was cached.
+var currentConvId = (function() {
+  var m = window.location.pathname.match(/^\/c\/([^/]+)/);
+  return m ? m[1] : null;
+})();
+var conversations = {};
+var availableFunctions = [];
+var pendingResponses = {};  // msg_id -> element
+var sidebarOpen = true;
+var _nodeCache = {};  // path -> node data
+var _liveTreeCollapsed = false;
+var _lastRunCommand = null;
+var _skipScrollToBottom = false;
+var isRunning = false;
+var execLogStartTime = 0;
+var _modelList = [];
+var _currentModel = '';
+var _hasActiveSession = false;
+var programsMeta = { favorites: [], folders: {} };
+// null = not yet initialized; buildThinkingMenu will pull the backend default
+// the first time. Hardcoding 'medium' here used to override backend defaults
+// (since 'medium' is a valid option for every provider, so the menu never
+// applied the backend's default).
+var _thinkingEffort = null;
+var _execThinkingEffort = null;
+var _thinkingConfig = null;
+// Track previously-seen providers so loadAgentSettings can reset effort to the
+// new provider's default when the provider actually changes. Without this,
+// switching from Codex (xhigh) back to Claude would keep "xhigh" because it's
+// a valid option for both — the default "auto" would never get applied.
+var _lastChatProvider = null;
+var _lastChatModel = null;
+var _lastExecProvider = null;
+var _lastExecModel = null;
+var _agentSettings = { chat: {}, exec: {}, available: {} };
+var _inputWrapperOriginal = '';
+var _fnFormActive = false;
+var _elapsedTimer = null;
