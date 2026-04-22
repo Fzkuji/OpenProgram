@@ -1,0 +1,27 @@
+  <aside id="rightSidebar" class="sidebar right-sidebar collapsed" data-view="history">
+    <div class="sidebar-header right-sidebar-header">
+      <button class="sidebar-toggle" onclick="rightDock.toggle()" title="Toggle panel">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M16.5 4A1.5 1.5 0 0 1 18 5.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 14.5v-9A1.5 1.5 0 0 1 3.5 4zM13 15h3.5a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5H13zM3.5 5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5H12V5z"/></svg>
+      </button>
+    </div>
+    <div class="sidebar-nav-group">
+      <div class="sidebar-nav-item right-nav-item" data-view="history" onclick="rightDock.toggle('history')">
+        <span class="sidebar-nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="12" r="3"/><path d="M6 9v6"/><path d="M9 6h6a3 3 0 0 1 3 3v0"/></svg></span>
+        <span class="sidebar-nav-label">History</span>
+      </div>
+      <div class="sidebar-nav-item right-nav-item" data-view="detail" onclick="rightDock.toggle('detail')">
+        <span class="sidebar-nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+        <span class="sidebar-nav-label">Execution Detail</span>
+      </div>
+    </div>
+    <div class="right-view-host">
+      <div id="historyPanel" class="right-view" data-view="history">
+        <div class="history-body"></div>
+      </div>
+      <div id="detailPanel" class="right-view" data-view="detail">
+        <div id="detailBody" class="detail-body">
+          <div class="detail-empty">No execution selected.<br/><span>Click a node in the conversation tree to inspect its context and output.</span></div>
+        </div>
+      </div>
+    </div>
+  </aside>

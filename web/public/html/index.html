@@ -23,9 +23,7 @@
         <span id="chatAgentBadge" class="runtime-badge agent-badge" onclick="openAgentSelector('chat')" title="Chat agent model">Chat: ...</span>
         <span id="execAgentBadge" class="runtime-badge agent-badge" onclick="openAgentSelector('exec')" title="Execution agent model">Exec: ...</span>
       </div>
-      <div class="topbar-right">
-        <button class="btn" onclick="toggleDetail()" id="btnDetail">Detail Panel</button>
-      </div>
+      <div class="topbar-right"></div>
     </div>
 
     <!-- Chat area -->
@@ -101,18 +99,6 @@
 
   </div>
 
-  <div class="col-resize" id="detailResize"></div>
-
-  <!-- Right Detail Panel -->
-  <div id="detailPanel" class="detail-panel collapsed">
-    <div class="detail-header">
-      <div id="detailTitle" class="detail-title">Node Detail</div>
-      <div class="detail-header-actions">
-        <button class="detail-close" onclick="closeDetail()">&times;</button>
-      </div>
-    </div>
-    <div id="detailBody" class="detail-body"></div>
-  </div>
 </div>
 
 <!-- External Libraries -->

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { PageShell } from "./page-shell";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -20,6 +21,11 @@ const SHARED_JS = [
   "shared/settings-general.js",
   "shared/ui.js",
   "shared/scrollbar.js",
+  // Right sidebar scripts are shared so the panel survives navigation
+  // between chat conversations (PageShell remounts per pathname but
+  // the right sidebar DOM lives on AppShell, above the remount).
+  "shared/right-dock.js",
+  "shared/history-graph.js",
 ];
 
 const EXTERNAL_LIBS = [
@@ -87,8 +93,16 @@ declare global {
   }
 }
 
+// Routes where the right sidebar (History / Execution Detail) is
+// relevant. Programs / Chats / Settings don't need it, so it's hidden
+// there even though the DOM persists.
+function isChatRoute(pathname: string) {
+  return pathname === "/chat" || pathname.startsWith("/c/");
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const rightSidebarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -106,6 +120,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     const close = (window as unknown as { _closeAllPopovers?: () => void })._closeAllPopovers;
     if (close) close();
+
+    // New chat route (/chat, no conv_id): clear the persisted History
+    // graph so the user doesn't see a stale DAG from whatever
+    // conversation they were just on. /c/:id loads its own graph via
+    // `load_conversation` → conversations.js → renderHistoryGraph.
+    if (pathname === "/chat") {
+      const render = (window as unknown as {
+        renderHistoryGraph?: (g: unknown[], h: string | null) => void;
+      }).renderHistoryGraph;
+      if (render) render([], null);
+    }
   }, [pathname]);
 
   useEffect(() => {
@@ -152,15 +177,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         const sidebarHtml = await sidebarP;
         if (sidebarRef.current) sidebarRef.current.innerHTML = sidebarHtml;
+        // Right sidebar fetched + injected alongside the left. Kept on
+        // AppShell so chat routes see one persistent instance across
+        // conversation switches.
+        const rightHtml = await fetch("/html/_right-sidebar.html").then((r) => r.text());
+        if (rightSidebarRef.current) rightSidebarRef.current.innerHTML = rightHtml;
         await externalsP;
       })();
-    } else if (sidebarRef.current && !sidebarRef.current.innerHTML) {
-      // Re-render sidebar on remount (rare — only if root layout unmounted).
-      fetch("/html/_sidebar.html")
-        .then((r) => r.text())
-        .then((html) => {
-          if (sidebarRef.current) sidebarRef.current.innerHTML = html;
-        });
+    } else {
+      if (sidebarRef.current && !sidebarRef.current.innerHTML) {
+        fetch("/html/_sidebar.html")
+          .then((r) => r.text())
+          .then((html) => {
+            if (sidebarRef.current) sidebarRef.current.innerHTML = html;
+          });
+      }
+      if (rightSidebarRef.current && !rightSidebarRef.current.innerHTML) {
+        fetch("/html/_right-sidebar.html")
+          .then((r) => r.text())
+          .then((html) => {
+            if (rightSidebarRef.current) rightSidebarRef.current.innerHTML = html;
+          });
+      }
     }
 
     return () => {
@@ -168,11 +206,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [router]);
 
+  const showChat = isChatRoute(pathname);
   return (
     <div className="app">
       <div ref={sidebarRef} style={{ display: "contents" }} />
       <div className="col-resize" id="sidebarResize"></div>
-      {children}
+      {/* Chat shell is mounted ONCE at the layout level and kept alive
+         across /chat ↔ /c/:id navigations. Hidden (not unmounted) when
+         visiting non-chat routes. This is what makes the WS + DOM +
+         right sidebar state persist — same pattern as the left sidebar. */}
+      <div style={{ display: showChat ? "contents" : "none" }}>
+        <PageShell page="chat" />
+      </div>
+      {/* Non-chat routes render their own page content via the router. */}
+      {!showChat && children}
+      {/* Right sidebar — persistent across conversations. */}
+      <div
+        ref={rightSidebarRef}
+        style={{ display: showChat ? "contents" : "none" }}
+      />
     </div>
   );
 }

@@ -1,0 +1,442 @@
+/* ===== Left Sidebar ===== */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 0.3s ease, min-width 0.3s ease;
+}
+
+.sidebar.collapsed {
+  width: 48px;
+  min-width: 48px;
+  overflow: hidden;
+}
+.sidebar.collapsed * {
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+}
+/* Custom scrollbars: defined globally below. On collapsed sidebar we hide
+   them via `overflow: hidden !important` above. */
+/* --- Collapsed sidebar: static top, smooth-slide bottom --- */
+/* Logo shrinks to 0 in flex layout; fade out text so no partial clipping */
+.sidebar.collapsed .sidebar-header .logo { opacity: 0; padding-left: 0; }
+/* Nav items: keep left-aligned, icons stay at same x-position (static) */
+.sidebar.collapsed .sidebar-nav-item {
+  gap: 0;  /* collapse gap since label is hidden */
+}
+.sidebar.collapsed .sidebar-nav-label { display: none; }
+.sidebar.collapsed .sidebar-nav-action { display: none; }
+.sidebar.collapsed .sidebar-favorites { display: none; }
+.sidebar.collapsed .sidebar-conversations { display: none; }
+/* Footer: padding-based positioning — avatar slides from 16px to 5.5px (smooth) */
+.sidebar.collapsed .sidebar-footer {
+  margin-top: auto;
+  border-top-color: transparent;
+}
+.sidebar.collapsed .sidebar-user {
+  gap: 0;
+  /* center 37px avatar (content-box) in 48px: (48 - 37) / 2 = 5.5px */
+  padding: 0 5.5px;
+}
+.sidebar.collapsed .user-info { display: none; }
+
+.sidebar-header {
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  height: 48px;
+  box-sizing: border-box;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+  height: 32px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  transition: opacity 0.15s ease, padding-left 0.3s ease;
+}
+
+.logo-img {
+  height: 32px;
+  width: auto;
+  display: block;
+}
+
+.logo-l1 { color: #ff6b6b; }
+.logo-l2 { color: #4ecdc4; }
+.logo-m  { color: #ffe66d; }
+
+.sidebar-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color 0.3s cubic-bezier(0.165,0.85,0.45,1),
+              background 0.3s cubic-bezier(0.165,0.85,0.45,1);
+}
+.sidebar-toggle svg { flex-shrink: 0; }
+
+/* Claude pattern: bg darkens, icon brightens */
+.sidebar-toggle:hover {
+  color: var(--text-bright);
+  background: rgba(0, 0, 0, 0.12);
+}
+.sidebar-toggle:active {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* .new-chat-btn kept hidden — JS still references it */
+.new-chat-btn { display: none; }
+
+/* Sidebar nav group — Claude.ai structure.
+   Uniform 1px seam between every nav item (Claude uses `gap-px`). */
+.sidebar-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 8px 0;
+  flex-shrink: 0;
+}
+
+/* Nav item — Claude: inline-flex, height 32px, padding 6px 16px, radius 6px */
+/* Inner content uses -translate-x-2 in Claude; we achieve same with padding 6px 8px */
+.sidebar-nav-item {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  padding: 6px 8px;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background 0.3s cubic-bezier(0.165,0.85,0.45,1),
+              color 0.3s cubic-bezier(0.165,0.85,0.45,1);
+  box-sizing: border-box;
+}
+.sidebar-nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.sidebar-nav-item:active {
+  background: rgba(0, 0, 0, 0.15);
+}
+.sidebar-nav-item.active {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+/* Icon container — Claude: 16x16 container, 20x20 SVG (overflow visible) */
+/* Claude pattern: icon CONTAINER is 16x16 (flex layout width) but SVG is 20x20
+   and overflows the container — visually the icon is 20x20 but takes only 16px
+   of horizontal space, so labels sit closer to the icon's optical center. */
+.sidebar-nav-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-bright);
+  flex-shrink: 0;
+  transition: color 75ms;
+  overflow: visible;
+}
+.sidebar-nav-icon svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.sidebar-nav-item:hover .sidebar-nav-icon { color: var(--text-bright); }
+.sidebar-nav-item.active .sidebar-nav-icon { color: var(--text-bright); }
+
+/* New Chat icon — circular bg + hover rotation/scale animation (Claude.ai) */
+/* Claude: size-[1.4rem] (22.4px) rounded-full, bg-text-500/15 */
+#navNewChat .sidebar-nav-icon {
+  width: 22.4px;
+  height: 22.4px;
+  /* Regular nav icons use a 16px layout container (with 20x20 SVG overflow).
+     Offset the 22.4px circle by -3.2px each side so its effective layout width
+     is also 16px — plus sign aligns with other icons' centers. */
+  margin: 0 -3.2px;
+  background: rgba(151, 149, 140, 0.15);
+  border-radius: 9999px;
+  transition: transform 0.3s cubic-bezier(0.165,0.85,0.45,1),
+              background 0.15s ease;
+}
+#navNewChat .sidebar-nav-icon svg {
+  width: 16px;
+  height: 16px;
+}
+/* Hover: slight tilt + scale up, bg darkens */
+#navNewChat:hover .sidebar-nav-icon {
+  background: rgba(151, 149, 140, 0.25);
+  transform: rotate(-3deg) scale(1.1);
+}
+/* Active/press: more tilt, slight scale down */
+#navNewChat:active .sidebar-nav-icon {
+  background: var(--text-primary);
+  transform: rotate(6deg) scale(0.98);
+}
+
+/* Programs icon — 2x2 grid, hover makes each square drift toward its corner */
+#navPrograms .sidebar-nav-icon svg rect {
+  transition: transform 0.3s cubic-bezier(0.165, 0.85, 0.45, 1);
+}
+#navPrograms:hover .sidebar-nav-icon svg rect:nth-of-type(1) { transform: translate(-0.5px, -0.5px); }
+#navPrograms:hover .sidebar-nav-icon svg rect:nth-of-type(2) { transform: translate( 0.5px, -0.5px); }
+#navPrograms:hover .sidebar-nav-icon svg rect:nth-of-type(3) { transform: translate(-0.5px,  0.5px); }
+#navPrograms:hover .sidebar-nav-icon svg rect:nth-of-type(4) { transform: translate( 0.5px,  0.5px); }
+#navPrograms:active .sidebar-nav-icon svg rect { transform: translate(0, 0); }
+
+.sidebar-nav-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 20px;
+  flex: 1;
+}
+
+/* Nav action (e.g. refresh) — only visible on hover */
+.sidebar-nav-action {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.sidebar-nav-item:hover .sidebar-nav-action { opacity: 0.6; }
+.sidebar-nav-action:hover { opacity: 1 !important; }
+
+/* Favorites section */
+.sidebar-favorites {
+  flex-shrink: 0;
+  padding: 16px 0 0;
+}
+.sidebar-favorites:empty,
+.sidebar-favorites.empty {
+  display: none;
+}
+.sidebar-fav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 8px;
+}
+.fav-item {
+  padding: 6px 8px;
+  height: 32px;
+  cursor: pointer;
+  transition: background 0.3s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+.fav-item:hover { background: var(--bg-hover); }
+.fav-item .fav-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.fav-item .fav-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+}
+
+/* Conversations section — Claude: padding-top 16px for group spacing */
+.sidebar-conversations {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.sidebar-conv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+/* Refresh button */
+.refresh-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+.refresh-btn:hover {
+  background: var(--bg-hover);
+  opacity: 1 !important;
+  color: var(--text-bright);
+}
+.refresh-btn:active {
+  background: var(--bg-tertiary);
+}
+@keyframes spin-refresh {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.refresh-btn.spinning svg {
+  animation: spin-refresh 0.6s ease-in-out;
+}
+.refresh-btn.spinning {
+  opacity: 1 !important;
+}
+.refresh-btn.done {
+  color: #4ade80 !important;
+  opacity: 1 !important;
+}
+
+/* ===== Sidebar Footer — 1:1 Claude.ai layout ===== */
+/* Claude: button w-full, rounded-none, px-2, gap-12, padding 32px 16px → 64px tall */
+.sidebar-footer {
+  flex-shrink: 0;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 75ms, border-top-color 0.15s ease;
+}
+.sidebar-footer:hover { background: var(--bg-hover); }
+.sidebar-user {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  height: 64px;
+  gap: 12px;
+  padding: 0 16px;
+  transition: gap 0.3s ease, padding 0.3s ease;
+}
+/* Avatar: 36px circle + 0.5px transparent border = 37px total */
+/* Claude: border-0.5 border-transparent group-hover:border-border-200 */
+.user-avatar {
+  box-sizing: content-box;
+  width: 36px; height: 36px;
+  border-radius: 9999px;
+  border: 0.5px solid transparent;
+  background: var(--text-primary);
+  color: var(--bg-secondary);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 530;
+  flex-shrink: 0;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+.sidebar-footer:hover .user-avatar {
+  border-color: var(--border-light);
+  opacity: 0.9;
+}
+.user-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+  transition: opacity 0.15s ease-out;
+}
+.user-name {
+  display: block;
+  width: 100%;
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 510;
+  line-height: 20px;
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-subtitle {
+  display: block;
+  width: 100%;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 400;
+  line-height: 16px;
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* User Menu Popup */
+.user-menu {
+  display: none;
+  position: absolute;
+  left: 8px;
+  width: calc(var(--sidebar-width) - 16px);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.32);
+  z-index: 1000;
+  padding: 6px;
+}
+.user-menu.open { display: block; }
+.user-menu-item {
+  padding: 6px 8px;
+  min-height: 32px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  transition: background 75ms;
+  box-sizing: border-box;
+}
+a.user-menu-item { text-decoration: none; color: inherit; }
+.user-menu-item:hover { background: var(--bg-hover); color: var(--text-bright); }
+.user-menu-icon {
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.user-menu-item:hover .user-menu-icon { color: var(--text-primary); }
+.user-menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 8px;
+}
+

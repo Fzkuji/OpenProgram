@@ -274,6 +274,12 @@ function renderConversationMessages(conv) {
   // siblings without a round-trip. Populated here since this is the
   // only place we see the whole conversation at once.
   window._allMessages = conv.messages.slice();
+  // Refresh the History DAG panel if it's wired up. The graph is the
+  // full conversation (every branch), not just the HEAD chain, so
+  // it comes from a separate field on the server payload.
+  if (typeof window.renderHistoryGraph === 'function') {
+    window.renderHistoryGraph(conv.graph || [], conv.head_id || null);
+  }
   // Container-level run_active flag — CSS greys out Edit/Retry when
   // true. Flipped elsewhere when runs start / end; set it from the
   // snapshot we just loaded so initial state is right.

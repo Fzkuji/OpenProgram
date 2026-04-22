@@ -1,0 +1,123 @@
+/* Right sidebar — mirror of the left sidebar. Reuses .sidebar,
+   .sidebar-header, .sidebar-toggle, .sidebar-nav-group, .sidebar-nav-item
+   etc. so heights/colors/strokes stay aligned. Only diffs:
+     * border on the LEFT, not the right
+     * `.right-view-host` replaces the favorites/conversations blocks
+     * active nav item uses --bg-hover tint
+     * collapsed state hides view-host (instead of favorites/conversations)
+*/
+
+.right-sidebar {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
+/* Header: toggle sits at the LEFT edge so it's symmetric with the
+   left sidebar's toggle at the RIGHT edge. */
+.right-sidebar-header {
+  justify-content: flex-start;
+}
+
+/* Active nav item (currently showing view). */
+.right-sidebar .sidebar-nav-item.active {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+/* View host — one child visible at a time, matching data-view. */
+.right-view-host {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.right-view {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+}
+.right-sidebar[data-view="history"] .right-view[data-view="history"],
+.right-sidebar[data-view="detail"] .right-view[data-view="detail"] {
+  display: flex;
+}
+
+/* Collapsed: hide view content + nav labels (the latter is inherited
+   from .sidebar.collapsed rules in 02-sidebar.css). */
+.right-sidebar.collapsed .right-view-host { display: none; }
+
+/* ============ History DAG view ============ */
+
+.history-body {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 8px;
+  position: relative;
+}
+.history-empty,
+.detail-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 40px 18px;
+  line-height: 1.55;
+}
+.detail-empty span {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.history-svg {
+  display: block;
+  margin: 0 auto;
+}
+
+.history-edge {
+  fill: none;
+  stroke: var(--border-color);
+  stroke-width: 1.2;
+  opacity: 0.5;
+}
+.history-edge.on-head {
+  stroke: var(--accent-blue, #3b82f6);
+  stroke-width: 1.6;
+  opacity: 0.9;
+}
+
+.history-node { cursor: pointer; }
+.history-node circle {
+  transition: r 0.1s ease-out, filter 0.1s ease-out;
+}
+.history-node:hover circle { filter: brightness(1.25); }
+.history-node.is-head circle {
+  stroke: var(--text-bright, #fff);
+  stroke-width: 1.6;
+  filter: drop-shadow(0 0 5px var(--accent-blue, #3b82f6));
+}
+
+.history-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  max-width: 240px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.1s;
+  z-index: 5;
+}
+.history-tooltip.visible { opacity: 1; }
+.history-tooltip-role {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}

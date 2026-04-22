@@ -313,7 +313,11 @@ function showDetail(node) {
   var body = document.getElementById('detailBody');
 
   panel.classList.remove('collapsed');
-  title.textContent = node.name;
+  // New dock structure: the panel is a tab inside the right sidebar.
+  // Showing node detail should also surface that tab if the sidebar
+  // is on another view (or collapsed).
+  if (window.rightDock) window.rightDock.show('detail');
+  if (title) title.textContent = node.name;
 
   var statusIcon = node.status === 'success' ? '&#10003;' : node.status === 'error' ? '&#10007;' : '&#9679;';
   var dur = node.duration_ms > 0 ? Math.round(node.duration_ms) + 'ms' : 'running...';

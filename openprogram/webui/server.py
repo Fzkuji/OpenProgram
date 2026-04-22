@@ -496,7 +496,11 @@ def _is_run_active(conv_id: str) -> bool:
 # _append_msg moved to openprogram.contextgit.dag.advance_head so the
 # DAG logic lives with the rest of ContextGit. Retained as a thin alias
 # for readability in existing call sites.
-from openprogram.contextgit import advance_head as _append_msg  # noqa: E402
+from openprogram.contextgit import (  # noqa: E402
+    advance_head as _append_msg,
+    head_or_tip as _head_or_tip,
+    linear_history as _linear_history,
+)
 
 
 # Thinking-effort picker configs + runtime apply helpers live in
@@ -550,7 +554,19 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 _MAX_CONTEXT_CHARS = 320_000
                 history_parts = []
                 total_chars = 0
-                messages = conv.get("messages", [])
+                # Build history from the ACTIVE BRANCH only. conv["messages"]
+                # is a flat DAG store containing every sibling branch; if we
+                # iterate it raw after a retry/edit, the model sees content
+                # from the branch we forked away from, which both pollutes
+                # the prompt and inflates token counts. linear_history walks
+                # the parent chain from HEAD, so retries are isolated.
+                _all_msgs = conv.get("messages", [])
+                _head = _head_or_tip(conv, _all_msgs)
+                messages = _linear_history(_all_msgs, _head) if _head else _all_msgs
+                # Drop the in-flight placeholder so the query isn't duplicated
+                # (assistant placeholder has empty content; retry of a user
+                # turn has msg_id == HEAD with content == query).
+                messages = [m for m in messages if m.get("id") != msg_id]
                 # Walk backwards to prioritize recent messages
                 for m in reversed(messages):
                     role = m.get("role", "")
@@ -1631,12 +1647,33 @@ async def _handle_ws_command(ws, cmd: dict):
                 })
 
             tree_data = conv["root_context"]._to_dict() if conv.get("root_context") else {}
+            # DAG snapshot: every message's id/parent/role/preview/time so
+            # the History panel can draw the whole branching graph. Keep
+            # the preview short — full content is already in "messages"
+            # for the active chain, and off-branch content is only fetched
+            # lazily when the user checks out a sibling.
+            graph = []
+            for m in all_msgs:
+                content = m.get("content") or ""
+                preview = content.strip().replace("\n", " ")
+                if len(preview) > 80:
+                    preview = preview[:77] + "…"
+                graph.append({
+                    "id": m.get("id"),
+                    "parent_id": m.get("parent_id"),
+                    "role": m.get("role"),
+                    "function": m.get("function"),
+                    "display": m.get("display"),
+                    "preview": preview,
+                    "created_at": m.get("created_at"),
+                })
             await ws.send_text(json.dumps({
                 "type": "conversation_loaded",
                 "data": {
                     "id": conv["id"],
                     "title": conv["title"],
                     "messages": shown,
+                    "graph": graph,
                     "head_id": head,
                     "context_tree": tree_data,
                     "function_trees": conv.get("function_trees", []),

@@ -171,6 +171,52 @@ export function PageShell({ page }: { page: Page }) {
       }
       if (hostRef.current) hostRef.current.innerHTML = "";
     };
+    // Deliberately NOT depending on pathname — all chat routes (/chat,
+    // /c/:id) share the same page="chat" HTML, so re-running this
+    // effect on every conv-switch would needlessly tear down the WS,
+    // wipe the DOM, and rebuild everything. Conv switching is handled
+    // in the pathname-keyed effect below, which reuses the existing WS.
+  }, [page]);
+
+  // Lightweight path-change handler: on chat pages, when the URL's
+  // conv id changes, we reuse the already-open WebSocket + keep the
+  // DOM mounted. Two fast paths to avoid WS-roundtrip lag:
+  //   * known conv — render from the local cache immediately, server
+  //     reply later overwrites with canonical state
+  //   * new chat (/chat) — call newConversation() which resets the
+  //     chat area in place (welcome screen + cleared state)
+  useEffect(() => {
+    if (page !== "chat") return;
+    const w = window as unknown as {
+      ws?: WebSocket;
+      currentConvId?: string | null;
+      conversations?: Record<string, unknown>;
+      renderConversationMessages?: (c: unknown) => void;
+      newConversation?: () => void;
+    };
+    const m = pathname.match(/^\/c\/([^/]+)/);
+    const target = m ? m[1] : null;
+    if (w.currentConvId === target) return;
+    w.currentConvId = target;
+
+    if (target === null) {
+      // /chat — reset in-place (welcome screen, clear messages, state).
+      if (w.newConversation) w.newConversation();
+      return;
+    }
+
+    // Optimistic render from cache — snaps the UI instantly; the WS
+    // reply below still overwrites with the authoritative snapshot.
+    const cached = w.conversations?.[target];
+    if (cached && w.renderConversationMessages) {
+      try { w.renderConversationMessages(cached); } catch {}
+    }
+    if (w.ws && w.ws.readyState === WebSocket.OPEN) {
+      w.ws.send(JSON.stringify({
+        action: "load_conversation",
+        conv_id: target,
+      }));
+    }
   }, [page, pathname]);
 
   if (err) {
