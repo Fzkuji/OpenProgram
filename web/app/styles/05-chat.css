@@ -177,15 +177,9 @@
    the background pill. */
 .message-actions {
   display: flex;
+  align-items: center;
   gap: 2px;
-  margin-top: 8px;
-  /* Align icon left edge with text left edge. .message-content has
-     padding-left: 36px. Each button is 26px wide with a 14px icon
-     centered, so the icon's left edge sits 6px inside the button.
-     We offset by that 6px so the icon (not the button box) lines up
-     under the first character of the text — same trick ChatGPT uses
-     via negative margin on its action container. */
-  padding-left: 30px;
+  margin-left: auto;  /* push to right of flex .message-header */
   opacity: 0;
   transition: opacity 150ms ease;
 }

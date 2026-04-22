@@ -60,12 +60,16 @@
     // informational.
     if (messageEl.classList.contains('system')) return;
 
-    var existing = messageEl.querySelector(':scope > .message-actions');
+    // Action bar lives inside .message-header so it sits on the same
+    // row as the avatar + sender name (pushed right via CSS). Falls
+    // back to the message element itself if header is missing.
+    var host = messageEl.querySelector(':scope > .message-header') || messageEl;
+    var existing = host.querySelector(':scope > .message-actions');
     if (existing) {
-      // Keep the bar pinned to last-child. Nav now lives INSIDE the
-      // bar (see message-actions-nav.js), so no sibling conflict.
-      if (messageEl.lastElementChild !== existing) {
-        messageEl.appendChild(existing);
+      // Keep bar pinned to last-child of header (so it's always at
+      // the right end).
+      if (host.lastElementChild !== existing) {
+        host.appendChild(existing);
       }
       // If the timestamp arrived after the bar was first built
       // (assistant replies get stamped on chat_response result), add
@@ -127,12 +131,8 @@
     if (!isUser) {
       bar.appendChild(makeBtn('branch', 'Branch into a new conversation', ICON.branch));
     }
-    messageEl.appendChild(bar);
+    host.appendChild(bar);
 
-    // Sibling navigator (< N / M >) — rendered below the action bar
-    // if the message has retry/edit siblings. See
-    // message-actions-nav.js. Called after the bar is in the DOM so
-    // it lands in the right position.
     if (typeof window.ensureSiblingNav === 'function') {
       window.ensureSiblingNav(messageEl);
     }

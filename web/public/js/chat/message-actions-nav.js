@@ -37,7 +37,10 @@
     if (!messageEl) return;
     var idx = parseInt(messageEl.getAttribute('data-sibling-index') || '0', 10);
     var total = parseInt(messageEl.getAttribute('data-sibling-total') || '0', 10);
-    var bar = messageEl.querySelector(':scope > .message-actions');
+    // Bar now lives inside .message-header. Use a loose descendant
+    // query so we find it regardless of nesting depth (header fallback
+    // to messageEl when header is absent).
+    var bar = messageEl.querySelector('.message-actions');
     if (!bar) return;
     var existing = bar.querySelector(':scope > .message-nav');
 
