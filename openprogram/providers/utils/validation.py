@@ -59,8 +59,9 @@ def _coerce_types(instance: Any, schema: dict[str, Any]) -> Any:
     
     if schema_type == "number" or schema_type == "integer":
         if isinstance(instance, str):
+            candidate = instance.strip()
             try:
-                return int(instance) if schema_type == "integer" else float(instance)
+                return int(candidate) if schema_type == "integer" else float(candidate)
             except (ValueError, TypeError):
                 pass
     elif schema_type == "string":
@@ -68,9 +69,10 @@ def _coerce_types(instance: Any, schema: dict[str, Any]) -> Any:
             return str(instance)
     elif schema_type == "boolean":
         if isinstance(instance, str):
-            if instance.lower() in ("true", "1", "yes"):
+            candidate = instance.strip().lower()
+            if candidate in ("true", "1", "yes"):
                 return True
-            elif instance.lower() in ("false", "0", "no"):
+            elif candidate in ("false", "0", "no"):
                 return False
     elif schema_type == "array":
         if isinstance(instance, list):
@@ -144,11 +146,15 @@ def validate_tool_arguments(tool: Tool, tool_call: ToolCall) -> dict[str, Any]:
 def _validate_basic(tool: Tool, tool_call: ToolCall, args: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
     """
     Basic validation fallback when jsonschema is not available.
-    Only checks required fields (original behavior).
+
+    We still apply the same lightweight type coercion as the full jsonschema
+    path so callers get consistent behavior across environments.
     """
+    coerced_args = _coerce_types(copy.deepcopy(args), schema)
+
     required = schema.get("required", [])
     for field in required:
-        if field not in args:
+        if field not in coerced_args:
             raise ValueError(
                 f'Validation failed for tool "{tool.name}":\n'
                 f'  - {field}: Missing required parameter\n\n'
@@ -156,7 +162,7 @@ def _validate_basic(tool: Tool, tool_call: ToolCall, args: dict[str, Any], schem
                 f'{_format_json(tool_call.arguments)}'
             )
 
-    return args
+    return coerced_args
 
 
 def _format_json(obj: Any) -> str:
