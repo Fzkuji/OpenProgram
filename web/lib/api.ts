@@ -233,6 +233,18 @@ export const api = {
       "/api/chat/branch",
       { method: "POST", body: JSON.stringify({ conv_id: convId, msg_id: msgId }) },
     ),
+
+  /** Read the canvas file. Returns ``content: ""`` + ``exists: false``
+   *  when the file hasn't been created yet — so the panel renders an
+   *  empty state instead of throwing. */
+  getCanvas: (path?: string) =>
+    jsonFetch<{
+      path: string;
+      content: string;
+      mtime: number;
+      blocks: { id: string; length: number }[];
+      exists: boolean;
+    }>(`/api/canvas${path ? "?path=" + encodeURIComponent(path) : ""}`),
 };
 
 export interface DoctorFinding {

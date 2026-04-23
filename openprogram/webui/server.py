@@ -2094,6 +2094,40 @@ def create_app():
                     return JSONResponse(content={"saved": True})
         return JSONResponse(content={"saved": False})
 
+    @app.get("/api/canvas")
+    async def get_canvas(path: str = None):
+        """Return the current canvas.md content + path + mtime.
+
+        Lets the WebUI's canvas panel poll for updates as the agent
+        writes blocks via the ``canvas`` tool. ``path`` query param
+        overrides the default; when omitted we resolve the same way
+        the tool does (``$OPENPROGRAM_CANVAS_PATH`` or ``./canvas.md``).
+        """
+        import os as _os
+        from openprogram.tools.canvas.canvas import _resolve_path, _BLOCK_RE
+        resolved = _resolve_path(path)
+        try:
+            st = _os.stat(resolved)
+            mtime = int(st.st_mtime * 1000)
+            with open(resolved, "r", encoding="utf-8") as f:
+                content = f.read()
+        except FileNotFoundError:
+            return JSONResponse(content={
+                "path": resolved, "content": "", "mtime": 0,
+                "blocks": [], "exists": False,
+            })
+        blocks = [
+            {"id": m.group("id"), "length": len(m.group("body"))}
+            for m in _BLOCK_RE.finditer(content)
+        ]
+        return JSONResponse(content={
+            "path": resolved,
+            "content": content,
+            "mtime": mtime,
+            "blocks": blocks,
+            "exists": True,
+        })
+
     @app.post("/api/pause")
     async def api_pause():
         pause_execution()

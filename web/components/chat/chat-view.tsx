@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import {
   Send, Square, Pause, Play, Loader2, Zap, ChevronDown, Activity,
-  Copy, RefreshCw, GitBranch, Check,
+  Copy, RefreshCw, GitBranch, Check, FileText,
 } from "lucide-react";
 import {
   useConvStore,
@@ -19,6 +19,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ContextTreePanel } from "./context-tree-panel";
+import { CanvasPanel } from "./canvas-panel";
 
 interface ChatViewProps {
   convId: string | null;
@@ -43,6 +44,7 @@ export function ChatView({ convId }: ChatViewProps) {
   const [thinking, setThinking] = useState<Effort>("medium");
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [treeOpen, setTreeOpen] = useState(false);
+  const [canvasOpen, setCanvasOpen] = useState(false);
   const tree = useConvStore((s) =>
     convId ? s.trees[convId] ?? null : null
   );
@@ -133,18 +135,32 @@ export function ChatView({ convId }: ChatViewProps) {
           <ModelBadge />
           <StatusDot status={wsStatus} />
         </div>
-        <button
-          onClick={() => setTreeOpen((v) => !v)}
-          title="Toggle Context Tree"
-          className="flex h-8 items-center gap-1 rounded-md px-2 text-[11px]"
-          style={{
-            background: treeOpen ? "var(--bg-tertiary)" : "transparent",
-            color: treeOpen ? "var(--text-bright)" : "var(--text-secondary)",
-          }}
-        >
-          <Activity className="h-3.5 w-3.5" />
-          Tree
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setCanvasOpen((v) => !v)}
+            title="Toggle Canvas"
+            className="flex h-8 items-center gap-1 rounded-md px-2 text-[11px]"
+            style={{
+              background: canvasOpen ? "var(--bg-tertiary)" : "transparent",
+              color: canvasOpen ? "var(--text-bright)" : "var(--text-secondary)",
+            }}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Canvas
+          </button>
+          <button
+            onClick={() => setTreeOpen((v) => !v)}
+            title="Toggle Context Tree"
+            className="flex h-8 items-center gap-1 rounded-md px-2 text-[11px]"
+            style={{
+              background: treeOpen ? "var(--bg-tertiary)" : "transparent",
+              color: treeOpen ? "var(--text-bright)" : "var(--text-secondary)",
+            }}
+          >
+            <Activity className="h-3.5 w-3.5" />
+            Tree
+          </button>
+        </div>
       </header>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
@@ -299,6 +315,9 @@ export function ChatView({ convId }: ChatViewProps) {
         </div>
       </footer>
       </div>
+      {canvasOpen && (
+        <CanvasPanel onClose={() => setCanvasOpen(false)} />
+      )}
       {treeOpen && (
         <ContextTreePanel tree={tree} onClose={() => setTreeOpen(false)} />
       )}
