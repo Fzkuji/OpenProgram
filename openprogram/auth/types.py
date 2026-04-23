@@ -164,6 +164,56 @@ CredentialPayload = (
 )
 
 
+@dataclass(frozen=True)
+class AuthReference:
+    """Pointer to a credential source we don't own the bytes of.
+
+    Some providers — notably subscription-only CLIs like Claude Code —
+    manage their own on-disk auth and don't expose the tokens to us.
+    For those we can't create a :class:`Credential` (there's nothing to
+    refresh or rotate), but the runtime still needs to tell the CLI
+    *where* to find its own state.
+
+    Two concrete uses today:
+
+    - ``kind="external_file"`` + ``store_path=~/.claude/.credentials.json``
+      — Claude Code CLI reads its own OAuth from this file. Our job
+      is ensuring its HOME/XDG vars point at the right dir so the CLI
+      finds the file; we never decode the contents.
+    - ``kind="credential_ref"`` + ``provider_id`` + ``profile_id`` —
+      "use whatever AuthManager currently returns for this pool".
+      Useful for cross-profile reuse (a subprocess runtime that wants
+      to share credentials with an API runtime's profile without
+      duplicating the Credential entry).
+
+    Intentionally not a union member of :class:`CredentialPayload` —
+    ``AuthReference`` never lives *inside* a Credential; it's a
+    sibling concept the Runtime layer resolves itself.
+    """
+
+    kind: Literal["external_file", "credential_ref"]
+    # external_file: path to a vendor-CLI-owned auth file. The runtime
+    # only uses this to derive HOME / env vars; contents are opaque.
+    store_path: Optional[str] = None
+    # credential_ref: target pool to delegate to. Resolve via AuthManager.
+    provider_id: Optional[str] = None
+    profile_id: Optional[str] = None
+    # Free-form metadata for provider-specific hints (e.g. the HOME dir
+    # the CLI expects, the env var name it reads from).
+    metadata: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.kind == "external_file" and not self.store_path:
+            raise ValueError(
+                "AuthReference(kind='external_file') requires store_path"
+            )
+        if self.kind == "credential_ref" and not (self.provider_id and self.profile_id):
+            raise ValueError(
+                "AuthReference(kind='credential_ref') requires provider_id "
+                "and profile_id"
+            )
+
+
 @dataclass
 class Credential:
     """One authentication artifact, plus the metadata needed to manage it.
@@ -603,6 +653,7 @@ __all__ = [
     "ApiKeyPayload", "OAuthPayload", "CliDelegatedPayload",
     "DeviceCodePayload", "ExternalProcessPayload", "SsoPayload",
     "CredentialPayload", "Credential",
+    "AuthReference",
     "PoolStrategy", "CredentialPool",
     "Profile",
     "AuthEventType", "AuthEvent", "AuthEventListener",
