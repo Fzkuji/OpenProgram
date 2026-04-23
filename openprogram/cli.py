@@ -97,6 +97,20 @@ def main():
                           choices=["claude", "gemini"],
                           help="Target CLI tool (default: auto-detect)")
 
+    # skills — introspect the skill registry the runtime will load
+    p_skills_ns = sub.add_parser(
+        "skills",
+        help="Inspect discovered SKILL.md entries (list, doctor)",
+    )
+    skills_sub = p_skills_ns.add_subparsers(dest="skills_verb", metavar="verb")
+    p_skills_list = skills_sub.add_parser("list", help="List discovered skills with their descriptions")
+    p_skills_list.add_argument("--dir", "-d", action="append", default=None,
+                               help="Override search dir (repeatable). Default: ~/.openprogram/skills + repo skills/")
+    p_skills_list.add_argument("--json", action="store_true", help="Emit JSON for scripting")
+    p_skills_doctor = skills_sub.add_parser("doctor", help="Scan skill dirs and report problems")
+    p_skills_doctor.add_argument("--dir", "-d", action="append", default=None,
+                                 help="Override search dir (repeatable)")
+
     # cron-worker
     p_cron = sub.add_parser(
         "cron-worker",
@@ -153,6 +167,16 @@ def main():
     elif args.command == "install-skills":
         _cmd_install_skills(args.target)
         return
+    elif args.command == "skills":
+        verb = getattr(args, "skills_verb", None) or "list"
+        dirs = getattr(args, "dir", None)
+        if verb == "list":
+            sys.exit(_cmd_skills_list(dirs, getattr(args, "json", False)))
+        elif verb == "doctor":
+            sys.exit(_cmd_skills_doctor(dirs))
+        else:
+            p_skills_ns.print_help()
+            return
     elif args.command in ("web", "visualize"):
         _cmd_web(args.port, not args.no_browser)
         return
@@ -233,6 +257,102 @@ def _cmd_sessions():
         status = s.get("status", "?")
         print(f"  {sid}  [{status}]  {q[:80]}")
     print(f"\nResume with: agentic resume <session_id> \"your answer\"")
+
+
+def _cmd_skills_list(override_dirs, as_json: bool) -> int:
+    """Print skills the runtime would discover, in override-precedence order."""
+    from openprogram.agentic_programming.skills import default_skill_dirs, load_skills
+
+    dirs = override_dirs or default_skill_dirs()
+    skills = load_skills(dirs)
+
+    if as_json:
+        import json as _json
+        print(_json.dumps([{
+            "name": s.name,
+            "description": s.description,
+            "slug": s.slug,
+            "file_path": s.file_path,
+            "base_dir": s.base_dir,
+        } for s in skills], indent=2))
+        return 0
+
+    print(f"Search dirs (override order):")
+    for d in dirs:
+        import os as _os
+        exists = "✓" if _os.path.isdir(d) else "✗"
+        print(f"  {exists}  {d}")
+    if not skills:
+        print("\n(no skills discovered)")
+        return 0
+    print(f"\nDiscovered {len(skills)} skill(s):\n")
+    for s in skills:
+        print(f"  {s.name}  ({s.slug})")
+        print(f"    {s.description[:100]}")
+        print(f"    {s.file_path}")
+    return 0
+
+
+def _cmd_skills_doctor(override_dirs) -> int:
+    """Scan skill dirs for broken SKILL.md files and duplicate names.
+
+    Exit code is non-zero when at least one issue is found so CI can
+    consume it.
+    """
+    import os as _os
+    from pathlib import Path as _Path
+
+    from openprogram.agentic_programming.skills import (
+        _load_one, _parse_front_matter, default_skill_dirs,
+    )
+
+    dirs = override_dirs or default_skill_dirs()
+    issues: list[str] = []
+    seen_names: dict[str, str] = {}
+
+    for d in dirs:
+        root = _Path(d)
+        if not root.is_dir():
+            # Missing dirs are warnings, not errors — the runtime tolerates them.
+            print(f"[warn] skill dir does not exist: {d}")
+            continue
+        for entry in sorted(root.iterdir()):
+            if not entry.is_dir():
+                continue
+            skill_md = entry / "SKILL.md"
+            if not skill_md.is_file():
+                issues.append(f"{entry}: missing SKILL.md")
+                continue
+            try:
+                text = skill_md.read_text(encoding="utf-8")
+            except OSError as e:
+                issues.append(f"{skill_md}: cannot read ({e})")
+                continue
+            fm = _parse_front_matter(text)
+            if not fm:
+                issues.append(f"{skill_md}: no YAML front matter (--- ... --- block)")
+                continue
+            name = (fm.get("name") or "").strip()
+            description = (fm.get("description") or "").strip()
+            if not name:
+                issues.append(f"{skill_md}: front matter missing `name`")
+            if not description:
+                issues.append(f"{skill_md}: front matter missing `description`")
+            if name and name in seen_names and seen_names[name] != str(skill_md):
+                issues.append(
+                    f"{skill_md}: duplicate name {name!r} "
+                    f"(first seen at {seen_names[name]})"
+                )
+            if name:
+                seen_names.setdefault(name, str(skill_md))
+
+    if not issues:
+        print(f"All skill dirs OK ({len(seen_names)} skill(s) discovered).")
+        return 0
+    print(f"Found {len(issues)} issue(s):")
+    for issue in issues:
+        print(f"  - {issue}")
+    return 1
 
 
 def _cmd_install_skills(target=None):
