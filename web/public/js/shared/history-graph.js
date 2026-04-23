@@ -43,6 +43,8 @@
   ];
 
   var _currentHead = null;
+  var _currentViewId = null;          // msgId whose node gets the white outline
+  var _headAncestorSet = Object.create(null); // set of ids on the HEAD branch
   var _tooltip = null;
   var _lastSignature = null;
   var _leafOfNode = Object.create(null); // msgId -> leaf msgId (branch tip)
@@ -185,16 +187,15 @@
     return 'circle';
   }
 
-  function _appendShape(parent, shape, color, isHead) {
-    // HEAD is marked purely by a thicker stroke + bright outline.
-    // An earlier version drew a separate halo circle behind the node,
-    // but when HEAD was a square or triangle the circular halo read
-    // as a second overlapping shape instead of "this one's active".
-    var r = isHead ? NODE_R + 0.6 : NODE_R;
+  function _appendShape(parent, shape, color, isCurrent) {
+    // The "current view" node (where the chat is scrolled to) gets a
+    // thick white outline. Defaults to HEAD on first render but moves
+    // independently as the user clicks nodes or scrolls the chat.
+    var r = isCurrent ? NODE_R + 0.6 : NODE_R;
     var common = {
       fill: color,
-      stroke: isHead ? 'var(--text-bright, #fff)' : 'rgba(0,0,0,0.35)',
-      'stroke-width': isHead ? 2.6 : 1,
+      stroke: isCurrent ? '#ffffff' : 'rgba(0,0,0,0.35)',
+      'stroke-width': isCurrent ? 2.6 : 1,
     };
     if (shape === 'circle') {
       parent.appendChild(_svg('circle', Object.assign({ r: r }, common)));
@@ -273,6 +274,11 @@
 
     var headAncestors = Object.create(null);
     _headAncestors(tree.byId, headId).forEach(function (id) { headAncestors[id] = true; });
+    _headAncestorSet = headAncestors;
+
+    // Default the "current view" marker to HEAD when no prior selection
+    // exists, or when the prior selection is no longer in the graph.
+    if (!_currentViewId || !tree.byId[_currentViewId]) _currentViewId = headId;
 
     var width = PAD_X * 2 + COL_W * Math.max(lanes.laneCount - 1, 0);
     var height = PAD_Y * 2 + ROW_H * maxDepth;
@@ -319,16 +325,16 @@
       var node = tree.byId[id];
       var p = pos(node);
       var isHead = id === headId;
+      var isCurrent = id === _currentViewId;
       var color = _laneColor(node._lane);
       var g = _svg('g', {
-        class: 'history-node' + (isHead ? ' is-head' : ''),
+        class: 'history-node'
+          + (isHead ? ' is-head' : '')
+          + (isCurrent ? ' is-current' : ''),
         transform: 'translate(' + p.x + ',' + p.y + ')',
         'data-msg-id': id,
       });
-      // No halo ring — HEAD is marked by the thicker stroke applied
-      // inside _appendShape. A separate halo circle caused the "square
-      // inside a circle" overlap in the bottom-most HEAD node.
-      _appendShape(g, _shapeFor(node), color, isHead);
+      _appendShape(g, _shapeFor(node), color, isCurrent);
       g._nodeData = node;
       nodeG.appendChild(g);
     });
@@ -347,6 +353,41 @@
           e.clientY - rect.top + body.scrollTop);
       });
       body.addEventListener('mouseleave', _hideTooltip);
+    }
+  }
+
+  // Update the white-outline cursor without re-rendering the whole SVG.
+  // Cheap DOM tweak so this can run on every chat-scroll event.
+  function _setCurrentView(msgId) {
+    if (!msgId || msgId === _currentViewId) return;
+    _currentViewId = msgId;
+    var panel = document.getElementById('historyPanel');
+    if (!panel) return;
+    var body = panel.querySelector('.history-body');
+    if (!body) return;
+    body.querySelectorAll('.history-node').forEach(function (g) {
+      var id = g.getAttribute('data-msg-id');
+      var active = id === msgId;
+      g.classList.toggle('is-current', active);
+      var shape = g.querySelector('circle, polygon, rect');
+      if (!shape) return;
+      shape.setAttribute('stroke', active ? '#ffffff' : 'rgba(0,0,0,0.35)');
+      shape.setAttribute('stroke-width', active ? '2.6' : '1');
+      // Nudge radius / size the same way _appendShape does on initial
+      // paint so clicks visibly "jump" the marker.
+      if (shape.tagName === 'circle') {
+        shape.setAttribute('r', String(active ? NODE_R + 0.6 : NODE_R));
+      }
+    });
+  }
+
+  function _scrollChatTo(msgId) {
+    if (!msgId) return;
+    var el = document.querySelector(
+      '[data-chat-msg-id="' + (window.CSS && CSS.escape ? CSS.escape(msgId) : msgId) + '"]'
+    );
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
 
@@ -377,8 +418,17 @@
     var g = e.target.closest && e.target.closest('.history-node');
     if (!g) return;
     var id = g.getAttribute('data-msg-id');
-    if (id) _checkout(id);
+    if (!id) return;
+    // On-branch click = navigate to that message (scroll chat + move
+    // the white cursor). Off-branch click = checkout that branch tip.
+    if (_headAncestorSet[id]) {
+      _setCurrentView(id);
+      _scrollChatTo(id);
+    } else {
+      _checkout(id);
+    }
   });
 
   window.renderHistoryGraph = render;
+  window.setHistoryCurrent = _setCurrentView;
 })();

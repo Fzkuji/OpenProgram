@@ -78,6 +78,45 @@ export function ChatView({ convId }: ChatViewProps) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messageIds]);
 
+  // Sync the history graph's white-outline cursor to whichever message
+  // is currently closest to the top of the chat viewport. Throttled via
+  // rAF so rapid scrolls don't thrash the DOM.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const containerTop = el.getBoundingClientRect().top;
+        const nodes = el.querySelectorAll<HTMLElement>("[data-chat-msg-id]");
+        let bestId: string | null = null;
+        let bestDist = Infinity;
+        nodes.forEach((n) => {
+          const rect = n.getBoundingClientRect();
+          // Prefer the element whose top edge sits just below the
+          // container top (i.e. the first fully-visible one). Fall back
+          // to the one nearest the top if everything is above.
+          const dist = Math.abs(rect.top - containerTop - 40);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestId = n.getAttribute("data-chat-msg-id");
+          }
+        });
+        const setter = (window as unknown as {
+          setHistoryCurrent?: (id: string) => void;
+        }).setHistoryCurrent;
+        if (bestId && setter) setter(bestId);
+      });
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [convId]);
+
   // Auto-size textarea
   useEffect(() => {
     const t = textareaRef.current;
@@ -465,6 +504,7 @@ function MessageBubble({ msgId, convId }: { msgId: string; convId: string | null
 
   return (
     <div
+      data-chat-msg-id={msg.id}
       className={cn(
         "group/msg flex flex-col gap-1",
         isUser ? "items-end" : "items-start",
@@ -606,6 +646,7 @@ function RuntimeBlock({ msg }: { msg: ChatMsg }) {
           : "var(--accent-blue)";
   return (
     <div
+      data-chat-msg-id={msg.id}
       className="mx-auto w-full max-w-[90%] overflow-hidden rounded-lg border"
       style={{
         background: "var(--bg-secondary)",
