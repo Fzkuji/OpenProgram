@@ -98,7 +98,8 @@ _RUNTIME_PROVIDER = {
     "AnthropicRuntime": "anthropic",
     "OpenAIRuntime": "openai",
     "GeminiRuntime": "gemini",
-    "GeminiCLIRuntime": "gemini-cli",
+    "GeminiCLIRuntime": "gemini-cli",         # legacy class name
+    "GoogleGeminiCLIRuntime": "gemini-cli",   # new HTTP-direct runtime
 }
 
 

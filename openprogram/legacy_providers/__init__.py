@@ -44,7 +44,7 @@ PROVIDERS = {
     "openclaw":     ("OpenClawRuntime",    "openprogram.legacy_providers.openclaw",     "default"),
     "claude-code":  ("ClaudeCodeRuntime",  "openprogram.providers.anthropic.cli_runtime",  "claude-sonnet-4-6"),
     "openai-codex": ("OpenAICodexRuntime", "openprogram.legacy_providers.openai_codex", "gpt-5.4-mini"),
-    "gemini-cli":   ("GeminiCLIRuntime",   "openprogram.legacy_providers.gemini_cli",   "gemini-2.5-flash"),
+    "gemini-cli":   ("GoogleGeminiCLIRuntime", "openprogram.providers.google_gemini_cli.runtime", "gemini-2.5-flash"),
     "anthropic":    ("AnthropicRuntime",    "openprogram.legacy_providers.anthropic",    "claude-sonnet-4-6"),
     "openai":       ("OpenAIRuntime",       "openprogram.legacy_providers.openai",       "gpt-4.1"),
     "gemini":       ("GeminiRuntime",       "openprogram.legacy_providers.gemini",       "gemini-2.5-flash"),
@@ -270,8 +270,12 @@ def __getattr__(name):
         from openprogram.legacy_providers.openai_codex import OpenAICodexRuntime
         return OpenAICodexRuntime
     if name == "GeminiCLIRuntime":
-        from openprogram.legacy_providers.gemini_cli import GeminiCLIRuntime
-        return GeminiCLIRuntime
+        # Legacy name kept for backwards compat — now points at the
+        # HTTP-direct runtime under providers.google_gemini_cli.
+        from openprogram.providers.google_gemini_cli.runtime import (
+            GoogleGeminiCLIRuntime,
+        )
+        return GoogleGeminiCLIRuntime
     if name == "OpenClawRuntime":
         from openprogram.legacy_providers.openclaw import OpenClawRuntime
         return OpenClawRuntime

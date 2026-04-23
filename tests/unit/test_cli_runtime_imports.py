@@ -21,7 +21,7 @@ import pytest
 
 _MODULES = [
     ("openprogram.providers.anthropic.cli_runtime", "ClaudeCodeRuntime"),
-    ("openprogram.legacy_providers.gemini_cli", "GeminiCLIRuntime"),
+    ("openprogram.providers.google_gemini_cli.runtime", "GoogleGeminiCLIRuntime"),
     ("openprogram.legacy_providers.openai_codex", "OpenAICodexRuntime"),
     ("openprogram.legacy_providers.openclaw", "OpenClawRuntime"),
 ]
