@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-from openprogram.legacy_providers.claude_code import ClaudeCodeRuntime
+from openprogram.providers.anthropic.cli_runtime import ClaudeCodeRuntime
 from openprogram.legacy_providers.claude_models import load_claude_models
 
 

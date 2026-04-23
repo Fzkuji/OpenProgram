@@ -42,7 +42,7 @@ import shutil
 # Maps provider name -> (class_name, module_path, default_model)
 PROVIDERS = {
     "openclaw":     ("OpenClawRuntime",    "openprogram.legacy_providers.openclaw",     "default"),
-    "claude-code":  ("ClaudeCodeRuntime",  "openprogram.legacy_providers.claude_code",  "claude-sonnet-4-6"),
+    "claude-code":  ("ClaudeCodeRuntime",  "openprogram.providers.anthropic.cli_runtime",  "claude-sonnet-4-6"),
     "openai-codex": ("OpenAICodexRuntime", "openprogram.legacy_providers.openai_codex", "gpt-5.4-mini"),
     "gemini-cli":   ("GeminiCLIRuntime",   "openprogram.legacy_providers.gemini_cli",   "gemini-2.5-flash"),
     "anthropic":    ("AnthropicRuntime",    "openprogram.legacy_providers.anthropic",    "claude-sonnet-4-6"),
@@ -264,7 +264,7 @@ def __getattr__(name):
         from openprogram.legacy_providers.gemini import GeminiRuntime
         return GeminiRuntime
     if name == "ClaudeCodeRuntime":
-        from openprogram.legacy_providers.claude_code import ClaudeCodeRuntime
+        from openprogram.providers.anthropic.cli_runtime import ClaudeCodeRuntime
         return ClaudeCodeRuntime
     if name == "OpenAICodexRuntime":
         from openprogram.legacy_providers.openai_codex import OpenAICodexRuntime

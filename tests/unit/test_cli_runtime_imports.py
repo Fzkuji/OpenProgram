@@ -20,7 +20,7 @@ import pytest
 
 
 _MODULES = [
-    ("openprogram.legacy_providers.claude_code", "ClaudeCodeRuntime"),
+    ("openprogram.providers.anthropic.cli_runtime", "ClaudeCodeRuntime"),
     ("openprogram.legacy_providers.gemini_cli", "GeminiCLIRuntime"),
     ("openprogram.legacy_providers.openai_codex", "OpenAICodexRuntime"),
     ("openprogram.legacy_providers.openclaw", "OpenClawRuntime"),
@@ -43,7 +43,7 @@ def test_legacy_cli_runtime_imports(module_path: str, class_name: str):
 def test_claude_code_module_has_configure_entry_point():
     # ClaudeCodeRuntime has historically carried a module-level function
     # that CI setup depends on — pin it so renames don't land silently.
-    mod = importlib.import_module("openprogram.legacy_providers.claude_code")
+    mod = importlib.import_module("openprogram.providers.anthropic.cli_runtime")
     assert hasattr(mod, "ClaudeCodeRuntime")
 
 

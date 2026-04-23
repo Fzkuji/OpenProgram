@@ -849,7 +849,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     _last_session_id = getattr(exec_rt, 'last_thread_id', None) or getattr(exec_rt, '_session_id', None)
                     # For Claude Code: keep runtime alive for modify reuse
                     # For others: close after extracting session id
-                    _is_persistent = type(exec_rt).__name__ == "ClaudeCodeRuntime"
+                    _is_persistent = getattr(exec_rt, "has_session", False)
                     if _is_persistent:
                         # Close the previous stored runtime if any
                         old_rt = conv.get("_last_exec_runtime")
@@ -1792,7 +1792,7 @@ def create_app():
 
         def _do_refresh():
             try:
-                from openprogram.legacy_providers.claude_code import ClaudeCodeRuntime
+                from openprogram.providers.anthropic.cli_runtime import ClaudeCodeRuntime
                 from openprogram.legacy_providers.claude_models import _refresh_impl
                 rt = ClaudeCodeRuntime(model="sonnet")
                 try:

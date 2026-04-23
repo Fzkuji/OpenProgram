@@ -403,6 +403,20 @@ class ClaudeCodeRuntime(Runtime):
         self._run_coro_sync(self._compact_turn(self.model))
         return True
 
+    # --- process restart -----------------------------------------------
+
+    def _restart_process(self) -> None:
+        """Force the live CLI subprocess to exit so the next turn respawns it.
+
+        Needed when an argv-level setting changes between turns (e.g.
+        ``thinking_level`` → ``--settings defaultEffortLevel``), because
+        those flags are only applied at process spawn. Cheap — ``_teardown_live``
+        is a no-op when no live proc exists.
+        """
+        if self._closed or self._loop.is_closed():
+            return
+        self._run_coro_sync(self._runner._teardown_live())
+
     # --- lifecycle -----------------------------------------------------
 
     def close(self):

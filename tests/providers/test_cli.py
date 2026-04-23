@@ -34,88 +34,9 @@ def test_visualizer_codex_runtime_enables_search(monkeypatch):
 
 
 
-# ══════════════════════════════════════════════════════════════
-# ClaudeCodeRuntime unsupported modality tests
-# ══════════════════════════════════════════════════════════════
-
-class TestClaudeCodeRuntimeUnsupported:
-    """Tests that ClaudeCodeRuntime warns on unsupported modalities."""
-
-    @pytest.fixture(autouse=True)
-    def setup_mock(self, monkeypatch):
-        """Mock shutil.which and subprocess.Popen for persistent process mode."""
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/claude" if name == "claude" else None)
-
-        # Mock Popen to simulate a persistent claude process
-        self._mock_stdin = MagicMock()
-        self._mock_stdout = MagicMock()
-        self._mock_proc = MagicMock()
-        self._mock_proc.poll.return_value = None  # process is alive
-        self._mock_proc.stdin = self._mock_stdin
-        self._mock_proc.stdout = self._mock_stdout
-        self._mock_proc.stderr = MagicMock()
-
-        # _read_response reads lines from stdout; return a result message
-        self._mock_stdout.readline.side_effect = [
-            '{"type":"result","result":"mock reply"}\n',
-        ]
-
-        self._orig_popen = subprocess.Popen
-        monkeypatch.setattr("subprocess.Popen", lambda *a, **kw: self._mock_proc)
-
-    def _reset_stdout(self):
-        """Reset mock stdout for a fresh _call."""
-        self._mock_stdout.readline.side_effect = [
-            '{"type":"result","result":"mock reply"}\n',
-        ]
-
-    def _make_runtime(self, **kwargs):
-        from openprogram.legacy_providers.claude_code import ClaudeCodeRuntime
-        return ClaudeCodeRuntime(cli_path="/usr/bin/claude", **kwargs)
-
-    def test_audio_block_warns(self):
-        """Audio blocks emit a warning and are filtered out."""
-        rt = self._make_runtime()
-        import warnings
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            rt._call([{"type": "text", "text": "hi"}, {"type": "audio", "path": "test.wav"}])
-            audio_warnings = [x for x in w if "audio" in str(x.message).lower()]
-            assert len(audio_warnings) == 1
-
-    def test_video_block_warns(self):
-        """Video blocks emit a warning and are filtered out."""
-        rt = self._make_runtime()
-        self._reset_stdout()
-        import warnings
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            rt._call([{"type": "text", "text": "hi"}, {"type": "video", "path": "test.mp4"}])
-            video_warnings = [x for x in w if "video" in str(x.message).lower()]
-            assert len(video_warnings) == 1
-
-    def test_file_block_warns(self):
-        """File/PDF blocks emit a warning and are filtered out."""
-        rt = self._make_runtime()
-        self._reset_stdout()
-        import warnings
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            rt._call([{"type": "text", "text": "hi"}, {"type": "file", "path": "test.pdf"}])
-            file_warnings = [x for x in w if "file" in str(x.message).lower()]
-            assert len(file_warnings) == 1
-
-    def test_unknown_block_with_text_fallback(self):
-        """Unknown blocks with text fall back to text content."""
-        rt = self._make_runtime()
-        self._reset_stdout()
-        result = rt._call([{"type": "custom", "text": "fallback text"}])
-        assert result == "mock reply"
-        # Verify the text was sent via stdin
-        written = self._mock_stdin.write.call_args[0][0]
-        msg = json.loads(written.strip())
-        content = msg["message"]["content"]
-        assert any(block.get("type") == "text" and block.get("text") == "fallback text" for block in content)
+# ClaudeCodeRuntime unsupported-modality coverage now lives in
+# tests/unit/test_claude_code_runtime.py (runs against the real CliRunner
+# with a fake ``claude`` binary, not ``subprocess.Popen`` mocks).
 
 
 # ══════════════════════════════════════════════════════════════

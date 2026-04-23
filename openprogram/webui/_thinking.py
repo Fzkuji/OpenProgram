@@ -166,10 +166,12 @@ def apply_thinking_effort(runtime, effort: str) -> None:
     effort = resolve_effort(effort, runtime)
 
     if rt_type == "ClaudeCodeRuntime":
-        # Claude Code CLI restarts its subprocess when --effort changes.
-        old_effort = getattr(runtime, "_thinking_effort", None)
+        # Claude Code CLI bakes --settings defaultEffortLevel into argv
+        # at spawn time, so we tear down the live subprocess when the
+        # effort changes to pick up the new flag on next turn.
+        old_effort = getattr(runtime, "thinking_level", None)
         if effort != old_effort:
-            runtime._thinking_effort = effort
+            runtime.thinking_level = effort or "off"
             if hasattr(runtime, "_restart_process"):
                 runtime._restart_process()
         return
