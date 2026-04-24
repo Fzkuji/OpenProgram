@@ -402,7 +402,8 @@ def _run_turn_with_history(agent, conv_id: str, message: str) -> str:
     user_msg = {
         "role": "user", "id": user_id,
         "parent_id": messages[-1]["id"] if messages else None,
-        "content": message, "timestamp": _time.time(), "source": "cli",
+        "content": message, "timestamp": _time.time(),
+        "source": "cli", "peer_display": "you",
     }
     _engine.ingest(messages, user_msg)
 

@@ -224,8 +224,17 @@ class ContextEngine:
     @staticmethod
     def _render_history_plain(messages: list[dict[str, Any]],
                               budget: int) -> str:
-        """Walk recent-first so the budget prioritizes the freshest
-        turns; re-reverse so the prompt reads chronologically."""
+        """Render history as a text prefix.
+
+        User turns keep their source stamped ("web", "cli", "wechat",
+        "telegram", ...) and a peer label when we have one, so when a
+        session has multiple senders (you on web + alice on WeChat)
+        the model can tell them apart instead of seeing a wall of
+        anonymous [User]: lines.
+
+        Walks recent-first so the budget prioritizes the freshest
+        turns; re-reverse so the prompt reads chronologically.
+        """
         parts: list[str] = []
         total = 0
         for m in reversed(messages):
@@ -234,7 +243,7 @@ class ContextEngine:
             if not content:
                 continue
             if role == "user":
-                entry = f"[User]: {content}"
+                entry = f"[{ContextEngine._user_tag(m)}]: {content}"
             elif role == "assistant":
                 entry = f"[Assistant]: {content}"
             elif role == "system" and m.get("_synthesized"):
@@ -253,6 +262,27 @@ class ContextEngine:
             + "\n".join(parts)
             + "\n── End of history ──\n\n"
         )
+
+    @staticmethod
+    def _user_tag(msg: dict[str, Any]) -> str:
+        """Build the [User...] tag: "User" alone for default, or
+        "User (WeChat: alice)" / "User (web, you)" etc. when a
+        source is stamped on the message."""
+        src = (msg.get("source") or "").strip().lower()
+        peer_display = (msg.get("peer_display") or "").strip()
+        if not src or src in ("web", "ui"):
+            return "User (web, you)" if src in ("web", "ui") else "User"
+        if src == "cli":
+            return "User (terminal, you)"
+        pretty_src = {
+            "wechat": "WeChat",
+            "telegram": "Telegram",
+            "discord": "Discord",
+            "slack": "Slack",
+        }.get(src, src)
+        if peer_display:
+            return f"User ({pretty_src}: {peer_display})"
+        return f"User ({pretty_src})"
 
     @staticmethod
     def _enabled_skills_summary(agent: AgentSpec) -> str:

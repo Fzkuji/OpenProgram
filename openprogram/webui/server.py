@@ -1457,6 +1457,7 @@ async def _handle_ws_command(ws, cmd: dict):
             "id": msg_id,
             "content": text,
             "timestamp": time.time(),
+            "source": "web",
         }
         if parsed["action"] == "run":
             user_msg["display"] = "runtime"

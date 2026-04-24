@@ -107,6 +107,11 @@ def dispatch_inbound(
         "content": user_text,
         "timestamp": time.time(),
         "source": channel,
+        # Display name stamped per-message so a session shared between
+        # you (web) and alice (wechat) renders distinct [User (WeChat:
+        # alice)] vs [User (web, you)] lines.
+        "peer_display": user_display or str(peer_id),
+        "peer_id": str(peer_id),
     }
     _engine.ingest(messages, user_msg)
 
