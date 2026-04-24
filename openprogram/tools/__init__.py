@@ -23,6 +23,7 @@ Registration stays lazy — import only the tools you pass to
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Any
 
 from ._helpers import is_available as _is_available
@@ -32,72 +33,87 @@ from ._helpers import is_available as _is_available
 # module. Same concern isn't there for other submodule names.
 _builtin_list = list
 
-from .apply_patch import TOOL as APPLY_PATCH
-from .bash import TOOL as BASH
-from .browser import TOOL as BROWSER
-from .canvas import TOOL as CANVAS
-from .clarify import TOOL as CLARIFY
-from .cron import TOOL as CRON
-from .edit import TOOL as EDIT
-from .execute_code import TOOL as EXECUTE_CODE
-from .glob import TOOL as GLOB
-from .grep import TOOL as GREP
-from .image_analyze import TOOL as IMAGE_ANALYZE
-from .image_generate import TOOL as IMAGE_GENERATE
-from .list import TOOL as LIST
-from .memory import TOOL as MEMORY
-from .mixture_of_agents import TOOL as MIXTURE_OF_AGENTS
-from .pdf import TOOL as PDF
-from .process import TOOL as PROCESS
-from .read import TOOL as READ
-from .spawn_program import TOOL as SPAWN_PROGRAM
-from .todo import READ_TOOL as TODO_READ, WRITE_TOOL as TODO_WRITE
-from .web_fetch import TOOL as WEB_FETCH
-from .web_search import TOOL as WEB_SEARCH
-from .write import TOOL as WRITE
+
+def _load_attr(module_name: str, attr_name: str):
+    module = import_module(module_name, __name__)
+    return getattr(module, attr_name)
 
 
-ALL_TOOLS: dict[str, dict[str, Any]] = {
-    "bash": BASH,
-    "read": READ,
-    "write": WRITE,
-    "edit": EDIT,
-    "glob": GLOB,
-    "grep": GREP,
-    "list": LIST,
-    "apply_patch": APPLY_PATCH,
-    "process": PROCESS,
-    "todo_read": TODO_READ,
-    "todo_write": TODO_WRITE,
-    "web_fetch": WEB_FETCH,
-    "web_search": WEB_SEARCH,
-    "image_generate": IMAGE_GENERATE,
-    "image_analyze": IMAGE_ANALYZE,
-    "pdf": PDF,
-    "spawn_program": SPAWN_PROGRAM,
-    "memory": MEMORY,
-    "clarify": CLARIFY,
-    "execute_code": EXECUTE_CODE,
-    "mixture_of_agents": MIXTURE_OF_AGENTS,
-    "canvas": CANVAS,
-    "cron": CRON,
-    "browser": BROWSER,
-}
+ALL_TOOLS: dict[str, dict[str, Any]] = {}
+
+for _module_name, _tool_name, _attr_name in [
+    (".bash", "bash", "TOOL"),
+    (".browser", "browser", "TOOL"),
+    (".canvas", "canvas", "TOOL"),
+    (".clarify", "clarify", "TOOL"),
+    (".cron", "cron", "TOOL"),
+    (".edit", "edit", "TOOL"),
+    (".execute_code", "execute_code", "TOOL"),
+    (".glob", "glob", "TOOL"),
+    (".grep", "grep", "TOOL"),
+    (".image_analyze", "image_analyze", "TOOL"),
+    (".image_generate", "image_generate", "TOOL"),
+    (".list", "list", "TOOL"),
+    (".memory", "memory", "TOOL"),
+    (".mixture_of_agents", "mixture_of_agents", "TOOL"),
+    (".pdf", "pdf", "TOOL"),
+    (".read", "read", "TOOL"),
+    (".spawn_program", "spawn_program", "TOOL"),
+    (".web_fetch", "web_fetch", "TOOL"),
+    (".web_search", "web_search", "TOOL"),
+    (".write", "write", "TOOL"),
+    (".apply_patch", "apply_patch", "TOOL"),
+    (".process", "process", "TOOL"),
+    (".todo", "todo_read", "READ_TOOL"),
+    (".todo", "todo_write", "WRITE_TOOL"),
+]:
+    try:
+        ALL_TOOLS[_tool_name] = _load_attr(_module_name, _attr_name)
+    except ModuleNotFoundError:
+        continue
+
+BASH = ALL_TOOLS.get("bash")
+BROWSER = ALL_TOOLS.get("browser")
+CANVAS = ALL_TOOLS.get("canvas")
+CLARIFY = ALL_TOOLS.get("clarify")
+CRON = ALL_TOOLS.get("cron")
+EDIT = ALL_TOOLS.get("edit")
+EXECUTE_CODE = ALL_TOOLS.get("execute_code")
+GLOB = ALL_TOOLS.get("glob")
+GREP = ALL_TOOLS.get("grep")
+IMAGE_ANALYZE = ALL_TOOLS.get("image_analyze")
+IMAGE_GENERATE = ALL_TOOLS.get("image_generate")
+LIST = ALL_TOOLS.get("list")
+MEMORY = ALL_TOOLS.get("memory")
+MIXTURE_OF_AGENTS = ALL_TOOLS.get("mixture_of_agents")
+PDF = ALL_TOOLS.get("pdf")
+READ = ALL_TOOLS.get("read")
+SPAWN_PROGRAM = ALL_TOOLS.get("spawn_program")
+WEB_FETCH = ALL_TOOLS.get("web_fetch")
+WEB_SEARCH = ALL_TOOLS.get("web_search")
+WRITE = ALL_TOOLS.get("write")
+
+APPLY_PATCH = ALL_TOOLS.get("apply_patch")
+PROCESS = ALL_TOOLS.get("process")
+TODO_READ = ALL_TOOLS.get("todo_read")
+TODO_WRITE = ALL_TOOLS.get("todo_write")
 
 # Default tool set (à la Claude Code): dedicated file ops for safe common
 # cases + bash as the escape hatch + search + multi-file patch + todos.
 # Omit `process` by default — long-running background sessions are opt-in.
 DEFAULT_TOOLS: list[str] = [
-    "bash",
-    "read",
-    "write",
-    "edit",
-    "apply_patch",
-    "glob",
-    "grep",
-    "list",
-    "todo_read",
-    "todo_write",
+    name for name in [
+        "bash",
+        "read",
+        "write",
+        "edit",
+        "apply_patch",
+        "glob",
+        "grep",
+        "list",
+        "todo_read",
+        "todo_write",
+    ] if name in ALL_TOOLS
 ]
 
 # Named toolset presets. Pass the name to ``get_many(toolset=...)`` instead

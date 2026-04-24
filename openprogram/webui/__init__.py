@@ -14,7 +14,19 @@ Or from CLI:
     python -m agentic_web
 """
 
-from openprogram.webui.server import start_server, stop_server
+
+def start_server(*args, **kwargs):
+    from openprogram.webui.server import start_server as _start_server
+
+    return _start_server(*args, **kwargs)
+
+
+
+def stop_server(*args, **kwargs):
+    from openprogram.webui.server import stop_server as _stop_server
+
+    return _stop_server(*args, **kwargs)
+
 
 
 def start_web(port: int = 8765, open_browser: bool = True):
