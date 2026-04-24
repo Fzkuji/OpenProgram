@@ -79,6 +79,39 @@ def _prev_rt_closed(rt) -> bool:
 # Runtime creation — provider-specific setup
 # ---------------------------------------------------------------------------
 
+def _preferred_default_model(provider: str) -> str | None:
+    """Pick a non-hardcoded default model for a provider based on user config.
+
+    Priority:
+      1. Top-level ``default_model`` in ``~/.agentic/config.json``
+         (only when ``default_provider`` matches or is unset).
+      2. First id in ``providers.<provider>.enabled_models`` if the user
+         has any models enabled for this provider.
+      3. ``None`` — caller uses its hardcoded fallback.
+    """
+    try:
+        from openprogram.webui._model_catalog import _read_providers_cfg
+        import json
+        import os
+        cfg_path = os.path.expanduser("~/.agentic/config.json")
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                root_cfg = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            root_cfg = {}
+        default_provider = root_cfg.get("default_provider")
+        default_model = root_cfg.get("default_model")
+        if default_model and (not default_provider or default_provider == provider):
+            return default_model
+        providers_cfg = _read_providers_cfg()
+        enabled = (providers_cfg.get(provider, {}).get("enabled_models") or [])
+        if enabled:
+            return enabled[0]
+    except Exception:
+        pass
+    return None
+
+
 def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     """Create a runtime appropriate for the web UI.
 
@@ -92,6 +125,14 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
         ``model="<provider>:<id>"``. These go through AgentSession end-to-end.
     """
     from openprogram.legacy_providers import create_runtime, PROVIDERS
+
+    # If caller didn't pin a model, prefer user config (default_model or
+    # the first entry in enabled_models) over the hardcoded PROVIDERS
+    # default. Keeps fresh installs on the hardcoded fallback while
+    # letting users promote e.g. Opus to default by enabling it in
+    # Settings — no manual switch needed every session.
+    if model is None:
+        model = _preferred_default_model(provider)
 
     if provider in PROVIDERS:
         kwargs = {"provider": provider}
