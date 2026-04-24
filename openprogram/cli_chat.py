@@ -265,9 +265,12 @@ SLASH_HELP = [
     ("/functions", "list agentic functions (programs/functions/)"),
     ("/apps", "list applications (programs/applications/)"),
     ("/session", "show the current session id + agent"),
+    ("/login <channel> [--id X]",
+                 "log in to a channel bot (wechat: QR, others: paste "
+                 "token). Also wires inbound messages to this agent."),
     ("/attach <channel> <peer> [--account X] [--kind direct|group]",
-                 "route a channel peer's messages into this session "
-                 "(auto-starts the channels worker)"),
+                 "route a specific channel peer's messages into this "
+                 "session (auto-starts the channels worker)"),
     ("/detach <channel> <peer> [--account X] [--kind ...]",
                  "remove the alias for a channel peer"),
     ("/connections", "list every channel peer currently aliased to "
@@ -355,6 +358,9 @@ def _handle_slash(cmd: str, console, rt,
         console.print(f"[bold]agent:[/]   {agent.id if agent else '(none)'}")
         return False
 
+    if verb == "login":
+        return _handle_login(args, console, agent)
+
     if verb == "attach":
         return _handle_attach(args, console, agent, conv_id)
 
@@ -420,6 +426,108 @@ def _parse_kv_args(args: list[str]) -> tuple[list[str], dict[str, str]]:
             positionals.append(a)
         i += 1
     return positionals, flags
+
+
+def _handle_login(args: list[str], console, agent) -> bool:
+    """Create a channel account if needed, prompt for credentials
+    (QR for WeChat; token paste for the rest), and make sure the
+    current agent will receive inbound messages from it.
+    """
+    positional, flags = _parse_kv_args(args)
+    if not positional:
+        console.print(
+            "[yellow]Usage: /login <channel> [--id X][/]  "
+            f"channels: {', '.join(_VALID_CHANNELS)}"
+        )
+        return False
+    channel = positional[0]
+    if channel not in _VALID_CHANNELS:
+        console.print(f"[yellow]Unknown channel {channel!r}.[/]")
+        return False
+    account_id = flags.get("id", "default")
+
+    try:
+        from openprogram.channels import accounts as _accts
+        from openprogram.channels import bindings as _bindings
+        from openprogram.channels.worker import (
+            current_worker_pid, spawn_detached,
+        )
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]channel modules missing: {e}[/]")
+        return False
+
+    # 1. Ensure the account row exists
+    if _accts.get(channel, account_id) is None:
+        _accts.create(channel, account_id)
+        console.print(f"[dim]Created {channel}:{account_id}[/]")
+
+    # 2. Credential acquisition — per-channel
+    if channel == "wechat":
+        from openprogram.channels.wechat import login_account
+        console.print(
+            f"[cyan]Opening WeChat QR for account `{account_id}`. "
+            "Scan with your phone's WeChat and confirm on the device.[/]"
+        )
+        creds = login_account(account_id)
+        if not creds:
+            console.print("[red]WeChat login cancelled / failed.[/]")
+            return False
+    else:
+        # Token paste path — don't echo the token.
+        import getpass as _gp
+        if channel == "slack":
+            bot = _gp.getpass("Slack bot token (xoxb-...): ")
+            app = _gp.getpass("Slack app-level token (xapp-...): ")
+            patch: dict = {}
+            if bot:
+                patch["bot_token"] = bot
+            if app:
+                patch["app_token"] = app
+            if not patch:
+                console.print("[yellow]No token entered.[/]")
+                return False
+            _accts.update_credentials(channel, account_id, patch)
+        else:
+            label = {"telegram": "Telegram", "discord": "Discord"}[channel]
+            tok = _gp.getpass(f"{label} bot token: ")
+            if not tok:
+                console.print("[yellow]No token entered.[/]")
+                return False
+            _accts.update_credentials(channel, account_id, {"bot_token": tok})
+        console.print(f"[green]{channel}:{account_id} credentials saved.[/]")
+
+    # 3. Make sure the agent actually receives inbound for this
+    #    (channel, account). If a matching binding already exists we
+    #    don't duplicate.
+    if agent is not None:
+        already = any(
+            b["agent_id"] == agent.id
+            and b["match"].get("channel") == channel
+            and b["match"].get("account_id") in (None, account_id)
+            for b in _bindings.list_for_agent(agent.id)
+        )
+        if not already:
+            _bindings.add(agent.id, {
+                "channel": channel, "account_id": account_id,
+            })
+            console.print(
+                f"[dim]Bound {channel}:{account_id} → agent "
+                f"{agent.id}.[/]"
+            )
+
+    # 4. Worker up so polling actually starts
+    if current_worker_pid() is None:
+        console.print("[dim]Starting channels worker...[/]")
+        spawn_detached()
+    else:
+        console.print("[dim]Channels worker already running.[/]")
+    console.print(
+        f"[green]Done.[/] Messages from {channel}:{account_id} "
+        f"will flow into agent {agent.id if agent else '?'}. "
+        f"Use /attach {channel} <peer_id> to pin a specific peer "
+        f"to THIS session."
+    )
+    return False
 
 
 def _handle_attach(args: list[str], console, agent, conv_id: str) -> bool:
