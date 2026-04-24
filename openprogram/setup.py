@@ -353,6 +353,7 @@ def run_model_section() -> int:
     """Pick the default agent's chat model across enabled providers."""
     from openprogram.webui import _model_catalog as mc
     from openprogram.agents import manager as _agents
+    from openprogram.agents import runtime_registry as _runtimes
     enabled = mc.list_enabled_models()
     if not enabled:
         print("No enabled models yet. Enable a provider in "
@@ -384,7 +385,7 @@ def run_model_section() -> int:
     provider, model = label_to_value[picked].split("/", 1)
     _agents.update(agent.id, {"model": {"provider": provider, "id": model}})
     # Drop any cached runtime so the new model takes effect next turn.
-    _agents.invalidate(agent.id)
+    _runtimes.invalidate(agent.id)
     print(f"Agent {agent.id}: default model set to {provider}/{model}")
     return 0
 
@@ -414,6 +415,7 @@ def run_tools_section() -> int:
 def run_agent_section() -> int:
     """Default reasoning effort for the default agent."""
     from openprogram.agents import manager as _agents
+    from openprogram.agents import runtime_registry as _runtimes
     agent = _ensure_default_agent()
     current = agent.thinking_effort or "medium"
 
@@ -425,7 +427,7 @@ def run_agent_section() -> int:
         print("Cancelled.")
         return 1
     _agents.update(agent.id, {"thinking_effort": picked})
-    _agents.invalidate(agent.id)
+    _runtimes.invalidate(agent.id)
     print(f"Agent {agent.id}: reasoning effort = {picked}")
     return 0
 
