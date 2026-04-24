@@ -95,7 +95,7 @@ class CodexRuntime(Runtime):
 
     def __init__(
         self,
-        model: str = "gpt-5.4-mini",
+        model: str = "gpt-5.5-mini",
         timeout: int = 300,
         cli_path: str = None,
         session_id: str = "auto",
@@ -160,7 +160,8 @@ class CodexRuntime(Runtime):
             pass
 
         # Fallback — codex-spark models are included in ChatGPT subscriptions
-        return ["gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"]
+        return ["gpt-5.5", "gpt-5.5-mini", "gpt-5.5-codex",
+                "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"]
 
     def _call(self, content: list[dict], model: str = None, response_format: dict = None) -> str:
         """Call Codex CLI with the content list.

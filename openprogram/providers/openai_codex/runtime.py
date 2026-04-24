@@ -12,7 +12,7 @@ Runtime → AgentSession → provider path. This class only handles auth.
 
 Usage:
     from openprogram.providers.openai_codex import OpenAICodexRuntime
-    rt = OpenAICodexRuntime(model="gpt-5.4-mini")
+    rt = OpenAICodexRuntime(model="gpt-5.5-mini")
     reply = rt.exec([{"type": "text", "text": "hi"}])
 """
 from __future__ import annotations
@@ -34,6 +34,7 @@ from . import auth_adapter
 
 
 _KNOWN_CODEX_MODELS = [
+    "gpt-5.5", "gpt-5.5-mini", "gpt-5.5-pro", "gpt-5.5-codex",
     "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro",
     "gpt-5.3-codex", "gpt-5.3-codex-spark",
     "gpt-5.2-codex", "gpt-5.1-codex", "gpt-5.1-codex-mini",
@@ -126,7 +127,7 @@ def _account_id_for(cred: Credential) -> str:
 class OpenAICodexRuntime(Runtime):
     """
     Args:
-        model:    Default model id (e.g. "gpt-5.4-mini", "gpt-5.4").
+        model:    Default model id (e.g. "gpt-5.5-mini", "gpt-5.5").
         system:   Optional system prompt (forwarded as `instructions`).
         profile:  Auth profile to consult. Defaults to the current
                   ContextVar scope (typically "default"). Explicit
@@ -139,7 +140,7 @@ class OpenAICodexRuntime(Runtime):
 
     def __init__(
         self,
-        model: str = "gpt-5.4-mini",
+        model: str = "gpt-5.5-mini",
         system: str | None = None,
         *,
         profile: Optional[str] = None,

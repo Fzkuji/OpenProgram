@@ -23,7 +23,7 @@ Usage:
     rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
 
     from openprogram.legacy_providers import OpenAICodexRuntime
-    rt = OpenAICodexRuntime(model="gpt-5.4-mini")
+    rt = OpenAICodexRuntime(model="gpt-5.5-mini")
 
 Auto-detection:
     from openprogram.legacy_providers import detect_provider, create_runtime
@@ -42,7 +42,7 @@ import shutil
 # Maps provider name -> (class_name, module_path, default_model)
 PROVIDERS = {
     "claude-code":  ("ClaudeCodeRuntime",  "openprogram.providers.anthropic.cli_runtime",  "claude-sonnet-4-6"),
-    "openai-codex": ("OpenAICodexRuntime", "openprogram.legacy_providers.openai_codex", "gpt-5.4-mini"),
+    "openai-codex": ("OpenAICodexRuntime", "openprogram.legacy_providers.openai_codex", "gpt-5.5-mini"),
     "gemini-cli":   ("GoogleGeminiCLIRuntime", "openprogram.providers.google_gemini_cli.runtime", "gemini-2.5-flash"),
     "anthropic":    ("AnthropicRuntime",    "openprogram.providers.anthropic.runtime",          "claude-sonnet-4-6"),
     "openai":       ("OpenAIRuntime",       "openprogram.providers.openai_responses.runtime",   "gpt-4.1"),
@@ -157,7 +157,7 @@ def detect_provider() -> tuple[str, str]:
         "\n"
         "  Or set explicitly:\n"
         "    export AGENTIC_PROVIDER=openai\n"
-        "    export AGENTIC_MODEL=gpt-5.4\n"
+        "    export AGENTIC_MODEL=gpt-5.5\n"
     )
 
 
