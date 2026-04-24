@@ -70,7 +70,10 @@ def dispatch_inbound(
     if agent is None:
         return f"[unknown agent {agent_id!r}] — binding points at a deleted agent."
 
-    session_key = _session_key_for(account_id, peer)
+    base_key = _session_key_for_agent(
+        agent, channel, account_id, peer,
+    )
+    session_key = _apply_reset_policy(agent, base_key)
     meta, messages = _load_or_init_session(
         agent_id=agent_id,
         session_key=session_key,
@@ -211,13 +214,90 @@ def _atomic_write_json(path: Path, payload: Any) -> None:
     os.replace(tmp, path)
 
 
-def _session_key_for(account_id: str, peer: dict[str, Any]) -> str:
+def _session_key_for_agent(agent, channel: str, account_id: str,
+                           peer: dict[str, Any]) -> str:
+    """Compute the session-routing key according to the agent's
+    ``session_scope``. OpenClaw's dmScope values:
+
+      main                      — one shared session for all DMs
+      per-peer                  — one per sender, across channels
+      per-channel-peer          — one per (channel, sender)
+      per-account-channel-peer  — one per (account, channel, sender)
+                                  — our previous default
+
+    Group / channel peers always isolate by peer id regardless of
+    scope, since a shared session across different groups is never
+    what anyone wants.
+    """
     kind = str(peer.get("kind") or "direct")
     pid = str(peer.get("id") or "")
-    raw = f"{account_id}_{kind}_{pid}"
-    # Sanitize for disk — keep a-z0-9_-; collapse runs.
+    scope = getattr(agent, "session_scope", None) or "per-account-channel-peer"
+
+    if kind in ("group", "channel"):
+        raw = f"{channel}_{account_id}_{kind}_{pid}"
+    elif scope == "main":
+        raw = "main"
+    elif scope == "per-peer":
+        raw = f"peer_{pid}"
+    elif scope == "per-channel-peer":
+        raw = f"{channel}_{kind}_{pid}"
+    else:  # per-account-channel-peer (default)
+        raw = f"{account_id}_{kind}_{pid}"
+
     safe = re.sub(r"[^A-Za-z0-9_-]", "-", raw).strip("-")
     return safe or "unknown"
+
+
+def _apply_reset_policy(agent, base_key: str) -> str:
+    """Honor the agent's daily / idle session reset settings.
+
+    Daily reset: if ``agent.session_daily_reset`` is ``HH:MM``, we
+    suffix the key with the current reset-window's date — rolling
+    over at that hour starts a brand-new session automatically.
+
+    Idle reset: if ``agent.session_idle_minutes > 0``, check the
+    existing session's ``_last_touched`` against wall clock; if we're
+    past the threshold, suffix the key with an epoch minute so the
+    next turn creates a fresh file on disk.
+
+    Reset suffixes are transparent to the UI — previous sessions
+    stay on disk (readable via the sidebar) and the new one picks up
+    from scratch.
+    """
+    import datetime as _dt
+
+    key = base_key
+    daily = (getattr(agent, "session_daily_reset", "") or "").strip()
+    if daily:
+        try:
+            h, m = daily.split(":", 1)
+            reset_h, reset_m = int(h), int(m)
+            now = _dt.datetime.now()
+            window_start = now.replace(
+                hour=reset_h, minute=reset_m, second=0, microsecond=0,
+            )
+            if now < window_start:
+                window_start -= _dt.timedelta(days=1)
+            key += f"_{window_start.strftime('%Y%m%d')}"
+        except (ValueError, AttributeError):
+            pass
+
+    idle_min = int(getattr(agent, "session_idle_minutes", 0) or 0)
+    if idle_min > 0:
+        # Check the previous session (base + any daily suffix). If
+        # it's stale, add an idle suffix so we rotate.
+        prev_meta_path = _meta_path(agent.id, key)
+        if prev_meta_path.exists():
+            try:
+                import json as _json
+                prev = _json.loads(prev_meta_path.read_text(encoding="utf-8"))
+                last = float(prev.get("_last_touched") or 0)
+                if last and (time.time() - last) > idle_min * 60:
+                    key += f"_cut{int(time.time() // 60)}"
+            except Exception:
+                pass
+
+    return key
 
 
 def _default_title(channel: str, user_display: str) -> str:

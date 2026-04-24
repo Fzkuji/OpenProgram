@@ -72,6 +72,19 @@ class AgentSpec:
     skills: dict[str, Any] = field(default_factory=lambda: {"disabled": []})
     tools: dict[str, Any] = field(default_factory=lambda: {"disabled": []})
     identity: AgentIdentity = field(default_factory=AgentIdentity)
+    # Session routing policy (see agents/context_engine.py and
+    # channels/_conversation.py). Values mirror OpenClaw's dmScope:
+    #   "main"                      — one shared session across all DMs
+    #   "per-peer"                  — one session per sender (any channel)
+    #   "per-channel-peer"          — one per (channel, sender)
+    #   "per-account-channel-peer"  — one per (account, channel, sender)
+    session_scope: str = "per-account-channel-peer"
+    # Idle reset — start a fresh session after N minutes of silence
+    # (0 = never). Independent of daily reset (below).
+    session_idle_minutes: int = 0
+    # Daily reset — if non-empty, hour-of-day in local time at which
+    # stale sessions get cut (e.g. "04:00"). Empty = no daily reset.
+    session_daily_reset: str = ""
     created_at: float = 0.0
     updated_at: float = 0.0
 
@@ -99,6 +112,11 @@ class AgentSpec:
                 name=str(identity.get("name") or ""),
                 mention_patterns=list(identity.get("mention_patterns") or []),
             ),
+            session_scope=str(
+                raw.get("session_scope") or "per-account-channel-peer"
+            ),
+            session_idle_minutes=int(raw.get("session_idle_minutes") or 0),
+            session_daily_reset=str(raw.get("session_daily_reset") or ""),
             created_at=float(raw.get("created_at") or 0.0),
             updated_at=float(raw.get("updated_at") or 0.0),
         )
