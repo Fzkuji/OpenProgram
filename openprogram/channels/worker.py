@@ -1,4 +1,4 @@
-"""Background-daemon controls for ``openprogram channels start --detach``.
+"""Background-worker controls for ``openprogram channels start --detach``.
 
 Design: channel polling lives in its own long-running process, not
 inside the CLI chat or the Web UI. Reason — those are front-ends
@@ -6,13 +6,13 @@ inside the CLI chat or the Web UI. Reason — those are front-ends
 Binding channel lifetime to any one of them means closing your chat
 window kills the WeChat bot.
 
-We reuse fcntl.flock via ``ChannelsLock``: only one daemon can run
+We reuse fcntl.flock via ``ChannelsLock``: only one worker can run
 at a time, and ``read_holder_pid`` lets us answer "is it alive?"
-from outside the daemon.
+from outside the worker.
 
 Layout:
   <state>/channels.lock   — fcntl-locked PID file (written by ChannelsLock)
-  <state>/channels.pid    — same PID, written by the daemon on startup
+  <state>/channels.pid    — same PID, written by the worker on startup
                              and cleaned on exit. Independent of the
                              fcntl lock so `status` / `stop` work even
                              if the flock file is somehow busy.
@@ -24,6 +24,10 @@ Start / stop semantics:
   stop                  — SIGTERM the PID from channels.pid (or lock
                           file as fallback); waits up to 5s then reports.
   status                — queries the PID file + kill(pid, 0) liveness.
+
+Naming: we call the background process a "worker" to line up with
+``openprogram cron-worker``. The underlying POSIX concept is a
+daemon, but user-facing text says worker everywhere for consistency.
 """
 from __future__ import annotations
 
@@ -69,12 +73,12 @@ def _process_alive(pid: int) -> bool:
         return True
 
 
-def current_daemon_pid() -> Optional[int]:
-    """Return the PID of a live channels daemon, or None.
+def current_worker_pid() -> Optional[int]:
+    """Return the PID of a live channels worker, or None.
 
     Prefers the lock file (fcntl-backed, authoritative for "someone
     is actively holding channels"); falls back to the .pid sidecar
-    if the lock file was cleared by a clean release but the daemon
+    if the lock file was cleared by a clean release but the worker
     kept running (shouldn't happen but be defensive).
     """
     from openprogram.channels._lock import read_holder_pid
@@ -88,7 +92,7 @@ def current_daemon_pid() -> Optional[int]:
 
 
 def write_pid_file() -> None:
-    """Called by the daemon on startup to record its PID.
+    """Called by the worker on startup to record its PID.
 
     Also writes a stamp line with start time + python path so
     ``status`` can show useful context.
@@ -98,7 +102,7 @@ def write_pid_file() -> None:
 
 
 def clear_pid_file() -> None:
-    """Called by the daemon on clean exit."""
+    """Called by the worker on clean exit."""
     pid_file, _ = _state_paths()
     try:
         pid_file.unlink(missing_ok=True)
@@ -107,28 +111,28 @@ def clear_pid_file() -> None:
 
 
 def spawn_detached() -> int:
-    """Fork a background daemon running ``openprogram channels start``.
+    """Fork a background worker running ``openprogram channels start``.
 
     Uses Popen with ``start_new_session=True`` so the child becomes
     its own session leader — it won't die when the parent terminal
     closes. stdout + stderr redirect to ``channels.log``; the child
     picks up writing the pid file on startup.
 
-    Returns an exit code (0 on success, 1 if another daemon is already
+    Returns an exit code (0 on success, 1 if another worker is already
     running).
     """
-    existing = current_daemon_pid()
+    existing = current_worker_pid()
     if existing is not None:
-        print(f"channels daemon already running (PID {existing}). "
+        print(f"channels worker already running (PID {existing}). "
               f"Stop it first with `openprogram channels stop`.")
         return 1
 
     _, log_file = _state_paths()
-    # Use the same python that's running us so the daemon doesn't hit
+    # Use the same python that's running us so the worker doesn't hit
     # a different environment / virtualenv.
     cmd = [sys.executable, "-m", "openprogram", "channels", "start"]
     log = open(log_file, "a", buffering=1)  # line-buffered
-    log.write(f"\n--- daemon starting at {time.ctime()} ---\n")
+    log.write(f"\n--- worker starting at {time.ctime()} ---\n")
     log.flush()
     try:
         proc = subprocess.Popen(
@@ -141,18 +145,18 @@ def spawn_detached() -> int:
         )
     except Exception as e:  # noqa: BLE001
         log.close()
-        print(f"failed to spawn daemon: {type(e).__name__}: {e}")
+        print(f"failed to spawn worker: {type(e).__name__}: {e}")
         return 1
 
     # Give the child a moment to either acquire the lock or die. This
-    # matters because start_detached is advertised as "returns after
-    # daemon is running" — a silent exit here would be a surprise.
+    # matters because --detach is advertised as "returns after the
+    # worker is running" — a silent exit here would be a surprise.
     deadline = time.time() + 3.0
     while time.time() < deadline:
         time.sleep(0.2)
         rc = proc.poll()
         if rc is not None:
-            print(f"daemon exited immediately (rc={rc}). "
+            print(f"worker exited immediately (rc={rc}). "
                   f"Tail of {log_file}:")
             try:
                 lines = log_file.read_text().splitlines()[-20:]
@@ -161,25 +165,25 @@ def spawn_detached() -> int:
             except OSError:
                 pass
             return 1
-        if current_daemon_pid() == proc.pid:
-            print(f"channels daemon started (PID {proc.pid}). "
+        if current_worker_pid() == proc.pid:
+            print(f"channels worker started (PID {proc.pid}). "
                   f"Logs: {log_file}")
             return 0
 
     # Hit the timeout but child is still alive — lock hasn't landed
     # yet (slow network? slow init?). Report the PID and move on.
-    print(f"channels daemon starting (PID {proc.pid}); not yet ready. "
+    print(f"channels worker starting (PID {proc.pid}); not yet ready. "
           f"Watch {log_file}.")
     return 0
 
 
-def stop_daemon() -> int:
+def stop_worker() -> int:
     """SIGTERM whichever process is holding the channels lock."""
-    pid = current_daemon_pid()
+    pid = current_worker_pid()
     if pid is None:
-        print("No channels daemon running.")
+        print("No channels worker running.")
         return 0
-    print(f"Stopping channels daemon (PID {pid})...")
+    print(f"Stopping channels worker (PID {pid})...")
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -206,17 +210,17 @@ def stop_daemon() -> int:
 
 
 def print_status() -> int:
-    """Print a one-line report on the channels daemon."""
-    pid = current_daemon_pid()
+    """Print a one-line report on the channels worker."""
+    pid = current_worker_pid()
     if pid is None:
-        print("channels daemon: not running")
+        print("channels worker: not running")
         return 0
-    started = _daemon_start_time(pid)
+    started = _worker_start_time(pid)
     age = ""
     if started is not None:
         age = f", up {_format_duration(time.time() - started)}"
     _, log_file = _state_paths()
-    print(f"channels daemon: running (PID {pid}{age})")
+    print(f"channels worker: running (PID {pid}{age})")
     print(f"  logs: {log_file}")
     try:
         from openprogram.channels import list_channels_status
@@ -231,7 +235,7 @@ def print_status() -> int:
     return 0
 
 
-def _daemon_start_time(pid: int) -> Optional[float]:
+def _worker_start_time(pid: int) -> Optional[float]:
     """Read the start timestamp written by ``write_pid_file``.
 
     If the pid file's PID matches the process asking, second line is
@@ -263,14 +267,14 @@ def prompt_spawn_if_configured_but_dead(
     *,
     verb: str,
 ) -> Optional[int]:
-    """Offer to spawn the daemon on a front-end's first run.
+    """Offer to spawn the worker on a front-end's first run.
 
-    If channels are configured AND no daemon is currently live,
+    If channels are configured AND no worker is currently live,
     prints a one-question prompt asking whether to fork one now.
     ``verb`` is a short label shown in the prompt ("chat" / "web UI")
     so the reason is obvious.
 
-    Returns the daemon PID if one is now running (either pre-existing
+    Returns the worker PID if one is now running (either pre-existing
     or newly spawned), or None if the user declined.
     """
     try:
@@ -287,11 +291,11 @@ def prompt_spawn_if_configured_but_dead(
     if not viable:
         return None
 
-    pid = current_daemon_pid()
+    pid = current_worker_pid()
     if pid is not None:
         names = ", ".join(r["platform"] for r in viable)
         console.print(
-            f"[dim]↪ channels daemon running (PID {pid}): {names}  "
+            f"[dim]↪ channels worker running (PID {pid}): {names}  "
             f"(stop with `openprogram channels stop`)[/]"
         )
         return pid
@@ -299,14 +303,14 @@ def prompt_spawn_if_configured_but_dead(
     names = ", ".join(r["platform"] for r in viable)
     console.print()
     console.print(
-        f"[yellow]Chat channels configured ({names}) but no daemon running."
+        f"[yellow]Chat channels configured ({names}) but no worker running."
         f"[/]"
     )
     # Delegate to setup_wizard._confirm so the arrow-key prompt style
     # matches the rest of the flow. Local import breaks the cycle.
     from openprogram.setup_wizard import _confirm
     if not _confirm(
-        f"Start the channels daemon now in the background so the bots "
+        f"Start the channels worker now in the background so the bots "
         f"receive messages while you {verb}?",
         default=True,
     ):
@@ -319,4 +323,4 @@ def prompt_spawn_if_configured_but_dead(
     rc = spawn_detached()
     if rc != 0:
         return None
-    return current_daemon_pid()
+    return current_worker_pid()

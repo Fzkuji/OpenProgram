@@ -137,14 +137,14 @@ def main():
     channels_sub.add_parser("list", help="Show per-platform enable + config status")
     p_chstart = channels_sub.add_parser("start",
         help="Start every enabled channel. Foreground by default; "
-             "use --detach to fork a background daemon and return.")
+             "use --detach to fork a background worker and return.")
     p_chstart.add_argument("--detach", action="store_true",
-        help="Fork a background daemon and return. Logs to "
+        help="Fork a background worker and return. Logs to "
              "<state>/channels.log. Use `openprogram channels stop` to kill.")
     channels_sub.add_parser("stop",
-        help="Kill the background channels daemon (reads lock file for PID).")
+        help="Stop the background channels worker (SIGTERM via PID file).")
     channels_sub.add_parser("status",
-        help="Show whether the channels daemon is running, which PID, "
+        help="Show whether the channels worker is running, which PID, "
              "and when it started.")
 
     # ---- cron-worker ------------------------------------------------------
@@ -283,15 +283,15 @@ def main():
             return
         if verb == "start":
             if getattr(args, "detach", False):
-                from openprogram.channels.daemon import spawn_detached
+                from openprogram.channels.worker import spawn_detached
                 sys.exit(spawn_detached())
             from openprogram.channels.runner import run_all
             sys.exit(run_all())
         if verb == "stop":
-            from openprogram.channels.daemon import stop_daemon
-            sys.exit(stop_daemon())
+            from openprogram.channels.worker import stop_worker
+            sys.exit(stop_worker())
         if verb == "status":
-            from openprogram.channels.daemon import print_status
+            from openprogram.channels.worker import print_status
             sys.exit(print_status())
         p_channels.print_help()
         return
@@ -853,18 +853,18 @@ def _cmd_web(port, open_browser):
 
     thread = start_web(port=port, open_browser=open_browser)
 
-    # Channels run in their own daemon process (see channels/daemon.py).
+    # Channels run in their own worker process (see channels/worker.py).
     # Give the user one shot at starting one here if they've configured
-    # channels but no daemon is live — otherwise this server wouldn't
+    # channels but no worker is live — otherwise this server wouldn't
     # route any inbound WeChat/Telegram/etc. into the Web UI session list.
     try:
         from rich.console import Console as _Console
-        from openprogram.channels.daemon import (
+        from openprogram.channels.worker import (
             prompt_spawn_if_configured_but_dead,
         )
         prompt_spawn_if_configured_but_dead(_Console(), verb="browse")
     except Exception as e:  # noqa: BLE001
-        print(f"[channels] daemon check skipped: "
+        print(f"[channels] worker check skipped: "
               f"{type(e).__name__}: {e}")
 
     print("Press Ctrl+C to stop.")

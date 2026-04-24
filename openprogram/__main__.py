@@ -1,6 +1,6 @@
 """Entry point so ``python -m openprogram`` works.
 
-The channels daemon spawner uses ``sys.executable -m openprogram ...``
+The channels worker spawner uses ``sys.executable -m openprogram ...``
 to re-exec the current python/virtualenv without relying on whatever
 ``openprogram`` shim happens to be on PATH. That only works if this
 module exists.

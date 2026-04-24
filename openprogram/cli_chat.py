@@ -408,13 +408,13 @@ def run_cli_chat(oneshot: str | None = None) -> None:
         print(reply)
         return
 
-    # Channels live in their own daemon process (see channels/daemon.py)
+    # Channels live in their own worker process (see channels/worker.py)
     # so closing this terminal doesn't kill the WeChat/Telegram bot.
-    # If channels are configured but no daemon is live, offer to fork
-    # one now — one question, arrow-key Yes/No. The daemon, once up,
+    # If channels are configured but no worker is live, offer to fork
+    # one now — one question, arrow-key Yes/No. The worker, once up,
     # survives every front-end coming and going.
     try:
-        from openprogram.channels.daemon import prompt_spawn_if_configured_but_dead
+        from openprogram.channels.worker import prompt_spawn_if_configured_but_dead
         prompt_spawn_if_configured_but_dead(console, verb="chat")
     except Exception:
         pass

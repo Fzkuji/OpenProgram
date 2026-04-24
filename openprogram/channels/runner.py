@@ -2,14 +2,15 @@
 
 Two entry points:
 
-    run_all()  —  blocking. Used by `openprogram channels start`.
-                   Starts every enabled+configured channel in a daemon
-                   thread, waits for Ctrl-C, then shuts them down.
+    run_all()  —  blocking. Used by `openprogram channels start` and
+                   the detached worker path. Starts every
+                   enabled+configured channel in a background thread,
+                   waits for Ctrl-C / SIGTERM, then shuts them down.
 
-    start_all() — non-blocking. Used by `openprogram` (CLI chat) and
-                   the Web UI to co-host channels alongside the main
-                   REPL/server. Returns (stop_event, threads, lock).
-                   Caller sets stop_event, joins threads, releases lock.
+    start_all() — non-blocking. Kept for callers that want to co-host
+                   channels inside another long-running process.
+                   Returns (stop_event, threads, lock); caller drives
+                   shutdown.
 
 A process-wide exclusive fcntl lock (``ChannelsLock``) gates both: at
 most one process pulls channel updates at a time. Multiple
@@ -107,12 +108,12 @@ def run_all() -> int:
     SIGTERM.
 
     Entry point for ``openprogram channels start`` (both foreground
-    and the detached daemon path, since the detached form simply
+    and the detached worker path, since the detached form simply
     execs us with stdout piped to a log file). Writes a PID file
     on startup and clears it on exit so ``openprogram channels
     status`` / ``stop`` can find us.
     """
-    from openprogram.channels.daemon import write_pid_file, clear_pid_file
+    from openprogram.channels.worker import write_pid_file, clear_pid_file
 
     status = list_channels_status()
     enabled = [r["platform"] for r in status if r["enabled"]]
@@ -131,7 +132,7 @@ def run_all() -> int:
     write_pid_file()
 
     # SIGTERM → same clean-shutdown path as Ctrl-C so the stop command
-    # from openprogram.channels.daemon.stop_daemon works.
+    # from openprogram.channels.worker.stop_worker works.
     import signal as _signal
     def _on_sigterm(_signum, _frame):
         raise KeyboardInterrupt
