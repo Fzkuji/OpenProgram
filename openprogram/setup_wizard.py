@@ -130,21 +130,29 @@ def _qstyle():
         from questionary import Style
     except ImportError:
         return None
-    # No `reverse` anywhere. questionary applies the `highlighted` class
-    # to both the current cursor AND to the initial-default item — using
-    # reverse bg on both made them indistinguishable. Now the cursor is
-    # ONLY identified by the `❯` pointer + cyan bold; everything else
-    # is plain text. Matches clack/OpenClaw's clean look.
+    # questionary's InquirerControl puts the DEFAULT choice into
+    # ``selected_options`` permanently (not just when the cursor is on
+    # it), so `class:selected` gets applied to the default row every
+    # render. If that style has any bg or reverse bits, the default
+    # row ends up looking "selected" even after the user arrow-keyed
+    # to a different item.
+    #
+    # Explicit bg:default + noinherit on both `selected` and
+    # `highlighted` defeats any bg / reverse that might leak in from
+    # questionary's or prompt_toolkit's fallback layers. The cursor is
+    # then identified purely by the `❯` pointer + cyan bold text; the
+    # default row looks identical to non-cursor rows once you've moved
+    # away.
     return Style([
         ("qmark",        "fg:ansicyan bold"),
         ("question",     "bold"),
         ("answer",       "fg:ansicyan bold"),
-        ("pointer",      "fg:ansicyan bold"),
-        ("highlighted",  "fg:ansicyan bold"),
-        ("selected",     "fg:ansicyan"),
+        ("pointer",      "noinherit fg:ansicyan bold"),
+        ("highlighted",  "noinherit fg:ansicyan bold bg:default"),
+        ("selected",     "noinherit bg:default"),  # match plain text
         ("separator",    "fg:ansibrightblack"),
         ("instruction",  "fg:ansibrightblack"),
-        ("text",         ""),
+        ("text",         "bg:default"),
         ("disabled",     "fg:ansibrightblack italic"),
     ])
 
