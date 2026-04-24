@@ -23,20 +23,22 @@ class SshBackend(Backend):
             )
         self.target = target
 
-    def run(self, command: str, timeout: float,
-            cwd: str | None = None) -> RunResult:
+    def _ssh_argv(self, command: str, cwd: str | None = None) -> list[str]:
         if cwd:
             command = f"cd {shlex.quote(cwd)} && {command}"
-        argv = [
+        return [
             "ssh",
             "-o", "BatchMode=yes",
             "-o", "StrictHostKeyChecking=accept-new",
             self.target,
             command,
         ]
+
+    def run(self, command: str, timeout: float,
+            cwd: str | None = None) -> RunResult:
         try:
             proc = subprocess.run(
-                argv,
+                self._ssh_argv(command, cwd),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -56,3 +58,22 @@ class SshBackend(Backend):
                 stderr="ssh CLI not on PATH — install OpenSSH or switch "
                        "backend via `openprogram config backend`.",
             )
+
+    def spawn(self, command: str,
+              cwd: str | None = None) -> subprocess.Popen:
+        # -T disables pseudo-tty allocation so our PIPEs stay clean
+        # line streams. Process output is captured via the remote ssh
+        # client streaming stdout back over the same socket.
+        argv = ["ssh", "-T",
+                "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=accept-new",
+                self.target,
+                f"cd {shlex.quote(cwd)} && {command}" if cwd else command]
+        return subprocess.Popen(
+            argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )

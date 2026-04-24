@@ -19,15 +19,18 @@ class DockerBackend(Backend):
     def __init__(self, image: str = "ubuntu:24.04") -> None:
         self.image = image
 
-    def run(self, command: str, timeout: float,
-            cwd: str | None = None) -> RunResult:
+    def _argv(self, command: str, cwd: str | None = None) -> list[str]:
         argv = ["docker", "run", "--rm", "-i"]
         if cwd:
             argv += ["-w", cwd]
         argv += [self.image, "sh", "-c", command]
+        return argv
+
+    def run(self, command: str, timeout: float,
+            cwd: str | None = None) -> RunResult:
         try:
             proc = subprocess.run(
-                argv,
+                self._argv(command, cwd),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -47,3 +50,17 @@ class DockerBackend(Backend):
                 stderr="docker CLI not on PATH — install Docker or "
                        "switch backend via `openprogram config backend`.",
             )
+
+    def spawn(self, command: str,
+              cwd: str | None = None) -> subprocess.Popen:
+        # Per-spawn container; caller manages lifecycle via the returned
+        # Popen. Terminating the docker client tears the container down
+        # since --rm is set.
+        return subprocess.Popen(
+            self._argv(command, cwd),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )

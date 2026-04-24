@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import abc
+import subprocess
 from dataclasses import dataclass
 
 
@@ -38,3 +39,18 @@ class Backend(abc.ABC):
             with exit_code != 0 and an informative stderr instead, so
             the calling tool doesn't surface raw exceptions to the LLM
         """
+
+    def spawn(self, command: str,
+              cwd: str | None = None) -> subprocess.Popen:
+        """Start a long-lived process; return the Popen handle.
+
+        Used by the ``process`` tool for interactive sessions that need
+        stdin/stdout streaming over time. Default implementation raises
+        ``NotImplementedError``; concrete backends override.
+
+        Pipes: stdin=PIPE, stdout=PIPE, stderr=merged (STDOUT) so the
+        caller can line-iterate stdout without juggling two streams.
+        """
+        raise NotImplementedError(
+            f"backend {self.backend_id!r} doesn't support spawn() yet"
+        )

@@ -28,3 +28,16 @@ class LocalBackend(Backend):
                 stderr=decode_maybe(e.stderr),
                 timed_out=True,
             )
+
+    def spawn(self, command: str,
+              cwd: str | None = None) -> subprocess.Popen:
+        return subprocess.Popen(
+            command,
+            shell=True,
+            cwd=cwd or None,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
