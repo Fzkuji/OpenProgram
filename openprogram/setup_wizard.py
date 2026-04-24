@@ -309,102 +309,18 @@ def _password(prompt: str) -> str | None:
 
 # --- Sections ---------------------------------------------------------------
 
-def run_providers_section(quick: bool = False) -> int:
-    """Provider setup. Quick: auto-scan + auto-import everything
-    discoverable; only ask if nothing was found. Advanced: full menu
-    loop (scan / login / doctor / list).
+def run_providers_section() -> int:
+    """Provider setup — always interactive. Imports Claude Code /
+    Codex / Gemini / GH CLI logins, adds API-key pasted entries, or
+    launches OAuth flows. Same flow in both modes — QuickStart doesn't
+    skip this because at least one provider is required.
     """
-    if quick:
-        return _providers_autoscan_or_paste()
     from openprogram.auth.cli import _cmd_setup
     return _cmd_setup()
 
 
-def _providers_autoscan_or_paste() -> int:
-    """QuickStart providers path: silently scan+import, fall back to
-    an API-key paste only if nothing was discoverable.
-    """
-    from openprogram.auth.sources import (
-        ClaudeCodeSource, CodexCliSource, EnvApiKeySource,
-        GhCliSource, QwenCliSource,
-    )
-    from openprogram.auth.profiles import DEFAULT_PROFILE_NAME, get_profile_manager
-    from openprogram.auth.store import get_store
-    from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
-
-    store = get_store()
-    pm = get_profile_manager()
-    profile_obj = pm.get_profile(DEFAULT_PROFILE_NAME)
-    profile = DEFAULT_PROFILE_NAME
-    sources: list[Any] = [
-        CodexCliSource(profile_id=profile),
-        ClaudeCodeSource(profile_id=profile),
-        QwenCliSource(profile_id=profile),
-        GhCliSource(),
-    ]
-    for p_id, env_var in PROVIDER_ENV_VARS.items():
-        sources.append(EnvApiKeySource(
-            provider_id=p_id, env_var=env_var, profile_id=profile,
-        ))
-
-    imported: list[str] = []
-    for src in sources:
-        try:
-            for cred in src.try_import(profile_obj.root):
-                cred.profile_id = profile
-                existing = store.find_pool(cred.provider_id, cred.profile_id)
-                if existing and any(c.source == cred.source
-                                    for c in existing.credentials):
-                    continue
-                store.add_credential(cred)
-                imported.append(cred.provider_id)
-        except Exception:
-            continue
-
-    if imported:
-        unique = sorted(set(imported))
-        print(f"Providers: imported {', '.join(unique)}")
-        return 0
-
-    print("Providers: nothing auto-discoverable.")
-    prov = _choose_one(
-        "Pick a provider to configure now:",
-        ["openai", "anthropic", "openrouter", "google", "skip"],
-        "skip",
-    )
-    if prov in (None, "skip"):
-        print("Providers: none set (run `openprogram providers login <name>` "
-              "later).")
-        return 0
-    env_map = {
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-        "google": "GEMINI_API_KEY",
-    }
-    env_var = env_map[prov]
-    key = _password(f"{env_var} (leave blank to skip):")
-    if not key:
-        print(f"Providers: skipped {prov} (set ${env_var} later).")
-        return 0
-    from openprogram.auth.types import Credential, ApiKeyPayload
-    store.add_credential(Credential(
-        provider_id=prov,
-        profile_id=profile,
-        kind="api_key",
-        payload=ApiKeyPayload(api_key=key),
-        source=f"env_{env_var}",
-    ))
-    print(f"Providers: imported {prov}")
-    return 0
-
-
-def run_model_section(quick: bool = False) -> int:
-    """Pick the default chat model across enabled providers.
-
-    Quick mode: if only one enabled model, pick it silently. If
-    multiple, show the picker (required input — no sensible default).
-    """
+def run_model_section() -> int:
+    """Pick the default chat model across enabled providers."""
     from openprogram.webui import _model_catalog as mc
     enabled = mc.list_enabled_models()
     if not enabled:
@@ -414,14 +330,6 @@ def run_model_section(quick: bool = False) -> int:
         return 1
 
     cfg = _read_config()
-    if quick and len(enabled) == 1:
-        m = enabled[0]
-        cfg["default_provider"] = m["provider"]
-        cfg["default_model"] = m["id"]
-        _write_config(cfg)
-        print(f"Default model: {m['provider']}/{m['id']}")
-        return 0
-
     labels = [f"{m['provider']}/{m['id']}  ({m.get('name', m['id'])})"
               for m in enabled]
     values = [f"{m['provider']}/{m['id']}" for m in enabled]
@@ -448,22 +356,13 @@ def run_model_section(quick: bool = False) -> int:
     return 0
 
 
-def run_tools_section(quick: bool = False) -> int:
-    """Pick which tools are enabled by default.
-
-    Quick mode: enable everything silently (existing `disabled` list
-    is preserved — we don't touch prior user choices).
-    """
+def run_tools_section() -> int:
+    """Pick which tools are enabled by default. Advanced-only —
+    QuickStart leaves the default (all enabled)."""
     from openprogram.tools import ALL_TOOLS
     cfg = _read_config()
     disabled = set(cfg.get("tools", {}).get("disabled", []) or [])
     names = sorted(ALL_TOOLS.keys())
-    if quick:
-        cfg.setdefault("tools", {})["disabled"] = sorted(disabled)
-        _write_config(cfg)
-        print(f"Tools: {len(names) - len(disabled)} / {len(names)} enabled "
-              f"(default)")
-        return 0
     items = [(n, n not in disabled) for n in names]
 
     picked = _checkbox("Enable these tools:", items)
@@ -479,20 +378,10 @@ def run_tools_section(quick: bool = False) -> int:
     return 0
 
 
-def run_agent_section(quick: bool = False) -> int:
-    """Default thinking effort and other agent-level defaults.
-
-    Quick mode: silently set `high` (the recommended default).
-    """
+def run_agent_section() -> int:
+    """Default thinking effort and other agent-level defaults."""
     cfg = _read_config()
     current = (cfg.get("agent", {}) or {}).get("thinking_effort") or "medium"
-
-    if quick:
-        picked = current if current in ("low", "medium", "high", "xhigh") else "high"
-        cfg.setdefault("agent", {})["thinking_effort"] = picked
-        _write_config(cfg)
-        print(f"Reasoning effort: {picked}")
-        return 0
 
     levels = ["low", "medium", "high", "xhigh"]
     picked = _choose_one("Default thinking effort:", levels, current)
@@ -507,12 +396,9 @@ def run_agent_section(quick: bool = False) -> int:
 
 # --- Phase 2 sections: skills, ui, memory -----------------------------------
 
-def run_skills_section(quick: bool = False) -> int:
-    """Pick which skills (SKILL.md entries) are enabled.
-
-    Quick mode: preserve existing `disabled` list (default: none —
-    all discovered skills enabled).
-    """
+def run_skills_section() -> int:
+    """Pick which skills (SKILL.md entries) are enabled. Advanced-only
+    — QuickStart leaves all discovered skills enabled."""
     try:
         from openprogram.agentic_programming import (
             default_skill_dirs, load_skills,
@@ -528,12 +414,6 @@ def run_skills_section(quick: bool = False) -> int:
     cfg = _read_config()
     disabled = set(cfg.get("skills", {}).get("disabled", []) or [])
     names = sorted(s.name for s in skills)
-    if quick:
-        cfg.setdefault("skills", {})["disabled"] = sorted(disabled)
-        _write_config(cfg)
-        print(f"Skills: {len(names) - len(disabled)} / {len(names)} enabled "
-              f"(default)")
-        return 0
     items = [(n, n not in disabled) for n in names]
 
     picked = _checkbox("Enable these skills:", items)
@@ -549,25 +429,13 @@ def run_skills_section(quick: bool = False) -> int:
     return 0
 
 
-def run_ui_section(quick: bool = False) -> int:
-    """Web UI preferences: port + auto-open browser.
-
-    Quick mode: silently set port=8765, open_browser=True unless the
-    user has already picked other values (preserve them).
-    """
+def run_ui_section() -> int:
+    """Web UI preferences: port + auto-open browser. Advanced-only —
+    QuickStart uses the default port 8765 with auto-open."""
     cfg = _read_config()
     ui = cfg.get("ui", {}) or {}
     cur_port = int(ui.get("port") or 8765)
     cur_open = bool(ui.get("open_browser", True))
-
-    if quick:
-        cfg.setdefault("ui", {}).update({
-            "port": cur_port, "open_browser": cur_open,
-        })
-        _write_config(cfg)
-        print(f"Web UI: 127.0.0.1:{cur_port} "
-              f"({'auto-open' if cur_open else 'no auto-open'})")
-        return 0
 
     port_raw = _text("Web UI port:", default=str(cur_port))
     if port_raw is None:
@@ -590,21 +458,15 @@ def run_ui_section(quick: bool = False) -> int:
     return 0
 
 
-def run_memory_section(quick: bool = False) -> int:
+def run_memory_section() -> int:
     """Memory backend for the ``memory`` tool.
 
     OpenProgram currently has one native backend: ``local`` (JSON files
-    under ~/.agentic/memory). Leaving the option in so hermes-style
-    plugin backends (mem0 / honcho / ...) can slot in later without
-    re-architecting this section.
+    under ~/.agentic/memory). Advanced-only — QuickStart uses ``local``
+    (the only real backend).
     """
     cfg = _read_config()
     cur = (cfg.get("memory", {}) or {}).get("backend") or "local"
-    if quick:
-        cfg.setdefault("memory", {})["backend"] = cur
-        _write_config(cfg)
-        print(f"Memory: {cur}")
-        return 0
     choices = ["local", "none"]
     picked = _choose_one("Memory backend:", choices, cur)
     if picked is None:
@@ -620,8 +482,9 @@ def run_memory_section(quick: bool = False) -> int:
 
 # --- Phase 3 sections: profile, tts, channels, backend ----------------------
 
-def run_profile_section(quick: bool = False) -> int:
-    """Named profile (active config slot).
+def run_profile_section() -> int:
+    """Named profile (active config slot). Advanced-only — QuickStart
+    uses ``default`` which is what nearly everyone wants.
 
     For now only records the active profile name. Routing per-profile
     config-path / state dirs is a follow-up — but storing the name
@@ -629,11 +492,6 @@ def run_profile_section(quick: bool = False) -> int:
     """
     cfg = _read_config()
     cur = cfg.get("profile", "default") or "default"
-    if quick:
-        cfg["profile"] = cur
-        _write_config(cfg)
-        print(f"Profile: {cur}")
-        return 0
     name = _text("Active profile name:", default=cur)
     if not name:
         print("Cancelled.")
@@ -646,25 +504,16 @@ def run_profile_section(quick: bool = False) -> int:
     return 0
 
 
-def run_tts_section(quick: bool = False) -> int:
-    """Text-to-speech backend + credentials.
+def run_tts_section() -> int:
+    """Text-to-speech backend + credentials. Advanced-only — QuickStart
+    leaves TTS off.
 
     Wizard writes config; runtime hookup (spoken replies) is a separate
     follow-up. Providers mirror hermes' common set.
-
-    Quick mode: preserve the current setting (default `none` on a
-    fresh install — TTS off).
     """
     cfg = _read_config()
     tts = cfg.get("tts", {}) or {}
     cur_prov = tts.get("provider") or "none"
-
-    if quick:
-        cfg["tts"] = {"provider": cur_prov, **{k: v for k, v in tts.items()
-                                                if k != "provider"}}
-        _write_config(cfg)
-        print(f"TTS: {cur_prov}")
-        return 0
 
     providers = [
         "none",
@@ -786,32 +635,15 @@ _CHANNEL_HANDLERS = {
 }
 
 
-def run_channels_section(quick: bool = False) -> int:
+def run_channels_section() -> int:
     """Single-select channel menu loop (OpenClaw-style).
 
     Replaces the earlier multi-checkbox UI that left users stranded on
     an empty "done" state. One channel at a time: pick → configure →
-    come back to the menu → pick another or "Finished".
-
-    Quick mode: ask a single yes/no gate. If yes, run the same loop so
-    the user can still configure one or more channels. If no, skip.
+    come back to the menu → pick another or "Finished". Picking
+    Finished right away is fine — users who don't need chat bots just
+    hit Enter.
     """
-    if quick:
-        cfg = _read_config()
-        already = [pid for pid in _CHANNEL_LABELS
-                   if _channel_configured(pid, cfg) or _channel_enabled(pid, cfg)]
-        if already:
-            print(f"Channels: keeping {', '.join(already)} "
-                  f"(run `openprogram config channels` to change)")
-            return 0
-        if not _confirm(
-            "Connect chat channels now? (Telegram / Discord / Slack / WeChat)",
-            default=False,
-        ):
-            print("Channels: none configured "
-                  "(run `openprogram config channels` later)")
-            return 0
-        # fall through to the loop
     while True:
         cfg = _read_config()
         options: list[str] = []
@@ -870,8 +702,10 @@ def run_channels_section(quick: bool = False) -> int:
         print(f"{pid}: configured.")
 
 
-def run_backend_section(quick: bool = False) -> int:
+def run_backend_section() -> int:
     """Where shell-style tools (bash, execute_code, ...) actually run.
+    Advanced-only — QuickStart uses `local`, which is the only real
+    runtime backend at the moment.
 
     Currently OpenProgram only has the 'local' in-process path. Wizard
     surfaces the full set so users can record intent; docker / ssh
@@ -880,12 +714,6 @@ def run_backend_section(quick: bool = False) -> int:
     cfg = _read_config()
     be = cfg.get("backend", {}) or {}
     cur_terminal = be.get("terminal") or "local"
-
-    if quick:
-        cfg.setdefault("backend", {})["terminal"] = cur_terminal
-        _write_config(cfg)
-        print(f"Terminal backend: {cur_terminal}")
-        return 0
 
     choices = ["local", "docker", "ssh"]
     picked = _choose_one("Terminal backend:", choices, cur_terminal)
@@ -911,54 +739,70 @@ def run_backend_section(quick: bool = False) -> int:
 
 # --- Orchestrator -----------------------------------------------------------
 
-# Section spec:
-#   (key, title, description, fn, default_run)
-#   default_run = True  → auto-run (user can Ctrl+C to abort the section)
-#   default_run = False → ask first, default No
-_CORE_SECTIONS = [
+# Section spec: (key, title, description, fn)
+#
+# Two tables:
+#   _QUICKSTART_SECTIONS — run in BOTH QuickStart and Advanced modes.
+#       Things the user must participate in: provider login, pick default
+#       model, set reasoning effort, connect chat channels (or skip in
+#       the Finished-first prompt).
+#   _ADVANCED_EXTRA_SECTIONS — run ONLY in Advanced mode. Detail knobs
+#       with sane defaults the average user never touches: Web UI port,
+#       tool toggles, skill toggles, TTS, memory backend, profile name,
+#       terminal backend.
+#
+# QuickStart doesn't touch the _ADVANCED_EXTRA_SECTIONS config at all —
+# the runtime reads each knob with a fallback default (ui.port=8765,
+# memory.backend=local, tools.disabled=[], etc.) so omitting the
+# section writes the same effective state as explicitly accepting the
+# default would.
+_QUICKSTART_SECTIONS = [
     ("providers", "Connect LLM provider(s)",
      "Import existing CLI logins (Claude Code / Codex / Gemini / GH CLI), "
      "or add API keys. At least one provider is required.",
-     run_providers_section, True),
+     run_providers_section),
     ("model", "Pick your default chat model",
      "Choose which enabled model starts every new conversation.",
-     run_model_section, True),
+     run_model_section),
     ("agent", "Default reasoning effort",
      "How hard should the model think by default? "
      "low = fastest, xhigh = deepest.",
-     run_agent_section, True),
-    ("tools", "Enable / disable tools",
-     f"Which of the built-in tools should the agent have access to.",
-     run_tools_section, False),
-    ("skills", "Enable / disable skills",
-     "SKILL.md instruction packs the agent can load on demand.",
-     run_skills_section, False),
-    ("ui", "Web UI preferences",
-     "Port and auto-open-browser for `openprogram web`.",
-     run_ui_section, False),
-    ("tts", "Text-to-speech (optional)",
-     "Spoken replies in CLI chat. Providers: openai / elevenlabs / "
-     "edge-tts (free).",
-     run_tts_section, False),
+     run_agent_section),
     ("channels", "Chat-channel bots (optional)",
      "Route messages from Telegram / Discord / Slack / WeChat through "
-     "your chat agent.",
-     run_channels_section, False),
-    ("memory", "Memory backend (optional)",
-     "Pick between the local JSON store and 'none' (disables the "
-     "memory tool).",
-     run_memory_section, False),
+     "your chat agent. Pick 'Finished' to skip.",
+     run_channels_section),
 ]
 
-_EXTRA_SECTIONS = [
-    ("profile", "Named profile (advanced)",
+_ADVANCED_EXTRA_SECTIONS = [
+    ("tools", "Enable / disable tools",
+     "Which of the built-in tools should the agent have access to. "
+     "QuickStart enables everything.",
+     run_tools_section),
+    ("skills", "Enable / disable skills",
+     "SKILL.md instruction packs the agent can load on demand. "
+     "QuickStart enables everything discovered.",
+     run_skills_section),
+    ("tts", "Text-to-speech",
+     "Spoken replies in CLI chat. Providers: openai / elevenlabs / "
+     "edge-tts (free). QuickStart leaves TTS off.",
+     run_tts_section),
+    ("ui", "Web UI preferences",
+     "Port and auto-open-browser for `openprogram web`. "
+     "QuickStart uses 8765 with auto-open.",
+     run_ui_section),
+    ("memory", "Memory backend",
+     "Local JSON store or 'none' (disables the memory tool). "
+     "QuickStart uses local.",
+     run_memory_section),
+    ("profile", "Named profile",
      "Stored profile name. Per-profile state-dir isolation is done via "
-     "`--profile <name>` at launch.",
-     run_profile_section, True),
-    ("backend", "Terminal exec backend (advanced)",
+     "`--profile <name>` at launch. QuickStart uses 'default'.",
+     run_profile_section),
+    ("backend", "Terminal exec backend",
      "Where the `bash` / `execute_code` / `process` tools actually "
-     "run: local / ssh / docker.",
-     run_backend_section, True),
+     "run: local / ssh / docker. QuickStart uses local.",
+     run_backend_section),
 ]
 
 
@@ -981,21 +825,6 @@ def _section_header(idx: int, total: int, title: str, desc: str) -> None:
         print(f"    {desc}")
 
 
-def _run_section(name: str, fn, ask_default: bool) -> int:
-    """Run a section body. ``ask_default`` controls the 'Configure X now?'
-    prompt default: True = default-yes, False = default-no.
-    """
-    if ask_default:
-        if not _confirm(f"Configure {name} now?", default=True):
-            print(f"Skipped {name}.")
-            return 0
-    else:
-        if not _confirm(f"Configure {name} now?", default=False):
-            print(f"Skipped {name}.")
-            return 0
-    return fn()
-
-
 def _print_intro() -> None:
     try:
         from rich.console import Console
@@ -1004,12 +833,12 @@ def _print_intro() -> None:
         console = Console()
         body = Text()
         body.append("Welcome to OpenProgram.\n\n", style="bold bright_blue")
-        body.append("Both modes cover every configurable section:\n",
-                    style="dim")
         body.append(
-            "  ▸ QuickStart — accept sensible defaults, skip the detail "
-            "questions\n"
-            "  ▸ Advanced   — answer every question, choose every detail\n\n",
+            "  ▸ QuickStart — provider login, default model, reasoning "
+            "effort, optional chat channels\n"
+            "  ▸ Advanced   — everything in QuickStart, plus tool toggles, "
+            "skills, TTS, Web UI port, memory backend, profile, terminal "
+            "backend\n\n",
             style="dim",
         )
         body.append(
@@ -1027,9 +856,8 @@ def _print_intro() -> None:
         print("=" * 60)
         print("  OpenProgram setup")
         print("=" * 60)
-        print("Both modes cover every section.")
-        print("  QuickStart — accept defaults, skip detail questions")
-        print("  Advanced   — answer every question")
+        print("  QuickStart — provider/model/effort/channels")
+        print("  Advanced   — + tools/skills/tts/ui/memory/profile/backend")
         print("All prompts use arrow keys + Enter.")
         print("Ctrl+C to exit; partial progress is saved.")
         print()
@@ -1070,12 +898,13 @@ def _print_summary() -> None:
 
 
 def _mode_select() -> str | None:
-    """QuickStart vs Advanced. Both modes cover the same sections —
-    QuickStart silently applies sensible defaults (recap at the end);
-    Advanced walks every question."""
+    """QuickStart: the essentials the user has to do (provider login,
+    pick default model, reasoning effort, optional chat channels).
+    Advanced: same plus the tuning knobs (tools, skills, TTS, Web UI
+    port, memory backend, profile, terminal backend)."""
     options = [
-        "QuickStart   — accept sensible defaults for everything, configure details later",
-        "Advanced     — walk every question, choose every detail",
+        "QuickStart   — provider / model / effort / channels",
+        "Advanced     — QuickStart + tools / skills / tts / ui / memory / profile / backend",
     ]
     picked = _choose_one("Setup mode:", options, options[0])
     if picked is None:
@@ -1099,11 +928,11 @@ def _hatch_select() -> str:
 
 
 def run_full_setup() -> int:
-    """Linear onboarding. Both modes walk the same sections.
+    """Linear onboarding.
 
-    QuickStart applies defaults silently for sections that have one
-    (tts/ui/memory/tools/skills/...), asks the minimum required for the
-    rest (providers, channels). Advanced asks every question.
+    QuickStart walks _QUICKSTART_SECTIONS — the essentials the user
+    has to participate in. Advanced walks the same list plus
+    _ADVANCED_EXTRA_SECTIONS — the detail knobs with sane defaults.
 
     OpenClaw-shaped: intro → mode select → sections → summary →
     hatch select (chat / web / later). No extra "Start?" confirm —
@@ -1132,40 +961,23 @@ def _print_cancelled() -> None:
 
 
 def _run_setup_inner(mode: str) -> int:
-    """QuickStart: every section runs in `quick=True` mode → sensible
-    defaults applied silently, single-line recap printed. Advanced:
-    every section runs in `quick=False` mode → full interactive
-    prompts.
-
-    Both modes walk the same _CORE_SECTIONS. _EXTRA_SECTIONS (profile,
-    backend) is advanced-only — QuickStart accepts their defaults
-    implicitly.
+    """Both QuickStart and Advanced walk _QUICKSTART_SECTIONS — those
+    are things the user must participate in (provider login, pick
+    default model, reasoning effort, chat channels). Advanced then
+    additionally walks _ADVANCED_EXTRA_SECTIONS — detail knobs with
+    sane defaults (UI port, tool toggles, TTS, memory backend, etc.)
+    that QuickStart silently leaves on the runtime fallbacks.
     """
-    quick = (mode == "quickstart")
-    total = len(_CORE_SECTIONS)
+    sections = list(_QUICKSTART_SECTIONS)
+    if mode == "advanced":
+        sections += list(_ADVANCED_EXTRA_SECTIONS)
+    total = len(sections)
 
-    for i, (name, title, desc, fn, default_run) in enumerate(_CORE_SECTIONS, 1):
+    for i, (name, title, desc, fn) in enumerate(sections, 1):
         _section_header(i, total, title, desc)
-        if quick:
-            rc = fn(quick=True)
-        elif default_run:
-            rc = fn()
-        else:
-            rc = _run_section(name, fn, ask_default=False)
+        rc = fn()
         if rc != 0:
             print(f"[warn] {name} exited with status {rc}; continuing.")
-
-    # Advanced-only: extras behind an explicit confirm.
-    if not quick and _confirm(
-        "Configure advanced sections (profile / backend)?",
-        default=False,
-    ):
-        extra_total = len(_EXTRA_SECTIONS)
-        for i, (name, title, desc, fn, default_run) in enumerate(_EXTRA_SECTIONS, 1):
-            _section_header(i, extra_total, title, desc)
-            rc = _run_section(name, fn, ask_default=default_run)
-            if rc != 0:
-                print(f"[warn] {name} exited with status {rc}; continuing.")
 
     _print_summary()
 
@@ -1196,12 +1008,13 @@ def run_configure_menu() -> int:
     again, until 'Continue'. Distinct from ``run_full_setup`` which is
     a linear first-run walk.
     """
-    section_map = {s[0]: s for s in _CORE_SECTIONS + _EXTRA_SECTIONS}
+    all_sections = list(_QUICKSTART_SECTIONS) + list(_ADVANCED_EXTRA_SECTIONS)
+    section_map = {s[0]: s for s in all_sections}
 
     while True:
         labels = []
         values = []
-        for key, title, _desc, _fn, _dr in _CORE_SECTIONS + _EXTRA_SECTIONS:
+        for key, title, _desc, _fn in all_sections:
             labels.append(f"{title}")
             values.append(key)
         labels.append("Continue (done)")
@@ -1214,7 +1027,7 @@ def run_configure_menu() -> int:
         key = values[labels.index(picked)]
         if key == "__done__":
             return 0
-        _, _, desc, fn, _ = section_map[key]
+        _, _, desc, fn = section_map[key]
         print()
         print(desc)
         rc = fn()
