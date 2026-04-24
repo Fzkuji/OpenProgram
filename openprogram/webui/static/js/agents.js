@@ -135,6 +135,145 @@ function openAgentSwitcher() {
   });
 }
 
+function openSessionAttachDialog() {
+  if (!currentConvId) {
+    alert('Open a conversation first, then Connect channel lets you ' +
+          'route a WeChat/Telegram/etc. user into it.');
+    return;
+  }
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  // Fetch accounts + current aliases so we can render.
+  var state = { accounts: null, aliases: null };
+  var origHandler = window._agentsBindingsTemp;
+  window._agentsBindingsTemp = function(msg) {
+    if (msg.type === 'channel_accounts') {
+      state.accounts = msg.data || [];
+      tryRender();
+    } else if (msg.type === 'session_aliases') {
+      state.aliases = msg.data || [];
+      tryRender();
+    }
+  };
+  ws.send(JSON.stringify({ action: 'list_channel_accounts' }));
+  ws.send(JSON.stringify({ action: 'list_session_aliases' }));
+
+  var overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay visible';
+  overlay.innerHTML = '<div class="confirm-dialog"><div class="confirm-title">Loading...</div></div>';
+  document.body.appendChild(overlay);
+
+  function close() {
+    window._agentsBindingsTemp = origHandler;
+    overlay.classList.remove('visible');
+    overlay.addEventListener('transitionend', function() { overlay.remove(); });
+  }
+
+  function tryRender() {
+    if (state.accounts === null || state.aliases === null) return;
+    var mine = state.aliases.filter(function(a) {
+      return a.session_id === currentConvId;
+    });
+    var existingHtml = '';
+    if (mine.length) {
+      existingHtml = '<div class="bind-section">';
+      for (var i = 0; i < mine.length; i++) {
+        var a = mine[i];
+        var summary = a.channel + ':' + a.account_id + '  ' +
+          a.peer.kind + ':' + a.peer.id;
+        existingHtml += '<div class="bind-row">' +
+          '<span class="bind-row-label">' + escHtml(summary) + '</span>' +
+          '<button class="bind-row-rm" data-ch="' + escAttr(a.channel) +
+            '" data-ac="' + escAttr(a.account_id) +
+            '" data-pk="' + escAttr(a.peer.kind) +
+            '" data-pi="' + escAttr(a.peer.id) + '">×</button>' +
+        '</div>';
+      }
+      existingHtml += '</div>';
+    }
+
+    var acctOptionsHtml = '';
+    for (var j = 0; j < state.accounts.length; j++) {
+      var acc = state.accounts[j];
+      acctOptionsHtml += '<option value="' +
+        escAttr(acc.channel + '|' + acc.account_id) + '">' +
+        escHtml(acc.channel + ' · ' + acc.account_id) + '</option>';
+    }
+    if (!acctOptionsHtml) {
+      acctOptionsHtml = '<option value="">(no channel accounts — ' +
+        'run `openprogram channels accounts add` first)</option>';
+    }
+
+    overlay.querySelector('.confirm-dialog').innerHTML =
+      '<div class="confirm-title">Connect channel to this session</div>' +
+      '<div class="confirm-message" style="text-align:left;font-size:12px;color:var(--text-muted);margin:0 0 4px">' +
+        'Route a channel user\'s messages into the current session ' +
+        '(session_id: ' + escHtml(currentConvId) + ').' +
+      '</div>' +
+      existingHtml +
+      '<div class="bind-add">' +
+        '<div class="bind-field"><label class="bind-label">Channel account</label>' +
+          '<select id="_saAcct" class="bind-input">' + acctOptionsHtml + '</select></div>' +
+        '<div class="bind-field"><label class="bind-label">Peer kind</label>' +
+          '<select id="_saKind" class="bind-input">' +
+            '<option value="direct">direct (DM)</option>' +
+            '<option value="group">group</option>' +
+            '<option value="channel">channel</option>' +
+          '</select></div>' +
+        '<div class="bind-field"><label class="bind-label">Peer id</label>' +
+          '<input id="_saPeer" class="bind-input" placeholder="WeChat openid / Telegram chat_id / ...">' +
+        '</div>' +
+        '<button class="confirm-btn" id="_saAdd">Attach</button>' +
+      '</div>' +
+      '<div class="confirm-actions">' +
+        '<button class="confirm-btn" id="_saClose">Close</button>' +
+      '</div>';
+
+    overlay.querySelector('#_saClose').onclick = close;
+    overlay.querySelectorAll('.bind-row-rm').forEach(function(btn) {
+      btn.onclick = function() {
+        ws.send(JSON.stringify({
+          action: 'detach_session',
+          channel: btn.getAttribute('data-ch'),
+          account_id: btn.getAttribute('data-ac'),
+          peer_kind: btn.getAttribute('data-pk'),
+          peer_id: btn.getAttribute('data-pi'),
+        }));
+        state.aliases = state.aliases.filter(function(a) {
+          return !(a.channel === btn.getAttribute('data-ch') &&
+                   a.account_id === btn.getAttribute('data-ac') &&
+                   a.peer.kind === btn.getAttribute('data-pk') &&
+                   a.peer.id === btn.getAttribute('data-pi'));
+        });
+        tryRender();
+      };
+    });
+    overlay.querySelector('#_saAdd').onclick = function() {
+      var raw = overlay.querySelector('#_saAcct').value;
+      if (!raw) { alert('No channel account — add one first.'); return; }
+      var parts = raw.split('|');
+      var peerId = overlay.querySelector('#_saPeer').value.trim();
+      if (!peerId) { alert('Peer id is required.'); return; }
+      var peerKind = overlay.querySelector('#_saKind').value;
+      ws.send(JSON.stringify({
+        action: 'attach_session',
+        session_id: currentConvId,
+        channel: parts[0],
+        account_id: parts[1],
+        peer_kind: peerKind,
+        peer_id: peerId,
+      }));
+      setTimeout(function() {
+        ws.send(JSON.stringify({ action: 'list_session_aliases' }));
+      }, 200);
+    };
+  }
+
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) close();
+  });
+}
+
 function openAgentBindingsDialog(agentId) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   // Request fresh data — we re-render after both land.

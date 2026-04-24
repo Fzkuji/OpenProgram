@@ -120,12 +120,38 @@ def main():
     _add_provider_args(p_sk_new)
 
     # ---- sessions ---------------------------------------------------------
-    p_sessions = sub.add_parser("sessions", help="Manage ask-user follow-up sessions")
+    p_sessions = sub.add_parser("sessions",
+        help="Manage chat sessions (list, attach a channel user to "
+             "an existing session, ...)")
     sessions_sub = p_sessions.add_subparsers(dest="sessions_verb", metavar="verb")
-    sessions_sub.add_parser("list", help="List active sessions")
+    sessions_sub.add_parser("list", help="List every session across every agent")
     p_ss_res = sessions_sub.add_parser("resume", help="Answer a waiting session")
     p_ss_res.add_argument("session_id")
     p_ss_res.add_argument("answer")
+    p_ss_att = sessions_sub.add_parser("attach",
+        help="Route a channel user's messages into this session.")
+    p_ss_att.add_argument("session_id",
+        help="Existing session id (e.g. local_abc123def0)")
+    p_ss_att.add_argument("--channel", required=True,
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_ss_att.add_argument("--account", default="default",
+        help="Account id (default: 'default')")
+    p_ss_att.add_argument("--peer", required=True,
+        help="External peer id — WeChat openid / Telegram chat_id / "
+             "<channel_id>_<user_id> for Discord/Slack")
+    p_ss_att.add_argument("--peer-kind", default="direct",
+        choices=["direct", "group", "channel"])
+    p_ss_det = sessions_sub.add_parser("detach",
+        help="Remove the alias for a channel peer (peer returns to "
+             "default scope-based routing)")
+    p_ss_det.add_argument("--channel", required=True,
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_ss_det.add_argument("--account", default="default")
+    p_ss_det.add_argument("--peer", required=True)
+    p_ss_det.add_argument("--peer-kind", default="direct",
+        choices=["direct", "group", "channel"])
+    sessions_sub.add_parser("aliases",
+        help="List every session↔channel-peer alias")
 
     # ---- web --------------------------------------------------------------
     p_web = sub.add_parser("web", help="Start the Web UI")
@@ -340,6 +366,57 @@ def main():
             _cmd_sessions()
         elif verb == "resume":
             _cmd_resume(args.session_id, args.answer)
+        elif verb == "attach":
+            from openprogram.agents import session_aliases as _a
+            from openprogram.webui import persistence as _persist
+            owner = _persist.resolve_agent_for_conv(args.session_id)
+            if owner is None:
+                print(f"[error] no session {args.session_id!r} found "
+                      f"under any agent.")
+                sys.exit(1)
+            # Also auto-start the channels worker since the user has
+            # now explicitly asked for external routing.
+            from openprogram.channels.worker import (
+                current_worker_pid, spawn_detached,
+            )
+            _a.attach(
+                channel=args.channel, account_id=args.account,
+                peer_kind=args.peer_kind, peer_id=args.peer,
+                agent_id=owner, session_id=args.session_id,
+            )
+            print(f"Attached {args.channel}:{args.account}:"
+                  f"{args.peer_kind}:{args.peer} → agent={owner}, "
+                  f"session={args.session_id}")
+            if current_worker_pid() is None:
+                print("Starting channels worker in the background...")
+                spawn_detached()
+        elif verb == "detach":
+            from openprogram.agents import session_aliases as _a
+            removed = _a.detach(
+                channel=args.channel, account_id=args.account,
+                peer_kind=args.peer_kind, peer_id=args.peer,
+            )
+            if removed:
+                print(f"Detached {args.channel}:{args.account}:"
+                      f"{args.peer_kind}:{args.peer}")
+            else:
+                print("No matching alias.")
+        elif verb == "aliases":
+            from openprogram.agents import session_aliases as _a
+            rows = _a.list_all()
+            if not rows:
+                print("No session aliases. "
+                      "Inbound channel messages fall back to "
+                      "binding → session_scope routing.")
+                return
+            print(f"{'channel':10} {'account':12} {'peer':28} "
+                  f"{'agent':12} session")
+            for r in rows:
+                peer = r["peer"]
+                peer_str = f"{peer['kind']}:{peer['id']}"
+                print(f"{r['channel']:10} {r['account_id']:12} "
+                      f"{peer_str[:27]:28} {r['agent_id']:12} "
+                      f"{r['session_id']}")
         else:
             p_sessions.print_help()
         return

@@ -58,22 +58,36 @@ def dispatch_inbound(
     rather than silently dropping the message.
     """
     peer = {"kind": peer_kind or "direct", "id": str(peer_id)}
-    try:
-        agent_id = _bindings.route(channel, account_id, peer)
-    except Exception as e:  # noqa: BLE001
-        return f"[routing error] {type(e).__name__}: {e}"
-    if not agent_id:
-        return ("[no agent configured] Run `openprogram agents add main` "
-                "and configure a provider.")
 
-    agent = _agents.get(agent_id)
-    if agent is None:
-        return f"[unknown agent {agent_id!r}] — binding points at a deleted agent."
+    # Session alias: user said "route this peer into session X".
+    # Highest priority — bypasses both binding-based agent selection
+    # and scope-based session key computation.
+    from openprogram.agents import session_aliases as _aliases
+    alias = _aliases.lookup(channel, account_id, peer)
+    if alias is not None:
+        agent_id, session_key = alias
+        agent = _agents.get(agent_id)
+        if agent is None:
+            return (f"[unknown agent {agent_id!r}] — alias points at a "
+                    f"deleted agent.")
+    else:
+        try:
+            agent_id = _bindings.route(channel, account_id, peer)
+        except Exception as e:  # noqa: BLE001
+            return f"[routing error] {type(e).__name__}: {e}"
+        if not agent_id:
+            return ("[no agent configured] Run `openprogram agents add "
+                    "main` and configure a provider.")
 
-    base_key = _session_key_for_agent(
-        agent, channel, account_id, peer,
-    )
-    session_key = _apply_reset_policy(agent, base_key)
+        agent = _agents.get(agent_id)
+        if agent is None:
+            return (f"[unknown agent {agent_id!r}] — binding points at a "
+                    f"deleted agent.")
+
+        base_key = _session_key_for_agent(
+            agent, channel, account_id, peer,
+        )
+        session_key = _apply_reset_policy(agent, base_key)
     meta, messages = _load_or_init_session(
         agent_id=agent_id,
         session_key=session_key,

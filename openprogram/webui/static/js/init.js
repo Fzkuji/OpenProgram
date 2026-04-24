@@ -96,8 +96,15 @@ function handleMessage(msg) {
       break;
     case 'channel_bindings':
     case 'channel_accounts':
+    case 'session_aliases':
       if (typeof window._agentsBindingsTemp === 'function') {
         window._agentsBindingsTemp(msg);
+      }
+      break;
+    case 'session_alias_changed':
+      if (typeof window._agentsBindingsTemp === 'function' &&
+          ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: 'list_session_aliases' }));
       }
       break;
     case 'binding_changed':

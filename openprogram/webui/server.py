@@ -1980,6 +1980,66 @@ async def _handle_ws_command(ws, cmd: dict):
         except Exception:
             pass
 
+    elif action == "list_session_aliases":
+        try:
+            from openprogram.agents import session_aliases as _sa
+            rows = _sa.list_all()
+        except Exception:
+            rows = []
+        await ws.send_text(json.dumps({
+            "type": "session_aliases", "data": rows,
+        }, default=str))
+
+    elif action == "attach_session":
+        try:
+            from openprogram.agents import session_aliases as _sa
+            from openprogram.webui import persistence as _p
+            from openprogram.channels.worker import (
+                current_worker_pid, spawn_detached,
+            )
+            session_id = cmd.get("session_id") or ""
+            owner = _p.resolve_agent_for_conv(session_id)
+            if owner is None:
+                await ws.send_text(json.dumps({
+                    "type": "error",
+                    "data": {"message": f"no session {session_id!r}"},
+                }, default=str))
+            else:
+                row = _sa.attach(
+                    channel=cmd.get("channel") or "",
+                    account_id=cmd.get("account_id") or "default",
+                    peer_kind=cmd.get("peer_kind") or "direct",
+                    peer_id=cmd.get("peer_id") or "",
+                    agent_id=owner,
+                    session_id=session_id,
+                )
+                if current_worker_pid() is None:
+                    spawn_detached()
+                _broadcast(json.dumps({
+                    "type": "session_alias_changed",
+                    "data": {"action": "attached", "alias": row},
+                }, default=str))
+        except Exception as e:  # noqa: BLE001
+            await ws.send_text(json.dumps({
+                "type": "error", "data": {"message": str(e)},
+            }, default=str))
+
+    elif action == "detach_session":
+        try:
+            from openprogram.agents import session_aliases as _sa
+            removed = _sa.detach(
+                channel=cmd.get("channel") or "",
+                account_id=cmd.get("account_id") or "default",
+                peer_kind=cmd.get("peer_kind") or "direct",
+                peer_id=cmd.get("peer_id") or "",
+            )
+            _broadcast(json.dumps({
+                "type": "session_alias_changed",
+                "data": {"action": "detached", "alias": removed},
+            }, default=str))
+        except Exception:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # FastAPI app

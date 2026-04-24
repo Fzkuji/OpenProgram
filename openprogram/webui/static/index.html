@@ -25,6 +25,7 @@
         <span id="execAgentBadge" class="runtime-badge agent-badge" onclick="openAgentSelector('exec')" title="Execution agent model">Exec: ...</span>
       </div>
       <div class="topbar-right">
+        <button class="btn" onclick="openSessionAttachDialog()" id="btnSessionAttach" title="Route a channel user's messages into this session">Connect channel</button>
         <button class="btn" onclick="toggleDetail()" id="btnDetail">Detail Panel</button>
       </div>
     </div>
@@ -102,7 +103,7 @@
 <script src="/js/tree.js?v=8"></script>
 <script src="/js/chat.js?v=10"></script>
 <script src="/js/sidebar.js?v=30"></script>
-<script src="/js/agents.js?v=2"></script>
+<script src="/js/agents.js?v=3"></script>
 <script src="/js/bindings.js?v=2"></script>
 <script src="/js/providers.js?v=5"></script>
 <script src="/js/settings.js?v=5"></script>
