@@ -234,14 +234,17 @@ def _action_pick_provider_and_login() -> None:
     for prov_id, label in popular:
         tag = "✓ " if prov_id in existing else "  "
         choices.append(Choice(f"{tag}{prov_id:22s} — {label}", value=prov_id))
-    choices.append(Choice("← Back", value=None))
+    choices.append(Choice("← Back", value="__back__"))
 
     provider = questionary.select(
         f"Pick a provider to log into  (profile: {profile})",
         choices=choices,
         qmark="›",
     ).ask()
-    if provider is None:
+    # questionary.Choice replaces `value=None` with the title, so our
+    # "← Back" entries come back as the literal string, never None.
+    # Use a sentinel value and match on it here.
+    if provider is None or provider == "__back__":
         return
 
     methods = _available_login_methods(provider)
@@ -279,12 +282,12 @@ def _action_profiles_menu() -> None:
         labels = [Choice(f"{p.name:16s}  {p.display_name or '-'}", value=p.name)
                   for p in profiles]
         labels.append(Choice("+ Create new profile", value="__create__"))
-        labels.append(Choice("← Back",               value=None))
+        labels.append(Choice("← Back",               value="__back__"))
 
         pick = questionary.select(
             "Profiles", choices=labels, qmark="›",
         ).ask()
-        if pick is None:
+        if pick is None or pick == "__back__":
             return
 
         if pick == "__create__":
@@ -306,7 +309,7 @@ def _action_profiles_menu() -> None:
             f"Profile {pick!r}",
             choices=[
                 Choice("Delete",  value="delete"),
-                Choice("← Back",  value=None),
+                Choice("← Back",  value="__back__"),
             ],
             qmark="›",
         ).ask()
