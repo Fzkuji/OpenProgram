@@ -55,21 +55,17 @@ def stream_openai_codex_responses(
             raise ImportError("httpx is required: pip install httpx")
 
         from openprogram.providers.env_api_keys import get_env_api_key
+        from openprogram.providers.types import AssistantMessage, Usage
 
-        output: dict[str, Any] = {
-            "role": "assistant",
-            "content": [],
-            "api": "openai-codex-responses",
-            "provider": model.provider,
-            "model": model.id,
-            "usage": {
-                "input": 0, "output": 0, "cache_read": 0, "cache_write": 0,
-                "total_tokens": 0,
-                "cost": {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "total": 0},
-            },
-            "stop_reason": "stop",
-            "timestamp": int(time.time() * 1000),
-        }
+        output = AssistantMessage(
+            content=[],
+            api="openai-codex-responses",
+            provider=model.provider,
+            model=model.id,
+            usage=Usage(),
+            stop_reason="stop",
+            timestamp=int(time.time() * 1000),
+        )
 
         try:
             api_key = opts.get("api_key") or get_env_api_key(model.provider) or ""
@@ -79,6 +75,28 @@ def stream_openai_codex_responses(
 
             if opts.get("on_payload"):
                 opts["on_payload"](request_body)
+
+            try:
+                _cache_key = request_body.get("prompt_cache_key", "")
+                _instr_len = len(request_body.get("instructions") or "")
+                _tool_names = sorted(t.get("name", "") for t in (request_body.get("tools") or []))
+                _reasoning = request_body.get("reasoning")
+                _input_items = request_body.get("input") or []
+                _input_text_len = sum(
+                    len(c.get("text", ""))
+                    for item in _input_items
+                    if isinstance(item, dict)
+                    for c in (item.get("content") or [])
+                    if isinstance(c, dict) and isinstance(c.get("text"), str)
+                )
+                print(
+                    f"[codex req] key={_cache_key!r} items={len(_input_items)} "
+                    f"text_chars={_input_text_len} instr={_instr_len} "
+                    f"tools={_tool_names} reasoning={_reasoning}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             headers: dict[str, str] = {
                 "Authorization": f"Bearer {api_key}",
@@ -104,18 +122,18 @@ def stream_openai_codex_responses(
                     sse_events = _parse_sse_stream(response)
                     await process_responses_stream(sse_events, output, ev_stream, model)
 
-            if output["stop_reason"] in ("aborted", "error"):
+            if output.stop_reason in ("aborted", "error"):
                 raise RuntimeError("An unknown error occurred")
 
-            ev_stream.push({"type": "done", "reason": output["stop_reason"], "message": output})
+            ev_stream.push({"type": "done", "reason": output.stop_reason, "message": output})
             ev_stream.end(output)
 
         except Exception as exc:
-            for b in output["content"]:
+            for b in output.content:
                 if isinstance(b, dict):
                     b.pop("index", None)
-            output["stop_reason"] = "error"
-            output["error_message"] = str(exc)
+            output.stop_reason = "error"
+            output.error_message = str(exc)
             ev_stream.push({"type": "error", "reason": "error", "error": output})
             ev_stream.end(output)
 
@@ -154,14 +172,13 @@ def _build_request_body(
         "stream": True,
         "store": False,
     }
-    if context.system_prompt:
-        body["instructions"] = context.system_prompt
+    # Codex backend rejects requests without `instructions` (HTTP 400), so
+    # fall back to a minimal default when no system prompt was supplied.
+    body["instructions"] = context.system_prompt or "You are a helpful assistant."
     if opts.get("session_id"):
         body["prompt_cache_key"] = opts["session_id"]
-    if opts.get("max_tokens"):
-        body["max_output_tokens"] = opts["max_tokens"]
-    if opts.get("temperature") is not None:
-        body["temperature"] = opts["temperature"]
+    # `max_output_tokens` and `temperature` are rejected by the Codex backend;
+    # they're only valid on the public OpenAI Responses API.
 
     tools = getattr(context, "tools", None)
     if tools:
@@ -172,9 +189,14 @@ def _build_request_body(
     reasoning_effort = opts.get("reasoning_effort")
     reasoning_summary = opts.get("reasoning_summary")
     if getattr(model, "reasoning", False) and reasoning_effort:
-        body["reasoning"] = {"effort": reasoning_effort}
-        if reasoning_summary:
-            body["reasoning"]["summary"] = reasoning_summary
+        body["reasoning"] = {
+            "effort": reasoning_effort,
+            # Default to "auto" so the API streams a readable summary of the
+            # reasoning trace. Without a summary field, Codex only returns
+            # encrypted_content (opaque to the UI) and no thinking deltas ever
+            # fire. Callers can override by passing reasoning_summary.
+            "summary": reasoning_summary or "auto",
+        }
         body["include"] = ["reasoning.encrypted_content"]
 
     if opts.get("text_verbosity"):

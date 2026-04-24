@@ -36,7 +36,16 @@ class EventStream(Generic[T, R]):
         self._error: Exception | None = None
 
     def push(self, event: T) -> None:
-        """Push an event into the stream."""
+        """Push an event into the stream.
+
+        Providers that emit plain dicts (keyed on "type") get normalized into
+        the matching typed AssistantMessageEvent — consumers index events via
+        attribute access and crash on dict inputs otherwise.
+        """
+        if isinstance(event, dict) and "type" in event:
+            normalized = _dict_to_assistant_event(event)
+            if normalized is not None:
+                event = normalized  # type: ignore[assignment]
         self._queue.put_nowait(event)
         if self._is_done and self._is_done(event):
             result = self._get_result(event) if self._get_result else None
@@ -83,7 +92,55 @@ _SENTINEL = _Sentinel()
 
 
 # Import types for AssistantMessageEventStream
-from ..types import AssistantMessage, AssistantMessageEvent
+from ..types import (
+    AssistantMessage,
+    AssistantMessageEvent,
+    EventStart,
+    EventTextStart,
+    EventTextDelta,
+    EventTextEnd,
+    EventThinkingStart,
+    EventThinkingDelta,
+    EventThinkingEnd,
+    EventToolCallStart,
+    EventToolCallDelta,
+    EventToolCallEnd,
+    EventDone,
+    EventError,
+)
+
+_ASSISTANT_EVENT_CLASSES = {
+    "start": EventStart,
+    "text_start": EventTextStart,
+    "text_delta": EventTextDelta,
+    "text_end": EventTextEnd,
+    "thinking_start": EventThinkingStart,
+    "thinking_delta": EventThinkingDelta,
+    "thinking_end": EventThinkingEnd,
+    "toolcall_start": EventToolCallStart,
+    "toolcall_delta": EventToolCallDelta,
+    "toolcall_end": EventToolCallEnd,
+    "done": EventDone,
+    "error": EventError,
+}
+
+
+def _dict_to_assistant_event(event: dict[str, "Any"]) -> "AssistantMessageEvent | None":
+    """Convert a provider-emitted dict event into its typed AssistantMessageEvent.
+
+    Providers historically emitted ``{"type": ..., ...}`` dicts. Consumers use
+    attribute access (``event.type``, ``event.partial``) and crash on dicts,
+    so we validate the payload via the matching Pydantic model. Unknown
+    ``type`` values or validation errors fall through — the caller keeps the
+    raw dict and the downstream failure mode stays identical.
+    """
+    cls = _ASSISTANT_EVENT_CLASSES.get(event.get("type"))
+    if cls is None:
+        return None
+    try:
+        return cls.model_validate(event)
+    except Exception:
+        return None
 
 
 class AssistantMessageEventStream(EventStream[AssistantMessageEvent, AssistantMessage]):

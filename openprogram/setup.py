@@ -1,4 +1,4 @@
-"""First-run setup wizard + per-section config commands.
+"""First-run setup + per-section config commands.
 
 Four sections, each runnable standalone:
 
@@ -83,9 +83,17 @@ def read_disabled_tools() -> set[str]:
 
 
 def read_disabled_skills() -> set[str]:
-    """Skills the user opted out of in `openprogram config skills`."""
-    cfg = _read_config()
-    return set(cfg.get("skills", {}).get("disabled", []) or [])
+    """Skills the default agent opts out of.
+
+    In the multi-agent model, skill enablement is per-agent. Callers
+    that still think in global terms (the CLI chat banner, for
+    example) read the default agent's list here.
+    """
+    from openprogram.agents import manager as _agents
+    agent = _agents.get_default()
+    if agent is None:
+        return set()
+    return set((agent.skills or {}).get("disabled") or [])
 
 
 def read_ui_prefs() -> dict[str, Any]:
@@ -98,11 +106,12 @@ def read_ui_prefs() -> dict[str, Any]:
 
 
 def read_agent_prefs() -> dict[str, Any]:
-    cfg = _read_config()
-    agent = cfg.get("agent", {}) or {}
-    return {
-        "thinking_effort": agent.get("thinking_effort") or "medium",
-    }
+    """Back-compat shim for callers that want a loose "what are the
+    agent defaults?" dict. Pulls from the default agent record."""
+    from openprogram.agents import manager as _agents
+    agent = _agents.get_default()
+    effort = (agent.thinking_effort if agent else None) or "medium"
+    return {"thinking_effort": effort}
 
 
 # --- UI primitives (questionary w/ input() fallback) ------------------------
@@ -124,7 +133,7 @@ _POINTER = "❯"
 
 def _qstyle():
     """Late-bound style object so import-time failures in questionary
-    don't cascade into setup_wizard import.
+    don't cascade into setup import.
 
     Never pass ``default=`` to a single-select prompt. Questionary's
     ``_is_selected`` (prompts/common.py:327) flags the default-matching
@@ -324,63 +333,78 @@ def run_providers_section() -> int:
     top-level try/except and cancels the whole wizard instead of
     being converted to return-code 130 by _cmd_setup's wrapper.
     """
-    from openprogram.auth.wizard import run_interactive_setup
+    from openprogram.auth.interactive import run_interactive_setup
     return run_interactive_setup()
 
 
+def _ensure_default_agent():
+    """Return the default agent, creating an empty ``main`` if none
+    exists. Setup sections mutate this agent's spec as the user
+    picks model / effort / etc.
+    """
+    from openprogram.agents import manager as _agents
+    spec = _agents.get_default()
+    if spec is not None:
+        return spec
+    return _agents.create("main", name="Main", make_default=True)
+
+
 def run_model_section() -> int:
-    """Pick the default chat model across enabled providers."""
+    """Pick the default agent's chat model across enabled providers."""
     from openprogram.webui import _model_catalog as mc
+    from openprogram.agents import manager as _agents
     enabled = mc.list_enabled_models()
     if not enabled:
-        print("No enabled models yet. After you enable a provider in "
-              "`openprogram providers setup`, come back and run "
+        print("No enabled models yet. Enable a provider in "
+              "`openprogram providers setup`, then rerun "
               "`openprogram config model`.")
         return 1
 
-    cfg = _read_config()
+    agent = _ensure_default_agent()
     labels = [f"{m['provider']}/{m['id']}  ({m.get('name', m['id'])})"
               for m in enabled]
     values = [f"{m['provider']}/{m['id']}" for m in enabled]
     label_to_value = dict(zip(labels, values))
 
-    cur_prov = cfg.get("default_provider")
-    cur_model = cfg.get("default_model")
     current_label = None
-    if cur_prov and cur_model:
+    if agent.model.provider and agent.model.id:
+        target = f"{agent.model.provider}/{agent.model.id}"
         for lbl, val in label_to_value.items():
-            if val == f"{cur_prov}/{cur_model}":
+            if val == target:
                 current_label = lbl
                 break
 
-    picked = _choose_one("Default chat model:", labels, current_label)
+    picked = _choose_one(
+        f"Default chat model for agent `{agent.id}`:",
+        labels, current_label,
+    )
     if picked is None:
         print("Cancelled.")
         return 1
     provider, model = label_to_value[picked].split("/", 1)
-    cfg["default_provider"] = provider
-    cfg["default_model"] = model
-    _write_config(cfg)
-    print(f"Default set: {provider}/{model}")
+    _agents.update(agent.id, {"model": {"provider": provider, "id": model}})
+    # Drop any cached runtime so the new model takes effect next turn.
+    _agents.invalidate(agent.id)
+    print(f"Agent {agent.id}: default model set to {provider}/{model}")
     return 0
 
 
 def run_tools_section() -> int:
-    """Pick which tools are enabled by default. Advanced-only —
+    """Pick which tools the default agent can use. Advanced-only —
     QuickStart leaves the default (all enabled)."""
     from openprogram.tools import ALL_TOOLS
-    cfg = _read_config()
-    disabled = set(cfg.get("tools", {}).get("disabled", []) or [])
+    from openprogram.agents import manager as _agents
+    agent = _ensure_default_agent()
+    disabled = set((agent.tools or {}).get("disabled") or [])
     names = sorted(ALL_TOOLS.keys())
     items = [(n, n not in disabled) for n in names]
 
-    picked = _checkbox("Enable these tools:", items)
+    picked = _checkbox(f"Tools for agent `{agent.id}`:", items)
     if picked is None:
         print("Cancelled.")
         return 1
     new_disabled = sorted(set(names) - set(picked))
-    cfg.setdefault("tools", {})["disabled"] = new_disabled
-    _write_config(cfg)
+    _agents.update(agent.id, {"tools": {"disabled": new_disabled}})
     print(f"Enabled: {len(picked)} / {len(names)} tools")
     if new_disabled:
         print(f"Disabled: {', '.join(new_disabled)}")
@@ -388,18 +412,21 @@ def run_tools_section() -> int:
 
 
 def run_agent_section() -> int:
-    """Default thinking effort and other agent-level defaults."""
-    cfg = _read_config()
-    current = (cfg.get("agent", {}) or {}).get("thinking_effort") or "medium"
+    """Default reasoning effort for the default agent."""
+    from openprogram.agents import manager as _agents
+    agent = _ensure_default_agent()
+    current = agent.thinking_effort or "medium"
 
     levels = ["low", "medium", "high", "xhigh"]
-    picked = _choose_one("Default thinking effort:", levels, current)
+    picked = _choose_one(
+        f"Reasoning effort for agent `{agent.id}`:", levels, current,
+    )
     if picked is None:
         print("Cancelled.")
         return 1
-    cfg.setdefault("agent", {})["thinking_effort"] = picked
-    _write_config(cfg)
-    print(f"Default thinking effort: {picked}")
+    _agents.update(agent.id, {"thinking_effort": picked})
+    _agents.invalidate(agent.id)
+    print(f"Agent {agent.id}: reasoning effort = {picked}")
     return 0
 
 
@@ -420,18 +447,18 @@ def run_skills_section() -> int:
         print("Skills: no skills discovered.")
         return 0
 
-    cfg = _read_config()
-    disabled = set(cfg.get("skills", {}).get("disabled", []) or [])
+    from openprogram.agents import manager as _agents
+    agent = _ensure_default_agent()
+    disabled = set((agent.skills or {}).get("disabled") or [])
     names = sorted(s.name for s in skills)
     items = [(n, n not in disabled) for n in names]
 
-    picked = _checkbox("Enable these skills:", items)
+    picked = _checkbox(f"Skills for agent `{agent.id}`:", items)
     if picked is None:
         print("Cancelled.")
         return 1
     new_disabled = sorted(set(names) - set(picked))
-    cfg.setdefault("skills", {})["disabled"] = new_disabled
-    _write_config(cfg)
+    _agents.update(agent.id, {"skills": {"disabled": new_disabled}})
     print(f"Enabled: {len(picked)} / {len(names)} skills")
     if new_disabled:
         print(f"Disabled: {', '.join(new_disabled)}")
@@ -565,187 +592,167 @@ _CHANNEL_LABELS = {
 }
 
 
-def _channel_configured(pid: str, cfg: dict[str, Any]) -> bool:
-    from openprogram.channels import _is_channel_configured
-    entry = (cfg.get("channels", {}) or {}).get(pid, {}) or {}
-    return _is_channel_configured(pid, entry, cfg)
-
-
-def _channel_enabled(pid: str, cfg: dict[str, Any]) -> bool:
-    return bool((cfg.get("channels", {}) or {}).get(pid, {}).get("enabled"))
-
-
-def _prompt_token(cfg: dict[str, Any], env_var: str, label: str) -> None:
-    """Prompt for one token. If a value is already stored (or present
-    in the environment), show a masked preview and ask whether to
-    keep it or replace it — so "Modify" actually lets the user swap
-    accounts / rotate tokens instead of being a silent no-op.
-    """
-    have_cfg = (cfg.get("api_keys", {}) or {}).get(env_var) or ""
-    have_env = os.environ.get(env_var, "")
-    current = have_cfg or have_env
-    if current:
-        source = "config" if have_cfg else f"env ${env_var}"
-        masked = f"{current[:6]}…{current[-4:]}" if len(current) > 12 else "set"
-        pick = _choose_one(
-            f"{label} is already set ({source}: {masked}).",
-            ["Keep current", "Replace with a new token"],
-            "Keep current",
-        )
-        if pick == "Keep current" or pick is None:
-            return
-    tok = _password(f"{label} (${env_var}):")
+def _add_telegram_account(account_id: str) -> None:
+    from openprogram.channels import accounts as _accts
+    if _accts.get("telegram", account_id) is None:
+        _accts.create("telegram", account_id)
+    tok = _password(f"Telegram bot token for account `{account_id}`:")
     if tok:
-        cfg.setdefault("api_keys", {})[env_var] = tok
+        _accts.update_credentials("telegram", account_id, {"bot_token": tok})
 
 
-def _configure_telegram(cfg: dict[str, Any]) -> None:
-    env = "TELEGRAM_BOT_TOKEN"
-    _prompt_token(cfg, env, "Telegram bot token")
-    cfg.setdefault("channels", {})["telegram"] = {
-        "enabled": True, "api_key_env": env,
-    }
+def _add_discord_account(account_id: str) -> None:
+    from openprogram.channels import accounts as _accts
+    if _accts.get("discord", account_id) is None:
+        _accts.create("discord", account_id)
+    tok = _password(f"Discord bot token for account `{account_id}`:")
+    if tok:
+        _accts.update_credentials("discord", account_id, {"bot_token": tok})
 
 
-def _configure_discord(cfg: dict[str, Any]) -> None:
-    env = "DISCORD_BOT_TOKEN"
-    _prompt_token(cfg, env, "Discord bot token")
-    cfg.setdefault("channels", {})["discord"] = {
-        "enabled": True, "api_key_env": env,
-    }
+def _add_slack_account(account_id: str) -> None:
+    from openprogram.channels import accounts as _accts
+    if _accts.get("slack", account_id) is None:
+        _accts.create("slack", account_id)
+    bot = _password(f"Slack bot token (xoxb-...) for `{account_id}`:")
+    app = _password(f"Slack app-level token (xapp-...) for `{account_id}`:")
+    patch: dict[str, Any] = {}
+    if bot:
+        patch["bot_token"] = bot
+    if app:
+        patch["app_token"] = app
+    if patch:
+        _accts.update_credentials("slack", account_id, patch)
 
 
-def _configure_slack(cfg: dict[str, Any]) -> None:
-    bot_env, app_env = "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"
-    _prompt_token(cfg, bot_env, "Slack bot token (xoxb-)")
-    _prompt_token(cfg, app_env, "Slack app-level token (xapp-, Socket Mode)")
-    cfg.setdefault("channels", {})["slack"] = {
-        "enabled": True,
-        "api_key_env": bot_env,
-        "app_token_env": app_env,
-    }
+def _add_wechat_account(account_id: str) -> None:
+    from openprogram.channels import accounts as _accts
+    from openprogram.channels.wechat import login_account
+    if _accts.get("wechat", account_id) is None:
+        _accts.create("wechat", account_id)
+    print(f"[wechat] logging in account `{account_id}` — scan the QR "
+          f"with your phone")
+    login_account(account_id)
 
 
-def _configure_wechat(cfg: dict[str, Any]) -> None:
-    # WeChat doesn't use an env var token — it's QR login. Credentials
-    # live under ~/.agentic/wechat/<bot_id>.json, so "Modify" can mean
-    # either keep the current login or switch accounts (drop creds,
-    # scan a fresh QR).
-    cfg.setdefault("channels", {})["wechat"] = {
-        "enabled": True, "auth": "qr",
-    }
-    try:
-        from openprogram.channels.wechat import (
-            _find_saved_creds, _qr_login, _creds_path, _sync_path,
-        )
-    except Exception as e:  # noqa: BLE001
-        print(f"[wechat] module load failed: {e}")
-        return
-
-    existing = _find_saved_creds()
-    if existing is not None:
-        bot_id = existing.get("ilink_bot_id", "?")
-        user = existing.get("ilink_user_id", "?")
-        pick = _choose_one(
-            f"WeChat is already logged in (bot_id={bot_id}, user={user}).",
-            ["Keep current account",
-             "Switch account — delete this login and scan a new QR",
-             "Keep current account (skip)"],
-            "Keep current account",
-        )
-        if pick in (None, "Keep current account", "Keep current account (skip)"):
-            return
-        # Switch: drop the saved credential + its cursor so the next
-        # QR login can't collide with the old bot's session.
-        try:
-            _creds_path(bot_id).unlink(missing_ok=True)
-            _sync_path(bot_id).unlink(missing_ok=True)
-        except OSError as e:  # noqa: BLE001
-            print(f"[wechat] failed to remove old credential: {e}")
-            return
-        print("[wechat] old login removed. Starting fresh QR login...")
-
-    if _confirm("Scan the QR code now? (you'll need WeChat on your phone)",
-                default=True):
-        _qr_login()
-    else:
-        print("WeChat will prompt for the QR scan on "
-              "`openprogram channels start`.")
-
-
-_CHANNEL_HANDLERS = {
-    "telegram": _configure_telegram,
-    "discord":  _configure_discord,
-    "slack":    _configure_slack,
-    "wechat":   _configure_wechat,
+_NEW_ACCOUNT_FN = {
+    "telegram": _add_telegram_account,
+    "discord": _add_discord_account,
+    "slack": _add_slack_account,
+    "wechat": _add_wechat_account,
 }
 
 
+def _ask_channel() -> str | None:
+    labels = [_CHANNEL_LABELS[k] for k in ("telegram", "discord",
+                                            "slack", "wechat")]
+    keys = ["telegram", "discord", "slack", "wechat"]
+    picked = _choose_one("Pick a channel:", labels, labels[0])
+    if picked is None:
+        return None
+    return keys[labels.index(picked)]
+
+
+def _manage_channel_account(channel: str, account_id: str) -> None:
+    """Top-level action menu for an existing channel account."""
+    from openprogram.channels import accounts as _accts
+    from openprogram.channels import bindings as _bindings
+    configured = _accts.is_configured(channel, account_id)
+    enabled = _accts.is_enabled(channel, account_id)
+    label = (f"{_CHANNEL_LABELS.get(channel, channel)}:{account_id} "
+             f"({'enabled' if enabled else 'disabled'}"
+             f", {'configured' if configured else 'needs credentials'})")
+    options = [
+        "Re-enter credentials",
+        "Disable" if enabled else "Enable",
+        "Delete this account (credentials + bindings)",
+        "Back",
+    ]
+    pick = _choose_one(label, options, options[-1])
+    if pick in (None, "Back"):
+        return
+    if pick == "Re-enter credentials":
+        fn = _NEW_ACCOUNT_FN.get(channel)
+        if fn is not None:
+            fn(account_id)
+        return
+    if pick == "Disable":
+        _accts.set_enabled(channel, account_id, False)
+        print(f"{channel}:{account_id} disabled")
+        return
+    if pick == "Enable":
+        _accts.set_enabled(channel, account_id, True)
+        print(f"{channel}:{account_id} enabled")
+        return
+    if pick.startswith("Delete"):
+        confirm = _choose_one(
+            f"Delete {channel}:{account_id} and its bindings?",
+            ["Keep", "Delete"], "Keep",
+        )
+        if confirm == "Delete":
+            _bindings.remove_for_account(channel, account_id)
+            _accts.delete(channel, account_id)
+            print(f"{channel}:{account_id} removed")
+
+
 def run_channels_section() -> int:
-    """Single-select channel menu loop (OpenClaw-style).
+    """List every channel account and let the user add / edit one.
 
-    Replaces the earlier multi-checkbox UI that left users stranded on
-    an empty "done" state. One channel at a time: pick → configure →
-    come back to the menu → pick another or "Finished". Picking
-    Finished right away is fine — users who don't need chat bots just
-    hit Enter.
+    Account-oriented: each row is a ``(channel, account_id)`` pair.
+    Multiple accounts per channel work out of the box (e.g. two
+    WeChat bot logins each bound to different agents).
     """
+    from openprogram.channels import accounts as _accts
     while True:
-        cfg = _read_config()
+        rows = _accts.list_all_accounts()
         options: list[str] = []
-        mapping: list[str] = []
-        for pid, label in _CHANNEL_LABELS.items():
-            enabled = _channel_enabled(pid, cfg)
-            configured = _channel_configured(pid, cfg)
-            tag_parts = []
+        mapping: list[tuple[str, str]] = []
+        for acct in rows:
+            enabled = _accts.is_enabled(acct.channel, acct.account_id)
+            configured = _accts.is_configured(acct.channel, acct.account_id)
+            tags = []
             if enabled:
-                tag_parts.append("enabled")
-            if configured:
-                tag_parts.append("configured")
-            tag = f"  ({', '.join(tag_parts)})" if tag_parts else ""
-            options.append(f"{label}{tag}")
-            mapping.append(pid)
+                tags.append("enabled")
+            else:
+                tags.append("disabled")
+            tags.append("configured" if configured else "needs credentials")
+            options.append(
+                f"{_CHANNEL_LABELS.get(acct.channel, acct.channel)}:"
+                f"{acct.account_id}  ({', '.join(tags)})"
+            )
+            mapping.append((acct.channel, acct.account_id))
+        options.append("+ Add a channel account")
+        mapping.append(("__add__", ""))
         options.append("Finished")
-        mapping.append("__done__")
+        mapping.append(("__done__", ""))
 
-        picked = _choose_one("Configure a channel:", options, options[-1])
+        picked = _choose_one("Channel accounts:", options, options[-1])
         if picked is None:
             return 0
-        pid = mapping[options.index(picked)]
-        if pid == "__done__":
+        channel, account_id = mapping[options.index(picked)]
+        if channel == "__done__":
             return 0
-
-        # Already configured → sub-menu: Modify / Disable / Delete / Skip
-        already = _channel_configured(pid, cfg) or _channel_enabled(pid, cfg)
-        if already:
-            sub = _choose_one(
-                f"{_CHANNEL_LABELS[pid]} already set up. What do you want to do?",
-                ["Modify settings", "Disable (keep config)",
-                 "Delete config", "Skip"],
-                "Skip",
+        if channel == "__add__":
+            new_channel = _ask_channel()
+            if new_channel is None:
+                continue
+            new_id = _text(
+                "Account id (letters/numbers/-_, e.g. personal, work):",
+                default="default",
             )
-            if sub == "Disable (keep config)":
-                entry = cfg.setdefault("channels", {}).setdefault(pid, {})
-                entry["enabled"] = False
-                _write_config(cfg)
-                print(f"{pid}: disabled.")
+            if not new_id:
                 continue
-            if sub == "Delete config":
-                cfg.get("channels", {}).pop(pid, None)
-                _write_config(cfg)
-                print(f"{pid}: removed.")
+            try:
+                _accts.create(new_channel, new_id)
+            except ValueError as e:  # already exists / bad id
+                print(f"[warn] {e}")
                 continue
-            if sub in (None, "Skip"):
-                continue
-            # fall through: Modify = re-run handler
-
-        handler = _CHANNEL_HANDLERS.get(pid)
-        if handler is None:
-            print(f"No handler for {pid!r}")
+            fn = _NEW_ACCOUNT_FN.get(new_channel)
+            if fn is not None:
+                fn(new_id)
+            print(f"{new_channel}:{new_id} saved")
             continue
-        handler(cfg)
-        _write_config(cfg)
-        print(f"{pid}: configured.")
+        _manage_channel_account(channel, account_id)
 
 
 def run_backend_section() -> int:
@@ -953,8 +960,12 @@ def _mode_select() -> str | None:
     return "quickstart" if picked.startswith("QuickStart") else "advanced"
 
 
-def _hatch_select() -> str:
-    """OpenClaw-style finale: where does the user go right after setup?"""
+def _pick_next_action() -> str:
+    """After setup finishes, prompt for the next action.
+
+    Returns one of: "chat" (open the terminal REPL), "web" (start
+    the Web UI), or "later" (do nothing — user runs a command later).
+    """
     options = [
         "Chat in terminal (recommended)",
         "Open the Web UI",
@@ -975,9 +986,9 @@ def run_full_setup() -> int:
     has to participate in. Advanced walks the same list plus
     _ADVANCED_EXTRA_SECTIONS — the detail knobs with sane defaults.
 
-    OpenClaw-shaped: intro → mode select → sections → summary →
-    hatch select (chat / web / later). No extra "Start?" confirm —
-    running `openprogram setup` is the start.
+    Structure: intro → mode select → sections → summary → next-action
+    select (chat / web / later). No extra "Start?" confirm — running
+    `openprogram setup` is the start.
     """
     try:
         _print_intro()
@@ -1022,15 +1033,15 @@ def _run_setup_inner(mode: str) -> int:
 
     _print_summary()
 
-    hatch = _hatch_select()
-    if hatch == "chat":
+    next_action = _pick_next_action()
+    if next_action == "chat":
         try:
             from openprogram.cli_chat import run_cli_chat
             run_cli_chat()
         except Exception as e:  # noqa: BLE001
             print(f"[setup] couldn't launch chat: {type(e).__name__}: {e}")
             print("Run `openprogram` manually.")
-    elif hatch == "web":
+    elif next_action == "web":
         try:
             from openprogram.cli import _cmd_web
             _cmd_web(None, None)

@@ -29,7 +29,7 @@ def _get_chat_runtime():
     if rt is None:
         return None, None
     try:
-        from openprogram.setup_wizard import read_agent_prefs
+        from openprogram.setup import read_agent_prefs
         effort = read_agent_prefs().get("thinking_effort")
         if effort:
             rt.thinking_level = effort
@@ -41,7 +41,7 @@ def _get_chat_runtime():
 def _reset_provider_cache() -> None:
     """Force _init_providers to re-detect the default runtime.
 
-    Used after an inline setup wizard run so the newly-imported
+    Used after an inline setup run so the newly-imported
     credentials get picked up without restarting the process.
     """
     from openprogram.webui import _runtime_management as rm
@@ -54,18 +54,18 @@ def _reset_provider_cache() -> None:
 
 
 def _prompt_first_run_setup(console) -> bool:
-    """No-provider first-run flow: offer the full setup wizard inline.
+    """No-provider first-run flow: offer the full setup inline.
 
     Returns True if a provider is now configured (wizard succeeded),
     False if the user declined / wizard failed.
     """
     import sys as _sys
-    from openprogram.setup_wizard import run_full_setup
+    from openprogram.setup import run_full_setup
 
     console.print()
     console.print(
         "[yellow]OpenProgram isn't configured yet.[/] "
-        "The setup wizard will connect a provider, pick your default "
+        "The setup will connect a provider, pick your default "
         "model, and let you customize tools + agent defaults."
     )
     console.print()
@@ -120,7 +120,7 @@ def _skill_inventory() -> tuple[int, list[tuple[str, str]]]:
         from openprogram.agentic_programming import (
             default_skill_dirs, load_skills,
         )
-        from openprogram.setup_wizard import read_disabled_skills
+        from openprogram.setup import read_disabled_skills
         skills = load_skills(default_skill_dirs())
         disabled = read_disabled_skills()
         skills = [s for s in skills if s.name not in disabled]
@@ -392,7 +392,7 @@ def run_cli_chat(oneshot: str | None = None) -> None:
 
     provider, rt = _get_chat_runtime()
     if rt is None:
-        # Hermes-style first-run: offer the setup wizard inline so the
+        # Hermes-style first-run: offer the setup inline so the
         # user doesn't have to exit and re-invoke. If they accept and
         # the wizard imports at least one credential, we continue into
         # the chat; otherwise we exit cleanly.

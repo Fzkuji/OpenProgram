@@ -11,24 +11,36 @@ function toggleSidebar() {
 
 function renderConversations() {
   var container = document.getElementById('convList');
+  if (!container) return;
   var html = '';
-  var convs = Object.values(conversations).sort(function(a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+  // Filter by current agent — conversations created outside the
+  // active agent are shown only when user switches to that agent.
+  var convs = Object.values(conversations).filter(function(c) {
+    if (!currentAgentId) return true;
+    // Legacy convs without an agent_id (pre-multi-agent) stay visible
+    // under every agent so the user can finish them.
+    return !c.agent_id || c.agent_id === currentAgentId;
+  }).sort(function(a, b) {
+    return (b.created_at || 0) - (a.created_at || 0);
+  });
   if (convs.length === 0) {
     html += '<div style="padding:8px 16px;font-size:12px;color:var(--text-muted)">No conversations yet</div>';
   } else {
     for (var ci = 0; ci < convs.length; ci++) {
       var c = convs[ci];
       var active = c.id === currentConvId ? ' active' : '';
-      var bindingIcon = '';
-      if (c.binding && c.binding.platform
-          && typeof platformIcon === 'function') {
-        bindingIcon = '<span class="conv-binding-icon" title="'
-          + escAttr(platformLabel(c.binding.platform) + ': '
-              + (c.binding.user_display || c.binding.user_id))
-          + '">' + platformIcon(c.binding.platform) + '</span>';
+      var sourceIcon = '';
+      var PLATFORM_ICONS = {
+        wechat: '\u{1F4AC}', telegram: '✈',
+        discord: '\u{1F3AE}', slack: '\u{1F4BC}',
+      };
+      if (c.source && PLATFORM_ICONS[c.source]) {
+        sourceIcon = '<span class="conv-binding-icon" title="' +
+          escAttr(c.source + ': ' + (c.peer_display || '')) + '">' +
+          PLATFORM_ICONS[c.source] + '</span>';
       }
       html += '<div class="conv-item' + active + '" onclick="switchConversation(\'' + c.id + '\')" title="' + escAttr(c.title || 'Untitled') + '">' +
-        bindingIcon +
+        sourceIcon +
         '<span class="conv-title">' + escHtml(c.title || 'Untitled') + '</span>' +
         '<span class="conv-del" onclick="event.stopPropagation();deleteConversation(\'' + c.id + '\')" title="Delete"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg></span>' +
       '</div>';
@@ -138,16 +150,16 @@ function newConversation() {
 
 function loadConversationData(data) {
   if (!data.messages) data.messages = [];
-  // Preserve any binding the sidebar learned from the
-  // conversations_list response — the conversation_loaded envelope
-  // doesn't always carry binding fields.
+  // Preserve agent_id / source picked up from the last sidebar sync —
+  // conversation_loaded doesn't always carry those fields.
   var prev = conversations[data.id];
-  if (prev && prev.binding && !data.binding) {
-    data.binding = prev.binding;
+  if (prev) {
+    if (!data.agent_id && prev.agent_id) data.agent_id = prev.agent_id;
+    if (!data.source && prev.source) data.source = prev.source;
+    if (!data.peer_display && prev.peer_display) data.peer_display = prev.peer_display;
   }
   conversations[data.id] = data;
   renderConversations();
-  if (typeof renderChannelBadge === 'function') renderChannelBadge();
   if (data.id === currentConvId) {
     var area = document.getElementById('chatArea');
     var hasSavedScroll = !!sessionStorage.getItem('agentic_scroll');

@@ -1748,18 +1748,53 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   border-color: inherit;
 }
 
-/* Channel binding badge in top bar + platform icon in sidebar */
-.channel-badge {
+/* Agent switcher badge in top bar */
+.agent-switcher {
   cursor: pointer;
   font-family: var(--mono);
   font-size: 11px;
-  opacity: 0.7;
+  opacity: 0.9;
+  border-color: rgba(90,170,255,0.35);
+  background: rgba(90,170,255,0.08);
 }
-.channel-badge:hover { opacity: 1; }
-.channel-badge.active {
-  opacity: 1;
-  border-color: rgba(90,170,255,0.45);
-  background: rgba(90,170,255,0.12);
+.agent-switcher:hover { opacity: 1; }
+.agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+}
+.agent-row {
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+.agent-row:hover { background: rgba(255,255,255,0.04); }
+.agent-row.active {
+  border-color: rgba(90,170,255,0.6);
+  background: rgba(90,170,255,0.1);
+}
+.agent-row-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.agent-row-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.agent-row-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 .conv-binding-icon {
   display: inline-block;

@@ -247,8 +247,8 @@ function showDetail(node) {
   }
 
   html += '<div class="detail-section">' +
-    '<div class="detail-section-title">Expose</div>' +
-    '<div class="detail-field-value">' + escHtml(node.expose || 'io') + '</div>' +
+    '<div class="detail-section-title">Render / Compress</div>' +
+    '<div class="detail-field-value">render: ' + escHtml(node.render || 'summary') + ' | compress: ' + (node.compress ? 'true' : 'false') + '</div>' +
   '</div>';
 
   if (node.name !== 'chat_session') {

@@ -1,65 +1,38 @@
 """Slack bot channel via Socket Mode (``slack_sdk``).
 
-Why Socket Mode (vs the Events API): Socket Mode opens a WebSocket
-from the bot to Slack, so it works behind NAT / without a public
-URL. Events API needs a publicly reachable HTTPS endpoint — fine
-for deployed bots, awkward for a dev-tool user running locally.
+Multi-account aware: each ``SlackChannel(account_id="work")`` reads
+its own bot + app tokens from
+``channels/slack/accounts/<account_id>/credentials.json``. Inbound
+messages route via the binding table.
 
-Setup prerequisites the user does once at https://api.slack.com/apps:
-    1. Create app, enable Socket Mode, generate an App-Level token
-       (starts ``xapp-``) with ``connections:write``
-    2. Enable the ``Bot Token Scopes`` you need (``chat:write``,
-       ``app_mentions:read`` at minimum) and install the app to a
-       workspace to get a Bot User OAuth Token (starts ``xoxb-``)
-    3. Subscribe to the ``message.im`` event (and optionally
-       ``app_mention``) under Event Subscriptions
-
-Config slots in ``channels.slack``:
-    api_key_env     env var holding the bot token (default
-                    SLACK_BOT_TOKEN, xoxb-...)
-    app_token_env   env var holding the app-level token (default
-                    SLACK_APP_TOKEN, xapp-...)
+Credential keys:
+    bot_token  (xoxb-...) — chat:write, app_mentions:read, ...
+    app_token  (xapp-...) — connections:write (Socket Mode)
 """
 from __future__ import annotations
 
-import os
 import threading
-from typing import Any
 
 from openprogram.channels.base import Channel
 
 
-MAX_MSG_CHARS = 3900  # Slack caps around 4000 but we stay conservative
+MAX_MSG_CHARS = 3900
 
 
 class SlackChannel(Channel):
     platform_id = "slack"
 
-    def __init__(self) -> None:
-        from openprogram.setup_wizard import _read_config
-        cfg = _read_config()
-        ch = (cfg.get("channels", {}) or {}).get("slack", {}) or {}
-
-        bot_env = ch.get("api_key_env") or "SLACK_BOT_TOKEN"
-        app_env = ch.get("app_token_env") or "SLACK_APP_TOKEN"
-
-        bot_token = (
-            os.environ.get(bot_env)
-            or (cfg.get("api_keys", {}) or {}).get(bot_env)
-        )
-        app_token = (
-            os.environ.get(app_env)
-            or (cfg.get("api_keys", {}) or {}).get(app_env)
-        )
-        if not bot_token:
+    def __init__(self, account_id: str = "default") -> None:
+        from openprogram.channels import accounts as _accounts
+        creds = _accounts.load_credentials("slack", account_id)
+        bot_token = creds.get("bot_token")
+        app_token = creds.get("app_token")
+        if not bot_token or not app_token:
             raise RuntimeError(
-                f"Slack channel: missing bot token. Set ${bot_env} or re-run "
-                f"`openprogram config channels`."
-            )
-        if not app_token:
-            raise RuntimeError(
-                f"Slack channel: missing app-level token. Set ${app_env} "
-                f"(Socket Mode uses xapp-... tokens with connections:write)."
+                f"Slack account {account_id!r} needs both bot_token "
+                f"(xoxb-...) and app_token (xapp-...). Run "
+                f"`openprogram channels accounts set-token slack "
+                f"--account {account_id}`."
             )
         try:
             import slack_sdk  # type: ignore  # noqa: F401
@@ -67,8 +40,9 @@ class SlackChannel(Channel):
         except ImportError as e:
             raise RuntimeError(
                 "Slack channel requires `slack_sdk`. "
-                "Install with: pip install slack_sdk"
+                "`pip install openprogram[channels]`."
             ) from e
+        self.account_id = account_id
         self.bot_token = bot_token
         self.app_token = app_token
 
@@ -78,15 +52,13 @@ class SlackChannel(Channel):
         from slack_sdk.socket_mode.request import SocketModeRequest  # type: ignore
         from slack_sdk.socket_mode.response import SocketModeResponse  # type: ignore
 
-        rt = _get_chat_runtime_or_die()
         web = WebClient(token=self.bot_token)
         client = SocketModeClient(app_token=self.app_token, web_client=web)
+        tag = f"slack:{self.account_id}"
 
-        # Track our own bot user id so we can skip our own messages.
         me = web.auth_test()
         my_id = me.get("user_id")
-        print(f"[slack] connected as {me.get('user')} "
-              f"(model={getattr(rt, 'model', '?')}) — ctrl+c to stop")
+        print(f"[{tag}] connected as {me.get('user')} — ctrl+c to stop")
 
         def _handle(_: "SocketModeClient", req: "SocketModeRequest") -> None:
             client.send_socket_mode_response(
@@ -98,7 +70,6 @@ class SlackChannel(Channel):
             etype = event.get("type")
             if etype not in ("message", "app_mention"):
                 return
-            # Filter self-messages, bot_messages, message_changed, etc.
             if event.get("subtype") is not None:
                 return
             if event.get("user") == my_id:
@@ -109,33 +80,33 @@ class SlackChannel(Channel):
             channel_id = event.get("channel")
             snippet = text[:60] + ("..." if len(text) > 60 else "")
             user = event.get("user")
-            print(f"[slack] <{user}> {snippet}")
-            # History keyed by (channel, user) so a shared channel
-            # and a DM have distinct memories.
-            from openprogram.channels._conversation import turn_with_history
-            user_id = f"{channel_id}_{user}"
-            reply_text = turn_with_history(
-                platform="slack",
-                user_id=user_id,
+            print(f"[{tag}] <{user}> {snippet}")
+
+            from openprogram.channels._conversation import dispatch_inbound
+            scoped_id = f"{channel_id}_{user}"
+            peer_kind = "direct" if (channel_id or "").startswith("D") else "channel"
+            reply_text = dispatch_inbound(
+                channel="slack",
+                account_id=self.account_id,
+                peer_kind=peer_kind,
+                peer_id=scoped_id,
                 user_text=text,
-                rt=rt,
-                user_display=user or user_id,
+                user_display=user or scoped_id,
             )
             for chunk in _chunk(reply_text, MAX_MSG_CHARS):
                 try:
                     web.chat_postMessage(channel=channel_id, text=chunk)
                 except Exception as e:  # noqa: BLE001
-                    print(f"[slack] send failed: {e}")
+                    print(f"[{tag}] send failed: {e}")
                     return
 
         client.socket_mode_request_listeners.append(_handle)
         client.connect()
-
         try:
             while not stop.is_set():
                 stop.wait(0.5)
         finally:
-            print("[slack] disconnecting")
+            print(f"[{tag}] disconnecting")
             try:
                 client.disconnect()
             except Exception:
@@ -146,21 +117,3 @@ def _chunk(text: str, limit: int) -> list[str]:
     if not text:
         return [""]
     return [text[i:i + limit] for i in range(0, len(text), limit)]
-
-
-def _get_chat_runtime_or_die():
-    from openprogram.webui import _runtime_management as rm
-    rm._init_providers()
-    rt = rm._chat_runtime
-    if rt is None:
-        raise RuntimeError(
-            "No chat runtime configured. Run `openprogram setup` first."
-        )
-    try:
-        from openprogram.setup_wizard import read_agent_prefs
-        eff = read_agent_prefs().get("thinking_effort")
-        if eff:
-            rt.thinking_level = eff
-    except Exception:
-        pass
-    return rt

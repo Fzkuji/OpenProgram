@@ -57,7 +57,7 @@ def run_interactive_setup() -> int:
         # questionary's prompt_toolkit UI — it would raise reading from
         # a closed fd. Fall back to the plain-input wizard, which still
         # works under input()-style redirection.
-        from .cli import _run_setup_wizard as _plain
+        from .cli import _run_setup as _plain
         return _plain()
 
     _banner()
@@ -419,7 +419,7 @@ def _pick_profile(pm, *, default: str) -> Optional[str]:
 
     Never pass default= to questionary.select — questionary flags the
     default-matching choice permanently and the cursor-row highlight
-    breaks for that row (see setup_wizard._qstyle docstring). We
+    breaks for that row (see setup._qstyle docstring). We
     reorder instead so the default sits at index 0 where the initial
     cursor lands.
     """

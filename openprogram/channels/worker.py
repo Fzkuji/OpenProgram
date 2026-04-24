@@ -184,19 +184,21 @@ def spawn_detached() -> int:
 
 
 def _active_platform_list() -> str:
-    """Comma-joined names of platforms this worker will actually poll.
+    """Comma-joined ``channel:account`` labels this worker will poll.
 
-    Reads config through the same filter the runner uses
-    (enabled + configured + implemented). Returns "" if none — worker
-    is running but has nothing to do.
+    Filters by enabled + configured + implemented — same predicate
+    the runner uses. Returns "" when nothing viable.
     """
     try:
-        from openprogram.channels import list_channels_status
-        rows = list_channels_status()
-        names = [r["platform"] for r in rows
-                 if r.get("enabled") and r.get("implemented")
-                 and r.get("configured")]
-        return ", ".join(names)
+        from openprogram.channels import list_status
+        rows = list_status()
+        labels = [
+            f"{r['platform']}:{r['account_id']}"
+            for r in rows
+            if r.get("enabled") and r.get("implemented")
+            and r.get("configured")
+        ]
+        return ", ".join(labels)
     except Exception:
         return ""
 
@@ -247,13 +249,14 @@ def print_status() -> int:
     print(f"channels worker: running (PID {pid}{age})")
     print(f"  logs: {log_file}")
     try:
-        from openprogram.channels import list_channels_status
-        rows = list_channels_status()
+        from openprogram.channels import list_status
+        rows = list_status()
         active = [r for r in rows
                   if r.get("enabled") and r.get("implemented")
                   and r.get("configured")]
         if active:
-            print(f"  active: {', '.join(r['platform'] for r in active)}")
+            labels = [f"{r['platform']}:{r['account_id']}" for r in active]
+            print(f"  active: {', '.join(labels)}")
     except Exception:
         pass
     return 0
@@ -330,9 +333,9 @@ def prompt_spawn_if_configured_but_dead(
         f"[yellow]Chat channels configured ({names}) but no worker running."
         f"[/]"
     )
-    # Delegate to setup_wizard._confirm so the arrow-key prompt style
+    # Delegate to setup._confirm so the arrow-key prompt style
     # matches the rest of the flow. Local import breaks the cycle.
-    from openprogram.setup_wizard import _confirm
+    from openprogram.setup import _confirm
     if not _confirm(
         f"Start the channels worker now in the background so the bots "
         f"receive messages while you {verb}?",

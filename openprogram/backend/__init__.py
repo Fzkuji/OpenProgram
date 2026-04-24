@@ -12,7 +12,7 @@ Three backends ship out of the box:
     ssh      — ``ssh <target> "..."`` per call
 
 Selection is read lazily from ``~/.agentic/config.json`` (via
-``setup_wizard._read_config``) so ``--profile`` and live config
+``setup._read_config``) so ``--profile`` and live config
 edits take effect without restarting anything.
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ BACKEND_CLASSES: dict[str, type[Backend]] = {
 def get_active_backend() -> Backend:
     """Resolve the currently-configured backend. Falls back to local."""
     try:
-        from openprogram.setup_wizard import _read_config
+        from openprogram.setup import _read_config
         cfg = _read_config()
     except Exception:
         return LocalBackend()

@@ -134,6 +134,12 @@ def convert_responses_messages(
                     if sig:
                         try:
                             reasoning_item = json.loads(sig)
+                            # store=false responses don't persist items, so
+                            # their server-assigned `id` won't resolve on the
+                            # next call ("Item not found"). Strip it — the
+                            # encrypted_content payload is self-contained.
+                            if isinstance(reasoning_item, dict):
+                                reasoning_item.pop("id", None)
                             output.append(reasoning_item)
                         except (json.JSONDecodeError, TypeError):
                             pass
@@ -348,12 +354,25 @@ async def process_responses_stream(
                 partial_json = current_block.get("partial_json", "") if isinstance(current_block, dict) else ""
                 args_raw = partial_json or item_dict.get("arguments", "{}")
                 args = parse_streaming_json(args_raw)
-                tool_call = {
-                    "type": "toolCall",
-                    "id": f"{item_dict.get('call_id', '')}|{item_dict.get('id', '')}",
-                    "name": item_dict.get("name", ""),
-                    "arguments": args,
-                }
+                # Mutate the block in output.content (current_block is the same
+                # reference) so the finalized message carries the parsed args,
+                # not the empty stub from response.output_item.added.
+                if isinstance(current_block, dict):
+                    current_block["arguments"] = args
+                    current_block.pop("partial_json", None)
+                    tool_call = {
+                        "type": "toolCall",
+                        "id": current_block.get("id", ""),
+                        "name": current_block.get("name", ""),
+                        "arguments": args,
+                    }
+                else:
+                    tool_call = {
+                        "type": "toolCall",
+                        "id": f"{item_dict.get('call_id', '')}|{item_dict.get('id', '')}",
+                        "name": item_dict.get("name", ""),
+                        "arguments": args,
+                    }
                 current_block = None
                 stream.push({"type": "toolcall_end", "content_index": block_index(), "tool_call": tool_call, "partial": output})
 
@@ -388,6 +407,12 @@ async def process_responses_stream(
                 if any(getattr(b, "type", None) == "toolCall" or (isinstance(b, dict) and b.get("type") == "toolCall") for b in output.content) and output.stop_reason == "stop":
                     output.stop_reason = "toolUse"
 
+                # Finalize content blocks: promote dicts to the Pydantic
+                # variants. Downstream code (agent_loop) uses `isinstance(c,
+                # ToolCall)` to discover tool calls and falls through silently
+                # if the block is still a dict — no tools run, empty reply.
+                output.content = _finalize_content_blocks(output.content)
+
         elif event_type == "error":
             code = event.get("code") if isinstance(event, dict) else getattr(event, "code", "")
             msg_text = event.get("message") if isinstance(event, dict) else getattr(event, "message", "Unknown error")
@@ -395,6 +420,36 @@ async def process_responses_stream(
 
         elif event_type == "response.failed":
             raise RuntimeError("Unknown error")
+
+
+def _finalize_content_blocks(blocks: list) -> list:
+    """Coerce streaming-stage dict blocks into the Pydantic content variants."""
+    from openprogram.providers.types import TextContent, ThinkingContent, ToolCall
+
+    finalized: list = []
+    for b in blocks:
+        if not isinstance(b, dict):
+            finalized.append(b)
+            continue
+        btype = b.get("type")
+        try:
+            if btype == "text":
+                finalized.append(TextContent.model_validate(b))
+            elif btype == "thinking":
+                finalized.append(ThinkingContent.model_validate(b))
+            elif btype == "toolCall":
+                args = b.get("arguments")
+                if not isinstance(args, dict):
+                    # parse_streaming_json can yield non-dict for malformed input;
+                    # ToolCall schema requires a dict, so fall back to empty.
+                    b = {**b, "arguments": {}}
+                b.pop("partial_json", None)
+                finalized.append(ToolCall.model_validate(b))
+            else:
+                finalized.append(b)
+        except Exception:
+            finalized.append(b)
+    return finalized
 
 
 def _map_stop_reason(status: str | None) -> "StopReason":

@@ -140,7 +140,7 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
 
     # setup — interactive wizard that chains discover → login → status
     auth_sub.add_parser(
-        "setup", help="Interactive first-time setup wizard",
+        "setup", help="Interactive first-time setup",
     )
 
     # aliases — show the short-name → canonical table
@@ -284,7 +284,7 @@ def _cmd_login(provider: str, profile: str, method: Optional[str]) -> int:
     if method is None:
         # Prefer the arrow-key picker; if questionary isn't installed
         # it returns None and we fall through to the numeric prompt.
-        from .wizard import pick_login_method_interactive
+        from .interactive import pick_login_method_interactive
         chosen_or_none = pick_login_method_interactive(provider, choices)
         if chosen_or_none is not None:
             chosen = chosen_or_none
@@ -1118,7 +1118,7 @@ def _cmd_setup() -> int:
     wizard, just without the navigation ergonomics.
     """
     try:
-        from .wizard import run_interactive_setup
+        from .interactive import run_interactive_setup
         return run_interactive_setup()
     except (KeyboardInterrupt, EOFError):
         print("\n\nSetup interrupted. Run `openprogram providers setup` again "
@@ -1127,7 +1127,7 @@ def _cmd_setup() -> int:
         return 130
 
 
-def _run_setup_wizard() -> int:
+def _run_setup() -> int:
     from openprogram.auth.sources import (
         ClaudeCodeSource,
         CodexCliSource,

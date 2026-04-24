@@ -152,23 +152,80 @@ def main():
     channels_sub.add_parser("status",
         help="Show whether the channels worker is running, which PID, "
              "and when it started.")
-    channels_sub.add_parser("bindings",
-        help="List every conversation ↔ (platform, user) binding.")
-    p_chatt = channels_sub.add_parser("attach",
-        help="Attach a conversation to an external channel user so "
-             "inbound messages land in it and outbound replies are "
-             "routed back.")
-    p_chatt.add_argument("conv_id", help="Conversation id")
-    p_chatt.add_argument("--platform", required=True,
+    # ---- channels accounts --------------------------------------------
+    p_chacct = channels_sub.add_parser("accounts",
+        help="Manage channel bot accounts (WeChat, Telegram, etc.)")
+    p_chacct_sub = p_chacct.add_subparsers(dest="accounts_verb",
+                                            metavar="verb")
+    p_chacct_sub.add_parser("list", help="List every channel account")
+    p_chacct_add = p_chacct_sub.add_parser("add",
+        help="Create a new channel account and prompt for credentials")
+    p_chacct_add.add_argument("channel",
         choices=["wechat", "telegram", "discord", "slack"])
-    p_chatt.add_argument("--user", required=True,
-        help="External user id (Telegram chat_id, WeChat from_user_id, "
-             "or <channel_id>_<user_id> for Discord / Slack).")
-    p_chatt.add_argument("--display", default=None,
-        help="Human-readable label for the binding (defaults to --user).")
-    p_chdet = channels_sub.add_parser("detach",
-        help="Remove a conversation's channel binding.")
-    p_chdet.add_argument("conv_id", help="Conversation id to unbind")
+    p_chacct_add.add_argument("--id", default="default",
+        help="Account id (default: 'default')")
+    p_chacct_rm = p_chacct_sub.add_parser("rm",
+        help="Delete a channel account (also drops its bindings)")
+    p_chacct_rm.add_argument("channel",
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_chacct_rm.add_argument("account_id")
+    p_chacct_login = p_chacct_sub.add_parser("login",
+        help="Re-run the login flow for an account (e.g. WeChat QR)")
+    p_chacct_login.add_argument("channel",
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_chacct_login.add_argument("--id", default="default",
+        help="Account id (default: 'default')")
+
+    # ---- channels bindings --------------------------------------------
+    p_chb = channels_sub.add_parser("bindings",
+        help="Route inbound channel messages to agents")
+    p_chb_sub = p_chb.add_subparsers(dest="bindings_verb", metavar="verb")
+    p_chb_sub.add_parser("list", help="Show every routing rule")
+    p_chb_add = p_chb_sub.add_parser("add",
+        help="Add a binding: inbound messages matching (channel, account, "
+             "optional peer) go to the given agent")
+    p_chb_add.add_argument("agent_id")
+    p_chb_add.add_argument("--channel", required=True,
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_chb_add.add_argument("--account", default=None,
+        help="Account id (omit for channel-wide)")
+    p_chb_add.add_argument("--peer", default=None,
+        help="Specific peer id (user_id / chat_id) — omit for broad rule")
+    p_chb_add.add_argument("--peer-kind", default="direct",
+        choices=["direct", "group", "channel"])
+    p_chb_rm = p_chb_sub.add_parser("rm",
+        help="Remove a binding by its id (see `bindings list`)")
+    p_chb_rm.add_argument("binding_id")
+
+    # ---- agents ----------------------------------------------------------
+    p_agents = sub.add_parser("agents",
+        help="Manage agents (each agent is a named persona with its own "
+             "model, skills, tools, and session store)")
+    p_agents_sub = p_agents.add_subparsers(dest="agents_verb", metavar="verb")
+    p_agents_sub.add_parser("list", help="List every agent")
+    p_ag_add = p_agents_sub.add_parser("add",
+        help="Create a new agent record")
+    p_ag_add.add_argument("id", help="Agent id (e.g. main, family, work)")
+    p_ag_add.add_argument("--name", default="",
+        help="Human-readable name")
+    p_ag_add.add_argument("--provider", default="",
+        help="LLM provider (claude-code, openai-codex, anthropic, ...)")
+    p_ag_add.add_argument("--model", default="",
+        help="Model id within that provider")
+    p_ag_add.add_argument("--effort", default="medium",
+        choices=["low", "medium", "high", "xhigh"],
+        help="Default reasoning effort")
+    p_ag_add.add_argument("--default", action="store_true",
+        help="Mark this agent as the default")
+    p_ag_rm = p_agents_sub.add_parser("rm",
+        help="Delete an agent and all its sessions")
+    p_ag_rm.add_argument("id")
+    p_ag_show = p_agents_sub.add_parser("show",
+        help="Print one agent's full record")
+    p_ag_show.add_argument("id")
+    p_ag_def = p_agents_sub.add_parser("set-default",
+        help="Mark an agent as the default")
+    p_ag_def.add_argument("id")
 
     # ---- cron-worker ------------------------------------------------------
     p_cron = sub.add_parser("cron-worker",
@@ -187,7 +244,7 @@ def main():
 
     # ---- setup (top-level, full first-run wizard) -------------------------
     sub.add_parser("setup",
-        help="First-run setup wizard (QuickStart or Advanced)")
+        help="First-run setup (QuickStart or Advanced)")
     sub.add_parser("configure",
         help="Re-edit any config section through a menu loop")
 
@@ -223,7 +280,7 @@ def main():
     args = parser.parse_args()
 
     # --profile must land in the env BEFORE any later code reads a path
-    # (setup_wizard config, session dir, logs dir, ...). get_active_profile
+    # (setup config, session dir, logs dir, ...). get_active_profile
     # checks the env each call so setting it here is enough.
     if args.profile:
         from openprogram.paths import set_active_profile
@@ -291,23 +348,20 @@ def main():
     if args.command == "channels":
         verb = getattr(args, "channels_verb", None)
         if verb == "list":
-            from openprogram.channels import list_channels_status
-            rows = list_channels_status()
+            from openprogram.channels import list_status
+            rows = list_status()
             if not rows:
-                print("No channels configured. Run "
-                      "`openprogram config channels`.")
+                print("No channel accounts configured. "
+                      "Run `openprogram channels accounts add <channel>`.")
                 return
-            print(f"{'platform':10} {'enabled':8} {'configured':12} {'impl':6}")
+            print(f"{'channel':10} {'account':14} {'enabled':8} "
+                  f"{'configured':12} {'impl':6}")
             for r in rows:
-                print(f"{r['platform']:10} "
-                      f"{str(r['enabled']):8} "
-                      f"{str(r['configured']):12} "
+                print(f"{r['platform']:10} {r['account_id']:14} "
+                      f"{str(r['enabled']):8} {str(r['configured']):12} "
                       f"{str(r['implemented']):6}")
             return
         if verb == "start":
-            # Default is background (detached). --foreground keeps it
-            # blocking for debugging; --detach stays accepted but is
-            # redundant now.
             if getattr(args, "foreground", False):
                 from openprogram.channels.runner import run_all
                 sys.exit(run_all())
@@ -319,56 +373,17 @@ def main():
         if verb == "status":
             from openprogram.channels.worker import print_status
             sys.exit(print_status())
+        if verb == "accounts":
+            _dispatch_accounts_verb(args, p_chacct)
+            return
         if verb == "bindings":
-            from openprogram.channels import bindings as _bindings_mod
-            _bindings_mod.migrate_legacy_if_needed()
-            rows = _bindings_mod.list_all()
-            if not rows:
-                print("No channel bindings. Inbound messages will "
-                      "auto-create new conversations; or attach an "
-                      "existing one with `openprogram channels attach`.")
-                return
-            print(f"{'platform':10} {'user_id':24} {'conv_id':22} "
-                  f"display")
-            for e in rows:
-                print(f"{e['platform']:10} "
-                      f"{str(e['user_id'])[:23]:24} "
-                      f"{e['conv_id']:22} "
-                      f"{e.get('user_display','')}")
-            return
-        if verb == "attach":
-            from openprogram.channels import bindings as _bindings_mod
-            from openprogram.channels.worker import (
-                current_worker_pid, spawn_detached,
-            )
-            displaced = _bindings_mod.attach(
-                args.platform, args.user, args.conv_id,
-                args.display or args.user,
-            )
-            if displaced:
-                print(f"Attached. (Displaced prior binding: "
-                      f"{displaced['platform']}:{displaced['user_id']} "
-                      f"→ {displaced['conv_id']})")
-            else:
-                print(f"Attached {args.platform}:{args.user} → "
-                      f"{args.conv_id}")
-            # Make the binding actually useful: start a worker if
-            # none is running. Attach is the user's explicit "I want
-            # to receive messages" signal.
-            if current_worker_pid() is None:
-                print("Starting channels worker in the background...")
-                spawn_detached()
-            return
-        if verb == "detach":
-            from openprogram.channels import bindings as _bindings_mod
-            removed = _bindings_mod.detach(conv_id=args.conv_id)
-            if removed:
-                print(f"Detached {removed['platform']}:"
-                      f"{removed['user_id']} from {args.conv_id}")
-            else:
-                print(f"No binding on {args.conv_id}.")
+            _dispatch_bindings_verb(args, p_chb)
             return
         p_channels.print_help()
+        return
+
+    if args.command == "agents":
+        _dispatch_agents_verb(args, p_agents)
         return
 
     if args.command == "cron-worker":
@@ -393,15 +408,15 @@ def main():
         sys.exit(_providers_dispatch(args))
 
     if args.command == "setup":
-        from openprogram.setup_wizard import run_full_setup
+        from openprogram.setup import run_full_setup
         sys.exit(run_full_setup())
 
     if args.command == "configure":
-        from openprogram.setup_wizard import run_configure_menu
+        from openprogram.setup import run_configure_menu
         sys.exit(run_configure_menu())
 
     if args.command == "config":
-        from openprogram import setup_wizard as _sw
+        from openprogram import setup as _sw
         target = args.config_target
         handlers = {
             "model":    _sw.run_model_section,
@@ -660,7 +675,7 @@ def _get_functions_dir():
 
 
 def _cmd_configure(provider: str | None):
-    """Interactive provider-setup wizard. Drives openprogram.legacy_providers.configuration."""
+    """Interactive provider-setup. Drives openprogram.legacy_providers.configuration."""
     from openprogram.legacy_providers import configuration
 
     catalog = configuration.list_providers()
@@ -913,7 +928,7 @@ def _cmd_web(port, open_browser):
 
     if port is None or open_browser is None:
         try:
-            from openprogram.setup_wizard import read_ui_prefs
+            from openprogram.setup import read_ui_prefs
             prefs = read_ui_prefs()
             if port is None:
                 port = prefs["port"]
@@ -1005,6 +1020,179 @@ def _cmd_deep_work(task, level, provider, model,
         print(f"Stopped after {result['steps']} steps.")
         if result.get("error"):
             print(f"Reason: {result['error']}")
+
+
+# ---------------------------------------------------------------------------
+# agents / channels.accounts / channels.bindings CLI dispatchers
+# ---------------------------------------------------------------------------
+
+def _dispatch_agents_verb(args, parser) -> None:
+    """Handle ``openprogram agents <verb>``."""
+    from openprogram.agents import manager as _A
+    verb = getattr(args, "agents_verb", None)
+    if verb == "list":
+        rows = _A.list_all()
+        if not rows:
+            print("No agents. Create one with `openprogram agents add main`.")
+            return
+        print(f"{'id':16} {'default':8} {'provider/model':40} effort")
+        for a in rows:
+            pm = f"{a.model.provider}/{a.model.id}" if a.model.provider else "-"
+            print(f"{a.id:16} {str(a.default):8} {pm:40} "
+                  f"{a.thinking_effort}")
+        return
+    if verb == "add":
+        try:
+            a = _A.create(
+                args.id,
+                name=args.name,
+                provider=args.provider,
+                model_id=args.model,
+                thinking_effort=args.effort,
+                make_default=getattr(args, "default", False),
+            )
+        except ValueError as e:
+            print(f"[error] {e}")
+            sys.exit(1)
+        print(f"Created agent {a.id!r} "
+              f"(provider={a.model.provider or '-'}, "
+              f"model={a.model.id or '-'}, default={a.default})")
+        return
+    if verb == "rm":
+        _A.delete(args.id)
+        print(f"Agent {args.id!r} removed")
+        return
+    if verb == "show":
+        a = _A.get(args.id)
+        if a is None:
+            print(f"No agent {args.id!r}")
+            sys.exit(1)
+        print(json.dumps(a.to_dict(), indent=2, sort_keys=True, default=str))
+        return
+    if verb == "set-default":
+        _A.set_default(args.id)
+        print(f"Default agent is now {args.id!r}")
+        return
+    parser.print_help()
+
+
+def _dispatch_accounts_verb(args, parser) -> None:
+    """Handle ``openprogram channels accounts <verb>``."""
+    from openprogram.channels import accounts as _acc
+    verb = getattr(args, "accounts_verb", None)
+    if verb == "list":
+        rows = _acc.list_all_accounts()
+        if not rows:
+            print("No channel accounts. "
+                  "Run `openprogram channels accounts add <channel>`.")
+            return
+        print(f"{'channel':10} {'account':14} {'name':20} "
+              f"{'enabled':8} configured")
+        for a in rows:
+            print(f"{a.channel:10} {a.account_id:14} {a.name[:19]:20} "
+                  f"{str(_acc.is_enabled(a.channel, a.account_id)):8} "
+                  f"{_acc.is_configured(a.channel, a.account_id)}")
+        return
+    if verb == "add":
+        try:
+            _acc.create(args.channel, args.id)
+        except ValueError as e:
+            print(f"[error] {e}")
+            sys.exit(1)
+        print(f"Created {args.channel}:{args.id}. "
+              f"Now set credentials with "
+              f"`openprogram channels accounts login {args.channel} "
+              f"--id {args.id}`.")
+        return
+    if verb == "rm":
+        from openprogram.channels import bindings as _b
+        _b.remove_for_account(args.channel, args.account_id)
+        _acc.delete(args.channel, args.account_id)
+        print(f"Removed {args.channel}:{args.account_id} (and its bindings)")
+        return
+    if verb == "login":
+        _login_account(args.channel, args.id)
+        return
+    parser.print_help()
+
+
+def _login_account(channel: str, account_id: str) -> None:
+    """Interactive credential entry for one account.
+
+    Telegram/Discord/Slack take tokens (env paste); WeChat does the
+    QR flow. Lives in cli.py rather than setup.py so `openprogram
+    channels accounts login` works without going through the setup
+    loop.
+    """
+    from openprogram.channels import accounts as _acc
+    if _acc.get(channel, account_id) is None:
+        _acc.create(channel, account_id)
+    if channel == "wechat":
+        from openprogram.channels.wechat import login_account
+        login_account(account_id)
+        return
+    import getpass
+    if channel == "telegram":
+        tok = getpass.getpass("Telegram bot token: ")
+        _acc.update_credentials("telegram", account_id, {"bot_token": tok})
+    elif channel == "discord":
+        tok = getpass.getpass("Discord bot token: ")
+        _acc.update_credentials("discord", account_id, {"bot_token": tok})
+    elif channel == "slack":
+        bot = getpass.getpass("Slack bot token (xoxb-...): ")
+        app = getpass.getpass("Slack app-level token (xapp-...): ")
+        patch: dict = {}
+        if bot:
+            patch["bot_token"] = bot
+        if app:
+            patch["app_token"] = app
+        if patch:
+            _acc.update_credentials("slack", account_id, patch)
+    else:
+        print(f"Unknown channel {channel!r}")
+        sys.exit(1)
+    print(f"{channel}:{account_id} credentials saved")
+
+
+def _dispatch_bindings_verb(args, parser) -> None:
+    """Handle ``openprogram channels bindings <verb>``."""
+    from openprogram.channels import bindings as _b
+    verb = getattr(args, "bindings_verb", None)
+    if verb == "list":
+        rows = _b.list_all()
+        if not rows:
+            print("No bindings. Inbound messages route to the default "
+                  "agent until you add one with `openprogram channels "
+                  "bindings add <agent_id> --channel <channel>`.")
+            return
+        print(f"{'id':18} {'agent':14} {'channel':10} {'account':12} "
+              f"peer")
+        for r in rows:
+            m = r["match"]
+            peer = m.get("peer") or {}
+            peer_str = (f"{peer.get('kind','?')}:{peer.get('id','?')}"
+                        if peer else "-")
+            print(f"{r['id']:18} {r['agent_id']:14} "
+                  f"{m.get('channel','*'):10} "
+                  f"{m.get('account_id','*'):12} {peer_str}")
+        return
+    if verb == "add":
+        match: dict = {"channel": args.channel}
+        if args.account:
+            match["account_id"] = args.account
+        if args.peer:
+            match["peer"] = {"kind": args.peer_kind, "id": args.peer}
+        entry = _b.add(args.agent_id, match)
+        print(f"Binding {entry['id']}: {match} → {args.agent_id}")
+        return
+    if verb == "rm":
+        removed = _b.remove(args.binding_id)
+        if removed:
+            print(f"Removed binding {args.binding_id}")
+        else:
+            print(f"No binding {args.binding_id!r}")
+        return
+    parser.print_help()
 
 
 if __name__ == "__main__":

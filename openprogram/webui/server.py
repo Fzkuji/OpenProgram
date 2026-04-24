@@ -381,6 +381,29 @@ def _on_context_event(event_type: str, data: dict):
     _broadcast(msg)
 
 
+def _load_agent_session_meta(session_key: str) -> Optional[dict]:
+    """Find a channel-bound agent session's meta.json by session_key.
+
+    Walks every agent's sessions/ dir once. Returns the parsed meta
+    dict (with channel/account_id/peer/etc.) or None if the session
+    key isn't owned by any agent.
+    """
+    try:
+        import json as _json
+        from openprogram.agents import manager as _A
+        from openprogram.agents.manager import sessions_dir
+        for agent in _A.list_all():
+            meta_p = sessions_dir(agent.id) / session_key / "meta.json"
+            if meta_p.exists():
+                try:
+                    return _json.loads(meta_p.read_text(encoding="utf-8"))
+                except Exception:
+                    return None
+    except Exception:
+        return None
+    return None
+
+
 def _broadcast(msg: str):
     """Send a message to all connected WebSocket clients."""
     if not _ws_connections or _loop is None:
@@ -668,19 +691,25 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 })
                 _broadcast_context_stats(conv_id, msg_id, chat_runtime=runtime)
 
-                # If this conversation is bound to an external channel
-                # (WeChat/Telegram/etc.), route the reply back out so
-                # the person chatting from their phone sees it.
+                # If this is a channel-bound agent session (WeChat /
+                # Telegram / etc.), push the web-side reply back out to
+                # the external user so their phone sees it too. The
+                # session meta carries channel + account_id + peer — we
+                # look it up from disk because the webui's in-memory
+                # conversation dict doesn't always carry these fields
+                # yet.
                 try:
-                    from openprogram.channels import bindings as _bindings
-                    from openprogram.channels.outbound import send_to_channel
-                    entry = _bindings.get_binding_for_conv(conv_id)
-                    if entry:
-                        send_to_channel(
-                            entry["platform"],
-                            entry["user_id"],
-                            str(result),
-                        )
+                    from openprogram.channels.outbound import send as _send
+                    meta = _load_agent_session_meta(conv_id)
+                    if meta and meta.get("channel") and meta.get("account_id"):
+                        peer_id = (meta.get("peer") or {}).get("id") or ""
+                        if peer_id:
+                            _send(
+                                meta["channel"],
+                                meta["account_id"],
+                                str(peer_id),
+                                str(result),
+                            )
                 except Exception as e:  # noqa: BLE001
                     _log(f"[channel outbound] skipped: "
                          f"{type(e).__name__}: {e}")
@@ -1756,31 +1785,129 @@ async def _handle_ws_command(ws, cmd: dict):
             fq.put(answer)
 
     elif action == "list_conversations":
-        try:
-            from openprogram.channels import bindings as _bindings_mod
-            # Pay the one-time migration scan on the first list request.
-            _bindings_mod.migrate_legacy_if_needed()
-        except Exception:
-            _bindings_mod = None  # type: ignore[assignment]
-        conv_list = []
+        # Snapshot the webui's own conversations (local REPL sessions)
+        # plus per-agent sessions on disk (channel-bound chats live
+        # here). Agent id is passed through when set — the sidebar
+        # filters by it so each agent sees its own session list.
+        conv_list: list[dict] = []
         with _conversations_lock:
             for cid, conv in _conversations.items():
                 runtime = conv.get("runtime")
                 session_id = getattr(runtime, '_session_id', None) if runtime else None
-                binding = None
-                if _bindings_mod is not None:
-                    binding = _bindings_mod.get_binding_for_conv(cid)
                 conv_list.append({
                     "id": cid,
                     "title": conv.get("title", "Untitled"),
                     "created_at": conv.get("created_at"),
                     "has_session": session_id is not None,
-                    "binding": binding,
+                    "agent_id": conv.get("agent_id"),
+                    "source": conv.get("source"),
+                    "peer_display": conv.get("peer_display"),
                 })
+        try:
+            from openprogram.agents import manager as _A
+            from openprogram.agents.manager import sessions_dir
+            for agent in _A.list_all():
+                sroot = sessions_dir(agent.id)
+                if not sroot.exists():
+                    continue
+                for entry in sroot.iterdir():
+                    if not entry.is_dir():
+                        continue
+                    meta_p = entry / "meta.json"
+                    if not meta_p.exists():
+                        continue
+                    try:
+                        meta = json.loads(meta_p.read_text(encoding="utf-8"))
+                    except Exception:
+                        continue
+                    conv_list.append({
+                        "id": entry.name,
+                        "title": meta.get("title") or entry.name,
+                        "created_at": meta.get("created_at") or 0,
+                        "has_session": False,
+                        "agent_id": agent.id,
+                        "source": meta.get("channel"),
+                        "peer_display": meta.get("peer_display"),
+                    })
+        except Exception:
+            pass
         conv_list.sort(key=lambda c: c.get("created_at") or 0)
         await ws.send_text(json.dumps({
-            "type": "conversations_list",
-            "data": conv_list,
+            "type": "conversations_list", "data": conv_list,
+        }, default=str))
+
+    elif action == "list_agents":
+        try:
+            from openprogram.agents import manager as _A
+            rows = [a.to_dict() for a in _A.list_all()]
+        except Exception:
+            rows = []
+        await ws.send_text(json.dumps({
+            "type": "agents_list", "data": rows,
+        }, default=str))
+
+    elif action == "add_agent":
+        try:
+            from openprogram.agents import manager as _A
+            a = _A.create(
+                cmd.get("id") or "",
+                name=cmd.get("name") or "",
+                provider=cmd.get("provider") or "",
+                model_id=cmd.get("model") or "",
+                thinking_effort=cmd.get("thinking_effort") or "medium",
+                make_default=bool(cmd.get("default") or False),
+            )
+            _broadcast(json.dumps({
+                "type": "agent_changed",
+                "data": {"action": "created", "agent": a.to_dict()},
+            }, default=str))
+        except Exception as e:  # noqa: BLE001
+            await ws.send_text(json.dumps({
+                "type": "error", "data": {"message": str(e)},
+            }, default=str))
+
+    elif action == "delete_agent":
+        try:
+            from openprogram.agents import manager as _A
+            _A.delete(cmd.get("id") or "")
+            _broadcast(json.dumps({
+                "type": "agent_changed",
+                "data": {"action": "deleted", "agent_id": cmd.get("id")},
+            }, default=str))
+        except Exception:
+            pass
+
+    elif action == "set_default_agent":
+        try:
+            from openprogram.agents import manager as _A
+            a = _A.set_default(cmd.get("id") or "")
+            _broadcast(json.dumps({
+                "type": "agent_changed",
+                "data": {"action": "default_changed",
+                         "agent_id": a.id, "agent": a.to_dict()},
+            }, default=str))
+        except Exception as e:  # noqa: BLE001
+            await ws.send_text(json.dumps({
+                "type": "error", "data": {"message": str(e)},
+            }, default=str))
+
+    elif action == "list_channel_accounts":
+        try:
+            from openprogram.channels import accounts as _acc
+            rows = [
+                {
+                    "channel": a.channel,
+                    "account_id": a.account_id,
+                    "name": a.name,
+                    "enabled": _acc.is_enabled(a.channel, a.account_id),
+                    "configured": _acc.is_configured(a.channel, a.account_id),
+                }
+                for a in _acc.list_all_accounts()
+            ]
+        except Exception:
+            rows = []
+        await ws.send_text(json.dumps({
+            "type": "channel_accounts", "data": rows,
         }, default=str))
 
     elif action == "list_channel_bindings":
@@ -1790,56 +1917,42 @@ async def _handle_ws_command(ws, cmd: dict):
         except Exception:
             rows = []
         await ws.send_text(json.dumps({
-            "type": "channel_bindings",
-            "data": rows,
+            "type": "channel_bindings", "data": rows,
         }, default=str))
 
-    elif action == "attach_channel":
-        from openprogram.channels import bindings as _bindings_mod
-        conv_id = cmd.get("conv_id") or ""
-        platform = cmd.get("platform") or ""
-        user_id = cmd.get("user_id") or ""
-        user_display = cmd.get("user_display") or user_id
-        if conv_id and platform and user_id:
-            displaced = _bindings_mod.attach(
-                platform, user_id, conv_id, user_display,
+    elif action == "add_binding":
+        try:
+            from openprogram.channels import bindings as _bindings_mod
+            from openprogram.channels.worker import (
+                current_worker_pid, spawn_detached,
             )
-            # Attaching is the user saying "I want this conversation
-            # to receive messages from outside". That only works if a
-            # worker is polling, so spin one up if it isn't already
-            # running. Fire-and-forget — spawn_detached returns fast
-            # and logs to channels.log.
-            try:
-                from openprogram.channels.worker import (
-                    current_worker_pid, spawn_detached,
-                )
-                if current_worker_pid() is None:
-                    spawn_detached()
-            except Exception as e:  # noqa: BLE001
-                _log(f"[attach] worker auto-start failed: "
-                     f"{type(e).__name__}: {e}")
+            match: dict = {"channel": cmd.get("channel") or ""}
+            if cmd.get("account_id"):
+                match["account_id"] = cmd["account_id"]
+            if cmd.get("peer"):
+                match["peer"] = cmd["peer"]
+            entry = _bindings_mod.add(cmd.get("agent_id") or "", match)
+            if current_worker_pid() is None:
+                spawn_detached()
             _broadcast(json.dumps({
-                "type": "channel_binding_changed",
-                "data": {
-                    "conv_id": conv_id,
-                    "binding": _bindings_mod.get_binding_for_conv(conv_id),
-                    "displaced": displaced,
-                },
+                "type": "binding_changed",
+                "data": {"action": "added", "binding": entry},
+            }, default=str))
+        except Exception as e:  # noqa: BLE001
+            await ws.send_text(json.dumps({
+                "type": "error", "data": {"message": str(e)},
             }, default=str))
 
-    elif action == "detach_channel":
-        from openprogram.channels import bindings as _bindings_mod
-        conv_id = cmd.get("conv_id") or ""
-        if conv_id:
-            removed = _bindings_mod.detach(conv_id=conv_id)
+    elif action == "remove_binding":
+        try:
+            from openprogram.channels import bindings as _bindings_mod
+            removed = _bindings_mod.remove(cmd.get("binding_id") or "")
             _broadcast(json.dumps({
-                "type": "channel_binding_changed",
-                "data": {
-                    "conv_id": conv_id,
-                    "binding": None,
-                    "removed": removed,
-                },
+                "type": "binding_changed",
+                "data": {"action": "removed", "binding": removed},
             }, default=str))
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

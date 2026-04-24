@@ -14,18 +14,6 @@ function startElapsedTimer() {
       _elapsedTimer = null;
       return;
     }
-    // While paused, freeze the display and flip the suffix to "(paused)".
-    // Don't increment — the user just complained that paused nodes keep
-    // ticking, which looks like the run is still consuming wall time.
-    if (isPaused) {
-      runningDurs.forEach(function(el) {
-        var t = el.textContent || '';
-        if (t.indexOf('(paused)') === -1) {
-          el.textContent = t.replace(/\.{3}\s*$/, '').replace(/\s*$/, '') + ' (paused)';
-        }
-      });
-      return;
-    }
     runningDurs.forEach(function(el) {
       var startTime = parseFloat(el.getAttribute('data-start'));
       if (startTime > 0) {

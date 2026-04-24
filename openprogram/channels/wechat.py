@@ -52,32 +52,30 @@ MAX_MSG_CHARS = 1800
 class WechatChannel(Channel):
     platform_id = "wechat"
 
-    def __init__(self) -> None:
-        # weclaw's iLink client is pure HTTP; we only need requests.
+    def __init__(self, account_id: str = "default") -> None:
         try:
             import requests  # noqa: F401
         except ImportError as e:
             raise RuntimeError(
                 "WeChat channel requires `requests`. "
-                "It ships with Python in most distributions; install with "
                 "`pip install requests`."
             ) from e
+        self.account_id = account_id
         self._wechat_uin = _make_wechat_uin()
-        self._creds: dict[str, str] | None = None  # populated on run()
 
     def run(self, stop: threading.Event) -> None:
-        creds = _load_or_login()
-        if creds is None:
-            print("[wechat] login aborted / failed; channel not starting.")
+        from openprogram.channels import accounts as _accounts
+        creds = _accounts.load_credentials("wechat", self.account_id)
+        if not creds.get("bot_token") or not creds.get("ilink_bot_id"):
+            print(f"[wechat:{self.account_id}] no saved credentials — "
+                  f"run `openprogram channels accounts login wechat "
+                  f"--account {self.account_id}` to scan a QR.")
             return
-        self._creds = creds
         base = creds.get("baseurl") or DEFAULT_BASE_URL
+        print(f"[wechat:{self.account_id}] online as "
+              f"{creds.get('ilink_user_id','?')} — ctrl+c to stop")
 
-        rt = _get_chat_runtime_or_die()
-        print(f"[wechat] logged in as {creds['ilink_user_id']} "
-              f"(model={getattr(rt, 'model', '?')}) — ctrl+c to stop")
-
-        cursor = _load_cursor(creds["ilink_bot_id"])
+        cursor = _load_cursor_for_account(self.account_id)
         consecutive_errors = 0
         backoff = 3
 
@@ -98,8 +96,8 @@ class WechatChannel(Channel):
             except Exception as e:  # noqa: BLE001
                 consecutive_errors += 1
                 wait = min(60, backoff * (2 ** min(consecutive_errors - 1, 4)))
-                print(f"[wechat] poll failed ({type(e).__name__}: {e}); "
-                      f"retry in {wait}s")
+                print(f"[wechat:{self.account_id}] poll failed "
+                      f"({type(e).__name__}: {e}); retry in {wait}s")
                 time.sleep(wait)
                 continue
 
@@ -107,33 +105,34 @@ class WechatChannel(Channel):
             errcode = data.get("errcode", 0)
             if errcode == -14:
                 if cursor:
-                    print("[wechat] session expired; resetting cursor")
+                    print(f"[wechat:{self.account_id}] session expired; "
+                          f"resetting cursor")
                     cursor = ""
-                    _save_cursor(creds["ilink_bot_id"], cursor)
+                    _save_cursor_for_account(self.account_id, cursor)
                     time.sleep(5)
                     continue
-                print("[wechat] bot token invalid — rerun "
-                      "`openprogram config channels` and scan QR again")
+                print(f"[wechat:{self.account_id}] bot token invalid — "
+                      f"relogin required.")
                 return
             if data.get("ret", 0) != 0 and errcode != 0:
-                print(f"[wechat] poll error ret={data.get('ret')} "
-                      f"errcode={errcode} errmsg={data.get('errmsg','')[:120]}")
+                print(f"[wechat:{self.account_id}] poll error "
+                      f"ret={data.get('ret')} errcode={errcode} "
+                      f"{data.get('errmsg','')[:120]}")
                 time.sleep(3)
                 continue
 
             new_cursor = data.get("get_updates_buf") or ""
             if new_cursor:
                 cursor = new_cursor
-                _save_cursor(creds["ilink_bot_id"], cursor)
+                _save_cursor_for_account(self.account_id, cursor)
 
             for msg in data.get("msgs", []) or []:
-                self._handle_message(msg, rt, base, creds)
+                self._handle_message(msg)
 
     # -------------------------------------------------------------------
 
-    def _handle_message(self, msg: dict, rt, base: str,
-                        creds: dict[str, str]) -> None:
-        if msg.get("message_type") != 1:  # 1 = User
+    def _handle_message(self, msg: dict) -> None:
+        if msg.get("message_type") != 1:
             return
         items = msg.get("item_list") or []
         text_item = next(
@@ -147,50 +146,20 @@ class WechatChannel(Channel):
         from_id = msg.get("from_user_id")
         if not from_id:
             return
-        context_token = msg.get("context_token") or ""
 
         snippet = text[:60] + ("..." if len(text) > 60 else "")
-        print(f"[wechat] <{from_id}> {snippet}")
+        print(f"[wechat:{self.account_id}] <{from_id}> {snippet}")
 
-        from openprogram.channels._conversation import turn_with_history
-        reply_text = turn_with_history(
-            platform="wechat",
-            user_id=from_id,
+        from openprogram.channels._conversation import dispatch_inbound
+        from openprogram.channels.outbound import send as _send
+        reply_text = dispatch_inbound(
+            channel="wechat",
+            account_id=self.account_id,
+            peer_kind="direct",
+            peer_id=str(from_id),
             user_text=text,
-            rt=rt,
         )
-
-        for chunk in _chunk(reply_text, MAX_MSG_CHARS):
-            self._send_text(base, creds, from_id, context_token, chunk)
-
-    def _send_text(self, base: str, creds: dict[str, str],
-                   to_user_id: str, context_token: str, text: str) -> None:
-        import requests
-        try:
-            resp = requests.post(
-                f"{base}/ilink/bot/sendmessage",
-                headers=self._auth_headers(creds["bot_token"]),
-                json={
-                    "msg": {
-                        "from_user_id": creds["ilink_bot_id"],
-                        "to_user_id": to_user_id,
-                        "client_id": uuid.uuid4().hex,
-                        "message_type": 2,     # Bot
-                        "message_state": 2,    # Finish
-                        "item_list": [
-                            {"type": 1, "text_item": {"text": text}}
-                        ],
-                        "context_token": context_token,
-                    },
-                    "base_info": {},
-                },
-                timeout=SEND_TIMEOUT,
-            )
-            data = resp.json() if resp.ok else {}
-            if data.get("ret", 0) != 0:
-                print(f"[wechat] send failed: {data.get('errmsg', '?')[:160]}")
-        except Exception as e:  # noqa: BLE001
-            print(f"[wechat] send error: {type(e).__name__}: {e}")
+        _send("wechat", self.account_id, str(from_id), reply_text)
 
     def _auth_headers(self, bot_token: str) -> dict[str, str]:
         return {
@@ -202,77 +171,52 @@ class WechatChannel(Channel):
 
 
 # --- Credential store -------------------------------------------------------
-
-def _wechat_dir() -> Path:
-    from openprogram.paths import get_state_dir
-    d = get_state_dir() / "wechat"
-    d.mkdir(parents=True, exist_ok=True, mode=0o700)
-    return d
+# Moved to openprogram.channels.accounts — the per-account store now
+# owns credentials.json for every platform. These helpers operate on
+# the long-poll cursor which is iLink-specific scratch and lives in
+# the account dir too.
 
 
-def _normalize_id(bot_id: str) -> str:
-    for c in "@.:":
-        bot_id = bot_id.replace(c, "-")
-    return bot_id
-
-
-def _creds_path(bot_id: str) -> Path:
-    return _wechat_dir() / f"{_normalize_id(bot_id)}.json"
-
-
-def _sync_path(bot_id: str) -> Path:
-    return _wechat_dir() / f"{_normalize_id(bot_id)}.sync.json"
-
-
-def _save_creds(creds: dict[str, str]) -> None:
-    path = _creds_path(creds["ilink_bot_id"])
-    path.write_text(json.dumps(creds, indent=2))
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
-
-
-def _find_saved_creds() -> dict[str, str] | None:
-    """Return the first credential file in the wechat dir, if any."""
-    d = _wechat_dir()
-    for entry in sorted(d.glob("*.json")):
-        if entry.name.endswith(".sync.json"):
-            continue
-        try:
-            return json.loads(entry.read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
-    return None
-
-
-def _load_cursor(bot_id: str) -> str:
-    path = _sync_path(bot_id)
+def _load_cursor_for_account(account_id: str) -> str:
+    from openprogram.channels.accounts import account_dir
+    path = account_dir("wechat", account_id) / "cursor.json"
     try:
         return (json.loads(path.read_text()) or {}).get("get_updates_buf", "")
     except (FileNotFoundError, json.JSONDecodeError):
         return ""
 
 
-def _save_cursor(bot_id: str, cursor: str) -> None:
+def _save_cursor_for_account(account_id: str, cursor: str) -> None:
+    from openprogram.channels.accounts import account_dir
+    path = account_dir("wechat", account_id) / "cursor.json"
     try:
-        _sync_path(bot_id).write_text(
-            json.dumps({"get_updates_buf": cursor})
-        )
+        path.write_text(json.dumps({"get_updates_buf": cursor}))
     except OSError:
         pass
 
 
-# --- QR login flow ----------------------------------------------------------
+# --- QR login flow — operates on one account ------------------------------
 
-def _load_or_login() -> dict[str, str] | None:
-    """Return existing credentials or drive the QR scan flow."""
-    existing = _find_saved_creds()
-    if existing:
+def login_account(account_id: str) -> dict[str, str] | None:
+    """Drive the QR-scan flow and persist credentials under
+    ``<state>/channels/wechat/accounts/<account_id>/credentials.json``.
+
+    Returns the credential dict on success, or None if the user
+    cancelled / the QR expired / anything failed. Idempotent: if the
+    account already has working credentials we just return them.
+    """
+    from openprogram.channels import accounts as _accounts
+    existing = _accounts.load_credentials("wechat", account_id)
+    if existing.get("bot_token") and existing.get("ilink_bot_id"):
+        print(f"[wechat:{account_id}] already logged in "
+              f"(ilink_bot_id={existing['ilink_bot_id']})")
         return existing
-    print()
-    print("[wechat] first-time login: you'll scan a QR with your phone.")
-    return _qr_login()
+    creds = _qr_login()
+    if creds is not None:
+        _accounts.save_credentials("wechat", account_id, creds)
+        print(f"[wechat:{account_id}] saved credentials to "
+              f"{_accounts.account_credentials_path('wechat', account_id)}")
+    return creds
 
 
 def _qr_login() -> dict[str, str] | None:
@@ -338,8 +282,8 @@ def _qr_login() -> dict[str, str] | None:
             if not creds["bot_token"] or not creds["ilink_bot_id"]:
                 print("[wechat] confirm response missing token/bot id; abort")
                 return None
-            _save_creds(creds)
-            print(f"[wechat] logged in! credentials saved to {_creds_path(creds['ilink_bot_id'])}")
+            print(f"[wechat] logged in (ilink_bot_id="
+                  f"{creds['ilink_bot_id']})")
             return creds
         print(f"[wechat] unexpected status {status!r}; retrying...")
 
@@ -380,24 +324,6 @@ def _chunk(text: str, limit: int) -> list[str]:
 
 def _make_wechat_uin() -> str:
     """Stable-per-process X-WECHAT-UIN the iLink server expects."""
-    uin = random.getrandbits(32)  # 4 random bytes as a decimal string
+    uin = random.getrandbits(32)
     decimal = str(uin)
     return base64.b64encode(decimal.encode("ascii")).decode("ascii")
-
-
-def _get_chat_runtime_or_die():
-    from openprogram.webui import _runtime_management as rm
-    rm._init_providers()
-    rt = rm._chat_runtime
-    if rt is None:
-        raise RuntimeError(
-            "No chat runtime configured. Run `openprogram setup` first."
-        )
-    try:
-        from openprogram.setup_wizard import read_agent_prefs
-        eff = read_agent_prefs().get("thinking_effort")
-        if eff:
-            rt.thinking_level = eff
-    except Exception:
-        pass
-    return rt

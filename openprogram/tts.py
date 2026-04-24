@@ -1,7 +1,7 @@
 """Text-to-speech playback for CLI chat replies.
 
 Minimal first pass: only the ``openai`` provider is actually wired.
-Other providers the setup wizard lists (elevenlabs, edge-tts, playht)
+Other providers the setup lists (elevenlabs, edge-tts, playht)
 fall through to a ``[tts] not yet implemented`` notice so the user
 sees exactly what's missing instead of a silent fail.
 
@@ -31,7 +31,7 @@ _WARNED_PROVIDERS: set[str] = set()
 
 def _read_tts_cfg() -> dict[str, Any]:
     try:
-        from openprogram.setup_wizard import _read_config
+        from openprogram.setup import _read_config
         cfg = _read_config()
     except Exception:
         return {}
@@ -44,7 +44,7 @@ def _api_key(env_name: str) -> str | None:
     if v:
         return v
     try:
-        from openprogram.setup_wizard import _read_config
+        from openprogram.setup import _read_config
         return (_read_config().get("api_keys", {}) or {}).get(env_name)
     except Exception:
         return None

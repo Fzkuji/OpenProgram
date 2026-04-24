@@ -11,6 +11,10 @@ function connect() {
     // currentConvId already derived from URL in state.js — send agent_settings
     // with that value so badges reflect the correct conversation from the start.
     loadAgentSettings();
+    // Request the agent registry early so the switcher renders before
+    // the first conversation list lands — otherwise the filter runs
+    // with currentAgentId=null and briefly shows cross-agent convs.
+    ws.send(JSON.stringify({ action: 'list_agents' }));
     ws.send(JSON.stringify({ action: 'list_conversations' }));
     if (currentConvId) {
       ws.send(JSON.stringify({ action: 'load_conversation', conv_id: currentConvId }));
@@ -84,8 +88,29 @@ function handleMessage(msg) {
     case 'conversations_list':
       _handleConversationsList(msg.data);
       break;
-    case 'channel_binding_changed':
-      handleChannelBindingChanged(msg.data);
+    case 'agents_list':
+      if (typeof _handleAgentsList === 'function') _handleAgentsList(msg.data);
+      break;
+    case 'agent_changed':
+      if (typeof _handleAgentChanged === 'function') _handleAgentChanged(msg.data);
+      break;
+    case 'agent_session_updated':
+      // A channel handler wrote a new turn into an agent session — if
+      // the user is viewing that session, re-fetch; always refresh
+      // the sidebar since titles / ordering might have changed.
+      if (msg.data && msg.data.session_id === currentConvId
+          && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          action: 'load_conversation', conv_id: currentConvId,
+        }));
+      }
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: 'list_conversations' }));
+      }
+      break;
+    case 'binding_changed':
+      // bindings live outside conversation state — no UI refresh
+      // needed here, but any open admin page can listen separately.
       break;
     case 'status':
       isPaused = msg.paused;
@@ -141,15 +166,15 @@ function _handleConversationsList(data) {
           id: c.id, title: c.title, messages: [],
           created_at: c.created_at,
           has_session: c.has_session,
-          binding: c.binding || null,
+          agent_id: c.agent_id || null,
+          source: c.source || null,
+          peer_display: c.peer_display || null,
         };
       } else {
         conversations[c.id].has_session = c.has_session;
-        // Binding changes arrive via channel_binding_changed too, but
-        // fold in whatever the server reports as the source of truth.
-        if ('binding' in c) {
-          conversations[c.id].binding = c.binding || null;
-        }
+        if ('agent_id' in c) conversations[c.id].agent_id = c.agent_id;
+        if ('source' in c) conversations[c.id].source = c.source;
+        if ('peer_display' in c) conversations[c.id].peer_display = c.peer_display;
       }
     }
   }
@@ -157,7 +182,6 @@ function _handleConversationsList(data) {
     newConversation();
   }
   renderConversations();
-  if (typeof renderChannelBadge === 'function') renderChannelBadge();
   if (currentConvId && conversations[currentConvId] && conversations[currentConvId].has_session) {
     _hasActiveSession = true;
     var provBadge = document.getElementById('providerBadge');

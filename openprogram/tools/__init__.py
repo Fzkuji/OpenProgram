@@ -161,7 +161,7 @@ def list_available() -> list[str]:
     """
     disabled: set[str] = set()
     try:
-        from openprogram.setup_wizard import read_disabled_tools
+        from openprogram.setup import read_disabled_tools
         disabled = read_disabled_tools()
     except Exception:
         pass

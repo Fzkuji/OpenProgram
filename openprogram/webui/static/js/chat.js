@@ -108,49 +108,6 @@ function rerunFromNode(path) {
   executeRetry(path);
 }
 
-function _injectPauseRetryButtons() {
-  var blocks = document.querySelectorAll('.runtime-block[data-function]');
-  blocks.forEach(function(block) {
-    if (block.querySelector('.pause-retry-footer')) return;
-    if (block.querySelector('.runtime-block-footer')) return;
-    var fn = block.getAttribute('data-function');
-    if (!fn) return;
-    var footer = document.createElement('div');
-    footer.className = 'runtime-block-footer pause-retry-footer';
-    footer.innerHTML = '<div class="runtime-footer-left">' +
-      '<button class="rerun-btn" onclick="stopAndRetry(\'' + escAttr(fn) + '\')">&#8634; Retry</button>' +
-    '</div>';
-    block.appendChild(footer);
-  });
-}
-
-function _removePauseRetryButtons() {
-  document.querySelectorAll('.pause-retry-footer').forEach(function(el) {
-    if (el.parentNode) el.parentNode.removeChild(el);
-  });
-}
-
-function stopAndRetry(funcName) {
-  if (!currentConvId) return;
-  fetch('/api/stop', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conv_id: currentConvId }),
-  })
-    .then(function(r) { return r.json(); })
-    .then(function() {
-      isPaused = false;
-      isRunning = false;
-      updateSendBtn();
-      setTimeout(function() { retryCurrentBlock(funcName); }, 400);
-    })
-    .catch(function() {
-      isPaused = false;
-      isRunning = false;
-      updateSendBtn();
-    });
-}
-
 function retryCurrentBlock(funcName) {
   if (!currentConvId || !conversations[currentConvId]) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) {

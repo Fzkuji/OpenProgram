@@ -264,6 +264,16 @@ class Model(BaseModel):
     provider: Provider
     base_url: str
     reasoning: bool = False
+    # Declared thinking capability. Empty list = model doesn't support
+    # reasoning; UI hides the menu entirely. `reasoning: bool` stays as the
+    # simple "anything at all?" flag (kept for backward compat with
+    # `supports_xhigh` and existing catalog code).
+    thinking_levels: list[ThinkingLevel] = Field(default_factory=list)
+    default_thinking_level: ThinkingLevel | None = None
+    # Optional tag for models whose thinking UX / request body diverges from
+    # the default path (LobeChat-style quirk marker). Examples: "opus47",
+    # "codex_max". Provider request builders and the UI picker switch on this.
+    thinking_variant: str | None = None
     input: list[Literal["text", "image"]] = Field(default_factory=lambda: ["text"])
     cost: ModelCost = Field(default_factory=ModelCost)
     context_window: int = 128000

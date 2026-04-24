@@ -67,6 +67,7 @@ class AgentSession:
         event_bus: EventBus | None = None,
         block_images: bool = False,
         initial_messages: list[AgentMessage] | None = None,
+        session_id: str | None = None,
     ) -> None:
         self._retry = retry or DEFAULT_RETRY_SETTINGS
         self._event_bus = event_bus
@@ -90,6 +91,7 @@ class AgentSession:
             initial_state=initial_state,
             convert_to_llm=wrap_convert_to_llm(block_images),
             get_api_key=get_api_key,
+            session_id=session_id,
         ))
 
         if event_bus is not None:

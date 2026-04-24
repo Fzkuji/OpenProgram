@@ -1,62 +1,84 @@
-"""Persistent conversation wrapper for chat-channel messages.
+"""Inbound-message → agent-session dispatcher.
 
-Before this module existed, every channel just called ``rt.exec(text)``
-— stateless, every message independent, the bot couldn't follow up.
+Each channel backend calls :func:`dispatch_inbound` for every incoming
+external message. This module does all the bookkeeping:
 
-Then we added a crude 1:1 mapping (``conv_id = f"{platform}_{user_id}"``)
-so history persisted, but that baked the channel identity into the
-conversation id and made bindings impossible to change. Now we delegate
-to :mod:`openprogram.channels.bindings`: each (platform, user_id) is
-bound to a ``conv_id`` in a dedicated table, the conversation has its
-own UUID-style id, and a WeChat user's first incoming message either
-reuses the existing binding or auto-creates a new conversation +
-binding entry.
+  1. Route ``(channel, account_id, peer)`` to an agent via bindings.
+  2. Resolve / create the agent's session for that peer.
+  3. Load the session's history and render it as a text prefix.
+  4. Run the turn through the agent's runtime.
+  5. Append user + assistant messages to the session file.
+  6. Push a live update to any connected Web UI tabs.
 
-Per-turn flow:
+Sessions live under ``<state>/agents/<agent_id>/sessions/<session_key>/``.
+``session_key`` is ``{account_id}_{peer_kind}_{peer_id}`` sanitized for
+disk — uniquely identifies a thread within one agent.
 
-1. ``auto_bind(platform, user_id)`` → ``conv_id``
-2. Load the persisted conversation (meta + messages) off disk.
-3. Render history as a ``[User]: ...`` / ``[Assistant]: ...`` prefix
-   (bounded by MAX_HISTORY_CHARS) and hand it plus the new user text
-   to ``rt.exec``.
-4. Append the user message + reply to messages, save, and poke any
-   running Web UI so browser tabs see the update live.
+The persistence file format matches what the Web UI reads for its own
+conversations (meta.json + messages.json), so bound sessions appear in
+the sidebar alongside anything the user started locally.
 """
 from __future__ import annotations
 
+import json
+import os
+import re
 import time
 import uuid
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 
-from openprogram.webui import persistence as _persist
+from openprogram.agents import manager as _agents
+from openprogram.agents import runtime_registry as _runtimes
 from openprogram.channels import bindings as _bindings
 
 
-# Keep the history prefix bounded so a long-running WeChat thread
-# doesn't silently blow past the model's context window. The webui
-# uses its own limit (_MAX_CONTEXT_CHARS ≈ 200k) — we mirror the
-# approximate intent with a smaller cap since channels tend to turn
-# more chat-style back-and-forth.
 MAX_HISTORY_CHARS = 60_000
 
 
-def turn_with_history(platform: str, user_id: str, user_text: str, rt,
-                      *, user_display: str | None = None) -> str:
-    """Run one turn with persistent history.
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
 
-    Resolves the (platform, user_id) to a conversation via the bindings
-    table — creating one on first contact. Loads the conversation,
-    appends the user's message, builds a ``[User]: ... [Assistant]:``
-    prefix from the recent history, calls ``rt.exec``, appends the
-    reply, and saves. Returns the assistant text.
+def dispatch_inbound(
+    *,
+    channel: str,
+    account_id: str,
+    peer_kind: str,
+    peer_id: str,
+    user_text: str,
+    user_display: str = "",
+) -> str:
+    """End-to-end inbound handling. Returns the assistant reply string
+    so the channel backend can forward it to the external user.
 
-    ``user_display`` is a human-readable label — WeChat nickname,
-    Telegram @handle, etc. Only used for the conversation title shown
-    in the Web UI list; the prompt itself always says ``[User]:``.
+    Never raises into the channel's poll loop — any failure (no
+    provider configured, runtime crash, etc.) is flattened into an
+    error-shaped reply string that the bot can surface to the user
+    rather than silently dropping the message.
     """
-    display = user_display or user_id
-    conv_id = _bindings.auto_bind(platform, user_id, user_display=display)
-    meta, messages = _load_or_init(conv_id, platform, display)
+    peer = {"kind": peer_kind or "direct", "id": str(peer_id)}
+    try:
+        agent_id = _bindings.route(channel, account_id, peer)
+    except Exception as e:  # noqa: BLE001
+        return f"[routing error] {type(e).__name__}: {e}"
+    if not agent_id:
+        return ("[no agent configured] Run `openprogram agents add main` "
+                "and configure a provider.")
+
+    agent = _agents.get(agent_id)
+    if agent is None:
+        return f"[unknown agent {agent_id!r}] — binding points at a deleted agent."
+
+    session_key = _session_key_for(account_id, peer)
+    meta, messages = _load_or_init_session(
+        agent_id=agent_id,
+        session_key=session_key,
+        channel=channel,
+        account_id=account_id,
+        peer=peer,
+        user_display=user_display or str(peer_id),
+    )
 
     user_msg_id = uuid.uuid4().hex[:12]
     messages.append({
@@ -65,16 +87,20 @@ def turn_with_history(platform: str, user_id: str, user_text: str, rt,
         "parent_id": messages[-1]["id"] if messages else None,
         "content": user_text,
         "timestamp": time.time(),
-        "source": platform,
+        "source": channel,
     })
 
+    system_prefix = _compose_system_prompt(agent)
     history_prefix = _render_history(messages[:-1])
     exec_content = []
+    if system_prefix:
+        exec_content.append({"type": "text", "text": system_prefix})
     if history_prefix:
         exec_content.append({"type": "text", "text": history_prefix})
     exec_content.append({"type": "text", "text": user_text})
 
     try:
+        rt = _runtimes.get_runtime_for(agent)
         reply = rt.exec(content=exec_content)
         reply_text = str(reply or "").strip() or "(empty reply)"
     except Exception as e:  # noqa: BLE001
@@ -86,67 +112,198 @@ def turn_with_history(platform: str, user_id: str, user_text: str, rt,
         "parent_id": user_msg_id,
         "content": reply_text,
         "timestamp": time.time(),
-        "source": platform,
+        "source": channel,
     })
 
     meta["head_id"] = messages[-1]["id"]
     meta["_last_touched"] = time.time()
-    _persist.save_meta(conv_id, meta)
-    _persist.save_messages(conv_id, messages)
-
-    # Best-effort: if webui is running in this process, patch its
-    # in-memory conversation dict so the UI shows the new messages
-    # on its next render pass (e.g. page reload). Live WebSocket
-    # push is a follow-up — for now a browser refresh surfaces the
-    # turn.
-    _poke_live_webui(conv_id, messages, meta)
-
+    _save_session(agent_id, session_key, meta, messages)
+    _poke_live_webui(agent_id, session_key, meta, messages)
     return reply_text
 
 
-def _load_or_init(conv_id: str, platform: str,
-                  user_display: str) -> tuple[dict, list[dict]]:
-    """Load persisted meta+messages or build fresh structures.
+# ---------------------------------------------------------------------------
+# Session storage — file layout compatible with webui.persistence
+# ---------------------------------------------------------------------------
 
-    ``persistence.load_conversation`` returns a flat dict with meta
-    fields + ``messages`` + ``function_trees``. We split messages out
-    and treat the rest as meta.
+def _session_path(agent_id: str, session_key: str) -> Path:
+    return _agents.sessions_dir(agent_id) / session_key
+
+
+def _meta_path(agent_id: str, session_key: str) -> Path:
+    return _session_path(agent_id, session_key) / "meta.json"
+
+
+def _messages_path(agent_id: str, session_key: str) -> Path:
+    return _session_path(agent_id, session_key) / "messages.json"
+
+
+def _load_or_init_session(
+    *,
+    agent_id: str,
+    session_key: str,
+    channel: str,
+    account_id: str,
+    peer: dict[str, Any],
+    user_display: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    folder = _session_path(agent_id, session_key)
+    folder.mkdir(parents=True, exist_ok=True)
+    meta_p = _meta_path(agent_id, session_key)
+    msgs_p = _messages_path(agent_id, session_key)
+
+    meta: dict[str, Any] = {}
+    messages: list[dict[str, Any]] = []
+    if meta_p.exists():
+        try:
+            meta = json.loads(meta_p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            meta = {}
+    if msgs_p.exists():
+        try:
+            messages = json.loads(msgs_p.read_text(encoding="utf-8")) or []
+        except (OSError, json.JSONDecodeError):
+            messages = []
+
+    if not meta:
+        meta = {
+            "id": session_key,
+            "agent_id": agent_id,
+            "title": _default_title(channel, user_display),
+            "created_at": time.time(),
+            "channel": channel,
+            "account_id": account_id,
+            "peer": dict(peer),
+            "peer_display": user_display,
+            "_titled": True,
+        }
+    else:
+        # Keep display fresh in case the user's handle changed.
+        if user_display and meta.get("peer_display") != user_display:
+            meta["peer_display"] = user_display
+            meta["title"] = _default_title(channel, user_display)
+
+    return meta, messages
+
+
+def _save_session(agent_id: str, session_key: str,
+                  meta: dict[str, Any],
+                  messages: list[dict[str, Any]]) -> None:
+    folder = _session_path(agent_id, session_key)
+    folder.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(_meta_path(agent_id, session_key), meta)
+    _atomic_write_json(_messages_path(agent_id, session_key), messages)
+
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, default=str),
+                   encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _session_key_for(account_id: str, peer: dict[str, Any]) -> str:
+    kind = str(peer.get("kind") or "direct")
+    pid = str(peer.get("id") or "")
+    raw = f"{account_id}_{kind}_{pid}"
+    # Sanitize for disk — keep a-z0-9_-; collapse runs.
+    safe = re.sub(r"[^A-Za-z0-9_-]", "-", raw).strip("-")
+    return safe or "unknown"
+
+
+def _default_title(channel: str, user_display: str) -> str:
+    pretty = {
+        "wechat": "WeChat",
+        "telegram": "Telegram",
+        "discord": "Discord",
+        "slack": "Slack",
+    }.get(channel, channel)
+    return f"{pretty}: {user_display}"
+
+
+# ---------------------------------------------------------------------------
+# System-prompt composition — OpenClaw-inspired agent-loop
+# ---------------------------------------------------------------------------
+
+def _compose_system_prompt(agent) -> str:
+    """Assemble the system-prompt prefix for this agent's turn.
+
+    Order (first block wins priority in the model's attention):
+
+      1. agent.identity.name + mention patterns — "you are the Family
+         Bot; users mention you with @family"
+      2. agent.system_prompt — the user's freeform persona text (the
+         OpenClaw equivalent of SOUL.md)
+      3. enabled skills' block headers — lightweight summary of what
+         skill files are available to load on demand; the full skill
+         bodies are loaded through the skill tool, not the prompt
+
+    Returns "" if the agent has nothing to say, in which case we don't
+    prepend a system block at all.
     """
-    data = _persist.load_conversation(conv_id)
-    if data:
-        messages = list(data.get("messages", []))
-        # Drop the non-meta keys so we can round-trip through save_meta
-        # without bloating meta.json with messages / function_trees.
-        meta = {k: v for k, v in data.items()
-                if k not in ("messages", "function_trees")}
-        if meta:
-            return meta, messages
+    parts: list[str] = []
+    name = (agent.identity.name or "").strip() if agent.identity else ""
+    if name:
+        header = f"You are {name} (id={agent.id})."
+        if agent.identity and agent.identity.mention_patterns:
+            header += (" Users may address you via: "
+                       + ", ".join(agent.identity.mention_patterns) + ".")
+        parts.append(header)
 
-    meta = {
-        "id": conv_id,
-        "title": f"{platform}: {user_display}",
-        "provider_name": None,
-        "model": None,
-        "session_id": None,
-        "created_at": time.time(),
-        # Tag so webui can group / filter / decorate these.
-        "source": platform,
-        "channel_user_display": user_display,
-        "head_id": None,
-        "context_tree": None,
-        "_titled": True,
-        "_last_touched": time.time(),
-    }
-    return meta, []
+    body = (agent.system_prompt or "").strip()
+    if body:
+        parts.append(body)
+
+    skill_summary = _enabled_skills_summary(agent)
+    if skill_summary:
+        parts.append(skill_summary)
+
+    if not parts:
+        return ""
+    return "── Agent prompt ──\n" + "\n\n".join(parts) + "\n── End of agent prompt ──\n\n"
 
 
-def _render_history(messages: list[dict]) -> str:
-    """Render message list as the ``[User]: ...`` prefix webui uses.
+def _enabled_skills_summary(agent) -> str:
+    """A short "you have these skills available" block.
 
-    Walks backwards to prioritize recent turns when we hit the char
-    budget, then re-reverses so the prompt reads oldest-first (the
-    order humans and models expect).
+    Reads the global skills registry once and filters by the agent's
+    disabled list. Kept compact — the full skill body is too long for
+    every turn; it gets loaded by the agent's skill tool when needed.
     """
+    try:
+        from openprogram.agentic_programming import (
+            default_skill_dirs, load_skills,
+        )
+    except Exception:
+        return ""
+    try:
+        skills = load_skills(default_skill_dirs())
+    except Exception:
+        return ""
+    if not skills:
+        return ""
+    disabled = set((agent.skills or {}).get("disabled") or [])
+    enabled = [s for s in skills if s.name not in disabled]
+    if not enabled:
+        return ""
+    lines = ["Skills available on demand:"]
+    for s in enabled[:20]:
+        desc = (getattr(s, "description", "") or "").strip()
+        if desc:
+            desc = desc.splitlines()[0][:80]
+            lines.append(f"  · {s.name} — {desc}")
+        else:
+            lines.append(f"  · {s.name}")
+    if len(enabled) > 20:
+        lines.append(f"  ... (+{len(enabled) - 20} more)")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# History rendering
+# ---------------------------------------------------------------------------
+
+def _render_history(messages: list[dict[str, Any]]) -> str:
     if not messages:
         return ""
     parts: list[str] = []
@@ -176,90 +333,38 @@ def _render_history(messages: list[dict]) -> str:
     )
 
 
-def _poke_live_webui(conv_id: str, messages: list[dict], meta: dict) -> None:
-    """Patch the running webui's in-memory conversation and push live
-    WebSocket updates to any browser tabs.
+# ---------------------------------------------------------------------------
+# Live Web UI push (best-effort)
+# ---------------------------------------------------------------------------
 
-    Noop when webui isn't imported (CLI chat only, or pure
-    ``channels start``) — the on-disk save has already happened, so
-    the conversation will appear when the user next opens the Web UI.
+def _poke_live_webui(agent_id: str, session_key: str,
+                     meta: dict[str, Any],
+                     messages: list[dict[str, Any]]) -> None:
+    """Tell any connected WebSocket clients a channel session changed.
 
-    Two events are emitted for connected clients:
-
-    * ``conversations_list`` if the conversation is new to the
-      in-memory dict — so the sidebar gets the new entry without a
-      page reload.
-    * ``conversation_reload`` for this conv_id — the frontend only
-      reacts if the user is currently viewing it, in which case it
-      asks the server to re-send the conversation data. Cheap and
-      prevents us from having to re-implement the frontend's message
-      merge logic here.
+    Only does anything if ``openprogram.webui.server`` is loaded in
+    this process (true for the Web UI server path, possibly true for
+    the worker). Failures silently swallow — persistence already
+    happened; live push is a nicety.
     """
-    import json
     try:
         import sys
         srv = sys.modules.get("openprogram.webui.server")
         if srv is None:
             return
-    except Exception:
-        return
-
-    was_new = False
-    try:
-        with srv._conversations_lock:
-            conv = srv._conversations.get(conv_id)
-            if conv is None:
-                was_new = True
-                from openprogram.agentic_programming.context import Context
-                conv = {
-                    "id": conv_id,
-                    "title": meta.get("title", conv_id),
-                    "root_context": Context(name="chat_session", status="idle",
-                                             start_time=time.time()),
-                    "runtime": None,
-                    "provider_name": meta.get("provider_name"),
-                    "messages": list(messages),
-                    "function_trees": [],
-                    "created_at": meta.get("created_at"),
-                    "head_id": meta.get("head_id"),
-                    "run_active": False,
-                    "source": meta.get("source"),
-                }
-                srv._conversations[conv_id] = conv
-            else:
-                conv["messages"] = list(messages)
-                conv["head_id"] = meta.get("head_id")
-    except Exception:
-        return
-
-    try:
-        if was_new:
-            # Rebuild the full sidebar list the same shape the normal
-            # `list_conversations` action returns, so clients pick it
-            # up through the existing dispatcher. Include the binding
-            # entry so the sidebar can show a "WeChat: alice"-style
-            # badge the moment the conversation appears.
-            conv_list = []
-            with srv._conversations_lock:
-                for cid, c in srv._conversations.items():
-                    runtime = c.get("runtime")
-                    sid = getattr(runtime, "_session_id", None) if runtime else None
-                    binding = _bindings.get_binding_for_conv(cid)
-                    conv_list.append({
-                        "id": cid,
-                        "title": c.get("title", "Untitled"),
-                        "created_at": c.get("created_at"),
-                        "has_session": sid is not None,
-                        "binding": binding,
-                    })
-            conv_list.sort(key=lambda c: c.get("created_at") or 0)
-            srv._broadcast(json.dumps(
-                {"type": "conversations_list", "data": conv_list},
-                default=str,
-            ))
-        srv._broadcast(json.dumps(
-            {"type": "conversation_reload", "data": {"conv_id": conv_id}},
-            default=str,
-        ))
+        # Broadcast a minimal "channel session updated" envelope that
+        # clients currently viewing that agent can use to refresh.
+        payload = {
+            "type": "agent_session_updated",
+            "data": {
+                "agent_id": agent_id,
+                "session_id": session_key,
+                "title": meta.get("title"),
+                "head_id": meta.get("head_id"),
+                "updated_at": meta.get("_last_touched"),
+                "source": meta.get("channel"),
+            },
+        }
+        srv._broadcast(json.dumps(payload, default=str))
     except Exception:
         pass
