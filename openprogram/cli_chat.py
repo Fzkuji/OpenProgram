@@ -41,27 +41,26 @@ def _reset_provider_cache() -> None:
 
 
 def _prompt_first_run_setup(console) -> bool:
-    """No-provider first-run flow: offer the setup wizard inline.
+    """No-provider first-run flow: offer the full setup wizard inline.
 
     Returns True if a provider is now configured (wizard succeeded),
     False if the user declined / wizard failed.
     """
     import sys as _sys
-    from openprogram.auth.cli import _cmd_setup
+    from openprogram.setup_wizard import run_full_setup
 
     console.print()
     console.print(
-        "[yellow]No LLM provider is configured yet.[/] "
-        "OpenProgram can scan this machine for existing logins "
-        "(Claude Code, Codex, Gemini, GitHub CLI, env vars) and "
-        "import them."
+        "[yellow]OpenProgram isn't configured yet.[/] "
+        "The setup wizard will connect a provider, pick your default "
+        "model, and let you customize tools + agent defaults."
     )
     console.print()
 
     if not _sys.stdin.isatty():
         console.print(
             "[dim]Non-interactive stdin detected. Run "
-            "`openprogram providers setup` manually, then re-run.[/]"
+            "`openprogram setup` manually, then re-run.[/]"
         )
         return False
 
@@ -71,11 +70,11 @@ def _prompt_first_run_setup(console) -> bool:
         reply = "n"
     if reply not in ("", "y", "yes"):
         console.print(
-            "[dim]Skipped. Run `openprogram providers setup` when ready.[/]"
+            "[dim]Skipped. Run `openprogram setup` when ready.[/]"
         )
         return False
 
-    rc = _cmd_setup()
+    rc = run_full_setup()
     _reset_provider_cache()
     _, rt = _get_chat_runtime()
     if rt is None:

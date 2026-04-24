@@ -140,14 +140,24 @@ def main():
     from openprogram.auth.cli import build_parser as _build_provider_verbs
     _build_provider_verbs(providers_sub)
 
+    # ---- setup (top-level, full first-run wizard) -------------------------
+    sub.add_parser("setup",
+        help="Full first-run setup wizard (providers + model + tools + agent)")
+
     # ---- config -----------------------------------------------------------
     p_config = sub.add_parser("config",
-        help="Configure OpenProgram (providers, models, ...)")
+        help="Configure OpenProgram — individual setup sections")
     p_config_sub = p_config.add_subparsers(dest="config_target", metavar="target")
     p_cfg_provider = p_config_sub.add_parser("provider",
-        help="Interactive wizard to set up a provider")
+        help="Interactive wizard to set up a provider (legacy name)")
     p_cfg_provider.add_argument("name", nargs="?", default=None,
         help="Provider id. If omitted, pick from a menu.")
+    p_config_sub.add_parser("model",
+        help="Pick the default chat model across enabled providers")
+    p_config_sub.add_parser("tools",
+        help="Enable / disable individual tools")
+    p_config_sub.add_parser("agent",
+        help="Set agent defaults (thinking effort, ...)")
 
     args = parser.parse_args()
 
@@ -231,9 +241,23 @@ def main():
             sys.exit(rc)
         sys.exit(_providers_dispatch(args))
 
+    if args.command == "setup":
+        from openprogram.setup_wizard import run_full_setup
+        sys.exit(run_full_setup())
+
     if args.command == "config":
-        if args.config_target == "provider":
+        from openprogram.setup_wizard import (
+            run_model_section, run_tools_section, run_agent_section,
+        )
+        target = args.config_target
+        if target == "provider":
             _cmd_configure(args.name)
+        elif target == "model":
+            sys.exit(run_model_section())
+        elif target == "tools":
+            sys.exit(run_tools_section())
+        elif target == "agent":
+            sys.exit(run_agent_section())
         else:
             p_config.print_help()
         return

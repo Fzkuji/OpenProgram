@@ -152,8 +152,23 @@ def get_many(
 
 
 def list_available() -> list[str]:
-    """Return the names of every registered tool whose gating currently passes."""
-    return [name for name, tool in ALL_TOOLS.items() if _is_available(tool)]
+    """Return the names of every registered tool whose gating passes AND
+    which the user hasn't disabled via ``openprogram config tools``.
+
+    Disabled-list is stored under ``tools.disabled`` in
+    ``~/.agentic/config.json`` and read lazily so the tools module
+    stays free of webui/FastAPI imports at registry build time.
+    """
+    disabled: set[str] = set()
+    try:
+        from openprogram.setup_wizard import read_disabled_tools
+        disabled = read_disabled_tools()
+    except Exception:
+        pass
+    return [
+        name for name, tool in ALL_TOOLS.items()
+        if _is_available(tool) and name not in disabled
+    ]
 
 
 def register_tool(name: str, tool: dict[str, Any], *, toolsets: list[str] | None = None) -> None:
