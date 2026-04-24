@@ -189,13 +189,14 @@
 
   function _appendShape(parent, shape, color, isCurrent) {
     // The "current view" node (where the chat is scrolled to) gets a
-    // thick white outline. Defaults to HEAD on first render but moves
-    // independently as the user clicks nodes or scrolls the chat.
-    var r = isCurrent ? NODE_R + 0.6 : NODE_R;
+    // thick outline + visible size bump. Pure white on light lane
+    // colours (amber, lime, cyan) was hard to pick out; a thicker
+    // stroke and a clearly larger shape reads much more obviously.
+    var r = isCurrent ? NODE_R + 1.8 : NODE_R;
     var common = {
       fill: color,
       stroke: isCurrent ? '#ffffff' : 'rgba(0,0,0,0.35)',
-      'stroke-width': isCurrent ? 2.6 : 1,
+      'stroke-width': isCurrent ? 3.2 : 1,
     };
     if (shape === 'circle') {
       parent.appendChild(_svg('circle', Object.assign({ r: r }, common)));
@@ -372,11 +373,9 @@
       var shape = g.querySelector('circle, polygon, rect');
       if (!shape) return;
       shape.setAttribute('stroke', active ? '#ffffff' : 'rgba(0,0,0,0.35)');
-      shape.setAttribute('stroke-width', active ? '2.6' : '1');
-      // Nudge radius / size the same way _appendShape does on initial
-      // paint so clicks visibly "jump" the marker.
+      shape.setAttribute('stroke-width', active ? '3.2' : '1');
       if (shape.tagName === 'circle') {
-        shape.setAttribute('r', String(active ? NODE_R + 0.6 : NODE_R));
+        shape.setAttribute('r', String(active ? NODE_R + 1.8 : NODE_R));
       }
     });
   }
