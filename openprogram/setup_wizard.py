@@ -477,10 +477,13 @@ def run_channels_section() -> int:
     cfg = _read_config()
     ch = cfg.get("channels", {}) or {}
 
+    # Slack needs TWO tokens under Socket Mode: a bot OAuth token
+    # (xoxb-...) and an app-level token (xapp-...). Others just one.
     PLATFORMS = [
-        ("telegram", "Telegram bot token", "TELEGRAM_BOT_TOKEN"),
-        ("discord",  "Discord bot token",  "DISCORD_BOT_TOKEN"),
-        ("slack",    "Slack bot token",    "SLACK_BOT_TOKEN"),
+        ("telegram", [("TELEGRAM_BOT_TOKEN", "Telegram bot token")]),
+        ("discord",  [("DISCORD_BOT_TOKEN",  "Discord bot token")]),
+        ("slack",    [("SLACK_BOT_TOKEN",    "Slack bot (xoxb-)"),
+                      ("SLACK_APP_TOKEN",    "Slack app-level (xapp-, Socket Mode)")]),
     ]
     items = [
         (p[0], bool((ch.get(p[0]) or {}).get("enabled", False)))
@@ -492,17 +495,26 @@ def run_channels_section() -> int:
         return 1
 
     new_ch: dict[str, Any] = {}
-    for pid, _label, env in PLATFORMS:
+    for pid, envs in PLATFORMS:
         prev = ch.get(pid, {}) or {}
         enabled = pid in picked
-        entry = {"enabled": enabled, "api_key_env": env}
+        first_env = envs[0][0]
+        entry: dict[str, Any] = {"enabled": enabled, "api_key_env": first_env}
+        # Preserve extra env slots (e.g. Slack's app_token_env).
+        if pid == "slack":
+            entry["app_token_env"] = envs[1][0]
         if enabled:
-            have = prev.get("token") or cfg.get("api_keys", {}).get(env) \
-                   or os.environ.get(env)
-            if not have:
-                tok = _password(f"{env} (leave blank to set later):")
-                if tok:
-                    cfg.setdefault("api_keys", {})[env] = tok
+            for env_var, label in envs:
+                have = (
+                    prev.get("token")
+                    or cfg.get("api_keys", {}).get(env_var)
+                    or os.environ.get(env_var)
+                )
+                if not have:
+                    tok = _password(f"{label} (${env_var}), "
+                                    f"leave blank to set later:")
+                    if tok:
+                        cfg.setdefault("api_keys", {})[env_var] = tok
         new_ch[pid] = entry
     cfg["channels"] = new_ch
     _write_config(cfg)

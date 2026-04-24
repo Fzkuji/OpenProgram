@@ -16,10 +16,14 @@ from typing import Any
 
 from openprogram.channels.base import Channel
 from openprogram.channels.telegram import TelegramChannel
+from openprogram.channels.discord import DiscordChannel
+from openprogram.channels.slack import SlackChannel
 
 
 CHANNEL_CLASSES: dict[str, type[Channel]] = {
     "telegram": TelegramChannel,
+    "discord": DiscordChannel,
+    "slack": SlackChannel,
 }
 
 
