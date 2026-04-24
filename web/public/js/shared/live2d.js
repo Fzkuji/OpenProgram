@@ -24,10 +24,10 @@
         parentElement: parent,
         mobileDisplay: true,
         models: [{
-          name: 'shizuku',
-          path: 'https://fastly.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/shizuku/shizuku.model.json',
+          name: 'pio',
+          path: 'https://fastly.jsdelivr.net/gh/fghrsh/live2d_api/model/Potion-Maker/Pio/model.json',
           position: [0, 20],
-          scale: 0.09,
+          scale: 0.6,
           stageStyle: {
             width: 160,
             height: 200,
