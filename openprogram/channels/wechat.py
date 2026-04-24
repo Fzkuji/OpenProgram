@@ -152,11 +152,13 @@ class WechatChannel(Channel):
         snippet = text[:60] + ("..." if len(text) > 60 else "")
         print(f"[wechat] <{from_id}> {snippet}")
 
-        try:
-            reply = rt.exec(content=[{"type": "text", "text": text}])
-            reply_text = str(reply or "").strip() or "(empty reply)"
-        except Exception as e:  # noqa: BLE001
-            reply_text = f"[error] {type(e).__name__}: {e}"
+        from openprogram.channels._conversation import turn_with_history
+        reply_text = turn_with_history(
+            platform="wechat",
+            user_id=from_id,
+            user_text=text,
+            rt=rt,
+        )
 
         for chunk in _chunk(reply_text, MAX_MSG_CHARS):
             self._send_text(base, creds, from_id, context_token, chunk)

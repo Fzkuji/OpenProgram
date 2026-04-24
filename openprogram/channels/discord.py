@@ -87,17 +87,17 @@ class DiscordChannel(Channel):
                 return
             snippet = text[:60] + ("..." if len(text) > 60 else "")
             print(f"[discord] <{msg.author}> {snippet}")
-            try:
-                # rt.exec is blocking; push off the event loop so the
-                # gateway heartbeat keeps flowing. Using asyncio.to_thread
-                # keeps the sync runtime happy (cf. same pattern in the
-                # webui /api/agent_settings endpoint).
-                reply = await asyncio.to_thread(
-                    rt.exec, [{"type": "text", "text": text}]
-                )
-                reply_text = str(reply or "").strip() or "(empty reply)"
-            except Exception as e:  # noqa: BLE001
-                reply_text = f"[error] {type(e).__name__}: {e}"
+            # turn_with_history is blocking (does disk I/O + rt.exec);
+            # hand it to a worker thread so the gateway heartbeat
+            # keeps flowing. Key channel scope on (channel_id, user_id)
+            # so each person's DM / thread gets its own history.
+            from openprogram.channels._conversation import turn_with_history
+            user_id = f"{msg.channel.id}_{msg.author.id}"
+            reply_text = await asyncio.to_thread(
+                turn_with_history,
+                "discord", user_id, text, rt,
+                user_display=str(msg.author),
+            )
             for chunk in _chunk(reply_text, MAX_MSG_CHARS):
                 try:
                     await msg.channel.send(chunk)

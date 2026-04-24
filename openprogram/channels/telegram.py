@@ -110,11 +110,14 @@ class TelegramChannel(Channel):
         snippet = text[:60] + ("..." if len(text) > 60 else "")
         print(f"[telegram] <{who}> {snippet}")
 
-        try:
-            reply = rt.exec(content=[{"type": "text", "text": text}])
-            reply_text = str(reply or "").strip() or "(empty reply)"
-        except Exception as e:  # noqa: BLE001
-            reply_text = f"[error] {type(e).__name__}: {e}"
+        from openprogram.channels._conversation import turn_with_history
+        reply_text = turn_with_history(
+            platform="telegram",
+            user_id=str(chat_id),
+            user_text=text,
+            rt=rt,
+            user_display=who,
+        )
 
         self._send(chat_id, reply_text)
 

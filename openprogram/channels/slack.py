@@ -110,11 +110,17 @@ class SlackChannel(Channel):
             snippet = text[:60] + ("..." if len(text) > 60 else "")
             user = event.get("user")
             print(f"[slack] <{user}> {snippet}")
-            try:
-                reply = rt.exec(content=[{"type": "text", "text": text}])
-                reply_text = str(reply or "").strip() or "(empty reply)"
-            except Exception as e:  # noqa: BLE001
-                reply_text = f"[error] {type(e).__name__}: {e}"
+            # History keyed by (channel, user) so a shared channel
+            # and a DM have distinct memories.
+            from openprogram.channels._conversation import turn_with_history
+            user_id = f"{channel_id}_{user}"
+            reply_text = turn_with_history(
+                platform="slack",
+                user_id=user_id,
+                user_text=text,
+                rt=rt,
+                user_display=user or user_id,
+            )
             for chunk in _chunk(reply_text, MAX_MSG_CHARS):
                 try:
                     web.chat_postMessage(channel=channel_id, text=chunk)
