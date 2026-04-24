@@ -130,12 +130,17 @@ def _qstyle():
         from questionary import Style
     except ImportError:
         return None
+    # No `reverse` anywhere. questionary applies the `highlighted` class
+    # to both the current cursor AND to the initial-default item — using
+    # reverse bg on both made them indistinguishable. Now the cursor is
+    # ONLY identified by the `❯` pointer + cyan bold; everything else
+    # is plain text. Matches clack/OpenClaw's clean look.
     return Style([
         ("qmark",        "fg:ansicyan bold"),
         ("question",     "bold"),
         ("answer",       "fg:ansicyan bold"),
         ("pointer",      "fg:ansicyan bold"),
-        ("highlighted",  "fg:ansicyan bold reverse"),
+        ("highlighted",  "fg:ansicyan bold"),
         ("selected",     "fg:ansicyan"),
         ("separator",    "fg:ansibrightblack"),
         ("instruction",  "fg:ansibrightblack"),
