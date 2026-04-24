@@ -519,14 +519,24 @@
         raf = 0;
         var container = document.getElementById('chatMessages');
         if (!container) return;
-        var areaTop = area.getBoundingClientRect().top;
-        // Anchor ~40px below viewport top so the cursor tracks what
-        // the user is actually reading.
-        var target = areaTop + 40;
-        // Direct children only — avoids matching data-msg-id
-        // elements nested inside runtime cards (which also carry
-        // the attribute on their root).
         var bubbles = container.querySelectorAll(':scope > [data-msg-id]');
+        if (!bubbles.length) return;
+
+        // If the scroll is already at (or within a hair of) the
+        // bottom, the user physically can't scroll the last bubble
+        // past the anchor. Short trailing bubbles (e.g. a collapsed
+        // runtime card that's last in the conversation) would
+        // otherwise never be selectable. Honour them by jumping
+        // straight to the last bubble in that case.
+        var atBottom = area.scrollTop + area.clientHeight >= area.scrollHeight - 2;
+        if (atBottom) {
+          var lastId = bubbles[bubbles.length - 1].getAttribute('data-msg-id');
+          if (lastId) _setCurrentView(lastId);
+          return;
+        }
+
+        var areaTop = area.getBoundingClientRect().top;
+        var target = areaTop + 40;
         var chosenId = null;
         var chosenTop = -Infinity;
         var firstId = null;
@@ -534,11 +544,6 @@
         for (var i = 0; i < bubbles.length; i++) {
           var r = bubbles[i].getBoundingClientRect();
           var id = bubbles[i].getAttribute('data-msg-id');
-          // Pick the last message whose top has already crossed the
-          // anchor — i.e. the one the user is currently reading,
-          // including when they're partway down a tall runtime
-          // card (previous heuristic picked the "closest top" and
-          // flipped to the next short bubble mid-card).
           if (r.top <= target && r.top > chosenTop) {
             chosenTop = r.top;
             chosenId = id;
