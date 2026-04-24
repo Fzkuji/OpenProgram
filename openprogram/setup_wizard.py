@@ -26,22 +26,44 @@ import os
 from pathlib import Path
 from typing import Any
 
+from openprogram.paths import get_config_path
 
-CONFIG_PATH = Path.home() / ".agentic" / "config.json"
+
+# Back-compat export — many readers used to import CONFIG_PATH directly.
+# Kept as a property-like getter: evaluating it returns the current
+# profile's config path rather than a value frozen at import time.
+class _ConfigPathProxy:
+    def __fspath__(self) -> str:
+        return str(get_config_path())
+    def __str__(self) -> str:
+        return str(get_config_path())
+    def __repr__(self) -> str:
+        return f"ConfigPath({get_config_path()!s})"
+    @property
+    def parent(self) -> Path:
+        return get_config_path().parent
+    def read_text(self, *a, **kw):
+        return get_config_path().read_text(*a, **kw)
+    def write_text(self, *a, **kw):
+        return get_config_path().write_text(*a, **kw)
+
+
+CONFIG_PATH: Any = _ConfigPathProxy()
 
 
 # --- storage helpers --------------------------------------------------------
 
 def _read_config() -> dict[str, Any]:
     try:
-        return json.loads(CONFIG_PATH.read_text())
+        return json.loads(get_config_path().read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
 def _write_config(cfg: dict[str, Any]) -> None:
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n")
+    path = get_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cfg, indent=2) + "\n")
 
 
 def read_disabled_tools() -> set[str]:

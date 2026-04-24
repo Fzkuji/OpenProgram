@@ -690,7 +690,8 @@ def _auto_save(ctx: Context):
     try:
         logs_dir = os.environ.get("AGENTIC_LOGS_DIR")
         if not logs_dir:
-            logs_dir = os.path.join(os.path.expanduser("~"), ".agentic", "logs")
+            from openprogram.paths import get_logs_dir
+            logs_dir = str(get_logs_dir())
         os.makedirs(logs_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         filename = f"{ctx.name}_{timestamp}.jsonl"

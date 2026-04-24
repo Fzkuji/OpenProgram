@@ -29,7 +29,14 @@ import time
 import uuid
 
 
+# Kept as a legacy constant for back-compat; _sessions_dir() is the
+# live accessor that respects --profile / OPENPROGRAM_PROFILE.
 SESSIONS_DIR = os.path.join(os.path.expanduser("~"), ".agentic", "sessions")
+
+
+def _sessions_dir() -> str:
+    from openprogram.paths import get_sessions_dir
+    return str(get_sessions_dir())
 
 
 class Session:
@@ -37,7 +44,7 @@ class Session:
 
     def __init__(self, session_id: str = None):
         self.session_id = session_id or uuid.uuid4().hex[:8]
-        self.dir = os.path.join(SESSIONS_DIR, self.session_id)
+        self.dir = os.path.join(_sessions_dir(), self.session_id)
 
     def _meta_path(self):
         return os.path.join(self.dir, "meta.json")
@@ -97,9 +104,9 @@ class Session:
 def list_sessions() -> list[dict]:
     """List all active sessions with their metadata."""
     results = []
-    if not os.path.isdir(SESSIONS_DIR):
+    if not os.path.isdir(_sessions_dir()):
         return results
-    for name in os.listdir(SESSIONS_DIR):
+    for name in os.listdir(_sessions_dir()):
         session = Session(name)
         meta = session.read_meta()
         if meta:
@@ -110,10 +117,10 @@ def list_sessions() -> list[dict]:
 
 def cleanup_stale_sessions(max_age: float = 3600):
     """Remove sessions older than max_age seconds."""
-    if not os.path.isdir(SESSIONS_DIR):
+    if not os.path.isdir(_sessions_dir()):
         return
     now = time.time()
-    for name in os.listdir(SESSIONS_DIR):
+    for name in os.listdir(_sessions_dir()):
         session = Session(name)
         meta = session.read_meta()
         if meta and now - meta.get("created", 0) > max_age:

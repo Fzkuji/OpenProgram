@@ -161,7 +161,8 @@ def agent_loop(
 
     # State persistence
     if state_dir is None:
-        state_dir = os.path.join(os.path.expanduser("~"), ".agentic", "logs")
+        from openprogram.paths import get_logs_dir
+        state_dir = str(get_logs_dir())
     sp = _state_path(state_dir, goal)
     state = _load_state(sp) or {"goal": goal, "steps": 0, "history": [], "done": False}
 

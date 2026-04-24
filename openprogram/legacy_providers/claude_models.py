@@ -337,8 +337,9 @@ def _fetch_anthropic_api_models() -> list[dict]:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         try:
-            cfg_path = os.path.expanduser("~/.agentic/config.json")
-            if os.path.exists(cfg_path):
+            from openprogram.paths import get_config_path
+            cfg_path = get_config_path()
+            if cfg_path.exists():
                 with open(cfg_path, "r") as f:
                     cfg = json.load(f)
                 api_key = cfg.get("api_keys", {}).get("ANTHROPIC_API_KEY")

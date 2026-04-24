@@ -83,7 +83,8 @@ def _load_provider_config() -> tuple[str, str] | None:
 
     # Config file
     try:
-        config_path = os.path.join(os.path.expanduser("~"), ".agentic", "config.json")
+        from openprogram.paths import get_config_path
+        config_path = get_config_path()
         import json
         with open(config_path) as f:
             config = json.load(f)

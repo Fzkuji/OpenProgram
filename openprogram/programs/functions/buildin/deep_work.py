@@ -298,7 +298,8 @@ def deep_work(
 
     # State
     if state_dir is None:
-        state_dir = os.path.join(os.path.expanduser("~"), ".agentic", "logs")
+        from openprogram.paths import get_logs_dir
+        state_dir = str(get_logs_dir())
     sp = _state_path(state_dir, task)
     state = _load_state(sp) or {
         "task": task,

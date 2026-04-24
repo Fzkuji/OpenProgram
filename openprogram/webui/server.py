@@ -139,7 +139,12 @@ from openprogram.webui._runtime_management import (
 
 
 
-_CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".agentic", "config.json")
+# Use the centralized path helper so --profile / OPENPROGRAM_PROFILE
+# reroutes config reads. str() so the callers that pass it to open()
+# get a plain path string.
+from openprogram.paths import get_config_path as _get_config_path
+def _CONFIG_PATH() -> str:  # noqa: N802  (keeping legacy name)
+    return str(_get_config_path())
 
 from openprogram.webui import persistence as _persist
 
@@ -270,7 +275,7 @@ def _restore_sessions():
 def _load_config() -> dict:
     """Load config from ~/.agentic/config.json."""
     try:
-        with open(_CONFIG_PATH) as f:
+        with open(_CONFIG_PATH()) as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
@@ -278,8 +283,8 @@ def _load_config() -> dict:
 
 def _save_config(config: dict):
     """Save config to ~/.agentic/config.json."""
-    os.makedirs(os.path.dirname(_CONFIG_PATH), exist_ok=True)
-    with open(_CONFIG_PATH, "w") as f:
+    os.makedirs(os.path.dirname(_CONFIG_PATH()), exist_ok=True)
+    with open(_CONFIG_PATH(), "w") as f:
         json.dump(config, f, indent=2)
 
 

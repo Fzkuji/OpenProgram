@@ -91,11 +91,10 @@ def _preferred_default_model(provider: str) -> str | None:
     """
     try:
         from openprogram.webui._model_catalog import _read_providers_cfg
+        from openprogram.paths import get_config_path
         import json
-        import os
-        cfg_path = os.path.expanduser("~/.agentic/config.json")
         try:
-            with open(cfg_path, "r", encoding="utf-8") as f:
+            with open(get_config_path(), "r", encoding="utf-8") as f:
                 root_cfg = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             root_cfg = {}

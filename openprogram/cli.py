@@ -62,6 +62,10 @@ def main():
         help="Port for --web / `web` (default: stored UI pref, then 8765)")
     parser.add_argument("--no-browser", action="store_true",
         help="Don't auto-open browser with --web")
+    parser.add_argument("--profile", default=None,
+        help="State-dir profile name. Reroutes config/sessions/logs to "
+             "~/.agentic-<name>/ so parallel workspaces don't share state. "
+             "Env: OPENPROGRAM_PROFILE.")
 
     sub = parser.add_subparsers(dest="command", help="Subcommand")
 
@@ -175,6 +179,13 @@ def main():
         help="Terminal exec backend (local/docker/ssh — runtime pending)")
 
     args = parser.parse_args()
+
+    # --profile must land in the env BEFORE any later code reads a path
+    # (setup_wizard config, session dir, logs dir, ...). get_active_profile
+    # checks the env each call so setting it here is enough.
+    if args.profile:
+        from openprogram.paths import set_active_profile
+        set_active_profile(args.profile)
 
     # -------- No subcommand: bare `openprogram` drops into CLI chat --------
     # Hermes-style: no mode chooser, the banner + REPL is the default
