@@ -400,3 +400,9 @@ def run_cli_chat(oneshot: str | None = None) -> None:
         reply = _run_turn(rt, user_input)
         console.print()
         console.print(reply)
+        # Fire-and-forget TTS; no-ops unless tts.provider is set.
+        try:
+            from openprogram.tts import speak
+            speak(reply)
+        except Exception:
+            pass
