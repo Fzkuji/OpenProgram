@@ -314,7 +314,14 @@ def create(
         agent_dir(agent_id).mkdir(parents=True, exist_ok=True)
         sessions_dir(agent_id)
         workspace_dir(agent_id)
+        # Seed AGENTS.md / SOUL.md / USER.md placeholders so the
+        # persona pipeline has something to load on the first turn.
         _write_agent(spec)
+        try:
+            from openprogram.agents.workspace import bootstrap as _ws_bootstrap
+            _ws_bootstrap(agent_id)
+        except Exception:
+            pass
 
         idx = _read_index()
         order = list(idx.get("order") or [])

@@ -80,23 +80,30 @@ def dispatch_inbound(
         user_display=user_display or str(peer_id),
     )
 
+    from openprogram.agents.context_engine import default_engine as _engine
+
     user_msg_id = uuid.uuid4().hex[:12]
-    messages.append({
+    user_msg = {
         "role": "user",
         "id": user_msg_id,
         "parent_id": messages[-1]["id"] if messages else None,
         "content": user_text,
         "timestamp": time.time(),
         "source": channel,
-    })
+    }
+    _engine.ingest(messages, user_msg)
 
-    system_prefix = _compose_system_prompt(agent)
-    history_prefix = _render_history(messages[:-1])
-    exec_content = []
-    if system_prefix:
-        exec_content.append({"type": "text", "text": system_prefix})
-    if history_prefix:
-        exec_content.append({"type": "text", "text": history_prefix})
+    # Assemble the prompt through the engine: it owns budget, history
+    # rendering, and system-prompt composition. We take the user's
+    # fresh turn out of the engine's "history" slice so the ingested
+    # copy isn't double-rendered.
+    assembled = _engine.assemble(agent, meta, messages[:-1])
+    exec_content: list[dict] = []
+    if assembled.system_prompt_addition:
+        exec_content.append({
+            "type": "text", "text": assembled.system_prompt_addition,
+        })
+    exec_content.extend(assembled.messages)
     exec_content.append({"type": "text", "text": user_text})
 
     try:
@@ -106,14 +113,16 @@ def dispatch_inbound(
     except Exception as e:  # noqa: BLE001
         reply_text = f"[error] {type(e).__name__}: {e}"
 
-    messages.append({
+    reply_msg = {
         "role": "assistant",
         "id": user_msg_id + "_reply",
         "parent_id": user_msg_id,
         "content": reply_text,
         "timestamp": time.time(),
         "source": channel,
-    })
+    }
+    _engine.ingest(messages, reply_msg)
+    _engine.after_turn(agent, meta, messages)
 
     meta["head_id"] = messages[-1]["id"]
     meta["_last_touched"] = time.time()
@@ -219,118 +228,6 @@ def _default_title(channel: str, user_display: str) -> str:
         "slack": "Slack",
     }.get(channel, channel)
     return f"{pretty}: {user_display}"
-
-
-# ---------------------------------------------------------------------------
-# System-prompt composition — OpenClaw-inspired agent-loop
-# ---------------------------------------------------------------------------
-
-def _compose_system_prompt(agent) -> str:
-    """Assemble the system-prompt prefix for this agent's turn.
-
-    Order (first block wins priority in the model's attention):
-
-      1. agent.identity.name + mention patterns — "you are the Family
-         Bot; users mention you with @family"
-      2. agent.system_prompt — the user's freeform persona text (the
-         OpenClaw equivalent of SOUL.md)
-      3. enabled skills' block headers — lightweight summary of what
-         skill files are available to load on demand; the full skill
-         bodies are loaded through the skill tool, not the prompt
-
-    Returns "" if the agent has nothing to say, in which case we don't
-    prepend a system block at all.
-    """
-    parts: list[str] = []
-    name = (agent.identity.name or "").strip() if agent.identity else ""
-    if name:
-        header = f"You are {name} (id={agent.id})."
-        if agent.identity and agent.identity.mention_patterns:
-            header += (" Users may address you via: "
-                       + ", ".join(agent.identity.mention_patterns) + ".")
-        parts.append(header)
-
-    body = (agent.system_prompt or "").strip()
-    if body:
-        parts.append(body)
-
-    skill_summary = _enabled_skills_summary(agent)
-    if skill_summary:
-        parts.append(skill_summary)
-
-    if not parts:
-        return ""
-    return "── Agent prompt ──\n" + "\n\n".join(parts) + "\n── End of agent prompt ──\n\n"
-
-
-def _enabled_skills_summary(agent) -> str:
-    """A short "you have these skills available" block.
-
-    Reads the global skills registry once and filters by the agent's
-    disabled list. Kept compact — the full skill body is too long for
-    every turn; it gets loaded by the agent's skill tool when needed.
-    """
-    try:
-        from openprogram.agentic_programming import (
-            default_skill_dirs, load_skills,
-        )
-    except Exception:
-        return ""
-    try:
-        skills = load_skills(default_skill_dirs())
-    except Exception:
-        return ""
-    if not skills:
-        return ""
-    disabled = set((agent.skills or {}).get("disabled") or [])
-    enabled = [s for s in skills if s.name not in disabled]
-    if not enabled:
-        return ""
-    lines = ["Skills available on demand:"]
-    for s in enabled[:20]:
-        desc = (getattr(s, "description", "") or "").strip()
-        if desc:
-            desc = desc.splitlines()[0][:80]
-            lines.append(f"  · {s.name} — {desc}")
-        else:
-            lines.append(f"  · {s.name}")
-    if len(enabled) > 20:
-        lines.append(f"  ... (+{len(enabled) - 20} more)")
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# History rendering
-# ---------------------------------------------------------------------------
-
-def _render_history(messages: list[dict[str, Any]]) -> str:
-    if not messages:
-        return ""
-    parts: list[str] = []
-    total = 0
-    for m in reversed(messages):
-        role = m.get("role", "")
-        content = (m.get("content") or "").strip()
-        if not content:
-            continue
-        if role == "user":
-            entry = f"[User]: {content}"
-        elif role == "assistant":
-            entry = f"[Assistant]: {content}"
-        else:
-            continue
-        if total + len(entry) > MAX_HISTORY_CHARS:
-            break
-        parts.append(entry)
-        total += len(entry)
-    parts.reverse()
-    if not parts:
-        return ""
-    return (
-        "── Conversation history ──\n"
-        + "\n".join(parts)
-        + "\n── End of history ──\n\n"
-    )
 
 
 # ---------------------------------------------------------------------------
