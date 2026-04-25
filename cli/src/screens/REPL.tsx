@@ -3,7 +3,6 @@ import { Box, useApp, useInput } from 'ink';
 import { BackendClient, WsEnvelope, StatsEnvelope } from '../ws/client.js';
 import { BottomBar } from '../components/BottomBar.js';
 import { Messages } from '../components/Messages.js';
-import { Welcome } from '../components/Welcome.js';
 import { Spinner } from '../components/Spinner.js';
 import { Turn, ToolCall } from '../components/Turn.js';
 import { PromptInput } from '../components/PromptInput/PromptInput.js';
@@ -237,8 +236,11 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   return (
     <Box flexDirection="column">
-      {committed.length === 0 && !streaming && !activity ? <Welcome stats={stats} /> : null}
-      <Messages committed={committed} streaming={streaming} />
+      <Messages
+        committed={committed}
+        streaming={streaming}
+        welcome={stats ? stats : undefined}
+      />
       {activity ? (
         <Spinner verb={activity.verb} detail={activity.detail} elapsed={elapsed} />
       ) : null}
