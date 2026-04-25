@@ -12,6 +12,12 @@ export interface SlashContext {
   openPicker: (kind: 'model' | 'resume' | 'agent') => void;
   /** Toggle (or set) the "tools-on" flag passed with the next chat turn. */
   toggleTools: () => void;
+  /** Toggle the terminal-bell-on-long-turn-complete flag. */
+  toggleBell: () => boolean;
+  /** Re-show the Welcome banner as a system note. */
+  showWelcome: () => void;
+  /** Print details for the current agent. */
+  showAgentInfo: () => void;
   /** Export the current transcript to a markdown file. */
   exportTranscript: (filename?: string) => string;
   /** Get the most recent assistant reply text (for /copy). */
@@ -53,10 +59,24 @@ const tokenize = (s: string): string[] =>
  * recognized (caller should NOT forward it to the LLM); false to forward as
  * a plain chat message.
  */
+const ALIASES: Record<string, string> = {
+  q: 'quit',
+  h: 'help',
+  n: 'new',
+  m: 'model',
+  r: 'resume',
+  e: 'export',
+  s: 'session',
+  t: 'tools',
+  c: 'clear',
+  w: 'welcome',
+};
+
 export function handleSlash(line: string, ctx: SlashContext): boolean {
   const tokens = tokenize(line);
   if (tokens.length === 0 || !tokens[0]?.startsWith('/')) return false;
-  const cmd = tokens[0]!.slice(1).toLowerCase();
+  const raw = tokens[0]!.slice(1).toLowerCase();
+  const cmd = ALIASES[raw] ?? raw;
   const args = tokens.slice(1);
 
   switch (cmd) {
@@ -152,9 +172,13 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     }
 
     case 'agent': {
-      // /agent with no arg → picker; /agent <id> → direct switch.
+      // /agent with no arg → picker; /agent inspect → details; /agent <id> → switch.
       if (args.length < 1) {
         ctx.openPicker('agent');
+        return true;
+      }
+      if (args[0] === 'inspect' || args[0] === 'info' || args[0] === 'show') {
+        ctx.showAgentInfo();
         return true;
       }
       const id = args[0]!;
@@ -189,6 +213,17 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
 
     case 'tools': {
       ctx.toggleTools();
+      return true;
+    }
+
+    case 'bell': {
+      const on = ctx.toggleBell();
+      ctx.pushSystem(`Terminal bell on long turns: ${on ? 'on' : 'off'}`);
+      return true;
+    }
+
+    case 'welcome': {
+      ctx.showWelcome();
       return true;
     }
 

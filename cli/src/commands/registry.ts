@@ -30,5 +30,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'detach', description: 'Detach a channel peer' },
   { name: 'connections', description: 'List channel bindings' },
   { name: 'copy', description: 'Copy the last assistant reply' },
+  { name: 'bell', description: 'Toggle terminal-bell on long turns' },
+  { name: 'welcome', description: 'Re-show the welcome banner' },
   { name: 'quit', description: 'Exit OpenProgram' },
 ];

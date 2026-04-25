@@ -9,6 +9,9 @@ const makeCtx = (overrides: Partial<SlashContext> = {}): SlashContext => ({
   exit: vi.fn(),
   openPicker: vi.fn(),
   toggleTools: vi.fn(),
+  toggleBell: vi.fn(() => true),
+  showWelcome: vi.fn(),
+  showAgentInfo: vi.fn(),
   exportTranscript: vi.fn(() => '/tmp/out.md'),
   ...overrides,
 });
@@ -99,5 +102,41 @@ describe('handleSlash', () => {
 
   it('unknown slash returns false (falls through to chat)', () => {
     expect(handleSlash('/totally-unknown', makeCtx())).toBe(false);
+  });
+
+  it('aliases /q → /quit', () => {
+    const ctx = makeCtx();
+    handleSlash('/q', ctx);
+    expect(ctx.exit).toHaveBeenCalled();
+  });
+
+  it('aliases /h → /help', () => {
+    const ctx = makeCtx();
+    handleSlash('/h', ctx);
+    expect(ctx.pushSystem).toHaveBeenCalled();
+  });
+
+  it('aliases /m → /model picker', () => {
+    const ctx = makeCtx();
+    handleSlash('/m', ctx);
+    expect(ctx.openPicker).toHaveBeenCalledWith('model');
+  });
+
+  it('/bell toggles', () => {
+    const ctx = makeCtx();
+    handleSlash('/bell', ctx);
+    expect(ctx.toggleBell).toHaveBeenCalled();
+  });
+
+  it('/welcome calls showWelcome', () => {
+    const ctx = makeCtx();
+    handleSlash('/welcome', ctx);
+    expect(ctx.showWelcome).toHaveBeenCalled();
+  });
+
+  it('/agent inspect calls showAgentInfo', () => {
+    const ctx = makeCtx();
+    handleSlash('/agent inspect', ctx);
+    expect(ctx.showAgentInfo).toHaveBeenCalled();
   });
 });

@@ -66,6 +66,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [history, setHistory] = useState<string[]>(() => loadHistory());
   const [contextWindow, setContextWindow] = useState<number | undefined>(undefined);
   const [conversationTitle, setConversationTitle] = useState<string | undefined>(undefined);
+  const [bellEnabled, setBellEnabled] = useState(true);
   const [modelsList, setModelsList] = useState<string[]>([]);
   const [pastConversations, setPastConversations] = useState<
     Array<{ id?: string; title?: string; created_at?: number }>
@@ -188,6 +189,19 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         } else if (d.type === 'result' && typeof d.content === 'string') {
           const text = d.content as string;
           finalizeStreamingTools();
+          // Ring the terminal bell if the turn took long enough that the
+          // user might have switched away. 5s threshold matches Claude
+          // Code's default. Suppressed via /bell.
+          setActivity((a) => {
+            if (
+              bellEnabled
+              && a
+              && Date.now() - a.startedAt > 5000
+            ) {
+              process.stdout.write('\x07');
+            }
+            return null;
+          });
           setStreaming((s) => {
             const tools = s?.tools ?? [];
             const final: Turn = {
@@ -200,7 +214,6 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
             setCommitted((m) => [...m, final]);
             return null;
           });
-          finishTurn();
         } else if (d.type === 'error' && typeof d.content === 'string') {
           setStreaming(null);
           setCommitted((m) => [
@@ -352,6 +365,44 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         exit: () => app.exit(),
         openPicker: (kind) => setPickerKind(kind),
         toggleTools: () => setToolsOn((on) => !on),
+        toggleBell: () => {
+          let next = bellEnabled;
+          setBellEnabled((b) => {
+            next = !b;
+            return next;
+          });
+          return next;
+        },
+        showWelcome: () => {
+          if (!stats) {
+            pushSystem('Stats not loaded yet — try again in a moment.');
+            return;
+          }
+          const lines = [
+            `OpenProgram · ${stats.agent?.name ?? '—'} · ${stats.agent?.model ?? '—'}`,
+            `${stats.programs_count ?? 0} programs · ${stats.skills_count ?? 0} skills · ${stats.agents_count ?? 0} agents · ${stats.conversations_count ?? 0} sessions`,
+          ];
+          if (stats.top_programs?.length) {
+            lines.push(`programs: ${stats.top_programs.map((p) => p.name).filter(Boolean).join(' · ')}`);
+          }
+          if (stats.top_skills?.length) {
+            lines.push(`skills: ${stats.top_skills.map((s) => s.name).filter(Boolean).join(' · ')}`);
+          }
+          pushSystem(lines.join('\n'));
+        },
+        showAgentInfo: () => {
+          const a = agentsList.find((x) => x.id === agent);
+          if (!a) {
+            pushSystem('No active agent.');
+            return;
+          }
+          const lines = [
+            `agent: ${a.name ?? a.id}  (${a.id})`,
+            `model: ${renderModel(a.model) ?? '—'}`,
+            `default: ${a.default ? 'yes' : 'no'}`,
+          ];
+          pushSystem(lines.join('\n'));
+        },
         lastAssistantText: () => {
           for (let i = committed.length - 1; i >= 0; i--) {
             if (committed[i]?.role === 'assistant') return committed[i]!.text;
