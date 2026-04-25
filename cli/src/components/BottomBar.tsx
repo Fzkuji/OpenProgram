@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { colors } from '../theme/colors.js';
-import { useTerminalWidth } from '../utils/useTerminalWidth.js';
+import { useTerminalWidth, usePanelWidth } from '../utils/useTerminalWidth.js';
 
 export interface BottomBarProps {
   agent?: string;
@@ -57,8 +57,12 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   const showTokens = cols >= 90 && (inTokens || outTokens);
   const showBusyTag = cols >= 70;
 
+  // Cap matches Welcome / PromptInput so the bar doesn't extend past
+  // the input box edge on wide terminals.
+  const width = usePanelWidth();
+
   return (
-    <Box paddingX={1} justifyContent="space-between" width={cols}>
+    <Box paddingX={1} justifyContent="space-between" width={width}>
       <Box flexShrink={1}>
         <Text color={toolsOn ? colors.success : colors.muted}>
           {toolsOn ? '▸▸ tools on' : '▸▸ tools off'}

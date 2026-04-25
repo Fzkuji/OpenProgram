@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { colors } from '../theme/colors.js';
-import { useTerminalWidth } from '../utils/useTerminalWidth.js';
+import { useTerminalWidth, usePanelWidth } from '../utils/useTerminalWidth.js';
 
 export interface WelcomeStats {
   agent?: { id?: string; name?: string; model?: string } | null;
@@ -35,7 +35,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
 
   // Cap the panel width so a 200-column terminal doesn't stretch the
   // border into a long strip — looks better aligned with the input box.
-  const width = Math.min(cols, 100);
+  const width = usePanelWidth();
   const compactTiles = cols < 60;
 
   return (
