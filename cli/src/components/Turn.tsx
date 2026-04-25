@@ -27,10 +27,10 @@ const ToolRow: React.FC<{ call: ToolCall }> = ({ call }) => {
     call.status === 'running' ? '◌' : call.status === 'error' ? '✗' : '●';
   const color =
     call.status === 'running'
-      ? colors.warning
+      ? colors.tool.running
       : call.status === 'error'
-      ? colors.error
-      : colors.muted;
+      ? colors.tool.error
+      : colors.tool.done;
   return (
     <Box flexDirection="column" paddingLeft={2}>
       <Box>
@@ -70,7 +70,7 @@ const UserRow: React.FC<{ turn: Turn }> = ({ turn }) => {
     <Box marginBottom={1} flexDirection="column">
       {lines.map((line, i) => (
         <Box key={i} paddingX={1}>
-          <Text backgroundColor="#222" color={colors.text}>
+          <Text backgroundColor={colors.user.bg} color={colors.user.fg}>
             {i === 0 ? '> ' : '  '}
             {line || ' '}
           </Text>
@@ -88,12 +88,12 @@ const AssistantRow: React.FC<{ turn: Turn }> = ({ turn }) => {
       <Box paddingX={1} flexDirection="column">
         {lines.length > 0 && lines[0] ? (
           <Box>
-            <Text color={colors.success}>● </Text>
+            <Text color={colors.assistant.glyph}>● </Text>
             <Text>{lines[0]}</Text>
           </Box>
         ) : (
           <Box>
-            <Text color={colors.success}>● </Text>
+            <Text color={colors.assistant.glyph}>● </Text>
           </Box>
         )}
         {lines.slice(1).map((l, i) => (

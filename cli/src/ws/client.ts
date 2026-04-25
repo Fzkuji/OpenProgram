@@ -63,6 +63,30 @@ export interface ConversationsListEnvelope {
   data: Array<{ id: string; title?: string; agent_id?: string; updated_at?: number; [k: string]: unknown }>;
 }
 
+export interface ChannelBindingsEnvelope {
+  type: 'channel_bindings';
+  data: Array<{
+    agent_id?: string;
+    match?: { channel?: string; account_id?: string; peer?: string };
+  }>;
+}
+
+export interface SessionAliasesEnvelope {
+  type: 'session_aliases';
+  data: Array<{
+    channel?: string;
+    account_id?: string;
+    peer?: string;
+    agent_id?: string;
+    conversation_id?: string;
+  }>;
+}
+
+export interface ChannelAccountsEnvelope {
+  type: 'channel_accounts';
+  data: Array<{ channel?: string; id?: string; [k: string]: unknown }>;
+}
+
 export interface ConversationLoadedEnvelope {
   type: 'conversation_loaded';
   data: { id: string; messages: Array<{ role: string; content: string; [k: string]: unknown }>; [k: string]: unknown };
@@ -112,6 +136,9 @@ export type WsEnvelope =
   | ModelsListEnvelope
   | ModelSwitchedEnvelope
   | HistoryListEnvelope
+  | ChannelBindingsEnvelope
+  | SessionAliasesEnvelope
+  | ChannelAccountsEnvelope
   | ErrorEnvelope
   | { type: 'pong' };
 

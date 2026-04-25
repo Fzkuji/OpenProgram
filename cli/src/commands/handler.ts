@@ -10,6 +10,10 @@ export interface SlashContext {
   exit: () => void;
   /** Open an interactive picker (model / resume / agent). */
   openPicker: (kind: 'model' | 'resume' | 'agent') => void;
+  /** Toggle (or set) the "tools-on" flag passed with the next chat turn. */
+  toggleTools: () => void;
+  /** Export the current transcript to a markdown file. */
+  exportTranscript: (filename?: string) => string;
   currentAgent?: string;
   currentModel?: string;
   currentConversation?: string;
@@ -168,6 +172,31 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
 
     case 'resume': {
       ctx.openPicker('resume');
+      return true;
+    }
+
+    case 'tools': {
+      ctx.toggleTools();
+      return true;
+    }
+
+    case 'export': {
+      const filename = args[0];
+      try {
+        const path = ctx.exportTranscript(filename);
+        ctx.pushSystem(`Exported transcript → ${path}`);
+      } catch (e) {
+        ctx.pushSystem(`Export failed: ${(e as Error).message}`);
+      }
+      return true;
+    }
+
+    case 'cost': {
+      // Token + cost stats live in the BottomBar; surface a snapshot here.
+      ctx.client.send({ action: 'sync', conv_id: ctx.currentConversation } as never);
+      ctx.pushSystem(
+        'Current token usage is shown on the bottom bar. ↓ input, ↑ output.',
+      );
       return true;
     }
 

@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { writeFileSync } from 'fs';
+import { join } from 'path';
 import { Box, useApp, useInput } from 'ink';
 import { BackendClient, WsEnvelope, StatsEnvelope } from '../ws/client.js';
 import { BottomBar } from '../components/BottomBar.js';
@@ -189,6 +191,30 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         if (ev.data?.current) setModel(ev.data.current);
       } else if (ev.type === 'history_list') {
         setPastConversations(ev.data ?? []);
+      } else if (ev.type === 'conversations_list') {
+        const data = ev.data ?? [];
+        const lines = data.length === 0
+          ? ['(no past sessions)']
+          : data.slice(0, 20).map((c: { id?: string; title?: string }) =>
+              `  ${c.id?.slice(0, 18) ?? '?'}  ${c.title ?? ''}`,
+            );
+        pushSystem(`Sessions:\n${lines.join('\n')}`);
+      } else if (ev.type === 'channel_bindings') {
+        const data = ev.data ?? [];
+        const lines = data.length === 0
+          ? ['(no channel bindings)']
+          : data.map((b: { agent_id?: string; match?: { channel?: string; account_id?: string; peer?: string } }) =>
+              `  ${b.match?.channel ?? '*'}:${b.match?.account_id ?? '*'}:${b.match?.peer ?? '*'} → ${b.agent_id ?? '?'}`,
+            );
+        pushSystem(`Channel bindings:\n${lines.join('\n')}`);
+      } else if (ev.type === 'session_aliases') {
+        const data = ev.data ?? [];
+        const lines = data.length === 0
+          ? ['(no session aliases)']
+          : data.map((a: { channel?: string; account_id?: string; peer?: string; agent_id?: string; conversation_id?: string }) =>
+              `  ${a.channel ?? '?'}:${a.account_id ?? '?'}:${a.peer ?? '?'} → ${a.agent_id ?? '?'}/${a.conversation_id ?? '?'}`,
+            );
+        pushSystem(`Session aliases:\n${lines.join('\n')}`);
       } else if (ev.type === 'conversation_loaded') {
         const data = ev.data as {
           id?: string;
@@ -269,6 +295,29 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         },
         exit: () => app.exit(),
         openPicker: (kind) => setPickerKind(kind),
+        toggleTools: () => setToolsOn((on) => !on),
+        exportTranscript: (filename) => {
+          const fname = filename ?? `openprogram-${Date.now()}.md`;
+          const path = fname.startsWith('/') ? fname : join(process.cwd(), fname);
+          const lines: string[] = [
+            `# OpenProgram session ${conversationId ?? '(unsaved)'}`,
+            `agent: ${agent ?? '—'}`,
+            `model: ${model ?? '—'}`,
+            '',
+          ];
+          for (const t of committed) {
+            lines.push(`## ${t.role}`);
+            lines.push('');
+            lines.push(t.text);
+            lines.push('');
+            for (const tc of t.tools ?? []) {
+              lines.push(`- tool: \`${tc.tool}\` ${tc.input ? `· ${tc.input}` : ''}`);
+            }
+            if ((t.tools ?? []).length) lines.push('');
+          }
+          writeFileSync(path, lines.join('\n'));
+          return path;
+        },
         currentAgent: agent,
         currentModel: model,
         currentConversation: conversationId,
