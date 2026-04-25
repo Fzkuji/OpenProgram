@@ -175,8 +175,9 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
             a ? { ...a, verb: (d.content as string).replace(/\.+$/, '') } : a,
           );
         } else if (d.type === 'context_stats') {
-          const chat = (d as { chat?: { input?: number; output?: number } }).chat;
-          if (chat) setTokens({ input: chat.input, output: chat.output });
+          const chat = (d as { chat?: { input_tokens?: number; output_tokens?: number } }).chat;
+          if (chat)
+            setTokens({ input: chat.input_tokens, output: chat.output_tokens });
         }
       } else if (ev.type === 'stats') {
         setStats(ev.data);
