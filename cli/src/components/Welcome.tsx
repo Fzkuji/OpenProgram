@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { colors } from '../theme/colors.js';
+import { useTerminalWidth } from '../utils/useTerminalWidth.js';
 
 export interface WelcomeStats {
   agent?: { id?: string; name?: string; model?: string } | null;
@@ -28,8 +29,14 @@ const Tile: React.FC<{ value: string; label: string }> = ({ value, label }) => (
 );
 
 export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
+  const cols = useTerminalWidth();
   const agentName = stats?.agent?.name ?? stats?.agent?.id ?? '—';
   const model = stats?.agent?.model ?? '—';
+
+  // Cap the panel width so a 200-column terminal doesn't stretch the
+  // border into a long strip — looks better aligned with the input box.
+  const width = Math.min(cols, 100);
+  const compactTiles = cols < 60;
 
   return (
     <Box
@@ -39,6 +46,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
       paddingX={2}
       paddingY={0}
       marginBottom={1}
+      width={width}
     >
       {/* Title row + agent / model on the right */}
       <Box justifyContent="space-between">
@@ -50,13 +58,26 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
         </Text>
       </Box>
 
-      {/* 4 stat tiles, evenly distributed across the panel */}
-      <Box marginTop={1}>
-        <Tile value={fmt(stats?.programs_count)} label="programs" />
-        <Tile value={fmt(stats?.skills_count)} label="skills" />
-        <Tile value={fmt(stats?.agents_count)} label="agents" />
-        <Tile value={fmt(stats?.conversations_count)} label="sessions" />
-      </Box>
+      {/* Stat tiles. Wide terminals: single row. Narrow: 2x2 grid. */}
+      {compactTiles ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Tile value={fmt(stats?.programs_count)} label="programs" />
+            <Tile value={fmt(stats?.skills_count)} label="skills" />
+          </Box>
+          <Box>
+            <Tile value={fmt(stats?.agents_count)} label="agents" />
+            <Tile value={fmt(stats?.conversations_count)} label="sessions" />
+          </Box>
+        </Box>
+      ) : (
+        <Box marginTop={1}>
+          <Tile value={fmt(stats?.programs_count)} label="programs" />
+          <Tile value={fmt(stats?.skills_count)} label="skills" />
+          <Tile value={fmt(stats?.agents_count)} label="agents" />
+          <Tile value={fmt(stats?.conversations_count)} label="sessions" />
+        </Box>
+      )}
 
       {/* A peek at what's installed — first few names of each kind. */}
       {stats?.top_programs?.length || stats?.top_skills?.length ? (

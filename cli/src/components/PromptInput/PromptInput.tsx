@@ -4,6 +4,7 @@ import { PromptInputHelpMenu } from './PromptInputHelpMenu.js';
 import { FileMenu } from './FileMenu.js';
 import { SLASH_COMMANDS, SlashCommand } from '../../commands/registry.js';
 import { fileCompletions, findAtToken, FileMatch } from '../../utils/fileCompletions.js';
+import { useTerminalWidth } from '../../utils/useTerminalWidth.js';
 import { colors } from '../../theme/colors.js';
 
 export interface PromptInputProps {
@@ -34,6 +35,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const [menuIndex, setMenuIndex] = useState(0);
   // -1 means we're not browsing history. 0..history.length-1 picks an entry.
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const cols = useTerminalWidth();
 
   const inSlashMode = value.startsWith('/');
   const matches = useMemo(() => (inSlashMode ? filterCommands(value) : []), [value, inSlashMode]);
@@ -209,7 +211,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const after = value.slice(cursor + 1);
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" width={Math.min(cols, 100)}>
       {inFileMode ? (
         <FileMenu items={fileMatches} selectedIndex={fileIndex} />
       ) : inSlashMode ? (
