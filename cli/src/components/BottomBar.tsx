@@ -7,6 +7,8 @@ export interface BottomBarProps {
   agent?: string;
   model?: string;
   conversationId?: string;
+  /** Human title — preferred over conv_id when present. */
+  conversationTitle?: string;
   busy?: boolean;
   /** When true, the input is in slash-command mode. */
   slashMode?: boolean;
@@ -30,6 +32,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   agent,
   model,
   conversationId,
+  conversationTitle,
   busy,
   slashMode,
   tokens,
@@ -98,7 +101,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
           {showConv ? (
             <>
               <Text color={colors.border}> · </Text>
-              {(conversationId ?? '(new)').slice(0, 14)}
+              {(conversationTitle ?? conversationId ?? '(new)').slice(0, 24)}
             </>
           ) : null}
           {showTokens ? (

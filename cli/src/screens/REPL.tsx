@@ -65,6 +65,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [tokens, setTokens] = useState<{ input?: number; output?: number }>({});
   const [history, setHistory] = useState<string[]>(() => loadHistory());
   const [contextWindow, setContextWindow] = useState<number | undefined>(undefined);
+  const [conversationTitle, setConversationTitle] = useState<string | undefined>(undefined);
   const [modelsList, setModelsList] = useState<string[]>([]);
   const [pastConversations, setPastConversations] = useState<
     Array<{ id?: string; title?: string; created_at?: number }>
@@ -140,6 +141,26 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         if (d.type === 'stream_event') {
           const inner = (d as { event?: { type?: string; text?: string; tool?: string; input?: string } }).event;
           if (!inner) return;
+          const innerWithResult = inner as { type?: string; tool?: string; result?: string; is_error?: boolean };
+          if (innerWithResult.type === 'tool_result' && innerWithResult.tool) {
+            // Attach the result preview to the most recent matching call.
+            setStreaming((s) => {
+              if (!s) return s;
+              const tools = (s.tools ?? []).slice();
+              for (let i = tools.length - 1; i >= 0; i--) {
+                if (tools[i]?.tool === innerWithResult.tool && tools[i]?.status === 'running') {
+                  tools[i] = {
+                    ...tools[i]!,
+                    status: innerWithResult.is_error ? 'error' : 'done',
+                    result: innerWithResult.result,
+                  };
+                  break;
+                }
+              }
+              return { ...s, tools };
+            });
+            return;
+          }
           if (inner.type === 'text' && typeof inner.text === 'string') {
             const delta = inner.text;
             upsertStreamingText(delta);
@@ -248,9 +269,11 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       } else if (ev.type === 'conversation_loaded') {
         const data = ev.data as {
           id?: string;
+          title?: string;
           messages?: Array<{ role?: string; content?: string }>;
         };
         if (data.id) setConversationId(data.id);
+        if (data.title) setConversationTitle(data.title);
         const turns = (data.messages ?? [])
           .filter((m) => m.role && m.content)
           .map((m, i) => ({
@@ -365,6 +388,10 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       if (handled) return;
     }
     setCommitted((m) => [...m, { id: `u-${Date.now()}`, role: 'user', text }]);
+    if (!conversationTitle && committed.length === 0) {
+      // Mirror server-side behaviour: first user message becomes the title.
+      setConversationTitle(text.slice(0, 50) + (text.length > 50 ? '…' : ''));
+    }
     setHistory((h) => {
       if (h[h.length - 1] === text) return h;
       appendHistory(text);
@@ -497,6 +524,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         agent={agent}
         model={model}
         conversationId={conversationId}
+        conversationTitle={conversationTitle}
         busy={!!activity}
         slashMode={slashMode}
         tokens={tokens}

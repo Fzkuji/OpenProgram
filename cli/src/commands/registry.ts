@@ -12,6 +12,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'sessions', description: 'List sessions' },
   { name: 'new', description: 'Start a new session' },
   { name: 'resume', description: 'Resume a previous session' },
+  { name: 'search', description: 'Search across past sessions' },
   { name: 'clear', description: 'Clear the screen' },
   { name: 'compact', description: 'Compact the conversation' },
   { name: 'config', description: 'Open configuration' },

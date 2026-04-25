@@ -23,6 +23,16 @@ const filterCommands = (filter: string): SlashCommand[] => {
   return SLASH_COMMANDS.filter((c) => c.name.toLowerCase().includes(needle));
 };
 
+const bestSearchMatch = (history: string[], term: string): string | null => {
+  if (history.length === 0) return null;
+  const t = term.toLowerCase();
+  if (!t) return history[history.length - 1] ?? null;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if ((history[i] ?? '').toLowerCase().includes(t)) return history[i] ?? null;
+  }
+  return null;
+};
+
 export const PromptInput: React.FC<PromptInputProps> = ({
   onSubmit,
   busy,
@@ -36,6 +46,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   // -1 means we're not browsing history. 0..history.length-1 picks an entry.
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const width = usePanelWidth();
+  // ctrl+r reverse search state.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const inSlashMode = value.startsWith('/');
   const matches = useMemo(() => (inSlashMode ? filterCommands(value) : []), [value, inSlashMode]);
@@ -78,6 +91,46 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     // While the agent is busy, esc cancels the in-flight turn.
     if (busy) {
       if (key.escape) onCancel?.();
+      return;
+    }
+
+    // Reverse search has its own little modal — handles its own keys.
+    if (searchOpen) {
+      if (key.escape) {
+        setSearchOpen(false);
+        setSearchTerm('');
+        return;
+      }
+      if (key.return) {
+        // Pull the current best match into the input and close search.
+        const match = bestSearchMatch(history ?? [], searchTerm);
+        if (match) {
+          setValue(match);
+          setCursor(match.length);
+        }
+        setSearchOpen(false);
+        setSearchTerm('');
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setSearchTerm((s) => s.slice(0, -1));
+        return;
+      }
+      if (key.ctrl && input === 'r') {
+        // Walk to the next older match (basic — we keep the term, the
+        // helper just returns the most recent for now).
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) {
+        setSearchTerm((s) => s + input);
+      }
+      return;
+    }
+
+    // ctrl+r enters reverse search mode.
+    if (key.ctrl && input === 'r') {
+      setSearchOpen(true);
+      setSearchTerm('');
       return;
     }
 
@@ -212,7 +265,17 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
   return (
     <Box flexDirection="column" width={width}>
-      {inFileMode ? (
+      {searchOpen ? (
+        <Box paddingX={1}>
+          <Text color={colors.warning}>(reverse-i-search)</Text>
+          <Text color={colors.muted}>: </Text>
+          <Text>{searchTerm}</Text>
+          <Text color={colors.border}>  → </Text>
+          <Text color={colors.muted}>
+            {bestSearchMatch(history ?? [], searchTerm) ?? '(no match)'}
+          </Text>
+        </Box>
+      ) : inFileMode ? (
         <FileMenu items={fileMatches} selectedIndex={fileIndex} />
       ) : inSlashMode ? (
         <PromptInputHelpMenu items={matches} selectedIndex={menuIndex} />

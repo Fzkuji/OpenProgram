@@ -179,6 +179,14 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'search': {
+      // Same picker as /resume — Picker has a built-in filter, so user can
+      // type to narrow titles. Different name on purpose so it shows up
+      // distinctly in the slash menu.
+      ctx.openPicker('resume');
+      return true;
+    }
+
     case 'tools': {
       ctx.toggleTools();
       return true;

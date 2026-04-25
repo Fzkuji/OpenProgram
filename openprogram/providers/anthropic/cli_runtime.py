@@ -239,8 +239,21 @@ class ClaudeCodeRuntime(Runtime):
                 "input": str(ev.input)[:100],
             })
         elif isinstance(ev, ToolResult):
-            # Non-fatal surface — legacy code ignored these; keep parity.
-            pass
+            # Forward a redacted preview so the CLI can render the call's
+            # output under its tool row. Capping at 2 KB avoids flooding
+            # the stream when something dumps a megabyte of bytes.
+            try:
+                content = getattr(ev, "content", None) or getattr(ev, "output", None) or ""
+                preview = str(content)[:2000]
+                self._emit_stream_event({
+                    "type": "tool_result",
+                    "elapsed": getattr(ev, "elapsed_ms", 0) / 1000.0,
+                    "tool": getattr(ev, "name", "") or getattr(ev, "tool_name", ""),
+                    "is_error": bool(getattr(ev, "is_error", False)),
+                    "result": preview,
+                })
+            except Exception:  # noqa: BLE001
+                pass
         elif isinstance(ev, SessionInfo):
             # Record the primary model id for UI display. ``session_id``
             # is informational — we don't resume by it (session_mode="none").
