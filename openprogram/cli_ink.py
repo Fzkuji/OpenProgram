@@ -8,11 +8,13 @@ attached so it owns the terminal.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -71,8 +73,26 @@ def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
     entry = _resolve_cli_entry()
 
     port = _find_free_port()
+    log_dir = Path.home() / ".openprogram" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "ink-server.log"
+
+    # Redirect Python stdout/stderr to a log file so the server thread's
+    # prints don't bleed into the Node CLI's terminal. Save the originals
+    # first; we'll hand them to the Node child explicitly.
+    tty_out = os.dup(1)
+    tty_err = os.dup(2)
+    log_fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+    os.dup2(log_fd, 1)
+    os.dup2(log_fd, 2)
+    os.close(log_fd)
+
     start_web(port=port, open_browser=False)
     if not _wait_until_listening(port):
+        os.dup2(tty_out, 1)
+        os.dup2(tty_err, 2)
+        os.close(tty_out)
+        os.close(tty_err)
         raise RuntimeError(f"webui server did not come up on port {port}")
 
     ws_url = f"ws://127.0.0.1:{port}/ws"
@@ -84,7 +104,7 @@ def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
         env["OPENPROGRAM_CONV"] = conv_id
 
     cmd = [node, str(entry), "--ws", ws_url]
-    proc = subprocess.Popen(cmd, env=env)
+    proc = subprocess.Popen(cmd, env=env, stdin=0, stdout=tty_out, stderr=tty_err)
     try:
         proc.wait()
     except KeyboardInterrupt:
@@ -94,4 +114,9 @@ def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
         except subprocess.TimeoutExpired:
             proc.kill()
     finally:
+        try:
+            os.close(tty_out)
+            os.close(tty_err)
+        except OSError:
+            pass
         sys.exit(proc.returncode or 0)

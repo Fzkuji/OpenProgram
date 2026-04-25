@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import { BackendClient, WsEnvelope } from '../ws/client.js';
 import { StatusLine } from '../components/StatusLine.js';
 import { Messages } from '../components/Messages.js';
+import { Welcome } from '../components/Welcome.js';
 import { PromptInput } from '../components/PromptInput/PromptInput.js';
 
 export interface REPLProps {
@@ -33,39 +34,52 @@ const renderModel = (m: AgentInfo['model']): string | undefined => {
 
 export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConversation }) => {
   const app = useApp();
-  const [messages, setMessages] = useState<UIMessage[]>([]);
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [committed, setCommitted] = useState<UIMessage[]>([]);
+  const [streaming, setStreaming] = useState<UIMessage | null>(null);
   const [agent, setAgent] = useState<string | undefined>(initialAgent);
   const [model, setModel] = useState<string | undefined>(undefined);
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversation);
   const [busy, setBusy] = useState(false);
-  const [pendingMsgId, setPendingMsgId] = useState<string | null>(null);
+  const agentSetRef = useRef(false);
 
   useEffect(() => {
     const off = client.on((ev: WsEnvelope) => {
       if (ev.type === 'chat_ack') {
         setConversationId(ev.data.conv_id);
-        setPendingMsgId(ev.data.msg_id);
       } else if (ev.type === 'chat_response') {
         const d = ev.data;
         if (d.type === 'stream_event' && typeof d.content === 'string') {
-          appendStream(d.content);
+          setStreaming((s) => ({
+            id: s?.id ?? `a-${Date.now()}`,
+            role: 'assistant',
+            text: (s?.text ?? '') + (d.content as string),
+          }));
         } else if (d.type === 'result' && typeof d.content === 'string') {
-          replaceOrAppendAssistant(d.content);
+          const text = d.content as string;
+          setStreaming(null);
+          setCommitted((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', text }]);
           setBusy(false);
-          setPendingMsgId(null);
         } else if (d.type === 'error' && typeof d.content === 'string') {
-          setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'system', text: `error: ${d.content}` }]);
+          setStreaming(null);
+          setCommitted((m) => [
+            ...m,
+            { id: `e-${Date.now()}`, role: 'system', text: `error: ${d.content as string}` },
+          ]);
           setBusy(false);
-          setPendingMsgId(null);
         } else if (d.type === 'status' && typeof d.content === 'string') {
-          setMessages((m) => [...m, { id: `s-${Date.now()}`, role: 'system', text: d.content as string }]);
+          // Skip noisy "Thinking..." status — busy indicator already covers it.
+          if (d.content !== 'Thinking...') {
+            setCommitted((m) => [
+              ...m,
+              { id: `s-${Date.now()}`, role: 'system', text: d.content as string },
+            ]);
+          }
         }
       } else if (ev.type === 'agents_list') {
         const list = ev.data as AgentInfo[];
-        setAgents(list);
         const def = list.find((a) => a.default) ?? list[0];
-        if (def && !agent) {
+        if (def && !agentSetRef.current) {
+          agentSetRef.current = true;
           setAgent(def.id);
           const m = renderModel(def.model);
           if (m) setModel(m);
@@ -78,7 +92,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       } else if (ev.type === 'error') {
         const data = (ev as { data?: { message?: string } }).data;
         const msg = data?.message ?? 'unknown error';
-        setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'system', text: `error: ${msg}` }]);
+        setCommitted((m) => [...m, { id: `e-${Date.now()}`, role: 'system', text: `error: ${msg}` }]);
       }
     });
     client.send({ action: 'sync' });
@@ -89,26 +103,6 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
 
-  const appendStream = (delta: string) => {
-    setMessages((m) => {
-      const last = m[m.length - 1];
-      if (last && last.role === 'assistant' && last.id.startsWith('a-stream')) {
-        return [...m.slice(0, -1), { ...last, text: last.text + delta }];
-      }
-      return [...m, { id: `a-stream-${Date.now()}`, role: 'assistant', text: delta }];
-    });
-  };
-
-  const replaceOrAppendAssistant = (text: string) => {
-    setMessages((m) => {
-      const last = m[m.length - 1];
-      if (last && last.role === 'assistant' && last.id.startsWith('a-stream')) {
-        return [...m.slice(0, -1), { ...last, id: `a-${Date.now()}`, text }];
-      }
-      return [...m, { id: `a-${Date.now()}`, role: 'assistant', text }];
-    });
-  };
-
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       app.exit();
@@ -117,7 +111,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   const onSubmit = (text: string) => {
     if (!text.trim()) return;
-    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', text }]);
+    setCommitted((m) => [...m, { id: `u-${Date.now()}`, role: 'user', text }]);
     setBusy(true);
     client.send({
       action: 'chat',
@@ -129,7 +123,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   return (
     <Box flexDirection="column">
-      <Messages items={messages} />
+      {committed.length === 0 && !streaming ? <Welcome /> : null}
+      <Messages committed={committed} streaming={streaming} />
       <PromptInput onSubmit={onSubmit} busy={busy} />
       <StatusLine agent={agent} model={model} conversationId={conversationId ?? '(new)'} busy={busy} />
     </Box>
