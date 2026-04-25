@@ -261,10 +261,42 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'login': {
+      const channel = args[0];
+      if (channel === 'wechat') {
+        ctx.pushSystem(
+          'WeChat login (QR scan via your phone):\n' +
+          '  1. In another terminal, run:\n' +
+          '       openprogram channels accounts login wechat default\n' +
+          '  2. Scan the printed QR with your phone\'s WeChat app.\n' +
+          '  3. The channel worker auto-starts after login. Incoming\n' +
+          '     messages from your contacts will route to the default\n' +
+          '     agent (or per /attach binding).\n' +
+          '  4. Bind a specific contact to this session with:\n' +
+          '       /attach wechat default <wxid>',
+        );
+        return true;
+      }
+      if (channel === 'telegram' || channel === 'discord' || channel === 'slack') {
+        ctx.pushSystem(
+          `${channel} login uses a bot token. In another terminal, run:\n` +
+          `  openprogram channels accounts add ${channel} default\n` +
+          'and paste the token when prompted.\n' +
+          'Then use /attach ' + channel + ' default <peer_id> to route a peer here.',
+        );
+        return true;
+      }
+      ctx.pushSystem(
+        'Channel login: /login <wechat|telegram|discord|slack>.\n' +
+        'For provider auth (Anthropic / Codex / Gemini): run\n' +
+        '  openprogram providers login <name> from the shell.',
+      );
+      return true;
+    }
+
     case 'memory':
     case 'mcp':
     case 'doctor':
-    case 'login':
     case 'logout':
     case 'config':
     case 'review':
