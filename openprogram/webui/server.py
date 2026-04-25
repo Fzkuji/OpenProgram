@@ -1592,21 +1592,33 @@ async def _handle_ws_command(ws, cmd: dict):
             agents = []
             agent_summary = None
 
-        # Programs (loaded callable functions, excluding internal helpers).
-        # Also surface a few names for the welcome panel so the user knows
-        # what's available without typing /functions.
+        # Programs split into "functions" (meta/builtin/external) and
+        # "applications" (the app subdir). Welcome panel renders them as
+        # two separate tiles.
         try:
             programs = _discover_functions()
             non_meta = [p for p in programs if p.get("category") not in ("meta",)]
             programs_count = len(non_meta)
-            top_programs = [
+            functions_only = [
+                p for p in non_meta if p.get("category") in ("builtin", "external")
+            ]
+            applications_only = [p for p in non_meta if p.get("category") == "app"]
+            top_functions = [
                 {"name": p.get("name"), "category": p.get("category")}
-                for p in non_meta[:6]
+                for p in functions_only[:6]
+                if p.get("name")
+            ]
+            top_applications = [
+                {"name": p.get("name"), "category": p.get("category")}
+                for p in applications_only[:6]
                 if p.get("name")
             ]
         except Exception:
             programs_count = 0
-            top_programs = []
+            functions_only = []
+            applications_only = []
+            top_functions = []
+            top_applications = []
 
         # Skills (SKILL.md registry).
         try:
@@ -1701,10 +1713,18 @@ async def _handle_ws_command(ws, cmd: dict):
                 "agent": agent_summary,
                 "agents_count": len(agents) if agents else 0,
                 "programs_count": programs_count,
+                "functions_count": len(functions_only),
+                "applications_count": len(applications_only),
                 "skills_count": skills_count,
                 "conversations_count": conversations_count,
-                "top_programs": top_programs,
+                "top_functions": top_functions,
+                "top_applications": top_applications,
                 "top_skills": top_skills,
+                "top_agents": top_agents,
+                "top_sessions": top_sessions,
+                "top_tools": top_tools,
+                "top_providers": top_providers,
+                "top_channels": top_channels,
             },
         }, default=str))
         return

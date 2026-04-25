@@ -6,7 +6,7 @@ import { Welcome } from '../src/components/Welcome.js';
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 
 describe('Welcome', () => {
-  it('shows agent / model line', () => {
+  it('shows agent / model line and tile labels', () => {
     const { lastFrame } = render(
       <Welcome
         stats={{
@@ -15,7 +15,10 @@ describe('Welcome', () => {
           programs_count: 21,
           skills_count: 8,
           conversations_count: 5,
-          top_programs: [{ name: 'create' }, { name: 'edit' }],
+          top_programs: [
+            { name: 'create', category: 'builtin' },
+            { name: 'edit', category: 'builtin' },
+          ],
           top_skills: [{ name: 'write' }],
         }}
       />,
@@ -24,10 +27,10 @@ describe('Welcome', () => {
     expect(out).toContain('OpenProgram');
     expect(out).toContain('Main');
     expect(out).toContain('gpt-5.4');
-    expect(out).toContain('21');
-    expect(out).toContain('programs');
     expect(out).toContain('skills');
-    expect(out).toContain('create');
+    expect(out).toContain('agents');
+    expect(out).toContain('functions');
+    expect(out).toContain('applications');
   });
 
   it('renders em-dashes for missing counts', () => {

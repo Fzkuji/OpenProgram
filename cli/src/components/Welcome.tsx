@@ -10,12 +10,17 @@ export interface WelcomeStats {
   skills_count?: number;
   conversations_count?: number;
   top_programs?: Array<{ name?: string; category?: string }>;
+  top_functions?: Array<{ name?: string; category?: string }>;
+  top_applications?: Array<{ name?: string; category?: string }>;
   top_skills?: Array<{ name?: string; slug?: string }>;
   top_agents?: Array<{ name?: string; id?: string }>;
   top_sessions?: Array<{ id?: string; title?: string }>;
   top_tools?: string[];
   top_providers?: string[];
   top_channels?: Array<{ channel?: string; id?: string }>;
+  // Counts for the split-out tiles. If absent, derived from top_*.length.
+  functions_count?: number;
+  applications_count?: number;
 }
 
 export interface WelcomeProps {
@@ -91,13 +96,6 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
   const agentName = stats?.agent?.name ?? stats?.agent?.id ?? '—';
   const model = stats?.agent?.model ?? '—';
 
-  const programs: ColumnSpec = {
-    count: fmt(stats?.programs_count),
-    label: 'programs',
-    items: (stats?.top_programs ?? [])
-      .map((p) => p.name)
-      .filter((s): s is string => !!s),
-  };
   const skills: ColumnSpec = {
     count: fmt(stats?.skills_count),
     label: 'skills',
@@ -136,47 +134,62 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
       c.channel && c.id ? `${c.channel}:${c.id}` : c.channel ?? c.id ?? '',
     ),
   };
-
-  // Layout decisions based on terminal width.
-  // - cols < 50 : 2 cols × 2 rows of headline tiles, no extras row
-  // - cols 50-100: single-row 4 tiles + extras row (3 tiles)
-  // - cols >= 100: same, items get a 2-sub-column layout per tile
-  const compact = cols < 50;
-  const twoSubCols = cols >= 110;
-
-  // Vertical budget. Other UI elements consume ~6-8 rows (input box +
-  // bottom bar + spinner + safety margin). Whatever remains we spend on
-  // welcome content: title, gaps, two header rows (count + label), N item
-  // rows per tile, optional extras row, tip, padding+border.
-  const reservedRows = 8;
-  const available = Math.max(8, rows - reservedRows);
-  // Per-tile fixed cost = count + label + (extras gap) ≈ 3.
-  // With one row of headline tiles + tip line ≈ 6 fixed rows.
-  // Items budget = available - 6 (single row) or - 9 (two rows).
-  const headlineFixed = 5; // title row + count + label + tip + gap
-  const extrasFixed = 4; // count + label + gap + (margin row)
-  const showExtras = available >= headlineFixed + extrasFixed + 4;
-  const itemsRowsForHeadline = Math.max(
-    1,
-    Math.min(8, available - headlineFixed - (showExtras ? extrasFixed : 0)),
+  // Programs are split into "functions" (meta/builtin/external runtime
+  // helpers) and "applications" (the app/ subdir projects). Fall back to
+  // top_programs when the server hasn't been updated yet.
+  const fallbackPrograms = stats?.top_programs ?? [];
+  const fnFromFallback = fallbackPrograms.filter(
+    (p) => p.category && p.category !== 'app',
   );
-  const itemsRowsForExtras = showExtras
-    ? Math.max(1, Math.min(4, available - headlineFixed - extrasFixed - itemsRowsForHeadline + 2))
-    : 0;
+  const appFromFallback = fallbackPrograms.filter((p) => p.category === 'app');
+  const functions: ColumnSpec = {
+    count: fmt(
+      stats?.functions_count
+        ?? (stats?.top_functions?.length
+          ?? (fnFromFallback.length || stats?.programs_count)),
+    ),
+    label: 'functions',
+    items: (stats?.top_functions ?? fnFromFallback)
+      .map((p) => p.name)
+      .filter((s): s is string => !!s),
+  };
+  const applications: ColumnSpec = {
+    count: fmt(
+      stats?.applications_count
+        ?? (stats?.top_applications?.length ?? appFromFallback.length),
+    ),
+    label: 'applications',
+    items: (stats?.top_applications ?? appFromFallback)
+      .map((p) => p.name)
+      .filter((s): s is string => !!s),
+  };
 
-  const headlineCols: ColumnSpec[] = compact
-    ? []
-    : [programs, skills, agentsCol, sessionsCol];
-  const headlineColWidth = compact
-    ? Math.floor((width - 4) / 2)
-    : Math.floor((width - 4) / 4);
+  // Always 4×2 grid (8 tiles). Layout order:
+  //   skills · agents · sessions · tools
+  //   providers · channels · functions · applications
+  const row1 = [skills, agentsCol, sessionsCol, tools];
+  const row2 = [providers, channels, functions, applications];
+  const rowAll = [...row1, ...row2];
 
-  const extrasCols: ColumnSpec[] = compact
-    ? [programs, skills, agentsCol, sessionsCol, tools, providers, channels]
-    : [tools, providers, channels];
-  const extrasColWidth = compact
-    ? Math.floor((width - 4) / 2)
-    : Math.floor((width - 4) / 3);
+  // Fixed chrome cost inside the welcome panel:
+  //   1 top border + 1 title + 1 marginTop + (row 1 height) +
+  //   1 marginTop + (row 2 height) + 1 marginTop + 1 tip + 1 bottom border
+  // → 7 chrome rows + 2 × tileHeight
+  // Reserve outside the panel: input box (3) + bottom bar (1) + safety (2).
+  const reservedOutside = 6;
+  const available = Math.max(8, rows - reservedOutside);
+  const chrome = 7;
+  // Per-tile minimum: 2 (count + label).
+  // Items per tile = (available - chrome) / 2 - 2.
+  const itemsPerTile = Math.max(0, Math.floor((available - chrome) / 2) - 2);
+
+  // Width per tile. Always 4 columns when cols >= 50; below that fall back
+  // to a 2-col grid (4 rows of 2 tiles).
+  const fourAcross = cols >= 50;
+  const tileWidth = fourAcross
+    ? Math.floor((width - 4) / 4)
+    : Math.floor((width - 4) / 2);
+  const twoSubCols = cols >= 130;
 
   return (
     <Box
@@ -198,51 +211,50 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
         </Text>
       </Box>
 
-      {/* Headline row — 4 main tiles with vertical item lists */}
-      {headlineCols.length > 0 ? (
-        <Box marginTop={1}>
-          {headlineCols.map((c) => (
-            <Column
-              key={c.label}
-              spec={c}
-              width={headlineColWidth}
-              twoCols={twoSubCols}
-              maxRows={itemsRowsForHeadline}
-            />
-          ))}
-        </Box>
-      ) : null}
-
-      {/* Compact: pack everything into 2-col grid; otherwise extras row */}
-      {compact ? (
+      {/* 4-across layout: two rows of 4 tiles each.
+          On narrow terminals, fall back to 2-across with 4 rows. */}
+      {fourAcross ? (
+        <>
+          <Box marginTop={1}>
+            {row1.map((c) => (
+              <Column
+                key={c.label}
+                spec={c}
+                width={tileWidth}
+                twoCols={twoSubCols}
+                maxRows={itemsPerTile}
+              />
+            ))}
+          </Box>
+          <Box marginTop={1}>
+            {row2.map((c) => (
+              <Column
+                key={c.label}
+                spec={c}
+                width={tileWidth}
+                twoCols={twoSubCols}
+                maxRows={itemsPerTile}
+              />
+            ))}
+          </Box>
+        </>
+      ) : (
         <Box flexDirection="column" marginTop={1}>
-          {Array.from({ length: Math.ceil(extrasCols.length / 2) }).map((_, row) => (
-            <Box key={row}>
-              {extrasCols.slice(row * 2, row * 2 + 2).map((c) => (
+          {Array.from({ length: Math.ceil(rowAll.length / 2) }).map((_, r) => (
+            <Box key={r}>
+              {rowAll.slice(r * 2, r * 2 + 2).map((c) => (
                 <Column
                   key={c.label}
                   spec={c}
-                  width={extrasColWidth}
+                  width={tileWidth}
                   twoCols={false}
-                  maxRows={Math.max(1, itemsRowsForHeadline - 1)}
+                  maxRows={Math.max(0, itemsPerTile - 1)}
                 />
               ))}
             </Box>
           ))}
         </Box>
-      ) : showExtras ? (
-        <Box marginTop={1}>
-          {extrasCols.map((c) => (
-            <Column
-              key={c.label}
-              spec={c}
-              width={extrasColWidth}
-              twoCols={twoSubCols}
-              maxRows={itemsRowsForExtras}
-            />
-          ))}
-        </Box>
-      ) : null}
+      )}
 
       <Box marginTop={1}>
         <Text color={colors.muted}>
