@@ -9,11 +9,13 @@ Progress:
 - 1e: live-session mode (``live_session="claude-stdio"``)
 - 1f-α: live-session policy (turn-count respawn, ``compact()``), plugin
   hooks for envelope + thinking-level argv
+- 1f-β: ``text_transforms.input`` rewrites prompt + system prompt + live
+  envelope; ``text_transforms.output`` rewrites streamed ``TextDelta``
+  text (tool metadata is left untouched)
 
 Still TODO:
 
-- ``text_transforms`` input/output rewrites
-- Provider-side ``CliBackendPlugin`` for Anthropic (1f-β)
+- Provider-side ``CliBackendPlugin`` for Anthropic
 """
 
 from __future__ import annotations
@@ -24,14 +26,16 @@ import json
 import os
 import signal
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import AsyncIterator, Iterable, Optional
 
 from .config import CliBackendConfig
-from .events import CliEvent, Done, Error, SessionInfo, Usage
+from .events import CliEvent, Done, Error, SessionInfo, TextDelta, Usage
 from .parsers import LineParser, parser_for
 from .plugin import (
     CliBackendPlugin,
+    PluginTextReplacement,
     PreparedExecution,
     PrepareExecutionContext,
 )
@@ -135,6 +139,8 @@ class CliRunner:
     ) -> AsyncIterator[CliEvent]:
         cfg = self._config
         call_start = time.monotonic()
+        prompt = self._apply_input_transforms(prompt)
+        system_prompt = self._apply_input_transforms(system_prompt)
 
         prepared = await self._call_prepare_execution(model_id, auth_profile_id)
 
@@ -255,6 +261,8 @@ class CliRunner:
         """
         cfg = self._config
         call_start = time.monotonic()
+        prompt = self._apply_input_transforms(prompt)
+        system_prompt = self._apply_input_transforms(system_prompt)
 
         # Respawn when turn limit hit (before reading ``_live_proc`` below).
         if (
@@ -423,7 +431,7 @@ class CliRunner:
             blob = blob_bytes.decode("utf-8", errors="replace")
             for ev in parser(blob, call_start):
                 self._capture_session(ev)
-                yield ev, "event"
+                yield self._apply_output_transforms(ev), "event"
             yield None, "eof"
             return
 
@@ -441,12 +449,13 @@ class CliRunner:
             line = line_bytes.decode("utf-8", errors="replace")
             for ev in parser(line, call_start):
                 self._capture_session(ev)
+                transformed = self._apply_output_transforms(ev)
                 # Detect turn boundary. ``Usage`` is what claude-stream-json
                 # emits for the ``result`` message — see parsers.py.
                 is_terminator = (
                     turn_terminator == "result" and isinstance(ev, Usage)
                 )
-                yield ev, ("terminator" if is_terminator else "event")
+                yield transformed, ("terminator" if is_terminator else "event")
                 if is_terminator:
                     return
 
@@ -750,6 +759,42 @@ class CliRunner:
             if prepared.env:
                 env.update(prepared.env)
         return env
+
+    def _apply_input_transforms(self, text: Optional[str]) -> Optional[str]:
+        if text is None:
+            return None
+        return self._apply_text_replacements(
+            text,
+            getattr(self.plugin.text_transforms, "input", ()) or (),
+        )
+
+    def _apply_output_transforms(self, event: CliEvent) -> CliEvent:
+        if not isinstance(event, TextDelta):
+            return event
+        transformed = self._apply_text_replacements(
+            event.text,
+            getattr(self.plugin.text_transforms, "output", ()) or (),
+        )
+        if transformed == event.text:
+            return event
+        return replace(event, text=transformed)
+
+    @staticmethod
+    def _apply_text_replacements(
+        text: str, replacements: Iterable[PluginTextReplacement]
+    ) -> str:
+        result = text
+        for replacement in replacements:
+            pattern = replacement.from_
+            if isinstance(pattern, str):
+                result = result.replace(pattern, replacement.to)
+            elif hasattr(pattern, "sub"):
+                result = pattern.sub(replacement.to, result)
+            else:
+                raise TypeError(
+                    "PluginTextReplacement.from_ must be str or compiled regex pattern"
+                )
+        return result
 
     async def _run_cleanup(self, prepared: Optional[PreparedExecution]) -> None:
         if prepared is None or prepared.cleanup is None:

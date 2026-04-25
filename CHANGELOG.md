@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Philosophy doc** added at `docs/philosophy/agentic-programming.md`.
 
 ### Added
+- **CLI runner text transforms** for provider plugins — `text_transforms.input` rewrites prompts/system prompts before launch, and `text_transforms.output` rewrites streamed assistant text deltas without altering tool payloads
 - **Real-time web UI** (`python -m openprogram.webui`, also accepts `openprogram.webui.visualize` alias) — interactive Context tree viewer with WebSocket streaming
 - **Built-in agentic functions**: `general_action`, `agent_loop`, `wait`, `deep_work`
 - **`deep_work`** — autonomous plan-execute-evaluate loop with quality levels (high_school → professor)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import stat
 import sys
@@ -521,3 +522,106 @@ def test_stdin_mode_feeds_prompt(tmp_path: Path) -> None:
     events = asyncio.run(_collect(runner, "piped-prompt"))
     texts = [e.text for e in events if isinstance(e, TextDelta)]
     assert texts == ["piped-prompt"]
+
+
+def test_text_transforms_rewrite_prompt_and_system_prompt(tmp_path: Path) -> None:
+    cli = _write_fake_cli(tmp_path, lines=[])
+    from openprogram.providers._shared.cli_backend import CliBackendConfig, CliBackendPlugin
+    from openprogram.providers._shared.cli_backend.plugin import (
+        PluginTextReplacement,
+        PluginTextTransforms,
+    )
+
+    plugin = CliBackendPlugin(
+        id="rewriter",
+        config=CliBackendConfig(
+            command=str(cli),
+            output="jsonl",
+            jsonl_dialect="claude-stream-json",
+            input="arg",
+            system_prompt_arg="--system",
+        ),
+        text_transforms=PluginTextTransforms(
+            input=(
+                PluginTextReplacement("secret-token", "[redacted]"),
+                PluginTextReplacement(re.compile(r"user-(\d+)"), r"member-\1"),
+            )
+        ),
+    )
+    runner = CliRunner(plugin=plugin, workspace_dir=str(tmp_path))
+
+    argv = runner._build_argv(
+        prompt=runner._apply_input_transforms("hello secret-token from user-42"),
+        model_id="m",
+        system_prompt=runner._apply_input_transforms("system secret-token user-7"),
+        image_paths=(),
+        resume=False,
+    )
+
+    assert argv[-1] == "hello [redacted] from member-42"
+    assert "--system" in argv
+    assert "system [redacted] member-7" in argv
+
+
+def test_text_transforms_rewrite_live_envelope_input(tmp_path: Path) -> None:
+    cli = _write_live_echo_cli(tmp_path)
+    from openprogram.providers._shared.cli_backend import CliBackendConfig, CliBackendPlugin
+    from openprogram.providers._shared.cli_backend.plugin import (
+        PluginTextReplacement,
+        PluginTextTransforms,
+    )
+
+    plugin = CliBackendPlugin(
+        id="live-rewriter",
+        config=CliBackendConfig(
+            command=str(cli),
+            output="jsonl",
+            jsonl_dialect="claude-stream-json",
+            live_session="claude-stdio",
+            input="stdin",
+        ),
+        text_transforms=PluginTextTransforms(
+            input=(PluginTextReplacement("secret-token", "[redacted]"),)
+        ),
+    )
+    runner = CliRunner(plugin=plugin, workspace_dir=str(tmp_path))
+
+    async def scenario():
+        events = await _collect(runner, "hello secret-token")
+        await runner.close()
+        return events
+
+    events = asyncio.run(scenario())
+    texts = [e.text for e in events if isinstance(e, TextDelta)]
+    assert texts == ["echo:hello [redacted]"]
+
+
+def test_text_transforms_rewrite_only_text_output(tmp_path: Path) -> None:
+    cli = _write_fake_cli(tmp_path, lines=[
+        {"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "secret-token"},
+            {"type": "tool_use", "id": "t1", "name": "bash", "input": {"cmd": "echo secret-token"}},
+        ]}},
+        {"type": "result", "result": "ok", "usage": {"input_tokens": 1, "output_tokens": 1}},
+    ])
+    from openprogram.providers._shared.cli_backend import CliBackendConfig, CliBackendPlugin
+    from openprogram.providers._shared.cli_backend.plugin import (
+        PluginTextReplacement,
+        PluginTextTransforms,
+    )
+
+    plugin = CliBackendPlugin(
+        id="out-rewriter",
+        config=CliBackendConfig(command=str(cli), output="jsonl", jsonl_dialect="claude-stream-json"),
+        text_transforms=PluginTextTransforms(
+            output=(PluginTextReplacement("secret-token", "[redacted]"),)
+        ),
+    )
+    runner = CliRunner(plugin=plugin, workspace_dir=str(tmp_path))
+    events = asyncio.run(_collect(runner, "hi"))
+
+    texts = [e.text for e in events if isinstance(e, TextDelta)]
+    tool_calls = [e for e in events if isinstance(e, ToolCall)]
+    assert texts == ["[redacted]"]
+    assert len(tool_calls) == 1
+    assert tool_calls[0].input == {"cmd": "echo secret-token"}

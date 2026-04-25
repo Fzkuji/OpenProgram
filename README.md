@@ -164,6 +164,8 @@ To inspect what the library can see on your machine:
 openprogram providers
 ```
 
+For CLI-backed providers, plugin authors can also attach `text_transforms` at the runner boundary. Input transforms rewrite prompts and system prompts before they reach the CLI, and output transforms rewrite streamed assistant text deltas after parsing, without mutating tool-call payloads.
+
 ### Retry and recovery
 
 Transient provider failures are handled at the `Runtime` layer, so you can retry just the LLM call instead of restarting the whole workflow:
