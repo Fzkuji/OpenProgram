@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { PromptInputHelpMenu } from './PromptInputHelpMenu.js';
+import { FileMenu } from './FileMenu.js';
 import { SLASH_COMMANDS, SlashCommand } from '../../commands/registry.js';
+import { fileCompletions, findAtToken, FileMatch } from '../../utils/fileCompletions.js';
 import { colors } from '../../theme/colors.js';
 
 export interface PromptInputProps {
@@ -36,6 +38,23 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const inSlashMode = value.startsWith('/');
   const matches = useMemo(() => (inSlashMode ? filterCommands(value) : []), [value, inSlashMode]);
 
+  // Detect an "@partial" token before the cursor — when present we open
+  // the file completion menu and drive it with ↑↓/tab/enter.
+  const atToken = useMemo(() => findAtToken(value, cursor), [value, cursor]);
+  const fileMatches = useMemo<FileMatch[]>(() => {
+    if (!atToken) return [];
+    try {
+      return fileCompletions(atToken.partial);
+    } catch {
+      return [];
+    }
+  }, [atToken]);
+  const [fileIndex, setFileIndex] = useState(0);
+  useEffect(() => {
+    if (fileIndex >= fileMatches.length) setFileIndex(0);
+  }, [fileMatches.length, fileIndex]);
+  const inFileMode = atToken !== null && fileMatches.length > 0;
+
   useEffect(() => {
     if (menuIndex >= matches.length) setMenuIndex(0);
   }, [matches.length, menuIndex]);
@@ -58,6 +77,37 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     if (busy) {
       if (key.escape) onCancel?.();
       return;
+    }
+
+    // File-completion navigation: when an @partial is at the cursor and
+    // we have matches, ↑↓/tab/enter drive the file menu.
+    if (inFileMode && atToken) {
+      if (key.upArrow) {
+        setFileIndex((i) => (i - 1 + fileMatches.length) % fileMatches.length);
+        return;
+      }
+      if (key.downArrow) {
+        setFileIndex((i) => (i + 1) % fileMatches.length);
+        return;
+      }
+      if (key.tab || key.return) {
+        const pick = fileMatches[fileIndex]!;
+        const before = value.slice(0, atToken.start);
+        const after = value.slice(cursor);
+        const insertText = `@${pick.path}${pick.isDir ? '/' : ''} `;
+        const next = before + insertText + after;
+        setValue(next);
+        setCursor(before.length + insertText.length);
+        return;
+      }
+      if (key.escape) {
+        // Drop the @partial so the menu closes.
+        const before = value.slice(0, atToken.start);
+        const after = value.slice(cursor);
+        setValue(before + after);
+        setCursor(before.length);
+        return;
+      }
     }
 
     // Slash-menu navigation has priority when active.
@@ -160,7 +210,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
   return (
     <Box flexDirection="column">
-      {inSlashMode ? (
+      {inFileMode ? (
+        <FileMenu items={fileMatches} selectedIndex={fileIndex} />
+      ) : inSlashMode ? (
         <PromptInputHelpMenu items={matches} selectedIndex={menuIndex} />
       ) : null}
       <Box

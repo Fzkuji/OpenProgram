@@ -11,6 +11,8 @@ export interface BottomBarProps {
   slashMode?: boolean;
   /** Last context stats (input/output tokens). */
   tokens?: { input?: number; output?: number };
+  /** Tools available for next turn. */
+  toolsOn?: boolean;
 }
 
 const formatTokens = (n?: number): string | null => {
@@ -26,9 +28,12 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   busy,
   slashMode,
   tokens,
+  toolsOn,
 }) => {
   const leftHint = slashMode
     ? '↑↓ choose · enter run · tab fill · esc cancel'
+    : busy
+    ? 'esc to stop · ctrl+c quit'
     : 'type / for commands · enter send · ctrl+c quit';
 
   const inTokens = formatTokens(tokens?.input);
@@ -36,7 +41,13 @@ export const BottomBar: React.FC<BottomBarProps> = ({
 
   return (
     <Box paddingX={1} justifyContent="space-between">
-      <Text color={colors.muted}>{leftHint}</Text>
+      <Box>
+        <Text color={toolsOn ? colors.success : colors.muted}>
+          {toolsOn ? '▸▸ tools on' : '▸▸ tools off'}
+        </Text>
+        <Text color={colors.border}> · </Text>
+        <Text color={colors.muted}>{leftHint}</Text>
+      </Box>
       <Text color={colors.muted}>
         {agent ?? '—'}
         <Text color={colors.border}> · </Text>

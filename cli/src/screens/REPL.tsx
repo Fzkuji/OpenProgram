@@ -64,6 +64,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     null,
   );
   const [agentsList, setAgentsList] = useState<AgentInfo[]>([]);
+  const [toolsOn, setToolsOn] = useState(false);
   const agentSetRef = useRef(false);
 
   // 1Hz tick for elapsed-seconds display while a turn is active.
@@ -245,6 +246,12 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       app.exit();
+      return;
+    }
+    // shift+tab toggles tool availability for the next turn (Claude Code parity).
+    if (key.shift && key.tab) {
+      setToolsOn((on) => !on);
+      return;
     }
   });
 
@@ -278,6 +285,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       conv_id: conversationId,
       agent_id: agent,
       text,
+      tools: toolsOn,
     });
   };
 
@@ -387,6 +395,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         busy={!!activity}
         slashMode={slashMode}
         tokens={tokens}
+        toolsOn={toolsOn}
       />
     </Box>
   );
