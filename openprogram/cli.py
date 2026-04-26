@@ -873,7 +873,17 @@ def _default_chrome_user_data_dir() -> str:
 
 
 def _cmd_browser_attach(port: int, keep_running: bool) -> int:
-    """Re-launch Chrome with a debug port and wire the browser tool to it."""
+    """Re-launch Chrome with a debug port and wire the browser tool to it.
+
+    Chrome 134+ silently refuses to expose CDP when the user-data-dir is
+    a "production" profile (the one with your real Google sign-in,
+    saved passwords, etc.) — a security measure to keep automated
+    processes from auto-scraping credentials. Workaround: keep a
+    sidecar copy of your real profile at ~/.openprogram/chrome-profile.
+    Chrome sees it as a "new" profile path and binds CDP normally; all
+    cookies / extensions / saved logins still work because the contents
+    were copied verbatim. The cost is one disk-space copy on first run.
+    """
     import os
     import subprocess
     import time
@@ -884,18 +894,23 @@ def _cmd_browser_attach(port: int, keep_running: bool) -> int:
         print("Couldn't find Google Chrome. Install it or set the path manually.")
         return 1
 
-    user_data = _default_chrome_user_data_dir()
+    real_user_data = _default_chrome_user_data_dir()
+    sidecar = Path.home() / ".openprogram" / "chrome-profile"
+    user_data = str(sidecar)
 
     if not keep_running:
         # Quit Chrome so we can re-launch with the debug port (Chrome
         # refuses to share a profile across processes — and worse, it
         # silently merges new launches into the existing instance, where
         # the --remote-debugging-port flag does NOT take effect).
-        print("This will close any running Chrome and reopen it with a debug port")
-        print(f"so the browser tool can drive your logged-in session.")
-        print(f"  Chrome:    {chrome}")
-        print(f"  Profile:   {user_data}")
-        print(f"  Debug port: {port}")
+        first_time = not sidecar.exists()
+        print("This will close any running Chrome and reopen a sidecar copy")
+        print("of your profile so the browser tool can drive a logged-in Chrome.")
+        print(f"  Chrome:        {chrome}")
+        print(f"  Source profile: {real_user_data}")
+        print(f"  Sidecar dir:   {sidecar}"
+              + ("  (will be created — one-time ~3GB copy)" if first_time else "  (already exists)"))
+        print(f"  Debug port:    {port}")
         try:
             ans = input("Continue? [y/N] ").strip().lower()
         except (KeyboardInterrupt, EOFError):
@@ -951,14 +966,38 @@ def _cmd_browser_attach(port: int, keep_running: bool) -> int:
                   f"'{user_data}/SingletonLock'")
             return 1
 
-        # Step 4: also remove a stale SingletonLock if Chrome left one.
-        for marker in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
-            p = Path(user_data) / marker
-            if p.exists() or p.is_symlink():
-                try:
-                    p.unlink()
-                except OSError:
-                    pass
+        # Step 4: also remove a stale SingletonLock if Chrome left one
+        # (in either the real profile or our sidecar).
+        for base in (real_user_data, user_data):
+            for marker in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+                p = Path(base) / marker
+                if p.exists() or p.is_symlink():
+                    try:
+                        p.unlink()
+                    except OSError:
+                        pass
+
+        # Step 5: ensure sidecar profile exists. First time we copy
+        # ~/Library/.../Google/Chrome/Default + Local State so all
+        # logins/extensions come along. Subsequent runs reuse the copy.
+        if first_time:
+            sidecar.mkdir(parents=True, exist_ok=True)
+            src_default = Path(real_user_data) / "Default"
+            src_local_state = Path(real_user_data) / "Local State"
+            if not src_default.exists():
+                print(f"  Source profile not found at {src_default}. Aborting.")
+                return 1
+            print("  Copying profile (this takes a moment for large profiles)…")
+            subprocess.run(
+                ["cp", "-R", str(src_default), str(sidecar / "Default")],
+                check=False,
+            )
+            if src_local_state.exists():
+                subprocess.run(
+                    ["cp", str(src_local_state), str(sidecar / "Local State")],
+                    check=False,
+                )
+            print(f"  Profile copied to {sidecar}.")
 
     # Detect which profile the user last used so we can skip the multi-
     # profile picker. With a picker in the way, --remote-debugging-port
