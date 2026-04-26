@@ -45,12 +45,14 @@ from typing import Any, Optional
 NAME = "agent_browser"
 
 DESCRIPTION = (
-    "Drive a browser through the npm `agent-browser` CLI. ariaSnapshot + "
-    "ref-id (@e1 @e2) interface designed for LLMs — no CSS selectors. "
-    "Sister tool to `browser` (Playwright). Use this when you want the "
-    "model to reason over an accessibility tree; use `browser` when you "
-    "need raw DOM/CSS control. Setup: `npm i -g agent-browser && "
-    "agent-browser install`."
+    "Drive a browser via the npm `agent-browser` CLI. ariaSnapshot + ref-id "
+    "(@e1, @e2) interface designed for LLM agents — no CSS selectors. "
+    "11 verbs (open / navigate / snapshot / click / type / scroll / press / "
+    "back / console / list / close). Sister tool: `playwright_browser` "
+    "exposes the same browser via raw Playwright + CSS selectors when DOM "
+    "control matters. Auto-attaches to the playwright_browser sidecar "
+    "Chrome via CDP when running, so both tools share one logged-in "
+    "browser. Setup: `npm i -g agent-browser && agent-browser install`."
 )
 
 SPEC: dict[str, Any] = {

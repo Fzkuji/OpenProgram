@@ -82,7 +82,7 @@ ALL_TOOLS: dict[str, dict[str, Any]] = {
     "mixture_of_agents": MIXTURE_OF_AGENTS,
     "canvas": CANVAS,
     "cron": CRON,
-    "browser": BROWSER,
+    "playwright_browser": BROWSER,
     "agent_browser": AGENT_BROWSER,
 }
 

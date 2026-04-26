@@ -28,14 +28,21 @@ from typing import Any
 from .._helpers import read_string_param
 
 
-NAME = "browser"
+NAME = "playwright_browser"
 
 DESCRIPTION = (
-    "Automate a headless Chromium browser via Playwright. Open a session, "
-    "navigate to URLs, click / type into elements by CSS selector, extract "
-    "page text, or take screenshots. Sessions persist across tool calls "
-    "within the same process — always ``close`` when done. Install the "
-    "runtime first: `pip install playwright && playwright install chromium`."
+    "Drive a browser through Playwright (Chromium / patchright / camoufox). "
+    "CSS-selector + DOM control, 28 verbs (open / navigate / click / type / "
+    "extract / screenshot / upload / wait / eval / html / hover / select / "
+    "press / accessibility / screenshot_b64 / tabs / new_tab / switch_tab / "
+    "download / cookies / save_login / frames / frame_eval / console / "
+    "block / viewport / list / close). Sister tool: `agent_browser` "
+    "exposes the same browser via ariaSnapshot + ref-id (@e1, @e2) for "
+    "LLMs that prefer accessibility-tree reasoning over CSS selectors. "
+    "Default engine is `auto` — boots a sidecar Chrome that copies your "
+    "real profile so saved logins / extensions work; first call slow, "
+    "subsequent calls instant. Setup: `pip install \"openprogram[browser]\" "
+    "&& playwright install chromium`."
 )
 
 
