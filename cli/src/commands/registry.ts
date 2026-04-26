@@ -28,6 +28,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'diff', description: 'Show git working-tree diff' },
   { name: 'init', description: 'Initialize an OpenProgram workspace' },
   { name: 'channel', description: 'Connect a chat channel (wechat/telegram/...)' },
+  { name: 'browser', description: 'Drive Chrome — /browser <url> or /browser <verb>' },
   { name: 'attach', description: 'Attach a channel peer to this session' },
   { name: 'detach', description: 'Detach a channel peer' },
   { name: 'connections', description: 'List channel bindings' },

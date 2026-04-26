@@ -14,6 +14,7 @@ export type WsRequest =
   | { action: 'sync' }
   | { action: 'stats' }
   | { action: 'stop'; conv_id: string }
+  | { action: 'browser'; verb: string; args?: Record<string, unknown> }
   | { action: 'list_models' }
   | { action: 'switch_model'; model: string; provider?: string; conv_id?: string }
   | { action: 'list_agents' }
@@ -87,6 +88,11 @@ export interface ChannelAccountsEnvelope {
   data: Array<{ channel?: string; id?: string; [k: string]: unknown }>;
 }
 
+export interface BrowserResultEnvelope {
+  type: 'browser_result';
+  data: { verb: string; result: string };
+}
+
 export interface ConversationLoadedEnvelope {
   type: 'conversation_loaded';
   data: { id: string; messages: Array<{ role: string; content: string; [k: string]: unknown }>; [k: string]: unknown };
@@ -139,6 +145,7 @@ export type WsEnvelope =
   | ChannelBindingsEnvelope
   | SessionAliasesEnvelope
   | ChannelAccountsEnvelope
+  | BrowserResultEnvelope
   | ErrorEnvelope
   | { type: 'pong' };
 

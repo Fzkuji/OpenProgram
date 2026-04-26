@@ -1543,6 +1543,29 @@ async def _handle_ws_command(ws, cmd: dict):
             }))
         return
 
+    if action == "browser":
+        # Proxy a single browser-tool verb. Used by the Ink CLI's /browser
+        # command so an agent or user can drive the attached Chrome
+        # without dropping into Python.
+        verb = cmd.get("verb") or ""
+        kwargs = cmd.get("args") or {}
+        if not verb:
+            await ws.send_text(json.dumps({
+                "type": "browser_result",
+                "data": {"verb": "", "result": "Error: `verb` is required."},
+            }))
+            return
+        try:
+            from openprogram.tools.browser.browser import execute as _br_exec
+            result = _br_exec(action=verb, **kwargs)
+        except Exception as e:  # noqa: BLE001
+            result = f"Error: {type(e).__name__}: {e}"
+        await ws.send_text(json.dumps({
+            "type": "browser_result",
+            "data": {"verb": verb, "result": str(result)},
+        }, default=str))
+        return
+
     if action == "stop":
         # Cancel the in-flight turn for a conversation. Mirrors the REST
         # /api/stop endpoint.

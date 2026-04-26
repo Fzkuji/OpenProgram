@@ -275,6 +275,9 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         const list = ev.data?.models ?? [];
         setModelsList(list);
         if (ev.data?.current) setModel(ev.data.current);
+      } else if (ev.type === 'browser_result') {
+        const data = (ev as { data: { verb: string; result: string } }).data;
+        pushSystem(`[browser ${data.verb}] ${data.result}`);
       } else if (ev.type === 'channel_accounts') {
         setChannelAccounts((ev.data ?? []) as Array<{ channel?: string; account_id?: string; configured?: boolean }>);
       } else if (ev.type === 'history_list') {

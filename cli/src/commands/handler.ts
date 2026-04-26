@@ -226,6 +226,44 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'browser': {
+      // Drive the attached Chrome from inside the TUI:
+      //   /browser                       → status
+      //   /browser <url>                 → open(url) (auto-bootstrap if needed)
+      //   /browser <verb> <args…>        → arbitrary tool call (advanced)
+      // Result is rendered as a system note when browser_result arrives.
+      const sub = args[0] ?? '';
+      const looksLikeUrl =
+        /^https?:\/\//i.test(sub) || sub.startsWith('localhost') || sub.includes('.');
+      if (!sub) {
+        ctx.client.send({
+          action: 'browser', verb: 'list', args: {},
+        } as never);
+        ctx.pushSystem('Asking the server for current browser sessions…');
+        return true;
+      }
+      if (looksLikeUrl) {
+        const url = sub.startsWith('http') ? sub : `https://${sub}`;
+        ctx.client.send({
+          action: 'browser', verb: 'open', args: { url },
+        } as never);
+        ctx.pushSystem(`Opening ${url} in attached Chrome…`);
+        return true;
+      }
+      // Treat as <verb> + key=value pairs.
+      const verb = sub;
+      const kvArgs: Record<string, string> = {};
+      for (const a of args.slice(1)) {
+        const eq = a.indexOf('=');
+        if (eq > 0) kvArgs[a.slice(0, eq)] = a.slice(eq + 1);
+      }
+      ctx.client.send({
+        action: 'browser', verb, args: kvArgs,
+      } as never);
+      ctx.pushSystem(`browser ${verb}…`);
+      return true;
+    }
+
     case 'bell': {
       const on = ctx.toggleBell();
       ctx.pushSystem(`Terminal bell on long turns: ${on ? 'on' : 'off'}`);
