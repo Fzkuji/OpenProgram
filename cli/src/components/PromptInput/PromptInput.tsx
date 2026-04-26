@@ -53,6 +53,21 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const inSlashMode = value.startsWith('/');
   const matches = useMemo(() => (inSlashMode ? filterCommands(value) : []), [value, inSlashMode]);
 
+  // Fish-shell style autosuggest: when the current input is a prefix of
+  // a past submission, show the rest in dim gray after the cursor.
+  // → / End / ctrl-e accepts. New keystrokes that don't match the
+  // suggestion silently update / drop it.
+  const suggestion = useMemo<string | null>(() => {
+    if (!value || !history || history.length === 0) return null;
+    if (cursor !== value.length) return null;
+    if (inSlashMode) return null; // slash menu has its own popup
+    for (let i = history.length - 1; i >= 0; i--) {
+      const h = history[i] ?? '';
+      if (h !== value && h.startsWith(value)) return h.slice(value.length);
+    }
+    return null;
+  }, [value, cursor, history, inSlashMode]);
+
   // Detect an "@partial" token before the cursor — when present we open
   // the file completion menu and drive it with ↑↓/tab/enter.
   const atToken = useMemo(() => findAtToken(value, cursor), [value, cursor]);
@@ -241,7 +256,23 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       return;
     }
     if (key.rightArrow) {
+      // At end-of-line with a suggestion, → accepts the rest.
+      if (cursor === value.length && suggestion) {
+        const next = value + suggestion;
+        setValue(next);
+        setCursor(next.length);
+        setHistoryIndex(-1);
+        return;
+      }
       setCursor((c) => Math.min(value.length, c + 1));
+      return;
+    }
+    // ctrl+E accepts the autosuggest (mnemonic: end-of-line / accept).
+    if (key.ctrl && input === 'e' && suggestion) {
+      const next = value + suggestion;
+      setValue(next);
+      setCursor(next.length);
+      setHistoryIndex(-1);
       return;
     }
     if (key.backspace || key.delete) {
@@ -284,11 +315,35 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         borderStyle="round"
         borderColor={busy ? colors.warning : colors.primary}
         paddingX={1}
+        justifyContent="space-between"
       >
-        <Text color={colors.primary}>{'> '}</Text>
-        <Text>{before}</Text>
-        <Text inverse>{at || ' '}</Text>
-        <Text>{after}</Text>
+        <Box flexShrink={1}>
+          <Text color={colors.primary}>{'> '}</Text>
+          {value.length === 0 ? (
+            // Empty state: gray placeholder hint with the cursor sitting at
+            // the very start. ↵ glyph still rendered on the right.
+            <>
+              <Text inverse>{' '}</Text>
+              <Text color={colors.muted}>type / for commands</Text>
+            </>
+          ) : (
+            <>
+              <Text>{before}</Text>
+              <Text inverse>{at || ' '}</Text>
+              <Text>{after}</Text>
+              {suggestion ? (
+                <Text color={colors.muted} dimColor>
+                  {suggestion}
+                </Text>
+              ) : null}
+            </>
+          )}
+        </Box>
+        <Box flexShrink={0} marginLeft={2}>
+          <Text color={colors.muted} dimColor>
+            ↵ enter
+          </Text>
+        </Box>
       </Box>
     </Box>
   );

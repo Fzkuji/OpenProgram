@@ -48,18 +48,19 @@ export const BottomBar: React.FC<BottomBarProps> = ({
 }) => {
   const cols = useTerminalWidth();
 
-  // Pick a hint length that fits — long form on wide terminals,
-  // shorter on narrow, drop entirely on very narrow.
+  // Bottom-bar left hint is now context-only (slash menu / busy / quit).
+  // The "type / for commands" placeholder lives inside the input box,
+  // and ↵ enter is rendered there too — no need to duplicate.
   const hintLong = slashMode
     ? '↑↓ choose · enter run · tab fill · esc cancel'
     : busy
     ? 'esc to stop · ctrl+c quit'
-    : 'type / for commands · enter send · ctrl+c quit';
+    : 'ctrl+c quit · ctrl+r history · @ files';
   const hintShort = slashMode
     ? '↑↓ enter tab esc'
     : busy
     ? 'esc stop'
-    : '/ commands';
+    : 'ctrl+c quit';
   const showHint = cols >= 60;
   const hint = cols >= 100 ? hintLong : hintShort;
 

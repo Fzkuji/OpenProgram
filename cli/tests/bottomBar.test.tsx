@@ -19,7 +19,9 @@ describe('BottomBar', () => {
   it('switches the left hint when slashMode is active', () => {
     const idle = render(<BottomBar agent="main" />);
     const idleOut = stripAnsi(idle.lastFrame() ?? '');
-    expect(idleOut).toContain('type / for commands');
+    // Idle hint is now context-only; "type / for commands" lives inside
+    // the input box, not in the bottom bar.
+    expect(idleOut).toContain('ctrl+c quit');
 
     const slash = render(<BottomBar agent="main" slashMode />);
     const slashOut = stripAnsi(slash.lastFrame() ?? '');

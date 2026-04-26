@@ -12,6 +12,7 @@ import { PromptInput } from '../components/PromptInput/PromptInput.js';
 import { handleSlash } from '../commands/handler.js';
 import { loadHistory, appendHistory, trimHistoryFile } from '../utils/history.js';
 import { copyToClipboard } from '../utils/clipboard.js';
+import { useTerminalWidth, useTerminalHeight } from '../utils/useTerminalWidth.js';
 
 export interface REPLProps {
   client: BackendClient;
@@ -91,6 +92,20 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [thinkingEffort, setThinkingEffort] = useState<'off' | 'low' | 'medium' | 'high'>('medium');
   const [connState, setConnState] = useState<ConnectionState>(client.getState());
   const agentSetRef = useRef(false);
+  // Bumps every time the terminal resizes so Messages can remount the
+  // <Static> region and re-print all committed turns at the new width
+  // (after our resize-time clear-screen).
+  const cols = useTerminalWidth();
+  const rows = useTerminalHeight();
+  const lastSizeRef = useRef<string>(`${cols}x${rows}`);
+  const [resizeNonce, setResizeNonce] = useState(0);
+  useEffect(() => {
+    const sig = `${cols}x${rows}`;
+    if (sig !== lastSizeRef.current) {
+      lastSizeRef.current = sig;
+      setResizeNonce((n) => n + 1);
+    }
+  }, [cols, rows]);
 
   // 1Hz tick for elapsed-seconds display while a turn is active.
   useEffect(() => {
@@ -646,6 +661,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         committed={committed}
         streaming={streaming}
         welcome={stats ? stats : undefined}
+        resizeNonce={resizeNonce}
       />
       {activity ? (
         <Spinner

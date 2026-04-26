@@ -14,13 +14,23 @@ export interface MessagesProps {
    * than disappearing on the first message.
    */
   welcome?: WelcomeStats;
+  /**
+   * Bumps when the terminal resizes. Used as the React key on the
+   * inner Static so resizing wipes Ink's "we already printed these"
+   * memo and the whole transcript re-prints fresh at the new width.
+   * Without this, our resize-time clear-screen escape would leave the
+   * scroll empty.
+   */
+  resizeNonce?: number;
 }
 
 type StaticItem =
   | { kind: 'welcome'; key: string; welcome: WelcomeStats }
   | { kind: 'turn'; key: string; turn: Turn };
 
-export const Messages: React.FC<MessagesProps> = ({ committed, streaming, welcome }) => {
+export const Messages: React.FC<MessagesProps> = ({
+  committed, streaming, welcome, resizeNonce = 0,
+}) => {
   const items: StaticItem[] = [];
   if (welcome) {
     items.push({ kind: 'welcome', key: '__welcome__', welcome });
@@ -29,9 +39,13 @@ export const Messages: React.FC<MessagesProps> = ({ committed, streaming, welcom
     items.push({ kind: 'turn', key: t.id, turn: t });
   }
 
+  // Re-mount Static on resize so it re-prints the whole transcript at
+  // the new width. Ink otherwise considers the previously-printed items
+  // permanent and skips them, which combined with our resize-time
+  // clear-screen leaves a blank scroll above the input box.
   return (
     <>
-      <Static items={items}>
+      <Static key={`static-${resizeNonce}`} items={items}>
         {(item) =>
           item.kind === 'welcome' ? (
             <Welcome key={item.key} stats={item.welcome} />
