@@ -122,8 +122,8 @@ SPEC: dict[str, Any] = {
             },
             "engine": {
                 "type": "string",
-                "enum": ["chromium", "patchright", "camoufox"],
-                "description": "For ``open``: which browser backend to use. 'chromium' is stock Playwright. 'patchright' is a drop-in stealth fork that patches deeper Chromium fingerprints (use this for Cloudflare-protected sites). 'camoufox' is a stealth-patched Firefox. Defaults to chromium; falls back to chromium if the chosen engine isn't installed.",
+                "enum": ["auto", "chromium", "patchright", "camoufox"],
+                "description": "For ``open``: which browser backend to use. Default 'auto' connects to a sidecar copy of the user's real Chrome (logged into all their accounts) — first call may take a minute on first run while the profile copies, subsequent calls are instant. Override with 'chromium' (stock Playwright), 'patchright' (stealth Chromium fork — useful when 'auto' Chrome isn't installed), or 'camoufox' (stealth Firefox).",
             },
             "timeout_ms": {
                 "type": "integer",
@@ -312,7 +312,7 @@ def _open(
     headless: bool = True,
     timeout_ms: int = 30_000,
     stealth: bool = True,
-    engine: str = "chromium",
+    engine: str = "auto",
     url: str | None = None,
     storage_state: str | None = None,
     cdp_url: str | None = None,
@@ -332,10 +332,28 @@ def _open(
     if not check_playwright():
         return _install_hint()
 
-    # CDP attach path: connect to a running Chrome the user launched
-    # with --remote-debugging-port. Auto-detected if `openprogram browser
-    # attach` was run earlier; explicit override via `cdp_url` wins.
-    if cdp_url is None:
+    # Auto-bootstrap path (default): when the caller didn't pin a
+    # specific engine and didn't pass cdp_url, ensure a sidecar Chrome
+    # is running and route through CDP. First call may take a minute
+    # because it copies the user's Chrome profile (~3GB) so saved
+    # logins / extensions are available; subsequent calls are instant.
+    auto_engine = engine in (None, "", "auto")
+    if cdp_url is None and auto_engine:
+        from openprogram.tools.browser._chrome_bootstrap import (
+            cdp_url_if_available, launch_sidecar_chrome,
+        )
+        cdp_url = cdp_url_if_available()
+        if cdp_url is None:
+            ok = launch_sidecar_chrome()
+            if ok:
+                cdp_url = cdp_url_if_available()
+        # If bootstrap failed (no Chrome installed, sandbox issues),
+        # fall through to plain chromium below.
+        if cdp_url is None:
+            engine = "chromium"
+
+    # Legacy-explicit path: caller asked for cdp via the auto port file.
+    if cdp_url is None and not auto_engine:
         port = _read_cdp_port()
         if port is not None:
             cdp_url = f"http://localhost:{port}"
@@ -937,7 +955,7 @@ def execute(
     tab_index: int | None = None,
     headless: bool = True,
     stealth: bool = True,
-    engine: str = "chromium",
+    engine: str = "auto",
     storage_state: str | None = None,
     name: str | None = None,
     timeout_ms: int = 30_000,
@@ -966,7 +984,7 @@ def execute(
                 tab_index = None
 
     if action == "open":
-        eng = engine or read_string_param(kw, "engine", "backend") or "chromium"
+        eng = engine or read_string_param(kw, "engine", "backend") or "auto"
         ss = storage_state or read_string_param(kw, "storage_state", "state")
         cdp = read_string_param(kw, "cdp_url", "cdp")
         return _open(
