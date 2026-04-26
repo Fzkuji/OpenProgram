@@ -294,6 +294,19 @@ def _start_engine(engine: str):
         return None, None, _install_hint()
 
 
+def _read_cdp_port() -> int | None:
+    """If the user ran `openprogram browser attach` we wrote the port here."""
+    import os
+    from pathlib import Path
+    p = Path.home() / ".openprogram" / "browser-cdp-port"
+    if not p.exists():
+        return None
+    try:
+        return int(p.read_text().strip())
+    except (ValueError, OSError):
+        return None
+
+
 def _open(
     *,
     headless: bool = True,
@@ -302,6 +315,7 @@ def _open(
     engine: str = "chromium",
     url: str | None = None,
     storage_state: str | None = None,
+    cdp_url: str | None = None,
 ) -> str:
     """Open a browser session, optionally pre-loading a saved login.
 
@@ -317,6 +331,56 @@ def _open(
     """
     if not check_playwright():
         return _install_hint()
+
+    # CDP attach path: connect to a running Chrome the user launched
+    # with --remote-debugging-port. Auto-detected if `openprogram browser
+    # attach` was run earlier; explicit override via `cdp_url` wins.
+    if cdp_url is None:
+        port = _read_cdp_port()
+        if port is not None:
+            cdp_url = f"http://localhost:{port}"
+
+    if cdp_url:
+        try:
+            from playwright.sync_api import sync_playwright
+            pw = sync_playwright().start()
+            browser = pw.chromium.connect_over_cdp(cdp_url)
+            # Real Chrome already has a default context with cookies/login.
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            pages = list(context.pages) or [context.new_page()]
+            # Use a fresh page so we don't hijack whatever the user has open.
+            page = context.new_page()
+            page.set_default_timeout(timeout_ms)
+            if url:
+                try:
+                    page.goto(url)
+                except Exception:
+                    pass
+            session_id = "br_" + uuid.uuid4().hex[:10]
+            _sessions[session_id] = {
+                "engine": "cdp",
+                "playwright": pw,
+                "browser": browser,
+                "context": context,
+                "page": page,
+                "pages": [page],
+                "active": 0,
+                "default_timeout": timeout_ms,
+                "login_url": url,
+                "is_cdp": True,           # don't .close() the user's Chrome
+            }
+            existing_tabs = len(pages)
+            return (
+                f"Opened browser session `{session_id}` "
+                f"(engine=cdp via {cdp_url}, attached to your running Chrome). "
+                f"Found {existing_tabs} existing tab(s); created a new tab for this session."
+            )
+        except Exception as e:
+            return (
+                f"Error connecting to Chrome at {cdp_url}: {type(e).__name__}: {e}\n"
+                f"Did you run `openprogram browser attach` first?"
+            )
+
     pw, kind, name_or_err = _start_engine(engine)
     if pw is None:
         return name_or_err  # error string from _start_engine
@@ -808,6 +872,24 @@ def _close(session_id: str) -> str:
     if sess is None:
         return f"Error: no browser session with id {session_id!r}."
     errors: list[str] = []
+    is_cdp = sess.get("is_cdp", False)
+    if is_cdp:
+        # Just close our own page — never tear down the user's real Chrome.
+        page = sess.get("page")
+        if page is not None:
+            try:
+                page.close()
+            except Exception as e:
+                errors.append(f"page: {e}")
+        pw = sess.get("playwright")
+        if pw is not None:
+            try:
+                pw.stop()
+            except Exception as e:
+                errors.append(f"playwright: {e}")
+        if errors:
+            return f"Detached from Chrome (session {session_id}) with warnings: {'; '.join(errors)}"
+        return f"Detached from Chrome (session {session_id}). Your Chrome window stays open."
     for key in ("context", "browser"):
         obj = sess.get(key)
         if obj is None:
@@ -886,6 +968,7 @@ def execute(
     if action == "open":
         eng = engine or read_string_param(kw, "engine", "backend") or "chromium"
         ss = storage_state or read_string_param(kw, "storage_state", "state")
+        cdp = read_string_param(kw, "cdp_url", "cdp")
         return _open(
             headless=headless,
             timeout_ms=timeout_ms,
@@ -893,6 +976,7 @@ def execute(
             engine=eng,
             url=url,
             storage_state=ss,
+            cdp_url=cdp,
         )
     if action == "save_login":
         nm = name or read_string_param(kw, "name", "host", "label")

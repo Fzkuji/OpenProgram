@@ -320,6 +320,16 @@ def main():
     p_br_rm = p_browser_sub.add_parser("rm",
         help="Delete a saved login by host or file name")
     p_br_rm.add_argument("name", help="Host or file name (e.g. app.gptzero.me)")
+    p_br_attach = p_browser_sub.add_parser("attach",
+        help="Restart your real Chrome with a debug port so the browser tool "
+             "can drive it (reuses your real cookies, extensions, logins).")
+    p_br_attach.add_argument("--port", type=int, default=9222,
+        help="Remote-debugging port (default 9222).")
+    p_br_attach.add_argument("--keep-running", action="store_true",
+        help="Don't quit Chrome first — assume it's already started with the port.")
+    p_browser_sub.add_parser("detach",
+        help="Forget the attached Chrome (browser tool falls back to its own "
+             "test browsers). Doesn't quit Chrome.")
 
     # ---- agents ----------------------------------------------------------
     p_agents = sub.add_parser("agents",
@@ -568,6 +578,10 @@ def main():
             sys.exit(_cmd_browser_list())
         if verb == "rm":
             sys.exit(_cmd_browser_rm(args.name))
+        if verb == "attach":
+            sys.exit(_cmd_browser_attach(args.port, args.keep_running))
+        if verb == "detach":
+            sys.exit(_cmd_browser_detach())
         p_browser.print_help()
         sys.exit(2)
 
@@ -826,6 +840,134 @@ def _cmd_browser_rm(name: str) -> int:
             return 0
     print(f"No saved login found for {name!r} (looked in {state_dir})")
     return 1
+
+
+def _detect_chrome_path() -> str | None:
+    """Best-effort lookup for the local Chrome binary."""
+    import os
+    import shutil
+    candidates = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ]
+    for p in candidates:
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return shutil.which("google-chrome") or shutil.which("chromium") or None
+
+
+def _default_chrome_user_data_dir() -> str:
+    """Where Chrome stores its profile on this OS."""
+    import os
+    import sys
+    home = os.path.expanduser("~")
+    if sys.platform == "darwin":
+        return os.path.join(home, "Library", "Application Support", "Google", "Chrome")
+    if sys.platform.startswith("win"):
+        return os.path.join(home, "AppData", "Local", "Google", "Chrome", "User Data")
+    return os.path.join(home, ".config", "google-chrome")
+
+
+def _cmd_browser_attach(port: int, keep_running: bool) -> int:
+    """Re-launch Chrome with a debug port and wire the browser tool to it."""
+    import os
+    import subprocess
+    import time
+    from pathlib import Path
+
+    chrome = _detect_chrome_path()
+    if chrome is None:
+        print("Couldn't find Google Chrome. Install it or set the path manually.")
+        return 1
+
+    user_data = _default_chrome_user_data_dir()
+
+    if not keep_running:
+        # Quit Chrome so we can re-launch with the debug port (Chrome
+        # refuses to share a profile across processes).
+        print("This will close any running Chrome and reopen it with a debug port")
+        print(f"so the browser tool can drive your logged-in session.")
+        print(f"  Chrome:    {chrome}")
+        print(f"  Profile:   {user_data}")
+        print(f"  Debug port: {port}")
+        try:
+            ans = input("Continue? [y/N] ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            return 130
+        if ans not in ("y", "yes"):
+            print("Cancelled.")
+            return 1
+
+        # Send AppleScript quit (graceful) on macOS, fall back to pkill.
+        import sys as _sys
+        if _sys.platform == "darwin":
+            subprocess.run(
+                ["osascript", "-e", 'quit app "Google Chrome"'],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        else:
+            subprocess.run(["pkill", "-f", "google-chrome"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # Wait until Chrome's profile lock releases.
+        for _ in range(20):
+            time.sleep(0.25)
+            lock = Path(user_data) / "SingletonLock"
+            if not lock.exists():
+                break
+
+    # Re-launch Chrome detached so quitting our shell doesn't take it down.
+    args = [
+        chrome,
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={user_data}",
+        "--restore-last-session",
+    ]
+    subprocess.Popen(
+        args,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    # Wait for the debug port to come up.
+    import socket as _socket
+    for _ in range(40):
+        time.sleep(0.25)
+        try:
+            with _socket.create_connection(("127.0.0.1", port), 0.2):
+                break
+        except OSError:
+            continue
+    else:
+        print(f"Chrome did not expose port {port} within 10s. Aborting.")
+        return 1
+
+    state = Path.home() / ".openprogram" / "browser-cdp-port"
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(str(port))
+    print()
+    print(f"Chrome is attached on http://localhost:{port}.")
+    print(f"  Subsequent browser-tool open(...) calls now drive this Chrome.")
+    print(f"  Run `openprogram browser detach` to fall back to the test browser.")
+    return 0
+
+
+def _cmd_browser_detach() -> int:
+    """Forget the attached Chrome (without quitting it)."""
+    from pathlib import Path
+    state = Path.home() / ".openprogram" / "browser-cdp-port"
+    if state.exists():
+        state.unlink()
+        print("Detached. The browser tool now uses its own test browsers.")
+    else:
+        print("Nothing was attached.")
+    return 0
 
 
 def _cmd_install_skills(target=None):
