@@ -145,7 +145,7 @@ def save(ctx: "Context", path: str | os.PathLike[str]) -> None:
 
 
 def from_jsonl(path: str | os.PathLike[str]) -> "Context":
-    """从 JSONL 的 enter/exit 记录重建 Context 树。用于崩溃恢复。"""
+    """从 JSONL 重建 Context 树。兼容事件流和 save() 的扁平导出。"""
     from openprogram.agentic_programming.context import Context
     path_str = os.fspath(path)
     with open(path_str, encoding="utf-8") as f:
@@ -161,6 +161,9 @@ def from_jsonl(path: str | os.PathLike[str]) -> "Context":
 
     if not records:
         raise ValueError("No valid records found in JSONL file")
+
+    if all("event" not in record for record in records):
+        return _from_flat_jsonl_records(records)
 
     nodes: dict[str, Context] = {}
     root: Optional[Context] = None
@@ -203,6 +206,52 @@ def from_jsonl(path: str | os.PathLike[str]) -> "Context":
                 if record.get("duration_ms") is not None and ctx.start_time
                 else 0.0
             )
+
+    if root is None:
+        raise ValueError("No valid records found in JSONL file")
+
+    return root
+
+
+def _from_flat_jsonl_records(records: list[dict]) -> "Context":
+    """Rebuild a tree from save(...jsonl) flat node records."""
+    from openprogram.agentic_programming.context import Context
+
+    nodes: dict[str, Context] = {}
+    root: Optional[Context] = None
+
+    for record in records:
+        node_path = record.get("path")
+        if not node_path:
+            continue
+
+        parent_path = node_path.rsplit("/", 1)[0] if "/" in node_path else None
+        parent = nodes.get(parent_path)
+        ctx = Context(
+            name=record.get("name", node_path.rsplit("/", 1)[-1].split("_")[0]),
+            prompt=record.get("prompt", ""),
+            params=record.get("params") or {},
+            parent=parent,
+            expose=record.get("expose", "io"),
+            start_time=record.get("start_time"),
+            node_type=record.get("node_type", "function"),
+        )
+        ctx.output = record.get("output")
+        ctx.raw_reply = record.get("raw_reply")
+        ctx.attempts = record.get("attempts") or []
+        ctx.error = record.get("error") or ""
+        ctx.status = record.get("status", "running")
+        ctx.source_file = record.get("source_file", "")
+        ctx.end_time = record.get("end_time") or 0.0
+
+        if not ctx.end_time and record.get("duration_ms") is not None and ctx.start_time:
+            ctx.end_time = ctx.start_time + record["duration_ms"] / 1000.0
+
+        if parent is not None:
+            parent.children.append(ctx)
+        else:
+            root = ctx
+        nodes[node_path] = ctx
 
     if root is None:
         raise ValueError("No valid records found in JSONL file")

@@ -148,6 +148,30 @@ def test_save_jsonl_preserves_numeric_depth(tmp_path):
     assert rows[1]["depth"] == 1
 
 
+def test_from_jsonl_accepts_save_jsonl_export(tmp_path):
+    """Context.from_jsonl() can reload the flat JSONL produced by save()."""
+    @agentic_function
+    def task():
+        return step()
+
+    @agentic_function
+    def step():
+        return "step done"
+
+    result = task()
+    path = tmp_path / "saved.jsonl"
+    task.context.save(path)
+
+    restored = Context.from_jsonl(path)
+
+    assert restored.name == "task"
+    assert restored.status == "success"
+    assert restored.output == result
+    assert len(restored.children) == 1
+    assert restored.children[0].name == "step"
+    assert restored.children[0].output == "step done"
+
+
 def test_summarize_max_tokens_keeps_current_call_and_prefers_newer_siblings():
     """max_tokens trimming drops older siblings first and keeps the current call block."""
     @agentic_function
