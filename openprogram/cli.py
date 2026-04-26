@@ -301,35 +301,30 @@ def main():
 
     # ---- browser ---------------------------------------------------------
     p_browser = sub.add_parser("browser",
-        help="Manage saved browser logins for the `browser` tool")
+        help="Install + maintain the browser tools. Lifecycle (open, "
+             "login, attach) is handled automatically by the tools "
+             "themselves — see /browser inside the chat.")
     p_browser_sub = p_browser.add_subparsers(dest="browser_verb", metavar="verb")
-    p_br_login = p_browser_sub.add_parser("login",
-        help="Open a browser at <url>, wait for you to log in, then save "
-             "the cookies/localStorage so future browser-tool calls run "
-             "headless.")
-    p_br_login.add_argument("url",
-        help="URL to open (e.g. https://app.gptzero.me/)")
-    p_br_login.add_argument("--name",
-        help="Override the file name (defaults to the URL host).")
-    p_br_login.add_argument("--engine", default="patchright",
-        choices=["chromium", "patchright", "camoufox"],
-        help="Browser engine. Default patchright (passes Cloudflare on most "
-             "sites). Use chromium if patchright not installed.")
+    p_br_install = p_browser_sub.add_parser("install",
+        help="Install browser-tool dependencies (Playwright + Chromium, "
+             "patchright/camoufox, agent-browser). Pick one target or 'all'.")
+    p_br_install.add_argument("target", nargs="?", default="playwright",
+        choices=["playwright", "patchright", "camoufox", "agent", "all"],
+        help="What to install (default: playwright).")
+    p_browser_sub.add_parser("status",
+        help="Show what's installed, whether the sidecar Chrome is running, "
+             "and how many saved logins exist.")
+    p_browser_sub.add_parser("refresh",
+        help="Re-copy your real Chrome profile to the sidecar (use after "
+             "logging in to a new site in your main Chrome).")
+    p_browser_sub.add_parser("reset",
+        help="Full reset — kill sidecar Chrome, drop the sidecar profile + "
+             "all saved logins + port file. Next open() re-bootstraps clean.")
     p_browser_sub.add_parser("list",
         help="Show every saved login under ~/.openprogram/browser-states/")
     p_br_rm = p_browser_sub.add_parser("rm",
         help="Delete a saved login by host or file name")
     p_br_rm.add_argument("name", help="Host or file name (e.g. app.gptzero.me)")
-    p_br_attach = p_browser_sub.add_parser("attach",
-        help="Restart your real Chrome with a debug port so the browser tool "
-             "can drive it (reuses your real cookies, extensions, logins).")
-    p_br_attach.add_argument("--port", type=int, default=9222,
-        help="Remote-debugging port (default 9222).")
-    p_br_attach.add_argument("--keep-running", action="store_true",
-        help="Don't quit Chrome first — assume it's already started with the port.")
-    p_browser_sub.add_parser("detach",
-        help="Forget the attached Chrome (browser tool falls back to its own "
-             "test browsers). Doesn't quit Chrome.")
 
     # ---- agents ----------------------------------------------------------
     p_agents = sub.add_parser("agents",
@@ -571,17 +566,18 @@ def main():
 
     if args.command == "browser":
         verb = getattr(args, "browser_verb", None)
-        if verb == "login":
-            sys.exit(_cmd_browser_login(args.url, getattr(args, "name", None),
-                                        getattr(args, "engine", "patchright")))
+        if verb == "install":
+            sys.exit(_cmd_browser_install(getattr(args, "target", "playwright")))
+        if verb == "status":
+            sys.exit(_cmd_browser_status())
+        if verb == "refresh":
+            sys.exit(_cmd_browser_refresh())
+        if verb == "reset":
+            sys.exit(_cmd_browser_reset())
         if verb == "list":
             sys.exit(_cmd_browser_list())
         if verb == "rm":
             sys.exit(_cmd_browser_rm(args.name))
-        if verb == "attach":
-            sys.exit(_cmd_browser_attach(args.port, args.keep_running))
-        if verb == "detach":
-            sys.exit(_cmd_browser_detach())
         p_browser.print_help()
         sys.exit(2)
 
@@ -777,36 +773,146 @@ def _cmd_skills_doctor(override_dirs) -> int:
     return 1
 
 
-def _cmd_browser_login(url: str, name: str | None, engine: str) -> int:
-    """Open a headed browser at `url`, let the user log in, save state."""
-    import re
-    from openprogram.tools.browser.browser import execute as ex
+def _cmd_browser_install(target: str) -> int:
+    """Install browser-tool dependencies. Pure shell-out — no agent involved."""
+    import subprocess
+    import shutil
 
-    print(f"Opening {url} in {engine} (headed)…")
-    r = ex("open", url=url, engine=engine, headless=False, timeout_ms=60_000)
-    print(r)
-    if r.startswith("Error"):
-        return 1
-    m = re.search(r"`(br_\w+)`", r)
-    if not m:
-        print("Could not parse session id.")
-        return 1
-    sid = m.group(1)
+    targets = ["playwright", "patchright", "camoufox", "agent"] if target == "all" else [target]
+    rc = 0
+    for t in targets:
+        print(f"\n=== installing {t} ===")
+        if t == "playwright":
+            r1 = subprocess.run(["pip", "install", "playwright>=1.45.0"])
+            r2 = subprocess.run(["playwright", "install", "chromium"]) if shutil.which("playwright") else r1
+            if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
+                rc = 1
+        elif t == "patchright":
+            r1 = subprocess.run(["pip", "install", "patchright>=1.40"])
+            r2 = subprocess.run(["patchright", "install", "chromium"]) if shutil.which("patchright") else r1
+            if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
+                rc = 1
+        elif t == "camoufox":
+            r1 = subprocess.run(["pip", "install", "camoufox>=0.4.0"])
+            r2 = subprocess.run(["camoufox", "fetch"]) if shutil.which("camoufox") else r1
+            if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
+                rc = 1
+        elif t == "agent":
+            if not shutil.which("npm"):
+                print("npm not found — install Node.js first.")
+                rc = 1
+                continue
+            r1 = subprocess.run(["npm", "install", "-g", "agent-browser"])
+            r2 = subprocess.run(["agent-browser", "install"]) if shutil.which("agent-browser") else r1
+            if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
+                rc = 1
+        else:
+            print(f"Unknown target: {t}")
+            rc = 1
+    return rc
 
-    print()
-    print("→ Log in inside the browser window that just opened.")
-    print("→ When you see your dashboard / the app's main page, come back here.")
-    try:
-        input("Press Enter when you are done logging in… ")
-    except (KeyboardInterrupt, EOFError):
-        print("\nCancelled. Closing browser.")
-        ex("close", session_id=sid)
-        return 130
 
-    saved = ex("save_login", session_id=sid, name=name)
-    print(saved)
-    ex("close", session_id=sid)
+def _cmd_browser_status() -> int:
+    """Show what's installed, sidecar state, saved login count."""
+    import shutil
+    import socket
+    from pathlib import Path
+    from openprogram.tools.browser._chrome_bootstrap import (
+        port_file, sidecar_dir, is_port_listening,
+    )
+
+    print("Installations:")
+    print(f"  playwright       {'✓' if _python_pkg_present('playwright') else '✗'}")
+    print(f"  patchright       {'✓' if _python_pkg_present('patchright') else '✗'}")
+    print(f"  camoufox         {'✓' if _python_pkg_present('camoufox') else '✗'}")
+    print(f"  agent-browser    {'✓' if shutil.which('agent-browser') or shutil.which('npx') else '✗'}")
+
+    print("\nSidecar Chrome:")
+    sd = sidecar_dir()
+    if sd.exists():
+        size_mb = sum(f.stat().st_size for f in sd.rglob("*") if f.is_file()) / 1024 / 1024
+        print(f"  profile dir: {sd} ({size_mb:.0f} MB)")
+    else:
+        print(f"  profile dir: (not yet created — runs lazily on first use)")
+    pf = port_file()
+    if pf.exists():
+        try:
+            port = int(pf.read_text().strip())
+            alive = is_port_listening(port)
+            print(f"  port file: {pf} → :{port} {'(LISTENING)' if alive else '(stale, not listening)'}")
+        except (OSError, ValueError):
+            print(f"  port file: {pf} (unreadable)")
+    else:
+        print("  port file: (none — sidecar not started)")
+
+    print("\nSaved logins:")
+    state_dir = Path.home() / ".openprogram" / "browser-states"
+    if state_dir.exists():
+        states = sorted(state_dir.glob("*.json"))
+        if states:
+            for p in states:
+                kb = p.stat().st_size / 1024
+                print(f"  {p.stem:<40} {kb:>6.1f} KB")
+        else:
+            print(f"  (none under {state_dir})")
+    else:
+        print(f"  (directory {state_dir} doesn't exist yet)")
     return 0
+
+
+def _cmd_browser_refresh() -> int:
+    """Re-copy the real Chrome profile to the sidecar."""
+    import subprocess
+    from pathlib import Path
+    from openprogram.tools.browser._chrome_bootstrap import (
+        sidecar_dir, port_file,
+    )
+
+    sd = sidecar_dir()
+    if sd.exists():
+        # Sidecar Chrome is probably running — kill it so the profile is unlocked.
+        subprocess.run(["pkill", "-9", "-f", "openprogram/chrome-profile"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Drop the old sidecar profile so the next bootstrap re-copies fresh.
+        import shutil
+        shutil.rmtree(sd, ignore_errors=True)
+        print(f"Removed old sidecar profile at {sd}")
+    pf = port_file()
+    if pf.exists():
+        pf.unlink()
+        print(f"Cleared port file {pf}")
+    print("Next browser tool open() will re-copy your real Chrome profile.")
+    return 0
+
+
+def _cmd_browser_reset() -> int:
+    """Full reset — sidecar + states + port file."""
+    import subprocess
+    import shutil
+    from pathlib import Path
+
+    subprocess.run(["pkill", "-9", "-f", "openprogram/chrome-profile"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    sd = Path.home() / ".openprogram" / "chrome-profile"
+    if sd.exists():
+        shutil.rmtree(sd, ignore_errors=True)
+        print(f"Removed sidecar profile {sd}")
+    states = Path.home() / ".openprogram" / "browser-states"
+    if states.exists():
+        shutil.rmtree(states, ignore_errors=True)
+        print(f"Removed saved logins {states}")
+    pf = Path.home() / ".openprogram" / "browser-cdp-port"
+    if pf.exists():
+        pf.unlink()
+        print(f"Removed port file {pf}")
+    print("Browser tool fully reset. Next open() bootstraps clean.")
+    return 0
+
+
+def _python_pkg_present(name: str) -> bool:
+    """Cheap import probe for status checks."""
+    import importlib.util
+    return importlib.util.find_spec(name) is not None
 
 
 def _cmd_browser_list() -> int:
@@ -841,258 +947,6 @@ def _cmd_browser_rm(name: str) -> int:
     print(f"No saved login found for {name!r} (looked in {state_dir})")
     return 1
 
-
-def _detect_chrome_path() -> str | None:
-    """Best-effort lookup for the local Chrome binary."""
-    import os
-    import shutil
-    candidates = [
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-    ]
-    for p in candidates:
-        if os.path.isfile(p) and os.access(p, os.X_OK):
-            return p
-    return shutil.which("google-chrome") or shutil.which("chromium") or None
-
-
-def _default_chrome_user_data_dir() -> str:
-    """Where Chrome stores its profile on this OS."""
-    import os
-    import sys
-    home = os.path.expanduser("~")
-    if sys.platform == "darwin":
-        return os.path.join(home, "Library", "Application Support", "Google", "Chrome")
-    if sys.platform.startswith("win"):
-        return os.path.join(home, "AppData", "Local", "Google", "Chrome", "User Data")
-    return os.path.join(home, ".config", "google-chrome")
-
-
-def _cmd_browser_attach(port: int, keep_running: bool) -> int:
-    """Re-launch Chrome with a debug port and wire the browser tool to it.
-
-    Chrome 134+ silently refuses to expose CDP when the user-data-dir is
-    a "production" profile (the one with your real Google sign-in,
-    saved passwords, etc.) — a security measure to keep automated
-    processes from auto-scraping credentials. Workaround: keep a
-    sidecar copy of your real profile at ~/.openprogram/chrome-profile.
-    Chrome sees it as a "new" profile path and binds CDP normally; all
-    cookies / extensions / saved logins still work because the contents
-    were copied verbatim. The cost is one disk-space copy on first run.
-    """
-    import os
-    import subprocess
-    import time
-    from pathlib import Path
-
-    chrome = _detect_chrome_path()
-    if chrome is None:
-        print("Couldn't find Google Chrome. Install it or set the path manually.")
-        return 1
-
-    real_user_data = _default_chrome_user_data_dir()
-    sidecar = Path.home() / ".openprogram" / "chrome-profile"
-    user_data = str(sidecar)
-
-    if not keep_running:
-        # Quit Chrome so we can re-launch with the debug port (Chrome
-        # refuses to share a profile across processes — and worse, it
-        # silently merges new launches into the existing instance, where
-        # the --remote-debugging-port flag does NOT take effect).
-        first_time = not sidecar.exists()
-        print("This will close any running Chrome and reopen a sidecar copy")
-        print("of your profile so the browser tool can drive a logged-in Chrome.")
-        print(f"  Chrome:        {chrome}")
-        print(f"  Source profile: {real_user_data}")
-        print(f"  Sidecar dir:   {sidecar}"
-              + ("  (will be created — one-time ~3GB copy)" if first_time else "  (already exists)"))
-        print(f"  Debug port:    {port}")
-        try:
-            ans = input("Continue? [y/N] ").strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            print()
-            return 130
-        if ans not in ("y", "yes"):
-            print("Cancelled.")
-            return 1
-
-        import sys as _sys
-
-        def _chrome_processes() -> list[int]:
-            """All running 'Google Chrome.app/Contents/MacOS' main+helper PIDs."""
-            try:
-                out = subprocess.check_output(["pgrep", "-f", "Google Chrome"],
-                                              stderr=subprocess.DEVNULL)
-                return [int(x) for x in out.split() if x.strip().isdigit()]
-            except subprocess.CalledProcessError:
-                return []
-
-        # Step 1: graceful quit.
-        if _sys.platform == "darwin":
-            subprocess.run(
-                ["osascript", "-e", 'quit app "Google Chrome"'],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        else:
-            subprocess.run(["pkill", "-f", "google-chrome"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-        # Step 2: wait up to 5s for processes to actually exit.
-        for _ in range(20):
-            time.sleep(0.25)
-            if not _chrome_processes():
-                break
-
-        # Step 3: if anything still alive, force kill — this is the
-        # critical step that fixes "Chrome opens but port isn't bound"
-        # caused by Cocoa merging our launch into a still-alive instance.
-        remaining = _chrome_processes()
-        if remaining:
-            print(f"  Still {len(remaining)} Chrome process(es) alive — sending SIGKILL.")
-            subprocess.run(["pkill", "-9", "-f", "Google Chrome"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            for _ in range(20):
-                time.sleep(0.25)
-                if not _chrome_processes():
-                    break
-
-        if _chrome_processes():
-            print("  Chrome processes still alive after SIGKILL. Aborting.")
-            print("  Try: pkill -9 -f 'Google Chrome' && rm -f "
-                  f"'{user_data}/SingletonLock'")
-            return 1
-
-        # Step 4: also remove a stale SingletonLock if Chrome left one
-        # (in either the real profile or our sidecar).
-        for base in (real_user_data, user_data):
-            for marker in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
-                p = Path(base) / marker
-                if p.exists() or p.is_symlink():
-                    try:
-                        p.unlink()
-                    except OSError:
-                        pass
-
-        # Step 5: ensure sidecar profile exists. First time we copy
-        # ~/Library/.../Google/Chrome/Default + Local State so all
-        # logins/extensions come along. Subsequent runs reuse the copy.
-        if first_time:
-            sidecar.mkdir(parents=True, exist_ok=True)
-            src_default = Path(real_user_data) / "Default"
-            src_local_state = Path(real_user_data) / "Local State"
-            if not src_default.exists():
-                print(f"  Source profile not found at {src_default}. Aborting.")
-                return 1
-            print("  Copying profile (this takes a moment for large profiles)…")
-            subprocess.run(
-                ["cp", "-R", str(src_default), str(sidecar / "Default")],
-                check=False,
-            )
-            if src_local_state.exists():
-                subprocess.run(
-                    ["cp", str(src_local_state), str(sidecar / "Local State")],
-                    check=False,
-                )
-            print(f"  Profile copied to {sidecar}.")
-
-    # Detect which profile the user last used so we can skip the multi-
-    # profile picker. With a picker in the way, --remote-debugging-port
-    # is held by the picker process, and once the user clicks a profile
-    # the picker exits and the port goes with it.
-    profile_dir = "Default"
-    local_state_path = Path(user_data) / "Local State"
-    if local_state_path.exists():
-        try:
-            import json as _json
-            data = _json.loads(local_state_path.read_text())
-            picked = data.get("profile", {}).get("last_used")
-            if picked:
-                profile_dir = picked
-        except (OSError, ValueError):
-            pass
-
-    # Re-launch Chrome detached so quitting our shell doesn't take it down.
-    # On macOS the binary itself routes through Cocoa's single-instance
-    # logic — launching it directly when the app process hasn't fully
-    # released the profile may silently reuse the existing instance with
-    # the wrong flags. `open -na` forces a fresh application launch and
-    # passes the args via --args.
-    import sys as _sys
-    chrome_args = [
-        f"--remote-debugging-port={port}",
-        f"--user-data-dir={user_data}",
-        f"--profile-directory={profile_dir}",
-        "--restore-last-session",
-        "--no-first-run",
-        "--no-default-browser-check",
-    ]
-    print(f"  Profile dir: {profile_dir}")
-    if _sys.platform == "darwin":
-        # /Applications/Google Chrome.app
-        app_dir = chrome
-        for _ in range(4):
-            app_dir = os.path.dirname(app_dir)
-            if app_dir.endswith(".app"):
-                break
-        if not app_dir.endswith(".app"):
-            app_dir = "/Applications/Google Chrome.app"
-        cmd = ["open", "-na", app_dir, "--args", *chrome_args]
-    else:
-        cmd = [chrome, *chrome_args]
-
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    # Wait for the debug port to come up. macOS app launch can take a few
-    # seconds when restoring tabs, so be patient.
-    import socket as _socket
-    print(f"Waiting for Chrome to expose port {port}…")
-    for i in range(120):  # 30s
-        time.sleep(0.25)
-        try:
-            with _socket.create_connection(("127.0.0.1", port), 0.2):
-                break
-        except OSError:
-            continue
-    else:
-        print(f"Chrome did not expose port {port} within 30s.")
-        print()
-        print("Diagnose:")
-        print(f"  ps aux | grep -i 'chrome.*remote-debugging' | grep -v grep")
-        print(f"  lsof -i :{port}")
-        print(f"  Or launch Chrome manually with:")
-        cmd_str = " ".join(f'"{c}"' if " " in c else c for c in cmd)
-        print(f"    {cmd_str}")
-        return 1
-
-    state = Path.home() / ".openprogram" / "browser-cdp-port"
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(str(port))
-    print()
-    print(f"Chrome is attached on http://localhost:{port}.")
-    print(f"  Subsequent browser-tool open(...) calls now drive this Chrome.")
-    print(f"  Run `openprogram browser detach` to fall back to the test browser.")
-    return 0
-
-
-def _cmd_browser_detach() -> int:
-    """Forget the attached Chrome (without quitting it)."""
-    from pathlib import Path
-    state = Path.home() / ".openprogram" / "browser-cdp-port"
-    if state.exists():
-        state.unlink()
-        print("Detached. The browser tool now uses its own test browsers.")
-    else:
-        print("Nothing was attached.")
-    return 0
 
 
 def _cmd_install_skills(target=None):
