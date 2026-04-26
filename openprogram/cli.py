@@ -299,6 +299,28 @@ def main():
         help="Remove a binding by its id (see `bindings list`)")
     p_chb_rm.add_argument("binding_id")
 
+    # ---- browser ---------------------------------------------------------
+    p_browser = sub.add_parser("browser",
+        help="Manage saved browser logins for the `browser` tool")
+    p_browser_sub = p_browser.add_subparsers(dest="browser_verb", metavar="verb")
+    p_br_login = p_browser_sub.add_parser("login",
+        help="Open a browser at <url>, wait for you to log in, then save "
+             "the cookies/localStorage so future browser-tool calls run "
+             "headless.")
+    p_br_login.add_argument("url",
+        help="URL to open (e.g. https://app.gptzero.me/)")
+    p_br_login.add_argument("--name",
+        help="Override the file name (defaults to the URL host).")
+    p_br_login.add_argument("--engine", default="patchright",
+        choices=["chromium", "patchright", "camoufox"],
+        help="Browser engine. Default patchright (passes Cloudflare on most "
+             "sites). Use chromium if patchright not installed.")
+    p_browser_sub.add_parser("list",
+        help="Show every saved login under ~/.openprogram/browser-states/")
+    p_br_rm = p_browser_sub.add_parser("rm",
+        help="Delete a saved login by host or file name")
+    p_br_rm.add_argument("name", help="Host or file name (e.g. app.gptzero.me)")
+
     # ---- agents ----------------------------------------------------------
     p_agents = sub.add_parser("agents",
         help="Manage agents (each agent is a named persona with its own "
@@ -537,6 +559,18 @@ def main():
         p_channels.print_help()
         return
 
+    if args.command == "browser":
+        verb = getattr(args, "browser_verb", None)
+        if verb == "login":
+            sys.exit(_cmd_browser_login(args.url, getattr(args, "name", None),
+                                        getattr(args, "engine", "patchright")))
+        if verb == "list":
+            sys.exit(_cmd_browser_list())
+        if verb == "rm":
+            sys.exit(_cmd_browser_rm(args.name))
+        p_browser.print_help()
+        sys.exit(2)
+
     if args.command == "agents":
         _dispatch_agents_verb(args, p_agents)
         return
@@ -726,6 +760,71 @@ def _cmd_skills_doctor(override_dirs) -> int:
     print(f"Found {len(issues)} issue(s):")
     for issue in issues:
         print(f"  - {issue}")
+    return 1
+
+
+def _cmd_browser_login(url: str, name: str | None, engine: str) -> int:
+    """Open a headed browser at `url`, let the user log in, save state."""
+    import re
+    from openprogram.tools.browser.browser import execute as ex
+
+    print(f"Opening {url} in {engine} (headed)…")
+    r = ex("open", url=url, engine=engine, headless=False, timeout_ms=60_000)
+    print(r)
+    if r.startswith("Error"):
+        return 1
+    m = re.search(r"`(br_\w+)`", r)
+    if not m:
+        print("Could not parse session id.")
+        return 1
+    sid = m.group(1)
+
+    print()
+    print("→ Log in inside the browser window that just opened.")
+    print("→ When you see your dashboard / the app's main page, come back here.")
+    try:
+        input("Press Enter when you are done logging in… ")
+    except (KeyboardInterrupt, EOFError):
+        print("\nCancelled. Closing browser.")
+        ex("close", session_id=sid)
+        return 130
+
+    saved = ex("save_login", session_id=sid, name=name)
+    print(saved)
+    ex("close", session_id=sid)
+    return 0
+
+
+def _cmd_browser_list() -> int:
+    """List saved browser logins."""
+    import os
+    from pathlib import Path
+    state_dir = Path.home() / ".openprogram" / "browser-states"
+    if not state_dir.exists():
+        print(f"(no saved logins — directory doesn't exist: {state_dir})")
+        return 0
+    entries = sorted(state_dir.glob("*.json"))
+    if not entries:
+        print(f"(no saved logins under {state_dir})")
+        return 0
+    print(f"Saved logins ({len(entries)}):")
+    for p in entries:
+        size_kb = p.stat().st_size / 1024
+        print(f"  {p.stem:<40} {size_kb:>6.1f} KB")
+    return 0
+
+
+def _cmd_browser_rm(name: str) -> int:
+    """Delete a saved login."""
+    from pathlib import Path
+    state_dir = Path.home() / ".openprogram" / "browser-states"
+    candidates = [state_dir / f"{name}.json", state_dir / name]
+    for p in candidates:
+        if p.exists():
+            p.unlink()
+            print(f"Removed {p}")
+            return 0
+    print(f"No saved login found for {name!r} (looked in {state_dir})")
     return 1
 
 
