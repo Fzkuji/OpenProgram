@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStdout } from 'ink';
 
-/** Hard cap so the panel doesn't stretch into a thin strip on a 200-col window. */
-export const MAX_PANEL_WIDTH = 100;
 /** Floor so a transient resize (e.g. sliding the window narrow) doesn't
  * propagate negative widths into Ink and crash the layout. */
 export const MIN_PANEL_WIDTH = 24;
@@ -29,12 +27,13 @@ export function useTerminalWidth(): number {
 
 /**
  * Width every top-level panel uses so Welcome / input box / bottom bar
- * line up edge-to-edge. Clamped to [MIN_PANEL_WIDTH, MAX_PANEL_WIDTH]
- * so transient resize states never feed negative widths into Ink.
+ * line up edge-to-edge. Uses the full terminal width (Claude Code's
+ * approach) — no upper cap, just a floor so transient resizes don't
+ * propagate negative widths into Ink.
  */
 export function usePanelWidth(): number {
   const cols = useTerminalWidth();
-  return Math.max(MIN_PANEL_WIDTH, Math.min(cols, MAX_PANEL_WIDTH));
+  return Math.max(MIN_PANEL_WIDTH, cols);
 }
 
 /** Returns the current terminal row count, re-renders on resize. */
