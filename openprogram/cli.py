@@ -960,6 +960,22 @@ def _cmd_browser_attach(port: int, keep_running: bool) -> int:
                 except OSError:
                     pass
 
+    # Detect which profile the user last used so we can skip the multi-
+    # profile picker. With a picker in the way, --remote-debugging-port
+    # is held by the picker process, and once the user clicks a profile
+    # the picker exits and the port goes with it.
+    profile_dir = "Default"
+    local_state_path = Path(user_data) / "Local State"
+    if local_state_path.exists():
+        try:
+            import json as _json
+            data = _json.loads(local_state_path.read_text())
+            picked = data.get("profile", {}).get("last_used")
+            if picked:
+                profile_dir = picked
+        except (OSError, ValueError):
+            pass
+
     # Re-launch Chrome detached so quitting our shell doesn't take it down.
     # On macOS the binary itself routes through Cocoa's single-instance
     # logic — launching it directly when the app process hasn't fully
@@ -970,10 +986,12 @@ def _cmd_browser_attach(port: int, keep_running: bool) -> int:
     chrome_args = [
         f"--remote-debugging-port={port}",
         f"--user-data-dir={user_data}",
+        f"--profile-directory={profile_dir}",
         "--restore-last-session",
         "--no-first-run",
         "--no-default-browser-check",
     ]
+    print(f"  Profile dir: {profile_dir}")
     if _sys.platform == "darwin":
         # /Applications/Google Chrome.app
         app_dir = chrome
