@@ -9,34 +9,51 @@ export interface MessagesProps {
   /** Currently-streaming assistant turn, if any. Re-renders every delta. */
   streaming?: Turn | null;
   /**
-   * Welcome stats. Shown ONLY while no committed turns exist; once the
-   * user sends the first message the panel unmounts. Crucially, Welcome
-   * sits OUTSIDE <Static> so Ink can dynamically erase it on unmount —
-   * Static commits its items to the terminal's scrollback permanently,
-   * which means a Welcome inside Static can't be repositioned and would
-   * get scroll-pushed off the top whenever Static re-prints (resize,
-   * theme switch).
+   * Welcome stats. Rendered as the first <Static> item so it scrolls
+   * naturally with the transcript and stays visible above the first chat
+   * turns. It does NOT auto-dismiss when the user sends a message —
+   * users explicitly asked for the welcome panel to stay put.
    */
   welcome?: WelcomeStats;
   /**
-   * Bumps when the terminal resizes or the active theme changes. Used as
-   * the React key on <Static> so Ink's "we already printed these" memo
-   * is invalidated and the whole transcript re-prints fresh — at the new
-   * width or in the new palette.
+   * Bumps when the active theme changes. Used as the React key on
+   * <Static> so Ink's "we already printed these" memo is invalidated and
+   * the whole transcript re-prints fresh in the new palette.
+   *
+   * Resize is intentionally NOT folded into this key. Ink handles resize
+   * internally (its own listener recomputes the Yoga layout and triggers
+   * onRender); us also clearing the screen + re-keying Static races
+   * against Ink's log-update internal state and produces blank-screen
+   * artifacts at certain widths. Trust Ink for resize.
    */
-  resizeNonce?: number;
+  themeNonce?: number;
 }
 
+type StaticItem =
+  | { kind: 'welcome'; key: string; welcome: WelcomeStats }
+  | { kind: 'turn'; key: string; turn: Turn };
+
 export const Messages: React.FC<MessagesProps> = ({
-  committed, streaming, welcome, resizeNonce = 0,
+  committed, streaming, welcome, themeNonce = 0,
 }) => {
-  const showWelcome = welcome && committed.length === 0 && !streaming;
+  const items: StaticItem[] = [];
+  if (welcome) {
+    items.push({ kind: 'welcome', key: '__welcome__', welcome });
+  }
+  for (const t of committed) {
+    items.push({ kind: 'turn', key: t.id, turn: t });
+  }
 
   return (
     <>
-      {showWelcome ? <Welcome stats={welcome} /> : null}
-      <Static key={`static-${resizeNonce}`} items={committed}>
-        {(turn) => <TurnRow key={turn.id} turn={turn} />}
+      <Static key={`static-${themeNonce}`} items={items}>
+        {(item) =>
+          item.kind === 'welcome' ? (
+            <Welcome key={item.key} stats={item.welcome} />
+          ) : (
+            <TurnRow key={item.key} turn={item.turn} />
+          )
+        }
       </Static>
       {streaming ? <TurnRow turn={streaming} /> : null}
     </>

@@ -45,20 +45,10 @@ queryTerminalBg(200)
   .then((bg) => { if (bg) setCachedSystemTheme(bg); })
   .catch(() => { /* fall back to COLORFGBG / dark */ });
 
-// On resize, repaint by clearing the viewport. Ink + Static (keyed on
-// resizeNonce in REPL.tsx) re-mounts and re-prints every committed turn
-// at the new width.
-let _lastCols = process.stdout.columns ?? 0;
-let _lastRows = process.stdout.rows ?? 0;
-process.stdout.on('resize', () => {
-  const cols = process.stdout.columns ?? 0;
-  const rows = process.stdout.rows ?? 0;
-  if (cols !== _lastCols || rows !== _lastRows) {
-    _lastCols = cols;
-    _lastRows = rows;
-    process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
-  }
-});
+// Resize is left to Ink. Its own listener recomputes Yoga layout and
+// triggers a re-render — adding our own clear-screen on top of that
+// raced against log-update's previousLineCount and produced blank
+// frames at certain widths.
 
 process.on('SIGINT', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));

@@ -12,7 +12,6 @@ import { PromptInput } from '../components/PromptInput/PromptInput.js';
 import { handleSlash } from '../commands/handler.js';
 import { loadHistory, appendHistory, trimHistoryFile } from '../utils/history.js';
 import { copyToClipboard } from '../utils/clipboard.js';
-import { useTerminalWidth, useTerminalHeight } from '../utils/useTerminalWidth.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { isThemeSetting } from '../theme/themes.js';
 import { ThemePicker } from '../components/ThemePicker.js';
@@ -96,33 +95,23 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [thinkingEffort, setThinkingEffort] = useState<'off' | 'low' | 'medium' | 'high'>('medium');
   const [connState, setConnState] = useState<ConnectionState>(client.getState());
   const agentSetRef = useRef(false);
-  // Bumps every time the terminal resizes so Messages can remount the
-  // <Static> region and re-print all committed turns at the new width
-  // (after our resize-time clear-screen).
-  const cols = useTerminalWidth();
-  const rows = useTerminalHeight();
-  const lastSizeRef = useRef<string>(`${cols}x${rows}`);
-  const [resizeNonce, setResizeNonce] = useState(0);
-  useEffect(() => {
-    const sig = `${cols}x${rows}`;
-    if (sig !== lastSizeRef.current) {
-      lastSizeRef.current = sig;
-      setResizeNonce((n) => n + 1);
-    }
-  }, [cols, rows]);
-
   // Theme switch — Ink's <Static> caches every committed turn's first
   // render, so without a key bump those rows stay locked to the old
-  // palette until the next resize. Bump the nonce on theme change AND
-  // clear the visible viewport first, otherwise the freshly-printed
-  // (new-theme) rows would stack on top of the still-on-screen
-  // (old-theme) ones.
+  // palette. Bump a nonce on theme change AND clear the visible viewport
+  // first, otherwise the freshly-printed (new-theme) rows would stack
+  // on top of the still-on-screen (old-theme) ones.
+  //
+  // Resize is left alone. Ink's own listener handles resize: it
+  // re-computes Yoga layout and triggers onRender. Adding our own
+  // clear-screen + key bump on top of that races against Ink's
+  // log-update internals and produces blank frames at certain widths.
   const lastThemeRef = useRef<string>(currentTheme);
+  const [themeNonce, setThemeNonce] = useState(0);
   useEffect(() => {
     if (lastThemeRef.current !== currentTheme) {
       lastThemeRef.current = currentTheme;
       process.stdout.write('\x1b[2J\x1b[H');
-      setResizeNonce((n) => n + 1);
+      setThemeNonce((n) => n + 1);
     }
   }, [currentTheme]);
 
@@ -695,7 +684,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         committed={committed}
         streaming={streaming}
         welcome={stats ? stats : undefined}
-        resizeNonce={resizeNonce}
+        themeNonce={themeNonce}
       />
       {activity ? (
         <Spinner
