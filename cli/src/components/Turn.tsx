@@ -13,11 +13,25 @@ export interface ToolCall {
   status: 'running' | 'done' | 'error';
 }
 
+/** A piece of an assistant turn — either a text segment or a tool call. */
+export type TurnBlock =
+  | { kind: 'text'; text: string }
+  | { kind: 'tool'; call: ToolCall };
+
 export interface Turn {
   id: string;
   role: Role;
   text: string;
-  /** Inline tool calls between text segments. Order is preserved. */
+  /**
+   * Ordered sequence of text + tool blocks, matching the order they
+   * arrived from the model. Renders interleaved so a tool call shows
+   * exactly where the model emitted it instead of all tools clumping
+   * after the text. Optional for back-compat with simple user / system
+   * rows that only carry plain text.
+   */
+  blocks?: TurnBlock[];
+  /** Legacy: flat list of tools (rendered after text). Used only when
+   * `blocks` is not provided. */
   tools?: ToolCall[];
   tag?: string;
   /** While streaming, skip the markdown renderer (re-running it every
@@ -68,8 +82,6 @@ const ToolRow: React.FC<{ call: ToolCall }> = ({ call }) => {
 
 const UserRow: React.FC<{ turn: Turn }> = ({ turn }) => {
   const colors = useColors();
-  // User message: gray background block, leading `>` glyph. Each visual
-  // line is its own <Text> so newlines split correctly inside the block.
   const lines = turn.text.split('\n');
   return (
     <Box marginBottom={1} flexDirection="column">
@@ -85,40 +97,63 @@ const UserRow: React.FC<{ turn: Turn }> = ({ turn }) => {
   );
 };
 
-const AssistantRow: React.FC<{ turn: Turn }> = ({ turn }) => {
+const TextSegment: React.FC<{ text: string; streaming?: boolean; showGlyph: boolean }>
+  = ({ text, streaming, showGlyph }) => {
   const colors = useColors();
-  const rendered = turn.streaming
-    ? turn.text
-    : turn.text
-    ? renderMarkdown(turn.text)
-    : '';
+  const rendered = streaming ? text : renderMarkdown(text);
   const lines = rendered.split('\n');
   return (
+    <Box paddingX={1} flexDirection="column">
+      {lines.map((line, i) => {
+        const isFirstLine = i === 0;
+        return (
+          <Box key={i}>
+            {isFirstLine && showGlyph ? (
+              <Text color={colors.assistant.glyph}>● </Text>
+            ) : (
+              <Text>  </Text>
+            )}
+            <Text>{line || ' '}</Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+};
+
+const AssistantRow: React.FC<{ turn: Turn }> = ({ turn }) => {
+  // Pick blocks if present (new streaming pipeline). Fall back to the
+  // legacy "text then tools" layout for older Turn shapes.
+  const blocks: TurnBlock[] =
+    turn.blocks && turn.blocks.length > 0
+      ? turn.blocks
+      : [
+          ...(turn.text ? [{ kind: 'text' as const, text: turn.text }] : []),
+          ...((turn.tools ?? []).map((t) => ({ kind: 'tool' as const, call: t }))),
+        ];
+
+  // Show the green leading ● only on the FIRST text block. Tool blocks
+  // carry their own status glyph, so a redundant assistant glyph above
+  // them just clutters the row. If there's no text at all (assistant
+  // emitted only tool calls), no glyph is shown — the tool's own ◌/●
+  // is enough to mark the assistant turn.
+  const firstTextIndex = blocks.findIndex((b) => b.kind === 'text');
+
+  return (
     <Box marginBottom={1} flexDirection="column">
-      <Box paddingX={1} flexDirection="column">
-        {lines.length > 0 && lines[0] ? (
-          <Box>
-            <Text color={colors.assistant.glyph}>● </Text>
-            <Text>{lines[0]}</Text>
-          </Box>
-        ) : (
-          <Box>
-            <Text color={colors.assistant.glyph}>● </Text>
-          </Box>
-        )}
-        {lines.slice(1).map((l, i) => (
-          <Box key={i} paddingLeft={2}>
-            <Text>{l || ' '}</Text>
-          </Box>
-        ))}
-      </Box>
-      {turn.tools && turn.tools.length > 0 ? (
-        <Box flexDirection="column" marginTop={0}>
-          {turn.tools.map((t) => (
-            <ToolRow key={t.id} call={t} />
-          ))}
-        </Box>
-      ) : null}
+      {blocks.map((block, i) => {
+        if (block.kind === 'tool') {
+          return <ToolRow key={`tool-${block.call.id}`} call={block.call} />;
+        }
+        return (
+          <TextSegment
+            key={`text-${i}`}
+            text={block.text}
+            streaming={turn.streaming}
+            showGlyph={i === firstTextIndex}
+          />
+        );
+      })}
     </Box>
   );
 };

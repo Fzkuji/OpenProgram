@@ -7,7 +7,7 @@ import { BottomBar } from '../components/BottomBar.js';
 import { Messages } from '../components/Messages.js';
 import { Spinner } from '../components/Spinner.js';
 import { Picker, PickerItem } from '../components/Picker.js';
-import { Turn, ToolCall } from '../components/Turn.js';
+import { Turn, ToolCall, TurnBlock } from '../components/Turn.js';
 import { PromptInput } from '../components/PromptInput/PromptInput.js';
 import { handleSlash } from '../commands/handler.js';
 import { loadHistory, appendHistory, trimHistoryFile } from '../utils/history.js';
@@ -133,39 +133,59 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   const finishTurn = () => setActivity(null);
 
+  // Streaming-turn state is built as an ordered list of blocks (text or
+  // tool) so the rendered transcript reflects the actual emit order:
+  // a tool call shows where the model called it, not at the bottom of
+  // the turn. The flat `text` field is also kept (concatenation of all
+  // text segments) so anything that just wants the body — /copy,
+  // exportTranscript — keeps working unchanged.
+  const newAssistantTurn = (): Turn => ({
+    id: `a-${Date.now()}`,
+    role: 'assistant',
+    text: '',
+    blocks: [],
+    streaming: true,
+  });
+
   const upsertStreamingText = (delta: string) => {
-    setStreaming((s) => ({
-      id: s?.id ?? `a-${Date.now()}`,
-      role: 'assistant',
-      text: (s?.text ?? '') + delta,
-      tools: s?.tools ?? [],
-      streaming: true,
-    }));
+    setStreaming((s) => {
+      const base: Turn = s ?? newAssistantTurn();
+      const blocks = (base.blocks ?? []).slice();
+      const last = blocks[blocks.length - 1];
+      if (last && last.kind === 'text') {
+        blocks[blocks.length - 1] = { kind: 'text', text: last.text + delta };
+      } else {
+        blocks.push({ kind: 'text', text: delta });
+      }
+      return {
+        ...base,
+        text: (base.text ?? '') + delta,
+        blocks,
+        streaming: true,
+      };
+    });
   };
 
   const appendStreamingTool = (tool: string, input?: string) => {
     setStreaming((s) => {
-      const base: Turn = s ?? {
-        id: `a-${Date.now()}`,
-        role: 'assistant',
-        text: '',
-        tools: [],
-        streaming: true,
-      };
-      const tools = base.tools ?? [];
-      const callId = `t-${Date.now()}-${tools.length}`;
+      const base: Turn = s ?? newAssistantTurn();
+      const blocks = (base.blocks ?? []).slice();
+      const callId = `t-${Date.now()}-${blocks.length}`;
       const call: ToolCall = { id: callId, tool, input, status: 'running' };
-      return { ...base, tools: [...tools, call], streaming: true };
+      blocks.push({ kind: 'tool', call });
+      return { ...base, blocks, streaming: true };
     });
   };
 
   const finalizeStreamingTools = () => {
     setStreaming((s) => {
-      if (!s || !s.tools || s.tools.length === 0) return s;
-      const tools = s.tools.map((t) =>
-        t.status === 'running' ? { ...t, status: 'done' as const } : t,
+      if (!s) return s;
+      const blocks = (s.blocks ?? []).map((b): TurnBlock =>
+        b.kind === 'tool' && b.call.status === 'running'
+          ? { kind: 'tool', call: { ...b.call, status: 'done' as const } }
+          : b,
       );
-      return { ...s, tools };
+      return { ...s, blocks };
     });
   };
 
@@ -180,21 +200,31 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           if (!inner) return;
           const innerWithResult = inner as { type?: string; tool?: string; result?: string; is_error?: boolean };
           if (innerWithResult.type === 'tool_result' && innerWithResult.tool) {
-            // Attach the result preview to the most recent matching call.
+            // Attach the result preview to the most recent matching call
+            // — search blocks bottom-up for the last 'running' tool block
+            // with this tool name and update it in place.
             setStreaming((s) => {
               if (!s) return s;
-              const tools = (s.tools ?? []).slice();
-              for (let i = tools.length - 1; i >= 0; i--) {
-                if (tools[i]?.tool === innerWithResult.tool && tools[i]?.status === 'running') {
-                  tools[i] = {
-                    ...tools[i]!,
-                    status: innerWithResult.is_error ? 'error' : 'done',
-                    result: innerWithResult.result,
+              const blocks = (s.blocks ?? []).slice();
+              for (let i = blocks.length - 1; i >= 0; i--) {
+                const b = blocks[i];
+                if (
+                  b?.kind === 'tool'
+                  && b.call.tool === innerWithResult.tool
+                  && b.call.status === 'running'
+                ) {
+                  blocks[i] = {
+                    kind: 'tool',
+                    call: {
+                      ...b.call,
+                      status: innerWithResult.is_error ? 'error' : 'done',
+                      result: innerWithResult.result,
+                    },
                   };
                   break;
                 }
               }
-              return { ...s, tools };
+              return { ...s, blocks };
             });
             return;
           }
@@ -239,12 +269,21 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
             return null;
           });
           setStreaming((s) => {
-            const tools = s?.tools ?? [];
+            // Preserve the streamed block sequence so the committed
+            // turn renders text + tool calls in the order they actually
+            // arrived from the model. If somehow nothing was streamed
+            // (no blocks), fall back to a single text block built from
+            // the final result content.
+            const blocks: TurnBlock[] = s?.blocks && s.blocks.length > 0
+              ? s.blocks
+              : text
+                ? [{ kind: 'text', text }]
+                : [];
             const final: Turn = {
               id: s?.id ?? `a-${Date.now()}`,
               role: 'assistant',
               text,
-              tools,
+              blocks,
             };
             // Move into committed (Static) and clear streaming.
             setCommitted((m) => [...m, final]);
