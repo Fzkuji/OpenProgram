@@ -36,10 +36,19 @@ export interface ColorTheme {
 }
 
 export const THEME_NAMES = ['dark', 'dark-dim', 'light', 'light-dim'] as const;
+/** A renderable palette. Always resolvable. */
 export type ThemeName = (typeof THEME_NAMES)[number];
 
-export const THEME_LABELS: Record<ThemeName, string> = {
-  dark: 'Dark — warm orange-red on black (default)',
+/**
+ * What the user can save as a setting. `auto` is resolved at runtime to
+ * one of the concrete ThemeName values via `getSystemThemeName()`.
+ */
+export const THEME_SETTINGS = ['auto', ...THEME_NAMES] as const;
+export type ThemeSetting = (typeof THEME_SETTINGS)[number];
+
+export const THEME_LABELS: Record<ThemeSetting, string> = {
+  auto: 'Auto — match the terminal background',
+  dark: 'Dark — warm orange-red on black',
   'dark-dim': 'Dark dim — softer accents, less eye strain at night',
   light: 'Light — black text, orange accent (daytime)',
   'light-dim': 'Light dim — muted accents on a light terminal',
@@ -122,6 +131,7 @@ export const THEMES: Record<ThemeName, ColorTheme> = {
 };
 
 export const DEFAULT_THEME: ThemeName = 'dark';
+export const DEFAULT_SETTING: ThemeSetting = 'dark';
 
 export function getTheme(name: ThemeName): ColorTheme {
   return THEMES[name] ?? THEMES[DEFAULT_THEME];
@@ -129,4 +139,8 @@ export function getTheme(name: ThemeName): ColorTheme {
 
 export function isThemeName(s: string): s is ThemeName {
   return (THEME_NAMES as readonly string[]).includes(s);
+}
+
+export function isThemeSetting(s: string): s is ThemeSetting {
+  return (THEME_SETTINGS as readonly string[]).includes(s);
 }

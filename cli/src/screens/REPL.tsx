@@ -14,7 +14,8 @@ import { loadHistory, appendHistory, trimHistoryFile } from '../utils/history.js
 import { copyToClipboard } from '../utils/clipboard.js';
 import { useTerminalWidth, useTerminalHeight } from '../utils/useTerminalWidth.js';
 import { useTheme } from '../theme/ThemeProvider.js';
-import { THEME_NAMES, THEME_LABELS, isThemeName, ThemeName } from '../theme/themes.js';
+import { isThemeSetting } from '../theme/themes.js';
+import { ThemePicker } from '../components/ThemePicker.js';
 
 export interface REPLProps {
   client: BackendClient;
@@ -82,7 +83,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [pickerKind, setPickerKind] = useState<
     null | 'model' | 'resume' | 'agent' | 'channel' | 'channel_account' | 'theme'
   >(null);
-  const { themeName, setTheme } = useTheme();
+  const { setThemeSetting } = useTheme();
   const [channelAccounts, setChannelAccounts] = useState<
     Array<{ channel?: string; account_id?: string; configured?: boolean }>
   >([]);
@@ -489,8 +490,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         currentModel: model,
         currentConversation: conversationId,
         setTheme: (name: string) => {
-          if (!isThemeName(name)) return false;
-          setTheme(name);
+          if (!isThemeSetting(name)) return false;
+          setThemeSetting(name);
           return true;
         },
       });
@@ -640,19 +641,11 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       />
     );
   } else if (pickerKind === 'theme') {
-    const items: PickerItem<ThemeName>[] = THEME_NAMES.map((name) => ({
-      label: name,
-      description: name === themeName ? `current · ${THEME_LABELS[name]}` : THEME_LABELS[name],
-      value: name,
-    }));
     pickerNode = (
-      <Picker
-        title="Switch theme"
-        items={items}
-        onSelect={(it) => {
-          setTheme(it.value);
+      <ThemePicker
+        onDone={(setting) => {
           setPickerKind(null);
-          pushSystem(`Theme set to ${it.value}.`);
+          pushSystem(`Theme set to ${setting}.`);
         }}
         onCancel={() => setPickerKind(null)}
       />

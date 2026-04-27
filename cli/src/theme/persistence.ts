@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, dirname } from 'path';
-import { DEFAULT_THEME, isThemeName, ThemeName } from './themes.js';
+import { DEFAULT_SETTING, isThemeSetting, ThemeSetting } from './themes.js';
 
 const CONFIG_PATH = join(homedir(), '.openprogram', 'cli-config.json');
 
@@ -30,14 +30,14 @@ const writeConfig = (cfg: CliConfig): void => {
   } catch { /* best effort */ }
 };
 
-export function loadThemeName(): ThemeName {
+export function loadThemeSetting(): ThemeSetting {
   const cfg = readConfig();
-  if (cfg.theme && isThemeName(cfg.theme)) return cfg.theme;
-  return DEFAULT_THEME;
+  if (cfg.theme && isThemeSetting(cfg.theme)) return cfg.theme;
+  return DEFAULT_SETTING;
 }
 
-export function saveThemeName(name: ThemeName): void {
+export function saveThemeSetting(setting: ThemeSetting): void {
   const cfg = readConfig();
-  cfg.theme = name;
+  cfg.theme = setting;
   writeConfig(cfg);
 }

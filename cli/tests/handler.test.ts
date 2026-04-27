@@ -154,6 +154,13 @@ describe('handleSlash', () => {
     expect(ctx.pushSystem).toHaveBeenCalledWith(expect.stringContaining('Theme set to light'));
   });
 
+  it('/theme auto is accepted (system-detect)', () => {
+    const setTheme = vi.fn(() => true);
+    const ctx = makeCtx({ setTheme });
+    handleSlash('/theme auto', ctx);
+    expect(setTheme).toHaveBeenCalledWith('auto');
+  });
+
   it('/theme <bogus> reports unknown', () => {
     const setTheme = vi.fn(() => false);
     const ctx = makeCtx({ setTheme });
