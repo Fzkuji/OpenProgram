@@ -44,7 +44,13 @@ const Column: React.FC<{
   maxRows: number;
 }> = ({ spec, width, twoCols, maxRows }) => {
   const colors = useColors();
-  const innerWidth = Math.max(8, width - 2);
+  // Column has paddingX={1}, so content area = width - 2. Subtract
+  // one MORE col so subWidth + paddingX is strictly less than width
+  // — otherwise we hit yoga's exact-fit edge case where invalid
+  // dimensions propagate up and ink renderer.ts:55-72 returns a
+  // height=0 blank screen (the actual root cause of "blank Welcome
+  // at certain sizes" the user reported across 107×41 / 119×50).
+  const innerWidth = Math.max(8, width - 3);
   const subWidth = twoCols ? Math.floor(innerWidth / 2) : innerWidth;
   const limitedItems = spec.items.slice(0, twoCols ? maxRows * 2 : maxRows);
   const overflow = spec.items.length - limitedItems.length;
@@ -58,7 +64,7 @@ const Column: React.FC<{
     for (const it of limitedItems) rows.push([it, undefined]);
   }
   return (
-    <Box flexDirection="column" width={width} paddingX={1}>
+    <Box flexDirection="column" width={width} paddingX={1} flexShrink={1}>
       {/* Count + label flush-left with the items below — uniform vertical
           alignment is easier to scan than centered headers over ragged
           lists. Count in primary orange, label in bold white so the
@@ -71,13 +77,18 @@ const Column: React.FC<{
       </Box>
       {rows.map(([a, b], i) => (
         <Box key={i}>
-          <Box width={subWidth}>
+          {/* flexShrink={1} on each cell tells yoga "if you can't
+              satisfy the explicit width, shrink me first" — defuses
+              the invalid-dimension cascade that returns a blank
+              screen from ink's renderer when a child width can't
+              be satisfied. */}
+          <Box width={subWidth} flexShrink={1}>
             <Text color={colors.muted} wrap="truncate-end">
               {a}
             </Text>
           </Box>
           {twoCols && b ? (
-            <Box width={subWidth}>
+            <Box width={subWidth} flexShrink={1}>
               <Text color={colors.muted} wrap="truncate-end">
                 {b}
               </Text>
@@ -267,7 +278,9 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
           width (border 2 + paddingX*2 = 4) — without an explicit width
           on this row Yoga sizes it to content and space-between has
           no extra space to distribute. */}
-      <Box justifyContent="space-between" width={Math.max(20, width - 6)}>
+      {/* width-7 (not width-6) so the row is strictly narrower than the
+          panel inner area; eliminates another exact-fit yoga edge. */}
+      <Box justifyContent="space-between" width={Math.max(20, width - 7)}>
         <Box flexShrink={1}>
           <Text bold color={colors.error} wrap="truncate-end">
             OpenProgram
