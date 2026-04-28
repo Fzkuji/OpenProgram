@@ -83,6 +83,13 @@ class TurnRequest:
     # NOT re-write it. Used by webui where the WS handler appends
     # the user msg before kicking off the agent thread.
     user_already_persisted: bool = False
+    # Multimodal attachments to include in the user message. Each
+    # entry is ``{"type": "image", "data": <base64>, "media_type":
+    # "image/png"}`` (or jpeg/webp/gif). The dispatcher attaches
+    # these as ImageContent blocks alongside the text TextContent.
+    # Providers that don't support vision will reject; the dispatcher
+    # surfaces that as an error envelope, not a crash.
+    attachments: Optional[list[dict]] = None
 
 
 @dataclass
@@ -224,7 +231,7 @@ def process_user_turn(
             user_parent_id = session.get("head_id")
     else:
         user_parent_id = req.parent_id
-    user_msg = {
+    user_msg: dict[str, Any] = {
         "id": user_msg_id,
         "role": "user",
         "content": req.user_text,
@@ -234,6 +241,22 @@ def process_user_turn(
         "peer_display": req.peer_display,
         "peer_id": req.peer_id,
     }
+    # Persist a lightweight attachment manifest (count + media types)
+    # so /resume + the search picker can show "[2 images]" badges
+    # without re-loading the base64 blobs. Full data still goes to
+    # the LLM via the in-context UserMessage but doesn't need to live
+    # in SessionDB rows — that would bloat the FTS5 index with base64.
+    if req.attachments:
+        manifest = []
+        for att in req.attachments:
+            if isinstance(att, dict):
+                manifest.append({
+                    "type": att.get("type"),
+                    "media_type": att.get("media_type"),
+                    "size_b64": len(att.get("data") or ""),
+                })
+        user_msg["extra"] = json.dumps({"attachments": manifest},
+                                         default=str)
     if not req.user_already_persisted:
         db.append_message(req.conv_id, user_msg)
         # Advance head to the user message. Crucial for branching: if
@@ -647,11 +670,33 @@ def _run_loop_blocking(
                                               loop_cancel, stream_fn)
         else:
             # Channels / TUI / first-time webui call: history excludes
-            # the new user turn. Wrap user_text as a UserMessage prompt;
-            # agent_loop appends it to context.messages internally.
-            from openprogram.providers.types import UserMessage, TextContent
+            # the new user turn. Wrap user_text as a UserMessage prompt
+            # plus any attached images. Agent_loop appends to
+            # context.messages internally.
+            from openprogram.providers.types import (
+                ImageContent, TextContent, UserMessage,
+            )
+            content_blocks: list = []
+            if req.user_text:
+                content_blocks.append(TextContent(text=req.user_text))
+            for att in (req.attachments or []):
+                if not isinstance(att, dict):
+                    continue
+                if att.get("type") == "image":
+                    try:
+                        content_blocks.append(ImageContent(
+                            data=att.get("data") or "",
+                            mime_type=att.get("media_type") or "image/png",
+                        ))
+                    except Exception:
+                        # Malformed attachment — skip silently rather
+                        # than aborting the whole turn. Provider will
+                        # see the text-only fallback.
+                        pass
+            if not content_blocks:
+                content_blocks = [TextContent(text="")]
             prompt = UserMessage(
-                content=[TextContent(text=req.user_text)],
+                content=content_blocks,
                 timestamp=int(time.time() * 1000),
             )
             ev_stream = agent_loop([prompt], context, config,

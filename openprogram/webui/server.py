@@ -56,6 +56,9 @@ _ws_connections: list[Any] = []
 _ws_lock = threading.Lock()
 _loop: Optional[asyncio.AbstractEventLoop] = None
 
+# Module load timestamp — used by /healthz uptime calc.
+_SERVER_START_TIME = time.time()
+
 # Conversation storage (in-memory). The conv dict still owns
 # runtime / root_context / function_trees / metadata, but the
 # ``messages`` array is now a derived view of SessionDB's active
@@ -2787,6 +2790,53 @@ def create_app():
     app.routes.insert(0, WebSocketRoute("/ws", _websocket_handler))
 
     # REST endpoints
+    @app.get("/healthz")
+    async def healthz():
+        """Liveness + readiness probe.
+
+        Used by load balancers / k8s / docker-compose healthcheck +
+        humans curl-checking that the server is functioning. Reports
+        SessionDB connectivity, registered tool count, recent turn
+        count, and uptime.
+
+        Returns 200 even when degraded — the JSON ``status`` field
+        tells you the actual state. (200 + degraded vs 503 is a
+        deployment-policy choice; we let the caller decide based on
+        the body.)
+        """
+        import time as _time
+        info: dict = {
+            "status": "ok",
+            "checked_at": _time.time(),
+            "uptime_seconds": int(_time.time() - _SERVER_START_TIME),
+        }
+        # SessionDB ping — count sessions to prove the DB responds.
+        try:
+            from openprogram.agent.session_db import default_db
+            db = default_db()
+            session_count = len(db.list_sessions(limit=1))
+            info["db_ok"] = True
+            info["sessions_visible"] = session_count
+            # Recent activity: messages with timestamp in last 24h.
+            cutoff = _time.time() - 24 * 3600
+            recent = db.conn.execute(
+                "SELECT COUNT(*) AS c FROM messages WHERE timestamp >= ?",
+                (cutoff,),
+            ).fetchone()
+            info["messages_24h"] = recent["c"] if recent else 0
+        except Exception as e:
+            info["db_ok"] = False
+            info["db_error"] = f"{type(e).__name__}: {e}"
+            info["status"] = "degraded"
+        # Tool registry count — proves the @tool decorator's import
+        # side-effects fired and channels/webui can dispatch tools.
+        try:
+            from openprogram.tools import list_registered_agent_tools
+            info["tools_registered"] = len(list_registered_agent_tools())
+        except Exception:
+            info["tools_registered"] = 0
+        return JSONResponse(content=info)
+
     @app.get("/api/tree")
     async def get_tree():
         return JSONResponse(content=_get_full_tree())
