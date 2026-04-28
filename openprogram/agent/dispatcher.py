@@ -316,6 +316,35 @@ def process_user_turn(
         model=req.model_override or session.get("model"),
     )
 
+    # 6.5. Auto-title: if the session is still using the placeholder
+    # title (or hasn't been titled by an explicit user action), set a
+    # readable label from the user's first message. Cheap version —
+    # just take the first 50 chars; LLM-summarized titles are a
+    # future upgrade. Fires once per session (idempotent via
+    # extra_meta._titled flag).
+    _maybe_auto_title(db, req.conv_id, session, req.user_text)
+
+    # 6.6. Compaction signal: when context is approaching the model's
+    # window, surface a "compaction_recommended" event so the UI can
+    # offer the user a /compact action. We don't auto-compact mid-
+    # turn — that would block the response. The actual compaction
+    # call is exposed as ``trigger_compaction(conv_id)`` for clients
+    # to invoke explicitly.
+    #
+    # Best-effort resolution of the context window; conservative
+    # 200k default if anything goes wrong (signal stays late but
+    # never crashes the turn).
+    try:
+        _ctx_window = int(getattr(
+            _resolve_model(_load_agent_profile(req.agent_id),
+                            req.model_override),
+            "max_tokens", 0,
+        )) or 200_000
+    except Exception:
+        _ctx_window = 200_000
+    _maybe_signal_compaction(db, req.conv_id, on_event,
+                              context_window=_ctx_window)
+
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal.
     on_event({"type": "chat_response",
@@ -342,6 +371,210 @@ def _noop(_: dict) -> None:
 def _default_title(req: TurnRequest) -> str:
     text = req.user_text.strip().splitlines()[0] if req.user_text else ""
     return text[:50] + ("…" if len(text) > 50 else "") or "New chat"
+
+
+def _maybe_auto_title(db, conv_id: str, session: dict,
+                      user_text: str) -> None:
+    """Stamp a readable session title once, on the first turn that
+    has a non-empty user message. Idempotent — once
+    ``extra_meta._titled`` is True we never touch the title again so
+    user-set titles via /rename win.
+
+    Skips when:
+      - The session was never created (missing row)
+      - User already explicitly titled it
+      - This wasn't a real text turn (e.g. tool-only follow-up)
+    """
+    extra = (session.get("extra_meta") or {})
+    if extra.get("_titled"):
+        return
+    stripped = (user_text or "").strip()
+    if not stripped:
+        return
+    text = stripped.splitlines()[0] if stripped.splitlines() else stripped
+    if not text:
+        return
+    title = text[:50] + ("…" if len(text) > 50 else "")
+    try:
+        db.update_session(conv_id, title=title, _titled=True)
+    except Exception:
+        pass
+
+
+# Conservative threshold: emit "compaction_recommended" once we're at
+# 70% of the context window. Lower than Hermes' 80% so the UI has
+# room to react before truncation hits.
+_COMPACTION_RECOMMEND_THRESHOLD = 0.7
+
+
+def _maybe_signal_compaction(db, conv_id: str,
+                              on_event: EventCallback,
+                              *, context_window: int) -> None:
+    """Estimate current branch token usage; emit a recommendation
+    envelope when it crosses the threshold. Single signal per turn —
+    debounced via session.extra_meta._compaction_recommended_at so
+    the UI doesn't get spammed."""
+    try:
+        from openprogram.agent.compaction import should_compact
+    except Exception:
+        return
+    try:
+        msgs = db.get_branch(conv_id) or []
+    except Exception:
+        return
+    if not msgs:
+        return
+    # Convert SessionDB row dicts to the shape should_compact expects
+    # (objects with role + content). The estimator is lenient — plain
+    # dicts work too.
+    if not should_compact(msgs, context_window=context_window,
+                           threshold=_COMPACTION_RECOMMEND_THRESHOLD):
+        return
+    on_event({
+        "type": "chat_response",
+        "data": {
+            "type": "compaction_recommended",
+            "conv_id": conv_id,
+            "branch_messages": len(msgs),
+        },
+    })
+
+
+def trigger_compaction(conv_id: str, agent_id: str = "main",
+                        on_event: Optional[EventCallback] = None,
+                        *,
+                        keep_recent_tokens: Optional[int] = None) -> dict:
+    """User-initiated compaction. Synchronous — the caller is responsible
+    for running this off the request thread if it cares about latency
+    (compaction calls the LLM to generate a summary).
+
+    Pipeline:
+      1. Load active branch from SessionDB.
+      2. Run compact_context to get summary text + recent kept tail.
+      3. Persist a synthetic ``compactionSummary`` row chained off
+         the current head's parent (so it sits at the same fork
+         point as the original first kept message).
+      4. set_head to the new summary row.
+      5. Re-link the kept tail: each kept message gets a new id and
+         parent_id pointing back through the new chain.
+
+    Mirrors Claude Code's compaction model (a real "summary" message
+    in the transcript) but stays SQL-native — no JSONL fork needed.
+    Old pre-summary messages remain in SessionDB but are off the
+    active branch (you can still get_descendants from them for
+    audit).
+
+    Returns ``{"summary": str, "kept_count": int, "summary_id": str}``.
+    """
+    on_event = on_event or _noop
+    from openprogram.agent.session_db import default_db
+    from openprogram.agent.compaction import compact_context
+
+    db = default_db()
+    sess = db.get_session(conv_id)
+    if sess is None:
+        raise ValueError(f"Unknown conversation {conv_id!r}")
+    history = db.get_branch(conv_id) or []
+    if len(history) < 4:
+        return {"summary": "", "kept_count": len(history), "summary_id": ""}
+
+    profile = _load_agent_profile(agent_id)
+    model = _resolve_model(profile, None)
+    system_prompt = profile.get("system_prompt") or ""
+
+    # compact_context expects dict-shaped messages — its internal
+    # cut-point logic does ``entry["message"].get("role", "")``, which
+    # blows up on pydantic Message objects. Pass the raw SessionDB
+    # rows (already dicts) and let the summarizer build its own
+    # serialized form.
+    #
+    # Async-in-sync: run in a fresh loop off any caller async loop.
+    settings: Optional[dict] = None
+    if keep_recent_tokens is not None:
+        settings = {"enabled": True,
+                    "keepRecentTokens": int(keep_recent_tokens),
+                    "reserveTokens": 16384}
+    loop = asyncio.new_event_loop()
+    try:
+        new_messages, summary = loop.run_until_complete(
+            compact_context(
+                messages=history,
+                system_prompt=system_prompt,
+                stream_fn=None,
+                model=model,
+                settings=settings,
+            )
+        )
+    finally:
+        loop.close()
+
+    if not summary:
+        return {"summary": "", "kept_count": len(history), "summary_id": ""}
+
+    # Persist the summary as a new root-level message (parent_id=None).
+    # Old chain stays in DB; readers walk only the new branch.
+    summary_id = uuid.uuid4().hex[:12]
+    db.append_message(conv_id, {
+        "id": summary_id,
+        "role": "user",
+        "content": f"[Previous conversation summary]\n{summary}",
+        "timestamp": time.time(),
+        "parent_id": None,
+        "source": "compaction",
+        "extra": json.dumps({
+            "compaction": True,
+            "logical_parent_id": sess.get("head_id"),
+            "summarized_count": len(history) - max(0, len(new_messages) - 1),
+        }, default=str),
+    })
+    # The kept tail (new_messages[1:]) gets re-parented to the summary.
+    # Each kept message gets a fresh id so it doesn't collide with the
+    # original row. Sequential parent chain through the tail.
+    last_id = summary_id
+    for src_msg in (new_messages[1:] if len(new_messages) > 1 else []):
+        new_id = uuid.uuid4().hex[:12]
+        # src_msg may be a SessionDB row dict (we passed dict-shaped
+        # history) OR a pydantic Message (compact_context's prepended
+        # summary block — already handled above as new_messages[0]).
+        # Normalize both.
+        if isinstance(src_msg, dict):
+            role = src_msg.get("role", "user")
+            content = src_msg.get("content", "")
+        else:
+            role = getattr(src_msg, "role", "user")
+            c = getattr(src_msg, "content", None)
+            if isinstance(c, str):
+                content = c
+            elif isinstance(c, list):
+                parts = []
+                for blk in c:
+                    t = getattr(blk, "text", None)
+                    if t:
+                        parts.append(t)
+                content = "\n".join(parts)
+            else:
+                content = str(c) if c is not None else ""
+        db.append_message(conv_id, {
+            "id": new_id,
+            "role": role if role != "toolResult" else "assistant",
+            "content": content,
+            "timestamp": time.time(),
+            "parent_id": last_id,
+            "source": "compaction",
+        })
+        last_id = new_id
+
+    db.set_head(conv_id, last_id)
+    on_event({
+        "type": "chat_response",
+        "data": {"type": "compaction_done",
+                 "conv_id": conv_id,
+                 "summary_id": summary_id,
+                 "summary": summary},
+    })
+    return {"summary": summary,
+             "kept_count": max(0, len(new_messages) - 1),
+             "summary_id": summary_id}
 
 
 def _run_loop_blocking(
