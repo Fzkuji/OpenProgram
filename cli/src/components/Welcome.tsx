@@ -37,21 +37,21 @@ interface ColumnSpec {
 
 const Column: React.FC<{
   spec: ColumnSpec;
-  width: number;
   /** When true, items wrap into 2 sub-columns inside the column. */
   twoCols: boolean;
   /** Cap on number of item rows shown (truncates with "+N more"). */
   maxRows: number;
-}> = ({ spec, width, twoCols, maxRows }) => {
+}> = ({ spec, twoCols, maxRows }) => {
   const colors = useColors();
-  // Column has paddingX={1}, so content area = width - 2. Subtract
-  // one MORE col so subWidth + paddingX is strictly less than width
-  // — otherwise we hit yoga's exact-fit edge case where invalid
-  // dimensions propagate up and ink renderer.ts:55-72 returns a
-  // height=0 blank screen (the actual root cause of "blank Welcome
-  // at certain sizes" the user reported across 107×41 / 119×50).
-  const innerWidth = Math.max(8, width - 3);
-  const subWidth = twoCols ? Math.floor(innerWidth / 2) : innerWidth;
+  // No explicit pixel widths anywhere in Column — every cell uses
+  // flex distribution. Why: explicit widths combined with paddingX
+  // and equal-distribution rounding repeatedly tripped yoga's
+  // invalid-dimension path (ink renderer.ts:55-72) at boundary
+  // sizes (107×41, 119×50, 110×36 — every fix moved the failure
+  // to a new size because each fix only tightened ONE rounding
+  // edge). flex={1} with flexBasis=0 lets yoga distribute the
+  // available width however it wants without needing pixel-perfect
+  // arithmetic from us.
   const limitedItems = spec.items.slice(0, twoCols ? maxRows * 2 : maxRows);
   const overflow = spec.items.length - limitedItems.length;
   const rows: Array<[string, string | undefined]> = [];
@@ -64,11 +64,7 @@ const Column: React.FC<{
     for (const it of limitedItems) rows.push([it, undefined]);
   }
   return (
-    <Box flexDirection="column" width={width} paddingX={1} flexShrink={1}>
-      {/* Count + label flush-left with the items below — uniform vertical
-          alignment is easier to scan than centered headers over ragged
-          lists. Count in primary orange, label in bold white so the
-          section header reads distinct from the dim-gray items. */}
+    <Box flexDirection="column" flexGrow={1} flexShrink={1} flexBasis={0} paddingX={1}>
       <Box>
         <Text bold color={colors.primary}>
           {spec.count}
@@ -77,18 +73,13 @@ const Column: React.FC<{
       </Box>
       {rows.map(([a, b], i) => (
         <Box key={i}>
-          {/* flexShrink={1} on each cell tells yoga "if you can't
-              satisfy the explicit width, shrink me first" — defuses
-              the invalid-dimension cascade that returns a blank
-              screen from ink's renderer when a child width can't
-              be satisfied. */}
-          <Box width={subWidth} flexShrink={1}>
+          <Box flexGrow={1} flexShrink={1} flexBasis={0}>
             <Text color={colors.muted} wrap="truncate-end">
               {a}
             </Text>
           </Box>
           {twoCols && b ? (
-            <Box width={subWidth} flexShrink={1}>
+            <Box flexGrow={1} flexShrink={1} flexBasis={0}>
               <Text color={colors.muted} wrap="truncate-end">
                 {b}
               </Text>
@@ -216,31 +207,23 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
 
   // Welcome panel chrome: round border (1+1=2) + paddingX={2} (2+2=4).
   // Total = 6 cols of overhead, content area = width - 6.
-  // Each Column has paddingX={1} = 2 chars overhead. Per-tile slot
-  // in the row layout = tileWidth + 2.
   //
-  // Bug we hit at 107×41: innerPanel was computed as width-4
-  // (forgot the border), and tileWidth didn't subtract column
-  // padding. 4 × (25+2) = 108 > 101 actual content = yoga overflow
-  // → entire Welcome panel disappears at heights where the stack
-  // can't be compressed further.
+  // Tile layout uses pure flex distribution — no explicit pixel
+  // widths anywhere — so yoga's invalid-dimension path can never
+  // fire (tracked back through user reports at 107×41 / 119×50 /
+  // 110×36 to ink renderer.ts:55-72 returning a height=0 screen
+  // when computed dims are NaN; explicit-width arithmetic kept
+  // tripping that path at boundary sizes).
   //
-  // Tightened math + 1-col buffer keeps yoga happy on every size.
-  const PADDING_PER_TILE = 2;
+  // The threshold below decides 4-across vs 2-across based on
+  // available content width. Each column needs ~12 cols for the
+  // "0 channels" + item text plus 2 col paddingX = 14 per slot.
+  // Four across wants 4×14=56; add 4 col margin to avoid layouts
+  // that look squished.
   const innerPanel = Math.max(0, width - 6);
-  // Each Column needs ~12 chars for "0 channels" + an item. 12 + 2
-  // padding = 14 per tile slot. Four across needs inner ≥ 4×14 + safety
-  // buffer. Below that fall back to 2-col grid.
   const minTileSlot = 14;
-  // 4-col safety margin. Empirically buf=1 still triggers yoga blanking
-  // at some sizes (119×50 reproduced in the wild). 4 is enough for any
-  // size we care about and only costs 1-2 chars per tile.
-  const SAFETY_BUFFER = 4;
-  const fourAcross = innerPanel >= minTileSlot * 4 + SAFETY_BUFFER;
-  const tilesPerRow = fourAcross ? 4 : 2;
-  const rawTileWidth =
-    Math.floor((innerPanel - SAFETY_BUFFER) / tilesPerRow) - PADDING_PER_TILE;
-  const tileWidth = Math.max(8, rawTileWidth);
+  const fourAcrossMin = minTileSlot * 4 + 4;
+  const fourAcross = innerPanel >= fourAcrossMin;
   const twoSubCols = cols >= 130;
   // The 4 most useful tiles when only one row fits.
   const oneRowSubset = [skills, agentsCol, sessionsCol, tools];
@@ -301,7 +284,6 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
               <Column
                 key={c.label}
                 spec={c}
-                width={tileWidth}
                 twoCols={twoSubCols}
                 maxRows={itemsPerTile}
               />
@@ -312,7 +294,6 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
               <Column
                 key={c.label}
                 spec={c}
-                width={tileWidth}
                 twoCols={twoSubCols}
                 maxRows={itemsPerTile}
               />
@@ -326,7 +307,6 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
               <Column
                 key={c.label}
                 spec={c}
-                width={tileWidth}
                 twoCols={false}
                 maxRows={0}
               />
@@ -337,7 +317,6 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
               <Column
                 key={c.label}
                 spec={c}
-                width={tileWidth}
                 twoCols={false}
                 maxRows={0}
               />
@@ -350,14 +329,13 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
             <Column
               key={c.label}
               spec={c}
-              width={tileWidth}
               twoCols={false}
               maxRows={0}
             />
           ))}
         </Box>
       ) : (
-        // Narrow (<50 cols) fallback: 2-across grid, drop items if tight.
+        // Narrow (<minTileSlot*2+SAFETY_BUFFER cols) fallback: 2-across grid.
         <Box flexDirection="column" marginTop={1}>
           {Array.from({ length: Math.ceil(rowAll.length / 2) }).map((_, r) => (
             <Box key={r}>
@@ -365,7 +343,6 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
                 <Column
                   key={c.label}
                   spec={c}
-                  width={tileWidth}
                   twoCols={false}
                   maxRows={mode === 'two-rows-items' ? Math.max(0, itemsPerTile - 1) : 0}
                 />
