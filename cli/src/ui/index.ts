@@ -33,6 +33,21 @@ export type {
   CurrentModalApi,
 } from './ModalProvider.js';
 
+export { Select } from './Select.js';
+export type { SelectOption, SelectProps } from './Select.js';
+
+export { Input } from './Input.js';
+export type { InputProps } from './Input.js';
+
+export { Confirm } from './Confirm.js';
+export type { ConfirmProps } from './Confirm.js';
+
+export { MultiSelect } from './MultiSelect.js';
+export type { MultiSelectOption, MultiSelectProps } from './MultiSelect.js';
+
+export { Form } from './Form.js';
+export type { FormProps, FormStep, FormStepContext } from './Form.js';
+
 export {
   useTerminalSize,
   useBreakpoint,
