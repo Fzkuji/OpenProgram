@@ -203,24 +203,30 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
     mode = 'none';
   }
 
-  // Width per tile. Each Column has paddingX={1} (= 2 chars overhead) so
-  // the effective per-tile slot in the panel is tileWidth + 2. Bug we
-  // saw at 107×41: rawTileWidth was computed as (panelInner / 4) without
-  // accounting for that padding — 4 × (25+2) = 108 > 103 inner = yoga
-  // overflow → entire Welcome panel disappears at certain heights where
-  // the stack gets tall enough that yoga can't compress it any more.
+  // Welcome panel chrome: round border (1+1=2) + paddingX={2} (2+2=4).
+  // Total = 6 cols of overhead, content area = width - 6.
+  // Each Column has paddingX={1} = 2 chars overhead. Per-tile slot
+  // in the row layout = tileWidth + 2.
   //
-  // Each Column needs ~12 chars for "0 channels" + at least one item.
-  // 12 + 2 (padding) = 14. So 4-across needs an inner width of ~56.
-  // Below that we fall back to the 2-col grid (4 rows of 2 tiles).
+  // Bug we hit at 107×41: innerPanel was computed as width-4
+  // (forgot the border), and tileWidth didn't subtract column
+  // padding. 4 × (25+2) = 108 > 101 actual content = yoga overflow
+  // → entire Welcome panel disappears at heights where the stack
+  // can't be compressed further.
+  //
+  // Tightened math + 1-col buffer keeps yoga happy on every size.
   const PADDING_PER_TILE = 2;
-  const innerPanel = Math.max(0, width - 4);   // Welcome panel paddingX={2}
-  const minTileSlot = 14;                      // tileWidth 12 + padding 2
-  const fourAcross = innerPanel >= minTileSlot * 4;
+  const innerPanel = Math.max(0, width - 6);
+  // Each Column needs ~12 chars for "0 channels" + an item. 12 + 2
+  // padding = 14 per tile slot. Four across needs inner ≥ 4×14 + 1
+  // buffer = 57. Below that fall back to 2-col grid.
+  const minTileSlot = 14;
+  const fourAcross = innerPanel >= minTileSlot * 4 + 1;
   const tilesPerRow = fourAcross ? 4 : 2;
-  const rawTileWidth = Math.floor(innerPanel / tilesPerRow) - PADDING_PER_TILE;
-  // Clamp to a minimum so a sudden resize down to ~10 cols doesn't
-  // produce negative widths and crash Ink.
+  // 1-col safety margin: keep total tile width strictly under
+  // innerPanel so equal-width yoga rounding never overflows.
+  const rawTileWidth =
+    Math.floor((innerPanel - 1) / tilesPerRow) - PADDING_PER_TILE;
   const tileWidth = Math.max(8, rawTileWidth);
   const twoSubCols = cols >= 130;
   // The 4 most useful tiles when only one row fits.

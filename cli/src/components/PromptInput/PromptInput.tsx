@@ -315,7 +315,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       <Box
         borderStyle="round"
         borderColor={busy ? colors.warning : colors.primary}
-        paddingX={1}
+        // paddingX={2} matches Welcome's paddingX so ``↵ enter`` lands
+        // in the same column as Welcome's ``agent · model`` (both right
+        // edges at width-3). Was 1 before; visually misaligned by 1 col.
+        paddingX={2}
         justifyContent="space-between"
       >
         <Box flexShrink={1}>
