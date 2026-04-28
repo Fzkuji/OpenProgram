@@ -154,6 +154,27 @@ export interface ChannelTurnEnvelope {
 }
 
 /**
+ * QR-login state-machine envelope. Server pushes these on every
+ * phase of a wechat (and future QR-based) login: qr_ready /
+ * scanned / confirmed / done / expired / error. The TUI renders
+ * the ASCII QR + status text in a non-interactive picker until
+ * ``done`` arrives.
+ */
+export interface QrLoginEnvelope {
+  type: 'qr_login';
+  data: {
+    channel?: string;
+    account_id?: string;
+    phase: 'qr_ready' | 'scanned' | 'confirmed' | 'done' | 'expired' | 'error';
+    url?: string;
+    ascii?: string;
+    message?: string;
+    credentials?: Record<string, unknown>;
+    already_configured?: boolean;
+  };
+}
+
+/**
  * SessionDB FTS5 search results. Sent by the server in response to a
  * ``search_messages`` action; the TUI's /search command consumes these
  * to render a picker of matched messages with their session context.
@@ -192,6 +213,7 @@ export type WsEnvelope =
   | ChannelAccountAddedEnvelope
   | BrowserResultEnvelope
   | ChannelTurnEnvelope
+  | QrLoginEnvelope
   | SearchResultsEnvelope
   | ErrorEnvelope
   | { type: 'pong' };

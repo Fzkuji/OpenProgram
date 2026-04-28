@@ -2571,6 +2571,57 @@ async def _handle_ws_command(ws, cmd: dict):
             "type": "channel_accounts", "data": rows,
         }, default=str))
 
+    elif action == "start_channel_login":
+        # QR-based login for channels that don't take a static token
+        # (currently wechat). Spawns the iLink QR flow on a worker
+        # thread and pushes ``qr_login`` envelopes for each phase
+        # (qr_ready / scanned / confirmed / done / expired / error).
+        # The TUI renders the ASCII QR in the transcript and opens
+        # the binding picker on ``done``.
+        ch = (cmd.get("channel") or "").strip().lower()
+        acct_id = (cmd.get("account_id") or "default").strip()
+        if ch != "wechat":
+            await ws.send_text(json.dumps({
+                "type": "qr_login",
+                "data": {"phase": "error",
+                          "channel": ch, "account_id": acct_id,
+                          "message": f"QR login not supported for {ch!r}"},
+            }))
+        else:
+            # Capture the asyncio loop + websocket so the worker
+            # thread can post envelopes back via the loop's threadsafe
+            # call_soon.
+            target_loop = asyncio.get_running_loop()
+            target_ws = ws
+
+            def _push(env: dict) -> None:
+                env_full = {"type": "qr_login",
+                             "data": {"channel": ch,
+                                       "account_id": acct_id,
+                                       **env}}
+                payload = json.dumps(env_full, default=str)
+
+                async def _send():
+                    try:
+                        await target_ws.send_text(payload)
+                    except Exception:
+                        pass
+
+                target_loop.call_soon_threadsafe(
+                    lambda: asyncio.ensure_future(_send()))
+
+            def _runner():
+                try:
+                    from openprogram.channels.wechat import (
+                        login_account_event_driven,
+                    )
+                    login_account_event_driven(acct_id, _push)
+                except Exception as e:
+                    _push({"phase": "error",
+                            "message": f"{type(e).__name__}: {e}"})
+
+            threading.Thread(target=_runner, daemon=True).start()
+
     elif action == "add_channel_account":
         # Token-based registration for discord / telegram / slack.
         # Wechat goes through the QR-login pair below since it has no

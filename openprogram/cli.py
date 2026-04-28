@@ -254,6 +254,11 @@ def main():
     channels_sub.add_parser("status",
         help="Show whether the channels worker is running, which PID, "
              "and when it started.")
+    channels_sub.add_parser("setup",
+        help="Interactive wizard — pick channel, log in (QR / token), "
+             "bind to an agent, optionally start the worker. One command "
+             "instead of `accounts add`+`accounts login`+`bindings add`+"
+             "`channels start`.")
     # ---- channels accounts --------------------------------------------
     p_chacct = channels_sub.add_parser("accounts",
         help="Manage channel bot accounts (WeChat, Telegram, etc.)")
@@ -555,6 +560,9 @@ def main():
         if verb == "status":
             from openprogram.channels.worker import print_status
             sys.exit(print_status())
+        if verb == "setup":
+            from openprogram.channels import setup as _ch_setup
+            sys.exit(_ch_setup.run())
         if verb == "accounts":
             _dispatch_accounts_verb(args, p_chacct)
             return

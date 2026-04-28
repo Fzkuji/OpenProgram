@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
-import { Box, useApp, useInput } from '@openprogram/ink';
+import { Box, Text, useApp, useInput } from '@openprogram/ink';
 import { BackendClient, WsEnvelope, StatsEnvelope, ConnectionState } from '../ws/client.js';
 import { BottomBar } from '../components/BottomBar.js';
 import { Messages } from '../components/Messages.js';
@@ -102,6 +102,13 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     null
     | 'model' | 'resume' | 'agent' | 'channel' | 'channel_account' | 'theme'
     | 'register_account_id' | 'register_token'
+    // Three new picker states for in-TUI channel binding:
+    //   - channel_action: after picking channel+account, choose
+    //     binding mode (catch-all this conv / per-peer / list).
+    //   - channel_peer_input: prompt for peer_id (e.g. wxid_xxx).
+    //   - channel_qr_wait: show ASCII QR + status while wechat
+    //     login is in progress.
+    | 'channel_action' | 'channel_peer_input' | 'channel_qr_wait'
   >(null);
   const [registerForm, setRegisterForm] = useState<{
     channel?: string;
@@ -112,6 +119,14 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     Array<{ channel?: string; account_id?: string; configured?: boolean }>
   >([]);
   const [chosenChannel, setChosenChannel] = useState<string | undefined>(undefined);
+  // Channel-binding scratch state — held while the user walks
+  // through the channel→account→action→peer picker chain.
+  const [chosenAccount, setChosenAccount] = useState<string | undefined>(undefined);
+  // QR login progress: the ASCII art for the current QR + a status
+  // message ("scanned", "waiting", etc.). Cleared when the picker
+  // closes.
+  const [qrAscii, setQrAscii] = useState<string | undefined>(undefined);
+  const [qrStatus, setQrStatus] = useState<string | undefined>(undefined);
   const [agentsList, setAgentsList] = useState<AgentInfo[]>([]);
   const [toolsOn, setToolsOn] = useState(true);
   // Permission cycle: ask before each tool call → auto-approve safe → bypass everything.
@@ -390,6 +405,43 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         // `peer_display` (the WeChat nickname etc.) so /resume can tag
         // the picker rows.
         setPastConversations(ev.data ?? []);
+      } else if (ev.type === 'qr_login') {
+        // Server-driven QR-login state machine. Server pushes:
+        //   qr_ready    → render the ASCII QR
+        //   scanned     → user scanned, awaiting confirm tap
+        //   confirmed   → Tencent acknowledged, creds received
+        //   done        → credentials saved on disk; jump to bind-picker
+        //   expired/error → close picker, surface error
+        const data = ev.data ?? {};
+        const phase = data.phase;
+        if (phase === 'qr_ready') {
+          setQrAscii(data.ascii ?? '(QR rendering not available — install qrcode)');
+          setQrStatus(`Waiting for scan… (URL: ${data.url ?? ''})`);
+        } else if (phase === 'scanned') {
+          setQrStatus('Scanned. Tap "confirm" on your phone.');
+        } else if (phase === 'confirmed') {
+          setQrStatus('Confirmed. Saving credentials…');
+        } else if (phase === 'done') {
+          pushSystem(`✅ Logged in to ${data.channel ?? '?'}:${data.account_id ?? '?'}.`);
+          setQrAscii(undefined);
+          setQrStatus(undefined);
+          setChosenAccount(data.account_id);
+          // Refresh account list, then drop into the binding picker
+          // so the user can immediately attach the new account to the
+          // current conversation.
+          client.send({ action: 'list_channel_accounts' });
+          setPickerKind('channel_action');
+        } else if (phase === 'expired') {
+          pushSystem('QR code expired. Try /channel again.');
+          setQrAscii(undefined);
+          setQrStatus(undefined);
+          setPickerKind(null);
+        } else if (phase === 'error') {
+          pushSystem(`QR login failed: ${data.message ?? 'unknown error'}`);
+          setQrAscii(undefined);
+          setQrStatus(undefined);
+          setPickerKind(null);
+        }
       } else if (ev.type === 'search_results') {
         // SessionDB FTS5 hits — render each as a system note so the
         // user can pick a session_id to /resume from. Picker
@@ -559,6 +611,16 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       setThinkingEffort((t) =>
         t === 'off' ? 'low' : t === 'low' ? 'medium' : t === 'medium' ? 'high' : 'off',
       );
+      return;
+    }
+    // Esc closes the channel_qr_wait picker (no input form to absorb
+    // it). Other pickers handle their own onCancel via Picker/LineInput
+    // — this is just for the read-only QR display.
+    if (key.escape && pickerKind === 'channel_qr_wait') {
+      pushSystem('QR login cancelled.');
+      setQrAscii(undefined);
+      setQrStatus(undefined);
+      setPickerKind(null);
       return;
     }
   });
@@ -788,33 +850,146 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
             return;
           }
           if (it.value === '__register_wechat__') {
-            pushSystem(
-              `WeChat login uses QR scanning, run from a shell on the gateway host:\n` +
-              `  openprogram channels accounts login wechat default\n` +
-              `Scan with WeChat on your phone, then come back to /channel.`,
-            );
-            setPickerKind(null);
-            setChosenChannel(undefined);
+            // In-TUI QR login. Server pushes qr_login envelopes; the
+            // channel_qr_wait picker renders them and switches to
+            // channel_action when login finishes.
+            const acctId = `default_${Date.now().toString(36).slice(-4)}`;
+            setChosenAccount(acctId);
+            setQrAscii(undefined);
+            setQrStatus('Requesting QR code…');
+            client.send({
+              action: 'start_channel_login',
+              channel: 'wechat',
+              account_id: 'default',
+            } as never);
+            setPickerKind('channel_qr_wait');
             return;
           }
-          if (!conversationId) {
-            pushSystem('Send a message first to create a session, then attach.');
-            setPickerKind(null);
-            setChosenChannel(undefined);
-            return;
-          }
-          pushSystem(
-            `Selected ${chosenChannel}:${it.value}.\n` +
-            `Now type \`/attach ${chosenChannel} ${it.value} <peer-id>\` with the channel-side\n` +
-            `peer (e.g. wxid_xxx for WeChat) to bind that contact to ${conversationId}.`,
-          );
-          setPickerKind(null);
-          setChosenChannel(undefined);
+          // Existing-account path: continue to binding-mode picker.
+          setChosenAccount(it.value);
+          setPickerKind('channel_action');
         }}
         onCancel={() => {
           setPickerKind('channel');
         }}
       />
+    );
+  } else if (pickerKind === 'channel_action') {
+    // Three-way: catch-all to current conversation, specific peer,
+    // or just list/delete existing bindings. Catch-all means every
+    // inbound message on this channel:account lands in conversationId
+    // — useful for "I want all my wechat replies in this TUI session".
+    const items: PickerItem<string>[] = [
+      {
+        label: 'Bind ALL inbound to this conversation',
+        description: conversationId
+          ? `Every ${chosenChannel}:${chosenAccount} message → current chat`
+          : 'Send a message first to create a session',
+        value: '__catchall__',
+      },
+      {
+        label: 'Bind a specific peer to this conversation',
+        description: 'You will be prompted for the peer id (wxid_xxx etc.)',
+        value: '__peer__',
+      },
+      {
+        label: 'Show existing bindings',
+        description: 'List + remove rules later',
+        value: '__list__',
+      },
+    ];
+    pickerNode = (
+      <Picker
+        title={`Bind ${chosenChannel}:${chosenAccount} how?`}
+        items={items}
+        onSelect={(it) => {
+          if (it.value === '__list__') {
+            client.send({ action: 'list_session_aliases' } as never);
+            client.send({ action: 'list_channel_bindings' } as never);
+            setPickerKind(null);
+            setChosenChannel(undefined);
+            setChosenAccount(undefined);
+            return;
+          }
+          if (it.value === '__catchall__') {
+            if (!conversationId) {
+              pushSystem('Send a message first so there is a conversation to bind.');
+              return;
+            }
+            // Catch-all = attach with peer_id="*". The bindings/route
+            // logic falls through to alias.lookup which matches any
+            // peer for this (channel, account) when peer_id == "*".
+            client.send({
+              action: 'attach_session',
+              session_id: conversationId,
+              channel: chosenChannel,
+              account_id: chosenAccount,
+              peer_kind: 'direct',
+              peer_id: '*',
+            } as never);
+            pushSystem(
+              `✅ Bound ${chosenChannel}:${chosenAccount} (catch-all) → current conversation. ` +
+              `Channel worker will route every inbound message here.`,
+            );
+            setPickerKind(null);
+            setChosenChannel(undefined);
+            setChosenAccount(undefined);
+            return;
+          }
+          if (it.value === '__peer__') {
+            if (!conversationId) {
+              pushSystem('Send a message first so there is a conversation to bind.');
+              return;
+            }
+            setPickerKind('channel_peer_input');
+            return;
+          }
+        }}
+        onCancel={() => setPickerKind('channel_account')}
+      />
+    );
+  } else if (pickerKind === 'channel_peer_input') {
+    pickerNode = (
+      <LineInput
+        label={`Peer ID for ${chosenChannel}:${chosenAccount}`}
+        hint="e.g. wxid_xxxx for WeChat. The bot's worker log shows them once messages arrive."
+        onSubmit={(v) => {
+          const peerId = v.trim();
+          if (!peerId) {
+            pushSystem('peer id required.');
+            return;
+          }
+          if (!conversationId) {
+            pushSystem('No active conversation.');
+            return;
+          }
+          client.send({
+            action: 'attach_session',
+            session_id: conversationId,
+            channel: chosenChannel,
+            account_id: chosenAccount,
+            peer_kind: 'direct',
+            peer_id: peerId,
+          } as never);
+          pushSystem(`✅ Bound ${chosenChannel}:${chosenAccount}:${peerId} → current conversation.`);
+          setPickerKind(null);
+          setChosenChannel(undefined);
+          setChosenAccount(undefined);
+        }}
+        onCancel={() => setPickerKind('channel_action')}
+      />
+    );
+  } else if (pickerKind === 'channel_qr_wait') {
+    // Read-only "picker" — no input, just renders the QR + status
+    // until the qr_login envelope handler advances us out.
+    pickerNode = (
+      <Box flexDirection="column" borderStyle="single" paddingX={1} paddingY={0}>
+        <Text bold>Scan to log in to {chosenChannel}</Text>
+        <Text color="ansi:blackBright">Open WeChat on your phone → tap [+] → "Scan QR"</Text>
+        {qrAscii ? <Text>{qrAscii}</Text> : <Text color="ansi:blackBright">Loading QR…</Text>}
+        <Text color="ansi:cyan">{qrStatus ?? ''}</Text>
+        <Text color="ansi:blackBright">(esc to cancel)</Text>
+      </Box>
     );
   } else if (pickerKind === 'register_account_id') {
     pickerNode = (

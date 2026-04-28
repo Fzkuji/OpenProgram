@@ -38,7 +38,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from openprogram.channels.base import Channel
 
@@ -286,6 +286,131 @@ def _qr_login() -> dict[str, str] | None:
                   f"{creds['ilink_bot_id']})")
             return creds
         print(f"[wechat] unexpected status {status!r}; retrying...")
+
+
+def _qr_to_ascii(payload: str) -> Optional[str]:
+    """Render ``payload`` as an ASCII QR code returned as a string.
+    Returns None when the ``qrcode`` library isn't installed.
+
+    Used by the TUI / web frontend QR-login flows so they can paste
+    the rendered code into the transcript instead of relying on the
+    server's stdout. Same parameters as ``_print_qr_terminal``.
+    """
+    try:
+        import qrcode
+        from io import StringIO
+    except ImportError:
+        return None
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=1,
+        border=2,
+    )
+    qr.add_data(payload)
+    qr.make(fit=True)
+    buf = StringIO()
+    qr.print_ascii(out=buf, invert=True)
+    return buf.getvalue()
+
+
+def login_account_event_driven(
+    account_id: str,
+    on_event,        # callable(dict) — receives qr_login envelopes
+) -> Optional[dict]:
+    """QR-login that pushes status envelopes through ``on_event``
+    instead of printing. Same flow as ``login_account`` / ``_qr_login``
+    but consumable by a server / TUI / GUI without scraping stdout.
+
+    Envelope shapes pushed to ``on_event``:
+      {"phase": "qr_ready", "url": <encoded payload>, "ascii": <str|None>}
+      {"phase": "scanned"}
+      {"phase": "confirmed"}
+      {"phase": "expired"}
+      {"phase": "error", "message": <str>}
+      {"phase": "done", "credentials": {...}}
+
+    Returns the credentials dict on success (also persisted to disk),
+    or None on cancel / expire / error. Idempotent: when the account
+    already has working credentials we emit a single ``done`` envelope
+    and return them.
+    """
+    from openprogram.channels import accounts as _acct
+    existing = _acct.load_credentials("wechat", account_id)
+    if existing.get("bot_token") and existing.get("ilink_bot_id"):
+        on_event({"phase": "done", "credentials": existing,
+                  "already_configured": True})
+        return existing
+
+    import requests
+    try:
+        resp = requests.get(
+            f"{DEFAULT_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3",
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:  # noqa: BLE001
+        on_event({"phase": "error",
+                  "message": f"failed to fetch QR: {e}"})
+        return None
+
+    token = data.get("qrcode")
+    qr_url = data.get("qrcode_img_content")
+    if not token or not qr_url:
+        on_event({"phase": "error",
+                  "message": "QR response missing fields"})
+        return None
+
+    on_event({
+        "phase": "qr_ready",
+        "url": qr_url,
+        "ascii": _qr_to_ascii(qr_url),
+    })
+
+    while True:
+        try:
+            resp = requests.get(
+                f"{DEFAULT_BASE_URL}/ilink/bot/get_qrcode_status?qrcode={token}",
+                timeout=40,
+            )
+            data = resp.json()
+        except Exception as e:  # noqa: BLE001
+            on_event({"phase": "error",
+                      "message": f"status poll failed: {e}"})
+            time.sleep(3)
+            continue
+
+        status = data.get("status")
+        if status == "wait":
+            continue
+        if status == "scaned":
+            on_event({"phase": "scanned"})
+            continue
+        if status == "expired":
+            on_event({"phase": "expired"})
+            return None
+        if status == "confirmed":
+            creds = {
+                "bot_token": data.get("bot_token") or "",
+                "ilink_bot_id": data.get("ilink_bot_id") or "",
+                "baseurl": data.get("baseurl") or "",
+                "ilink_user_id": data.get("ilink_user_id") or "",
+            }
+            if not creds["bot_token"] or not creds["ilink_bot_id"]:
+                on_event({"phase": "error",
+                          "message": "confirm response missing fields"})
+                return None
+            on_event({"phase": "confirmed"})
+            _acct.create("wechat", account_id) if not _acct.get(
+                "wechat", account_id) else None
+            _acct.save_credentials("wechat", account_id, creds)
+            on_event({"phase": "done", "credentials": creds,
+                      "already_configured": False})
+            return creds
+        on_event({"phase": "error",
+                  "message": f"unexpected status {status!r}"})
+        time.sleep(2)
 
 
 def _print_qr_terminal(payload: str) -> bool:
