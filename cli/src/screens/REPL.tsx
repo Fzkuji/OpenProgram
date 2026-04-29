@@ -1,17 +1,17 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
-import { Box, Text, useApp, useInput } from '../runtime/index';
-import { Shell, ScrollView, ModalHost, ToastHost } from '../ui/index.js';
+import { Box, Text, useApp, useInput, useScrollbackWriter } from '../runtime/index';
+import { Shell, ModalHost, ToastHost } from '../ui/index.js';
 import { StatsEnvelope, ConnectionState } from '../ws/client.js';
 import { BottomBar } from '../components/BottomBar.js';
-import { Messages } from '../components/Messages.js';
 import { Spinner } from '../components/Spinner.js';
-import { Turn } from '../components/Turn.js';
+import { Turn, TurnRow } from '../components/Turn.js';
 import { PromptInput } from '../components/PromptInput/PromptInput.js';
 import { handleSlash } from '../commands/handler.js';
 import { loadHistory, appendHistory } from '../utils/history.js';
 import { copyToClipboard } from '../utils/clipboard.js';
+import { formatTurnText, formatWelcomeText } from '../utils/formatTranscript.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { isThemeSetting } from '../theme/themes.js';
 import type {
@@ -98,6 +98,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort>('xhigh');
   const [connState, setConnState] = useState<ConnectionState>(client.getState());
   const agentSetRef = useRef(false);
+  const welcomePrintedRef = useRef(false);
+  const lastWrittenIdxRef = useRef(0);
   // Theme switch: with hermes-ink every render is a full cell-grid
   // frame, so changing useColors() context just re-renders the entire
   // tree with the new palette — no Static remount or nonce needed.
@@ -126,6 +128,25 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     return () => clearInterval(t);
   }, [activity]);
 
+  const emitScrollback = useScrollbackWriter();
+  const resetScrollbackCursor = () => {
+    lastWrittenIdxRef.current = 0;
+  };
+
+  useEffect(() => {
+    if (!stats || welcomePrintedRef.current) return;
+    welcomePrintedRef.current = true;
+    emitScrollback(formatWelcomeText(stats));
+  }, [stats, emitScrollback]);
+
+  useEffect(() => {
+    const start = lastWrittenIdxRef.current;
+    if (start >= committed.length) return;
+    const text = committed.slice(start).map(formatTurnText).join('');
+    if (text) emitScrollback(text);
+    lastWrittenIdxRef.current = committed.length;
+  }, [committed, emitScrollback]);
+
   const pushSystem = (text: string) =>
     setCommitted((m) => [
       ...m,
@@ -151,6 +172,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setConversationTitle, setConnState,
     setToolsOn, setThinkingEffort, setPermissionMode,
     setSearchResults, setContextSearchQuery, setSessionLiveByConv,
+    resetScrollbackCursor,
     agentSetRef, sessionAliasesPrintRef, sessionAliasesRef,
   });
 
@@ -235,12 +257,14 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         client,
         pushSystem,
         clearCommitted: () => {
+          resetScrollbackCursor();
           setCommitted([]);
         },
         newSession: () => {
           setConversationId(undefined);
           setConversationTitle(undefined);
           setStreaming(null);
+          resetScrollbackCursor();
           setCommitted([]);
         },
         exit: () => app.exit(),
@@ -379,19 +403,13 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setChosenChannel, setChosenAccount, setConversationId, setAgent,
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft,
+    resetScrollbackCursor,
     sessionAliasesRef,
   });
 
   return (
-    <Shell mouseTracking mode="alt">
-      <ScrollView stickyBottom>
-        <Messages
-          committed={committed}
-          streaming={streaming}
-          welcome={pickerNode ? undefined : (stats ?? undefined)}
-          fillWelcome={committed.length === 0 && !streaming && !pickerNode}
-        />
-      </ScrollView>
+    <Shell mouseTracking={false}>
+      {streaming ? <TurnRow turn={streaming} /> : null}
       {activity ? (
         <Spinner
           verb={activity.verb}

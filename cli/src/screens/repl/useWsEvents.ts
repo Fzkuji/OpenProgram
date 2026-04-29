@@ -38,6 +38,7 @@ export interface WsEventsCtx {
   // helpers reused by callers outside the WS handler
   pushSystem: (text: string) => void;
   finishTurn: () => void;
+  resetScrollbackCursor: () => void;
 
   // state read inside dispatch (always latest via ref pattern)
   bellEnabled: boolean;
@@ -440,6 +441,7 @@ export function useWsEvents(ctx: WsEventsCtx): void {
               | 'system',
             text: m.content ?? '',
           }));
+        c.resetScrollbackCursor();
         c.setCommitted(turns);
         c.setStreaming(null);
       } else if (ev.type === 'model_switched') {

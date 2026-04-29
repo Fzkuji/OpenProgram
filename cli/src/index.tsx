@@ -37,6 +37,9 @@ process.on('SIGINT', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));
 
 async function main(): Promise<void> {
+  if (!demo && process.stdout.isTTY) {
+    process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+  }
   const root = demo
     ? <ThemeProvider><Demo /></ThemeProvider>
     : <ThemeProvider><REPL client={client} /></ThemeProvider>;
