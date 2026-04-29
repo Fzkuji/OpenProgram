@@ -9,6 +9,7 @@ import { BottomBar } from '../components/BottomBar.js';
 import { Messages } from '../components/Messages.js';
 import { Spinner } from '../components/Spinner.js';
 import { Turn } from '../components/Turn.js';
+import { Welcome } from '../components/Welcome.js';
 import { TranscriptViewport } from '../components/TranscriptViewport.js';
 import { PromptInput } from '../components/PromptInput/PromptInput.js';
 import { handleSlash } from '../commands/handler.js';
@@ -366,6 +367,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     : sessionLiveByConv[conversationId]
     ? 'active'
     : 'loaded';
+  const hasTranscript = committed.length > 0 || streaming !== null;
 
   // Picker switch lives in pickerRouter.tsx — every legacy
   // picker (model / agent / channel chain / theme / resume / etc.)
@@ -384,21 +386,20 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setContextSearchQuery, setSearchResults, setPromptDraft,
     sessionAliasesRef,
   });
+  const welcomeStats = pickerNode ? undefined : stats;
 
   return (
     <Shell mouseTracking mode="alt">
-      <TranscriptViewport
-        stickyBottom
-        scrollRef={transcriptScrollRef}
-        showScrollbar={committed.length > 0 || streaming !== null}
-      >
-        <Messages
-          committed={committed}
-          streaming={streaming}
-          welcome={pickerNode ? undefined : (stats ?? undefined)}
-          fillWelcome={committed.length === 0 && !streaming && !pickerNode}
-        />
-      </TranscriptViewport>
+      {welcomeStats ? (
+        <Welcome stats={welcomeStats} fillAvailable={!hasTranscript} />
+      ) : null}
+      {hasTranscript ? (
+        <TranscriptViewport stickyBottom scrollRef={transcriptScrollRef}>
+          <Messages committed={committed} streaming={streaming} />
+        </TranscriptViewport>
+      ) : (
+        <Box flexGrow={1} flexShrink={1} />
+      )}
       {activity ? (
         <Spinner
           verb={activity.verb}

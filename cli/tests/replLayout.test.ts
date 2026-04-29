@@ -11,7 +11,10 @@ describe('REPL layout contract', () => {
     expect(source).toContain('<TranscriptViewport');
     expect(source).toContain('scrollRef={transcriptScrollRef}');
     expect(source).toContain('<Messages');
-    expect(source).toContain('showScrollbar={committed.length > 0 || streaming !== null}');
+    expect(source).toContain('const hasTranscript = committed.length > 0 || streaming !== null;');
+    expect(source).toContain('<Welcome stats={welcomeStats} fillAvailable={!hasTranscript} />');
+    expect(source).not.toContain('welcome={');
+    expect(source).not.toContain('fillWelcome');
     expect(source).not.toContain('onTranscriptScroll');
   });
 
