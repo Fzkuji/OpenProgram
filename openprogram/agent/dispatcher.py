@@ -960,6 +960,23 @@ def _resolve_model(profile: dict, override: Optional[str] = None):
         get_model = None  # type: ignore[assignment]
 
     requested = override or profile.get("model")
+    # agent.json stores ``model`` either as the legacy ``"<provider>/<id>"``
+    # string or as the newer ``{"provider": ..., "id": ...}`` dict
+    # (cli_chat.py and setup.py both write the dict form). Normalize
+    # to a single string shape here so the rest of this function — and
+    # the eventual ``Model(id=requested, ...)`` fallback — only ever
+    # sees a str. Without this, a dict reached the pydantic ctor and
+    # blew up with "Input should be a valid string" the moment a
+    # channel message arrived.
+    provider_hint: Optional[str] = None
+    if isinstance(requested, dict):
+        provider_hint = requested.get("provider") or None
+        model_id = requested.get("id") or requested.get("model") or None
+        if provider_hint and model_id:
+            requested = f"{provider_hint}/{model_id}"
+        else:
+            requested = model_id
+
     if get_model and requested:
         # Profile model can be "<provider>/<id>" or just "<id>".
         if "/" in requested:
@@ -968,9 +985,15 @@ def _resolve_model(profile: dict, override: Optional[str] = None):
             if m:
                 return m
         else:
-            # Probe known providers
-            for provider in ("openai", "anthropic", "google", "amazon-bedrock",
-                              "cerebras", "claude-code", "github-copilot"):
+            # Probe known providers, biased toward the dict's
+            # ``provider`` field if present so a malformed entry like
+            # ``{"provider": "openai-codex", "id": "gpt-5.4"}`` still
+            # tries the right backend first.
+            order = ["openai", "anthropic", "google", "amazon-bedrock",
+                     "cerebras", "claude-code", "github-copilot"]
+            if provider_hint and provider_hint not in order:
+                order.insert(0, provider_hint)
+            for provider in order:
                 m = get_model(provider, requested)
                 if m:
                     return m
