@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Box, Text, useInput } from '@openprogram/ink';
+import { Box, Text, useInput } from '../../runtime/index';
 import { PromptInputHelpMenu } from './PromptInputHelpMenu.js';
 import { FileMenu } from './FileMenu.js';
 import { SLASH_COMMANDS, SlashCommand } from '../../commands/registry.js';
 import { fileCompletions, findAtToken, FileMatch } from '../../utils/fileCompletions.js';
-import { usePanelWidth } from '../../utils/useTerminalWidth.js';
+import { usePanelWidth, useTerminalWidth } from '../../utils/useTerminalWidth.js';
 import { useColors } from '../../theme/ThemeProvider.js';
+import { stringWidth } from '../../runtime/ink/stringWidth.js';
 
 export interface PromptInputProps {
   onSubmit: (text: string) => void;
@@ -15,6 +16,11 @@ export interface PromptInputProps {
   onCancel?: () => void;
   /** Past submissions for ↑/↓ recall (newest last). */
   history?: string[];
+  /** Text injected by an external picker, then consumed into local input state. */
+  initialDraft?: string;
+  onDraftApplied?: () => void;
+  /** Open cross-session context search. Receives the current draft. */
+  onContextSearch?: (draft: string) => void;
 }
 
 const filterCommands = (filter: string): SlashCommand[] => {
@@ -23,14 +29,83 @@ const filterCommands = (filter: string): SlashCommand[] => {
   return SLASH_COMMANDS.filter((c) => c.name.toLowerCase().includes(needle));
 };
 
-const bestSearchMatch = (history: string[], term: string): string | null => {
-  if (history.length === 0) return null;
-  const t = term.toLowerCase();
-  if (!t) return history[history.length - 1] ?? null;
-  for (let i = history.length - 1; i >= 0; i--) {
-    if ((history[i] ?? '').toLowerCase().includes(t)) return history[i] ?? null;
+const visibleInput = (text: string): string => text.replace(/\n/g, '↵ ');
+
+const clamp = (n: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, n));
+
+const sliceCells = (text: string, start: number, end: number): string => {
+  if (end <= start) return '';
+  let position = 0;
+  let out = '';
+
+  for (const char of text) {
+    const width = Math.max(0, stringWidth(char));
+    const next = position + width;
+    if (next <= start) {
+      position = next;
+      continue;
+    }
+    if (position >= end) break;
+    if (next > end) break;
+    out += char;
+    position = next;
   }
-  return null;
+
+  return out;
+};
+
+interface InputViewport {
+  prefix: boolean;
+  before: string;
+  cursor: string;
+  after: string;
+  suffix: boolean;
+}
+
+const buildInputViewport = (
+  value: string,
+  cursor: number,
+  maxColumns: number,
+): InputViewport => {
+  const before = visibleInput(value.slice(0, cursor));
+  const rawCursor = visibleInput(value.slice(cursor, cursor + 1));
+  const cursorText = rawCursor.slice(0, 1) || ' ';
+  const after = visibleInput(value.slice(cursor + 1));
+  const cursorCol = stringWidth(before);
+  const cursorWidth = Math.max(1, stringWidth(cursorText));
+  const afterStart = cursorCol + cursorWidth;
+  const totalWidth = afterStart + stringWidth(after);
+  const columns = Math.max(1, maxColumns);
+
+  if (totalWidth <= columns) {
+    return { prefix: false, before, cursor: cursorText, after, suffix: false };
+  }
+
+  let markerColumns = 2;
+  let start = 0;
+  let end = columns;
+
+  for (let i = 0; i < 4; i++) {
+    const contentColumns = Math.max(cursorWidth, columns - markerColumns);
+    start = clamp(
+      cursorCol - Math.floor(contentColumns * 0.75),
+      0,
+      Math.max(0, totalWidth - contentColumns),
+    );
+    end = Math.min(totalWidth, start + contentColumns);
+    const nextMarkerColumns = (start > 0 ? 1 : 0) + (end < totalWidth ? 1 : 0);
+    if (nextMarkerColumns === markerColumns) break;
+    markerColumns = nextMarkerColumns;
+  }
+
+  return {
+    prefix: start > 0,
+    before: sliceCells(before, start, cursorCol),
+    cursor: cursorText,
+    after: sliceCells(after, Math.max(0, start - afterStart), Math.max(0, end - afterStart)),
+    suffix: end < totalWidth,
+  };
 };
 
 export const PromptInput: React.FC<PromptInputProps> = ({
@@ -39,6 +114,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   onSlashModeChange,
   onCancel,
   history,
+  initialDraft,
+  onDraftApplied,
+  onContextSearch,
 }) => {
   const colors = useColors();
   const [value, setValue] = useState('');
@@ -47,10 +125,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   // -1 means we're not browsing history. 0..history.length-1 picks an entry.
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const width = usePanelWidth();
-  // ctrl+r reverse search state.
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-
+  const cols = useTerminalWidth();
   const inSlashMode = value.startsWith('/');
   const matches = useMemo(() => (inSlashMode ? filterCommands(value) : []), [value, inSlashMode]);
 
@@ -94,6 +169,14 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     onSlashModeChange?.(inSlashMode && matches.length > 0);
   }, [inSlashMode, matches.length, onSlashModeChange]);
 
+  useEffect(() => {
+    if (initialDraft === undefined) return;
+    setValue(initialDraft);
+    setCursor(initialDraft.length);
+    setHistoryIndex(-1);
+    onDraftApplied?.();
+  }, [initialDraft, onDraftApplied]);
+
   const submitText = (text: string) => {
     if (busy || !text.trim()) return;
     setValue('');
@@ -110,43 +193,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       return;
     }
 
-    // Reverse search has its own little modal — handles its own keys.
-    if (searchOpen) {
-      if (key.escape) {
-        setSearchOpen(false);
-        setSearchTerm('');
-        return;
-      }
-      if (key.return) {
-        // Pull the current best match into the input and close search.
-        const match = bestSearchMatch(history ?? [], searchTerm);
-        if (match) {
-          setValue(match);
-          setCursor(match.length);
-        }
-        setSearchOpen(false);
-        setSearchTerm('');
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setSearchTerm((s) => s.slice(0, -1));
-        return;
-      }
-      if (key.ctrl && input === 'r') {
-        // Walk to the next older match (basic — we keep the term, the
-        // helper just returns the most recent for now).
-        return;
-      }
-      if (input && !key.ctrl && !key.meta) {
-        setSearchTerm((s) => s + input);
-      }
-      return;
-    }
-
-    // ctrl+r enters reverse search mode.
+    // Ctrl-R opens saved-context search. The old input-history search
+    // remains covered by ↑/↓ recall and autosuggest.
     if (key.ctrl && input === 'r') {
-      setSearchOpen(true);
-      setSearchTerm('');
+      onContextSearch?.(value);
       return;
     }
 
@@ -290,64 +340,83 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     }
   });
 
-  // Render input with a visible cursor caret at `cursor`.
-  const before = value.slice(0, cursor);
-  const at = value.slice(cursor, cursor + 1);
-  const after = value.slice(cursor + 1);
+  const lineCount = value.length > 0 ? value.split('\n').length : 1;
+  const rightHint =
+    busy ? 'esc stop'
+    : inFileMode ? 'tab insert'
+    : inSlashMode ? 'tab fill'
+    : suggestion ? '→ accept'
+    : lineCount > 1 ? `${lineCount} lines`
+    : 'enter';
+  const showRightHint = cols >= 38;
+  const placeholder =
+    busy ? 'waiting for response'
+    : 'message, /command, @file';
+  const borderColor =
+    busy ? colors.warning
+    : inFileMode || inSlashMode ? colors.accent
+    : colors.primary;
+  const rightHintWidth = showRightHint ? stringWidth(rightHint) + 3 : 0;
+  const inputAreaWidth = Math.max(8, cols - rightHintWidth - 8);
+  const valueViewportWidth = Math.max(1, inputAreaWidth - 2);
+  const inputViewport = buildInputViewport(value, cursor, valueViewportWidth);
+  const inputViewportCells =
+    (inputViewport.prefix ? 1 : 0) +
+    stringWidth(inputViewport.before) +
+    stringWidth(inputViewport.cursor) +
+    stringWidth(inputViewport.after) +
+    (inputViewport.suffix ? 1 : 0);
+  const suggestionCells = Math.max(0, valueViewportWidth - inputViewportCells);
+  const suggestionPreview = (() => {
+    if (!suggestion || suggestionCells <= 1) return '';
+    const visible = visibleInput(suggestion);
+    if (stringWidth(visible) <= suggestionCells) return visible;
+    return `${sliceCells(visible, 0, suggestionCells - 1)}…`;
+  })();
 
   return (
-    <Box flexDirection="column" width={width}>
-      {searchOpen ? (
-        <Box paddingX={1}>
-          <Text color={colors.warning}>(reverse-i-search)</Text>
-          <Text color={colors.muted}>: </Text>
-          <Text>{searchTerm}</Text>
-          <Text color={colors.border}>  → </Text>
-          <Text color={colors.muted}>
-            {bestSearchMatch(history ?? [], searchTerm) ?? '(no match)'}
-          </Text>
-        </Box>
-      ) : inFileMode ? (
+    <Box flexDirection="column" width={width} flexShrink={0}>
+      {inFileMode ? (
         <FileMenu items={fileMatches} selectedIndex={fileIndex} />
       ) : inSlashMode ? (
         <PromptInputHelpMenu items={matches} selectedIndex={menuIndex} />
       ) : null}
       <Box
         borderStyle="round"
-        borderColor={busy ? colors.warning : colors.primary}
-        // paddingX={2} matches Welcome's paddingX so ``↵ enter`` lands
-        // in the same column as Welcome's ``agent · model`` (both right
-        // edges at width-3). Was 1 before; visually misaligned by 1 col.
-        paddingX={2}
+        borderColor={borderColor}
+        paddingX={1}
         justifyContent="space-between"
+        flexShrink={0}
       >
-        <Box flexShrink={1}>
+        <Box flexShrink={0} width={inputAreaWidth}>
           <Text color={colors.primary}>{'> '}</Text>
           {value.length === 0 ? (
-            // Empty state: gray placeholder hint with the cursor sitting at
-            // the very start. ↵ glyph still rendered on the right.
             <>
               <Text inverse>{' '}</Text>
-              <Text color={colors.muted}>type / for commands</Text>
+              <Text color={colors.muted} wrap="truncate-end">{placeholder}</Text>
             </>
           ) : (
             <>
-              <Text>{before}</Text>
-              <Text inverse>{at || ' '}</Text>
-              <Text>{after}</Text>
-              {suggestion ? (
+              {inputViewport.prefix ? <Text color={colors.border}>…</Text> : null}
+              <Text>{inputViewport.before}</Text>
+              <Text inverse>{inputViewport.cursor}</Text>
+              <Text>{inputViewport.after}</Text>
+              {inputViewport.suffix ? <Text color={colors.border}>…</Text> : null}
+              {suggestionPreview ? (
                 <Text color={colors.muted}>
-                  {suggestion}
+                  {suggestionPreview}
                 </Text>
               ) : null}
             </>
           )}
         </Box>
-        <Box flexShrink={0} marginLeft={2}>
-          <Text color={colors.muted}>
-            ↵ enter
-          </Text>
-        </Box>
+        {showRightHint ? (
+          <Box flexShrink={0} marginLeft={2}>
+            <Text color={busy ? colors.warning : colors.muted}>
+              {rightHint}
+            </Text>
+          </Box>
+        ) : null}
       </Box>
     </Box>
   );

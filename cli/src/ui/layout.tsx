@@ -12,7 +12,7 @@
  * spacing consistent across screens.
  */
 import React, { type ReactNode, Children, isValidElement, cloneElement } from 'react';
-import { Box, Spacer as InkSpacer } from '@openprogram/ink';
+import { Box, Spacer as InkSpacer } from '../runtime/index';
 
 export interface StackRowProps {
   children?: ReactNode;

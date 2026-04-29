@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text, useInput } from '@openprogram/ink';
+import { Box, Text, useInput } from '../runtime/index';
 import { useColors, usePreviewTheme, useThemeSetting, useTheme } from '../theme/ThemeProvider.js';
 import { THEME_SETTINGS, THEME_LABELS, ThemeSetting } from '../theme/themes.js';
 import { usePanelWidth } from '../utils/useTerminalWidth.js';

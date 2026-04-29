@@ -94,12 +94,23 @@ def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
         os.dup2(log_fd, 2)
         os.close(log_fd)
 
-    # Don't wait for the ws server to listen before spawning Node — Node
-    # takes ~340ms to load its bundle (React + Ink + marked + ws), in
-    # parallel with the server's ~240ms boot. BackendClient retries with
-    # exponential backoff so the first connect attempt may fail and that's
-    # fine.
-    start_web(port=port, open_browser=False)
+    # If a channels worker is already running it has its OWN webui in
+    # the same process; attach to that instead of starting a competing
+    # one. Sharing the webui process is what makes inbound wechat msgs
+    # show up live in the TUI (channel threads' `_broadcast` only
+    # reaches clients connected to the asyncio loop in their own
+    # process). Otherwise start our own webui as before.
+    from openprogram.channels.worker import read_worker_port
+    worker_port = read_worker_port()
+    if worker_port is not None:
+        port = worker_port
+    else:
+        # Don't wait for the ws server to listen before spawning Node — Node
+        # takes ~340ms to load its bundle (React + Ink + marked + ws), in
+        # parallel with the server's ~240ms boot. BackendClient retries with
+        # exponential backoff so the first connect attempt may fail and that's
+        # fine.
+        start_web(port=port, open_browser=False)
 
     ws_url = f"ws://127.0.0.1:{port}/ws"
     env = os.environ.copy()

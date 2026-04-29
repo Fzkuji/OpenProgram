@@ -37,4 +37,20 @@ openprogram/logs/
 # Full upstream clones kept locally for reference while designing new
 # tools/providers. Not committed — too large and rot against upstream.
 references/openclaw/
+references/openclaw 3/
 references/hermes-agent/
+references/weclaw/
+references/claude-code-leaked/
+
+# Local OpenProgram runtime state
+.openprogram/
+
+# Frontend dependency/build artifacts
+web/node_modules/
+web/.next/
+web/next-env.d.ts
+web/tsconfig.tsbuildinfo
+
+# Local duplicate/generated lockfiles
+cli/package-lock 2.json
+cli/vendor/ink/package-lock.json

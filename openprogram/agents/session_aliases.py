@@ -23,11 +23,11 @@ Storage:
       ]
     }
 
-Matching is exact on (channel, account_id, peer.kind, peer.id).
-One target per inbound envelope — no fan-out. Lookup is
-sub-millisecond thanks to the in-memory dict; writes are fcntl-locked
-so the Web UI server and the channels worker can both mutate the
-file safely.
+Lookup first checks exact (channel, account_id, peer.kind, peer.id)
+aliases, then falls back to a catch-all row whose peer.id is "*".
+One target per inbound envelope — no fan-out. Writes are fcntl-locked
+so the Web UI server and the channels worker can both mutate the file
+safely.
 """
 from __future__ import annotations
 
@@ -104,17 +104,29 @@ def _write(rows: list[dict[str, Any]]) -> None:
         os.replace(tmp, path)
 
 
-def _match(row: dict, channel: str, account_id: str,
-           peer: dict) -> bool:
+def _match_account(row: dict, channel: str, account_id: str) -> bool:
     if row["channel"] != channel:
         return False
     if row["account_id"] != (account_id or "default"):
+        return False
+    return True
+
+
+def _match_exact(row: dict, channel: str, account_id: str,
+                 peer: dict) -> bool:
+    if not _match_account(row, channel, account_id):
         return False
     if row["peer"]["id"] != str(peer.get("id") or ""):
         return False
     rk = row["peer"].get("kind") or "direct"
     pk = peer.get("kind") or "direct"
     return rk == pk
+
+
+def _match_catch_all(row: dict, channel: str, account_id: str) -> bool:
+    if not _match_account(row, channel, account_id):
+        return False
+    return row.get("peer", {}).get("id") == "*"
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +144,10 @@ def lookup(channel: str, account_id: str,
     with _lock:
         rows = _read()
     for row in reversed(rows):
-        if _match(row, channel, account_id, peer):
+        if _match_exact(row, channel, account_id, peer):
+            return (row["agent_id"], row["session_id"])
+    for row in reversed(rows):
+        if _match_catch_all(row, channel, account_id):
             return (row["agent_id"], row["session_id"])
     return None
 
@@ -181,8 +196,8 @@ def attach(*, channel: str, account_id: str, peer_kind: str,
         replaced: Optional[dict[str, Any]] = None
         kept: list[dict[str, Any]] = []
         for r in rows:
-            if replaced is None and _match(r, channel,
-                                           account_id or "default", peer):
+            if replaced is None and _match_exact(r, channel,
+                                                 account_id or "default", peer):
                 replaced = r
                 continue
             kept.append(r)
@@ -206,8 +221,8 @@ def detach(*, channel: str, account_id: str, peer_kind: str,
         rows = _read()
         kept, removed = [], None
         for r in rows:
-            if removed is None and _match(r, channel,
-                                          account_id or "default", peer):
+            if removed is None and _match_exact(r, channel,
+                                                account_id or "default", peer):
                 removed = r
                 continue
             kept.append(r)

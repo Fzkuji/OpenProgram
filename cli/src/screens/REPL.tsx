@@ -1,128 +1,37 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
-import { Box, Text, useApp, useInput } from '@openprogram/ink';
-import { Shell, ModalHost, ToastHost, useScrollbackWriter } from '../ui/index.js';
-import { BackendClient, WsEnvelope, StatsEnvelope, ConnectionState } from '../ws/client.js';
+import { Box, Text, useApp, useInput } from '../runtime/index';
+import { Shell, ScrollView, ModalHost, ToastHost } from '../ui/index.js';
+import { StatsEnvelope, ConnectionState } from '../ws/client.js';
 import { BottomBar } from '../components/BottomBar.js';
-import { TurnRow } from '../components/Turn.js';
+import { Messages } from '../components/Messages.js';
 import { Spinner } from '../components/Spinner.js';
-import { Picker, PickerItem } from '../components/Picker.js';
-import { LineInput } from '../components/LineInput.js';
-import { Turn, ToolCall, TurnBlock } from '../components/Turn.js';
+import { Turn } from '../components/Turn.js';
 import { PromptInput } from '../components/PromptInput/PromptInput.js';
 import { handleSlash } from '../commands/handler.js';
-import { loadHistory, appendHistory, trimHistoryFile } from '../utils/history.js';
+import { loadHistory, appendHistory } from '../utils/history.js';
 import { copyToClipboard } from '../utils/clipboard.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { isThemeSetting } from '../theme/themes.js';
-import { ThemePicker } from '../components/ThemePicker.js';
-import { formatTurnText, formatWelcomeText } from '../utils/formatTranscript.js';
+import type {
+  REPLProps,
+  AgentInfo,
+  Activity,
+  PickerKind,
+  PendingAttach,
+  SessionAliasRow,
+  ChannelAccountRow,
+  PastConversation,
+  RegisterForm,
+  SearchResultRow,
+  ThinkingEffort,
+} from './repl/types.js';
+import { randomLocalId, renderModel } from './repl/helpers.js';
+import { buildPickerNode } from './repl/pickerRouter.js';
+import { useWsEvents } from './repl/useWsEvents.js';
 
-export interface REPLProps {
-  client: BackendClient;
-  initialAgent?: string;
-  initialConversation?: string;
-}
-
-interface AgentInfo {
-  id: string;
-  name: string;
-  model?: string | { provider?: string; id?: string };
-  default?: boolean;
-}
-
-const tsToDate = (ts?: number): string => {
-  if (!ts) return '';
-  const d = new Date(ts * 1000);
-  return d.toLocaleDateString();
-};
-
-/**
- * Generate a 10-char hex id for a freshly minted local conversation.
- * Mirrors the server's ``"local_" + uuid().hex[:10]`` shape from
- * webui/server.py:_get_or_create_conversation, so a TUI-side mint
- * matches what the server would have generated.
- */
-const randomLocalId = (): string => {
-  // Math.random() gives 52 bits — enough entropy for the 10-char
-  // hex slice. crypto.randomUUID isn't available in older Node
-  // ESM workers without a preamble.
-  let out = '';
-  while (out.length < 10) {
-    out += Math.floor(Math.random() * 0x100000000).toString(16);
-  }
-  return out.slice(0, 10);
-};
-
-/**
- * Look up the session_id currently bound to (channel, account, peer)
- * in the cached alias list. Returns ``undefined`` when no row matches
- * — i.e. attach would be a fresh write, not an overwrite.
- *
- * The server returns rows verbatim from session_aliases.json, so
- * ``peer`` is the nested ``{kind, id}`` object, not a flat string.
- * Always go through this helper instead of inlining the match —
- * keeping the channel/account/peer matching in one place ensures all
- * three call sites (channel_account, channel_action, peer_input)
- * detect the same overwrite cases the server's _match does.
- */
-const findExistingAlias = (
-  aliases: Array<{
-    channel?: string;
-    account_id?: string;
-    // Server sends the raw row — peer is a nested dict, not a string.
-    peer?: { kind?: string; id?: string } | string;
-    agent_id?: string;
-    session_id?: string;
-    conversation_id?: string;
-  }>,
-  channel: string,
-  account_id: string,
-  peerId: string,
-  peerKind: 'direct' | 'group' | 'channel' = 'direct',
-): string | undefined => {
-  for (const a of aliases) {
-    if (a.channel !== channel) continue;
-    if ((a.account_id ?? 'default') !== (account_id || 'default')) continue;
-    const peer = typeof a.peer === 'object' && a.peer !== null
-      ? { kind: a.peer.kind ?? 'direct', id: a.peer.id ?? '' }
-      : { kind: 'direct', id: '' };
-    if (peer.id !== peerId) continue;
-    if (peer.kind !== peerKind) continue;
-    return a.session_id ?? a.conversation_id;
-  }
-  return undefined;
-};
-
-const renderModel = (m: AgentInfo['model']): string | undefined => {
-  if (!m) return undefined;
-  if (typeof m === 'string') return m;
-  return m.id ?? m.provider;
-};
-
-/** Some runtimes embed the provider as a prefix in ``runtime.model`` (e.g.
- *  Codex emits ``openai-codex:gpt-5.4``). Strip it for display so the
- *  BottomBar only shows the bare model id. */
-const stripProviderPrefix = (m: string | undefined): string | undefined => {
-  if (!m) return m;
-  const idx = m.indexOf(':');
-  if (idx <= 0) return m;
-  return m.slice(idx + 1);
-};
-
-interface Activity {
-  /** Verb shown next to the spinner — "Thinking", "Calling Bash", etc. */
-  verb: string;
-  /** Optional inline detail — usually the truncated tool input. */
-  detail?: string;
-  /** Wall clock when this turn started (used for elapsed display). */
-  startedAt: number;
-  /** Cumulative characters received from text deltas. */
-  streamedChars?: number;
-  /** Wall clock when streaming first started (text first delta). */
-  streamStartedAt?: number;
-}
+export type { REPLProps } from './repl/types.js';
 
 export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConversation }) => {
   const app = useApp();
@@ -144,6 +53,11 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [windowByConv, setWindowByConv] = useState<Record<string, number>>({});
   const [history, setHistory] = useState<string[]>(() => loadHistory());
   const [conversationTitle, setConversationTitle] = useState<string | undefined>(undefined);
+  const [promptDraft, setPromptDraft] = useState<string | undefined>(undefined);
+  const [searchBaseDraft, setSearchBaseDraft] = useState('');
+  const [contextSearchQuery, setContextSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResultRow[]>([]);
+  const [sessionLiveByConv, setSessionLiveByConv] = useState<Record<string, boolean>>({});
   const [bellEnabled, setBellEnabled] = useState(true);
   const [modelsList, setModelsList] = useState<string[]>([]);
   const [pastConversations, setPastConversations] = useState<
@@ -157,37 +71,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       peer_display?: string;
     }>
   >([]);
-  const [pickerKind, setPickerKind] = useState<
-    null
-    | 'model' | 'resume' | 'agent' | 'channel' | 'channel_account' | 'theme'
-    | 'register_account_id' | 'register_token'
-    // Three new picker states for in-TUI channel binding:
-    //   - channel_action: after picking channel+account, choose
-    //     binding mode (catch-all this conv / per-peer / list).
-    //   - channel_peer_input: prompt for peer_id (e.g. wxid_xxx).
-    //   - channel_qr_wait: show ASCII QR + status while wechat
-    //     login is in progress.
-    //   - channel_overwrite_confirm: a previous alias would be
-    //     replaced — make the user explicitly opt in instead of
-    //     silently overwriting.
-    | 'channel_action' | 'channel_peer_input' | 'channel_qr_wait'
-    | 'channel_overwrite_confirm'
-  >(null);
-  // Pending attach payload paused in front of an overwrite confirm.
-  // The picker reads this to render "you're about to replace X" and
-  // sends the actual attach_session when the user picks "yes".
-  const [pendingAttach, setPendingAttach] = useState<{
-    channel: string;
-    account_id: string;
-    peer_kind: 'direct' | 'group' | 'channel';
-    peer_id: string;
-    session_id: string;
-    existingSessionId: string;
-    // Done-message lines pushSystem'd after attach lands. Captured at
-    // confirm-time so the surface text matches whatever flow opened
-    // the confirm (catch-all / peer / etc.).
-    successMessage: string;
-  } | null>(null);
+  const [pickerKind, setPickerKind] = useState<PickerKind>(null);
+  const [pendingAttach, setPendingAttach] = useState<PendingAttach | null>(null);
   const [registerForm, setRegisterForm] = useState<{
     channel?: string;
     accountId?: string;
@@ -207,23 +92,12 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [qrStatus, setQrStatus] = useState<string | undefined>(undefined);
   const [agentsList, setAgentsList] = useState<AgentInfo[]>([]);
   const [toolsOn, setToolsOn] = useState(true);
-  // Permission cycle: ask before each tool call → auto-approve safe → bypass everything.
-  const [permissionMode, setPermissionMode] = useState<'ask' | 'auto' | 'bypass'>('ask');
-  // Thinking effort cycle: off → low → medium → high → off.
-  const [thinkingEffort, setThinkingEffort] = useState<'off' | 'low' | 'medium' | 'high'>('medium');
+  // Permission cycle: auto-approve safe tools or bypass approval.
+  const [permissionMode, setPermissionMode] = useState<'ask' | 'auto' | 'bypass'>('bypass');
+  // Thinking effort cycle: off → minimal → low → medium → high → xhigh → off.
+  const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort>('xhigh');
   const [connState, setConnState] = useState<ConnectionState>(client.getState());
   const agentSetRef = useRef(false);
-  // Inline-flow scrollback bookkeeping. Both bumps are reset-safe so
-  // /clear (clearCommitted) restarts cleanly.
-  //   - welcomePrintedRef: only print Welcome the first time stats
-  //     arrive; subsequent stats updates would just duplicate the
-  //     banner in scrollback.
-  //   - lastWrittenIdxRef: index of the next ``committed`` entry that
-  //     hasn't yet been flushed to stdout. The effect downstream
-  //     formats every entry from this index up to committed.length
-  //     and resets the cursor.
-  const welcomePrintedRef = useRef(false);
-  const lastWrittenIdxRef = useRef(0);
   // Theme switch: with hermes-ink every render is a full cell-grid
   // frame, so changing useColors() context just re-renders the entire
   // tree with the new palette — no Static remount or nonce needed.
@@ -233,13 +107,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   // descriptions without firing a fresh round-trip. Default empty so
   // the picker degrades to "no overwrite info" if alias data hasn't
   // landed yet.
-  const sessionAliasesRef = useRef<Array<{
-    channel?: string;
-    account_id?: string;
-    peer?: { kind?: string; id?: string };
-    agent_id?: string;
-    session_id?: string;
-  }>>([]);
+  const sessionAliasesRef = useRef<SessionAliasRow[]>([]);
   // True ⇔ the next session_aliases envelope should be echoed to the
   // system area. /aliases sets this; picker pre-fetches do not. This
   // splits "load cache" from "show user the list" so both can use the
@@ -258,33 +126,6 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     return () => clearInterval(t);
   }, [activity]);
 
-  // Inline-flow: emit the Welcome banner into the terminal's
-  // scrollback the first time stats arrive, then never again.
-  // emitToScrollback redraws the live strip in the new cursor
-  // position so there's no flicker / overlap with the input box.
-  const emitScrollback = useScrollbackWriter();
-  useEffect(() => {
-    if (!stats || welcomePrintedRef.current) return;
-    welcomePrintedRef.current = true;
-    emitScrollback(formatWelcomeText(stats));
-  }, [stats, emitScrollback]);
-
-  // Inline-flow: each newly committed turn (user message, finished
-  // assistant reply, system note) emits into scrollback. The live
-  // strip below — input box + status — repaints in the new cursor
-  // position automatically. Diff against lastWrittenIdxRef so
-  // unrelated state changes don't re-emit already-emitted turns.
-  useEffect(() => {
-    const start = lastWrittenIdxRef.current;
-    if (start >= committed.length) return;
-    const slice = committed.slice(start);
-    const text = slice.map(formatTurnText).join('');
-    if (text) emitScrollback(text);
-    lastWrittenIdxRef.current = committed.length;
-  }, [committed, emitScrollback]);
-
-
-
   const pushSystem = (text: string) =>
     setCommitted((m) => [
       ...m,
@@ -296,466 +137,23 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   const finishTurn = () => setActivity(null);
 
-  // Streaming-turn state is built as an ordered list of blocks (text or
-  // tool) so the rendered transcript reflects the actual emit order:
-  // a tool call shows where the model called it, not at the bottom of
-  // the turn. The flat `text` field is also kept (concatenation of all
-  // text segments) so anything that just wants the body — /copy,
-  // exportTranscript — keeps working unchanged.
-  const newAssistantTurn = (): Turn => ({
-    id: `a-${Date.now()}`,
-    role: 'assistant',
-    text: '',
-    blocks: [],
-    streaming: true,
+
+  useWsEvents({
+    client,
+    pushSystem, finishTurn,
+    bellEnabled, conversationId, chosenChannel, chosenAccount,
+    setConversationId, setStreaming, setActivity, setCommitted,
+    setTokensByConv, setWindowByConv,
+    setStats, setModel, setAgent, setAgentsList, setModelsList,
+    setChannelAccounts, setPastConversations,
+    setQrAscii, setQrStatus,
+    setPickerKind, setChosenChannel, setChosenAccount,
+    setConversationTitle, setConnState,
+    setToolsOn, setThinkingEffort, setPermissionMode,
+    setSearchResults, setContextSearchQuery, setSessionLiveByConv,
+    agentSetRef, sessionAliasesPrintRef, sessionAliasesRef,
   });
 
-  const upsertStreamingText = (delta: string) => {
-    setStreaming((s) => {
-      const base: Turn = s ?? newAssistantTurn();
-      const blocks = (base.blocks ?? []).slice();
-      const last = blocks[blocks.length - 1];
-      if (last && last.kind === 'text') {
-        blocks[blocks.length - 1] = { kind: 'text', text: last.text + delta };
-      } else {
-        blocks.push({ kind: 'text', text: delta });
-      }
-      return {
-        ...base,
-        text: (base.text ?? '') + delta,
-        blocks,
-        streaming: true,
-      };
-    });
-  };
-
-  const appendStreamingTool = (tool: string, input?: string) => {
-    setStreaming((s) => {
-      const base: Turn = s ?? newAssistantTurn();
-      const blocks = (base.blocks ?? []).slice();
-      const callId = `t-${Date.now()}-${blocks.length}`;
-      const call: ToolCall = { id: callId, tool, input, status: 'running' };
-      blocks.push({ kind: 'tool', call });
-      return { ...base, blocks, streaming: true };
-    });
-  };
-
-  const finalizeStreamingTools = () => {
-    setStreaming((s) => {
-      if (!s) return s;
-      const blocks = (s.blocks ?? []).map((b): TurnBlock =>
-        b.kind === 'tool' && b.call.status === 'running'
-          ? { kind: 'tool', call: { ...b.call, status: 'done' as const } }
-          : b,
-      );
-      return { ...s, blocks };
-    });
-  };
-
-  useEffect(() => {
-    const off = client.on((ev: WsEnvelope) => {
-      if (ev.type === 'chat_ack') {
-        setConversationId(ev.data.conv_id);
-      } else if (ev.type === 'chat_response') {
-        const d = ev.data;
-        if (d.type === 'stream_event') {
-          const inner = (d as { event?: { type?: string; text?: string; tool?: string; input?: string } }).event;
-          if (!inner) return;
-          const innerWithResult = inner as { type?: string; tool?: string; result?: string; is_error?: boolean };
-          if (innerWithResult.type === 'tool_result' && innerWithResult.tool) {
-            // Attach the result preview to the most recent matching call
-            // — search blocks bottom-up for the last 'running' tool block
-            // with this tool name and update it in place.
-            setStreaming((s) => {
-              if (!s) return s;
-              const blocks = (s.blocks ?? []).slice();
-              for (let i = blocks.length - 1; i >= 0; i--) {
-                const b = blocks[i];
-                if (
-                  b?.kind === 'tool'
-                  && b.call.tool === innerWithResult.tool
-                  && b.call.status === 'running'
-                ) {
-                  blocks[i] = {
-                    kind: 'tool',
-                    call: {
-                      ...b.call,
-                      status: innerWithResult.is_error ? 'error' : 'done',
-                      result: innerWithResult.result,
-                    },
-                  };
-                  break;
-                }
-              }
-              return { ...s, blocks };
-            });
-            return;
-          }
-          if (inner.type === 'text' && typeof inner.text === 'string') {
-            const delta = inner.text;
-            upsertStreamingText(delta);
-            setActivity((a) => {
-              if (!a) return a;
-              return {
-                ...a,
-                verb: 'Streaming',
-                streamedChars: (a.streamedChars ?? 0) + delta.length,
-                streamStartedAt: a.streamStartedAt ?? Date.now(),
-              };
-            });
-          } else if (inner.type === 'tool_use' && inner.tool) {
-            appendStreamingTool(inner.tool, inner.input);
-            setActivity((a) =>
-              a
-                ? {
-                    ...a,
-                    verb: `Calling ${inner.tool}`,
-                    detail: inner.input ? inner.input.slice(0, 50) : undefined,
-                  }
-                : a,
-            );
-          }
-        } else if (d.type === 'result' && typeof d.content === 'string') {
-          const text = d.content as string;
-          finalizeStreamingTools();
-          // Ring the terminal bell if the turn took long enough that the
-          // user might have switched away. 5s threshold matches Claude
-          // Code's default. Suppressed via /bell.
-          setActivity((a) => {
-            if (
-              bellEnabled
-              && a
-              && Date.now() - a.startedAt > 5000
-            ) {
-              process.stdout.write('\x07');
-            }
-            return null;
-          });
-          setStreaming((s) => {
-            // Preserve the streamed block sequence so the committed
-            // turn renders text + tool calls in the order they actually
-            // arrived from the model. If somehow nothing was streamed
-            // (no blocks), fall back to a single text block built from
-            // the final result content.
-            const blocks: TurnBlock[] = s?.blocks && s.blocks.length > 0
-              ? s.blocks
-              : text
-                ? [{ kind: 'text', text }]
-                : [];
-            const final: Turn = {
-              id: s?.id ?? `a-${Date.now()}`,
-              role: 'assistant',
-              text,
-              blocks,
-            };
-            // Move into committed (Static) and clear streaming.
-            setCommitted((m) => [...m, final]);
-            return null;
-          });
-        } else if (d.type === 'error' && typeof d.content === 'string') {
-          setStreaming(null);
-          setCommitted((m) => [
-            ...m,
-            { id: `e-${Date.now()}`, role: 'system', text: `error: ${d.content as string}` },
-          ]);
-          finishTurn();
-        } else if (d.type === 'status' && typeof d.content === 'string') {
-          // Server sends "Thinking..." — fold it into the spinner verb so the
-          // committed area stays uncluttered.
-          setActivity((a) =>
-            a ? { ...a, verb: (d.content as string).replace(/\.+$/, '') } : a,
-          );
-        } else if (d.type === 'context_stats') {
-          const cs = d as {
-            chat?: { input_tokens?: number; output_tokens?: number };
-            context_window?: number | null;
-            conv_id?: string;
-            model?: string;
-          };
-          // Server tags every context_stats with the conv_id it
-          // belongs to. Stash by id so switching branches flips the
-          // displayed numbers without losing the others.
-          const cid = cs.conv_id ?? conversationId;
-          if (cid && cs.chat) {
-            setTokensByConv((m) => ({
-              ...m,
-              [cid]: { input: cs.chat!.input_tokens, output: cs.chat!.output_tokens },
-            }));
-          }
-          if (
-            cid
-            && typeof cs.context_window === 'number'
-            && cs.context_window > 0
-          ) {
-            setWindowByConv((m) => ({ ...m, [cid]: cs.context_window as number }));
-          }
-          // Live model from the actual runtime. Trumps agent-default
-          // values seeded by stats/agents_list events: those describe
-          // what the agent is configured to use, not what the runtime
-          // we're talking to right now actually is.
-          if (cs.model && cid === conversationId) {
-            setModel(stripProviderPrefix(cs.model));
-          }
-        }
-      } else if (ev.type === 'stats') {
-        setStats(ev.data);
-        if (ev.data.agent?.model) setModel(ev.data.agent.model);
-        if (ev.data.agent?.id && !agentSetRef.current) {
-          agentSetRef.current = true;
-          setAgent(ev.data.agent.id);
-        }
-      } else if (ev.type === 'models_list') {
-        const list = ev.data?.models ?? [];
-        setModelsList(list);
-        if (ev.data?.current) setModel(ev.data.current);
-      } else if (ev.type === 'browser_result') {
-        const data = (ev as { data: { verb: string; result: string } }).data;
-        pushSystem(`[browser ${data.verb}] ${data.result}`);
-      } else if (ev.type === 'channel_accounts') {
-        setChannelAccounts((ev.data ?? []) as Array<{ channel?: string; account_id?: string; configured?: boolean }>);
-      } else if (ev.type === 'channel_account_added') {
-        const data = (ev as { data: { ok?: boolean; channel?: string; account_id?: string; error?: string } }).data;
-        if (data?.ok) {
-          pushSystem(
-            `Account added: ${data.channel}:${data.account_id}.\n` +
-            `Next: /attach ${data.channel} ${data.account_id} <peer-id>\n` +
-            `to bind a contact to the current session.`,
-          );
-          client.send({ action: 'list_channel_accounts' });
-        } else {
-          pushSystem(`Failed to add account: ${data?.error ?? 'unknown error'}`);
-        }
-      } else if (ev.type === 'history_list') {
-        // Initial snapshot at WS connect — only in-memory webui sessions.
-        // /resume sends list_conversations to refresh with disk-based
-        // (channel-bound) sessions too.
-        setPastConversations(ev.data ?? []);
-      } else if (ev.type === 'conversations_list') {
-        // Richer list including channel-bound sessions on disk. Each
-        // entry may carry `source` ("wechat"/"telegram"/…) and
-        // `peer_display` (the WeChat nickname etc.) so /resume can tag
-        // the picker rows.
-        setPastConversations(ev.data ?? []);
-      } else if (ev.type === 'qr_login') {
-        // Server-driven QR-login state machine. Server pushes:
-        //   qr_ready    → render the ASCII QR
-        //   scanned     → user scanned, awaiting confirm tap
-        //   confirmed   → Tencent acknowledged, creds received
-        //   done        → credentials saved on disk; jump to bind-picker
-        //   expired/error → close picker, surface error
-        const data = ev.data ?? {};
-        const phase = data.phase;
-        if (phase === 'qr_ready') {
-          setQrAscii(data.ascii ?? '(QR rendering not available — install qrcode)');
-          setQrStatus(`Waiting for scan… (URL: ${data.url ?? ''})`);
-        } else if (phase === 'scanned') {
-          setQrStatus('Scanned. Tap "confirm" on your phone.');
-        } else if (phase === 'confirmed') {
-          setQrStatus('Confirmed. Saving credentials…');
-        } else if (phase === 'done') {
-          setQrAscii(undefined);
-          setQrStatus(undefined);
-          setChosenAccount(data.account_id);
-          client.send({ action: 'list_channel_accounts' });
-          // Login + bind = one logical step. Lazy-create a TUI
-          // conversation if needed (server attach_session will
-          // back it with an empty SessionDB row).
-          const targetConvId = conversationId ?? `local_${randomLocalId()}`;
-          if (!conversationId) {
-            setConversationId(targetConvId);
-          }
-          client.send({
-            action: 'attach_session',
-            session_id: targetConvId,
-            channel: data.channel ?? chosenChannel,
-            account_id: data.account_id ?? chosenAccount,
-            peer_kind: 'direct',
-            peer_id: '*',
-          } as never);
-          pushSystem(
-            `✅ Logged in to ${data.channel ?? '?'}:${data.account_id ?? '?'} ` +
-            `and bound this conversation to receive every inbound message.\n` +
-            `Switch later via /channel.`,
-          );
-          setPickerKind(null);
-          setChosenChannel(undefined);
-          setChosenAccount(undefined);
-        } else if (phase === 'expired') {
-          pushSystem('QR code expired. Try /channel again.');
-          setQrAscii(undefined);
-          setQrStatus(undefined);
-          setPickerKind(null);
-        } else if (phase === 'error') {
-          pushSystem(`QR login failed: ${data.message ?? 'unknown error'}`);
-          setQrAscii(undefined);
-          setQrStatus(undefined);
-          setPickerKind(null);
-        }
-      } else if (ev.type === 'search_results') {
-        // SessionDB FTS5 hits — render each as a system note so the
-        // user can pick a session_id to /resume from. Picker
-        // integration (open with these as items) is a follow-up;
-        // for now the inline list is enough to find what you typed
-        // /search for.
-        const data = ev.data ?? { query: '', results: [], total: 0 };
-        if (!data.total) {
-          pushSystem(`No matches for "${data.query}".`);
-        } else {
-          const lines = [`Search "${data.query}" — ${data.total} result(s):`];
-          for (const r of data.results.slice(0, 20)) {
-            const titleStr = r.session_title ?? r.session_id ?? '?';
-            const sourceTag = r.session_source ? ` [${r.session_source}]` : '';
-            const roleTag = r.role === 'user' ? '👤' : '🤖';
-            lines.push(`  ${roleTag} ${titleStr}${sourceTag}`);
-            lines.push(`     ${r.preview}`);
-            lines.push(`     /resume ${r.session_id}`);
-          }
-          if (data.total > 20) {
-            lines.push(`  … and ${data.total - 20} more (refine your query)`);
-          }
-          pushSystem(lines.join('\n'));
-        }
-      } else if (ev.type === 'channel_bindings') {
-        const data = ev.data ?? [];
-        const lines = data.length === 0
-          ? ['(no channel bindings)']
-          : data.map((b: { agent_id?: string; match?: { channel?: string; account_id?: string; peer?: string } }) =>
-              `  ${b.match?.channel ?? '*'}:${b.match?.account_id ?? '*'}:${b.match?.peer ?? '*'} → ${b.agent_id ?? '?'}`,
-            );
-        pushSystem(`Channel bindings:\n${lines.join('\n')}`);
-      } else if (ev.type === 'session_aliases') {
-        const data = ev.data ?? [];
-        // Cache the raw rows so the channel-binding picker can show
-        // "you'll overwrite X" hints without re-fetching. Also drives
-        // the on-demand `(no session aliases)` summary below.
-        sessionAliasesRef.current = data;
-        if (sessionAliasesPrintRef.current) {
-          sessionAliasesPrintRef.current = false;
-          const lines = data.length === 0
-            ? ['(no session aliases)']
-            : data.map((a) => {
-                const peerStr = a.peer
-                  ? `${a.peer.kind ?? 'direct'}:${a.peer.id ?? '?'}`
-                  : '?';
-                return (
-                  `  ${a.channel ?? '?'}:` +
-                  `${a.account_id ?? '?'}:${peerStr} → ` +
-                  `${a.agent_id ?? '?'}/${a.session_id ?? '?'}`
-                );
-              });
-          pushSystem(`Session aliases:\n${lines.join('\n')}`);
-        }
-      } else if (ev.type === 'session_alias_changed') {
-        const d = ev.data;
-        // Server kicks one of these on every successful attach /
-        // detach. The replaced field is the carrier for "you just
-        // overwrote X" awareness — the whole point of this refactor.
-        if (d?.action === 'attached' && d.replaced) {
-          const r = d.replaced;
-          pushSystem(
-            `⚠️  Replaced previous binding ` +
-            `${r.channel ?? '?'}:${r.account_id ?? '?'}:` +
-            `${r.peer?.id ?? '?'} → ${r.session_id ?? '?'}. ` +
-            `Use /aliases to inspect.`,
-          );
-        }
-        // Refresh the cache so subsequent picker descriptions stay
-        // accurate. Server doesn't push the full list on attach.
-        client.send({ action: 'list_session_aliases' } as never);
-      } else if (ev.type === 'conversation_loaded') {
-        const data = ev.data as {
-          id?: string;
-          title?: string;
-          messages?: Array<{ role?: string; content?: string }>;
-          provider_info?: { model?: string };
-        };
-        if (data.id) setConversationId(data.id);
-        if (data.title) setConversationTitle(data.title);
-        if (data.provider_info?.model) setModel(stripProviderPrefix(data.provider_info.model));
-        const turns = (data.messages ?? [])
-          .filter((m) => m.role && m.content)
-          .map((m, i) => ({
-            id: `loaded-${data.id}-${i}`,
-            role: (m.role === 'assistant' ? 'assistant' : m.role === 'user' ? 'user' : 'system') as
-              | 'assistant'
-              | 'user'
-              | 'system',
-            text: m.content ?? '',
-          }));
-        // Switching conversations replaces the transcript — reset
-        // the inline-flush cursor so the loaded history flushes to
-        // stdout fresh, instead of relying on the diff against
-        // whatever the previous conversation's length was.
-        lastWrittenIdxRef.current = 0;
-        setCommitted(turns);
-        setStreaming(null);
-      } else if (ev.type === 'model_switched') {
-        if (ev.data?.model) setModel(ev.data.model);
-        pushSystem(
-          `Switched model → ${ev.data?.provider ?? '?'}:${ev.data?.model ?? '?'}`,
-        );
-      } else if (ev.type === 'agents_list') {
-        const list = ev.data as AgentInfo[];
-        setAgentsList(list);
-        const def = list.find((a) => a.default) ?? list[0];
-        if (def && !agentSetRef.current) {
-          agentSetRef.current = true;
-          setAgent(def.id);
-          const m = renderModel(def.model);
-          if (m) setModel(m);
-        }
-      } else if (ev.type === 'event') {
-        const e = ev as { type: 'event'; event: string; data: Record<string, unknown> };
-        if (e.event === 'agents') {
-          client.send({ action: 'list_agents' });
-          client.send({ action: 'stats' });
-        }
-      } else if (ev.type === 'channel_turn') {
-        // Live wechat / telegram inbound. Channels worker just persisted
-        // a user message + assistant reply for some session; if the TUI
-        // is currently viewing that session, append both turns to the
-        // transcript so the chat updates without a /resume refresh.
-        const d = ev.data;
-        if (d.conv_id !== conversationId) return;
-        const newTurns: Turn[] = [];
-        if (d.user?.text) {
-          const tag = d.user.peer_display ? `[${d.user.source ?? 'channel'}:${d.user.peer_display}] ` : '';
-          newTurns.push({
-            id: d.user.id ?? `cu-${Date.now()}`,
-            role: 'user',
-            text: tag + d.user.text,
-          });
-        }
-        if (d.assistant?.text) {
-          newTurns.push({
-            id: d.assistant.id ?? `ca-${Date.now()}`,
-            role: 'assistant',
-            text: d.assistant.text,
-          });
-        }
-        if (newTurns.length > 0) setCommitted((m) => [...m, ...newTurns]);
-      } else if (ev.type === 'error') {
-        const data = (ev as { data?: { message?: string } }).data;
-        const msg = data?.message ?? 'unknown error';
-        setCommitted((m) => [...m, { id: `e-${Date.now()}`, role: 'system', text: `error: ${msg}` }]);
-        finishTurn();
-      }
-    });
-    const offState = client.onState((s) => setConnState(s));
-    client.send({ action: 'stats' });
-    client.send({ action: 'list_agents' });
-    // Boot-time prefetch of alias rows into sessionAliasesRef. Silent
-    // (sessionAliasesPrintRef stays false) — purely so the channel
-    // picker can render "you'll overwrite X" hints without latency
-    // when /channel is opened later.
-    client.send({ action: 'list_session_aliases' });
-    trimHistoryFile();
-    return () => {
-      off();
-      offState();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]);
 
   // Double-press Ctrl+C to exit (Claude Code / Hermes pattern).
   // First press: surface a "Press Ctrl+C again to exit" hint in
@@ -790,16 +188,21 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       }, 800);
       return;
     }
-    // shift+tab cycles permission mode (Claude Code parity):
-    // ask → auto → bypass → ask. Always ask, auto-approve safe, or bypass all.
+    // shift+tab cycles the modes that are usable without a separate
+    // approval prompt UI.
     if (key.shift && key.tab) {
-      setPermissionMode((m) => (m === 'ask' ? 'auto' : m === 'auto' ? 'bypass' : 'ask'));
+      setPermissionMode((m) => (m === 'bypass' ? 'auto' : 'bypass'));
       return;
     }
-    // tab cycles thinking effort: off → low → medium → high → off.
+    // tab cycles thinking effort: off → minimal → low → medium → high → xhigh → off.
     if (key.tab && !key.shift) {
       setThinkingEffort((t) =>
-        t === 'off' ? 'low' : t === 'low' ? 'medium' : t === 'medium' ? 'high' : 'off',
+        t === 'off' ? 'minimal'
+        : t === 'minimal' ? 'low'
+        : t === 'low' ? 'medium'
+        : t === 'medium' ? 'high'
+        : t === 'high' ? 'xhigh'
+        : 'off',
       );
       return;
     }
@@ -827,22 +230,18 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       return [...h, text].slice(-500);
     });
     if (text.startsWith('/')) {
+      if (text.trim().startsWith('/search')) setSearchBaseDraft('');
       const handled = handleSlash(text, {
         client,
         pushSystem,
         clearCommitted: () => {
-          // /clear: drop the React-side log AND reset the inline
-          // flush cursor so a new welcome / new conversation prints
-          // freshly without trying to "catch up" on writes already
-          // in scrollback.
           setCommitted([]);
-          lastWrittenIdxRef.current = 0;
         },
         newSession: () => {
           setConversationId(undefined);
+          setConversationTitle(undefined);
           setStreaming(null);
           setCommitted([]);
-          lastWrittenIdxRef.current = 0;
         },
         exit: () => app.exit(),
         openPicker: (kind) => setPickerKind(kind),
@@ -938,7 +337,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       agent_id: agent,
       text,
       tools: toolsOn,
-      thinking_effort: thinkingEffort === 'off' ? undefined : thinkingEffort,
+      thinking_effort: thinkingEffort,
+      permission_mode: permissionMode,
     } as never);
   };
 
@@ -958,529 +358,40 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     if (dt <= 0.1) return undefined;
     return Math.round(activity.streamedChars / dt);
   })();
+  const sessionStatus = !conversationId
+    ? 'empty'
+    : sessionLiveByConv[conversationId]
+    ? 'active'
+    : 'loaded';
 
-  // Build picker items based on the current pickerKind.
-  let pickerNode: React.ReactElement | null = null;
-  if (pickerKind === 'model') {
-    const items: PickerItem<string>[] = modelsList.map((m) => ({
-      label: m,
-      description: m === model ? 'current' : undefined,
-      value: m,
-    }));
-    pickerNode = (
-      <Picker
-        title="Switch model"
-        items={items}
-        onSelect={(it) => {
-          client.send({
-            action: 'switch_model',
-            model: it.value,
-            conv_id: conversationId,
-          });
-          setPickerKind(null);
-        }}
-        onCancel={() => setPickerKind(null)}
-      />
-    );
-  } else if (pickerKind === 'agent') {
-    const items: PickerItem<string>[] = agentsList.map((a) => ({
-      label: a.name || a.id,
-      description: a.default
-        ? `${a.id} · default`
-        : a.id,
-      value: a.id,
-    }));
-    pickerNode = (
-      <Picker
-        title="Switch agent"
-        items={items}
-        onSelect={(it) => {
-          client.send({ action: 'set_default_agent', id: it.value });
-          setAgent(it.value);
-          setPickerKind(null);
-        }}
-        onCancel={() => setPickerKind(null)}
-      />
-    );
-  } else if (pickerKind === 'channel') {
-    const channels = ['wechat', 'telegram', 'discord', 'slack'];
-    const items: PickerItem<string>[] = channels.map((ch) => ({
-      label: ch,
-      description:
-        channelAccounts.filter((a) => a.channel === ch).length > 0
-          ? `${channelAccounts.filter((a) => a.channel === ch).length} account(s) configured`
-          : 'no account yet',
-      value: ch,
-    }));
-    pickerNode = (
-      <Picker
-        title="Choose a channel"
-        items={items}
-        onSelect={(it) => {
-          setChosenChannel(it.value);
-          setPickerKind('channel_account');
-        }}
-        onCancel={() => setPickerKind(null)}
-      />
-    );
-  } else if (pickerKind === 'channel_account') {
-    const filtered = channelAccounts.filter((a) => a.channel === chosenChannel);
-    const accountItems: PickerItem<string>[] = filtered.map((a) => {
-      // Surface the current catch-all binding (if any) right in the
-      // account row, so the user sees "selecting this will overwrite
-      // X" before they ever press Enter — the confirm picker is the
-      // safety net, this is the front-page warning.
-      const bound = findExistingAlias(
-        sessionAliasesRef.current,
-        chosenChannel ?? '', a.account_id ?? '', '*',
-      );
-      const status = a.configured ? 'logged in' : 'not configured';
-      return {
-        label: a.account_id ?? '',
-        description: bound
-          ? `${status} · already bound → ${bound}`
-          : status,
-        value: a.account_id ?? '',
-      };
-    });
-    const isTokenChannel =
-      chosenChannel === 'discord' || chosenChannel === 'telegram' || chosenChannel === 'slack';
-    const items: PickerItem<string>[] = [
-      ...accountItems,
-      isTokenChannel
-        ? { label: '+ Register new', description: 'paste a bot token to add an account', value: '__register__' }
-        : { label: '+ Register new', description: 'wechat needs shell QR — select for command', value: '__register_wechat__' },
-    ];
-    pickerNode = (
-      <Picker
-        title={`Pick a ${chosenChannel} account`}
-        items={items}
-        onSelect={(it) => {
-          if (it.value === '__register__') {
-            setRegisterForm({ channel: chosenChannel });
-            setPickerKind('register_account_id');
-            return;
-          }
-          if (it.value === '__register_wechat__') {
-            // In-TUI QR login. Server pushes qr_login envelopes; the
-            // channel_qr_wait picker renders them and switches to
-            // channel_action when login finishes.
-            const acctId = `default_${Date.now().toString(36).slice(-4)}`;
-            setChosenAccount(acctId);
-            setQrAscii(undefined);
-            setQrStatus('Requesting QR code…');
-            client.send({
-              action: 'start_channel_login',
-              channel: 'wechat',
-              account_id: 'default',
-            } as never);
-            setPickerKind('channel_qr_wait');
-            return;
-          }
-          // Existing account: bind the current TUI conversation as a
-          // catch-all in one keypress. If the user hasn't sent any
-          // messages yet, mint a fresh conv id and set it active —
-          // server-side attach_session will lazy-create the empty
-          // SessionDB row.
-          const targetConvId = conversationId ?? `local_${randomLocalId()}`;
-          const okMsg =
-            `✅ Bound this conversation to ${chosenChannel}:${it.value}. ` +
-            `Every inbound message lands here. Tweak via /bindings.`;
-          // Detect overwrite ahead of time. Server's attach() does
-          // return ``replaced`` so we *would* learn about it post-hoc
-          // — but the user has zero chance to say no at that point.
-          // Surfacing it pre-attach turns a silent destructive op
-          // into an explicit choice.
-          const existing = findExistingAlias(
-            sessionAliasesRef.current,
-            chosenChannel ?? '', it.value, '*',
-          );
-          if (existing && existing !== targetConvId) {
-            if (!conversationId) setConversationId(targetConvId);
-            setPendingAttach({
-              channel: chosenChannel ?? '',
-              account_id: it.value,
-              peer_kind: 'direct',
-              peer_id: '*',
-              session_id: targetConvId,
-              existingSessionId: existing,
-              successMessage: okMsg,
-            });
-            setPickerKind('channel_overwrite_confirm');
-            return;
-          }
-          if (!conversationId) setConversationId(targetConvId);
-          client.send({
-            action: 'attach_session',
-            session_id: targetConvId,
-            channel: chosenChannel,
-            account_id: it.value,
-            peer_kind: 'direct',
-            peer_id: '*',
-          } as never);
-          pushSystem(okMsg);
-          setPickerKind(null);
-          setChosenChannel(undefined);
-          setChosenAccount(undefined);
-        }}
-        onCancel={() => {
-          setPickerKind('channel');
-        }}
-      />
-    );
-  } else if (pickerKind === 'channel_action') {
-    // Three-way: catch-all to current conversation, specific peer,
-    // or just list/delete existing bindings. Catch-all means every
-    // inbound message on this channel:account lands in conversationId
-    // — useful for "I want all my wechat replies in this TUI session".
-    const items: PickerItem<string>[] = [
-      {
-        label: 'Bind ALL inbound to this conversation',
-        description: conversationId
-          ? `Every ${chosenChannel}:${chosenAccount} message → current chat`
-          : `Every ${chosenChannel}:${chosenAccount} message → a fresh chat (auto-created)`,
-        value: '__catchall__',
-      },
-      {
-        label: 'Bind a specific peer to this conversation',
-        description: 'You will be prompted for the peer id (wxid_xxx etc.)',
-        value: '__peer__',
-      },
-      {
-        label: 'Show existing bindings',
-        description: 'List + remove rules later',
-        value: '__list__',
-      },
-    ];
-    pickerNode = (
-      <Picker
-        title={`Bind ${chosenChannel}:${chosenAccount} how?`}
-        items={items}
-        onSelect={(it) => {
-          if (it.value === '__list__') {
-            client.send({ action: 'list_session_aliases' } as never);
-            client.send({ action: 'list_channel_bindings' } as never);
-            setPickerKind(null);
-            setChosenChannel(undefined);
-            setChosenAccount(undefined);
-            return;
-          }
-          if (it.value === '__catchall__') {
-            // Catch-all = attach with peer_id="*". The bindings/route
-            // logic falls through to alias.lookup which matches any
-            // peer for this (channel, account) when peer_id == "*".
-            // Lazy-create the TUI conversation if there isn't one
-            // yet — server-side attach_session backs it with an
-            // empty SessionDB row.
-            const targetConvId = conversationId ?? `local_${randomLocalId()}`;
-            const okMsg =
-              `✅ Bound ${chosenChannel}:${chosenAccount} (catch-all) → current conversation. ` +
-              `Channel worker will route every inbound message here.`;
-            const existing = findExistingAlias(
-              sessionAliasesRef.current,
-              chosenChannel ?? '', chosenAccount ?? '', '*',
-            );
-            if (existing && existing !== targetConvId) {
-              if (!conversationId) setConversationId(targetConvId);
-              setPendingAttach({
-                channel: chosenChannel ?? '',
-                account_id: chosenAccount ?? '',
-                peer_kind: 'direct',
-                peer_id: '*',
-                session_id: targetConvId,
-                existingSessionId: existing,
-                successMessage: okMsg,
-              });
-              setPickerKind('channel_overwrite_confirm');
-              return;
-            }
-            if (!conversationId) setConversationId(targetConvId);
-            client.send({
-              action: 'attach_session',
-              session_id: targetConvId,
-              channel: chosenChannel,
-              account_id: chosenAccount,
-              peer_kind: 'direct',
-              peer_id: '*',
-            } as never);
-            pushSystem(okMsg);
-            setPickerKind(null);
-            setChosenChannel(undefined);
-            setChosenAccount(undefined);
-            return;
-          }
-          if (it.value === '__peer__') {
-            setPickerKind('channel_peer_input');
-            return;
-          }
-        }}
-        onCancel={() => setPickerKind('channel_account')}
-      />
-    );
-  } else if (pickerKind === 'channel_peer_input') {
-    pickerNode = (
-      <LineInput
-        label={`Peer ID for ${chosenChannel}:${chosenAccount}`}
-        hint="e.g. wxid_xxxx for WeChat. The bot's worker log shows them once messages arrive."
-        onSubmit={(v) => {
-          const peerId = v.trim();
-          if (!peerId) {
-            pushSystem('peer id required.');
-            return;
-          }
-          const targetConvId = conversationId ?? `local_${randomLocalId()}`;
-          const okMsg =
-            `✅ Bound ${chosenChannel}:${chosenAccount}:${peerId} → current conversation.`;
-          const existing = findExistingAlias(
-            sessionAliasesRef.current,
-            chosenChannel ?? '', chosenAccount ?? '', peerId,
-          );
-          if (existing && existing !== targetConvId) {
-            if (!conversationId) setConversationId(targetConvId);
-            setPendingAttach({
-              channel: chosenChannel ?? '',
-              account_id: chosenAccount ?? '',
-              peer_kind: 'direct',
-              peer_id: peerId,
-              session_id: targetConvId,
-              existingSessionId: existing,
-              successMessage: okMsg,
-            });
-            setPickerKind('channel_overwrite_confirm');
-            return;
-          }
-          if (!conversationId) setConversationId(targetConvId);
-          client.send({
-            action: 'attach_session',
-            session_id: targetConvId,
-            channel: chosenChannel,
-            account_id: chosenAccount,
-            peer_kind: 'direct',
-            peer_id: peerId,
-          } as never);
-          pushSystem(okMsg);
-          setPickerKind(null);
-          setChosenChannel(undefined);
-          setChosenAccount(undefined);
-        }}
-        onCancel={() => setPickerKind('channel_action')}
-      />
-    );
-  } else if (pickerKind === 'channel_overwrite_confirm') {
-    // Two-option confirm: replace the existing alias, or back out.
-    // Putting the actual session ids in the title makes the
-    // destructive op visible — same model Linear uses for "delete
-    // issue X" prompts.
-    const p = pendingAttach;
-    pickerNode = p ? (
-      <Picker
-        title={
-          `${p.channel}:${p.account_id}:${p.peer_id} is already bound to ` +
-          `${p.existingSessionId}. Replace with ${p.session_id}?`
-        }
-        items={[
-          {
-            label: 'Replace existing binding',
-            description: `${p.existingSessionId} → ${p.session_id}`,
-            value: '__yes__',
-          },
-          {
-            label: 'Cancel',
-            description: 'Keep the existing binding, do nothing',
-            value: '__no__',
-          },
-        ]}
-        onSelect={(it) => {
-          if (it.value === '__yes__') {
-            client.send({
-              action: 'attach_session',
-              session_id: p.session_id,
-              channel: p.channel,
-              account_id: p.account_id,
-              peer_kind: p.peer_kind,
-              peer_id: p.peer_id,
-            } as never);
-            pushSystem(p.successMessage);
-          } else {
-            pushSystem(
-              `Cancelled. ${p.channel}:${p.account_id}:${p.peer_id} ` +
-              `still bound to ${p.existingSessionId}.`,
-            );
-          }
-          setPendingAttach(null);
-          setPickerKind(null);
-          setChosenChannel(undefined);
-          setChosenAccount(undefined);
-        }}
-        onCancel={() => {
-          pushSystem(
-            `Cancelled. ${p.channel}:${p.account_id}:${p.peer_id} ` +
-            `still bound to ${p.existingSessionId}.`,
-          );
-          setPendingAttach(null);
-          setPickerKind(null);
-          setChosenChannel(undefined);
-          setChosenAccount(undefined);
-        }}
-      />
-    ) : null;
-  } else if (pickerKind === 'channel_qr_wait') {
-    // Read-only "picker" — no input, just renders the QR + status
-    // until the qr_login envelope handler advances us out.
-    pickerNode = (
-      <Box flexDirection="column" borderStyle="single" paddingX={1} paddingY={0}>
-        <Text bold>Scan to log in to {chosenChannel}</Text>
-        <Text color="ansi:blackBright">Open WeChat on your phone → tap [+] → "Scan QR"</Text>
-        {qrAscii ? <Text>{qrAscii}</Text> : <Text color="ansi:blackBright">Loading QR…</Text>}
-        <Text color="ansi:cyan">{qrStatus ?? ''}</Text>
-        <Text color="ansi:blackBright">(esc to cancel)</Text>
-      </Box>
-    );
-  } else if (pickerKind === 'register_account_id') {
-    pickerNode = (
-      <LineInput
-        label={`Register ${registerForm.channel ?? '?'} account`}
-        hint="Choose a short id you'll use to refer to this account (e.g. 'default', 'work')."
-        initial="default"
-        onSubmit={(v) => {
-          const id = v.trim();
-          if (!id) {
-            pushSystem('account_id required.');
-            return;
-          }
-          setRegisterForm((f) => ({ ...f, accountId: id }));
-          setPickerKind('register_token');
-        }}
-        onCancel={() => {
-          setPickerKind('channel_account');
-          setRegisterForm({});
-        }}
-      />
-    );
-  } else if (pickerKind === 'register_token') {
-    pickerNode = (
-      <LineInput
-        label={`${registerForm.channel ?? '?'} bot token for "${registerForm.accountId}"`}
-        hint="Paste the bot token from your provider dashboard."
-        mask
-        onSubmit={(token) => {
-          const t = token.trim();
-          if (!t) {
-            pushSystem('token required.');
-            return;
-          }
-          if (!registerForm.channel || !registerForm.accountId) {
-            pushSystem('register form incomplete; aborting.');
-            setPickerKind(null);
-            setRegisterForm({});
-            return;
-          }
-          client.send({
-            action: 'add_channel_account',
-            channel: registerForm.channel,
-            account_id: registerForm.accountId,
-            token: t,
-          });
-          // Same one-step semantics as wechat QR done: token saved
-          // → bind the current TUI conversation as catch-all. Mint a
-          // conv id if there isn't one yet so the user doesn't need
-          // to send a dummy message first.
-          if (registerForm.channel && registerForm.accountId) {
-            const targetConvId = conversationId ?? `local_${randomLocalId()}`;
-            if (!conversationId) {
-              setConversationId(targetConvId);
-            }
-            client.send({
-              action: 'attach_session',
-              session_id: targetConvId,
-              channel: registerForm.channel,
-              account_id: registerForm.accountId,
-              peer_kind: 'direct',
-              peer_id: '*',
-            } as never);
-            pushSystem(
-              `✅ Registered ${registerForm.channel}:${registerForm.accountId} ` +
-              `and bound this conversation to receive inbound messages.`,
-            );
-          }
-          setPickerKind(null);
-          setRegisterForm({});
-          setChosenChannel(undefined);
-          client.send({ action: 'list_channel_accounts' });
-        }}
-        onCancel={() => {
-          setPickerKind('register_account_id');
-        }}
-      />
-    );
-  } else if (pickerKind === 'theme') {
-    pickerNode = (
-      <ThemePicker
-        onDone={(setting) => {
-          setPickerKind(null);
-          pushSystem(`Theme set to ${setting}.`);
-        }}
-        onCancel={() => setPickerKind(null)}
-      />
-    );
-  } else if (pickerKind === 'resume') {
-    // Channel-bound sessions (source="wechat"/"telegram"/…) bubble to
-    // the top with a [channel:peer] tag prefix so users can pick a
-    // wechat conversation directly without scanning random IDs.
-    const sorted = [...pastConversations].sort((a, b) => {
-      const aChan = a.source ? 0 : 1;
-      const bChan = b.source ? 0 : 1;
-      if (aChan !== bChan) return aChan - bChan;
-      return (b.created_at ?? 0) - (a.created_at ?? 0);
-    });
-    const items: PickerItem<string>[] = sorted
-      .filter((c) => c.id)
-      .map((c) => {
-        const tag = c.source
-          ? `[${c.source}${c.peer_display ? `:${c.peer_display}` : ''}] `
-          : '';
-        const title = c.title || c.id || '';
-        return {
-          label: (tag + title).slice(0, 60),
-          description: `${c.id ?? ''} · ${tsToDate(c.created_at)}`,
-          value: c.id!,
-        };
-      });
-    pickerNode = (
-      <Picker
-        title="Resume a session"
-        items={items}
-        onSelect={(it) => {
-          client.send({ action: 'load_conversation', conv_id: it.value });
-          setConversationId(it.value);
-          setCommitted([]);
-          lastWrittenIdxRef.current = 0;
-          setStreaming(null);
-          setPickerKind(null);
-        }}
-        onCancel={() => setPickerKind(null)}
-      />
-    );
-  }
+  // Picker switch lives in pickerRouter.tsx — every legacy
+  // picker (model / agent / channel chain / theme / resume / etc.)
+  // wires the same set of REPL setters and the WS client, so we
+  // bundle them through a single ctx object.
+  const pickerNode = buildPickerNode({
+    client, pushSystem,
+    pickerKind, pendingAttach,
+    chosenChannel, chosenAccount, conversationId,
+    modelsList, model, agentsList, channelAccounts,
+    registerForm, qrAscii, qrStatus, pastConversations,
+    contextSearchQuery, searchResults, searchBaseDraft,
+    setPickerKind, setPendingAttach,
+    setChosenChannel, setChosenAccount, setConversationId, setAgent,
+    setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
+    setContextSearchQuery, setSearchResults, setPromptDraft,
+    sessionAliasesRef,
+  });
 
-  // Layout — Shell wraps AlternateScreen so we run in a constrained
-  // viewport (rows × cols), not main-buffer flow. ScrollView
-  // (overflow:scroll, sticky-bottom) takes the flexible middle
-  // area; spinner / picker / PromptInput / BottomBar stack at the
-  // bottom in fixed-height rows.
-  //
-  // resize handling: AlternateScreen + Shell propagate the new
-  // (rows, cols) through TerminalSizeContext, every flex sibling
-  // re-lays out automatically — no manual resize listener, no
-  // residual content drift.
   return (
-    <Shell mouseTracking={false}>
-      {/* Currently-streaming assistant turn lives in the dynamic
-          strip; ink redraws it in place as tokens stream. Once the
-          stream finishes, REPL pushes the turn into ``committed``
-          and the inline-flow effect flushes it to stdout — so it
-          ends up above the strip in scrollback, not duplicated. */}
-      {streaming ? <TurnRow turn={streaming} /> : null}
+    <Shell mouseTracking mode="alt">
+      <ScrollView stickyBottom>
+        <Messages
+          committed={committed}
+          streaming={streaming}
+          welcome={pickerNode ? undefined : (stats ?? undefined)}
+          fillWelcome={committed.length === 0 && !streaming && !pickerNode}
+        />
+      </ScrollView>
       {activity ? (
         <Spinner
           verb={activity.verb}
@@ -1509,6 +420,14 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           onSlashModeChange={setSlashMode}
           onCancel={onCancel}
           history={history}
+          initialDraft={promptDraft}
+          onDraftApplied={() => setPromptDraft(undefined)}
+          onContextSearch={(draft) => {
+            setSearchBaseDraft(draft);
+            setContextSearchQuery('');
+            setSearchResults([]);
+            setPickerKind('context_search');
+          }}
         />
       )}
       <BottomBar
@@ -1523,6 +442,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           permissionMode={permissionMode}
           thinkingEffort={thinkingEffort}
           connState={connState}
+          sessionStatus={sessionStatus}
           contextWindow={conversationId ? windowByConv[conversationId] : undefined}
           exitPending={exitPending}
         />

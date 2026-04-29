@@ -14,14 +14,16 @@ export interface MessagesProps {
   streaming?: Turn | null;
   /** Optional welcome banner. Pinned at the top of the transcript. */
   welcome?: WelcomeStats;
+  /** Use the opening screen height for the Welcome panel. */
+  fillWelcome?: boolean;
 }
 
 export const Messages: React.FC<MessagesProps> = ({
-  committed, streaming, welcome,
+  committed, streaming, welcome, fillWelcome = false,
 }) => {
   return (
     <>
-      {welcome ? <Welcome stats={welcome} /> : null}
+      {welcome ? <Welcome stats={welcome} fillAvailable={fillWelcome} /> : null}
       {committed.map((turn) => <TurnRow key={turn.id} turn={turn} />)}
       {streaming ? <TurnRow turn={streaming} /> : null}
     </>

@@ -14,7 +14,7 @@
  * moves (matters when there are 50+ items).
  */
 import React, { useEffect, useState } from 'react';
-import { Box, RawAnsi, useInput } from '@openprogram/ink';
+import { Box, RawAnsi, useInput } from '../runtime/index';
 import chalk from 'chalk';
 import { useColors } from '../theme/ThemeProvider.js';
 import { useTerminalSize } from './hooks.js';

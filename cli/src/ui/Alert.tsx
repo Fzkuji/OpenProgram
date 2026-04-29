@@ -12,7 +12,7 @@
  * vary by variant.
  */
 import React, { type ReactNode } from 'react';
-import { Box, Text } from '@openprogram/ink';
+import { Box, Text } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
 
 export type AlertVariant = 'info' | 'success' | 'warning' | 'error';

@@ -79,7 +79,8 @@ import {
   DISABLE_MODIFY_OTHER_KEYS,
   ENABLE_KITTY_KEYBOARD,
   ENABLE_MODIFY_OTHER_KEYS,
-  ERASE_SCREEN
+  ERASE_SCREEN,
+  ERASE_SCROLLBACK
 } from './termio/csi.js'
 import {
   DBP,
@@ -460,12 +461,18 @@ export default class Ink {
       // the OLD terminal width, so its relative cursor moves land in the
       // wrong cells once the column count changes (visible as left-shift
       // residue and "│" right-border carry-over). Wipe the visible
-      // screen + scrollback and clear log-update's memo. The next render
-      // (queued below in the microtask) writes a full frame from (0,0)
-      // at the new width — every component (Welcome, Messages turns,
-      // PromptInput, BottomBar) re-flows naturally because Yoga
-      // recomputes layout at the new terminalColumns.
-      this.options.stdout.write('\x1b[2J\x1b[3J\x1b[H')
+      // screen and clear log-update's memo so the next render (queued
+      // below in the microtask) writes a full frame from (0,0) at the
+      // new width.
+      //
+      // CRITICAL: only clear visible cells (CSI H + CSI J), NEVER write
+      // CSI 3J. The user's scrollback — their shell history before we
+      // started, plus any content we pushed via emitToScrollback — must
+      // survive every resize. Wiping it on each window drag is what
+      // made the inline-flow REPL "lose everything" when the user
+      // resized; the welcome banner and committed turns disappeared
+      // even though they should have stayed in scrollback.
+      this.options.stdout.write('\x1b[H\x1b[J')
       this.log.reset()
     }
 
@@ -945,7 +952,18 @@ export default class Ink {
     }
 
     const tWrite = performance.now()
-    writeDiffToTerminal(this.terminal, optimized, this.altScreenActive && !SYNC_OUTPUT_SUPPORTED)
+    // Inline-flow main-screen mode (no AlternateScreen): user's
+    // scrollback is the canonical history. log-update's fullReset
+    // path emits a `clearTerminal` op when it detects column-width
+    // changes or off-viewport diffs; we MUST tell writeDiffToTerminal
+    // not to include CSI 3J in that sequence, otherwise scrollback
+    // gets wiped on every resize/full-reset.
+    writeDiffToTerminal(
+      this.terminal,
+      optimized,
+      this.altScreenActive && !SYNC_OUTPUT_SUPPORTED,
+      this.altScreenActive
+    )
     const writeMs = performance.now() - tWrite
 
     // Update blit safety for the NEXT frame. The frame just rendered
@@ -1270,7 +1288,11 @@ export default class Ink {
    */
   private reenterAltScreen(): void {
     this.options.stdout.write(
-      ENTER_ALT_SCREEN + ERASE_SCREEN + CURSOR_HOME + (this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : '')
+      ENTER_ALT_SCREEN +
+        ERASE_SCREEN +
+        ERASE_SCROLLBACK +
+        CURSOR_HOME +
+        (this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : '')
     )
     this.resetFramesForAltScreen()
   }
@@ -1921,6 +1943,7 @@ export default class Ink {
         onOpenHyperlink={this.openHyperlink}
         onSelectionChange={this.notifySelectionChange}
         onSelectionDrag={this.handleSelectionDrag}
+        onSelectionEnd={() => { this.copySelectionNoClear() }}
         onStdinResume={this.reassertTerminalModes}
         selection={this.selection}
         stderr={this.options.stderr}
@@ -1954,7 +1977,7 @@ export default class Ink {
     // Non-TTY environments don't handle erasing ansi escapes well, so it's better to
     // only render last frame of non-static output
     const diff = this.log.renderPreviousOutput_DEPRECATED(this.frontFrame)
-    writeDiffToTerminal(this.terminal, optimize(diff))
+    writeDiffToTerminal(this.terminal, optimize(diff), false, this.altScreenActive)
 
     // Clean up terminal modes synchronously before process exit.
     // React's componentWillUnmount won't run in time when process.exit() is called,

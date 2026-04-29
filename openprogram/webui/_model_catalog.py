@@ -25,7 +25,7 @@ import threading
 from typing import Any
 
 # Importing these modules triggers runtime-level registry augmentation:
-# - openai_codex runtime adds Codex-route models (gpt-5.4 family)
+# - openai_codex runtime adds Codex-route models (gpt-5.5 family)
 # - anthropic._claude_code_registry adds Claude Code CLI models under
 #   the "claude-code" provider so list_enabled_models can find them
 from openprogram.providers.openai_codex import runtime as _codex_runtime  # noqa: F401

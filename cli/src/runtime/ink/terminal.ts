@@ -203,7 +203,12 @@ export type Terminal = {
   stderr: Writable
 }
 
-export function writeDiffToTerminal(terminal: Terminal, diff: Diff, skipSyncMarkers = false): void {
+export function writeDiffToTerminal(
+  terminal: Terminal,
+  diff: Diff,
+  skipSyncMarkers = false,
+  eraseScrollback = true
+): void {
   // No output if there are no patches
   if (diff.length === 0) {
     return
@@ -232,7 +237,7 @@ export function writeDiffToTerminal(terminal: Terminal, diff: Diff, skipSyncMark
         break
 
       case 'clearTerminal':
-        buffer += getClearTerminalSequence()
+        buffer += getClearTerminalSequence(eraseScrollback)
 
         break
 

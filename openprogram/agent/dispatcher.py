@@ -17,12 +17,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Literal, Optional
+
+from openprogram.agent.session_config import reasoning_from_config, SessionRunConfig
 
 
 PermissionMode = Literal["ask", "auto", "bypass"]
@@ -625,10 +628,14 @@ def _run_loop_blocking(
 
     # Resolve agent profile → tools, system_prompt, model.
     agent_profile = _load_agent_profile(req.agent_id)
-    tools = _resolve_tools(agent_profile, req.tools_override)
+    tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
+    _log_resolved_tools(req, tools)
     if tools:
         tools = [_wrap_with_approval(t, req, on_event) for t in tools]
-    system_prompt = agent_profile.get("system_prompt") or ""
+    system_prompt = _with_tool_runtime_prompt(
+        agent_profile.get("system_prompt") or "",
+        tools,
+    )
     model = _resolve_model(agent_profile, req.model_override)
 
     context = AgentContext(
@@ -644,6 +651,11 @@ def _run_loop_blocking(
     config = AgentLoopConfig(
         model=model,
         convert_to_llm=_default_convert_to_llm,
+        reasoning=reasoning_from_config(SessionRunConfig(
+            thinking_effort=req.thinking_effort
+            if req.thinking_effort is not None
+            else agent_profile.get("thinking_effort"),
+        )),
     )
 
     # Async drain that forwards each AgentEvent → on_event envelope.
@@ -987,7 +999,7 @@ def _resolve_model(profile: dict, override: Optional[str] = None):
         else:
             # Probe known providers, biased toward the dict's
             # ``provider`` field if present so a malformed entry like
-            # ``{"provider": "openai-codex", "id": "gpt-5.4"}`` still
+            # ``{"provider": "openai-codex", "id": "gpt-5.5"}`` still
             # tries the right backend first.
             order = ["openai", "anthropic", "google", "amazon-bedrock",
                      "cerebras", "claude-code", "github-copilot"]
@@ -1010,11 +1022,61 @@ def _resolve_model(profile: dict, override: Optional[str] = None):
     )
 
 
-def _resolve_tools(profile: dict,
-                   override: Optional[list[str]] = None) -> Optional[list]:
+def _with_tool_runtime_prompt(system_prompt: str, tools: Optional[list]) -> str:
+    if not tools:
+        return system_prompt
+
+    names = [getattr(t, "name", "") for t in tools]
+    names = [n for n in names if n]
+    if not names:
+        return system_prompt
+
+    cwd = os.getcwd()
+    has_bash = "bash" in names
+    lines = [
+        "Runtime tool context:",
+        f"- Current working directory: {cwd}",
+        f"- Available tools for this turn: {', '.join(names)}",
+        "- If the user asks for the current directory, answer from the Current working directory line above.",
+        "- If the user asks to list the current directory, call the list tool with that absolute path.",
+        "- When the user asks to inspect files, directories, or program state, call the relevant available tool instead of saying no tools are available.",
+    ]
+    if has_bash:
+        lines.append("- Shell command execution is available through the bash tool.")
+    else:
+        lines.append("- Shell command execution is not available in this transport; use filesystem/search tools such as list, read, glob, and grep when possible.")
+
+    tool_prompt = "\n".join(lines)
+    return f"{system_prompt.rstrip()}\n\n{tool_prompt}".strip()
+
+
+def _log_resolved_tools(req: TurnRequest, tools: Optional[list]) -> None:
+    try:
+        names = sorted(
+            getattr(t, "name", "")
+            for t in (tools or [])
+            if getattr(t, "name", "")
+        )
+        override_state = "explicit" if req.tools_override is not None else "profile"
+        print(
+            f"[dispatcher tools] source={req.source!r} agent={req.agent_id!r} "
+            f"mode={override_state} tools={names}",
+            flush=True,
+        )
+    except Exception:
+        pass
+
+
+def _resolve_tools(
+    profile: dict,
+    override: Optional[list[str]] = None,
+    *,
+    source: Optional[str] = None,
+) -> Optional[list]:
     """Resolve the AgentTool list for this turn.
 
-    `override` (per-turn) > profile.tools (per-agent) > all registered.
+    `override` (per-turn) > profile.tools (per-agent).
+    `source` hides tools marked unsafe for channel transports.
     Returns None when no tools are configured (caller gives agent_loop
     a tools-free context — it's a pure chat then).
     """
@@ -1027,12 +1089,27 @@ def _resolve_tools(profile: dict,
     if wanted == []:
         return []
     try:
-        from openprogram.tools import agent_tools, get_agent_tool
-        # Caller passed an explicit name list — preserve their order
-        # and drop names that aren't in the AgentTool registry.
+        from openprogram.tools import DEFAULT_TOOLS, agent_tools
+        if isinstance(wanted, dict):
+            enabled = wanted.get("enabled")
+            if isinstance(enabled, list):
+                names = [str(n) for n in enabled]
+            else:
+                disabled = {str(n) for n in (wanted.get("disabled") or [])}
+                names = [n for n in DEFAULT_TOOLS if n not in disabled]
+            toolset = wanted.get("toolset")
+            if isinstance(toolset, str) and not isinstance(enabled, list):
+                return agent_tools(toolset=toolset, source=source, only_available=True)
+            return agent_tools(names=names, source=source, only_available=True)
+
+        # Caller passed an explicit name list — preserve their order,
+        # drop missing names, then apply availability + source gates.
         if isinstance(wanted, list) and wanted and isinstance(wanted[0], str):
-            picked = [get_agent_tool(n) for n in wanted]
-            return [t for t in picked if t is not None]
+            return agent_tools(
+                names=[str(n) for n in wanted],
+                source=source,
+                only_available=True,
+            )
         # Fallback: caller already passed AgentTool instances
         return [t for t in wanted if hasattr(t, "name")]
     except Exception:

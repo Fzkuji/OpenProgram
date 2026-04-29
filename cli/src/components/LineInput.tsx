@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Text, useInput } from '@openprogram/ink';
+import { Box, Text, useInput } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
 import { usePanelWidth } from '../utils/useTerminalWidth.js';
 
@@ -17,6 +17,12 @@ export interface LineInputProps {
   /** Called on Esc. */
   onCancel: () => void;
 }
+
+const printableInput = (input: string): string =>
+  input.replace(/[\u0000-\u001f\u007f]/g, '');
+
+const dropLastCodePoint = (value: string): string =>
+  Array.from(value).slice(0, -1).join('');
 
 /**
  * Single-line text input. Used by the channel-account register flow
@@ -39,15 +45,16 @@ export const LineInput: React.FC<LineInputProps> = ({
       return;
     }
     if (key.backspace || key.delete) {
-      setValue((v) => v.slice(0, -1));
+      setValue(dropLastCodePoint);
       return;
     }
-    if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
-      setValue((v) => v + input);
+    if (input && !key.ctrl && !key.meta) {
+      const text = printableInput(input);
+      if (text) setValue((v) => v + text);
     }
   });
 
-  const display = mask ? '•'.repeat(value.length) : value;
+  const display = mask ? '•'.repeat(Array.from(value).length) : value;
 
   return (
     <Box

@@ -112,25 +112,44 @@ def _json_dumps(obj) -> str:
 # ---------------------------------------------------------------------------
 
 def save_meta(agent_id: str, conv_id: str, meta: dict) -> None:
+    """Persist conversation metadata into SessionDB.
+
+    Was a meta.json atomic-write; now it's an UPDATE on the sessions
+    row with overflow into extra_meta JSON for fields SessionDB
+    doesn't model explicitly. We still mkdir the conv folder because
+    the function-tree code (`init_tree` / `append_tree_event`) drops
+    JSONLs into `<conv>/trees/` and that path stays file-based.
+    """
+    from openprogram.agent.session_db import default_db
     _ensure_conv_dir(agent_id, conv_id)
-    with _lock_for(agent_id, conv_id):
-        _atomic_write_text(
-            conv_dir(agent_id, conv_id) / "meta.json", _json_dumps(meta),
-        )
+    db = default_db()
+    meta_fields = dict(meta)
+    meta_fields.pop("id", None)
+    meta_fields.pop("agent_id", None)
+    if db.get_session(conv_id) is None:
+        db.create_session(conv_id, agent_id, **meta_fields)
+    else:
+        db.update_session(conv_id, agent_id=agent_id, **meta_fields)
 
 
 def save_messages(agent_id: str, conv_id: str, messages: list) -> None:
+    """Sync the message log to SessionDB. Skips messages whose ids are
+    already persisted, so callers can keep passing the full in-memory
+    list without rewriting the whole transcript every turn."""
+    from openprogram.agent.session_db import default_db
     _ensure_conv_dir(agent_id, conv_id)
-    with _lock_for(agent_id, conv_id):
-        _atomic_write_text(
-            conv_dir(agent_id, conv_id) / "messages.json",
-            _json_dumps(messages),
-        )
+    db = default_db()
+    if db.get_session(conv_id) is None:
+        db.create_session(conv_id, agent_id)
+    existing_ids = {m["id"] for m in db.get_messages(conv_id)}
+    new_msgs = [m for m in messages if m.get("id") and m["id"] not in existing_ids]
+    if new_msgs:
+        db.append_messages(conv_id, new_msgs)
 
 
 def save_conversation(agent_id: str, conv_id: str,
                       meta: dict, messages: list) -> None:
-    """Save both meta and messages in one call — still atomic per file."""
+    """Save both meta and messages in one call."""
     save_meta(agent_id, conv_id, meta)
     save_messages(agent_id, conv_id, messages)
 
@@ -280,44 +299,34 @@ def _tree_dict_to_records(node: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def list_conversations(agent_id: str = "") -> list[tuple[str, str]]:
-    """Return ``[(agent_id, conv_id), ...]`` across the entire store.
+    """Return ``[(agent_id, conv_id), ...]`` across SessionDB.
 
-    When an ``agent_id`` filter is supplied, only that agent's sessions
-    are listed. Otherwise we walk every agent.
+    With ``agent_id`` empty (default) we list every agent; otherwise
+    just that agent. Was a filesystem walk; now an indexed query —
+    O(log n) instead of O(n × dirs).
     """
-    from openprogram.agents.manager import list_all
-    out: list[tuple[str, str]] = []
-    agents = [a for a in list_all() if (not agent_id or a.id == agent_id)]
-    for spec in agents:
-        root = _sessions_root(spec.id)
-        if not root.is_dir():
-            continue
-        for d in sorted(root.iterdir()):
-            if d.is_dir():
-                out.append((spec.id, d.name))
-    return out
+    from openprogram.agent.session_db import default_db
+    db = default_db()
+    rows = db.list_sessions(agent_id=agent_id or None, limit=10_000)
+    return [(r["agent_id"], r["id"]) for r in rows]
 
 
 def load_conversation(agent_id: str, conv_id: str) -> Optional[dict]:
-    """Return the conversation state dict (meta + messages + function_trees)."""
-    d = conv_dir(agent_id, conv_id)
-    if not d.is_dir():
+    """Return the conversation state dict (meta + messages + function_trees).
+
+    Reads SessionDB for meta + messages; function_trees still come
+    from the per-conv `trees/` JSONL files because that's a separate
+    high-frequency event log used only during webui function execution.
+    """
+    from openprogram.agent.session_db import default_db
+    db = default_db()
+    sess = db.get_session(conv_id)
+    if sess is None:
+        return None
+    if sess.get("agent_id") != agent_id:
         return None
 
-    meta: dict = {}
-    messages: list = []
-    meta_p = d / "meta.json"
-    msgs_p = d / "messages.json"
-    if meta_p.exists():
-        try:
-            meta = json.loads(meta_p.read_text(encoding="utf-8"))
-        except Exception:
-            meta = {}
-    if msgs_p.exists():
-        try:
-            messages = json.loads(msgs_p.read_text(encoding="utf-8"))
-        except Exception:
-            messages = []
+    messages = db.get_messages(conv_id)
 
     function_trees: list = []
     for func_idx in list_func_indexes(agent_id, conv_id):
@@ -329,7 +338,7 @@ def load_conversation(agent_id: str, conv_id: str) -> Optional[dict]:
         if tree is not None:
             function_trees.append(tree)
 
-    result = dict(meta)
+    result = dict(sess)
     result["id"] = conv_id
     result["agent_id"] = agent_id
     result["messages"] = messages
@@ -338,6 +347,8 @@ def load_conversation(agent_id: str, conv_id: str) -> Optional[dict]:
 
 
 def delete_conversation(agent_id: str, conv_id: str) -> None:
+    from openprogram.agent.session_db import default_db
+    default_db().delete_session(conv_id)
     d = conv_dir(agent_id, conv_id)
     if d.is_dir():
         shutil.rmtree(d)

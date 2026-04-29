@@ -35,9 +35,9 @@ from typing import Any, Callable
 # ---------------------------------------------------------------------------
 
 _CODEX_MODELS = [
-    ("gpt-5.4-mini", "fast & cheap — default"),
-    ("gpt-5.4", "balanced"),
-    ("gpt-5.4-pro", "best reasoning, slow & expensive"),
+    ("gpt-5.5-mini", "fast & cheap — default"),
+    ("gpt-5.5", "balanced"),
+    ("gpt-5.5-pro", "best reasoning, slow & expensive"),
 ]
 
 

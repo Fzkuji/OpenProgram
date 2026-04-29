@@ -5,7 +5,8 @@ export type ChatRequest = {
   conv_id?: string;
   agent_id?: string;
   text: string;
-  thinking_effort?: string;
+  thinking_effort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  permission_mode?: 'ask' | 'auto' | 'bypass';
   tools?: boolean;
 };
 
@@ -24,6 +25,7 @@ export type WsRequest =
   | { action: 'list_conversations' }
   | { action: 'load_conversation'; conv_id: string }
   | { action: 'delete_conversation'; id: string }
+  | { action: 'search_messages'; query: string; limit?: number; agent_id?: string }
   | { action: 'list_channel_accounts' }
   | { action: 'add_channel_account'; channel: string; account_id: string; token: string }
   | { action: 'list_channel_bindings' }
@@ -146,7 +148,17 @@ export interface BrowserResultEnvelope {
 
 export interface ConversationLoadedEnvelope {
   type: 'conversation_loaded';
-  data: { id: string; messages: Array<{ role: string; content: string; [k: string]: unknown }>; [k: string]: unknown };
+  data: {
+    id: string;
+    messages: Array<{ role: string; content: string; [k: string]: unknown }>;
+    settings?: {
+      tools_enabled?: boolean | null;
+      tools_override?: string[] | null;
+      thinking_effort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null;
+      permission_mode?: 'ask' | 'auto' | 'bypass' | null;
+    };
+    [k: string]: unknown;
+  };
 }
 
 export interface ModelsListEnvelope {
@@ -253,6 +265,7 @@ export interface SearchResultsEnvelope {
       message_id: string;
       role: string;
       preview: string;
+      content?: string;
       timestamp?: number;
     }>;
   };

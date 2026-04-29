@@ -46,20 +46,29 @@ function isModernWindowsTerminal(): boolean {
 }
 
 /**
- * Returns the ANSI escape sequence to clear the terminal including scrollback.
- * Automatically detects terminal capabilities.
+ * Returns the ANSI escape sequence to clear the terminal.
+ *
+ * eraseScrollback=true (default, alt-screen): erase visible cells AND
+ * scrollback. Alt-screen has no scrollback semantically, so the 3J is
+ * harmless there but ensures buffers are uniformly clean.
+ *
+ * eraseScrollback=false (main-screen inline-flow): erase visible cells
+ * only — the user's scrollback (their shell history, plus any
+ * emitToScrollback content from us) MUST survive resize / fullReset.
+ * Without this guard, a window-drag wipes everything we wrote above
+ * the live strip.
  */
-export function getClearTerminalSequence(): string {
+export function getClearTerminalSequence(eraseScrollback = true): string {
   if (process.platform === 'win32') {
     if (isModernWindowsTerminal()) {
-      return ERASE_SCREEN + ERASE_SCROLLBACK + CURSOR_HOME
+      return ERASE_SCREEN + (eraseScrollback ? ERASE_SCROLLBACK : '') + CURSOR_HOME
     } else {
       // Legacy Windows console - can't clear scrollback
       return ERASE_SCREEN + CURSOR_HOME_WINDOWS
     }
   }
 
-  return ERASE_SCREEN + ERASE_SCROLLBACK + CURSOR_HOME
+  return ERASE_SCREEN + (eraseScrollback ? ERASE_SCROLLBACK : '') + CURSOR_HOME
 }
 
 /**

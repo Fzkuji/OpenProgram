@@ -41,6 +41,17 @@ _KNOWN_CODEX_MODELS = [
 ]
 
 
+def _codex_supports_xhigh(model_id: str) -> bool:
+    return any(tag in model_id for tag in ("gpt-5.2", "gpt-5.3", "gpt-5.4", "gpt-5.5"))
+
+
+def _display_name_for_codex_model(model_id: str) -> str:
+    parts = model_id.replace("gpt-", "").split("-")
+    head = "GPT-" + parts[0]
+    tail = " ".join(p.capitalize() if p != "codex" else "Codex" for p in parts[1:])
+    return (head + " " + tail).strip()
+
+
 def _augment_registry_with_codex_models() -> None:
     """Inject Codex-route model ids into the provider registry if the
     generated catalog is missing them. The ChatGPT backend has no public
@@ -49,7 +60,7 @@ def _augment_registry_with_codex_models() -> None:
     (name, cost, context window) for whichever ids already exist. New
     entries get a sensible Codex default."""
     from openprogram.providers.models_generated import MODELS
-    from openprogram.providers.types import Model, ModelCost
+    from openprogram.providers.thinking_catalog import derive_thinking_fields
 
     template = next(
         (m for m in MODELS.values()
@@ -61,13 +72,22 @@ def _augment_registry_with_codex_models() -> None:
 
     for mid in _KNOWN_CODEX_MODELS:
         key = f"openai-codex/{mid}"
-        if key in MODELS:
-            continue
-        parts = mid.replace("gpt-", "").split("-")
-        head = "GPT-" + parts[0]
-        tail = " ".join(p.capitalize() if p != "codex" else "Codex" for p in parts[1:])
-        display = (head + " " + tail).strip()
-        MODELS[key] = template.model_copy(update={"id": mid, "name": display})
+        display = _display_name_for_codex_model(mid)
+        model = MODELS.get(key) or template.model_copy(update={"id": mid, "name": display})
+        levels, default, variant = derive_thinking_fields(
+            "openai-codex",
+            mid,
+            True,
+            _codex_supports_xhigh(mid),
+        )
+        MODELS[key] = model.model_copy(update={
+            "id": mid,
+            "name": model.name or display,
+            "reasoning": True,
+            "thinking_levels": levels,
+            "default_thinking_level": default,
+            "thinking_variant": variant,
+        })
 
 
 _augment_registry_with_codex_models()

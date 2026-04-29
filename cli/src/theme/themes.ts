@@ -14,7 +14,7 @@
  *     or when the high-saturation orange feels loud.
  */
 
-import type { Color } from '@openprogram/ink';
+import type { Color } from '../runtime/index';
 
 export interface ColorTheme {
   // Common roles

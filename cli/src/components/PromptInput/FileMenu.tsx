@@ -1,7 +1,8 @@
 import React from 'react';
-import { Box, Text } from '@openprogram/ink';
+import { Box, Text } from '../../runtime/index';
 import { FileMatch } from '../../utils/fileCompletions.js';
 import { useColors } from '../../theme/ThemeProvider.js';
+import { usePanelWidth } from '../../utils/useTerminalWidth.js';
 
 export interface FileMenuProps {
   items: FileMatch[];
@@ -12,6 +13,11 @@ const MAX_VISIBLE = 8;
 
 export const FileMenu: React.FC<FileMenuProps> = ({ items, selectedIndex }) => {
   const colors = useColors();
+  const width = usePanelWidth();
+  const pathWidth = Math.max(10, width - 4);
+  const footer = width >= 70
+    ? `${selectedIndex + 1}/${items.length} · ↑↓ choose · enter/tab insert · esc cancel`
+    : `${selectedIndex + 1}/${items.length} · enter/tab`;
   if (items.length === 0) {
     return (
       <Box paddingX={1}>
@@ -36,17 +42,17 @@ export const FileMenu: React.FC<FileMenuProps> = ({ items, selectedIndex }) => {
             <Text color={selected ? colors.primary : colors.border}>
               {selected ? '▌ ' : '  '}
             </Text>
-            <Text color={selected ? colors.primary : colors.text} bold={selected} wrap="truncate-end">
-              {m.path}
-              {m.isDir ? '/' : ''}
-            </Text>
+            <Box width={pathWidth}>
+              <Text color={selected ? colors.primary : colors.text} bold={selected} wrap="truncate-end">
+                {m.path}
+                {m.isDir ? '/' : ''}
+              </Text>
+            </Box>
           </Box>
         );
       })}
       {items.length > MAX_VISIBLE ? (
-        <Text color={colors.muted}>
-          {selectedIndex + 1}/{items.length} · ↑↓ choose · enter / tab insert · esc cancel
-        </Text>
+        <Text color={colors.muted}>{footer}</Text>
       ) : null}
     </Box>
   );

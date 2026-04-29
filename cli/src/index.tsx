@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@openprogram/ink';
+import { render } from './runtime/index';
 import { REPL } from './screens/REPL.js';
 import { Demo } from './screens/Demo.js';
 import { BackendClient } from './ws/client.js';
@@ -36,26 +36,7 @@ queryTerminalBg(200)
 process.on('SIGINT', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));
 
-// REPL runs in main-buffer "inline" mode — Ink's live strip is the
-// input + status only, finished turns flow into native scrollback
-// via emitToScrollback. So the user's pre-existing shell output is
-// still in scrollback (good — they wanted it there) but the visible
-// screen needs to be wiped first so the welcome banner doesn't
-// overlap their last shell prompts.
-//
-//  - \x1b[2J : erase entire screen (visible cells)
-//  - \x1b[H  : home cursor to (1, 1)
-//
-// Notably we do NOT send \x1b[3J (erase scrollback). Killing the
-// user's prior shell history would make them really mad — only
-// what's currently on-screen needs to go.
-//
-// Demo uses Shell mode="alt" which enters alt-screen on its own;
-// only inline-flow REPL needs this preamble.
 async function main(): Promise<void> {
-  if (!demo && process.stdout.isTTY) {
-    process.stdout.write('\x1b[2J\x1b[H');
-  }
   const root = demo
     ? <ThemeProvider><Demo /></ThemeProvider>
     : <ThemeProvider><REPL client={client} /></ThemeProvider>;

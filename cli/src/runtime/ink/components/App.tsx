@@ -63,6 +63,7 @@ type Props = {
   // so the handler is always wired but dormant until tracking is on.
   readonly selection: SelectionState
   readonly onSelectionChange: () => void
+  readonly onSelectionEnd?: () => void
   // Dispatch a click at (col, row) — hit-tests the DOM tree and bubbles
   // onClick handlers. Returns true if a DOM handler consumed the click.
   // No-op (returns false) outside fullscreen mode (Ink.dispatchClick
@@ -568,6 +569,12 @@ function processKeysInBatch(app: App, items: ParsedInput[], _unused1: undefined,
 }
 
 /** Exported for testing. Mutates app.props.selection and click/hover state. */
+function copyFinishedSelection(app: App, sel: SelectionState): void {
+  if (hasSelection(sel)) {
+    app.props.onSelectionEnd?.()
+  }
+}
+
 export function handleMouseEvent(app: App, m: ParsedMouse): void {
   // Allow disabling click handling while keeping wheel scroll (which goes
   // through the keybinding system as 'wheelup'/'wheeldown', not here).
@@ -599,6 +606,7 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
       // `focus-events on` is set, so this is the more reliable signal.
       if (sel.isDragging) {
         finishSelection(sel)
+        copyFinishedSelection(app, sel)
         app.props.onSelectionChange()
       }
 
@@ -642,6 +650,7 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
     // hit the no-button-motion recovery above instead, so this is rare.
     if (sel.isDragging) {
       finishSelection(sel)
+      copyFinishedSelection(app, sel)
       app.props.onSelectionChange()
     }
 
@@ -716,12 +725,14 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
     }
 
     finishSelection(sel)
+    copyFinishedSelection(app, sel)
     app.props.onSelectionChange()
 
     return
   }
 
   finishSelection(sel)
+  copyFinishedSelection(app, sel)
 
   // NOTE: unlike the old release-based detection we do NOT reset clickCount
   // on release-after-drag. This aligns with NSEvent.clickCount semantics:

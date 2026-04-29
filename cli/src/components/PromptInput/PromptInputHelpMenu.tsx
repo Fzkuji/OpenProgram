@@ -1,7 +1,8 @@
 import React from 'react';
-import { Box, Text } from '@openprogram/ink';
+import { Box, Text } from '../../runtime/index';
 import type { SlashCommand } from '../../commands/registry.js';
 import { useColors } from '../../theme/ThemeProvider.js';
+import { usePanelWidth } from '../../utils/useTerminalWidth.js';
 
 export interface PromptInputHelpMenuProps {
   items: SlashCommand[];
@@ -12,6 +13,12 @@ const MAX_VISIBLE = 8;
 
 export const PromptInputHelpMenu: React.FC<PromptInputHelpMenuProps> = ({ items, selectedIndex }) => {
   const colors = useColors();
+  const width = usePanelWidth();
+  const labelWidth = Math.max(10, Math.min(20, Math.floor(width * 0.28)));
+  const descWidth = Math.max(10, width - labelWidth - 7);
+  const footer = width >= 70
+    ? `${selectedIndex + 1}/${items.length} · ↑↓ choose · enter run · tab fill`
+    : `${selectedIndex + 1}/${items.length} · enter/tab`;
   if (items.length === 0) {
     return (
       <Box paddingX={1}>
@@ -36,19 +43,21 @@ export const PromptInputHelpMenu: React.FC<PromptInputHelpMenuProps> = ({ items,
         return (
           <Box key={c.name}>
             <Text color={selected ? colors.primary : colors.border}>{arrow} </Text>
-            <Box width={18}>
+            <Box width={labelWidth}>
               <Text color={selected ? colors.primary : colors.text} bold={selected}>
                 /{c.name}
               </Text>
             </Box>
-            <Text color={selected ? colors.text : colors.muted}>{c.description}</Text>
+            <Box width={descWidth}>
+              <Text color={selected ? colors.text : colors.muted} wrap="truncate-end">
+                {c.description}
+              </Text>
+            </Box>
           </Box>
         );
       })}
       {items.length > MAX_VISIBLE ? (
-        <Text color={colors.muted}>
-          {selectedIndex + 1}/{items.length} · ↑↓ to choose · enter / tab to insert
-        </Text>
+        <Text color={colors.muted}>{footer}</Text>
       ) : null}
     </Box>
   );

@@ -76,12 +76,23 @@ describe('handleSlash', () => {
     expect(ctx.pushSystem).toHaveBeenCalledWith(expect.stringContaining('Usage'));
   });
 
-  it('/attach without conversation says so', () => {
-    const ctx = makeCtx({ currentConversation: undefined });
+  it('/attach without conversation sends lazy attach_session', () => {
+    const send = vi.fn();
+    const ctx = makeCtx({
+      client: { send } as never,
+      currentConversation: undefined,
+    });
     handleSlash('/attach wechat default wxid_alice', ctx);
-    expect(ctx.pushSystem).toHaveBeenCalledWith(
-      expect.stringContaining('No current conversation'),
-    );
+    expect(send).toHaveBeenCalledWith({
+      action: 'attach_session',
+      channel: 'wechat',
+      account_id: 'default',
+      peer: 'wxid_alice',
+      session_id: '',
+      peer_kind: 'direct',
+      peer_id: 'wxid_alice',
+    });
+    expect(ctx.pushSystem).toHaveBeenCalledWith(expect.stringContaining('materialize'));
   });
 
   it('/attach with conv sends attach_session', () => {
@@ -96,7 +107,9 @@ describe('handleSlash', () => {
       channel: 'wechat',
       account_id: 'default',
       peer: 'wxid_alice',
-      conversation_id: 'local_abc',
+      session_id: 'local_abc',
+      peer_kind: 'direct',
+      peer_id: 'wxid_alice',
     });
   });
 

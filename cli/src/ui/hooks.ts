@@ -1,7 +1,7 @@
 /**
  * Shared hooks for the OpenProgram TUI Kit.
  *
- *   useTerminalSize()   re-exported from vendored ink — every component
+ *   useTerminalSize()   re-exported from the local runtime — every component
  *                       that cares about resize should use this, NOT
  *                       process.stdout subscriptions (race against ink
  *                       internal layout). Throws when called outside of
@@ -17,7 +17,7 @@
  *   useResponsive(map)  pick a value by breakpoint. Saves the
  *                       per-render switch inside components.
  */
-import { useTerminalSize as inkUseTerminalSize, type TerminalSize } from '@openprogram/ink';
+import { useTerminalSize as inkUseTerminalSize, type TerminalSize } from '../runtime/index';
 
 export type { TerminalSize };
 

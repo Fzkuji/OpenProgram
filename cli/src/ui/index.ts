@@ -1,17 +1,17 @@
 /**
  * OpenProgram TUI Kit — opinionated component library on top of
- * vendored ink.
+ * the local runtime.
  *
  * Layers:
- *   Layer 0  vendored ink (DOM): Box, Text, ScrollBox, AlternateScreen,
- *            useInput, etc. — exported from '@openprogram/ink'.
+ *   Layer 0  runtime DOM: Box, Text, ScrollBox, AlternateScreen,
+ *            useInput, etc. — exported from '../runtime/index'.
  *   Layer 1  this kit: app-shell, layout, modal, form, feedback. Use
  *            these in screens; do NOT mix with raw ink primitives in
  *            new code (existing screens migrate gradually).
  *   Layer 2  screens (REPL, demo): consume layer 1.
  *
- * Phase 1 surface: enough to migrate REPL off main-buffer flow and
- * fix the resize bugs. Subsequent phases add Modal, Form, Toast.
+ * Shell + ScrollView provide the persistent full-screen chat layout.
+ * Modal, Form, Toast, and layout helpers cover the remaining screen UI.
  */
 
 export { Shell } from './Shell.js';
@@ -74,7 +74,3 @@ export {
   useResponsive,
 } from './hooks.js';
 export type { TerminalSize, Breakpoint, ResponsiveValue } from './hooks.js';
-
-// Re-export the vendored-ink scrollback writer through the kit so
-// screen code never has to reach into the vendored package directly.
-export { useScrollbackWriter } from '@openprogram/ink';

@@ -289,21 +289,16 @@ def _qr_login() -> dict[str, str] | None:
 
 
 def _qr_to_ascii(payload: str) -> Optional[str]:
-    """Render ``payload`` as a compact half-block QR string.
+    """Render ``payload`` as an ASCII QR code returned as a string.
     Returns None when the ``qrcode`` library isn't installed.
 
-    Each terminal row encodes TWO QR rows via the ▀ ▄ █ glyphs:
-        ▀ = top dark, bottom light
-        ▄ = top light, bottom dark
-        █ = both dark
-        ' ' = both light
-    This halves the height vs ``print_ascii(invert=True)`` (one
-    line per QR row), which matters in TUI layouts where the QR
-    picker shouldn't push the input bar off-screen on common
-    terminal heights (~25-30 rows).
+    Used by the TUI / web frontend QR-login flows so they can paste
+    the rendered code into the transcript instead of relying on the
+    server's stdout. Same parameters as ``_print_qr_terminal``.
     """
     try:
         import qrcode
+        from io import StringIO
     except ImportError:
         return None
     qr = qrcode.QRCode(
@@ -314,29 +309,9 @@ def _qr_to_ascii(payload: str) -> Optional[str]:
     )
     qr.add_data(payload)
     qr.make(fit=True)
-    matrix = qr.get_matrix()    # bool[][]
-    # Pad to even row count so the half-block pairing is clean.
-    if len(matrix) % 2:
-        matrix.append([False] * len(matrix[0]))
-
-    out_rows: list[str] = []
-    for i in range(0, len(matrix), 2):
-        top = matrix[i]
-        bot = matrix[i + 1]
-        chars = []
-        for x in range(len(top)):
-            t = top[x]
-            b = bot[x]
-            if t and b:
-                chars.append("█")
-            elif t:
-                chars.append("▀")
-            elif b:
-                chars.append("▄")
-            else:
-                chars.append(" ")
-        out_rows.append("".join(chars))
-    return "\n".join(out_rows)
+    buf = StringIO()
+    qr.print_ascii(out=buf, invert=True)
+    return buf.getvalue()
 
 
 def login_account_event_driven(

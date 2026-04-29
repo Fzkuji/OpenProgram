@@ -27,7 +27,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Box, Text } from '@openprogram/ink';
+import { Box, Text } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
 import type { AlertVariant } from './Alert.js';
 

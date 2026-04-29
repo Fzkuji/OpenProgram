@@ -160,7 +160,7 @@ class CodexRuntime(Runtime):
             pass
 
         # Fallback — codex-spark models are included in ChatGPT subscriptions
-        return ["gpt-5.5", "gpt-5.5-mini", "gpt-5.5-codex",
+        return ["gpt-5.5", "gpt-5.5-mini", "gpt-5.5-pro", "gpt-5.5-codex",
                 "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"]
 
     def _call(self, content: list[dict], model: str = None, response_format: dict = None) -> str:

@@ -24,6 +24,8 @@ THINKING_CONFIGS = {
     "claude-code": {
         "label": "effort",
         "options": [
+            {"value": "off", "desc": "No extra reasoning"},
+            {"value": "minimal", "desc": "Minimal reasoning"},
             {"value": "low", "desc": "Quick responses"},
             {"value": "medium", "desc": "Balanced"},
             {"value": "high", "desc": "Deep reasoning"},
@@ -36,7 +38,8 @@ THINKING_CONFIGS = {
     "openai-codex": {
         "label": "reasoning effort",
         "options": [
-            {"value": "none", "desc": "No reasoning"},
+            {"value": "off", "desc": "No reasoning"},
+            {"value": "minimal", "desc": "Minimal reasoning"},
             {"value": "low", "desc": "Quick reasoning"},
             {"value": "medium", "desc": "Balanced"},
             {"value": "high", "desc": "Deep reasoning"},
@@ -48,6 +51,7 @@ THINKING_CONFIGS = {
         "label": "thinking",
         "options": [
             {"value": "off", "desc": "No extended thinking"},
+            {"value": "minimal", "desc": "Minimal thinking"},
             {"value": "low", "desc": "Brief thinking"},
             {"value": "medium", "desc": "Balanced"},
             {"value": "high", "desc": "Extended thinking"},
@@ -57,6 +61,8 @@ THINKING_CONFIGS = {
     "openai": {
         "label": "reasoning effort",
         "options": [
+            {"value": "off", "desc": "No reasoning"},
+            {"value": "minimal", "desc": "Minimal reasoning"},
             {"value": "low", "desc": "Quick reasoning"},
             {"value": "medium", "desc": "Balanced"},
             {"value": "high", "desc": "Deep reasoning"},
@@ -68,6 +74,7 @@ THINKING_CONFIGS = {
         "label": "thinking",
         "options": [
             {"value": "off", "desc": "No thinking"},
+            {"value": "minimal", "desc": "Minimal thinking"},
             {"value": "low", "desc": "Brief thinking"},
             {"value": "medium", "desc": "Balanced"},
             {"value": "high", "desc": "Extended thinking"},
@@ -112,7 +119,7 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
     """Prefer the model's own ``thinking_levels`` if declared, else fall
     back to the provider's static config. Lets different models under
     the same provider expose different pickers (gpt-4o hides the menu,
-    gpt-5 shows low/medium/high, Codex Max adds xhigh).
+    gpt-5 shows minimal/low/medium/high, Codex Max adds xhigh).
     """
     from openprogram.providers import get_model
     if model_id:
@@ -120,9 +127,10 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
         if model is not None and getattr(model, "thinking_levels", None):
             levels = list(model.thinking_levels)
             label = get_thinking_config(provider).get("label", "thinking")
+            values = ["off", *levels]
             return {
                 "label": label,
-                "options": [{"value": v, "desc": _LEVEL_DESC.get(v, v)} for v in levels],
+                "options": [{"value": v, "desc": _LEVEL_DESC.get(v, "No reasoning" if v == "off" else v)} for v in values],
                 "default": model.default_thinking_level or levels[len(levels) // 2],
                 "variant": model.thinking_variant,
             }
@@ -157,7 +165,7 @@ def apply_thinking_effort(runtime, effort: str) -> None:
     """Push a normalized effort onto a live runtime.
 
     API-backed runtimes share the unified ``runtime.thinking_level``
-    attribute (pi-ai ThinkingLevel: off/low/medium/high/xhigh), which
+    attribute (pi-ai ThinkingLevel: off/minimal/low/medium/high/xhigh), which
     flows into the provider's SimpleStreamOptions.reasoning — same
     abstraction opencode / pi-ai use. CLI subprocess runtimes still
     need provider-specific plumbing because their knobs are

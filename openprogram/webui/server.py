@@ -289,6 +289,10 @@ def _save_conversation(conv_id: str):
             "account_id": conv.get("account_id"),
             "peer": conv.get("peer"),
             "peer_display": conv.get("peer_display"),
+            "tools_enabled": conv.get("tools_enabled"),
+            "tools_override": conv.get("tools_override"),
+            "thinking_effort": conv.get("thinking_effort"),
+            "permission_mode": conv.get("permission_mode"),
         }
         messages = list(conv.get("messages", []))
     try:
@@ -647,19 +651,36 @@ def _get_or_create_conversation(conv_id: str = None,
                 _hydrated_head = _sess.get("head_id") if _sess else None
             except Exception:
                 _hydrated = []
+                _sess = None
                 _hydrated_head = None
+            resolved_agent = (
+                agent_id
+                or ((_sess or {}).get("agent_id") if isinstance(_sess, dict) else None)
+                or resolved_agent
+            )
             _conversations[conv_id] = {
                 "id": conv_id,
                 "agent_id": resolved_agent,
-                "title": "New conversation",
+                "title": ((_sess or {}).get("title") if isinstance(_sess, dict) else None)
+                         or "New conversation",
                 "root_context": Context(name="chat_session", status="idle", start_time=time.time()),
                 "runtime": None,          # created lazily on first message
-                "provider_name": None,
+                "provider_name": ((_sess or {}).get("provider_name") if isinstance(_sess, dict) else None),
                 "messages": _hydrated,
                 "function_trees": [],
-                "created_at": time.time(),
+                "created_at": ((_sess or {}).get("created_at") if isinstance(_sess, dict) else None)
+                              or time.time(),
                 "head_id": _hydrated_head,
                 "run_active": False,
+                "source": ((_sess or {}).get("source") if isinstance(_sess, dict) else None),
+                "channel": ((_sess or {}).get("channel") if isinstance(_sess, dict) else None),
+                "account_id": ((_sess or {}).get("account_id") if isinstance(_sess, dict) else None),
+                "peer": ((_sess or {}).get("peer") if isinstance(_sess, dict) else None),
+                "peer_display": ((_sess or {}).get("peer_display") if isinstance(_sess, dict) else None),
+                "tools_enabled": ((_sess or {}).get("tools_enabled") if isinstance(_sess, dict) else None),
+                "tools_override": ((_sess or {}).get("tools_override") if isinstance(_sess, dict) else None),
+                "thinking_effort": ((_sess or {}).get("thinking_effort") if isinstance(_sess, dict) else None),
+                "permission_mode": ((_sess or {}).get("permission_mode") if isinstance(_sess, dict) else None),
             }
         return _conversations[conv_id]
 
@@ -739,7 +760,7 @@ from ._thinking import (  # noqa: E402
 def _execute_in_context(conv_id: str, msg_id: str, action: str,
                         func_name: str = None, kwargs: dict = None, query: str = None,
                         thinking_effort: str = None, exec_thinking_effort: str = None,
-                        tools_flag=None):
+                        tools_flag=None, permission_mode: str = None):
     """Execute a chat query or function call within the conversation's Context tree.
 
     This is the core execution engine. Everything runs under the conversation's
@@ -753,14 +774,33 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
         # the conv dict.
         _agent_id = conv.get("agent_id") or _default_agent_id()
         runtime = _get_conv_runtime(conv_id, msg_id=msg_id)
+        from openprogram.agent.session_config import (
+            load_session_run_config,
+            permission_from_config,
+            save_session_run_config,
+            tools_override_from_config,
+        )
+        if tools_flag is not None or thinking_effort is not None \
+                or permission_mode is not None:
+            run_cfg = save_session_run_config(
+                conv_id,
+                agent_id=_agent_id,
+                tools=tools_flag,
+                thinking_effort=thinking_effort,
+                permission_mode=permission_mode,
+            )
+        else:
+            run_cfg = load_session_run_config(conv_id)
+        effective_thinking = run_cfg.thinking_effort
+        effective_permission = permission_from_config(run_cfg, default="bypass")
 
         # Apply thinking effort to chat runtime
-        _apply_thinking_effort(runtime, thinking_effort)
+        _apply_thinking_effort(runtime, effective_thinking)
 
         try:
             if action == "query":
                 # Direct chat — include conversation history for context
-                _log(f"[exec] query: {query[:80]}... (thinking={thinking_effort})")
+                _log(f"[exec] query: {query[:80]}... (thinking={effective_thinking})")
                 with _running_tasks_lock:
                     _running_tasks[conv_id] = {
                         "msg_id": msg_id,
@@ -828,18 +868,9 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     chat_content.append({"type": "text", "text": context_text})
                 chat_content.append({"type": "text", "text": query})
 
-                # Resolve opt-in tools — pass names through, dispatcher
-                # picks AgentTools from the unified registry.
-                resolved_tools_override = None
-                if tools_flag:
-                    if isinstance(tools_flag, list):
-                        resolved_tools_override = list(tools_flag)
-                    else:
-                        try:
-                            from openprogram.tools import DEFAULT_TOOLS
-                            resolved_tools_override = list(DEFAULT_TOOLS)
-                        except Exception as e:
-                            _log(f"[exec] tools load failed: {e}; continuing without tools")
+                # Resolve tools from the session-level setting. When
+                # unset, dispatcher falls back to the agent profile.
+                resolved_tools_override = tools_override_from_config(run_cfg)
 
                 # Hand the turn to the unified dispatcher. The user
                 # message is already persisted by the WS handler that
@@ -897,9 +928,9 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     user_text=query,
                     agent_id=_agent_id,
                     source="web",
-                    permission_mode="bypass",
+                    permission_mode=effective_permission,
                     tools_override=resolved_tools_override,
-                    thinking_effort=thinking_effort,
+                    thinking_effort=effective_thinking,
                     user_msg_id=msg_id,
                     user_already_persisted=True,
                 )
@@ -2024,11 +2055,24 @@ async def _handle_ws_command(ws, cmd: dict):
         thinking_effort = cmd.get("thinking_effort") or None
         exec_thinking_effort = cmd.get("exec_thinking_effort") or None
         tools_flag = cmd.get("tools")
+        permission_mode = cmd.get("permission_mode") or None
         if not text:
             return
 
         conv = _get_or_create_conversation(conv_id, agent_id=agent_id)
         conv_id = conv["id"]
+        from openprogram.agent.session_config import save_session_run_config
+        run_cfg = save_session_run_config(
+            conv_id,
+            agent_id=conv.get("agent_id") or _default_agent_id(),
+            tools=tools_flag,
+            thinking_effort=thinking_effort,
+            permission_mode=permission_mode,
+        )
+        conv["tools_enabled"] = run_cfg.tools_enabled
+        conv["tools_override"] = run_cfg.tools_override
+        conv["thinking_effort"] = run_cfg.thinking_effort
+        conv["permission_mode"] = run_cfg.permission_mode
         msg_id = str(uuid.uuid4())[:8]
 
         # Update title from first message
@@ -2061,14 +2105,14 @@ async def _handle_ws_command(ws, cmd: dict):
             threading.Thread(
                 target=_execute_in_context,
                 args=(conv_id, msg_id, "run"),
-                kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"], "thinking_effort": thinking_effort, "exec_thinking_effort": exec_thinking_effort},
+                kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"], "thinking_effort": run_cfg.thinking_effort, "exec_thinking_effort": exec_thinking_effort, "permission_mode": run_cfg.permission_mode},
                 daemon=True,
             ).start()
         elif parsed["action"] == "query":
             threading.Thread(
                 target=_execute_in_context,
                 args=(conv_id, msg_id, "query"),
-                kwargs={"query": parsed["raw"], "thinking_effort": thinking_effort, "tools_flag": tools_flag},
+                kwargs={"query": parsed["raw"], "thinking_effort": run_cfg.thinking_effort, "tools_flag": tools_flag, "permission_mode": run_cfg.permission_mode},
                 daemon=True,
             ).start()
 
@@ -2346,6 +2390,8 @@ async def _handle_ws_command(ws, cmd: dict):
                     "preview": preview,
                     "created_at": m.get("created_at"),
                 })
+            from openprogram.agent.session_config import load_session_run_config
+            run_cfg = load_session_run_config(conv["id"])
             await ws.send_text(json.dumps({
                 "type": "conversation_loaded",
                 "data": {
@@ -2358,6 +2404,12 @@ async def _handle_ws_command(ws, cmd: dict):
                     "function_trees": conv.get("function_trees", []),
                     "provider_info": _get_provider_info(conv_id),
                     "context_stats": conv.get("_last_context_stats"),
+                    "settings": {
+                        "tools_enabled": run_cfg.tools_enabled,
+                        "tools_override": run_cfg.tools_override,
+                        "thinking_effort": run_cfg.thinking_effort,
+                        "permission_mode": run_cfg.permission_mode,
+                    },
                     # run_active drives UI gating for Edit / Retry
                     # buttons. Derived from the real source of truth
                     # (_running_tasks) so it can't drift out of sync.
@@ -2399,6 +2451,7 @@ async def _handle_ws_command(ws, cmd: dict):
                     "title": "New conversation",
                     "context_tree": {},
                     "provider_info": _get_provider_info(),
+                    "settings": {},
                 },
             }, default=str))
 
@@ -2449,6 +2502,7 @@ async def _handle_ws_command(ws, cmd: dict):
                     "message_id": h.get("id"),
                     "role": h.get("role"),
                     "preview": preview,
+                    "content": content,
                     "timestamp": h.get("timestamp"),
                 })
             await ws.send_text(json.dumps({

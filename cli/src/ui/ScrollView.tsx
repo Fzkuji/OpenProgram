@@ -1,7 +1,7 @@
 /**
  * <ScrollView> — application-side scroll container.
  *
- * Thin wrapper over vendored ink's <ScrollBox> that:
+ * Thin wrapper over the local runtime's <ScrollBox> that:
  *
  *   - defaults to ``flexGrow=1, flexShrink=1, flexDirection="column"``
  *     so it fills available height inside <Shell> automatically
@@ -30,7 +30,7 @@ import {
   ScrollBox,
   type ScrollBoxHandle,
   useInput,
-} from '@openprogram/ink';
+} from '../runtime/index';
 
 export interface ScrollViewProps {
   children: ReactNode;
@@ -60,6 +60,14 @@ export const ScrollView: React.FC<ScrollViewProps> = ({
     const s = ref.current;
     if (!s) return;
     const vh = s.getViewportHeight();
+    if (key.wheelUp) {
+      s.scrollBy(-3);
+      return;
+    }
+    if (key.wheelDown) {
+      s.scrollBy(3);
+      return;
+    }
     if (key.pageUp) {
       s.scrollBy(-Math.max(1, vh - 2));
       return;

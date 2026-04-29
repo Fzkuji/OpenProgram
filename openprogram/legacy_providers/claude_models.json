@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "last_updated": "2026-04-20T12:12:26Z",
+  "last_updated": "2026-04-28T19:10:06Z",
   "source": "refresh",
-  "note": "Claude Code CLI subscription-mode registry. 三个家族（由弱到强）：haiku < sonnet < opus，都必须在列表里。显示顺序：最强在前 opus → sonnet → haiku；家族内新版在前、[1m] 在 200K 前。默认 = Sonnet 4.6（中间档、实际可跑）。每家族保留最新代 + 上一代；更旧版本已移除。",
+  "note": "Claude Code CLI subscription-mode registry. 三个家族（由弱到强）：haiku < sonnet < opus，都必须在列表里。显示顺序：最强在前 opus → sonnet → haiku；家族内新版在前、[1m] 在 200K 前。默认 = Sonnet 4.6（中间档、实际可跑）。每个家族保留最新代 + 上一代；更旧版本已移除。",
   "models": [
     {
       "id": "claude-opus-4-7[1m]",
@@ -19,7 +19,7 @@
       "display": "Claude Opus 4.7",
       "family": "opus",
       "generation": "4.7",
-      "context_window": 200000,
+      "context_window": 1000000,
       "max_output": 64000,
       "requires_extra_usage": false,
       "recommended": true

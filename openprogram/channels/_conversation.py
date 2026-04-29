@@ -99,12 +99,17 @@ def dispatch_inbound(
         peer=peer,
         user_display=user_display or str(peer_id),
     )
+    from openprogram.agent.session_config import (
+        load_session_run_config,
+        permission_from_config,
+        tools_override_from_config,
+    )
+    run_cfg = load_session_run_config(session_key)
 
     # Hand the rest of the turn — agent run, message append, FTS
-    # indexing — to the unified dispatcher. Channels run headless,
-    # so we use ``permission_mode="auto"`` and rely on per-tool
-    # ``unsafe_in=[channel]`` flags to hide risky tools (bash, etc.)
-    # from this transport.
+    # indexing — to the unified dispatcher. Channel turns reuse the
+    # bound session's run settings; source filtering still hides tools
+    # marked unsafe for this transport.
     from openprogram.agent.dispatcher import (
         TurnRequest,
         process_user_turn,
@@ -135,7 +140,9 @@ def dispatch_inbound(
         source=channel,
         peer_display=user_display or str(peer_id),
         peer_id=str(peer_id),
-        permission_mode="auto",
+        permission_mode=permission_from_config(run_cfg, default="auto"),
+        tools_override=tools_override_from_config(run_cfg),
+        thinking_effort=run_cfg.thinking_effort,
     )
     try:
         result = process_user_turn(req, on_event=_on_event)

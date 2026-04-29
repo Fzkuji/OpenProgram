@@ -13,8 +13,8 @@ Only list models whose capability deviates from the defaults applied by
 `apply_thinking_catalog()`:
 
   * reasoning=False         → no thinking menu
-  * reasoning=True, xhigh   → ["low","medium","high","xhigh"], default "medium"
-  * reasoning=True, other   → ["low","medium","high"], default "medium"
+  * reasoning=True, xhigh   → ["minimal","low","medium","high","xhigh"], default "xhigh"
+  * reasoning=True, other   → ["minimal","low","medium","high"], default "medium"
 
 Key format matches `MODELS` keys: "{provider}/{model_id}".
 """
@@ -51,13 +51,15 @@ def derive_thinking_fields(
 
     if levels is None and reasoning:
         if supports_xhigh:
-            levels = ["low", "medium", "high", "xhigh"]
+            levels = ["minimal", "low", "medium", "high", "xhigh"]
         else:
-            levels = ["low", "medium", "high"]
+            levels = ["minimal", "low", "medium", "high"]
     if levels is None:
         levels = []
     if default is None and levels:
-        default = "medium" if "medium" in levels else levels[len(levels) // 2]
+        default = "xhigh" if "xhigh" in levels else (
+            "medium" if "medium" in levels else levels[len(levels) // 2]
+        )
     return levels, default, variant
 
 

@@ -190,6 +190,69 @@ def _patched_run_loop(stream_fn):
     return _wrap
 
 
+def test_resolve_tools_filters_channel_unsafe_tools(fresh_registry) -> None:
+    @tool(name="safeprobe", description="Safe")
+    def safeprobe() -> str:
+        """Safe probe."""
+        return "ok"
+
+    @tool(name="unsafeprobe", description="Unsafe", unsafe_in=["wechat"])
+    def unsafeprobe() -> str:
+        """Unsafe probe."""
+        return "no"
+
+    names = [
+        t.name for t in D._resolve_tools(
+            {"tools": ["safeprobe", "unsafeprobe"]},
+            source="wechat",
+        ) or []
+    ]
+
+    assert names == ["safeprobe"]
+
+
+def test_resolve_default_agent_tools_from_profile_dict(
+    fresh_registry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import openprogram.tools as tools_pkg
+
+    @tool(name="safeprobe", description="Safe")
+    def safeprobe() -> str:
+        """Safe probe."""
+        return "ok"
+
+    @tool(name="unsafeprobe", description="Unsafe", unsafe_in=["wechat"])
+    def unsafeprobe() -> str:
+        """Unsafe probe."""
+        return "no"
+
+    monkeypatch.setattr(tools_pkg, "DEFAULT_TOOLS", ["safeprobe", "unsafeprobe"])
+
+    names = [
+        t.name for t in D._resolve_tools(
+            {"tools": {"disabled": []}},
+            source="wechat",
+        ) or []
+    ]
+
+    assert names == ["safeprobe"]
+
+
+def test_tool_runtime_prompt_mentions_available_tools() -> None:
+    class T:
+        def __init__(self, name: str):
+            self.name = name
+
+    prompt = D._with_tool_runtime_prompt("Base prompt.", [T("read"), T("list")])
+
+    assert "Base prompt." in prompt
+    assert "Available tools for this turn: read, list" in prompt
+    assert "Current working directory:" in prompt
+    assert "call the list tool with that absolute path" in prompt
+    assert "instead of saying no tools are available" in prompt
+
+
 # ---------------------------------------------------------------------------
 # Test 1: tool_use → tool gets executed, tool_result envelope emitted
 # ---------------------------------------------------------------------------

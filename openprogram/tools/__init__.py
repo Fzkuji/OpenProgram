@@ -123,10 +123,10 @@ DEFAULT_TOOLS: list[str] = [
 # already declared their own toolset/unsafe_in/persist_full via
 # ``@tool(...)``, so they're absent from this map.
 _LEGACY_TOOL_META: dict[str, dict[str, Any]] = {
-    "apply_patch":        {"toolsets": ["core"]},
+    "apply_patch":        {"toolsets": ["core"], "unsafe_in": ["wechat", "telegram"]},
     "process":            {"toolsets": ["core"], "unsafe_in": ["wechat", "telegram"]},
     "todo_read":          {"toolsets": ["core"]},
-    "todo_write":         {"toolsets": ["core"]},
+    "todo_write":         {"toolsets": ["core"], "unsafe_in": ["wechat", "telegram"]},
     "web_fetch":          {"toolsets": ["core", "research"], "max_result_chars": 30_000, "persist_full": True},
     "web_search":         {"toolsets": ["core", "research"]},
     "image_generate":     {"toolsets": ["core"]},

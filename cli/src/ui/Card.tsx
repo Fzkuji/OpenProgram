@@ -13,7 +13,7 @@
  * frame plus a colored variant + icon prefix.
  */
 import React, { type ReactNode } from 'react';
-import { Box, Text, type Color } from '@openprogram/ink';
+import { Box, Text, type Color } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
 
 export interface CardProps {

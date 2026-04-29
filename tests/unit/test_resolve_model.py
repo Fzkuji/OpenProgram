@@ -11,16 +11,17 @@ regression can't sneak back in.
 from __future__ import annotations
 
 from openprogram.agent.dispatcher import _resolve_model
+from openprogram.providers.models import get_model
 
 
 def test_dict_model_normalizes_to_string() -> None:
-    """Profile model = {"provider": "openai-codex", "id": "gpt-5.4"}
+    """Profile model = {"provider": "openai-codex", "id": "gpt-5.5"}
     must resolve to a real Model, not a dict-id stub."""
     m = _resolve_model({
-        "model": {"provider": "openai-codex", "id": "gpt-5.4"},
+        "model": {"provider": "openai-codex", "id": "gpt-5.5"},
     })
     assert isinstance(m.id, str)
-    assert m.id == "gpt-5.4"
+    assert m.id == "gpt-5.5"
     assert m.provider == "openai-codex"
 
 
@@ -53,3 +54,13 @@ def test_partial_dict_falls_through_safely() -> None:
     m = _resolve_model({"model": {"id": "mystery-model"}})
     assert isinstance(m.id, str)
     assert m.id == "mystery-model"
+
+
+def test_codex_55_exposes_full_thinking_levels() -> None:
+    """Runtime-injected Codex models must keep the full abstract picker set."""
+    import openprogram.providers.openai_codex.runtime  # noqa: F401
+
+    m = get_model("openai-codex", "gpt-5.5")
+    assert m is not None
+    assert m.thinking_levels == ["minimal", "low", "medium", "high", "xhigh"]
+    assert m.default_thinking_level == "xhigh"

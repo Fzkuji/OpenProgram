@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text } from '@openprogram/ink';
+import { Box, Text } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
+import { usePanelWidth } from '../utils/useTerminalWidth.js';
 
 const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -15,6 +16,7 @@ export interface SpinnerProps {
 
 export const Spinner: React.FC<SpinnerProps> = ({ verb, detail, elapsed }) => {
   const colors = useColors();
+  const width = usePanelWidth();
   const [frame, setFrame] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setFrame((f) => (f + 1) % FRAMES.length), 80);
@@ -22,7 +24,7 @@ export const Spinner: React.FC<SpinnerProps> = ({ verb, detail, elapsed }) => {
   }, []);
 
   return (
-    <Box paddingX={1}>
+    <Box paddingX={1} flexShrink={0}>
       <Text color={colors.warning}>{FRAMES[frame]} </Text>
       <Text color={colors.text}>{verb}</Text>
       {typeof elapsed === 'number' ? (
@@ -31,7 +33,9 @@ export const Spinner: React.FC<SpinnerProps> = ({ verb, detail, elapsed }) => {
       {detail ? (
         <>
           <Text color={colors.border}> · </Text>
-          <Text color={colors.muted}>{detail}</Text>
+          <Box width={Math.max(8, width - verb.length - 16)} flexShrink={1}>
+            <Text color={colors.muted} wrap="truncate-end">{detail}</Text>
+          </Box>
         </>
       ) : null}
     </Box>

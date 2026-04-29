@@ -25,7 +25,7 @@ interface ChatViewProps {
   convId: string | null;
 }
 
-const THINKING_OPTIONS = ["low", "medium", "high", "xhigh"] as const;
+const THINKING_OPTIONS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 type Effort = (typeof THINKING_OPTIONS)[number];
 
 export function ChatView({ convId }: ChatViewProps) {

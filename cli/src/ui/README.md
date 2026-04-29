@@ -1,33 +1,32 @@
 # OpenProgram TUI Kit
 
 `cli/src/ui/` — application-side component library for OpenProgram's
-terminal UI. Sits on top of the vendored ink at `cli/vendor/ink/`.
+terminal UI. It sits on top of the local runtime in `cli/src/runtime/`.
 
 ## Why this exists
 
-The vendored ink gives us a real DOM (Box / Text / ScrollBox /
+The local runtime gives us a terminal DOM (Box / Text / ScrollBox /
 AlternateScreen / Yoga flex / mouse + keyboard events). What we lacked
 was the equivalent of "shadcn/ui" — a stable, opinionated set of
 components that screens write against, so the app code reads like
 HTML+JSX and behaves consistently across resize, focus, and modal
 state.
 
-Without this layer, every screen was hand-rolling its own picker
-shape, its own input box, its own resize handling. The bugs from
-that approach pile up: `pickerKind` enum with 11 branches in REPL,
-inconsistent esc semantics, terminal residue on resize.
+Without this layer, each screen had separate picker, input, and resize
+code. That produced inconsistent escape-key behavior, repeated layout
+logic, and resize artifacts.
 
 ## Layers
 
 ```
-Layer 0   cli/vendor/ink/         DOM primitives
+Layer 0   cli/src/runtime/        DOM primitives
 Layer 1   cli/src/ui/             ← this kit
 Layer 2   cli/src/screens/        REPL etc., consumes Layer 1
 ```
 
-Screens **should not** import from `@openprogram/ink` directly for
-new code. Use the kit's components — they wrap ink with the right
-defaults and same-shape APIs across the board.
+Screens should import runtime primitives from `../runtime/index` only
+when they need raw Box/Text/useInput-level APIs. Prefer the kit's
+components for shell, scroll, modal, form, feedback, and layout code.
 
 ## Quick reference
 
@@ -67,16 +66,17 @@ import {
 ### App shell
 
 ```tsx
-<Shell>
+<Shell mode="alt">
   <ScrollView stickyBottom>{transcript}</ScrollView>
   <PromptInput />
   <BottomBar />
 </Shell>
 ```
 
-`<Shell>` wraps `<AlternateScreen>`, applies `width=cols, height=rows`
-on the root, and provides `ModalProvider` + `ToastProvider`. Children
-flex down by default.
+For persistent full-screen screens, use `<Shell mode="alt">`. It wraps
+`<AlternateScreen>`, applies `width=cols, height=rows` on the root, and
+provides `ModalProvider` + `ToastProvider`. Children flex down by
+default.
 
 ### Modal stack (replacing pickerKind switch)
 

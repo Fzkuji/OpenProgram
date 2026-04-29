@@ -75,6 +75,7 @@ def _build_turn_envelope(prompt: str, image_paths: tuple[str, ...]) -> str:
 _EFFORT_MAP: dict[str, str] = {
     "off": "low",
     "none": "low",
+    "minimal": "low",
     "low": "low",
     "medium": "medium",
     "high": "high",

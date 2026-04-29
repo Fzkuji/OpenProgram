@@ -90,8 +90,14 @@ def start_all(*, quiet: bool = False) -> tuple[
 
 def run_all() -> int:
     """Blocking — spin up every viable channel-account thread and
-    wait for Ctrl-C or SIGTERM."""
-    from openprogram.channels.worker import write_pid_file, clear_pid_file
+    wait for Ctrl-C or SIGTERM. Also starts the shared webui WebSocket
+    server in the same process so an attached TUI / web client sees
+    inbound channel messages broadcast in real time (the server's
+    `_broadcast` only reaches clients connected to its own asyncio
+    loop, so channels and webui MUST live in one process)."""
+    from openprogram.channels.worker import (
+        write_pid_file, clear_pid_file, write_port_file, clear_port_file,
+    )
 
     rows = list_status()
     if not rows:
@@ -102,6 +108,20 @@ def run_all() -> int:
     stop, threads, lock = start_all(quiet=False)
     if not threads or stop is None or lock is None:
         return 1
+
+    # Bring up the webui server in this same process so the channel
+    # threads' `_broadcast` calls reach any TUI / web client that
+    # connects. Find a free port and advertise it via a sidecar file
+    # so cli_ink.py can discover us instead of starting a competing
+    # webui.
+    from openprogram.webui import start_web
+    from openprogram.cli_ink import _find_free_port  # reuse helper
+    port = _find_free_port()
+    start_web(port=port, open_browser=False)
+    write_port_file(port)
+    print(f"[channels] webui WS at ws://127.0.0.1:{port}/ws — "
+          f"a `openprogram` TUI started while this worker is running "
+          f"will attach to it automatically.")
 
     write_pid_file()
 
@@ -126,6 +146,7 @@ def run_all() -> int:
     finally:
         lock.release()
         clear_pid_file()
+        clear_port_file()
     return 0
 
 

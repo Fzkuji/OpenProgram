@@ -5,24 +5,19 @@
  *
  *  - ``mode="inline"`` (default) — main-buffer flow. The Shell renders
  *    a small dynamic strip (input + status + any in-flight modals).
- *    Caller is responsible for shoveling already-committed turns to
- *    ``stdout`` via ``console.log`` so the terminal's native
- *    scrollback owns history. This is the layout REPL uses: history
- *    scrolls up naturally, only the bottom strip redraws.
+ *    Use only for screens that intentionally rely on the terminal's
+ *    native scrollback outside the React tree.
  *
  *  - ``mode="alt"`` — alt-screen flow. Wraps in <AlternateScreen> and
  *    pins height to terminal rows so flexbox children can fill the
- *    viewport. Used by ``--demo`` and any future fullscreen views
- *    (browser overlay, transcript modal). Don't use this for the
- *    chat REPL: alt-screen + a growing message list reflows the
- *    whole frame on every turn and squeezes content (the bug that
- *    motivated this refactor).
+ *    viewport. Use for persistent full-screen interfaces such as the
+ *    chat REPL, demo, and future browser/transcript views.
  *
  * Both modes provide ToastProvider + ModalProvider + esc handler so
  * picker / form code is mode-agnostic.
  */
 import React, { type ReactNode } from 'react';
-import { AlternateScreen, Box, useInput, useTerminalSize } from '@openprogram/ink';
+import { AlternateScreen, Box, useInput, useTerminalSize } from '../runtime/index';
 import { ModalProvider, useModal } from './ModalProvider.js';
 import { ToastProvider } from './ToastProvider.js';
 

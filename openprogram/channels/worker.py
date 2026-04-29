@@ -48,6 +48,42 @@ def _state_paths() -> tuple[Path, Path]:
     return root / "channels.pid", root / "channels.log"
 
 
+def _port_file_path() -> Path:
+    """Sidecar advertising the in-process webui port. Read by cli_ink
+    so the TUI attaches to a running channels worker's webui instead
+    of starting a competing one (which would split inbound msgs from
+    outbound clients across two asyncio loops)."""
+    from openprogram.paths import get_state_dir
+    return get_state_dir() / "channels.port"
+
+
+def write_port_file(port: int) -> None:
+    _port_file_path().write_text(f"{port}\n")
+
+
+def clear_port_file() -> None:
+    try:
+        _port_file_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def read_worker_port() -> Optional[int]:
+    """Return the port a live channels-worker's webui is listening on,
+    or None if no live worker / no port file. Verifies the worker is
+    still alive before returning the port to avoid handing out a stale
+    value when the previous worker crashed without cleaning up."""
+    if current_worker_pid() is None:
+        return None
+    p = _port_file_path()
+    if not p.exists():
+        return None
+    try:
+        return int(p.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
 def _read_pid_file() -> Optional[int]:
     pid_file, _ = _state_paths()
     if not pid_file.exists():
@@ -130,7 +166,15 @@ def spawn_detached() -> int:
     _, log_file = _state_paths()
     # Use the same python that's running us so the worker doesn't hit
     # a different environment / virtualenv.
-    cmd = [sys.executable, "-m", "openprogram", "channels", "start"]
+    # --foreground is REQUIRED on the re-exec: without it the child hits
+    # the same dispatch branch and calls spawn_detached again, fork-bombing
+    # the log with "starting (PID …)" lines while runner.run_all() never
+    # actually runs (status stays "not running" forever).
+    # -u: unbuffered stdout/stderr — without this Python block-buffers writes
+    # when stdout is a pipe (our log file), so the worker's startup messages
+    # ("online as…", "webui WS at…") only flush minutes later when the
+    # buffer fills or the process exits, making `channels status` look stuck.
+    cmd = [sys.executable, "-u", "-m", "openprogram", "channels", "start", "--foreground"]
     log = open(log_file, "a", buffering=1)  # line-buffered
     log.write(f"\n--- worker starting at {time.ctime()} ---\n")
     log.flush()

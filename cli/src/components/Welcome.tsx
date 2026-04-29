@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from '@openprogram/ink';
+import { Box, Text } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
 import { useTerminalWidth, usePanelWidth, useTerminalHeight } from '../utils/useTerminalWidth.js';
 
@@ -30,6 +30,8 @@ export interface WelcomeStats {
 
 export interface WelcomeProps {
   stats?: WelcomeStats;
+  /** Expand the panel to consume the opening screen's available space. */
+  fillAvailable?: boolean;
 }
 
 const fmt = (n?: number): string => (typeof n === 'number' ? String(n) : '—');
@@ -97,7 +99,7 @@ const Column: React.FC<{
   );
 };
 
-export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
+export const Welcome: React.FC<WelcomeProps> = ({ stats, fillAvailable = false }) => {
   const colors = useColors();
   const cols = useTerminalWidth();
   const rows = useTerminalHeight();
@@ -187,29 +189,25 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
   const row2 = [providers, channels, functions, applications];
   const rowAll = [...row1, ...row2];
 
-  // Three display modes by available height. Budget breakdown:
-  //   outside reserved (input box 3 + bottom bar 1 + welcome marginBottom 1
-  //   + safety 1) = 6 rows
-  //   welcome chrome (border × 2 + title + 3 marginTop + tip) = 7 rows
-  //   one-row variant chrome = 6 rows
-  // Tile rows:
-  //   compact   = 2 (count + label)
-  //   with items, worst case = maxRows + 3 (count + label + items + overflow)
-  //
-  // Mode thresholds:
-  //   rows >= 21  → two rows of tiles, items per tile = (rows - 19) / 2
-  //   rows >= 17  → two rows compact (no items, just count + label)
-  //   rows >= 14  → one row of tiles (drop row2), compact
-  //   else        → skip welcome entirely
+  // Opening screen mode uses the vertical space that is otherwise empty
+  // between Welcome and the bottom input. Once turns exist, Welcome goes
+  // back to its natural compact height so the transcript gets the space.
+  const targetPanelHeight = fillAvailable ? Math.max(0, rows - 5) : 0;
+  const layoutRows = fillAvailable ? targetPanelHeight : rows;
+
+  // Display modes by available height. With two rows of item tiles,
+  // panel height is approximately 2 * itemRows + 11.
   type Mode = 'none' | 'one-row' | 'two-rows-compact' | 'two-rows-items';
   let mode: Mode;
   let itemsPerTile = 0;
-  if (rows >= 21) {
+  if (layoutRows >= 21) {
     mode = 'two-rows-items';
-    itemsPerTile = Math.min(8, Math.max(0, Math.floor((rows - 19) / 2)));
-  } else if (rows >= 17) {
+    itemsPerTile = fillAvailable
+      ? Math.min(24, Math.max(0, Math.floor((layoutRows - 11) / 2)))
+      : Math.min(8, Math.max(0, Math.floor((layoutRows - 19) / 2)));
+  } else if (layoutRows >= 17) {
     mode = 'two-rows-compact';
-  } else if (rows >= 14) {
+  } else if (layoutRows >= 14) {
     mode = 'one-row';
   } else {
     mode = 'none';
@@ -251,6 +249,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats }) => {
       paddingX={2}
       paddingY={0}
       marginBottom={1}
+      minHeight={fillAvailable ? targetPanelHeight : undefined}
       width={width}
     >
       {/* Title row — same flexShrink trick as BottomBar so the right

@@ -13,7 +13,7 @@
  * Each section has a short label so the screen reads like a catalogue.
  */
 import React, { useState } from 'react';
-import { Box, Text, useApp, useInput } from '@openprogram/ink';
+import { Box, Text, useApp, useInput } from '../runtime/index';
 import {
   Shell, ScrollView,
   ModalHost, useModal,

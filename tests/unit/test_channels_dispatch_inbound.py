@@ -220,3 +220,52 @@ def test_dispatch_inbound_replay_continues_session(
     ]
     assert msgs[0]["content"] == "one"
     assert msgs[2]["content"] == "two"
+
+
+def test_dispatch_inbound_uses_bound_session_run_config(
+    tmp_db: SessionDB, stub_routing, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_db.create_session(
+        "local_bound",
+        "main",
+        title="Bound session",
+        tools_enabled=False,
+        thinking_effort="high",
+        permission_mode="bypass",
+    )
+    monkeypatch.setattr(
+        "openprogram.agents.session_aliases.lookup",
+        lambda channel, account_id, peer: ("main", "local_bound"),
+    )
+
+    seen: dict[str, object] = {}
+
+    async def _capturing(model, ctx, opts):
+        seen["tools"] = [t.name for t in (ctx.tools or [])]
+        seen["reasoning"] = getattr(opts, "reasoning", None)
+        yield EventStart(partial=_build_partial(""))
+        yield EventDone(reason="stop", message=_build_final("configured"))
+
+    orig_run = D._run_loop_blocking
+
+    def _wrapped(*, req, history, on_event, cancel_event, **_):
+        seen["permission_mode"] = req.permission_mode
+        return orig_run(req=req, history=history, on_event=on_event,
+                        cancel_event=cancel_event, stream_fn=_capturing)
+
+    with patch.object(D, "_run_loop_blocking", _wrapped):
+        reply = C.dispatch_inbound(
+            channel="wechat",
+            account_id="acct1",
+            peer_kind="direct",
+            peer_id="alice",
+            user_text="hi",
+            user_display="Alice",
+        )
+
+    assert reply == "configured"
+    assert seen["tools"] == []
+    assert seen["reasoning"] == "high"
+    assert seen["permission_mode"] == "bypass"
+    msgs = tmp_db.get_messages("local_bound")
+    assert [m["role"] for m in msgs] == ["user", "assistant"]
