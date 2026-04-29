@@ -74,7 +74,6 @@ export interface PickerCtx {
   setContextSearchQuery: React.Dispatch<React.SetStateAction<string>>;
   setSearchResults: React.Dispatch<React.SetStateAction<SearchResultRow[]>>;
   setPromptDraft: React.Dispatch<React.SetStateAction<string | undefined>>;
-  resetScrollbackCursor: () => void;
 
   sessionAliasesRef: React.MutableRefObject<SessionAliasRow[]>;
 }
@@ -91,7 +90,6 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     setChosenChannel, setChosenAccount, setConversationId, setAgent,
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft,
-    resetScrollbackCursor,
     sessionAliasesRef,
   } = ctx;
 
@@ -258,7 +256,6 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
         onSelect={(it) => {
           client.send({ action: 'load_conversation', conv_id: it.value });
           setConversationId(it.value);
-          resetScrollbackCursor();
           setCommitted([]);
           setStreaming(null);
           setPickerKind(null);
