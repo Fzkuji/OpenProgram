@@ -11,10 +11,8 @@ describe('REPL layout contract', () => {
     expect(source).toContain('<TranscriptViewport');
     expect(source).toContain('scrollRef={transcriptScrollRef}');
     expect(source).toContain('<Messages');
-    expect(source).toContain('const hasTranscript = committed.length > 0 || streaming !== null;');
-    expect(source).toContain('<Welcome stats={welcomeStats} fillAvailable={!hasTranscript} />');
-    expect(source).not.toContain('welcome={');
-    expect(source).not.toContain('fillWelcome');
+    expect(source).toContain('welcome={pickerNode ? undefined : (stats ?? undefined)}');
+    expect(source).toContain('fillWelcome={committed.length === 0 && !streaming && !pickerNode}');
     expect(source).not.toContain('onTranscriptScroll');
   });
 
@@ -40,13 +38,13 @@ describe('REPL layout contract', () => {
     expect(source).not.toContain('TranscriptScrollAction');
   });
 
-  it('owns transcript scroll controls and an app scrollbar in one component', () => {
+  it('owns transcript scroll controls without drawing an app scrollbar', () => {
     const source = read('src/components/TranscriptViewport.tsx');
 
     expect(source).toContain('ScrollBox');
-    expect(source).toContain('TranscriptScrollbar');
     expect(source).toContain("prependListener('input'");
-    expect(source).toContain('position="absolute"');
     expect(source).toContain('stopImmediatePropagation');
+    expect(source).not.toContain('TranscriptScrollbar');
+    expect(source).not.toContain('computeScrollbarCells');
   });
 });

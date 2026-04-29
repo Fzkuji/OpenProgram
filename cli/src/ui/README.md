@@ -80,9 +80,9 @@ default.
 
 REPL should use `cli/src/components/TranscriptViewport.tsx` for the
 chat transcript. It owns transcript wheel/PageUp/PageDown/Home/End
-handling and the app scrollbar, while `PromptInput` owns only text
-editing, completion, and submit behavior. `ScrollView` remains the
-generic scroll container for screens that do not have a fixed composer.
+handling, while `PromptInput` owns only text editing, completion, and
+submit behavior. `ScrollView` remains the generic scroll container for
+screens that do not have a fixed composer.
 
 ### Modal stack (replacing pickerKind switch)
 

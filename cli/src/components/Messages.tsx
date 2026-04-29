@@ -1,5 +1,6 @@
 import React from 'react';
 import { TurnRow, Turn } from './Turn.js';
+import { Welcome, WelcomeStats } from './Welcome.js';
 
 export interface MessagesProps {
   /**
@@ -11,13 +12,18 @@ export interface MessagesProps {
   committed: Turn[];
   /** Currently-streaming assistant turn, if any. */
   streaming?: Turn | null;
+  /** Optional welcome banner. It scrolls with the transcript. */
+  welcome?: WelcomeStats;
+  /** Use the opening screen height for the Welcome panel. */
+  fillWelcome?: boolean;
 }
 
 export const Messages: React.FC<MessagesProps> = ({
-  committed, streaming,
+  committed, streaming, welcome, fillWelcome = false,
 }) => {
   return (
     <>
+      {welcome ? <Welcome stats={welcome} fillAvailable={fillWelcome} /> : null}
       {committed.map((turn) => <TurnRow key={turn.id} turn={turn} />)}
       {streaming ? <TurnRow turn={streaming} /> : null}
     </>
