@@ -35,7 +35,7 @@ import {
   // App shell — wraps everything
   Shell,
 
-  // Scrolling area, sticky-bottom optional
+  // Generic scrolling area, sticky-bottom optional
   ScrollView,
 
   // Modal stack
@@ -67,7 +67,7 @@ import {
 
 ```tsx
 <Shell mode="alt">
-  <ScrollView stickyBottom>{transcript}</ScrollView>
+  <TranscriptViewport stickyBottom>{transcript}</TranscriptViewport>
   <PromptInput />
   <BottomBar />
 </Shell>
@@ -77,6 +77,12 @@ For persistent full-screen screens, use `<Shell mode="alt">`. It wraps
 `<AlternateScreen>`, applies `width=cols, height=rows` on the root, and
 provides `ModalProvider` + `ToastProvider`. Children flex down by
 default.
+
+REPL should use `cli/src/components/TranscriptViewport.tsx` for the
+chat transcript. It owns transcript wheel/PageUp/PageDown/Home/End
+handling and the app scrollbar, while `PromptInput` owns only text
+editing, completion, and submit behavior. `ScrollView` remains the
+generic scroll container for screens that do not have a fixed composer.
 
 ### Modal stack (replacing pickerKind switch)
 

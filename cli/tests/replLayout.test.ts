@@ -8,9 +8,9 @@ describe('REPL layout contract', () => {
     const source = read('src/screens/REPL.tsx');
 
     expect(source).toContain('<Shell mouseTracking mode="alt">');
-    expect(source).toContain('<ScrollView stickyBottom scrollRef={transcriptScrollRef}>');
+    expect(source).toContain('<TranscriptViewport stickyBottom scrollRef={transcriptScrollRef}>');
     expect(source).toContain('<Messages');
-    expect(source).toContain('onTranscriptScroll={scrollTranscript}');
+    expect(source).not.toContain('onTranscriptScroll');
   });
 
   it('does not write the REPL transcript into terminal scrollback', () => {
@@ -26,5 +26,20 @@ describe('REPL layout contract', () => {
     const source = read('src/index.tsx');
 
     expect(source).toContain("process.stdout.write('\\x1b[2J\\x1b[3J\\x1b[H')");
+  });
+
+  it('keeps transcript scrolling out of PromptInput', () => {
+    const source = read('src/components/PromptInput/PromptInput.tsx');
+
+    expect(source).not.toContain('onTranscriptScroll');
+    expect(source).not.toContain('TranscriptScrollAction');
+  });
+
+  it('owns transcript scroll controls and an app scrollbar in one component', () => {
+    const source = read('src/components/TranscriptViewport.tsx');
+
+    expect(source).toContain('ScrollBox');
+    expect(source).toContain('TranscriptScrollbar');
+    expect(source).toContain('stopImmediatePropagation');
   });
 });

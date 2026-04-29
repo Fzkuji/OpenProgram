@@ -10,7 +10,9 @@
  *            new code (existing screens migrate gradually).
  *   Layer 2  screens (REPL, demo): consume layer 1.
  *
- * Shell + ScrollView provide the persistent full-screen chat layout.
+ * Shell provides the full-screen frame. REPL uses its own
+ * TranscriptViewport because chat transcript scrolling has to stay
+ * separate from PromptInput ownership.
  * Modal, Form, Toast, and layout helpers cover the remaining screen UI.
  */
 

@@ -21,17 +21,7 @@ export interface PromptInputProps {
   onDraftApplied?: () => void;
   /** Open cross-session context search. Receives the current draft. */
   onContextSearch?: (draft: string) => void;
-  /** Scroll the transcript when terminal wheel input arrives as keys. */
-  onTranscriptScroll?: (action: TranscriptScrollAction) => void;
 }
-
-export type TranscriptScrollAction =
-  | 'line-up'
-  | 'line-down'
-  | 'page-up'
-  | 'page-down'
-  | 'top'
-  | 'bottom';
 
 const filterCommands = (filter: string): SlashCommand[] => {
   const needle = filter.replace(/^\//, '').toLowerCase();
@@ -127,7 +117,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   initialDraft,
   onDraftApplied,
   onContextSearch,
-  onTranscriptScroll,
 }) => {
   const colors = useColors();
   const [value, setValue] = useState('');
@@ -197,31 +186,12 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     onSubmit(text);
   };
 
-  const scrollTranscript = (
-    action: TranscriptScrollAction,
-    event: { stopImmediatePropagation: () => void },
-  ) => {
-    if (!onTranscriptScroll) return false;
-    onTranscriptScroll(action);
-    event.stopImmediatePropagation();
-    return true;
-  };
-
-  useInput((input, key, event) => {
+  useInput((input, key) => {
     // While the agent is busy, esc cancels the in-flight turn.
     if (busy) {
       if (key.escape) onCancel?.();
       return;
     }
-
-    if (key.wheelUp && scrollTranscript('line-up', event)) return;
-    if (key.wheelDown && scrollTranscript('line-down', event)) return;
-    if (key.pageUp && scrollTranscript('page-up', event)) return;
-    if (key.pageDown && scrollTranscript('page-down', event)) return;
-    if (key.ctrl && input === 'u' && scrollTranscript('page-up', event)) return;
-    if (key.ctrl && input === 'd' && scrollTranscript('page-down', event)) return;
-    if ((key.home || (key.ctrl && input === 'g')) && scrollTranscript('top', event)) return;
-    if ((key.end || (key.ctrl && input === 'G')) && scrollTranscript('bottom', event)) return;
 
     // Ctrl-R opens saved-context search. The old input-history search
     // remains covered by ↑/↓ recall and autosuggest.
@@ -310,12 +280,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     }
     // History recall: ↑ on an empty/inactive line walks backwards through
     // past submissions, ↓ walks forward toward the live input.
-    if (key.upArrow && value.length === 0 && historyIndex < 0 && scrollTranscript('line-up', event)) {
-      return;
-    }
-    if (key.downArrow && value.length === 0 && historyIndex < 0 && scrollTranscript('line-down', event)) {
-      return;
-    }
     if (key.upArrow && history && history.length > 0) {
       const next = historyIndex < 0 ? history.length - 1 : Math.max(0, historyIndex - 1);
       setHistoryIndex(next);

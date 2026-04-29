@@ -3,12 +3,13 @@ import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { Box, Text, useApp, useInput } from '../runtime/index';
 import type { ScrollBoxHandle } from '../runtime/index';
-import { Shell, ScrollView, ModalHost, ToastHost } from '../ui/index.js';
+import { Shell, ModalHost, ToastHost } from '../ui/index.js';
 import { StatsEnvelope, ConnectionState } from '../ws/client.js';
 import { BottomBar } from '../components/BottomBar.js';
 import { Messages } from '../components/Messages.js';
 import { Spinner } from '../components/Spinner.js';
 import { Turn } from '../components/Turn.js';
+import { TranscriptViewport } from '../components/TranscriptViewport.js';
 import { PromptInput } from '../components/PromptInput/PromptInput.js';
 import { handleSlash } from '../commands/handler.js';
 import { loadHistory, appendHistory } from '../utils/history.js';
@@ -352,33 +353,6 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     pushSystem('Stopped.');
   };
 
-  const scrollTranscript = (
-    action:
-      | 'line-up'
-      | 'line-down'
-      | 'page-up'
-      | 'page-down'
-      | 'top'
-      | 'bottom',
-  ) => {
-    const scroll = transcriptScrollRef.current;
-    if (!scroll) return;
-    const vh = Math.max(1, scroll.getViewportHeight());
-    if (action === 'line-up') {
-      scroll.scrollBy(-3);
-    } else if (action === 'line-down') {
-      scroll.scrollBy(3);
-    } else if (action === 'page-up') {
-      scroll.scrollBy(-Math.max(1, vh - 2));
-    } else if (action === 'page-down') {
-      scroll.scrollBy(Math.max(1, vh - 2));
-    } else if (action === 'top') {
-      scroll.scrollTo(0);
-    } else {
-      scroll.scrollToBottom();
-    }
-  };
-
   const elapsed = activity ? (Date.now() - activity.startedAt) / 1000 : undefined;
   void tick; // depend on tick so elapsed re-renders every second
   const streamRate = (() => {
@@ -413,14 +387,14 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   return (
     <Shell mouseTracking mode="alt">
-      <ScrollView stickyBottom scrollRef={transcriptScrollRef}>
+      <TranscriptViewport stickyBottom scrollRef={transcriptScrollRef}>
         <Messages
           committed={committed}
           streaming={streaming}
           welcome={pickerNode ? undefined : (stats ?? undefined)}
           fillWelcome={committed.length === 0 && !streaming && !pickerNode}
         />
-      </ScrollView>
+      </TranscriptViewport>
       {activity ? (
         <Spinner
           verb={activity.verb}
@@ -457,7 +431,6 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
             setSearchResults([]);
             setPickerKind('context_search');
           }}
-          onTranscriptScroll={scrollTranscript}
         />
       )}
       <BottomBar
