@@ -38,6 +38,13 @@ describe('REPL layout contract', () => {
     expect(source).not.toContain('TranscriptScrollAction');
   });
 
+  it('parks the terminal cursor at the prompt caret for IME input', () => {
+    const source = read('src/components/PromptInput/PromptInput.tsx');
+
+    expect(source).toContain('useDeclaredCursor');
+    expect(source).toContain('ref={cursorRef}');
+  });
+
   it('owns transcript scroll controls without drawing an app scrollbar', () => {
     const source = read('src/components/TranscriptViewport.tsx');
 

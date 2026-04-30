@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Box, Text, useInput } from '../../runtime/index';
+import { Box, Text, useDeclaredCursor, useInput } from '../../runtime/index';
 import { PromptInputHelpMenu } from './PromptInputHelpMenu.js';
 import { FileMenu } from './FileMenu.js';
 import { SLASH_COMMANDS, SlashCommand } from '../../commands/registry.js';
@@ -373,6 +373,14 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     if (stringWidth(visible) <= suggestionCells) return visible;
     return `${sliceCells(visible, 0, suggestionCells - 1)}…`;
   })();
+  const cursorRef = useDeclaredCursor({
+    line: 0,
+    column:
+      2 +
+      (inputViewport.prefix ? 1 : 0) +
+      stringWidth(inputViewport.before),
+    active: !busy,
+  });
 
   return (
     <Box flexDirection="column" width={width} flexShrink={0}>
@@ -388,7 +396,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         justifyContent="space-between"
         flexShrink={0}
       >
-        <Box flexShrink={0} width={inputAreaWidth}>
+        <Box ref={cursorRef} flexShrink={0} width={inputAreaWidth}>
           <Text color={colors.primary}>{'> '}</Text>
           {value.length === 0 ? (
             <>
