@@ -11,9 +11,10 @@ describe('theme palettes', () => {
       welcomeTitle: 'ansi:cyanBright',
     });
     expect(getTheme('light')).toMatchObject({
-      primary: '#8f2f0b',
-      accent: '#2563eb',
-      text: '#111827',
+      primary: '#c44a17',
+      accent: '#a13b13',
+      muted: '#5e5e5e',
+      text: '#1a1a1a',
       welcomeTitle: 'ansi:black',
     });
   });
