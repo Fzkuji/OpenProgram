@@ -75,7 +75,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
     ? '↑↓ choose · enter run · tab fill · esc cancel'
     : busy
     ? 'esc to stop'
-    : 'ctrl+r search context · @ files';
+    : 'ctrl+r search context';
   const hintShort = exitPending
     ? 'ctrl+c again to exit'
     : slashMode
