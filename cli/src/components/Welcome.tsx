@@ -34,6 +34,39 @@ export interface WelcomeProps {
   fillAvailable?: boolean;
 }
 
+export type WelcomeMode =
+  | 'inline'
+  | 'summary'
+  | 'one-row'
+  | 'two-rows-compact'
+  | 'two-rows-items';
+
+export interface WelcomeLayout {
+  mode: WelcomeMode;
+  itemsPerTile: number;
+}
+
+export function getWelcomeLayout(
+  layoutRows: number,
+  fillAvailable: boolean,
+): WelcomeLayout {
+  const rows = Math.max(0, Math.floor(layoutRows));
+  const itemsModeAt = fillAvailable ? 17 : 21;
+
+  if (rows >= itemsModeAt) {
+    return {
+      mode: 'two-rows-items',
+      itemsPerTile: fillAvailable
+        ? Math.min(24, Math.max(0, Math.floor((rows - 11) / 2)))
+        : Math.min(8, Math.max(0, Math.floor((rows - 19) / 2))),
+    };
+  }
+  if (rows >= 11) return { mode: 'two-rows-compact', itemsPerTile: 0 };
+  if (rows >= 8) return { mode: 'one-row', itemsPerTile: 0 };
+  if (rows >= 5) return { mode: 'summary', itemsPerTile: 0 };
+  return { mode: 'inline', itemsPerTile: 0 };
+}
+
 const fmt = (n?: number): string => (typeof n === 'number' ? String(n) : '—');
 
 interface ColumnSpec {
@@ -195,23 +228,10 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats, fillAvailable = false }
   const targetPanelHeight = fillAvailable ? Math.max(0, rows - 5) : 0;
   const layoutRows = fillAvailable ? targetPanelHeight : rows;
 
-  // Display modes by available height. With two rows of item tiles,
-  // panel height is approximately 2 * itemRows + 11.
-  type Mode = 'none' | 'one-row' | 'two-rows-compact' | 'two-rows-items';
-  let mode: Mode;
-  let itemsPerTile = 0;
-  if (layoutRows >= 21) {
-    mode = 'two-rows-items';
-    itemsPerTile = fillAvailable
-      ? Math.min(24, Math.max(0, Math.floor((layoutRows - 11) / 2)))
-      : Math.min(8, Math.max(0, Math.floor((layoutRows - 19) / 2)));
-  } else if (layoutRows >= 17) {
-    mode = 'two-rows-compact';
-  } else if (layoutRows >= 14) {
-    mode = 'one-row';
-  } else {
-    mode = 'none';
-  }
+  // Display modes by available height. In the opening screen,
+  // layoutRows already excludes the fixed prompt/bottom bar area, so
+  // the thresholds are based on panel rows, not terminal rows.
+  const { mode, itemsPerTile } = getWelcomeLayout(layoutRows, fillAvailable);
 
   // Width per tile. Always 4 columns when cols >= 50; below that fall back
   // to a 2-col grid (4 rows of 2 tiles). Clamp to a minimum so a sudden
@@ -227,7 +247,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats, fillAvailable = false }
 
   // Smallest fallback — no room for a panel. Still print one line so the
   // user knows what's going on.
-  if (mode === 'none') {
+  if (mode === 'inline') {
     return (
       <Box paddingX={1} marginBottom={0}>
         <Text color={colors.error} bold>
@@ -273,7 +293,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats, fillAvailable = false }
       </Box>
 
       {/* Tile layout — mode switches based on terminal height. */}
-      {mode === 'two-rows-items' && fourAcross ? (
+      {mode === 'summary' ? null : mode === 'two-rows-items' && fourAcross ? (
         <>
           <Box marginTop={1}>
             {row1.map((c) => (
