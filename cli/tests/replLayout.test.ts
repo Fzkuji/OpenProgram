@@ -59,10 +59,17 @@ describe('REPL layout contract', () => {
   it('reserves tab for prompt completion instead of thinking effort', () => {
     const repl = read('src/screens/REPL.tsx');
     const bottomBar = read('src/components/BottomBar.tsx');
+    const prompt = read('src/components/PromptInput/PromptInput.tsx');
+    const registry = read('src/commands/registry.ts');
 
-    expect(repl).toContain("key.ctrl && input === 't'");
+    expect(registry).toContain("name: 'effort'");
+    expect(prompt).toContain('tabIndex={0}');
+    expect(prompt).toContain('autoFocus');
+    expect(prompt).toContain('onKeyDownCapture');
+    expect(prompt).toContain('event.preventDefault()');
+    expect(repl).not.toContain("key.ctrl && input === 't'");
     expect(repl).not.toContain('key.tab && !key.shift');
-    expect(bottomBar).toContain('ctrl+t thinking');
+    expect(bottomBar).not.toContain('ctrl+t');
   });
 
   it('uses the native terminal cursor for declared prompt carets', () => {

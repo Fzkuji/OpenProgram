@@ -70,6 +70,19 @@ describe('handleSlash', () => {
     expect(ctx.toggleTools).toHaveBeenCalled();
   });
 
+  it('/effort sets thinking effort', () => {
+    const setThinkingEffort = vi.fn();
+    const ctx = makeCtx({ setThinkingEffort });
+    handleSlash('/effort minimal', ctx);
+    expect(setThinkingEffort).toHaveBeenCalledWith('minimal');
+  });
+
+  it('/effort reports available values', () => {
+    const ctx = makeCtx({ currentThinkingEffort: 'high', setThinkingEffort: vi.fn() });
+    handleSlash('/effort', ctx);
+    expect(ctx.pushSystem).toHaveBeenCalledWith(expect.stringContaining('off|minimal|low|medium|high|xhigh'));
+  });
+
   it('/attach without args prints usage', () => {
     const ctx = makeCtx();
     handleSlash('/attach', ctx);

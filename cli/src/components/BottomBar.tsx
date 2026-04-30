@@ -75,14 +75,14 @@ export const BottomBar: React.FC<BottomBarProps> = ({
     ? '↑↓ choose · enter run · tab fill · esc cancel'
     : busy
     ? 'esc to stop'
-    : 'ctrl+r search context · ctrl+t thinking';
+    : 'ctrl+r search context';
   const hintShort = exitPending
     ? 'ctrl+c again to exit'
     : slashMode
     ? '↑↓ enter tab esc'
     : busy
     ? 'esc stop'
-    : 'ctrl+r search · ctrl+t think';
+    : 'ctrl+r search';
   const showHint = cols >= 60 && hintLong.length > 0;
   const hint = cols >= 100 ? hintLong : hintShort;
 
@@ -149,7 +149,14 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   if (busy && showBusyTag) pushPart(<Text color={colors.warning}>working</Text>);
 
   return (
-    <Box paddingX={1} justifyContent="space-between" width={width} flexShrink={0}>
+    <Box
+      paddingX={1}
+      justifyContent="space-between"
+      width={width}
+      height={1}
+      overflow="hidden"
+      flexShrink={0}
+    >
       <Box flexShrink={1}>
         <Text color={
           permissionMode === 'bypass' ? colors.error

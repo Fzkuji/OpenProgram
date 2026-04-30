@@ -396,6 +396,13 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         justifyContent="space-between"
         flexShrink={0}
         width={width}
+        tabIndex={0}
+        autoFocus
+        onKeyDownCapture={(event) => {
+          if (event.key === 'tab' && !event.ctrl && !event.meta) {
+            event.preventDefault();
+          }
+        }}
       >
         <Box ref={cursorRef} flexShrink={0} width={inputAreaWidth}>
           <Text color={colors.primary}>{'> '}</Text>

@@ -1,6 +1,8 @@
 import { BackendClient } from '../ws/client.js';
 import { SLASH_COMMANDS } from './registry.js';
 
+type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+
 export interface SlashContext {
   client: BackendClient;
   /** Append a system-style note (gray, no role label). */
@@ -14,6 +16,10 @@ export interface SlashContext {
   setTheme?: (name: string) => boolean;
   /** Toggle (or set) the "tools-on" flag passed with the next chat turn. */
   toggleTools: () => void;
+  /** Current thinking budget shown on the bottom bar and sent with chat turns. */
+  currentThinkingEffort?: ThinkingEffort;
+  /** Set the thinking budget for subsequent chat turns. */
+  setThinkingEffort?: (effort: ThinkingEffort) => void;
   /** Toggle the terminal-bell-on-long-turn-complete flag. */
   toggleBell: () => boolean;
   /** Re-show the Welcome banner as a system note. */
@@ -79,6 +85,17 @@ const ALIASES: Record<string, string> = {
   t: 'tools',
   c: 'clear',
   w: 'welcome',
+};
+
+const THINKING_EFFORTS: ThinkingEffort[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+
+const normalizeThinkingEffort = (raw: string): ThinkingEffort | null => {
+  const v = raw.toLowerCase();
+  if (v === 'min') return 'minimal';
+  if (v === 'med') return 'medium';
+  if (v === 'xhi' || v === 'x-high' || v === 'extra-high') return 'xhigh';
+  if ((THINKING_EFFORTS as string[]).includes(v)) return v as ThinkingEffort;
+  return null;
 };
 
 export function handleSlash(line: string, ctx: SlashContext): boolean {
@@ -215,6 +232,28 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         return true;
       }
       ctx.client.send({ action: 'switch_model', model: args[0]!, conv_id: ctx.currentConversation });
+      return true;
+    }
+
+    case 'effort': {
+      if (!ctx.setThinkingEffort) {
+        ctx.pushSystem('/effort is not available in this screen.');
+        return true;
+      }
+      if (args.length < 1) {
+        ctx.pushSystem(
+          `Thinking effort: ${ctx.currentThinkingEffort ?? 'xhigh'}\n` +
+          `Usage: /effort <${THINKING_EFFORTS.join('|')}>`,
+        );
+        return true;
+      }
+      const effort = normalizeThinkingEffort(args[0]!);
+      if (!effort) {
+        ctx.pushSystem(`Unknown effort '${args[0]}'. Use one of: ${THINKING_EFFORTS.join(', ')}`);
+        return true;
+      }
+      ctx.setThinkingEffort(effort);
+      ctx.pushSystem(`Thinking effort set to ${effort}.`);
       return true;
     }
 

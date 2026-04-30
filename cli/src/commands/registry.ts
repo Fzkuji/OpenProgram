@@ -8,6 +8,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'agents', description: 'List or switch agents' },
   { name: 'agent', description: 'Switch to a different agent' },
   { name: 'model', description: 'Change the model' },
+  { name: 'effort', description: 'Set thinking effort (off/minimal/low/medium/high/xhigh)' },
   { name: 'session', description: 'Show current session info' },
   { name: 'sessions', description: 'List sessions' },
   { name: 'new', description: 'Start a new session' },

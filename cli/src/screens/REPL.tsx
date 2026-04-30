@@ -197,19 +197,6 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       setPermissionMode((m) => (m === 'bypass' ? 'auto' : 'bypass'));
       return;
     }
-    // ctrl+t cycles thinking effort: off → minimal → low → medium → high → xhigh → off.
-    // Plain tab is reserved for prompt completion.
-    if (key.ctrl && input === 't') {
-      setThinkingEffort((t) =>
-        t === 'off' ? 'minimal'
-        : t === 'minimal' ? 'low'
-        : t === 'low' ? 'medium'
-        : t === 'medium' ? 'high'
-        : t === 'high' ? 'xhigh'
-        : 'off',
-      );
-      return;
-    }
     // Esc closes the channel_qr_wait picker (no input form to absorb
     // it). Other pickers handle their own onCancel via Picker/LineInput
     // — this is just for the read-only QR display.
@@ -250,6 +237,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         exit: () => app.exit(),
         openPicker: (kind) => setPickerKind(kind),
         toggleTools: () => setToolsOn((on) => !on),
+        currentThinkingEffort: thinkingEffort,
+        setThinkingEffort,
         toggleBell: () => {
           let next = bellEnabled;
           setBellEnabled((b) => {
