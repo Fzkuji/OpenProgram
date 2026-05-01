@@ -27,13 +27,13 @@ export function useTerminalWidth(): number {
 
 /**
  * Width every top-level panel uses so Welcome / input box / bottom bar
- * line up edge-to-edge. Keep one terminal column free on the right so
- * bordered panels do not render into the terminal's last column, where
- * some emulators clip or wrap the final border cell.
+ * line up edge-to-edge with the terminal viewport. The Ink runtime owns
+ * the full-screen cell grid, so top-level panels should use the reported
+ * column count instead of leaving a one-sided gutter.
  */
 export function usePanelWidth(): number {
   const cols = useTerminalWidth();
-  return Math.max(MIN_PANEL_WIDTH, cols - 1);
+  return Math.max(MIN_PANEL_WIDTH, cols);
 }
 
 /** Returns the current terminal row count, re-renders on resize. */

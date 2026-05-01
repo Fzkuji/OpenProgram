@@ -38,10 +38,11 @@ describe('REPL layout contract', () => {
     expect(source).not.toContain('TranscriptScrollAction');
   });
 
-  it('keeps bordered top-level panels away from the terminal edge', () => {
+  it('keeps bordered top-level panels aligned to the terminal width', () => {
     const source = read('src/utils/useTerminalWidth.ts');
 
-    expect(source).toContain('cols - 1');
+    expect(source).toContain('return Math.max(MIN_PANEL_WIDTH, cols);');
+    expect(source).not.toContain('cols - 1');
   });
 
   it('parks the terminal cursor at the prompt caret for IME input', () => {
