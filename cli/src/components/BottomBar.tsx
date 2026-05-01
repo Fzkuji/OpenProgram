@@ -42,8 +42,6 @@ const compact = (s: string | undefined, max: number): string | undefined => {
   return `${s.slice(0, max - 1)}…`;
 };
 
-const XHIGH_COLOR = '#991b1b';
-
 export const BottomBar: React.FC<BottomBarProps> = ({
   agent,
   model,
@@ -165,7 +163,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         ) : null}
         {toolsOn === false || showToolsOn ? <Text color={colors.border}> · </Text> : null}
         <Text color={
-          thinkingEffort === 'xhigh' ? XHIGH_COLOR
+          thinkingEffort === 'xhigh' ? colors.bottomBar.effortXhigh
           : thinkingEffort === 'high' ? colors.primary
           : thinkingEffort === 'off' ? colors.muted
           : colors.warning

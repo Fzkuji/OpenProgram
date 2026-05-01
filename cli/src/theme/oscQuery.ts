@@ -14,6 +14,8 @@
  */
 
 import type { ThemeName } from './themes.js';
+import type { TerminalQuerier } from '../runtime/ink/terminal-querier.js';
+import { oscColor } from '../runtime/ink/terminal-querier.js';
 
 export type SystemTheme = ThemeName;
 
@@ -47,6 +49,11 @@ export const themeFromRgb = (rgb: RGB): SystemTheme => {
   if (luminance < 0.5) return 'dark-dim';
   if (luminance > 0.86) return 'light';
   return 'light-dim';
+};
+
+export const themeFromOscData = (data: string): SystemTheme | undefined => {
+  const rgb = parseOscRgb(data);
+  return rgb ? themeFromRgb(rgb) : undefined;
 };
 
 export async function queryTerminalBg(timeoutMs = 200): Promise<SystemTheme | undefined> {
@@ -93,4 +100,23 @@ export async function queryTerminalBg(timeoutMs = 200): Promise<SystemTheme | un
     }
     timer = setTimeout(() => cleanup(undefined), timeoutMs);
   });
+}
+
+export async function queryTerminalBgWithQuerier(
+  querier: TerminalQuerier | null | undefined,
+  timeoutMs = 500,
+): Promise<SystemTheme | undefined> {
+  if (!querier) return undefined;
+  const query = Promise.all([
+    querier.send(oscColor(11)),
+    querier.flush(),
+  ]).then(([response]) => response);
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), timeoutMs);
+  });
+  const response = await Promise.race([query, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+  return response?.type === 'osc' ? themeFromOscData(response.data) : undefined;
 }

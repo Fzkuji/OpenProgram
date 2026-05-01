@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
-import { useTerminalFocus } from '../runtime/index.js';
-import { queryTerminalBg } from './oscQuery.js';
+import { useStdin, useTerminalFocus } from '../runtime/index.js';
+import { detectAutoTheme } from './autoTheme.js';
 import { ColorTheme, getTheme, ThemeName, ThemeSetting } from './themes.js';
 import { loadThemeSetting, saveThemeSetting } from './persistence.js';
 import { getSystemThemeName, setCachedSystemTheme, subscribeSystemTheme } from './systemTheme.js';
@@ -42,6 +42,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [themeSetting, setThemeSettingState] = useState<ThemeSetting>(() => loadThemeSetting());
   const [previewSetting, setPreviewSetting] = useState<ThemeSetting | null>(null);
   const terminalFocused = useTerminalFocus();
+  const { querier } = useStdin();
   // Bumps when the cached system theme changes (e.g. OSC 11 reply lands).
   // Used so React re-resolves `auto` without us threading state through.
   const [, setSystemTick] = useState(0);
@@ -65,10 +66,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const refresh = () => {
       if (cancelled || inFlight) return;
       inFlight = true;
-      queryTerminalBg(250)
+      detectAutoTheme(querier)
         .then((bg) => {
           if (!cancelled && bg) setCachedSystemTheme(bg);
         })
+        .catch(() => {})
         .finally(() => {
           inFlight = false;
         });
@@ -80,7 +82,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       cancelled = true;
       clearInterval(timer);
     };
-  }, [activeSetting, terminalFocused]);
+  }, [activeSetting, terminalFocused, querier]);
 
   const setThemeSetting = useCallback((setting: ThemeSetting) => {
     setThemeSettingState(setting);

@@ -28,7 +28,7 @@ export function buildChannelPicker(
   kind: ChannelKind,
 ): React.ReactElement | null {
   const {
-    client, pushSystem,
+    client, colors, pushSystem,
     pendingAttach,
     chosenChannel, chosenAccount, conversationId,
     channelAccounts,
@@ -362,10 +362,10 @@ export function buildChannelPicker(
     return (
       <Box flexDirection="column" borderStyle="single" paddingX={1} paddingY={0}>
         <Text bold>Scan to log in to {chosenChannel}</Text>
-        <Text color="ansi:blackBright">Open WeChat on your phone → tap [+] → "Scan QR"</Text>
-        {qrAscii ? <Text>{qrAscii}</Text> : <Text color="ansi:blackBright">Loading QR…</Text>}
-        <Text color="ansi:cyan">{qrStatus ?? ''}</Text>
-        <Text color="ansi:blackBright">(esc to cancel)</Text>
+        <Text color={colors.channelQr.hint}>Open WeChat on your phone → tap [+] → "Scan QR"</Text>
+        {qrAscii ? <Text>{qrAscii}</Text> : <Text color={colors.channelQr.hint}>Loading QR…</Text>}
+        <Text color={colors.channelQr.status}>{qrStatus ?? ''}</Text>
+        <Text color={colors.channelQr.hint}>(esc to cancel)</Text>
       </Box>
     );
   }

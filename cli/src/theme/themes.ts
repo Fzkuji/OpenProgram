@@ -27,8 +27,19 @@ export interface ColorTheme {
   accent: Color;
   text: Color;
   border: Color;
-  appTitle: Color;
-  welcomeTitle: Color;
+
+  // App surface
+  welcome: {
+    appTitle: Color;
+    sectionTitle: Color;
+  };
+  bottomBar: {
+    effortXhigh: Color;
+  };
+  channelQr: {
+    hint: Color;
+    status: Color;
+  };
 
   // Chat-turn roles
   user: { bg: Color | undefined; fg: Color; glyph: Color };
@@ -68,8 +79,17 @@ const dark: ColorTheme = {
   accent: '#38bdf8',
   text: '#e5e7eb',
   border: '#52525b',
-  appTitle: '#c2412d',
-  welcomeTitle: 'ansi:cyanBright',
+  welcome: {
+    appTitle: '#c2412d',
+    sectionTitle: '#bae6fd',
+  },
+  bottomBar: {
+    effortXhigh: '#991b1b',
+  },
+  channelQr: {
+    hint: '#a1a1aa',
+    status: '#38bdf8',
+  },
   user: { bg: '#2a211a', fg: '#f7efe7', glyph: '#f97316' },
   assistant: { bg: undefined, fg: '#e5e7eb', glyph: '#4ade80' },
   system: { bg: undefined, fg: '#a1a1aa', glyph: '#a1a1aa' },
@@ -86,8 +106,17 @@ const darkDim: ColorTheme = {
   accent: '#4aa3b8',
   text: '#d7dce2',
   border: '#3f4650',
-  appTitle: '#c2412d',
-  welcomeTitle: 'ansi:cyanBright',
+  welcome: {
+    appTitle: '#c2412d',
+    sectionTitle: '#a8c9d7',
+  },
+  bottomBar: {
+    effortXhigh: '#8b1e1e',
+  },
+  channelQr: {
+    hint: '#8a8f98',
+    status: '#4aa3b8',
+  },
   user: { bg: '#221d19', fg: '#ded6cf', glyph: '#d08342' },
   assistant: { bg: undefined, fg: '#d7dce2', glyph: '#86a886' },
   system: { bg: undefined, fg: '#8a8f98', glyph: '#8a8f98' },
@@ -107,8 +136,17 @@ const light: ColorTheme = {
   accent: '#a13b13',
   text: '#1a1a1a',
   border: '#bdbdbd',
-  appTitle: '#c2412d',
-  welcomeTitle: 'ansi:black',
+  welcome: {
+    appTitle: '#c2412d',
+    sectionTitle: '#1a1a1a',
+  },
+  bottomBar: {
+    effortXhigh: '#991b1b',
+  },
+  channelQr: {
+    hint: '#5e5e5e',
+    status: '#a13b13',
+  },
   // Light cream tint for the user block so it reads as a quoted region
   // without going darker than the page itself.
   user: { bg: '#f4e4d4', fg: '#3a1f12', glyph: '#c44a17' },
@@ -127,8 +165,17 @@ const lightDim: ColorTheme = {
   accent: '#8a4a2a',
   text: '#262626',
   border: '#c8c8c8',
-  appTitle: '#c2412d',
-  welcomeTitle: 'ansi:black',
+  welcome: {
+    appTitle: '#c2412d',
+    sectionTitle: '#262626',
+  },
+  bottomBar: {
+    effortXhigh: '#8b1e1e',
+  },
+  channelQr: {
+    hint: '#6e6e6e',
+    status: '#8a4a2a',
+  },
   user: { bg: '#ecdfd1', fg: '#3a2418', glyph: '#9b4a2a' },
   assistant: { bg: undefined, fg: '#262626', glyph: '#436e48' },
   system: { bg: undefined, fg: '#6e6e6e', glyph: '#6e6e6e' },

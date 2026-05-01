@@ -27,6 +27,7 @@ import { BackendClient } from '../../ws/client.js';
 import { tsToDate } from './helpers.js';
 import { buildChannelPicker } from './pickers/channel.js';
 import { buildRegisterPicker } from './pickers/register.js';
+import type { ColorTheme } from '../../theme/themes.js';
 import type {
   AgentInfo,
   ChannelAccountRow,
@@ -43,6 +44,7 @@ const THINKING_EFFORTS: ThinkingEffort[] = ['off', 'minimal', 'low', 'medium', '
 
 export interface PickerCtx {
   client: BackendClient;
+  colors: ColorTheme;
   pushSystem: (text: string) => void;
 
   pickerKind: PickerKind;
@@ -85,7 +87,7 @@ export interface PickerCtx {
 
 export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
   const {
-    client, pushSystem,
+    client, colors, pushSystem,
     pickerKind, pendingAttach,
     chosenChannel, chosenAccount, conversationId,
     modelsList, model, agentsList, channelAccounts,

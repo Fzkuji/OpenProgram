@@ -4,7 +4,7 @@ import { REPL } from './screens/REPL.js';
 import { Demo } from './screens/Demo.js';
 import { BackendClient } from './ws/client.js';
 import { ThemeProvider } from './theme/ThemeProvider.js';
-import { queryTerminalBg } from './theme/oscQuery.js';
+import { detectAutoTheme } from './theme/autoTheme.js';
 import { setCachedSystemTheme } from './theme/systemTheme.js';
 
 function parseArgs(argv: string[]): { ws: string; demo: boolean } {
@@ -26,10 +26,9 @@ const { ws, demo } = parseArgs(process.argv.slice(2));
 const client = new BackendClient(ws);
 if (!demo) client.connect();
 
-// OSC 11 (background-color query) for the auto theme. The reply lands
-// via setCachedSystemTheme whenever it arrives; ThemeProvider's
-// subscriber bumps state and flips 'auto' from dark to light in place.
-queryTerminalBg(200)
+// Initial auto-theme detection. ThemeProvider keeps auto refreshed during
+// runtime when the terminal is focused.
+detectAutoTheme(null)
   .then((bg) => { if (bg) setCachedSystemTheme(bg); })
   .catch(() => { /* fall back to COLORFGBG / dark */ });
 

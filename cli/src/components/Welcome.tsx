@@ -100,10 +100,10 @@ const Column: React.FC<{
   return (
     <Box flexDirection="column" width={width} paddingX={1}>
       <Box>
-        <Text bold color={colors.welcomeTitle}>
+        <Text bold color={colors.welcome.sectionTitle}>
           {spec.count}
         </Text>
-        <Text bold color={colors.welcomeTitle}>{` ${spec.label}`}</Text>
+        <Text bold color={colors.welcome.sectionTitle}>{` ${spec.label}`}</Text>
       </Box>
       {rows.map(([a, b], i) => (
         <Box key={i}>
@@ -246,7 +246,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats, fillAvailable = false }
   if (mode === 'inline') {
     return (
       <Box paddingX={1} marginBottom={0}>
-        <Text color={colors.appTitle} bold>
+        <Text color={colors.welcome.appTitle} bold>
           OpenProgram
         </Text>
         <Text color={colors.border}> · </Text>
@@ -277,7 +277,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats, fillAvailable = false }
           no extra space to distribute. */}
       <Box justifyContent="space-between" width={Math.max(20, width - 6)}>
         <Box flexShrink={1}>
-          <Text bold color={colors.appTitle} wrap="truncate-end">
+          <Text bold color={colors.welcome.appTitle} wrap="truncate-end">
             OpenProgram
           </Text>
         </Box>

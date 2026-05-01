@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text, useInput } from '../runtime/index';
+import { Box, Text, useInput, useStdin } from '../runtime/index';
 import { useColors, usePreviewTheme, useThemeSetting, useTheme } from '../theme/ThemeProvider.js';
 import { THEME_SETTINGS, THEME_LABELS, ThemeSetting } from '../theme/themes.js';
 import { usePanelWidth } from '../utils/useTerminalWidth.js';
-import { queryTerminalBg } from '../theme/oscQuery.js';
 import { setCachedSystemTheme, getSystemThemeName } from '../theme/systemTheme.js';
+import { detectAutoTheme } from '../theme/autoTheme.js';
 
 export interface ThemePickerProps {
   /** Called after the user confirms a choice (preview already saved). */
@@ -27,6 +27,7 @@ export const ThemePicker: React.FC<ThemePickerProps> = ({ onDone, onCancel }) =>
   const savedSetting = useThemeSetting();
   const { currentTheme } = useTheme();
   const { setPreviewTheme, savePreview, cancelPreview } = usePreviewTheme();
+  const { querier } = useStdin();
   const width = usePanelWidth();
 
   // Start the cursor on the saved setting so the user sees what's active.
@@ -34,21 +35,18 @@ export const ThemePicker: React.FC<ThemePickerProps> = ({ onDone, onCancel }) =>
   const [index, setIndex] = useState(initial);
   const [resolvedAuto, setResolvedAuto] = useState<string>(getSystemThemeName());
 
-  // Re-query the terminal every time the picker opens. The startup query
-  // can lose its reply if Ink claims stdin in a way that swallows the
-  // chunk; re-firing on demand gives us a second shot. A successful reply
-  // updates the cache and bumps everyone subscribed to system-theme
-  // changes (which includes ThemeProvider), so the live preview reflects
-  // the freshly-detected bg immediately.
+  // Re-query auto-theme detection every time the picker opens. Runtime
+  // refresh is owned by ThemeProvider; the picker also updates its local
+  // "now" label so the user can see what auto currently resolves to.
   useEffect(() => {
     let cancelled = false;
-    queryTerminalBg(300).then((bg) => {
+    detectAutoTheme(querier).then((bg) => {
       if (cancelled || !bg) return;
       setCachedSystemTheme(bg);
       setResolvedAuto(bg);
-    });
+    }).catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [querier]);
 
   // Push the highlighted setting as a preview so the surrounding UI repaints.
   useEffect(() => {

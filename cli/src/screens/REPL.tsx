@@ -78,7 +78,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     channel?: string;
     accountId?: string;
   }>({});
-  const { setThemeSetting, currentTheme } = useTheme();
+  const { setThemeSetting, currentTheme, colors } = useTheme();
   const [channelAccounts, setChannelAccounts] = useState<
     Array<{ channel?: string; account_id?: string; configured?: boolean }>
   >([]);
@@ -361,7 +361,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   // wires the same set of REPL setters and the WS client, so we
   // bundle them through a single ctx object.
   const pickerNode = buildPickerNode({
-    client, pushSystem,
+    client, colors, pushSystem,
     pickerKind, pendingAttach,
     chosenChannel, chosenAccount, conversationId,
     modelsList, model, agentsList, channelAccounts,

@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync, statSync } from 'fs';
 import { themeFromRgb } from '../src/theme/oscQuery.js';
 import { getTheme } from '../src/theme/themes.js';
+
+const listFiles = (dir: string): string[] => {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = `${dir}/${entry}`;
+    if (statSync(path).isDirectory()) {
+      out.push(...listFiles(path));
+    } else if (/\.[tj]sx?$/.test(path)) {
+      out.push(path);
+    }
+  }
+  return out;
+};
 
 describe('theme palettes', () => {
   it('uses balanced semantic accents for dark and light modes', () => {
@@ -9,16 +22,26 @@ describe('theme palettes', () => {
       primary: '#f97316',
       accent: '#38bdf8',
       text: '#e5e7eb',
-      appTitle: '#c2412d',
-      welcomeTitle: 'ansi:cyanBright',
+      welcome: {
+        appTitle: '#c2412d',
+        sectionTitle: '#bae6fd',
+      },
+      bottomBar: {
+        effortXhigh: '#991b1b',
+      },
     });
     expect(getTheme('light')).toMatchObject({
       primary: '#c44a17',
       accent: '#a13b13',
       muted: '#5e5e5e',
       text: '#1a1a1a',
-      appTitle: '#c2412d',
-      welcomeTitle: 'ansi:black',
+      welcome: {
+        appTitle: '#c2412d',
+        sectionTitle: '#1a1a1a',
+      },
+      bottomBar: {
+        effortXhigh: '#991b1b',
+      },
     });
   });
 
@@ -33,7 +56,20 @@ describe('theme palettes', () => {
     const source = readFileSync('src/theme/ThemeProvider.tsx', 'utf8');
     expect(source).toContain("activeSetting !== 'auto'");
     expect(source).toContain('AUTO_THEME_REFRESH_MS');
-    expect(source).toContain('queryTerminalBg(250)');
+    expect(source).toContain('detectAutoTheme(querier)');
     expect(source).toContain('setCachedSystemTheme(bg)');
+  });
+
+  it('keeps normal UI component colors in theme tokens', () => {
+    const files = [
+      ...listFiles('src/components'),
+      ...listFiles('src/screens'),
+      ...listFiles('src/ui'),
+    ];
+    const offenders = files.flatMap((file) => {
+      const source = readFileSync(file, 'utf8');
+      return /#[0-9a-fA-F]{3,8}|(?:backgroundColor|color)="ansi:/.test(source) ? [file] : [];
+    });
+    expect(offenders).toEqual([]);
   });
 });
