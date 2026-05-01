@@ -59,10 +59,10 @@ _loop: Optional[asyncio.AbstractEventLoop] = None
 # Module load timestamp — used by /healthz uptime calc.
 _SERVER_START_TIME = time.time()
 
-# Max preview rows sent to the CLI Welcome panel. The TUI still decides how
-# many rows fit for the current terminal size; this only prevents the server
-# from cutting useful data before layout runs.
-WELCOME_STATS_PREVIEW_LIMIT = 48
+# Max session rows sent to the CLI Welcome panel. Catalog data such as
+# tools, providers, functions, skills, agents, and channels is sent in full;
+# the TUI decides how many rows fit for the current terminal size.
+WELCOME_STATS_SESSION_LIMIT = 48
 
 # Conversation storage (in-memory). The conv dict still owns
 # runtime / root_context / function_trees / metadata, but the
@@ -1896,12 +1896,12 @@ async def _handle_ws_command(ws, cmd: dict):
             applications_only = [p for p in non_meta if p.get("category") == "app"]
             top_functions = [
                 {"name": p.get("name"), "category": p.get("category")}
-                for p in functions_only[:WELCOME_STATS_PREVIEW_LIMIT]
+                for p in functions_only
                 if p.get("name")
             ]
             top_applications = [
                 {"name": p.get("name"), "category": p.get("category")}
-                for p in applications_only[:WELCOME_STATS_PREVIEW_LIMIT]
+                for p in applications_only
                 if p.get("name")
             ]
         except Exception:
@@ -1925,28 +1925,28 @@ async def _handle_ws_command(ws, cmd: dict):
             from openprogram.agent.session_db import default_db as _session_db
             session_db = _session_db()
             conversations_count = session_db.count_sessions()
-            session_rows = session_db.list_sessions(limit=WELCOME_STATS_PREVIEW_LIMIT)
+            session_rows = session_db.list_sessions(limit=WELCOME_STATS_SESSION_LIMIT)
         except Exception:
             conversations_count = 0
             session_rows = []
 
-        # Top skills by name (a few representative ones).
+        # Skills by name.
         try:
             from openprogram.agentic_programming.skills import (
                 default_skill_dirs as _ds, load_skills as _ls,
             )
             top_skills = [
                 {"name": s.name, "slug": s.slug}
-                for s in _ls(_ds())[:WELCOME_STATS_PREVIEW_LIMIT]
+                for s in _ls(_ds())
             ]
         except Exception:
             top_skills = []
 
-        # Top agents (we may have several once user creates more).
+        # Agents.
         try:
             top_agents = [
                 {"name": a.to_dict().get("name") or a.id, "id": a.id}
-                for a in agents[:WELCOME_STATS_PREVIEW_LIMIT]
+                for a in agents
             ] if agents else []
         except Exception:
             top_agents = []
@@ -1964,16 +1964,12 @@ async def _handle_ws_command(ws, cmd: dict):
         except Exception:
             top_sessions = []
 
-        # Default tools available to the agent. tools_count counts the
-        # full registry; top_tools is the truncated preview the Welcome
-        # banner shows.
+        # Tools available to the agent. Send the full registry and let
+        # the TUI decide how many names fit in the current terminal.
         try:
-            from openprogram.tools import (
-                ALL_TOOLS as _ALL,
-                DEFAULT_TOOLS as _DT,
-            )
+            from openprogram.tools import ALL_TOOLS as _ALL
             tools_count = len(_ALL)
-            top_tools = list(_DT)[:WELCOME_STATS_PREVIEW_LIMIT]
+            top_tools = list(_ALL)
         except Exception:
             tools_count = 0
             top_tools = []
@@ -1983,7 +1979,7 @@ async def _handle_ws_command(ws, cmd: dict):
             from openprogram.providers import get_providers as _gp
             providers_list = list(_gp())
             providers_count = len(providers_list)
-            top_providers = providers_list[:WELCOME_STATS_PREVIEW_LIMIT]
+            top_providers = providers_list
         except Exception:
             providers_count = 0
             top_providers = []
@@ -1999,7 +1995,6 @@ async def _handle_ws_command(ws, cmd: dict):
                         "id": getattr(acc, "id", None) or acc.account_id,
                     })
             channels_count = len(top_channels)
-            top_channels = top_channels[:WELCOME_STATS_PREVIEW_LIMIT]
         except Exception:
             channels_count = 0
             top_channels = []
