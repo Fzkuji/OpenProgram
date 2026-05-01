@@ -69,8 +69,27 @@ export function getWelcomeLayout(
 
 const fmt = (n?: number): string => (typeof n === 'number' ? String(n) : '—');
 
+const pickCount = (
+  explicit: number | undefined,
+  listLen: number | undefined,
+): number | undefined => {
+  if (typeof explicit === 'number') return explicit;
+  if (typeof listLen === 'number') return listLen;
+  return undefined;
+};
+
+export function getColumnOverflow(
+  totalCount: number | undefined,
+  itemCount: number,
+  renderedCount: number,
+): number {
+  const totalItems = Math.max(totalCount ?? itemCount, itemCount);
+  return Math.max(0, totalItems - renderedCount);
+}
+
 interface ColumnSpec {
   count: string;
+  totalCount?: number;
   label: string;
   items: string[];
 }
@@ -87,7 +106,11 @@ const Column: React.FC<{
   const innerWidth = Math.max(8, width - 2);
   const subWidth = twoCols ? Math.floor(innerWidth / 2) : innerWidth;
   const limitedItems = spec.items.slice(0, twoCols ? maxRows * 2 : maxRows);
-  const overflow = spec.items.length - limitedItems.length;
+  const overflow = getColumnOverflow(
+    spec.totalCount,
+    spec.items.length,
+    limitedItems.length,
+  );
   const rows: Array<[string, string | undefined]> = [];
   if (twoCols) {
     const half = Math.ceil(limitedItems.length / 2);
@@ -136,53 +159,54 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats, fillAvailable = false }
   const agentName = stats?.agent?.name ?? stats?.agent?.id ?? '—';
   const model = stats?.agent?.model ?? '—';
 
-  // pickCount: prefer the explicit total count from the server. Fall
-  // back to the preview-list length when the server is older. Returns
-  // a number so fmt(0) renders as '0' instead of '—'. The previous
-  // logic mixed undefined and 0 in a way that produced em-dash even
-  // when the server sent valid zeros.
-  const pickCount = (
-    explicit: number | undefined,
-    listLen: number | undefined,
-  ): number | undefined => {
-    if (typeof explicit === 'number') return explicit;
-    if (typeof listLen === 'number') return listLen;
-    return undefined;
-  };
-
+  const skillsCount = pickCount(stats?.skills_count, stats?.top_skills?.length);
   const skills: ColumnSpec = {
-    count: fmt(pickCount(stats?.skills_count, stats?.top_skills?.length)),
+    count: fmt(skillsCount),
+    totalCount: skillsCount,
     label: 'skills',
     items: (stats?.top_skills ?? [])
       .map((s) => s.name)
       .filter((s): s is string => !!s),
   };
+  const agentsCount = pickCount(stats?.agents_count, stats?.top_agents?.length);
   const agentsCol: ColumnSpec = {
-    count: fmt(pickCount(stats?.agents_count, stats?.top_agents?.length)),
+    count: fmt(agentsCount),
+    totalCount: agentsCount,
     label: 'agents',
     items: (stats?.top_agents ?? [])
       .map((a) => a.name ?? a.id)
       .filter((s): s is string => !!s),
   };
+  const sessionsCount = pickCount(
+    stats?.conversations_count,
+    stats?.top_sessions?.length,
+  );
   const sessionsCol: ColumnSpec = {
-    count: fmt(pickCount(stats?.conversations_count, stats?.top_sessions?.length)),
+    count: fmt(sessionsCount),
+    totalCount: sessionsCount,
     label: 'sessions',
     items: (stats?.top_sessions ?? [])
       .map((s) => s.title ?? s.id)
       .filter((s): s is string => !!s),
   };
+  const toolsCount = pickCount(stats?.tools_count, stats?.top_tools?.length);
   const tools: ColumnSpec = {
-    count: fmt(pickCount(stats?.tools_count, stats?.top_tools?.length)),
+    count: fmt(toolsCount),
+    totalCount: toolsCount,
     label: 'tools',
     items: stats?.top_tools ?? [],
   };
+  const providersCount = pickCount(stats?.providers_count, stats?.top_providers?.length);
   const providers: ColumnSpec = {
-    count: fmt(pickCount(stats?.providers_count, stats?.top_providers?.length)),
+    count: fmt(providersCount),
+    totalCount: providersCount,
     label: 'providers',
     items: stats?.top_providers ?? [],
   };
+  const channelsCount = pickCount(stats?.channels_count, stats?.top_channels?.length);
   const channels: ColumnSpec = {
-    count: fmt(pickCount(stats?.channels_count, stats?.top_channels?.length)),
+    count: fmt(channelsCount),
+    totalCount: channelsCount,
     label: 'channels',
     items: (stats?.top_channels ?? []).map((c) =>
       c.channel && c.id ? `${c.channel}:${c.id}` : c.channel ?? c.id ?? '',
@@ -200,13 +224,17 @@ export const Welcome: React.FC<WelcomeProps> = ({ stats, fillAvailable = false }
   const appFromFallback = fallbackPrograms.filter((p) => p.category === 'app');
   const fnItems = stats?.top_functions ?? fnFromFallback;
   const appItems = stats?.top_applications ?? appFromFallback;
+  const functionsCount = pickCount(stats?.functions_count, fnItems.length);
   const functions: ColumnSpec = {
-    count: fmt(pickCount(stats?.functions_count, fnItems.length)),
+    count: fmt(functionsCount),
+    totalCount: functionsCount,
     label: 'functions',
     items: fnItems.map((p) => p.name).filter((s): s is string => !!s),
   };
+  const applicationsCount = pickCount(stats?.applications_count, appItems.length);
   const applications: ColumnSpec = {
-    count: fmt(pickCount(stats?.applications_count, appItems.length)),
+    count: fmt(applicationsCount),
+    totalCount: applicationsCount,
     label: 'applications',
     items: appItems.map((p) => p.name).filter((s): s is string => !!s),
   };

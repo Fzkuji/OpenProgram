@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getWelcomeLayout } from '../src/components/Welcome.js';
+import { getColumnOverflow, getWelcomeLayout } from '../src/components/Welcome.js';
 
 describe('Welcome layout height policy', () => {
   it('keeps the opening panel visible as terminal height decreases', () => {
@@ -38,5 +38,16 @@ describe('Welcome layout height policy', () => {
       mode: 'two-rows-items',
       itemsPerTile: 1,
     });
+  });
+});
+
+describe('Welcome preview overflow', () => {
+  it('uses the server total count when the preview list is shorter', () => {
+    expect(getColumnOverflow(22, 8, 8)).toBe(14);
+  });
+
+  it('falls back to preview list length when the server omits total count', () => {
+    expect(getColumnOverflow(undefined, 8, 8)).toBe(0);
+    expect(getColumnOverflow(undefined, 8, 5)).toBe(3);
   });
 });
