@@ -7,6 +7,10 @@ describe('Welcome layout height policy', () => {
       mode: 'two-rows-items',
       itemsPerTile: 12,
     });
+    expect(getWelcomeLayout(75, true)).toEqual({
+      mode: 'two-rows-items',
+      itemsPerTile: 32,
+    });
     expect(getWelcomeLayout(19, true)).toEqual({
       mode: 'two-rows-items',
       itemsPerTile: 4,
@@ -37,6 +41,14 @@ describe('Welcome layout height policy', () => {
     expect(getWelcomeLayout(21, false)).toEqual({
       mode: 'two-rows-items',
       itemsPerTile: 1,
+    });
+    expect(getWelcomeLayout(41, false)).toEqual({
+      mode: 'two-rows-items',
+      itemsPerTile: 11,
+    });
+    expect(getWelcomeLayout(80, false)).toEqual({
+      mode: 'two-rows-items',
+      itemsPerTile: 24,
     });
   });
 });

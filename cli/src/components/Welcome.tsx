@@ -57,8 +57,8 @@ export function getWelcomeLayout(
     return {
       mode: 'two-rows-items',
       itemsPerTile: fillAvailable
-        ? Math.min(24, Math.max(0, Math.floor((rows - 11) / 2)))
-        : Math.min(8, Math.max(0, Math.floor((rows - 19) / 2))),
+        ? Math.min(48, Math.max(0, Math.floor((rows - 11) / 2)))
+        : Math.min(24, Math.max(0, Math.floor((rows - 19) / 2))),
     };
   }
   if (rows >= 11) return { mode: 'two-rows-compact', itemsPerTile: 0 };
@@ -99,7 +99,7 @@ const Column: React.FC<{
   width: number;
   /** When true, items wrap into 2 sub-columns inside the column. */
   twoCols: boolean;
-  /** Cap on number of item rows shown (truncates with "+N more"). */
+  /** Cap on number of item rows shown. */
   maxRows: number;
 }> = ({ spec, width, twoCols, maxRows }) => {
   const colors = useColors();
@@ -144,9 +144,7 @@ const Column: React.FC<{
           ) : null}
         </Box>
       ))}
-      {overflow > 0 ? (
-        <Text color={colors.border}> +{overflow}</Text>
-      ) : null}
+      {overflow > 0 ? <Text color={colors.border}>+{overflow}</Text> : null}
     </Box>
   );
 };
