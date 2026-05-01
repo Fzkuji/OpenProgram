@@ -144,7 +144,9 @@ const Column: React.FC<{
           ) : null}
         </Box>
       ))}
-      {overflow > 0 ? <Text color={colors.border}>+{overflow}</Text> : null}
+      {overflow > 0 ? (
+        <Text bold color={colors.welcome.sectionCount}>+{overflow}</Text>
+      ) : null}
     </Box>
   );
 };

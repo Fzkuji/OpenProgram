@@ -59,6 +59,34 @@ def _resolve_node() -> str:
     return node
 
 
+def _restart_channels_worker_for_tui() -> int | None:
+    """Restart an existing channels worker and return its webui port.
+
+    The TUI must share the channels worker's webui when channels are
+    active, otherwise inbound channel broadcasts are emitted from a
+    different process. Reusing a long-lived worker also reuses its old
+    imported code, so a TUI launch refreshes the worker process first.
+    """
+    from openprogram.channels import worker as _worker
+
+    if _worker.current_worker_pid() is None:
+        return None
+
+    if _worker.stop_worker() != 0:
+        return _worker.read_worker_port()
+
+    if _worker.spawn_detached() != 0:
+        return None
+
+    deadline = time.time() + 6.0
+    while time.time() < deadline:
+        port = _worker.read_worker_port()
+        if port is not None and _wait_until_listening(port, timeout=0.2):
+            return port
+        time.sleep(0.1)
+    return _worker.read_worker_port()
+
+
 def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
     """Start the webui server, then exec the Node CLI as a child.
 
@@ -95,13 +123,12 @@ def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
         os.close(log_fd)
 
     # If a channels worker is already running it has its OWN webui in
-    # the same process; attach to that instead of starting a competing
-    # one. Sharing the webui process is what makes inbound wechat msgs
-    # show up live in the TUI (channel threads' `_broadcast` only
-    # reaches clients connected to the asyncio loop in their own
-    # process). Otherwise start our own webui as before.
-    from openprogram.channels.worker import read_worker_port
-    worker_port = read_worker_port()
+    # the same process. Restart it first, then attach to its new webui
+    # instead of reusing a stale imported server module. Sharing the webui
+    # process is what makes inbound channel messages show up live in the
+    # TUI; otherwise channel broadcasts and the TUI would live in separate
+    # processes.
+    worker_port = _restart_channels_worker_for_tui()
     if worker_port is not None:
         port = worker_port
     else:
