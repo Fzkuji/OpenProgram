@@ -274,9 +274,24 @@ def stop_worker() -> int:
     print(f"PID {pid} didn't exit after SIGTERM; sending SIGKILL.")
     try:
         os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        clear_pid_file()
+        clear_port_file()
+        print("Stopped.")
+        return 0
     except OSError:
-        pass
-    return 0
+        return 1
+
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        if not _process_alive(pid):
+            clear_pid_file()
+            clear_port_file()
+            print("Stopped.")
+            return 0
+        time.sleep(0.1)
+    print(f"PID {pid} is still alive after SIGKILL.")
+    return 1
 
 
 def print_status() -> int:
