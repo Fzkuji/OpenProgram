@@ -2,7 +2,7 @@
   <img src="docs/images/logo.svg" alt="OpenProgram" width="300">
 </p>
 
-<p align="center">The Open Source Agent Harness Framework. Any LLM. Any platform. Agentic Programming Paradigm.</p>
+<p align="center">Open Source Agent Harness Framework. Any LLM. Any platform. Agentic Programming Paradigm.</p>
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square"></a>
