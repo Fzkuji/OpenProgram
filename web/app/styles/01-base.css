@@ -78,6 +78,23 @@ html, body {
   width: 100vw;
 }
 
+/* Pin the column order with explicit flex `order` so the layout
+   doesn't depend on DOM source order. Both sidebars are injected
+   asynchronously into `display: contents` wrappers (AppShell's
+   sidebarRef / rightSidebarRef and PageShell's hostRef), and at very
+   wide viewports the injection timing was occasionally putting the
+   right sidebar to the left of the main column. order is the cheapest
+   deterministic fix — left = 0, resize = 1, main = 2, right = 99. */
+.app > #sidebar,
+.app > .sidebar:not(.right-sidebar) { order: 0; }
+.app > .col-resize,
+.app > #sidebarResize { order: 1; }
+.app > .main { order: 2; flex: 1; min-width: 0; }
+.app > #rightSidebar,
+.app > .right-sidebar,
+.app > #detailResize { order: 99; }
+.app > #rightSidebar { margin-left: auto; }
+
 /* Column resize handle */
 /* Zero layout width — main content sits flush against the sidebar's own
    border-right. The drag handle is an invisible absolute strip overlapping
