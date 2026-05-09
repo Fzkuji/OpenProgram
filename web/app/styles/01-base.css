@@ -1,0 +1,161 @@
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Layout & typography (shared) */
+  --radius: 8px;
+  --radius-lg: 12px;
+  --transition: 0.2s ease;
+  --sidebar-width: 288px;
+  --detail-width: 300px;
+  --font-mono: var(--font-jetbrains-mono), 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+
+  /* Accent colors (shared) */
+  --accent-blue: #3886e5;
+  --accent-green: #18a96b;
+  --accent-red: #e5534b;
+  --accent-yellow: #c69026;
+  --accent-purple: #a371f7;
+  --accent-cyan: #3bc9db;
+  --accent-orange: #d19a66;
+}
+
+/* Dark theme (default) — based on Claude dark */
+:root, [data-theme="dark"] {
+  --bg-primary: #1f1f1e;
+  --bg-secondary: #171716;
+  --bg-tertiary: #252524;
+  --bg-hover: #2e2e2c;
+  --bg-hover-contrast: #141413;
+  --bg-input: #1a1a19;
+  --border: rgba(226, 225, 218, 0.12);
+  --border-light: rgba(226, 225, 218, 0.2);
+  --text-primary: #c3c2b7;
+  --text-secondary: #97958c;
+  --text-bright: #f8f8f6;
+  --text-muted: #6b6a63;
+  --user-msg-bg: #2a2a28;
+  --assistant-msg-bg: #232322;
+  --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  color-scheme: dark;
+}
+
+/* Light theme — based on Claude light */
+[data-theme="light"] {
+  --bg-primary: #faf9f5;
+  --bg-secondary: #f5f4ed;
+  --bg-tertiary: #f0eee6;
+  --bg-hover: #e8e6dc;
+  --bg-hover-contrast: #ffffff;
+  --bg-input: #ffffff;
+  --border: rgba(31, 30, 29, 0.12);
+  --border-light: rgba(31, 30, 29, 0.2);
+  --text-primary: #3d3d3a;
+  --text-secondary: #73726c;
+  --text-bright: #141413;
+  --text-muted: #97958c;
+  --user-msg-bg: #e8e6dc;
+  --assistant-msg-bg: #f0eee6;
+  --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  color-scheme: light;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ===== Layout: 3-column ===== */
+.app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* Column resize handle */
+/* Zero layout width — main content sits flush against the sidebar's own
+   border-right. The drag handle is an invisible absolute strip overlapping
+   the border (extends 2px into each side but never painted, so it doesn't
+   shrink any visible region). */
+.col-resize {
+  width: 0;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+.col-resize::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  width: 5px;
+  cursor: col-resize;
+}
+
+/* ===== Scrollbar =====
+   Custom overlay scrollbars: native scrollbars are hidden on targeted scroll
+   containers (`.scroll-overlay`), and js/scrollbar.js draws a thin floating
+   thumb on top of the content. The thumb is theme-aware, drag-to-scroll, and
+   takes no layout width. Containers not marked `.scroll-overlay` fall back to
+   the OS default scrollbar. */
+.scroll-overlay {
+  scrollbar-width: none; /* Firefox: hide native */
+}
+.scroll-overlay::-webkit-scrollbar {
+  display: none; /* WebKit: hide native */
+}
+
+.overlay-thumb {
+  position: fixed;
+  width: 6px;
+  right: 0;
+  border-radius: 6px;
+  background: var(--border-light);
+  pointer-events: auto;
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.25s, background 0.15s, width 0.12s;
+  cursor: default;
+  user-select: none;
+}
+.overlay-thumb.visible { opacity: 0.85; }
+.overlay-thumb:hover,
+.overlay-thumb.dragging {
+  background: var(--text-muted);
+  width: 8px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+  .sidebar.collapsed { width: 0; }
+  .menu-btn { display: block; }
+  .detail-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 100; box-shadow: -4px 0 20px rgba(0,0,0,0.5); }
+  .detail-panel.collapsed { width: 0; }
+}
+
+@media (max-width: 600px) {
+  .message { padding: 12px 16px; }
+  .input-area { padding: 12px 16px 16px; }
+  .welcome-examples { flex-direction: column; }
+}
+
+/* Chats nav icon: two bubbles nudge apart on hover (Claude.ai detail) */
+.sidebar-nav-chats .nav-chats-bubble-l,
+.sidebar-nav-chats .nav-chats-bubble-r {
+  transition: transform 0.2s ease;
+}
+.sidebar-nav-chats:hover .nav-chats-bubble-l { transform: translateX(-0.5px); }
+.sidebar-nav-chats:hover .nav-chats-bubble-r { transform: translateX(0.5px); }
+.sidebar-nav-chats:active .nav-chats-bubble-l,
+.sidebar-nav-chats:active .nav-chats-bubble-r {
+  transform: translateX(0);
+}
+

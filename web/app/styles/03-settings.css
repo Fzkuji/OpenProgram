@@ -1,0 +1,428 @@
+/* ===== Settings View ===== */
+/* ===== Settings View (Claude-style) ===== */
+.settings-view {
+  min-height: 0;
+}
+.settings-topbar {
+  display: flex;
+  align-items: flex-end;
+  padding: 0 32px;
+  height: 96px;
+  box-sizing: border-box;
+}
+.settings-title {
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--text-bright);
+  line-height: 1.3;
+}
+.settings-body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 0 32px;
+  margin: 32px 0;
+  padding: 0 32px;
+  max-width: 1600px;
+}
+.settings-body.providers-active {
+  /* Providers section wants every pixel of horizontal space to avoid wrapping
+     its three-column layout. Drop the cap so the detail pane grows with the
+     sidebar-collapsed viewport. */
+  max-width: none;
+}
+.settings-nav {
+  width: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: start;
+  position: sticky;
+  top: 16px;
+  padding: 0;
+  margin-left: -12px;
+}
+.settings-nav-item {
+  padding: 0 12px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 75ms, color 75ms;
+  white-space: nowrap;
+}
+.settings-nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.settings-nav-item.active {
+  color: var(--text-bright);
+  background: var(--bg-tertiary);
+}
+.settings-content {
+  padding: 0;
+}
+
+/* Sections separated by bottom border */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+  padding-bottom: 32px;
+}
+.settings-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.settings-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin: 0;
+}
+
+/* Cards within sections */
+.settings-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+}
+.settings-card + .settings-card {
+  margin-top: 12px;
+}
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.settings-card-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Rows inside cards */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+.settings-row + .settings-row {
+  border-top: 1px solid var(--border);
+}
+.settings-label {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.settings-value {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Theme switcher */
+.theme-switcher {
+  display: inline-flex;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.theme-btn {
+  padding: 4px 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-family: var(--font-sans);
+}
+.theme-btn:hover {
+  color: var(--text-primary);
+}
+.theme-btn.active {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+/* Confirm dialog (Claude-style modal) */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.confirm-overlay.visible { opacity: 1; }
+.confirm-dialog {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 400px;
+  transform: scale(0.95);
+  transition: transform 0.15s ease;
+}
+.confirm-overlay.visible .confirm-dialog { transform: scale(1); }
+.confirm-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-bottom: 8px;
+}
+.confirm-message {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.confirm-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  transition: background 0.1s;
+  font-family: var(--font-sans);
+}
+.confirm-btn:hover { background: var(--bg-hover); }
+.confirm-btn-danger {
+  background: var(--accent-red);
+  color: #fff;
+  border-color: var(--accent-red);
+}
+.confirm-btn-danger:hover { background: #c9413a; }
+
+/* Input & Button */
+.settings-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  height: 28px;
+  line-height: 26px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  width: 280px;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.settings-input:hover { border-color: var(--text-muted); }
+.settings-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+.settings-btn {
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  padding: 0 12px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 75ms;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.settings-btn:hover { opacity: 0.85; }
+
+/* Badges */
+.settings-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  height: 20px;
+}
+.settings-badge.ok { background: rgba(46,160,67,0.2); color: #3fb950; }
+.settings-badge.missing { background: rgba(139,148,158,0.2); color: var(--text-muted); }
+
+/* Keep existing section styles */
+.sidebar-section {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Section header with hide/show hint */
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 16px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.sidebar-section-title {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  padding: 0;
+}
+.sidebar-section-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.sidebar-section-header:hover .sidebar-section-hint { opacity: 0.75; }
+
+/* Conversation list — exact Claude.ai values */
+/* Claude: height 32, padding 6px 16px with -translate-x-2, radius 6px, font 12px, gap 1px */
+/* Effective: text at 16px from sidebar left = 8px container + 8px item padding */
+.conv-item {
+  padding: 6px 8px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  box-sizing: border-box;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background 0.3s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  border-radius: 6px;
+  margin: 0;
+}
+.conv-item .conv-title {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  line-height: 20px;
+}
+/* Claude.ai style: fade out right edge only on hover/focus so the delete
+   button doesn't collide with text. */
+.conv-item:hover .conv-title,
+.conv-item:focus-within .conv-title {
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(to right, #000 78%, transparent 95%);
+  mask-image: linear-gradient(to right, #000 78%, transparent 95%);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+.conv-item .conv-del {
+  display: none; width: 20px; height: 20px;
+  font-size: 12px; border-radius: 4px; color: var(--text-muted);
+  align-items: center; justify-content: center; line-height: 1;
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+}
+.conv-item:hover .conv-del { display: flex; }
+.conv-item .conv-del:hover { background: var(--accent-red); color: #fff; }
+
+.conv-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.conv-item.active { background: var(--bg-hover); color: var(--text-bright); }
+.conv-clear-all {
+  padding: 6px 16px; font-size: 11px; color: var(--text-muted);
+  cursor: pointer; text-align: center;
+}
+.conv-clear-all:hover { color: var(--accent-red); }
+
+/* Functions section */
+.sidebar-functions {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.fn-category {
+  padding: 4px 16px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.fn-subcategory {
+  padding: 2px 24px 1px;
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.fn-item {
+  padding: 0 16px 0 24px;
+  height: 32px;
+  cursor: pointer;
+  transition: background 75ms;
+  gap: 8px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  margin: 1px 8px;
+}
+
+.fn-item:hover { background: var(--bg-hover); }
+
+.fn-icon {
+  font-size: 12px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.fn-icon.fn-cat-app { color: var(--accent-green); }
+.fn-icon.fn-cat-meta { color: var(--accent-purple); }
+.fn-icon.fn-cat-builtin { color: var(--accent-cyan); }
+.fn-icon.fn-cat-generated { color: var(--accent-yellow); }
+.fn-icon.fn-cat-user { color: var(--accent-orange); }
+
+.fn-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-bright);
+  flex-shrink: 0;
+}
+
+.fn-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+

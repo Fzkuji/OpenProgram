@@ -1,0 +1,29 @@
+/* App styles — port from openprogram/webui/static/css/style.css */
+@import "./styles.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* shadcn token bridge so shadcn/ui components keep working */
+:root {
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
+  --card: var(--bg-secondary);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-tertiary);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent-blue);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bg-tertiary);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-tertiary);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--bg-hover);
+  --accent-foreground: var(--text-bright);
+  --destructive: var(--accent-red);
+  --destructive-foreground: #ffffff;
+  --input: var(--bg-input);
+  --ring: var(--accent-blue);
+  --radius-lg: 12px;
+}
