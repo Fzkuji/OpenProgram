@@ -7,6 +7,9 @@ import { PageShell } from "./page-shell";
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
 // web/public/js/shared/ so the static tree groups them together.
+// Legacy shared JS modules. We keep loading the ones that the
+// not-yet-migrated chat page + sidebar + right rail still depend on;
+// the settings/programs/chats trios are gone (migrated to React).
 const SHARED_JS = [
   "shared/state.js",
   "shared/helpers.js",
@@ -15,15 +18,8 @@ const SHARED_JS = [
   "shared/programs-panel.js",
   "shared/fn-form.js",
   "shared/providers.js",
-  "shared/settings.js",
-  "shared/settings-providers.js",
-  "shared/settings-wizard.js",
-  "shared/settings-general.js",
   "shared/ui.js",
   "shared/scrollbar.js",
-  // Right sidebar scripts are shared so the panel survives navigation
-  // between chat conversations (PageShell remounts per pathname but
-  // the right sidebar DOM lives on AppShell, above the remount).
   "shared/right-dock.js",
   "shared/history-graph.js",
 ];
