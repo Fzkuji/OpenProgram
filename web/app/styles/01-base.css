@@ -150,16 +150,23 @@ html, body {
 }
 
 /* ===== Responsive ===== */
+/* Narrow-viewport overlay: only EXPANDED sidebars float on top of the
+   main column. Collapsed rails stay in the flex flow so they keep
+   their 48px width and the main column never sits behind them.
+   Without the :not(.collapsed) guard the collapsed rail was
+   position:fixed too, painting the toggle/icon strip on top of the
+   topbar and chat content. */
 @media (max-width: 900px) {
-  /* Use :not(.right-sidebar) so the right rail doesn't get pinned to
-     left:0 along with the left rail — it has class .sidebar too. */
-  .sidebar:not(.right-sidebar) { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
-  .sidebar:not(.right-sidebar).collapsed { width: 0; }
+  .sidebar:not(.right-sidebar):not(.collapsed) {
+    position: fixed; left: 0; top: 0; bottom: 0; z-index: 100;
+    box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+  }
   .menu-btn { display: block; }
-  .right-sidebar,
-  .detail-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 100; box-shadow: -4px 0 20px rgba(0,0,0,0.5); }
-  .right-sidebar.collapsed,
-  .detail-panel.collapsed { width: 0; }
+  .right-sidebar:not(.collapsed),
+  .detail-panel:not(.collapsed) {
+    position: fixed; right: 0; top: 0; bottom: 0; z-index: 100;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.5);
+  }
 }
 
 @media (max-width: 600px) {
