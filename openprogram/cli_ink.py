@@ -1,9 +1,12 @@
 """Launch the Ink-based TUI front-end.
 
-The CLI front-end is a Node.js program (cli/dist/index.js) that talks to the
-Python webui server over WebSocket. ``run_ink_tui`` starts the server in
-this process, picks a free port, and spawns the Node child with stdin/stdout
-attached so it owns the terminal.
+The TUI is a Node.js program (cli/dist/index.js) that talks to the
+OpenProgram worker over WebSocket. The worker must already be running
+— ``run_ink_tui`` looks up the live worker via ``worker.{pid,port}``
+and connects. If no worker is running we print actionable hints
+(``openprogram worker start`` / ``openprogram worker install``) and
+exit. The TUI no longer spawns a temporary backend of its own; the
+backend is a single, long-lived process shared by all front-ends.
 """
 
 from __future__ import annotations
@@ -14,7 +17,6 @@ import shutil
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -59,55 +61,87 @@ def _resolve_node() -> str:
     return node
 
 
-def _restart_channels_worker_for_tui() -> int | None:
-    """Restart an existing channels worker and return its webui port.
+def _print_no_worker_hint() -> None:
+    """Tell the user how to start a worker."""
+    print("openprogram: no worker is running.", file=sys.stderr)
+    print(file=sys.stderr)
+    print("The TUI connects to a persistent worker process that hosts the", file=sys.stderr)
+    print("model API, sessions, and any chat-channel adapters. Start one:", file=sys.stderr)
+    print(file=sys.stderr)
+    print("  openprogram worker start          # one-off background process", file=sys.stderr)
+    print("  openprogram worker install        # install as a system service", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Then re-run `openprogram` to open the TUI.", file=sys.stderr)
 
-    The TUI must share the channels worker's webui when channels are
-    active, otherwise inbound channel broadcasts are emitted from a
-    different process. Reusing a long-lived worker also reuses its old
-    imported code, so a TUI launch refreshes the worker process first.
+
+def _resolve_worker_port(*, autostart: bool) -> int | None:
+    """Find a live worker's port, optionally starting one if missing.
+
+    With ``autostart=False`` (the strict mode the TUI uses), simply
+    returns the port from ``worker.port`` if a worker is alive, else
+    None. With ``autostart=True``, this could spawn a worker — kept as
+    an opt-in for non-interactive flows that want the legacy convenience.
     """
-    from openprogram.channels import worker as _worker
+    from openprogram.worker import current_worker_pid, read_worker_port, spawn_detached
 
-    if _worker.current_worker_pid() is None:
-        return None
-
-    if _worker.stop_worker() != 0:
-        return _worker.read_worker_port()
-
-    if _worker.spawn_detached() != 0:
-        return None
-
-    deadline = time.time() + 6.0
-    while time.time() < deadline:
-        port = _worker.read_worker_port()
-        if port is not None and _wait_until_listening(port, timeout=0.2):
+    if current_worker_pid() is not None:
+        port = read_worker_port()
+        if port is not None and _wait_until_listening(port, timeout=2.0):
             return port
+
+    if not autostart:
+        return None
+
+    rc = spawn_detached()
+    if rc != 0:
+        return None
+    deadline = time.time() + 8.0
+    while time.time() < deadline:
+        if current_worker_pid() is not None:
+            port = read_worker_port()
+            if port is not None and _wait_until_listening(port, timeout=0.5):
+                return port
         time.sleep(0.1)
-    return _worker.read_worker_port()
+    return None
 
 
 def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
-    """Start the webui server, then exec the Node CLI as a child.
+    """Connect the Node TUI to the live worker.
 
     The agent / conv_id / rt arguments are kept for signature compatibility
     with the old Textual entry; the Node front-end discovers the default
     agent over the ws ``list_agents`` action and picks its own conv_id when
     the user sends the first message.
     """
-    from openprogram.webui import start_web
-
     node = _resolve_node()
     entry = _resolve_cli_entry()
 
-    port = _find_free_port()
+    # Surface any update that was applied since the last launch. This
+    # runs before the dup2 redirect so the user actually sees it on
+    # their terminal instead of in ink-server.log.
+    try:
+        from openprogram.updater import pop_staged_notice
+        notice = pop_staged_notice()
+        if notice:
+            target = notice.get("version") or "?"
+            summary = notice.get("summary") or ""
+            line = f"openprogram: updated to {target}"
+            if summary and summary != "up to date":
+                line += f" ({summary})"
+            print(line, file=sys.stderr)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Strict mode: require an existing worker. The legacy "spawn one for
+    # this session" path is gone — front-ends connect, they don't host.
+    port = _resolve_worker_port(autostart=False)
+    if port is None:
+        _print_no_worker_hint()
+        sys.exit(2)
 
     # cli.py already did the early dup2 for the TUI path and stashed the
     # original tty fds on the cli module. Reuse those so the Node child
-    # gets a clean terminal while the server's threads keep writing into
-    # ~/.openprogram/logs/ink-startup.log. Fall back to a fresh redirect
-    # if the early hook didn't run (e.g. when run_ink_tui is called from
-    # somewhere other than the cli entry point).
+    # gets a clean terminal while logs land in ~/.openprogram/logs/.
     from openprogram import cli as _cli
     tty_out = getattr(_cli, "_TUI_TTY_OUT", None)
     tty_err = getattr(_cli, "_TUI_TTY_ERR", None)
@@ -121,23 +155,6 @@ def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
         os.dup2(log_fd, 1)
         os.dup2(log_fd, 2)
         os.close(log_fd)
-
-    # If a channels worker is already running it has its OWN webui in
-    # the same process. Restart it first, then attach to its new webui
-    # instead of reusing a stale imported server module. Sharing the webui
-    # process is what makes inbound channel messages show up live in the
-    # TUI; otherwise channel broadcasts and the TUI would live in separate
-    # processes.
-    worker_port = _restart_channels_worker_for_tui()
-    if worker_port is not None:
-        port = worker_port
-    else:
-        # Don't wait for the ws server to listen before spawning Node — Node
-        # takes ~340ms to load its bundle (React + Ink + marked + ws), in
-        # parallel with the server's ~240ms boot. BackendClient retries with
-        # exponential backoff so the first connect attempt may fail and that's
-        # fine.
-        start_web(port=port, open_browser=False)
 
     ws_url = f"ws://127.0.0.1:{port}/ws"
     env = os.environ.copy()

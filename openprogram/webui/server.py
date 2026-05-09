@@ -2735,9 +2735,7 @@ async def _handle_ws_command(ws, cmd: dict):
     elif action == "add_binding":
         try:
             from openprogram.channels import bindings as _bindings_mod
-            from openprogram.channels.worker import (
-                current_worker_pid, spawn_detached,
-            )
+            from openprogram.worker import current_worker_pid, spawn_detached
             match: dict = {"channel": cmd.get("channel") or ""}
             if cmd.get("account_id"):
                 match["account_id"] = cmd["account_id"]
@@ -2780,9 +2778,7 @@ async def _handle_ws_command(ws, cmd: dict):
         try:
             from openprogram.agents import session_aliases as _sa
             from openprogram.webui import persistence as _p
-            from openprogram.channels.worker import (
-                current_worker_pid, spawn_detached,
-            )
+            from openprogram.worker import current_worker_pid, spawn_detached
             session_id = cmd.get("session_id") or ""
             if not session_id:
                 await ws.send_text(json.dumps({

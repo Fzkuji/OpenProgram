@@ -8,7 +8,12 @@ OpenAI Codex, Google (Generative AI + Vertex + Gemini CLI), and Amazon Bedrock.
 from __future__ import annotations
 
 from openprogram.providers.api_registry import register_api_provider
-from openprogram.providers import anthropic, google, openai_completions
+# Provider submodules are imported lazily inside register_builtins()
+# below. Importing them at module top would force re-entry into the
+# parent providers package while it's still being initialized, which
+# Python flags as "partially initialized module" when more than one
+# thread is in the import chain at the same time (the worker's
+# session-restore thread races the main webui startup).
 
 
 class _StreamFnProvider:
@@ -34,6 +39,10 @@ def register_builtins() -> None:
     if _registered:
         return
     _registered = True
+
+    # Lazy imports so register.py module load doesn't pull these
+    # submodules into the still-loading providers package.
+    from openprogram.providers import anthropic, google, openai_completions
 
     # Anthropic Messages API
     register_api_provider(
@@ -112,6 +121,17 @@ def register_builtins() -> None:
         register_api_provider(
             "google-antigravity",
             _StreamFnProvider(stream_google_gemini_cli, stream_simple_google_gemini_cli),
+            source_id="builtin",
+        )
+    except ImportError:
+        pass
+
+    # Claude Max CLI (subscription-based, requires `claude auth login`)
+    try:
+        from openprogram.providers.claude_max_cli import stream_claude_max_cli, stream_simple_claude_max_cli
+        register_api_provider(
+            "claude-code-cli",
+            _StreamFnProvider(stream_claude_max_cli, stream_simple_claude_max_cli),
             source_id="builtin",
         )
     except ImportError:

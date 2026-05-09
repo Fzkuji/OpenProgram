@@ -43,6 +43,65 @@ from .types import (
 )
 
 
+def _latest_user_text(messages: list) -> str:
+    """Walk back from the end and return the last user-role text.
+
+    Memory prefetch uses this as the recall query for the upcoming
+    turn. Empty string if no user message is present (e.g. on the
+    first model warmup call).
+    """
+    for msg in reversed(messages):
+        role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
+        if role != "user":
+            continue
+        content = getattr(msg, "content", None)
+        if content is None and isinstance(msg, dict):
+            content = msg.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for c in content:
+                if isinstance(c, str):
+                    parts.append(c)
+                elif isinstance(c, dict):
+                    if c.get("type") == "text" or "text" in c:
+                        parts.append(str(c.get("text", "")))
+                else:
+                    text = getattr(c, "text", None)
+                    if text:
+                        parts.append(str(text))
+            joined = " ".join(p for p in parts if p)
+            if joined.strip():
+                return joined.strip()
+        return ""
+    return ""
+
+
+def _memory_sync_turn(messages: list, final_message) -> None:
+    """Best-effort post-turn write to short-term memory.
+
+    Cheap pattern matching only — heavier extraction lives in the
+    session-end watcher.
+    """
+    try:
+        from openprogram.memory.builtin import BuiltinMemoryProvider
+    except Exception:
+        return
+    user_text = _latest_user_text(messages)
+    if not user_text:
+        return
+    asst_text = ""
+    content = getattr(final_message, "content", None) or []
+    for c in content:
+        if hasattr(c, "type") and c.type == "text":
+            asst_text += getattr(c, "text", "") or ""
+    try:
+        BuiltinMemoryProvider().sync_turn(user_text, asst_text)
+    except Exception:
+        pass
+
+
 def _create_agent_stream() -> EventStream[AgentEvent, list[AgentMessage]]:
     return EventStream(
         is_done=lambda e: e.type == "agent_end",
@@ -248,9 +307,28 @@ async def _stream_assistant_response(
         else:
             llm_messages = result
 
+    # Per-turn memory prefetch — extract the latest user message and
+    # ask the memory subsystem for relevant snippets. The result is
+    # already fenced as <memory-context>; we append it to the system
+    # prompt for THIS LLM call only (never persisted to history). The
+    # frozen core.md block stays at the top of the system prompt so
+    # the LLM's prefix cache still hits.
+    prefetch_block = ""
+    latest_user_text = _latest_user_text(messages)
+    if latest_user_text:
+        try:
+            from openprogram.memory.builtin import BuiltinMemoryProvider
+            prefetch_block = BuiltinMemoryProvider().prefetch(latest_user_text)
+        except Exception:
+            prefetch_block = ""
+
+    sys_prompt = context.system_prompt or None
+    if prefetch_block:
+        sys_prompt = (sys_prompt or "") + "\n\n" + prefetch_block
+
     # Build LLM context
     llm_context = Context(
-        system_prompt=context.system_prompt or None,
+        system_prompt=sys_prompt,
         messages=llm_messages,
         tools=[t for t in (context.tools or [])],
     )
@@ -316,6 +394,8 @@ async def _stream_assistant_response(
             if not added_partial:
                 ev_stream.push(AgentEventMessageStart(message=final_message))
             ev_stream.push(AgentEventMessageEnd(message=final_message))
+            if event.type == "done":
+                _memory_sync_turn(messages, final_message)
             return final_message
 
     # Fallback: return partial if no done/error event

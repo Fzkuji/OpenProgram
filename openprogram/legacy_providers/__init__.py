@@ -42,7 +42,7 @@ import shutil
 # Maps provider name -> (class_name, module_path, default_model)
 PROVIDERS = {
     "claude-code":  ("ClaudeCodeRuntime",  "openprogram.providers.anthropic.cli_runtime",  "claude-sonnet-4-6"),
-    "openai-codex": ("OpenAICodexRuntime", "openprogram.legacy_providers.openai_codex", "gpt-5.5-mini"),
+    "openai-codex": ("OpenAICodexRuntime", "openprogram.legacy_providers.openai_codex", "gpt-5.5"),
     "gemini-cli":   ("GoogleGeminiCLIRuntime", "openprogram.providers.google_gemini_cli.runtime", "gemini-2.5-flash"),
     "anthropic":    ("AnthropicRuntime",    "openprogram.providers.anthropic.runtime",          "claude-sonnet-4-6"),
     "openai":       ("OpenAIRuntime",       "openprogram.providers.openai_responses.runtime",   "gpt-4.1"),

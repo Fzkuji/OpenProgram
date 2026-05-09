@@ -20,7 +20,7 @@ import { useState } from "react";
  * user knows which file this is and whether it's actively updating.
  */
 export function CanvasPanel({ onClose }: { onClose: () => void }) {
-  const [pathOverride, _setPathOverride] = useState<string | undefined>(
+  const [pathOverride] = useState<string | undefined>(
     undefined,
   );
 

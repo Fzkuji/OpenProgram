@@ -207,6 +207,18 @@ class ContextEngine:
         if skill_index:
             parts.append(skill_index)
 
+        # 5. Persistent memory snapshot (machine-wide). Frozen at session
+        # start so the LLM's prefix cache survives. Full recall is
+        # available on demand via the memory_recall / memory_reflect /
+        # wiki_get tools.
+        try:
+            from openprogram.memory.builtin import BuiltinMemoryProvider
+            mem_block = BuiltinMemoryProvider().system_prompt_block()
+            if mem_block.strip():
+                parts.append(mem_block)
+        except Exception:  # noqa: BLE001
+            pass
+
         if not parts:
             return ""
         return ("── Agent prompt ──\n"

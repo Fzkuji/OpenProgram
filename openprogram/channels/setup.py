@@ -24,7 +24,7 @@ from typing import Optional
 
 from openprogram.channels import accounts as _accounts
 from openprogram.channels import bindings as _bindings
-from openprogram.channels import worker as _worker
+from openprogram import worker as _worker
 from openprogram.setup import _choose_one, _confirm, _text
 
 

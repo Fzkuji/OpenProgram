@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
-import { subscribeAuthEvents } from "@/lib/auth-events";
+import { subscribeProviderAuthEvents as subscribeAuthEvents } from "@/lib/provider-auth-events";
 import type {
   AuthProfile,
   CredentialView,
@@ -62,8 +62,8 @@ export default function AuthSettingsPage() {
     setError(null);
     try {
       const [p, pl] = await Promise.all([
-        api.listAuthProfiles(),
-        api.listAuthPools(profile),
+        api.listProviderProfiles(),
+        api.listProviderPools(profile),
       ]);
       setProfiles(p.profiles);
       setPools(pl.pools);
@@ -88,7 +88,7 @@ export default function AuthSettingsPage() {
 
   const onDiscover = async () => {
     try {
-      const r = await api.discoverCredentials();
+      const r = await api.discoverProviderCredentials();
       setDiscovered(r.discovered);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -100,12 +100,12 @@ export default function AuthSettingsPage() {
     if (!addForm.provider.trim()) return;
     try {
       if (addForm.type === "api_key") {
-        await api.addCredential(addForm.provider.trim(), activeProfile, {
+        await api.addProviderCredential(addForm.provider.trim(), activeProfile, {
           type: "api_key",
           api_key: addForm.apiKey.trim(),
         });
       } else {
-        await api.addCredential(addForm.provider.trim(), activeProfile, {
+        await api.addProviderCredential(addForm.provider.trim(), activeProfile, {
           type: "oauth",
           access_token: addForm.accessToken.trim(),
           refresh_token: addForm.refreshToken.trim() || undefined,
@@ -126,7 +126,7 @@ export default function AuthSettingsPage() {
 
   const onRemove = async (cred: CredentialView) => {
     try {
-      await api.removeCredential(cred.provider_id, cred.profile_id, cred.credential_id);
+      await api.removeProviderCredential(cred.provider_id, cred.profile_id, cred.credential_id);
       reload(activeProfile);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

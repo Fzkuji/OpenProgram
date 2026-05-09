@@ -54,6 +54,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     bypass_words = {
         "agents", "sessions", "channels", "config", "programs", "skills",
         "providers", "web", "resume", "init", "doctor", "browser",
+        "worker", "update", "memory",
     }
     bypass_flags = {
         "--print", "-p", "--no-tui", "--web", "--help", "-h", "--version",
@@ -232,33 +233,78 @@ def main():
         help="Port (default: stored UI pref, then 8765)")
     p_web.add_argument("--no-browser", action="store_true", help="Don't open browser")
 
+    # ---- memory (persistent, machine-wide knowledge) ----------------------
+    p_memory = sub.add_parser("memory",
+        help="Inspect / manage persistent memory (short-term + wiki + core).")
+    memory_sub = p_memory.add_subparsers(dest="memory_verb", metavar="verb")
+    memory_sub.add_parser("status",
+        help="Show paths, counts, last sleep timestamp.")
+    p_mr = memory_sub.add_parser("recall",
+        help="Search wiki + recent short-term and print raw snippets.")
+    p_mr.add_argument("query", nargs="+")
+    p_mr.add_argument("--days", type=int, default=30,
+        help="Limit short-term search to last N days (default 30).")
+    p_ms = memory_sub.add_parser("show",
+        help="Print a wiki page (slug or 'kind/slug').")
+    p_ms.add_argument("path")
+    p_med = memory_sub.add_parser("edit",
+        help="Open a wiki page in $EDITOR.")
+    p_med.add_argument("path")
+    p_msleep = memory_sub.add_parser("sleep",
+        help="Run a sleep sweep now (light → deep → REM).")
+    p_msleep.add_argument("--phase", choices=["light", "deep", "rem"],
+        help="Run only one phase instead of the full sweep.")
+    memory_sub.add_parser("reflections",
+        help="Print the latest entries from wiki/reflections.md.")
+    p_mexp = memory_sub.add_parser("export",
+        help="Tar+gzip the entire memory dir to a path.")
+    p_mexp.add_argument("--out", default=None,
+        help="Output path (default: ./openprogram-memory-<date>.tar.gz)")
+
+    # ---- update (auto-update from upstream) -------------------------------
+    p_update = sub.add_parser("update",
+        help="Check for + apply updates from upstream. The worker also "
+             "runs this in the background at startup; this command is "
+             "the manual entry point.")
+    p_update.add_argument("--check", action="store_true",
+        help="Only check; don't apply any update.")
+    p_update.add_argument("--force", action="store_true",
+        help="Bypass the 6-hour throttle.")
+
+    # ---- worker (persistent backend process) ------------------------------
+    p_worker = sub.add_parser("worker",
+        help="Manage the persistent worker process (webui + channels). "
+             "All TUI / Web UI front-ends connect to this single process, "
+             "so multiple front-ends and external channels share state.")
+    worker_sub = p_worker.add_subparsers(dest="worker_verb", metavar="verb")
+    worker_sub.add_parser("run",
+        help="Run the worker in the foreground (blocking). Useful for "
+             "debugging — Ctrl-C stops it.")
+    worker_sub.add_parser("start",
+        help="Spawn a detached worker in the background and return.")
+    worker_sub.add_parser("stop",
+        help="Stop the running worker (SIGTERM, escalates to SIGKILL).")
+    worker_sub.add_parser("restart",
+        help="Stop the running worker and start a fresh one.")
+    worker_sub.add_parser("status",
+        help="Show whether the worker is running, its PID, port, and uptime.")
+    worker_sub.add_parser("install",
+        help="Install as a system service (launchd on macOS, systemd --user "
+             "on Linux). Auto-starts at login and restarts on crash.")
+    worker_sub.add_parser("uninstall",
+        help="Remove the system service.")
+
     # ---- channels ---------------------------------------------------------
     p_channels = sub.add_parser("channels",
         help="Run / inspect chat-channel bots (Telegram, Discord, Slack, WeChat)")
     channels_sub = p_channels.add_subparsers(dest="channels_verb", metavar="verb")
     channels_sub.add_parser("list", help="Show per-platform enable + config status")
-    p_chstart = channels_sub.add_parser("start",
-        help="Start the channels worker in the background. Returns "
-             "immediately; use `channels stop` to kill it. Add "
-             "--foreground to keep it attached to your terminal instead "
-             "(useful for debugging).")
-    p_chstart.add_argument("--foreground", "--fg", action="store_true",
-        help="Stay in the foreground (blocking) instead of detaching. "
-             "Ctrl-C stops it.")
-    # Back-compat: older docs + the inline prompt_spawn_if_configured_but_dead
-    # path still pass --detach. Accept and ignore it.
-    p_chstart.add_argument("--detach", action="store_true",
-        help=argparse.SUPPRESS)
-    channels_sub.add_parser("stop",
-        help="Stop the background channels worker (SIGTERM via PID file).")
-    channels_sub.add_parser("status",
-        help="Show whether the channels worker is running, which PID, "
-             "and when it started.")
     channels_sub.add_parser("setup",
         help="Interactive wizard — pick channel, log in (QR / token), "
-             "bind to an agent, optionally start the worker. One command "
-             "instead of `accounts add`+`accounts login`+`bindings add`+"
-             "`channels start`.")
+             "bind to an agent. One command instead of "
+             "`accounts add` + `accounts login` + `bindings add`. "
+             "Channels run inside the persistent worker — start it with "
+             "`openprogram worker start`.")
     # ---- channels accounts --------------------------------------------
     p_chacct = channels_sub.add_parser("accounts",
         help="Manage channel bot accounts (WeChat, Telegram, etc.)")
@@ -481,11 +527,9 @@ def main():
                 print(f"[error] no session {args.session_id!r} found "
                       f"under any agent.")
                 sys.exit(1)
-            # Also auto-start the channels worker since the user has
+            # Also auto-start the persistent worker since the user has
             # now explicitly asked for external routing.
-            from openprogram.channels.worker import (
-                current_worker_pid, spawn_detached,
-            )
+            from openprogram.worker import current_worker_pid, spawn_detached
             _row, replaced = _a.attach(
                 channel=args.channel, account_id=args.account,
                 peer_kind=args.peer_kind, peer_id=args.peer,
@@ -498,7 +542,7 @@ def main():
                 print(f"  (replaced previous binding "
                       f"→ session {replaced.get('session_id')})")
             if current_worker_pid() is None:
-                print("Starting channels worker in the background...")
+                print("Starting openprogram worker in the background...")
                 spawn_detached()
         elif verb == "detach":
             from openprogram.agents import session_aliases as _a
@@ -535,6 +579,148 @@ def main():
         _cmd_web(args.port, False if args.no_browser else None)
         return
 
+    if args.command == "memory":
+        verb = getattr(args, "memory_verb", None)
+        from openprogram.memory import store as _mstore
+        from openprogram.memory import index as _midx
+        if verb == "status":
+            stats = _midx.stats()
+            print(f"memory root:     {_mstore.root()}")
+            print(f"wiki pages:      {stats['wiki_pages']}")
+            print(f"short entries:   {stats['short_entries']}")
+            print(f"last reindex:    {stats['last_reindex'] or '(never)'}")
+            ls = _mstore.last_sleep_path()
+            if ls.exists():
+                print(f"last sleep:      {ls.read_text().strip()[:200]}")
+            else:
+                print("last sleep:      (never)")
+            sys.exit(0)
+        if verb == "recall":
+            from openprogram.memory.builtin.recall import recall_for_prompt
+            q = " ".join(args.query)
+            text = recall_for_prompt(q, short_days=args.days)
+            print(text or f"No memories matched {q!r}.")
+            sys.exit(0)
+        if verb == "show":
+            from openprogram.memory import wiki as _w
+            from openprogram.memory.schema import render_wiki_page
+            path = args.path
+            page = None
+            if "/" in path:
+                kind, slug = path.split("/", 1)
+                page = _w.get(kind, slug)
+            if page is None:
+                page = _w.find(path)
+            if page is None:
+                print(f"No wiki page matches {path!r}.")
+                sys.exit(1)
+            print(render_wiki_page(page))
+            sys.exit(0)
+        if verb == "edit":
+            import os, subprocess
+            from openprogram.memory import wiki as _w
+            path = args.path
+            if "/" in path:
+                kind, slug = path.split("/", 1)
+                target = _mstore.wiki_page(kind, slug)
+            else:
+                page = _w.find(path)
+                if page is None:
+                    print(f"No wiki page matches {path!r}.")
+                    sys.exit(1)
+                target = _mstore.wiki_page(page.type, page.id)
+            editor = os.environ.get("EDITOR", "vi")
+            subprocess.call([editor, str(target)])
+            _midx.reindex_all()  # changes may have shifted text — refresh index
+            sys.exit(0)
+        if verb == "sleep":
+            from openprogram.memory.sleep import run_sweep, run_phase
+            from openprogram.memory.llm_bridge import build_default_llm
+            llm = build_default_llm()
+            phase = getattr(args, "phase", None)
+            report = run_phase(phase, llm=llm) if phase else run_sweep(llm=llm)
+            import json as _json
+            print(_json.dumps(report, indent=2, ensure_ascii=False))
+            sys.exit(0)
+        if verb == "reflections":
+            r = _mstore.wiki_reflections()
+            if not r.exists():
+                print("(no reflections yet)")
+                sys.exit(0)
+            text = r.read_text(encoding="utf-8")
+            blocks = text.strip().split("\n## ")
+            tail = blocks[-3:] if len(blocks) > 3 else blocks
+            print("\n## ".join(tail))
+            sys.exit(0)
+        if verb == "export":
+            import datetime as _dt
+            import shutil as _sh
+            import tarfile as _tar
+            out = getattr(args, "out", None) or (
+                f"./openprogram-memory-{_dt.date.today().isoformat()}.tar.gz"
+            )
+            with _tar.open(out, "w:gz") as t:
+                t.add(str(_mstore.root()), arcname="memory")
+            print(f"exported to {out}")
+            sys.exit(0)
+        p_memory.print_help()
+        sys.exit(2)
+
+    if args.command == "update":
+        from openprogram.updater import (
+            apply_update, check_for_update, detect_install_method, is_disabled,
+        )
+        if is_disabled() and not args.force:
+            print("auto-update disabled by OPENPROGRAM_NO_AUTO_UPDATE.")
+            print("Use `openprogram update --force` to override.")
+            sys.exit(0)
+        method = detect_install_method()
+        info = check_for_update(force=args.force)
+        if info is None:
+            print(f"No update path for install method: {method.value}.")
+            sys.exit(0)
+        if not info.available:
+            print(f"openprogram {info.current} ({method.value}): {info.summary}.")
+            sys.exit(0)
+        print(f"update available: {info.current} → {info.target} ({info.summary})")
+        if args.check:
+            sys.exit(0)
+        ok, msg = apply_update(info)
+        if ok:
+            print(f"updated to {info.target}.")
+            print("Restart the worker so the new code takes effect:")
+            print("  openprogram worker restart")
+            sys.exit(0)
+        print(f"update failed: {msg}")
+        sys.exit(1)
+
+    if args.command == "worker":
+        verb = getattr(args, "worker_verb", None)
+        from openprogram import worker as _worker
+        if verb == "run":
+            sys.exit(_worker.run_foreground())
+        if verb == "start":
+            sys.exit(_worker.spawn_detached())
+        if verb == "stop":
+            sys.exit(_worker.stop_worker())
+        if verb == "restart":
+            sys.exit(_worker.restart_worker())
+        if verb == "status":
+            from openprogram.worker import services as _services
+            rc = _worker.print_status()
+            if _services.is_supported():
+                print()
+                _services.status()
+            sys.exit(rc)
+        if verb == "install":
+            from openprogram.worker import services as _services
+            sys.exit(_services.install())
+        if verb == "uninstall":
+            from openprogram.worker import services as _services
+            sys.exit(_services.uninstall())
+        p_worker.print_help()
+        sys.exit(2)
+
     if args.command == "channels":
         verb = getattr(args, "channels_verb", None)
         if verb == "list":
@@ -551,18 +737,6 @@ def main():
                       f"{str(r['enabled']):8} {str(r['configured']):12} "
                       f"{str(r['implemented']):6}")
             return
-        if verb == "start":
-            if getattr(args, "foreground", False):
-                from openprogram.channels.runner import run_all
-                sys.exit(run_all())
-            from openprogram.channels.worker import spawn_detached
-            sys.exit(spawn_detached())
-        if verb == "stop":
-            from openprogram.channels.worker import stop_worker
-            sys.exit(stop_worker())
-        if verb == "status":
-            from openprogram.channels.worker import print_status
-            sys.exit(print_status())
         if verb == "setup":
             from openprogram.channels import setup as _ch_setup
             sys.exit(_ch_setup.run())
@@ -1333,7 +1507,7 @@ def _cmd_web(port, open_browser):
     # offer to start one the moment a user hits "Attach" on a
     # conversation.
     try:
-        from openprogram.channels.worker import current_worker_pid
+        from openprogram.worker import current_worker_pid
         pid = current_worker_pid()
         if pid:
             print(f"Channels worker running (PID {pid}).")

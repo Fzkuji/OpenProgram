@@ -457,9 +457,7 @@ def _handle_login(args: list[str], console, agent) -> bool:
     try:
         from openprogram.channels import accounts as _accts
         from openprogram.channels import bindings as _bindings
-        from openprogram.channels.worker import (
-            current_worker_pid, spawn_detached,
-        )
+        from openprogram.worker import current_worker_pid, spawn_detached
     except Exception as e:  # noqa: BLE001
         console.print(f"[red]channel modules missing: {e}[/]")
         return False
@@ -714,9 +712,7 @@ def _handle_attach(args: list[str], console, agent, conv_id: str) -> bool:
 
     try:
         from openprogram.agents import session_aliases as _sa
-        from openprogram.channels.worker import (
-            current_worker_pid, spawn_detached,
-        )
+        from openprogram.worker import current_worker_pid, spawn_detached
         _row, replaced = _sa.attach(
             channel=channel, account_id=account_id,
             peer_kind=peer_kind, peer_id=peer,
@@ -939,7 +935,7 @@ def run_cli_chat(oneshot: str | None = None,
     # happens to already be running, so the user knows their bindings
     # are live.
     try:
-        from openprogram.channels.worker import current_worker_pid
+        from openprogram.worker import current_worker_pid
         pid = current_worker_pid()
         if pid:
             console.print(

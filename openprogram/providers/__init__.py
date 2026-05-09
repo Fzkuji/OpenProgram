@@ -127,3 +127,11 @@ def __getattr__(name: str):
         from openprogram import legacy_providers
         return getattr(legacy_providers, name)
     raise AttributeError(f"module 'openprogram.providers' has no attribute {name!r}")
+
+
+# Register builtin API providers AFTER the full package init completes.
+# Doing this from inside stream.py at module load triggers a circular
+# re-entry into providers/* when threads import in parallel.
+from .stream import _ensure_builtins as _stream_ensure_builtins
+_stream_ensure_builtins()
+del _stream_ensure_builtins

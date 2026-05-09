@@ -62,7 +62,7 @@ from .grep import TOOL as GREP
 from .image_analyze import TOOL as IMAGE_ANALYZE
 from .image_generate import TOOL as IMAGE_GENERATE
 from .list import TOOL as LIST
-from .memory import TOOL as MEMORY
+from .memory import ALL as MEMORY_TOOLS
 from .mixture_of_agents import TOOL as MIXTURE_OF_AGENTS
 from .pdf import TOOL as PDF
 from .process import TOOL as PROCESS
@@ -92,7 +92,7 @@ ALL_TOOLS: dict[str, dict[str, Any]] = {
     "image_analyze": IMAGE_ANALYZE,
     "pdf": PDF,
     "spawn_program": SPAWN_PROGRAM,
-    "memory": MEMORY,
+    **MEMORY_TOOLS,
     "clarify": CLARIFY,
     "execute_code": EXECUTE_CODE,
     "mixture_of_agents": MIXTURE_OF_AGENTS,
@@ -133,7 +133,10 @@ _LEGACY_TOOL_META: dict[str, dict[str, Any]] = {
     "image_analyze":      {"toolsets": ["core", "research"]},
     "pdf":                {"toolsets": ["research"], "max_result_chars": 50_000, "persist_full": True},
     "spawn_program":      {"toolsets": ["core"]},
-    "memory":             {"toolsets": ["core"]},
+    "memory_note":        {"toolsets": ["core"]},
+    "memory_recall":      {"toolsets": ["core"]},
+    "memory_reflect":     {"toolsets": ["core"]},
+    "wiki_get":           {"toolsets": ["core"]},
     "clarify":            {"toolsets": ["core"]},
     "execute_code":       {"toolsets": ["core"], "unsafe_in": ["wechat", "telegram"]},
     "mixture_of_agents":  {"toolsets": ["research"]},
@@ -328,7 +331,7 @@ __all__ = [
     "IMAGE_ANALYZE",
     "PDF",
     "SPAWN_PROGRAM",
-    "MEMORY",
+    "MEMORY_TOOLS",
     "CLARIFY",
     "EXECUTE_CODE",
     "MIXTURE_OF_AGENTS",

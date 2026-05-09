@@ -9,7 +9,6 @@ from typing import AsyncGenerator
 
 from .api_registry import get_api_provider
 from .env_api_keys import get_env_api_key
-from .register import register_builtins
 from .types import (
     AssistantMessage,
     AssistantMessageEvent,
@@ -21,7 +20,29 @@ from .types import (
     StreamOptions,
 )
 
-register_builtins()
+# Avoid eager `from .register import register_builtins` at module top:
+# `register.py` imports `openprogram.providers`, which imports this
+# module — fine on the main thread (Python resolves the partial module),
+# but a concurrent worker thread that triggers the same import races
+# the partial state and raises ImportError. Importing lazily breaks
+# the cycle.
+_builtins_registered = False
+
+
+def _ensure_builtins() -> None:
+    global _builtins_registered
+    if _builtins_registered:
+        return
+    from .register import register_builtins
+    register_builtins()
+    _builtins_registered = True
+
+
+# NOTE: _ensure_builtins() is called once from providers/__init__.py
+# at the very end of package init, AFTER stream.py has finished
+# loading. Calling it here would re-enter providers (via register.py)
+# while __init__.py is mid-way and trip Python's import machinery in
+# multi-threaded contexts.
 
 
 async def stream_simple(
