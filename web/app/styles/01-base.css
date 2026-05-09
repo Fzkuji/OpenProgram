@@ -150,22 +150,41 @@ html, body {
 }
 
 /* ===== Responsive ===== */
-/* Narrow-viewport overlay: only EXPANDED sidebars float on top of the
-   main column. Collapsed rails stay in the flex flow so they keep
-   their 48px width and the main column never sits behind them.
-   Without the :not(.collapsed) guard the collapsed rail was
-   position:fixed too, painting the toggle/icon strip on top of the
-   topbar and chat content. */
+/* Narrow viewport: BOTH sidebars are always position: fixed so the
+   collapse/expand animation only changes their own width and never
+   reflows the main column. The main column reserves fixed 48px
+   gutters on each side for the collapsed rails. Expanding a sidebar
+   simply grows its width over the main column — covering the topbar
+   badges and chat content under it — without pushing main around.
+   This kills the previous mid-transition jump where collapsing made
+   main first shrink (sidebar entering flow at full width) and then
+   expand back as the sidebar's width animated to 48px. */
 @media (max-width: 900px) {
+  .menu-btn { display: block; }
+
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; z-index: 100;
+  }
+  .sidebar:not(.right-sidebar) { left: 0; }
   .sidebar:not(.right-sidebar):not(.collapsed) {
-    position: fixed; left: 0; top: 0; bottom: 0; z-index: 100;
     box-shadow: 4px 0 20px rgba(0,0,0,0.5);
   }
-  .menu-btn { display: block; }
+  .right-sidebar,
+  .detail-panel {
+    position: fixed; top: 0; bottom: 0; right: 0; z-index: 100;
+  }
   .right-sidebar:not(.collapsed),
   .detail-panel:not(.collapsed) {
-    position: fixed; right: 0; top: 0; bottom: 0; z-index: 100;
     box-shadow: -4px 0 20px rgba(0,0,0,0.5);
+  }
+
+  /* Reserve 48px gutters for the collapsed rails so main content
+     starts past them, never under them. Box-sizing: border-box on
+     .main keeps its inner width math intact. */
+  .app > .main {
+    padding-left: 48px;
+    padding-right: 48px;
+    box-sizing: border-box;
   }
 }
 
