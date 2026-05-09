@@ -24,6 +24,7 @@ import type {
   Activity,
   AgentInfo,
   ChannelAccountRow,
+  ChannelActivity,
   PastConversation,
   PendingAttach,
   PickerKind,
@@ -72,6 +73,13 @@ export interface WsEventsCtx {
   setSearchResults: React.Dispatch<React.SetStateAction<SearchResultRow[]>>;
   setContextSearchQuery: React.Dispatch<React.SetStateAction<string>>;
   setSessionLiveByConv: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  /**
+   * Per-conv ambient activity for any conv the TUI is NOT currently
+   * focused on. Wechat / telegram inbound turns push into this map so
+   * the user sees live "📱 wechat:bot42 → main: streaming…" updates in
+   * the bottom feed even while staring at a different session.
+   */
+  setChannelActivityByConv: React.Dispatch<React.SetStateAction<Record<string, ChannelActivity>>>;
 
   // refs (object identity stable, no need for ref pattern)
   agentSetRef: React.MutableRefObject<boolean>;
@@ -103,6 +111,71 @@ export function useWsEvents(ctx: WsEventsCtx): void {
           d.type === 'context_stats'
         ) {
           markSessionLive((d.conv_id as string | undefined) ?? c.conversationId);
+        }
+        // Foreign-conv routing: dispatcher tags every chat_response
+        // with the originating conv_id. If it isn't the conv we're
+        // currently viewing, surface the activity in the per-conv
+        // ambient feed instead of pretending the deltas belong to the
+        // current session (which would corrupt the streaming buffer).
+        const dConvId = (d as { conv_id?: string }).conv_id;
+        if (dConvId && c.conversationId && dConvId !== c.conversationId) {
+          if (d.type === 'stream_event') {
+            const inner = (d as { event?: { type?: string; text?: string } }).event;
+            if (inner?.type === 'text' && typeof inner.text === 'string') {
+              const delta = inner.text;
+              c.setChannelActivityByConv((m) => {
+                const prev = m[dConvId] ?? {
+                  convId: dConvId,
+                  streamingText: '',
+                  streaming: true,
+                  lastUpdate: Date.now(),
+                };
+                return {
+                  ...m,
+                  [dConvId]: {
+                    ...prev,
+                    streamingText: (prev.streamingText ?? '') + delta,
+                    streaming: true,
+                    lastUpdate: Date.now(),
+                  },
+                };
+              });
+            }
+            return;
+          }
+          if (d.type === 'result' && typeof d.content === 'string') {
+            const finalText = d.content as string;
+            c.setChannelActivityByConv((m) => {
+              const prev = m[dConvId] ?? {
+                convId: dConvId,
+                streamingText: '',
+                streaming: false,
+                lastUpdate: Date.now(),
+              };
+              return {
+                ...m,
+                [dConvId]: {
+                  ...prev,
+                  finalText,
+                  streaming: false,
+                  lastUpdate: Date.now(),
+                },
+              };
+            });
+            return;
+          }
+          // status / context_stats / error for foreign convs — just
+          // refresh the timestamp so stale entries can age out.
+          if (d.type === 'status' || d.type === 'error') {
+            c.setChannelActivityByConv((m) => {
+              if (!m[dConvId]) return m;
+              return {
+                ...m,
+                [dConvId]: { ...m[dConvId], lastUpdate: Date.now() },
+              };
+            });
+          }
+          return;
         }
         if (d.type === 'stream_event') {
           const inner = (d as { event?: { type?: string; text?: string; tool?: string; input?: string } }).event;
@@ -481,7 +554,35 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         // append both turns to the transcript so the chat updates
         // without a /resume refresh.
         const d = ev.data;
-        if (d.conv_id !== c.conversationId) return;
+        if (d.conv_id !== c.conversationId) {
+          // Foreign conv: surface in the ambient activity feed so the
+          // user sees that wechat/telegram processed a turn even when
+          // staring at a different session.
+          if (d.conv_id) {
+            c.setChannelActivityByConv((m) => {
+              const prev = m[d.conv_id] ?? {
+                convId: d.conv_id,
+                streamingText: '',
+                streaming: false,
+                lastUpdate: Date.now(),
+              };
+              return {
+                ...m,
+                [d.conv_id]: {
+                  ...prev,
+                  source: d.user?.source ?? prev.source,
+                  peerDisplay: d.user?.peer_display ?? prev.peerDisplay,
+                  userText: d.user?.text ?? prev.userText,
+                  finalText: d.assistant?.text ?? prev.finalText,
+                  streaming: false,
+                  lastUpdate: Date.now(),
+                },
+              };
+            });
+            markSessionLive(d.conv_id);
+          }
+          return;
+        }
         const newTurns: Turn[] = [];
         if (d.user?.text) {
           const tag = d.user.peer_display ? `[${d.user.source ?? 'channel'}:${d.user.peer_display}] ` : '';

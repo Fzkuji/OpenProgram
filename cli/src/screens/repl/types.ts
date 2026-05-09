@@ -116,3 +116,28 @@ export interface RegisterForm {
   channel?: string;
   accountId?: string;
 }
+
+/**
+ * Live activity for a conv the TUI is NOT currently focused on — used
+ * to surface inbound channel turns (wechat / telegram / ...) without
+ * polluting the main transcript. Each entry tracks the latest user
+ * message + the assistant reply as it streams, so the bottom feed can
+ * show e.g. `wechat:bot42 → main: streaming…` in real time.
+ */
+export interface ChannelActivity {
+  convId: string;
+  /** Channel platform ("wechat", "telegram", ...) when known. */
+  source?: string;
+  /** Display name for the bound peer (e.g. WeChat nickname). */
+  peerDisplay?: string;
+  /** Last user message text seen on this conv. */
+  userText?: string;
+  /** Buffered assistant text deltas — grows as `text_delta` events arrive. */
+  streamingText: string;
+  /** Final assistant text once the turn ends (`result` event). */
+  finalText?: string;
+  /** True between the first stream_event and the result event. */
+  streaming: boolean;
+  /** Last update wall-clock — used to age out idle entries. */
+  lastUpdate: number;
+}

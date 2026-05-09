@@ -310,7 +310,8 @@ def process_user_turn(
             "extra": json.dumps({"trace": traceback.format_exc()[:2000]}),
         })
         on_event({"type": "chat_response",
-                  "data": {"type": "error", "content": err_text}})
+                  "data": {"type": "error", "conv_id": req.conv_id,
+                           "content": err_text}})
         return TurnResult(
             final_text="",
             user_msg_id=user_msg_id,
@@ -374,7 +375,8 @@ def process_user_turn(
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal.
     on_event({"type": "chat_response",
-              "data": {"type": "result", "content": final_text}})
+              "data": {"type": "result", "conv_id": req.conv_id,
+                       "content": final_text}})
 
     return TurnResult(
         final_text=final_text,
@@ -849,6 +851,12 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
     unchanged."""
     t = getattr(ev, "type", None)
 
+    # Conv-id tag attached to every envelope so multi-conv consumers
+    # (TUI watching a different conv, browser sidebar, ...) can route
+    # the stream to the right buffer instead of treating every delta
+    # as belonging to whatever they're currently viewing.
+    cid = req.conv_id
+
     if t == "message_update":
         ame = getattr(ev, "assistant_message_event", None)
         if ame is None:
@@ -859,6 +867,7 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
             return {
                 "type": "chat_response",
                 "data": {"type": "stream_event",
+                         "conv_id": cid,
                          "event": {"type": "text",
                                    "text": getattr(ame, "delta", "")}},
             }
@@ -869,6 +878,7 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
         return {
             "type": "chat_response",
             "data": {"type": "stream_event",
+                     "conv_id": cid,
                      "event": {"type": "tool_use",
                                "tool": getattr(ev, "tool_name", "?"),
                                "input": json.dumps(args, default=str)
@@ -880,6 +890,7 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
         return {
             "type": "chat_response",
             "data": {"type": "stream_event",
+                     "conv_id": cid,
                      "event": {"type": "tool_result",
                                "tool": getattr(ev, "tool_name", "?"),
                                "result": _shorten(getattr(ev, "result", "")),

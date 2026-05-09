@@ -20,6 +20,7 @@ import type {
   REPLProps,
   AgentInfo,
   Activity,
+  ChannelActivity,
   PickerKind,
   PendingAttach,
   SessionAliasRow,
@@ -29,6 +30,7 @@ import type {
   SearchResultRow,
   ThinkingEffort,
 } from './repl/types.js';
+import { ChannelActivityFeed } from '../components/ChannelActivityFeed.js';
 import { randomLocalId, renderModel } from './repl/helpers.js';
 import { buildPickerNode } from './repl/pickerRouter.js';
 import { useWsEvents } from './repl/useWsEvents.js';
@@ -59,6 +61,12 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [contextSearchQuery, setContextSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResultRow[]>([]);
   const [sessionLiveByConv, setSessionLiveByConv] = useState<Record<string, boolean>>({});
+  // Ambient activity buffer for inbound channel turns (wechat/telegram/...)
+  // landing on conversations the TUI is not currently focused on.
+  // Populated by useWsEvents; rendered above BottomBar.
+  const [channelActivityByConv, setChannelActivityByConv] = useState<
+    Record<string, ChannelActivity>
+  >({});
   const [bellEnabled, setBellEnabled] = useState(true);
   const [modelsList, setModelsList] = useState<string[]>([]);
   const [pastConversations, setPastConversations] = useState<
@@ -153,6 +161,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setConversationTitle, setConnState,
     setToolsOn, setThinkingEffort, setPermissionMode,
     setSearchResults, setContextSearchQuery, setSessionLiveByConv,
+    setChannelActivityByConv,
     agentSetRef, sessionAliasesPrintRef, sessionAliasesRef,
   });
 
@@ -423,6 +432,10 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           }}
         />
       )}
+      <ChannelActivityFeed
+        activities={channelActivityByConv}
+        currentConvId={conversationId}
+      />
       <BottomBar
           agent={agent}
           model={model}
