@@ -122,6 +122,9 @@ function loadConversationData(data) {
   if (!data.messages) data.messages = [];
   conversations[data.id] = data;
   renderConversations();
+  if (data.id === currentConvId && typeof window.refreshStatusSource === 'function') {
+    window.refreshStatusSource();
+  }
   if (data.id === currentConvId) {
     var area = document.getElementById('chatArea');
     var hasSavedScroll = !!sessionStorage.getItem('agentic_scroll');

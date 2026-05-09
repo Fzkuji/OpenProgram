@@ -53,17 +53,45 @@ function updateSendBtn() {
 
 function updatePauseBtn() { updateSendBtn(); }
 
-function updateStatus(status) {
+function updateStatus(status, source) {
+  // `source` is an optional binding label that follows the connection
+  // state, e.g. "wechat:bot42", "telegram:@foo", or "web". When set,
+  // the badge reads `connected · wechat:bot42` so the TUI / backend /
+  // browser stay visually in sync about which channel session a conv
+  // is bound to. Falls back to plain "connected" when no source is
+  // known yet (e.g. before a conv is loaded).
   var badge = document.getElementById('statusBadge');
   if (!badge) return;
   if (status === 'connected') {
-    badge.textContent = 'connected';
+    var label = 'connected';
+    if (source) label += ' · ' + source;
+    badge.textContent = label;
+    badge.title = source ? 'session source: ' + source : '';
     badge.className = 'status-badge';
   } else {
     badge.textContent = 'disconnected';
+    badge.title = '';
     badge.className = 'status-badge disconnected';
   }
 }
+
+function refreshStatusSource() {
+  var cid = (typeof currentConvId !== 'undefined') ? currentConvId : null;
+  if (!cid || typeof conversations === 'undefined') {
+    updateStatus('connected', '');
+    return;
+  }
+  var conv = conversations[cid];
+  if (!conv) { updateStatus('connected', ''); return; }
+  var label = '';
+  if (conv.channel && conv.account_id) {
+    label = conv.channel + ':' + conv.account_id;
+  } else if (conv.source) {
+    label = conv.source;
+  }
+  updateStatus('connected', label);
+}
+window.refreshStatusSource = refreshStatusSource;
 
 // ===== Pause/Resume =====
 
