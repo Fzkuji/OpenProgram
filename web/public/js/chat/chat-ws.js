@@ -93,6 +93,9 @@ function handleChatResponse(data) {
       if (msgs.length > 0) {
         conversations[currentConvId].title = msgs[0].content.slice(0, 50);
         renderConversations();
+        if (typeof window.refreshStatusSource === 'function') {
+          window.refreshStatusSource();
+        }
       }
     }
   }

@@ -83,13 +83,21 @@ function refreshStatusSource() {
   }
   var conv = conversations[cid];
   if (!conv) { updateStatus('connected', ''); return; }
-  var label = '';
+  // Build the badge label as `<channel>:<account_id> · <title>` so the
+  // user can see which channel is bound AND which session at a glance.
+  // Either piece may be missing — for a plain web/cli session there's
+  // no channel, and a brand-new chat may not have a title yet.
+  var parts = [];
   if (conv.channel && conv.account_id) {
-    label = conv.channel + ':' + conv.account_id;
+    parts.push(conv.channel + ':' + conv.account_id);
   } else if (conv.source) {
-    label = conv.source;
+    parts.push(conv.source);
   }
-  updateStatus('connected', label);
+  var title = (conv.title || '').trim();
+  if (title && title !== 'New conversation') {
+    parts.push(title.length > 30 ? title.slice(0, 30) + '…' : title);
+  }
+  updateStatus('connected', parts.join(' · '));
 }
 window.refreshStatusSource = refreshStatusSource;
 
