@@ -261,12 +261,15 @@ function updateAgentBadges() {
   if (chatBadge && _agentSettings.chat) {
     var cp = _agentSettings.chat.provider || '?';
     var cm = _agentSettings.chat.model || '';
-    var label = 'Chat: ' + cp + ' \u00b7 ' + cm;
+    var detailsParts = [cp];
+    if (cm) detailsParts.push(cm);
     var sid = _agentSettings.chat.session_id;
-    if (sid) {
-      label += ' \u00b7 ' + sid.slice(0, 8);
-    }
-    chatBadge.textContent = label;
+    if (sid) detailsParts.push(sid.slice(0, 8));
+    var details = ': ' + detailsParts.join(' \u00b7 ');
+    chatBadge.innerHTML = ''
+      + '<span class="badge-short">Chat</span>'
+      + '<span class="badge-details">' + _escAgentBadge(details) + '</span>';
+    chatBadge.title = 'Chat agent' + details;
     var isLocked = _agentSettings.chat.locked;
     if (isLocked) {
       chatBadge.classList.add('locked');
@@ -279,8 +282,22 @@ function updateAgentBadges() {
   if (execBadge && _agentSettings.exec) {
     var ep = _agentSettings.exec.provider || '?';
     var em = _agentSettings.exec.model || '';
-    execBadge.textContent = 'Exec: ' + ep + ' \u00b7 ' + em;
+    var execDetailsParts = [ep];
+    if (em) execDetailsParts.push(em);
+    var execDetails = ': ' + execDetailsParts.join(' \u00b7 ');
+    execBadge.innerHTML = ''
+      + '<span class="badge-short">Exec</span>'
+      + '<span class="badge-details">' + _escAgentBadge(execDetails) + '</span>';
+    execBadge.title = 'Execution agent' + execDetails;
   }
+}
+
+function _escAgentBadge(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 async function openAgentSelector(agentType) {

@@ -25,12 +25,42 @@
   flex-shrink: 0;
   background: var(--bg-primary);
   z-index: 5;
+  /* Container query target — badges below collapse based on this
+     element's inline-size so narrow viewports don't overflow. */
+  container-type: inline-size;
+  container-name: topbar;
 }
 
 .topbar-left {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* min-width: 0 lets the flex children shrink properly so the
+     ellipsis on individual badges activates instead of pushing
+     siblings off-screen. */
+  min-width: 0;
+}
+
+/* Two-part badges: a short always-visible label + a details span
+   that holds the secondary info (channel, model, title, …). */
+.badge-short {
+  font-weight: 500;
+}
+.badge-details {
+  /* Show by default; container query below hides on narrow widths. */
+  margin-left: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22ch;
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+@container topbar (max-width: 720px) {
+  .badge-details {
+    display: none;
+  }
 }
 
 .topbar-right {

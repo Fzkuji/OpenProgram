@@ -54,25 +54,32 @@ function updateSendBtn() {
 function updatePauseBtn() { updateSendBtn(); }
 
 function updateStatus(status, source) {
-  // `source` is an optional binding label that follows the connection
-  // state, e.g. "wechat:bot42", "telegram:@foo", or "web". When set,
-  // the badge reads `connected · wechat:bot42` so the TUI / backend /
-  // browser stay visually in sync about which channel session a conv
-  // is bound to. Falls back to plain "connected" when no source is
-  // known yet (e.g. before a conv is loaded).
+  // Two-part badge: a `.badge-short` always-visible label
+  // ("connected" / "disconnected") + a `.badge-details` span that the
+  // CSS container query hides when the topbar is narrow. The details
+  // are also stuffed into `title` so a hover still surfaces them when
+  // collapsed. This keeps the layout from overflowing on narrow
+  // viewports without losing information.
   var badge = document.getElementById('statusBadge');
   if (!badge) return;
-  if (status === 'connected') {
-    var label = 'connected';
-    if (source) label += ' · ' + source;
-    badge.textContent = label;
-    badge.title = source ? 'session source: ' + source : '';
-    badge.className = 'status-badge';
-  } else {
-    badge.textContent = 'disconnected';
-    badge.title = '';
-    badge.className = 'status-badge disconnected';
-  }
+  var connected = status === 'connected';
+  var shortLabel = connected ? 'connected' : 'disconnected';
+  var details = connected && source ? ' · ' + source : '';
+  badge.innerHTML = ''
+    + '<span class="badge-short">' + shortLabel + '</span>'
+    + (details
+        ? '<span class="badge-details">' + escapeHtml(details) + '</span>'
+        : '');
+  badge.title = connected && source ? 'session source: ' + source : '';
+  badge.className = connected ? 'status-badge' : 'status-badge disconnected';
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function refreshStatusSource() {
