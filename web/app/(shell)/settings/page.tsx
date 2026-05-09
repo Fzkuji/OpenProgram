@@ -2,11 +2,14 @@
 
 import dynamic from "next/dynamic";
 
-const PageShell = dynamic(
-  () => import("@/components/page-shell").then((m) => m.PageShell),
-  { ssr: false }
+// Migrated from PageShell injection of /html/settings.html. Native
+// React component with co-located CSS module.
+const SettingsPage = dynamic(
+  () =>
+    import("@/components/settings/settings-page").then((m) => m.SettingsPage),
+  { ssr: false },
 );
 
-export default function SettingsPage() {
-  return <PageShell page="settings" />;
+export default function Page() {
+  return <SettingsPage />;
 }
