@@ -151,10 +151,14 @@ html, body {
 
 /* ===== Responsive ===== */
 @media (max-width: 900px) {
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
-  .sidebar.collapsed { width: 0; }
+  /* Use :not(.right-sidebar) so the right rail doesn't get pinned to
+     left:0 along with the left rail — it has class .sidebar too. */
+  .sidebar:not(.right-sidebar) { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+  .sidebar:not(.right-sidebar).collapsed { width: 0; }
   .menu-btn { display: block; }
+  .right-sidebar,
   .detail-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 100; box-shadow: -4px 0 20px rgba(0,0,0,0.5); }
+  .right-sidebar.collapsed,
   .detail-panel.collapsed { width: 0; }
 }
 
