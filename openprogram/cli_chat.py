@@ -914,6 +914,19 @@ def run_cli_chat(oneshot: str | None = None,
             run_ink_tui(agent=agent, conv_id=conv_id, rt=rt)
             return
         except Exception as e:  # noqa: BLE001
+            # cli.py:_maybe_redirect_for_tui() already dup2'd stdout/stderr
+            # to ~/.openprogram/logs/ink-startup.log on the assumption the
+            # Ink TUI would take over the terminal. The fallback REPL writes
+            # to those same fds, so without restoring them the user sees a
+            # frozen blank terminal while everything goes to the log file.
+            from openprogram import cli as _cli
+            for std_fd, saved_attr in ((1, "_TUI_TTY_OUT"), (2, "_TUI_TTY_ERR")):
+                saved = getattr(_cli, saved_attr, None)
+                if saved is not None:
+                    try:
+                        os.dup2(saved, std_fd)
+                    except OSError:
+                        pass
             console.print(
                 f"[yellow]TUI failed to start ({type(e).__name__}: {e}); "
                 f"falling back to REPL.[/]"
