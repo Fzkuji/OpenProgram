@@ -135,6 +135,18 @@ def run_foreground() -> int:
     write_pid_file()
     print(f"[worker] webui WS at ws://127.0.0.1:{port}/ws")
 
+    # Warm the provider cache in a background thread so the first HTTP
+    # request (e.g. /api/providers/list when the user opens /programs)
+    # doesn't have to do the 3-5s probe itself.
+    def _warm_providers() -> None:
+        try:
+            from openprogram.webui import _runtime_management as rm
+            rm._init_providers()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[worker] provider warm-up failed: {exc}")
+
+    threading.Thread(target=_warm_providers, daemon=True, name="provider-warmup").start()
+
     # Frontend (Next.js). Optional — falls back gracefully if node/npm
     # missing or OPENPROGRAM_NO_WEB is set.
     try:
