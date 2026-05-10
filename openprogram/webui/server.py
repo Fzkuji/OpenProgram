@@ -4447,6 +4447,20 @@ def start_server(port: int = 8765, open_browser: bool = True) -> threading.Threa
     # transcript dir. Defer it into a background thread so the uvicorn
     # socket comes up first — the CLI can connect while restore is still
     # walking files. /resume queries pull straight from disk anyway.
+    #
+    # Eagerly import provider registry on the main thread BEFORE
+    # spawning the restore thread. Two daemons (this restore thread and
+    # the worker's provider warm-up) used to race into the same
+    # provider module imports, occasionally tripping Python's import
+    # lock with `_DeadlockError`. When that fired, _restore_sessions
+    # died silently and every load_session afterwards returned an empty
+    # envelope (no head, no messages, "正在等待" forever). Forcing the
+    # provider import here makes the module lock cold by the time the
+    # threads start, so the deadlock can't form.
+    try:
+        import openprogram.providers  # noqa: F401
+    except Exception as _e:
+        _log(f"[startup] provider preload failed: {_e}")
     threading.Thread(
         target=_restore_sessions,
         name="openprogram-session-restore",
