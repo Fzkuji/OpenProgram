@@ -35,6 +35,64 @@ def _node_available() -> bool:
     return shutil.which("node") is not None and shutil.which("npm") is not None
 
 
+def _reclaim_web_port(port: int) -> None:
+    """Kill any leftover Next.js process holding ``port``.
+
+    A previous worker that crashed (or was killed without running its
+    shutdown hook) can leave its child ``next-server`` orphaned and still
+    bound to the web port. The new worker would then fail with EADDRINUSE.
+    Detect that case and clear the port before we spawn our own.
+
+    Conservative: only kills processes whose command line looks like the
+    Next.js server, never anything else listening on that port.
+    """
+    try:
+        out = subprocess.run(
+            ["lsof", "-iTCP:%d" % port, "-sTCP:LISTEN", "-nP", "-Fp"],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    pids = [int(line[1:]) for line in out.stdout.splitlines() if line.startswith("p")]
+    if not pids:
+        return
+
+    import signal
+    import time as _time
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmdline = f.read().decode("utf-8", "replace")
+        except OSError:
+            try:
+                ps = subprocess.run(
+                    ["ps", "-p", str(pid), "-o", "command="],
+                    capture_output=True, text=True, timeout=2,
+                )
+                cmdline = ps.stdout
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+        if "next-server" not in cmdline and "next/dist/bin/next" not in cmdline:
+            print(f"[worker] web: port {port} held by PID {pid} (not next); leaving alone")
+            continue
+        print(f"[worker] web: reclaiming port {port} from leftover next PID {pid}")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            continue
+        for _ in range(20):
+            _time.sleep(0.1)
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                break
+        else:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+
 def _ensure_built(wd: Path) -> bool:
     """Make sure ``web/.next/`` exists. Returns True on success."""
     next_dir = wd / ".next"
@@ -79,13 +137,22 @@ def start_web_frontend(
         return None
 
     port = int(web_port or os.environ.get("OPENPROGRAM_WEB_PORT", "3000"))
+    _reclaim_web_port(port)
     env = dict(os.environ)
     env["OPENPROGRAM_BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
     env["PORT"] = str(port)
+    env["OPENPROGRAM_PARENT_PID"] = str(os.getpid())
+
+    watcher = wd / "scripts" / "with-parent-watch.mjs"
+    cmd = (
+        ["node", str(watcher)]
+        if watcher.exists()
+        else ["npm", "run", "start", "--", "-p", str(port)]
+    )
 
     try:
         proc = subprocess.Popen(
-            ["npm", "run", "start", "--", "-p", str(port)],
+            cmd,
             cwd=str(wd),
             env=env,
             stdout=sys.stdout,

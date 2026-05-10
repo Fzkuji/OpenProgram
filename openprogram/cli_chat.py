@@ -46,11 +46,13 @@ def _reset_provider_cache() -> None:
     """
     from openprogram.webui import _runtime_management as rm
     rm._providers_initialized = False
+    rm._rest_probe_started = False
     rm._chat_runtime = None
     rm._chat_provider = None
     rm._chat_model = None
     rm._default_runtime = None
     rm._default_provider = None
+    rm._available_providers.clear()
 
 
 def _prompt_first_run_setup(console) -> bool:

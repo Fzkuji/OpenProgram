@@ -154,37 +154,82 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     return Runtime(model=f"{provider}:{model}")
 
 
-def _detect_default_provider() -> tuple:
-    """Auto-detect best provider; return (name, runtime) or (None, None).
+_PROVIDER_PRIORITY = ("claude-code", "openai-codex", "gemini-cli", "anthropic", "gemini", "openai")
+_CLI_BINS = {"openai-codex": "codex", "claude-code": "claude", "gemini-cli": "gemini"}
 
-    Order prioritizes Claude Code CLI (sonnet) per project default.
+
+def _probe_one_provider(p_name: str):
+    """Probe a single provider. Returns (name, runtime, models) or None on failure.
+
+    `runtime` is kept open so a successful probe can be reused as the default
+    runtime without rebuilding. Caller is responsible for closing the ones it
+    doesn't keep.
     """
-    for p in ("claude-code", "openai-codex", "gemini-cli", "anthropic", "gemini", "openai"):
-        rt = None
-        try:
-            rt = _create_runtime_for_visualizer(p)
-            if p in _CLI_PROVIDERS:
-                import shutil
-                cli_names = {"openai-codex": "codex", "claude-code": "claude", "gemini-cli": "gemini"}
-                cli_bin = cli_names.get(p, p)
-                if not shutil.which(cli_bin):
-                    raise RuntimeError(f"{cli_bin} not installed")
-            _log(f"[detect] {p} OK")
+    try:
+        if p_name in _CLI_PROVIDERS:
+            import shutil as _shutil
+            if not _shutil.which(_CLI_BINS.get(p_name, p_name)):
+                raise RuntimeError(f"{p_name} not installed")
+        rt = _create_runtime_for_visualizer(p_name)
+        models = rt.list_models() if hasattr(rt, "list_models") else []
+        if rt.model and rt.model not in models:
+            models = [rt.model] + models
+        return p_name, rt, models
+    except Exception as e:
+        _log(f"[probe] {p_name} unavailable: {e}")
+        return None
+
+
+def _detect_default_provider() -> tuple:
+    """Kept as a back-compat shim; new code goes through `_init_providers`."""
+    for p in _PROVIDER_PRIORITY:
+        result = _probe_one_provider(p)
+        if result is not None:
+            _, rt, _models = result
             return p, rt
-        except Exception as e:
-            _log(f"[detect] {p} failed: {e}")
-            if rt and hasattr(rt, "close"):
-                try:
-                    rt.close()
-                except Exception:
-                    pass
-            continue
-    _log("[detect] No provider available — server will start without LLM support")
     return None, None
 
 
+_rest_probe_started = False
+
+
+def _probe_rest_async(skip: str | None) -> None:
+    """Probe the non-default providers in a background thread.
+
+    The default is already in `_available_providers` from the foreground
+    `_init_providers` call. This fills in the rest so the Settings UI has a
+    complete provider/model list without blocking startup on it.
+    """
+    global _rest_probe_started
+    if _rest_probe_started:
+        return
+    _rest_probe_started = True
+
+    def _run():
+        from concurrent.futures import ThreadPoolExecutor
+        targets = [p for p in _PROVIDER_PRIORITY if p != skip]
+        with ThreadPoolExecutor(max_workers=len(targets) or 1) as ex:
+            for r in ex.map(_probe_one_provider, targets):
+                if r is None:
+                    continue
+                name, rt, models = r
+                _available_providers[name] = {"models": models, "default_model": rt.model}
+                if hasattr(rt, "close"):
+                    try:
+                        rt.close()
+                    except Exception:
+                        pass
+
+    threading.Thread(target=_run, name="probe-rest-providers", daemon=True).start()
+
+
 def _init_providers():
-    """Initialize chat and exec provider defaults + probe available providers."""
+    """Initialize chat and exec provider defaults.
+
+    Foreground only probes providers in priority order until one succeeds;
+    the rest are probed asynchronously to populate `_available_providers`
+    for the Settings UI without blocking startup.
+    """
     global _chat_provider, _chat_model, _chat_runtime
     global _exec_provider, _exec_model
     global _default_provider, _default_runtime
@@ -195,7 +240,22 @@ def _init_providers():
             return
         _providers_initialized = True
 
-        provider_name, rt = _detect_default_provider()
+        provider_name = None
+        rt = None
+        for p in _PROVIDER_PRIORITY:
+            result = _probe_one_provider(p)
+            if result is None:
+                continue
+            name, probe_rt, models = result
+            _available_providers[name] = {"models": models, "default_model": probe_rt.model}
+            provider_name = name
+            rt = probe_rt
+            break
+
+        if provider_name:
+            _log(f"[detect] {provider_name} OK")
+        else:
+            _log("[detect] No provider available — server will start without LLM support")
 
         _chat_provider = provider_name
         _chat_model = rt.model if rt else None
@@ -207,23 +267,7 @@ def _init_providers():
         _default_provider = provider_name
         _default_runtime = rt
 
-        import shutil as _shutil
-        _cli_bins = {"openai-codex": "codex", "claude-code": "claude", "gemini-cli": "gemini"}
-        for p_name in ("claude-code", "openai-codex", "gemini-cli", "anthropic", "gemini", "openai"):
-            try:
-                if p_name in _CLI_PROVIDERS:
-                    if not _shutil.which(_cli_bins.get(p_name, p_name)):
-                        raise RuntimeError(f"{p_name} not installed")
-                probe_rt = _create_runtime_for_visualizer(p_name)
-                models = probe_rt.list_models() if hasattr(probe_rt, "list_models") else []
-                if probe_rt.model and probe_rt.model not in models:
-                    models = [probe_rt.model] + models
-                _available_providers[p_name] = {"models": models, "default_model": probe_rt.model}
-                if hasattr(probe_rt, "close"):
-                    probe_rt.close()
-            except Exception as e:
-                _log(f"[probe] {p_name} unavailable: {e}")
-                continue
+    _probe_rest_async(skip=provider_name)
 
 
 def _get_conv_runtime(conv_id: str, msg_id: str = None):
