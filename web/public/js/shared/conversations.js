@@ -21,8 +21,15 @@ function renderConversations() {
                    window._channelPrefixFor(c.channel, c.account_id) : '';
       var realTitle = (typeof window._displayTitleFor === 'function') ?
                       window._displayTitleFor(c) : (c.title || '');
+      // When the title is a backend placeholder, fall back to a
+      // preview of the most recent user message so the user keeps
+      // seeing some content. Pulled in from the server snapshot.
+      if (!realTitle && c.preview) {
+        var pv = String(c.preview).trim();
+        realTitle = pv.length > 30 ? pv.slice(0, 30) + '…' : pv;
+      }
       var label;
-      if (prefix && realTitle)      label = prefix + ' · ' + realTitle;
+      if (prefix && realTitle)      label = prefix + ': ' + realTitle;
       else if (prefix)              label = prefix;
       else if (realTitle)           label = realTitle;
       else                          label = c.title || 'Untitled';
@@ -322,7 +329,10 @@ function newConversation() {
 
 function loadConversationData(data) {
   if (!data.messages) data.messages = [];
-  conversations[data.id] = data;
+  // Merge instead of replace so fields populated by an earlier
+  // conversations_list (e.g. channel / account_id, which conversation_loaded
+  // didn't always carry) survive when the load response lands.
+  conversations[data.id] = Object.assign({}, conversations[data.id] || {}, data);
   renderConversations();
   if (data.id === currentConvId) {
     if (typeof window.refreshStatusSource === 'function') window.refreshStatusSource();

@@ -25,7 +25,7 @@ export function AppSidebar() {
     return arr;
   }, [conversations]);
 
-  function channelLabelFor(c: { title?: string; channel?: string | null; account_id?: string | null }): string {
+  function channelLabelFor(c: { title?: string; channel?: string | null; account_id?: string | null; preview?: string | null }): string {
     const t = (c.title || "").trim();
     const placeholder =
       !t ||
@@ -39,9 +39,14 @@ export function AppSidebar() {
           Record<string, string>)[String(c.channel).toLowerCase()] || c.channel;
       prefix = c.account_id ? `${brand} (${c.account_id})` : brand;
     }
-    if (prefix && !placeholder) return `${prefix} · ${t}`;
+    let realTitle = placeholder ? "" : t;
+    if (!realTitle && c.preview) {
+      const pv = String(c.preview).trim();
+      realTitle = pv.length > 30 ? pv.slice(0, 30) + "…" : pv;
+    }
+    if (prefix && realTitle) return `${prefix}: ${realTitle}`;
     if (prefix) return prefix;
-    if (!placeholder) return t;
+    if (realTitle) return realTitle;
     return "Untitled";
   }
 

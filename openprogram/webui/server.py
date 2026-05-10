@@ -2502,6 +2502,11 @@ async def _handle_ws_command(ws, cmd: dict):
                     "function_trees": conv.get("function_trees", []),
                     "provider_info": _get_provider_info(conv_id),
                     "context_stats": conv.get("_last_context_stats"),
+                    "channel": conv.get("channel"),
+                    "account_id": conv.get("account_id"),
+                    "peer": conv.get("peer"),
+                    "peer_display": conv.get("peer_display"),
+                    "source": conv.get("source"),
                     "settings": {
                         "tools_enabled": run_cfg.tools_enabled,
                         "tools_override": run_cfg.tools_override,
@@ -2619,6 +2624,21 @@ async def _handle_ws_command(ws, cmd: dict):
             for cid, conv in _conversations.items():
                 runtime = conv.get("runtime")
                 session_id = getattr(runtime, '_session_id', None) if runtime else None
+                # Pull the latest user message from the in-memory
+                # transcript as a content preview. Channel-bound convs
+                # carry placeholder titles ("WeChat: <id>"); the
+                # sidebar shows this preview after the channel chip
+                # so the user sees what they were chatting about.
+                preview = None
+                msgs = conv.get("messages") or []
+                for m in reversed(msgs):
+                    if m.get("role") == "user":
+                        c = m.get("content") or ""
+                        if isinstance(c, str) and c.strip():
+                            preview = c.strip().replace("\n", " ")
+                            if len(preview) > 80:
+                                preview = preview[:77] + "…"
+                            break
                 conv_list.append({
                     "id": cid,
                     "title": conv.get("title", "Untitled"),
@@ -2630,6 +2650,7 @@ async def _handle_ws_command(ws, cmd: dict):
                     "channel": conv.get("channel"),
                     "account_id": conv.get("account_id"),
                     "peer": conv.get("peer"),
+                    "preview": preview,
                 })
         # Channel-bound sessions and any local sessions persisted to
         # SessionDB. The in-memory `_conversations` snapshot above
@@ -2655,6 +2676,11 @@ async def _handle_ws_command(ws, cmd: dict):
                             break
                     continue
                 seen_ids.add(sid)
+                preview = default_db().latest_user_text(sid)
+                if preview:
+                    preview = preview.strip().replace("\n", " ")
+                    if len(preview) > 80:
+                        preview = preview[:77] + "…"
                 conv_list.append({
                     "id": sid,
                     "title": srow.get("title") or sid,
@@ -2666,6 +2692,7 @@ async def _handle_ws_command(ws, cmd: dict):
                     "channel": srow.get("channel"),
                     "account_id": srow.get("account_id"),
                     "peer": srow.get("peer") or srow.get("peer_id"),
+                    "preview": preview,
                 })
         except Exception:
             pass

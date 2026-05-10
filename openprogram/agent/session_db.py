@@ -404,6 +404,23 @@ class SessionDB:
         cur = self.conn.execute(sql, args)
         return [_row_to_message(r) for r in cur.fetchall()]
 
+    def latest_user_text(self, session_id: str) -> Optional[str]:
+        """Return the most recent user-message text for ``session_id``,
+        or None if the session has no user messages yet. Used by the
+        sidebar to show a content preview when the session's title is
+        a backend-generated placeholder (e.g. ``WeChat: <id>``)."""
+        cur = self.conn.execute(
+            "SELECT content FROM messages "
+            "WHERE session_id=? AND role='user' "
+            "ORDER BY timestamp DESC LIMIT 1",
+            (session_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        v = row[0]
+        return v if isinstance(v, str) else None
+
     # -- branching (DAG walking) -----------------------------------------
     #
     # OpenProgram messages form an append-only DAG: every row carries

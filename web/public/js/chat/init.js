@@ -254,15 +254,15 @@ function _handleConversationsList(data) {
           peer_display: c.peer_display || null,
           source: c.source || null,
           agent_id: c.agent_id || null,
+          preview: c.preview || null,
         };
       } else {
         conversations[c.id].has_session = c.has_session;
-        // Refresh channel binding from the server in case it changed
-        // (e.g. user moved this conv to a new channel from the TUI).
         if ('channel' in c) conversations[c.id].channel = c.channel || null;
         if ('account_id' in c) conversations[c.id].account_id = c.account_id || null;
         if ('peer' in c) conversations[c.id].peer = c.peer || null;
         if ('peer_display' in c) conversations[c.id].peer_display = c.peer_display || null;
+        if ('preview' in c) conversations[c.id].preview = c.preview || null;
       }
     }
   }
