@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronRight, ChevronDown, Activity, X } from "lucide-react";
-import type { TreeNode } from "@/lib/conv-store";
+import type { TreeNode } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 
 interface Props {

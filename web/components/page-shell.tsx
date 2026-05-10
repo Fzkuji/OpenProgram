@@ -118,7 +118,7 @@ export function PageShell({ page }: { page: Page }) {
         hostRef.current.innerHTML = main;
 
         // Wait for AppShell's shared JS to finish loading before running
-        // page-specific scripts (which depend on globals like renderConversations,
+        // page-specific scripts (which depend on globals like renderSessions,
         // loadProviders, escHtml, etc.).
         const w = window as unknown as { __sharedScriptsReady?: Promise<void> };
         if (w.__sharedScriptsReady) await w.__sharedScriptsReady;
@@ -183,38 +183,38 @@ export function PageShell({ page }: { page: Page }) {
   // DOM mounted. Two fast paths to avoid WS-roundtrip lag:
   //   * known conv — render from the local cache immediately, server
   //     reply later overwrites with canonical state
-  //   * new chat (/chat) — call newConversation() which resets the
+  //   * new chat (/chat) — call newSession() which resets the
   //     chat area in place (welcome screen + cleared state)
   useEffect(() => {
     if (page !== "chat") return;
     const w = window as unknown as {
       ws?: WebSocket;
-      currentConvId?: string | null;
+      currentSessionId?: string | null;
       conversations?: Record<string, unknown>;
-      renderConversationMessages?: (c: unknown) => void;
-      newConversation?: () => void;
+      renderSessionMessages?: (c: unknown) => void;
+      newSession?: () => void;
     };
-    const m = pathname.match(/^\/c\/([^/]+)/);
+    const m = pathname.match(/^\/s\/([^/]+)/);
     const target = m ? m[1] : null;
-    if (w.currentConvId === target) return;
-    w.currentConvId = target;
+    if (w.currentSessionId === target) return;
+    w.currentSessionId = target;
 
     if (target === null) {
       // /chat — reset in-place (welcome screen, clear messages, state).
-      if (w.newConversation) w.newConversation();
+      if (w.newSession) w.newSession();
       return;
     }
 
     // Optimistic render from cache — snaps the UI instantly; the WS
     // reply below still overwrites with the authoritative snapshot.
     const cached = w.conversations?.[target];
-    if (cached && w.renderConversationMessages) {
-      try { w.renderConversationMessages(cached); } catch {}
+    if (cached && w.renderSessionMessages) {
+      try { w.renderSessionMessages(cached); } catch {}
     }
     if (w.ws && w.ws.readyState === WebSocket.OPEN) {
       w.ws.send(JSON.stringify({
-        action: "load_conversation",
-        conv_id: target,
+        action: "load_session",
+        session_id: target,
       }));
     }
   }, [page, pathname]);

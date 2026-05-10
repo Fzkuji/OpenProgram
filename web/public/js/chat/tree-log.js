@@ -151,8 +151,8 @@ function renderAttemptNav(funcName, currentIdx, total) {
 }
 
 function switchAttempt(funcName, direction) {
-  if (!currentConvId || !conversations[currentConvId]) return;
-  var msgs = conversations[currentConvId].messages || [];
+  if (!currentSessionId || !conversations[currentSessionId]) return;
+  var msgs = conversations[currentSessionId].messages || [];
   var msg = null;
   for (var i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].role === 'assistant' && msgs[i].function === funcName && msgs[i].attempts) {
@@ -168,7 +168,7 @@ function switchAttempt(funcName, direction) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       action: 'switch_attempt',
-      conv_id: currentConvId,
+      session_id: currentSessionId,
       function: funcName,
       attempt_index: newIdx
     }));

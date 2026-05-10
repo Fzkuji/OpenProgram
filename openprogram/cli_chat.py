@@ -284,7 +284,7 @@ SLASH_HELP = [
 
 
 def _handle_slash(cmd: str, console, rt,
-                  agent=None, conv_id: str = "") -> bool:
+                  agent=None, session_id: str = "") -> bool:
     """Handle a /slash command. Return True if the session should exit."""
     raw = cmd[1:].strip()
     parts = raw.split()
@@ -328,7 +328,7 @@ def _handle_slash(cmd: str, console, rt,
         return _handle_new_session(console)
 
     if verb == "copy":
-        return _handle_copy(console, agent, conv_id)
+        return _handle_copy(console, agent, session_id)
 
     if verb == "tools":
         count, names = _tool_inventory()
@@ -364,7 +364,7 @@ def _handle_slash(cmd: str, console, rt,
         return False
 
     if verb == "session":
-        console.print(f"[bold]session:[/] {conv_id or '(none)'}")
+        console.print(f"[bold]session:[/] {session_id or '(none)'}")
         console.print(f"[bold]agent:[/]   {agent.id if agent else '(none)'}")
         return False
 
@@ -372,13 +372,13 @@ def _handle_slash(cmd: str, console, rt,
         return _handle_login(args, console, agent)
 
     if verb == "attach":
-        return _handle_attach(args, console, agent, conv_id)
+        return _handle_attach(args, console, agent, session_id)
 
     if verb == "detach":
         return _handle_detach(args, console)
 
     if verb in ("connections", "conns"):
-        return _handle_connections(console, conv_id)
+        return _handle_connections(console, session_id)
 
     if verb == "profile":
         from openprogram.paths import get_active_profile, get_state_dir, set_active_profile
@@ -656,7 +656,7 @@ def _handle_new_session(console) -> bool:
     return False
 
 
-def _handle_copy(console, agent, conv_id: str) -> bool:
+def _handle_copy(console, agent, session_id: str) -> bool:
     """Copy the last assistant message to the system clipboard.
 
     The TUI has its own override that uses ``app.copy_to_clipboard``;
@@ -664,10 +664,10 @@ def _handle_copy(console, agent, conv_id: str) -> bool:
     prints the message to stdout so the user can use the terminal's
     own selection."""
     from openprogram.webui import persistence as _persist
-    if not (agent and conv_id):
+    if not (agent and session_id):
         console.print("[yellow]No active session.[/]")
         return False
-    data = _persist.load_conversation(agent.id, conv_id)
+    data = _persist.load_session(agent.id, session_id)
     if not data:
         console.print("[yellow]Session has no messages yet.[/]")
         return False
@@ -692,9 +692,9 @@ def _handle_copy(console, agent, conv_id: str) -> bool:
     return False
 
 
-def _handle_attach(args: list[str], console, agent, conv_id: str) -> bool:
+def _handle_attach(args: list[str], console, agent, session_id: str) -> bool:
     positional, flags = _parse_kv_args(args)
-    if not conv_id or agent is None:
+    if not session_id or agent is None:
         console.print("[yellow]No active session — can't attach.[/]")
         return False
     if len(positional) < 2:
@@ -718,11 +718,11 @@ def _handle_attach(args: list[str], console, agent, conv_id: str) -> bool:
         _row, replaced = _sa.attach(
             channel=channel, account_id=account_id,
             peer_kind=peer_kind, peer_id=peer,
-            agent_id=agent.id, session_id=conv_id,
+            agent_id=agent.id, session_id=session_id,
         )
         console.print(
             f"[green]Attached[/] {channel}:{account_id}:"
-            f"{peer_kind}:{peer} → session {conv_id}"
+            f"{peer_kind}:{peer} → session {session_id}"
         )
         if replaced is not None:
             console.print(
@@ -769,12 +769,12 @@ def _handle_detach(args: list[str], console) -> bool:
     return False
 
 
-def _handle_connections(console, conv_id: str) -> bool:
-    if not conv_id:
+def _handle_connections(console, session_id: str) -> bool:
+    if not session_id:
         console.print("[yellow]No active session.[/]")
         return False
     from openprogram.agents import session_aliases as _sa
-    rows = _sa.list_for_session(conv_id)
+    rows = _sa.list_for_session(session_id)
     if not rows:
         console.print(
             "[dim]No channel peers attached to this session yet. "
@@ -795,9 +795,9 @@ def _handle_connections(console, conv_id: str) -> bool:
 
 # --- Chat turn -------------------------------------------------------------
 
-def _run_turn_with_history(agent, conv_id: str, message: str) -> str:
+def _run_turn_with_history(agent, session_id: str, message: str) -> str:
     """Run one CLI chat turn, persisted to
-    ``<state>/agents/<agent_id>/sessions/<conv_id>/``.
+    ``<state>/agents/<agent_id>/sessions/<session_id>/``.
 
     Loads the session's prior messages, renders them as a
     [User]/[Assistant] prefix, calls rt.exec through the per-agent
@@ -809,13 +809,13 @@ def _run_turn_with_history(agent, conv_id: str, message: str) -> str:
     from openprogram.agents.context_engine import default_engine as _engine
     from openprogram.webui import persistence as _persist
 
-    data = _persist.load_conversation(agent.id, conv_id) or {}
+    data = _persist.load_session(agent.id, session_id) or {}
     meta = {k: v for k, v in data.items()
             if k not in ("messages", "function_trees")}
     messages: list = list(data.get("messages") or [])
     if not meta:
         meta = {
-            "id": conv_id,
+            "id": session_id,
             "agent_id": agent.id,
             "title": message[:50] + ("..." if len(message) > 50 else ""),
             "created_at": _time.time(),
@@ -858,8 +858,8 @@ def _run_turn_with_history(agent, conv_id: str, message: str) -> str:
     meta["head_id"] = reply_msg["id"]
     meta["_last_touched"] = _time.time()
 
-    _persist.save_meta(agent.id, conv_id, meta)
-    _persist.save_messages(agent.id, conv_id, messages)
+    _persist.save_meta(agent.id, session_id, meta)
+    _persist.save_messages(agent.id, session_id, messages)
     return reply_text
 
 
@@ -904,16 +904,16 @@ def run_cli_chat(oneshot: str | None = None,
         agent = _A.create("main", make_default=True)
 
     if resume:
-        conv_id = resume
+        session_id = resume
     else:
-        conv_id = "local_" + _uuid.uuid4().hex[:10]
+        session_id = "local_" + _uuid.uuid4().hex[:10]
 
     # Full-screen TUI path (default). One-shot stays on the Rich path
     # because rendering a scroll buffer for a single turn is overkill.
     if tui and not oneshot:
         try:
             from openprogram.cli_ink import run_ink_tui
-            run_ink_tui(agent=agent, conv_id=conv_id, rt=rt)
+            run_ink_tui(agent=agent, session_id=session_id, rt=rt)
             return
         except Exception as e:  # noqa: BLE001
             # cli.py:_maybe_redirect_for_tui() already dup2'd stdout/stderr
@@ -936,14 +936,14 @@ def run_cli_chat(oneshot: str | None = None,
 
     # Rich REPL fallback / oneshot path
     if resume:
-        console.print(f"[dim]Resuming session {conv_id} under "
+        console.print(f"[dim]Resuming session {session_id} under "
                       f"agent {agent.id}[/]")
     else:
-        console.print(f"[dim]New session {conv_id} under "
+        console.print(f"[dim]New session {session_id} under "
                       f"agent {agent.id}[/]")
 
     if oneshot:
-        reply = _run_turn_with_history(agent, conv_id, oneshot)
+        reply = _run_turn_with_history(agent, session_id, oneshot)
         print(reply)
         return
 
@@ -976,10 +976,10 @@ def run_cli_chat(oneshot: str | None = None,
             continue
         if user_input.startswith("/"):
             if _handle_slash(user_input, console, rt,
-                             agent=agent, conv_id=conv_id):
+                             agent=agent, session_id=session_id):
                 return
             continue
-        reply = _run_turn_with_history(agent, conv_id, user_input)
+        reply = _run_turn_with_history(agent, session_id, user_input)
         console.print()
         console.print(reply)
         # Fire-and-forget TTS; no-ops unless tts.provider is set.

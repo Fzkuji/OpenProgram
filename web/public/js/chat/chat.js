@@ -40,7 +40,7 @@ function submitFollowUp() {
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify({
       action: 'follow_up_answer',
-      conv_id: currentConvId,
+      session_id: currentSessionId,
       answer: answer,
     }));
   }
@@ -78,7 +78,7 @@ function sendMessage(textOverride) {
     var _payload = {
       action: 'chat',
       text: text,
-      conv_id: currentConvId,
+      session_id: currentSessionId,
       thinking_effort: _thinkingEffort,
       exec_thinking_effort: _execThinkingEffort,
       tools: !!window._toolsEnabled
@@ -86,7 +86,7 @@ function sendMessage(textOverride) {
     // First message of a brand-new conversation: attach the user's
     // channel choice from the welcome-screen picker, if any. Ignored by
     // the backend for existing convs.
-    if (!currentConvId && window._pendingChannelChoice && window._pendingChannelChoice.channel) {
+    if (!currentSessionId && window._pendingChannelChoice && window._pendingChannelChoice.channel) {
       _payload.channel = window._pendingChannelChoice.channel;
       _payload.account_id = window._pendingChannelChoice.account_id || '';
     }
@@ -128,7 +128,7 @@ function retryChatQuery(text, btn) {
   ws.send(JSON.stringify({
     action: 'chat',
     text: text,
-    conv_id: currentConvId,
+    session_id: currentSessionId,
     thinking_effort: _thinkingEffort,
     exec_thinking_effort: _execThinkingEffort,
     tools: !!window._toolsEnabled
@@ -160,11 +160,11 @@ function _removePauseRetryButtons() {
 }
 
 function stopAndRetry(funcName) {
-  if (!currentConvId) return;
+  if (!currentSessionId) return;
   fetch('/api/stop', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conv_id: currentConvId }),
+    body: JSON.stringify({ session_id: currentSessionId }),
   })
     .then(function(r) { return r.json(); })
     .then(function() {
@@ -181,13 +181,13 @@ function stopAndRetry(funcName) {
 }
 
 function retryCurrentBlock(funcName) {
-  if (!currentConvId || !conversations[currentConvId]) return;
+  if (!currentSessionId || !conversations[currentSessionId]) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     addSystemMessage('Retry failed: not connected to server.');
     return;
   }
 
-  var msgs = conversations[currentConvId].messages || [];
+  var msgs = conversations[currentSessionId].messages || [];
   var userCmd = null;
 
   // 1) Look for user message with display:'runtime' matching funcName
@@ -257,7 +257,7 @@ function retryCurrentBlock(funcName) {
   setRunning(true);
   ws.send(JSON.stringify({
     action: 'retry_overwrite',
-    conv_id: currentConvId,
+    session_id: currentSessionId,
     function: funcName,
     text: userCmd,
     thinking_effort: _thinkingEffort,
@@ -290,10 +290,10 @@ function addUserMessage(text) {
   }
   scrollToBottom();
 
-  if (currentConvId && conversations[currentConvId]) {
-    if (!conversations[currentConvId].messages) conversations[currentConvId].messages = [];
-    conversations[currentConvId].messages.push({ role: 'user', content: text });
-    updateContextStats(conversations[currentConvId].messages);
+  if (currentSessionId && conversations[currentSessionId]) {
+    if (!conversations[currentSessionId].messages) conversations[currentSessionId].messages = [];
+    conversations[currentSessionId].messages.push({ role: 'user', content: text });
+    updateContextStats(conversations[currentSessionId].messages);
   }
 }
 
@@ -341,10 +341,10 @@ function addRuntimeBlockPending(rawText, funcName, params) {
   appendToChat(div);
   scrollToBottom();
 
-  if (currentConvId && conversations[currentConvId]) {
-    if (!conversations[currentConvId].messages) conversations[currentConvId].messages = [];
-    conversations[currentConvId].messages.push({ role: 'user', content: rawText, display: 'runtime' });
-    updateContextStats(conversations[currentConvId].messages);
+  if (currentSessionId && conversations[currentSessionId]) {
+    if (!conversations[currentSessionId].messages) conversations[currentSessionId].messages = [];
+    conversations[currentSessionId].messages.push({ role: 'user', content: rawText, display: 'runtime' });
+    updateContextStats(conversations[currentSessionId].messages);
   }
 }
 

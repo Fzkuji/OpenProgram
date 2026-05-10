@@ -105,12 +105,12 @@ def _resolve_worker_port(*, autostart: bool) -> int | None:
     return None
 
 
-def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
+def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
     """Connect the Node TUI to the live worker.
 
-    The agent / conv_id / rt arguments are kept for signature compatibility
+    The agent / session_id / rt arguments are kept for signature compatibility
     with the old Textual entry; the Node front-end discovers the default
-    agent over the ws ``list_agents`` action and picks its own conv_id when
+    agent over the ws ``list_agents`` action and picks its own session_id when
     the user sends the first message.
     """
     node = _resolve_node()
@@ -168,8 +168,8 @@ def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
     env["OPENPROGRAM_WS"] = ws_url
     if agent is not None and getattr(agent, "id", None):
         env["OPENPROGRAM_AGENT"] = agent.id
-    if conv_id:
-        env["OPENPROGRAM_CONV"] = conv_id
+    if session_id:
+        env["OPENPROGRAM_CONV"] = session_id
 
     cmd = [node, str(entry), "--ws", ws_url]
     proc = subprocess.Popen(cmd, env=env, stdin=0, stdout=tty_out, stderr=tty_err)

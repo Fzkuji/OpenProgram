@@ -39,8 +39,8 @@ from openprogram.webui._pause_stop import (
     unregister_active_runtime as _unregister_active_runtime,
     kill_active_runtime as _kill_active_runtime,
     mark_context_cancelled as _mark_context_cancelled,
-    set_current_conv_id as _set_current_conv_id,
-    reset_current_conv_id as _reset_current_conv_id,
+    set_current_session_id as _set_current_session_id,
+    reset_current_session_id as _reset_current_session_id,
 )
 from openprogram.agentic_programming.function import CancelledError as _CancelledError
 from openprogram.webui.messages import get_store as _get_message_store
@@ -68,10 +68,10 @@ WELCOME_STATS_SESSION_LIMIT = 48
 # runtime / root_context / function_trees / metadata, but the
 # ``messages`` array is now a derived view of SessionDB's active
 # branch — see _get_messages / _invalidate_messages below.
-_conversations: dict[str, dict] = {}
-_conversations_lock = threading.Lock()
+_sessions: dict[str, dict] = {}
+_sessions_lock = threading.Lock()
 
-# Active-branch message cache (conv_id → list[dict]). Populated on
+# Active-branch message cache (session_id → list[dict]). Populated on
 # demand by _get_messages, invalidated whenever advance_head /
 # set_head / a fresh dispatcher turn writes to SessionDB.
 #
@@ -88,53 +88,53 @@ _MSG_CACHE_CAP = 64
 _msg_cache: "_collections.OrderedDict[str, list[dict]]" = _collections.OrderedDict()
 
 
-def _get_messages(conv_id: str) -> list[dict]:
+def _get_messages(session_id: str) -> list[dict]:
     """Return the active-branch messages for a conversation.
 
     Reads from cache when warm, falls back to SessionDB.get_branch on
     miss. The cache contains COPIES — callers that mutate the list
     won't accidentally invalidate the cache, but they must call
-    _invalidate_messages(conv_id) afterwards if they wrote anything
+    _invalidate_messages(session_id) afterwards if they wrote anything
     that should be visible.
 
-    Returns ``[]`` for unknown conv_ids — same as the dict-based
+    Returns ``[]`` for unknown session_ids — same as the dict-based
     reader's behavior, so existing call sites don't need null-guards.
     """
     with _msg_cache_lock:
-        if conv_id in _msg_cache:
-            _msg_cache.move_to_end(conv_id)
-            return list(_msg_cache[conv_id])
+        if session_id in _msg_cache:
+            _msg_cache.move_to_end(session_id)
+            return list(_msg_cache[session_id])
     # Cache miss — load from DB. Out of the lock so concurrent
     # different-conv reads don't serialize.
     try:
         from openprogram.agent.session_db import default_db
-        msgs = default_db().get_branch(conv_id)
+        msgs = default_db().get_branch(session_id)
     except Exception:
         msgs = []
     with _msg_cache_lock:
-        _msg_cache[conv_id] = msgs
-        _msg_cache.move_to_end(conv_id)
+        _msg_cache[session_id] = msgs
+        _msg_cache.move_to_end(session_id)
         while len(_msg_cache) > _MSG_CACHE_CAP:
             _msg_cache.popitem(last=False)
         return list(msgs)
 
 
-def _invalidate_messages(conv_id: str) -> None:
-    """Drop ``conv_id``'s cached branch list. Call after any write
+def _invalidate_messages(session_id: str) -> None:
+    """Drop ``session_id``'s cached branch list. Call after any write
     that should be visible to the next reader: append_message,
     set_head, retry/edit, deepest_leaf jumps."""
     with _msg_cache_lock:
-        _msg_cache.pop(conv_id, None)
+        _msg_cache.pop(session_id, None)
 
 
-def _hydrate_messages_from_db(conv_id: str) -> list[dict]:
+def _hydrate_messages_from_db(session_id: str) -> list[dict]:
     """Force-refresh and return the active branch. Used by paths that
     just wrote to SessionDB and need the next read to be fresh."""
-    _invalidate_messages(conv_id)
-    return _get_messages(conv_id)
+    _invalidate_messages(session_id)
+    return _get_messages(session_id)
 
 
-def _set_active_head(conv_id: str, head_id: Optional[str]) -> None:
+def _set_active_head(session_id: str, head_id: Optional[str]) -> None:
     """Switch the conversation's active branch leaf.
 
     Used by retry / edit / sibling-checkout / deepest-leaf jump UIs.
@@ -145,24 +145,24 @@ def _set_active_head(conv_id: str, head_id: Optional[str]) -> None:
     """
     try:
         from openprogram.agent.session_db import default_db
-        default_db().set_head(conv_id, head_id)
+        default_db().set_head(session_id, head_id)
     except Exception as e:
-        _log(f"_set_active_head: SessionDB write failed for {conv_id}: {e}")
-    with _conversations_lock:
-        conv = _conversations.get(conv_id)
+        _log(f"_set_active_head: SessionDB write failed for {session_id}: {e}")
+    with _sessions_lock:
+        conv = _sessions.get(session_id)
         if conv is not None:
             conv["head_id"] = head_id
-    _invalidate_messages(conv_id)
+    _invalidate_messages(session_id)
 
 
-def _deepest_leaf_db(conv_id: str, root_id: str) -> Optional[str]:
+def _deepest_leaf_db(session_id: str, root_id: str) -> Optional[str]:
     """SessionDB-backed deepest_leaf — finds the tip of the subtree
     under ``root_id`` so sibling-checkout lands on the latest reply,
     not the fork point. Mirrors openprogram.contextgit.deepest_leaf
     but reads from SQL instead of an in-memory message list."""
     try:
         from openprogram.agent.session_db import default_db
-        return default_db().get_deepest_leaf(conv_id, root_id)
+        return default_db().get_deepest_leaf(session_id, root_id)
     except Exception:
         return None
 
@@ -176,7 +176,7 @@ _follow_up_queues: dict = {}
 _follow_up_lock = threading.Lock()
 
 # Track running tasks so refresh can recover them
-_running_tasks: dict = {}  # conv_id → {msg_id, func_name, started_at, ...}
+_running_tasks: dict = {}  # session_id → {msg_id, func_name, started_at, ...}
 _running_tasks_lock = threading.Lock()
 
 
@@ -188,24 +188,24 @@ from contextlib import contextmanager as _contextmanager
 
 
 @_contextmanager
-def _web_follow_up(conv_id: str, msg_id: str, func_name: str, tree_cb=None):
+def _web_follow_up(session_id: str, msg_id: str, func_name: str, tree_cb=None):
     """Set up follow-up question support for a web UI command execution.
 
     Registers a global ask_user handler that sends follow-up questions to
     the browser via WebSocket and blocks until the user answers.
 
     Args:
-        conv_id:   Conversation ID (for routing the answer back).
+        session_id:   Conversation ID (for routing the answer back).
         msg_id:    Message ID (for associating with the right chat message).
         func_name: Function name (for display in the frontend).
         tree_cb:   Optional tree event callback to trigger on follow-up.
     """
     fq = queue.Queue()
     with _follow_up_lock:
-        _follow_up_queues[conv_id] = fq
+        _follow_up_queues[session_id] = fq
 
     def _handler(question: str) -> str:
-        _broadcast_chat_response(conv_id, msg_id, {
+        _broadcast_chat_response(session_id, msg_id, {
             "type": "follow_up_question",
             "question": question,
             "function": func_name,
@@ -223,7 +223,7 @@ def _web_follow_up(conv_id: str, msg_id: str, func_name: str, tree_cb=None):
     finally:
         set_ask_user(None)
         with _follow_up_lock:
-            _follow_up_queues.pop(conv_id, None)
+            _follow_up_queues.pop(session_id, None)
 
 
 
@@ -237,7 +237,7 @@ from openprogram.webui._runtime_management import (
     _create_runtime_for_visualizer,
     _detect_default_provider,
     _init_providers,
-    _get_conv_runtime,
+    _get_session_runtime,
     _get_exec_runtime,
     _switch_runtime,
     _get_provider_info,
@@ -255,7 +255,7 @@ def _CONFIG_PATH() -> str:  # noqa: N802  (keeping legacy name)
 from openprogram.webui import persistence as _persist
 
 
-def _save_conversation(conv_id: str):
+def _save_session(session_id: str):
     """Persist one conversation's meta + messages under its agent.
 
     Per-function execution trees are written incrementally by
@@ -264,10 +264,10 @@ def _save_conversation(conv_id: str):
     in SessionDB) is skipped entirely so the user doesn't see "ghost"
     history rows for chats they never typed in.
     """
-    if not conv_id:
+    if not session_id:
         return
-    with _conversations_lock:
-        conv = _conversations.get(conv_id)
+    with _sessions_lock:
+        conv = _sessions.get(session_id)
         if conv is None:
             return
         # Skip persistence for brand-new conversations the user hasn't
@@ -277,7 +277,7 @@ def _save_conversation(conv_id: str):
         if not conv.get("messages"):
             try:
                 from openprogram.agent.session_db import default_db
-                if default_db().get_session(conv_id) is None:
+                if default_db().get_session(session_id) is None:
                     return
             except Exception:
                 pass
@@ -285,7 +285,7 @@ def _save_conversation(conv_id: str):
         runtime = conv.get("runtime")
         agent_id = conv.get("agent_id") or _default_agent_id()
         meta = {
-            "id": conv_id,
+            "id": session_id,
             "agent_id": agent_id,
             "title": conv.get("title", "Untitled"),
             "provider_name": conv.get("provider_name"),
@@ -314,10 +314,10 @@ def _save_conversation(conv_id: str):
         }
         messages = list(conv.get("messages", []))
     try:
-        _persist.save_meta(agent_id, conv_id, meta)
-        _persist.save_messages(agent_id, conv_id, messages)
+        _persist.save_meta(agent_id, session_id, meta)
+        _persist.save_messages(agent_id, session_id, messages)
     except Exception as e:
-        _log(f"[save_conversation] {conv_id} error: {e}")
+        _log(f"[save_conversation] {session_id} error: {e}")
 
 
 def _default_agent_id() -> str:
@@ -333,25 +333,25 @@ def _default_agent_id() -> str:
     return "main"
 
 
-def _delete_conversation_files(conv_id: str):
+def _delete_session_files(session_id: str):
     """Look up which agent owns this conv then delete its dir."""
     try:
-        with _conversations_lock:
-            conv = _conversations.get(conv_id)
+        with _sessions_lock:
+            conv = _sessions.get(session_id)
             agent_id = (conv or {}).get("agent_id") if conv else None
         if not agent_id:
-            agent_id = _persist.resolve_agent_for_conv(conv_id)
+            agent_id = _persist.resolve_agent_for_conv(session_id)
         if agent_id:
-            _persist.delete_conversation(agent_id, conv_id)
+            _persist.delete_session(agent_id, session_id)
     except Exception as e:
-        _log(f"[delete_conversation_files] {conv_id} error: {e}")
+        _log(f"[delete_session_files] {session_id} error: {e}")
 
 
 def _restore_sessions():
-    """Walk every agent's sessions dir and hydrate _conversations."""
-    for agent_id, conv_id in _persist.list_conversations():
+    """Walk every agent's sessions dir and hydrate _sessions."""
+    for agent_id, session_id in _persist.list_sessions():
         try:
-            data = _persist.load_conversation(agent_id, conv_id)
+            data = _persist.load_session(agent_id, session_id)
             if data is None:
                 continue
 
@@ -364,15 +364,19 @@ def _restore_sessions():
             provider_name = data.get("provider_name")
             provider_override = data.get("provider_override")
             model_override = data.get("model_override")
-            session_id = data.get("session_id")
+            # The "session_id" inside meta is the LLM runtime's own
+            # session identifier (Claude Code, etc.) — separate from
+            # session_id in this loop, which is the SessionDB primary
+            # key. Use a different local name to keep them apart.
+            runtime_session_id = data.get("session_id") or data.get("llm_session_id")
             model = data.get("model")
 
-            # Skip eager runtime restore unless this conversation was
+            # Skip eager runtime restore unless this session was
             # explicitly switched (provider_override). Without an
             # override we can't tell whether the persisted
             # ``provider_name`` reflects a user choice or stale state
             # written by the old auto-default-on-create path; letting
-            # ``_get_conv_runtime`` build the runtime lazily from agent
+            # ``_get_session_runtime`` build the runtime lazily from agent
             # config is the only way old buggy sessions escape the
             # claude-code default.
             runtime = None
@@ -381,8 +385,8 @@ def _restore_sessions():
                     runtime = _create_runtime_for_visualizer(
                         provider_override, model=model_override or model
                     )
-                    if session_id and hasattr(runtime, "_session_id"):
-                        runtime._session_id = session_id
+                    if runtime_session_id and hasattr(runtime, "_session_id"):
+                        runtime._session_id = runtime_session_id
                         runtime._turn_count = 1
                         runtime.has_session = True
                 except Exception:
@@ -399,9 +403,9 @@ def _restore_sessions():
             normalize_parent_pointers(msgs)
             head_id = data.get("head_id") or head_or_tip({}, msgs)
 
-            with _conversations_lock:
-                _conversations[conv_id] = {
-                    "id": conv_id,
+            with _sessions_lock:
+                _sessions[session_id] = {
+                    "id": session_id,
                     "agent_id": agent_id,
                     "title": data.get("title", "Untitled"),
                     "root_context": root_ctx,
@@ -424,10 +428,10 @@ def _restore_sessions():
                     "peer": data.get("peer"),
                     "peer_display": data.get("peer_display"),
                 }
-            _log(f"[restore] agent={agent_id} conv={conv_id}: "
-                 f"{data.get('title')} (session={session_id})")
+            _log(f"[restore] agent={agent_id} session={session_id}: "
+                 f"{data.get('title')} (runtime_session={runtime_session_id})")
         except Exception as e:
-            _log(f"[restore] failed for {conv_id}: {e}")
+            _log(f"[restore] failed for {session_id}: {e}")
 
 
 def _load_config() -> dict:
@@ -514,7 +518,7 @@ def _on_context_event(event_type: str, data: dict):
         # When stop fires on a paused task, resume_execution() unblocks this
         # thread. Raise immediately so the worker aborts at the nearest node
         # boundary instead of running another full agentic call first.
-        from openprogram.webui._pause_stop import _current_conv_id as _cv
+        from openprogram.webui._pause_stop import _current_session_id as _cv
         _cid = _cv.get(None)
         if _cid and _is_cancelled(_cid):
             raise _CancelledError(f"Execution stopped by user (conv={_cid})")
@@ -603,7 +607,7 @@ def _get_full_tree() -> list[dict]:
         return list(_root_contexts)
 
 
-def _cleanup_conv_resources(conv_id: str, conv: dict):
+def _cleanup_session_resources(session_id: str, conv: dict):
     """Clean up all resources associated with a deleted conversation."""
     # Remove root_contexts entries — match by the conversation's root_context name
     root_ctx = conv.get("root_context")
@@ -613,9 +617,9 @@ def _cleanup_conv_resources(conv_id: str, conv: dict):
             with _root_contexts_lock:
                 _root_contexts[:] = [r for r in _root_contexts if r.get("name") != root_name]
     # Clean up follow-up queues and running tasks
-    _follow_up_queues.pop(conv_id, None)
+    _follow_up_queues.pop(session_id, None)
     with _running_tasks_lock:
-        _running_tasks.pop(conv_id, None)
+        _running_tasks.pop(session_id, None)
 
 
 from openprogram.webui._functions import (
@@ -643,7 +647,7 @@ from openprogram.webui._functions import (
 # Conversation management — each conversation has a Context tree
 # ---------------------------------------------------------------------------
 
-def _get_or_create_conversation(conv_id: str = None,
+def _get_or_create_session(session_id: str = None,
                                 agent_id: str = None,
                                 *,
                                 channel: str = None,
@@ -661,10 +665,10 @@ def _get_or_create_conversation(conv_id: str = None,
     Ignored on lookup of existing conversations — call
     ``set_conversation_channel`` to change them after creation.
     """
-    if conv_id is None:
-        conv_id = "local_" + uuid.uuid4().hex[:10]
-    with _conversations_lock:
-        if conv_id not in _conversations:
+    if session_id is None:
+        session_id = "local_" + uuid.uuid4().hex[:10]
+    with _sessions_lock:
+        if session_id not in _sessions:
             resolved_agent = agent_id or _default_agent_id()
             # Hydrate the active branch from SessionDB so a webui
             # restart / fresh worker process sees the same messages
@@ -673,8 +677,8 @@ def _get_or_create_conversation(conv_id: str = None,
             try:
                 from openprogram.agent.session_db import default_db
                 _db = default_db()
-                _hydrated = _db.get_branch(conv_id) or []
-                _sess = _db.get_session(conv_id)
+                _hydrated = _db.get_branch(session_id) or []
+                _sess = _db.get_session(session_id)
                 _hydrated_head = _sess.get("head_id") if _sess else None
             except Exception:
                 _hydrated = []
@@ -685,8 +689,8 @@ def _get_or_create_conversation(conv_id: str = None,
                 or ((_sess or {}).get("agent_id") if isinstance(_sess, dict) else None)
                 or resolved_agent
             )
-            _conversations[conv_id] = {
-                "id": conv_id,
+            _sessions[session_id] = {
+                "id": session_id,
                 "agent_id": resolved_agent,
                 "title": ((_sess or {}).get("title") if isinstance(_sess, dict) else None)
                          or "New conversation",
@@ -715,10 +719,10 @@ def _get_or_create_conversation(conv_id: str = None,
                 "thinking_effort": ((_sess or {}).get("thinking_effort") if isinstance(_sess, dict) else None),
                 "permission_mode": ((_sess or {}).get("permission_mode") if isinstance(_sess, dict) else None),
             }
-        return _conversations[conv_id]
+        return _sessions[session_id]
 
 
-def _is_run_active(conv_id: str) -> bool:
+def _is_run_active(session_id: str) -> bool:
     """Is there an in-flight agent run for this conversation?
 
     Single source of truth for UI gating (Edit / Retry buttons go grey
@@ -726,14 +730,14 @@ def _is_run_active(conv_id: str) -> bool:
     dict we use for pause / stop, so we can't drift out of sync.
     """
     with _running_tasks_lock:
-        return conv_id in _running_tasks
+        return session_id in _running_tasks
 
 
 # DAG helpers live in openprogram.contextgit. We keep ``advance_head``
 # as the in-memory mutation primitive but wrap it in ``_append_msg``
 # below so every webui write also flows into SessionDB. That makes the
 # dispatcher / channels worker / TUI see writes from the webui WS
-# handlers without waiting for the next ``_save_conversation``.
+# handlers without waiting for the next ``_save_session``.
 from openprogram.contextgit import (  # noqa: E402
     advance_head as _raw_advance_head,
     head_or_tip as _head_or_tip,
@@ -758,7 +762,7 @@ def _append_msg(conv: dict, msg: dict) -> None:
       4. Cache invalidation is last so step 3 is visible.
 
     Failures in steps 2-4 are logged but non-fatal; the in-memory
-    mirror is still consistent and the next ``_save_conversation``
+    mirror is still consistent and the next ``_save_session``
     will sync the row through ``save_messages`` (idempotent).
     """
     _raw_advance_head(conv, msg)
@@ -771,9 +775,19 @@ def _append_msg(conv: dict, msg: dict) -> None:
         db = default_db()
         if db.get_session(cid) is None:
             create_kwargs = {}
+            # Channel binding + presentational fields.
             for fld in ("channel", "account_id", "peer", "peer_display", "source", "title"):
                 v = conv.get(fld)
                 if v:
+                    create_kwargs[fld] = v
+            # Per-session run config — these used to be written via
+            # save_session_run_config which create_session'd a ghost row
+            # even when the user never sent a real message. Now folded
+            # into the same create_session call as the first message so
+            # SessionDB only ever holds rows for sessions with content.
+            for fld in ("tools_enabled", "tools_override", "thinking_effort", "permission_mode"):
+                v = conv.get(fld)
+                if v is not None:
                     create_kwargs[fld] = v
             db.create_session(cid, conv.get("agent_id") or _default_agent_id(), **create_kwargs)
         db.append_message(cid, msg)
@@ -795,7 +809,7 @@ from ._thinking import (  # noqa: E402
 )
 
 
-def _execute_in_context(conv_id: str, msg_id: str, action: str,
+def _execute_in_context(session_id: str, msg_id: str, action: str,
                         func_name: str = None, kwargs: dict = None, query: str = None,
                         thinking_effort: str = None, exec_thinking_effort: str = None,
                         tools_flag=None, permission_mode: str = None):
@@ -804,14 +818,14 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
     This is the core execution engine. Everything runs under the conversation's
     root Context, so summarize() automatically provides conversation history.
     """
-    _conv_token = _set_current_conv_id(conv_id)
+    _conv_token = _set_current_session_id(session_id)
     try:
-        conv = _get_or_create_conversation(conv_id)
+        conv = _get_or_create_session(session_id)
         # Resolve the owning agent once so every persist call in this
         # function uses a stable id even if the caller later rebinds
         # the conv dict.
         _agent_id = conv.get("agent_id") or _default_agent_id()
-        runtime = _get_conv_runtime(conv_id, msg_id=msg_id)
+        runtime = _get_session_runtime(session_id, msg_id=msg_id)
         from openprogram.agent.session_config import (
             load_session_run_config,
             permission_from_config,
@@ -821,14 +835,14 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
         if tools_flag is not None or thinking_effort is not None \
                 or permission_mode is not None:
             run_cfg = save_session_run_config(
-                conv_id,
+                session_id,
                 agent_id=_agent_id,
                 tools=tools_flag,
                 thinking_effort=thinking_effort,
                 permission_mode=permission_mode,
             )
         else:
-            run_cfg = load_session_run_config(conv_id)
+            run_cfg = load_session_run_config(session_id)
         effective_thinking = run_cfg.thinking_effort
         effective_permission = permission_from_config(run_cfg, default="bypass")
 
@@ -840,7 +854,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 # Direct chat — include conversation history for context
                 _log(f"[exec] query: {query[:80]}... (thinking={effective_thinking})")
                 with _running_tasks_lock:
-                    _running_tasks[conv_id] = {
+                    _running_tasks[session_id] = {
                         "msg_id": msg_id,
                         "func_name": "_chat",
                         "started_at": time.time(),
@@ -848,7 +862,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                         "loaded_func_ref": None,
                         "stream_events": [],
                     }
-                _broadcast_chat_response(conv_id, msg_id, {
+                _broadcast_chat_response(session_id, msg_id, {
                     "type": "status", "content": "Thinking...",
                 })
 
@@ -923,7 +937,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     process_user_turn as _process_user_turn,
                 )
 
-                _register_active_runtime(conv_id, runtime)
+                _register_active_runtime(session_id, runtime)
 
                 tool_calls_collected: list[dict] = []
 
@@ -937,7 +951,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     if payload.get("type") == "stream_event":
                         evt = payload.get("event") or {}
                         with _running_tasks_lock:
-                            ti = _running_tasks.get(conv_id)
+                            ti = _running_tasks.get(session_id)
                             if ti and "stream_events" in ti:
                                 ti["stream_events"].append(evt)
                                 if len(ti["stream_events"]) > 200:
@@ -950,7 +964,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                             })
                         # Fan out to WS clients with the same envelope
                         # shape the legacy on_stream hook used.
-                        _broadcast_chat_response(conv_id, msg_id, {
+                        _broadcast_chat_response(session_id, msg_id, {
                             "type": "stream_event",
                             "event": evt,
                             "function": "_chat",
@@ -962,7 +976,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                         pass
 
                 req_obj = _TurnRequest(
-                    conv_id=conv_id,
+                    session_id=session_id,
                     user_text=query,
                     agent_id=_agent_id,
                     source="web",
@@ -979,11 +993,11 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     )
                 finally:
                     with _running_tasks_lock:
-                        _running_tasks.pop(conv_id, None)
-                    _unregister_active_runtime(conv_id)
+                        _running_tasks.pop(session_id, None)
+                    _unregister_active_runtime(session_id)
 
                 if turn_result.failed:
-                    _broadcast_chat_response(conv_id, msg_id, {
+                    _broadcast_chat_response(session_id, msg_id, {
                         "type": "error",
                         "content": turn_result.error or "(unknown error)",
                     })
@@ -995,15 +1009,15 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 # Dispatcher persisted the assistant message itself
                 # (with id=msg_id+'_a'). Hydrate the in-memory mirror
                 # from SessionDB so subsequent webui readers
-                # (load_conversation, retry, etc.) see it.
-                _hydrate_messages_from_db(conv_id)
-                with _conversations_lock:
-                    refreshed = _conversations.get(conv_id)
+                # (load_session, retry, etc.) see it.
+                _hydrate_messages_from_db(session_id)
+                with _sessions_lock:
+                    refreshed = _sessions.get(session_id)
                     if refreshed is not None:
                         try:
                             from openprogram.agent.session_db import default_db
-                            refreshed["messages"] = default_db().get_branch(conv_id) or []
-                            sess = default_db().get_session(conv_id)
+                            refreshed["messages"] = default_db().get_branch(session_id) or []
+                            sess = default_db().get_session(session_id)
                             if sess:
                                 refreshed["head_id"] = sess.get("head_id")
                         except Exception:
@@ -1012,12 +1026,12 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 # Blocks: dispatcher emits structured stream events;
                 # webui consumers can rebuild blocks from those. For
                 # the immediate "result" envelope we just send text.
-                _broadcast_chat_response(conv_id, msg_id, {
+                _broadcast_chat_response(session_id, msg_id, {
                     "type": "result",
                     "content": str(result),
                     "tool_calls": tool_calls_collected,
                 })
-                _broadcast_context_stats(conv_id, msg_id, chat_runtime=runtime)
+                _broadcast_context_stats(session_id, msg_id, chat_runtime=runtime)
 
                 # If this is a channel-bound agent session (WeChat /
                 # Telegram / etc.), push the web-side reply back out to
@@ -1028,7 +1042,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 # yet.
                 try:
                     from openprogram.channels.outbound import send as _send
-                    meta = _load_agent_session_meta(conv_id)
+                    meta = _load_agent_session_meta(session_id)
                     if meta and meta.get("channel") and meta.get("account_id"):
                         peer_id = (meta.get("peer") or {}).get("id") or ""
                         if peer_id:
@@ -1047,7 +1061,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 if func_name == "create" and kwargs and "description" in kwargs:
                     desc = kwargs["description"].strip()
                     if len(desc) < 5:
-                        _broadcast_chat_response(conv_id, msg_id, {
+                        _broadcast_chat_response(session_id, msg_id, {
                             "type": "result",
                             "content": "Description too short. What function would you like to create?",
                             "function": func_name,
@@ -1060,7 +1074,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                         )
                         if check.strip().lower().startswith("no"):
                             reason = check.strip()[2:].strip().lstrip(",:").strip() or "unclear"
-                            _broadcast_chat_response(conv_id, msg_id, {
+                            _broadcast_chat_response(session_id, msg_id, {
                                 "type": "result",
                                 "content": f"Unclear description: {reason}\n\nPlease describe what the function should **do**.",
                                 "function": func_name,
@@ -1077,7 +1091,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     if k not in ("runtime", "callback")
                 )
                 with _running_tasks_lock:
-                    _running_tasks[conv_id] = {
+                    _running_tasks[session_id] = {
                         "msg_id": msg_id,
                         "func_name": func_name,
                         "started_at": time.time(),
@@ -1085,18 +1099,18 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                         "loaded_func_ref": None,  # set after load
                         "stream_events": [],  # buffered for refresh recovery
                     }
-                _broadcast_chat_response(conv_id, msg_id, {
+                _broadcast_chat_response(session_id, msg_id, {
                     "type": "status",
                     "content": f"Running {func_name}...",
                 })
 
                 loaded_func = _load_function(func_name)
                 if loaded_func is None:
-                    _broadcast_chat_response(conv_id, msg_id, {"type": "error", "content": f"Function '{func_name}' not found."})
+                    _broadcast_chat_response(session_id, msg_id, {"type": "error", "content": f"Function '{func_name}' not found."})
                     return
                 with _running_tasks_lock:
-                    if conv_id in _running_tasks:
-                        _running_tasks[conv_id]["loaded_func_ref"] = loaded_func
+                    if session_id in _running_tasks:
+                        _running_tasks[session_id]["loaded_func_ref"] = loaded_func
                 call_kwargs = dict(kwargs or {})
                 # Resolve string function-name parameters to actual function objects
                 # (e.g. edit(function="sentiment") → edit(function=<sentiment function>))
@@ -1124,19 +1138,19 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     conv.setdefault("last_workdirs", {})[func_name] = _work_dir
                     _log(f"[exec] workdir: {_work_dir}")
                 _log(f"[exec] new runtime: provider={type(exec_rt).__name__}, no_tools={_no_tools}, id={id(exec_rt)}, thinking={exec_thinking_effort}")
-                _register_active_runtime(conv_id, exec_rt)
+                _register_active_runtime(session_id, exec_rt)
                 _inject_runtime(loaded_func, call_kwargs, exec_rt)
 
                 # Register streaming callback for real-time LLM output
                 def _on_stream(event: dict):
                     # Buffer for refresh recovery (keep last 200 events)
                     with _running_tasks_lock:
-                        ti = _running_tasks.get(conv_id)
+                        ti = _running_tasks.get(session_id)
                         if ti and "stream_events" in ti:
                             ti["stream_events"].append(event)
                             if len(ti["stream_events"]) > 200:
                                 ti["stream_events"] = ti["stream_events"][-200:]
-                    _broadcast_chat_response(conv_id, msg_id, {
+                    _broadcast_chat_response(session_id, msg_id, {
                         "type": "stream_event",
                         "event": event,
                         "function": func_name,
@@ -1159,8 +1173,8 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     "_in_progress": True,
                 }
                 conv["function_trees"].append(_run_placeholder_tree)
-                _persist.init_tree(_agent_id, conv_id, _run_func_idx, _run_attempt_idx)
-                _save_conversation(conv_id)
+                _persist.init_tree(_agent_id, session_id, _run_func_idx, _run_attempt_idx)
+                _save_session(session_id)
 
                 # Register event-driven tree updates: append each node event
                 # to the JSONL file and broadcast a full partial tree.
@@ -1168,7 +1182,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     try:
                         if event_type == "node_created":
                             _persist.append_tree_event(
-                                _agent_id, conv_id, _run_func_idx, _run_attempt_idx,
+                                _agent_id, session_id, _run_func_idx, _run_attempt_idx,
                                 {
                                     "event": "enter",
                                     "path": data.get("path"),
@@ -1183,7 +1197,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                             )
                         elif event_type == "node_completed":
                             _persist.append_tree_event(
-                                _agent_id, conv_id, _run_func_idx, _run_attempt_idx,
+                                _agent_id, session_id, _run_func_idx, _run_attempt_idx,
                                 {
                                     "event": "exit",
                                     "path": data.get("path"),
@@ -1205,7 +1219,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                             partial_tree["_in_progress"] = True
                             if _run_func_idx < len(conv.get("function_trees", [])):
                                 conv["function_trees"][_run_func_idx] = partial_tree
-                            _broadcast_chat_response(conv_id, msg_id, {
+                            _broadcast_chat_response(session_id, msg_id, {
                                 "type": "tree_update",
                                 "tree": partial_tree,
                                 "function": func_name,
@@ -1216,14 +1230,14 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 on_event(_tree_event_callback)
 
                 # Follow-up support + execution
-                with _web_follow_up(conv_id, msg_id, func_name, tree_cb=_tree_event_callback):
+                with _web_follow_up(session_id, msg_id, func_name, tree_cb=_tree_event_callback):
                     try:
                         result = _format_result(loaded_func(**call_kwargs), action=func_name)
                     finally:
                         off_event(_tree_event_callback)
                         with _running_tasks_lock:
-                            _running_tasks.pop(conv_id, None)
-                        _unregister_active_runtime(conv_id)
+                            _running_tasks.pop(session_id, None)
+                        _unregister_active_runtime(session_id)
                     # Store session id for modify/resume before closing
                     _last_session_id = getattr(exec_rt, 'last_thread_id', None) or getattr(exec_rt, '_session_id', None)
                     # For Claude Code: keep runtime alive for modify reuse
@@ -1294,7 +1308,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     "parent_id": msg_id,  # child of this run's user turn
                 }
                 _append_msg(conv, reply_msg)
-                _broadcast_chat_response(conv_id, msg_id, {
+                _broadcast_chat_response(session_id, msg_id, {
                     "type": "result",
                     "content": str(result),
                     "function": func_name,
@@ -1304,7 +1318,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     "current_attempt": 0,
                     "usage": _func_usage,
                 })
-                _broadcast_context_stats(conv_id, msg_id, exec_runtime=exec_rt)
+                _broadcast_context_stats(session_id, msg_id, exec_runtime=exec_rt)
 
         finally:
             pass
@@ -1325,19 +1339,19 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
             }, default=str))
 
         # Persist sessions to disk after each execution
-        _save_conversation(conv_id)
+        _save_session(session_id)
 
     except (Exception, _CancelledError) as e:
         with _running_tasks_lock:
-            _running_tasks.pop(conv_id, None)
-        _unregister_active_runtime(conv_id)
+            _running_tasks.pop(session_id, None)
+        _unregister_active_runtime(session_id)
 
         # Cancellation path — either the exception came from /api/stop killing
         # the subprocess, or a CancelledError was raised by the cancel hook
         # (e.g. loops between exec calls). Mark any still-running tree nodes
         # as cancelled and emit a "stopped" result instead of an error message.
-        if _is_cancelled(conv_id) or isinstance(e, _CancelledError):
-            _clear_cancel(conv_id)
+        if _is_cancelled(session_id) or isinstance(e, _CancelledError):
+            _clear_cancel(session_id)
             ctx = None
             _lf = locals().get("loaded_func")
             if _lf is not None:
@@ -1361,7 +1375,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                             if (getattr(n, "status", "") == "error"
                                     and getattr(n, "error", "") == "Cancelled by user"):
                                 _persist.append_tree_event(
-                                    _agent_id, conv_id, _fidx, _aidx,
+                                    _agent_id, session_id, _fidx, _aidx,
                                     {
                                         "event": "exit",
                                         "path": n.path,
@@ -1377,7 +1391,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                             for c in getattr(n, "children", []) or []:
                                 _walk(c)
                         _walk(ctx)
-                    _broadcast_chat_response(conv_id, msg_id, {
+                    _broadcast_chat_response(session_id, msg_id, {
                         "type": "tree_update",
                         "tree": ctx._to_dict(),
                         "function": func_name,
@@ -1385,7 +1399,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 except Exception:
                     pass
             try:
-                conv = _get_or_create_conversation(conv_id)
+                conv = _get_or_create_session(session_id)
                 now = time.time()
                 _append_msg(conv, {
                     "role": "assistant",
@@ -1397,10 +1411,10 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                     "display": "runtime",
                     "timestamp": now,
                 })
-                _save_conversation(conv_id)
+                _save_session(session_id)
             except Exception:
                 pass
-            _broadcast_chat_response(conv_id, msg_id, {
+            _broadcast_chat_response(session_id, msg_id, {
                 "type": "result",
                 "content": "Execution stopped by user.",
                 "function": func_name,
@@ -1414,7 +1428,7 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
         # chat messages with a retry button, not as runtime blocks.
         error_display = "runtime" if func_name else "chat"
         try:
-            conv = _get_or_create_conversation(conv_id)
+            conv = _get_or_create_session(session_id)
             now = time.time()
             error_msg = {
                 "role": "assistant",
@@ -1431,10 +1445,10 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
                 error_msg["retry_query"] = query
             error_msg["parent_id"] = msg_id
             _append_msg(conv, error_msg)
-            _save_conversation(conv_id)
+            _save_session(session_id)
         except Exception:
             pass
-        _broadcast_chat_response(conv_id, msg_id, {
+        _broadcast_chat_response(session_id, msg_id, {
             "type": "error",
             "content": error_content,
             "function": func_name,
@@ -1442,10 +1456,10 @@ def _execute_in_context(conv_id: str, msg_id: str, action: str,
             "retry_query": query if not func_name else None,
         })
     finally:
-        _reset_current_conv_id(_conv_token)
+        _reset_current_session_id(_conv_token)
 
 
-def _broadcast_context_stats(conv_id: str, msg_id: str, chat_runtime=None, exec_runtime=None):
+def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, exec_runtime=None):
     """Broadcast chat & exec token usage stats to frontend.
 
     Chat usage: use the provider's latest reported value directly.
@@ -1454,7 +1468,7 @@ def _broadcast_context_stats(conv_id: str, msg_id: str, chat_runtime=None, exec_
       - No accumulation — provider knows best about its own usage.
     Exec usage: per-function execution, read from exec_runtime.last_usage.
     """
-    conv = _conversations.get(conv_id)
+    conv = _sessions.get(session_id)
     if not conv:
         return
 
@@ -1508,12 +1522,12 @@ def _broadcast_context_stats(conv_id: str, msg_id: str, chat_runtime=None, exec_
         "context_window": context_window,
     }
     conv["_last_context_stats"] = stats
-    _broadcast_chat_response(conv_id, msg_id, stats)
+    _broadcast_chat_response(session_id, msg_id, stats)
 
 
-def _broadcast_chat_response(conv_id: str, msg_id: str, response: dict):
+def _broadcast_chat_response(session_id: str, msg_id: str, response: dict):
     """Broadcast a chat response to all WebSocket clients."""
-    response["conv_id"] = conv_id
+    response["session_id"] = session_id
     response["msg_id"] = msg_id
     response["timestamp"] = time.time()
 
@@ -1527,7 +1541,7 @@ def _broadcast_chat_response(conv_id: str, msg_id: str, response: dict):
 # ---------------------------------------------------------------------------
 # Every frame the store emits is wrapped in the same `chat_response` envelope
 # the rest of the chat traffic uses, so the frontend has one dispatcher to
-# route everything. Frames carry their own conv_id so clients filter.
+# route everything. Frames carry their own session_id so clients filter.
 
 def _wire_message_store_broadcast() -> None:
     """Install a one-shot global listener on the process-wide store.
@@ -1541,9 +1555,9 @@ def _wire_message_store_broadcast() -> None:
         return
     store = _get_message_store()
 
-    def _on_frame(conv_id: str, frame: dict) -> None:
+    def _on_frame(session_id: str, frame: dict) -> None:
         envelope = {"type": "chat_response", "data": dict(frame)}
-        envelope["data"]["conv_id"] = conv_id
+        envelope["data"]["session_id"] = session_id
         _broadcast(json.dumps(envelope, default=str))
 
     store.subscribe_all(_on_frame)
@@ -1677,10 +1691,10 @@ async def _websocket_handler(ws):
         await ws.send_text(json.dumps(
             {"type": "functions_list", "data": functions}, default=str
         ))
-        with _conversations_lock:
+        with _sessions_lock:
             history = [
                 {"id": c["id"], "title": c["title"], "created_at": c["created_at"]}
-                for c in _conversations.values()
+                for c in _sessions.values()
             ]
         await ws.send_text(json.dumps(
             {"type": "history_list", "data": history}, default=str
@@ -1752,7 +1766,7 @@ async def _handle_ws_command(ws, cmd: dict):
         try:
             model = (cmd.get("model") or "").strip()
             explicit_provider = (cmd.get("provider") or "").strip() or None
-            conv_id = cmd.get("conv_id")
+            session_id = cmd.get("session_id")
             if not model:
                 await ws.send_text(json.dumps({
                     "type": "error", "data": {"message": "Missing model"},
@@ -1776,9 +1790,9 @@ async def _handle_ws_command(ws, cmd: dict):
                     _create_runtime_for_visualizer, provider, bare_model,
                 )
 
-            if conv_id:
-                with _conversations_lock:
-                    conv = _conversations.get(conv_id)
+            if session_id:
+                with _sessions_lock:
+                    conv = _sessions.get(session_id)
                 if conv:
                     old_rt = conv.get("runtime")
                     cur_prov = conv.get(
@@ -1798,7 +1812,7 @@ async def _handle_ws_command(ws, cmd: dict):
                         conv["provider_name"] = prov
                     else:
                         old_rt.model = bare_model
-                    info = _get_provider_info(conv_id)
+                    info = _get_provider_info(session_id)
                     _broadcast(json.dumps(
                         {"type": "provider_changed", "data": info},
                     ))
@@ -1808,7 +1822,7 @@ async def _handle_ws_command(ws, cmd: dict):
                     }))
                     return
 
-            # No conv_id → swap default runtime.
+            # No session_id → swap default runtime.
             if (
                 target_provider
                 and target_provider != _runtime_management._default_provider
@@ -1870,14 +1884,14 @@ async def _handle_ws_command(ws, cmd: dict):
     if action == "stop":
         # Cancel the in-flight turn for a conversation. Mirrors the REST
         # /api/stop endpoint.
-        conv_id = cmd.get("conv_id")
-        if not conv_id:
+        session_id = cmd.get("session_id")
+        if not session_id:
             return
-        _mark_cancelled(conv_id)
+        _mark_cancelled(session_id)
         resume_execution()
-        _kill_active_runtime(conv_id)
+        _kill_active_runtime(session_id)
         with _follow_up_lock:
-            q = _follow_up_queues.get(conv_id)
+            q = _follow_up_queues.get(session_id)
         if q is not None:
             try:
                 q.put_nowait({"_cancelled": True})
@@ -1887,7 +1901,7 @@ async def _handle_ws_command(ws, cmd: dict):
             "type": "status",
             "paused": False,
             "stopped": True,
-            "conv_id": conv_id,
+            "session_id": session_id,
         }))
         return
 
@@ -1988,10 +2002,10 @@ async def _handle_ws_command(ws, cmd: dict):
         try:
             top_sessions = []
             for row in session_rows:
-                conv_id = row.get("id") or ""
-                title = row.get("title") or conv_id
+                session_id = row.get("id") or ""
+                title = row.get("title") or session_id
                 top_sessions.append({
-                    "id": conv_id,
+                    "id": session_id,
                     "title": str(title)[:40],
                 })
         except Exception:
@@ -2061,14 +2075,14 @@ async def _handle_ws_command(ws, cmd: dict):
         # Reconnect handshake: client sends the max seq it has seen per
         # message; server replies with the frames needed to catch up. The
         # store decides snapshot-vs-replay — see MessageStore.sync.
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         known_seqs = cmd.get("known_seqs") or {}
-        if not conv_id:
+        if not session_id:
             return
         store = _get_message_store()
-        for frame in store.sync(conv_id, known_seqs):
+        for frame in store.sync(session_id, known_seqs):
             envelope = {"type": "chat_response", "data": dict(frame)}
-            envelope["data"]["conv_id"] = conv_id
+            envelope["data"]["session_id"] = session_id
             try:
                 await ws.send_text(json.dumps(envelope, default=str))
             except Exception:
@@ -2077,7 +2091,7 @@ async def _handle_ws_command(ws, cmd: dict):
 
     if action == "chat":
         text = cmd.get("text", "").strip()
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         agent_id = cmd.get("agent_id") or None
         thinking_effort = cmd.get("thinking_effort") or None
         exec_thinking_effort = cmd.get("exec_thinking_effort") or None
@@ -2092,17 +2106,17 @@ async def _handle_ws_command(ws, cmd: dict):
         new_channel = (cmd.get("channel") or "").strip().lower() or None
         new_account_id = (cmd.get("account_id") or "").strip() or None
         new_peer = (cmd.get("peer") or "").strip() or None
-        conv = _get_or_create_conversation(
-            conv_id,
+        conv = _get_or_create_session(
+            session_id,
             agent_id=agent_id,
             channel=new_channel,
             account_id=new_account_id,
             peer=new_peer,
         )
-        conv_id = conv["id"]
+        session_id = conv["id"]
         from openprogram.agent.session_config import save_session_run_config
         run_cfg = save_session_run_config(
-            conv_id,
+            session_id,
             agent_id=conv.get("agent_id") or _default_agent_id(),
             tools=tools_flag,
             thinking_effort=thinking_effort,
@@ -2134,62 +2148,62 @@ async def _handle_ws_command(ws, cmd: dict):
             user_msg["display"] = "runtime"
         _append_msg(conv, user_msg)
 
-        # Send acknowledgment with conv_id
+        # Send acknowledgment with session_id
         await ws.send_text(json.dumps({
             "type": "chat_ack",
-            "data": {"conv_id": conv_id, "msg_id": msg_id},
+            "data": {"session_id": session_id, "msg_id": msg_id},
         }))
 
         if parsed["action"] == "run":
             threading.Thread(
                 target=_execute_in_context,
-                args=(conv_id, msg_id, "run"),
+                args=(session_id, msg_id, "run"),
                 kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"], "thinking_effort": run_cfg.thinking_effort, "exec_thinking_effort": exec_thinking_effort, "permission_mode": run_cfg.permission_mode},
                 daemon=True,
             ).start()
         elif parsed["action"] == "query":
             threading.Thread(
                 target=_execute_in_context,
-                args=(conv_id, msg_id, "query"),
+                args=(session_id, msg_id, "query"),
                 kwargs={"query": parsed["raw"], "thinking_effort": run_cfg.thinking_effort, "tools_flag": tools_flag, "permission_mode": run_cfg.permission_mode},
                 daemon=True,
             ).start()
 
     elif action == "retry_node":
         node_path = cmd.get("node_path")
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         params_override = cmd.get("params")  # optional edited params
-        _log(f"[retry] received retry_node: conv_id={conv_id}, node_path={node_path}, params_override={params_override}")
-        if not node_path or not conv_id:
-            _log(f"[retry] missing node_path or conv_id, aborting")
+        _log(f"[retry] received retry_node: session_id={session_id}, node_path={node_path}, params_override={params_override}")
+        if not node_path or not session_id:
+            _log(f"[retry] missing node_path or session_id, aborting")
             await ws.send_text(json.dumps({
                 "type": "chat_response",
-                "data": {"type": "error", "content": "Retry failed: missing node_path or conv_id", "conv_id": conv_id or "", "msg_id": "err"},
+                "data": {"type": "error", "content": "Retry failed: missing node_path or session_id", "session_id": session_id or "", "msg_id": "err"},
             }))
             return
         msg_id = str(uuid.uuid4())[:8]
         await ws.send_text(json.dumps({
             "type": "chat_ack",
-            "data": {"conv_id": conv_id, "msg_id": msg_id},
+            "data": {"session_id": session_id, "msg_id": msg_id},
         }))
         _log(f"[retry] starting retry thread msg_id={msg_id}")
         threading.Thread(
             target=_retry_node,
-            args=(conv_id, msg_id, node_path, params_override),
+            args=(session_id, msg_id, node_path, params_override),
             daemon=True,
         ).start()
 
     elif action == "retry_overwrite":
         # Overwrite retry: remove old user+assistant messages for this function, re-run
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         func_name = cmd.get("function")
         text = cmd.get("text", "").strip()
         thinking_effort = cmd.get("thinking_effort") or None
         exec_thinking_effort = cmd.get("exec_thinking_effort") or None
-        if not conv_id or not text:
+        if not session_id or not text:
             return
 
-        conv = _get_or_create_conversation(conv_id)
+        conv = _get_or_create_session(session_id)
 
         # Retry = fresh session — clear old session state
         conv.pop("_last_exec_session", None)
@@ -2217,7 +2231,7 @@ async def _handle_ws_command(ws, cmd: dict):
         # the next get_branch / dispatcher turn sees the truncated view.
         # Old messages stay in SessionDB (append-only log, Claude Code
         # style) — they're just not on the active branch any more.
-        _set_active_head(conv_id, new_messages[-1]["id"] if new_messages else None)
+        _set_active_head(session_id, new_messages[-1]["id"] if new_messages else None)
 
         # Remove old function_trees for this function
         conv["function_trees"] = [
@@ -2242,7 +2256,7 @@ async def _handle_ws_command(ws, cmd: dict):
 
         await ws.send_text(json.dumps({
             "type": "chat_ack",
-            "data": {"conv_id": conv_id, "msg_id": msg_id},
+            "data": {"session_id": session_id, "msg_id": msg_id},
         }))
 
         # Parse and execute
@@ -2252,12 +2266,12 @@ async def _handle_ws_command(ws, cmd: dict):
         if parsed["action"] == "run":
             threading.Thread(
                 target=_execute_in_context,
-                args=(conv_id, msg_id, "run"),
+                args=(session_id, msg_id, "run"),
                 kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"], "thinking_effort": thinking_effort, "exec_thinking_effort": exec_thinking_effort},
                 daemon=True,
             ).start()
         else:
-            _broadcast_chat_response(conv_id, msg_id, {
+            _broadcast_chat_response(session_id, msg_id, {
                 "type": "error",
                 "content": f"Could not parse retry command: {text[:100]}",
                 "function": func_name,
@@ -2265,10 +2279,10 @@ async def _handle_ws_command(ws, cmd: dict):
             })
 
     elif action == "switch_attempt":
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         func_name = cmd.get("function")
         attempt_idx = cmd.get("attempt_index", 0)
-        conv = _conversations.get(conv_id)
+        conv = _sessions.get(session_id)
         if conv:
             messages = conv.get("messages", [])
             msg_idx = None
@@ -2304,7 +2318,7 @@ async def _handle_ws_command(ws, cmd: dict):
                 # branch off the active attempt's tail, not whatever
                 # was there before.
                 _set_active_head(
-                    conv_id,
+                    session_id,
                     new_msgs_for_attempt[-1]["id"] if new_msgs_for_attempt else None,
                 )
 
@@ -2317,7 +2331,7 @@ async def _handle_ws_command(ws, cmd: dict):
                             func_trees[ti] = selected_tree
                             break
 
-                _save_conversation(conv_id)
+                _save_session(session_id)
                 await ws.send_text(json.dumps({
                     "type": "attempt_switched",
                     "data": {
@@ -2336,20 +2350,20 @@ async def _handle_ws_command(ws, cmd: dict):
         # only relevant for direct-peer conversations (e.g. wechat
         # private chat with one user); group / channel conversations
         # leave it None.
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         ch = (cmd.get("channel") or "").strip().lower() or None
         acct_id = (cmd.get("account_id") or "").strip() or None
         peer = (cmd.get("peer") or "").strip() or None
         peer_display = (cmd.get("peer_display") or "").strip() or None
         ok = False
         err = None
-        if not conv_id:
-            err = "conv_id required"
+        if not session_id:
+            err = "session_id required"
         else:
-            with _conversations_lock:
-                conv = _conversations.get(conv_id)
+            with _sessions_lock:
+                conv = _sessions.get(session_id)
             if conv is None:
-                err = f"unknown conversation {conv_id!r}"
+                err = f"unknown conversation {session_id!r}"
             elif ch is None and (acct_id or peer):
                 err = "channel must be set when account_id / peer is set"
             else:
@@ -2363,15 +2377,15 @@ async def _handle_ws_command(ws, cmd: dict):
                     from openprogram.agent.session_db import default_db
                     db_pre = default_db()
                     db_owners = set(db_pre.sessions_with_binding(ch, acct_id))
-                    with _conversations_lock:
+                    with _sessions_lock:
                         mem_owners = {
-                            oid for oid, o in _conversations.items()
+                            oid for oid, o in _sessions.items()
                             if o.get("channel") == ch and o.get("account_id") == acct_id
                         }
-                    candidates = (db_owners | mem_owners) - {conv_id}
+                    candidates = (db_owners | mem_owners) - {session_id}
                     for oid in candidates:
-                        with _conversations_lock:
-                            other = _conversations.get(oid)
+                        with _sessions_lock:
+                            other = _sessions.get(oid)
                             if other is not None:
                                 other["channel"] = None
                                 other["account_id"] = None
@@ -2403,9 +2417,9 @@ async def _handle_ws_command(ws, cmd: dict):
                     # brand-new empty conv we keep the choice in memory
                     # only; _append_msg will carry it into the session
                     # row when the first real message arrives.
-                    if db.get_session(conv_id) is not None:
+                    if db.get_session(session_id) is not None:
                         db.update_session(
-                            conv_id,
+                            session_id,
                             channel=conv["channel"],
                             account_id=conv["account_id"],
                             peer=conv["peer"],
@@ -2420,22 +2434,22 @@ async def _handle_ws_command(ws, cmd: dict):
                 for oid in evicted_ids:
                     try:
                         await ws.send_text(json.dumps({
-                            "type": "conversation_channel_updated",
+                            "type": "session_channel_updated",
                             "data": {
-                                "conv_id": oid,
+                                "session_id": oid,
                                 "ok": True,
                                 "channel": None,
                                 "account_id": None,
                                 "peer": None,
-                                "evicted_by": conv_id,
+                                "evicted_by": session_id,
                             },
                         }, default=str))
                     except Exception:
                         pass
         await ws.send_text(json.dumps({
-            "type": "conversation_channel_updated",
+            "type": "session_channel_updated",
             "data": {
-                "conv_id": conv_id,
+                "session_id": session_id,
                 "ok": ok,
                 "channel": ch,
                 "account_id": acct_id,
@@ -2449,16 +2463,16 @@ async def _handle_ws_command(ws, cmd: dict):
         # Returns explicit names from the branches table, or a default
         # synthesised from the first user-message content on that path.
         # The currently-checked-out branch (head_id) is flagged.
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         rows: list[dict] = []
         active_head = None
-        if conv_id:
+        if session_id:
             try:
                 from openprogram.agent.session_db import default_db
                 db = default_db()
-                sess = db.get_session(conv_id)
+                sess = db.get_session(session_id)
                 active_head = (sess or {}).get("head_id")
-                leaves = db.list_branches(conv_id)
+                leaves = db.list_branches(session_id)
                 # Default-name policy: walk back from each leaf to find
                 # the first message whose chain diverges from the
                 # others — that message's user content is a useful
@@ -2480,7 +2494,7 @@ async def _handle_ws_command(ws, cmd: dict):
                             "    WHERE m.session_id=?"
                             ") SELECT content FROM chain WHERE role='user' "
                             "ORDER BY ts DESC LIMIT 1",
-                            (mid, conv_id, conv_id),
+                            (mid, session_id, session_id),
                         )
                         r = cur.fetchone()
                         if r and isinstance(r[0], str):
@@ -2496,128 +2510,128 @@ async def _handle_ws_command(ws, cmd: dict):
                         "active": (mid == active_head),
                     })
             except Exception as e:
-                _log(f"[list_branches] {conv_id}: {e}")
+                _log(f"[list_branches] {session_id}: {e}")
         await ws.send_text(json.dumps({
             "type": "branches_list",
-            "data": {"conv_id": conv_id, "branches": rows, "active": active_head},
+            "data": {"session_id": session_id, "branches": rows, "active": active_head},
         }, default=str))
 
     elif action == "checkout_branch":
         # git checkout — set session.head_id to a leaf message id.
         # The next inbound / user message will append after this head.
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         head_msg_id = cmd.get("head_msg_id")
         ok = False
         err = None
-        if not conv_id or not head_msg_id:
-            err = "conv_id and head_msg_id required"
+        if not session_id or not head_msg_id:
+            err = "session_id and head_msg_id required"
         else:
             try:
                 from openprogram.agent.session_db import default_db
                 db = default_db()
                 cur = db.conn.execute(
                     "SELECT 1 FROM messages WHERE id=? AND session_id=?",
-                    (head_msg_id, conv_id),
+                    (head_msg_id, session_id),
                 )
                 if not cur.fetchone():
                     err = f"unknown message {head_msg_id!r}"
                 else:
-                    db.set_head(conv_id, head_msg_id)
-                    with _conversations_lock:
-                        c = _conversations.get(conv_id)
+                    db.set_head(session_id, head_msg_id)
+                    with _sessions_lock:
+                        c = _sessions.get(session_id)
                         if c is not None:
                             c["head_id"] = head_msg_id
                             # Drop cached message list so next read
                             # rehydrates from the new head's chain.
-                            c["messages"] = db.get_branch(conv_id) or []
-                    _invalidate_messages(conv_id)
+                            c["messages"] = db.get_branch(session_id) or []
+                    _invalidate_messages(session_id)
                     ok = True
             except Exception as e:
                 err = f"{type(e).__name__}: {e}"
         await ws.send_text(json.dumps({
             "type": "branch_checked_out",
-            "data": {"conv_id": conv_id, "head_msg_id": head_msg_id,
+            "data": {"session_id": session_id, "head_msg_id": head_msg_id,
                       "ok": ok, "error": err},
         }, default=str))
 
     elif action == "rename_branch":
         # git branch -m — name (or rename) a branch tip.
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         head_msg_id = cmd.get("head_msg_id")
         new_name = (cmd.get("name") or "").strip()
         ok = False
         err = None
-        if not conv_id or not head_msg_id or not new_name:
-            err = "conv_id, head_msg_id, name all required"
+        if not session_id or not head_msg_id or not new_name:
+            err = "session_id, head_msg_id, name all required"
         elif len(new_name) > 80:
             err = "name too long (max 80)"
         else:
             try:
                 from openprogram.agent.session_db import default_db
-                default_db().set_branch_name(conv_id, head_msg_id, new_name)
+                default_db().set_branch_name(session_id, head_msg_id, new_name)
                 ok = True
             except Exception as e:
                 err = f"{type(e).__name__}: {e}"
         await ws.send_text(json.dumps({
             "type": "branch_renamed",
-            "data": {"conv_id": conv_id, "head_msg_id": head_msg_id,
+            "data": {"session_id": session_id, "head_msg_id": head_msg_id,
                       "name": new_name, "ok": ok, "error": err},
         }, default=str))
 
     elif action == "delete_branch_name":
         # git branch -d (label only — the messages stay, just unnamed).
-        conv_id = cmd.get("conv_id")
+        session_id = cmd.get("session_id")
         head_msg_id = cmd.get("head_msg_id")
         ok = False
         err = None
-        if not conv_id or not head_msg_id:
-            err = "conv_id and head_msg_id required"
+        if not session_id or not head_msg_id:
+            err = "session_id and head_msg_id required"
         else:
             try:
                 from openprogram.agent.session_db import default_db
-                default_db().delete_branch_name(conv_id, head_msg_id)
+                default_db().delete_branch_name(session_id, head_msg_id)
                 ok = True
             except Exception as e:
                 err = f"{type(e).__name__}: {e}"
         await ws.send_text(json.dumps({
             "type": "branch_name_deleted",
-            "data": {"conv_id": conv_id, "head_msg_id": head_msg_id,
+            "data": {"session_id": session_id, "head_msg_id": head_msg_id,
                       "ok": ok, "error": err},
         }, default=str))
 
-    elif action == "delete_conversation":
-        conv_id = cmd.get("conv_id")
-        if conv_id:
-            with _conversations_lock:
-                conv = _conversations.pop(conv_id, None)
+    elif action == "delete_session":
+        session_id = cmd.get("session_id")
+        if session_id:
+            with _sessions_lock:
+                conv = _sessions.pop(session_id, None)
             if conv:
                 if conv.get("runtime") and hasattr(conv["runtime"], 'close'):
                     conv["runtime"].close()
                 # Clean up root_contexts entries belonging to this conversation
-                _cleanup_conv_resources(conv_id, conv)
-            _delete_conversation_files(conv_id)
+                _cleanup_session_resources(session_id, conv)
+            _delete_session_files(session_id)
 
-    elif action == "clear_conversations":
-        with _conversations_lock:
-            conv_ids = list(_conversations.keys())
-            convs = list(_conversations.values())
+    elif action == "clear_sessions":
+        with _sessions_lock:
+            session_ids = list(_sessions.keys())
+            convs = list(_sessions.values())
             for conv in convs:
                 if conv.get("runtime") and hasattr(conv["runtime"], 'close'):
                     conv["runtime"].close()
-            _conversations.clear()
+            _sessions.clear()
         # Clean up all root_contexts and queues
         with _root_contexts_lock:
             _root_contexts.clear()
-        for cid in conv_ids:
+        for cid in session_ids:
             _follow_up_queues.pop(cid, None)
             with _running_tasks_lock:
                 _running_tasks.pop(cid, None)
-            _delete_conversation_files(cid)
+            _delete_session_files(cid)
 
-    elif action == "load_conversation":
-        conv_id = cmd.get("conv_id")
-        with _conversations_lock:
-            conv = _conversations.get(conv_id)
+    elif action == "load_session":
+        session_id = cmd.get("session_id")
+        with _sessions_lock:
+            conv = _sessions.get(session_id)
         if conv:
             # ContextGit: send only the linear path from HEAD back to
             # root, not the whole DAG. Siblings (retry/edit branches)
@@ -2632,7 +2646,7 @@ async def _handle_ws_command(ws, cmd: dict):
             )
             # Source of truth = SessionDB. The in-memory conv["messages"]
             # gets stale or scrubbed by checkout / branch ops; reading
-            # the full DAG fresh every load_conversation eliminates a
+            # the full DAG fresh every load_session eliminates a
             # whole class of "blank chat after checkout" bugs.
             from openprogram.agent.session_db import default_db as _db_for_load
             _db_load = _db_for_load()
@@ -2716,7 +2730,7 @@ async def _handle_ws_command(ws, cmd: dict):
             from openprogram.agent.session_config import load_session_run_config
             run_cfg = load_session_run_config(conv["id"])
             await ws.send_text(json.dumps({
-                "type": "conversation_loaded",
+                "type": "session_loaded",
                 "data": {
                     "id": conv["id"],
                     "title": conv["title"],
@@ -2725,7 +2739,7 @@ async def _handle_ws_command(ws, cmd: dict):
                     "head_id": head,
                     "context_tree": tree_data,
                     "function_trees": conv.get("function_trees", []),
-                    "provider_info": _get_provider_info(conv_id),
+                    "provider_info": _get_provider_info(session_id),
                     "context_stats": conv.get("_last_context_stats"),
                     "channel": conv.get("channel"),
                     "account_id": conv.get("account_id"),
@@ -2746,7 +2760,7 @@ async def _handle_ws_command(ws, cmd: dict):
             }, default=str))
             # If a task is currently running for this conversation, notify the client
             with _running_tasks_lock:
-                task_info = _running_tasks.get(conv_id)
+                task_info = _running_tasks.get(session_id)
             if task_info:
                 # Try to get current partial tree from the running function
                 partial_tree = None
@@ -2762,7 +2776,7 @@ async def _handle_ws_command(ws, cmd: dict):
                 await ws.send_text(json.dumps({
                     "type": "running_task",
                     "data": {
-                        "conv_id": conv_id,
+                        "session_id": session_id,
                         "msg_id": task_info["msg_id"],
                         "func_name": task_info["func_name"],
                         "started_at": task_info["started_at"],
@@ -2773,9 +2787,9 @@ async def _handle_ws_command(ws, cmd: dict):
                 }, default=str))
         else:
             await ws.send_text(json.dumps({
-                "type": "conversation_loaded",
+                "type": "session_loaded",
                 "data": {
-                    "id": conv_id,
+                    "id": session_id,
                     "title": "New conversation",
                     "context_tree": {},
                     "provider_info": _get_provider_info(),
@@ -2786,10 +2800,10 @@ async def _handle_ws_command(ws, cmd: dict):
 
     elif action == "follow_up_answer":
         # User answered a follow-up question from a running function
-        fq_conv_id = cmd.get("conv_id", "")
+        fq_session_id = cmd.get("session_id", "")
         answer = cmd.get("answer", "")
         with _follow_up_lock:
-            fq = _follow_up_queues.get(fq_conv_id)
+            fq = _follow_up_queues.get(fq_session_id)
         if fq is not None:
             fq.put(answer)
 
@@ -2818,7 +2832,7 @@ async def _handle_ws_command(ws, cmd: dict):
             results = []
             for h in hits:
                 # Trim content for the picker preview; full content is
-                # available via load_conversation when the user picks one.
+                # available via load_session when the user picks one.
                 content = h.get("content") or ""
                 preview = content.strip().replace("\n", " ")
                 if len(preview) > 120:
@@ -2839,14 +2853,14 @@ async def _handle_ws_command(ws, cmd: dict):
                           "total": len(results)},
             }, default=str))
 
-    elif action == "list_conversations":
+    elif action == "list_sessions":
         # Snapshot the webui's own conversations (local REPL sessions)
         # plus per-agent sessions on disk (channel-bound chats live
         # here). Agent id is passed through when set — the sidebar
         # filters by it so each agent sees its own session list.
         conv_list: list[dict] = []
-        with _conversations_lock:
-            for cid, conv in _conversations.items():
+        with _sessions_lock:
+            for cid, conv in _sessions.items():
                 runtime = conv.get("runtime")
                 session_id = getattr(runtime, '_session_id', None) if runtime else None
                 # Pull the latest user message from the in-memory
@@ -2878,7 +2892,7 @@ async def _handle_ws_command(ws, cmd: dict):
                     "preview": preview,
                 })
         # Channel-bound sessions and any local sessions persisted to
-        # SessionDB. The in-memory `_conversations` snapshot above
+        # SessionDB. The in-memory `_sessions` snapshot above
         # holds the live runtime state; SessionDB holds the durable
         # snapshot. Dedup by id; fill in source/peer_display on
         # in-memory rows that didn't carry them.
@@ -2921,9 +2935,20 @@ async def _handle_ws_command(ws, cmd: dict):
                 })
         except Exception:
             pass
+        # Filter out completely-empty sessions left over from earlier
+        # bugs (sessions with no messages and a default placeholder
+        # title — never persisted intentionally). The current code path
+        # already refuses to persist empty sessions, but the SessionDB
+        # has stale rows that would otherwise clutter the sidebar.
+        def _is_empty_placeholder(row: dict) -> bool:
+            if row.get("preview"):
+                return False
+            t = (row.get("title") or "").strip()
+            return t in ("", "New conversation", "Untitled")
+        conv_list = [r for r in conv_list if not _is_empty_placeholder(r)]
         conv_list.sort(key=lambda c: c.get("created_at") or 0)
         await ws.send_text(json.dumps({
-            "type": "conversations_list", "data": conv_list,
+            "type": "sessions_list", "data": conv_list,
         }, default=str))
 
     elif action == "list_agents":
@@ -3371,12 +3396,12 @@ def create_app():
         if body is None:
             return JSONResponse(content={"error": "no body"}, status_code=400)
         text = body.get("text", "").strip()
-        conv_id = body.get("conv_id")
+        session_id = body.get("session_id")
         if not text:
             return JSONResponse(content={"error": "empty message"}, status_code=400)
 
-        conv = _get_or_create_conversation(conv_id)
-        conv_id = conv["id"]
+        conv = _get_or_create_session(session_id)
+        session_id = conv["id"]
         msg_id = str(uuid.uuid4())[:8]
 
         if not conv["messages"]:
@@ -3396,19 +3421,19 @@ def create_app():
         if parsed["action"] == "run":
             threading.Thread(
                 target=_execute_in_context,
-                args=(conv_id, msg_id, "run"),
+                args=(session_id, msg_id, "run"),
                 kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"]},
                 daemon=True,
             ).start()
         elif parsed["action"] == "query":
             threading.Thread(
                 target=_execute_in_context,
-                args=(conv_id, msg_id, "query"),
+                args=(session_id, msg_id, "query"),
                 kwargs={"query": parsed["raw"]},
                 daemon=True,
             ).start()
 
-        return JSONResponse(content={"conv_id": conv_id, "msg_id": msg_id})
+        return JSONResponse(content={"session_id": session_id, "msg_id": msg_id})
 
     # Retry / Edit / Checkout routes live in _chat_routes.py — see
     # docs/design/contextgit.md. Keeping them out of this module keeps
@@ -3433,16 +3458,16 @@ def create_app():
         """
         if body is None:
             return JSONResponse(content={"error": "no body"}, status_code=400)
-        conv_id = body.get("conv_id")
+        session_id = body.get("session_id")
         pivot_id = body.get("msg_id")
-        if not conv_id or not pivot_id:
+        if not session_id or not pivot_id:
             return JSONResponse(
-                content={"error": "conv_id and msg_id required"}, status_code=400,
+                content={"error": "session_id and msg_id required"}, status_code=400,
             )
 
         import copy as _copy
-        with _conversations_lock:
-            src = _conversations.get(conv_id)
+        with _sessions_lock:
+            src = _sessions.get(session_id)
             if src is None:
                 return JSONResponse(content={"error": "unknown conv"}, status_code=404)
             msgs = src["messages"]
@@ -3454,7 +3479,7 @@ def create_app():
 
             new_id = str(uuid.uuid4())[:8]
             new_title = f"{src.get('title', 'branch')} (branch)"
-            _conversations[new_id] = {
+            _sessions[new_id] = {
                 "id": new_id,
                 "title": new_title,
                 "root_context": Context(
@@ -3465,15 +3490,15 @@ def create_app():
                 "messages": _copy.deepcopy(msgs[: pivot_idx + 1]),
                 "function_trees": [],
                 "created_at": time.time(),
-                "branched_from": conv_id,
+                "branched_from": session_id,
                 "branched_at_msg": pivot_id,
             }
 
-        _save_conversation(new_id)
+        _save_session(new_id)
         return JSONResponse(content={
-            "conv_id": new_id,
+            "session_id": new_id,
             "title": new_title,
-            "branched_from": conv_id,
+            "branched_from": session_id,
         })
 
     @app.post("/api/run/{function_name}")
@@ -3486,7 +3511,7 @@ def create_app():
         disables Run when empty).
         """
         kwargs = body or {}
-        conv_id = kwargs.pop("_conv_id", None)
+        session_id = kwargs.pop("_session_id", None)
         work_dir = kwargs.pop("work_dir", None)
         if not work_dir or not str(work_dir).strip():
             return JSONResponse(
@@ -3494,18 +3519,18 @@ def create_app():
                 status_code=400,
             )
         kwargs["_work_dir"] = work_dir
-        conv = _get_or_create_conversation(conv_id)
-        conv_id = conv["id"]
+        conv = _get_or_create_session(session_id)
+        session_id = conv["id"]
         msg_id = str(uuid.uuid4())[:8]
 
         threading.Thread(
             target=_execute_in_context,
-            args=(conv_id, msg_id, "run"),
+            args=(session_id, msg_id, "run"),
             kwargs={"func_name": function_name, "kwargs": kwargs},
             daemon=True,
         ).start()
 
-        return JSONResponse(content={"conv_id": conv_id, "msg_id": msg_id})
+        return JSONResponse(content={"session_id": session_id, "msg_id": msg_id})
 
     @app.post("/api/pick-folder")
     async def pick_folder(body: dict = None):
@@ -3580,7 +3605,7 @@ def create_app():
         })
 
     @app.get("/api/workdir/defaults")
-    async def workdir_defaults(conv_id: str = None, function_name: str = None):
+    async def workdir_defaults(session_id: str = None, function_name: str = None):
         """Return suggested workdir values for the UI to prefill.
 
         - `last` — the workdir this conversation last used for this function
@@ -3593,9 +3618,9 @@ def create_app():
             os.path.dirname(__file__), "..", ".."
         ))
         last = None
-        if conv_id and function_name:
-            with _conversations_lock:
-                conv = _conversations.get(conv_id)
+        if session_id and function_name:
+            with _sessions_lock:
+                conv = _sessions.get(session_id)
                 if conv:
                     last = conv.get("last_workdirs", {}).get(function_name)
         return JSONResponse(content={
@@ -3606,21 +3631,21 @@ def create_app():
 
     @app.get("/api/history")
     async def get_history():
-        with _conversations_lock:
+        with _sessions_lock:
             history = [
                 {"id": c["id"], "title": c["title"], "created_at": c["created_at"],
                  "messages": c.get("messages", []),
                  "message_count": len(c.get("messages", []))}
-                for c in sorted(_conversations.values(), key=lambda c: c["created_at"], reverse=True)
+                for c in sorted(_sessions.values(), key=lambda c: c["created_at"], reverse=True)
             ]
         return JSONResponse(content=history)
 
     @app.post("/api/history")
     async def save_history(body: dict = None):
-        if body and "conv_id" in body:
-            conv_id = body["conv_id"]
-            with _conversations_lock:
-                if conv_id in _conversations:
+        if body and "session_id" in body:
+            session_id = body["session_id"]
+            with _sessions_lock:
+                if session_id in _sessions:
                     return JSONResponse(content={"saved": True})
         return JSONResponse(content={"saved": False})
 
@@ -3679,17 +3704,17 @@ def create_app():
         _execute_in_context detects the cancel flag and marks running tree
         nodes as cancelled, then broadcasts the final tree.
         """
-        conv_id = (body or {}).get("conv_id")
-        if not conv_id:
+        session_id = (body or {}).get("session_id")
+        if not session_id:
             return JSONResponse(
-                content={"stopped": False, "error": "missing conv_id"},
+                content={"stopped": False, "error": "missing session_id"},
                 status_code=400,
             )
-        _mark_cancelled(conv_id)
+        _mark_cancelled(session_id)
         resume_execution()
-        _kill_active_runtime(conv_id)
+        _kill_active_runtime(session_id)
         with _follow_up_lock:
-            q = _follow_up_queues.get(conv_id)
+            q = _follow_up_queues.get(session_id)
         if q is not None:
             try:
                 q.put_nowait({"_cancelled": True})
@@ -3699,7 +3724,7 @@ def create_app():
             "type": "status",
             "paused": False,
             "stopped": True,
-            "conv_id": conv_id,
+            "session_id": session_id,
         }))
         return JSONResponse(content={"stopped": True})
 
@@ -3819,17 +3844,17 @@ def create_app():
 
     @app.post("/api/provider/{name}")
     async def switch_provider(name: str, body: dict = None):
-        conv_id = body.get("conv_id") if body else None
+        session_id = body.get("session_id") if body else None
         # Check if already active for this conversation
-        if conv_id:
-            with _conversations_lock:
-                conv = _conversations.get(conv_id)
+        if session_id:
+            with _sessions_lock:
+                conv = _sessions.get(session_id)
             if conv and conv.get("provider_name") == name:
                 return JSONResponse(content={"switched": False, "already_active": True, "provider": name})
         elif name == _runtime_management._default_provider:
             return JSONResponse(content={"switched": False, "already_active": True, "provider": name})
         try:
-            _switch_runtime(name, conv_id=conv_id)
+            _switch_runtime(name, session_id=session_id)
             return JSONResponse(content={"switched": True, "provider": name})
         except Exception as e:
             return JSONResponse(content={"error": str(e)}, status_code=400)
@@ -3871,7 +3896,7 @@ def create_app():
           {
             "model":    str,  # either bare id ("gpt-4o") or "provider:id"
             "provider": str,  # optional explicit provider
-            "conv_id":  str,  # optional; target a specific conversation
+            "session_id":  str,  # optional; target a specific conversation
           }
 
         If "provider" is given (or inferred from "provider:id" model string)
@@ -3883,7 +3908,7 @@ def create_app():
             return JSONResponse(content={"error": "Missing model"}, status_code=400)
         model = body["model"].strip()
         explicit_provider = (body.get("provider") or "").strip() or None
-        conv_id = body.get("conv_id")
+        session_id = body.get("session_id")
 
         # "provider:id" syntax → split
         inferred_provider = None
@@ -3912,9 +3937,9 @@ def create_app():
                 _create_runtime_for_visualizer, provider, bare_model
             )
 
-        if conv_id:
-            with _conversations_lock:
-                conv = _conversations.get(conv_id)
+        if session_id:
+            with _sessions_lock:
+                conv = _sessions.get(session_id)
             if conv:
                 old_rt = conv.get("runtime")
                 cur_prov = conv.get("provider_name", _runtime_management._default_provider)
@@ -3933,11 +3958,11 @@ def create_app():
                     old_rt.model = bare_model
                     conv["provider_override"] = prov
                     conv["model_override"] = bare_model
-                info = _get_provider_info(conv_id)
+                info = _get_provider_info(session_id)
                 _broadcast(json.dumps({"type": "provider_changed", "data": info}))
                 return JSONResponse(content={"switched": True, "provider": prov, "model": bare_model})
 
-        # Default runtime path (no conv_id).
+        # Default runtime path (no session_id).
         if target_provider and target_provider != _runtime_management._default_provider:
             new_rt = await _build_rt(target_provider)
             if _runtime_management._default_runtime and hasattr(_runtime_management._default_runtime, "close"):
@@ -3989,10 +4014,10 @@ def create_app():
     # --- Agent settings (chat + exec) ---
 
     @app.get("/api/agent_settings")
-    async def get_agent_settings(conv_id: str = None):
+    async def get_agent_settings(session_id: str = None):
         """Get current chat and exec agent provider/model settings.
 
-        If conv_id is provided, returns lock state and session_id for that
+        If session_id is provided, returns lock state and session_id for that
         specific conversation. Otherwise returns unlocked defaults.
         """
         _init_providers()
@@ -4002,9 +4027,9 @@ def create_app():
         chat_provider = _runtime_management._chat_provider
         chat_model = _runtime_management._chat_model
 
-        if conv_id:
-            with _conversations_lock:
-                conv = _conversations.get(conv_id)
+        if session_id:
+            with _sessions_lock:
+                conv = _sessions.get(session_id)
             if conv:
                 # Locked if conversation has messages
                 if conv.get("messages") and len(conv["messages"]) > 0:
@@ -4060,18 +4085,18 @@ def create_app():
                 # while the actual runtime was still the old one, so the
                 # retry click saw new==current and no-op'd, giving the
                 # "two clicks to switch" symptom.
-                with _conversations_lock:
-                    conv_ids = list(_conversations.keys())
+                with _sessions_lock:
+                    session_ids = list(_sessions.keys())
                 new_rts = {}
-                for cid in conv_ids:
+                for cid in session_ids:
                     new_rts[cid] = await asyncio.to_thread(
                         _create_runtime_for_visualizer, new_provider, new_model
                     )
                 _runtime_management._chat_provider = new_provider
                 _runtime_management._chat_model = new_model
-                with _conversations_lock:
+                with _sessions_lock:
                     for cid, new_rt in new_rts.items():
-                        conv = _conversations.get(cid)
+                        conv = _sessions.get(cid)
                         if not conv:
                             continue
                         old_rt = conv.get("runtime")
@@ -4297,8 +4322,8 @@ def create_app():
     async def edit_function(name: str, body: dict = None):
         """Run meta edit() on a function."""
         instruction = (body or {}).get("instruction", "")
-        conv_id = (body or {}).get("conv_id")
-        conv = _get_or_create_conversation(conv_id)
+        session_id = (body or {}).get("session_id")
+        conv = _get_or_create_session(session_id)
         msg_id = str(uuid.uuid4())[:8]
 
         def _do_edit():
@@ -4309,18 +4334,18 @@ def create_app():
                 fn = getattr(mod, name)
                 runtime = create_runtime()
                 edited = edit(fn=fn, runtime=runtime, instruction=instruction or None)
-                _broadcast_chat_response(conv_id, msg_id, {
+                _broadcast_chat_response(session_id, msg_id, {
                     "type": "result",
                     "content": f"Edited function '{name}' successfully.",
                 })
             except Exception as e:
-                _broadcast_chat_response(conv_id, msg_id, {
+                _broadcast_chat_response(session_id, msg_id, {
                     "type": "error",
                     "content": f"Edit failed: {e}",
                 })
 
         threading.Thread(target=_do_edit, daemon=True).start()
-        return JSONResponse(content={"conv_id": conv["id"], "msg_id": msg_id})
+        return JSONResponse(content={"session_id": conv["id"], "msg_id": msg_id})
 
     @app.delete("/api/function/{name}")
     async def delete_function(name: str):
@@ -4344,8 +4369,8 @@ def create_app():
         """Create a new function from description."""
         if not body or "description" not in body:
             return JSONResponse(content={"error": "no description"}, status_code=400)
-        conv_id = body.get("conv_id")
-        conv = _get_or_create_conversation(conv_id)
+        session_id = body.get("session_id")
+        conv = _get_or_create_session(session_id)
         msg_id = str(uuid.uuid4())[:8]
         name = body.get("name", "new_func")
         desc = body["description"]
@@ -4355,7 +4380,7 @@ def create_app():
                 from openprogram.programs.functions.meta import create
                 runtime = _get_runtime()
                 fn = create(description=desc, runtime=runtime, name=name)
-                _broadcast_chat_response(conv_id, msg_id, {
+                _broadcast_chat_response(session_id, msg_id, {
                     "type": "result",
                     "content": f"Created function '{name}' successfully.",
                 })
@@ -4363,13 +4388,13 @@ def create_app():
                 functions = _discover_functions()
                 _broadcast(json.dumps({"type": "functions_list", "data": functions}, default=str))
             except Exception as e:
-                _broadcast_chat_response(conv_id, msg_id, {
+                _broadcast_chat_response(session_id, msg_id, {
                     "type": "error",
                     "content": f"Create failed: {e}",
                 })
 
         threading.Thread(target=_do_create, daemon=True).start()
-        return JSONResponse(content={"conv_id": conv["id"], "msg_id": msg_id})
+        return JSONResponse(content={"session_id": conv["id"], "msg_id": msg_id})
 
     @app.post("/api/register")
     async def register_external(body: dict = None):

@@ -22,7 +22,7 @@ export interface ConvSummary {
 }
 
 interface RunningTask {
-  conv_id: string;
+  session_id: string;
   msg_id: string;
   func_name?: string;
   started_at?: number;
@@ -46,7 +46,7 @@ export interface TreeNode {
  * Normalized shape.
  *
  * ``messagesById`` holds every message ever observed, keyed by its id.
- * ``messageOrder[convId]`` holds the ordered id list for one
+ * ``messageOrder[sessionId]`` holds the ordered id list for one
  * conversation. Split this way so a streaming delta only touches one
  * entry in ``messagesById`` and leaves ``messageOrder`` untouched —
  * components that subscribe to the id list (e.g. the scroll container)
@@ -67,7 +67,7 @@ interface ConvState {
   /** Ordered id list per conversation. */
   messageOrder: Record<string, string[]>;
   /** Currently active conversation id. */
-  currentConvId: string | null;
+  currentSessionId: string | null;
   /** Currently running task (show Stop button). */
   runningTask: RunningTask | null;
   /** Paused flag. */
@@ -76,14 +76,14 @@ interface ConvState {
   providerInfo: { provider?: string; model?: string; type?: string } | null;
   /** Latest live Context tree per conversation. */
   trees: Record<string, TreeNode>;
-  setTree: (convId: string, tree: TreeNode) => void;
+  setTree: (sessionId: string, tree: TreeNode) => void;
 
   /** Per-conversation token usage from the latest context_stats event. */
   tokens: Record<string, { input?: number; output?: number; cache_read?: number }>;
   /** Per-conversation context window size (model-dependent). */
   contextWindow: Record<string, number>;
   setContextStats: (
-    convId: string,
+    sessionId: string,
     chat: { input?: number; output?: number; cache_read?: number } | null,
     contextWindow?: number | null,
   ) => void;
@@ -94,39 +94,39 @@ interface ConvState {
   removeConversation: (id: string) => void;
   clearConversations: () => void;
   setCurrentConv: (id: string | null) => void;
-  setMessages: (convId: string, msgs: ChatMsg[]) => void;
-  appendMessage: (convId: string, msg: ChatMsg) => void;
-  updateMessage: (convId: string, msgId: string, patch: Partial<ChatMsg>) => void;
+  setMessages: (sessionId: string, msgs: ChatMsg[]) => void;
+  appendMessage: (sessionId: string, msg: ChatMsg) => void;
+  updateMessage: (sessionId: string, msgId: string, patch: Partial<ChatMsg>) => void;
   /** Truncate messages at and after msgId. Used by retry to drop the
    *  stale reply before the new one streams in. */
-  truncateFrom: (convId: string, msgId: string) => void;
+  truncateFrom: (sessionId: string, msgId: string) => void;
   setRunningTask: (t: RunningTask | null) => void;
   setPaused: (p: boolean) => void;
   setProviderInfo: (p: ConvState["providerInfo"]) => void;
 }
 
-export const useConvStore = create<ConvState>((set) => ({
+export const useSessionStore = create<ConvState>((set) => ({
   wsStatus: "connecting",
   conversations: {},
   messagesById: {},
   messageOrder: {},
-  currentConvId: null,
+  currentSessionId: null,
   runningTask: null,
   paused: false,
   providerInfo: null,
   trees: {},
-  setTree: (convId, tree) =>
-    set((s) => ({ trees: { ...s.trees, [convId]: tree } })),
+  setTree: (sessionId, tree) =>
+    set((s) => ({ trees: { ...s.trees, [sessionId]: tree } })),
 
   tokens: {},
   contextWindow: {},
-  setContextStats: (convId, chat, ctxWindow) =>
+  setContextStats: (sessionId, chat, ctxWindow) =>
     set((s) => {
       const next: Partial<ConvState> = {};
       if (chat) {
         next.tokens = {
           ...s.tokens,
-          [convId]: {
+          [sessionId]: {
             input: chat.input,
             output: chat.output,
             cache_read: chat.cache_read,
@@ -134,7 +134,7 @@ export const useConvStore = create<ConvState>((set) => ({
         };
       }
       if (typeof ctxWindow === "number" && ctxWindow > 0) {
-        next.contextWindow = { ...s.contextWindow, [convId]: ctxWindow };
+        next.contextWindow = { ...s.contextWindow, [sessionId]: ctxWindow };
       }
       return next;
     }),
@@ -162,7 +162,7 @@ export const useConvStore = create<ConvState>((set) => ({
         conversations: rest,
         messageOrder: order,
         messagesById: byId,
-        currentConvId: s.currentConvId === id ? null : s.currentConvId,
+        currentSessionId: s.currentSessionId === id ? null : s.currentSessionId,
       };
     }),
 
@@ -171,33 +171,33 @@ export const useConvStore = create<ConvState>((set) => ({
       conversations: {},
       messagesById: {},
       messageOrder: {},
-      currentConvId: null,
+      currentSessionId: null,
     }),
 
-  setCurrentConv: (id) => set({ currentConvId: id }),
+  setCurrentConv: (id) => set({ currentSessionId: id }),
 
-  setMessages: (convId, msgs) =>
+  setMessages: (sessionId, msgs) =>
     set((s) => {
       // Drop any old ids for this conv so stale entries don't leak.
       const byId = { ...s.messagesById };
-      for (const oldId of s.messageOrder[convId] ?? []) delete byId[oldId];
+      for (const oldId of s.messageOrder[sessionId] ?? []) delete byId[oldId];
       for (const m of msgs) byId[m.id] = m;
       return {
         messagesById: byId,
-        messageOrder: { ...s.messageOrder, [convId]: msgs.map((m) => m.id) },
+        messageOrder: { ...s.messageOrder, [sessionId]: msgs.map((m) => m.id) },
       };
     }),
 
-  appendMessage: (convId, msg) =>
+  appendMessage: (sessionId, msg) =>
     set((s) => ({
       messagesById: { ...s.messagesById, [msg.id]: msg },
       messageOrder: {
         ...s.messageOrder,
-        [convId]: [...(s.messageOrder[convId] ?? []), msg.id],
+        [sessionId]: [...(s.messageOrder[sessionId] ?? []), msg.id],
       },
     })),
 
-  updateMessage: (_convId, msgId, patch) =>
+  updateMessage: (_sessionId, msgId, patch) =>
     set((s) => {
       const cur = s.messagesById[msgId];
       if (!cur) return {};
@@ -206,9 +206,9 @@ export const useConvStore = create<ConvState>((set) => ({
       };
     }),
 
-  truncateFrom: (convId, msgId) =>
+  truncateFrom: (sessionId, msgId) =>
     set((s) => {
-      const order = s.messageOrder[convId];
+      const order = s.messageOrder[sessionId];
       if (!order) return {};
       const idx = order.indexOf(msgId);
       if (idx < 0) return {};
@@ -218,7 +218,7 @@ export const useConvStore = create<ConvState>((set) => ({
       for (const d of dropped) delete byId[d];
       return {
         messagesById: byId,
-        messageOrder: { ...s.messageOrder, [convId]: nextOrder },
+        messageOrder: { ...s.messageOrder, [sessionId]: nextOrder },
       };
     }),
 
@@ -234,10 +234,10 @@ export const useConvStore = create<ConvState>((set) => ({
  * content update on an existing message will NOT re-render consumers
  * of this hook.
  */
-export function useMessageIds(convId: string | null): string[] {
-  return useConvStore(
+export function useMessageIds(sessionId: string | null): string[] {
+  return useSessionStore(
     useShallow((s) =>
-      convId ? s.messageOrder[convId] ?? EMPTY_IDS : EMPTY_IDS
+      sessionId ? s.messageOrder[sessionId] ?? EMPTY_IDS : EMPTY_IDS
     )
   );
 }
@@ -248,7 +248,7 @@ export function useMessageIds(convId: string | null): string[] {
  * added/removed etc. don't affect this hook's consumer.
  */
 export function useMessageById(msgId: string): ChatMsg | undefined {
-  return useConvStore((s) => s.messagesById[msgId]);
+  return useSessionStore((s) => s.messagesById[msgId]);
 }
 
 const EMPTY_IDS: string[] = [];

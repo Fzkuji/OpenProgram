@@ -3,7 +3,7 @@ function _channelLabel(channel, accountId) {
   return accountId ? channel + ':' + accountId : channel;
 }
 
-function renderConversations() {
+function renderSessions() {
   var container = document.getElementById('convList');
   var html = '';
   var convs = Object.values(conversations).sort(function(a, b) { return (b.created_at || 0) - (a.created_at || 0); });
@@ -12,7 +12,7 @@ function renderConversations() {
   } else {
     for (var ci = 0; ci < convs.length; ci++) {
       var c = convs[ci];
-      var active = c.id === currentConvId ? ' active' : '';
+      var active = c.id === currentSessionId ? ' active' : '';
       // Build a clean display label: "<channel> (<account>) · <title>"
       // when the conv is bound to a channel; otherwise just the title.
       // Strip backend placeholder titles ("WeChat: o9cq..." etc.) so
@@ -33,12 +33,12 @@ function renderConversations() {
       else if (prefix)              label = prefix;
       else if (realTitle)           label = realTitle;
       else                          label = c.title || 'Untitled';
-      html += '<div class="conv-item' + active + '" onclick="switchConversation(\'' + c.id + '\')" title="' + escAttr(label) + '">' +
+      html += '<div class="conv-item' + active + '" onclick="switchSession(\'' + c.id + '\')" title="' + escAttr(label) + '">' +
         '<span class="conv-title">' + escHtml(label) + '</span>' +
-        '<span class="conv-del" onclick="event.stopPropagation();deleteConversation(\'' + c.id + '\')" title="Delete"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg></span>' +
+        '<span class="conv-del" onclick="event.stopPropagation();deleteSession(\'' + c.id + '\')" title="Delete"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg></span>' +
       '</div>';
     }
-    html += '<div class="conv-clear-all" onclick="clearAllConversations()">Clear all</div>';
+    html += '<div class="conv-clear-all" onclick="clearAllSessions()">Clear all</div>';
   }
   container.innerHTML = html;
 }
@@ -86,10 +86,10 @@ window._onChannelAccountsMessage = _onChannelAccountsMessage;
 
 function _currentChannelChoice() {
   // For an existing conv, the badge reflects that conv's channel.
-  // For a brand-new conv (no currentConvId yet), it reflects the
+  // For a brand-new conv (no currentSessionId yet), it reflects the
   // pending choice that will be sent with the first message.
-  if (currentConvId && conversations[currentConvId]) {
-    var c = conversations[currentConvId];
+  if (currentSessionId && conversations[currentSessionId]) {
+    var c = conversations[currentSessionId];
     return { channel: c.channel || null, account_id: c.account_id || null };
   }
   return window._pendingChannelChoice || { channel: null, account_id: null };
@@ -113,7 +113,7 @@ function openChannelDropdown(evt) {
   if (window._closeAllPopovers) window._closeAllPopovers('channel');
   var badge = document.getElementById('statusBadge');
   if (!badge) return;
-  var convId = currentConvId || null;
+  var sessionId = currentSessionId || null;
   var cur = _currentChannelChoice();
 
   fetchChannelAccounts().then(function(rows) {
@@ -184,12 +184,12 @@ function openChannelDropdown(evt) {
       e.stopPropagation();
       var ch = item.getAttribute('data-ch') || '';
       var acct = item.getAttribute('data-acct') || '';
-      if (convId) {
+      if (sessionId) {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ action: 'set_conversation_channel',
-            conv_id: convId, channel: ch, account_id: acct }));
+            session_id: sessionId, channel: ch, account_id: acct }));
         }
-        var conv = conversations[convId];
+        var conv = conversations[sessionId];
         if (conv) {
           conv.channel = ch || null;
           conv.account_id = (ch && acct) ? acct : null;
@@ -233,58 +233,58 @@ function _closeChannelDropdown() {
 //   - checkout_branch → branch_checked_out (sets head_id)
 //   - rename_branch / delete_branch_name (TODO UI)
 
-var _branchesByConv = {};   // conv_id → [{head_msg_id, name, active, ...}]
-var _branchesPending = {};  // conv_id → resolve fn
+var _branchesByConv = {};   // session_id → [{head_msg_id, name, active, ...}]
+var _branchesPending = {};  // session_id → resolve fn
 
-function fetchBranches(convId) {
-  if (!convId) return Promise.resolve([]);
-  if (_branchesByConv[convId]) return Promise.resolve(_branchesByConv[convId]);
-  if (_branchesPending[convId]) {
+function fetchBranches(sessionId) {
+  if (!sessionId) return Promise.resolve([]);
+  if (_branchesByConv[sessionId]) return Promise.resolve(_branchesByConv[sessionId]);
+  if (_branchesPending[sessionId]) {
     return new Promise(function(res) {
-      var prev = _branchesPending[convId];
-      _branchesPending[convId] = function(v) { prev(v); res(v); };
+      var prev = _branchesPending[sessionId];
+      _branchesPending[sessionId] = function(v) { prev(v); res(v); };
     });
   }
   return new Promise(function(res) {
-    _branchesPending[convId] = res;
+    _branchesPending[sessionId] = res;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'list_branches', conv_id: convId }));
+      ws.send(JSON.stringify({ action: 'list_branches', session_id: sessionId }));
     } else {
-      delete _branchesPending[convId];
+      delete _branchesPending[sessionId];
       res([]);
     }
     setTimeout(function() {
-      if (_branchesPending[convId] === res) {
-        delete _branchesPending[convId];
-        res(_branchesByConv[convId] || []);
+      if (_branchesPending[sessionId] === res) {
+        delete _branchesPending[sessionId];
+        res(_branchesByConv[sessionId] || []);
       }
     }, 3000);
   });
 }
 
 function _onBranchesListMessage(payload) {
-  if (!payload || !payload.conv_id) return;
+  if (!payload || !payload.session_id) return;
   var rows = Array.isArray(payload.branches) ? payload.branches : [];
-  _branchesByConv[payload.conv_id] = rows;
-  if (_branchesPending[payload.conv_id]) {
-    var fn = _branchesPending[payload.conv_id];
-    delete _branchesPending[payload.conv_id];
+  _branchesByConv[payload.session_id] = rows;
+  if (_branchesPending[payload.session_id]) {
+    var fn = _branchesPending[payload.session_id];
+    delete _branchesPending[payload.session_id];
     fn(rows);
   }
-  if (payload.conv_id === currentConvId && typeof window.refreshBranchBadge === 'function') {
+  if (payload.session_id === currentSessionId && typeof window.refreshBranchBadge === 'function') {
     window.refreshBranchBadge();
   }
 }
 window._onBranchesListMessage = _onBranchesListMessage;
 
 function _onBranchCheckedOut(payload) {
-  if (!payload || !payload.ok || !payload.conv_id) return;
+  if (!payload || !payload.ok || !payload.session_id) return;
   // Invalidate cache so the next dropdown re-fetches with the new
   // active marker. The server-side history graph / message list will
   // update through their own existing envelopes.
-  delete _branchesByConv[payload.conv_id];
-  if (payload.conv_id === currentConvId && typeof window.refreshBranchBadge === 'function') {
-    fetchBranches(payload.conv_id).then(window.refreshBranchBadge);
+  delete _branchesByConv[payload.session_id];
+  if (payload.session_id === currentSessionId && typeof window.refreshBranchBadge === 'function') {
+    fetchBranches(payload.session_id).then(window.refreshBranchBadge);
   }
 }
 window._onBranchCheckedOut = _onBranchCheckedOut;
@@ -292,8 +292,8 @@ window._onBranchCheckedOut = _onBranchCheckedOut;
 window.refreshBranchBadge = function() {
   var badge = document.getElementById('branchBadge');
   if (!badge) return;
-  if (!currentConvId) { badge.style.display = 'none'; return; }
-  var list = _branchesByConv[currentConvId] || [];
+  if (!currentSessionId) { badge.style.display = 'none'; return; }
+  var list = _branchesByConv[currentSessionId] || [];
   if (list.length <= 1) {
     // Only one branch — hide the chip; nothing to switch.
     badge.style.display = 'none';
@@ -311,12 +311,12 @@ function openBranchDropdown(evt) {
   if (document.getElementById('branchDropdown')) { _closeBranchDropdown(); return; }
   if (window._closeAllPopovers) window._closeAllPopovers('branch');
   var badge = document.getElementById('branchBadge');
-  if (!badge || !currentConvId) return;
+  if (!badge || !currentSessionId) return;
 
   // Force-refresh on open so the active flag and any new leaves from
   // recent retries / edits are picked up.
-  delete _branchesByConv[currentConvId];
-  fetchBranches(currentConvId).then(function(rows) {
+  delete _branchesByConv[currentSessionId];
+  fetchBranches(currentSessionId).then(function(rows) {
     var rect = badge.getBoundingClientRect();
     var dd = document.createElement('div');
     dd.id = 'branchDropdown';
@@ -347,13 +347,13 @@ function openBranchDropdown(evt) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           action: 'checkout_branch',
-          conv_id: currentConvId,
+          session_id: currentSessionId,
           head_msg_id: head,
         }));
         // Reload conv to repaint with the new head's branch.
         ws.send(JSON.stringify({
-          action: 'load_conversation',
-          conv_id: currentConvId,
+          action: 'load_session',
+          session_id: currentSessionId,
         }));
       }
       _closeBranchDropdown();
@@ -381,13 +381,13 @@ function _closeBranchDropdown() {
   document.removeEventListener('click', _branchDropdownDocClick);
 }
 
-function switchConversation(convId) {
+function switchSession(sessionId) {
   // If already on this conversation, just reload in-place
-  if (convId === currentConvId && window.location.pathname === '/c/' + convId) {
+  if (sessionId === currentSessionId && window.location.pathname === '/s/' + sessionId) {
     return;
   }
-  if (window.__navigate) { window.__navigate('/c/' + convId); return; }
-  window.location.href = '/c/' + convId;
+  if (window.__navigate) { window.__navigate('/s/' + sessionId); return; }
+  window.location.href = '/s/' + sessionId;
 }
 
 function _showConfirm(title, message, onConfirm) {
@@ -414,42 +414,42 @@ function _showConfirm(title, message, onConfirm) {
   overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
 }
 
-function deleteConversation(convId) {
-  var conv = conversations[convId];
+function deleteSession(sessionId) {
+  var conv = conversations[sessionId];
   var title = (conv && conv.title) || 'Untitled';
   _showConfirm('Delete chat', 'Are you sure you want to delete "' + title + '"?', function() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'delete_conversation', conv_id: convId }));
+      ws.send(JSON.stringify({ action: 'delete_session', session_id: sessionId }));
     }
-    delete conversations[convId];
-    if (currentConvId === convId) {
-      newConversation();
+    delete conversations[sessionId];
+    if (currentSessionId === sessionId) {
+      newSession();
     }
-    renderConversations();
+    renderSessions();
   });
 }
 
-function clearAllConversations() {
+function clearAllSessions() {
   var count = Object.keys(conversations).length;
   if (!count) return;
   _showConfirm('Delete all chats', 'Are you sure you want to delete all ' + count + ' conversations? This cannot be undone.', function() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'clear_conversations' }));
+      ws.send(JSON.stringify({ action: 'clear_sessions' }));
     }
     conversations = {};
-    newConversation();
-    renderConversations();
+    newSession();
+    renderSessions();
   });
 }
 
-function newConversation() {
+function newSession() {
   if (window.location.pathname !== '/chat') {
     if (window.__navigate) { window.__navigate('/chat'); return; }
     window.location.href = '/chat';
     return;
   }
   // Already on /, reset in-place
-  currentConvId = null;
+  currentSessionId = null;
   history.replaceState(null, '', '/chat');
   pendingResponses = {};
   trees = [];
@@ -468,7 +468,7 @@ function newConversation() {
   if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
   container.appendChild(welcome);
   setWelcomeVisible(true);
-  renderConversations();
+  renderSessions();
   var ctxEl = document.getElementById('contextStats');
   if (ctxEl) ctxEl.textContent = '';
   _hasActiveSession = false;
@@ -483,14 +483,14 @@ function newConversation() {
   loadAgentSettings();
 }
 
-function loadConversationData(data) {
+function loadSessionData(data) {
   if (!data.messages) data.messages = [];
   // Merge instead of replace so fields populated by an earlier
-  // conversations_list (e.g. channel / account_id, which conversation_loaded
+  // sessions_list (e.g. channel / account_id, which session_loaded
   // didn't always carry) survive when the load response lands.
   conversations[data.id] = Object.assign({}, conversations[data.id] || {}, data);
-  renderConversations();
-  if (data.id === currentConvId) {
+  renderSessions();
+  if (data.id === currentSessionId) {
     if (typeof window.refreshStatusSource === 'function') window.refreshStatusSource();
     if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
     // Pull the latest branch list so the chip reflects this conv's
@@ -501,11 +501,11 @@ function loadConversationData(data) {
       if (typeof window.refreshBranchBadge === 'function') window.refreshBranchBadge();
     });
   }
-  if (data.id === currentConvId) {
+  if (data.id === currentSessionId) {
     var area = document.getElementById('chatArea');
     var hasSavedScroll = !!sessionStorage.getItem('agentic_scroll');
     if (hasSavedScroll) _skipScrollToBottom = true;
-    renderConversationMessages(data);
+    renderSessionMessages(data);
     if (data.function_trees && data.function_trees.length > 0) {
       for (var i = 0; i < data.function_trees.length; i++) {
         var ft = data.function_trees[i];
@@ -569,7 +569,7 @@ function extractMessagesFromTree(tree) {
   return messages;
 }
 
-function renderConversationMessages(conv) {
+function renderSessionMessages(conv) {
   var container = document.getElementById('chatMessages');
   trees = [];
 
@@ -644,7 +644,7 @@ function renderConversationMessages(conv) {
       div.setAttribute('data-sibling-total', String(msg.sibling_total));
       // Server provides direct prev/next ids because the client only
       // holds the linear chain under HEAD — sibling branches aren't
-      // in _allMessages. See server load_conversation handler.
+      // in _allMessages. See server load_session handler.
       if (msg.prev_sibling_id) div.setAttribute('data-prev-sibling', msg.prev_sibling_id);
       if (msg.next_sibling_id) div.setAttribute('data-next-sibling', msg.next_sibling_id);
     }
@@ -848,8 +848,8 @@ function handleAttemptSwitched(data) {
     if (idx >= 0) { trees[idx] = data.tree; } else { trees.push(data.tree); }
   }
 
-  if (currentConvId && conversations[currentConvId]) {
-    var conv = conversations[currentConvId];
+  if (currentSessionId && conversations[currentSessionId]) {
+    var conv = conversations[currentSessionId];
     var msgs = conv.messages || [];
     for (var i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === 'assistant' && msgs[i].function === data.function && msgs[i].attempts) {
@@ -861,7 +861,7 @@ function handleAttemptSwitched(data) {
       }
     }
     _skipScrollToBottom = true;
-    renderConversationMessages(conv);
+    renderSessionMessages(conv);
     var el = document.querySelector('[data-function="' + data.function + '"]');
     if (el) {
       requestAnimationFrame(function() { el.scrollIntoView({ block: 'center' }); });

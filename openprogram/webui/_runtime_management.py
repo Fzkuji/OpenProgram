@@ -51,18 +51,18 @@ def _broadcast(msg: str) -> None:
         pass
 
 
-def _broadcast_chat_response(conv_id: str, msg_id: str, response: dict) -> None:
+def _broadcast_chat_response(session_id: str, msg_id: str, response: dict) -> None:
     try:
         from openprogram.webui.server import _broadcast_chat_response as _srv_bcr
-        _srv_bcr(conv_id, msg_id, response)
+        _srv_bcr(session_id, msg_id, response)
     except Exception:
         pass
 
 
-def _get_conversations():
+def _get_sessions():
     """Return (conversations dict, lock). Late import to avoid cycle."""
-    from openprogram.webui.server import _conversations, _conversations_lock
-    return _conversations, _conversations_lock
+    from openprogram.webui.server import _sessions, _sessions_lock
+    return _sessions, _sessions_lock
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +270,7 @@ def _init_providers():
     _probe_rest_async(skip=provider_name)
 
 
-def _get_conv_runtime(conv_id: str, msg_id: str = None):
+def _get_session_runtime(session_id: str, msg_id: str = None):
     """Get chat runtime for a conversation, creating if needed.
 
     Resolution order for the runtime's provider/model:
@@ -285,12 +285,12 @@ def _get_conv_runtime(conv_id: str, msg_id: str = None):
     """
     _init_providers()
 
-    _conversations, _ = _get_conversations()
-    conv = _conversations.get(conv_id)
+    _sessions, _ = _get_sessions()
+    conv = _sessions.get(session_id)
     if conv and conv.get("runtime"):
         return conv["runtime"]
 
-    provider, model = _resolve_conv_provider_model(conv)
+    provider, model = _resolve_session_provider_model(conv)
 
     if not provider:
         raise RuntimeError(
@@ -304,14 +304,14 @@ def _get_conv_runtime(conv_id: str, msg_id: str = None):
     return rt
 
 
-def _resolve_conv_provider_model(conv: dict | None) -> tuple[str | None, str | None]:
+def _resolve_session_provider_model(conv: dict | None) -> tuple[str | None, str | None]:
     """Pick (provider, model) for a conversation.
 
     Resolution order:
       1. Explicit ``provider_override`` on the conv (set by ``/model``
          switch). The older ``provider_name`` field is deliberately NOT
          consulted as a user choice — past versions of
-         ``_get_conv_runtime`` polluted it with the global default, so
+         ``_get_session_runtime`` polluted it with the global default, so
          persisted ``provider_name`` is treated as a runtime-cache only.
       2. The conversation's agent's configured model (agent.json
          ``model.provider`` / ``model.id``).
@@ -360,13 +360,13 @@ def _get_exec_runtime(no_tools: bool = False):
     return rt
 
 
-def _switch_runtime(provider: str, conv_id: str = None, msg_id: str = None):
+def _switch_runtime(provider: str, session_id: str = None, msg_id: str = None):
     """Switch provider. Updates current conversation + global default."""
     global _default_provider, _default_runtime
 
     with _runtime_lock:
-        if conv_id and msg_id:
-            _broadcast_chat_response(conv_id, msg_id, {
+        if session_id and msg_id:
+            _broadcast_chat_response(session_id, msg_id, {
                 "type": "status",
                 "content": f"Switching to {provider}...",
             })
@@ -379,8 +379,8 @@ def _switch_runtime(provider: str, conv_id: str = None, msg_id: str = None):
             else:
                 name, rt = provider, _create_runtime_for_visualizer(provider)
         except Exception as e:
-            if conv_id and msg_id:
-                _broadcast_chat_response(conv_id, msg_id, {
+            if session_id and msg_id:
+                _broadcast_chat_response(session_id, msg_id, {
                     "type": "error",
                     "content": f"Failed to set up {provider}: {e}",
                 })
@@ -389,10 +389,10 @@ def _switch_runtime(provider: str, conv_id: str = None, msg_id: str = None):
         _default_provider = name
         _default_runtime = rt
 
-        if conv_id:
-            _conversations, _conversations_lock = _get_conversations()
-            with _conversations_lock:
-                conv = _conversations.get(conv_id)
+        if session_id:
+            _sessions, _sessions_lock = _get_sessions()
+            with _sessions_lock:
+                conv = _sessions.get(session_id)
             if conv:
                 conv["runtime"] = _create_runtime_for_visualizer(name)
                 conv["provider_name"] = name
@@ -401,22 +401,22 @@ def _switch_runtime(provider: str, conv_id: str = None, msg_id: str = None):
                 conv["provider_override"] = name
                 conv["model_override"] = getattr(rt, "model", None)
 
-        if conv_id and msg_id:
-            _broadcast_chat_response(conv_id, msg_id, {
+        if session_id and msg_id:
+            _broadcast_chat_response(session_id, msg_id, {
                 "type": "status",
                 "content": f"Using {name} ({rt.model})",
             })
 
         _broadcast(json.dumps({
             "type": "provider_changed",
-            "data": _get_provider_info(conv_id),
+            "data": _get_provider_info(session_id),
         }))
 
         return rt
 
 
-def _get_provider_info(conv_id: str = None) -> dict:
-    """Get provider info. If conv_id given, return that conversation's provider.
+def _get_provider_info(session_id: str = None) -> dict:
+    """Get provider info. If session_id given, return that conversation's provider.
 
     When the conversation has no live runtime yet (lazy restore — runtime
     is only built on the first turn after a server restart), resolve
@@ -424,10 +424,10 @@ def _get_provider_info(conv_id: str = None) -> dict:
     global default. Otherwise pre-chat displays show the auto-detected
     fallback even after the user fixed the agent's model.
     """
-    if conv_id:
-        _conversations, _conversations_lock = _get_conversations()
-        with _conversations_lock:
-            conv = _conversations.get(conv_id)
+    if session_id:
+        _sessions, _sessions_lock = _get_sessions()
+        with _sessions_lock:
+            conv = _sessions.get(session_id)
         if conv:
             runtime = conv.get("runtime")
             if runtime is not None:
@@ -440,7 +440,7 @@ def _get_provider_info(conv_id: str = None) -> dict:
                     "runtime": type(runtime).__name__,
                     "session_id": getattr(runtime, "_session_id", None),
                 }
-            provider_name, model = _resolve_conv_provider_model(conv)
+            provider_name, model = _resolve_session_provider_model(conv)
             if provider_name:
                 provider_type = "CLI" if provider_name in _CLI_PROVIDERS else "API"
                 return {

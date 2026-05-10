@@ -444,7 +444,7 @@ function executeRetry(path, paramsOverride) {
     addSystemMessage('Retry failed: not connected to server. Try refreshing.');
     return;
   }
-  if (!currentConvId) {
+  if (!currentSessionId) {
     addSystemMessage('Retry failed: no active conversation. Send a message first.');
     return;
   }
@@ -471,8 +471,8 @@ function executeRetry(path, paramsOverride) {
     var _attemptFooter = '';
     var _rootFunc = path.split('/')[0];
     var _prevTotal = 0;
-    if (currentConvId && conversations[currentConvId]) {
-      var _aMsgs = conversations[currentConvId].messages || [];
+    if (currentSessionId && conversations[currentSessionId]) {
+      var _aMsgs = conversations[currentSessionId].messages || [];
       for (var _ai = _aMsgs.length - 1; _ai >= 0; _ai--) {
         if (_aMsgs[_ai].role === 'assistant' && _aMsgs[_ai].function === _rootFunc && _aMsgs[_ai].attempts) {
           _prevTotal = _aMsgs[_ai].attempts.length;
@@ -506,7 +506,7 @@ function executeRetry(path, paramsOverride) {
   ws.send(JSON.stringify({
     action: 'retry_node',
     node_path: path,
-    conv_id: currentConvId,
+    session_id: currentSessionId,
     params: params
   }));
 }
@@ -664,8 +664,8 @@ function renderAttemptNav(funcName, currentIdx, total) {
 }
 
 function switchAttempt(funcName, direction) {
-  if (!currentConvId || !conversations[currentConvId]) return;
-  var msgs = conversations[currentConvId].messages || [];
+  if (!currentSessionId || !conversations[currentSessionId]) return;
+  var msgs = conversations[currentSessionId].messages || [];
   var msg = null;
   for (var i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].role === 'assistant' && msgs[i].function === funcName && msgs[i].attempts) {
@@ -681,7 +681,7 @@ function switchAttempt(funcName, direction) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       action: 'switch_attempt',
-      conv_id: currentConvId,
+      session_id: currentSessionId,
       function: funcName,
       attempt_index: newIdx
     }));

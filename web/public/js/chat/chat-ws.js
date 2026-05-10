@@ -64,8 +64,8 @@ function handleChatResponse(data) {
   }
 
   // Store assistant message
-  if (currentConvId && conversations[currentConvId]) {
-    if (!conversations[currentConvId].messages) conversations[currentConvId].messages = [];
+  if (currentSessionId && conversations[currentSessionId]) {
+    if (!conversations[currentSessionId].messages) conversations[currentSessionId].messages = [];
     var storedMsg = {
       role: 'assistant',
       content: data.content || '',
@@ -82,17 +82,17 @@ function handleChatResponse(data) {
       }];
       storedMsg.current_attempt = 0;
     }
-    conversations[currentConvId].messages.push(storedMsg);
-    updateContextStats(conversations[currentConvId].messages);
+    conversations[currentSessionId].messages.push(storedMsg);
+    updateContextStats(conversations[currentSessionId].messages);
   }
 
   // Update conversation title
-  if (currentConvId && conversations[currentConvId]) {
-    if (!conversations[currentConvId].title || conversations[currentConvId].title === 'New conversation') {
-      var msgs = conversations[currentConvId].messages;
+  if (currentSessionId && conversations[currentSessionId]) {
+    if (!conversations[currentSessionId].title || conversations[currentSessionId].title === 'New conversation') {
+      var msgs = conversations[currentSessionId].messages;
       if (msgs.length > 0) {
-        conversations[currentConvId].title = msgs[0].content.slice(0, 50);
-        renderConversations();
+        conversations[currentSessionId].title = msgs[0].content.slice(0, 50);
+        renderSessions();
         if (typeof window.refreshStatusSource === 'function') {
           window.refreshStatusSource();
         }
@@ -136,10 +136,10 @@ function _handleStatusResponse(data) {
     var rootKey = ct.path || ct.name;
     var idx = trees.findIndex(function(t) { return t.path === rootKey || t.name === ct.name; });
     if (idx >= 0) { trees[idx] = ct; } else { trees.push(ct); }
-    if (currentConvId && conversations[currentConvId]) {
+    if (currentSessionId && conversations[currentSessionId]) {
       var rebuilt = extractMessagesFromTree(ct);
-      conversations[currentConvId].messages = rebuilt;
-      renderConversationMessages(conversations[currentConvId]);
+      conversations[currentSessionId].messages = rebuilt;
+      renderSessionMessages(conversations[currentSessionId]);
     }
   }
   scrollToBottom();
@@ -447,8 +447,8 @@ function _handleRetryResult(data) {
     delete pendingResponses[pendingKeys[pi]];
   }
 
-  if (currentConvId && conversations[currentConvId]) {
-    var msgs = conversations[currentConvId].messages || [];
+  if (currentSessionId && conversations[currentSessionId]) {
+    var msgs = conversations[currentSessionId].messages || [];
     for (var mi = msgs.length - 1; mi >= 0; mi--) {
       if (msgs[mi].role === 'assistant' && msgs[mi].function === data.function) {
         msgs[mi].attempts = data.attempts;
@@ -466,11 +466,11 @@ function _handleRetryResult(data) {
         existingCheck.nextElementSibling.remove();
       }
     }
-    if (currentConvId && conversations[currentConvId]) {
-      var msgs = conversations[currentConvId].messages || [];
+    if (currentSessionId && conversations[currentSessionId]) {
+      var msgs = conversations[currentSessionId].messages || [];
       for (var ti = msgs.length - 1; ti >= 0; ti--) {
         if (msgs[ti].role === 'assistant' && msgs[ti].function === data.function) {
-          conversations[currentConvId].messages = msgs.slice(0, ti + 1);
+          conversations[currentSessionId].messages = msgs.slice(0, ti + 1);
           break;
         }
       }
@@ -549,8 +549,8 @@ function _handleRuntimeResult(data, type) {
     var paramsSpan = pendingBlock.querySelector('.runtime-params');
     if (paramsSpan) runtimeParams = paramsSpan.textContent || '';
   }
-  if (!runtimeParams && currentConvId && conversations[currentConvId]) {
-    var msgs = conversations[currentConvId].messages || [];
+  if (!runtimeParams && currentSessionId && conversations[currentSessionId]) {
+    var msgs = conversations[currentSessionId].messages || [];
     for (var ri = msgs.length - 1; ri >= 0; ri--) {
       if (msgs[ri].role === 'user' && msgs[ri].display === 'runtime') {
         var parsed = parseRunCommandForDisplay(msgs[ri].content);
@@ -623,7 +623,7 @@ function _handleChatResult(data, type) {
   }
 
   if (targetEl && !document.body.contains(targetEl)) {
-    // Placeholder was detached by a conversation_loaded re-render. Re-attach
+    // Placeholder was detached by a session_loaded re-render. Re-attach
     // the same node so the reply lands in one bubble, not two.
     appendToChat(targetEl);
   } else if (!targetEl) {

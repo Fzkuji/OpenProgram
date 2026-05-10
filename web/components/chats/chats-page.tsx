@@ -4,7 +4,7 @@
  * /chats — list of past conversations.
  *
  * Native React port of web/public/html/chats.html. Owns its own
- * WebSocket subscription (open → list_conversations → render rows).
+ * WebSocket subscription (open → list_sessions → render rows).
  * Styles are co-located in chats-page.module.css; design tokens
  * (--text-bright, --border, --text-muted, ...) come from globals.
  */
@@ -35,7 +35,7 @@ export function ChatsPage() {
       const ws = new WebSocket(`${proto}//${window.location.host}/ws`);
       wsRef.current = ws;
       ws.onopen = () => {
-        ws.send(JSON.stringify({ action: "list_conversations" }));
+        ws.send(JSON.stringify({ action: "list_sessions" }));
       };
       ws.onclose = () => {
         if (!cancelled) reconnect = setTimeout(connect, 2000);
@@ -55,7 +55,7 @@ export function ChatsPage() {
           return;
         }
         if (
-          msg.type === "conversations_list" ||
+          msg.type === "sessions_list" ||
           msg.type === "history_list"
         ) {
           const list = msg.data ?? [];
@@ -161,7 +161,7 @@ export function ChatsPage() {
               <div
                 key={c.id}
                 className={styles.row}
-                onClick={() => router.push(`/c/${c.id}`)}
+                onClick={() => router.push(`/s/${c.id}`)}
               >
                 <div className={styles.rowTitle}>{c.title || "Untitled"}</div>
                 <div className={styles.rowMeta}>

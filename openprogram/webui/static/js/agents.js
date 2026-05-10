@@ -10,7 +10,7 @@
 //   agents[]       — registry list fetched from the server
 //
 // The sidebar render (sidebar.js) reads currentAgentId to decide which
-// conversations to show. We re-call renderConversations() on every
+// conversations to show. We re-call renderSessions() on every
 // agent-list refresh and every switcher click.
 
 var currentAgentId = null;
@@ -34,8 +34,8 @@ function _handleAgentsList(data) {
     currentAgentId = agents[0].id;
   }
   renderAgentSwitcher();
-  if (typeof renderConversations === 'function') {
-    renderConversations();
+  if (typeof renderSessions === 'function') {
+    renderSessions();
   }
 }
 
@@ -55,15 +55,15 @@ function switchAgent(id) {
   if (!id || id === currentAgentId) return;
   currentAgentId = id;
   renderAgentSwitcher();
-  if (typeof renderConversations === 'function') renderConversations();
+  if (typeof renderSessions === 'function') renderSessions();
   // If we were on a conv belonging to a different agent, drop back
   // to /new so the user isn't staring at a conv that's hidden from
   // the current agent's list.
-  if (currentConvId) {
-    var conv = conversations[currentConvId];
+  if (currentSessionId) {
+    var conv = conversations[currentSessionId];
     if (conv && conv.agent_id && conv.agent_id !== currentAgentId) {
-      if (typeof newConversation === 'function') {
-        newConversation();
+      if (typeof newSession === 'function') {
+        newSession();
       }
     }
   }
@@ -136,7 +136,7 @@ function openAgentSwitcher() {
 }
 
 function openSessionAttachDialog() {
-  if (!currentConvId) {
+  if (!currentSessionId) {
     alert('Open a conversation first, then Connect channel lets you ' +
           'route a WeChat/Telegram/etc. user into it.');
     return;
@@ -172,7 +172,7 @@ function openSessionAttachDialog() {
   function tryRender() {
     if (state.accounts === null || state.aliases === null) return;
     var mine = state.aliases.filter(function(a) {
-      return a.session_id === currentConvId;
+      return a.session_id === currentSessionId;
     });
     var existingHtml = '';
     if (mine.length) {
@@ -208,7 +208,7 @@ function openSessionAttachDialog() {
       '<div class="confirm-title">Connect channel to this session</div>' +
       '<div class="confirm-message" style="text-align:left;font-size:12px;color:var(--text-muted);margin:0 0 4px">' +
         'Route a channel user\'s messages into the current session ' +
-        '(session_id: ' + escHtml(currentConvId) + ').' +
+        '(session_id: ' + escHtml(currentSessionId) + ').' +
       '</div>' +
       existingHtml +
       '<div class="bind-add">' +
@@ -257,7 +257,7 @@ function openSessionAttachDialog() {
       var peerKind = overlay.querySelector('#_saKind').value;
       ws.send(JSON.stringify({
         action: 'attach_session',
-        session_id: currentConvId,
+        session_id: currentSessionId,
         channel: parts[0],
         account_id: parts[1],
         peer_kind: peerKind,

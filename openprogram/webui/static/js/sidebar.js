@@ -9,7 +9,7 @@ function toggleSidebar() {
 
 // ===== Conversations =====
 
-function renderConversations() {
+function renderSessions() {
   var container = document.getElementById('convList');
   if (!container) return;
   var html = '';
@@ -28,7 +28,7 @@ function renderConversations() {
   } else {
     for (var ci = 0; ci < convs.length; ci++) {
       var c = convs[ci];
-      var active = c.id === currentConvId ? ' active' : '';
+      var active = c.id === currentSessionId ? ' active' : '';
       var sourceIcon = '';
       var PLATFORM_ICONS = {
         wechat: '\u{1F4AC}', telegram: '✈',
@@ -39,23 +39,23 @@ function renderConversations() {
           escAttr(c.source + ': ' + (c.peer_display || '')) + '">' +
           PLATFORM_ICONS[c.source] + '</span>';
       }
-      html += '<div class="conv-item' + active + '" onclick="switchConversation(\'' + c.id + '\')" title="' + escAttr(c.title || 'Untitled') + '">' +
+      html += '<div class="conv-item' + active + '" onclick="switchSession(\'' + c.id + '\')" title="' + escAttr(c.title || 'Untitled') + '">' +
         sourceIcon +
         '<span class="conv-title">' + escHtml(c.title || 'Untitled') + '</span>' +
-        '<span class="conv-del" onclick="event.stopPropagation();deleteConversation(\'' + c.id + '\')" title="Delete"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg></span>' +
+        '<span class="conv-del" onclick="event.stopPropagation();deleteSession(\'' + c.id + '\')" title="Delete"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg></span>' +
       '</div>';
     }
-    html += '<div class="conv-clear-all" onclick="clearAllConversations()">Clear all</div>';
+    html += '<div class="conv-clear-all" onclick="clearAllSessions()">Clear all</div>';
   }
   container.innerHTML = html;
 }
 
-function switchConversation(convId) {
+function switchSession(sessionId) {
   // If already on this conversation, just reload in-place
-  if (convId === currentConvId && window.location.pathname === '/c/' + convId) {
+  if (sessionId === currentSessionId && window.location.pathname === '/s/' + sessionId) {
     return;
   }
-  window.location.href = '/c/' + convId;
+  window.location.href = '/s/' + sessionId;
 }
 
 function _showConfirm(title, message, onConfirm) {
@@ -82,41 +82,41 @@ function _showConfirm(title, message, onConfirm) {
   overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
 }
 
-function deleteConversation(convId) {
-  var conv = conversations[convId];
+function deleteSession(sessionId) {
+  var conv = conversations[sessionId];
   var title = (conv && conv.title) || 'Untitled';
   _showConfirm('Delete chat', 'Are you sure you want to delete "' + title + '"?', function() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'delete_conversation', conv_id: convId }));
+      ws.send(JSON.stringify({ action: 'delete_session', session_id: sessionId }));
     }
-    delete conversations[convId];
-    if (currentConvId === convId) {
-      newConversation();
+    delete conversations[sessionId];
+    if (currentSessionId === sessionId) {
+      newSession();
     }
-    renderConversations();
+    renderSessions();
   });
 }
 
-function clearAllConversations() {
+function clearAllSessions() {
   var count = Object.keys(conversations).length;
   if (!count) return;
   _showConfirm('Delete all chats', 'Are you sure you want to delete all ' + count + ' conversations? This cannot be undone.', function() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'clear_conversations' }));
+      ws.send(JSON.stringify({ action: 'clear_sessions' }));
     }
     conversations = {};
-    newConversation();
-    renderConversations();
+    newSession();
+    renderSessions();
   });
 }
 
-function newConversation() {
+function newSession() {
   if (window.location.pathname !== '/new') {
     window.location.href = '/new';
     return;
   }
   // Already on /, reset in-place
-  currentConvId = null;
+  currentSessionId = null;
   history.replaceState(null, '', '/new');
   pendingResponses = {};
   trees = [];
@@ -133,7 +133,7 @@ function newConversation() {
     '</div>';
   container.appendChild(welcome);
   setWelcomeVisible(true);
-  renderConversations();
+  renderSessions();
   var ctxEl = document.getElementById('contextStats');
   if (ctxEl) ctxEl.textContent = '';
   _hasActiveSession = false;
@@ -148,10 +148,10 @@ function newConversation() {
   loadAgentSettings();
 }
 
-function loadConversationData(data) {
+function loadSessionData(data) {
   if (!data.messages) data.messages = [];
   // Preserve agent_id / source picked up from the last sidebar sync —
-  // conversation_loaded doesn't always carry those fields.
+  // session_loaded doesn't always carry those fields.
   var prev = conversations[data.id];
   if (prev) {
     if (!data.agent_id && prev.agent_id) data.agent_id = prev.agent_id;
@@ -159,12 +159,12 @@ function loadConversationData(data) {
     if (!data.peer_display && prev.peer_display) data.peer_display = prev.peer_display;
   }
   conversations[data.id] = data;
-  renderConversations();
-  if (data.id === currentConvId) {
+  renderSessions();
+  if (data.id === currentSessionId) {
     var area = document.getElementById('chatArea');
     var hasSavedScroll = !!sessionStorage.getItem('agentic_scroll');
     if (hasSavedScroll) _skipScrollToBottom = true;
-    renderConversationMessages(data);
+    renderSessionMessages(data);
     if (data.function_trees && data.function_trees.length > 0) {
       for (var i = 0; i < data.function_trees.length; i++) {
         var ft = data.function_trees[i];
@@ -228,7 +228,7 @@ function extractMessagesFromTree(tree) {
   return messages;
 }
 
-function renderConversationMessages(conv) {
+function renderSessionMessages(conv) {
   var container = document.getElementById('chatMessages');
   trees = [];
 
@@ -433,8 +433,8 @@ function handleAttemptSwitched(data) {
     if (idx >= 0) { trees[idx] = data.tree; } else { trees.push(data.tree); }
   }
 
-  if (currentConvId && conversations[currentConvId]) {
-    var conv = conversations[currentConvId];
+  if (currentSessionId && conversations[currentSessionId]) {
+    var conv = conversations[currentSessionId];
     var msgs = conv.messages || [];
     for (var i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === 'assistant' && msgs[i].function === data.function && msgs[i].attempts) {
@@ -446,7 +446,7 @@ function handleAttemptSwitched(data) {
       }
     }
     _skipScrollToBottom = true;
-    renderConversationMessages(conv);
+    renderSessionMessages(conv);
     var el = document.querySelector('[data-function="' + data.function + '"]');
     if (el) {
       requestAnimationFrame(function() { el.scrollIntoView({ block: 'center' }); });

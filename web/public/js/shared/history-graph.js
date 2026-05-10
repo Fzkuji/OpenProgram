@@ -584,8 +584,8 @@
   }
 
   async function _checkout(msgId) {
-    var convId = window.currentConvId;
-    if (!convId || !msgId) return;
+    var sessionId = window.currentSessionId;
+    if (!sessionId || !msgId) return;
     // Clicking any node on a branch = switch to that branch's TIP.
     // This matches the "git checkout <branch>" mental model the user
     // asked for: one click = one branch switch, never mid-branch rewind.
@@ -595,11 +595,11 @@
       var r = await fetch('/api/chat/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conv_id: convId, msg_id: target }),
+        body: JSON.stringify({ session_id: sessionId, msg_id: target }),
       });
       if (!r.ok) throw new Error(await r.text());
       if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-        window.ws.send(JSON.stringify({ action: 'load_conversation', conv_id: convId }));
+        window.ws.send(JSON.stringify({ action: 'load_session', session_id: sessionId }));
       }
     } catch (err) {
       console.error('[history-graph] checkout failed:', err);

@@ -4,7 +4,7 @@ One-stop persistence for chat conversations across every transport
 (TUI / web / wechat / telegram / discord / slack). Replaces the
 per-conv ``meta.json`` + ``messages.json`` layout — that path was
 fine at MVP scale but was rewriting the whole messages file every
-turn, walking the filesystem on every ``list_conversations`` call,
+turn, walking the filesystem on every ``list_sessions`` call,
 and offering no way to grep history.
 
 Schema:

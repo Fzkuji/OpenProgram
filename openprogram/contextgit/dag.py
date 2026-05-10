@@ -172,7 +172,7 @@ def advance_head(conv: dict, msg: dict) -> None:
       collapses the fork into a linear append and breaks the DAG.
 
     After the append HEAD == ``msg['id']``. Callers persist via
-    ``_save_conversation`` separately — we don't do I/O here.
+    ``_save_session`` separately — we don't do I/O here.
     """
     if "parent_id" not in msg:
         msg["parent_id"] = conv.get("head_id")

@@ -9,11 +9,11 @@ import {
   Copy, RefreshCw, GitBranch, Check, FileText,
 } from "lucide-react";
 import {
-  useConvStore,
+  useSessionStore,
   useMessageById,
   useMessageIds,
   type ChatMsg,
-} from "@/lib/conv-store";
+} from "@/lib/session-store";
 import { useWS } from "@/lib/ws";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -22,22 +22,22 @@ import { ContextTreePanel } from "./context-tree-panel";
 import { CanvasPanel } from "./canvas-panel";
 
 interface ChatViewProps {
-  convId: string | null;
+  sessionId: string | null;
 }
 
 const THINKING_OPTIONS = ["low", "medium", "high", "xhigh"] as const;
 type Effort = (typeof THINKING_OPTIONS)[number];
 
-export function ChatView({ convId }: ChatViewProps) {
+export function ChatView({ sessionId }: ChatViewProps) {
   const { send } = useWS();
-  const wsStatus = useConvStore((s) => s.wsStatus);
-  const messageIds = useMessageIds(convId);
-  const runningTask = useConvStore((s) => s.runningTask);
-  const paused = useConvStore((s) => s.paused);
-  const providerInfo = useConvStore((s) => s.providerInfo);
-  const currentConvId = useConvStore((s) => s.currentConvId);
-  const setCurrentConv = useConvStore((s) => s.setCurrentConv);
-  const appendMessage = useConvStore((s) => s.appendMessage);
+  const wsStatus = useSessionStore((s) => s.wsStatus);
+  const messageIds = useMessageIds(sessionId);
+  const runningTask = useSessionStore((s) => s.runningTask);
+  const paused = useSessionStore((s) => s.paused);
+  const providerInfo = useSessionStore((s) => s.providerInfo);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
+  const appendMessage = useSessionStore((s) => s.appendMessage);
 
   const searchParams = useSearchParams();
   const [input, setInput] = useState("");
@@ -45,8 +45,8 @@ export function ChatView({ convId }: ChatViewProps) {
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [treeOpen, setTreeOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
-  const tree = useConvStore((s) =>
-    convId ? s.trees[convId] ?? null : null
+  const tree = useSessionStore((s) =>
+    sessionId ? s.trees[sessionId] ?? null : null
   );
 
   // Honor /chat?prefill=... or /chat?run=funcname
@@ -62,12 +62,12 @@ export function ChatView({ convId }: ChatViewProps) {
 
   // Ask server to load this conversation when mounted
   useEffect(() => {
-    if (convId && wsStatus === "open") {
-      if (currentConvId !== convId) setCurrentConv(convId);
-      send({ action: "load_conversation", conv_id: convId });
+    if (sessionId && wsStatus === "open") {
+      if (currentSessionId !== sessionId) setCurrentConv(sessionId);
+      send({ action: "load_session", session_id: sessionId });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convId, wsStatus]);
+  }, [sessionId, wsStatus]);
 
   // Scroll on id-list change (new message) and, separately, also on
   // streaming content change of the last bubble — handled by the
@@ -87,14 +87,14 @@ export function ChatView({ convId }: ChatViewProps) {
   }, [input]);
 
   const busy = runningTask !== null;
-  const isRunning = busy && runningTask?.conv_id === (convId ?? currentConvId);
+  const isRunning = busy && runningTask?.session_id === (sessionId ?? currentSessionId);
 
   function submit() {
     const text = input.trim();
     if (!text || busy || wsStatus !== "open") return;
     const localId = "u-" + Math.random().toString(36).slice(2, 10);
     // Optimistically append user message
-    const targetConv = convId ?? currentConvId;
+    const targetConv = sessionId ?? currentSessionId;
     if (targetConv) {
       appendMessage(targetConv, {
         id: localId,
@@ -106,20 +106,20 @@ export function ChatView({ convId }: ChatViewProps) {
     send({
       action: "chat",
       text,
-      conv_id: convId ?? currentConvId ?? null,
+      session_id: sessionId ?? currentSessionId ?? null,
       thinking_effort: thinking,
     });
     setInput("");
   }
 
   function stop() {
-    const id = runningTask?.conv_id ?? convId ?? currentConvId;
+    const id = runningTask?.session_id ?? sessionId ?? currentSessionId;
     if (!id) return;
     api.stop(id).catch(() => {});
   }
 
   function togglePause() {
-    const id = runningTask?.conv_id ?? convId ?? currentConvId;
+    const id = runningTask?.session_id ?? sessionId ?? currentSessionId;
     if (!id) return;
     (paused ? api.resume(id) : api.pause(id)).catch(() => {});
   }
@@ -133,7 +133,7 @@ export function ChatView({ convId }: ChatViewProps) {
       >
         <div className="flex items-center gap-2">
           <ModelBadge />
-          <ContextBadge convId={convId} />
+          <ContextBadge sessionId={sessionId} />
           <StatusDot status={wsStatus} />
         </div>
         <div className="flex items-center gap-1">
@@ -185,7 +185,7 @@ export function ChatView({ convId }: ChatViewProps) {
             </div>
           )}
           {messageIds.map((id) => (
-            <MessageBubble key={id} msgId={id} convId={currentConvId} />
+            <MessageBubble key={id} msgId={id} sessionId={currentSessionId} />
           ))}
         </div>
       </div>
@@ -327,7 +327,7 @@ export function ChatView({ convId }: ChatViewProps) {
 }
 
 function ModelBadge() {
-  const providerInfo = useConvStore((s) => s.providerInfo);
+  const providerInfo = useSessionStore((s) => s.providerInfo);
   const { data: enabledModels } = useQuery({
     queryKey: ["models-enabled"],
     queryFn: api.listEnabledModels,
@@ -424,17 +424,17 @@ function ModelBadge() {
 /**
  * Per-conversation token / context-window indicator.
  *
- * Subscribes to ``tokens[convId]`` + ``contextWindow[convId]`` so when
+ * Subscribes to ``tokens[sessionId]`` + ``contextWindow[sessionId]`` so when
  * the user switches branches the badge flips to that branch's own
- * usage. Server tags every ``context_stats`` event with conv_id, so the
+ * usage. Server tags every ``context_stats`` event with session_id, so the
  * store stays partitioned cleanly. Hidden when no usage yet.
  */
-function ContextBadge({ convId }: { convId: string | null }) {
-  const tokens = useConvStore(
-    (s) => (convId ? s.tokens[convId] : undefined),
+function ContextBadge({ sessionId }: { sessionId: string | null }) {
+  const tokens = useSessionStore(
+    (s) => (sessionId ? s.tokens[sessionId] : undefined),
   );
-  const window = useConvStore(
-    (s) => (convId ? s.contextWindow[convId] : undefined),
+  const window = useSessionStore(
+    (s) => (sessionId ? s.contextWindow[sessionId] : undefined),
   );
   if (!tokens || !tokens.input) return null;
   const fmt = (n: number) =>
@@ -482,7 +482,7 @@ function StatusDot({ status }: { status: "connecting" | "open" | "closed" }) {
   );
 }
 
-function MessageBubble({ msgId, convId }: { msgId: string; convId: string | null }) {
+function MessageBubble({ msgId, sessionId }: { msgId: string; sessionId: string | null }) {
   // Subscribe to this one message entry. When a streaming delta lands
   // on a *different* msgId, React.memo + this selector keep us from
   // re-rendering. Only the bubble owning the updated id re-renders.
@@ -503,7 +503,7 @@ function MessageBubble({ msgId, convId }: { msgId: string; convId: string | null
   // point copying an empty placeholder).
   const actionable =
     !isSystem &&
-    convId !== null &&
+    sessionId !== null &&
     msg.status !== "streaming" &&
     msg.status !== "pending";
 
@@ -547,14 +547,14 @@ function MessageBubble({ msgId, convId }: { msgId: string; convId: string | null
           </span>
         )}
       </div>
-      {actionable && <MessageActions msg={msg} convId={convId!} />}
+      {actionable && <MessageActions msg={msg} sessionId={sessionId!} />}
     </div>
   );
 }
 
-function MessageActions({ msg, convId }: { msg: ChatMsg; convId: string }) {
+function MessageActions({ msg, sessionId }: { msg: ChatMsg; sessionId: string }) {
   const router = useRouter();
-  const truncateFrom = useConvStore((s) => s.truncateFrom);
+  const truncateFrom = useSessionStore((s) => s.truncateFrom);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<null | "retry" | "branch">(null);
 
@@ -582,8 +582,8 @@ function MessageActions({ msg, convId }: { msg: ChatMsg; convId: string }) {
       // Optimistically drop this message + anything after it. Server
       // is about to stream in a fresh reply; the truncate keeps the
       // UI honest until the new WS frames land.
-      truncateFrom(convId, msg.id);
-      await api.retryChat(convId, msg.id);
+      truncateFrom(sessionId, msg.id);
+      await api.retryChat(sessionId, msg.id);
     } catch (e) {
       console.error("retry failed", e);
     } finally {
@@ -594,8 +594,8 @@ function MessageActions({ msg, convId }: { msg: ChatMsg; convId: string }) {
   const onBranch = async () => {
     setBusy("branch");
     try {
-      const r = await api.branchChat(convId, msg.id);
-      router.push(`/c/${r.conv_id}`);
+      const r = await api.branchChat(sessionId, msg.id);
+      router.push(`/s/${r.session_id}`);
     } catch (e) {
       console.error("branch failed", e);
     } finally {

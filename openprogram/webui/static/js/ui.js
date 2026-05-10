@@ -86,7 +86,7 @@ function togglePause() {
 }
 
 function stopExecution() {
-  if (!currentConvId) {
+  if (!currentSessionId) {
     isPaused = false;
     isRunning = false;
     updateSendBtn();
@@ -95,7 +95,7 @@ function stopExecution() {
   fetch('/api/stop', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conv_id: currentConvId }),
+    body: JSON.stringify({ session_id: currentSessionId }),
   })
     .then(function(r) { return r.json(); })
     .then(function() {

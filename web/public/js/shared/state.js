@@ -5,10 +5,10 @@ var selectedPath = null;
 var isPaused = false;
 var expandedNodes = new Set();
 var reconnectTimer = null;
-// Drive conv_id from URL (source of truth). localStorage is no longer used —
+// Drive session_id from URL (source of truth). localStorage is no longer used —
 // it caused stale values when opening /new while an old id was cached.
-var currentConvId = (function() {
-  var m = window.location.pathname.match(/^\/c\/([^/]+)/);
+var currentSessionId = (function() {
+  var m = window.location.pathname.match(/^\/s\/([^/]+)/);
   return m ? m[1] : null;
 })();
 var conversations = {};

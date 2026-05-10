@@ -134,7 +134,7 @@ def dispatch_inbound(
                 captured_user_id.append(str(data["msg_id"]))
 
     req = TurnRequest(
-        conv_id=session_key,
+        session_id=session_key,
         user_text=user_text,
         agent_id=agent_id,
         source=channel,
@@ -416,10 +416,10 @@ def _broadcast_channel_turn(agent_id: str, session_key: str,
                             reply_msg: dict[str, Any]) -> None:
     """Push the just-completed channel turn (user message + assistant
     reply) to every connected WS client. The TUI watches for this event
-    and appends both messages to its transcript when the conv_id matches
+    and appends both messages to its transcript when the session_id matches
     the currently-viewed session — so a wechat user typing "hello"
     shows up live in an attached `openprogram` TUI without a /resume
-    refresh. session_key is also the conv_id the TUI uses (same
+    refresh. session_key is also the session_id the TUI uses (same
     `default_direct_<peer>` layout), no translation needed.
     """
     try:
@@ -430,7 +430,7 @@ def _broadcast_channel_turn(agent_id: str, session_key: str,
         payload = {
             "type": "channel_turn",
             "data": {
-                "conv_id": session_key,
+                "session_id": session_key,
                 "agent_id": agent_id,
                 "user": {
                     "id": user_msg.get("id"),

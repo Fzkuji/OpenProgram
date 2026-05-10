@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
 import { Plus, LayoutGrid, Settings, Info, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useConvStore } from "@/lib/conv-store";
+import { useSessionStore } from "@/lib/session-store";
 import { useWS } from "@/lib/ws";
 
 export function AppSidebar() {
@@ -13,10 +13,10 @@ export function AppSidebar() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const conversations = useConvStore((s) => s.conversations);
-  const currentConvId = useConvStore((s) => s.currentConvId);
-  const setCurrentConv = useConvStore((s) => s.setCurrentConv);
-  const clearLocal = useConvStore((s) => s.clearConversations);
+  const conversations = useSessionStore((s) => s.conversations);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
+  const clearLocal = useSessionStore((s) => s.clearConversations);
   const { send } = useWS();
 
   const convList = useMemo(() => {
@@ -57,15 +57,15 @@ export function AppSidebar() {
 
   function switchTo(id: string) {
     setCurrentConv(id);
-    send({ action: "load_conversation", conv_id: id });
-    router.push(`/c/${id}`);
+    send({ action: "load_session", session_id: id });
+    router.push(`/s/${id}`);
   }
 
   function deleteConv(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     if (!confirm("Delete this conversation?")) return;
-    send({ action: "delete_conversation", conv_id: id });
-    if (currentConvId === id) {
+    send({ action: "delete_session", session_id: id });
+    if (currentSessionId === id) {
       setCurrentConv(null);
       router.push("/chat");
     }
@@ -74,12 +74,12 @@ export function AppSidebar() {
   function clearAll() {
     if (!convList.length) return;
     if (!confirm(`Delete all ${convList.length} conversations?`)) return;
-    send({ action: "clear_conversations" });
+    send({ action: "clear_sessions" });
     clearLocal();
     router.push("/chat");
   }
 
-  const chatActive = pathname === "/chat" || pathname === "/" || pathname.startsWith("/c/");
+  const chatActive = pathname === "/chat" || pathname === "/" || pathname.startsWith("/s/");
   const programsActive = pathname.startsWith("/programs");
 
   return (
@@ -126,7 +126,7 @@ export function AppSidebar() {
           ) : (
             <ul className="space-y-0.5">
               {convList.map((c) => {
-                const active = c.id === currentConvId;
+                const active = c.id === currentSessionId;
                 return (
                   <li key={c.id}>
                     <div

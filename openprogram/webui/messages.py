@@ -145,7 +145,7 @@ class Message:
     """
 
     id: str
-    conv_id: str
+    session_id: str
     role: Literal["user", "assistant", "system"]
     status: MessageStatus = "pending"
     content: list[Block] = field(default_factory=list)
@@ -164,7 +164,7 @@ class Message:
     def to_dict(self) -> dict:
         return {
             "id": self.id,
-            "conv_id": self.conv_id,
+            "session_id": self.session_id,
             "role": self.role,
             "status": self.status,
             "content": [b.to_dict() for b in self.content],
@@ -184,7 +184,7 @@ class Message:
         blocks = [Block.from_dict(b) for b in (d.get("content") or [])]
         return cls(
             id=d["id"],
-            conv_id=d["conv_id"],
+            session_id=d["session_id"],
             role=d["role"],
             status=d.get("status", "complete"),
             content=blocks,
@@ -227,7 +227,7 @@ DeltaOp = Literal[
 # ---------------------------------------------------------------------------
 
 _Listener = Callable[[str, dict], None]
-# Signature: (conv_id, frame_dict) → None. Frame is already shaped for the
+# Signature: (session_id, frame_dict) → None. Frame is already shaped for the
 # wire. Listeners are typically per-websocket "send this to my client".
 
 
@@ -238,7 +238,7 @@ class MessageStore:
     frame to that conversation's listeners.
 
     Persistence is opt-in via ``persist_dir``. When set, ``commit()`` writes
-    the message as one line into ``{conv_id}/messages.jsonl`` (append-only,
+    the message as one line into ``{session_id}/messages.jsonl`` (append-only,
     one record per message terminal state). Re-commits overwrite by id when
     the store is reloaded from disk.
 
@@ -252,7 +252,7 @@ class MessageStore:
         self._messages: dict[str, Message] = {}
         # message_id → deque-like list of (seq, delta) pairs
         self._delta_ring: dict[str, list[tuple[int, dict]]] = {}
-        # conv_id → list of listeners
+        # session_id → list of listeners
         self._listeners: dict[str, list[_Listener]] = {}
         # Wildcard listeners — see subscribe_all. Used by transports that
         # want one fan-out point for every conversation (e.g. a single WS
@@ -263,13 +263,13 @@ class MessageStore:
 
     # -- registration --------------------------------------------------------
 
-    def subscribe(self, conv_id: str, listener: _Listener) -> Callable[[], None]:
+    def subscribe(self, session_id: str, listener: _Listener) -> Callable[[], None]:
         with self._lock:
-            self._listeners.setdefault(conv_id, []).append(listener)
+            self._listeners.setdefault(session_id, []).append(listener)
 
         def _unsub():
             with self._lock:
-                lst = self._listeners.get(conv_id)
+                lst = self._listeners.get(session_id)
                 if lst and listener in lst:
                     lst.remove(listener)
 
@@ -297,15 +297,15 @@ class MessageStore:
         with self._lock:
             return self._messages.get(message_id)
 
-    def list_for_conv(self, conv_id: str) -> list[Message]:
+    def list_for_conv(self, session_id: str) -> list[Message]:
         with self._lock:
-            return [m for m in self._messages.values() if m.conv_id == conv_id]
+            return [m for m in self._messages.values() if m.session_id == session_id]
 
     # -- writes --------------------------------------------------------------
 
     def create(
         self,
-        conv_id: str,
+        session_id: str,
         role: str,
         *,
         message_id: Optional[str] = None,
@@ -316,7 +316,7 @@ class MessageStore:
         mid = message_id or f"msg_{uuid.uuid4().hex[:12]}"
         msg = Message(
             id=mid,
-            conv_id=conv_id,
+            session_id=session_id,
             role=role,
             status=status,
             content=list(content or []),
@@ -327,7 +327,7 @@ class MessageStore:
             self._delta_ring[mid] = []
             # New messages go out as snapshots — there's no prior state for
             # delta apply to stitch onto.
-            self._emit(conv_id, {"type": "message.snapshot", "message": msg.to_dict()})
+            self._emit(session_id, {"type": "message.snapshot", "message": msg.to_dict()})
         return msg
 
     def add_block(self, message_id: str, block: Block) -> None:
@@ -434,13 +434,13 @@ class MessageStore:
                 del ring[: len(ring) - MAX_DELTA_CATCHUP]
             # Fan out the dedicated commit frame in addition to the delta,
             # so clients have one call site for "message is done now".
-            self._emit(msg.conv_id, {
+            self._emit(msg.session_id, {
                 "type": "message.delta",
                 "message_id": msg.id,
                 "seq": msg.seq,
                 "patch": delta,
             })
-            self._emit(msg.conv_id, {
+            self._emit(msg.session_id, {
                 "type": "message.commit",
                 "message_id": message_id,
                 "seq": msg.seq,
@@ -452,7 +452,7 @@ class MessageStore:
 
     # -- sync / reconnect ----------------------------------------------------
 
-    def sync(self, conv_id: str, known_seqs: dict[str, int]) -> list[dict]:
+    def sync(self, session_id: str, known_seqs: dict[str, int]) -> list[dict]:
         """Compute the frames a reconnecting client needs to catch up.
 
         Client sends ``{msg_id: seq}``; server returns a list of frames.
@@ -467,7 +467,7 @@ class MessageStore:
         """
         with self._lock:
             frames: list[dict] = []
-            for msg in self.list_for_conv(conv_id):
+            for msg in self.list_for_conv(session_id):
                 client_seq = known_seqs.get(msg.id, -1)
                 if client_seq >= msg.seq:
                     continue
@@ -489,11 +489,11 @@ class MessageStore:
 
     # -- persistence ---------------------------------------------------------
 
-    def load_conv(self, conv_id: str) -> None:
-        """Rehydrate all messages for ``conv_id`` from JSONL. Idempotent."""
+    def load_conv(self, session_id: str) -> None:
+        """Rehydrate all messages for ``session_id`` from JSONL. Idempotent."""
         if self._persist_dir is None:
             return
-        path = self._persist_dir / conv_id / "messages.jsonl"
+        path = self._persist_dir / session_id / "messages.jsonl"
         if not path.exists():
             return
         with self._lock, path.open("r", encoding="utf-8") as f:
@@ -514,7 +514,7 @@ class MessageStore:
     def load_all(self) -> list[str]:
         """Scan the persist dir and rehydrate every conversation found.
 
-        Returns the list of ``conv_id`` values successfully loaded. Safe
+        Returns the list of ``session_id`` values successfully loaded. Safe
         to call multiple times (``load_conv`` is idempotent) — useful on
         server startup to get v2 JSONL messages back into memory without
         depending on users clicking each conversation.
@@ -554,7 +554,7 @@ class MessageStore:
         # time, so crash recovery picks up the latest record per id.
         # Size stays bounded because we only persist on terminal states,
         # not per-delta.
-        d = self._persist_dir / msg.conv_id
+        d = self._persist_dir / msg.session_id
         d.mkdir(parents=True, exist_ok=True)
         rec = {"v": SCHEMA_VERSION, "message": msg.to_dict()}
         with (d / "messages.jsonl").open("a", encoding="utf-8") as f:
@@ -574,17 +574,17 @@ class MessageStore:
             # That's fine — the snapshot always exists, it's just a bigger
             # payload. This is the tradeoff the outer constant controls.
             del ring[: len(ring) - MAX_DELTA_CATCHUP]
-        self._emit(msg.conv_id, {
+        self._emit(msg.session_id, {
             "type": "message.delta",
             "message_id": msg.id,
             "seq": msg.seq,
             "patch": patch,
         })
 
-    def _emit(self, conv_id: str, frame: dict) -> None:
-        for lst in (self._listeners.get(conv_id) or []):
+    def _emit(self, session_id: str, frame: dict) -> None:
+        for lst in (self._listeners.get(session_id) or []):
             try:
-                lst(conv_id, frame)
+                lst(session_id, frame)
             except Exception:
                 # A broken listener must not take out the whole broadcast.
                 # Listener lifecycle is owned by the transport layer; it
@@ -592,7 +592,7 @@ class MessageStore:
                 pass
         for lst in list(self._global_listeners):
             try:
-                lst(conv_id, frame)
+                lst(session_id, frame)
             except Exception:
                 pass
 

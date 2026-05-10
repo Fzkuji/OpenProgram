@@ -76,12 +76,12 @@
   }
 
   function checkout(targetId) {
-    var convId = window.currentConvId;
-    if (!convId || !targetId) return Promise.reject(new Error('missing conv or target'));
+    var sessionId = window.currentSessionId;
+    if (!sessionId || !targetId) return Promise.reject(new Error('missing conv or target'));
     return fetch('/api/chat/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conv_id: convId, msg_id: targetId }),
+      body: JSON.stringify({ session_id: sessionId, msg_id: targetId }),
     }).then(function (r) {
       if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || r.statusText); });
       return r.json();
@@ -89,7 +89,7 @@
       // Ask the server for the fresh linear history under the new
       // HEAD. conversations.js handles the render.
       if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-        window.ws.send(JSON.stringify({ action: 'load_conversation', conv_id: convId }));
+        window.ws.send(JSON.stringify({ action: 'load_session', session_id: sessionId }));
       }
     });
   }

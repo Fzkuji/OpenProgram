@@ -95,15 +95,15 @@
   }
 
   function submitEdit(messageEl, newContent) {
-    var convId = window.currentConvId;
+    var sessionId = window.currentSessionId;
     var msgId = messageEl.getAttribute('data-msg-id');
-    if (!convId || !msgId) {
-      return Promise.reject(new Error('missing conv_id or msg_id'));
+    if (!sessionId || !msgId) {
+      return Promise.reject(new Error('missing session_id or msg_id'));
     }
     return fetch('/api/chat/edit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conv_id: convId, msg_id: msgId, content: newContent }),
+      body: JSON.stringify({ session_id: sessionId, msg_id: msgId, content: newContent }),
     }).then(function (r) {
       if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || r.statusText); });
       return r.json();
@@ -115,7 +115,7 @@
       // Re-request the conversation state so the client picks up the
       // new HEAD and sibling counts.
       if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-        window.ws.send(JSON.stringify({ action: 'load_conversation', conv_id: convId }));
+        window.ws.send(JSON.stringify({ action: 'load_session', session_id: sessionId }));
       }
     });
   }

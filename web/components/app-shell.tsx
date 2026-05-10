@@ -93,7 +93,7 @@ declare global {
 // relevant. Programs / Chats / Settings don't need it, so it's hidden
 // there even though the DOM persists.
 function isChatRoute(pathname: string) {
-  return pathname === "/chat" || pathname.startsWith("/c/");
+  return pathname === "/chat" || pathname.startsWith("/s/");
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -117,10 +117,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const close = (window as unknown as { _closeAllPopovers?: () => void })._closeAllPopovers;
     if (close) close();
 
-    // New chat route (/chat, no conv_id): clear the persisted History
+    // New chat route (/chat, no session_id): clear the persisted History
     // graph + Execution Detail panel so the user doesn't see stale
     // content from whatever conversation they were just on. /c/:id
-    // reloads both via `load_conversation` → conversations.js →
+    // reloads both via `load_session` → conversations.js →
     // renderHistoryGraph + subsequent node click → showDetail.
     if (pathname === "/chat") {
       const render = (window as unknown as {

@@ -49,37 +49,37 @@ def wait_if_paused() -> None:
 _cancel_flags: dict[str, bool] = {}
 _cancel_flags_lock = threading.Lock()
 
-# Per-thread conv_id so the cancel hook knows whose flag to check.
+# Per-thread session_id so the cancel hook knows whose flag to check.
 # Set by `_execute_in_context` at entry. ContextVars do not propagate across
 # threading.Thread starts, so the value is always set from inside the worker.
-_current_conv_id: ContextVar = ContextVar("_current_conv_id", default=None)
+_current_session_id: ContextVar = ContextVar("_current_session_id", default=None)
 
 
-def mark_cancelled(conv_id: str) -> None:
+def mark_cancelled(session_id: str) -> None:
     with _cancel_flags_lock:
-        _cancel_flags[conv_id] = True
+        _cancel_flags[session_id] = True
 
 
-def is_cancelled(conv_id: str) -> bool:
+def is_cancelled(session_id: str) -> bool:
     with _cancel_flags_lock:
-        return _cancel_flags.get(conv_id, False)
+        return _cancel_flags.get(session_id, False)
 
 
-def clear_cancel(conv_id: str) -> None:
+def clear_cancel(session_id: str) -> None:
     with _cancel_flags_lock:
-        _cancel_flags.pop(conv_id, None)
+        _cancel_flags.pop(session_id, None)
 
 
-def set_current_conv_id(conv_id: str):
-    """Bind conv_id to the current worker context. Call at the top of
+def set_current_session_id(session_id: str):
+    """Bind session_id to the current worker context. Call at the top of
     _execute_in_context. Returns the token for later reset()."""
-    return _current_conv_id.set(conv_id)
+    return _current_session_id.set(session_id)
 
 
-def reset_current_conv_id(token) -> None:
-    """Reset the conv_id ContextVar using a token from set_current_conv_id."""
+def reset_current_session_id(token) -> None:
+    """Reset the session_id ContextVar using a token from set_current_session_id."""
     try:
-        _current_conv_id.reset(token)
+        _current_session_id.reset(token)
     except Exception:
         pass
 
@@ -90,7 +90,7 @@ def _cancel_hook() -> None:
     Registered with agentic_function's hook list, so every @agentic_function
     entry (and every Runtime.exec call) aborts once /api/stop fires.
     """
-    cid = _current_conv_id.get(None)
+    cid = _current_session_id.get(None)
     if cid and is_cancelled(cid):
         raise CancelledError(f"Execution stopped by user (conv={cid})")
 
@@ -107,20 +107,20 @@ _active_exec_runtimes: dict[str, Any] = {}
 _active_exec_runtimes_lock = threading.Lock()
 
 
-def register_active_runtime(conv_id: str, rt: Any) -> None:
+def register_active_runtime(session_id: str, rt: Any) -> None:
     with _active_exec_runtimes_lock:
-        _active_exec_runtimes[conv_id] = rt
+        _active_exec_runtimes[session_id] = rt
 
 
-def unregister_active_runtime(conv_id: str) -> None:
+def unregister_active_runtime(session_id: str) -> None:
     with _active_exec_runtimes_lock:
-        _active_exec_runtimes.pop(conv_id, None)
+        _active_exec_runtimes.pop(session_id, None)
 
 
-def kill_active_runtime(conv_id: str) -> None:
+def kill_active_runtime(session_id: str) -> None:
     """Terminate the subprocess of the active exec runtime, if any."""
     with _active_exec_runtimes_lock:
-        rt = _active_exec_runtimes.get(conv_id)
+        rt = _active_exec_runtimes.get(session_id)
     if rt is None:
         return
     proc = getattr(rt, "_proc", None)

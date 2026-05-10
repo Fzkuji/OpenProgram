@@ -61,28 +61,28 @@ function connect() {
   ws = new WebSocket(proto + '//' + location.host + '/ws');
   ws.onopen = function() {
     updateStatus('connected');
-    ws.send(JSON.stringify({ action: 'list_conversations' }));
+    ws.send(JSON.stringify({ action: 'list_sessions' }));
   };
   ws.onclose = function() { updateStatus('disconnected'); setTimeout(connect, 2000); };
   ws.onerror = function() { ws.close(); };
   ws.onmessage = function(e) {
     try {
       var msg = JSON.parse(e.data);
-      if (msg.type === 'conversations_list' || msg.type === 'history_list') {
+      if (msg.type === 'sessions_list' || msg.type === 'history_list') {
         var data = msg.data || [];
         data.forEach(function(c) {
           if (!conversations[c.id]) conversations[c.id] = { id: c.id, title: c.title, messages: [] };
         });
-        if (typeof renderConversations === 'function') renderConversations();
+        if (typeof renderSessions === 'function') renderSessions();
       }
     } catch(err) {}
   };
 }
 
 // Override navigation functions for settings page
-function newConversation() { window.location.href = '/new'; }
+function newSession() { window.location.href = '/new'; }
 function loadConversation(id) {
-  window.location.href = '/c/' + id;
+  window.location.href = '/s/' + id;
 }
 
 // (togglePanel, doRefreshFunctions now in sidebar.js)

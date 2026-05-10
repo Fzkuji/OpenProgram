@@ -8,16 +8,16 @@ function connect() {
     updateStatus('connected');
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null;
     }
-    // currentConvId already derived from URL in state.js — send agent_settings
+    // currentSessionId already derived from URL in state.js — send agent_settings
     // with that value so badges reflect the correct conversation from the start.
     loadAgentSettings();
     // Request the agent registry early so the switcher renders before
     // the first conversation list lands — otherwise the filter runs
     // with currentAgentId=null and briefly shows cross-agent convs.
     ws.send(JSON.stringify({ action: 'list_agents' }));
-    ws.send(JSON.stringify({ action: 'list_conversations' }));
-    if (currentConvId) {
-      ws.send(JSON.stringify({ action: 'load_conversation', conv_id: currentConvId }));
+    ws.send(JSON.stringify({ action: 'list_sessions' }));
+    if (currentSessionId) {
+      ws.send(JSON.stringify({ action: 'load_session', session_id: currentSessionId }));
     }
   };
 
@@ -54,19 +54,19 @@ function handleMessage(msg) {
       (msg.data || []).forEach(function(c) {
         conversations[c.id] = conversations[c.id] || { id: c.id, title: c.title, messages: [] };
       });
-      renderConversations();
+      renderSessions();
       break;
     case 'chat_ack':
-      if (msg.data.conv_id) {
-        currentConvId = msg.data.conv_id;
-        // Update URL to /c/{conv_id} without full page reload
-        if (window.location.pathname !== '/c/' + currentConvId) {
-          history.pushState(null, '', '/c/' + currentConvId);
+      if (msg.data.session_id) {
+        currentSessionId = msg.data.session_id;
+        // Update URL to /c/{session_id} without full page reload
+        if (window.location.pathname !== '/s/' + currentSessionId) {
+          history.pushState(null, '', '/s/' + currentSessionId);
         }
-        if (!conversations[currentConvId]) {
-          conversations[currentConvId] = { id: currentConvId, title: 'New conversation', messages: [] };
+        if (!conversations[currentSessionId]) {
+          conversations[currentSessionId] = { id: currentSessionId, title: 'New conversation', messages: [] };
         }
-        renderConversations();
+        renderSessions();
         // Refresh badges — conversation's provider may differ from default
         loadAgentSettings();
       }
@@ -74,19 +74,19 @@ function handleMessage(msg) {
     case 'chat_response':
       handleChatResponse(msg.data);
       break;
-    case 'conversation_loaded':
-      loadConversationData(msg.data);
+    case 'session_loaded':
+      loadSessionData(msg.data);
       break;
-    case 'conversation_reload':
-      if (msg.data && msg.data.conv_id === currentConvId && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: 'load_conversation', conv_id: currentConvId }));
+    case 'session_reload':
+      if (msg.data && msg.data.session_id === currentSessionId && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: 'load_session', session_id: currentSessionId }));
       }
       break;
     case 'attempt_switched':
       handleAttemptSwitched(msg.data);
       break;
-    case 'conversations_list':
-      _handleConversationsList(msg.data);
+    case 'sessions_list':
+      _handleSessionsList(msg.data);
       break;
     case 'agents_list':
       if (typeof _handleAgentsList === 'function') _handleAgentsList(msg.data);
@@ -117,14 +117,14 @@ function handleMessage(msg) {
       // A channel handler wrote a new turn into an agent session — if
       // the user is viewing that session, re-fetch; always refresh
       // the sidebar since titles / ordering might have changed.
-      if (msg.data && msg.data.session_id === currentConvId
+      if (msg.data && msg.data.session_id === currentSessionId
           && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
-          action: 'load_conversation', conv_id: currentConvId,
+          action: 'load_session', session_id: currentSessionId,
         }));
       }
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: 'list_conversations' }));
+        ws.send(JSON.stringify({ action: 'list_sessions' }));
       }
       break;
     case 'status':
@@ -168,7 +168,7 @@ function handleContextEvent(eventType, data) {
   updateTreeData(data);
 }
 
-function _handleConversationsList(data) {
+function _handleSessionsList(data) {
   var serverIds = new Set((data || []).map(function(c) { return c.id; }));
   Object.keys(conversations).forEach(function(id) {
     if (!serverIds.has(id)) delete conversations[id];
@@ -193,11 +193,11 @@ function _handleConversationsList(data) {
       }
     }
   }
-  if (currentConvId && !conversations[currentConvId]) {
-    newConversation();
+  if (currentSessionId && !conversations[currentSessionId]) {
+    newSession();
   }
-  renderConversations();
-  if (currentConvId && conversations[currentConvId] && conversations[currentConvId].has_session) {
+  renderSessions();
+  if (currentSessionId && conversations[currentSessionId] && conversations[currentSessionId].has_session) {
     _hasActiveSession = true;
     var provBadge = document.getElementById('providerBadge');
     if (provBadge && provBadge.textContent.indexOf('\ud83d\udd12') === -1) {
@@ -285,8 +285,8 @@ function _handleRunningTask(rt) {
 
     // Build attempt nav footer if this is a retry
     var _attemptFooter = '';
-    if (isRetryOfExisting && currentConvId && conversations[currentConvId]) {
-      var _aMsgs = conversations[currentConvId].messages || [];
+    if (isRetryOfExisting && currentSessionId && conversations[currentSessionId]) {
+      var _aMsgs = conversations[currentSessionId].messages || [];
       var _prevTotal = 0;
       for (var _ai = _aMsgs.length - 1; _ai >= 0; _ai--) {
         if (_aMsgs[_ai].role === 'assistant' && _aMsgs[_ai].function === rt.func_name && _aMsgs[_ai].attempts) {
@@ -443,7 +443,7 @@ window.addEventListener('beforeunload', function() {
 connect();
 loadProviders();
 // Only show welcome on /new, not on /c/{id}
-if (!window.location.pathname.match(/^\/c\//)) {
+if (!window.location.pathname.match(/^\/s\//)) {
   setWelcomeVisible(true);
 }
 

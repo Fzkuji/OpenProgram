@@ -32,9 +32,9 @@ async function initWorkdirField(fnName) {
   if (!input) return;
   input.dataset.fnName = fnName || '';
 
-  var convId = (typeof currentConvId !== 'undefined') ? currentConvId : null;
+  var sessionId = (typeof currentSessionId !== 'undefined') ? currentSessionId : null;
   var url = '/api/workdir/defaults?function_name=' + encodeURIComponent(fnName || '');
-  if (convId) url += '&conv_id=' + encodeURIComponent(convId);
+  if (sessionId) url += '&session_id=' + encodeURIComponent(sessionId);
   try {
     var r = await fetch(url);
     var data = await r.json();

@@ -134,22 +134,22 @@ export const api = {
   listHistory: () =>
     jsonFetch<{ id: string; title: string; created_at?: number }[]>("/api/history"),
 
-  pause: (conv_id: string) =>
+  pause: (session_id: string) =>
     jsonFetch<{ ok: true }>("/api/pause", {
       method: "POST",
-      body: JSON.stringify({ conv_id }),
+      body: JSON.stringify({ session_id }),
     }),
 
-  resume: (conv_id: string) =>
+  resume: (session_id: string) =>
     jsonFetch<{ ok: true }>("/api/resume", {
       method: "POST",
-      body: JSON.stringify({ conv_id }),
+      body: JSON.stringify({ session_id }),
     }),
 
-  stop: (conv_id: string) =>
+  stop: (session_id: string) =>
     jsonFetch<{ ok: true }>("/api/stop", {
       method: "POST",
-      body: JSON.stringify({ conv_id }),
+      body: JSON.stringify({ session_id }),
     }),
 
   switchModel: (provider: string, model: string) =>
@@ -222,16 +222,16 @@ export const api = {
   listProviderAliases: () =>
     jsonFetch<Record<string, string>>("/api/providers/aliases"),
 
-  retryChat: (convId: string, msgId: string) =>
-    jsonFetch<{ conv_id: string; msg_id: string; truncated_from: string }>(
+  retryChat: (sessionId: string, msgId: string) =>
+    jsonFetch<{ session_id: string; msg_id: string; truncated_from: string }>(
       "/api/chat/retry",
-      { method: "POST", body: JSON.stringify({ conv_id: convId, msg_id: msgId }) },
+      { method: "POST", body: JSON.stringify({ session_id: sessionId, msg_id: msgId }) },
     ),
 
-  branchChat: (convId: string, msgId: string) =>
-    jsonFetch<{ conv_id: string; title: string; branched_from: string }>(
+  branchChat: (sessionId: string, msgId: string) =>
+    jsonFetch<{ session_id: string; title: string; branched_from: string }>(
       "/api/chat/branch",
-      { method: "POST", body: JSON.stringify({ conv_id: convId, msg_id: msgId }) },
+      { method: "POST", body: JSON.stringify({ session_id: sessionId, msg_id: msgId }) },
     ),
 
   /** Read the canvas file. Returns ``content: ""`` + ``exists: false``

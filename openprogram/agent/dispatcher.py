@@ -45,7 +45,7 @@ INHERIT_PARENT: Any = _InheritParent()
 
 @dataclass
 class TurnRequest:
-    conv_id: str
+    session_id: str
     user_text: str
     agent_id: str
     source: str                                  # "tui" / "web" / "wechat" / ...
@@ -197,22 +197,22 @@ def process_user_turn(
     # 1. Ensure session exists. Load history along the *active branch*
     #    (parent-walked from head_id) instead of the full append log,
     #    so retried / forked branches don't pollute the LLM context.
-    session = db.get_session(req.conv_id)
+    session = db.get_session(req.session_id)
     if session is None:
         db.create_session(
-            req.conv_id, req.agent_id,
+            req.session_id, req.agent_id,
             title=_default_title(req),
             source=req.source,
             channel=req.source if req.source in {"wechat", "telegram", "discord", "slack"} else None,
             peer_display=req.peer_display,
             peer_id=req.peer_id,
         )
-        session = db.get_session(req.conv_id) or {}
+        session = db.get_session(req.session_id) or {}
     if req.history_override is not None:
         history = list(req.history_override)
     elif isinstance(req.parent_id, _InheritParent):
         # Normal append — walk the active branch.
-        history = db.get_branch(req.conv_id) or db.get_messages(req.conv_id)
+        history = db.get_branch(req.session_id) or db.get_messages(req.session_id)
     elif req.parent_id is None:
         # Root-level fork — LLM starts with empty history.
         history = []
@@ -220,7 +220,7 @@ def process_user_turn(
         # Sibling fork — history is the branch ending at the explicit
         # parent. LLM sees what existed up to the fork point, not
         # what's currently on the active branch.
-        history = db.get_branch(req.conv_id, req.parent_id)
+        history = db.get_branch(req.session_id, req.parent_id)
 
     # 2. Persist user message immediately (so a crash mid-stream still
     #    leaves the user's input recorded). Resolve parent_id:
@@ -261,23 +261,23 @@ def process_user_turn(
         user_msg["extra"] = json.dumps({"attachments": manifest},
                                          default=str)
     if not req.user_already_persisted:
-        db.append_message(req.conv_id, user_msg)
+        db.append_message(req.session_id, user_msg)
         # Advance head to the user message. Crucial for branching: if
         # the caller passed parent_id pointing at an older message,
         # we're now on a NEW leaf and head must reflect that —
         # otherwise the next get_branch call would still walk down
         # the old branch.
-        db.set_head(req.conv_id, user_msg_id)
+        db.set_head(req.session_id, user_msg_id)
         on_event({
             "type": "chat_ack",
-            "data": {"conv_id": req.conv_id, "msg_id": user_msg_id},
+            "data": {"session_id": req.session_id, "msg_id": user_msg_id},
         })
     else:
         # Caller already wrote the user msg + emitted ack (webui
         # path). Make sure history reflects that — load from DB if
         # the caller didn't pass a history_override.
         if req.history_override is None:
-            history = db.get_branch(req.conv_id) or history
+            history = db.get_branch(req.session_id) or history
 
     # 3. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck
@@ -300,7 +300,7 @@ def process_user_turn(
         err_text = f"[error] {type(e).__name__}: {e}"
         # Persist error as a system message — visible in resume + indexed in FTS
         err_id = uuid.uuid4().hex[:12]
-        db.append_message(req.conv_id, {
+        db.append_message(req.session_id, {
             "id": err_id,
             "role": "system",
             "content": err_text,
@@ -310,7 +310,7 @@ def process_user_turn(
             "extra": json.dumps({"trace": traceback.format_exc()[:2000]}),
         })
         on_event({"type": "chat_response",
-                  "data": {"type": "error", "conv_id": req.conv_id,
+                  "data": {"type": "error", "session_id": req.session_id,
                            "content": err_text}})
         return TurnResult(
             final_text="",
@@ -333,11 +333,11 @@ def process_user_turn(
     if tool_calls:
         assistant_msg["extra"] = json.dumps({"tool_calls": tool_calls},
                                             default=str)
-    db.append_message(req.conv_id, assistant_msg)
+    db.append_message(req.session_id, assistant_msg)
 
     # 6. Update session bookkeeping (head_id, token tracking, model).
     db.update_session(
-        req.conv_id,
+        req.session_id,
         head_id=assistant_msg_id,
         last_prompt_tokens=int(usage.get("input_tokens") or 0),
         model=req.model_override or session.get("model"),
@@ -349,13 +349,13 @@ def process_user_turn(
     # just take the first 50 chars; LLM-summarized titles are a
     # future upgrade. Fires once per session (idempotent via
     # extra_meta._titled flag).
-    _maybe_auto_title(db, req.conv_id, session, req.user_text)
+    _maybe_auto_title(db, req.session_id, session, req.user_text)
 
     # 6.6. Compaction signal: when context is approaching the model's
     # window, surface a "compaction_recommended" event so the UI can
     # offer the user a /compact action. We don't auto-compact mid-
     # turn — that would block the response. The actual compaction
-    # call is exposed as ``trigger_compaction(conv_id)`` for clients
+    # call is exposed as ``trigger_compaction(session_id)`` for clients
     # to invoke explicitly.
     #
     # Best-effort resolution of the context window; conservative
@@ -369,13 +369,13 @@ def process_user_turn(
         )) or 200_000
     except Exception:
         _ctx_window = 200_000
-    _maybe_signal_compaction(db, req.conv_id, on_event,
+    _maybe_signal_compaction(db, req.session_id, on_event,
                               context_window=_ctx_window)
 
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal.
     on_event({"type": "chat_response",
-              "data": {"type": "result", "conv_id": req.conv_id,
+              "data": {"type": "result", "session_id": req.session_id,
                        "content": final_text}})
 
     return TurnResult(
@@ -401,7 +401,7 @@ def _default_title(req: TurnRequest) -> str:
     return text[:50] + ("…" if len(text) > 50 else "") or "New chat"
 
 
-def _maybe_auto_title(db, conv_id: str, session: dict,
+def _maybe_auto_title(db, session_id: str, session: dict,
                       user_text: str) -> None:
     """Stamp a readable session title once, on the first turn that
     has a non-empty user message. Idempotent — once
@@ -424,7 +424,7 @@ def _maybe_auto_title(db, conv_id: str, session: dict,
         return
     title = text[:50] + ("…" if len(text) > 50 else "")
     try:
-        db.update_session(conv_id, title=title, _titled=True)
+        db.update_session(session_id, title=title, _titled=True)
     except Exception:
         pass
 
@@ -435,7 +435,7 @@ def _maybe_auto_title(db, conv_id: str, session: dict,
 _COMPACTION_RECOMMEND_THRESHOLD = 0.7
 
 
-def _maybe_signal_compaction(db, conv_id: str,
+def _maybe_signal_compaction(db, session_id: str,
                               on_event: EventCallback,
                               *, context_window: int) -> None:
     """Estimate current branch token usage; emit a recommendation
@@ -447,7 +447,7 @@ def _maybe_signal_compaction(db, conv_id: str,
     except Exception:
         return
     try:
-        msgs = db.get_branch(conv_id) or []
+        msgs = db.get_branch(session_id) or []
     except Exception:
         return
     if not msgs:
@@ -462,13 +462,13 @@ def _maybe_signal_compaction(db, conv_id: str,
         "type": "chat_response",
         "data": {
             "type": "compaction_recommended",
-            "conv_id": conv_id,
+            "session_id": session_id,
             "branch_messages": len(msgs),
         },
     })
 
 
-def trigger_compaction(conv_id: str, agent_id: str = "main",
+def trigger_compaction(session_id: str, agent_id: str = "main",
                         on_event: Optional[EventCallback] = None,
                         *,
                         keep_recent_tokens: Optional[int] = None) -> dict:
@@ -499,10 +499,10 @@ def trigger_compaction(conv_id: str, agent_id: str = "main",
     from openprogram.agent.compaction import compact_context
 
     db = default_db()
-    sess = db.get_session(conv_id)
+    sess = db.get_session(session_id)
     if sess is None:
-        raise ValueError(f"Unknown conversation {conv_id!r}")
-    history = db.get_branch(conv_id) or []
+        raise ValueError(f"Unknown conversation {session_id!r}")
+    history = db.get_branch(session_id) or []
     if len(history) < 4:
         return {"summary": "", "kept_count": len(history), "summary_id": ""}
 
@@ -542,7 +542,7 @@ def trigger_compaction(conv_id: str, agent_id: str = "main",
     # Persist the summary as a new root-level message (parent_id=None).
     # Old chain stays in DB; readers walk only the new branch.
     summary_id = uuid.uuid4().hex[:12]
-    db.append_message(conv_id, {
+    db.append_message(session_id, {
         "id": summary_id,
         "role": "user",
         "content": f"[Previous conversation summary]\n{summary}",
@@ -582,7 +582,7 @@ def trigger_compaction(conv_id: str, agent_id: str = "main",
                 content = "\n".join(parts)
             else:
                 content = str(c) if c is not None else ""
-        db.append_message(conv_id, {
+        db.append_message(session_id, {
             "id": new_id,
             "role": role if role != "toolResult" else "assistant",
             "content": content,
@@ -592,11 +592,11 @@ def trigger_compaction(conv_id: str, agent_id: str = "main",
         })
         last_id = new_id
 
-    db.set_head(conv_id, last_id)
+    db.set_head(session_id, last_id)
     on_event({
         "type": "chat_response",
         "data": {"type": "compaction_done",
-                 "conv_id": conv_id,
+                 "session_id": session_id,
                  "summary_id": summary_id,
                  "summary": summary},
     })
@@ -834,7 +834,7 @@ async def _await_user_approval(
         "type": "approval_request",
         "data": {
             "request_id": request_id,
-            "conv_id": req.conv_id,
+            "session_id": req.session_id,
             "tool": tool_name,
             "args": args,
         },
@@ -855,7 +855,7 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
     # (TUI watching a different conv, browser sidebar, ...) can route
     # the stream to the right buffer instead of treating every delta
     # as belonging to whatever they're currently viewing.
-    cid = req.conv_id
+    cid = req.session_id
 
     if t == "message_update":
         ame = getattr(ev, "assistant_message_event", None)
@@ -867,7 +867,7 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
             return {
                 "type": "chat_response",
                 "data": {"type": "stream_event",
-                         "conv_id": cid,
+                         "session_id": cid,
                          "event": {"type": "text",
                                    "text": getattr(ame, "delta", "")}},
             }
@@ -878,7 +878,7 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
         return {
             "type": "chat_response",
             "data": {"type": "stream_event",
-                     "conv_id": cid,
+                     "session_id": cid,
                      "event": {"type": "tool_use",
                                "tool": getattr(ev, "tool_name", "?"),
                                "input": json.dumps(args, default=str)
@@ -890,7 +890,7 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
         return {
             "type": "chat_response",
             "data": {"type": "stream_event",
-                     "conv_id": cid,
+                     "session_id": cid,
                      "event": {"type": "tool_result",
                                "tool": getattr(ev, "tool_name", "?"),
                                "result": _shorten(getattr(ev, "result", "")),

@@ -197,7 +197,7 @@ function toggleModelDropdown(event) {
     dd.remove();
     if (fullId === _currentModel) return;
 
-    var body = { model: fullId, conv_id: currentConvId };
+    var body = { model: fullId, session_id: currentSessionId };
     if (targetProvider) body.provider = targetProvider;
 
     fetch('/api/model', {
@@ -220,7 +220,7 @@ function toggleModelDropdown(event) {
 async function loadAgentSettings() {
   try {
     var url = '/api/agent_settings';
-    if (currentConvId) url += '?conv_id=' + encodeURIComponent(currentConvId);
+    if (currentSessionId) url += '?session_id=' + encodeURIComponent(currentSessionId);
     var resp = await fetch(url);
     _agentSettings = await resp.json();
   } catch(e) { return; }
@@ -465,7 +465,7 @@ async function switchProvider(name) {
     var resp = await fetch('/api/provider/' + encodeURIComponent(name), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conv_id: currentConvId })
+      body: JSON.stringify({ session_id: currentSessionId })
     });
     var data = await resp.json();
     if (data.switched) {

@@ -116,7 +116,7 @@ window._displayTitleFor = _displayTitleFor;
 window._isPlaceholderTitle = _isPlaceholderTitle;
 
 function refreshStatusSource() {
-  var cid = (typeof currentConvId !== 'undefined') ? currentConvId : null;
+  var cid = (typeof currentSessionId !== 'undefined') ? currentSessionId : null;
   var conv = (cid && typeof conversations !== 'undefined') ? conversations[cid] : null;
 
   // Pick the channel/account triple to display: the conv's binding if
@@ -166,7 +166,7 @@ function togglePause() {
 }
 
 function stopExecution() {
-  if (!currentConvId) {
+  if (!currentSessionId) {
     isPaused = false;
     isRunning = false;
     updateSendBtn();
@@ -175,7 +175,7 @@ function stopExecution() {
   fetch('/api/stop', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conv_id: currentConvId }),
+    body: JSON.stringify({ session_id: currentSessionId }),
   })
     .then(function(r) { return r.json(); })
     .then(function() {

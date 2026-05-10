@@ -4,7 +4,7 @@ Normally inbound channel messages land in a session whose key is
 computed from ``session_scope``. That's fine for fresh contacts.
 
 This module lets a user say "when alice DMs me on WeChat, put her
-messages into the session I already have open (conv_id
+messages into the session I already have open (session_id
 ``local_abc123``)" — without changing the global scope setting.
 
 Storage:

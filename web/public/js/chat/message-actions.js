@@ -14,7 +14,7 @@
 // freshly-sent user messages, chat.js stamps a temporary id and
 // init.js swaps it for the server-assigned one when `chat_ack` comes
 // in. Loaded-from-history bubbles get the real id straight from
-// renderConversationMessages.
+// renderSessionMessages.
 //
 // Failure modes: bubble with no data-msg-id (rare race: assistant
 // reply streamed before chat_ack — shouldn't happen but we guard).
@@ -188,10 +188,10 @@
   }
 
   function doRetry(btn, messageEl) {
-    var convId = window.currentConvId;
+    var sessionId = window.currentSessionId;
     var msgId = messageEl.getAttribute('data-msg-id');
-    if (!convId || !msgId) {
-      console.warn('[message-actions] retry: missing conv_id or msg_id', convId, msgId);
+    if (!sessionId || !msgId) {
+      console.warn('[message-actions] retry: missing session_id or msg_id', sessionId, msgId);
       return;
     }
     btn.disabled = true;
@@ -201,18 +201,18 @@
     // more — the old branch is still part of the DAG and has to stay
     // accessible via <N/M>. Instead we wait for the POST to succeed
     // then ask the server for the linearized view under the new HEAD.
-    // load_conversation also carries sibling_index/_total so the
+    // load_session also carries sibling_index/_total so the
     // navigator shows up correctly.
     fetch('/api/chat/retry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conv_id: convId, msg_id: msgId }),
+      body: JSON.stringify({ session_id: sessionId, msg_id: msgId }),
     })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (e) { throw new Error(e.error || r.statusText); }); })
       .then(function () {
         if (typeof window.setRunActive === 'function') window.setRunActive(true);
         if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-          window.ws.send(JSON.stringify({ action: 'load_conversation', conv_id: convId }));
+          window.ws.send(JSON.stringify({ action: 'load_session', session_id: sessionId }));
         }
       })
       .catch(function (err) {
@@ -222,30 +222,30 @@
   }
 
   function doBranch(btn, messageEl) {
-    var convId = window.currentConvId;
+    var sessionId = window.currentSessionId;
     var msgId = messageEl.getAttribute('data-msg-id');
-    if (!convId || !msgId) {
-      console.warn('[message-actions] branch: missing conv_id or msg_id', convId, msgId);
+    if (!sessionId || !msgId) {
+      console.warn('[message-actions] branch: missing session_id or msg_id', sessionId, msgId);
       return;
     }
     btn.disabled = true;
     fetch('/api/chat/branch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conv_id: convId, msg_id: msgId }),
+      body: JSON.stringify({ session_id: sessionId, msg_id: msgId }),
     })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (e) { throw new Error(e.error || r.statusText); }); })
       .then(function (res) {
         // Navigate to the new conversation. The WS handler for
-        // conversation_loaded will render the copied messages.
-        var newId = res.conv_id;
-        history.pushState(null, '', '/c/' + newId);
-        window.currentConvId = newId;
+        // session_loaded will render the copied messages.
+        var newId = res.session_id;
+        history.pushState(null, '', '/s/' + newId);
+        window.currentSessionId = newId;
         if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-          window.ws.send(JSON.stringify({ action: 'load_conversation', conv_id: newId }));
+          window.ws.send(JSON.stringify({ action: 'load_session', session_id: newId }));
         } else {
           // Fallback: full reload onto the new URL.
-          window.location.href = '/c/' + newId;
+          window.location.href = '/s/' + newId;
         }
       })
       .catch(function (err) {

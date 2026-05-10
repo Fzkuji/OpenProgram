@@ -8,7 +8,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { useConvStore, type ChatMsg, type ConvSummary } from "./conv-store";
+import { useSessionStore, type ChatMsg, type ConvSummary } from "./session-store";
 
 interface WSContextValue {
   send: (payload: unknown) => boolean;
@@ -30,7 +30,7 @@ interface WSMessage {
 interface ChatResponseData {
   type: string;
   content?: string;
-  conv_id?: string;
+  session_id?: string;
   msg_id?: string;
   function?: string;
   display?: "runtime" | "normal";
@@ -58,7 +58,7 @@ interface ConversationLoaded {
 
 /**
  * Single WebSocket to /ws, shared across the whole app.
- * Auto-reconnects on close. Pushes all server events into conv-store.
+ * Auto-reconnects on close. Pushes all server events into session-store.
  */
 export function WSProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -76,7 +76,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
     setRunningTask,
     setPaused,
     setProviderInfo,
-  } = useConvStore.getState();
+  } = useSessionStore.getState();
 
   useEffect(() => {
     let cancelled = false;
@@ -106,7 +106,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
     }
 
     function handleMessage(msg: WSMessage) {
-      const store = useConvStore.getState();
+      const store = useSessionStore.getState();
 
       switch (msg.type) {
         case "history_list": {
@@ -114,7 +114,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
           setConversations(list);
           break;
         }
-        case "conversations_list": {
+        case "sessions_list": {
           const list = (msg.data as ConvSummary[]) ?? [];
           setConversations(list);
           break;
@@ -125,14 +125,14 @@ export function WSProvider({ children }: { children: ReactNode }) {
         }
         case "running_task": {
           const d = msg.data as {
-            conv_id: string;
+            session_id: string;
             msg_id: string;
             func_name?: string;
             started_at?: number;
             paused?: boolean;
           };
           setRunningTask({
-            conv_id: d.conv_id,
+            session_id: d.session_id,
             msg_id: d.msg_id,
             func_name: d.func_name,
             started_at: d.started_at,
@@ -141,34 +141,34 @@ export function WSProvider({ children }: { children: ReactNode }) {
           break;
         }
         case "chat_ack": {
-          const d = msg.data as { conv_id: string; msg_id: string };
-          if (!store.currentConvId) store.setCurrentConv(d.conv_id);
+          const d = msg.data as { session_id: string; msg_id: string };
+          if (!store.currentSessionId) store.setCurrentConv(d.session_id);
           // ensure conversation exists in list
-          if (!store.conversations[d.conv_id]) {
+          if (!store.conversations[d.session_id]) {
             upsertConversation({
-              id: d.conv_id,
+              id: d.session_id,
               title: "Untitled",
               created_at: Date.now() / 1000,
             });
           }
           // prepare empty assistant placeholder
-          appendMessage(d.conv_id, {
+          appendMessage(d.session_id, {
             id: d.msg_id + "_reply",
             role: "assistant",
             content: "",
             status: "streaming",
           });
-          setRunningTask({ conv_id: d.conv_id, msg_id: d.msg_id });
+          setRunningTask({ session_id: d.session_id, msg_id: d.msg_id });
           break;
         }
         case "chat_response": {
           const d = msg.data as ChatResponseData;
-          if (!d || !d.conv_id || !d.msg_id) return;
-          const convId = d.conv_id;
+          if (!d || !d.session_id || !d.msg_id) return;
+          const sessionId = d.session_id;
           const replyId = d.msg_id + "_reply";
 
           if (d.type === "status") {
-            updateMessage(convId, replyId, {
+            updateMessage(sessionId, replyId, {
               role: "system",
               content: d.content ?? "",
               status: "pending",
@@ -177,15 +177,15 @@ export function WSProvider({ children }: { children: ReactNode }) {
             const delta = d.delta ?? d.content ?? "";
             if (delta) {
               const cur =
-                useConvStore.getState().messagesById[replyId]?.content ?? "";
-              updateMessage(convId, replyId, {
+                useSessionStore.getState().messagesById[replyId]?.content ?? "";
+              updateMessage(sessionId, replyId, {
                 role: "assistant",
                 content: cur + delta,
                 status: "streaming",
               });
             }
           } else if (d.type === "result") {
-            updateMessage(convId, replyId, {
+            updateMessage(sessionId, replyId, {
               role: "assistant",
               content: d.content ?? "",
               status: d.cancelled ? "cancelled" : "done",
@@ -195,7 +195,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
             setRunningTask(null);
             setPaused(false);
           } else if (d.type === "error") {
-            updateMessage(convId, replyId, {
+            updateMessage(sessionId, replyId, {
               role: "assistant",
               content: d.content ?? "",
               status: "error",
@@ -205,21 +205,21 @@ export function WSProvider({ children }: { children: ReactNode }) {
             setRunningTask(null);
             setPaused(false);
           } else if (d.type === "cancelled") {
-            updateMessage(convId, replyId, { status: "cancelled" });
+            updateMessage(sessionId, replyId, { status: "cancelled" });
             setRunningTask(null);
             setPaused(false);
           } else if (d.type === "conversation_title") {
-            if (d.title) upsertConversation({ id: convId, title: d.title });
+            if (d.title) upsertConversation({ id: sessionId, title: d.title });
           } else if (d.type === "tree_update") {
-            const td = msg.data as { conv_id?: string; tree?: unknown };
-            if (td.conv_id && td.tree) {
-              useConvStore
+            const td = msg.data as { session_id?: string; tree?: unknown };
+            if (td.session_id && td.tree) {
+              useSessionStore
                 .getState()
-                .setTree(td.conv_id, td.tree as never);
+                .setTree(td.session_id, td.tree as never);
             }
           } else if (d.type === "context_stats") {
             const cs = msg.data as {
-              conv_id?: string;
+              session_id?: string;
               chat?: {
                 input_tokens?: number;
                 output_tokens?: number;
@@ -227,9 +227,9 @@ export function WSProvider({ children }: { children: ReactNode }) {
               };
               context_window?: number | null;
             };
-            if (cs.conv_id) {
-              useConvStore.getState().setContextStats(
-                cs.conv_id,
+            if (cs.session_id) {
+              useSessionStore.getState().setContextStats(
+                cs.session_id,
                 cs.chat
                   ? {
                       input: cs.chat.input_tokens,
@@ -243,7 +243,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
           }
           break;
         }
-        case "conversation_loaded": {
+        case "session_loaded": {
           const d = msg.data as ConversationLoaded;
           upsertConversation({ id: d.id, title: d.title });
           const msgs: ChatMsg[] = (d.messages ?? []).map((m, i) => ({
@@ -262,8 +262,8 @@ export function WSProvider({ children }: { children: ReactNode }) {
           break;
         }
         case "conversation_deleted": {
-          const d = msg.data as { conv_id: string };
-          if (d?.conv_id) removeConversation(d.conv_id);
+          const d = msg.data as { session_id: string };
+          if (d?.session_id) removeConversation(d.session_id);
           break;
         }
         case "conversations_cleared": {

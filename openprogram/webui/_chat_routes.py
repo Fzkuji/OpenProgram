@@ -10,7 +10,7 @@ Kept separate from ``server.py`` so that:
 These routes reach back into server.py for the live conversation dict
 and the run-active predicate via lazy imports (see the handlers below).
 That avoids an import cycle while still letting the routes sit in their
-own module. Globals like ``_conversations`` aren't moved out of
+own module. Globals like ``_sessions`` aren't moved out of
 server.py because doing so would touch every other site that uses them,
 and this refactor is scoped to the ContextGit surface.
 
@@ -32,7 +32,7 @@ from openprogram.contextgit import advance_head
 router = APIRouter()
 
 
-def _fork_user_turn_and_run(conv_id: str, pivot_id: str, new_content: str | None) -> dict:
+def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | None) -> dict:
     """Shared engine for retry / edit.
 
     Finds the nearest user-message ancestor of ``pivot_id``, creates a
@@ -53,14 +53,14 @@ def _fork_user_turn_and_run(conv_id: str, pivot_id: str, new_content: str | None
     # Reject while a run is active. The UI also greys the buttons, but
     # defense in depth: forking mid-run would orphan the in-flight
     # assistant reply against a HEAD that's about to move.
-    if _srv._is_run_active(conv_id):
+    if _srv._is_run_active(session_id):
         return {"__error__": (
             "a run is currently active — wait for it to finish or stop it first",
             409,
         )}
 
-    with _srv._conversations_lock:
-        conv = _srv._conversations.get(conv_id)
+    with _srv._sessions_lock:
+        conv = _srv._sessions.get(session_id)
         if conv is None:
             return {"__error__": ("unknown conv", 404)}
         msgs = conv["messages"]
@@ -97,7 +97,7 @@ def _fork_user_turn_and_run(conv_id: str, pivot_id: str, new_content: str | None
 
         advance_head(conv, new_user)   # append + move HEAD
 
-    _srv._save_conversation(conv_id)
+    _srv._save_session(session_id)
 
     # Kick off the run against the new user message. Same dispatch
     # logic as POST /api/chat.
@@ -105,20 +105,20 @@ def _fork_user_turn_and_run(conv_id: str, pivot_id: str, new_content: str | None
     if parsed["action"] == "run":
         threading.Thread(
             target=_srv._execute_in_context,
-            args=(conv_id, new_msg_id, "run"),
+            args=(session_id, new_msg_id, "run"),
             kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"]},
             daemon=True,
         ).start()
     else:
         threading.Thread(
             target=_srv._execute_in_context,
-            args=(conv_id, new_msg_id, "query"),
+            args=(session_id, new_msg_id, "query"),
             kwargs={"query": parsed["raw"]},
             daemon=True,
         ).start()
 
     return {
-        "conv_id": conv_id,
+        "session_id": session_id,
         "msg_id": new_msg_id,
         "forked_from": src_user.get("id"),
     }
@@ -134,13 +134,13 @@ async def post_chat_retry(body: dict = None):
     """
     if body is None:
         return JSONResponse(content={"error": "no body"}, status_code=400)
-    conv_id = body.get("conv_id")
+    session_id = body.get("session_id")
     pivot_id = body.get("msg_id")
-    if not conv_id or not pivot_id:
+    if not session_id or not pivot_id:
         return JSONResponse(
-            content={"error": "conv_id and msg_id required"}, status_code=400,
+            content={"error": "session_id and msg_id required"}, status_code=400,
         )
-    result = _fork_user_turn_and_run(conv_id, pivot_id, new_content=None)
+    result = _fork_user_turn_and_run(session_id, pivot_id, new_content=None)
     if "__error__" in result:
         msg, code = result["__error__"]
         return JSONResponse(content={"error": msg}, status_code=code)
@@ -157,15 +157,15 @@ async def post_chat_edit(body: dict = None):
     """
     if body is None:
         return JSONResponse(content={"error": "no body"}, status_code=400)
-    conv_id = body.get("conv_id")
+    session_id = body.get("session_id")
     pivot_id = body.get("msg_id")
     new_content = body.get("content")
-    if not conv_id or not pivot_id or new_content is None:
+    if not session_id or not pivot_id or new_content is None:
         return JSONResponse(
-            content={"error": "conv_id, msg_id, content required"},
+            content={"error": "session_id, msg_id, content required"},
             status_code=400,
         )
-    result = _fork_user_turn_and_run(conv_id, pivot_id, new_content=str(new_content))
+    result = _fork_user_turn_and_run(session_id, pivot_id, new_content=str(new_content))
     if "__error__" in result:
         msg, code = result["__error__"]
         return JSONResponse(content={"error": msg}, status_code=code)
@@ -184,11 +184,11 @@ async def post_chat_checkout(body: dict = None):
 
     if body is None:
         return JSONResponse(content={"error": "no body"}, status_code=400)
-    conv_id = body.get("conv_id")
+    session_id = body.get("session_id")
     target_id = body.get("msg_id")
-    if not conv_id or not target_id:
+    if not session_id or not target_id:
         return JSONResponse(
-            content={"error": "conv_id and msg_id required"}, status_code=400,
+            content={"error": "session_id and msg_id required"}, status_code=400,
         )
     # Validate target_id against the FULL DAG, not the current linear
     # chain — that's the whole point of checkout. Looking it up in
@@ -198,21 +198,21 @@ async def post_chat_checkout(body: dict = None):
     db = default_db()
     cur = db.conn.execute(
         "SELECT 1 FROM messages WHERE id=? AND session_id=?",
-        (target_id, conv_id),
+        (target_id, session_id),
     )
     if not cur.fetchone():
         return JSONResponse(content={"error": "unknown msg"}, status_code=404)
-    db.set_head(conv_id, target_id)
-    with _srv._conversations_lock:
-        conv = _srv._conversations.get(conv_id)
+    db.set_head(session_id, target_id)
+    with _srv._sessions_lock:
+        conv = _srv._sessions.get(session_id)
         if conv is not None:
             conv["head_id"] = target_id
             # Refresh the in-memory transcript to the new branch's
             # chain so the next read doesn't show the old head's view.
             try:
-                conv["messages"] = db.get_branch(conv_id) or []
+                conv["messages"] = db.get_branch(session_id) or []
             except Exception:
                 pass
-    _srv._invalidate_messages(conv_id)
-    _srv._save_conversation(conv_id)
-    return JSONResponse(content={"conv_id": conv_id, "head_id": target_id})
+    _srv._invalidate_messages(session_id)
+    _srv._save_session(session_id)
+    return JSONResponse(content={"session_id": session_id, "head_id": target_id})
