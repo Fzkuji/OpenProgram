@@ -16,6 +16,10 @@ function handleChatResponse(data) {
     _handleStreamEvent(data);
     return;
   }
+  if (type === 'user_message') {
+    _handleInboundUserMessage(data);
+    return;
+  }
   if (type === 'follow_up_question') {
     _handleFollowUpQuestion(data);
     return;
@@ -102,6 +106,36 @@ function handleChatResponse(data) {
 }
 
 // --- Internal response handlers ---
+
+function _handleInboundUserMessage(data) {
+  // Only render when this user message belongs to the session the
+  // browser is currently viewing. dispatcher broadcasts globally, so
+  // every connected client gets every session's events.
+  if (!data || !data.session_id || data.session_id !== currentSessionId) return;
+  // Web-side sends already render an optimistic bubble locally — skip
+  // the broadcast for that path to avoid double-rendering.
+  if (data.source === 'web') return;
+  // DOM-level dedup: if a bubble with this msg_id is already in the
+  // transcript (we've seen this envelope before, or load_session
+  // already rendered it), don't append again.
+  if (data.msg_id && document.querySelector('.message[data-msg-id="' + data.msg_id + '"]')) {
+    return;
+  }
+  if (typeof addUserMessage !== 'function') return;
+  addUserMessage(data.content || '');
+  var bubble = window._pendingUserBubble;
+  if (bubble) {
+    if (data.msg_id) bubble.setAttribute('data-msg-id', data.msg_id);
+    if (data.peer_display) {
+      var label = bubble.querySelector('.message-sender');
+      if (label) label.textContent = data.peer_display;
+    }
+    window._pendingUserBubble = null;
+  }
+  // Hide the welcome screen if it's still up — fresh inbound message
+  // means this session is no longer empty.
+  if (typeof setWelcomeVisible === 'function') setWelcomeVisible(false);
+}
 
 function _handleContextStats(data) {
   var el = document.getElementById('contextStats');

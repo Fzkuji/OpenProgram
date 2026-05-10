@@ -272,6 +272,25 @@ def process_user_turn(
             "type": "chat_ack",
             "data": {"session_id": req.session_id, "msg_id": user_msg_id},
         })
+        # Broadcast the inbound user message itself so any UI tailing
+        # this session (web sidebar transcript, TUI mirror) shows it
+        # in real time — without this, channel-sourced messages
+        # (wechat / discord) only appeared after the LLM started
+        # replying. Carries source + peer_display so the UI can label
+        # it appropriately and dedup against optimistic renders.
+        on_event({
+            "type": "chat_response",
+            "data": {
+                "type": "user_message",
+                "session_id": req.session_id,
+                "msg_id": user_msg_id,
+                "content": req.user_text or "",
+                "source": req.source,
+                "peer_display": req.peer_display,
+                "timestamp": user_msg.get("timestamp"),
+                "parent_id": user_msg.get("parent_id"),
+            },
+        })
     else:
         # Caller already wrote the user msg + emitted ack (webui
         # path). Make sure history reflects that — load from DB if
