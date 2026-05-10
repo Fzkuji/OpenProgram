@@ -683,7 +683,7 @@ function renderSessionMessages(conv) {
     );
   }
 
-  if (!_skipScrollToBottom) scrollToBottom();
+  if (!_skipScrollToBottom) scrollToBottom({ force: true });
   _skipScrollToBottom = false;
 }
 

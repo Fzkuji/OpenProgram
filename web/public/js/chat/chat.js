@@ -288,7 +288,10 @@ function addUserMessage(text) {
   if (typeof window.ensureMessageActions === 'function') {
     window.ensureMessageActions(div);
   }
-  scrollToBottom();
+  // Sending a message is an explicit user action — anchor to the new
+  // bubble even if they had scrolled up previously, so they see what
+  // they just sent.
+  scrollToBottom({ force: true });
 
   if (currentSessionId && conversations[currentSessionId]) {
     if (!conversations[currentSessionId].messages) conversations[currentSessionId].messages = [];

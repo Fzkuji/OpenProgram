@@ -59,11 +59,57 @@ function renderMathInChat() {
   });
 }
 
-function scrollToBottom() {
+// "Stick to bottom" follows the last message's tail through streaming
+// updates. User-initiated scroll-up detaches; scrolling back near the
+// bottom re-attaches. The chat-messages container has a large
+// padding-bottom (40vh) for reading comfort once the conversation is
+// idle, but during streaming we anchor on the last message's actual
+// bottom edge so the streaming text stays visible instead of getting
+// pushed up while empty padding fills the viewport.
+var _stickToBottom = true;
+window.__stickToBottom = function () { return _stickToBottom; };
+
+function _setupStickToBottomListener() {
+  if (window.__stickListenerInstalled) return;
+  var area = document.getElementById('chatArea');
+  if (!area) return;
+  area.addEventListener('scroll', function () {
+    var distFromBottom = area.scrollHeight - area.scrollTop - area.clientHeight;
+    // Within 60px of the bottom = stick. Anything further = detach.
+    _stickToBottom = distFromBottom < 60;
+  }, { passive: true });
+  window.__stickListenerInstalled = true;
+}
+
+function scrollToBottom(opts) {
   renderMathInChat();
   var area = document.getElementById('chatArea');
-  requestAnimationFrame(function() {
-    area.scrollTop = area.scrollHeight;
+  var messages = document.getElementById('chatMessages');
+  if (!area || !messages) return;
+  _setupStickToBottomListener();
+  // ``force: true`` overrides the stick-to-bottom check (used after
+  // load_session to land at the latest turn even if the user was
+  // scrolled up in the previous session).
+  var force = !!(opts && opts.force);
+  if (!force && !_stickToBottom) return;
+  requestAnimationFrame(function () {
+    // Anchor the last message's bottom to the viewport bottom (with a
+    // 16px breathing margin) instead of scrolling to the padding edge,
+    // so streaming text doesn't get hidden above the 40vh empty pad.
+    var bubbles = messages.querySelectorAll('.message');
+    var last = bubbles.length ? bubbles[bubbles.length - 1] : null;
+    if (!last) {
+      area.scrollTop = area.scrollHeight;
+      return;
+    }
+    var areaRect = area.getBoundingClientRect();
+    var msgRect = last.getBoundingClientRect();
+    var delta = msgRect.bottom - areaRect.bottom + 16;
+    if (delta > 0) area.scrollTop += delta;
+    // Clamp: never scroll past natural max.
+    if (area.scrollTop > area.scrollHeight - area.clientHeight) {
+      area.scrollTop = area.scrollHeight - area.clientHeight;
+    }
   });
 }
 
