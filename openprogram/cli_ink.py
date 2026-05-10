@@ -132,9 +132,16 @@ def run_ink_tui(*, agent=None, conv_id: str | None = None, rt=None) -> None:
     except Exception:  # noqa: BLE001
         pass
 
-    # Strict mode: require an existing worker. The legacy "spawn one for
-    # this session" path is gone — front-ends connect, they don't host.
-    port = _resolve_worker_port(autostart=False)
+    # Auto-start the worker if missing (overridable via env var for the rare
+    # case where the user wants a strictly-connecting TUI). The worker manages
+    # its own singleton lock, so concurrent CLI launches won't race-spawn.
+    from openprogram.worker import current_worker_pid
+    no_autostart = os.environ.get("OPENPROGRAM_NO_AUTO_WORKER", "").strip() in ("1", "true", "yes")
+    autostart = not no_autostart
+    started_here = autostart and current_worker_pid() is None
+    if started_here:
+        print("openprogram: starting worker…", file=sys.stderr)
+    port = _resolve_worker_port(autostart=autostart)
     if port is None:
         _print_no_worker_hint()
         sys.exit(2)
