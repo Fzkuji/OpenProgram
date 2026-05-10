@@ -25,6 +25,26 @@ export function AppSidebar() {
     return arr;
   }, [conversations]);
 
+  function channelLabelFor(c: { title?: string; channel?: string | null; account_id?: string | null }): string {
+    const t = (c.title || "").trim();
+    const placeholder =
+      !t ||
+      t === "New conversation" ||
+      t === "Untitled" ||
+      /^(wechat|discord|telegram|slack)\s*[:：]\s*\S{8,}/i.test(t);
+    let prefix = "";
+    if (c.channel) {
+      const brand =
+        ({ wechat: "WeChat", discord: "Discord", telegram: "Telegram", slack: "Slack" } as
+          Record<string, string>)[String(c.channel).toLowerCase()] || c.channel;
+      prefix = c.account_id ? `${brand} (${c.account_id})` : brand;
+    }
+    if (prefix && !placeholder) return `${prefix} · ${t}`;
+    if (prefix) return prefix;
+    if (!placeholder) return t;
+    return "Untitled";
+  }
+
   function newChat() {
     setCurrentConv(null);
     router.push("/chat");
@@ -121,7 +141,7 @@ export function AppSidebar() {
                         if (!active) e.currentTarget.style.background = "transparent";
                       }}
                     >
-                      <span className="flex-1 truncate">{c.title || "Untitled"}</span>
+                      <span className="flex-1 truncate">{channelLabelFor(c)}</span>
                       <button
                         onClick={(e) => deleteConv(c.id, e)}
                         className="opacity-0 transition-opacity group-hover:opacity-60 hover:opacity-100"

@@ -87,6 +87,7 @@ function handleMessage(msg) {
         renderConversations();
         // Refresh badges — conversation's provider may differ from default
         loadAgentSettings();
+        if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
       }
       // Stamp the server msg_id onto the optimistically-rendered user
       // bubble so retry/branch buttons can target it.
@@ -122,6 +123,23 @@ function handleMessage(msg) {
       break;
     case 'conversations_list':
       _handleConversationsList(msg.data);
+      break;
+    case 'channel_accounts':
+      if (typeof window._onChannelAccountsMessage === 'function') {
+        window._onChannelAccountsMessage(msg.data);
+      }
+      break;
+    case 'conversation_channel_updated':
+      if (msg.data && msg.data.ok && msg.data.conv_id && conversations[msg.data.conv_id]) {
+        conversations[msg.data.conv_id].channel = msg.data.channel || null;
+        conversations[msg.data.conv_id].account_id = msg.data.account_id || null;
+        conversations[msg.data.conv_id].peer = msg.data.peer || null;
+        renderConversations();
+        if (msg.data.conv_id === currentConvId) {
+          if (typeof window.refreshStatusSource === 'function') window.refreshStatusSource();
+          if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
+        }
+      }
       break;
     case 'status':
       isPaused = msg.paused;
@@ -227,9 +245,24 @@ function _handleConversationsList(data) {
     for (var ci = 0; ci < data.length; ci++) {
       var c = data[ci];
       if (!conversations[c.id]) {
-        conversations[c.id] = { id: c.id, title: c.title, messages: [], created_at: c.created_at, has_session: c.has_session };
+        conversations[c.id] = {
+          id: c.id, title: c.title, messages: [],
+          created_at: c.created_at, has_session: c.has_session,
+          channel: c.channel || null,
+          account_id: c.account_id || null,
+          peer: c.peer || null,
+          peer_display: c.peer_display || null,
+          source: c.source || null,
+          agent_id: c.agent_id || null,
+        };
       } else {
         conversations[c.id].has_session = c.has_session;
+        // Refresh channel binding from the server in case it changed
+        // (e.g. user moved this conv to a new channel from the TUI).
+        if ('channel' in c) conversations[c.id].channel = c.channel || null;
+        if ('account_id' in c) conversations[c.id].account_id = c.account_id || null;
+        if ('peer' in c) conversations[c.id].peer = c.peer || null;
+        if ('peer_display' in c) conversations[c.id].peer_display = c.peer_display || null;
       }
     }
   }

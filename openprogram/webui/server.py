@@ -260,7 +260,9 @@ def _save_conversation(conv_id: str):
 
     Per-function execution trees are written incrementally by
     append_tree_event in the tree event callback — we do not rewrite
-    them here.
+    them here. An empty conversation (no messages yet, no session row
+    in SessionDB) is skipped entirely so the user doesn't see "ghost"
+    history rows for chats they never typed in.
     """
     if not conv_id:
         return
@@ -268,6 +270,17 @@ def _save_conversation(conv_id: str):
         conv = _conversations.get(conv_id)
         if conv is None:
             return
+        # Skip persistence for brand-new conversations the user hasn't
+        # actually used. Once _append_msg lands the first message it
+        # creates the session row, and from that point on this guard
+        # passes (db.get_session is non-None) and we save normally.
+        if not conv.get("messages"):
+            try:
+                from openprogram.agent.session_db import default_db
+                if default_db().get_session(conv_id) is None:
+                    return
+            except Exception:
+                pass
         root_ctx = conv.get("root_context")
         runtime = conv.get("runtime")
         agent_id = conv.get("agent_id") or _default_agent_id()
@@ -631,13 +644,22 @@ from openprogram.webui._functions import (
 # ---------------------------------------------------------------------------
 
 def _get_or_create_conversation(conv_id: str = None,
-                                agent_id: str = None) -> dict:
+                                agent_id: str = None,
+                                *,
+                                channel: str = None,
+                                account_id: str = None,
+                                peer: str = None) -> dict:
     """Get or create a conversation with its own Context tree + Runtime.
 
     If ``agent_id`` is provided the new conversation is bound to that
     agent; otherwise it lands in the registry's default agent. Existing
     conversations keep whatever agent they were created under — we
     never rebind on lookup.
+
+    The optional ``channel`` / ``account_id`` / ``peer`` triple binds the
+    new conversation to a chat channel (e.g. ``wechat`` + ``baby``).
+    Ignored on lookup of existing conversations — call
+    ``set_conversation_channel`` to change them after creation.
     """
     if conv_id is None:
         conv_id = "local_" + uuid.uuid4().hex[:10]
@@ -678,9 +700,15 @@ def _get_or_create_conversation(conv_id: str = None,
                 "head_id": _hydrated_head,
                 "run_active": False,
                 "source": ((_sess or {}).get("source") if isinstance(_sess, dict) else None),
-                "channel": ((_sess or {}).get("channel") if isinstance(_sess, dict) else None),
-                "account_id": ((_sess or {}).get("account_id") if isinstance(_sess, dict) else None),
-                "peer": ((_sess or {}).get("peer") if isinstance(_sess, dict) else None),
+                "channel": channel
+                          if channel is not None
+                          else ((_sess or {}).get("channel") if isinstance(_sess, dict) else None),
+                "account_id": account_id
+                              if account_id is not None
+                              else ((_sess or {}).get("account_id") if isinstance(_sess, dict) else None),
+                "peer": peer
+                        if peer is not None
+                        else ((_sess or {}).get("peer") if isinstance(_sess, dict) else None),
                 "peer_display": ((_sess or {}).get("peer_display") if isinstance(_sess, dict) else None),
                 "tools_enabled": ((_sess or {}).get("tools_enabled") if isinstance(_sess, dict) else None),
                 "tools_override": ((_sess or {}).get("tools_override") if isinstance(_sess, dict) else None),
@@ -742,7 +770,12 @@ def _append_msg(conv: dict, msg: dict) -> None:
         from openprogram.agent.session_db import default_db
         db = default_db()
         if db.get_session(cid) is None:
-            db.create_session(cid, conv.get("agent_id") or _default_agent_id())
+            create_kwargs = {}
+            for fld in ("channel", "account_id", "peer", "peer_display", "source", "title"):
+                v = conv.get(fld)
+                if v:
+                    create_kwargs[fld] = v
+            db.create_session(cid, conv.get("agent_id") or _default_agent_id(), **create_kwargs)
         db.append_message(cid, msg)
         db.set_head(cid, msg_id)
     except Exception as e:
@@ -2053,7 +2086,19 @@ async def _handle_ws_command(ws, cmd: dict):
         if not text:
             return
 
-        conv = _get_or_create_conversation(conv_id, agent_id=agent_id)
+        # Optional channel binding for brand-new conversations. Ignored
+        # silently for existing convs (call set_conversation_channel to
+        # change them after the fact).
+        new_channel = (cmd.get("channel") or "").strip().lower() or None
+        new_account_id = (cmd.get("account_id") or "").strip() or None
+        new_peer = (cmd.get("peer") or "").strip() or None
+        conv = _get_or_create_conversation(
+            conv_id,
+            agent_id=agent_id,
+            channel=new_channel,
+            account_id=new_account_id,
+            peer=new_peer,
+        )
         conv_id = conv["id"]
         from openprogram.agent.session_config import save_session_run_config
         run_cfg = save_session_run_config(
@@ -2284,6 +2329,65 @@ async def _handle_ws_command(ws, cmd: dict):
                         "subsequent_messages": restored,
                     },
                 }, default=str))
+
+    elif action == "set_conversation_channel":
+        # Bind (or unbind) a conversation to a chat channel + account.
+        # Pass channel="" to unbind back to local. peer is optional —
+        # only relevant for direct-peer conversations (e.g. wechat
+        # private chat with one user); group / channel conversations
+        # leave it None.
+        conv_id = cmd.get("conv_id")
+        ch = (cmd.get("channel") or "").strip().lower() or None
+        acct_id = (cmd.get("account_id") or "").strip() or None
+        peer = (cmd.get("peer") or "").strip() or None
+        peer_display = (cmd.get("peer_display") or "").strip() or None
+        ok = False
+        err = None
+        if not conv_id:
+            err = "conv_id required"
+        else:
+            with _conversations_lock:
+                conv = _conversations.get(conv_id)
+            if conv is None:
+                err = f"unknown conversation {conv_id!r}"
+            elif ch is None and (acct_id or peer):
+                err = "channel must be set when account_id / peer is set"
+            else:
+                conv["channel"] = ch
+                conv["account_id"] = acct_id if ch else None
+                conv["peer"] = peer if ch else None
+                if peer_display is not None:
+                    conv["peer_display"] = peer_display if ch else None
+                try:
+                    from openprogram.agent.session_db import default_db
+                    db = default_db()
+                    # Only persist when the conversation already has a
+                    # session row (i.e. at least one message). For a
+                    # brand-new empty conv we keep the choice in memory
+                    # only; _append_msg will carry it into the session
+                    # row when the first real message arrives.
+                    if db.get_session(conv_id) is not None:
+                        db.update_session(
+                            conv_id,
+                            channel=conv["channel"],
+                            account_id=conv["account_id"],
+                            peer=conv["peer"],
+                            peer_display=conv.get("peer_display"),
+                        )
+                    ok = True
+                except Exception as e:
+                    err = f"persist failed: {type(e).__name__}: {e}"
+        await ws.send_text(json.dumps({
+            "type": "conversation_channel_updated",
+            "data": {
+                "conv_id": conv_id,
+                "ok": ok,
+                "channel": ch,
+                "account_id": acct_id,
+                "peer": peer,
+                "error": err,
+            },
+        }, default=str))
 
     elif action == "delete_conversation":
         conv_id = cmd.get("conv_id")
@@ -2523,6 +2627,9 @@ async def _handle_ws_command(ws, cmd: dict):
                     "agent_id": conv.get("agent_id"),
                     "source": conv.get("source"),
                     "peer_display": conv.get("peer_display"),
+                    "channel": conv.get("channel"),
+                    "account_id": conv.get("account_id"),
+                    "peer": conv.get("peer"),
                 })
         # Channel-bound sessions and any local sessions persisted to
         # SessionDB. The in-memory `_conversations` snapshot above
@@ -2541,6 +2648,10 @@ async def _handle_ws_command(ws, cmd: dict):
                                 row["source"] = srow["source"]
                             if not row.get("peer_display") and srow.get("peer_display"):
                                 row["peer_display"] = srow["peer_display"]
+                            if not row.get("channel") and srow.get("channel"):
+                                row["channel"] = srow["channel"]
+                            if not row.get("account_id") and srow.get("account_id"):
+                                row["account_id"] = srow["account_id"]
                             break
                     continue
                 seen_ids.add(sid)
@@ -2552,6 +2663,9 @@ async def _handle_ws_command(ws, cmd: dict):
                     "agent_id": srow.get("agent_id"),
                     "source": srow.get("source"),
                     "peer_display": srow.get("peer_display"),
+                    "channel": srow.get("channel"),
+                    "account_id": srow.get("account_id"),
+                    "peer": srow.get("peer") or srow.get("peer_id"),
                 })
         except Exception:
             pass

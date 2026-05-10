@@ -166,6 +166,13 @@ class CliRunner:
                 cwd=self.workspace_dir,
                 env=env,
                 start_new_session=True,
+                # asyncio default StreamReader limit is 64 KiB; codex
+                # CLI emits single newline-delimited records (full
+                # reasoning trace + tool result) that can exceed that
+                # on long prompts — readline() then raises
+                # "Separator is not found, and chunk exceed the limit".
+                # Lift to 64 MiB so any realistic CLI line fits.
+                limit=64 * 1024 * 1024,
             )
         except FileNotFoundError:
             yield Error(
@@ -294,6 +301,10 @@ class CliRunner:
                     cwd=self.workspace_dir,
                     env=env,
                     start_new_session=True,
+                    # See live-mode subprocess block above — codex CLI
+                    # can emit single records larger than the asyncio
+                    # default 64 KiB StreamReader limit.
+                    limit=64 * 1024 * 1024,
                 )
             except FileNotFoundError:
                 yield Error(

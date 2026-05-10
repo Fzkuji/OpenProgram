@@ -75,14 +75,22 @@ function sendMessage(textOverride) {
 
   setRunning(true);
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
+    var _payload = {
       action: 'chat',
       text: text,
       conv_id: currentConvId,
       thinking_effort: _thinkingEffort,
       exec_thinking_effort: _execThinkingEffort,
       tools: !!window._toolsEnabled
-    }));
+    };
+    // First message of a brand-new conversation: attach the user's
+    // channel choice from the welcome-screen picker, if any. Ignored by
+    // the backend for existing convs.
+    if (!currentConvId && window._pendingChannelChoice && window._pendingChannelChoice.channel) {
+      _payload.channel = window._pendingChannelChoice.channel;
+      _payload.account_id = window._pendingChannelChoice.account_id || '';
+    }
+    ws.send(JSON.stringify(_payload));
   } else {
     var errDiv = document.createElement('div');
     errDiv.className = 'message assistant';

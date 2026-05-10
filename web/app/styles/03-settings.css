@@ -348,6 +348,7 @@
 .conv-item:hover .conv-del { display: flex; }
 .conv-item .conv-del:hover { background: var(--accent-red); color: #fff; }
 
+
 .conv-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .conv-item.active { background: var(--bg-hover); color: var(--text-bright); }
 .conv-clear-all {

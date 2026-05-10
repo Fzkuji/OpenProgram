@@ -126,6 +126,12 @@ def save_meta(agent_id: str, conv_id: str, meta: dict) -> None:
     meta_fields = dict(meta)
     meta_fields.pop("id", None)
     meta_fields.pop("agent_id", None)
+    # `session_id` in meta is the LLM runtime's session identifier, not
+    # the SessionDB primary key. Rename it before forwarding so the
+    # **kwargs expansion doesn't collide with update_session's first
+    # positional parameter (also called `session_id`).
+    if "session_id" in meta_fields:
+        meta_fields["llm_session_id"] = meta_fields.pop("session_id")
     if db.get_session(conv_id) is None:
         db.create_session(conv_id, agent_id, **meta_fields)
     else:

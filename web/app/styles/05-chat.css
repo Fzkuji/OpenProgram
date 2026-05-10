@@ -93,6 +93,10 @@
   background: rgba(97, 175, 239, 0.12);
   color: var(--accent-blue);
   border: 1px solid rgba(97, 175, 239, 0.25);
+  cursor: pointer;
+}
+.status-badge:hover {
+  background: rgba(97, 175, 239, 0.2);
 }
 
 .status-badge.disconnected {

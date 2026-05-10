@@ -82,28 +82,64 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+// Strip backend-generated placeholder titles like "WeChat: o9cq..."
+// (the dispatcher uses these as a fallback when a channel session has
+// no real title yet). We don't want them shown — they leak the raw
+// account id and crowd out anything useful.
+function _isPlaceholderTitle(title) {
+  if (!title) return true;
+  if (title === 'New conversation' || title === 'Untitled') return true;
+  // "WeChat: o9cq...", "Discord: 1234567...", etc. — channel prefix +
+  // a long opaque id. Treat as placeholder.
+  return /^(wechat|discord|telegram|slack)\s*[:：]\s*\S{8,}/i.test(title);
+}
+
+var _CHANNEL_BRAND = { wechat: 'WeChat', discord: 'Discord', telegram: 'Telegram', slack: 'Slack' };
+function _channelBrand(channel) {
+  if (!channel) return '';
+  return _CHANNEL_BRAND[String(channel).toLowerCase()] || channel;
+}
+function _channelPrefixFor(channel, accountId) {
+  if (!channel) return '';
+  var brand = _channelBrand(channel);
+  return accountId ? brand + ' (' + accountId + ')' : brand;
+}
+
+function _displayTitleFor(conv) {
+  if (!conv) return '';
+  var t = (conv.title || '').trim();
+  if (_isPlaceholderTitle(t)) return '';
+  return t.length > 30 ? t.slice(0, 30) + '…' : t;
+}
+window._channelPrefixFor = _channelPrefixFor;
+window._displayTitleFor = _displayTitleFor;
+window._isPlaceholderTitle = _isPlaceholderTitle;
+
 function refreshStatusSource() {
   var cid = (typeof currentConvId !== 'undefined') ? currentConvId : null;
-  if (!cid || typeof conversations === 'undefined') {
-    updateStatus('connected', '');
-    return;
+  var conv = (cid && typeof conversations !== 'undefined') ? conversations[cid] : null;
+
+  // Pick the channel/account triple to display: the conv's binding if
+  // it has one, otherwise the user's pending choice from the welcome
+  // picker. So the badge updates instantly when the user picks on a
+  // brand-new chat.
+  var ch = null, acct = null;
+  if (conv && conv.channel) {
+    ch = conv.channel;
+    acct = conv.account_id || null;
+  } else if (window._pendingChannelChoice && window._pendingChannelChoice.channel) {
+    ch = window._pendingChannelChoice.channel;
+    acct = window._pendingChannelChoice.account_id || null;
   }
-  var conv = conversations[cid];
-  if (!conv) { updateStatus('connected', ''); return; }
-  // Build the badge label as `<channel>:<account_id> · <title>` so the
-  // user can see which channel is bound AND which session at a glance.
-  // Either piece may be missing — for a plain web/cli session there's
-  // no channel, and a brand-new chat may not have a title yet.
+
   var parts = [];
-  if (conv.channel && conv.account_id) {
-    parts.push(conv.channel + ':' + conv.account_id);
-  } else if (conv.source) {
+  if (ch) {
+    parts.push(_channelPrefixFor(ch, acct));
+  } else if (conv && conv.source) {
     parts.push(conv.source);
   }
-  var title = (conv.title || '').trim();
-  if (title && title !== 'New conversation') {
-    parts.push(title.length > 30 ? title.slice(0, 30) + '…' : title);
-  }
+  var title = _displayTitleFor(conv);
+  if (title) parts.push(title);
   updateStatus('connected', parts.join(' · '));
 }
 window.refreshStatusSource = refreshStatusSource;
@@ -222,6 +258,10 @@ window._closeAllPopovers = function(except) {
   if (except !== 'agent') {
     var ag = document.getElementById('agentSelector');
     if (ag) ag.remove();
+  }
+  if (except !== 'channel') {
+    var ch = document.getElementById('channelDropdown');
+    if (ch) ch.remove();
   }
 };
 

@@ -1,3 +1,8 @@
+function _channelLabel(channel, accountId) {
+  if (!channel) return 'local';
+  return accountId ? channel + ':' + accountId : channel;
+}
+
 function renderConversations() {
   var container = document.getElementById('convList');
   var html = '';
@@ -8,14 +13,209 @@ function renderConversations() {
     for (var ci = 0; ci < convs.length; ci++) {
       var c = convs[ci];
       var active = c.id === currentConvId ? ' active' : '';
-      html += '<div class="conv-item' + active + '" onclick="switchConversation(\'' + c.id + '\')" title="' + escAttr(c.title || 'Untitled') + '">' +
-        '<span class="conv-title">' + escHtml(c.title || 'Untitled') + '</span>' +
+      // Build a clean display label: "<channel> (<account>) · <title>"
+      // when the conv is bound to a channel; otherwise just the title.
+      // Strip backend placeholder titles ("WeChat: o9cq..." etc.) so
+      // the raw account id doesn't leak into the list.
+      var prefix = (typeof window._channelPrefixFor === 'function') ?
+                   window._channelPrefixFor(c.channel, c.account_id) : '';
+      var realTitle = (typeof window._displayTitleFor === 'function') ?
+                      window._displayTitleFor(c) : (c.title || '');
+      var label;
+      if (prefix && realTitle)      label = prefix + ' · ' + realTitle;
+      else if (prefix)              label = prefix;
+      else if (realTitle)           label = realTitle;
+      else                          label = c.title || 'Untitled';
+      html += '<div class="conv-item' + active + '" onclick="switchConversation(\'' + c.id + '\')" title="' + escAttr(label) + '">' +
+        '<span class="conv-title">' + escHtml(label) + '</span>' +
         '<span class="conv-del" onclick="event.stopPropagation();deleteConversation(\'' + c.id + '\')" title="Delete"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg></span>' +
       '</div>';
     }
     html += '<div class="conv-clear-all" onclick="clearAllConversations()">Clear all</div>';
   }
   container.innerHTML = html;
+}
+
+// Cached list of channel accounts (filled lazily). Each entry:
+// { channel, account_id, name, enabled, configured }.
+var _channelAccountsCache = null;
+var _channelAccountsPending = null;  // resolve fn for in-flight fetch
+
+function fetchChannelAccounts() {
+  if (_channelAccountsCache) return Promise.resolve(_channelAccountsCache);
+  if (_channelAccountsPending) {
+    return new Promise(function(res) {
+      var prev = _channelAccountsPending;
+      _channelAccountsPending = function(v) { prev(v); res(v); };
+    });
+  }
+  return new Promise(function(res) {
+    _channelAccountsPending = res;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'list_channel_accounts' }));
+    } else {
+      _channelAccountsPending = null;
+      res([]);
+    }
+    setTimeout(function() {
+      if (_channelAccountsPending === res) {
+        _channelAccountsPending = null;
+        res(_channelAccountsCache || []);
+      }
+    }, 3000);
+  });
+}
+
+// Called by ws message handler when a channel_accounts envelope arrives.
+function _onChannelAccountsMessage(rows) {
+  _channelAccountsCache = Array.isArray(rows) ? rows : [];
+  if (_channelAccountsPending) {
+    var fn = _channelAccountsPending;
+    _channelAccountsPending = null;
+    fn(_channelAccountsCache);
+  }
+}
+window._onChannelAccountsMessage = _onChannelAccountsMessage;
+
+function _currentChannelChoice() {
+  // For an existing conv, the badge reflects that conv's channel.
+  // For a brand-new conv (no currentConvId yet), it reflects the
+  // pending choice that will be sent with the first message.
+  if (currentConvId && conversations[currentConvId]) {
+    var c = conversations[currentConvId];
+    return { channel: c.channel || null, account_id: c.account_id || null };
+  }
+  return window._pendingChannelChoice || { channel: null, account_id: null };
+}
+
+window.refreshChannelBadge = function() {
+  // Channel state is shown by the existing #statusBadge via
+  // refreshStatusSource; this hook just delegates so callers don't
+  // need to know which renderer owns it.
+  if (typeof window.refreshStatusSource === 'function') {
+    window.refreshStatusSource();
+  }
+};
+
+function openChannelDropdown(evt) {
+  if (evt) evt.stopPropagation();
+  // Toggle close if our dropdown is already open.
+  if (document.getElementById('channelDropdown')) { _closeChannelDropdown(); return; }
+  // Mutual exclusivity with other topbar popovers (chat / exec / model
+  // selectors etc.) — same coordinator the agent selectors use.
+  if (window._closeAllPopovers) window._closeAllPopovers('channel');
+  var badge = document.getElementById('statusBadge');
+  if (!badge) return;
+  var convId = currentConvId || null;
+  var cur = _currentChannelChoice();
+
+  fetchChannelAccounts().then(function(rows) {
+    var enabled = (rows || []).filter(function(r) { return r.enabled; });
+    var rect = badge.getBoundingClientRect();
+    var dd = document.createElement('div');
+    // Reuse the model-dropdown styling so chat / exec / channel pickers
+    // all look the same. Adds .channel-selector for any channel-only
+    // overrides we might want later.
+    dd.className = 'agent-selector model-dropdown channel-selector';
+    dd.id = 'channelDropdown';
+    dd.style.top = (rect.bottom + 4) + 'px';
+    dd.style.left = rect.left + 'px';
+
+    var brandFor = function(plat) {
+      var map = { wechat: 'WeChat', discord: 'Discord', telegram: 'Telegram', slack: 'Slack' };
+      return map[String(plat).toLowerCase()] || plat;
+    };
+
+    var html = '';
+    html += '<div class="model-dd-group-label" style="padding-top:6px"><span>Conversation channel</span></div>';
+
+    // "Local" sits at the top as its own row — no channel binding.
+    html += '<div class="model-dd-item' + (!cur.channel ? ' active' : '') + '" data-ch="" data-acct="">' +
+              '<span class="model-dd-name">Local</span>' +
+            '</div>';
+
+    if (enabled.length === 0) {
+      html += '<div class="model-dd-group-label" style="padding-top:10px;font-size:11px">' +
+                '<a href="/settings" style="color:var(--accent-blue);text-decoration:none">Add a channel in Settings →</a>' +
+              '</div>';
+    } else {
+      // Group accounts by platform: a group label row (icon + brand
+      // name) and then one row per account under it. Same shape as
+      // the chat / exec dropdowns.
+      var byPlat = {};
+      var order = [];
+      enabled.forEach(function(r) {
+        if (!byPlat[r.channel]) { byPlat[r.channel] = []; order.push(r.channel); }
+        byPlat[r.channel].push(r);
+      });
+      order.forEach(function(plat) {
+        html += '<div class="model-dd-group-label">' +
+                  '<span class="provider-icon" style="width:14px;height:14px">' +
+                    (typeof _dropdownProviderIcon === 'function' ? _dropdownProviderIcon(plat) : '') +
+                  '</span>' +
+                  '<span>' + escHtml(brandFor(plat)) + '</span>' +
+                '</div>';
+        byPlat[plat].forEach(function(r) {
+          var active = (r.channel === cur.channel && r.account_id === cur.account_id);
+          var meta = r.name && r.name !== r.account_id ? r.name : '';
+          html += '<div class="model-dd-item' + (active ? ' active' : '') + '"' +
+                    ' data-ch="' + escAttr(r.channel) + '"' +
+                    ' data-acct="' + escAttr(r.account_id) + '">' +
+                    '<span class="model-dd-name">' + escHtml(r.account_id) + '</span>' +
+                    (meta ? '<span class="model-dd-caps"><span class="cap-badge ctx">' + escHtml(meta) + '</span></span>' : '') +
+                  '</div>';
+        });
+      });
+    }
+
+    dd.innerHTML = html;
+    document.body.appendChild(dd);
+
+    dd.addEventListener('click', function(e) {
+      var item = e.target.closest('[data-ch]');
+      if (!item) return;
+      e.stopPropagation();
+      var ch = item.getAttribute('data-ch') || '';
+      var acct = item.getAttribute('data-acct') || '';
+      if (convId) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ action: 'set_conversation_channel',
+            conv_id: convId, channel: ch, account_id: acct }));
+        }
+        var conv = conversations[convId];
+        if (conv) {
+          conv.channel = ch || null;
+          conv.account_id = (ch && acct) ? acct : null;
+        }
+      } else {
+        window._pendingChannelChoice = { channel: ch || null, account_id: ch ? (acct || null) : null };
+      }
+      window.refreshChannelBadge();
+      _closeChannelDropdown();
+    });
+
+    // Close on outside click — defer the listener so the click that
+    // opened the dropdown doesn't immediately close it.
+    setTimeout(function() {
+      document.addEventListener('click', _channelDropdownDocClick, { once: true });
+    }, 0);
+  });
+}
+window.openChannelDropdown = openChannelDropdown;
+
+function _channelDropdownDocClick(e) {
+  var dd = document.getElementById('channelDropdown');
+  if (dd && dd.contains(e.target)) {
+    document.addEventListener('click', _channelDropdownDocClick, { once: true });
+    return;
+  }
+  _closeChannelDropdown();
+}
+
+function _closeChannelDropdown() {
+  var dd = document.getElementById('channelDropdown');
+  if (dd) dd.remove();
+  document.removeEventListener('click', _channelDropdownDocClick);
 }
 
 function switchConversation(convId) {
@@ -101,6 +301,8 @@ function newConversation() {
       '<div class="welcome-title">Agentic Programming</div>' +
       '<div class="welcome-text">Run agentic functions, create new ones, or ask questions. Type a command or natural language below.</div>' +
     '</div>';
+  window._pendingChannelChoice = null;
+  if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
   container.appendChild(welcome);
   setWelcomeVisible(true);
   renderConversations();
@@ -122,8 +324,9 @@ function loadConversationData(data) {
   if (!data.messages) data.messages = [];
   conversations[data.id] = data;
   renderConversations();
-  if (data.id === currentConvId && typeof window.refreshStatusSource === 'function') {
-    window.refreshStatusSource();
+  if (data.id === currentConvId) {
+    if (typeof window.refreshStatusSource === 'function') window.refreshStatusSource();
+    if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
   }
   if (data.id === currentConvId) {
     var area = document.getElementById('chatArea');
