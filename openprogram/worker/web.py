@@ -93,68 +93,74 @@ def _reclaim_web_port(port: int) -> None:
                 pass
 
 
-def _manifest_backend_port(wd: Path) -> Optional[int]:
-    """Read the backend port baked into ``.next/routes-manifest.json``.
+_MANIFEST_FILES = ("routes-manifest.json",)
 
-    Returns None if the manifest is missing or unparseable. Next bakes
-    rewrite destinations at ``next build`` time, so this tells us which
-    backend the bundle is hard-wired to.
+
+def _patch_manifest_ports(wd: Path, backend_port: int) -> bool:
+    """Rewrite ``127.0.0.1:<port>`` in the next manifest(s) to the live port.
+
+    Next bakes rewrite destinations into JSON files at build time. Rather
+    than re-running ``next build`` (30+s), patch the JSON in place — the
+    next-server reads these files at startup, so a fresh ``next start``
+    picks up the new port immediately.
+
+    Returns True if the manifest is now consistent with backend_port (or
+    didn't need patching), False on parse / write failure.
     """
     import json
     import re
-    manifest = wd / ".next" / "routes-manifest.json"
-    if not manifest.exists():
-        return None
-    try:
-        data = json.loads(manifest.read_text())
-    except (OSError, json.JSONDecodeError):
-        return None
-    for rewrite in data.get("rewrites", []) or []:
-        dest = rewrite.get("destination", "") if isinstance(rewrite, dict) else ""
-        m = re.search(r"127\.0\.0\.1:(\d+)", dest)
-        if m:
-            return int(m.group(1))
-    return None
+    target = f"127.0.0.1:{backend_port}"
+    pattern = re.compile(r"127\.0\.0\.1:\d+")
+    ok = True
+    for fname in _MANIFEST_FILES:
+        path = wd / ".next" / fname
+        if not path.exists():
+            continue
+        try:
+            text = path.read_text()
+        except OSError:
+            ok = False
+            continue
+        new_text = pattern.sub(target, text)
+        if new_text == text:
+            continue
+        try:
+            json.loads(new_text)  # sanity check
+            path.write_text(new_text)
+            print(f"[worker] web: patched {fname} → :{backend_port}")
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[worker] web: failed to patch {fname}: {e}")
+            ok = False
+    return ok
 
 
 def _ensure_built(wd: Path, *, backend_port: int) -> bool:
-    """Make sure ``web/.next/`` exists and is wired to the live backend port.
+    """Make sure ``web/.next/`` exists, then patch manifest port to match.
 
-    Rebuilds when the manifest is missing OR when its baked rewrite target
-    points at a different port than the worker is currently listening on
-    (e.g. the previous worker grabbed a different free port). Build env
-    sets OPENPROGRAM_BACKEND_URL so the new manifest matches.
+    Only runs ``next build`` on first launch (or if .next was wiped).
+    Subsequent worker runs reuse the prebuilt bundle and just patch the
+    manifest's rewrite destination, which is orders of magnitude faster.
     """
     next_dir = wd / ".next"
-    needs_build_reason = None
+
     if not next_dir.exists():
-        needs_build_reason = "first run"
-    else:
-        baked = _manifest_backend_port(wd)
-        if baked is None:
-            needs_build_reason = "manifest missing rewrites"
-        elif baked != backend_port:
-            needs_build_reason = f"manifest points at :{baked}, worker on :{backend_port}"
+        node_modules = wd / "node_modules"
+        if not node_modules.exists():
+            print("[worker] web: installing npm deps (first run, may take a while)…")
+            r = subprocess.run(["npm", "install", "--silent"], cwd=str(wd))
+            if r.returncode != 0:
+                print("[worker] web: npm install failed")
+                return False
 
-    if needs_build_reason is None:
-        return True
-
-    node_modules = wd / "node_modules"
-    if not node_modules.exists():
-        print("[worker] web: installing npm deps (first run, may take a while)…")
-        r = subprocess.run(["npm", "install", "--silent"], cwd=str(wd))
+        print("[worker] web: building production bundle (first run only)…")
+        build_env = dict(os.environ)
+        build_env["OPENPROGRAM_BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
+        r = subprocess.run(["npm", "run", "build"], cwd=str(wd), env=build_env)
         if r.returncode != 0:
-            print("[worker] web: npm install failed")
+            print("[worker] web: build failed")
             return False
 
-    print(f"[worker] web: rebuilding bundle ({needs_build_reason})…")
-    build_env = dict(os.environ)
-    build_env["OPENPROGRAM_BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
-    r = subprocess.run(["npm", "run", "build"], cwd=str(wd), env=build_env)
-    if r.returncode != 0:
-        print("[worker] web: build failed")
-        return False
-    return True
+    return _patch_manifest_ports(wd, backend_port)
 
 
 def start_web_frontend(
