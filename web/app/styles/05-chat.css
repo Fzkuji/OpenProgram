@@ -98,6 +98,27 @@
 .status-badge:hover {
   background: rgba(97, 175, 239, 0.2);
 }
+.branch-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: rgba(180, 180, 180, 0.08);
+  color: var(--text-primary);
+  border: 1px solid rgba(180, 180, 180, 0.18);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.branch-badge:hover {
+  background: rgba(180, 180, 180, 0.18);
+}
+.branch-badge .branch-icon {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.85;
+}
+.branch-badge .branch-icon svg { display: block; }
 
 .status-badge.disconnected {
   background: rgba(224, 108, 117, 0.12);

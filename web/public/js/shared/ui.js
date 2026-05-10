@@ -263,6 +263,10 @@ window._closeAllPopovers = function(except) {
     var ch = document.getElementById('channelDropdown');
     if (ch) ch.remove();
   }
+  if (except !== 'branch') {
+    var br = document.getElementById('branchDropdown');
+    if (br) br.remove();
+  }
 };
 
 function toggleThinkingMenu(e) {

@@ -129,6 +129,25 @@ function handleMessage(msg) {
         window._onChannelAccountsMessage(msg.data);
       }
       break;
+    case 'branches_list':
+      if (typeof window._onBranchesListMessage === 'function') {
+        window._onBranchesListMessage(msg.data);
+      }
+      break;
+    case 'branch_checked_out':
+      if (typeof window._onBranchCheckedOut === 'function') {
+        window._onBranchCheckedOut(msg.data);
+      }
+      break;
+    case 'branch_renamed':
+    case 'branch_name_deleted':
+      if (msg.data && msg.data.conv_id && typeof window._onBranchesListMessage === 'function') {
+        // Force a refetch so the badge picks up the new label.
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ action: 'list_branches', conv_id: msg.data.conv_id }));
+        }
+      }
+      break;
     case 'conversation_channel_updated':
       if (msg.data && msg.data.ok && msg.data.conv_id && conversations[msg.data.conv_id]) {
         conversations[msg.data.conv_id].channel = msg.data.channel || null;

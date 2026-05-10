@@ -190,12 +190,29 @@ async def post_chat_checkout(body: dict = None):
         return JSONResponse(
             content={"error": "conv_id and msg_id required"}, status_code=400,
         )
+    # Validate target_id against the FULL DAG, not the current linear
+    # chain — that's the whole point of checkout. Looking it up in
+    # conv["messages"] (which only holds the head's chain) means
+    # off-branch clicks always 404'd.
+    from openprogram.agent.session_db import default_db
+    db = default_db()
+    cur = db.conn.execute(
+        "SELECT 1 FROM messages WHERE id=? AND session_id=?",
+        (target_id, conv_id),
+    )
+    if not cur.fetchone():
+        return JSONResponse(content={"error": "unknown msg"}, status_code=404)
+    db.set_head(conv_id, target_id)
     with _srv._conversations_lock:
         conv = _srv._conversations.get(conv_id)
-        if conv is None:
-            return JSONResponse(content={"error": "unknown conv"}, status_code=404)
-        if not any(m.get("id") == target_id for m in conv["messages"]):
-            return JSONResponse(content={"error": "unknown msg"}, status_code=404)
-        conv["head_id"] = target_id
+        if conv is not None:
+            conv["head_id"] = target_id
+            # Refresh the in-memory transcript to the new branch's
+            # chain so the next read doesn't show the old head's view.
+            try:
+                conv["messages"] = db.get_branch(conv_id) or []
+            except Exception:
+                pass
+    _srv._invalidate_messages(conv_id)
     _srv._save_conversation(conv_id)
     return JSONResponse(content={"conv_id": conv_id, "head_id": target_id})

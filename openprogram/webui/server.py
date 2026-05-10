@@ -2353,6 +2353,43 @@ async def _handle_ws_command(ws, cmd: dict):
             elif ch is None and (acct_id or peer):
                 err = "channel must be set when account_id / peer is set"
             else:
+                # Enforce 1:1 ownership: if any other session is bound to
+                # the same (channel, account), strip its binding first.
+                # The new conv steals the slot; the old conv falls back
+                # to local. Collect ids so we can broadcast the eviction
+                # to clients after the lock is released.
+                evicted_ids: list[str] = []
+                if ch:
+                    from openprogram.agent.session_db import default_db
+                    db_pre = default_db()
+                    db_owners = set(db_pre.sessions_with_binding(ch, acct_id))
+                    with _conversations_lock:
+                        mem_owners = {
+                            oid for oid, o in _conversations.items()
+                            if o.get("channel") == ch and o.get("account_id") == acct_id
+                        }
+                    candidates = (db_owners | mem_owners) - {conv_id}
+                    for oid in candidates:
+                        with _conversations_lock:
+                            other = _conversations.get(oid)
+                            if other is not None:
+                                other["channel"] = None
+                                other["account_id"] = None
+                                other["peer"] = None
+                                other["peer_display"] = None
+                        try:
+                            if db_pre.get_session(oid) is not None:
+                                db_pre.update_session(
+                                    oid,
+                                    channel=None,
+                                    account_id=None,
+                                    peer=None,
+                                    peer_display=None,
+                                )
+                        except Exception as ex:
+                            _log(f"[set_conversation_channel] evict {oid} db: {ex}")
+                        evicted_ids.append(oid)
+
                 conv["channel"] = ch
                 conv["account_id"] = acct_id if ch else None
                 conv["peer"] = peer if ch else None
@@ -2377,6 +2414,24 @@ async def _handle_ws_command(ws, cmd: dict):
                     ok = True
                 except Exception as e:
                     err = f"persist failed: {type(e).__name__}: {e}"
+
+                # Broadcast eviction notices so any client looking at an
+                # evicted conv sees its chip flip back to "local".
+                for oid in evicted_ids:
+                    try:
+                        await ws.send_text(json.dumps({
+                            "type": "conversation_channel_updated",
+                            "data": {
+                                "conv_id": oid,
+                                "ok": True,
+                                "channel": None,
+                                "account_id": None,
+                                "peer": None,
+                                "evicted_by": conv_id,
+                            },
+                        }, default=str))
+                    except Exception:
+                        pass
         await ws.send_text(json.dumps({
             "type": "conversation_channel_updated",
             "data": {
@@ -2387,6 +2442,147 @@ async def _handle_ws_command(ws, cmd: dict):
                 "peer": peer,
                 "error": err,
             },
+        }, default=str))
+
+    elif action == "list_branches":
+        # git-style: every leaf message in the DAG is a branch tip.
+        # Returns explicit names from the branches table, or a default
+        # synthesised from the first user-message content on that path.
+        # The currently-checked-out branch (head_id) is flagged.
+        conv_id = cmd.get("conv_id")
+        rows: list[dict] = []
+        active_head = None
+        if conv_id:
+            try:
+                from openprogram.agent.session_db import default_db
+                db = default_db()
+                sess = db.get_session(conv_id)
+                active_head = (sess or {}).get("head_id")
+                leaves = db.list_branches(conv_id)
+                # Default-name policy: walk back from each leaf to find
+                # the first message whose chain diverges from the
+                # others — that message's user content is a useful
+                # auto-label. As a quick first pass, just use the leaf
+                # message's own preview if no explicit name exists.
+                for row in leaves:
+                    mid = row["head_msg_id"]
+                    name = row.get("name")
+                    if not name:
+                        # Walk parent chain looking for the most recent
+                        # user message; use it as the auto-name.
+                        cur = db.conn.execute(
+                            "WITH RECURSIVE chain(id, parent_id, role, content, ts) AS ("
+                            "  SELECT id, parent_id, role, content, timestamp "
+                            "    FROM messages WHERE id=? AND session_id=?"
+                            "  UNION ALL"
+                            "  SELECT m.id, m.parent_id, m.role, m.content, m.timestamp"
+                            "    FROM messages m JOIN chain c ON m.id = c.parent_id"
+                            "    WHERE m.session_id=?"
+                            ") SELECT content FROM chain WHERE role='user' "
+                            "ORDER BY ts DESC LIMIT 1",
+                            (mid, conv_id, conv_id),
+                        )
+                        r = cur.fetchone()
+                        if r and isinstance(r[0], str):
+                            txt = r[0].strip().replace("\n", " ")
+                            name = (txt[:30] + "…") if len(txt) > 30 else txt
+                        else:
+                            name = mid[:8]
+                    rows.append({
+                        "head_msg_id": mid,
+                        "name": name,
+                        "is_named": bool(row.get("name")),
+                        "created_at": row.get("created_at"),
+                        "active": (mid == active_head),
+                    })
+            except Exception as e:
+                _log(f"[list_branches] {conv_id}: {e}")
+        await ws.send_text(json.dumps({
+            "type": "branches_list",
+            "data": {"conv_id": conv_id, "branches": rows, "active": active_head},
+        }, default=str))
+
+    elif action == "checkout_branch":
+        # git checkout — set session.head_id to a leaf message id.
+        # The next inbound / user message will append after this head.
+        conv_id = cmd.get("conv_id")
+        head_msg_id = cmd.get("head_msg_id")
+        ok = False
+        err = None
+        if not conv_id or not head_msg_id:
+            err = "conv_id and head_msg_id required"
+        else:
+            try:
+                from openprogram.agent.session_db import default_db
+                db = default_db()
+                cur = db.conn.execute(
+                    "SELECT 1 FROM messages WHERE id=? AND session_id=?",
+                    (head_msg_id, conv_id),
+                )
+                if not cur.fetchone():
+                    err = f"unknown message {head_msg_id!r}"
+                else:
+                    db.set_head(conv_id, head_msg_id)
+                    with _conversations_lock:
+                        c = _conversations.get(conv_id)
+                        if c is not None:
+                            c["head_id"] = head_msg_id
+                            # Drop cached message list so next read
+                            # rehydrates from the new head's chain.
+                            c["messages"] = db.get_branch(conv_id) or []
+                    _invalidate_messages(conv_id)
+                    ok = True
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
+        await ws.send_text(json.dumps({
+            "type": "branch_checked_out",
+            "data": {"conv_id": conv_id, "head_msg_id": head_msg_id,
+                      "ok": ok, "error": err},
+        }, default=str))
+
+    elif action == "rename_branch":
+        # git branch -m — name (or rename) a branch tip.
+        conv_id = cmd.get("conv_id")
+        head_msg_id = cmd.get("head_msg_id")
+        new_name = (cmd.get("name") or "").strip()
+        ok = False
+        err = None
+        if not conv_id or not head_msg_id or not new_name:
+            err = "conv_id, head_msg_id, name all required"
+        elif len(new_name) > 80:
+            err = "name too long (max 80)"
+        else:
+            try:
+                from openprogram.agent.session_db import default_db
+                default_db().set_branch_name(conv_id, head_msg_id, new_name)
+                ok = True
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
+        await ws.send_text(json.dumps({
+            "type": "branch_renamed",
+            "data": {"conv_id": conv_id, "head_msg_id": head_msg_id,
+                      "name": new_name, "ok": ok, "error": err},
+        }, default=str))
+
+    elif action == "delete_branch_name":
+        # git branch -d (label only — the messages stay, just unnamed).
+        conv_id = cmd.get("conv_id")
+        head_msg_id = cmd.get("head_msg_id")
+        ok = False
+        err = None
+        if not conv_id or not head_msg_id:
+            err = "conv_id and head_msg_id required"
+        else:
+            try:
+                from openprogram.agent.session_db import default_db
+                default_db().delete_branch_name(conv_id, head_msg_id)
+                ok = True
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
+        await ws.send_text(json.dumps({
+            "type": "branch_name_deleted",
+            "data": {"conv_id": conv_id, "head_msg_id": head_msg_id,
+                      "ok": ok, "error": err},
         }, default=str))
 
     elif action == "delete_conversation":
@@ -2434,9 +2630,28 @@ async def _handle_ws_command(ws, cmd: dict):
                 sibling_index,
                 siblings as _siblings,
             )
-            all_msgs = conv.get("messages", [])
-            head = head_or_tip(conv, all_msgs)
+            # Source of truth = SessionDB. The in-memory conv["messages"]
+            # gets stale or scrubbed by checkout / branch ops; reading
+            # the full DAG fresh every load_conversation eliminates a
+            # whole class of "blank chat after checkout" bugs.
+            from openprogram.agent.session_db import default_db as _db_for_load
+            _db_load = _db_for_load()
+            try:
+                all_msgs = _db_load.get_messages(conv["id"]) or []
+            except Exception:
+                all_msgs = conv.get("messages", []) or []
+            try:
+                _sess_for_load = _db_load.get_session(conv["id"]) or {}
+                _persisted_head = _sess_for_load.get("head_id")
+            except Exception:
+                _persisted_head = None
+            head = _persisted_head or head_or_tip(conv, all_msgs)
+            # Keep in-memory chain in sync with the head we just resolved
+            # so the rest of the request (and other code paths reading
+            # conv["messages"]) sees consistent state.
             chain = linear_history(all_msgs, head) if head else list(all_msgs)
+            conv["messages"] = chain
+            conv["head_id"] = head
             # Annotate each msg with its sibling position + pointers
             # to the neighbouring siblings. Client doesn't have the
             # full DAG (we only send the linear chain under HEAD), so
@@ -2473,8 +2688,18 @@ async def _handle_ws_command(ws, cmd: dict):
             # the preview short — full content is already in "messages"
             # for the active chain, and off-branch content is only fetched
             # lazily when the user checks out a sibling.
+            # Pull the FULL DAG from SessionDB for the history graph,
+            # not just the linear chain under the current head — otherwise
+            # checking out a branch hides every other branch from the
+            # graph. The chat transcript stays linear (under "messages"
+            # above); only the graph needs the full tree.
+            try:
+                from openprogram.agent.session_db import default_db
+                full_msgs = default_db().get_messages(conv["id"])
+            except Exception:
+                full_msgs = all_msgs
             graph = []
-            for m in all_msgs:
+            for m in full_msgs:
                 content = m.get("content") or ""
                 preview = content.strip().replace("\n", " ")
                 if len(preview) > 80:

@@ -90,6 +90,20 @@ CREATE INDEX IF NOT EXISTS idx_messages_session_ts
 CREATE INDEX IF NOT EXISTS idx_messages_parent
   ON messages(parent_id);
 
+-- Named branches over the message DAG. A "branch" is identified by
+-- the head_msg_id at its tip; the linear chain back to root via
+-- parent_id is the branch's commit history. (head_msg_id, session_id)
+-- is unique — at most one name per branch tip per session.
+CREATE TABLE IF NOT EXISTS branches (
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  head_msg_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  PRIMARY KEY (session_id, head_msg_id)
+);
+CREATE INDEX IF NOT EXISTS idx_branches_session
+  ON branches(session_id);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
   content,
   session_id UNINDEXED,
@@ -403,6 +417,90 @@ class SessionDB:
             args.append(limit)
         cur = self.conn.execute(sql, args)
         return [_row_to_message(r) for r in cur.fetchall()]
+
+    def sessions_with_binding(self, channel: str, account_id: Optional[str]) -> list[str]:
+        """Return ids of all sessions currently bound to ``channel`` +
+        ``account_id``. Used to enforce single-session ownership of a
+        channel account when the user re-binds via the UI."""
+        if account_id is None:
+            cur = self.conn.execute(
+                "SELECT id FROM sessions WHERE channel=? AND account_id IS NULL",
+                (channel,),
+            )
+        else:
+            cur = self.conn.execute(
+                "SELECT id FROM sessions WHERE channel=? AND account_id=?",
+                (channel, account_id),
+            )
+        return [r[0] for r in cur.fetchall()]
+
+    # -- branches (git-style named heads over the message DAG) ----------
+
+    def list_branches(self, session_id: str) -> list[dict[str, Any]]:
+        """Return one row per leaf message in the session — that is,
+        every potential branch tip. Rows carry the explicit name from
+        the `branches` table if any, otherwise an empty name (callers
+        synthesise a default like "main" or the first user-message
+        text). Ordered by leaf timestamp ascending so older branches
+        come first; the active head walker stays consistent across
+        calls."""
+        cur = self.conn.execute(
+            "SELECT m.id, m.timestamp "
+            "FROM messages m "
+            "WHERE m.session_id=? AND NOT EXISTS ("
+            "  SELECT 1 FROM messages c "
+            "  WHERE c.session_id=? AND c.parent_id=m.id"
+            ") "
+            "ORDER BY m.timestamp ASC",
+            (session_id, session_id),
+        )
+        leaves = [(r[0], r[1]) for r in cur.fetchall()]
+        if not leaves:
+            return []
+        # Pull explicit names in one query.
+        cur = self.conn.execute(
+            "SELECT head_msg_id, name, created_at FROM branches "
+            "WHERE session_id=?",
+            (session_id,),
+        )
+        names = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+        out = []
+        for mid, ts in leaves:
+            n = names.get(mid)
+            out.append({
+                "head_msg_id": mid,
+                "name": n[0] if n else None,
+                "created_at": n[1] if n else ts,
+                "leaf_timestamp": ts,
+            })
+        return out
+
+    def set_branch_name(self, session_id: str, head_msg_id: str,
+                        name: str) -> None:
+        """Upsert a branch name for ``head_msg_id``. Creates the row if
+        missing, otherwise overwrites. Caller is responsible for
+        validating that the head exists."""
+        import time as _t
+        def _do(conn):
+            conn.execute(
+                "INSERT INTO branches(session_id, head_msg_id, name, created_at) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(session_id, head_msg_id) DO UPDATE SET name=excluded.name",
+                (session_id, head_msg_id, name, _t.time()),
+            )
+            conn.commit()
+        self._execute_write(_do)
+
+    def delete_branch_name(self, session_id: str, head_msg_id: str) -> None:
+        """Drop the explicit name for a branch. The branch tip itself
+        (the message) is untouched — only the named-label is removed."""
+        def _do(conn):
+            conn.execute(
+                "DELETE FROM branches WHERE session_id=? AND head_msg_id=?",
+                (session_id, head_msg_id),
+            )
+            conn.commit()
+        self._execute_write(_do)
 
     def latest_user_text(self, session_id: str) -> Optional[str]:
         """Return the most recent user-message text for ``session_id``,

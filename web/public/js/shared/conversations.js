@@ -225,6 +225,162 @@ function _closeChannelDropdown() {
   document.removeEventListener('click', _channelDropdownDocClick);
 }
 
+// ===== Branch (git-style) selector ============================
+//
+// Each leaf message in a session's DAG is a "branch tip". The
+// session.head_id is the currently-checked-out branch. We expose:
+//   - list_branches  → branches_list      (cached, refreshed lazily)
+//   - checkout_branch → branch_checked_out (sets head_id)
+//   - rename_branch / delete_branch_name (TODO UI)
+
+var _branchesByConv = {};   // conv_id → [{head_msg_id, name, active, ...}]
+var _branchesPending = {};  // conv_id → resolve fn
+
+function fetchBranches(convId) {
+  if (!convId) return Promise.resolve([]);
+  if (_branchesByConv[convId]) return Promise.resolve(_branchesByConv[convId]);
+  if (_branchesPending[convId]) {
+    return new Promise(function(res) {
+      var prev = _branchesPending[convId];
+      _branchesPending[convId] = function(v) { prev(v); res(v); };
+    });
+  }
+  return new Promise(function(res) {
+    _branchesPending[convId] = res;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'list_branches', conv_id: convId }));
+    } else {
+      delete _branchesPending[convId];
+      res([]);
+    }
+    setTimeout(function() {
+      if (_branchesPending[convId] === res) {
+        delete _branchesPending[convId];
+        res(_branchesByConv[convId] || []);
+      }
+    }, 3000);
+  });
+}
+
+function _onBranchesListMessage(payload) {
+  if (!payload || !payload.conv_id) return;
+  var rows = Array.isArray(payload.branches) ? payload.branches : [];
+  _branchesByConv[payload.conv_id] = rows;
+  if (_branchesPending[payload.conv_id]) {
+    var fn = _branchesPending[payload.conv_id];
+    delete _branchesPending[payload.conv_id];
+    fn(rows);
+  }
+  if (payload.conv_id === currentConvId && typeof window.refreshBranchBadge === 'function') {
+    window.refreshBranchBadge();
+  }
+}
+window._onBranchesListMessage = _onBranchesListMessage;
+
+function _onBranchCheckedOut(payload) {
+  if (!payload || !payload.ok || !payload.conv_id) return;
+  // Invalidate cache so the next dropdown re-fetches with the new
+  // active marker. The server-side history graph / message list will
+  // update through their own existing envelopes.
+  delete _branchesByConv[payload.conv_id];
+  if (payload.conv_id === currentConvId && typeof window.refreshBranchBadge === 'function') {
+    fetchBranches(payload.conv_id).then(window.refreshBranchBadge);
+  }
+}
+window._onBranchCheckedOut = _onBranchCheckedOut;
+
+window.refreshBranchBadge = function() {
+  var badge = document.getElementById('branchBadge');
+  if (!badge) return;
+  if (!currentConvId) { badge.style.display = 'none'; return; }
+  var list = _branchesByConv[currentConvId] || [];
+  if (list.length <= 1) {
+    // Only one branch — hide the chip; nothing to switch.
+    badge.style.display = 'none';
+    return;
+  }
+  var active = list.find(function(b) { return b.active; });
+  var label = active ? active.name : 'detached';
+  var nameEl = badge.querySelector('.branch-name');
+  if (nameEl) nameEl.textContent = label + ' (' + list.length + ')';
+  badge.style.display = '';
+};
+
+function openBranchDropdown(evt) {
+  if (evt) evt.stopPropagation();
+  if (document.getElementById('branchDropdown')) { _closeBranchDropdown(); return; }
+  if (window._closeAllPopovers) window._closeAllPopovers('branch');
+  var badge = document.getElementById('branchBadge');
+  if (!badge || !currentConvId) return;
+
+  // Force-refresh on open so the active flag and any new leaves from
+  // recent retries / edits are picked up.
+  delete _branchesByConv[currentConvId];
+  fetchBranches(currentConvId).then(function(rows) {
+    var rect = badge.getBoundingClientRect();
+    var dd = document.createElement('div');
+    dd.id = 'branchDropdown';
+    dd.className = 'agent-selector model-dropdown branch-selector';
+    dd.style.top = (rect.bottom + 4) + 'px';
+    dd.style.left = rect.left + 'px';
+
+    var html = '<div class="model-dd-group-label" style="padding-top:6px"><span>Branches</span></div>';
+    if (!rows.length) {
+      html += '<div class="model-dd-group-label" style="font-size:11px"><span>No branches yet — retry or edit a message to fork.</span></div>';
+    } else {
+      rows.forEach(function(b) {
+        html += '<div class="model-dd-item' + (b.active ? ' active' : '') + '"' +
+                  ' data-head="' + escAttr(b.head_msg_id) + '">' +
+                  '<span class="model-dd-name">' + escHtml(b.name) + '</span>' +
+                  (b.active ? '<span class="model-dd-caps"><span class="cap-badge ctx">HEAD</span></span>' : '') +
+                '</div>';
+      });
+    }
+    dd.innerHTML = html;
+    document.body.appendChild(dd);
+
+    dd.addEventListener('click', function(e) {
+      var item = e.target.closest('[data-head]');
+      if (!item) return;
+      e.stopPropagation();
+      var head = item.getAttribute('data-head');
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          action: 'checkout_branch',
+          conv_id: currentConvId,
+          head_msg_id: head,
+        }));
+        // Reload conv to repaint with the new head's branch.
+        ws.send(JSON.stringify({
+          action: 'load_conversation',
+          conv_id: currentConvId,
+        }));
+      }
+      _closeBranchDropdown();
+    });
+
+    setTimeout(function() {
+      document.addEventListener('click', _branchDropdownDocClick, { once: true });
+    }, 0);
+  });
+}
+window.openBranchDropdown = openBranchDropdown;
+
+function _branchDropdownDocClick(e) {
+  var dd = document.getElementById('branchDropdown');
+  if (dd && dd.contains(e.target)) {
+    document.addEventListener('click', _branchDropdownDocClick, { once: true });
+    return;
+  }
+  _closeBranchDropdown();
+}
+
+function _closeBranchDropdown() {
+  var dd = document.getElementById('branchDropdown');
+  if (dd) dd.remove();
+  document.removeEventListener('click', _branchDropdownDocClick);
+}
+
 function switchConversation(convId) {
   // If already on this conversation, just reload in-place
   if (convId === currentConvId && window.location.pathname === '/c/' + convId) {
@@ -337,6 +493,13 @@ function loadConversationData(data) {
   if (data.id === currentConvId) {
     if (typeof window.refreshStatusSource === 'function') window.refreshStatusSource();
     if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
+    // Pull the latest branch list so the chip reflects this conv's
+    // current head + alternates. fetchBranches caches per conv; we
+    // invalidate to force a fresh server snapshot.
+    delete _branchesByConv[data.id];
+    fetchBranches(data.id).then(function() {
+      if (typeof window.refreshBranchBadge === 'function') window.refreshBranchBadge();
+    });
   }
   if (data.id === currentConvId) {
     var area = document.getElementById('chatArea');
