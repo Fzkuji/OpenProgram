@@ -328,10 +328,15 @@ window.renderBranchesPanel = function () {
   tog.style.marginLeft = 'auto';
   tog.style.fontSize = '12px';
   tog.style.color = 'var(--text-muted)';
-  tog.style.opacity = '0';
+  // When collapsed: always show the "Show" hint so users know
+  // the panel has content folded. When expanded ("Hide"): hover-only,
+  // matches the left-sidebar Recents / Favorites behaviour.
+  tog.style.opacity = collapsed ? '0.75' : '0';
   tog.style.transition = 'opacity 0.15s';
   hdr.addEventListener('mouseenter', function () { tog.style.opacity = '0.75'; });
-  hdr.addEventListener('mouseleave', function () { tog.style.opacity = '0'; });
+  hdr.addEventListener('mouseleave', function () {
+    tog.style.opacity = collapsed ? '0.75' : '0';
+  });
   hdr.addEventListener('click', function () {
     var _raw = sessionStorage.getItem('agentic_branches_collapsed');
     var c = _raw === null ? true : _raw === '1';

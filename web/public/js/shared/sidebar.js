@@ -19,22 +19,31 @@ window.restoreSidebarState = restoreSidebarState;
 
 // ===== Conversations =====
 
+function _setSectionCollapsed(sectionId, listId, hintId, collapsed) {
+  var list = document.getElementById(listId);
+  var hint = document.getElementById(hintId);
+  if (!list) return;
+  list.style.display = collapsed ? 'none' : '';
+  if (hint) hint.textContent = collapsed ? 'Show' : 'Hide';
+  // Mark the surrounding section so CSS can make the "Show" label
+  // always visible while collapsed (so users don't think the panel
+  // is empty), and leave the "Hide" label hover-only when expanded.
+  var section = document.getElementById(sectionId);
+  if (section) section.classList.toggle('is-collapsed', collapsed);
+}
+
 function toggleConvList() {
   var list = document.getElementById('convList');
-  var hint = document.getElementById('convHint');
   if (!list) return;
-  var hidden = list.style.display === 'none';
-  list.style.display = hidden ? '' : 'none';
-  if (hint) hint.textContent = hidden ? 'Hide' : 'Show';
+  _setSectionCollapsed('convSection', 'convList', 'convHint',
+                        list.style.display !== 'none');
 }
 
 function toggleFavList() {
   var list = document.getElementById('favList');
-  var hint = document.getElementById('favHint');
   if (!list) return;
-  var hidden = list.style.display === 'none';
-  list.style.display = hidden ? '' : 'none';
-  if (hint) hint.textContent = hidden ? 'Hide' : 'Show';
+  _setSectionCollapsed('favSection', 'favList', 'favHint',
+                        list.style.display !== 'none');
 }
 
 function doRefreshFunctions(btn) {

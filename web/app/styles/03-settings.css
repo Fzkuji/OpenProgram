@@ -296,6 +296,13 @@
   transition: opacity 0.15s;
 }
 .sidebar-section-header:hover .sidebar-section-hint { opacity: 0.75; }
+/* When the section is collapsed, keep the "Show" label visible so
+   users see the toggle exists. Hover state stays as-is for the
+   expanded ("Hide") case. */
+.is-collapsed > .sidebar-section-header .sidebar-section-hint,
+.sidebar-section-header.is-collapsed .sidebar-section-hint {
+  opacity: 0.75;
+}
 
 /* Conversation list — exact Claude.ai values */
 /* Claude: height 32, padding 6px 16px with -translate-x-2, radius 6px, font 12px, gap 1px */
