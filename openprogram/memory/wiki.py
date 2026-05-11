@@ -1,7 +1,7 @@
 """Wiki-layer read / write / log.
 
 Wiki pages are managed by the sleep process. The agent reads via
-``wiki_get`` / ``memory_recall`` but does not write directly. ``apply()``
+``memory_get`` / ``memory_recall`` but does not write directly. ``apply()``
 exists for explicit edits (via ``wiki_apply`` tool or CLI), and every
 write goes through ``log()`` to keep an append-only audit trail.
 """

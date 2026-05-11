@@ -21,7 +21,7 @@ Sleep (background consolidation) runs nightly via the worker cron and
 promotes short-term → wiki, regenerates core, surfaces reflections.
 
 The agent interacts via lifecycle hooks (``MemoryProvider``) and four
-tools: ``memory_note``, ``memory_recall``, ``memory_reflect``, ``wiki_get``.
+tools: ``memory_note``, ``memory_recall``, ``memory_reflect``, ``memory_get``.
 
 Storage location: ``<state>/memory/`` (profile-global by default —
 shared across every agent and conversation on the machine).

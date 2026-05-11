@@ -136,7 +136,10 @@ _LEGACY_TOOL_META: dict[str, dict[str, Any]] = {
     "memory_note":        {"toolsets": ["core"]},
     "memory_recall":      {"toolsets": ["core"]},
     "memory_reflect":     {"toolsets": ["core"]},
-    "wiki_get":           {"toolsets": ["core"]},
+    "memory_get":         {"toolsets": ["core"]},
+    "memory_browse":      {"toolsets": ["core"]},
+    "memory_lint":        {"toolsets": ["core"]},
+    "memory_ingest":      {"toolsets": ["core"]},
     "clarify":            {"toolsets": ["core"]},
     "execute_code":       {"toolsets": ["core"], "unsafe_in": ["wechat", "telegram"]},
     "mixture_of_agents":  {"toolsets": ["research"]},
@@ -216,7 +219,8 @@ TOOLSETS: dict[str, dict[str, list[str]] | list[str]] = {
         # Memory tool names are injected by tools/memory at import
         # time; reference by name so the preset works even if the
         # exact name list shifts.
-        "tools":    ["memory_note", "memory_recall", "memory_reflect", "wiki_get"],
+        "tools":    ["memory_note", "memory_recall", "memory_reflect",
+                     "memory_get", "memory_browse", "memory_lint", "memory_ingest"],
         "includes": ["default"],
     },
     "safe": {

@@ -210,7 +210,7 @@ class ContextEngine:
         # 5. Persistent memory snapshot (machine-wide). Frozen at session
         # start so the LLM's prefix cache survives. Full recall is
         # available on demand via the memory_recall / memory_reflect /
-        # wiki_get tools.
+        # memory_get tools.
         try:
             from openprogram.memory.builtin import BuiltinMemoryProvider
             mem_block = BuiltinMemoryProvider().system_prompt_block()

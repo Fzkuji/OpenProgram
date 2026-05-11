@@ -35,7 +35,7 @@ def render(entries: list[str], *, last_consolidated: str = "") -> str:
         f"{rule}\n"
     )
     body = "\n§\n".join(entries)
-    foot = "\n\n[for full context use memory_recall <query>]\n"
+    foot = "\n\n[for full context start with `memory_browse`]\n"
     return head + body + foot
 
 
@@ -56,15 +56,36 @@ def read() -> str:
 
 
 def system_prompt_block() -> str:
-    """Return the block to inject into a system prompt.
+    """Return the block to inject into the system prompt.
 
-    Returns an empty string when memory hasn't been set up yet, so callers
-    can unconditionally append it.
+    Three layers in one block:
+      1. The compiled core.md (stable user prefs + active project facts,
+         regenerated from the wiki by sleep deep)
+      2. A one-line tool-surface pointer so the LLM knows how to dig
+         deeper without us auto-injecting recall snippets
+      3. Nothing else — keep this under ~2KB
+
+    Returns "" when neither core nor wiki has any content yet so the
+    block adds no system-prompt noise on a fresh install.
     """
-    raw = read()
-    if not raw.strip():
+    raw = read().strip()
+    # Decide whether memory exists at all
+    from . import store
+    has_wiki = (store.wiki_dir() / "index.md").exists()
+    if not raw and not has_wiki:
         return ""
-    return raw
+
+    pointer = (
+        "Memory tools available: `memory_browse` (catalog: wiki topics + "
+        "recent days), `memory_get(target)` (read a wiki page or "
+        "YYYY-MM-DD short-term file), `memory_recall(query)` (FTS "
+        "fallback), `memory_reflect(query)` (multi-page synthesis), "
+        "`memory_note(...)` (record an observation), `memory_ingest`/"
+        "`memory_lint` (admin). Browse before recalling."
+    )
+    if raw:
+        return raw.rstrip() + "\n\n" + pointer
+    return pointer
 
 
 def select_entries(pages: list[WikiPage], *, budget: int = CORE_BUDGET_CHARS) -> list[str]:

@@ -110,14 +110,22 @@ def _scan(idle_minutes: int) -> int:
 
 
 def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
-    """Hand messages to the builtin provider's on_session_end.
+    """Run the two-step wiki ingest over an idle conversation.
 
     Returns True on success — caller marks the session as processed.
     Returns False on retryable failure (LLM call failed, network error,
     etc.) so the next poll tries again.
+
+    Switched 2026-05-11 from a one-shot "extract facts → short-term"
+    summarizer to the Karpathy / nashsu LLM-Wiki ingest: a two-step
+    analyse-then-generate pass that writes wiki pages directly. The
+    old short-term path is still available via
+    ``BuiltinMemoryProvider.on_session_end`` for back-compat or for
+    plugin providers that don't implement ingest; if either step of
+    the ingest fails we fall through to it.
     """
     try:
-        from .builtin import BuiltinMemoryProvider
+        from .ingest import ingest_session
         from .llm_bridge import build_default_llm
     except Exception:
         return False
@@ -126,33 +134,35 @@ def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
         # No LLM configured at all — safe to mark processed; we'd just
         # loop on this same session forever otherwise.
         return True
-    provider = BuiltinMemoryProvider()
-    provider.initialize(session_id=session_id, summarize_model=llm)
-    # Wrap the LLM call so we can distinguish "transient API failure"
-    # (don't mark processed — retry next poll) from "no extractable
-    # facts" (do mark processed).
-    last_error: Exception | None = None
 
-    def _wrapped_llm(system_prompt: str, user_text: str) -> str:
-        nonlocal last_error
-        try:
-            return llm(system_prompt, user_text)
-        except Exception as e:  # noqa: BLE001
-            last_error = e
-            raise
-
-    provider._summarize_model = _wrapped_llm
     try:
-        provider.on_session_end(messages)
+        result = ingest_session(session_id, messages, llm=llm)
     except Exception as e:  # noqa: BLE001
-        logger.warning("on_session_end failed for %s: %s", session_id, e)
+        logger.warning("memory: wiki ingest crashed for %s: %s", session_id, e)
         return False
-    if last_error is not None:
-        # The provider swallowed the error inside on_session_end (it
-        # logs and returns); re-surface it so we don't mark processed.
-        logger.info("memory: %s session %s (will retry next poll)", last_error, session_id)
+
+    if result.get("ok"):
+        logger.info(
+            "memory: ingested session %s into wiki (files=%d reviews=%d)",
+            session_id, result.get("n_files", 0), result.get("n_reviews", 0),
+        )
+        return True
+
+    # Ingest failed. Distinguish "LLM unreachable" (retry next poll)
+    # from "LLM responded but didn't follow the protocol" (don't loop
+    # forever; mark processed and move on).
+    err = (result.get("error") or "").lower()
+    transient = any(
+        token in err
+        for token in ("analysis", "generation:", "timeout", "connection", "unreachable")
+    )
+    if transient:
+        logger.info("memory: %s — will retry next poll", result.get("error"))
         return False
-    logger.info("memory: extracted facts from idle session %s (msgs=%d)", session_id, len(messages))
+    logger.info(
+        "memory: ingest produced no usable output for %s (%s); marking processed",
+        session_id, result.get("error"),
+    )
     return True
 
 

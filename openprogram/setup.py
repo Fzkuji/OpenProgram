@@ -72,14 +72,17 @@ def read_disabled_tools() -> set[str]:
     Kept in this module so the tools package doesn't import config from
     deeper webui modules and drag in FastAPI at tool-registry import time.
 
-    Also honours ``memory.backend == "none"`` by hiding all four
-    memory tools (note / recall / reflect / wiki_get), since they
-    have no backing store in that mode.
+    Also honours ``memory.backend == "none"`` by hiding every memory
+    tool (note / recall / reflect / get / browse / lint / ingest),
+    since they have no backing store in that mode.
     """
     cfg = _read_config()
     disabled = set(cfg.get("tools", {}).get("disabled", []) or [])
     if (cfg.get("memory", {}) or {}).get("backend") == "none":
-        disabled.update({"memory_note", "memory_recall", "memory_reflect", "wiki_get"})
+        disabled.update({
+            "memory_note", "memory_recall", "memory_reflect",
+            "memory_get", "memory_browse", "memory_lint", "memory_ingest",
+        })
     return disabled
 
 
@@ -516,7 +519,7 @@ def run_memory_section() -> int:
     print(f"Memory backend: {picked}")
     if picked == "none":
         print("(The memory tools (memory_note / memory_recall / memory_reflect / "
-              "wiki_get) will no-op until a backend is selected.)")
+              "memory_get) will no-op until a backend is selected.)")
     return 0
 
 

@@ -185,64 +185,342 @@ def reflect(query: str | None = None, **_: Any) -> str:
     )
 
 
-# ── wiki_get ─────────────────────────────────────────────────────────────────
+# ── memory_get ───────────────────────────────────────────────────────────────
 
-WIKI_GET_NAME = "wiki_get"
-WIKI_GET_DESC = (
-    "Fetch a complete wiki page by slug or alias. Returns the full markdown "
-    "including frontmatter (claims, sources, confidence). Use this after "
-    "memory_recall surfaces a relevant page and you need the full context, "
-    "or when you know the slug from prior interactions."
+# Unified read entry. Resolves a target by shape:
+#   - "YYYY-MM-DD"             → short-term file for that day
+#   - "entities/claude-max-..." → wiki page at that path
+#   - "claude-max-proxy"       → wiki page by alias / slug
+# Replaces the old `wiki_get` (kept as alias for back-compat).
+
+GET_NAME = "memory_get"
+GET_DESC = (
+    "Fetch a memory page. Accepts either a wiki slug "
+    "(e.g. 'entities/claude-max-proxy' or just 'claude-max-proxy') or a "
+    "short-term date ('YYYY-MM-DD'). Returns the full markdown content. "
+    "Use this after `memory_browse` to pull the page you identified."
 )
 
-WIKI_GET_SPEC: dict[str, Any] = {
-    "name": WIKI_GET_NAME,
-    "description": WIKI_GET_DESC,
+GET_SPEC: dict[str, Any] = {
+    "name": GET_NAME,
+    "description": GET_DESC,
     "parameters": {
         "type": "object",
         "properties": {
-            "slug": {
+            "target": {
                 "type": "string",
-                "description": "Page slug or alias (e.g. 'openprogram', 'op').",
-            },
-            "kind": {
-                "type": "string",
-                "enum": ["entities", "concepts", "procedures", "user"],
-                "description": "Optional kind to disambiguate.",
+                "description": (
+                    "Wiki slug (e.g. 'claude-max-proxy', 'entities/openprogram') "
+                    "or short-term date ('YYYY-MM-DD')."
+                ),
             },
         },
-        "required": ["slug"],
+        "required": ["target"],
     },
 }
 
 
-def wiki_get(
-    slug: str | None = None,
-    kind: str | None = None,
-    **_: Any,
-) -> str:
-    slug = (slug or "").strip()
-    if not slug:
-        return "Error: wiki_get requires `slug`."
-    page = wiki.get(kind, slug) if kind else None
-    if page is None:
-        page = wiki.find(slug)
-    if page is None:
-        return f"No wiki page matches {slug!r}."
+_DATE_RE_STR = r"^\d{4}-\d{2}-\d{2}$"
+
+
+def memory_get(target: str | None = None, **_: Any) -> str:
+    import re
+    from openprogram.memory import store
     from openprogram.memory.schema import render_wiki_page
-    return render_wiki_page(page)
+
+    target = (target or "").strip()
+    if not target:
+        return "Error: memory_get requires `target`."
+
+    # ── Short-term day ────────────────────────────────────────────────
+    if re.match(_DATE_RE_STR, target):
+        path = store.short_term_for(target)
+        if not path.exists():
+            return f"No short-term file for {target}."
+        return path.read_text(encoding="utf-8")
+
+    # ── Wiki page by explicit path ────────────────────────────────────
+    if "/" in target:
+        rel = target
+        if rel.startswith("wiki/"):
+            rel = rel[len("wiki/"):]
+        if not rel.endswith(".md"):
+            rel = rel + ".md"
+        wpath = store.wiki_dir() / rel
+        if wpath.exists():
+            return wpath.read_text(encoding="utf-8")
+        # fall through to alias resolution using last segment
+        target = rel.rsplit("/", 1)[-1].removesuffix(".md")
+
+    # ── Wiki page by alias / slug ─────────────────────────────────────
+    page = wiki.find(target)
+    if page is not None:
+        return render_wiki_page(page)
+
+    # ── Last-ditch: raw filename search across wiki ───────────────────
+    for p in store.wiki_dir().rglob(f"{target}.md"):
+        return p.read_text(encoding="utf-8")
+    return f"No memory matches {target!r}. Try `memory_browse` first."
+
+
+# Back-compat aliases — old code references WIKI_GET_NAME etc.
+WIKI_GET_NAME = GET_NAME
+WIKI_GET_SPEC = GET_SPEC
+wiki_get = memory_get
+
+
+# ── memory_browse ────────────────────────────────────────────────────────────
+
+# Karpathy / nashsu LLM-Wiki pattern: instead of injecting recall results,
+# the agent BROWSES the wiki by reading the index first and then drilling
+# into specific pages. This tool returns the index and is the recommended
+# starting point whenever the agent suspects long-term knowledge exists.
+
+BROWSE_NAME = "memory_browse"
+BROWSE_DESC = (
+    "Return the wiki index (`index.md`). Use this as the first step when "
+    "you suspect there's relevant long-term knowledge: read the index, "
+    "pick the page(s) most likely to help, then use `wiki_get` on each. "
+    "Faster and more grounded than `memory_recall` for navigating known "
+    "structure; recall is a fallback when you don't know which slugs exist."
+)
+
+BROWSE_SPEC: dict[str, Any] = {
+    "name": BROWSE_NAME,
+    "description": BROWSE_DESC,
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
+def memory_browse(**_: Any) -> str:
+    """Return the unified memory catalog: wiki index (topic axis) +
+    recent short-term days (time axis). One call gives the LLM
+    everything it needs to decide what to drill into.
+    """
+    from openprogram.memory import store, short_term
+
+    parts: list[str] = []
+
+    # --- Wiki index (topic axis) ---------------------------------------
+    idx = store.wiki_dir() / "index.md"
+    try:
+        wiki_idx = idx.read_text(encoding="utf-8").strip()
+    except OSError:
+        wiki_idx = ""
+    parts.append("=== Wiki (topic index) ===\n")
+    if wiki_idx:
+        parts.append(wiki_idx)
+    else:
+        parts.append(
+            "(empty — nothing ingested yet. Use `memory_note` during "
+            "conversation; the next session-end / sleep will ingest.)"
+        )
+    parts.append("")
+
+    # --- Short-term recent days (time axis) ----------------------------
+    parts.append("=== Short-term (recent days) ===\n")
+    files = sorted(store.short_term_dir().glob("*.md"))[-14:]
+    if not files:
+        parts.append("(no short-term notes yet)")
+    else:
+        for f in reversed(files):  # newest first
+            date = f.stem
+            try:
+                entries = short_term.read_day(date)
+            except Exception:
+                entries = []
+            count = len(entries)
+            preview = ""
+            if entries:
+                first_text = (entries[0].text or "").strip().replace("\n", " ")
+                if len(first_text) > 80:
+                    first_text = first_text[:77] + "..."
+                preview = f" — {first_text}"
+            parts.append(f"- {date} ({count} entries){preview}")
+
+    parts.append("")
+    parts.append(
+        "Read with `memory_get(\"<wiki-slug>\")` (e.g. "
+        "`entities/claude-max-proxy`) or `memory_get(\"<YYYY-MM-DD>\")` "
+        "for a short-term day."
+    )
+    return "\n".join(parts)
+
+
+# ── memory_lint ──────────────────────────────────────────────────────────────
+
+# Health-check the wiki: orphans, broken links, missing concepts, contradictions.
+# Returns a structured report; the agent (or the user via the future Memory UI)
+# decides what to act on.
+
+LINT_NAME = "memory_lint"
+LINT_DESC = (
+    "Run a wiki health check. Reports orphan pages, broken `[[wikilinks]]`, "
+    "pages with no outbound links, and the pending review queue. Use when "
+    "the user asks 'how's my memory looking' or before a deliberate cleanup."
+)
+
+LINT_SPEC: dict[str, Any] = {
+    "name": LINT_NAME,
+    "description": LINT_DESC,
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
+def memory_lint(**_: Any) -> str:
+    """Run structural lint + return any persisted review items."""
+    import json
+    import re
+    from openprogram.memory import store
+
+    wiki_root = store.wiki_dir()
+    md_files: list[tuple[str, str]] = []  # (slug, body)
+    for p in wiki_root.rglob("*.md"):
+        if p.name in ("SCHEMA.md", "purpose.md"):
+            continue
+        rel = p.relative_to(wiki_root).with_suffix("")
+        try:
+            md_files.append((str(rel), p.read_text(encoding="utf-8")))
+        except OSError:
+            continue
+    slug_set = {s.lower() for s, _ in md_files}
+    slug_set.update(s.split("/", 1)[-1].lower() for s, _ in md_files)
+
+    wikilink_re = re.compile(r"\[\[([^\]|]+?)(?:\|[^\]]+?)?\]\]")
+    inbound: dict[str, int] = {}
+    outbound: dict[str, int] = {}
+    broken: list[tuple[str, str]] = []
+    for slug, body in md_files:
+        slug_l = slug.lower()
+        outbound.setdefault(slug_l, 0)
+        for m in wikilink_re.finditer(body):
+            target = m.group(1).strip().lower()
+            outbound[slug_l] += 1
+            inbound[target] = inbound.get(target, 0) + 1
+            if target not in slug_set:
+                broken.append((slug, target))
+
+    orphans: list[str] = []
+    no_outlinks: list[str] = []
+    for slug, _ in md_files:
+        sl = slug.lower()
+        # Skip protocol pages
+        if sl in ("index", "log", "overview", "purpose", "schema", "reflections"):
+            continue
+        if inbound.get(sl, 0) == 0 and inbound.get(sl.split("/", 1)[-1], 0) == 0:
+            orphans.append(slug)
+        if outbound.get(sl, 0) == 0:
+            no_outlinks.append(slug)
+
+    # Pending review items from ingest
+    reviews: list[dict] = []
+    qpath = store.state_dir() / "review-queue.json"
+    if qpath.exists():
+        try:
+            reviews = [r for r in json.loads(qpath.read_text(encoding="utf-8"))
+                       if not r.get("resolved")]
+        except Exception:
+            reviews = []
+
+    lines = [
+        f"# Wiki lint report",
+        f"",
+        f"Pages: {len(md_files)}",
+        f"Orphan pages (no inbound links): {len(orphans)}",
+        f"Pages with no outbound links: {len(no_outlinks)}",
+        f"Broken `[[wikilinks]]`: {len(broken)}",
+        f"Pending review items from ingest: {len(reviews)}",
+        f"",
+    ]
+    if orphans:
+        lines.append("## Orphans")
+        lines += [f"- `{s}`" for s in orphans[:20]]
+        lines.append("")
+    if broken:
+        lines.append("## Broken wikilinks")
+        lines += [f"- `{s}` → `[[{t}]]` (target missing)" for s, t in broken[:20]]
+        lines.append("")
+    if no_outlinks:
+        lines.append("## No outbound links")
+        lines += [f"- `{s}`" for s in no_outlinks[:20]]
+        lines.append("")
+    if reviews:
+        lines.append("## Pending reviews (ingest flagged for human judgement)")
+        for r in reviews[:20]:
+            lines.append(f"- [{r.get('kind')}] {r.get('title','')} (id={r.get('id')})")
+        lines.append("")
+    if len(md_files) == 0:
+        lines.append("(wiki is empty — nothing to lint yet)")
+    return "\n".join(lines).rstrip()
+
+
+# ── memory_ingest ────────────────────────────────────────────────────────────
+
+# Manual trigger for the two-step wiki ingest over the CURRENT session.
+# Normally the session_watcher fires this automatically after 30 minutes
+# of idle; this tool lets the user say "remember this now" mid-stream.
+
+INGEST_NAME = "memory_ingest"
+INGEST_DESC = (
+    "Manually run the two-step wiki ingest on the current conversation. "
+    "Use only when the user explicitly says 'remember this' or 'consolidate "
+    "memory now' — otherwise the background watcher handles it automatically "
+    "after the session goes idle. Requires the current session_id."
+)
+
+INGEST_SPEC: dict[str, Any] = {
+    "name": INGEST_NAME,
+    "description": INGEST_DESC,
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_id": {
+                "type": "string",
+                "description": "ID of the session to ingest (current conversation).",
+            },
+        },
+        "required": ["session_id"],
+    },
+}
+
+
+def memory_ingest(session_id: str | None = None, **_: Any) -> str:
+    sid = (session_id or "").strip()
+    if not sid:
+        return "Error: memory_ingest requires `session_id`."
+    try:
+        from openprogram.agent.session_db import default_db
+        from openprogram.memory.ingest import ingest_session
+        from openprogram.memory.llm_bridge import build_default_llm
+    except Exception as e:
+        return f"Error: ingest pipeline unavailable ({e})."
+    llm = build_default_llm()
+    if llm is None:
+        return "Error: no LLM configured for ingest (set provider keys)."
+    try:
+        messages = default_db().get_branch(sid)
+    except Exception as e:
+        return f"Error: cannot load session {sid!r}: {e}."
+    if not messages:
+        return f"Session {sid!r} has no messages."
+    result = ingest_session(sid, messages, llm=llm)
+    if not result.get("ok"):
+        return f"Ingest failed: {result.get('error')}"
+    return (
+        f"Ingest complete: wrote {result.get('n_files')} pages, "
+        f"flagged {result.get('n_reviews')} review items."
+    )
 
 
 # ── Compatibility export for tools/__init__.py ───────────────────────────────
-
-# Keep the original ``NAME`` / ``DESCRIPTION`` / ``SPEC`` / ``execute``
-# triple — older registry code still expects a single tool. We treat the
-# four tools as a tool *bundle* exported from ``__init__.py``; this file
-# itself just defines them.
 
 __all__ = [
     "NOTE_NAME", "NOTE_SPEC", "note",
     "RECALL_NAME", "RECALL_SPEC", "recall",
     "REFLECT_NAME", "REFLECT_SPEC", "reflect",
-    "WIKI_GET_NAME", "WIKI_GET_SPEC", "wiki_get",
+    "GET_NAME", "GET_SPEC", "memory_get",
+    "WIKI_GET_NAME", "WIKI_GET_SPEC", "wiki_get",  # back-compat alias
+    "BROWSE_NAME", "BROWSE_SPEC", "memory_browse",
+    "LINT_NAME", "LINT_SPEC", "memory_lint",
+    "INGEST_NAME", "INGEST_SPEC", "memory_ingest",
 ]
