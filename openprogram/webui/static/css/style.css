@@ -1911,7 +1911,9 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   font-weight: 600;
 }
 .agent-selector .model-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   padding: 4px 8px;
   margin: 1px 0;
@@ -1924,6 +1926,28 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   text-align: left;
   cursor: pointer;
 }
+.model-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-cap-icons {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.cap-icon {
+  width: 13px;
+  height: 13px;
+  opacity: 0.75;
+}
+.cap-vision    { color: #56b6c2; }
+.cap-video     { color: #4d9fe8; }
+.cap-tools     { color: #98c379; }
+.cap-reasoning { color: #c678dd; }
 .agent-selector .model-item:hover {
   background: rgba(198,120,221,0.15);
   color: var(--accent-purple);

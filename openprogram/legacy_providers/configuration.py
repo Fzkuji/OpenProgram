@@ -152,12 +152,12 @@ def _codex_save(ctx: dict) -> dict:
             existing = {}
 
     model = ctx.get("model") or _CODEX_MODELS[0][0]
-    existing["default_provider"] = "openai-codex"
+    existing["default_provider"] = "chatgpt-subscription"
     existing["default_model"] = model
     config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
     return {
         "status": "ok",
-        "message": f"Saved {config_path}: default_provider=openai-codex, default_model={model}",
+        "message": f"Saved {config_path}: default_provider=chatgpt-subscription, default_model={model}",
     }
 
 
@@ -166,8 +166,8 @@ def _codex_save(ctx: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 PROVIDER_CONFIG: dict[str, dict] = {
-    "openai-codex": {
-        "label": "OpenAI Codex (ChatGPT subscription)",
+    "chatgpt-subscription": {
+        "label": "ChatGPT Subscription (OAuth)",
         "type": "cli-oauth",
         "description": (
             "Use your ChatGPT Plus/Pro/Business subscription via the Codex CLI. "

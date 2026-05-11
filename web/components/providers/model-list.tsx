@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { Search, Eye, Wrench, Brain, FileText, Trash2 } from "lucide-react";
+import { Search, Eye, Video, Wrench, Brain, FileText, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Provider, Capability } from "@/lib/types";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ const capConfig: Record<
   { icon: typeof Eye; color: string; label: string }
 > = {
   vision: { icon: Eye, color: "var(--accent-cyan)", label: "Vision" },
+  video: { icon: Video, color: "var(--accent-blue)", label: "Video" },
   tools: { icon: Wrench, color: "var(--accent-green)", label: "Tools" },
   reasoning: {
     icon: Brain,

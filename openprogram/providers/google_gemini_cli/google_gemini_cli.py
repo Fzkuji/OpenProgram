@@ -26,6 +26,7 @@ from openprogram.providers._shared.google import (
     retain_thought_signature,
 )
 from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
+from openprogram.providers._shared.validate_modalities import validate_input_modalities
 from openprogram.providers.utils.event_stream import EventStream
 from openprogram.providers.utils.sanitize_unicode import sanitize_surrogates
 
@@ -104,6 +105,8 @@ def stream_google_gemini_cli(
     opts = options or {}
     ev_stream: EventStream = EventStream()
 
+    validate_input_modalities(model, context)
+
     async def _run() -> None:
         global _tool_call_counter
         try:
@@ -151,13 +154,13 @@ def stream_google_gemini_cli(
             }
 
             project_id = opts.get("project_id") or os.environ.get("GOOGLE_CLOUD_PROJECT") or ""
+            if not project_id and not is_antigravity:
+                project_id = await _discover_project_id(headers, endpoints[0])
             contents = convert_messages(model, context)
             request_body = _build_request_body(model, context, opts, contents, project_id)
 
             if opts.get("on_payload"):
                 opts["on_payload"](request_body)
-
-            model_id_for_url = model.id.replace(".", "-")
 
             ev_stream.push({"type": "start", "partial": output})
 
@@ -165,7 +168,7 @@ def stream_google_gemini_cli(
             endpoint_index = 0
             while retry_count <= _MAX_RETRIES:
                 base_url = endpoints[min(endpoint_index, len(endpoints) - 1)]
-                endpoint_url = f"{base_url.rstrip('/')}/v1/projects/{project_id}/locations/us-central1/publishers/google/models/{model_id_for_url}:streamGenerateContent?alt=sse"
+                endpoint_url = f"{base_url.rstrip('/')}/v1internal:streamGenerateContent?alt=sse"
                 async with httpx.AsyncClient(timeout=120.0) as client:
                     async with client.stream(
                         "POST",
@@ -449,3 +452,37 @@ def _get_google_budget(model: "Model", effort: str, custom_budgets: dict[str, in
     if "2.5-flash" in model.id:
         return {"minimal": 128, "low": 2048, "medium": 8192, "high": 24576}.get(effort, 2048)
     return -1
+
+
+_cached_project_id: str = ""
+
+
+async def _discover_project_id(headers: dict[str, str], base_url: str) -> str:
+    """Call loadCodeAssist to discover the cloudaicompanionProject for this OAuth token.
+
+    Result is cached in-process so the extra round-trip only happens once per session.
+    """
+    global _cached_project_id
+    if _cached_project_id:
+        return _cached_project_id
+    try:
+        import httpx
+        url = f"{base_url.rstrip('/')}/v1internal:loadCodeAssist"
+        body = {
+            "metadata": {
+                "ideType": "IDE_UNSPECIFIED",
+                "platform": "PLATFORM_UNSPECIFIED",
+                "pluginType": "GEMINI",
+            }
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, headers=headers, content=json.dumps(body))
+            if resp.status_code == 200:
+                data = resp.json()
+                project = data.get("cloudaicompanionProject") or ""
+                if project:
+                    _cached_project_id = project
+                    return project
+    except Exception:
+        pass
+    return ""

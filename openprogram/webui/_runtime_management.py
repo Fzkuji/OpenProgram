@@ -17,7 +17,7 @@ from typing import Optional
 # Globals — live here so server.py doesn't own provider state directly.
 # ---------------------------------------------------------------------------
 
-_CLI_PROVIDERS = {"openai-codex", "gemini-cli"}
+_CLI_PROVIDERS = {"chatgpt-subscription", "gemini-cli"}
 
 _runtime_lock = threading.Lock()
 
@@ -135,7 +135,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
 
     if provider in PROVIDERS:
         kwargs = {"provider": provider}
-        if provider == "openai-codex":
+        if provider == "chatgpt-subscription":
             kwargs["search"] = True
         if model:
             kwargs["model"] = model
@@ -154,8 +154,37 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     return Runtime(model=f"{provider}:{model}")
 
 
-_PROVIDER_PRIORITY = ("openai-codex", "gemini-cli", "anthropic", "gemini", "openai", "claude-max-proxy")
-_CLI_BINS = {"openai-codex": "codex", "gemini-cli": "gemini"}
+_PROVIDER_PRIORITY = ("chatgpt-subscription", "gemini-cli", "anthropic", "gemini", "openai", "claude-code")
+_CLI_BINS = {"chatgpt-subscription": "codex", "gemini-cli": "gemini"}
+
+
+def _build_model_caps(provider_name: str, model_ids: list[str]) -> dict[str, dict]:
+    """Return {model_id: {vision, video, audio, reasoning, tools}} for each model."""
+    try:
+        from openprogram.providers.models_generated import MODELS
+        caps: dict[str, dict] = {}
+        for mid in model_ids:
+            # Try provider-qualified key first, then bare id
+            key = f"{provider_name}/{mid}"
+            m = MODELS.get(key) or MODELS.get(mid)
+            if m is None:
+                # Fallback: scan for any key whose model.id matches
+                for k, v in MODELS.items():
+                    if v.id == mid and (v.provider == provider_name or v.api == provider_name):
+                        m = v
+                        break
+            if m:
+                inputs = list(getattr(m, "input", []) or [])
+                caps[mid] = {
+                    "vision": "image" in inputs,
+                    "video": "video" in inputs,
+                    "audio": "audio" in inputs,
+                    "reasoning": bool(getattr(m, "reasoning", False)),
+                    "tools": True,
+                }
+        return caps
+    except Exception:
+        return {}
 
 
 def _probe_one_provider(p_name: str):
@@ -213,7 +242,7 @@ def _probe_rest_async(skip: str | None) -> None:
                 if r is None:
                     continue
                 name, rt, models = r
-                _available_providers[name] = {"models": models, "default_model": rt.model}
+                _available_providers[name] = {"models": models, "default_model": rt.model, "model_caps": _build_model_caps(name, models)}
                 if hasattr(rt, "close"):
                     try:
                         rt.close()
@@ -344,10 +373,10 @@ def _get_exec_runtime(no_tools: bool = False):
         raise RuntimeError(
             "No provider available. Install a CLI (codex/gemini) or set an API key."
         )
-    if no_tools and _exec_provider == "openai-codex":
+    if no_tools and _exec_provider == "chatgpt-subscription":
         from openprogram.legacy_providers import create_runtime
         rt = create_runtime(
-            provider="openai-codex", session_id=None, search=False,
+            provider="chatgpt-subscription", session_id=None, search=False,
             full_auto=False, sandbox="read-only",
         )
     else:

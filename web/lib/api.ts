@@ -18,6 +18,7 @@ interface RawModel {
   id: string;
   name: string;
   vision?: boolean;
+  video?: boolean;
   tools?: boolean;
   reasoning?: boolean;
   context_window?: number;
@@ -29,6 +30,7 @@ interface RawModel {
 function mapModel(m: RawModel, provider: string): Model {
   const caps: Capability[] = [];
   if (m.vision) caps.push("vision");
+  if (m.video) caps.push("video");
   if (m.tools) caps.push("tools");
   if (m.reasoning) caps.push("reasoning");
   if (m.context_window) caps.push("ctx");

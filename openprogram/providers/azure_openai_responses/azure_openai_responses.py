@@ -19,6 +19,7 @@ from openprogram.providers._shared.openai_responses import (
     convert_responses_tools,
     process_responses_stream,
 )
+from openprogram.providers._shared.validate_modalities import validate_input_modalities
 from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers.utils.event_stream import EventStream
 
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from openprogram.providers.types import Context, Model, SimpleStreamOptions
 
 _DEFAULT_API_VERSION = "v1"
-_AZURE_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-codex", "opencode", "azure-openai-responses"})
+_AZURE_TOOL_CALL_PROVIDERS = frozenset({"openai", "chatgpt-subscription", "opencode", "azure-openai-responses"})
 
 
 def stream_azure_openai_responses(
@@ -37,6 +38,8 @@ def stream_azure_openai_responses(
     """Stream from Azure OpenAI Responses API."""
     opts = options or {}
     ev_stream: EventStream = EventStream()
+
+    validate_input_modalities(model, context)
 
     async def _run() -> None:
         try:

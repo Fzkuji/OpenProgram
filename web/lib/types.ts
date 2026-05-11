@@ -1,4 +1,4 @@
-export type Capability = "vision" | "tools" | "reasoning" | "ctx";
+export type Capability = "vision" | "video" | "tools" | "reasoning" | "ctx";
 
 export interface Model {
   id: string;

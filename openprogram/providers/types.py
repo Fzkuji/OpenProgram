@@ -15,11 +15,11 @@ KnownApi = Literal[
     "mistral-conversations",
     "openai-responses",
     "azure-openai-responses",
-    "openai-codex-responses",
+    "chatgpt-subscription",
     "anthropic-messages",
     "bedrock-converse-stream",
     "google-generative-ai",
-    "google-gemini-cli",
+    "gemini-subscription",
     "google-vertex",
 ]
 Api = str  # KnownApi or arbitrary string
@@ -28,12 +28,12 @@ KnownProvider = Literal[
     "amazon-bedrock",
     "anthropic",
     "google",
-    "google-gemini-cli",
-    "google-antigravity",
+    "gemini-subscription",
+    "gemini-subscription-corp",
     "google-vertex",
     "openai",
     "azure-openai-responses",
-    "openai-codex",
+    "chatgpt-subscription",
     "github-copilot",
     "xai",
     "groq",
@@ -48,7 +48,7 @@ KnownProvider = Literal[
     "opencode",
     "opencode-go",
     "kimi-coding",
-    "claude-max-proxy",
+    "claude-code",
 ]
 Provider = str  # KnownProvider or arbitrary string
 
@@ -173,6 +173,18 @@ class ImageContent(BaseModel):
     mime_type: str  # e.g. "image/jpeg"
 
 
+class VideoContent(BaseModel):
+    type: Literal["video"] = "video"
+    data: str  # base64 encoded
+    mime_type: str  # e.g. "video/mp4"
+
+
+class AudioContent(BaseModel):
+    type: Literal["audio"] = "audio"
+    data: str  # base64 encoded
+    mime_type: str  # e.g. "audio/mp3"
+
+
 class ToolCall(BaseModel):
     type: Literal["toolCall"] = "toolCall"
     id: str
@@ -204,7 +216,7 @@ class Usage(BaseModel):
 
 class UserMessage(BaseModel):
     role: Literal["user"] = "user"
-    content: str | list[TextContent | ImageContent]
+    content: str | list[TextContent | ImageContent | VideoContent | AudioContent]
     timestamp: int  # Unix ms
 
 
@@ -224,7 +236,7 @@ class ToolResultMessage(BaseModel):
     role: Literal["toolResult"] = "toolResult"
     tool_call_id: str
     tool_name: str
-    content: list[TextContent | ImageContent]
+    content: list[TextContent | ImageContent | VideoContent | AudioContent]
     details: Any | None = None
     is_error: bool = False
     timestamp: int  # Unix ms
@@ -275,7 +287,7 @@ class Model(BaseModel):
     # the default path (LobeChat-style quirk marker). Examples: "opus47",
     # "codex_max". Provider request builders and the UI picker switch on this.
     thinking_variant: str | None = None
-    input: list[Literal["text", "image"]] = Field(default_factory=lambda: ["text"])
+    input: list[Literal["text", "image", "video", "audio"]] = Field(default_factory=lambda: ["text"])
     cost: ModelCost = Field(default_factory=ModelCost)
     context_window: int = 128000
     max_tokens: int = 8192

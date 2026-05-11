@@ -37,6 +37,7 @@ from ..types import (
 )
 from ..utils.json_parse import parse_partial_json
 from .._shared.transform_messages import transform_messages as _transform_messages
+from .._shared.validate_modalities import validate_input_modalities
 
 
 def _uses_developer_role(model: Model) -> bool:
@@ -149,6 +150,8 @@ async def stream_simple(
 ) -> AsyncGenerator[AssistantMessageEvent, None]:
     """Stream a response from the OpenAI Chat Completions API."""
     opts = options or SimpleStreamOptions()
+
+    validate_input_modalities(model, context)
 
     base_url = model.base_url if model.base_url != "https://api.openai.com/v1" else None
     extra_headers = opts.headers or {}

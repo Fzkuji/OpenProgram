@@ -8,10 +8,10 @@ Available providers:
     AnthropicRuntime       — Anthropic Claude API (text + image, prompt caching)
     OpenAIRuntime          — OpenAI GPT API (text + image, response_format)
     GeminiRuntime          — Google Gemini API (text + image)
-    ClaudeMaxProxyRuntime  — Claude via local ``claude-max-api-proxy`` daemon (HTTP),
+    ClaudeCodeRuntime       — Claude via local ``claude-max-api-proxy`` daemon (HTTP),
                              for Max-plan users who don't have a paid API key.
-    OpenAICodexRuntime     — OpenAI Codex CLI (no API key in harness, uses codex auth)
-    GeminiCLIRuntime       — Gemini CLI (no API key, uses Google account)
+    ChatGPTSubscriptionRuntime — OpenAI Codex HTTP API (ChatGPT subscription OAuth, reads ~/.codex/auth.json)
+    GeminiSubscriptionRuntime  — Google Gemini HTTP API (Google account OAuth, reads ~/.gemini/oauth_creds.json)
 
 Usage:
     from openprogram.legacy_providers import AnthropicRuntime
@@ -23,8 +23,8 @@ Usage:
     from openprogram.legacy_providers import GeminiRuntime
     rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
 
-    from openprogram.legacy_providers import OpenAICodexRuntime
-    rt = OpenAICodexRuntime(model="gpt-5.5-mini")
+    from openprogram.legacy_providers import ChatGPTSubscriptionRuntime
+    rt = ChatGPTSubscriptionRuntime(model="gpt-5.5-mini")
 
 Auto-detection:
     from openprogram.legacy_providers import detect_provider, create_runtime
@@ -45,9 +45,9 @@ PROVIDERS = {
     # Claude via a local `claude-max-api-proxy` daemon (HTTP). Replaces
     # the previous CLI-spawning `claude-code` provider; tools come from
     # OpenProgram's own registry instead of the CLI's built-ins.
-    "claude-max-proxy": ("ClaudeMaxProxyRuntime",  "openprogram.providers.anthropic._max_proxy_runtime",  "claude-sonnet-4-6"),
-    "openai-codex":     ("OpenAICodexRuntime",     "openprogram.legacy_providers.openai_codex",           "gpt-5.5"),
-    "gemini-cli":       ("GoogleGeminiCLIRuntime", "openprogram.providers.google_gemini_cli.runtime",     "gemini-2.5-flash"),
+    "claude-code":        ("ClaudeCodeRuntime",             "openprogram.providers.anthropic._max_proxy_runtime",  "claude-sonnet-4-6"),
+    "chatgpt-subscription": ("ChatGPTSubscriptionRuntime", "openprogram.legacy_providers.openai_codex",           "gpt-5.5"),
+    "gemini-cli":        ("GeminiSubscriptionRuntime",    "openprogram.providers.google_gemini_cli.runtime",     "gemini-2.5-flash"),
     "anthropic":        ("AnthropicRuntime",       "openprogram.providers.anthropic.runtime",             "claude-sonnet-4-6"),
     "openai":           ("OpenAIRuntime",          "openprogram.providers.openai_responses.runtime",      "gpt-4.1"),
     "gemini":           ("GeminiRuntime",          "openprogram.providers.google.runtime",                "gemini-2.5-flash"),
@@ -62,7 +62,7 @@ def _detect_caller_env() -> tuple[str, str] | None:
     # Running inside Codex CLI?
     if os.environ.get("CODEX_CLI") or os.environ.get("CODEX_SANDBOX_TYPE"):
         if shutil.which("codex"):
-            return "openai-codex", None
+            return "chatgpt-subscription", None
 
     return None
 
@@ -126,7 +126,7 @@ def detect_provider() -> tuple[str, str]:
 
     # 4. CLI providers (no API key needed)
     if shutil.which("codex"):
-        return "openai-codex", None
+        return "chatgpt-subscription", None
     if shutil.which("gemini"):
         return "gemini-cli", "gemini-2.5-flash"
 
@@ -152,7 +152,7 @@ def detect_provider() -> tuple[str, str]:
         "                    (or GOOGLE_GENERATIVE_AI_API_KEY=...)\n"
         "\n"
         "  Claude via Max plan (HTTP proxy):\n"
-        "    6. Install + launch the proxy, then use provider=claude-max-proxy:\n"
+        "    6. Install + launch the proxy, then use provider=claude-max:\n"
         "       npm install -g claude-max-api-proxy && claude-max-api-proxy\n"
         "\n"
         "  Or set explicitly:\n"
@@ -166,14 +166,14 @@ def check_providers() -> dict:
 
     Returns a dict with status of each provider:
         {
-            "openai-codex": {"available": True, "method": "CLI", "model": "gpt-5.5"},
+            "chatgpt-subscription": {"available": True, "method": "CLI", "model": "gpt-5.5"},
             "openai": {"available": True, "method": "API", "model": "gpt-4.1"},
             ...
         }
     """
     results = {}
     cli_checks = {
-        "openai-codex": "codex",
+        "chatgpt-subscription": "codex",
         "gemini-cli": "gemini",
     }
     api_checks = {
@@ -216,7 +216,7 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
     """Create a Runtime instance with auto-detection or explicit provider.
 
     Args:
-        provider:  Provider name (e.g. "anthropic", "claude-max-proxy",
+        provider:  Provider name (e.g. "anthropic", "claude-code",
                    "openai", "gemini-cli"). Pass "auto" or None to
                    auto-detect the best available provider via
                    detect_provider().
@@ -267,21 +267,19 @@ def __getattr__(name):
     if name == "GeminiRuntime":
         from openprogram.providers.google.runtime import GeminiRuntime
         return GeminiRuntime
-    if name == "ClaudeMaxProxyRuntime":
+    if name in ("ClaudeCodeRuntime", "ClaudeCodeRuntime"):
         from openprogram.providers.anthropic._max_proxy_runtime import (
-            ClaudeMaxProxyRuntime,
+            ClaudeCodeRuntime,
         )
-        return ClaudeMaxProxyRuntime
-    if name == "OpenAICodexRuntime":
-        from openprogram.legacy_providers.openai_codex import OpenAICodexRuntime
-        return OpenAICodexRuntime
-    if name == "GeminiCLIRuntime":
-        # Legacy name kept for backwards compat — now points at the
-        # HTTP-direct runtime under providers.google_gemini_cli.
+        return ClaudeCodeRuntime
+    if name in ("ChatGPTSubscriptionRuntime", "ChatGPTSubscriptionRuntime"):
+        from openprogram.legacy_providers.openai_codex import ChatGPTSubscriptionRuntime
+        return ChatGPTSubscriptionRuntime
+    if name in ("GeminiSubscriptionRuntime", "GeminiSubscriptionRuntime"):
         from openprogram.providers.google_gemini_cli.runtime import (
-            GoogleGeminiCLIRuntime,
+            GeminiSubscriptionRuntime,
         )
-        return GoogleGeminiCLIRuntime
+        return GeminiSubscriptionRuntime
     raise AttributeError(f"module 'openprogram.legacy_providers' has no attribute {name!r}")
 
 
@@ -292,7 +290,7 @@ __all__ = [
     "AnthropicRuntime",
     "OpenAIRuntime",
     "GeminiRuntime",
-    "ClaudeMaxProxyRuntime",
-    "OpenAICodexRuntime",
-    "GeminiCLIRuntime",
+    "ClaudeCodeRuntime",
+    "ChatGPTSubscriptionRuntime",
+    "GeminiSubscriptionRuntime",
 ]

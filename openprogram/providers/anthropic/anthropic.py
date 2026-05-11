@@ -51,6 +51,7 @@ from ..utils.event_stream import EventStream
 from ..utils.json_parse import parse_partial_json, parse_streaming_json
 from ..utils.sanitize_unicode import sanitize_surrogates
 from .._shared.transform_messages import transform_messages as _transform_messages
+from .._shared.validate_modalities import validate_input_modalities
 
 # Anthropic beta features
 _BETA_FINE_GRAINED = "fine-grained-tool-streaming-2025-05-14"
@@ -418,6 +419,8 @@ async def stream_simple(
     Full parity with TypeScript including OAuth, cache control, beta headers.
     """
     opts = options or SimpleStreamOptions()
+
+    validate_input_modalities(model, context)
 
     api_key = opts.api_key or ""
     if not api_key:

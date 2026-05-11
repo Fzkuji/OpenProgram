@@ -10,6 +10,7 @@ import json
 import time
 from typing import Any, AsyncGenerator
 
+from .._shared.validate_modalities import validate_input_modalities
 from ..types import (
     AssistantMessage,
     AssistantMessageEvent,
@@ -175,6 +176,7 @@ async def stream_simple(
     options: SimpleStreamOptions | None = None,
 ) -> AsyncGenerator[AssistantMessageEvent, None]:
     """Stream a response from the Google Generative AI API using google.genai SDK."""
+    validate_input_modalities(model, context)
     try:
         from google import genai
     except ImportError:

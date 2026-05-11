@@ -9,6 +9,7 @@
  * model list (toggle / search / fetch remote / bulk enable / disable).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Eye, Wrench, Brain, Video } from "lucide-react";
 import styles from "./settings-page.module.css";
 import { ProviderIcon } from "./provider-icon";
 
@@ -37,6 +38,7 @@ interface Model {
   name?: string;
   enabled: boolean;
   vision?: boolean;
+  video?: boolean;
   tools?: boolean;
   reasoning?: boolean;
   context_window?: number;
@@ -752,9 +754,10 @@ function ModelRow({
   onToggle: (enabled: boolean) => void;
 }) {
   const caps: React.ReactNode[] = [];
-  if (model.vision) caps.push(<span key="v" className={styles.capBadge + " " + styles.vision} title="Vision">👁</span>);
-  if (model.tools) caps.push(<span key="t" className={styles.capBadge + " " + styles.tools} title="Tools">🔧</span>);
-  if (model.reasoning) caps.push(<span key="r" className={styles.capBadge + " " + styles.reasoning} title="Reasoning">🧠</span>);
+  if (model.vision) caps.push(<span key="v" className={styles.capBadge + " " + styles.vision} title="Vision"><Eye size={11} strokeWidth={1.8} /></span>);
+  if (model.video) caps.push(<span key="vid" className={styles.capBadge + " " + styles.video} title="Video"><Video size={11} strokeWidth={1.8} /></span>);
+  if (model.tools) caps.push(<span key="t" className={styles.capBadge + " " + styles.tools} title="Tools"><Wrench size={11} strokeWidth={1.8} /></span>);
+  if (model.reasoning) caps.push(<span key="r" className={styles.capBadge + " " + styles.reasoning} title="Reasoning"><Brain size={11} strokeWidth={1.8} /></span>);
   if (model.context_window)
     caps.push(<span key="c" className={styles.capBadge + " " + styles.ctx}>{formatCtx(model.context_window)}</span>);
 

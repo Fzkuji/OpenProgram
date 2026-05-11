@@ -516,7 +516,10 @@
   font-size: 10px;
 }
 .capBadge.vision {
-  color: var(--accent-blue);
+  color: var(--accent-cyan, #56b6c2);
+}
+.capBadge.video {
+  color: var(--accent-blue, #4d9fe8);
 }
 .capBadge.tools {
   color: var(--accent-green);

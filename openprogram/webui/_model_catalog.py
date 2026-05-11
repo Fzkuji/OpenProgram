@@ -27,7 +27,7 @@ from typing import Any
 # Importing these modules triggers runtime-level registry augmentation:
 # - openai_codex runtime adds Codex-route models (gpt-5.5 family)
 # - anthropic._claude_max_proxy_registry adds Claude models under the
-#   "claude-max-proxy" provider so list_enabled_models can find them
+#   "claude-code" provider so list_enabled_models can find them
 from openprogram.providers.openai_codex import runtime as _codex_runtime  # noqa: F401
 from openprogram.providers.anthropic import _claude_max_proxy_registry as _cmp_registry  # noqa: F401
 
@@ -36,12 +36,12 @@ from openprogram.providers.anthropic import _claude_max_proxy_registry as _cmp_r
 # prettified id ("amazon-bedrock" -> "Amazon Bedrock").
 _PROVIDER_LABELS = {
     "openai": "OpenAI",
-    "openai-codex": "ChatGPT Codex",
+    "chatgpt-subscription": "ChatGPT Subscription",
     "anthropic": "Anthropic",
     "google": "Google AI",
     "google-vertex": "Google Vertex AI",
-    "google-gemini-cli": "Google Gemini (Cloud Code Assist)",
-    "google-antigravity": "Google Antigravity",
+    "gemini-subscription": "Google Gemini (Cloud Code Assist)",
+    "gemini-subscription-corp": "Google Gemini (Corporate OAuth)",
     "azure-openai-responses": "Azure OpenAI",
     "amazon-bedrock": "Amazon Bedrock",
     "openrouter": "OpenRouter",
@@ -58,7 +58,7 @@ _PROVIDER_LABELS = {
     # Claude via local HTTP proxy daemon (replaces the old Claude Code CLI
     # provider). Tools come from OpenProgram's own registry instead of the
     # CLI's built-ins.
-    "claude-max-proxy": "Claude (Max proxy)",
+    "claude-code": "Claude (Max plan)",
     # CLI-backed:
     "gemini-cli": "Gemini CLI",
 }
@@ -97,7 +97,7 @@ _FETCH_MODELS_PROVIDERS = frozenset({
     #   google*        — custom endpoints / OAuth
     #   azure-*        — needs deployment name not model id
     #   amazon-bedrock — AWS SigV4
-    #   openai-codex   — ChatGPT backend, no public listing (403)
+    #   chatgpt-subscription — ChatGPT backend, no public listing (403)
     #   github-copilot — private OAuth with custom headers
     #   opencode       — not verified; add if/when tested
 })
@@ -108,8 +108,8 @@ _ENV_API_KEYS = {
     "anthropic": "ANTHROPIC_API_KEY",
     "google": "GOOGLE_GENERATIVE_AI_API_KEY",
     "google-vertex": None,  # uses gcloud ADC
-    "google-gemini-cli": None,  # uses OAuth
-    "google-antigravity": None,
+    "gemini-subscription": None,  # uses OAuth
+    "gemini-subscription-corp": None,
     "azure-openai-responses": "AZURE_OPENAI_API_KEY",
     "amazon-bedrock": None,  # AWS credentials chain
     "openrouter": "OPENROUTER_API_KEY",
@@ -123,7 +123,7 @@ _ENV_API_KEYS = {
     "kimi-coding": "MOONSHOT_API_KEY",
     "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
     "opencode": None,
-    "openai-codex": None,  # OAuth via ~/.codex/auth.json
+    "chatgpt-subscription": None,  # OAuth via ~/.codex/auth.json
 }
 
 
@@ -145,14 +145,14 @@ def _is_configured(provider_id: str) -> bool:
     for cli in _CLI_PROVIDERS:
         if cli["id"] == provider_id:
             return shutil.which(cli["cli_binary"]) is not None
-    # openai-codex: reads ~/.codex/auth.json
-    if provider_id == "openai-codex":
+    # chatgpt-subscription: reads ~/.codex/auth.json
+    if provider_id == "chatgpt-subscription":
         from pathlib import Path
         return (Path.home() / ".codex" / "auth.json").exists()
-    # claude-max-proxy: there's no env-key path; the daemon is "ready"
+    # claude-max: there's no env-key path; the daemon is "ready"
     # when its HTTP endpoint answers. Quick 0.5s probe — failure means
-    # the user hasn't started ``claude-max-api-proxy`` yet.
-    if provider_id == "claude-max-proxy":
+    # the user hasn't started ``claude-max-api`` yet.
+    if provider_id == "claude-code":
         import os, urllib.request, urllib.error
         # `claude-max-api-proxy` binary defaults to port 3456. Strip
         # a trailing /v1 because the proxy exposes /health at root.
@@ -177,7 +177,7 @@ def _is_configured(provider_id: str) -> bool:
 #   * Backticked spans render as inline <code>.
 #   * Lines beginning with ``$ `` render as a command row (copy-able).
 _SETUP_HINTS: dict[str, str] = {
-    "claude-max-proxy": (
+    "claude-code": (
         "Claude (Max plan) auth lives in the Claude Code keychain — there's no API\n"
         "key to paste here. Install the local proxy daemon once and keep it running:\n"
         "\n"
@@ -212,6 +212,8 @@ def _model_to_dict(model, enabled: bool) -> dict[str, Any]:
         "context_window": getattr(model, "context_window", 0) or 0,
         "max_tokens": getattr(model, "max_tokens", 0) or 0,
         "vision": "image" in inputs,
+        "video": "video" in inputs,
+        "audio": "audio" in inputs,
         "reasoning": bool(getattr(model, "reasoning", False)),
         # Thinking UX capability (see providers/thinking_catalog.py). Empty
         # `thinking_levels` → UI hides the menu for this model.
@@ -257,7 +259,7 @@ def list_providers() -> list[dict[str, Any]]:
         hint = _setup_hint(pid)
         if hint:
             entry["setup_hint"] = hint
-            # claude-max-proxy doesn't use an API key env — the proxy
+            # claude-max doesn't use an API key env — the proxy
             # forwards via Claude Code's OAuth — so skip the API-key
             # input UI for it.
             entry["api_key_env"] = None

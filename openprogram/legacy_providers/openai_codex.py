@@ -1,8 +1,12 @@
 """Backward-compat shim.
 
-``OpenAICodexRuntime`` moved to ``openprogram.providers.openai_codex``.
-Import from there in new code.
+``ChatGPTSubscriptionRuntime`` lives in ``openprogram.providers.openai_codex``.
+Import from there in new code. The old name ``ChatGPTSubscriptionRuntime`` is kept as
+an alias for backward compatibility.
 """
-from openprogram.providers.openai_codex.runtime import OpenAICodexRuntime
+from openprogram.providers.openai_codex.runtime import ChatGPTSubscriptionRuntime
 
-__all__ = ["OpenAICodexRuntime"]
+# Backward-compat alias
+ChatGPTSubscriptionRuntime = ChatGPTSubscriptionRuntime
+
+__all__ = ["ChatGPTSubscriptionRuntime", "ChatGPTSubscriptionRuntime"]

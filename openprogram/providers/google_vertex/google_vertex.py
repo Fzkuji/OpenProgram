@@ -23,6 +23,7 @@ from openprogram.providers._shared.google import (
     map_tool_choice,
     retain_thought_signature,
 )
+from openprogram.providers._shared.validate_modalities import validate_input_modalities
 from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers.utils.event_stream import EventStream
 from openprogram.providers.utils.sanitize_unicode import sanitize_surrogates
@@ -41,6 +42,8 @@ def stream_google_vertex(
     """Stream responses from Google Vertex AI."""
     opts = options or {}
     ev_stream: EventStream = EventStream()
+
+    validate_input_modalities(model, context)
 
     async def _run() -> None:
         global _tool_call_counter

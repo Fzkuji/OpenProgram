@@ -18,6 +18,7 @@ from openprogram.providers.models import calculate_cost
 from openprogram.providers.utils.event_stream import EventStream
 from openprogram.providers.utils.json_parse import parse_streaming_json
 from openprogram.providers.utils.sanitize_unicode import sanitize_surrogates
+from openprogram.providers._shared.validate_modalities import validate_input_modalities
 
 if TYPE_CHECKING:
     from openprogram.providers.types import (
@@ -96,6 +97,8 @@ def stream_bedrock(
     """Stream responses from AWS Bedrock Converse Stream API."""
     opts = options or {}
     ev_stream: EventStream = EventStream()
+
+    validate_input_modalities(model, context)
 
     async def _run() -> None:
         try:

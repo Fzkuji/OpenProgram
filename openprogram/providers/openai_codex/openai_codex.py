@@ -20,6 +20,7 @@ from openprogram.providers._shared.openai_responses import (
     convert_responses_tools,
     process_responses_stream,
 )
+from openprogram.providers._shared.validate_modalities import validate_input_modalities
 from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers.utils.event_stream import EventStream
 
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
 _DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api"
 _MAX_RETRIES = 3
 _BASE_DELAY_MS = 1000
-_CODEX_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-codex", "opencode"})
+_CODEX_TOOL_CALL_PROVIDERS = frozenset({"openai", "chatgpt-subscription", "opencode"})
 
 
 def _is_retryable_error(status: int, error_text: str) -> bool:
@@ -62,7 +63,7 @@ def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
         return opts_api_key
 
     from openprogram.providers.env_api_keys import get_env_api_key
-    env_key = get_env_api_key("openai-codex")
+    env_key = get_env_api_key("chatgpt-subscription")
     if env_key:
         return env_key
 
@@ -70,7 +71,7 @@ def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
     # within the skew window, so we never serve a stale access_token.
     try:
         from openprogram.auth.manager import get_manager
-        cred = get_manager().acquire_sync("openai-codex")
+        cred = get_manager().acquire_sync("chatgpt-subscription")
         payload = getattr(cred, "payload", None)
         token = getattr(payload, "access_token", None)
         if token:
@@ -94,6 +95,8 @@ def stream_openai_codex_responses(
     opts = options or {}
     ev_stream: EventStream = EventStream()
 
+    validate_input_modalities(model, context)
+
     async def _run() -> None:
         try:
             import httpx
@@ -104,7 +107,7 @@ def stream_openai_codex_responses(
 
         output = AssistantMessage(
             content=[],
-            api="openai-codex-responses",
+            api="chatgpt-subscription",
             provider=model.provider,
             model=model.id,
             usage=Usage(),

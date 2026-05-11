@@ -95,17 +95,14 @@ def convert_messages(model: "Model", context: "Context") -> list[dict[str, Any]]
             if isinstance(content_val, str):
                 contents.append({"role": "user", "parts": [{"text": sanitize_surrogates(content_val)}]})
             else:
+                model_input = model.input or []
                 parts: list[dict[str, Any]] = []
                 for item in content_val:
                     item_type = getattr(item, "type", None)
                     if item_type == "text":
                         parts.append({"text": sanitize_surrogates(item.text)})
-                    elif item_type == "image":
+                    elif item_type in ("image", "video", "audio") and item_type in model_input:
                         parts.append({"inlineData": {"mimeType": item.mime_type, "data": item.data}})
-
-                # Filter images if model doesn't support them
-                if "image" not in (model.input or []):
-                    parts = [p for p in parts if "text" in p]
 
                 if not parts:
                     continue
@@ -163,7 +160,6 @@ def convert_messages(model: "Model", context: "Context") -> list[dict[str, Any]]
             contents.append({"role": "model", "parts": parts})
 
         elif role == "toolResult":
-            from openprogram.providers.types import TextContent, ImageContent
             text_parts = [c for c in msg.content if getattr(c, "type", None) == "text"]
             text_result = "\n".join(c.text for c in text_parts)
             image_parts_raw = (

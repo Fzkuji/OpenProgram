@@ -1,5 +1,24 @@
 // ===== Provider, Agent Settings, Model Management =====
 
+// SVG icon paths (24x24 viewBox, stroke-based)
+var _CAP_ICONS = {
+  vision: '<svg class="cap-icon cap-vision" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" title="Vision"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  video:  '<svg class="cap-icon cap-video"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" title="Video"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/></svg>',
+  tools:  '<svg class="cap-icon cap-tools"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" title="Tool use"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+  reasoning: '<svg class="cap-icon cap-reasoning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" title="Reasoning"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>',
+};
+
+function _modelCapIcons(caps) {
+  var html = '<span class="model-cap-icons">';
+  if (caps.vision)    html += _CAP_ICONS.vision;
+  if (caps.video)     html += _CAP_ICONS.video;
+  if (caps.tools)     html += _CAP_ICONS.tools;
+  if (caps.reasoning) html += _CAP_ICONS.reasoning;
+  html += '</span>';
+  return html;
+}
+
+
 function updateProviderBadge(info) {
   var provBadge = document.getElementById('providerBadge');
   var sessBadge = document.getElementById('sessionBadge');
@@ -180,12 +199,17 @@ function openAgentSelector(agentType) {
     html += '<div class="provider-name">' + escHtml(provName) + '</div>';
     var models = prov.models || [];
     if (models.length === 0) models = [prov.default_model || ''];
+    var modelCaps = prov.model_caps || {};
     for (var i = 0; i < models.length; i++) {
       var m = models[i];
       var isActive = (current.provider === provName && current.model === m);
       var cls = 'model-item' + (isActive ? ' active' : '');
+      var caps = modelCaps[m] || {};
+      var iconsHtml = _modelCapIcons(caps);
       html += '<button class="' + cls + '" data-provider="' + escAttr(provName) +
-              '" data-model="' + escAttr(m) + '">' + escHtml(m) + '</button>';
+              '" data-model="' + escAttr(m) + '">' +
+              '<span class="model-item-name">' + escHtml(m) + '</span>' +
+              iconsHtml + '</button>';
     }
     html += '</div>';
   }
