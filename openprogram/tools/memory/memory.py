@@ -254,7 +254,7 @@ def memory_ingest(session_id: str | None = None, **_: Any) -> str:
     sid = (session_id or "").strip()
     if not sid:
         return "Error: memory_ingest requires `session_id`."
-    from openprogram.memory.ingest import ingest_session_by_id
+    from openprogram.memory.wiki.ingest import ingest_session_by_id
     result = ingest_session_by_id(sid)
     if not result.get("ok"):
         return f"Ingest failed: {result.get('error')}"
@@ -280,7 +280,7 @@ LINT_SPEC: dict[str, Any] = {
 
 
 def memory_lint(**_: Any) -> str:
-    from openprogram.memory import wiki_ops
+    from openprogram.memory.wiki import ops as wiki_ops
     return wiki_ops.lint()
 
 
@@ -308,7 +308,7 @@ def memory_backlinks(name: str | None = None, **_: Any) -> str:
     name = (name or "").strip()
     if not name:
         return "Error: memory_backlinks requires `name`."
-    from openprogram.memory import wiki_ops
+    from openprogram.memory.wiki import ops as wiki_ops
     hits = wiki_ops.backlinks(name)
     if not hits:
         return f"No pages link to [[{name}]]."

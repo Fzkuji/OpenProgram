@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import store
-from . import wiki_helpers as h
+from .. import store
+from . import helpers as h
 
 
 def root() -> Path:

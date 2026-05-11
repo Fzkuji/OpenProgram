@@ -133,7 +133,7 @@ def folder_tree(root: Path, *, max_depth: int = 8) -> str:
 
 def iter_md_files(root: Path, *, skip: set[str] | None = None) -> Iterable[Path]:
     """Every .md under root except governance docs."""
-    from . import store
+    from .. import store
     skip = set(skip or store.GOVERNANCE_PAGES)
     for p in sorted(root.rglob("*.md")):
         if p.name in skip:

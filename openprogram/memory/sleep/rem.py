@@ -54,7 +54,7 @@ def run(*, llm: Callable[[str, str], str] | None = None) -> dict[str, Any]:
 
 
 def _structural_observations(pages: list) -> list[str]:
-    from ..wiki_ops import lint as wiki_lint
+    from ..wiki.ops import lint as wiki_lint
     obs: list[str] = [f"- Pages: {len(pages)} total."]
     report = wiki_lint().splitlines()
     obs.extend(f"- {line.lstrip('- ')}" for line in report[2:10] if line.strip())

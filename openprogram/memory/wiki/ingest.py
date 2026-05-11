@@ -38,7 +38,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import store
+from .. import store
 
 logger = logging.getLogger(__name__)
 
@@ -315,7 +315,7 @@ def ingest_session(
 
     purpose = _read_or_default(vault_root / "purpose.md", "(no purpose)")
     index = _read_or_default(vault_root / "index.md", "(empty index)")
-    from .wiki_helpers import folder_tree
+    from .helpers import folder_tree
     tree = folder_tree(vault_root) or "(empty vault)"
     source_title = f"Session {session_id} ({today})"
 
@@ -399,7 +399,7 @@ def ingest_session(
     # ── Git commit ──────────────────────────────────────────────────────
     commit_info: dict[str, Any] = {}
     try:
-        from . import wiki_ops
+        from . import ops as wiki_ops
         commit_info = wiki_ops.git_commit(f"ingest: {slug}")
     except Exception as e:  # noqa: BLE001
         commit_info = {"ok": False, "error": str(e)}

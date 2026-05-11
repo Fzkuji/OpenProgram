@@ -18,8 +18,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from . import store
-from . import wiki_helpers as h
+from .. import store
+from . import helpers as h
 
 logger = logging.getLogger(__name__)
 
@@ -130,12 +130,14 @@ def lint() -> str:
 
 def rename(old: str, new: str) -> dict[str, Any]:
     """Rename a node by stem. Moves folder-form or leaf-form, rewrites
-    every ``[[old]]`` to ``[[new]]`` across the vault.
+    every ``[[old]]`` to ``[[new]]`` across the vault, and updates the
+    persistent link index.
     """
     root = store.wiki_dir()
     target = h.find_node(root, old)
     if target is None:
         return {"ok": False, "error": f"no page named {old!r}"}
+    old_path_for_index = target
 
     if target.parent != root and target.parent.name == target.stem:
         new_folder = target.parent.parent / new
@@ -143,19 +145,33 @@ def rename(old: str, new: str) -> dict[str, Any]:
             return {"ok": False, "error": f"destination {new_folder} exists"}
         target.parent.rename(new_folder)
         (new_folder / f"{target.stem}.md").rename(new_folder / f"{new}.md")
+        new_path_for_index = new_folder / f"{new}.md"
     else:
         new_path = target.with_name(f"{new}.md")
         if new_path.exists():
             return {"ok": False, "error": f"destination {new_path} exists"}
         target.rename(new_path)
+        new_path_for_index = new_path
 
     rewrites = 0
+    changed_paths: list[Path] = []
     for p in h.iter_md_files(root):
         before = p.read_text(encoding="utf-8")
         after = h.rewrite_wikilinks(before, old, new)
         if after != before:
             p.write_text(after, encoding="utf-8")
             rewrites += 1
+            changed_paths.append(p)
+
+    try:
+        from . import index as _idx
+        _idx.remove_wiki_page(old_path_for_index)
+        _idx.update_wiki_page(new_path_for_index)
+        for p in changed_paths:
+            _idx.update_wiki_page(p)
+    except Exception:
+        pass
+
     return {"ok": True, "rewrites": rewrites}
 
 
@@ -171,21 +187,41 @@ def tree(*, max_depth: int = 8) -> str:
 def backlinks(name: str) -> list[dict[str, str]]:
     """Find every page that has a ``[[name]]`` wikilink to ``name``.
 
-    Mirrors Obsidian's backlinks panel — for any page, list inbound
-    references with context snippets.
-
-    Returns a list of ``{"page": str, "snippet": str}`` (relative
-    paths from vault root, each snippet ~120 chars centred on the
-    wikilink).
+    Fast path via the persistent link index — O(rows) instead of
+    O(full-vault scan). The snippet is still fetched from disk for
+    each hit so callers see context.
     """
     import re
     root = store.wiki_dir()
     name_l = name.lower().removesuffix(".md")
-    out: list[dict[str, str]] = []
     link_re = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+?)?(?:#[^\]]+?)?\]\]")
-    for p in h.iter_md_files(root):
-        if p.stem.lower() == name_l:
-            continue
+    out: list[dict[str, str]] = []
+    try:
+        from . import index as _idx
+        rel_paths = _idx.inbound(name)
+    except Exception:
+        rel_paths = []
+
+    if not rel_paths:  # Index might be stale on first use — fall back to scan
+        for p in h.iter_md_files(root):
+            if p.stem.lower() == name_l:
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            masked, _ = h.mask_code(text)
+            for m in link_re.finditer(masked):
+                if m.group(1).strip().lower() == name_l:
+                    start = max(0, m.start() - 60)
+                    end = min(len(text), m.end() + 60)
+                    snippet = text[start:end].replace("\n", " ").strip()
+                    out.append({"page": str(p.relative_to(root)), "snippet": snippet})
+                    break
+        return out
+
+    for rel in rel_paths:
+        p = root / rel
         try:
             text = p.read_text(encoding="utf-8")
         except OSError:
@@ -196,8 +232,8 @@ def backlinks(name: str) -> list[dict[str, str]]:
                 start = max(0, m.start() - 60)
                 end = min(len(text), m.end() + 60)
                 snippet = text[start:end].replace("\n", " ").strip()
-                out.append({"page": str(p.relative_to(root)), "snippet": snippet})
-                break  # one snippet per page is enough
+                out.append({"page": rel, "snippet": snippet})
+                break
     return out
 
 
@@ -277,6 +313,7 @@ def relink(old: str, new: str) -> dict[str, Any]:
     root = store.wiki_dir()
     rewrites = 0
     changed: list[str] = []
+    changed_paths: list[Path] = []
     for p in h.iter_md_files(root):
         before = p.read_text(encoding="utf-8")
         after = h.rewrite_wikilinks(before, old, new)
@@ -284,6 +321,13 @@ def relink(old: str, new: str) -> dict[str, Any]:
             p.write_text(after, encoding="utf-8")
             rewrites += after.lower().count(f"[[{new.lower()}") - before.lower().count(f"[[{new.lower()}")
             changed.append(str(p.relative_to(root)))
+            changed_paths.append(p)
+    try:
+        from . import index as _idx
+        for p in changed_paths:
+            _idx.update_wiki_page(p)
+    except Exception:
+        pass
     return {"ok": True, "rewrites": rewrites, "pages": changed}
 
 
@@ -328,6 +372,11 @@ def prune_broken_links(*, dry_run: bool = True) -> dict[str, Any]:
         if not dry_run and after != before:
             p.write_text(after, encoding="utf-8")
             applied += 1
+            try:
+                from . import index as _idx
+                _idx.update_wiki_page(p)
+            except Exception:
+                pass
 
     return {"ok": True, "broken": broken, "applied": applied, "dry_run": dry_run}
 

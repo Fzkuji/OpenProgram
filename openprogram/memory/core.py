@@ -77,7 +77,7 @@ def refresh_from_wiki() -> Path:
     a folder-tree snippet.
     """
     from . import wiki
-    from .wiki_helpers import parse_frontmatter
+    from .wiki.helpers import parse_frontmatter
 
     body = ""
     for name in ("Core", "User Preferences", "User"):

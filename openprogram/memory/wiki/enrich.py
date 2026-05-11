@@ -37,7 +37,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from . import store
+from .. import store
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +129,12 @@ def enrich_page(
     except OSError as e:
         return {"ok": False, "error": f"write: {e}"}
 
+    try:
+        from . import index as _idx
+        _idx.update_wiki_page(page_path)
+    except Exception:
+        pass
+
     return {"ok": True, "changed": True, "n_links": _count_new_links(content, enriched)}
 
 
@@ -215,7 +221,7 @@ def enrich_inbound_for_new_page(
 
     # Flatten to a numbered candidate list, capped.
     candidates: list[tuple[Path, str]] = []  # (page_path, snippet)
-    from . import store
+    from .. import store
     root = store.wiki_dir()
     for entry in raw_mentions:
         page_path = root / entry["page"]
@@ -268,6 +274,13 @@ def enrich_inbound_for_new_page(
             page_path.write_text(new_content, encoding="utf-8")
             pages_changed.add(page_path)
             linked += 1
+
+    try:
+        from . import index as _idx
+        for p in pages_changed:
+            _idx.update_wiki_page(p)
+    except Exception:
+        pass
 
     return {
         "ok": True,
