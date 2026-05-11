@@ -34,7 +34,7 @@ import json
 # --- Pre-import TTY redirect ------------------------------------------------
 # When the user is launching the Ink TUI (no subcommand or just `--resume`),
 # we want a clean terminal: anything printed during openprogram package import
-# (RequestsDependencyWarning, "[detect] claude-code OK", uvicorn boot logs)
+# (RequestsDependencyWarning, "[detect] codex OK", uvicorn boot logs)
 # would otherwise show up above the TUI. Do the dup2 BEFORE pulling any
 # openprogram modules so the noise lands in a log file. The original tty fds
 # are exposed as module attributes so cli_ink can hand them to the Node child.
@@ -105,7 +105,7 @@ def _add_provider_args(parser):
     parser.add_argument(
         "--provider", "-p",
         default=None,
-        help="LLM provider: claude-code, codex, gemini-cli, anthropic, openai, gemini. "
+        help="LLM provider: claude-max-proxy, codex, gemini-cli, anthropic, openai, gemini. "
              "Auto-detected if not specified.",
     )
     parser.add_argument(
@@ -389,7 +389,7 @@ def main():
     p_ag_add.add_argument("--name", default="",
         help="Human-readable name")
     p_ag_add.add_argument("--provider", default="",
-        help="LLM provider (claude-code, openai-codex, anthropic, ...)")
+        help="LLM provider (claude-max-proxy, openai-codex, anthropic, ...)")
     p_ag_add.add_argument("--model", default="",
         help="Model id within that provider")
     p_ag_add.add_argument("--effort", default="medium",
@@ -1156,8 +1156,8 @@ def _cmd_install_skills(target=None):
         targets = {target: targets[target]}
 
     if not targets:
-        print("No CLI tools found. Install Claude Code or Gemini CLI first:")
-        print("  npm i -g @anthropic-ai/claude-code && claude login")
+        print("No CLI tools found. Install Codex CLI or Gemini CLI first:")
+        print("  npm i -g @openai/codex && codex auth")
         print("  npm i -g @google/gemini-cli")
         sys.exit(1)
 
@@ -1216,7 +1216,7 @@ def _get_runtime(provider=None, model=None):
     """Get a Runtime via auto-detection or explicit provider.
 
     Args:
-        provider:  Provider name (e.g. "anthropic", "claude-code").
+        provider:  Provider name (e.g. "anthropic", "claude-max-proxy").
                    If None, auto-detects the best available.
         model:     Model name override.
 

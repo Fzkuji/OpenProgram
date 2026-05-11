@@ -17,7 +17,7 @@ from typing import Optional
 # Globals — live here so server.py doesn't own provider state directly.
 # ---------------------------------------------------------------------------
 
-_CLI_PROVIDERS = {"openai-codex", "claude-code", "gemini-cli"}
+_CLI_PROVIDERS = {"openai-codex", "gemini-cli"}
 
 _runtime_lock = threading.Lock()
 
@@ -154,8 +154,8 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     return Runtime(model=f"{provider}:{model}")
 
 
-_PROVIDER_PRIORITY = ("claude-code", "openai-codex", "gemini-cli", "anthropic", "gemini", "openai")
-_CLI_BINS = {"openai-codex": "codex", "claude-code": "claude", "gemini-cli": "gemini"}
+_PROVIDER_PRIORITY = ("openai-codex", "gemini-cli", "anthropic", "gemini", "openai", "claude-max-proxy")
+_CLI_BINS = {"openai-codex": "codex", "gemini-cli": "gemini"}
 
 
 def _probe_one_provider(p_name: str):
@@ -342,7 +342,7 @@ def _get_exec_runtime(no_tools: bool = False):
     _init_providers()
     if not _exec_provider:
         raise RuntimeError(
-            "No provider available. Install a CLI (codex/claude/gemini) or set an API key."
+            "No provider available. Install a CLI (codex/gemini) or set an API key."
         )
     if no_tools and _exec_provider == "openai-codex":
         from openprogram.legacy_providers import create_runtime
@@ -350,9 +350,6 @@ def _get_exec_runtime(no_tools: bool = False):
             provider="openai-codex", session_id=None, search=False,
             full_auto=False, sandbox="read-only",
         )
-    elif no_tools and _exec_provider == "claude-code":
-        from openprogram.legacy_providers import create_runtime
-        rt = create_runtime(provider="claude-code", tools="")
     else:
         rt = _create_runtime_for_visualizer(_exec_provider)
     if _exec_model:

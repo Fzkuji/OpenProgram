@@ -18,22 +18,19 @@ from __future__ import annotations
 
 
 # Per-user defaults (explicit; do not revert without asking):
-#   - Claude (claude-code, anthropic): auto / max available — adaptive thinking
+#   - Claude (claude-max-proxy, anthropic): auto / max available — adaptive thinking
 #   - GPT (codex, openai): maximum effort — the user wants the strongest setting
 THINKING_CONFIGS = {
-    "claude-code": {
-        "label": "effort",
+    "claude-max-proxy": {
+        "label": "thinking",
         "options": [
-            {"value": "off", "desc": "No extra reasoning"},
-            {"value": "minimal", "desc": "Minimal reasoning"},
-            {"value": "low", "desc": "Quick responses"},
+            {"value": "off", "desc": "No extended thinking"},
+            {"value": "minimal", "desc": "Minimal thinking"},
+            {"value": "low", "desc": "Brief thinking"},
             {"value": "medium", "desc": "Balanced"},
-            {"value": "high", "desc": "Deep reasoning"},
-            {"value": "xhigh", "desc": "Extra deep reasoning"},
-            {"value": "max", "desc": "Maximum effort"},
-            {"value": "auto", "desc": "Adaptive"},
+            {"value": "high", "desc": "Extended thinking"},
         ],
-        "default": "auto",
+        "default": "high",
     },
     "openai-codex": {
         "label": "reasoning effort",
@@ -100,7 +97,7 @@ _LEVEL_DESC = {
 # without needing the live runtime's own provider attribute (which some
 # runtime classes don't expose cleanly).
 _RUNTIME_PROVIDER = {
-    "ClaudeCodeRuntime": "claude-code",
+    "ClaudeMaxProxyRuntime": "claude-max-proxy",
     "OpenAICodexRuntime": "openai-codex",
     "AnthropicRuntime": "anthropic",
     "OpenAIRuntime": "openai",
@@ -173,17 +170,6 @@ def apply_thinking_effort(runtime, effort: str) -> None:
     """
     rt_type = type(runtime).__name__
     effort = resolve_effort(effort, runtime)
-
-    if rt_type == "ClaudeCodeRuntime":
-        # Claude Code CLI bakes --settings defaultEffortLevel into argv
-        # at spawn time, so we tear down the live subprocess when the
-        # effort changes to pick up the new flag on next turn.
-        old_effort = getattr(runtime, "thinking_level", None)
-        if effort != old_effort:
-            runtime.thinking_level = effort or "off"
-            if hasattr(runtime, "_restart_process"):
-                runtime._restart_process()
-        return
 
     # OpenAI Codex CLI subprocess runtime also reads _reasoning_effort
     # directly from the subclass attribute to build its

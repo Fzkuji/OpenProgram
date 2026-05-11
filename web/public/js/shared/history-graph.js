@@ -241,7 +241,14 @@
       // Must mirror _buildShapeEl's formula — equilateral with
       // centroid at origin, so inner and outer triangles stay
       // concentric during size transitions.
-      var t = r + 1.2;
+      // Triangle visual mass is ~41% of a circle with the same radius
+      // (equilateral area = (3√3/4)·t² ≈ 1.299·t² vs circle πr²),
+      // so to make triangles read as the same "weight" as the round
+      // nodes we scale the circumradius by ~1.5 instead of just
+      // adding a small constant. Area then comes out to ~93% of the
+      // circle's, close enough that the eye doesn't pick out a size
+      // mismatch between user / assistant nodes.
+      var t = r * 1.5;
       var COS30 = 0.8660254;
       shape.setAttribute(
         'points',
@@ -270,7 +277,14 @@
       // The old formula put the centroid at y ≈ 0.233t, which made
       // shrunk inner shapes look offset upward inside the larger
       // outer triangle (they shared origin, but not centre-of-mass).
-      var t = r + 1.2;
+      // Triangle visual mass is ~41% of a circle with the same radius
+      // (equilateral area = (3√3/4)·t² ≈ 1.299·t² vs circle πr²),
+      // so to make triangles read as the same "weight" as the round
+      // nodes we scale the circumradius by ~1.5 instead of just
+      // adding a small constant. Area then comes out to ~93% of the
+      // circle's, close enough that the eye doesn't pick out a size
+      // mismatch between user / assistant nodes.
+      var t = r * 1.5;
       var COS30 = 0.8660254;
       return _svg('polygon', {
         points: '0,' + (-t)
@@ -532,7 +546,22 @@
   // outer coloured shape + adds/removes a shape-matched white inner
   // shape that fades in/out.
   function _applyVisibility(nodeEl, visible) {
-    var shape = nodeEl.querySelector('circle, polygon, rect');
+    // First child is the invisible hit-target circle (fill=transparent);
+    // the outer coloured shape is whichever sibling carries a real fill.
+    // Without skipping the hit-target, the inner white shape always
+    // ended up as a circle no matter what the outer was — querySelector
+    // returned the transparent circle first in document order.
+    var shape = null;
+    var kids = nodeEl.children;
+    for (var i = 0; i < kids.length; i++) {
+      var c = kids[i];
+      var tag = c.tagName;
+      if (tag !== 'circle' && tag !== 'polygon' && tag !== 'rect') continue;
+      if (c.getAttribute('fill') === 'transparent') continue;
+      if (c.classList && c.classList.contains('n-inner')) continue;
+      shape = c;
+      break;
+    }
     if (shape) _applyShapeSize(shape, visible);
     var inner = nodeEl.querySelector('.n-inner');
     if (visible) {
@@ -563,19 +592,67 @@
     }
   }
 
-  // Diff-update the highlight state across all nodes.
+  // Diff-update the highlight state across all nodes, then scroll the
+  // graph viewport so the highlighted band stays roughly aligned with
+  // the chat scroll position. Without the scroll part the user reported
+  // the graph "not following" the chat — visibility highlights would
+  // light up nodes off-screen in the right rail.
   function _setVisibleSet(newSet) {
     var panel = document.getElementById('historyPanel');
     if (!panel) return;
     var body = panel.querySelector('.history-body');
     if (!body) return;
+    var visibleEls = [];
     body.querySelectorAll('.history-node').forEach(function (g) {
       var id = g.getAttribute('data-msg-id');
       var nowVisible = !!newSet[id];
       var wasVisible = !!_visibleIds[id];
       if (nowVisible !== wasVisible) _applyVisibility(g, nowVisible);
+      if (nowVisible) visibleEls.push(g);
     });
     _visibleIds = newSet;
+
+    if (visibleEls.length && !_userScrolledGraph) {
+      // Target the median visible node at ~45% of the graph viewport
+      // height — slightly above centre so the user can see what's
+      // coming next (a few rows of "future" below the highlighted
+      // band). Earlier the logic only scrolled when the node fell
+      // outside a [60px, h-60px] band, which left the highlighted
+      // dot clinging to the very top or bottom edge of the rail for
+      // most scroll states.
+      var mid = visibleEls[Math.floor(visibleEls.length / 2)];
+      var nodeRect = mid.getBoundingClientRect();
+      var bodyRect = body.getBoundingClientRect();
+      var nodeY = nodeRect.top - bodyRect.top + body.scrollTop;
+      var desired = body.clientHeight * 0.45;
+      var targetScroll = nodeY - desired;
+      var maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
+      if (targetScroll < 0) targetScroll = 0;
+      if (targetScroll > maxScroll) targetScroll = maxScroll;
+      // Dead zone: skip the scroll if the node is already within
+      // 24px of where we'd put it, otherwise we wobble on every
+      // single-pixel chat scroll tick.
+      if (Math.abs(targetScroll - body.scrollTop) > 24) {
+        body.scrollTo({ top: targetScroll, behavior: 'smooth' });
+      }
+    }
+  }
+
+  // If the user is actively scrolling the graph by hand, suppress
+  // auto-scroll for a moment so we don't yank the viewport back.
+  var _userScrolledGraph = false;
+  var _userScrollTimer = 0;
+  function _wireGraphManualScroll() {
+    var body = document.querySelector('#historyPanel .history-body');
+    if (!body || body._manualScrollWired) return;
+    body._manualScrollWired = true;
+    body.addEventListener('wheel', function () {
+      _userScrolledGraph = true;
+      clearTimeout(_userScrollTimer);
+      _userScrollTimer = setTimeout(function () {
+        _userScrolledGraph = false;
+      }, 1500);
+    }, { passive: true });
   }
 
   // Compute which chat bubbles intersect #chatArea's viewport and
@@ -631,7 +708,11 @@
     if (!bubble) return;
     // scrollIntoView walks up to the nearest scrollable ancestor,
     // which is #chatArea — that's what we want.
-    bubble.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // `block: 'start'` puts the clicked message at the top of the
+    // chat viewport instead of the middle, so the user sees the
+    // turn they clicked plus everything after it (the conversation
+    // continuation), not surrounding context above.
+    bubble.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   // Attached to #chatArea on first run; survives conversation switches
@@ -648,6 +729,7 @@
       raf = requestAnimationFrame(function () {
         raf = 0;
         _recomputeVisibility();
+        _wireGraphManualScroll();
       });
     }, { passive: true });
   }
@@ -667,6 +749,11 @@
         body: JSON.stringify({ session_id: sessionId, msg_id: target }),
       });
       if (!r.ok) throw new Error(await r.text());
+      // Tell conversations.js where to land after the upcoming
+      // session_loaded re-render — the message the user actually
+      // clicked, not the bottom of the new branch. renderSessionMessages
+      // reads this and scrollIntoViews the matching bubble.
+      window._postCheckoutScrollTo = msgId;
       if (window.ws && window.ws.readyState === WebSocket.OPEN) {
         window.ws.send(JSON.stringify({ action: 'load_session', session_id: sessionId }));
       }

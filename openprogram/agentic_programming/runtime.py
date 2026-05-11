@@ -51,6 +51,15 @@ _current_tools: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
     "_current_tools", default=None,
 )
 
+# OpenClaw-style tool policy that overlays on top of the chosen tool
+# list. Set by callers (dispatcher / channels / runtime.exec kwargs)
+# to filter the resolved tools per-call without renaming them. Shape:
+# ``{"toolset": "research", "source": "wechat", "allow": [...], "deny": [...]}``.
+# Any subset of keys is valid; missing keys mean "no constraint".
+_current_tool_policy: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
+    "_current_tool_policy", default=None,
+)
+
 
 class Runtime:
     """
@@ -188,7 +197,7 @@ class Runtime:
         pathway of ``_call()`` rather than the AgentSession + render_messages
         pathway.
 
-        Legacy providers (ClaudeCodeRuntime, OpenAICodexRuntime, ...) and
+        Legacy providers (OpenAICodexRuntime, ...) and
         user-supplied ``call=`` functions expect a text-merged
         ``full_content`` list. The default Runtime (``model="provider:id"``)
         builds messages directly from the execution tree and ignores
@@ -245,6 +254,10 @@ class Runtime:
         response_format: Optional[dict] = None,
         model: Optional[str] = None,
         tools: Optional[list] = None,
+        toolset: Optional[str] = None,
+        tools_source: Optional[str] = None,
+        tools_allow: Optional[list[str]] = None,
+        tools_deny: Optional[list[str]] = None,
         tool_choice: Any = "auto",
         parallel_tool_calls: bool = True,
         max_iterations: int = 20,
@@ -350,6 +363,22 @@ class Runtime:
         # _current_exec_ctx / _current_tools and build the AgentSession.
         exec_ctx_token = _current_exec_ctx.set(exec_ctx) if exec_ctx is not None else None
         tools_token = _current_tools.set(tools) if tools else None
+        # Snapshot any policy kwargs into the contextvar so
+        # _call_via_providers picks them up without growing its
+        # signature. Only set when at least one is provided; otherwise
+        # leave the outer-scope policy alone (e.g. dispatcher set one
+        # earlier from session config).
+        _policy_kwargs = {
+            "toolset": toolset,
+            "source":  tools_source,
+            "allow":   tools_allow,
+            "deny":    tools_deny,
+        }
+        _policy_kwargs = {k: v for k, v in _policy_kwargs.items() if v is not None}
+        policy_token = (
+            _current_tool_policy.set({**(_current_tool_policy.get(None) or {}), **_policy_kwargs})
+            if _policy_kwargs else None
+        )
         try:
             attempts = exec_ctx.attempts if exec_ctx is not None else []
             for attempt in range(self.max_retries):
@@ -384,6 +413,8 @@ class Runtime:
                 _current_exec_ctx.reset(exec_ctx_token)
             if tools_token is not None:
                 _current_tools.reset(tools_token)
+            if policy_token is not None:
+                _current_tool_policy.reset(policy_token)
 
     async def async_exec(
         self,
@@ -540,7 +571,37 @@ class Runtime:
 
         exec_ctx = _current_exec_ctx.get(None)
         raw_tools = _current_tools.get(None)
-        agent_tools = _adapt_tools(raw_tools) if raw_tools else None
+        policy = _current_tool_policy.get(None) or {}
+        # Default-on semantics: `tools=` unset (None) → resolve the
+        # caller's preset (or DEFAULT_TOOLS) and run the OpenClaw-style
+        # filter chain. Matches Hermes' "all toolsets, then filter"
+        # behaviour so every provider exposes a non-trivial tool list
+        # by default, not just the old claude-code CLI path.
+        if raw_tools is None:
+            from openprogram.tools import (
+                agent_tools as _resolve_agent_tools,
+            )
+            preset = policy.get("toolset") if policy else None
+            tools_for_session = _resolve_agent_tools(
+                toolset=preset,
+                source=policy.get("source") if policy else None,
+                allow=policy.get("allow") if policy else None,
+                deny=policy.get("deny") if policy else None,
+            )
+            agent_tools = tools_for_session or None
+        elif raw_tools:
+            from openprogram.tools import apply_tool_policy as _apply_policy
+            adapted = _adapt_tools(raw_tools) or []
+            adapted = _apply_policy(
+                adapted,
+                source=policy.get("source") if policy else None,
+                allow=policy.get("allow") if policy else None,
+                deny=policy.get("deny") if policy else None,
+            )
+            agent_tools = adapted or None
+        else:
+            # Explicit `tools=[]` — caller wanted no tools, honour it.
+            agent_tools = None
 
         if exec_ctx is not None:
             messages = exec_ctx.render_messages()

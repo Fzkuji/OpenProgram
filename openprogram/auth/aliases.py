@@ -31,7 +31,11 @@ _ALIASES: dict[str, str] = {
     "vertex": "google-vertex",
     # Common typos / dropped hyphens
     "openai-codex-cli": "openai-codex",
+    # Legacy provider name kept as an alias so any session config /
+    # external script still referencing "claude-code" continues to
+    # resolve auth (it now routes through the same anthropic creds).
     "claude-code": "anthropic",
+    "claude-max-proxy": "anthropic",
     "gemini-cli": "google-gemini-cli",
     "github-copilot-cli": "github-copilot",
     # Keep identity mappings so round-tripping through resolve is safe.

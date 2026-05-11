@@ -17,7 +17,6 @@ KnownApi = Literal[
     "azure-openai-responses",
     "openai-codex-responses",
     "anthropic-messages",
-    "claude-code-cli",
     "bedrock-converse-stream",
     "google-generative-ai",
     "google-gemini-cli",
@@ -49,7 +48,7 @@ KnownProvider = Literal[
     "opencode",
     "opencode-go",
     "kimi-coding",
-    "claude-code",
+    "claude-max-proxy",
 ]
 Provider = str  # KnownProvider or arbitrary string
 

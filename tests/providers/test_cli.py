@@ -34,9 +34,10 @@ def test_visualizer_codex_runtime_enables_search(monkeypatch):
 
 
 
-# ClaudeCodeRuntime unsupported-modality coverage now lives in
-# tests/unit/test_claude_code_runtime.py (runs against the real CliRunner
-# with a fake ``claude`` binary, not ``subprocess.Popen`` mocks).
+# Note: ClaudeCodeRuntime and the shared CliRunner (CLAUDE_CODE_PLUGIN
+# / CLAUDE_CODE_CONFIG) have been removed. Claude now goes through the
+# HTTP-based ClaudeMaxProxyRuntime; its tests live alongside the
+# regular Anthropic runtime tests.
 
 
 # ══════════════════════════════════════════════════════════════

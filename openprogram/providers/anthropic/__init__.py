@@ -1,19 +1,24 @@
-"""Anthropic provider — API (Messages) and CLI (Claude Code) backends.
+"""Anthropic provider — Messages API + Claude Max API proxy.
 
-Both live under one provider dir, matching openclaw's convention where
-``extensions/anthropic/`` hosts ``cli-backend.ts`` alongside the API
-plugin. The shared ``CliRunner`` drives the CLI path via
-``CLAUDE_CODE_PLUGIN``; the API path stays as before.
+The legacy Claude Code CLI provider (``ClaudeCodeRuntime``) and its
+plugin scaffolding (``CLAUDE_CODE_PLUGIN`` / ``CLAUDE_CODE_CONFIG``)
+have been removed. Anthropic access now goes exclusively through
+HTTP — either ``api.anthropic.com`` directly (:class:`AnthropicRuntime`)
+or a local ``claude-max-api-proxy`` daemon for Max-plan users
+(:class:`ClaudeMaxProxyRuntime`). Both share OpenProgram's tool
+registry, so the long-standing asymmetry where the CLI provider
+silently shipped its own Read/Write/Edit tools is gone.
 """
 from .anthropic import stream_simple
-from .cli_backend import CLAUDE_CODE_CONFIG, CLAUDE_CODE_PLUGIN
-from .cli_runtime import ClaudeCodeRuntime
 from .runtime import AnthropicRuntime
+from ._max_proxy_runtime import ClaudeMaxProxyRuntime
+# Side-effect import: registers Claude models under provider
+# `claude-max-proxy` in the global MODELS registry so the UI picker
+# surfaces them.
+from . import _claude_max_proxy_registry  # noqa: F401
 
 __all__ = [
     "stream_simple",
-    "CLAUDE_CODE_CONFIG",
-    "CLAUDE_CODE_PLUGIN",
-    "ClaudeCodeRuntime",
     "AnthropicRuntime",
+    "ClaudeMaxProxyRuntime",
 ]

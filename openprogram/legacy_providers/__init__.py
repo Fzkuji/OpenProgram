@@ -5,12 +5,13 @@ Each provider is an optional dependency. Import will give a clear error
 if the required SDK is not installed.
 
 Available providers:
-    AnthropicRuntime    — Anthropic Claude API (text + image, prompt caching)
-    OpenAIRuntime       — OpenAI GPT API (text + image, response_format)
-    GeminiRuntime       — Google Gemini API (text + image)
-    ClaudeCodeRuntime   — Claude Code CLI (no API key, uses subscription)
-    OpenAICodexRuntime  — OpenAI Codex CLI (no API key in harness, uses codex auth)
-    GeminiCLIRuntime    — Gemini CLI (no API key, uses Google account)
+    AnthropicRuntime       — Anthropic Claude API (text + image, prompt caching)
+    OpenAIRuntime          — OpenAI GPT API (text + image, response_format)
+    GeminiRuntime          — Google Gemini API (text + image)
+    ClaudeMaxProxyRuntime  — Claude via local ``claude-max-api-proxy`` daemon (HTTP),
+                             for Max-plan users who don't have a paid API key.
+    OpenAICodexRuntime     — OpenAI Codex CLI (no API key in harness, uses codex auth)
+    GeminiCLIRuntime       — Gemini CLI (no API key, uses Google account)
 
 Usage:
     from openprogram.legacy_providers import AnthropicRuntime
@@ -41,12 +42,15 @@ import shutil
 
 # Maps provider name -> (class_name, module_path, default_model)
 PROVIDERS = {
-    "claude-code":  ("ClaudeCodeRuntime",  "openprogram.providers.anthropic.cli_runtime",  "claude-sonnet-4-6"),
-    "openai-codex": ("OpenAICodexRuntime", "openprogram.legacy_providers.openai_codex", "gpt-5.5"),
-    "gemini-cli":   ("GoogleGeminiCLIRuntime", "openprogram.providers.google_gemini_cli.runtime", "gemini-2.5-flash"),
-    "anthropic":    ("AnthropicRuntime",    "openprogram.providers.anthropic.runtime",          "claude-sonnet-4-6"),
-    "openai":       ("OpenAIRuntime",       "openprogram.providers.openai_responses.runtime",   "gpt-4.1"),
-    "gemini":       ("GeminiRuntime",       "openprogram.providers.google.runtime",              "gemini-2.5-flash"),
+    # Claude via a local `claude-max-api-proxy` daemon (HTTP). Replaces
+    # the previous CLI-spawning `claude-code` provider; tools come from
+    # OpenProgram's own registry instead of the CLI's built-ins.
+    "claude-max-proxy": ("ClaudeMaxProxyRuntime",  "openprogram.providers.anthropic._max_proxy_runtime",  "claude-sonnet-4-6"),
+    "openai-codex":     ("OpenAICodexRuntime",     "openprogram.legacy_providers.openai_codex",           "gpt-5.5"),
+    "gemini-cli":       ("GoogleGeminiCLIRuntime", "openprogram.providers.google_gemini_cli.runtime",     "gemini-2.5-flash"),
+    "anthropic":        ("AnthropicRuntime",       "openprogram.providers.anthropic.runtime",             "claude-sonnet-4-6"),
+    "openai":           ("OpenAIRuntime",          "openprogram.providers.openai_responses.runtime",      "gpt-4.1"),
+    "gemini":           ("GeminiRuntime",          "openprogram.providers.google.runtime",                "gemini-2.5-flash"),
 }
 
 
@@ -55,11 +59,6 @@ def _detect_caller_env() -> tuple[str, str] | None:
 
     Returns (provider, model) if detected, None otherwise.
     """
-    # Running inside Claude Code?
-    if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
-        if shutil.which("claude"):
-            return "claude-code", "sonnet"
-
     # Running inside Codex CLI?
     if os.environ.get("CODEX_CLI") or os.environ.get("CODEX_SANDBOX_TYPE"):
         if shutil.which("codex"):
@@ -110,7 +109,7 @@ def detect_provider() -> tuple[str, str]:
       5. Available API keys (ANTHROPIC_API_KEY → OPENAI_API_KEY → GOOGLE_API_KEY)
 
     Returns:
-        (provider_name, default_model) — e.g. ("claude-code", "sonnet")
+        (provider_name, default_model) — e.g. ("anthropic", "claude-sonnet-4-6")
 
     Raises:
         RuntimeError if no provider is found.
@@ -126,8 +125,6 @@ def detect_provider() -> tuple[str, str]:
         return result
 
     # 4. CLI providers (no API key needed)
-    if shutil.which("claude"):
-        return "claude-code", "sonnet"
     if shutil.which("codex"):
         return "openai-codex", None
     if shutil.which("gemini"):
@@ -145,15 +142,18 @@ def detect_provider() -> tuple[str, str]:
         "No LLM provider found. Set up one of the following:\n"
         "\n"
         "  CLI providers (no API key needed):\n"
-        "    1. Claude Code CLI:  npm install -g @anthropic-ai/claude-code && claude login\n"
-        "    2. Codex CLI:        npm install -g @openai/codex && codex auth\n"
-        "    3. Gemini CLI:       npm install -g @google/gemini-cli\n"
+        "    1. Codex CLI:        npm install -g @openai/codex && codex auth\n"
+        "    2. Gemini CLI:       npm install -g @google/gemini-cli\n"
         "\n"
         "  API providers (set environment variable):\n"
-        "    4. Anthropic:  export ANTHROPIC_API_KEY=sk-ant-...\n"
-        "    5. OpenAI:     export OPENAI_API_KEY=sk-...\n"
-        "    6. Gemini:     export GOOGLE_API_KEY=...\n"
+        "    3. Anthropic:  export ANTHROPIC_API_KEY=sk-ant-...\n"
+        "    4. OpenAI:     export OPENAI_API_KEY=sk-...\n"
+        "    5. Gemini:     export GOOGLE_API_KEY=...\n"
         "                    (or GOOGLE_GENERATIVE_AI_API_KEY=...)\n"
+        "\n"
+        "  Claude via Max plan (HTTP proxy):\n"
+        "    6. Install + launch the proxy, then use provider=claude-max-proxy:\n"
+        "       npm install -g claude-max-api-proxy && claude-max-api-proxy\n"
         "\n"
         "  Or set explicitly:\n"
         "    export AGENTIC_PROVIDER=openai\n"
@@ -166,14 +166,13 @@ def check_providers() -> dict:
 
     Returns a dict with status of each provider:
         {
-            "claude-code": {"available": True, "method": "CLI", "model": "sonnet"},
+            "openai-codex": {"available": True, "method": "CLI", "model": "gpt-5.5"},
             "openai": {"available": True, "method": "API", "model": "gpt-4.1"},
             ...
         }
     """
     results = {}
     cli_checks = {
-        "claude-code": "claude",
         "openai-codex": "codex",
         "gemini-cli": "gemini",
     }
@@ -217,9 +216,10 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
     """Create a Runtime instance with auto-detection or explicit provider.
 
     Args:
-        provider:  Provider name (e.g. "anthropic", "claude-code", "openai",
-                   "gemini-cli"). Pass "auto" or None to auto-detect the
-                   best available provider via detect_provider().
+        provider:  Provider name (e.g. "anthropic", "claude-max-proxy",
+                   "openai", "gemini-cli"). Pass "auto" or None to
+                   auto-detect the best available provider via
+                   detect_provider().
         model:     Model name override.
         **kwargs:  Forwarded to the provider Runtime constructor.
 
@@ -260,9 +260,11 @@ def __getattr__(name):
     if name == "GeminiRuntime":
         from openprogram.providers.google.runtime import GeminiRuntime
         return GeminiRuntime
-    if name == "ClaudeCodeRuntime":
-        from openprogram.providers.anthropic.cli_runtime import ClaudeCodeRuntime
-        return ClaudeCodeRuntime
+    if name == "ClaudeMaxProxyRuntime":
+        from openprogram.providers.anthropic._max_proxy_runtime import (
+            ClaudeMaxProxyRuntime,
+        )
+        return ClaudeMaxProxyRuntime
     if name == "OpenAICodexRuntime":
         from openprogram.legacy_providers.openai_codex import OpenAICodexRuntime
         return OpenAICodexRuntime
@@ -283,7 +285,7 @@ __all__ = [
     "AnthropicRuntime",
     "OpenAIRuntime",
     "GeminiRuntime",
-    "ClaudeCodeRuntime",
+    "ClaudeMaxProxyRuntime",
     "OpenAICodexRuntime",
     "GeminiCLIRuntime",
 ]

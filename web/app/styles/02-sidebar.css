@@ -109,11 +109,14 @@
   margin: 0;
   pointer-events: none;
 }
-/* Reserve space for the absolutely-positioned footer so the
-   conversations list doesn't scroll under it. ~56px = footer's
-   trigger height (avatar 28 + vertical padding 16 + border 1) +
-   a little breathing room. */
-.sidebar-conversations { padding-bottom: 60px; }
+/* Reserve space at the bottom of the sidebar's flex flow for the
+   absolutely-positioned UserMenuFooter. Padding-bottom inside the
+   conv list lives in its scroll content (hidden until scrolling),
+   so the visible last item still sat under the absolute footer.
+   Putting margin-bottom on the last in-flow flex child shrinks the
+   flex item itself, so the visible bottom of the conv list ends
+   above where the absolute footer renders. */
+.sidebar > .sidebar-conversations { margin-bottom: 64px; }
 
 .sidebar-header {
   padding: 8px;

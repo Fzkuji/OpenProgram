@@ -23,6 +23,13 @@ interface Provider {
   base_url?: string;
   supports_fetch?: boolean;
   cli_binary?: string;
+  /**
+   * Provider-specific setup instructions surfaced in the detail
+   * panel. Backticked spans render as inline <code>; lines starting
+   * with `$ ` render as a command row. Used by claude-max-proxy /
+   * any other "local daemon" provider whose setup isn't an API key.
+   */
+  setup_hint?: string;
 }
 
 interface Model {
@@ -46,6 +53,61 @@ export function ProvidersSection() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  // Forward wheel events to the page scroll once the sidebar's own
+  // scroll is at top/bottom. Browsers' default scroll-chaining only
+  // kicks in on the NEXT wheel event after the boundary is hit, so a
+  // user trying to scroll past the end of a long provider list sees
+  // their small wheel ticks get consumed without page movement until
+  // they "force" a larger gesture. We rAF-accumulate deltas so the
+  // forwarded scroll feels as smooth as the browser's own.
+  useEffect(() => {
+    const sb = sidebarRef.current;
+    if (!sb) return;
+    let pendingDelta = 0;
+    let rafId = 0;
+    let scrollTarget: HTMLElement | null = null;
+    function flush() {
+      rafId = 0;
+      if (!scrollTarget || pendingDelta === 0) return;
+      scrollTarget.scrollTop += pendingDelta;
+      pendingDelta = 0;
+    }
+    function onWheel(e: WheelEvent) {
+      const el = sidebarRef.current;
+      if (!el) return;
+      const atTop = el.scrollTop === 0;
+      const atBottom =
+        Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight;
+      if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) {
+        // Find the closest scrollable ancestor once and cache it.
+        if (!scrollTarget) {
+          let p: HTMLElement | null = el.parentElement;
+          while (p) {
+            const cs = getComputedStyle(p);
+            if (
+              (cs.overflowY === "auto" || cs.overflowY === "scroll") &&
+              p.scrollHeight > p.clientHeight
+            ) {
+              scrollTarget = p;
+              break;
+            }
+            p = p.parentElement;
+          }
+        }
+        if (!scrollTarget) return;
+        e.preventDefault();
+        pendingDelta += e.deltaY;
+        if (!rafId) rafId = requestAnimationFrame(flush);
+      }
+    }
+    sb.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      sb.removeEventListener("wheel", onWheel);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   const reload = useCallback(async (preserveSelection?: boolean) => {
     let list: Provider[] = [];
@@ -94,7 +156,7 @@ export function ProvidersSection() {
     <div className={styles.section}>
       <h2 className={styles.sectionTitle}>AI Providers</h2>
       <div className={styles.providersLayout}>
-        <div className={styles.providersSidebar}>
+        <div className={styles.providersSidebar} ref={sidebarRef}>
           <div className={styles.providersSearch}>
             <input
               type="search"
@@ -233,9 +295,13 @@ function Detail({
             checked={provider.enabled}
             onChange={(e) => onToggle(e.target.checked)}
           />
-          <span className="slider" />
+          <span className={styles.slider} />
         </label>
       </div>
+
+      {provider.setup_hint && (
+        <SetupHint hint={provider.setup_hint} configured={!!provider.configured} />
+      )}
 
       {provider.api_key_env && (
         <ApiKey envVar={provider.api_key_env} configured={!!provider.configured} onChanged={onChanged} />
@@ -257,6 +323,66 @@ function Detail({
         </div>
       )}
     </>
+  );
+}
+
+function SetupHint({ hint, configured }: { hint: string; configured: boolean }) {
+  // Tiny markdown subset: backticked spans → <code>, lines starting
+  // with "$ " → command rows. Avoids pulling a markdown lib for what
+  // is essentially a small static help blurb per provider.
+  const lines = hint.split("\n");
+  return (
+    <div className={styles.detailSection}>
+      <div className={styles.detailSectionTitle}>
+        <span>Setup</span>
+        <span className={styles.modelCountSummary}>
+          {configured ? "Detected" : "Not running"}
+        </span>
+      </div>
+      <div style={{ color: "var(--text-muted)", fontSize: 13, lineHeight: 1.55 }}>
+        {lines.map((line, i) => {
+          const isCmd = line.startsWith("$ ");
+          if (isCmd) {
+            return (
+              <pre
+                key={i}
+                style={{
+                  margin: "4px 0",
+                  padding: "6px 10px",
+                  background: "var(--bg-secondary)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  overflow: "auto",
+                }}
+              >
+                {line.slice(2)}
+              </pre>
+            );
+          }
+          const segments = line.split(/(`[^`]+`)/g).map((seg, j) => {
+            if (seg.startsWith("`") && seg.endsWith("`")) {
+              return (
+                <code
+                  key={j}
+                  style={{
+                    background: "var(--bg-tertiary)",
+                    padding: "0 4px",
+                    borderRadius: 3,
+                    fontSize: 12,
+                  }}
+                >
+                  {seg.slice(1, -1)}
+                </code>
+              );
+            }
+            return <span key={j}>{seg}</span>;
+          });
+          return <div key={i}>{segments.length && line ? segments : <br />}</div>;
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -648,7 +774,7 @@ function ModelRow({
           checked={model.enabled}
           onChange={(e) => onToggle(e.target.checked)}
         />
-        <span className="slider" />
+        <span className={styles.slider} />
       </label>
     </div>
   );

@@ -100,6 +100,6 @@ class TestProviderLazyImport:
         assert "AnthropicRuntime" in providers.__all__
         assert "OpenAIRuntime" in providers.__all__
         assert "GeminiRuntime" in providers.__all__
-        assert "ClaudeCodeRuntime" in providers.__all__
+        assert "ClaudeMaxProxyRuntime" in providers.__all__
         assert "OpenAICodexRuntime" in providers.__all__
         assert "GeminiCLIRuntime" in providers.__all__

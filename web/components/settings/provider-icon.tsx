@@ -26,6 +26,7 @@ const SLUGS: Record<string, string> = {
   "vercel-ai-gateway": "vercel",
   opencode: "opencode",
   "claude-code": "claude",
+  "claude-max-proxy": "claude",
   "gemini-cli": "gemini",
 };
 const CDN = "https://unpkg.com/@lobehub/icons-static-svg@1.4.0/icons/";

@@ -3,7 +3,7 @@ Unified provider + model catalog for the webui.
 
 Responsibilities:
 - Enumerate API providers (from openprogram.providers registry) + CLI
-  runtime providers (claude-code, gemini-cli) as one combined list.
+  runtime providers (gemini-cli) as one combined list.
 - Enumerate models per provider with capability metadata
   (vision / reasoning / tools / context_window).
 - Persist per-provider enabled flag and per-model enabled list in
@@ -26,10 +26,10 @@ from typing import Any
 
 # Importing these modules triggers runtime-level registry augmentation:
 # - openai_codex runtime adds Codex-route models (gpt-5.5 family)
-# - anthropic._claude_code_registry adds Claude Code CLI models under
-#   the "claude-code" provider so list_enabled_models can find them
+# - anthropic._claude_max_proxy_registry adds Claude models under the
+#   "claude-max-proxy" provider so list_enabled_models can find them
 from openprogram.providers.openai_codex import runtime as _codex_runtime  # noqa: F401
-from openprogram.providers.anthropic import _claude_code_registry as _cc_registry  # noqa: F401
+from openprogram.providers.anthropic import _claude_max_proxy_registry as _cmp_registry  # noqa: F401
 
 
 # Display labels for provider ids. Anything not listed falls back to
@@ -55,8 +55,11 @@ _PROVIDER_LABELS = {
     "kimi-coding": "Kimi Coding",
     "vercel-ai-gateway": "Vercel AI Gateway",
     "opencode": "OpenCode",
+    # Claude via local HTTP proxy daemon (replaces the old Claude Code CLI
+    # provider). Tools come from OpenProgram's own registry instead of the
+    # CLI's built-ins.
+    "claude-max-proxy": "Claude (Max proxy)",
     # CLI-backed:
-    "claude-code": "Claude Code CLI",
     "gemini-cli": "Gemini CLI",
 }
 
@@ -64,13 +67,6 @@ _PROVIDER_LABELS = {
 # CLI-backed providers aren't in the HTTP provider registry. We describe them
 # here so the settings page can list them alongside registry providers.
 _CLI_PROVIDERS = [
-    {
-        "id": "claude-code",
-        "label": _PROVIDER_LABELS["claude-code"],
-        "kind": "cli",
-        "cli_binary": "claude",
-        "api_key_env": None,
-    },
     {
         "id": "gemini-cli",
         "label": _PROVIDER_LABELS["gemini-cli"],
@@ -143,7 +139,8 @@ def _label(provider_id: str) -> str:
 
 
 def _is_configured(provider_id: str) -> bool:
-    """Is this provider usable (key present or CLI binary found)."""
+    """Is this provider usable (key present, CLI binary found, or
+    local daemon responding)."""
     # CLI-backed: binary presence decides.
     for cli in _CLI_PROVIDERS:
         if cli["id"] == provider_id:
@@ -152,12 +149,58 @@ def _is_configured(provider_id: str) -> bool:
     if provider_id == "openai-codex":
         from pathlib import Path
         return (Path.home() / ".codex" / "auth.json").exists()
+    # claude-max-proxy: there's no env-key path; the daemon is "ready"
+    # when its HTTP endpoint answers. Quick 0.5s probe — failure means
+    # the user hasn't started ``claude-max-api-proxy`` yet.
+    if provider_id == "claude-max-proxy":
+        import os, urllib.request, urllib.error
+        # `claude-max-api-proxy` binary defaults to port 3456. Strip
+        # a trailing /v1 because the proxy exposes /health at root.
+        url = (os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:3456").rstrip("/")
+        if url.endswith("/v1"):
+            url = url[:-3]
+        try:
+            with urllib.request.urlopen(url + "/health", timeout=0.5):
+                return True
+        except (urllib.error.URLError, ConnectionError, OSError):
+            return False
     env = _ENV_API_KEYS.get(provider_id)
     if env is None:
         return True  # assume true for providers without a standard key var
     import os
     from openprogram.webui.server import _get_api_key  # re-use helper
     return bool(_get_api_key(env))
+
+
+# Provider-specific setup instructions surfaced in the web UI's
+# detail pane. Plain text with two minor conventions:
+#   * Backticked spans render as inline <code>.
+#   * Lines beginning with ``$ `` render as a command row (copy-able).
+_SETUP_HINTS: dict[str, str] = {
+    "claude-max-proxy": (
+        "Claude (Max plan) auth lives in the Claude Code keychain — there's no API\n"
+        "key to paste here. Install the local proxy daemon once and keep it running:\n"
+        "\n"
+        "$ npm install -g @anthropic-ai/claude-code\n"
+        "$ claude auth login\n"
+        "$ npm install -g claude-max-api-proxy\n"
+        "$ claude-max-api\n"
+        "\n"
+        "Note the binary is `claude-max-api` (no `-proxy` suffix). It listens on\n"
+        "`http://localhost:3456` by default; pass a positional port to change it\n"
+        "(e.g. `claude-max-api 8765`) and tell us where with\n"
+        "`CLAUDE_MAX_PROXY_URL=http://host:port`.\n"
+        "\n"
+        "Once the daemon is up, this section flips to \"Detected\" and you can\n"
+        "enable the provider above. The proxy exposes an OpenAI-compatible\n"
+        "`/v1/chat/completions` endpoint and routes traffic through your existing\n"
+        "Claude Code OAuth session, so no extra API key is needed."
+    ),
+}
+
+
+def _setup_hint(provider_id: str) -> str | None:
+    return _SETUP_HINTS.get(provider_id)
 
 
 def _model_to_dict(model, enabled: bool) -> dict[str, Any]:
@@ -197,7 +240,7 @@ def list_providers() -> list[dict[str, Any]]:
         enabled_ids = set(pcfg.get("enabled_models") or [])
         all_ids = {m.id for m in models} | {c.get("id") for c in custom if c.get("id")}
         default_base = models[0].base_url if models and models[0].base_url else ""
-        result.append({
+        entry = {
             "id": pid,
             "label": _label(pid),
             "kind": "api",
@@ -210,7 +253,15 @@ def list_providers() -> list[dict[str, Any]]:
             "supports_fetch": pid in _FETCH_MODELS_PROVIDERS,
             "model_count": len(models) + len(custom),
             "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
-        })
+        }
+        hint = _setup_hint(pid)
+        if hint:
+            entry["setup_hint"] = hint
+            # claude-max-proxy doesn't use an API key env — the proxy
+            # forwards via Claude Code's OAuth — so skip the API-key
+            # input UI for it.
+            entry["api_key_env"] = None
+        result.append(entry)
 
     # CLI-backed providers (not in registry)
     for cli in _CLI_PROVIDERS:

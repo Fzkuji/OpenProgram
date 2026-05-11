@@ -86,6 +86,10 @@
       if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || r.statusText); });
       return r.json();
     }).then(function () {
+      // Park the user at the message they pivoted on after the
+      // re-render so they don't lose their scroll position to the
+      // bottom of the new branch.
+      window._postCheckoutScrollTo = targetId;
       // Ask the server for the fresh linear history under the new
       // HEAD. conversations.js handles the render.
       if (window.ws && window.ws.readyState === WebSocket.OPEN) {

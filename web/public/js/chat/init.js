@@ -348,6 +348,23 @@ function _handleRunningTask(rt) {
 
   // Chat query
   if (rt.func_name === '_chat') {
+    // Don't spawn the `runtime_pending` ghost if an assistant
+    // placeholder already exists for this turn — chat.js's
+    // `addAssistantPlaceholder` + the _renderChatStreamEvent
+    // lazy-create path already own a bubble we'll stream into,
+    // and a second ghost just sits forever showing typing dots.
+    var existingPending = rt.msg_id && pendingResponses && pendingResponses[rt.msg_id];
+    var existingDom = rt.msg_id && document.querySelector(
+      '#chatMessages .message.assistant[data-msg-id="' +
+      (window.CSS && CSS.escape ? CSS.escape(rt.msg_id) : rt.msg_id) +
+      '"]'
+    );
+    if (existingPending || existingDom) {
+      // Make sure any prior ghost is gone too.
+      var oldGhost = document.getElementById('runtime_pending');
+      if (oldGhost && oldGhost.parentNode) oldGhost.parentNode.removeChild(oldGhost);
+      return;
+    }
     if (!document.getElementById('runtime_pending')) {
       var chatDiv = document.createElement('div');
       chatDiv.className = 'message bot';

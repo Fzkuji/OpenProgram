@@ -116,7 +116,14 @@ def grep(pattern: str,
         output_mode: Output format: "files_with_matches", "content", or "count".
         case_insensitive: Case-insensitive match. Default false.
     """
-    root = path or os.getcwd()
+    if path:
+        root = path
+    else:
+        try:
+            from openprogram.paths import get_default_workdir
+            root = get_default_workdir()
+        except Exception:
+            root = os.getcwd()
     if not os.path.exists(root):
         return f"Error: path not found: {root}"
     if shutil.which("rg"):

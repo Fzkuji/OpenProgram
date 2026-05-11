@@ -124,7 +124,7 @@ _SEED: dict = {
         },
         {
             "id": "claude-sonnet-4-6",
-            "display": "Claude Sonnet 4.6 — default",
+            "display": "Claude Sonnet 4.6",
             "family": "sonnet",
             "generation": "4.6",
             "context_window": 200000,

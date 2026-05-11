@@ -1089,6 +1089,29 @@ function renderSessionMessages(conv) {
     });
   } catch (e) {}
 
+  // Branch switch / checkout pivot: scroll to the message the user
+  // clicked instead of the bottom of the new branch. Set by
+  // history-graph.js / message-actions-nav.js before they fire
+  // load_session.
+  var pivot = window._postCheckoutScrollTo;
+  if (pivot) {
+    window._postCheckoutScrollTo = null;
+    // Scope strictly to chatMessages — history-graph nodes in the
+    // right sidebar ALSO carry data-msg-id, so a plain selector picks
+    // the SVG node first and scrollIntoView jumps the wrong panel.
+    var pivotEl = null;
+    var key = window.CSS && CSS.escape ? CSS.escape(pivot) : pivot;
+    var matches = container.querySelectorAll('[data-msg-id="' + key + '"], [data-msg-ids~="' + key + '"]');
+    if (matches.length) pivotEl = matches[0];
+    if (pivotEl) {
+      requestAnimationFrame(function () {
+        pivotEl.scrollIntoView({ behavior: 'auto', block: 'start' });
+      });
+      _skipScrollToBottom = false;
+      return;
+    }
+  }
+
   if (!_skipScrollToBottom) scrollToBottom({ force: true });
   _skipScrollToBottom = false;
 }

@@ -381,7 +381,7 @@ def _restore_sessions():
             # written by the old auto-default-on-create path; letting
             # ``_get_session_runtime`` build the runtime lazily from agent
             # config is the only way old buggy sessions escape the
-            # claude-code default.
+            # legacy claude-code default.
             runtime = None
             if provider_override:
                 try:
@@ -478,14 +478,22 @@ def _list_providers() -> list[dict]:
     """List available providers and their status."""
     import shutil
     result = []
+    import urllib.request, urllib.error
+    def _proxy_alive() -> bool:
+        url = os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:8765"
+        try:
+            with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=0.5):
+                return True
+        except (urllib.error.URLError, ConnectionError, OSError):
+            return False
     checks = [
         # (name, label, available_check, env_keys_for_config_or_None_if_CLI)
         ("openai-codex", "Codex CLI", lambda: shutil.which("codex") is not None, None),
-        ("claude-code", "Claude Code CLI", lambda: shutil.which("claude") is not None, None),
         ("gemini-cli", "Gemini CLI", lambda: shutil.which("gemini") is not None, None),
         ("anthropic", "Anthropic API", lambda: bool(_get_api_key("ANTHROPIC_API_KEY")), ["ANTHROPIC_API_KEY"]),
         ("openai", "OpenAI API", lambda: bool(_get_api_key("OPENAI_API_KEY")), ["OPENAI_API_KEY"]),
         ("gemini", "Gemini API", lambda: bool(_get_api_key("GOOGLE_API_KEY") or _get_api_key("GOOGLE_GENERATIVE_AI_API_KEY")), ["GOOGLE_API_KEY"]),
+        ("claude-max-proxy", "Claude (Max proxy)", _proxy_alive, ["CLAUDE_MAX_PROXY_URL"]),
     ]
     for name, label, check, env_keys in checks:
         available = check()
@@ -1844,7 +1852,7 @@ async def _handle_ws_command(ws, cmd: dict):
                 head, tail = model.split(":", 1)
                 from openprogram.providers import get_providers as _get_providers
                 known = set(_get_providers())
-                known.update({"claude-code", "openai-codex", "gemini-cli",
+                known.update({"claude-max-proxy", "openai-codex", "gemini-cli",
                               "anthropic", "openai", "gemini"})
                 if head in known:
                     inferred_provider = head
@@ -3547,33 +3555,11 @@ def create_app():
         except Exception as e:
             _log(f"[v2-restore] failed: {e}")
 
-    @app.on_event("startup")
-    async def _refresh_claude_registry_if_stale():
-        """Background-refresh openprogram/providers/claude_models.json when it's
-        more than 24h old. Non-blocking; failures are logged and swallowed so
-        a flaky network never prevents the server from starting."""
-        import threading
-        try:
-            from openprogram.legacy_providers.claude_models import is_stale
-        except Exception:
-            return
-        if not is_stale(max_age_hours=24):
-            return
-
-        def _do_refresh():
-            try:
-                from openprogram.providers.anthropic.cli_runtime import ClaudeCodeRuntime
-                from openprogram.legacy_providers.claude_models import _refresh_impl
-                rt = ClaudeCodeRuntime(model="sonnet")
-                try:
-                    _refresh_impl(rt)
-                finally:
-                    rt.close()
-            except Exception as e:
-                import sys
-                print(f"[claude_models] refresh failed: {e}", file=sys.stderr)
-
-        threading.Thread(target=_do_refresh, daemon=True).start()
+    # The previous boot-time refresh of `claude_models.json` relied on
+    # the now-removed Claude Code CLI runtime to enumerate models. The
+    # static catalog shipped with the repo is the source of truth now;
+    # update it via `tools/scripts/refresh_claude_models.py` (offline)
+    # if Anthropic ships a new model family.
 
     # No HTML routes — frontend lives in web/ (Next.js on :3000).
 
@@ -4211,7 +4197,7 @@ def create_app():
             # Only treat as provider prefix if head matches a known provider id.
             from openprogram.providers import get_providers as _get_providers
             known = set(_get_providers())
-            known.update({"claude-code", "openai-codex", "gemini-cli",
+            known.update({"claude-max-proxy", "openai-codex", "gemini-cli",
                           "anthropic", "openai", "gemini"})
             if head in known:
                 inferred_provider = head

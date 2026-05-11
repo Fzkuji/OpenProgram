@@ -1922,21 +1922,77 @@ select.fn-form-input {
 /* .message-content adds its own 36px padding-left for the avatar column —
    cancel it here since .chat-stream-body is already offset the same amount. */
 .chat-stream-body .chat-text { margin-left: 0; padding-left: 0; padding-right: 0; }
-.chat-thinking,
-.chat-tool {
+.chat-thinking {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-secondary);
   overflow: hidden;
   font-size: 12px;
 }
-.chat-tool.is-error { border-color: var(--accent-red, #c94b4b); }
+/* Tool calls render as a single bordered "card" containing dense
+   rows separated by hairlines, instead of each call being its own
+   rounded box with an 8px gap. Cuts vertical space ~60% for the
+   long tool-storm assistant turns. */
+.chat-tools {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+  font-size: 12px;
+}
+.chat-tool {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+  font-size: 12px;
+}
+.chat-tool + .chat-tool {
+  border-top: 1px solid var(--border);
+}
+.chat-tool.is-error { background: rgba(201, 75, 75, 0.06); }
+/* The outer .chat-tools card is now itself collapsible. Its
+   .chat-fold-content carries the row list; kill the generic content
+   padding so rows still sit flush, and add a divider between the
+   header button and the rows. */
+.chat-tools > .chat-fold-content {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+/* Reuse the entire `.inline-tree` / `.inline-tree-header` look from
+   execution trees so chat-tools and execution trees read as one
+   family. The chat-tools card markup adds `.inline-tree` directly
+   so most of the visual style comes from those classes — these
+   overrides only handle the count badge + hide/show the body. */
+.chat-tools .chat-tools-count {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  border-radius: 10px;
+  padding: 0 7px;
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+}
+.chat-tools[data-collapsed="1"] > .chat-tools-body { display: none; }
+.chat-tools[data-collapsed="0"] > .chat-tools-body { display: block; }
+.chat-tools[data-collapsed="0"] > .inline-tree-header { border-bottom: 1px solid var(--border); }
+/* The .inline-tree-body rules (padding) are for execution-tree
+   content; for our flat tool-row list keep zero outer padding so
+   rows sit flush to the card edges (their own row padding handles
+   breathing). */
+.chat-tools > .inline-tree-body { padding: 0; }
 .chat-fold-btn {
   display: flex;
   align-items: center;
   width: 100%;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 3px 10px;
   background: transparent;
   border: none;
   color: var(--text-secondary);

@@ -68,8 +68,9 @@ def invalidate_all() -> None:
 
 def _build_runtime(provider: str, model_id: str) -> Any:
     """Build a fresh runtime for (provider, model_id). Falls through
-    to auto-detection (claude-code, openai-codex, etc. in the order
-    used by the Web UI) when the agent hasn't picked a provider yet.
+    to auto-detection (claude-max-proxy, openai-codex, etc. in the
+    order used by the Web UI) when the agent hasn't picked a provider
+    yet.
 
     Raises RuntimeError if we can't even construct a fallback — the
     caller shows a "configure a provider" error to the user.
@@ -100,13 +101,13 @@ def _build_configured(provider: str, model_id: str) -> Any:
 
 
 def _build_autodetect() -> Any:
-    """Same pass the Web UI uses on fresh installs: try Claude Code /
-    Codex / Gemini CLI / Anthropic / OpenAI / Google in order. Raises
-    if none are configured.
+    """Same pass the Web UI uses on fresh installs: try Codex / Gemini
+    CLI / Anthropic / OpenAI / Google / Claude Max proxy in order.
+    Raises if none are configured.
     """
     from openprogram.legacy_providers import create_runtime
-    for p in ("claude-code", "openai-codex", "gemini-cli",
-              "anthropic", "gemini", "openai"):
+    for p in ("openai-codex", "gemini-cli",
+              "anthropic", "gemini", "openai", "claude-max-proxy"):
         try:
             rt = create_runtime(provider=p)
             if rt is not None:

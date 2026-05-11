@@ -117,7 +117,7 @@ function fmtTokenNum(n) {
 }
 
 function _isClaudeProvider(p) {
-  return p === 'claude_code' || p === 'claude-code' || p === 'anthropic';
+  return p === 'claude-max-proxy' || p === 'anthropic';
 }
 function _isCodexProvider(p) {
   return p === 'codex' || p === 'codex-cli';

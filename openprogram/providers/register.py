@@ -126,17 +126,6 @@ def register_builtins() -> None:
     except ImportError:
         pass
 
-    # Claude Max CLI (subscription-based, requires `claude auth login`)
-    try:
-        from openprogram.providers.claude_max_cli import stream_claude_max_cli, stream_simple_claude_max_cli
-        register_api_provider(
-            "claude-code-cli",
-            _StreamFnProvider(stream_claude_max_cli, stream_simple_claude_max_cli),
-            source_id="builtin",
-        )
-    except ImportError:
-        pass
-
     # Amazon Bedrock Converse Stream
     try:
         from openprogram.providers.amazon_bedrock import stream_bedrock

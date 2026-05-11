@@ -1070,7 +1070,7 @@ def _resolve_model(profile: dict, override: Optional[str] = None):
             # ``{"provider": "openai-codex", "id": "gpt-5.5"}`` still
             # tries the right backend first.
             order = ["openai", "anthropic", "google", "amazon-bedrock",
-                     "cerebras", "claude-code", "github-copilot"]
+                     "cerebras", "claude-max-proxy", "github-copilot"]
             if provider_hint and provider_hint not in order:
                 order.insert(0, provider_hint)
             for provider in order:
@@ -1099,12 +1099,18 @@ def _with_tool_runtime_prompt(system_prompt: str, tools: Optional[list]) -> str:
     if not names:
         return system_prompt
 
-    cwd = os.getcwd()
+    from openprogram.paths import get_default_workdir
+    cwd = get_default_workdir()
     has_bash = "bash" in names
     lines = [
         "Runtime tool context:",
         f"- Current working directory: {cwd}",
         f"- Available tools for this turn: {', '.join(names)}",
+        "- Scope every filesystem operation (read/list/glob/grep/bash) "
+        "to the smallest known target, ideally under the working "
+        "directory above. Do NOT recurse over `$HOME` or `/`; recursive "
+        "`**` walks over a home directory take minutes and exhaust the "
+        "turn budget.",
         "- If the user asks for the current directory, answer from the Current working directory line above.",
         "- If the user asks to list the current directory, call the list tool with that absolute path.",
         "- When the user asks to inspect files, directories, or program state, call the relevant available tool instead of saying no tools are available.",
@@ -1150,10 +1156,19 @@ def _resolve_tools(
     """
     wanted = override if override is not None else profile.get("tools")
     if wanted is None:
-        # No explicit list: leave None so agent_loop runs in pure chat
-        # mode. We could default to "all tools" but that's a security
-        # decision better made explicit (set tools in agent.json).
-        return None
+        # Default-on: match runtime.Runtime._call_via_providers and
+        # Hermes/OpenClaw — when the agent profile didn't pin a tool
+        # list, expose DEFAULT_TOOLS (filtered by `source` so channel
+        # transports still drop unsafe ones via `unsafe_in`). This
+        # used to return None ("pure chat"), which broke parity with
+        # the deleted claude-code CLI provider that always shipped
+        # Read/Write/Edit. Set `tools: []` in agent.json to opt out
+        # explicitly.
+        try:
+            from openprogram.tools import agent_tools as _agent_tools
+            return _agent_tools(source=source, only_available=True)
+        except Exception:
+            return None
     if wanted == []:
         return []
     try:

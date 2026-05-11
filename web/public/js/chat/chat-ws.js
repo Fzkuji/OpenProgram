@@ -239,17 +239,38 @@ function _renderChatStreamEvent(evt, msgId) {
   var el = null;
   if (msgId && pendingResponses[msgId]) {
     el = pendingResponses[msgId];
-  } else if (msgId && typeof addAssistantPlaceholder === 'function') {
-    // First event for a turn that hasn't been registered yet — create
-    // the placeholder lazily so retry / channel-driven runs don't lose
-    // their first tool_use / text delta.
-    addAssistantPlaceholder(msgId);
-    el = pendingResponses[msgId];
+  } else if (msgId) {
+    // Race: a stream_event can arrive before chat_ack rekeys the
+    // chat.js-created `pending_<ts>` placeholder. Adopt that orphan
+    // instead of creating a second bubble next to it.
+    var _orphans = Object.keys(pendingResponses).filter(function (k) {
+      return k.indexOf('pending_') === 0;
+    });
+    if (_orphans.length === 1) {
+      pendingResponses[msgId] = pendingResponses[_orphans[0]];
+      delete pendingResponses[_orphans[0]];
+      el = pendingResponses[msgId];
+    } else if (typeof addAssistantPlaceholder === 'function') {
+      // First event for a turn that has no placeholder at all (e.g.
+      // channel-driven run, reconnect). Create one lazily so the
+      // first tool_use / text delta has somewhere to land.
+      addAssistantPlaceholder(msgId);
+      el = pendingResponses[msgId];
+    }
   } else {
     var pendingKeys = Object.keys(pendingResponses);
     if (pendingKeys.length) el = pendingResponses[pendingKeys[0]];
   }
   if (!el) return;
+
+  // Kill any `runtime_pending` ghost spawned by _handleRunningTask
+  // for this same turn — once we have a real bubble to stream into,
+  // the ghost is redundant and reads as a duplicate empty Agentic
+  // bubble above the live one.
+  var ghost = document.getElementById('runtime_pending');
+  if (ghost && ghost !== el && ghost.parentNode) {
+    ghost.parentNode.removeChild(ghost);
+  }
 
   var ti = el.querySelector('.typing-indicator');
   if (ti) ti.remove();
@@ -270,7 +291,16 @@ function _renderChatStreamEvent(evt, msgId) {
         '</button>' +
         '<div class="chat-fold-content"></div>' +
       '</div>' +
-      '<div class="chat-tools"></div>' +
+      '<div class="chat-tools inline-tree" data-collapsed="1" style="display:none">' +
+        '<div class="inline-tree-header chat-tools-header" onclick="_toggleChatToolsCard(this)">' +
+          '<span><span style="color:var(--accent-cyan)">&#9670;</span> Tool calls <span class="chat-tools-count">0</span></span>' +
+          '<span class="inline-tree-actions">' +
+            '<button class="inline-tree-copy chat-tools-copy" onclick="event.stopPropagation();_copyChatTools(event, this)" title="Copy tool calls as JSON">Copy JSON</button>' +
+            '<span class="inline-tree-toggle chat-tools-toggle">&#9654;</span>' +
+          '</span>' +
+        '</div>' +
+        '<div class="inline-tree-body chat-tools-body"></div>' +
+      '</div>' +
       '<div class="chat-text message-content"></div>';
     el.appendChild(scaffold);
   }
@@ -291,6 +321,8 @@ function _renderChatStreamEvent(evt, msgId) {
     if (evt.elapsed) elapsed.textContent = '· ' + evt.elapsed + 's';
   } else if (evt.type === 'tool_use') {
     var tools = scaffold.querySelector('.chat-tools');
+    tools.style.display = '';
+    var toolsBody = tools.querySelector('.chat-tools-body');
     var callId = evt.tool_call_id || ('t_' + Date.now());
     var tool = document.createElement('div');
     tool.className = 'chat-tool';
@@ -307,7 +339,9 @@ function _renderChatStreamEvent(evt, msgId) {
         '<div class="chat-tool-section"><div class="chat-tool-section-label">args</div><pre class="chat-tool-pre">' + escHtml(evt.input || '') + '</pre></div>' +
         '<div class="chat-tool-section chat-tool-result-section" style="display:none"><div class="chat-tool-section-label">result</div><pre class="chat-tool-pre chat-tool-result"></pre></div>' +
       '</div>';
-    tools.appendChild(tool);
+    toolsBody.appendChild(tool);
+    var countEl = tools.querySelector('.chat-tools-count');
+    if (countEl) countEl.textContent = String(toolsBody.children.length);
   } else if (evt.type === 'tool_result') {
     var callId2 = evt.tool_call_id || '';
     var tool2 = scaffold.querySelector('.chat-tool[data-call-id="' + CSS.escape(callId2) + '"]');
@@ -315,6 +349,8 @@ function _renderChatStreamEvent(evt, msgId) {
       // Result arrived without a matching tool_use (shouldn't happen, but
       // degrade gracefully by creating a result-only block).
       var tools2 = scaffold.querySelector('.chat-tools');
+      tools2.style.display = '';
+      var toolsBody2 = tools2.querySelector('.chat-tools-body');
       tool2 = document.createElement('div');
       tool2.className = 'chat-tool';
       tool2.dataset.callId = callId2 || ('t_' + Date.now());
@@ -328,7 +364,9 @@ function _renderChatStreamEvent(evt, msgId) {
         '<div class="chat-fold-content">' +
           '<div class="chat-tool-section chat-tool-result-section"><div class="chat-tool-section-label">result</div><pre class="chat-tool-pre chat-tool-result"></pre></div>' +
         '</div>';
-      tools2.appendChild(tool2);
+      toolsBody2.appendChild(tool2);
+      var countEl2 = tools2.querySelector('.chat-tools-count');
+      if (countEl2) countEl2.textContent = String(toolsBody2.children.length);
     }
     var status = tool2.querySelector('.chat-tool-status');
     if (status) status.textContent = evt.is_error ? 'error' : (evt.elapsed ? '· ' + evt.elapsed + 's' : 'done');
@@ -348,6 +386,7 @@ function _renderChatStreamEvent(evt, msgId) {
 function _renderAssistantBlocks(blocks, finalText) {
   var thinking = '';
   var toolsHtml = '';
+  var toolCount = 0;
   blocks.forEach(function(b) {
     if (b.type === 'thinking' && b.text) {
       thinking =
@@ -359,6 +398,7 @@ function _renderAssistantBlocks(blocks, finalText) {
           '<div class="chat-fold-content">' + escHtml(b.text) + '</div>' +
         '</div>';
     } else if (b.type === 'tool') {
+      toolCount++;
       var errCls = b.is_error ? ' is-error' : '';
       var statusTxt = b.is_error ? 'error' : 'done';
       var argsPreview = escHtml(_compactToolArgs(b.input || ''));
@@ -380,7 +420,18 @@ function _renderAssistantBlocks(blocks, finalText) {
         '</div>';
     }
   });
-  var toolsBlock = toolsHtml ? ('<div class="chat-tools">' + toolsHtml + '</div>') : '<div class="chat-tools"></div>';
+  var toolsBlock = toolCount > 0
+    ? ('<div class="chat-tools inline-tree" data-collapsed="1">' +
+         '<div class="inline-tree-header chat-tools-header" onclick="_toggleChatToolsCard(this)">' +
+           '<span><span style="color:var(--accent-cyan)">&#9670;</span> Tool calls <span class="chat-tools-count">' + toolCount + '</span></span>' +
+           '<span class="inline-tree-actions">' +
+             '<button class="inline-tree-copy chat-tools-copy" onclick="event.stopPropagation();_copyChatTools(event, this)" title="Copy tool calls as JSON">Copy JSON</button>' +
+             '<span class="inline-tree-toggle chat-tools-toggle">&#9654;</span>' +
+           '</span>' +
+         '</div>' +
+         '<div class="inline-tree-body chat-tools-body">' + toolsHtml + '</div>' +
+       '</div>')
+    : '';
   return '<div class="chat-stream-body">' +
       thinking +
       toolsBlock +
@@ -394,6 +445,49 @@ function _toggleChatFold(btn) {
   var collapsed = parent.dataset.collapsed === '1';
   parent.dataset.collapsed = collapsed ? '0' : '1';
 }
+
+// Toggle the outer chat-tools card. Header click target is the
+// header div itself, so parent is the .chat-tools element.
+function _toggleChatToolsCard(hdr) {
+  var card = hdr.closest('.chat-tools');
+  if (!card) return;
+  var collapsed = card.dataset.collapsed === '1';
+  card.dataset.collapsed = collapsed ? '0' : '1';
+  var toggle = card.querySelector('.chat-tools-toggle');
+  if (toggle) toggle.innerHTML = collapsed ? '&#9660;' : '&#9654;';
+}
+window._toggleChatToolsCard = _toggleChatToolsCard;
+
+// Copy all tool rows in this card as a single JSON blob.
+function _copyChatTools(ev, btn) {
+  var card = btn.closest('.chat-tools');
+  if (!card) return;
+  var rows = card.querySelectorAll('.chat-tools-body > .chat-tool');
+  var payload = [];
+  rows.forEach(function (row) {
+    var name = row.querySelector('.chat-tool-name');
+    var args = row.querySelector('.chat-tool-section pre.chat-tool-pre');
+    var result = row.querySelector('.chat-tool-result');
+    var status = row.querySelector('.chat-tool-status');
+    payload.push({
+      tool: name ? name.textContent : null,
+      tool_call_id: row.dataset.callId || null,
+      input: args ? args.textContent : null,
+      result: result ? result.textContent : null,
+      is_error: row.classList.contains('is-error'),
+      status: status ? status.textContent.trim() : null,
+    });
+  });
+  var text = JSON.stringify(payload, null, 2);
+  try {
+    navigator.clipboard.writeText(text);
+    btn.textContent = 'Copied!';
+    setTimeout(function () { btn.textContent = 'Copy JSON'; }, 1200);
+  } catch (e) {
+    console.error('[chat-tools] copy failed:', e);
+  }
+}
+window._copyChatTools = _copyChatTools;
 
 function _handleStreamEvent(data) {
   var evt = data.event || {};

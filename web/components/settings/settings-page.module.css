@@ -4,6 +4,12 @@
 
 .view {
   min-height: 0;
+  /* This is the single scroll root for the whole settings page,
+     mirroring claude.ai's settings UX: topbar + nav + content all
+     scroll up together instead of being pinned with a tiny inner
+     scroller for the model list. */
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .topbar {
@@ -40,6 +46,9 @@
   flex-direction: column;
   gap: 1px;
   align-self: start;
+  /* Sticky so the outer tabs (LLM Providers / General) stay
+     in view while the right content scrolls — matches claude.ai's
+     settings UX where the left categories column is pinned. */
   position: sticky;
   top: 16px;
   margin-left: -12px;
@@ -201,26 +210,44 @@
   color: var(--text-bright);
 }
 
-/* Providers two-pane layout. The two columns each scroll on their own
-   so a long provider list (sidebar) or a long model list (detail)
-   doesn't push the topbar off-screen. */
+/* Providers two-pane layout. Whole settings page scrolls as one
+   block (claude.ai-style): no inner overflow, no fixed height — the
+   columns grow naturally and the page scrolls them up together.
+   The provider list on the left is `position: sticky` so it stays
+   in view while the user scans the long model list on the right. */
 .providersLayout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 24px;
-  /* Reserve viewport minus topbar (96px) and surrounding margins. */
-  height: calc(100vh - 200px);
-  min-height: 480px;
 }
 .providersSidebar {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  overflow-y: auto;
   padding-right: 4px;
+  align-self: start;
+  /* Stay in view next to the scrolling detail column. The provider
+     list can get long (20+ providers), so cap its own height and
+     give it its own scrollbar — same shape as claude.ai's left
+     settings nav. */
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  /* No overscroll-behavior — default chaining. The wheel scrolls
+     this sidebar internally until it hits top/bottom, then naturally
+     propagates to `.view`. `contain` would trap the wheel here and
+     make the user "force" past the boundary to continue page
+     scrolling, which felt stuck. */
 }
 .providersSidebar > .providersSearch { margin-bottom: 8px; }
-.providersSidebar > .providersGroupLabel { margin-top: 8px; }
+.providersSidebar > .providersGroupLabel { margin-top: 20px; }
+/* First group label sits directly under the search box — keep that
+   gap tight (8px) so the search has visual continuity with the
+   "Enabled" header it introduces. Only the later "Not enabled"
+   label (or any subsequent group break) gets the larger breathing
+   room above. */
+.providersSidebar > .providersSearch + .providersGroupLabel { margin-top: 8px; }
 .providersSearch {
   position: relative;
 }
@@ -317,6 +344,9 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* No inner overflow — single page-level scroll. The sticky
+     `.providersSidebar` keeps the provider picker on screen while
+     the user scans this column's full content. */
 }
 .detailEmpty {
   color: var(--text-muted);
@@ -424,13 +454,15 @@
   background: white;
 }
 
-/* Model list */
+/* Model list — no inner scroll. The whole settings page is a single
+   scroll root (`.view`); the model list grows naturally and rides
+   the page scroll. Earlier `max-height: 480px; overflow-y: auto`
+   trapped the wheel inside the list so the rest of the page only
+   moved after large gestures past the model list's end. */
 .modelList {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 480px;
-  overflow-y: auto;
   padding-right: 4px;
 }
 .modelItem {

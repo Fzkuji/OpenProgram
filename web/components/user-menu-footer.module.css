@@ -13,8 +13,12 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  /* Full-bleed hover: span the entire footer width so the click /
+     hover target isn't just an inset rounded pill. Horizontal padding
+     stays at 10px so the avatar sits at the same x as before, but
+     border-radius is gone and width is 100% of footer. */
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
   user-select: none;
   background: transparent;
@@ -72,10 +76,18 @@
 .item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  /* Match `.conv-item` in the Recents list above so the menu's rows
+     are the same visual rhythm as the chat list: 32px row, 6px/8px
+     padding, 14px text, 12px gap, no oversized line-height. */
+  gap: 12px;
+  padding: 6px 8px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  box-sizing: border-box;
+  line-height: 20px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-primary);
   text-decoration: none;
   cursor: pointer;

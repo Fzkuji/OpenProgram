@@ -84,3 +84,36 @@ def ensure_state_dir() -> Path:
     d = get_state_dir()
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def get_default_workdir() -> str:
+    """Project / working-directory the agent should treat as "where the
+    user is right now".
+
+    Resolution order:
+      1. ``OPENPROGRAM_WORKDIR`` env var.
+      2. ``default_workdir`` key in ``~/.agentic/config.json``.
+      3. ``os.getcwd()`` — the worker process's launch cwd.
+
+    Why a separate concept from ``os.getcwd()``: the worker is a
+    long-running daemon usually started from ``$HOME``. If the agent's
+    system prompt simply tells the LLM "cwd is /Users/<user>" the
+    model will happily run ``glob '**/*.py'`` over the entire home
+    directory, which takes minutes and yields garbage. Claude Code
+    works because its cwd is whichever terminal directory the user
+    launched it from; our worker can't replicate that automatically,
+    so we expose a config switch the user (or per-session UI) can
+    point at the real project root.
+    """
+    import json
+    env_v = os.environ.get("OPENPROGRAM_WORKDIR")
+    if env_v and env_v.strip() and os.path.isdir(env_v):
+        return env_v
+    try:
+        cfg = json.loads(get_config_path().read_text())
+        wd = cfg.get("default_workdir")
+        if isinstance(wd, str) and wd.strip() and os.path.isdir(wd):
+            return wd
+    except Exception:
+        pass
+    return os.getcwd()

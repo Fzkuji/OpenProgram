@@ -176,12 +176,99 @@ _autoload_agent_registry()
 # categorization by agent type. Only the two non-curated extremes are
 # kept as named entries:
 #
-# "default" — matches DEFAULT_TOOLS (kept in sync below).
-# "full"    — every registered tool. Mostly for debugging / listing.
-TOOLSETS: dict[str, list[str]] = {
+# Hermes-style named presets. `default` is the always-on minimal
+# safe set; `full` is every registered tool (mostly for debugging).
+# Scenario presets bundle the extras the LLM tends to need for a
+# given mode of work — research, browser automation, coding with
+# code execution, etc. Selecting a preset is the only intended way
+# to opt-in to non-default tools without hand-listing names; callers
+# that need a custom mix should pass `names=[...]` directly.
+#
+# Composition: an entry can carry an ``includes`` field (Hermes
+# pattern) that names other presets to expand. ``_expand_preset``
+# walks them recursively and dedupes. Composition lets `debugging`
+# reuse `coding` + `research` without duplicating the tool list,
+# so adding a new tool to `coding` propagates without edits.
+TOOLSETS: dict[str, dict[str, list[str]] | list[str]] = {
+    # Bare-list form for back-compat with `TOOLSETS[name]` callers
+    # that don't expect a dict — these two are stable presets.
     "default": DEFAULT_TOOLS,
-    "full": [*ALL_TOOLS],
+    "full":    [*ALL_TOOLS],
+
+    # Scenario presets.
+    "research": {
+        "tools":    ["web_search", "web_fetch", "pdf", "image_analyze"],
+        "includes": ["default"],
+    },
+    "browser": {
+        "tools":    ["playwright_browser", "agent_browser", "web_search"],
+        "includes": ["default"],
+    },
+    "coding": {
+        "tools":    ["execute_code", "process"],
+        "includes": ["default"],
+    },
+    "vision": {
+        "tools":    ["image_analyze", "image_generate", "pdf"],
+        "includes": ["default"],
+    },
+    "memory": {
+        # Memory tool names are injected by tools/memory at import
+        # time; reference by name so the preset works even if the
+        # exact name list shifts.
+        "tools":    ["memory_note", "memory_recall", "memory_reflect", "wiki_get"],
+        "includes": ["default"],
+    },
+    "safe": {
+        # No shell / process / code-exec. For untrusted user input
+        # paths where we want LLM to still answer questions but never
+        # touch the host.
+        "tools":    ["read", "glob", "grep", "list", "web_search",
+                     "web_fetch", "image_analyze", "pdf"],
+        "includes": [],   # explicitly does NOT pull `default` (which has bash/write/edit)
+    },
+    "debugging": {
+        # Composition example: union of research + coding.
+        "tools":    [],
+        "includes": ["research", "coding"],
+    },
 }
+
+
+def _expand_preset(name: str, _seen: set[str] | None = None) -> list[str]:
+    """Resolve a preset name to a flat, deduplicated tool-name list.
+
+    Walks the ``includes`` chain recursively. Cycle-safe: keeps a
+    visited set so a misconfigured preset that references itself
+    doesn't recurse forever. Unknown preset names raise KeyError —
+    same contract as direct ``TOOLSETS[name]`` access used to have.
+    """
+    if _seen is None:
+        _seen = set()
+    if name in _seen:
+        return []
+    _seen.add(name)
+
+    entry = TOOLSETS[name]
+    # Note: ``list`` is shadowed in this module by the ``.list`` subpackage
+    # import at the top, so we check against ``dict`` instead. The two
+    # accepted shapes are: plain sequence of tool-name strings, or a
+    # ``{"tools": [...], "includes": [...]}`` mapping.
+    if not isinstance(entry, dict):
+        return [n for n in entry]
+
+    out: list[str] = []
+    seen_tools: set[str] = set()
+    for inc in entry.get("includes", []) or []:
+        for t in _expand_preset(inc, _seen):
+            if t not in seen_tools:
+                out.append(t)
+                seen_tools.add(t)
+    for t in entry.get("tools", []) or []:
+        if t not in seen_tools:
+            out.append(t)
+            seen_tools.add(t)
+    return out
 
 
 def get(name: str) -> dict[str, Any]:
@@ -208,7 +295,7 @@ def get_many(
         raise ValueError("Pass either `names` or `toolset`, not both.")
     if toolset is not None:
         try:
-            names = TOOLSETS[toolset]
+            names = _expand_preset(toolset)
         except KeyError as e:
             raise KeyError(
                 f"Unknown toolset {toolset!r}. Known: {sorted(TOOLSETS)}"
@@ -273,22 +360,52 @@ def agent_tools(
     *,
     toolset: str | None = None,
     source: str | None = None,
+    allow: list[str] | None = None,
+    deny: list[str] | None = None,
     only_available: bool = False,
 ) -> list[AgentTool]:
-    """Return AgentTool instances. Mirrors ``get_many`` semantics but
-    returns the unified AgentTool shape consumed by ``agent_loop``.
+    """Return AgentTool instances. Hermes-style toolset resolution plus
+    an OpenClaw-style allow/deny policy chain.
 
-    - ``source`` (e.g. "wechat") drops tools flagged unsafe_in that channel.
-    - ``only_available`` reuses the legacy ``check_fn`` / ``requires_env``
-      gating so the LLM doesn't see tools without their API keys.
+    Cascade (in order):
+
+      1. Resolve the *initial set* by exactly one of:
+            * ``names=`` — explicit list
+            * ``toolset=`` — name in :data:`TOOLSETS` (presets resolve
+              recursively via ``includes``)
+            * neither — :data:`DEFAULT_TOOLS`
+      2. Drop tools whose ``unsafe_in`` metadata blacklists ``source``
+         (channel-level filter). Mirrors the per-tool channel policy
+         OpenClaw applies via ``filterToolsByMessageProvider``.
+      3. Apply ``deny=`` — explicit subtraction by name.
+      4. Apply ``allow=`` — explicit intersection (only listed names
+         survive). Useful for per-call subagent / role-scoped runs.
+      5. ``only_available=True`` drops tools whose ``check_fn`` /
+         ``requires_env`` reports them unrunnable right now.
+
+    All filters compose: ``toolset="research", deny=["pdf"],
+    allow=["web_search", "read"]`` is "research minus pdf, then
+    intersected with [web_search, read]". The allow step runs last so
+    it acts as a hard ceiling regardless of what the toolset includes.
     """
     if names is not None and toolset is not None:
         raise ValueError("Pass either `names` or `toolset`, not both.")
+    # Resolve presets through the TOOLSETS dict here so `filter_for`
+    # (which only knows about per-tool `toolsets=` metadata) doesn't
+    # get a name it can't look up.
+    if toolset is not None and toolset in TOOLSETS:
+        names = _expand_preset(toolset)
+        toolset = None
     if names is None and toolset is None:
         names = DEFAULT_TOOLS
     picked = _filter_agent_tools(names=names, toolset=toolset, source=source)
+    if deny:
+        denyset = set(deny)
+        picked = [t for t in picked if t.name not in denyset]
+    if allow is not None:
+        allowset = set(allow)
+        picked = [t for t in picked if t.name in allowset]
     if only_available:
-        # Cross-reference with the legacy dict for gating signals
         gated = []
         for t in picked:
             record = ALL_TOOLS.get(t.name)
@@ -296,6 +413,57 @@ def agent_tools(
                 gated.append(t)
         picked = gated
     return picked
+
+
+def apply_tool_policy(
+    tools: list[AgentTool],
+    *,
+    source: str | None = None,
+    allow: list[str] | None = None,
+    deny: list[str] | None = None,
+    only_available: bool = False,
+) -> list[AgentTool]:
+    """Run the policy cascade on an existing AgentTool list.
+
+    Same channel / allow / deny / availability filters as
+    :func:`agent_tools`, applied post-construction. Use this when the
+    caller already has a tool list (e.g. produced by an explicit
+    ``runtime.exec(tools=[...])`` call) and needs to enforce session
+    or channel policy on top — mirrors how OpenClaw runs its tool
+    builder once and then layers ``wrapTool*`` filters over the
+    result.
+    """
+    # `list` builtin is shadowed by the .list subpackage import above; use
+    # slice copy instead of list(...).
+    out = [t for t in tools]
+    if source:
+        out = [
+            t for t in out
+            if source not in _unsafe_in_for(t.name)
+        ]
+    if deny:
+        denyset = set(deny)
+        out = [t for t in out if t.name not in denyset]
+    if allow is not None:
+        allowset = set(allow)
+        out = [t for t in out if t.name in allowset]
+    if only_available:
+        gated = []
+        for t in out:
+            record = ALL_TOOLS.get(t.name)
+            if record is None or _is_available(record):
+                gated.append(t)
+        out = gated
+    return out
+
+
+def _unsafe_in_for(tool_name: str) -> set[str]:
+    """Read the live unsafe_in registry for a single tool. Looks at the
+    in-process registry that ``@tool(..., unsafe_in=[...])`` populates
+    so the answer reflects whatever plugins are loaded right now.
+    """
+    from openprogram.tools._runtime import _unsafe_in_channel
+    return _unsafe_in_channel.get(tool_name, set())
 
 
 def get_agent_tool(name: str) -> AgentTool | None:
@@ -346,4 +514,5 @@ __all__ = [
     "register_tool",
     "tool",
     "tool_requires_approval",
+    "apply_tool_policy",
 ]

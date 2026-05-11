@@ -135,7 +135,7 @@ export function ModelList({ provider }: { provider: Provider }) {
         </div>
       ) : (
         <ul
-          className="max-h-[60vh] overflow-y-auto rounded-md border"
+          className="rounded-md border"
           style={{
             background: "var(--bg-input)",
             borderColor: "var(--border-color)",

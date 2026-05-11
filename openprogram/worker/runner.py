@@ -33,8 +33,19 @@ def _find_free_port() -> int:
 
 
 def _port_available(port: int) -> bool:
+    """True iff we can bind ``127.0.0.1:port`` right now.
+
+    Sets ``SO_REUSEADDR`` before ``bind()`` so a port that only sits
+    in ``TIME_WAIT`` (left by a worker we just stopped) is reported
+    as available. Without this, every quick restart shifts the
+    backend off ``8765`` to a random port for ~60s, which forces a
+    Next.js bundle rebuild + makes every open browser tab lose its
+    WebSocket. ``uvicorn`` also sets ``SO_REUSEADDR`` on its server
+    socket, so the actual subsequent bind succeeds too.
+    """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", port))
         return True
     except OSError:
