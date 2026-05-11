@@ -293,7 +293,18 @@ window.renderBranchesPanel = function () {
   var _bcRaw = sessionStorage.getItem('agentic_branches_collapsed');
   var collapsed = _bcRaw === null ? true : _bcRaw === '1';
 
-  // Active branch always at top.
+  // Use lane colors from the history graph if available; fallback to index order.
+  var _branchLaneColors = [
+    '#4f8ef7','#5aad4e','#d4843a','#9d6fe0','#e0445a',
+    '#2db3d5','#d96d2d','#35b89a','#6b8dd6','#2ec4b6'
+  ];
+  var graphColorMap = window._branchLaneColorMap || {};
+  var colorMap = {};
+  rows.forEach(function (b, idx) {
+    colorMap[b.head_msg_id] = graphColorMap[b.head_msg_id] || _branchLaneColors[idx % _branchLaneColors.length];
+  });
+
+  // Active branch always at top for display only.
   rows = rows.slice().sort(function(a, b) { return (b.active ? 1 : 0) - (a.active ? 1 : 0); });
 
   host.className = 'branches-section' + (collapsed ? ' is-collapsed' : '');
@@ -312,21 +323,32 @@ window.renderBranchesPanel = function () {
   });
 
   var list = host.querySelector('.branches-list');
+
+  // Render active (HEAD) item before the collapsible list so it's always visible.
+  var activeRow = rows.find(function(b) { return b.active; });
+  if (activeRow) {
+    var headColor = colorMap[activeRow.head_msg_id] || _branchLaneColors[0];
+    var headItem = document.createElement('div');
+    headItem.className = 'branch-item active';
+    headItem.setAttribute('data-head', activeRow.head_msg_id);
+    headItem.innerHTML =
+      '<span class="branch-item-dot" style="background:' + headColor + '"></span>' +
+      '<span class="branch-item-name">' + escHtml(activeRow.name) + '</span>' +
+      '<span class="branch-item-badge">HEAD</span>';
+    host.insertBefore(headItem, list);
+  }
+
   if (collapsed) list.style.display = 'none';
 
-  var _branchLaneColors = [
-    '#4f8ef7','#5aad4e','#d4843a','#9d6fe0','#e0445a',
-    '#2db3d5','#d96d2d','#35b89a','#6b8dd6','#2ec4b6'
-  ];
-  rows.forEach(function (b, idx) {
-    var laneColor = _branchLaneColors[idx % _branchLaneColors.length];
+  rows.forEach(function (b) {
+    if (b.active) return; // already rendered above
+    var laneColor = colorMap[b.head_msg_id] || _branchLaneColors[0];
     var item = document.createElement('div');
-    item.className = 'branch-item' + (b.active ? ' active' : '');
+    item.className = 'branch-item';
     item.setAttribute('data-head', b.head_msg_id);
     item.innerHTML =
       '<span class="branch-item-dot" style="background:' + laneColor + '"></span>' +
-      '<span class="branch-item-name">' + escHtml(b.name) + '</span>' +
-      (b.active ? '<span class="branch-item-badge">HEAD</span>' : '');
+      '<span class="branch-item-name">' + escHtml(b.name) + '</span>';
     item.addEventListener('click', function () {
       if (b.active) return;
       if (ws && ws.readyState === WebSocket.OPEN) {

@@ -386,6 +386,14 @@
     var lanes = _assignLanes(tree.byId, tree.roots, headId);
     _leafOfNode = lanes.leafOfNode;
 
+    // Expose head_msg_id → lane color so branch panel dots match the graph.
+    var _colorMap = Object.create(null);
+    Object.keys(tree.byId).forEach(function (id) {
+      var node = tree.byId[id];
+      if (node._lane !== undefined) _colorMap[id] = _laneColor(node._lane);
+    });
+    window._branchLaneColorMap = _colorMap;
+
     var headAncestors = Object.create(null);
     _headAncestors(tree.byId, headId).forEach(function (id) { headAncestors[id] = true; });
     _headAncestorSet = headAncestors;

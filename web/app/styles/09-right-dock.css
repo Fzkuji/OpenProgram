@@ -45,12 +45,17 @@
    from .sidebar.collapsed rules in 02-sidebar.css). */
 .right-sidebar.collapsed .right-view-host { display: none; }
 
+/* HEAD item sits directly in .branches-section, needs same side padding as the list */
+.branches-section > .branch-item {
+  margin: 0 8px 1px;
+}
+
 /* ============ Branches panel — mirrors left sidebar section style ============ */
 
 /* Wrapper mirrors .sidebar-favorites */
 .branches-section {
   flex-shrink: 0;
-  padding: 16px 0 0;
+  padding: 16px 0 8px;
 }
 
 /* List mirrors .sidebar-fav-list / .sidebar-panel-list */
@@ -107,8 +112,8 @@
   height: 18px;
   line-height: 18px;
   border-radius: 3px;
-  background: rgba(79, 142, 247, 0.2);
-  color: #4f8ef7;
+  background: rgba(160, 160, 160, 0.15);
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
@@ -117,7 +122,7 @@
 .history-body {
   flex: 1;
   overflow: auto;
-  padding: 12px 8px;
+  padding: 12px 8px 32px;
   position: relative;
 }
 .history-empty,
