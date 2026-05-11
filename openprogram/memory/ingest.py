@@ -483,10 +483,34 @@ def ingest_source(
     if reviews:
         _persist_reviews(reviews, source_slug=source_slug, ts=today)
 
+    # --- Enrich wikilinks on the pages we just wrote ---------------------
+    # Skip the bookkeeping pages — index/log/overview have their own
+    # cross-link rules; only the content pages get post-processing.
+    enrich_stats: dict[str, Any] = {"skipped": True}
+    try:
+        from . import enrich
+        skip_names = {"index.md", "log.md", "overview.md"}
+        content_paths = [
+            store.wiki_dir() / w for w in written
+            if Path(w).name not in skip_names
+        ]
+        if content_paths:
+            enrich_stats = enrich.enrich_pages(content_paths, llm=llm)
+            logger.info(
+                "memory: enriched %d/%d pages with wikilinks (links_added=%d)",
+                enrich_stats.get("pages_changed", 0),
+                len(content_paths),
+                enrich_stats.get("links_added", 0),
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("enrich-wikilinks pass failed (non-fatal): %s", exc)
+        enrich_stats = {"error": str(exc)}
+
     return {
         "ok": True,
         "n_files": len(written),
         "n_reviews": len(reviews),
+        "enrich": enrich_stats,
         "log_entry": log_entry,
         "skipped": skipped,
     }
