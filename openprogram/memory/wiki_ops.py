@@ -164,6 +164,84 @@ def tree(*, max_depth: int = 8) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Relink — rewrite wikilinks only (no file move)
+# ---------------------------------------------------------------------------
+
+
+def relink(old: str, new: str) -> dict[str, Any]:
+    """Rewrite ``[[old]]`` → ``[[new]]`` across the vault without
+    touching any file's location or name.
+
+    Use case: user (or Obsidian without auto-rewrite) renamed a file
+    on disk and the wikilinks to it are now broken. ``relink`` does
+    just the cascade rewrite half of :func:`rename`.
+
+    Args:
+        old: the previously-linked filename stem.
+        new: the new filename stem the page now lives under.
+
+    Returns ``{ok, rewrites, pages}`` — number of pages changed and
+    their relative paths.
+    """
+    root = store.wiki_dir()
+    rewrites = 0
+    changed: list[str] = []
+    for p in h.iter_md_files(root):
+        before = p.read_text(encoding="utf-8")
+        after = h.rewrite_wikilinks(before, old, new)
+        if after != before:
+            p.write_text(after, encoding="utf-8")
+            rewrites += after.lower().count(f"[[{new.lower()}") - before.lower().count(f"[[{new.lower()}")
+            changed.append(str(p.relative_to(root)))
+    return {"ok": True, "rewrites": rewrites, "pages": changed}
+
+
+# ---------------------------------------------------------------------------
+# Prune broken wikilinks
+# ---------------------------------------------------------------------------
+
+
+def prune_broken_links(*, dry_run: bool = True) -> dict[str, Any]:
+    """Find every ``[[wikilink]]`` whose target page doesn't exist
+    and (if ``dry_run`` is False) strip the brackets, leaving the
+    plain text in place.
+
+    Returns ``{ok, broken: [...], applied}``. With ``dry_run=True``
+    the report shows what would change but nothing is written.
+    """
+    import re
+    root = store.wiki_dir()
+    pages = list(h.iter_md_files(root))
+    stems = {p.stem.lower() for p in pages}
+
+    wikilink_re = re.compile(r"\[\[([^\]|#]+?)(\|[^\]]+?)?(#[^\]]+?)?\]\]")
+    broken: list[tuple[str, str]] = []
+    applied = 0
+    for p in pages:
+        before = p.read_text(encoding="utf-8")
+        masked, repls = h.mask_code(before)
+
+        def _sub(m: "re.Match[str]") -> str:
+            target = m.group(1).strip()
+            if target.lower() in stems:
+                return m.group(0)
+            broken.append((str(p.relative_to(root)), target))
+            if dry_run:
+                return m.group(0)
+            # Strip brackets, keep alias text if present else the target text.
+            alias = (m.group(2) or "")[1:] if m.group(2) else ""
+            anchor = m.group(3) or ""
+            return (alias or target) + anchor
+
+        after = h.unmask_code(wikilink_re.sub(_sub, masked), repls)
+        if not dry_run and after != before:
+            p.write_text(after, encoding="utf-8")
+            applied += 1
+
+    return {"ok": True, "broken": broken, "applied": applied, "dry_run": dry_run}
+
+
+# ---------------------------------------------------------------------------
 # Survey (agentic — rewrite a topic page from its children)
 # ---------------------------------------------------------------------------
 
