@@ -236,8 +236,15 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
             )
         class_name, module_path, default_model = PROVIDERS[provider]
     else:
-        detected, default_model = detect_provider()
-        class_name, module_path, _ = PROVIDERS[detected]
+        detected, detected_model = detect_provider()
+        class_name, module_path, table_default = PROVIDERS[detected]
+        # detect_provider returns None for CLI providers ("we found
+        # the binary but don't have an opinion on which model"). The
+        # PROVIDERS table always carries a non-empty default for every
+        # backend; prefer the detected value when present, otherwise
+        # fall back to the table so we never hand the runtime a
+        # ``model=None`` and crash at construction.
+        default_model = detected_model or table_default
         provider = detected
 
     use_model = model or default_model

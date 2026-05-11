@@ -143,6 +143,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const close = (window as unknown as { _closeAllPopovers?: () => void })._closeAllPopovers;
     if (close) close();
 
+    // Keep legacy `window.currentSessionId` in lockstep with the
+    // Next.js client route. Legacy `init.js` parses the URL exactly
+    // once at script load; SPA navigations between sessions don't
+    // re-run it, so a click on a sidebar conv updates the URL but
+    // `currentSessionId` stays pinned at whatever the previous
+    // ``chat_ack`` last wrote. The legacy model picker reads that
+    // bare global and was sending ``session_id`` of the OLD conv to
+    // ``/api/model`` — every picker click silently switched the
+    // wrong conversation.
+    try {
+      const m = pathname.match(/^\/s\/([^/]+)/);
+      const sid = m ? m[1] : null;
+      (window as unknown as { currentSessionId?: string | null }).currentSessionId = sid;
+    } catch {
+      /* ignore */
+    }
+
     // New chat route (/chat, no session_id): clear the persisted History
     // graph + Execution Detail panel so the user doesn't see stale
     // content from whatever conversation they were just on. /c/:id

@@ -43,24 +43,32 @@ def _proxy_base_url() -> str:
 # ``claude-sonnet-4-6`` here — the user would think they picked
 # Sonnet and silently get Haiku. Keep this hand-curated; the next
 # proxy release that adds more ids should be reflected here.
+# Display names carry the actual sub-version Anthropic's CLI alias
+# currently routes to (verified by asking the model itself: the
+# ``claude-opus-4`` alias self-identifies as ``claude-opus-4-7``,
+# ``claude-sonnet-4`` as ``claude-sonnet-4-6``, ``claude-haiku-4``
+# as ``claude-haiku-4-5``). The IDs stay as the bare aliases since
+# that's what the proxy's ``/v1/chat/completions`` accepts — but
+# the display name reflects the real version so users know which
+# Claude they're actually talking to.
 _PROXY_MODELS = [
     {
         "id": "claude-opus-4",
-        "name": "Claude Opus 4",
+        "name": "Claude Opus 4.7",
         "family": "opus",
         "context_window": 200000,
         "max_tokens": 32000,
     },
     {
         "id": "claude-sonnet-4",
-        "name": "Claude Sonnet 4",
+        "name": "Claude Sonnet 4.6",
         "family": "sonnet",
         "context_window": 200000,
         "max_tokens": 16000,
     },
     {
         "id": "claude-haiku-4",
-        "name": "Claude Haiku 4",
+        "name": "Claude Haiku 4.5",
         "family": "haiku",
         "context_window": 200000,
         "max_tokens": 16000,

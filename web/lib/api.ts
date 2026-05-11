@@ -152,10 +152,14 @@ export const api = {
       body: JSON.stringify({ session_id }),
     }),
 
-  switchModel: (provider: string, model: string) =>
+  // Pin a (provider, model) for this conversation. ``session_id`` is
+  // required — without it the backend only updates the global default
+  // and the active conversation keeps using its old runtime (the bug
+  // where "switching to Opus" silently kept routing to Sonnet).
+  switchModel: (provider: string, model: string, session_id?: string) =>
     jsonFetch<{ ok: true }>("/api/model", {
       method: "POST",
-      body: JSON.stringify({ provider, model }),
+      body: JSON.stringify({ provider, model, session_id }),
     }),
 
   getAgentSettings: () => jsonFetch<Record<string, unknown>>("/api/agent_settings"),

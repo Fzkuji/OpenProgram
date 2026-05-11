@@ -34,7 +34,12 @@ const nextConfig = {
   reactStrictMode: false,
   async rewrites() {
     return [
-      { source: "/api/:path*", destination: `${BACKEND}/api/:path*` },
+      // ``/api/*`` is handled by the dynamic route at
+      // ``app/api/[...path]/route.ts`` which re-reads
+      // ``~/.agentic/worker.port`` on every request, so it stays
+      // live when the worker shifts ports. Don't add a static
+      // rewrite here — it would compete with the route handler and
+      // bake in a port at startup.
       { source: "/ws", destination: `${BACKEND}/ws` },
       { source: "/ws/:path*", destination: `${BACKEND}/ws/:path*` },
     ];

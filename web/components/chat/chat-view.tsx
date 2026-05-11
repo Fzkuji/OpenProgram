@@ -64,6 +64,19 @@ export function ChatView({ sessionId }: ChatViewProps) {
   useEffect(() => {
     if (sessionId && wsStatus === "open") {
       if (currentSessionId !== sessionId) setCurrentConv(sessionId);
+      // Legacy `providers.js` reads a bare `currentSessionId` global
+      // that's only refreshed by ``chat_ack`` from the server. After
+      // a Next.js client-side route change to a different session,
+      // the legacy global stays pinned at the OLD session id, so the
+      // model picker (legacy code) sends ``session_id`` of the
+      // previous conv to ``/api/model``. The current conv's model
+      // pick gets silently lost. Mirror the React route into the
+      // legacy global here.
+      try {
+        (window as unknown as { currentSessionId?: string | null }).currentSessionId = sessionId;
+      } catch {
+        /* ignore */
+      }
       send({ action: "load_session", session_id: sessionId });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -328,6 +341,7 @@ export function ChatView({ sessionId }: ChatViewProps) {
 
 function ModelBadge() {
   const providerInfo = useSessionStore((s) => s.providerInfo);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const { data: enabledModels } = useQuery({
     queryKey: ["models-enabled"],
     queryFn: api.listEnabledModels,
@@ -341,7 +355,12 @@ function ModelBadge() {
   async function pick(provider: string, model: string) {
     setOpen(false);
     try {
-      await api.switchModel(provider, model);
+      // Pass session_id so the backend stamps provider_override /
+      // model_override on THIS conversation. Without it the call
+      // only nudges the global default and the active conv stays
+      // bound to its previously-built runtime — that's the bug
+      // where picking "Opus" silently still ran Sonnet.
+      await api.switchModel(provider, model, currentSessionId || undefined);
     } catch (e) {
       alert("Switch failed: " + String(e));
     }

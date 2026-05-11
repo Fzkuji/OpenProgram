@@ -424,6 +424,28 @@ async function openAgentSelector(agentType) {
       updateAgentBadges();
       loadAgentSettings();
     }).catch(function() {});
+
+    // The agent-settings update above only writes the agent's
+    // *default* model. The session has a per-conv provider/model
+    // override that takes priority over the agent default (set by
+    // the model picker / inherited from `_user_pinned_*`), so without
+    // also pushing this pick through `/api/model` the change has
+    // zero effect on the current conversation — the user picked
+    // Sonnet here but the chat still answers as Opus because the
+    // conv's `model_override` is still `claude-opus-4`. Fire both
+    // requests in parallel; the chat side wins because it's the one
+    // the runtime resolution actually reads.
+    if (agentType === 'chat' && currentSessionId) {
+      fetch('/api/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: provider,
+          model: model,
+          session_id: currentSessionId,
+        }),
+      }).catch(function() {});
+    }
   });
 
   // Outside-click close is handled by the unified popover listener in ui.js.

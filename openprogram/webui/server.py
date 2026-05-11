@@ -72,6 +72,14 @@ WELCOME_STATS_SESSION_LIMIT = 48
 # ``messages`` array is now a derived view of SessionDB's active
 # branch — see _get_messages / _invalidate_messages below.
 _sessions: dict[str, dict] = {}
+
+# Last (provider, model) the user picked from the chat ModelBadge
+# without an attached session — i.e. they picked a model on the
+# welcome screen / before opening a chat. Captured globally so the
+# next freshly-created conversation can inherit the choice.
+# ``None`` until the user has picked at least once.
+_user_pinned_provider: Optional[str] = None
+_user_pinned_model: Optional[str] = None
 _sessions_lock = threading.Lock()
 
 # Active-branch message cache (session_id → list[dict]). Populated on
@@ -700,6 +708,17 @@ def _get_or_create_session(session_id: str = None,
                 or ((_sess or {}).get("agent_id") if isinstance(_sess, dict) else None)
                 or resolved_agent
             )
+            # Inherit a user-pinned (provider, model) from the most
+            # recent picker click that didn't have a session attached.
+            # Lets the welcome-page flow "pick Opus, then start a chat"
+            # actually run Opus — otherwise the new conv falls back to
+            # the agent profile's default model.
+            _inherit_prov = _user_pinned_provider
+            _inherit_model = _user_pinned_model
+            _log(
+                f"[_get_or_create_session] creating {session_id!r} "
+                f"inherit_prov={_inherit_prov!r} inherit_model={_inherit_model!r}"
+            )
             _sessions[session_id] = {
                 "id": session_id,
                 "agent_id": resolved_agent,
@@ -707,7 +726,10 @@ def _get_or_create_session(session_id: str = None,
                          or "New conversation",
                 "root_context": Context(name="chat_session", status="idle", start_time=time.time()),
                 "runtime": None,          # created lazily on first message
-                "provider_name": ((_sess or {}).get("provider_name") if isinstance(_sess, dict) else None),
+                "provider_name": ((_sess or {}).get("provider_name") if isinstance(_sess, dict) else None)
+                                 or _inherit_prov,
+                "provider_override": _inherit_prov,
+                "model_override": _inherit_model,
                 "messages": _hydrated,
                 "function_trees": [],
                 "created_at": ((_sess or {}).get("created_at") if isinstance(_sess, dict) else None)
@@ -1041,6 +1063,29 @@ def _execute_in_context(session_id: str, msg_id: str, action: str,
                         # broadcast below, so swallow here.
                         pass
 
+                # Carry the conversation's picker choice (if any) into
+                # the dispatcher so it doesn't fall back to the agent
+                # profile's default model. Without this the model
+                # picker only updates `conv["runtime"]`, but the
+                # dispatcher re-resolves through `_resolve_model` and
+                # silently routes back to the agent default — that's
+                # the "I picked Opus but it answers as Sonnet" bug.
+                _conv_now = _sessions.get(session_id) or {}
+                _picker_provider = _conv_now.get("provider_override")
+                _picker_model = _conv_now.get("model_override")
+                _model_override = None
+                if _picker_provider and _picker_model:
+                    _model_override = f"{_picker_provider}/{_picker_model}"
+                elif _picker_model:
+                    _model_override = _picker_model
+                _log(
+                    f"[model resolve] session={session_id!r} "
+                    f"provider_override={_picker_provider!r} "
+                    f"model_override={_picker_model!r} "
+                    f"agent_model={_conv_now.get('agent_id')!r}/profile "
+                    f"resolved={_model_override!r}"
+                )
+
                 req_obj = _TurnRequest(
                     session_id=session_id,
                     user_text=query,
@@ -1051,6 +1096,7 @@ def _execute_in_context(session_id: str, msg_id: str, action: str,
                     thinking_effort=effective_thinking,
                     user_msg_id=msg_id,
                     user_already_persisted=True,
+                    model_override=_model_override,
                 )
 
                 try:
@@ -4169,6 +4215,7 @@ def create_app():
 
     @app.post("/api/model")
     async def switch_model(body: dict = None):
+        _log(f"[/api/model] body={body!r}")
         """Switch model (and optionally provider) for the active runtime.
 
         Body:
@@ -4219,6 +4266,7 @@ def create_app():
         if session_id:
             with _sessions_lock:
                 conv = _sessions.get(session_id)
+            _log(f"[/api/model] session_id={session_id!r} conv_found={conv is not None} target_provider={target_provider!r} bare_model={bare_model!r}")
             if conv:
                 old_rt = conv.get("runtime")
                 cur_prov = conv.get("provider_name", _runtime_management._default_provider)
@@ -4234,9 +4282,23 @@ def create_app():
                     conv["provider_override"] = prov
                     conv["model_override"] = bare_model
                 else:
-                    old_rt.model = bare_model
+                    if old_rt is not None:
+                        old_rt.model = bare_model
                     conv["provider_override"] = prov
                     conv["model_override"] = bare_model
+                _log(
+                    f"[/api/model] post-write conv id={id(conv)} "
+                    f"provider_override={conv.get('provider_override')!r} "
+                    f"model_override={conv.get('model_override')!r} "
+                    f"sessions[sid] id={id(_sessions.get(session_id))}"
+                )
+                # ALSO remember the pick as the new "global default"
+                # for future fresh sessions. Otherwise opening a New
+                # Chat right after picking Opus on the current conv
+                # silently rolls back to the agent profile's model.
+                global _user_pinned_provider, _user_pinned_model
+                _user_pinned_provider = prov
+                _user_pinned_model = bare_model
                 info = _get_provider_info(session_id)
                 _broadcast(json.dumps({"type": "provider_changed", "data": info}))
                 return JSONResponse(content={"switched": True, "provider": prov, "model": bare_model})
@@ -4253,6 +4315,11 @@ def create_app():
             _runtime_management._default_runtime.model = bare_model
         else:
             return JSONResponse(content={"error": "No active runtime"}, status_code=400)
+
+        # Mirror the session-path branch: remember the choice so any
+        # freshly-created conv later inherits it.
+        _user_pinned_provider = target_provider or _runtime_management._default_provider
+        _user_pinned_model = bare_model
 
         info = _get_provider_info()
         _broadcast(json.dumps({"type": "provider_changed", "data": info}))

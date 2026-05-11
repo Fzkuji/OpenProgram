@@ -95,6 +95,19 @@ function handleMessage(msg) {
         // Refresh badges — conversation's provider may differ from default
         loadAgentSettings();
         if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
+        // Branches: a fresh session never went through `load_session`,
+        // so the right-rail Branches panel stays empty until the user
+        // refreshes. Fetch the branch list now (now that the server
+        // has registered the user turn) and render the panel.
+        if (typeof fetchBranches === 'function') {
+          if (typeof _branchesByConv !== 'undefined' && _branchesByConv) {
+            delete _branchesByConv[currentSessionId];
+          }
+          fetchBranches(currentSessionId).then(function () {
+            if (typeof window.renderBranchesPanel === 'function') window.renderBranchesPanel();
+            if (typeof window.refreshBranchBadge === 'function') window.refreshBranchBadge();
+          });
+        }
       }
       // Stamp the server msg_id onto the optimistically-rendered user
       // bubble so retry/branch buttons can target it.
