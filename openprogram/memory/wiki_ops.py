@@ -164,6 +164,97 @@ def tree(*, max_depth: int = 8) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Backlinks — what links TO this page
+# ---------------------------------------------------------------------------
+
+
+def backlinks(name: str) -> list[dict[str, str]]:
+    """Find every page that has a ``[[name]]`` wikilink to ``name``.
+
+    Mirrors Obsidian's backlinks panel — for any page, list inbound
+    references with context snippets.
+
+    Returns a list of ``{"page": str, "snippet": str}`` (relative
+    paths from vault root, each snippet ~120 chars centred on the
+    wikilink).
+    """
+    import re
+    root = store.wiki_dir()
+    name_l = name.lower().removesuffix(".md")
+    out: list[dict[str, str]] = []
+    link_re = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+?)?(?:#[^\]]+?)?\]\]")
+    for p in h.iter_md_files(root):
+        if p.stem.lower() == name_l:
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        masked, _ = h.mask_code(text)
+        for m in link_re.finditer(masked):
+            if m.group(1).strip().lower() == name_l:
+                start = max(0, m.start() - 60)
+                end = min(len(text), m.end() + 60)
+                snippet = text[start:end].replace("\n", " ").strip()
+                out.append({"page": str(p.relative_to(root)), "snippet": snippet})
+                break  # one snippet per page is enough
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Unlinked mentions — plain-text occurrences not yet wikilinked
+# ---------------------------------------------------------------------------
+
+
+def unlinked_mentions(name: str, *, max_per_page: int = 3) -> list[dict[str, Any]]:
+    """Find pages that mention ``name`` in plain text without a
+    `[[wikilink]]`. Pure Python, no LLM.
+
+    Mirrors Obsidian's "Unlinked mentions" panel — surfaces pages
+    that ought to link to ``name`` but don't.
+
+    Args:
+        name: page filename stem to search for.
+        max_per_page: cap occurrences reported per page (rest hidden).
+
+    Returns a list of
+    ``{"page": str, "occurrences": [snippet, ...]}``.
+    """
+    import re
+    root = store.wiki_dir()
+    name_l = name.lower().removesuffix(".md")
+    # Word-boundary, case-insensitive, exact-token match
+    pattern = re.compile(rf"(?<![\w]){re.escape(name)}(?![\w])", re.IGNORECASE)
+    link_re = re.compile(r"\[\[[^\]]+\]\]")
+
+    out: list[dict[str, Any]] = []
+    for p in h.iter_md_files(root):
+        if p.stem.lower() == name_l:
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Strip frontmatter so we don't match the YAML
+        _fm, body = h.parse_frontmatter(text)
+        masked, _ = h.mask_code(body)
+        # Blank out every existing [[...]] block so we don't double-count
+        masked = link_re.sub(lambda m: " " * len(m.group(0)), masked)
+
+        snippets: list[str] = []
+        for m in pattern.finditer(masked):
+            start = max(0, m.start() - 50)
+            end = min(len(masked), m.end() + 50)
+            ctx = body[start:end].replace("\n", " ").strip()
+            snippets.append(ctx)
+            if len(snippets) >= max_per_page:
+                break
+        if snippets:
+            out.append({"page": str(p.relative_to(root)), "occurrences": snippets})
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Relink — rewrite wikilinks only (no file move)
 # ---------------------------------------------------------------------------
 

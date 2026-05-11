@@ -284,6 +284,42 @@ def memory_lint(**_: Any) -> str:
     return wiki_ops.lint()
 
 
+# ── memory_backlinks ─────────────────────────────────────────────────────────
+
+BACKLINKS_NAME = "memory_backlinks"
+BACKLINKS_DESC = (
+    "List every wiki page that has a `[[wikilink]]` to the given page. "
+    "Obsidian's backlinks panel in tool form — useful for 'what mentions X?'"
+)
+
+BACKLINKS_SPEC: dict[str, Any] = {
+    "name": BACKLINKS_NAME, "description": BACKLINKS_DESC,
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Wiki page filename stem."},
+        },
+        "required": ["name"],
+    },
+}
+
+
+def memory_backlinks(name: str | None = None, **_: Any) -> str:
+    name = (name or "").strip()
+    if not name:
+        return "Error: memory_backlinks requires `name`."
+    from openprogram.memory import wiki_ops
+    hits = wiki_ops.backlinks(name)
+    if not hits:
+        return f"No pages link to [[{name}]]."
+    lines = [f"# Backlinks to [[{name}]] ({len(hits)} pages)", ""]
+    for h in hits:
+        lines.append(f"## `{h['page']}`")
+        lines.append(h['snippet'])
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 # Back-compat alias
 WIKI_GET_NAME = GET_NAME
 WIKI_GET_SPEC = GET_SPEC
@@ -299,4 +335,5 @@ __all__ = [
     "BROWSE_NAME", "BROWSE_SPEC", "memory_browse",
     "LINT_NAME", "LINT_SPEC", "memory_lint",
     "INGEST_NAME", "INGEST_SPEC", "memory_ingest",
+    "BACKLINKS_NAME", "BACKLINKS_SPEC", "memory_backlinks",
 ]

@@ -140,6 +140,7 @@ _LEGACY_TOOL_META: dict[str, dict[str, Any]] = {
     "memory_browse":      {"toolsets": ["core"]},
     "memory_lint":        {"toolsets": ["core"]},
     "memory_ingest":      {"toolsets": ["core"]},
+    "memory_backlinks":   {"toolsets": ["core"]},
     "clarify":            {"toolsets": ["core"]},
     "execute_code":       {"toolsets": ["core"], "unsafe_in": ["wechat", "telegram"]},
     "mixture_of_agents":  {"toolsets": ["research"]},
@@ -220,7 +221,8 @@ TOOLSETS: dict[str, dict[str, list[str]] | list[str]] = {
         # time; reference by name so the preset works even if the
         # exact name list shifts.
         "tools":    ["memory_note", "memory_recall", "memory_reflect",
-                     "memory_get", "memory_browse", "memory_lint", "memory_ingest"],
+                     "memory_get", "memory_browse", "memory_lint",
+                     "memory_ingest", "memory_backlinks"],
         "includes": ["default"],
     },
     "safe": {

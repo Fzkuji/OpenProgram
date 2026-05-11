@@ -158,6 +158,176 @@ def enrich_pages(
 
 
 # ---------------------------------------------------------------------------
+# Inbound enrichment — for a newly-created page, scan vault for
+# unlinked plain-text mentions and convert validated ones to [[name]].
+# ---------------------------------------------------------------------------
+
+
+INBOUND_SYSTEM_PROMPT = """\
+You decide which plain-text mentions of a page name should become
+[[wikilinks]] pointing at it.
+
+You will receive:
+  - the name of a wiki page (the link target)
+  - a list of candidate mentions: each one is a context snippet from
+    some OTHER page where the name appears as plain text
+
+For each candidate, answer "yes" (this should be a wikilink) or
+"no" (don't link it — same word, unrelated meaning, or generic
+usage).
+
+Response format — EXACTLY this JSON shape, nothing else:
+{
+  "decisions": [
+    { "i": 0, "link": true },
+    { "i": 1, "link": false }
+  ]
+}
+
+Be conservative. If a mention is ambiguous, say no.
+"""
+
+
+def enrich_inbound_for_new_page(
+    new_page: Path,
+    *,
+    llm: Callable[[str, str], str],
+    max_candidates: int = 30,
+) -> dict[str, Any]:
+    """Scan the vault for unlinked plain-text mentions of
+    ``new_page.stem`` and convert validated ones to ``[[stem]]``.
+
+    Args:
+        new_page: path of the newly-created page (its filename stem
+            is the link target).
+        llm: ``(system, user) -> str`` callable.
+        max_candidates: cap on candidate occurrences sent to the LLM
+            in one batch (cost control).
+
+    Returns ``{ok, candidates, linked, pages_changed, error}``.
+    """
+    from . import wiki_ops
+
+    name = new_page.stem
+    raw_mentions = wiki_ops.unlinked_mentions(name, max_per_page=2)
+    if not raw_mentions:
+        return {"ok": True, "candidates": 0, "linked": 0, "pages_changed": 0}
+
+    # Flatten to a numbered candidate list, capped.
+    candidates: list[tuple[Path, str]] = []  # (page_path, snippet)
+    from . import store
+    root = store.wiki_dir()
+    for entry in raw_mentions:
+        page_path = root / entry["page"]
+        for snippet in entry["occurrences"]:
+            candidates.append((page_path, snippet))
+            if len(candidates) >= max_candidates:
+                break
+        if len(candidates) >= max_candidates:
+            break
+
+    user_text = (
+        f"Page name (link target): {name}\n\n"
+        "Candidates:\n"
+        + "\n".join(
+            f"[{i}] page=`{p.relative_to(root)}` snippet: {s!r}"
+            for i, (p, s) in enumerate(candidates)
+        )
+    )
+
+    try:
+        raw = llm(INBOUND_SYSTEM_PROMPT, user_text)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("inbound enrich llm call failed for %s: %s", new_page, e)
+        return {"ok": False, "error": f"llm: {e}"}
+
+    decisions = _parse_inbound_response(raw)
+    if not decisions:
+        return {"ok": True, "candidates": len(candidates), "linked": 0, "pages_changed": 0}
+
+    # Apply: for each yes-decision, replace the FIRST unlinked
+    # occurrence of `name` in that page's body with `[[name]]`.
+    pages_changed: set[Path] = set()
+    linked = 0
+    for d in decisions:
+        i = d.get("i")
+        if not isinstance(i, int) or i < 0 or i >= len(candidates):
+            continue
+        if not d.get("link"):
+            continue
+        page_path, _snippet = candidates[i]
+        if page_path in pages_changed:
+            continue   # one link per page
+        try:
+            content = page_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Use the same machinery as outbound enrich for safety
+        new_content = _apply_links(content, [{"term": name, "target": name}])
+        if new_content != content:
+            page_path.write_text(new_content, encoding="utf-8")
+            pages_changed.add(page_path)
+            linked += 1
+
+    return {
+        "ok": True,
+        "candidates": len(candidates),
+        "linked": linked,
+        "pages_changed": len(pages_changed),
+    }
+
+
+def _parse_inbound_response(raw: str) -> list[dict[str, Any]]:
+    """Extract a balanced JSON object's ``decisions`` array."""
+    if not raw or not raw.strip():
+        return []
+    text = raw.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```\s*$", "", text)
+    start = text.find("{")
+    if start == -1:
+        return []
+    depth = 0
+    in_str = False
+    escape = False
+    end = -1
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_str:
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end == -1:
+        return []
+    try:
+        parsed = json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        return []
+    decisions = parsed.get("decisions")
+    if not isinstance(decisions, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for d in decisions:
+        if isinstance(d, dict) and isinstance(d.get("i"), int):
+            out.append({"i": d["i"], "link": bool(d.get("link", False))})
+    return out
+
+
+# ---------------------------------------------------------------------------
 # JSON parsing
 # ---------------------------------------------------------------------------
 

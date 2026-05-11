@@ -20,6 +20,7 @@ from .memory import (
     BROWSE_NAME, BROWSE_SPEC, memory_browse,
     LINT_NAME, LINT_SPEC, memory_lint,
     INGEST_NAME, INGEST_SPEC, memory_ingest,
+    BACKLINKS_NAME, BACKLINKS_SPEC, memory_backlinks,
 )
 
 
@@ -34,6 +35,7 @@ MEMORY_GET = _wrap(GET_SPEC, memory_get, max_chars=30_000)
 MEMORY_BROWSE = _wrap(BROWSE_SPEC, memory_browse, max_chars=30_000)
 MEMORY_LINT = _wrap(LINT_SPEC, memory_lint, max_chars=15_000)
 MEMORY_INGEST = _wrap(INGEST_SPEC, memory_ingest, max_chars=4_000)
+MEMORY_BACKLINKS = _wrap(BACKLINKS_SPEC, memory_backlinks, max_chars=20_000)
 
 # Mapping keyed by tool name for direct registration in
 # ``openprogram.tools.__init__.ALL_TOOLS``.
@@ -45,12 +47,14 @@ ALL: dict[str, dict] = {
     BROWSE_NAME: MEMORY_BROWSE,
     LINT_NAME: MEMORY_LINT,
     INGEST_NAME: MEMORY_INGEST,
+    BACKLINKS_NAME: MEMORY_BACKLINKS,
 }
 
 __all__ = [
     "NOTE_NAME", "RECALL_NAME", "REFLECT_NAME", "GET_NAME",
     "BROWSE_NAME", "LINT_NAME", "INGEST_NAME",
     "MEMORY_NOTE", "MEMORY_RECALL", "MEMORY_REFLECT", "MEMORY_GET",
-    "MEMORY_BROWSE", "MEMORY_LINT", "MEMORY_INGEST",
+    "MEMORY_BROWSE", "MEMORY_LINT", "MEMORY_INGEST", "MEMORY_BACKLINKS",
+    "BACKLINKS_NAME",
     "ALL",
 ]

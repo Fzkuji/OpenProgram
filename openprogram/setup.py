@@ -81,7 +81,8 @@ def read_disabled_tools() -> set[str]:
     if (cfg.get("memory", {}) or {}).get("backend") == "none":
         disabled.update({
             "memory_note", "memory_recall", "memory_reflect",
-            "memory_get", "memory_browse", "memory_lint", "memory_ingest",
+            "memory_get", "memory_browse", "memory_lint",
+            "memory_ingest", "memory_backlinks",
         })
     return disabled
 

@@ -360,16 +360,38 @@ def ingest_session(
     if review_items:
         _persist_reviews(review_items, source_slug=slug, ts=today)
 
-    # ── Enrich wikilinks on pages we just touched ───────────────────────
+    # ── Enrich wikilinks (two directions) ────────────────────────────────
+    # We don't know exactly which pages changed (agent decided), so
+    # use `git status` against the vault repo to find them. Then:
+    #   * outbound: for every touched page, scan its body for plain-
+    #     text mentions of EXISTING wiki pages and add `[[wikilink]]`s
+    #   * inbound:  for every NEWLY-CREATED page (status "??"), scan
+    #     the rest of the vault for unlinked mentions of it and
+    #     convert validated ones to `[[name]]`. Without this pass new
+    #     pages stay link-orphans.
     enrich_stats: dict[str, Any] = {"skipped": True}
     try:
         from . import enrich
-        # We don't know exactly which pages changed (agent decided);
-        # use git diff to find them.
-        touched = _git_touched_pages(vault_root)
+        touched, created = _git_touched_pages(vault_root)
         if touched:
             llm = _llm_callable_from_runtime(runtime)
-            enrich_stats = enrich.enrich_pages(touched, llm=llm)
+            out_stats = enrich.enrich_pages(touched, llm=llm)
+
+            inbound_pages = 0
+            inbound_links = 0
+            for new_page in created:
+                r = enrich.enrich_inbound_for_new_page(new_page, llm=llm)
+                if r.get("ok"):
+                    inbound_links += int(r.get("linked", 0) or 0)
+                    inbound_pages += int(r.get("pages_changed", 0) or 0)
+
+            enrich_stats = {
+                "outbound_pages_changed": out_stats.get("pages_changed", 0),
+                "outbound_links_added": out_stats.get("links_added", 0),
+                "inbound_pages_changed": inbound_pages,
+                "inbound_links_added": inbound_links,
+                "new_pages_processed": len(created),
+            }
     except Exception as e:  # noqa: BLE001
         logger.warning("enrich pass failed (non-fatal): %s", e)
         enrich_stats = {"error": str(e)}
@@ -460,27 +482,33 @@ def _persist_reviews(reviews: list[dict], *, source_slug: str, ts: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _git_touched_pages(root: Path) -> list[Path]:
-    """Pages staged-or-modified in the vault git repo since last commit.
-    Excludes governance docs."""
+def _git_touched_pages(root: Path) -> tuple[list[Path], list[Path]]:
+    """Return ``(all_touched, newly_created)`` content pages since last commit.
+
+    * ``all_touched`` — every modified or new ``.md`` file (governance
+      docs excluded). Used for outbound enrichment.
+    * ``newly_created`` — subset whose git status is ``??`` (untracked).
+      Used for inbound enrichment (we only scan inbound for genuinely
+      new pages so we don't re-process edits to existing ones).
+    """
     import subprocess
     if not (root / ".git").exists():
-        return []
+        return [], []
     try:
         out = subprocess.run(
             ["git", "-C", str(root), "status", "--porcelain"],
             check=True, capture_output=True, timeout=15, text=True,
         ).stdout
     except Exception:
-        return []
-    paths: list[Path] = []
+        return [], []
+    touched: list[Path] = []
+    created: list[Path] = []
     skip_names = set(store.GOVERNANCE_PAGES)
     for line in out.splitlines():
-        # Status line: "XY <path>"; X/Y are 1-char status codes.
         if len(line) < 4:
             continue
+        status = line[:2]
         rel = line[3:].strip().strip('"')
-        # Renames: "old -> new"
         if " -> " in rel:
             rel = rel.split(" -> ", 1)[1]
         if not rel.endswith(".md"):
@@ -488,6 +516,9 @@ def _git_touched_pages(root: Path) -> list[Path]:
         p = root / rel
         if p.name in skip_names:
             continue
-        if p.exists():
-            paths.append(p)
-    return paths
+        if not p.exists():
+            continue
+        touched.append(p)
+        if status.strip() == "??":  # untracked = new file
+            created.append(p)
+    return touched, created
