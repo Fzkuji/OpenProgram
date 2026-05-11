@@ -266,6 +266,39 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'branch': {
+      const sid = ctx.currentConversation;
+      if (!sid) {
+        ctx.pushSystem('/branch needs an active conversation.');
+        return true;
+      }
+      // /branch rename [name]  → empty name = AI auto-name
+      // /branch delete         → delete the active branch's tail
+      // /branch                → open picker (checkout)
+      // The server falls back to the session's current head_id when
+      // we don't pass head_msg_id, so these all operate on whatever
+      // the session is currently checked out to.
+      if (args[0] === 'rename') {
+        const name = args.slice(1).join(' ').trim();
+        if (!name) {
+          ctx.client.send({ action: 'auto_name_branch', session_id: sid });
+          ctx.pushSystem('Asking the model to name this branch…');
+        } else {
+          ctx.client.send({ action: 'rename_branch', session_id: sid, name });
+          ctx.pushSystem(`Renamed current branch → ${name}`);
+        }
+        return true;
+      }
+      if (args[0] === 'delete') {
+        ctx.client.send({ action: 'delete_branch', session_id: sid });
+        ctx.pushSystem('Deleted current branch.');
+        return true;
+      }
+      ctx.client.send({ action: 'list_branches', session_id: sid });
+      ctx.openPicker('branch');
+      return true;
+    }
+
     case 'search': {
       // Two modes:
       //   /search                 → falls back to the resume picker (title

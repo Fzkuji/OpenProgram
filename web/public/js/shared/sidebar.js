@@ -55,3 +55,9 @@ function doRefreshFunctions(btn) {
     }, 800);
   });
 }
+
+// Sidebar footer is now a React component (UserMenuFooter) mounted
+// into #userMenuFooterMount by AppShell via createPortal. The
+// previous toggleUserMenu / openSettings legacy stubs are gone — no
+// caller in legacy HTML references them anymore (footer markup was
+// also stripped from _sidebar.html).

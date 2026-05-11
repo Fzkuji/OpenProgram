@@ -502,6 +502,48 @@ class SessionDB:
             conn.commit()
         self._execute_write(_do)
 
+    def delete_branch_tail(self, session_id: str, head_msg_id: str) -> int:
+        """Delete the unique tail of a branch ending at head_msg_id.
+
+        Walks parent_id upwards from the leaf, deleting messages that
+        have no children left. Stops at the first message with siblings
+        (the fork point shared with another branch) — removing it would
+        corrupt the other branches. Returns count of deleted messages.
+        """
+        deleted = 0
+        cursor = head_msg_id
+        while cursor:
+            row = self.conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE session_id=? AND parent_id=?",
+                (session_id, cursor),
+            ).fetchone()
+            if row and row[0] > 0:
+                # Has remaining children → it's a fork point shared with
+                # another branch. Stop walking.
+                break
+            parent_row = self.conn.execute(
+                "SELECT parent_id FROM messages WHERE session_id=? AND id=?",
+                (session_id, cursor),
+            ).fetchone()
+            if parent_row is None:
+                break
+            parent_id = parent_row[0]
+            cur_id = cursor
+            def _do(conn, mid=cur_id):
+                conn.execute(
+                    "DELETE FROM branches WHERE session_id=? AND head_msg_id=?",
+                    (session_id, mid),
+                )
+                conn.execute(
+                    "DELETE FROM messages WHERE session_id=? AND id=?",
+                    (session_id, mid),
+                )
+                conn.commit()
+            self._execute_write(_do)
+            deleted += 1
+            cursor = parent_id
+        return deleted
+
     def latest_user_text(self, session_id: str) -> Optional[str]:
         """Return the most recent user-message text for ``session_id``,
         or None if the session has no user messages yet. Used by the

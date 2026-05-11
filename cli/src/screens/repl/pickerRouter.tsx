@@ -30,6 +30,7 @@ import { buildRegisterPicker } from './pickers/register.js';
 import type { ColorTheme } from '../../theme/themes.js';
 import type {
   AgentInfo,
+  BranchRow,
   ChannelAccountRow,
   PastConversation,
   PendingAttach,
@@ -57,6 +58,7 @@ export interface PickerCtx {
   model: string | undefined;
   agentsList: AgentInfo[];
   channelAccounts: ChannelAccountRow[];
+  branchesList: BranchRow[];
   registerForm: RegisterForm;
   qrAscii: string | undefined;
   qrStatus: string | undefined;
@@ -116,6 +118,32 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
             model: it.value,
             conv_id: conversationId,
           });
+          setPickerKind(null);
+        }}
+        onCancel={() => setPickerKind(null)}
+      />
+    );
+  }
+
+  if (pickerKind === 'branch') {
+    const items: PickerItem<string>[] = ctx.branchesList.map((b) => ({
+      label: b.name + (b.active ? '  (HEAD)' : ''),
+      description: b.is_named ? 'named' : undefined,
+      value: b.head_msg_id,
+    }));
+    return (
+      <Picker
+        title="Switch branch — Enter to checkout"
+        items={items}
+        onSelect={(it) => {
+          if (!conversationId) { setPickerKind(null); return; }
+          client.send({
+            action: 'checkout_branch',
+            session_id: conversationId,
+            head_msg_id: it.value,
+          });
+          // Reload the conversation to repaint with the new HEAD chain.
+          client.send({ action: 'load_session', session_id: conversationId });
           setPickerKind(null);
         }}
         onCancel={() => setPickerKind(null)}

@@ -38,6 +38,9 @@ from openprogram.webui._pause_stop import (
     register_active_runtime as _register_active_runtime,
     unregister_active_runtime as _unregister_active_runtime,
     kill_active_runtime as _kill_active_runtime,
+    register_cancel_event as _register_cancel_event,
+    unregister_cancel_event as _unregister_cancel_event,
+    has_active_runtime as _has_active_runtime,
     mark_context_cancelled as _mark_context_cancelled,
     set_current_session_id as _set_current_session_id,
     reset_current_session_id as _reset_current_session_id,
@@ -730,7 +733,15 @@ def _is_run_active(session_id: str) -> bool:
     dict we use for pause / stop, so we can't drift out of sync.
     """
     with _running_tasks_lock:
-        return session_id in _running_tasks
+        if session_id not in _running_tasks:
+            return False
+    # Zombie entry (no live runtime registered) → not actually running.
+    # Drop it so subsequent calls don't keep blocking Edit/Retry/etc.
+    if not _has_active_runtime(session_id):
+        with _running_tasks_lock:
+            _running_tasks.pop(session_id, None)
+        return False
+    return True
 
 
 # DAG helpers live in openprogram.contextgit. We keep ``advance_head``
@@ -858,6 +869,7 @@ def _execute_in_context(session_id: str, msg_id: str, action: str,
                         "msg_id": msg_id,
                         "func_name": "_chat",
                         "started_at": time.time(),
+                        "last_event_at": time.time(),
                         "display_params": "",
                         "loaded_func_ref": None,
                         "stream_events": [],
@@ -938,8 +950,21 @@ def _execute_in_context(session_id: str, msg_id: str, action: str,
                 )
 
                 _register_active_runtime(session_id, runtime)
+                _chat_cancel_event = threading.Event()
+                _register_cancel_event(session_id, _chat_cancel_event)
+                if _is_cancelled(session_id):
+                    _chat_cancel_event.set()
 
                 tool_calls_collected: list[dict] = []
+                # Live block accumulator. Each tool_use opens a new
+                # block keyed by tool_call_id; the matching tool_result
+                # fills in `result` / `is_error`. The final list is
+                # shipped on the result envelope so the frontend can
+                # store it on the in-memory message dict (and so the
+                # immediate post-run render matches the after-refresh
+                # render that pulls msg.blocks from DB).
+                tool_blocks_collected: list[dict] = []
+                tool_blocks_by_id: dict[str, dict] = {}
 
                 def _on_dispatcher_event(env: dict) -> None:
                     et = env.get("type")
@@ -956,7 +981,40 @@ def _execute_in_context(session_id: str, msg_id: str, action: str,
                                 ti["stream_events"].append(evt)
                                 if len(ti["stream_events"]) > 200:
                                     ti["stream_events"] = ti["stream_events"][-200:]
+                                ti["last_event_at"] = time.time()
+                        if evt.get("type") == "tool_use":
+                            _tid = evt.get("tool_call_id")
+                            blk = {
+                                "type": "tool",
+                                "tool": evt.get("tool"),
+                                "tool_call_id": _tid,
+                                "input": evt.get("input"),
+                                "result": None,
+                                "is_error": False,
+                            }
+                            tool_blocks_collected.append(blk)
+                            if _tid:
+                                tool_blocks_by_id[_tid] = blk
                         if evt.get("type") == "tool_result":
+                            _tid = evt.get("tool_call_id")
+                            blk = tool_blocks_by_id.get(_tid)
+                            if blk is None:
+                                # Result without prior tool_use (rare,
+                                # but degrade gracefully so the user
+                                # still sees something).
+                                blk = {
+                                    "type": "tool",
+                                    "tool": evt.get("tool"),
+                                    "tool_call_id": _tid,
+                                    "input": None,
+                                    "result": None,
+                                    "is_error": False,
+                                }
+                                tool_blocks_collected.append(blk)
+                                if _tid:
+                                    tool_blocks_by_id[_tid] = blk
+                            blk["result"] = evt.get("result")
+                            blk["is_error"] = bool(evt.get("is_error"))
                             tool_calls_collected.append({
                                 "tool": evt.get("tool"),
                                 "result": evt.get("result"),
@@ -990,11 +1048,13 @@ def _execute_in_context(session_id: str, msg_id: str, action: str,
                 try:
                     turn_result = _process_user_turn(
                         req_obj, on_event=_on_dispatcher_event,
+                        cancel_event=_chat_cancel_event,
                     )
                 finally:
                     with _running_tasks_lock:
                         _running_tasks.pop(session_id, None)
                     _unregister_active_runtime(session_id)
+                    _unregister_cancel_event(session_id)
 
                 if turn_result.failed:
                     _broadcast_chat_response(session_id, msg_id, {
@@ -1023,13 +1083,19 @@ def _execute_in_context(session_id: str, msg_id: str, action: str,
                         except Exception:
                             pass
 
-                # Blocks: dispatcher emits structured stream events;
-                # webui consumers can rebuild blocks from those. For
-                # the immediate "result" envelope we just send text.
+                # Blocks: dispatcher persists them in extra; we also
+                # ship them on the result envelope so the in-memory
+                # transcript carries the same collapsible scaffold as
+                # the after-refresh DB-rebuilt view (otherwise the
+                # user sees rich tool bubbles during streaming, then
+                # plain text once we stamp the message, then the
+                # rebuilt scaffold after refresh — three different
+                # renders for the same turn).
                 _broadcast_chat_response(session_id, msg_id, {
                     "type": "result",
                     "content": str(result),
                     "tool_calls": tool_calls_collected,
+                    "blocks": tool_blocks_collected,
                 })
                 _broadcast_context_stats(session_id, msg_id, chat_runtime=runtime)
 
@@ -2075,7 +2141,9 @@ async def _handle_ws_command(ws, cmd: dict):
         # Reconnect handshake: client sends the max seq it has seen per
         # message; server replies with the frames needed to catch up. The
         # store decides snapshot-vs-replay — see MessageStore.sync.
-        session_id = cmd.get("session_id")
+        # Accept both `session_id` and the older `conv_id` alias so
+        # reconnect works across existing clients and tests.
+        session_id = cmd.get("session_id") or cmd.get("conv_id")
         known_seqs = cmd.get("known_seqs") or {}
         if not session_id:
             return
@@ -2482,8 +2550,11 @@ async def _handle_ws_command(ws, cmd: dict):
                     mid = row["head_msg_id"]
                     name = row.get("name")
                     if not name:
-                        # Walk parent chain looking for the most recent
-                        # user message; use it as the auto-name.
+                        # Default label = the most recent message on
+                        # this branch (any role — assistant replies
+                        # tend to summarize the turn better than the
+                        # user's question alone). Walk parent chain
+                        # from leaf to root, picking the latest by ts.
                         cur = db.conn.execute(
                             "WITH RECURSIVE chain(id, parent_id, role, content, ts) AS ("
                             "  SELECT id, parent_id, role, content, timestamp "
@@ -2492,14 +2563,15 @@ async def _handle_ws_command(ws, cmd: dict):
                             "  SELECT m.id, m.parent_id, m.role, m.content, m.timestamp"
                             "    FROM messages m JOIN chain c ON m.id = c.parent_id"
                             "    WHERE m.session_id=?"
-                            ") SELECT content FROM chain WHERE role='user' "
+                            ") SELECT content FROM chain "
+                            "WHERE role IN ('user','assistant') "
                             "ORDER BY ts DESC LIMIT 1",
                             (mid, session_id, session_id),
                         )
                         r = cur.fetchone()
                         if r and isinstance(r[0], str):
                             txt = r[0].strip().replace("\n", " ")
-                            name = (txt[:30] + "…") if len(txt) > 30 else txt
+                            name = (txt[:40] + "…") if len(txt) > 40 else txt
                         else:
                             name = mid[:8]
                     rows.append({
@@ -2555,12 +2627,22 @@ async def _handle_ws_command(ws, cmd: dict):
         }, default=str))
 
     elif action == "rename_branch":
-        # git branch -m — name (or rename) a branch tip.
+        # git branch -m — name (or rename) a branch tip. When the
+        # caller omits head_msg_id we fall back to the session's
+        # current head (lets TUI slash commands operate on "the
+        # active branch" without tracking head client-side).
         session_id = cmd.get("session_id")
         head_msg_id = cmd.get("head_msg_id")
         new_name = (cmd.get("name") or "").strip()
         ok = False
         err = None
+        if not head_msg_id and session_id:
+            try:
+                from openprogram.agent.session_db import default_db
+                _sess = default_db().get_session(session_id) or {}
+                head_msg_id = _sess.get("head_id")
+            except Exception:
+                pass
         if not session_id or not head_msg_id or not new_name:
             err = "session_id, head_msg_id, name all required"
         elif len(new_name) > 80:
@@ -2576,6 +2658,88 @@ async def _handle_ws_command(ws, cmd: dict):
             "type": "branch_renamed",
             "data": {"session_id": session_id, "head_msg_id": head_msg_id,
                       "name": new_name, "ok": ok, "error": err},
+        }, default=str))
+
+    elif action == "auto_name_branch":
+        # AI-generated branch name. Walk the branch's chain back to root,
+        # take the last few messages as context, and ask the chat runtime
+        # for a short label (≤ ~12 chars). Persists the name on success.
+        session_id = cmd.get("session_id")
+        head_msg_id = cmd.get("head_msg_id")
+        if not head_msg_id and session_id:
+            try:
+                from openprogram.agent.session_db import default_db
+                _sess = default_db().get_session(session_id) or {}
+                head_msg_id = _sess.get("head_id")
+            except Exception:
+                pass
+        ok = False
+        err = None
+        name = None
+        if not session_id or not head_msg_id:
+            err = "session_id and head_msg_id required"
+        else:
+            try:
+                from openprogram.agent.session_db import default_db
+                db = default_db()
+                # Walk parent_id chain from head back to root.
+                chain = []
+                cur = head_msg_id
+                while cur:
+                    row = db.conn.execute(
+                        "SELECT id, parent_id, role, content "
+                        "FROM messages WHERE session_id=? AND id=?",
+                        (session_id, cur),
+                    ).fetchone()
+                    if row is None:
+                        break
+                    chain.insert(0, row)
+                    cur = row[1]
+                # Recent few turns provide enough context, full
+                # transcript would just blow tokens.
+                recent = chain[-6:]
+                transcript = "\n\n".join(
+                    f"[{r[2] or '?'}] {(r[3] or '').strip()}"
+                    for r in recent if r[3]
+                )[:2000]
+                prompt = (
+                    "Summarize the topic of this conversation as a "
+                    "very short branch label. Reply with ONLY the label "
+                    "itself — 2 to 6 words, no quotes, no trailing "
+                    "punctuation, in the same language as the conversation.\n\n"
+                    + transcript
+                )
+                from openprogram.webui import _runtime_management as rm
+                rm._init_providers()
+                rt = rm._chat_runtime
+                if rt is None:
+                    err = "no LLM runtime available"
+                else:
+                    import asyncio as _a
+                    reply = await _a.to_thread(
+                        rt.exec, content=[{"type": "text", "text": prompt}]
+                    )
+                    cleaned = (str(reply or "")
+                               .strip()
+                               .strip('"\'')
+                               .splitlines()[0]
+                               if reply else "")
+                    cleaned = cleaned.strip().strip('"\'').rstrip(".。")
+                    if cleaned:
+                        if len(cleaned) > 40:
+                            cleaned = cleaned[:40].rstrip() + "…"
+                        db.set_branch_name(session_id, head_msg_id, cleaned)
+                        name = cleaned
+                        ok = True
+                    else:
+                        err = "LLM returned empty response"
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
+        await ws.send_text(json.dumps({
+            "type": "branch_renamed",
+            "data": {"session_id": session_id, "head_msg_id": head_msg_id,
+                      "name": name, "ok": ok, "error": err,
+                      "auto": True},
         }, default=str))
 
     elif action == "delete_branch_name":
@@ -2597,6 +2761,79 @@ async def _handle_ws_command(ws, cmd: dict):
             "type": "branch_name_deleted",
             "data": {"session_id": session_id, "head_msg_id": head_msg_id,
                       "ok": ok, "error": err},
+        }, default=str))
+
+    elif action == "delete_branch":
+        # Real branch delete: walk the unique tail from head_msg_id up
+        # through parents, removing messages that no other branch still
+        # depends on (no children) up to the fork point. If the
+        # currently-checked-out HEAD is on this branch, fall back to
+        # any sibling leaf so the session isn't left pointing into
+        # nothing.
+        session_id = cmd.get("session_id")
+        head_msg_id = cmd.get("head_msg_id")
+        if not head_msg_id and session_id:
+            try:
+                from openprogram.agent.session_db import default_db as _df
+                _sess = _df().get_session(session_id) or {}
+                head_msg_id = _sess.get("head_id")
+            except Exception:
+                pass
+        ok = False
+        err = None
+        deleted = 0
+        new_head = None
+        if not session_id or not head_msg_id:
+            err = "session_id and head_msg_id required"
+        else:
+            try:
+                from openprogram.agent.session_db import default_db
+                db = default_db()
+                # If HEAD is on this branch, pick a fallback before deleting.
+                sess = db.get_session(session_id) or {}
+                cur_head = sess.get("head_id")
+                head_in_branch = False
+                if cur_head:
+                    walk = cur_head
+                    while walk:
+                        if walk == head_msg_id:
+                            head_in_branch = True
+                            break
+                        row = db.conn.execute(
+                            "SELECT parent_id FROM messages WHERE session_id=? AND id=?",
+                            (session_id, walk),
+                        ).fetchone()
+                        if row is None:
+                            break
+                        walk = row[0]
+                if head_in_branch:
+                    leaves = db.list_branches(session_id)
+                    for lf in leaves:
+                        if lf["head_msg_id"] != head_msg_id:
+                            new_head = lf["head_msg_id"]
+                            break
+                    if new_head:
+                        db.set_head(session_id, new_head)
+                deleted = db.delete_branch_tail(session_id, head_msg_id)
+                # Refresh in-memory snapshot.
+                with _sessions_lock:
+                    conv = _sessions.get(session_id)
+                    if conv is not None:
+                        if new_head:
+                            conv["head_id"] = new_head
+                            try:
+                                conv["messages"] = db.get_branch(session_id) or []
+                            except Exception:
+                                pass
+                _invalidate_messages(session_id)
+                ok = True
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
+        await ws.send_text(json.dumps({
+            "type": "branch_deleted",
+            "data": {"session_id": session_id, "head_msg_id": head_msg_id,
+                      "ok": ok, "deleted": deleted,
+                      "new_head": new_head, "error": err},
         }, default=str))
 
     elif action == "delete_session":
@@ -2758,9 +2995,34 @@ async def _handle_ws_command(ws, cmd: dict):
                     "run_active": _is_run_active(conv["id"]),
                 },
             }, default=str))
-            # If a task is currently running for this conversation, notify the client
+            # If a task is currently running for this conversation, notify the client.
+            # Two zombie guards, both belt-and-suspenders for the
+            # "stuck running" state:
+            #
+            #   1. No paired runtime registered → cleanup was skipped
+            #      (process restart, exception path).
+            #   2. Runtime is registered but no stream event in the
+            #      last 5 minutes AND task started >5min ago → the
+            #      worker is wedged inside a provider HTTP read or
+            #      similar; treat as dead so the client gets a clean
+            #      UI on reload, no forever-spinning placeholder.
+            #
+            # The cancel flag from any prior /api/stop click stays set
+            # so any straggler emit from the wedged task gets ignored.
             with _running_tasks_lock:
                 task_info = _running_tasks.get(session_id)
+            if task_info and not _has_active_runtime(session_id):
+                with _running_tasks_lock:
+                    _running_tasks.pop(session_id, None)
+                task_info = None
+            if task_info:
+                _now = time.time()
+                _started = task_info.get("started_at", _now)
+                _last_evt_ts = task_info.get("last_event_at", _started)
+                if (_now - _started > 300) and (_now - _last_evt_ts > 300):
+                    with _running_tasks_lock:
+                        _running_tasks.pop(session_id, None)
+                    task_info = None
             if task_info:
                 # Try to get current partial tree from the running function
                 partial_tree = None
@@ -3720,6 +3982,37 @@ def create_app():
                 q.put_nowait({"_cancelled": True})
             except Exception:
                 pass
+        # Force-clear server-side run state immediately. If the worker
+        # task is stuck inside a provider HTTP read it may not honor
+        # cancel for a long time, but the UI should not stay frozen on
+        # the user's side waiting for that. Once these are gone:
+        #   * Edit / Retry stop greying out
+        #   * load_session / branch checkout no longer emits a
+        #     running_task event (no ghost "Agentic …" bubble)
+        # The cancel flag stays set so any straggler emit gets ignored.
+        with _running_tasks_lock:
+            _running_tasks.pop(session_id, None)
+        try:
+            _unregister_active_runtime(session_id)
+        except Exception:
+            pass
+        try:
+            _unregister_cancel_event(session_id)
+        except Exception:
+            pass
+        # Emit a terminal cancelled envelope so the frontend exits the
+        # "thinking" state and clears any in-flight placeholders for
+        # this turn. Without this, clients that loaded mid-run would
+        # keep their typing-indicator until the next message arrives.
+        _broadcast(json.dumps({
+            "type": "chat_response",
+            "data": {
+                "type": "cancelled",
+                "session_id": session_id,
+                "content": "Execution stopped by user.",
+                "cancelled": True,
+            },
+        }))
         _broadcast(json.dumps({
             "type": "status",
             "paused": False,
@@ -4031,14 +4324,15 @@ def create_app():
             with _sessions_lock:
                 conv = _sessions.get(session_id)
             if conv:
-                # Locked if conversation has messages
-                if conv.get("messages") and len(conv["messages"]) > 0:
-                    chat_locked = True
-                # Get session_id from conversation runtime
+                # No more "locked when session has messages" — switching
+                # model mid-session is allowed (HTTP-based providers
+                # treat each turn statelessly). The previous lock made
+                # the chat badge non-clickable on any non-empty session,
+                # which contradicted the product behaviour the user
+                # asked for.
                 rt = conv.get("runtime")
                 if rt:
                     chat_session_id = getattr(rt, '_session_id', None)
-                # Use conversation's provider/model if set
                 if conv.get("provider_name"):
                     chat_provider = conv["provider_name"]
                 if rt and getattr(rt, 'model', None):

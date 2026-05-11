@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
+import { UserMenuFooter } from "./user-menu-footer";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -101,6 +103,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const rightSidebarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
+  // Mount target for the React UserMenuFooter portal. Set after the
+  // legacy sidebar HTML lands in the DOM. Re-checked on every render
+  // (and explicitly bumped after sidebar inject) so we don't miss it.
+  const [userMenuMount, setUserMenuMount] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (userMenuMount) return;
+    let cancelled = false;
+    function findMount() {
+      const el = document.getElementById("userMenuFooterMount");
+      if (el && !cancelled) {
+        setUserMenuMount(el);
+        return true;
+      }
+      return false;
+    }
+    if (findMount()) return;
+    const t = setInterval(() => {
+      if (findMount()) clearInterval(t);
+    }, 100);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [userMenuMount]);
 
   // Sync `.active` on sidebar nav items to the current route and close any
   // open popover when navigating. The programs page inline script also sets
@@ -250,6 +276,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ref={rightSidebarRef}
         style={{ display: showChat ? "contents" : "none" }}
       />
+      {userMenuMount && createPortal(<UserMenuFooter />, userMenuMount)}
     </div>
   );
 }

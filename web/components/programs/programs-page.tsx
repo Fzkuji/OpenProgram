@@ -185,13 +185,20 @@ export function ProgramsPage() {
 
   // ---- actions --------------------------------------------------------
   function runProgram(name: string, category?: string) {
-    router.push(
-      `/chat?run=${encodeURIComponent(name)}&cat=${encodeURIComponent(category || "")}`,
-    );
+    // SPA soft-nav. Stash the request on window; page-shell calls
+    // __triggerPendingRunFunction after the chat-route effect fires,
+    // and init.js drains __pendingRunFunction to open the fn-form.
+    (window as unknown as {
+      __pendingRunFunction?: { name: string; cat: string };
+    }).__pendingRunFunction = { name, cat: category || "" };
+    router.push("/chat");
   }
 
   function editProgram(name: string) {
-    router.push(`/chat?run=edit&fn=${encodeURIComponent(name)}`);
+    (window as unknown as {
+      __pendingRunFunction?: { name: string; cat: string; fn?: string };
+    }).__pendingRunFunction = { name: "edit", cat: "", fn: name };
+    router.push("/chat");
   }
 
   async function toggleFav(name: string, e: React.MouseEvent) {

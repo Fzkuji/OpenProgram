@@ -401,7 +401,9 @@
   max-height: 60vh;
   overflow-y: auto;
   padding: 6px;
-  gap: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .model-dd-group-label {

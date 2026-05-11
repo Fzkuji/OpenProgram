@@ -181,8 +181,14 @@ def stream_openai_codex_responses(
                     b.pop("index", None)
             output.stop_reason = "error"
             output.error_message = str(exc)
-            ev_stream.push({"type": "error", "reason": "error", "error": output})
-            ev_stream.end(output)
+            # Use ev_stream.fail() so the consumer's `async for`
+            # raises this exception instead of seeing a normal
+            # stream end. The previous push-error + end pattern
+            # left the stream looking "successful" to agent_loop,
+            # which then auto-retried — that's why a single SSE
+            # idle timeout sent the worker into a busy-loop with
+            # no progress in SessionDB.
+            ev_stream.fail(exc)
 
     asyncio.ensure_future(_run())
     return ev_stream
@@ -252,16 +258,70 @@ def _build_request_body(
     return body
 
 
+SSE_IDLE_TIMEOUT_S = 300.0   # 5 min — match codex CLI default
+SSE_TOTAL_TIMEOUT_S = 1800.0 # 30 min absolute ceiling
+
+
+class StreamIdleTimeout(Exception):
+    """No real data event received for SSE_IDLE_TIMEOUT_S."""
+
+
+class StreamTotalTimeout(Exception):
+    """Single SSE stream exceeded SSE_TOTAL_TIMEOUT_S."""
+
+
 async def _parse_sse_stream(response: Any):
-    """Parse SSE events from an httpx streaming response."""
-    async for line in response.aiter_lines():
+    """Parse SSE events from an httpx streaming response.
+
+    OpenAI's Codex Responses API emits keepalive frames (event: ping
+    / blank lines) every few seconds during reasoning. httpx's read
+    timeout treats *any* incoming bytes as activity and never trips
+    on a stalled stream that's still echoing pings, so a session can
+    hang forever waiting for content that never arrives.
+
+    We track ``last_data_at`` independently — only "real" data events
+    (i.e. parsed JSON payloads other than [DONE]) refresh it. If
+    nothing of substance arrives for SSE_IDLE_TIMEOUT_S, we raise.
+    A separate hard ceiling (SSE_TOTAL_TIMEOUT_S) backstops genuinely
+    stuck requests that never even hit idle (e.g. ping-flooded).
+    """
+    import asyncio
+    import time as _time
+    deadline = _time.monotonic() + SSE_TOTAL_TIMEOUT_S
+    last_data_at = _time.monotonic()
+    line_iter = response.aiter_lines().__aiter__()
+    while True:
+        now = _time.monotonic()
+        if now >= deadline:
+            raise StreamTotalTimeout(
+                f"SSE total budget {SSE_TOTAL_TIMEOUT_S}s exceeded")
+        idle_left = SSE_IDLE_TIMEOUT_S - (now - last_data_at)
+        if idle_left <= 0:
+            raise StreamIdleTimeout(
+                f"no SSE data event for {SSE_IDLE_TIMEOUT_S}s")
+        # Wait for the next raw line. We bound by whichever limit
+        # fires sooner so we never block past the idle threshold.
+        wait = min(idle_left, deadline - now)
+        try:
+            line = await asyncio.wait_for(line_iter.__anext__(), timeout=wait)
+        except asyncio.TimeoutError:
+            # No bytes at all — that's both no-line and no-data.
+            raise StreamIdleTimeout(
+                f"no SSE bytes for {SSE_IDLE_TIMEOUT_S}s")
+        except StopAsyncIteration:
+            return
         if line.startswith("data: "):
             data = line[6:]
             if data == "[DONE]":
                 break
             try:
-                yield json.loads(data)
+                evt = json.loads(data)
             except json.JSONDecodeError:
-                pass
+                continue
+            # Only real, parsed data events refresh the idle timer —
+            # keepalive pings never arrive here, so they can't stall
+            # the abort path.
+            last_data_at = _time.monotonic()
+            yield evt
         elif line.startswith("event: "):
-            pass  # Event type prefix, ignore
+            pass  # Event type prefix; not enough to count as data.

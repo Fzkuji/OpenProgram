@@ -203,11 +203,25 @@ async def _run_loop(
     if config.get_steering_messages:
         pending_messages = await config.get_steering_messages()
 
+    # Hard cap on the inner tool-call loop so a model that keeps asking
+    # for "one more tool call" can't churn the runtime forever. 50 is
+    # plenty for a real task; anything beyond that is the model spinning.
+    MAX_INNER_ITERATIONS = 50
+    inner_iterations = 0
+
     while True:
         has_more_tool_calls = True
         steering_after_tools: list[AgentMessage] | None = None
 
         while has_more_tool_calls or len(pending_messages) > 0:
+            inner_iterations += 1
+            if inner_iterations > MAX_INNER_ITERATIONS:
+                # End the stream cleanly with whatever we've got. The
+                # consumer (dispatcher / cli_chat) treats a normal
+                # stream end as a successful turn — no more, no less.
+                ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                ev_stream.end(new_messages)
+                return
             if not first_turn:
                 ev_stream.push(AgentEventTurnStart())
             else:

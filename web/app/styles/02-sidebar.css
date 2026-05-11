@@ -7,6 +7,11 @@
   flex-direction: column;
   flex-shrink: 0;
   overflow: hidden;
+  /* `position: relative` is the anchor for the absolutely-positioned
+     `#userMenuFooterMount` below — the footer leaves the flex flow so
+     the avatar's x/y don't reflow when conversations / favourites get
+     `display: none` on collapse. */
+  position: relative;
   transition: width 0.3s ease, min-width 0.3s ease;
 }
 
@@ -43,6 +48,72 @@
   padding: 0 5.5px;
 }
 .sidebar.collapsed .user-info { display: none; }
+
+/* React UserMenuFooter (portal-mounted into #userMenuFooterMount).
+   The component uses CSS-module-scoped classnames which the legacy
+   `.sidebar-user`/`.user-info` rules can't target, so we piggyback
+   on stable companion classes (`user-menu-footer-*`) set in the
+   component.
+
+   COLLAPSE-ANIMATION KEY POINT:
+   The `.sidebar.collapsed` class flips instantly but `.sidebar`'s
+   width is on a 300ms transition. If we switched `justify-content`
+   or `padding` based on the class, the trigger would instantly
+   re-layout its content (e.g. center it) while the box was still
+   280px wide, making the avatar pop to the middle-right of the
+   sidebar before sliding left with the width. Instead we keep
+   the avatar pinned to a fixed left padding (10px) in both states
+   — when width animates from 280 → 48 the same 10px offset reads
+   as "left-aligned" expanded and "centered" collapsed (28px avatar
+   in a 48px column: (48 - 28)/2 = 10px). The label fades via
+   opacity + width rather than `display: none` so it disappears
+   in lockstep with the width transition. */
+/* Anchor footer to the sidebar's bottom-left corner with absolute
+   positioning. This is what eliminates the "avatar pops to middle
+   then slides left" jank: by leaving the flex flow, the footer no
+   longer reflows when conversations / favourites get `display: none`
+   on collapse, and the trigger's left padding stays at a fixed
+   pixel offset from the sidebar's left edge. As the sidebar's width
+   transitions 280 → 48 the avatar sits at x=10 in both states —
+   "left-aligned" when expanded, "centred" when collapsed (28px
+   avatar in a 48px column with 10px on each side). */
+#userMenuFooterMount {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+}
+/* Kill the CSS-module footer's 8px horizontal padding so the avatar's
+   x = trigger left padding only (10px). 28px avatar in 48px column
+   then sits at 10/28/10 — properly centred. */
+.user-menu-footer {
+  padding: 8px 0 !important;
+}
+.user-menu-footer-trigger {
+  padding: 8px 10px !important;
+}
+.user-menu-footer-info {
+  overflow: hidden;
+  /* Without nowrap, the 'Agentic'/'Local instance' lines would
+     wrap character-by-character as max-width shrinks to 0, ballooning
+     info's intrinsic HEIGHT mid-transition and yanking the whole
+     bottom-anchored footer (and its avatar) upward. nowrap pins
+     the height at line-height × 2 so the trigger keeps a stable
+     vertical box; the long text just overflows and gets clipped. */
+  white-space: nowrap;
+  transition: opacity 0.2s ease, max-width 0.3s ease, margin 0.3s ease;
+}
+.sidebar.collapsed .user-menu-footer-info {
+  opacity: 0;
+  max-width: 0;
+  margin: 0;
+  pointer-events: none;
+}
+/* Reserve space for the absolutely-positioned footer so the
+   conversations list doesn't scroll under it. ~56px = footer's
+   trigger height (avatar 28 + vertical padding 16 + border 1) +
+   a little breathing room. */
+.sidebar-conversations { padding-bottom: 60px; }
 
 .sidebar-header {
   padding: 8px;

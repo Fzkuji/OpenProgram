@@ -52,10 +52,20 @@ export interface Activity {
 export type PickerKind =
   | null
   | 'model' | 'resume' | 'agent' | 'channel' | 'channel_account' | 'theme' | 'effort'
+  | 'branch'
   | 'context_search' | 'context_search_results'
   | 'register_account_id' | 'register_token'
   | 'channel_action' | 'channel_peer_input' | 'channel_qr_wait'
   | 'channel_overwrite_confirm';
+
+/** One branch as returned by ws `list_branches`. */
+export interface BranchRow {
+  head_msg_id: string;
+  name: string;
+  is_named?: boolean;
+  active?: boolean;
+  created_at?: number;
+}
 
 /** Pending attach payload paused in front of an overwrite confirm. */
 export interface PendingAttach {

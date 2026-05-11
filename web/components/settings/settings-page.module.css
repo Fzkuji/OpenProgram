@@ -38,7 +38,7 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
   align-self: start;
   position: sticky;
   top: 16px;
@@ -201,17 +201,26 @@
   color: var(--text-bright);
 }
 
-/* Providers two-pane layout */
+/* Providers two-pane layout. The two columns each scroll on their own
+   so a long provider list (sidebar) or a long model list (detail)
+   doesn't push the topbar off-screen. */
 .providersLayout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 24px;
+  /* Reserve viewport minus topbar (96px) and surrounding margins. */
+  height: calc(100vh - 200px);
+  min-height: 480px;
 }
 .providersSidebar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 1px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
+.providersSidebar > .providersSearch { margin-bottom: 8px; }
+.providersSidebar > .providersGroupLabel { margin-top: 8px; }
 .providersSearch {
   position: relative;
 }

@@ -16,10 +16,10 @@ function applyTheme(theme: Theme) {
 }
 
 export function GeneralSection() {
-  const [theme, setThemeState] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>("auto");
 
   useEffect(() => {
-    const saved = (localStorage.getItem("agentic_theme") || "dark") as Theme;
+    const saved = (localStorage.getItem("agentic_theme") || "auto") as Theme;
     setThemeState(saved);
     applyTheme(saved);
     const mq = window.matchMedia("(prefers-color-scheme: dark)");

@@ -1,0 +1,100 @@
+/* Footer "..." menu — replaces legacy .sidebar-footer / .user-menu rules
+   in 02-sidebar.css. Visual parity with the old design. */
+
+.footer {
+  position: relative;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+  padding: 8px;
+  flex-shrink: 0;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text-primary);
+}
+.trigger:hover { background: var(--bg-hover); }
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.name { color: var(--text-bright); font-size: 13px; }
+.subtitle { color: var(--text-muted); font-size: 11px; }
+
+/* Popover anchored above the trigger. Gap below matches left/right
+   8px so the menu floats with even breathing room. */
+.menu {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 8px);
+  background: var(--bg-tertiary, var(--bg-secondary));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+.item:hover { background: var(--bg-hover); color: var(--text-bright); }
+.item svg { color: var(--text-muted); flex-shrink: 0; }
+.item:hover svg { color: var(--text-primary); }
+
+.sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* Collapsed-sidebar rules live in app/styles/02-sidebar.css and
+   target stable companion classes (`user-menu-footer-*`) so the
+   legacy CSS can match them without going through CSS-module hashes. */

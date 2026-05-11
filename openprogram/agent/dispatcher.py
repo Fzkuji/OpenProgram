@@ -350,8 +350,28 @@ def process_user_turn(
         "source": req.source,
     }
     if tool_calls:
-        assistant_msg["extra"] = json.dumps({"tool_calls": tool_calls},
-                                            default=str)
+        # Persist BOTH shapes:
+        #   * tool_calls — legacy slim list (id/tool/result/is_error)
+        #     still consumed by older code paths.
+        #   * blocks — the structured form _renderAssistantBlocks /
+        #     _buildAssistantMessage expect, so the webui can rebuild
+        #     the same collapsible scaffold after refresh instead of
+        #     showing a plain text reply with no tool history.
+        blocks = [
+            {
+                "type": "tool",
+                "tool": t.get("tool"),
+                "tool_call_id": t.get("tool_call_id") or t.get("id"),
+                "input": t.get("input"),
+                "result": t.get("result"),
+                "is_error": t.get("is_error"),
+            }
+            for t in tool_calls
+        ]
+        assistant_msg["extra"] = json.dumps(
+            {"tool_calls": tool_calls, "blocks": blocks},
+            default=str,
+        )
     db.append_message(req.session_id, assistant_msg)
 
     # 6. Update session bookkeeping (head_id, token tracking, model).
@@ -738,6 +758,10 @@ def _run_loop_blocking(
         final_text_parts: list[str] = []
         usage_total: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
         tool_calls: list[dict] = []
+        # Capture tool_use inputs so we can rebuild the same
+        # collapsible scaffold on reload. tool_execution_end events
+        # don't carry the input args, so we stash them at start time.
+        tool_inputs_by_id: dict[str, dict] = {}
 
         async for ev in _aiter_event_stream(ev_stream):
             envelope = _agent_event_to_envelope(ev, req)
@@ -749,10 +773,23 @@ def _run_loop_blocking(
             # fires, the user has already approved (or the wrapper
             # short-circuited with a denial result).
             if hasattr(ev, "type"):
+                if ev.type == "tool_execution_start":
+                    _tid = getattr(ev, "tool_call_id", None)
+                    _args = getattr(ev, "args", None)
+                    if _tid is not None:
+                        tool_inputs_by_id[_tid] = {
+                            "tool": getattr(ev, "tool_name", None),
+                            "input": json.dumps(_args, default=str)
+                                     if _args is not None else None,
+                        }
                 if ev.type == "tool_execution_end":
+                    _tid = getattr(ev, "tool_call_id", None)
+                    _meta = tool_inputs_by_id.get(_tid, {})
                     tool_calls.append({
-                        "id": getattr(ev, "tool_call_id", None),
-                        "tool": getattr(ev, "tool_name", None),
+                        "id": _tid,
+                        "tool_call_id": _tid,
+                        "tool": getattr(ev, "tool_name", None) or _meta.get("tool"),
+                        "input": _meta.get("input"),
                         "result": _shorten(getattr(ev, "result", "")),
                         "is_error": bool(getattr(ev, "is_error", False)),
                     })
@@ -902,7 +939,7 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
                                "tool": getattr(ev, "tool_name", "?"),
                                "input": json.dumps(args, default=str)
                                         if args is not None else None,
-                               "id": getattr(ev, "tool_call_id", None)}},
+                               "tool_call_id": getattr(ev, "tool_call_id", None)}},
         }
 
     if t == "tool_execution_end":
@@ -913,7 +950,8 @@ def _agent_event_to_envelope(ev, req: TurnRequest) -> Optional[dict]:
                      "event": {"type": "tool_result",
                                "tool": getattr(ev, "tool_name", "?"),
                                "result": _shorten(getattr(ev, "result", "")),
-                               "is_error": bool(getattr(ev, "is_error", False))}},
+                               "is_error": bool(getattr(ev, "is_error", False)),
+                               "tool_call_id": getattr(ev, "tool_call_id", None)}},
         }
 
     return None

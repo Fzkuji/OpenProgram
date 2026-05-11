@@ -25,6 +25,37 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+      <head>
+        {/*
+          Apply persisted theme before React hydrates so the page
+          paints in the correct mode. Without this, every route
+          renders as dark (CSS default) until a component that
+          imports applyTheme mounts — which only happens on the
+          Settings page. The listener also keeps `auto` reactive to
+          system color-scheme changes app-wide, not just in settings.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function () {
+              try {
+                var saved = localStorage.getItem('agentic_theme') || 'auto';
+                function apply(t) {
+                  if (t === 'auto') {
+                    var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+                  } else {
+                    document.documentElement.setAttribute('data-theme', t);
+                  }
+                }
+                apply(saved);
+                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+                  if ((localStorage.getItem('agentic_theme') || 'auto') === 'auto') apply('auto');
+                });
+              } catch (e) {}
+            })();`,
+          }}
+        />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>

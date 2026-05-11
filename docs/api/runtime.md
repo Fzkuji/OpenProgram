@@ -18,7 +18,7 @@ class Runtime(call=None, model="default")
 |------|------|--------|------|
 | `call` | `Callable \| None` | `None` | LLM provider 函数。签名：`fn(content: list[dict], model: str, response_format: dict) -> str`。如果不传，需要子类化并重写 `_call()` |
 | `model` | `str` | `"default"` | 默认模型名称，每次调用可覆盖 |
-| `max_retries` | `int` | `2` | exec() 最大尝试次数（包含首次调用） |
+| `max_retries` | `int` | `2` | exec() 最大尝试次数（包含首次调用，且必须 >= 1） |
 
 ### 属性
 

@@ -246,6 +246,11 @@ def test_runtime_rejects_zero_retries():
         Runtime(call=echo_call, max_retries=0)
 
 
+def test_runtime_rejects_negative_retries():
+    with pytest.raises(ValueError, match="max_retries"):
+        Runtime(call=echo_call, max_retries=-1)
+
+
 def test_runtime_subclass():
     """Runtime can be subclassed with custom _call."""
     class CustomRuntime(Runtime):

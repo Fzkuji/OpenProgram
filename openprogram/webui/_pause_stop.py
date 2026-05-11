@@ -55,9 +55,28 @@ _cancel_flags_lock = threading.Lock()
 _current_session_id: ContextVar = ContextVar("_current_session_id", default=None)
 
 
+_cancel_events: dict[str, threading.Event] = {}
+
+
+def register_cancel_event(session_id: str, ev: threading.Event) -> None:
+    with _cancel_flags_lock:
+        _cancel_events[session_id] = ev
+
+
+def unregister_cancel_event(session_id: str) -> None:
+    with _cancel_flags_lock:
+        _cancel_events.pop(session_id, None)
+
+
 def mark_cancelled(session_id: str) -> None:
     with _cancel_flags_lock:
         _cancel_flags[session_id] = True
+        ev = _cancel_events.get(session_id)
+    if ev is not None:
+        try:
+            ev.set()
+        except Exception:
+            pass
 
 
 def is_cancelled(session_id: str) -> bool:
@@ -115,6 +134,17 @@ def register_active_runtime(session_id: str, rt: Any) -> None:
 def unregister_active_runtime(session_id: str) -> None:
     with _active_exec_runtimes_lock:
         _active_exec_runtimes.pop(session_id, None)
+
+
+def has_active_runtime(session_id: str) -> bool:
+    """True iff a runtime is currently registered for this session.
+
+    Used as a zombie check against ``_running_tasks``: an entry there
+    without a paired live runtime (process died, cleanup missed) is
+    stale and should be treated as no-op.
+    """
+    with _active_exec_runtimes_lock:
+        return session_id in _active_exec_runtimes
 
 
 def kill_active_runtime(session_id: str) -> None:

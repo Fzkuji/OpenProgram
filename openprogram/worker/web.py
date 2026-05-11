@@ -211,17 +211,119 @@ def start_web_frontend(
         return None
 
     print(f"[worker] web: http://127.0.0.1:{port} (backend → :{backend_port})")
+
+    # Watch .next/BUILD_ID — when a fresh `npm run build` writes a new
+    # build, the old next-server process is still serving the previous
+    # BUILD_ID's chunks (it caches manifests in memory at startup).
+    # Browsers then load HTML pointing at <hash>.css that no longer
+    # exists on disk, and the page renders unstyled. Restarting the
+    # next subprocess on every BUILD_ID change makes that race
+    # invisible — the user's hard refresh just picks up a coherent
+    # build without anyone running `worker restart` by hand.
+    _start_build_id_watcher(wd, backend_port, port, env, cmd, proc)
     return proc
 
 
+# In-process handle to the live next subprocess. The watcher thread
+# updates this when it restarts next; stop_web_frontend reads it so a
+# clean shutdown still kills the *current* child, not whatever Popen
+# the caller saved at spawn time.
+_LIVE_PROC_LOCK = threading.Lock() if False else None  # placeholder
+import threading as _threading  # noqa: E402
+_live_proc_lock = _threading.Lock()
+_live_proc: Optional[subprocess.Popen] = None
+
+
+def _set_live_proc(proc: Optional[subprocess.Popen]) -> None:
+    global _live_proc
+    with _live_proc_lock:
+        _live_proc = proc
+
+
+def _start_build_id_watcher(
+    wd: Path,
+    backend_port: int,
+    port: int,
+    env: dict,
+    cmd: list,
+    initial_proc: subprocess.Popen,
+) -> None:
+    _set_live_proc(initial_proc)
+
+    build_id_path = wd / ".next" / "BUILD_ID"
+
+    def _read_id() -> Optional[str]:
+        try:
+            return build_id_path.read_text().strip()
+        except OSError:
+            return None
+
+    last_seen = _read_id()
+
+    def _loop() -> None:
+        import time as _t
+        nonlocal last_seen
+        while True:
+            _t.sleep(2.0)
+            cur = _read_id()
+            if cur is None or cur == last_seen:
+                continue
+            last_seen = cur
+            print(f"[worker] web: detected new BUILD_ID {cur} — restarting next")
+            with _live_proc_lock:
+                old = _live_proc
+            if old is not None:
+                try:
+                    old.terminate()
+                    try:
+                        old.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        old.kill()
+                except Exception:  # noqa: BLE001
+                    pass
+            # Reclaim the port (the watcher script around next will
+            # have exited by now, but a SIGKILL on the wrapper can
+            # leave next-server orphaned holding the socket).
+            _reclaim_web_port(port)
+            # Re-patch the freshly-built routes-manifest. `npm run
+            # build` evaluates next.config.mjs's rewrites() with
+            # whatever OPENPROGRAM_BACKEND_URL was in env at build
+            # time, which often disagrees with the live worker port —
+            # without this, the new next-server proxies /api → wrong
+            # port and every request 500's.
+            _patch_manifest_ports(wd, backend_port)
+            try:
+                new_proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(wd),
+                    env=env,
+                    stdout=sys.stdout,
+                    stderr=sys.stderr,
+                )
+                _set_live_proc(new_proc)
+                print(f"[worker] web: respawned next (PID {new_proc.pid})")
+            except OSError as e:
+                print(f"[worker] web: respawn failed: {e}")
+
+    _threading.Thread(
+        target=_loop, name="web-build-id-watcher", daemon=True
+    ).start()
+
+
 def stop_web_frontend(proc: Optional[subprocess.Popen], *, timeout: float = 5.0) -> None:
-    if proc is None:
+    # Prefer the watcher's live handle (it tracks restarts); fall back
+    # to whatever Popen the caller supplied.
+    target = proc
+    with _live_proc_lock:
+        if _live_proc is not None:
+            target = _live_proc
+    if target is None:
         return
     try:
-        proc.terminate()
+        target.terminate()
         try:
-            proc.wait(timeout=timeout)
+            target.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            target.kill()
     except Exception:  # noqa: BLE001
         pass

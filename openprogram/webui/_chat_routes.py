@@ -63,7 +63,11 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
         conv = _srv._sessions.get(session_id)
         if conv is None:
             return {"__error__": ("unknown conv", 404)}
-        msgs = conv["messages"]
+        # conv["messages"] only holds the current head's linear chain.
+        # Retry/edit commonly target a sibling that is by definition
+        # off-chain, so look up against the full SessionDB DAG.
+        from openprogram.agent.session_db import default_db as _db_for_retry
+        msgs = _db_for_retry().get_messages(session_id)
         pivot = next((m for m in msgs if m.get("id") == pivot_id), None)
         if pivot is None:
             return {"__error__": ("unknown msg", 404)}
@@ -78,24 +82,45 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
             return {"__error__": ("no user message to fork from", 400)}
         src_user = cur
 
-        new_msg_id = str(uuid.uuid4())[:8]
-        new_user = {
-            "role": "user",
-            "id": new_msg_id,
-            "content": new_content if new_content is not None
-                       else src_user.get("content", ""),
-            "timestamp": time.time(),
-            # Sibling of src_user: same parent.
-            "parent_id": src_user.get("parent_id"),
-            # Lineage breadcrumbs (future tooling / debugging).
-            "forked_from": src_user.get("id"),
-        }
-        if src_user.get("display"):
-            new_user["display"] = src_user["display"]
-        if new_content is not None:
-            new_user["edit_of"] = src_user.get("id")
+        # If retry (not edit) and the previous turn never produced an
+        # assistant reply (timed out / errored / was force-stopped),
+        # rerun the SAME user message instead of forking a sibling. The
+        # "old branch" doesn't really exist — there's nothing on it but
+        # the user's question — so forking just litters the DAG with
+        # empty placeholder branches. Edit always forks because the
+        # user explicitly changed the prompt.
+        has_assistant_child = any(
+            m.get("parent_id") == src_user.get("id") and m.get("role") == "assistant"
+            for m in msgs
+        )
+        if new_content is None and not has_assistant_child:
+            new_msg_id = src_user.get("id")
+            new_user = src_user
+            conv["head_id"] = new_msg_id
+            try:
+                from openprogram.agent.session_db import default_db
+                default_db().set_head(session_id, new_msg_id)
+            except Exception:
+                pass
+        else:
+            new_msg_id = str(uuid.uuid4())[:8]
+            new_user = {
+                "role": "user",
+                "id": new_msg_id,
+                "content": new_content if new_content is not None
+                           else src_user.get("content", ""),
+                "timestamp": time.time(),
+                # Sibling of src_user: same parent.
+                "parent_id": src_user.get("parent_id"),
+                # Lineage breadcrumbs (future tooling / debugging).
+                "forked_from": src_user.get("id"),
+            }
+            if src_user.get("display"):
+                new_user["display"] = src_user["display"]
+            if new_content is not None:
+                new_user["edit_of"] = src_user.get("id")
 
-        advance_head(conv, new_user)   # append + move HEAD
+            advance_head(conv, new_user)   # append + move HEAD
 
     _srv._save_session(session_id)
 

@@ -35,7 +35,7 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Reset webui module state. We don't reimport — we just clear the
     # in-process structures so each test sees a clean slate.
     from openprogram.webui import server as srv
-    srv._conversations.clear()
+    srv._sessions.clear()
     srv._msg_cache.clear()
     return srv, db
 
@@ -113,7 +113,7 @@ def test_lru_cap_evicts_oldest(server, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_get_or_create_conversation_hydrates_from_db(server) -> None:
     """A fresh worker process / restart sees pre-existing SessionDB
-    conversations through the in-memory _conversations dict. The
+    conversations through the in-memory _sessions dict. The
     hydration must happen at conv creation time so existing webui
     code that reads conv["messages"] keeps working without changes."""
     srv, db = server
@@ -126,7 +126,7 @@ def test_get_or_create_conversation_hydrates_from_db(server) -> None:
                               "parent_id": "m1"})
     db.set_head("c1", "m2")
 
-    conv = srv._get_or_create_conversation("c1")
+    conv = srv._get_or_create_session("c1")
     assert [m["id"] for m in conv["messages"]] == ["m1", "m2"]
     assert conv["head_id"] == "m2"
 
@@ -140,7 +140,7 @@ def test_append_msg_dual_writes_memory_and_db(server) -> None:
       - invalidate the cache (so the next _get_messages re-reads)
     """
     srv, db = server
-    conv = srv._get_or_create_conversation("c1", agent_id="main")
+    conv = srv._get_or_create_session("c1", agent_id="main")
 
     msg = {"id": "m1", "role": "user", "content": "hello",
            "timestamp": 1.0}
@@ -165,7 +165,7 @@ def test_append_msg_invalidates_existing_cache(server) -> None:
     new row. This is the regression-prone case where the old code wrote
     to the dict but stale cache served readers."""
     srv, db = server
-    conv = srv._get_or_create_conversation("c1", agent_id="main")
+    conv = srv._get_or_create_session("c1", agent_id="main")
     srv._append_msg(conv, {"id": "m1", "role": "user", "content": "x",
                             "timestamp": 1.0})
     # Warm the cache by reading
@@ -183,7 +183,7 @@ def test_set_active_head_syncs_db_memory_and_cache(server) -> None:
     in-memory conv["head_id"], and invalidate the cache atomically
     enough that the next reader sees a coherent view."""
     srv, db = server
-    conv = srv._get_or_create_conversation("c1", agent_id="main")
+    conv = srv._get_or_create_session("c1", agent_id="main")
     srv._append_msg(conv, {"id": "m1", "role": "user", "content": "x",
                             "timestamp": 1.0})
     srv._append_msg(conv, {"id": "m2", "role": "assistant", "content": "y",
@@ -202,7 +202,7 @@ def test_set_active_head_syncs_db_memory_and_cache(server) -> None:
 
 def test_set_active_head_to_none_clears(server) -> None:
     srv, db = server
-    conv = srv._get_or_create_conversation("c1", agent_id="main")
+    conv = srv._get_or_create_session("c1", agent_id="main")
     srv._append_msg(conv, {"id": "m1", "role": "user", "content": "x",
                             "timestamp": 1.0})
     srv._set_active_head("c1", None)
@@ -238,7 +238,7 @@ def test_agentic_function_result_persists_via_append_msg(server) -> None:
     so a fresh worker can hydrate the run result without depending
     on _save_conversation having flushed."""
     srv, db = server
-    conv = srv._get_or_create_conversation("c1", agent_id="main")
+    conv = srv._get_or_create_session("c1", agent_id="main")
     # Simulate run action: user runtime command + assistant result
     srv._append_msg(conv, {
         "id": "u1", "role": "user",

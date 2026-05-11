@@ -20,6 +20,7 @@ import type {
   REPLProps,
   AgentInfo,
   Activity,
+  BranchRow,
   ChannelActivity,
   PickerKind,
   PendingAttach,
@@ -69,6 +70,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   >({});
   const [bellEnabled, setBellEnabled] = useState(true);
   const [modelsList, setModelsList] = useState<string[]>([]);
+  const [branchesList, setBranchesList] = useState<BranchRow[]>([]);
   const [pastConversations, setPastConversations] = useState<
     Array<{
       id?: string;
@@ -154,7 +156,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     bellEnabled, conversationId, chosenChannel, chosenAccount,
     setConversationId, setStreaming, setActivity, setCommitted,
     setTokensByConv, setWindowByConv,
-    setStats, setModel, setAgent, setAgentsList, setModelsList,
+    setStats, setModel, setAgent, setAgentsList, setModelsList, setBranchesList,
     setChannelAccounts, setPastConversations,
     setQrAscii, setQrStatus,
     setPickerKind, setChosenChannel, setChosenAccount,
@@ -373,7 +375,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     client, colors, pushSystem,
     pickerKind, pendingAttach,
     chosenChannel, chosenAccount, conversationId,
-    modelsList, model, agentsList, channelAccounts,
+    modelsList, model, agentsList, channelAccounts, branchesList,
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft,
     thinkingEffort,

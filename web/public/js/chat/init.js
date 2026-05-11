@@ -66,6 +66,13 @@ function handleMessage(msg) {
     case 'functions_list':
       availableFunctions = msg.data || [];
       loadProgramsMeta().then(function() { renderFunctions(); });
+      // Drain any pending hand-off from the programs page right
+      // away so users don't see a 200-400ms idle before the fn-form
+      // pops. The polling fallback in __triggerPendingRunFunction
+      // covers the inverse case (URL-only, scripts not yet loaded).
+      if (typeof window.__triggerPendingRunFunction === 'function') {
+        window.__triggerPendingRunFunction();
+      }
       break;
     case 'history_list':
       (msg.data || []).forEach(function(c) {
@@ -95,18 +102,54 @@ function handleMessage(msg) {
         window._pendingUserBubble.setAttribute('data-msg-id', msg.data.msg_id);
         window._pendingUserBubble = null;
       }
+      // chat.js created the assistant placeholder under a temporary
+      // "pending_<ts>" key (server msg_id wasn't known yet). Rekey
+      // it to the real msg_id now so stream_event / chat_response
+      // can look the bubble up exactly instead of guessing first.
+      if (msg.data.msg_id && typeof pendingResponses !== 'undefined') {
+        var _serverMsgId = msg.data.msg_id;
+        if (!pendingResponses[_serverMsgId]) {
+          var _tempKeys = Object.keys(pendingResponses).filter(function (k) {
+            return k.indexOf('pending_') === 0;
+          });
+          if (_tempKeys.length === 1) {
+            pendingResponses[_serverMsgId] = pendingResponses[_tempKeys[0]];
+            delete pendingResponses[_tempKeys[0]];
+          }
+        }
+      }
       // ContextGit: a fresh chat_ack means a run just started.
       // Flip the container flag so Edit/Retry grey out until the
       // run finishes (signalled by chat_response / error / result).
       setRunActive(true);
       break;
     case 'chat_response':
+      // Cancelled envelope without a msg_id is the force-stop signal
+      // from /api/stop. Clear every in-flight placeholder + the
+      // running_task ghost bubble in one shot, then fall through so
+      // handleChatResponse still gets to render the "stopped" notice
+      // (if any pending bubble matches a msg_id it carries).
+      if (msg.data && msg.data.type === 'cancelled') {
+        try {
+          var _rp = document.getElementById('runtime_pending');
+          if (_rp && _rp.parentNode) _rp.parentNode.removeChild(_rp);
+        } catch (e) {}
+        try {
+          Object.keys(pendingResponses || {}).forEach(function (k) {
+            var ph = pendingResponses[k];
+            if (ph && ph.parentNode) ph.parentNode.removeChild(ph);
+            delete pendingResponses[k];
+          });
+        } catch (e) {}
+        setRunActive(false);
+        if (typeof setRunning === 'function') setRunning(false);
+        break;
+      }
       handleChatResponse(msg.data);
       // Terminal response types signal the run is finished — lift
       // the Edit/Retry grey-out. 'streaming' / 'delta' types leave
       // the flag on because more is still coming.
-      if (msg.data && (msg.data.type === 'result' || msg.data.type === 'error' ||
-                       msg.data.type === 'cancelled')) {
+      if (msg.data && (msg.data.type === 'result' || msg.data.type === 'error')) {
         setRunActive(false);
       }
       break;
@@ -141,8 +184,8 @@ function handleMessage(msg) {
       break;
     case 'branch_renamed':
     case 'branch_name_deleted':
-      if (msg.data && msg.data.session_id && typeof window._onBranchesListMessage === 'function') {
-        // Force a refetch so the badge picks up the new label.
+    case 'branch_deleted':
+      if (msg.data && msg.data.session_id) {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ action: 'list_branches', session_id: msg.data.session_id }));
         }
@@ -548,19 +591,48 @@ if (!window.location.pathname.match(/^\/s\//)) {
   }
 })();
 
-// Check for ?run= parameter from programs page
-(function() {
-  var params = new URLSearchParams(window.location.search);
-  var runName = params.get('run');
-  var runCat = params.get('cat');
-  if (runName) {
+// Programs-page hand-off. Two entry points:
+//   * URL: /chat?run=name&cat=cat (hard refresh / direct link)
+//   * window.__pendingRunFunction: SPA-pushed in-process from
+//     /programs (router.push doesn't re-run this script's top level)
+// page-shell.tsx calls window.__triggerPendingRunFunction() on every
+// chat-route mount so the in-process path also fires reliably.
+window.__triggerPendingRunFunction = function () {
+  var pending = window.__pendingRunFunction;
+  var runName, runCat;
+  if (pending && pending.name) {
+    runName = pending.name;
+    runCat = pending.cat || '';
+    window.__pendingRunFunction = null;
+  } else {
+    var params = new URLSearchParams(window.location.search);
+    runName = params.get('run');
+    runCat = params.get('cat');
+    if (!runName) return;
     history.replaceState(null, '', '/chat');
-    var waitForFunctions = setInterval(function() {
-      if (availableFunctions.length > 0) {
-        clearInterval(waitForFunctions);
-        clickFunction(runName, runCat || 'user');
-      }
-    }, 200);
-    setTimeout(function() { clearInterval(waitForFunctions); }, 5000);
   }
-})();
+  // Try immediately; if the data isn't ready yet, fall back to a
+  // tight poll. The functions_list ws handler also re-fires the
+  // trigger as soon as data arrives, so the typical fast path ends
+  // up being event-driven (~10ms after envelope) rather than waiting
+  // for a polling tick.
+  function attempt() {
+    if (typeof availableFunctions === 'undefined' || availableFunctions.length === 0) return false;
+    if (typeof clickFunction !== 'function') return false;
+    clickFunction(runName, runCat || 'user');
+    return true;
+  }
+  if (attempt()) return;
+  var deadline = Date.now() + 30000;
+  var poll = setInterval(function () {
+    if (Date.now() > deadline) {
+      clearInterval(poll);
+      console.warn('[?run] timeout waiting for functions_list');
+      return;
+    }
+    if (attempt()) clearInterval(poll);
+  }, 50);
+};
+// Run once at script load — covers a hard refresh that lands on
+// /chat?run=...
+window.__triggerPendingRunFunction();

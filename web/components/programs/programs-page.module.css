@@ -33,10 +33,12 @@
   gap: 24px;
   padding: 16px 24px 32px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .content {
   min-width: 0;
+  overflow-y: auto;
 }
 
 /* Inline toolbar next to title */

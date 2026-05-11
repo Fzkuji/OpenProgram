@@ -120,6 +120,62 @@
 }
 .branch-badge .branch-icon svg { display: block; }
 
+/* Branch dropdown: suppress global ::after checkmark. */
+.branch-selector .model-dd-item.active::after { display: none; content: none; }
+
+/* Override .model-dropdown's min-width:300px / max-width:480px so the
+   dropdown sizes purely to the longest branch row's content. The
+   double-class boost is needed because 08-dropdown.css loads after
+   05-chat.css. */
+.model-dropdown.branch-selector { min-width: 0; max-width: none; }
+
+.branch-selector .model-dd-item {
+  position: relative;
+  padding-right: 0;
+  gap: 0;
+}
+/* Name shrinks to its content; the slot follows directly. Together
+   with the dropdown's content-fit width above, this gives every
+   row a chip flush-right against the dropdown's right edge with the
+   text ending right next to it (only an 8px breathing margin). */
+.branch-selector .model-dd-item .model-dd-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-right: 8px;
+}
+.branch-selector .branch-action-slot {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.branch-selector .branch-action-slot .branch-head {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.branch-selector .branch-action-slot .branch-del {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px; height: 22px;
+  display: none;
+  align-items: center; justify-content: center;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  cursor: pointer;
+}
+.branch-selector .model-dd-item:hover .branch-del { display: flex; }
+.branch-selector .model-dd-item:hover .branch-head { visibility: hidden; }
+.branch-selector .branch-del:hover {
+  background: var(--accent-red);
+  color: #fff;
+}
+
 .status-badge.disconnected {
   background: rgba(224, 108, 117, 0.12);
   color: var(--accent-red);

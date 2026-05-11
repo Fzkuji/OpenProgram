@@ -271,10 +271,143 @@ function _onBranchesListMessage(payload) {
     delete _branchesPending[payload.session_id];
     fn(rows);
   }
-  if (payload.session_id === currentSessionId && typeof window.refreshBranchBadge === 'function') {
-    window.refreshBranchBadge();
+  if (payload.session_id === currentSessionId) {
+    if (typeof window.refreshBranchBadge === 'function') window.refreshBranchBadge();
+    if (typeof window.repaintBranchTags === 'function') window.repaintBranchTags();
+    if (typeof window.renderBranchesPanel === 'function') window.renderBranchesPanel();
   }
 }
+
+// Right-sidebar Branches panel — third entry point for switching
+// branches (besides the topbar chip dropdown and clicking a node in
+// the history graph). Renders the same list with a collapsed/expanded
+// toggle: collapsed shows just the active branch as a chip; expanded
+// shows the whole list.
+window.renderBranchesPanel = function () {
+  var host = document.getElementById('branchesPanel');
+  if (!host) return;
+  if (!currentSessionId) { host.innerHTML = ''; return; }
+  var rows = _branchesByConv[currentSessionId] || [];
+  if (!rows.length) { host.innerHTML = ''; return; }
+
+  // Default to collapsed: only the active branch chip shows on
+  // session load. Users who click "Show" get '0' persisted in
+  // sessionStorage; everyone else (first visit, new session) sees
+  // the compact view.
+  var _bcRaw = sessionStorage.getItem('agentic_branches_collapsed');
+  var collapsed = _bcRaw === null ? true : _bcRaw === '1';
+  var active = rows.find(function (b) { return b.active; });
+
+  // Mirror left sidebar's `.sidebar-section-header` + conv-item
+  // styling so the right panel reads as part of the same family.
+  host.innerHTML =
+    '<div class="branches-panel-header">' +
+      '<span class="branches-panel-title">Branches</span>' +
+      '<span class="branches-panel-toggle">' +
+        (collapsed ? 'Show' : 'Hide') +
+      '</span>' +
+    '</div>' +
+    '<div id="_branchesList"></div>';
+
+  // 16px gap above the section header — matches the left sidebar's
+  // `.sidebar-favorites { padding: 16px 0 0; }` for visual parity.
+  host.style.padding = '16px 0 0';
+  host.style.flexShrink = '0';
+
+  var hdr = host.querySelector('.branches-panel-header');
+  hdr.style.display = 'flex';
+  hdr.style.alignItems = 'center';
+  hdr.style.padding = '4px 16px';
+  hdr.style.cursor = 'pointer';
+  hdr.style.userSelect = 'none';
+  var ttl = hdr.querySelector('.branches-panel-title');
+  ttl.style.fontSize = '12px';
+  ttl.style.fontWeight = '400';
+  ttl.style.color = 'var(--text-muted)';
+  var tog = hdr.querySelector('.branches-panel-toggle');
+  tog.style.marginLeft = 'auto';
+  tog.style.fontSize = '12px';
+  tog.style.color = 'var(--text-muted)';
+  tog.style.opacity = '0';
+  tog.style.transition = 'opacity 0.15s';
+  hdr.addEventListener('mouseenter', function () { tog.style.opacity = '0.75'; });
+  hdr.addEventListener('mouseleave', function () { tog.style.opacity = '0'; });
+  hdr.addEventListener('click', function () {
+    var _raw = sessionStorage.getItem('agentic_branches_collapsed');
+    var c = _raw === null ? true : _raw === '1';
+    sessionStorage.setItem('agentic_branches_collapsed', c ? '0' : '1');
+    window.renderBranchesPanel();
+  });
+
+  var list = host.querySelector('#_branchesList');
+  // Match left sidebar's `.sidebar-conv-list` — flex column with 1px
+  // gap so rows breathe but stay tight.
+  list.style.display = 'flex';
+  list.style.flexDirection = 'column';
+  list.style.gap = '1px';
+  list.style.padding = '0 8px';
+  var visibleRows = collapsed
+    ? (active ? [active] : rows.slice(0, 1))
+    : rows;
+  visibleRows.forEach(function (b) {
+    var item = document.createElement('div');
+    item.setAttribute('data-head', b.head_msg_id);
+    // conv-item-equivalent geometry (left sidebar's recents).
+    item.style.display = 'flex';
+    item.style.alignItems = 'center';
+    item.style.gap = '8px';
+    item.style.padding = '6px 8px';
+    item.style.height = '32px';
+    item.style.minHeight = '32px';
+    item.style.boxSizing = 'border-box';
+    item.style.borderRadius = '6px';
+    item.style.cursor = 'pointer';
+    item.style.fontSize = '14px';
+    item.style.lineHeight = '20px';
+    item.style.color = b.active ? 'var(--text-bright)' : 'var(--text-primary)';
+    item.style.background = b.active ? 'var(--bg-hover, rgba(255,255,255,0.06))' : 'transparent';
+    item.addEventListener('mouseenter', function () {
+      if (!b.active) item.style.background = 'var(--bg-hover, rgba(255,255,255,0.06))';
+    });
+    item.addEventListener('mouseleave', function () {
+      if (!b.active) item.style.background = 'transparent';
+    });
+    var label = document.createElement('span');
+    label.style.flex = '1 1 auto';
+    label.style.minWidth = '0';
+    label.style.overflow = 'hidden';
+    label.style.textOverflow = 'ellipsis';
+    label.style.whiteSpace = 'nowrap';
+    label.textContent = b.name;
+    item.appendChild(label);
+    if (b.active) {
+      var pill = document.createElement('span');
+      pill.textContent = 'HEAD';
+      pill.style.fontSize = '10px';
+      pill.style.padding = '0 6px';
+      pill.style.borderRadius = '3px';
+      pill.style.background = 'var(--bg-tertiary, rgba(255,255,255,0.08))';
+      pill.style.color = 'var(--text-muted)';
+      pill.style.flexShrink = '0';
+      item.appendChild(pill);
+    }
+    item.addEventListener('click', function () {
+      if (b.active) return;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          action: 'checkout_branch',
+          session_id: currentSessionId,
+          head_msg_id: b.head_msg_id,
+        }));
+        ws.send(JSON.stringify({
+          action: 'load_session',
+          session_id: currentSessionId,
+        }));
+      }
+    });
+    list.appendChild(item);
+  });
+};
 window._onBranchesListMessage = _onBranchesListMessage;
 
 function _onBranchCheckedOut(payload) {
@@ -294,15 +427,27 @@ window.refreshBranchBadge = function() {
   if (!badge) return;
   if (!currentSessionId) { badge.style.display = 'none'; return; }
   var list = _branchesByConv[currentSessionId] || [];
-  if (list.length <= 1) {
-    // Only one branch — hide the chip; nothing to switch.
+  // Show the chip even with a single branch — gives a stable place to
+  // see the current branch name and (eventually) rename / split it.
+  // Hidden only when the session has no branches at all (empty conv).
+  if (list.length === 0) {
     badge.style.display = 'none';
     return;
   }
   var active = list.find(function(b) { return b.active; });
   var label = active ? active.name : 'detached';
   var nameEl = badge.querySelector('.branch-name');
-  if (nameEl) nameEl.textContent = label + ' (' + list.length + ')';
+  if (nameEl) {
+    nameEl.textContent = label + ' (' + list.length + ')';
+    // Cap width + ellipsis so a long auto-name doesn't blow up topbar.
+    nameEl.style.display = 'inline-block';
+    nameEl.style.maxWidth = '180px';
+    nameEl.style.overflow = 'hidden';
+    nameEl.style.textOverflow = 'ellipsis';
+    nameEl.style.whiteSpace = 'nowrap';
+    nameEl.style.verticalAlign = 'bottom';
+  }
+  badge.title = label + ' (' + list.length + ' branches)';
   badge.style.display = '';
 };
 
@@ -332,14 +477,218 @@ function openBranchDropdown(evt) {
         html += '<div class="model-dd-item' + (b.active ? ' active' : '') + '"' +
                   ' data-head="' + escAttr(b.head_msg_id) + '">' +
                   '<span class="model-dd-name">' + escHtml(b.name) + '</span>' +
-                  (b.active ? '<span class="model-dd-caps"><span class="cap-badge ctx">HEAD</span></span>' : '') +
+                  '<span class="branch-rename" data-rename="' + escAttr(b.head_msg_id) + '"' +
+                    ' data-current="' + escAttr(b.is_named ? b.name : '') + '"' +
+                    ' title="Rename (empty = AI auto-name)">' +
+                    '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L5 13l-3 1 1-3 8.5-8.5z"/></svg>' +
+                  '</span>' +
+                  (b.active ? '<span class="cap-badge ctx branch-head">HEAD</span>' : '') +
+                  '<span class="branch-del" data-del="' + escAttr(b.head_msg_id) + '" title="Delete this branch">' +
+                    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>' +
+                  '</span>' +
                 '</div>';
       });
     }
     dd.innerHTML = html;
     document.body.appendChild(dd);
 
+    // Force layout via inline styles so the dropdown sizes purely to
+    // content + the chip/X share the same right-anchored slot. CSS
+    // specificity from the legacy .model-dropdown rules was making
+    // the spec-by-class approach unreliable; inline always wins.
+    dd.style.minWidth = '0';
+    dd.style.maxWidth = 'none';
+    dd.style.width = 'auto';
+    dd.style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.5)';
+    dd.querySelectorAll('.model-dd-item').forEach(function (row) {
+      row.style.gap = '0';
+      row.style.position = 'relative';
+      // Reserve right side for HEAD chip + X (right-anchored absolute).
+      row.style.paddingRight = '64px';
+
+      var nm = row.querySelector('.model-dd-name');
+      if (nm) {
+        nm.style.flex = '1 1 auto';
+        nm.style.minWidth = '0';
+        // Cap the name's render width so a long auto-name (last
+        // assistant reply) doesn't stretch the dropdown beyond the
+        // viewport — global ellipsis CSS truncates the rest.
+        nm.style.maxWidth = '320px';
+      }
+      // HEAD chip — anchored to row's right edge.
+      var head = row.querySelector('.branch-head');
+      if (head) {
+        head.style.position = 'absolute';
+        head.style.right = '8px';
+        head.style.top = '50%';
+        head.style.transform = 'translateY(-50%)';
+        head.style.pointerEvents = 'none';
+        head.style.padding = '0 8px';
+        head.style.height = '20px';
+        head.style.lineHeight = '20px';
+        head.style.display = 'inline-flex';
+        head.style.alignItems = 'center';
+      }
+      // Both buttons are 24×24 (matches sidebar's .conv-del visual
+      // weight better) and sit 8px apart so the icons feel like one
+      // tight group. Default: transparent. Mouse-on-element only:
+      // rename → subtle grey, X → red.
+      var BTN = 24;
+      var del = row.querySelector('.branch-del');
+      if (del) {
+        del.style.position = 'absolute';
+        del.style.right = '8px';
+        del.style.top = '50%';
+        del.style.transform = 'translateY(-50%)';
+        del.style.width = BTN + 'px';
+        del.style.height = BTN + 'px';
+        del.style.display = 'none';
+        del.style.alignItems = 'center';
+        del.style.justifyContent = 'center';
+        del.style.borderRadius = '4px';
+        del.style.color = 'var(--text-muted)';
+        del.style.background = 'transparent';
+        del.style.cursor = 'pointer';
+        del.addEventListener('mouseenter', function () {
+          del.style.background = 'var(--accent-red)';
+          del.style.color = '#fff';
+        });
+        del.addEventListener('mouseleave', function () {
+          del.style.background = 'transparent';
+          del.style.color = 'var(--text-muted)';
+        });
+      }
+      var rename = row.querySelector('.branch-rename');
+      if (rename) {
+        rename.style.position = 'absolute';
+        // X width 24 + X right offset 8 + 4px gap = 36px right offset.
+        rename.style.right = '36px';
+        rename.style.top = '50%';
+        rename.style.transform = 'translateY(-50%)';
+        rename.style.width = BTN + 'px';
+        rename.style.height = BTN + 'px';
+        rename.style.display = 'none';
+        rename.style.alignItems = 'center';
+        rename.style.justifyContent = 'center';
+        rename.style.borderRadius = '4px';
+        rename.style.color = 'var(--text-muted)';
+        rename.style.background = 'transparent';
+        rename.style.cursor = 'pointer';
+        rename.addEventListener('mouseenter', function () {
+          rename.style.background = 'rgba(255, 255, 255, 0.16)';
+          rename.style.color = 'var(--text-bright, #fff)';
+        });
+        rename.addEventListener('mouseleave', function () {
+          rename.style.background = 'transparent';
+          rename.style.color = 'var(--text-muted)';
+        });
+      }
+      row.addEventListener('mouseenter', function () {
+        if (head) head.style.visibility = 'hidden';
+        if (del) del.style.display = 'flex';
+        if (rename) rename.style.display = 'inline-flex';
+      });
+      row.addEventListener('mouseleave', function () {
+        if (head) head.style.visibility = 'visible';
+        if (del) del.style.display = 'none';
+        if (rename) rename.style.display = 'none';
+      });
+    });
+
     dd.addEventListener('click', function(e) {
+      // Rename pencil — replace the name span with an inline input.
+      // Enter submits, Esc cancels, blur submits. Empty submit triggers
+      // AI auto-name; non-empty calls rename_branch.
+      var ren = e.target.closest('[data-rename]');
+      if (ren) {
+        e.stopPropagation();
+        var rhead = ren.getAttribute('data-rename');
+        var current = ren.getAttribute('data-current') || '';
+        var rowEl = ren.closest('.model-dd-item');
+        if (!rowEl) return;
+        var nameEl = rowEl.querySelector('.model-dd-name');
+        if (!nameEl || nameEl.dataset.editing === '1') return;
+        nameEl.dataset.editing = '1';
+        var originalText = nameEl.textContent;
+        // Build the input matching the surrounding row's typography.
+        var inp = document.createElement('input');
+        inp.type = 'text';
+        inp.value = current;
+        inp.placeholder = 'name (empty = AI auto-name)';
+        inp.style.width = '100%';
+        inp.style.boxSizing = 'border-box';
+        inp.style.font = 'inherit';
+        inp.style.color = 'var(--text-bright)';
+        inp.style.background = 'var(--bg-input, rgba(255,255,255,0.06))';
+        inp.style.border = '1px solid var(--accent-blue, #6cb4ff)';
+        inp.style.borderRadius = '4px';
+        inp.style.padding = '2px 6px';
+        inp.style.outline = 'none';
+        nameEl.textContent = '';
+        nameEl.appendChild(inp);
+        setTimeout(function () { inp.focus(); inp.select(); }, 0);
+
+        var submitted = false;
+        function commit(value) {
+          if (submitted) return;
+          submitted = true;
+          var trimmed = (value || '').trim();
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            if (!trimmed) {
+              ws.send(JSON.stringify({
+                action: 'auto_name_branch',
+                session_id: currentSessionId,
+                head_msg_id: rhead,
+              }));
+            } else if (trimmed !== current) {
+              ws.send(JSON.stringify({
+                action: 'rename_branch',
+                session_id: currentSessionId,
+                head_msg_id: rhead,
+                name: trimmed,
+              }));
+            }
+          }
+          delete nameEl.dataset.editing;
+          // Restore the row's text — list_branches reply will overwrite.
+          nameEl.textContent = originalText;
+        }
+        function cancel() {
+          if (submitted) return;
+          submitted = true;
+          delete nameEl.dataset.editing;
+          nameEl.textContent = originalText;
+        }
+        inp.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') { ev.preventDefault(); commit(inp.value); }
+          else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+        });
+        inp.addEventListener('blur', function () { commit(inp.value); });
+        // Stop click bubbling — clicks inside the input shouldn't
+        // trigger checkout on the row.
+        inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
+        return;
+      }
+      // Delete X — handled separately so the row's checkout doesn't fire.
+      var del = e.target.closest('[data-del]');
+      if (del) {
+        e.stopPropagation();
+        var dhead = del.getAttribute('data-del');
+        if (!confirm('Delete this branch and its messages? This cannot be undone.')) return;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            action: 'delete_branch',
+            session_id: currentSessionId,
+            head_msg_id: dhead,
+          }));
+          ws.send(JSON.stringify({
+            action: 'load_session',
+            session_id: currentSessionId,
+          }));
+        }
+        _closeBranchDropdown();
+        return;
+      }
       var item = e.target.closest('[data-head]');
       if (!item) return;
       e.stopPropagation();
@@ -350,7 +699,6 @@ function openBranchDropdown(evt) {
           session_id: currentSessionId,
           head_msg_id: head,
         }));
-        // Reload conv to repaint with the new head's branch.
         ws.send(JSON.stringify({
           action: 'load_session',
           session_id: currentSessionId,
@@ -469,6 +817,11 @@ function newSession() {
   container.appendChild(welcome);
   setWelcomeVisible(true);
   renderSessions();
+  // Clear the right-sidebar Branches panel — without this the previous
+  // session's branch chip lingers on the welcome screen.
+  if (typeof window.renderBranchesPanel === 'function') {
+    try { window.renderBranchesPanel(); } catch (e) {}
+  }
   var ctxEl = document.getElementById('contextStats');
   if (ctxEl) ctxEl.textContent = '';
   _hasActiveSession = false;
@@ -481,6 +834,19 @@ function newSession() {
   loadProviders();
   loadModelPills();
   loadAgentSettings();
+  // Reset session-scoped chips that aren't covered by loadAgentSettings:
+  // status badge (was showing previous session's "WeChat (xxx) · ...")
+  // and branch chip (was showing previous session's branch list).
+  if (typeof window.refreshStatusSource === 'function') window.refreshStatusSource();
+  if (typeof window.refreshBranchBadge === 'function') {
+    // Wipe local cache for the branch chip so it doesn't flash the old
+    // session's branches before realising there's no current session.
+    if (typeof _branchesByConv !== 'undefined') {
+      // _branchesByConv is module-local in conversations.js — drop all keys.
+      Object.keys(_branchesByConv).forEach(function (k) { delete _branchesByConv[k]; });
+    }
+    window.refreshBranchBadge();
+  }
 }
 
 function loadSessionData(data) {
@@ -683,6 +1049,46 @@ function renderSessionMessages(conv) {
     );
   }
 
+  // Re-attach any in-flight assistant placeholders that this
+  // re-render detached. renderSessionMessages clears the chat
+  // container above; _renderChatStreamEvent still mutates the
+  // pendingResponses node (now detached) so tool_use / tool_result
+  // bubbles accumulate in memory but the user sees nothing until
+  // _handleChatResult re-attaches at the end. Re-attaching here means
+  // retry's tool calls render live, not all-at-once on completion.
+  // Re-attach in-flight placeholders that this re-render detached.
+  // Two guards prevent ghost bubbles on branch switches:
+  //   * skip when no run is active — a placeholder lingering past
+  //     run completion is by definition orphan, drop it
+  //   * skip when the placeholder's key isn't on the current branch
+  //     (e.g. a run on a sibling that the user just navigated away
+  //     from); the run still owns it but it shouldn't render here
+  try {
+    var _runActive = (typeof window.isRunning !== 'undefined' && window.isRunning)
+                  || (typeof isRunning !== 'undefined' && isRunning);
+    var idsOnBranch = {};
+    (conv.messages || []).forEach(function (m) {
+      if (m && m.id) idsOnBranch[m.id] = true;
+    });
+    Object.keys(pendingResponses || {}).forEach(function (k) {
+      var ph = pendingResponses[k];
+      if (!ph || document.body.contains(ph)) return;
+      // Key is on this branch (the user msg the assistant is replying
+      // to) → re-attach. Brand-new retry/edit puts its placeholder
+      // key as the just-forked user msg, which is the new HEAD and
+      // therefore on the branch we're about to render. So this also
+      // covers the live-streaming retry case.
+      if (_runActive && idsOnBranch[k]) {
+        container.appendChild(ph);
+      } else if (!_runActive) {
+        delete pendingResponses[k];
+      }
+      // else: run is active but key not on this branch — leave the
+      // node detached (still in pendingResponses for the owner branch
+      // to find on its next render).
+    });
+  } catch (e) {}
+
   if (!_skipScrollToBottom) scrollToBottom({ force: true });
   _skipScrollToBottom = false;
 }
@@ -794,9 +1200,26 @@ function _buildAssistantMessage(msg, mi) {
   var cHtml = '';
   // Plain chat with persisted thinking/tool blocks — rebuild the same
   // collapsible scaffold the live stream produced.
-  var hasBlocks = !msg.function && msg.blocks && msg.blocks.length;
+  // Backfill: messages stored before the dispatcher started writing
+  // `blocks` only carry `tool_calls` (slim {tool, result, is_error}).
+  // Synthesize a minimal blocks array from that so the user still
+  // sees a tool history after refresh instead of a wall of bare text.
+  var _blocks = msg.blocks;
+  if ((!_blocks || !_blocks.length) && !msg.function && msg.tool_calls && msg.tool_calls.length) {
+    _blocks = msg.tool_calls.map(function (tc) {
+      return {
+        type: 'tool',
+        tool: tc.tool,
+        tool_call_id: tc.id || tc.tool_call_id || null,
+        input: tc.input || '',
+        result: tc.result,
+        is_error: tc.is_error,
+      };
+    });
+  }
+  var hasBlocks = !msg.function && _blocks && _blocks.length;
   if (hasBlocks && typeof _renderAssistantBlocks === 'function') {
-    cHtml = _renderAssistantBlocks(msg.blocks, msg.content || '');
+    cHtml = _renderAssistantBlocks(_blocks, msg.content || '');
     div.innerHTML =
       '<div class="message-header">' +
         '<div class="message-avatar bot-avatar">A</div>' +

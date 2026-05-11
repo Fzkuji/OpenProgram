@@ -188,6 +188,7 @@ runtime = Runtime(call=my_llm_call, max_retries=3)
 - `max_retries=1` means try once, then fail immediately
 - `max_retries=2` means first call + one retry
 - `max_retries=3` means first call + up to two retries
+- `max_retries=0` is invalid and raises `ValueError` at `Runtime(...)` construction time
 
 The retry loop is designed for transient provider failures such as rate limits, flaky network requests, and temporary upstream errors. `TypeError` and `NotImplementedError` are treated as implementation errors and are raised immediately instead of being retried.
 
@@ -229,6 +230,7 @@ A few practical details matter:
 - if retries already happened, those recorded attempts become part of the repair context
 - if the verifier never accepts a rewrite within `max_rounds`, `fix()` returns a summary string instead of raising
 - if more information is needed and no `ask_user` handler is installed, it can return a follow-up payload like `{"type": "follow_up", "question": "..."}`
+- call sites should branch on the return type: `callable` means a repaired function, `dict` means follow-up is required, and `str` means repair exhausted its rounds and returned a failure summary
 
 Use `Runtime(max_retries=...)` for transient API problems, and `fix()` for structural problems in the generated function itself. They complement each other rather than overlapping.
 

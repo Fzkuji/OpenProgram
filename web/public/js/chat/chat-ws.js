@@ -179,16 +179,76 @@ function _handleStatusResponse(data) {
   scrollToBottom();
 }
 
+// Distill a tool's raw JSON args into a one-glance label.
+//   * file_path / path → trimmed to a path relative to $HOME or repo root
+//   * command          → just the command string
+//   * pattern / query  → the search string
+//   * fallback         → first 60 chars of raw JSON
+// Keeps the chat narrow: full args still available in the unfolded body.
+function _compactToolArgs(rawJson) {
+  if (!rawJson) return '';
+  var obj = null;
+  try { obj = JSON.parse(rawJson); } catch (e) { obj = null; }
+  if (!obj || typeof obj !== 'object') {
+    return rawJson.length > 60 ? rawJson.slice(0, 60) + '…' : rawJson;
+  }
+  function shortPath(p) {
+    if (typeof p !== 'string') return String(p);
+    // Strip $HOME prefix so we don't keep printing /Users/<user>/ on every row.
+    // No reliable way to know HOME in browser; approximate by stripping a
+    // leading segment that looks like a home dir.
+    var m = p.match(/^\/Users\/[^/]+\/(.*)$/);
+    if (m) p = '~/' + m[1];
+    // Then collapse the repo-root prefix if it's recognizable.
+    p = p.replace(/^~\/Documents\/LLM Agent Harness\/OpenProgram\//, '');
+    return p.length > 64 ? '…' + p.slice(-63) : p;
+  }
+  if (typeof obj.file_path === 'string') return shortPath(obj.file_path);
+  if (typeof obj.path === 'string')      return shortPath(obj.path);
+  if (typeof obj.command === 'string') {
+    var cmd = obj.command.replace(/^cd\s+"[^"]+"\s*&&\s*/, '');
+    return cmd.length > 64 ? cmd.slice(0, 63) + '…' : cmd;
+  }
+  if (typeof obj.pattern === 'string') return obj.pattern;
+  if (typeof obj.query === 'string')   return obj.query;
+  if (typeof obj.url === 'string')     return obj.url;
+  // Generic: pick first scalar value.
+  var keys = Object.keys(obj);
+  for (var i = 0; i < keys.length; i++) {
+    var v = obj[keys[i]];
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      var s = keys[i] + '=' + String(v);
+      return s.length > 60 ? s.slice(0, 60) + '…' : s;
+    }
+  }
+  return rawJson.length > 60 ? rawJson.slice(0, 60) + '…' : rawJson;
+}
+
 // Render a single stream event inside the current assistant bubble for a
 // plain chat (no runtime_pending block). Supports three event types:
 //   text      — streamed reply, rendered as markdown in .chat-text
 //   thinking  — reasoning tokens, folded into a collapsible .chat-thinking
 //   tool_use  — tool call, shown as a collapsible .chat-tool
 //   tool_result — result for a prior tool_use, filled into matching .chat-tool
-function _renderChatStreamEvent(evt) {
-  var pendingKeys = Object.keys(pendingResponses);
-  if (!pendingKeys.length) return;
-  var el = pendingResponses[pendingKeys[0]];
+function _renderChatStreamEvent(evt, msgId) {
+  // Prefer the exact msg_id key the broadcast carries so each turn's
+  // events anchor to their own bubble. Falling back to "first pending
+  // key" used to ship events to whatever placeholder happened to be
+  // first in iteration order, which silently merged turns and left
+  // orphans behind.
+  var el = null;
+  if (msgId && pendingResponses[msgId]) {
+    el = pendingResponses[msgId];
+  } else if (msgId && typeof addAssistantPlaceholder === 'function') {
+    // First event for a turn that hasn't been registered yet — create
+    // the placeholder lazily so retry / channel-driven runs don't lose
+    // their first tool_use / text delta.
+    addAssistantPlaceholder(msgId);
+    el = pendingResponses[msgId];
+  } else {
+    var pendingKeys = Object.keys(pendingResponses);
+    if (pendingKeys.length) el = pendingResponses[pendingKeys[0]];
+  }
   if (!el) return;
 
   var ti = el.querySelector('.typing-indicator');
@@ -240,7 +300,7 @@ function _renderChatStreamEvent(evt) {
       '<button type="button" class="chat-fold-btn" onclick="_toggleChatFold(this)" onmousedown="event.preventDefault()">' +
         '<span class="chat-fold-caret">&#9654;</span>' +
         '<span class="chat-fold-label"><span class="chat-tool-name">' + escHtml(evt.tool || '?') + '</span>' +
-          '<span class="chat-tool-args">(' + escHtml((evt.input || '').slice(0, 80)) + ')</span></span>' +
+          '<span class="chat-tool-args">(' + escHtml(_compactToolArgs(evt.input || '')) + ')</span></span>' +
         '<span class="chat-fold-elapsed chat-tool-status">running…</span>' +
       '</button>' +
       '<div class="chat-fold-content">' +
@@ -301,7 +361,7 @@ function _renderAssistantBlocks(blocks, finalText) {
     } else if (b.type === 'tool') {
       var errCls = b.is_error ? ' is-error' : '';
       var statusTxt = b.is_error ? 'error' : 'done';
-      var argsPreview = escHtml((b.input || '').slice(0, 80));
+      var argsPreview = escHtml(_compactToolArgs(b.input || ''));
       var hasResult = b.result !== undefined && b.result !== null && b.result !== '';
       toolsHtml +=
         '<div class="chat-tool' + errCls + '" data-collapsed="1" data-call-id="' + escAttr(b.tool_call_id || '') + '">' +
@@ -345,7 +405,7 @@ function _handleStreamEvent(data) {
   var pendingBlock = document.getElementById('runtime_pending');
   var isChatStream = data.function === '_chat';
   if (!pendingBlock || isChatStream) {
-    _renderChatStreamEvent(evt);
+    _renderChatStreamEvent(evt, data.msg_id);
     return;
   }
 
@@ -648,12 +708,21 @@ function _handleChatResult(data, type) {
     ghostChat.remove();
   }
 
-  var pendingKeys = Object.keys(pendingResponses);
   var targetEl = null;
-  if (pendingKeys.length > 0) {
-    var key = pendingKeys[0];
-    targetEl = pendingResponses[key];
-    delete pendingResponses[key];
+  if (data.msg_id && pendingResponses[data.msg_id]) {
+    targetEl = pendingResponses[data.msg_id];
+    delete pendingResponses[data.msg_id];
+  } else {
+    // Fallback: match by first pending key only when msg_id didn't
+    // resolve (e.g., legacy callers that don't stamp it). Still drop
+    // every other stale entry so we don't leave orphans for the next
+    // branch render to re-attach.
+    var pendingKeys = Object.keys(pendingResponses);
+    if (pendingKeys.length > 0) {
+      var key = pendingKeys[0];
+      targetEl = pendingResponses[key];
+      delete pendingResponses[key];
+    }
   }
 
   if (targetEl && !document.body.contains(targetEl)) {

@@ -185,8 +185,27 @@ export function PageShell({ page }: { page: Page }) {
   //     reply later overwrites with canonical state
   //   * new chat (/chat) — call newSession() which resets the
   //     chat area in place (welcome screen + cleared state)
+  // SPA hand-off from /programs: drain window.__pendingRunFunction
+  // (set by ProgramsPage before router.push("/chat")) so the chat
+  // page's fn-form opens automatically. Defer one tick so SHARED_JS
+  // has a chance to install the trigger on first mount.
   useEffect(() => {
     if (page !== "chat") return;
+    const t = setTimeout(() => {
+      const w = window as unknown as { __triggerPendingRunFunction?: () => void };
+      if (w.__triggerPendingRunFunction) w.__triggerPendingRunFunction();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [page, pathname]);
+
+  useEffect(() => {
+    if (page !== "chat") return;
+    // Only react when the URL is on a chat route. SPA-routing away
+    // (e.g. user clicks Programs from /s/<id>) leaves this PageShell
+    // mounted for one tick before the new route's PageShell takes
+    // over; without this guard, that tick would call newSession()
+    // and rewrite the URL back to /chat.
+    if (pathname !== "/chat" && !pathname.startsWith("/s/")) return;
     const w = window as unknown as {
       ws?: WebSocket;
       currentSessionId?: string | null;

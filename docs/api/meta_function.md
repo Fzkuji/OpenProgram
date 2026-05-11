@@ -83,6 +83,11 @@ def fix(
 - `str` — 自然语言总结（当所有 `max_rounds` 耗尽仍未通过 verify 时，返回失败原因的总结文本而非抛异常）。
 - `dict` — `{"type": "follow_up", "question": "..."}` 当 LLM 信息不足需要提问且无 `ask_user` handler 时。
 
+调用方通常这样分支处理：
+- `callable(result)` → 修复成功，拿到新的函数
+- `isinstance(result, dict)` → 需要继续补充信息
+- `isinstance(result, str)` → 修复轮次耗尽，拿到失败总结
+
 ### 内部循环
 
 `fix()` 运行一个 **clarify → generate → verify** 循环：

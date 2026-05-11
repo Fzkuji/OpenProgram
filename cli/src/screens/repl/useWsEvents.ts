@@ -20,6 +20,7 @@ import { handleChannelTurn } from './wsHandlers/handleChannelTurn.js';
 import type {
   Activity,
   AgentInfo,
+  BranchRow,
   ChannelAccountRow,
   ChannelActivity,
   PastConversation,
@@ -62,6 +63,7 @@ export interface WsEventsCtx {
   setPickerKind: React.Dispatch<React.SetStateAction<PickerKind>>;
   setChosenChannel: React.Dispatch<React.SetStateAction<string | undefined>>;
   setChosenAccount: React.Dispatch<React.SetStateAction<string | undefined>>;
+  setBranchesList: React.Dispatch<React.SetStateAction<BranchRow[]>>;
   setConversationTitle: React.Dispatch<React.SetStateAction<string | undefined>>;
   setConnState: React.Dispatch<React.SetStateAction<ConnectionState>>;
   setToolsOn: React.Dispatch<React.SetStateAction<boolean>>;
@@ -117,6 +119,15 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         c.pushSystem(`[browser ${data.verb}] ${data.result}`);
       } else if (ev.type === 'channel_accounts') {
         c.setChannelAccounts((ev.data ?? []) as ChannelAccountRow[]);
+      } else if (ev.type === 'branches_list') {
+        const data = (ev as { data: { branches?: BranchRow[]; active?: string } }).data;
+        c.setBranchesList(data?.branches ?? []);
+      } else if (ev.type === 'branch_renamed' || ev.type === 'branch_deleted'
+                 || ev.type === 'branch_checked_out' || ev.type === 'branch_name_deleted') {
+        // Any structural change re-fetches the list so the picker /
+        // any UI reading branchesList stays consistent.
+        const sid = (ev as { data?: { session_id?: string } }).data?.session_id;
+        if (sid) client.send({ action: 'list_branches', session_id: sid });
       } else if (ev.type === 'channel_account_added') {
         const data = (ev as { data: { ok?: boolean; channel?: string; account_id?: string; error?: string } }).data;
         if (data?.ok) {

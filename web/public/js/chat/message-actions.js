@@ -209,8 +209,16 @@
       body: JSON.stringify({ session_id: sessionId, msg_id: msgId }),
     })
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (e) { throw new Error(e.error || r.statusText); }); })
-      .then(function () {
+      .then(function (resp) {
         if (typeof window.setRunActive === 'function') window.setRunActive(true);
+        // Anchor for dispatcher's stream_event broadcasts (tool_use /
+        // tool_result / text). Key the placeholder by the new user
+        // msg_id the server just returned — every chat_response frame
+        // for this turn carries the same msg_id, so the renderer can
+        // match it exactly instead of guessing "first pending key".
+        if (resp && resp.msg_id && typeof window.addAssistantPlaceholder === 'function') {
+          window.addAssistantPlaceholder(resp.msg_id);
+        }
         if (window.ws && window.ws.readyState === WebSocket.OPEN) {
           window.ws.send(JSON.stringify({ action: 'load_session', session_id: sessionId }));
         }

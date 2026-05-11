@@ -27,19 +27,21 @@
   var PAD_X = 18;
   var PAD_Y = 16;
 
-  // Branch palette — distinct hues, first one is the HEAD branch's
-  // colour so the active line reads as the canonical blue.
+  // Branch palette — desaturated pastels so multiple branches on
+  // screen don't fight for attention. First slot is the HEAD branch
+  // (rendered slightly brighter via on-head edge opacity / node size
+  // difference, not by colour).
   var LANE_COLORS = [
-    '#3b82f6', // blue
-    '#22c55e', // green
-    '#f59e0b', // amber
-    '#a855f7', // purple
-    '#ef4444', // red
-    '#06b6d4', // cyan
-    '#ec4899', // pink
-    '#84cc16', // lime
-    '#14b8a6', // teal
-    '#f97316', // orange
+    '#7aa2f7', // soft blue   — HEAD lane
+    '#9ece6a', // sage green
+    '#e0af68', // warm sand
+    '#bb9af7', // muted lavender
+    '#f7768e', // dusty rose
+    '#7dcfff', // pale cyan
+    '#ff9e64', // warm peach
+    '#73daca', // mint
+    '#c0caf5', // ice
+    '#b4f9f8', // aqua
   ];
 
   var _currentHead = null;
@@ -421,16 +423,83 @@
       var node = tree.byId[id];
       var p = pos(node);
       var isHead = id === headId;
+      var onHead = !!headAncestors[id];
       var color = _laneColor(node._lane);
       var g = _svg('g', {
-        class: 'history-node' + (isHead ? ' is-head' : ''),
+        class: 'history-node' + (isHead ? ' is-head' : '') + (onHead ? '' : ' off-head'),
         transform: 'translate(' + p.x + ',' + p.y + ')',
         'data-msg-id': id,
       });
-      _appendShape(g, _shapeFor(node), color);
+      // Invisible hit-target: extends the click region way past the
+      // tiny visual node so a quick mouse aim still lands on the
+      // right node. NODE_R is 5px; HIT_R 14 gives roughly the row
+      // height of a comfortable click target without overlap.
+      var hit = _svg('circle', {
+        r: '14',
+        fill: 'transparent',
+        'pointer-events': 'all',
+      });
+      g.appendChild(hit);
+      g.style.cursor = 'pointer';
+      var r = onHead ? NODE_R : NODE_R * 0.7;
+      var el = _buildShapeEl(_shapeFor(node), color, r);
+      if (el) {
+        el.setAttribute('pointer-events', 'none');  // hit goes through to .history-node
+        g.appendChild(el);
+      }
       g._nodeData = node;
       nodeG.appendChild(g);
     });
+
+    // Branch-name tags — git-style labels floating above leaves that
+    // the user explicitly named. Source of truth is
+    // window._branchesByConv (populated by conversations.js after
+    // every list_branches reply); we read whatever's cached for the
+    // current session.
+    (function _drawBranchTags() {
+      var sid = window.currentSessionId;
+      var rows = (window._branchesByConv && window._branchesByConv[sid]) || [];
+      var named = rows.filter(function (r) { return r.is_named && r.name; });
+      if (!named.length) return;
+      var tagG = _svg('g', { class: 'history-branch-tags' });
+      named.forEach(function (b) {
+        var node = tree.byId[b.head_msg_id];
+        if (!node) return;
+        var p = pos(node);
+        var label = b.name;
+        // Approx text width: 7.2px per char at 11px font.
+        var textW = Math.ceil(label.length * 7.2);
+        var pad = 6;
+        var w = textW + pad * 2;
+        var h = 16;
+        var dy = -22;  // float above the node bubble
+        var tg = _svg('g', {
+          class: 'history-branch-tag',
+          transform: 'translate(' + p.x + ',' + p.y + ')',
+        });
+        var rect = _svg('rect', {
+          x: String(-w / 2),
+          y: String(dy - h / 2),
+          width: String(w),
+          height: String(h),
+          rx: '3',
+          fill: '#3aafa9',
+        });
+        var text = _svg('text', {
+          x: '0',
+          y: String(dy + 4),
+          'text-anchor': 'middle',
+          'font-size': '11',
+          'font-family': 'var(--font-sans, sans-serif)',
+          fill: '#fff',
+        });
+        text.textContent = label;
+        tg.appendChild(rect);
+        tg.appendChild(text);
+        tagG.appendChild(tg);
+      });
+      svg.appendChild(tagG);
+    })();
 
     body.replaceChildren(svg);
     _tooltip = null;
@@ -621,6 +690,19 @@
     }
   });
 
-  window.renderHistoryGraph = render;
+  // Cache the last input so external triggers (e.g. branch rename) can
+  // repaint without round-tripping through load_session.
+  var _lastGraph = null;
+  var _lastHeadId = null;
+  var _origRender = render;
+  function _renderAndCache(graph, headId) {
+    _lastGraph = graph;
+    _lastHeadId = headId;
+    return _origRender(graph, headId);
+  }
+  window.renderHistoryGraph = _renderAndCache;
+  window.repaintBranchTags = function () {
+    if (_lastGraph) _origRender(_lastGraph, _lastHeadId);
+  };
   window.recomputeHistoryVisibility = _recomputeVisibility;
 })();
