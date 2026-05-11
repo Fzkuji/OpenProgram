@@ -486,3 +486,23 @@ def test_runtime_retry_error_report_outside_function():
         runtime.exec(content=[{"type": "text", "text": "bare call"}])
 
     assert "Attempt 2: ConnectionError: offline" in str(exc_info.value)
+
+
+def test_runtime_no_retry_on_not_implemented_error():
+    """NotImplementedError is treated as a programming/configuration error."""
+    call_count = [0]
+
+    def not_implemented(content, model="test", response_format=None):
+        call_count[0] += 1
+        raise NotImplementedError("provider stub")
+
+    runtime = Runtime(call=not_implemented, max_retries=3)
+
+    @agentic_function
+    def func():
+        return runtime.exec(content=[{"type": "text", "text": "test"}])
+
+    with pytest.raises(NotImplementedError, match="provider stub"):
+        func()
+
+    assert call_count[0] == 1

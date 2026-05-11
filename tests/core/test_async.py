@@ -308,6 +308,27 @@ class TestAsyncExec:
         with pytest.raises(NotImplementedError):
             asyncio.run(func())
 
+    def test_async_exec_no_retry_on_not_implemented_error(self):
+        """NotImplementedError should bypass retry in async_exec too."""
+        call_count = [0]
+
+        async def not_implemented(content, model="test", response_format=None):
+            call_count[0] += 1
+            raise NotImplementedError("provider stub")
+
+        runtime = Runtime(call=not_implemented, max_retries=3)
+
+        @agentic_function
+        async def func():
+            return await runtime.async_exec(content=[
+                {"type": "text", "text": "test"},
+            ])
+
+        with pytest.raises(NotImplementedError, match="provider stub"):
+            asyncio.run(func())
+
+        assert call_count[0] == 1
+
     def test_async_exec_retry_error_report_outside_function(self):
         """Retry errors outside @agentic_function still include attempt history."""
         async def always_fail(content, model="test", response_format=None):
