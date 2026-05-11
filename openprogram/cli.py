@@ -603,35 +603,25 @@ def main():
             sys.exit(0)
         if verb == "show":
             from openprogram.memory import wiki as _w
-            from openprogram.memory.schema import render_wiki_page
-            path = args.path
-            page = None
-            if "/" in path:
-                kind, slug = path.split("/", 1)
-                page = _w.get(kind, slug)
-            if page is None:
-                page = _w.find(path)
-            if page is None:
-                print(f"No wiki page matches {path!r}.")
+            content = _w.read(args.path)
+            if content is None:
+                print(f"No wiki page matches {args.path!r}.")
                 sys.exit(1)
-            print(render_wiki_page(page))
+            print(content)
             sys.exit(0)
         if verb == "edit":
             import os, subprocess
             from openprogram.memory import wiki as _w
-            path = args.path
-            if "/" in path:
-                kind, slug = path.split("/", 1)
-                target = _mstore.wiki_page(kind, slug)
-            else:
-                page = _w.find(path)
-                if page is None:
-                    print(f"No wiki page matches {path!r}.")
+            target = _w.find(args.path)
+            if target is None:
+                literal = _w.root() / (args.path if args.path.endswith(".md") else args.path + ".md")
+                if not literal.exists():
+                    print(f"No wiki page matches {args.path!r}.")
                     sys.exit(1)
-                target = _mstore.wiki_page(page.type, page.id)
+                target = literal
             editor = os.environ.get("EDITOR", "vi")
             subprocess.call([editor, str(target)])
-            _midx.reindex_all()  # changes may have shifted text — refresh index
+            _midx.reindex_all()
             sys.exit(0)
         if verb == "sleep":
             from openprogram.memory.sleep import run_sweep, run_phase

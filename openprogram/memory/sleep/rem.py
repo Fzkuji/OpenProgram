@@ -1,42 +1,39 @@
-"""REM phase — reflect on themes, contradictions, stale claims.
+"""REM phase — reflect on themes across the wiki.
 
-Scans the wiki, optionally runs an LLM pass, and appends a dated entry
-to ``wiki/reflections.md``. Never writes durable claims.
+Walks every wiki page, optionally runs an LLM pass, and appends a
+dated entry to ``wiki/reflections.md``. Never edits topic pages
+themselves — that's ingest / survey / refactor.
 """
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Callable
 
 from .. import store, wiki
-from ..schema import now_iso
 
 logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """\
 You are the REM-sleep reflection layer for an AI agent's memory wiki.
-You receive the full wiki page set and produce a short reflection entry:
+You receive the full wiki page set and produce a short reflection:
 
   - Recurring themes across pages
-  - Open contradictions between disputed claims
-  - Stale claims that haven't been refreshed in a while
+  - Tensions / contradictions between pages
   - Missing cross-references between related pages
+  - Topics that have grown enough to deserve refactoring into subtopics
 
-Output 5–15 lines of markdown. No frontmatter, no headers.
-Each line is a single observation. Be concrete; cite slugs.
+Output 5-15 lines of markdown. No frontmatter, no headers.
+Each line is a single observation. Be concrete; cite [[wikilinks]].
 """
 
 
 def run(*, llm: Callable[[str, str], str] | None = None) -> dict[str, Any]:
-    pages = list(wiki.all_pages())
+    pages = list(wiki.iter_pages())
     if not pages:
         return {"phase": "rem", "skipped": "wiki empty"}
 
-    # Always emit a deterministic structural section first — works
-    # without an LLM and surfaces obvious issues like dangling pages.
     structural = _structural_observations(pages)
 
     body = ""
@@ -57,42 +54,24 @@ def run(*, llm: Callable[[str, str], str] | None = None) -> dict[str, Any]:
 
 
 def _structural_observations(pages: list) -> list[str]:
-    """Things we can spot without an LLM."""
-    obs: list[str] = []
-    disputed = []
-    superseded = []
-    low_conf = []
-    by_kind: dict[str, list] = {}
-    for p in pages:
-        by_kind.setdefault(p.type, []).append(p)
-        for c in p.claims:
-            if c.status == "disputed":
-                disputed.append(f"{p.type}/{p.id}: {c.text}")
-            elif c.status == "superseded":
-                superseded.append(f"{p.type}/{p.id}: {c.text}")
-            elif c.confidence < 0.4:
-                low_conf.append(f"{p.type}/{p.id} ({c.confidence}): {c.text}")
-    counts = ", ".join(f"{k}:{len(v)}" for k, v in by_kind.items())
-    obs.append(f"- Pages: {counts}, total {len(pages)}.")
-    if disputed:
-        obs.append(f"- {len(disputed)} disputed claim(s) need resolution:")
-        for d in disputed[:5]:
-            obs.append(f"  - {d}")
-    if superseded:
-        obs.append(f"- {len(superseded)} superseded claim(s) — consider archiving.")
-    if low_conf:
-        obs.append(f"- {len(low_conf)} low-confidence claim(s) (<0.4):")
-        for d in low_conf[:5]:
-            obs.append(f"  - {d}")
+    from ..wiki_ops import lint as wiki_lint
+    obs: list[str] = [f"- Pages: {len(pages)} total."]
+    report = wiki_lint().splitlines()
+    obs.extend(f"- {line.lstrip('- ')}" for line in report[2:10] if line.strip())
     return obs
 
 
 def _wiki_dump(pages: list) -> str:
-    lines = []
+    lines: list[str] = []
+    root = store.wiki_dir()
     for p in pages:
-        lines.append(f"## {p.type}/{p.id} — {p.title} (conf={p.confidence})")
-        for cl in p.claims:
-            lines.append(f"- ({cl.status}, {cl.confidence}) {cl.text}")
+        rel = p.relative_to(root)
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        lines.append(f"## {rel}")
+        lines.append(text)
         lines.append("")
     return "\n".join(lines)
 

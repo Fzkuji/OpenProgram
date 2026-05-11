@@ -3,31 +3,56 @@
 All paths route through the active state directory so ``--profile`` and
 ``OPENPROGRAM_STATE_DIR`` overrides flow through automatically.
 
-Layout::
+Wiki layout — Obsidian-style hierarchical vault (RAH pattern), with
+nashsu-style `type:` frontmatter for semantic role enrichment:
 
     <state>/memory/
         short-term/YYYY-MM-DD.md
-        wiki/
-            index.md
-            log.md
-            reflections.md
-            user/profile.md
-            entities/<id>.md
-            concepts/<id>.md
-            procedures/<id>.md
+        wiki/                          # Obsidian vault, git-tracked
+            AGENTS.md                  # ingest-agent entrypoint (read-only)
+            SCHEMA.md                  # protocol (read-only)
+            purpose.md                 # scope rules (read-only)
+            index.md                   # LLM-maintained catalog
+            log.md                     # append-only timeline
+            overview.md                # 2-4 paragraph TL;DR
+            reflections.md             # sleep-REM appends here
+            <Topic>/<Topic>.md         # folder form (has children)
+            <Leaf>.md                  # bare leaf
+            ...
         core.md
-        index.sqlite
+        index.sqlite                   # FTS over wiki + short-term
         .state/
             recall-counts.json
+            sleep-stage.json
             last-sleep.json
             sleep.lock
+            review-queue.json          # ingest-flagged human-review items
+            session-end.json           # processed-session bookkeeping
 """
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Iterable
 
-WIKI_KINDS = ("user", "entities", "concepts", "procedures")
+
+# Valid `type:` frontmatter values. Folder location is the primary
+# taxonomy; type is secondary role-hint metadata.
+WIKI_PAGE_TYPES = (
+    "entity",
+    "concept",
+    "procedure",
+    "user",
+    "source",
+    "query",
+    "synthesis",
+)
+
+# Page-level filenames that are governance / bookkeeping and must
+# never be treated as content pages.
+GOVERNANCE_PAGES = (
+    "AGENTS.md", "SCHEMA.md", "purpose.md",
+    "index.md", "log.md", "overview.md", "reflections.md",
+)
 
 
 def root() -> Path:
@@ -45,15 +70,12 @@ def short_term_dir() -> Path:
 
 
 def short_term_for(date_iso: str) -> Path:
-    """Path of the daily short-term file for an ISO date (``YYYY-MM-DD``)."""
     return short_term_dir() / f"{date_iso}.md"
 
 
 def wiki_dir() -> Path:
     p = root() / "wiki"
     p.mkdir(parents=True, exist_ok=True)
-    for kind in WIKI_KINDS:
-        (p / kind).mkdir(parents=True, exist_ok=True)
     return p
 
 
@@ -65,17 +87,12 @@ def wiki_log() -> Path:
     return wiki_dir() / "log.md"
 
 
+def wiki_overview() -> Path:
+    return wiki_dir() / "overview.md"
+
+
 def wiki_reflections() -> Path:
     return wiki_dir() / "reflections.md"
-
-
-def wiki_page(kind: str, slug: str) -> Path:
-    """Path of a wiki page. Creates the kind dir on demand."""
-    if kind not in WIKI_KINDS:
-        raise ValueError(f"unknown wiki kind {kind!r}, expected one of {WIKI_KINDS}")
-    d = wiki_dir() / kind
-    d.mkdir(parents=True, exist_ok=True)
-    return d / f"{slug}.md"
 
 
 def core() -> Path:
@@ -104,18 +121,18 @@ def sleep_lock_path() -> Path:
     return state_dir() / "sleep.lock"
 
 
-def iter_wiki_pages() -> Iterable[tuple[str, str, Path]]:
-    """Yield (kind, slug, path) for every existing wiki page."""
-    for kind in WIKI_KINDS:
-        d = wiki_dir() / kind
-        if not d.exists():
+def review_queue_path() -> Path:
+    return state_dir() / "review-queue.json"
+
+
+def iter_wiki_pages() -> Iterable[Path]:
+    """Yield every wiki content .md page (governance docs excluded)."""
+    for p in sorted(wiki_dir().rglob("*.md")):
+        if p.name in GOVERNANCE_PAGES:
             continue
-        for child in sorted(d.glob("*.md")):
-            yield kind, child.stem, child
+        yield p
 
 
 def iter_short_term() -> Iterable[Path]:
-    """Yield short-term files in ascending date order."""
-    d = short_term_dir()
-    for child in sorted(d.glob("*.md")):
+    for child in sorted(short_term_dir().glob("*.md")):
         yield child

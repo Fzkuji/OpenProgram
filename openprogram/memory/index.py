@@ -1,12 +1,15 @@
-"""SQLite FTS5 index over wiki + short-term.
+"""SQLite FTS5 index over wiki + short-term — BM25 fallback path.
 
-We rebuild the index incrementally on every write and on demand from
-the sleep process. Two virtual tables (``wiki_fts``, ``short_fts``)
-keep wiki pages and short-term entries indexed separately so callers
-can scope searches.
+Two virtual tables:
 
-Schema is intentionally minimal — BM25 ranking is good enough for the
-sizes we expect (a few thousand entries). No embeddings, no vectors.
+* ``wiki_fts(path, title, type, body)`` — one row per content .md
+  under the vault. ``path`` is relative to the vault root.
+* ``short_fts(date, ts, kind, tags, text, session)`` — one row per
+  short-term entry.
+
+Used by :func:`recall_for_prompt` as a keyword fallback when the
+LLM doesn't know which wiki page to read. The primary read path is
+folder-tree navigation; FTS is only invoked by ``memory_recall``.
 """
 from __future__ import annotations
 
@@ -14,25 +17,20 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Iterator
 
-from . import store, wiki, short_term
+from . import short_term, store, wiki
+from .wiki_helpers import parse_frontmatter
 
 _lock = threading.RLock()
 
 
-# ── Connection ────────────────────────────────────────────────────────────────
-
-
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
-    """Open a connection with row factory and FK on. Thread-safe via lock."""
     path = store.index_db()
     with _lock:
         c = sqlite3.connect(str(path))
         c.row_factory = sqlite3.Row
-        c.execute("PRAGMA foreign_keys = ON")
         try:
             yield c
             c.commit()
@@ -41,19 +39,16 @@ def _conn() -> Iterator[sqlite3.Connection]:
 
 
 def init() -> None:
-    """Create FTS5 tables if missing. Idempotent."""
     with _conn() as c:
         c.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS wiki_fts USING fts5("
-            "kind UNINDEXED, slug UNINDEXED, title, body, claims, aliases, "
-            "tokenize='porter unicode61'"
-            ")"
+            "path UNINDEXED, title, type UNINDEXED, body, "
+            "tokenize='porter unicode61')"
         )
         c.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS short_fts USING fts5("
-            "date UNINDEXED, ts UNINDEXED, kind UNINDEXED, tags, text, session UNINDEXED, "
-            "tokenize='porter unicode61'"
-            ")"
+            "date UNINDEXED, ts UNINDEXED, kind UNINDEXED, tags, text, "
+            "session UNINDEXED, tokenize='porter unicode61')"
         )
         c.execute(
             "CREATE TABLE IF NOT EXISTS index_meta ("
@@ -61,89 +56,66 @@ def init() -> None:
         )
 
 
-# ── Indexing ─────────────────────────────────────────────────────────────────
-
-
 def reindex_all() -> tuple[int, int]:
-    """Rebuild both tables from on-disk content. Returns (wiki_n, short_n)."""
     init()
+    root = store.wiki_dir()
     with _conn() as c:
         c.execute("DELETE FROM wiki_fts")
         c.execute("DELETE FROM short_fts")
         wn = 0
-        for page in wiki.all_pages():
+        for path in wiki.iter_pages():
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            fm, body = parse_frontmatter(text)
+            t = fm.get("type") or ""
             c.execute(
-                "INSERT INTO wiki_fts (kind, slug, title, body, claims, aliases) VALUES (?,?,?,?,?,?)",
-                (
-                    page.type, page.id, page.title, page.body,
-                    "\n".join(cl.text for cl in page.claims),
-                    " ".join(page.aliases),
-                ),
+                "INSERT INTO wiki_fts (path, title, type, body) VALUES (?,?,?,?)",
+                (str(path.relative_to(root)), path.stem, str(t), body),
             )
             wn += 1
         sn = 0
         for date_iso, entry in short_term.all_entries():
             c.execute(
-                "INSERT INTO short_fts (date, ts, kind, tags, text, session) VALUES (?,?,?,?,?,?)",
-                (
-                    date_iso, entry.timestamp, entry.type,
-                    " ".join(entry.tags), entry.text, entry.session_id,
-                ),
+                "INSERT INTO short_fts (date, ts, kind, tags, text, session) "
+                "VALUES (?,?,?,?,?,?)",
+                (date_iso, entry.timestamp, entry.type,
+                 " ".join(entry.tags), entry.text, entry.session_id),
             )
             sn += 1
         c.execute(
-            "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('last_reindex', datetime('now'))"
+            "INSERT OR REPLACE INTO index_meta (key, value) VALUES "
+            "('last_reindex', datetime('now'))"
         )
     return wn, sn
 
 
 def add_short_term(date_iso: str, entry) -> None:
-    """Index a freshly-appended short-term entry without a full rebuild."""
     init()
     with _conn() as c:
         c.execute(
-            "INSERT INTO short_fts (date, ts, kind, tags, text, session) VALUES (?,?,?,?,?,?)",
-            (
-                date_iso, entry.timestamp, entry.type,
-                " ".join(entry.tags), entry.text, entry.session_id,
-            ),
+            "INSERT INTO short_fts (date, ts, kind, tags, text, session) "
+            "VALUES (?,?,?,?,?,?)",
+            (date_iso, entry.timestamp, entry.type,
+             " ".join(entry.tags), entry.text, entry.session_id),
         )
-
-
-def add_wiki_page(page) -> None:
-    """Index (or re-index) a single wiki page."""
-    init()
-    with _conn() as c:
-        c.execute(
-            "DELETE FROM wiki_fts WHERE kind = ? AND slug = ?",
-            (page.type, page.id),
-        )
-        c.execute(
-            "INSERT INTO wiki_fts (kind, slug, title, body, claims, aliases) VALUES (?,?,?,?,?,?)",
-            (
-                page.type, page.id, page.title, page.body,
-                "\n".join(c.text for c in page.claims),
-                " ".join(page.aliases),
-            ),
-        )
-
-
-def remove_wiki_page(kind: str, slug: str) -> None:
-    init()
-    with _conn() as c:
-        c.execute("DELETE FROM wiki_fts WHERE kind = ? AND slug = ?", (kind, slug))
-
-
-# ── Search ───────────────────────────────────────────────────────────────────
 
 
 @dataclass
 class WikiHit:
-    kind: str
-    slug: str
+    path: str
     title: str
+    type: str
     snippet: str
     score: float
+
+    @property
+    def kind(self) -> str:
+        return self.type
+    @property
+    def slug(self) -> str:
+        return self.title
 
 
 @dataclass
@@ -157,11 +129,6 @@ class ShortHit:
 
 
 def _sanitize(query: str) -> str:
-    """Make user input safe for FTS5 MATCH.
-
-    FTS5 has its own query language; raw user input often blows it up
-    on punctuation. We strip non-word chars and OR the surviving terms.
-    """
     import re
     terms = [t for t in re.split(r"[^\w一-鿿]+", query) if t]
     if not terms:
@@ -176,12 +143,12 @@ def search_wiki(query: str, limit: int = 5) -> list[WikiHit]:
         return []
     with _conn() as c:
         rows = c.execute(
-            "SELECT kind, slug, title, snippet(wiki_fts, 3, '«', '»', '…', 16) AS snip, "
+            "SELECT path, title, type, snippet(wiki_fts, 3, '«', '»', '…', 16) AS snip, "
             "bm25(wiki_fts) AS score FROM wiki_fts WHERE wiki_fts MATCH ? "
             "ORDER BY score LIMIT ?",
             (q, limit),
         ).fetchall()
-    return [WikiHit(r["kind"], r["slug"], r["title"], r["snip"], -r["score"]) for r in rows]
+    return [WikiHit(r["path"], r["title"], r["type"] or "", r["snip"], -r["score"]) for r in rows]
 
 
 def search_short(query: str, limit: int = 10, days: int | None = 30) -> list[ShortHit]:
@@ -207,11 +174,7 @@ def search_short(query: str, limit: int = 10, days: int | None = 30) -> list[Sho
     ]
 
 
-# ── Status ───────────────────────────────────────────────────────────────────
-
-
 def stats() -> dict:
-    """One-line counts for ``memory status``."""
     init()
     with _conn() as c:
         wn = c.execute("SELECT COUNT(*) FROM wiki_fts").fetchone()[0]

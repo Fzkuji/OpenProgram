@@ -48,7 +48,8 @@ def _format(
     if wiki_list:
         parts.append("**Wiki**")
         for h in wiki_list:
-            parts.append(f"- *{h.title}* ({h.kind}/{h.slug}): {h.snippet}")
+            type_label = f" `type:{h.type}`" if getattr(h, "type", "") else ""
+            parts.append(f"- [[{h.title}]] (`{h.path}`{type_label}): {h.snippet}")
     if short_list:
         if parts:
             parts.append("")
