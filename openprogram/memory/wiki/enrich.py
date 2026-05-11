@@ -130,7 +130,7 @@ def enrich_page(
         return {"ok": False, "error": f"write: {e}"}
 
     try:
-        from . import index as _idx
+        from .. import index as _idx
         _idx.update_wiki_page(page_path)
     except Exception:
         pass
@@ -276,7 +276,7 @@ def enrich_inbound_for_new_page(
             linked += 1
 
     try:
-        from . import index as _idx
+        from .. import index as _idx
         for p in pages_changed:
             _idx.update_wiki_page(p)
     except Exception:

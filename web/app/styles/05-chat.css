@@ -1305,6 +1305,9 @@
   left: 0;
   right: 0;
   padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: 0 0 26px 26px;
+  z-index: 1;
 }
 
 .input-actions {

@@ -284,6 +284,178 @@ def memory_lint(**_: Any) -> str:
     return wiki_ops.lint()
 
 
+# ── memory_rename ────────────────────────────────────────────────────────────
+
+RENAME_NAME = "memory_rename"
+RENAME_DESC = (
+    "Rename a wiki page (filename stem). Moves the file/folder AND "
+    "rewrites every `[[old]]` → `[[new]]` across the vault. Updates "
+    "the link index. Use this — never `mv` directly."
+)
+
+RENAME_SPEC: dict[str, Any] = {
+    "name": RENAME_NAME, "description": RENAME_DESC,
+    "parameters": {
+        "type": "object",
+        "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
+        "required": ["old", "new"],
+    },
+}
+
+
+def memory_rename(old: str | None = None, new: str | None = None, **_: Any) -> str:
+    old = (old or "").strip()
+    new = (new or "").strip()
+    if not old or not new:
+        return "Error: memory_rename requires both `old` and `new`."
+    from openprogram.memory.wiki import ops as wiki_ops
+    r = wiki_ops.rename(old, new)
+    if not r.get("ok"):
+        return f"Rename failed: {r.get('error')}"
+    return f"Renamed [[{old}]] → [[{new}]]; {r.get('rewrites', 0)} pages updated."
+
+
+# ── memory_relink ────────────────────────────────────────────────────────────
+
+RELINK_NAME = "memory_relink"
+RELINK_DESC = (
+    "Cascade-rewrite `[[old]]` → `[[new]]` across the vault WITHOUT "
+    "moving any file. Use when a page was renamed externally and "
+    "wikilinks to it are broken."
+)
+
+RELINK_SPEC: dict[str, Any] = {
+    "name": RELINK_NAME, "description": RELINK_DESC,
+    "parameters": {
+        "type": "object",
+        "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
+        "required": ["old", "new"],
+    },
+}
+
+
+def memory_relink(old: str | None = None, new: str | None = None, **_: Any) -> str:
+    old = (old or "").strip()
+    new = (new or "").strip()
+    if not old or not new:
+        return "Error: memory_relink requires both `old` and `new`."
+    from openprogram.memory.wiki import ops as wiki_ops
+    r = wiki_ops.relink(old, new)
+    return f"Relinked [[{old}]] → [[{new}]] in {r.get('rewrites', 0)} pages."
+
+
+# ── memory_delete ────────────────────────────────────────────────────────────
+
+DELETE_NAME = "memory_delete"
+DELETE_DESC = (
+    "Delete a wiki page (leaf or empty topic folder). Strips every "
+    "`[[name]]` reference into plain text. Refuses to delete a topic "
+    "that still has subtopic children."
+)
+
+DELETE_SPEC: dict[str, Any] = {
+    "name": DELETE_NAME, "description": DELETE_DESC,
+    "parameters": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+    },
+}
+
+
+def memory_delete(name: str | None = None, **_: Any) -> str:
+    name = (name or "").strip()
+    if not name:
+        return "Error: memory_delete requires `name`."
+    from openprogram.memory.wiki import ops as wiki_ops
+    r = wiki_ops.delete_page(name)
+    if not r.get("ok"):
+        return f"Delete failed: {r.get('error')}"
+    return (
+        f"Deleted {r.get('deleted')}; stripped {r.get('refs_stripped', 0)} references."
+    )
+
+
+# ── memory_review ────────────────────────────────────────────────────────────
+
+REVIEW_NAME = "memory_review"
+REVIEW_DESC = (
+    "Manage the review queue. No args: list pending items "
+    "(contradictions / duplicates / missing pages / suggestions). "
+    "With `resolve_id` + `action`: mark an item resolved."
+)
+
+REVIEW_SPEC: dict[str, Any] = {
+    "name": REVIEW_NAME, "description": REVIEW_DESC,
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "resolve_id": {"type": "integer"},
+            "action": {"type": "string"},
+            "note": {"type": "string"},
+        },
+    },
+}
+
+
+def memory_review(
+    resolve_id: int | None = None,
+    action: str | None = None,
+    note: str | None = None,
+    **_: Any,
+) -> str:
+    from openprogram.memory.wiki import ops as wiki_ops
+    if resolve_id is not None:
+        r = wiki_ops.review_resolve(int(resolve_id), action=(action or "ack"), note=(note or ""))
+        return r.get("error") if not r.get("ok") else f"Marked #{resolve_id} resolved ({action or 'ack'})."
+    items = wiki_ops.review_list(only_pending=True)
+    if not items:
+        return "Review queue is empty."
+    lines = [f"# Review queue ({len(items)} pending)", ""]
+    for it in items[:30]:
+        lines.append(f"## #{it.get('id')} [{it.get('kind')}] {it.get('title','')}")
+        if it.get("detail"):
+            lines.append(it["detail"])
+        lines.append(f"_source: {it.get('source_slug','')} | created: {it.get('created_at','')}_")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+# ── memory_status ────────────────────────────────────────────────────────────
+
+STATUS_NAME = "memory_status"
+STATUS_DESC = (
+    "Snapshot of the memory vault — page count by type, FTS rows, "
+    "pending reviews, last reindex, vault root."
+)
+
+STATUS_SPEC: dict[str, Any] = {
+    "name": STATUS_NAME, "description": STATUS_DESC,
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
+def memory_status(**_: Any) -> str:
+    from openprogram.memory.wiki import ops as wiki_ops
+    s = wiki_ops.stats()
+    lines = [
+        "# Memory status", "",
+        f"Vault: `{s.get('vault_root')}`",
+        f"Total pages: **{s.get('pages_total', 0)}**",
+        f"FTS rows: wiki={s.get('fts_wiki_rows', 0)} short-term={s.get('fts_short_rows', 0)}",
+        f"Pending reviews: **{s.get('pending_reviews', 0)}**",
+        f"Last reindex: {s.get('last_reindex') or '(never)'}",
+        "", "## Pages by type",
+    ]
+    by_type = s.get("pages_by_type", {})
+    if by_type:
+        for t, n in sorted(by_type.items(), key=lambda kv: -kv[1]):
+            lines.append(f"- `{t}`: {n}")
+    else:
+        lines.append("- (none)")
+    return "\n".join(lines)
+
+
 # ── memory_backlinks ─────────────────────────────────────────────────────────
 
 BACKLINKS_NAME = "memory_backlinks"
@@ -336,4 +508,9 @@ __all__ = [
     "LINT_NAME", "LINT_SPEC", "memory_lint",
     "INGEST_NAME", "INGEST_SPEC", "memory_ingest",
     "BACKLINKS_NAME", "BACKLINKS_SPEC", "memory_backlinks",
+    "RENAME_NAME", "RENAME_SPEC", "memory_rename",
+    "RELINK_NAME", "RELINK_SPEC", "memory_relink",
+    "DELETE_NAME", "DELETE_SPEC", "memory_delete",
+    "REVIEW_NAME", "REVIEW_SPEC", "memory_review",
+    "STATUS_NAME", "STATUS_SPEC", "memory_status",
 ]

@@ -164,7 +164,7 @@ def rename(old: str, new: str) -> dict[str, Any]:
             changed_paths.append(p)
 
     try:
-        from . import index as _idx
+        from .. import index as _idx
         _idx.remove_wiki_page(old_path_for_index)
         _idx.update_wiki_page(new_path_for_index)
         for p in changed_paths:
@@ -177,6 +177,75 @@ def rename(old: str, new: str) -> dict[str, Any]:
 
 def tree(*, max_depth: int = 8) -> str:
     return h.folder_tree(store.wiki_dir(), max_depth=max_depth)
+
+
+# ---------------------------------------------------------------------------
+# Delete
+# ---------------------------------------------------------------------------
+
+
+def delete_page(name: str, *, prune_refs: bool = True) -> dict[str, Any]:
+    """Delete a page (leaf or folder form) and optionally strip
+    ``[[name]]`` references across the vault.
+
+    Refuses to delete a topic folder that still has subtopic children —
+    caller should delete the children first or run :func:`refactor`.
+
+    Returns ``{ok, deleted, refs_stripped, error}``.
+    """
+    root = store.wiki_dir()
+    target = h.find_node(root, name)
+    if target is None:
+        return {"ok": False, "error": f"no page named {name!r}"}
+
+    deleted: list[str] = []
+    if target.parent != root and target.parent.name == target.stem:
+        import shutil
+        children = [c for c in target.parent.iterdir() if c.is_dir()]
+        if children:
+            return {
+                "ok": False,
+                "error": f"topic {name!r} still has {len(children)} subtopic children",
+            }
+        shutil.rmtree(target.parent)
+        deleted.append(str(target.parent.relative_to(root)))
+    else:
+        target.unlink()
+        deleted.append(str(target.relative_to(root)))
+
+    try:
+        from .. import index as _idx
+        _idx.remove_wiki_page(target)
+    except Exception:
+        pass
+
+    refs_stripped = 0
+    if prune_refs:
+        import re
+        name_l = name.lower().removesuffix(".md")
+        link_re = re.compile(r"\[\[([^\]|#]+?)(\|[^\]]+?)?(#[^\]]+?)?\]\]")
+        for p in h.iter_md_files(root):
+            before = p.read_text(encoding="utf-8")
+            masked, repls = h.mask_code(before)
+
+            def _sub(m: "re.Match[str]") -> str:
+                if m.group(1).strip().lower() != name_l:
+                    return m.group(0)
+                alias = (m.group(2) or "")[1:] if m.group(2) else ""
+                anchor = m.group(3) or ""
+                return (alias or m.group(1).strip()) + anchor
+
+            after = h.unmask_code(link_re.sub(_sub, masked), repls)
+            if after != before:
+                p.write_text(after, encoding="utf-8")
+                refs_stripped += 1
+                try:
+                    from .. import index as _idx
+                    _idx.update_wiki_page(p)
+                except Exception:
+                    pass
+
+    return {"ok": True, "deleted": deleted, "refs_stripped": refs_stripped}
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +266,7 @@ def backlinks(name: str) -> list[dict[str, str]]:
     link_re = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+?)?(?:#[^\]]+?)?\]\]")
     out: list[dict[str, str]] = []
     try:
-        from . import index as _idx
+        from .. import index as _idx
         rel_paths = _idx.inbound(name)
     except Exception:
         rel_paths = []
@@ -323,7 +392,7 @@ def relink(old: str, new: str) -> dict[str, Any]:
             changed.append(str(p.relative_to(root)))
             changed_paths.append(p)
     try:
-        from . import index as _idx
+        from .. import index as _idx
         for p in changed_paths:
             _idx.update_wiki_page(p)
     except Exception:
@@ -373,7 +442,7 @@ def prune_broken_links(*, dry_run: bool = True) -> dict[str, Any]:
             p.write_text(after, encoding="utf-8")
             applied += 1
             try:
-                from . import index as _idx
+                from .. import index as _idx
                 _idx.update_wiki_page(p)
             except Exception:
                 pass
@@ -579,3 +648,98 @@ def git_commit(message: str) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e)}
     return {"ok": True, "committed": True, "hash": h}
+
+
+# ---------------------------------------------------------------------------
+# Review queue — list / resolve items flagged by ingest
+# ---------------------------------------------------------------------------
+
+
+def review_list(*, only_pending: bool = True) -> list[dict[str, Any]]:
+    """Return items in the review queue. Items are flagged by ingest
+    when it spots contradictions, duplicates, missing pages, or
+    suggestions worth human judgement.
+    """
+    import json
+    qpath = store.review_queue_path()
+    if not qpath.exists():
+        return []
+    try:
+        items = json.loads(qpath.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if only_pending:
+        items = [it for it in items if not it.get("resolved")]
+    return items
+
+
+def review_resolve(item_id: int, *, action: str = "ack", note: str = "") -> dict[str, Any]:
+    """Mark a review item as resolved.
+
+    Args:
+        item_id: the integer id returned by ``review_list``.
+        action: free-form label ("ack" / "skip" / "applied" / ...).
+        note: optional human note.
+
+    Returns ``{ok, item, error}``. Does NOT delete — the resolved
+    item stays in the file with ``resolved=True`` for audit.
+    """
+    import json
+    from datetime import datetime
+    qpath = store.review_queue_path()
+    if not qpath.exists():
+        return {"ok": False, "error": "review queue is empty"}
+    try:
+        items = json.loads(qpath.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"parse: {e}"}
+    for it in items:
+        if it.get("id") == item_id:
+            it["resolved"] = True
+            it["resolved_at"] = datetime.now().isoformat(timespec="seconds")
+            it["resolution"] = {"action": action, "note": note}
+            qpath.write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
+            return {"ok": True, "item": it}
+    return {"ok": False, "error": f"no item with id={item_id}"}
+
+
+# ---------------------------------------------------------------------------
+# Stats — counts useful for `memory_status` tool
+# ---------------------------------------------------------------------------
+
+
+def stats() -> dict[str, Any]:
+    """Return a snapshot of the vault state.
+
+    Counts are cheap (file listing + index queries), so this is safe
+    to call from a tool / lint pass / web UI.
+    """
+    root = store.wiki_dir()
+    pages = list(h.iter_md_files(root))
+    by_type: dict[str, int] = {}
+    for p in pages:
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fm, _ = h.parse_frontmatter(text)
+        t = fm.get("type") or "?"
+        by_type[t] = by_type.get(t, 0) + 1
+
+    try:
+        from .. import index as _idx
+        idx_stats = _idx.stats()
+    except Exception:
+        idx_stats = {}
+
+    pending_reviews = len(review_list(only_pending=True))
+
+    return {
+        "pages_total": len(pages),
+        "pages_by_type": by_type,
+        "pending_reviews": pending_reviews,
+        "fts_wiki_rows": idx_stats.get("wiki_pages", 0),
+        "fts_short_rows": idx_stats.get("short_entries", 0),
+        "last_reindex": idx_stats.get("last_reindex"),
+        "vault_root": str(root),
+    }

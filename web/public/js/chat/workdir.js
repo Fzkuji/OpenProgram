@@ -11,7 +11,10 @@
  * chooser (AppleScript). The user can also type/paste a path directly.
  */
 
-function buildWorkdirField() {
+function buildWorkdirField(fn) {
+  var mode = (fn && fn.workdir_mode) ? fn.workdir_mode : 'optional';
+  if (mode === 'hidden') return '';
+  var requiredAttr = mode === 'required' ? ' data-workdir-required="1"' : '';
   return (
     '<div class="workdir-row">' +
       '<button type="button" class="workdir-btn" onclick="pickWorkdir()" title="Open folder chooser">' +
@@ -21,7 +24,8 @@ function buildWorkdirField() {
         '<span>Working in a folder</span>' +
       '</button>' +
       '<input type="text" class="workdir-input" id="fnField_work_dir" ' +
-             'placeholder="/path/to/your/project" spellcheck="false" autocomplete="off" ' +
+             'placeholder="/path/to/your/project" spellcheck="false" autocomplete="off"' +
+             requiredAttr + ' ' +
              'oninput="_workdirOnInput(event)">' +
     '</div>'
   );

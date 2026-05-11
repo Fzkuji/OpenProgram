@@ -5,7 +5,8 @@
     "gui_agent",
     "research_agent",
     "test_resume",
-    "edit"
+    "edit",
+    "wiki_agent"
   ],
   "folders": {
     "123": []

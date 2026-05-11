@@ -141,6 +141,11 @@ _LEGACY_TOOL_META: dict[str, dict[str, Any]] = {
     "memory_lint":        {"toolsets": ["core"]},
     "memory_ingest":      {"toolsets": ["core"]},
     "memory_backlinks":   {"toolsets": ["core"]},
+    "memory_rename":      {"toolsets": ["core"]},
+    "memory_relink":      {"toolsets": ["core"]},
+    "memory_delete":      {"toolsets": ["core"]},
+    "memory_review":      {"toolsets": ["core"]},
+    "memory_status":      {"toolsets": ["core"]},
     "clarify":            {"toolsets": ["core"]},
     "execute_code":       {"toolsets": ["core"], "unsafe_in": ["wechat", "telegram"]},
     "mixture_of_agents":  {"toolsets": ["research"]},
@@ -222,7 +227,9 @@ TOOLSETS: dict[str, dict[str, list[str]] | list[str]] = {
         # exact name list shifts.
         "tools":    ["memory_note", "memory_recall", "memory_reflect",
                      "memory_get", "memory_browse", "memory_lint",
-                     "memory_ingest", "memory_backlinks"],
+                     "memory_ingest", "memory_backlinks",
+                     "memory_rename", "memory_relink", "memory_delete",
+                     "memory_review", "memory_status"],
         "includes": ["default"],
     },
     "safe": {

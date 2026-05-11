@@ -32,16 +32,16 @@
   // (rendered slightly brighter via on-head edge opacity / node size
   // difference, not by colour).
   var LANE_COLORS = [
-    '#7aa2f7', // soft blue   — HEAD lane
-    '#9ece6a', // sage green
-    '#e0af68', // warm sand
-    '#bb9af7', // muted lavender
-    '#f7768e', // dusty rose
-    '#7dcfff', // pale cyan
-    '#ff9e64', // warm peach
-    '#73daca', // mint
-    '#c0caf5', // ice
-    '#b4f9f8', // aqua
+    '#4f8ef7', // vivid blue     — HEAD lane
+    '#5aad4e', // strong green
+    '#d4843a', // warm orange
+    '#9d6fe0', // medium violet
+    '#e0445a', // vivid rose
+    '#2db3d5', // strong cyan
+    '#d96d2d', // burnt orange
+    '#35b89a', // teal
+    '#6b8dd6', // steel blue
+    '#2ec4b6', // deep aqua
   ];
 
   var _currentHead = null;

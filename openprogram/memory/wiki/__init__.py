@@ -34,6 +34,16 @@ Example::
 """
 from __future__ import annotations
 
+# ---------------------------------------------------------------------------
+# Backend selection: prefer wiki_agent_harness if installed, fall back to
+# the local implementation bundled in this subpackage.
+# ---------------------------------------------------------------------------
+try:
+    import wiki_agent_harness as _wah  # noqa: F401
+    _BACKEND = "wiki_agent_harness"
+except ImportError:
+    _BACKEND = "local"
+
 from pathlib import Path
 from typing import Any, Callable
 
@@ -57,8 +67,23 @@ from .enrich import (  # noqa: F401
 )
 
 
+def _resolve_root(root: str | Path | None) -> Path:
+    """Return the vault root Path, falling back to openprogram store."""
+    if root is not None:
+        p = Path(root).expanduser().resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    from .. import store
+    return store.wiki_dir()
+
+
 class Wiki:
     """Bound view of a single vault. The portable entry point.
+
+    When ``wiki_agent_harness`` is installed the implementation is
+    delegated to :class:`wiki_agent_harness.Wiki` (rooted at the
+    openprogram vault directory).  Otherwise the local implementation
+    is used.
 
     Args:
         root: Vault root directory. If omitted, uses
@@ -74,6 +99,21 @@ class Wiki:
     that pin them to ``self.root``.
     """
 
+    def __new__(
+        cls,
+        root: str | Path | None = None,
+        *,
+        runtime: Any | None = None,
+        llm: Callable[[str, str], str] | None = None,
+    ):
+        if _BACKEND == "wiki_agent_harness" and cls is Wiki:
+            # Delegate to wiki_agent_harness.Wiki, pinned to the openprogram
+            # vault root so all path resolution stays consistent.
+            from wiki_agent_harness import Wiki as _WAHWiki
+            vault_root = _resolve_root(root)
+            return _WAHWiki(root=vault_root, runtime=runtime, llm=llm)
+        return super().__new__(cls)
+
     def __init__(
         self,
         root: str | Path | None = None,
@@ -81,12 +121,9 @@ class Wiki:
         runtime: Any | None = None,
         llm: Callable[[str, str], str] | None = None,
     ) -> None:
-        if root is None:
-            from .. import store
-            self.root: Path = store.wiki_dir()
-        else:
-            self.root = Path(root).expanduser().resolve()
-            self.root.mkdir(parents=True, exist_ok=True)
+        # __init__ is skipped when __new__ returns a wiki_agent_harness.Wiki
+        # instance (different type), so this branch only runs for local backend.
+        self.root: Path = _resolve_root(root)
         self._runtime = runtime
         self._llm = llm
 

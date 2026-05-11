@@ -125,7 +125,7 @@ def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
     the ingest fails we fall through to it.
     """
     try:
-        from .ingest import ingest_session
+        from .wiki.ingest import ingest_session
         from .llm_bridge import build_default_llm
     except Exception:
         return False

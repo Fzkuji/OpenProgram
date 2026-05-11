@@ -31,9 +31,8 @@ function renderFunctions() {
 
   section.classList.remove('empty');
   var catIcons = { app: '\u{1F4E6}', meta: '\u{1F6E0}', builtin: '\u2699', generated: '\u2699', user: '\u270E' };
-  var maxShow = 4;
   var html = '';
-  for (var i = 0; i < Math.min(favFns.length, maxShow); i++) {
+  for (var i = 0; i < favFns.length; i++) {
     var f = favFns[i];
     var cat = f.category || 'user';
     var icon = catIcons[cat] || '\u270E';
@@ -81,7 +80,16 @@ async function fixFunction(name) {
 
 function clickFunction(name, category) {
   var fn = availableFunctions.find(function(f) { return f.name === name; });
-  if (fn) showFnForm(fn);
+  if (!fn) return;
+  // If not on the chat page, navigate there then open the form.
+  // Note: #chatInput is removed from DOM when a form is open, so use .input-wrapper
+  // as the presence indicator — it always exists on the chat page.
+  if (!document.querySelector('.input-wrapper')) {
+    window.__pendingRunFunction = { name: name, cat: category || '' };
+    if (window.__navigate) window.__navigate('/chat');
+    return;
+  }
+  showFnForm(fn);
 }
 
 function clickFnExample(fnName) {

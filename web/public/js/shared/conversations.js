@@ -286,128 +286,52 @@ function _onBranchesListMessage(payload) {
 window.renderBranchesPanel = function () {
   var host = document.getElementById('branchesPanel');
   if (!host) return;
-  if (!currentSessionId) { host.innerHTML = ''; return; }
+  if (!currentSessionId) { host.innerHTML = ''; host.className = ''; return; }
   var rows = _branchesByConv[currentSessionId] || [];
-  if (!rows.length) { host.innerHTML = ''; return; }
+  if (!rows.length) { host.innerHTML = ''; host.className = ''; return; }
 
-  // Default to collapsed: only the active branch chip shows on
-  // session load. Users who click "Show" get '0' persisted in
-  // sessionStorage; everyone else (first visit, new session) sees
-  // the compact view.
   var _bcRaw = sessionStorage.getItem('agentic_branches_collapsed');
   var collapsed = _bcRaw === null ? true : _bcRaw === '1';
-  var active = rows.find(function (b) { return b.active; });
 
-  // Mirror left sidebar's `.sidebar-section-header` + conv-item
-  // styling so the right panel reads as part of the same family.
+  // Active branch always at top.
+  rows = rows.slice().sort(function(a, b) { return (b.active ? 1 : 0) - (a.active ? 1 : 0); });
+
+  host.className = 'branches-section' + (collapsed ? ' is-collapsed' : '');
   host.innerHTML =
-    '<div class="branches-panel-header">' +
-      '<span class="branches-panel-title">Branches</span>' +
-      '<span class="branches-panel-toggle">' +
-        (collapsed ? 'Show' : 'Hide') +
-      '</span>' +
+    '<div class="sidebar-section-header">' +
+      '<span class="sidebar-section-title">Branches</span>' +
+      '<span class="sidebar-section-hint">' + (collapsed ? 'Show' : 'Hide') + '</span>' +
     '</div>' +
-    '<div id="_branchesList"></div>';
+    '<div class="branches-list"></div>';
 
-  // 16px gap above the section header — matches the left sidebar's
-  // `.sidebar-favorites { padding: 16px 0 0; }` for visual parity.
-  host.style.padding = '16px 0 0';
-  host.style.flexShrink = '0';
-
-  var hdr = host.querySelector('.branches-panel-header');
-  hdr.style.display = 'flex';
-  hdr.style.alignItems = 'center';
-  hdr.style.padding = '4px 16px';
-  hdr.style.cursor = 'pointer';
-  hdr.style.userSelect = 'none';
-  var ttl = hdr.querySelector('.branches-panel-title');
-  ttl.style.fontSize = '12px';
-  ttl.style.fontWeight = '400';
-  ttl.style.color = 'var(--text-muted)';
-  var tog = hdr.querySelector('.branches-panel-toggle');
-  tog.style.marginLeft = 'auto';
-  tog.style.fontSize = '12px';
-  tog.style.color = 'var(--text-muted)';
-  // When collapsed: always show the "Show" hint so users know
-  // the panel has content folded. When expanded ("Hide"): hover-only,
-  // matches the left-sidebar Recents / Favorites behaviour.
-  tog.style.opacity = collapsed ? '0.75' : '0';
-  tog.style.transition = 'opacity 0.15s';
-  hdr.addEventListener('mouseenter', function () { tog.style.opacity = '0.75'; });
-  hdr.addEventListener('mouseleave', function () {
-    tog.style.opacity = collapsed ? '0.75' : '0';
-  });
-  hdr.addEventListener('click', function () {
+  host.querySelector('.sidebar-section-header').addEventListener('click', function () {
     var _raw = sessionStorage.getItem('agentic_branches_collapsed');
     var c = _raw === null ? true : _raw === '1';
     sessionStorage.setItem('agentic_branches_collapsed', c ? '0' : '1');
     window.renderBranchesPanel();
   });
 
-  var list = host.querySelector('#_branchesList');
-  // Match left sidebar's `.sidebar-conv-list` — flex column with 1px
-  // gap so rows breathe but stay tight.
-  list.style.display = 'flex';
-  list.style.flexDirection = 'column';
-  list.style.gap = '1px';
-  list.style.padding = '0 8px';
-  var visibleRows = collapsed
-    ? (active ? [active] : rows.slice(0, 1))
-    : rows;
-  visibleRows.forEach(function (b) {
+  var list = host.querySelector('.branches-list');
+  if (collapsed) list.style.display = 'none';
+
+  var _branchLaneColors = [
+    '#4f8ef7','#5aad4e','#d4843a','#9d6fe0','#e0445a',
+    '#2db3d5','#d96d2d','#35b89a','#6b8dd6','#2ec4b6'
+  ];
+  rows.forEach(function (b, idx) {
+    var laneColor = _branchLaneColors[idx % _branchLaneColors.length];
     var item = document.createElement('div');
+    item.className = 'branch-item' + (b.active ? ' active' : '');
     item.setAttribute('data-head', b.head_msg_id);
-    // conv-item-equivalent geometry (left sidebar's recents).
-    item.style.display = 'flex';
-    item.style.alignItems = 'center';
-    item.style.gap = '8px';
-    item.style.padding = '6px 8px';
-    item.style.height = '32px';
-    item.style.minHeight = '32px';
-    item.style.boxSizing = 'border-box';
-    item.style.borderRadius = '6px';
-    item.style.cursor = 'pointer';
-    item.style.fontSize = '14px';
-    item.style.lineHeight = '20px';
-    item.style.color = b.active ? 'var(--text-bright)' : 'var(--text-primary)';
-    item.style.background = b.active ? 'var(--bg-hover, rgba(255,255,255,0.06))' : 'transparent';
-    item.addEventListener('mouseenter', function () {
-      if (!b.active) item.style.background = 'var(--bg-hover, rgba(255,255,255,0.06))';
-    });
-    item.addEventListener('mouseleave', function () {
-      if (!b.active) item.style.background = 'transparent';
-    });
-    var label = document.createElement('span');
-    label.style.flex = '1 1 auto';
-    label.style.minWidth = '0';
-    label.style.overflow = 'hidden';
-    label.style.textOverflow = 'ellipsis';
-    label.style.whiteSpace = 'nowrap';
-    label.textContent = b.name;
-    item.appendChild(label);
-    if (b.active) {
-      var pill = document.createElement('span');
-      pill.textContent = 'HEAD';
-      pill.style.fontSize = '10px';
-      pill.style.padding = '0 6px';
-      pill.style.borderRadius = '3px';
-      pill.style.background = 'var(--bg-tertiary, rgba(255,255,255,0.08))';
-      pill.style.color = 'var(--text-muted)';
-      pill.style.flexShrink = '0';
-      item.appendChild(pill);
-    }
+    item.innerHTML =
+      '<span class="branch-item-dot" style="background:' + laneColor + '"></span>' +
+      '<span class="branch-item-name">' + escHtml(b.name) + '</span>' +
+      (b.active ? '<span class="branch-item-badge">HEAD</span>' : '');
     item.addEventListener('click', function () {
       if (b.active) return;
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          action: 'checkout_branch',
-          session_id: currentSessionId,
-          head_msg_id: b.head_msg_id,
-        }));
-        ws.send(JSON.stringify({
-          action: 'load_session',
-          session_id: currentSessionId,
-        }));
+        ws.send(JSON.stringify({ action: 'checkout_branch', session_id: currentSessionId, head_msg_id: b.head_msg_id }));
+        ws.send(JSON.stringify({ action: 'load_session', session_id: currentSessionId }));
       }
     });
     list.appendChild(item);

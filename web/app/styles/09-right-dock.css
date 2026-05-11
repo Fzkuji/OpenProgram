@@ -45,6 +45,73 @@
    from .sidebar.collapsed rules in 02-sidebar.css). */
 .right-sidebar.collapsed .right-view-host { display: none; }
 
+/* ============ Branches panel — mirrors left sidebar section style ============ */
+
+/* Wrapper mirrors .sidebar-favorites */
+.branches-section {
+  flex-shrink: 0;
+  padding: 16px 0 0;
+}
+
+/* List mirrors .sidebar-fav-list / .sidebar-panel-list */
+.branches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 8px;
+  max-height: calc(32px * 4 + 3px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Item mirrors .fav-item / .conv-item geometry */
+.branch-item {
+  padding: 6px 8px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background 75ms;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+}
+.branch-item:hover { background: var(--bg-hover); }
+.branch-item.active {
+  background: rgba(160, 160, 160, 0.12);
+  color: var(--text-bright);
+}
+.branch-item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.branch-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.branch-item-badge {
+  font-size: 10px;
+  padding: 0 6px;
+  height: 18px;
+  line-height: 18px;
+  border-radius: 3px;
+  background: rgba(79, 142, 247, 0.2);
+  color: #4f8ef7;
+  flex-shrink: 0;
+}
+
 /* ============ History DAG view ============ */
 
 .history-body {

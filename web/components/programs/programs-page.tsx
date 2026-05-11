@@ -105,6 +105,13 @@ export function ProgramsPage() {
     } catch {
       /* ignore */
     }
+    // Sync the legacy sidebar's in-memory programsMeta and re-render.
+    const w = window as unknown as Record<string, unknown>;
+    if (typeof w.programsMeta === "object") {
+      (w.programsMeta as Record<string, unknown>).favorites = [...next.favorites];
+      (w.programsMeta as Record<string, unknown>).folders = { ...next.folders };
+    }
+    if (typeof w.renderFunctions === "function") (w.renderFunctions as () => void)();
   }, []);
 
   // Close context menu on any outside click.

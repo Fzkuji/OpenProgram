@@ -107,7 +107,7 @@ function _pinBottomRow(bottomRow) {
 
 function _buildFormHtml(fn, fieldsHtml) {
   // No footer — .input-bottom-row stays as permanent element in wrapper
-  var workdirHtml = (typeof buildWorkdirField === 'function') ? buildWorkdirField() : '';
+  var workdirHtml = (typeof buildWorkdirField === 'function') ? buildWorkdirField(fn) : '';
   return '<div class="fn-form-header">' +
     '<div class="fn-form-title">' +
       '<span class="fn-form-name"><span style="color:var(--text-secondary);font-weight:400">function </span>' + escHtml(fn.name) + '</span>' +
@@ -123,6 +123,22 @@ function _buildFormHtml(fn, fieldsHtml) {
 }
 
 function _showFnFormSwitch(fn, wrapper, sendBtn) {
+  // Clear any stuck styles from a previous equal-height switch where
+  // transitionend never fired (height == height → no animation → no cleanup).
+  wrapper.style.height = '';
+  wrapper.style.overflow = '';
+  wrapper.style.transition = '';
+  // Also unpin bottomRow if _pinBottomRow left it fixed-positioned.
+  var bottomRowEarly = wrapper.querySelector('.input-bottom-row');
+  if (bottomRowEarly && bottomRowEarly.style.position === 'fixed') {
+    bottomRowEarly.style.position = '';
+    bottomRowEarly.style.left = '';
+    bottomRowEarly.style.top = '';
+    bottomRowEarly.style.width = '';
+    bottomRowEarly.style.bottom = '';
+    bottomRowEarly.style.right = '';
+  }
+
   var heightBefore = wrapper.offsetHeight;
 
   // Build new content HTML first
@@ -149,7 +165,6 @@ function _showFnFormSwitch(fn, wrapper, sendBtn) {
   wrapper.style.transition = 'none';
   var unpinBottomRow = _pinBottomRow(bottomRow);
 
-
   // Swap content (insert before bottomRow)
   var oldParts = wrapper.querySelectorAll('.fn-form-header, .fn-form-body');
   for (var i = 0; i < oldParts.length; i++) oldParts[i].remove();
@@ -162,17 +177,31 @@ function _showFnFormSwitch(fn, wrapper, sendBtn) {
   if (typeof buildThinkingMenu === 'function') buildThinkingMenu();
   if (typeof initWorkdirField === 'function') initWorkdirField(fn.name);
 
-  // Animate to target height
+  // Animate to target height; if heights are equal skip animation entirely.
   requestAnimationFrame(function() {
-    wrapper.style.transition = 'height 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)';
-    wrapper.style.height = heightAfter + 'px';
-    wrapper.addEventListener('transitionend', function handler(e) {
-      if (e.target !== wrapper || e.propertyName !== 'height') return;
+    if (heightAfter === heightBefore) {
       wrapper.style.height = '';
       wrapper.style.overflow = '';
       wrapper.style.transition = '';
       unpinBottomRow();
-
+      return;
+    }
+    wrapper.style.transition = 'height 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)';
+    wrapper.style.height = heightAfter + 'px';
+    var cleanupTimer = setTimeout(function() {
+      // Fallback: if transitionend doesn't fire (e.g. browser quirk), clean up anyway.
+      wrapper.style.height = '';
+      wrapper.style.overflow = '';
+      wrapper.style.transition = '';
+      unpinBottomRow();
+    }, 400);
+    wrapper.addEventListener('transitionend', function handler(e) {
+      if (e.target !== wrapper || e.propertyName !== 'height') return;
+      clearTimeout(cleanupTimer);
+      wrapper.style.height = '';
+      wrapper.style.overflow = '';
+      wrapper.style.transition = '';
+      unpinBottomRow();
       wrapper.removeEventListener('transitionend', handler);
     });
   });
@@ -479,14 +508,11 @@ function submitFnForm(fnName) {
   var fn = availableFunctions.find(function(f) { return f.name === fnName; });
   if (!fn) return;
 
-  // work_dir is always required — it's a runtime-level setting, not a param.
   var workdirEl = document.getElementById('fnField_work_dir');
   var workdirVal = workdirEl ? workdirEl.value.trim() : '';
-  if (!workdirVal) {
-    if (workdirEl) {
-      workdirEl.classList.add('workdir-input-error');
-      workdirEl.focus();
-    }
+  if (workdirEl && workdirEl.dataset.workdirRequired === '1' && !workdirVal) {
+    workdirEl.classList.add('workdir-input-error');
+    workdirEl.focus();
     return;
   }
 
