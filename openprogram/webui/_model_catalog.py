@@ -665,12 +665,64 @@ def _fetch_github_copilot(provider_id: str, timeout: float) -> Any:
     return out
 
 
+def _fetch_claude_code(provider_id: str, timeout: float) -> Any:
+    """Claude (Max plan) proxy daemon — OpenAI-compatible /v1/models.
+
+    The proxy speaks OpenAI Completions protocol and exposes the
+    Claude models available through the user's Claude Code session.
+    No API key needed; the proxy reuses the OAuth credentials in the
+    Claude Code keychain.
+    """
+    import os, httpx
+    base = (os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:3456").rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    try:
+        r = httpx.get(base + "/v1/models", timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+    except httpx.HTTPStatusError as e:
+        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"error": (
+            f"Proxy not reachable at {base}. Is `claude-max-api` running? ({e})"
+        )}
+    items = data.get("data") or data.get("models") or []
+    return items if isinstance(items, list) else {"error": "unexpected response shape"}
+
+
+def _fetch_codex_static(provider_id: str, timeout: float) -> Any:
+    """OpenAI Codex (chatgpt-subscription) — no public list API.
+
+    The ChatGPT backend returns 403 on /models. Instead, re-emit the
+    registry's curated Codex catalog so the Fetch button at least
+    refreshes from upstream registry edits. Useful when we ship new
+    model rows in models_generated.py — users hit Fetch to see them.
+    """
+    from openprogram.providers.models_generated import MODELS
+    out = []
+    for v in MODELS.values():
+        if v.provider != "chatgpt-subscription":
+            continue
+        out.append({
+            "id": v.id,
+            "name": v.name,
+            "context_window": v.context_window,
+            "vision": "image" in (v.input or []),
+            "reasoning": bool(v.reasoning),
+        })
+    if not out:
+        return {"error": "No Codex models in registry"}
+    return out
+
+
 # Provider id → fetcher function. Providers in _FETCH_MODELS_PROVIDERS
 # (OpenAI-compatible) use _fetch_openai_compat by default; explicit
 # entries here override.
 _FETCHERS: dict[str, Any] = {
     "anthropic": _fetch_anthropic,
-    "claude-code": _fetch_anthropic,  # same API surface via the proxy
+    "claude-code": _fetch_claude_code,  # local proxy, no API key
+    "chatgpt-subscription": _fetch_codex_static,
     "google": _fetch_google,
     "amazon-bedrock": _fetch_bedrock,
     "github-copilot": _fetch_github_copilot,
