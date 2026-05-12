@@ -114,6 +114,37 @@ class FigureCrop:
     caption_prefix: str
 
 
+@dataclass(frozen=True)
+class CaptionRef:
+    """A caption discovered in a PDF (without extraction).
+
+    Returned by :func:`list_captions`.
+
+    Attributes
+    ----------
+    kind : str
+        ``"Figure"`` or ``"Table"``.
+    number : int
+        The integer following the kind keyword.
+    label : str
+        Normalized human-readable label, e.g. ``"Figure 3"``.
+    prefix : str
+        Caption prefix verbatim from the PDF (e.g. ``"Figure 3:"``)
+        suitable for passing to :func:`extract_one_figure`.
+    page : int
+        1-indexed page number.
+    bbox : tuple[float, float, float, float]
+        Caption block bbox in PDF points.
+    """
+
+    kind: str
+    number: int
+    label: str
+    prefix: str
+    page: int
+    bbox: tuple[float, float, float, float]
+
+
 # ---------------------------------------------------------------------------
 # Tunables (defaults that work on ~10pt NeurIPS / arXiv layouts)
 # ---------------------------------------------------------------------------
@@ -128,6 +159,14 @@ _MIN_HEADING_WIDTH_FRAC = 0.40
 
 _OTHER_FIG_PAT = re.compile(r"^\s*Figure\s+\d+[:.|]")
 _SUBCAP_PAT = re.compile(r"^\s*\(?[a-z]\)\s+[A-Z]")
+# Discovery — matches Figure/Fig./Fig with various separators
+_DISCOVERY_PAT = re.compile(
+    r"^\s*(Figure|Fig\.|Fig|Table|Tab\.|Tab)\s+(\d+)\s*[:.\|]"
+)
+_KIND_NORMALIZE = {
+    "figure": "Figure", "fig.": "Figure", "fig": "Figure",
+    "table": "Table", "tab.": "Table", "tab": "Table",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -508,4 +547,161 @@ def extract_figures(
     return results
 
 
-__all__ = ["FigureCrop", "extract_one_figure", "extract_figures"]
+def list_captions(
+    pdf_path: Path | str,
+    *,
+    include_tables: bool = False,
+    pages: tuple[int, int] | None = None,
+) -> list[CaptionRef]:
+    """Scan a PDF and return every Figure / Table caption found.
+
+    Useful for discovery before extraction, or for callers who want
+    to inspect what's available before calling :func:`extract_all_figures`.
+
+    Parameters
+    ----------
+    pdf_path : path-like
+    include_tables : bool, default False
+        When True, also return Table captions.
+    pages : (start, end) 1-indexed inclusive, optional
+        Restrict scan to a page range.
+
+    Returns
+    -------
+    list[CaptionRef]
+        Sorted by (page, y). Each entry has the literal caption prefix
+        suitable for :func:`extract_one_figure`.
+
+    Raises
+    ------
+    ImportError
+        ``pymupdf`` not installed.
+    """
+    try:
+        import fitz  # type: ignore
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("pymupdf is required: pip install pymupdf") from e
+
+    pdf_path = Path(pdf_path)
+    doc = fitz.open(str(pdf_path))
+    n_pages = len(doc)
+    p_start, p_end = (1, n_pages) if pages is None else (
+        max(1, pages[0]), min(n_pages, pages[1])
+    )
+
+    out: list[CaptionRef] = []
+    try:
+        for page_idx in range(p_start - 1, p_end):
+            page = doc[page_idx]
+            blocks = page.get_text("blocks")
+            for b in blocks:
+                if b[6] != 0:
+                    continue
+                stripped = b[4].strip()
+                m = _DISCOVERY_PAT.match(stripped)
+                if not m:
+                    continue
+                kind = _KIND_NORMALIZE[m.group(1).lower()]
+                if kind == "Table" and not include_tables:
+                    continue
+                number = int(m.group(2))
+                # Reconstruct the verbatim prefix to match extract_one_figure's
+                # prefix-string contract — take the matched span end and
+                # extract that many characters from the original text.
+                prefix = stripped[: m.end()]
+                out.append(CaptionRef(
+                    kind=kind,
+                    number=number,
+                    label=f"{kind} {number}",
+                    prefix=prefix,
+                    page=page_idx + 1,
+                    bbox=(b[0], b[1], b[2], b[3]),
+                ))
+    finally:
+        doc.close()
+
+    out.sort(key=lambda c: (c.page, c.bbox[1]))
+    return out
+
+
+def extract_all_figures(
+    pdf_path: Path | str,
+    out_dir: Path | str,
+    *,
+    include_tables: bool = False,
+    filename_template: str = "{kind_short}{number:02d}.png",
+    dpi: int = _DEFAULT_DPI,
+    include_caption: bool = True,
+    skip_missing: bool = True,
+    margin_pt: float = _DEFAULT_MARGIN_PT,
+    max_caption_lines: int = _DEFAULT_MAX_CAPTION_LINES,
+) -> list[FigureCrop]:
+    """One-shot: discover every figure in the PDF and crop each.
+
+    Caller doesn't list captions or pages — the tool scans the PDF
+    once for ``Figure N:`` (and optionally ``Table N:``) markers,
+    then extracts each found caption in turn.
+
+    Parameters
+    ----------
+    pdf_path : path-like
+        Source PDF.
+    out_dir : path-like
+        Where to write PNGs. Created if missing.
+    include_tables : bool, default False
+        Also extract Table captions. Note: table content typically sits
+        BELOW its caption (figures sit above), but the underlying
+        algorithm searches above the caption — tables may extract
+        poorly. Disabled by default.
+    filename_template : str, default ``"{kind_short}{number:02d}.png"``
+        Output filename per figure. Available fields:
+        ``{kind}`` (e.g. ``"Figure"``), ``{kind_short}`` (e.g. ``"fig"``),
+        ``{number}`` (int), ``{page}``.
+    dpi : int, default 300
+    include_caption : bool, default True
+    skip_missing : bool, default True
+        When True (default), captions that fail to extract are skipped
+        silently. When False, raises on the first failure.
+    margin_pt : float, default 4.0
+    max_caption_lines : int, default 6
+
+    Returns
+    -------
+    list[FigureCrop]
+        One entry per successfully cropped figure.
+    """
+    refs = list_captions(pdf_path, include_tables=include_tables)
+    out_dir_path = Path(out_dir)
+    out_dir_path.mkdir(parents=True, exist_ok=True)
+
+    short = {"Figure": "fig", "Table": "tab"}
+    results: list[FigureCrop] = []
+    for ref in refs:
+        fname = filename_template.format(
+            kind=ref.kind,
+            kind_short=short.get(ref.kind, ref.kind.lower()),
+            number=ref.number,
+            page=ref.page,
+        )
+        try:
+            results.append(extract_one_figure(
+                pdf_path,
+                ref.prefix,
+                out_dir_path / fname,
+                include_caption=include_caption,
+                dpi=dpi,
+                page_hint=ref.page,
+                max_caption_lines=max_caption_lines,
+                margin_pt=margin_pt,
+            ))
+        except ValueError:
+            if not skip_missing:
+                raise
+    return results
+
+
+__all__ = [
+    "FigureCrop", "CaptionRef",
+    "extract_one_figure", "extract_figures",
+    "list_captions", "extract_all_figures",
+]
