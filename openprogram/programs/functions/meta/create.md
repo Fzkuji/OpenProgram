@@ -96,7 +96,7 @@ available = {
 
 ### 调用流程
 
-直接用原生 tool_use，没有 catalog/parse/prepare_args 这些中间层：
+直接用原生 tool_use，没有 build_options/render_options/parse_args 这些中间层：
 
 ```python
 # 把子函数放进 tools=[...]，LLM 发 function_call 事件，runtime 本地分发
@@ -114,7 +114,7 @@ runtime 自动把二者组合成工具。Python 信号里的 `runtime: Runtime` 
 
 ### 容错机制
 
-tool_use 的原生协议已经消化了大部分 parse_action 时代需要手动处理的 case：
+tool_use 的原生协议已经消化了大部分 render_options 时代需要手动处理的 case：
 
 | 情况 | 处理 |
 |------|------|

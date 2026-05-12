@@ -1,4 +1,4 @@
-"""parse_action — extract a function call action from LLM output."""
+"""render_options — extract the LLM's chosen option (call + args) from its text reply."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import re
 from openprogram.programs.functions.buildin._utils import _extract_first_json_object
 
 
-def parse_action(text: str) -> dict | None:
+def render_options(text: str) -> dict | None:
     """Extract {"call": "name", "args": {...}} from LLM output, or None.
 
     Searches for JSON with a "call" key in markdown fences or bare JSON.

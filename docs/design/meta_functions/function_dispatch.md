@@ -31,12 +31,12 @@ def assistant(task: str, runtime: Runtime) -> str:
 或"必调指定那个"。
 
 `@agentic_function` 自带 `.spec` 和 `.execute`，直接塞进 `tools=[...]` 就能用；
-不需要另写 catalog / parse / prepare_args 那套中间层（旧版 `parse_action` 方案
+不需要另写 build_options / render_options / parse_args 那套中间层（旧版方案
 已经在 2026-04 移除）。
 
 ## 历史方案
 
-> 之前这里描述的是基于 `build_catalog` + `parse_action` + `prepare_args` 的土
+> 之前这里描述的是基于 `build_options` + `render_options` + `parse_args` 的土
 > 工具调用方案。它在 provider 没有 native tool_use 时是合理的兜底，但现在主流
 > provider（OpenAI / Anthropic / Gemini）都原生支持 tool_use，没必要再维护。
 

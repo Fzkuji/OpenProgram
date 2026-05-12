@@ -1,4 +1,4 @@
-"""prepare_args — prepare function call arguments from LLM action + context."""
+"""parse_args — prepare function call arguments from LLM action + context."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from openprogram.agentic_programming.runtime import Runtime
 _AUTO_PARAMS = {"runtime", "exec_runtime", "review_runtime"}
 
 
-def prepare_args(action: dict, available: dict, runtime: Runtime,
+def parse_args(action: dict, available: dict, runtime: Runtime,
                  context: dict = None, fix_fn=None) -> dict:
     """Prepare complete arguments for a function call.
 

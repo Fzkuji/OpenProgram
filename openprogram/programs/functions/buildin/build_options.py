@@ -1,10 +1,10 @@
-"""build_catalog — generate a function catalog for the LLM from a registry."""
+"""build_options — generate the LLM-facing options menu from a registry."""
 
 from __future__ import annotations
 
 
-def build_catalog(available: dict) -> str:
-    """Build a function catalog string from a function registry.
+def build_options(available: dict) -> str:
+    """Build the LLM-facing options menu string from a function registry.
 
     Only shows parameters with source="llm" — parameters the LLM needs
     to decide. Context-filled and runtime params are hidden.

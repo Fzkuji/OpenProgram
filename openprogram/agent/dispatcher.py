@@ -1014,25 +1014,44 @@ def _extract_text(msg) -> str:
 
 
 def _extract_usage(msg) -> dict:
+    """Pull a usage dict from a final assistant message.
+
+    Handles three shapes providers actually emit:
+      * pydantic Usage object: attribute access
+      * plain dict (gemini_cli, claude-max proxy, etc.): subscript
+      * AssistantMessage with .usage attr that's itself a dict OR object
+
+    Field name aliases too — Anthropic uses input/output, others
+    input_tokens/output_tokens, cache_read vs cache_read_tokens, etc.
+    """
     if msg is None:
         return {}
-    usage = getattr(msg, "usage", None)
+    # msg can be a dict (gemini-cli pushes plain dict as "message") or
+    # an object with .usage attribute.
+    usage = None
+    if isinstance(msg, dict):
+        usage = msg.get("usage")
+    else:
+        usage = getattr(msg, "usage", None)
+        if usage is not None and hasattr(usage, "model_dump"):
+            usage = usage.model_dump()
     if usage is None:
         return {}
-    # Providers report fields inconsistently (`input`/`output` vs
-    # `input_tokens`/`output_tokens`). Probe both and keep all four
-    # buckets so per-turn accounting can show cache hit rate.
+
     def _g(*names):
         for n in names:
-            v = getattr(usage, n, None)
+            if isinstance(usage, dict):
+                v = usage.get(n)
+            else:
+                v = getattr(usage, n, None)
             if v:
                 return int(v)
         return 0
     return {
-        "input_tokens":  _g("input_tokens", "input"),
-        "output_tokens": _g("output_tokens", "output"),
-        "cache_read_tokens":  _g("cache_read_tokens",  "cache_read"),
-        "cache_write_tokens": _g("cache_write_tokens", "cache_write"),
+        "input_tokens":  _g("input_tokens", "input", "prompt_tokens"),
+        "output_tokens": _g("output_tokens", "output", "completion_tokens"),
+        "cache_read_tokens":  _g("cache_read_tokens",  "cache_read",  "cached_tokens"),
+        "cache_write_tokens": _g("cache_write_tokens", "cache_write", "cache_creation_input_tokens"),
     }
 
 

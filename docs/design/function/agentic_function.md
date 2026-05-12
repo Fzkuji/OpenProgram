@@ -73,7 +73,7 @@ research_pipeline
 
 把子函数塞进 `runtime.exec(tools=[...])`，让 provider 原生 tool_use 协议处理
 分发。`@agentic_function` 自带 `.spec`（JSON Schema，自动从签名 + docstring
-生成）和 `.execute`，不需要写任何 catalog/parse/prepare_args 中间层。
+生成）和 `.execute`，不需要写任何 build_options/render_options/parse_args 中间层。
 
 ```python
 @agentic_function
@@ -134,7 +134,7 @@ research_assistant
 
 ## 容错机制
 
-原生 tool_use 协议已经消化了旧 parse_action 时代需要手动处理的大部分 case：
+原生 tool_use 协议已经消化了旧 render_options 时代需要手动处理的大部分 case：
 
 | 情况 | 处理 |
 |------|------|

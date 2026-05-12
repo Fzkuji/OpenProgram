@@ -1,7 +1,7 @@
 # LLM 决定调用哪个函数（tool_use）
 
 **历史状态：** 2026-04 之前，这里描述的是靠 prompt 让 LLM 吐 `{"call":..., "args":...}`
-文本、再用 `parse_action` / `build_catalog` / `prepare_args` 拼起来的"土工具调用"方案。
+文本、再用 `render_options` / `build_options` / `parse_args` 拼起来的"土工具调用"方案。
 这套已经被 provider 原生 `tool_use` 协议替代，旧模块已删除。保留本文档只为方便
 回溯为什么要换。
 
@@ -36,14 +36,14 @@ def research_assistant(task: str, runtime: Runtime) -> str:
 
 ## 为什么换
 
-| 维度 | 旧方案（parse_action） | 新方案（tool_use） |
+| 维度 | 旧方案（render_options） | 新方案（tool_use） |
 |---|---|---|
 | 输出格式 | 文本嵌 JSON，靠 prompt 劝说 | 独立事件类型，协议保证 |
-| 参数校验 | 手动 prepare_args + fix_call_params 重试 | JSON Schema 校验，模型原生回退 |
+| 参数校验 | 手动 parse_args + fix_call_params 重试 | JSON Schema 校验，模型原生回退 |
 | 函数名越界 | 自己查注册表并 fallback | tools 声明是白名单，协议级拒绝 |
 | 多工具并发 | 不支持 | `parallel_tool_calls=True` 原生支持 |
 | 必选某个 | prompt 里求（不可靠） | `tool_choice={"type":"function","name":"X"}` |
-| 代码行数 | 需要 catalog + parse + prepare 三件套 | `tools=[fn]` 一行 |
+| 代码行数 | 需要 build_options + render_options + parse_args 三件套 | `tools=[fn]` 一行 |
 
 旧方案是在没有 native tool_use 时手搓的弱版本；现在主流 provider（OpenAI /
 Anthropic / Gemini）都支持 tool_use，没必要再保留。

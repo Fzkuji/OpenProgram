@@ -1,3 +1,14 @@
 {
-  "favorites": []
+  "favorites": [
+    "agentic_research",
+    "_research_step",
+    "gui_agent",
+    "research_agent",
+    "test_resume",
+    "edit",
+    "wiki_agent"
+  ],
+  "folders": {
+    "123": []
+  }
 }

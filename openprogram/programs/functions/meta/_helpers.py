@@ -706,7 +706,7 @@ def generate_code(task: str, runtime: Runtime) -> str:
     runtime dispatches locally and feeds results back until the LLM returns
     a plain text reply.
 
-    No catalog/parse/prepare_args glue needed — @agentic_function exposes a
+    No build_options/render_options/parse_args glue needed — @agentic_function exposes a
     JSON-schema tool spec automatically via its `.spec` property, and the
     runtime's tool loop handles everything else.
 
@@ -832,7 +832,7 @@ def generate_code(task: str, runtime: Runtime) -> str:
 
     ── Error handling for dispatch (Pattern 3) ──
 
-    Most edge cases the old parse_action flow worried about are gone under
+    Most edge cases the old render_options flow worried about are gone under
     tool_use:
 
     | Situation                 | Why it's handled                         |

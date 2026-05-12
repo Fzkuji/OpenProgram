@@ -81,10 +81,17 @@ async function fixFunction(name) {
 function clickFunction(name, category) {
   var fn = availableFunctions.find(function(f) { return f.name === name; });
   if (!fn) return;
-  // If not on the chat page, navigate there then open the form.
-  // Note: #chatInput is removed from DOM when a form is open, so use .input-wrapper
-  // as the presence indicator — it always exists on the chat page.
-  if (!document.querySelector('.input-wrapper')) {
+  // Always route through /chat (new chat) when clicked from anywhere
+  // OTHER than the chat page itself. The previous check looked for
+  // `.input-wrapper` in the DOM, but app-shell keeps that element
+  // mounted-but-hidden on every page — so the click silently opened
+  // an invisible fn form on /settings, /memory, /programs, etc.
+  //
+  // Path test catches both the empty-chat shell (/chat) and an active
+  // conversation (/s/<id>); both have a real visible input.
+  var p = location.pathname;
+  var onChat = p === '/chat' || p.indexOf('/s/') === 0;
+  if (!onChat) {
     window.__pendingRunFunction = { name: name, cat: category || '' };
     if (window.__navigate) window.__navigate('/chat');
     return;
