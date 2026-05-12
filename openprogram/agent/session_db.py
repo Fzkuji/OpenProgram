@@ -949,6 +949,15 @@ class SessionDB:
         if not msgs:
             return
 
+        # Same token auto-fill as append_message — historically this path
+        # skipped it, which left bulk-imported / replayed messages with
+        # token_source=unknown.
+        from openprogram.providers._shared.token_counter import count_tokens
+        try:
+            from openprogram.providers.models_generated import MODELS
+        except Exception:
+            MODELS = {}  # type: ignore
+
         def _do(conn: sqlite3.Connection) -> None:
             for m in msgs:
                 row: dict[str, Any] = {
@@ -965,6 +974,38 @@ class SessionDB:
                     row["extra"] = json.dumps(extra, default=str)
                 if "id" not in row or "role" not in row or "content" not in row:
                     continue
+                # Auto-fill token columns if not supplied.
+                if row.get("input_tokens") is None:
+                    try:
+                        model_obj = None
+                        model_id = m.get("model") or extra.get("model")
+                        provider_name = m.get("provider") or extra.get("provider")
+                        if model_id:
+                            key = (
+                                f"{provider_name}/{model_id}"
+                                if provider_name else None
+                            )
+                            model_obj = (MODELS.get(key) if key else None) or \
+                                MODELS.get(model_id)
+                            if model_obj is None:
+                                for v in MODELS.values():
+                                    if getattr(v, "id", None) == model_id:
+                                        model_obj = v
+                                        break
+                        tc = count_tokens(m, model_obj)
+                        row.setdefault("input_tokens", tc.input)
+                        row.setdefault("output_tokens", tc.output)
+                        row.setdefault("cache_read_tokens", tc.cache_read)
+                        row.setdefault("cache_write_tokens", tc.cache_write)
+                        row.setdefault("token_source", tc.source)
+                        if model_obj is not None:
+                            row.setdefault(
+                                "token_model", getattr(model_obj, "id", None)
+                            )
+                        elif model_id:
+                            row.setdefault("token_model", str(model_id))
+                    except Exception:
+                        pass
                 cols = list(row.keys())
                 conn.execute(
                     f"INSERT OR REPLACE INTO messages ({','.join(cols)}) "
@@ -977,6 +1018,96 @@ class SessionDB:
             )
 
         self._execute_write(_do)
+
+    def backfill_token_counts(self, session_id: str | None = None) -> dict[str, Any]:
+        """Recompute token counts for messages where source is missing or
+        marked 'unknown'. Returns counts: {scanned, updated}.
+
+        Safe to call repeatedly — only rewrites rows that lack a real
+        token_source. Uses the same heuristic-or-tiktoken path as
+        append_message, so the result is identical to writing fresh.
+        """
+        from openprogram.providers._shared.token_counter import count_tokens
+        try:
+            from openprogram.providers.models_generated import MODELS
+        except Exception:
+            MODELS = {}  # type: ignore
+
+        # Pick rows to recompute. 'unknown' or NULL or missing input_tokens
+        # all qualify.
+        params: list[Any] = []
+        sql = (
+            "SELECT id, session_id, role, content, extra, model, "
+            "  input_tokens, output_tokens, cache_read_tokens, "
+            "  cache_write_tokens, token_source "
+            "FROM messages "
+            "WHERE token_source IS NULL OR token_source='unknown' "
+            "  OR input_tokens IS NULL"
+        )
+        if session_id:
+            sql += " AND session_id=?"
+            params.append(session_id)
+
+        cur = self.conn.execute(sql, params)
+        rows = cur.fetchall()
+        scanned = len(rows)
+        updates: list[tuple[Any, ...]] = []
+
+        for r in rows:
+            d = dict(r)
+            try:
+                content = d.get("content")
+                if isinstance(content, str) and content.startswith(("{", "[")):
+                    try:
+                        content = json.loads(content)
+                    except Exception:
+                        pass
+                msg = {
+                    "id": d["id"],
+                    "role": d["role"],
+                    "content": content,
+                    "model": d.get("model"),
+                }
+                extra_raw = d.get("extra")
+                if extra_raw:
+                    try:
+                        extra = json.loads(extra_raw)
+                        if isinstance(extra, dict):
+                            for k, v in extra.items():
+                                msg.setdefault(k, v)
+                    except Exception:
+                        pass
+                model_obj = None
+                mid = msg.get("model")
+                if mid:
+                    model_obj = MODELS.get(mid)
+                    if model_obj is None:
+                        for v in MODELS.values():
+                            if getattr(v, "id", None) == mid:
+                                model_obj = v
+                                break
+                tc = count_tokens(msg, model_obj)
+                updates.append((
+                    tc.input, tc.output, tc.cache_read, tc.cache_write,
+                    tc.source,
+                    getattr(model_obj, "id", None) if model_obj else mid,
+                    d["id"], d["session_id"],
+                ))
+            except Exception:
+                continue
+
+        def _do(conn: sqlite3.Connection) -> None:
+            conn.executemany(
+                "UPDATE messages SET input_tokens=?, output_tokens=?, "
+                "  cache_read_tokens=?, cache_write_tokens=?, "
+                "  token_source=?, token_model=? "
+                "WHERE id=? AND session_id=?",
+                updates,
+            )
+
+        if updates:
+            self._execute_write(_do)
+        return {"scanned": scanned, "updated": len(updates)}
 
     def close(self) -> None:
         try:

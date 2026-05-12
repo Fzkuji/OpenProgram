@@ -59,6 +59,16 @@ def register(app):
             })
         return JSONResponse(content={"branches": out})
 
+    @app.post("/api/sessions/{session_id}/tokens/backfill")
+    async def backfill_session_tokens(session_id: str):
+        """Recompute token counts for all messages in this session whose
+        token_source is unknown / NULL. Returns scanned/updated counts.
+        Safe to call repeatedly — only touches rows that lack a real
+        provider/tiktoken count."""
+        from openprogram.agent.session_db import default_db
+        result = default_db().backfill_token_counts(session_id)
+        return JSONResponse(content=result)
+
     @app.get("/api/sessions/{session_id}/tokens")
     async def get_session_tokens(session_id: str, head_id: str | None = None,
                                  model: str | None = None,
