@@ -36,18 +36,10 @@ if TYPE_CHECKING:
 GoogleThinkingLevel = str  # "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | "LOW" | "MEDIUM" | "HIGH"
 
 _DEFAULT_ENDPOINT = "https://cloudcode-pa.googleapis.com"
-_ANTIGRAVITY_DAILY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com"
-_ANTIGRAVITY_AUTOPUSH_ENDPOINT = "https://autopush-cloudcode-pa.sandbox.googleapis.com"
-_ANTIGRAVITY_ENDPOINT_FALLBACKS = [
-    _ANTIGRAVITY_DAILY_ENDPOINT,
-    _ANTIGRAVITY_AUTOPUSH_ENDPOINT,
-    _DEFAULT_ENDPOINT,
-]
 _MAX_RETRIES = 3
 _BASE_DELAY_MS = 1000
 _MAX_EMPTY_STREAM_RETRIES = 2
 _EMPTY_STREAM_BASE_DELAY_MS = 500
-_DEFAULT_ANTIGRAVITY_VERSION = "1.18.4"
 
 _GEMINI_CLI_HEADERS = {
     "User-Agent": "google-cloud-sdk vscode_cloudshelleditor/0.1",
@@ -59,17 +51,7 @@ _GEMINI_CLI_HEADERS = {
     }),
 }
 
-_ANTIGRAVITY_SYSTEM_INSTRUCTION = (
-    "You are a helpful AI coding assistant. You can help with code generation, "
-    "debugging, refactoring, explanation, and other software engineering tasks."
-)
-
 _tool_call_counter = 0
-
-
-def _get_antigravity_headers() -> dict[str, str]:
-    version = os.environ.get("PI_AI_ANTIGRAVITY_VERSION", _DEFAULT_ANTIGRAVITY_VERSION)
-    return {"User-Agent": f"antigravity/{version} darwin/arm64"}
 
 
 def extract_retry_delay(error_text: str) -> int | None:
@@ -133,28 +115,21 @@ def stream_google_gemini_cli(
 
         try:
             api_key = opts.get("api_key") or get_env_api_key(model.provider) or ""
-            is_antigravity = "antigravity" in model.provider.lower()
 
             # Endpoint selection
             model_base_url = getattr(model, "base_url", None)
-            if model_base_url:
-                endpoints = [model_base_url]
-            elif is_antigravity:
-                endpoints = list(_ANTIGRAVITY_ENDPOINT_FALLBACKS)
-            else:
-                endpoints = [_DEFAULT_ENDPOINT]
+            endpoints = [model_base_url] if model_base_url else [_DEFAULT_ENDPOINT]
 
-            provider_headers = _get_antigravity_headers() if is_antigravity else _GEMINI_CLI_HEADERS
             headers: dict[str, str] = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                **provider_headers,
+                **_GEMINI_CLI_HEADERS,
                 **(getattr(model, "headers", None) or {}),
                 **(opts.get("headers") or {}),
             }
 
             project_id = opts.get("project_id") or os.environ.get("GOOGLE_CLOUD_PROJECT") or ""
-            if not project_id and not is_antigravity:
+            if not project_id:
                 project_id = await _discover_project_id(headers, endpoints[0])
             contents = convert_messages(model, context)
             request_body = _build_request_body(model, context, opts, contents, project_id)
@@ -362,19 +337,14 @@ def _build_request_body(
     project_id: str,
 ) -> dict[str, Any]:
     """Build CloudCodeAssistRequest body matching TS format."""
-    is_antigravity = "antigravity" in model.provider.lower()
-
     # Inner request (generateContent params)
     request: dict[str, Any] = {"contents": contents}
 
     # System instruction
-    system_parts: list[dict[str, Any]] = []
-    if is_antigravity:
-        system_parts.append({"text": _ANTIGRAVITY_SYSTEM_INSTRUCTION})
     if context.system_prompt:
-        system_parts.append({"text": sanitize_surrogates(context.system_prompt)})
-    if system_parts:
-        request["systemInstruction"] = {"parts": system_parts}
+        request["systemInstruction"] = {
+            "parts": [{"text": sanitize_surrogates(context.system_prompt)}]
+        }
 
     # Session ID
     if opts.get("session_id"):
@@ -419,11 +389,9 @@ def _build_request_body(
         "project": project_id,
         "model": model.id,
         "request": request,
-        "userAgent": "antigravity" if is_antigravity else "pi-coding-agent",
+        "userAgent": "pi-coding-agent",
         "requestId": request_id,
     }
-    if is_antigravity:
-        body["requestType"] = "agent"
 
     return body
 
