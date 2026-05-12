@@ -106,7 +106,9 @@
   align-self: start;
   position: sticky;
   top: 16px;
-  margin-left: -12px;
+  /* 8px inner padding so item visible width = 288 − 16 = 272, matching
+     the main sidebar nav item width. */
+  padding: 8px;
 }
 .folderSep {
   height: 1px;
@@ -117,8 +119,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
-  height: 36px;
+  padding: 0 8px;
+  height: 32px;
   cursor: pointer;
   font-size: 14px;
   color: var(--text-secondary);

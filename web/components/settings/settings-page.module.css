@@ -46,16 +46,18 @@
   flex-direction: column;
   gap: 1px;
   align-self: start;
+  /* 8px inner padding matches .sidebar-nav-group so the visible button
+     width = 288 − 16 = 272, identical to the main sidebar's nav items. */
+  padding: 8px;
   /* Sticky so the outer tabs (LLM Providers / General) stay
      in view while the right content scrolls — matches claude.ai's
      settings UX where the left categories column is pinned. */
   position: sticky;
   top: 16px;
-  margin-left: -12px;
 }
 .navItem {
-  padding: 0 12px;
-  height: 36px;
+  padding: 0 8px;
+  height: 32px;
   display: flex;
   align-items: center;
   font-size: 14px;
@@ -224,7 +226,9 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding-right: 4px;
+  /* 8px inner padding matches sidebar so the inner items render at the
+     same effective button width as the main sidebar (272px). */
+  padding: 8px;
   align-self: start;
   /* Stay in view next to the scrolling detail column. The provider
      list can get long (20+ providers), so cap its own height and
