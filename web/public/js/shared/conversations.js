@@ -335,8 +335,10 @@ window.renderBranchesPanel = function () {
     colorMap[b.head_msg_id] = graphColorMap[b.head_msg_id] || _branchLaneColors[idx % _branchLaneColors.length];
   });
 
-  // Active branch always at top for display only.
-  rows = rows.slice().sort(function(a, b) { return (b.active ? 1 : 0) - (a.active ? 1 : 0); });
+  // Branches render in their natural DAG order; the active one stays in
+  // place (no float-to-top). Collapsed mode hides every row except the
+  // active one — so the panel always shows where HEAD is, regardless of
+  // expanded state.
 
   host.className = 'branches-section' + (collapsed ? ' is-collapsed' : '');
   host.innerHTML =
@@ -355,42 +357,13 @@ window.renderBranchesPanel = function () {
 
   var list = host.querySelector('.branches-list');
 
-  // Render active (HEAD) item before the collapsible list so it's always visible.
-  var activeRow = rows.find(function(b) { return b.active; });
-  if (activeRow) {
-    var headColor = colorMap[activeRow.head_msg_id] || _branchLaneColors[0];
-    var headItem = document.createElement('div');
-    headItem.className = 'branch-item active';
-    headItem.setAttribute('data-head', activeRow.head_msg_id);
-    var headTok = tokenMap[activeRow.head_msg_id];
-    var headTokTxt = '';
-    var headTokColor = '';
-    if (headTok && headTok.current_tokens) {
-      var pct = headTok.context_window
-        ? Math.round((headTok.current_tokens / headTok.context_window) * 100)
-        : null;
-      headTokTxt = _formatBranchTokens(headTok.current_tokens) + (pct !== null ? ' (' + pct + '%)' : '');
-      if (pct !== null) {
-        if (pct > 85)      headTokColor = 'var(--accent-red, #e5534b)';
-        else if (pct > 65) headTokColor = 'var(--accent-yellow, #d2a106)';
-        else               headTokColor = 'var(--text-muted)';
-      }
-    }
-    headItem.innerHTML =
-      '<span class="branch-item-dot" style="background:' + headColor + '"></span>' +
-      '<span class="branch-item-name">' + escHtml(activeRow.name) + '</span>' +
-      (headTokTxt ? '<span class="branch-item-tokens" style="color:' + headTokColor + '">' + headTokTxt + '</span>' : '') +
-      '<span class="branch-item-badge">HEAD</span>';
-    host.insertBefore(headItem, list);
-  }
-
-  if (collapsed) list.style.display = 'none';
-
   rows.forEach(function (b) {
-    if (b.active) return; // already rendered above
     var laneColor = colorMap[b.head_msg_id] || _branchLaneColors[0];
     var item = document.createElement('div');
-    item.className = 'branch-item';
+    item.className = 'branch-item' + (b.active ? ' active' : '');
+    // Collapsed mode: hide every non-active row in JS so the natural
+    // order is preserved when re-expanded. Avoids CSS :nth-child games.
+    if (collapsed && !b.active) item.style.display = 'none';
     item.setAttribute('data-head', b.head_msg_id);
     var bTok = tokenMap[b.head_msg_id];
     var bTokTxt = '';
@@ -409,7 +382,8 @@ window.renderBranchesPanel = function () {
     item.innerHTML =
       '<span class="branch-item-dot" style="background:' + laneColor + '"></span>' +
       '<span class="branch-item-name">' + escHtml(b.name) + '</span>' +
-      (bTokTxt ? '<span class="branch-item-tokens" style="color:' + bTokColor + '">' + bTokTxt + '</span>' : '');
+      (bTokTxt ? '<span class="branch-item-tokens" style="color:' + bTokColor + '">' + bTokTxt + '</span>' : '') +
+      (b.active ? '<span class="branch-item-badge">HEAD</span>' : '');
     item.addEventListener('click', function () {
       if (b.active) return;
       if (ws && ws.readyState === WebSocket.OPEN) {
