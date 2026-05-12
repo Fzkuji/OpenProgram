@@ -343,7 +343,18 @@ def process_user_turn(
     # 5. Persist assistant message.
     # Attach usage + model so session_db.append_message stamps real
     # provider numbers (input/output/cache_read/cache_write) into the
-    # messages.* token columns instead of estimating from char count.
+    # messages.* token columns. If provider didn't report usage, leave
+    # the columns NULL — we never fabricate counts.
+    model_str = req.model_override or session.get("model") or ""
+    if isinstance(model_str, dict):
+        model_id = model_str.get("id") or model_str.get("model")
+        provider_id = model_str.get("provider")
+    elif isinstance(model_str, str) and "/" in model_str:
+        provider_id, model_id = model_str.split("/", 1)
+    else:
+        model_id = model_str or None
+        provider_id = None
+    has_usage = bool(usage.get("input_tokens") or usage.get("output_tokens"))
     assistant_msg = {
         "id": assistant_msg_id,
         "role": "assistant",
@@ -351,15 +362,18 @@ def process_user_turn(
         "timestamp": time.time(),
         "parent_id": user_msg_id,
         "source": req.source,
-        "model": getattr(model, "id", None),
-        "provider": getattr(model, "provider", None),
-        "input_tokens":  int(usage.get("input_tokens")  or 0),
-        "output_tokens": int(usage.get("output_tokens") or 0),
-        "cache_read_tokens":  int(usage.get("cache_read_tokens")  or 0),
-        "cache_write_tokens": int(usage.get("cache_write_tokens") or 0),
-        "token_source": "provider_usage" if (usage.get("input_tokens") or usage.get("output_tokens")) else "heuristic",
-        "token_model": getattr(model, "id", None),
+        "model": model_id,
+        "provider": provider_id,
     }
+    if has_usage:
+        assistant_msg.update({
+            "input_tokens":  int(usage.get("input_tokens")  or 0),
+            "output_tokens": int(usage.get("output_tokens") or 0),
+            "cache_read_tokens":  int(usage.get("cache_read_tokens")  or 0),
+            "cache_write_tokens": int(usage.get("cache_write_tokens") or 0),
+            "token_source": "provider_usage",
+            "token_model":  model_id,
+        })
     if tool_calls:
         # Persist BOTH shapes:
         #   * tool_calls — legacy slim list (id/tool/result/is_error)
