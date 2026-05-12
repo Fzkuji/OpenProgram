@@ -142,7 +142,7 @@ export function ChatView({ sessionId }: ChatViewProps) {
       <div className="flex flex-1 flex-col">
       <header
         className="flex h-12 shrink-0 items-center justify-between border-b px-4"
-        style={{ borderColor: "var(--border-color)" }}
+        style={{ borderColor: "var(--border)" }}
       >
         <div className="flex items-center gap-2">
           <ModelBadge />
@@ -204,14 +204,14 @@ export function ChatView({ sessionId }: ChatViewProps) {
 
       <footer
         className="shrink-0 border-t p-4"
-        style={{ borderColor: "var(--border-color)" }}
+        style={{ borderColor: "var(--border)" }}
       >
         <div className="mx-auto max-w-3xl">
           <div
             className="flex items-end gap-2 rounded-lg border p-2"
             style={{
               background: "var(--bg-secondary)",
-              borderColor: "var(--border-color)",
+              borderColor: "var(--border)",
             }}
           >
             <div className="relative">
@@ -232,7 +232,7 @@ export function ChatView({ sessionId }: ChatViewProps) {
                   className="absolute bottom-full left-0 mb-1 overflow-hidden rounded-md border py-1 shadow-lg"
                   style={{
                     background: "var(--bg-tertiary)",
-                    borderColor: "var(--border-color)",
+                    borderColor: "var(--border)",
                   }}
                 >
                   {THINKING_OPTIONS.map((opt) => (
@@ -292,7 +292,7 @@ export function ChatView({ sessionId }: ChatViewProps) {
                   title={paused ? "Resume" : "Pause"}
                   style={{
                     background: "transparent",
-                    borderColor: "var(--border-color)",
+                    borderColor: "var(--border)",
                     color: "var(--text-primary)",
                   }}
                 >
@@ -392,7 +392,7 @@ function ModelBadge() {
           className="absolute left-0 top-full z-20 mt-1 max-h-[400px] w-[320px] overflow-y-auto rounded-md border py-1 shadow-lg"
           style={{
             background: "var(--bg-tertiary)",
-            borderColor: "var(--border-color)",
+            borderColor: "var(--border)",
           }}
         >
           {Object.keys(byProvider).length === 0 && (
@@ -635,7 +635,7 @@ function MessageBubble({ msgId, sessionId }: { msgId: string; sessionId: string 
             : msg.status === "error"
               ? "var(--accent-red)"
               : "var(--text-primary)",
-          border: isUser ? "none" : "1px solid var(--border-color)",
+          border: isUser ? "none" : "1px solid var(--border)",
           opacity: isSystem ? 0.7 : 1,
         }}
       >
@@ -804,7 +804,7 @@ function RuntimeBlock({ msg }: { msg: ChatMsg }) {
       className="mx-auto w-full max-w-[90%] overflow-hidden rounded-lg border"
       style={{
         background: "var(--bg-secondary)",
-        borderColor: "var(--border-color)",
+        borderColor: "var(--border)",
       }}
     >
       <button
@@ -812,7 +812,7 @@ function RuntimeBlock({ msg }: { msg: ChatMsg }) {
         className="flex w-full items-center gap-2 border-b px-3 py-2 text-left"
         style={{
           background: "var(--bg-tertiary)",
-          borderColor: "var(--border-color)",
+          borderColor: "var(--border)",
         }}
       >
         <span

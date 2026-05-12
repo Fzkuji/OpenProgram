@@ -38,11 +38,11 @@ export function CanvasPanel({ onClose }: { onClose: () => void }) {
   return (
     <aside
       className="flex w-[440px] shrink-0 flex-col border-l"
-      style={{ borderColor: "var(--border-color)", background: "var(--bg-primary)" }}
+      style={{ borderColor: "var(--border)", background: "var(--bg-primary)" }}
     >
       <header
         className="flex shrink-0 items-center justify-between border-b px-3 py-2"
-        style={{ borderColor: "var(--border-color)" }}
+        style={{ borderColor: "var(--border)" }}
       >
         <div className="flex items-center gap-2 min-w-0">
           <FileText className="h-4 w-4 shrink-0" style={{ color: "var(--text-muted)" }} />
@@ -88,7 +88,7 @@ export function CanvasPanel({ onClose }: { onClose: () => void }) {
       {data?.blocks && data.blocks.length > 0 && (
         <div
           className="shrink-0 border-b px-3 py-1.5 text-[10px] flex gap-2 flex-wrap"
-          style={{ borderColor: "var(--border-color)", color: "var(--text-muted)" }}
+          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
         >
           {data.blocks.map((b) => (
             <span

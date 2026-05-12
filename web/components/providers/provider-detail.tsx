@@ -92,7 +92,7 @@ export function ProviderDetail({ provider }: Props) {
           className="h-8 shrink-0 rounded-md border px-3 text-[12px]"
           style={{
             background: "transparent",
-            borderColor: "var(--border-color)",
+            borderColor: "var(--border)",
             color: "var(--text-primary)",
           }}
         >
@@ -160,7 +160,7 @@ export function ProviderDetail({ provider }: Props) {
                       className="h-8 flex-1 font-mono text-[12px]"
                       style={{
                         background: "var(--bg-input)",
-                        borderColor: "var(--border-color)",
+                        borderColor: "var(--border)",
                         color: "var(--text-primary)",
                       }}
                     />
@@ -171,7 +171,7 @@ export function ProviderDetail({ provider }: Props) {
                       onClick={() => setRevealKey((v) => !v)}
                       style={{
                         background: "transparent",
-                        borderColor: "var(--border-color)",
+                        borderColor: "var(--border)",
                         color: "var(--text-primary)",
                       }}
                     >
@@ -202,7 +202,7 @@ export function ProviderDetail({ provider }: Props) {
                     className="h-8 flex-1 text-[13px]"
                     style={{
                       background: "var(--bg-input)",
-                      borderColor: "var(--border-color)",
+                      borderColor: "var(--border)",
                       color: "var(--text-primary)",
                     }}
                   />
@@ -214,7 +214,7 @@ export function ProviderDetail({ provider }: Props) {
                     disabled={saveBase.isPending}
                     style={{
                       background: "transparent",
-                      borderColor: "var(--border-color)",
+                      borderColor: "var(--border)",
                       color: "var(--text-primary)",
                     }}
                   >
@@ -269,7 +269,7 @@ export function ProviderDetail({ provider }: Props) {
                     disabled={fetchModels.isPending}
                     style={{
                       background: "transparent",
-                      borderColor: "var(--border-color)",
+                      borderColor: "var(--border)",
                       color: "var(--text-primary)",
                     }}
                   >
@@ -319,7 +319,7 @@ function Card({ children }: { children: React.ReactNode }) {
       className="rounded-[10px] border px-5 py-4"
       style={{
         background: "var(--bg-secondary)",
-        borderColor: "var(--border-color)",
+        borderColor: "var(--border)",
       }}
     >
       {children}
@@ -350,7 +350,7 @@ function Row({
   return (
     <div
       className="flex items-center gap-4 border-t py-3 first:border-t-0 first:pt-0"
-      style={{ borderColor: "var(--border-color)" }}
+      style={{ borderColor: "var(--border)" }}
     >
       <div className="min-w-0 flex-1">
         <div className="text-[13px]" style={{ color: "var(--text-primary)" }}>

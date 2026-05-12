@@ -71,13 +71,13 @@ export function ProgramRunDialog({ fn, onClose }: Props) {
         className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border"
         style={{
           background: "var(--bg-secondary)",
-          borderColor: "var(--border-color)",
+          borderColor: "var(--border)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
           className="flex items-center justify-between border-b px-5 py-3"
-          style={{ borderColor: "var(--border-color)" }}
+          style={{ borderColor: "var(--border)" }}
         >
           <div>
             <h2
@@ -122,7 +122,7 @@ export function ProgramRunDialog({ fn, onClose }: Props) {
                 className="max-h-64 overflow-auto rounded-md border p-3 font-mono text-[11px]"
                 style={{
                   background: "var(--bg-input)",
-                  borderColor: "var(--border-color)",
+                  borderColor: "var(--border)",
                   color: "var(--text-primary)",
                 }}
               >
@@ -134,14 +134,14 @@ export function ProgramRunDialog({ fn, onClose }: Props) {
 
         <div
           className="flex justify-end gap-2 border-t px-5 py-3"
-          style={{ borderColor: "var(--border-color)" }}
+          style={{ borderColor: "var(--border)" }}
         >
           <button
             onClick={onClose}
             className="h-8 rounded-md border px-3 text-[13px]"
             style={{
               background: "transparent",
-              borderColor: "var(--border-color)",
+              borderColor: "var(--border)",
               color: "var(--text-primary)",
             }}
           >
@@ -153,7 +153,7 @@ export function ProgramRunDialog({ fn, onClose }: Props) {
             className="flex h-8 items-center gap-1 rounded-md border px-3 text-[13px]"
             style={{
               background: "transparent",
-              borderColor: "var(--border-color)",
+              borderColor: "var(--border)",
               color: "var(--text-primary)",
             }}
           >
@@ -223,7 +223,7 @@ function ParamInput({
           className="h-8 w-full rounded-md border px-2 text-[12px]"
           style={{
             background: "var(--bg-input)",
-            borderColor: "var(--border-color)",
+            borderColor: "var(--border)",
             color: "var(--text-primary)",
           }}
         >
@@ -237,7 +237,7 @@ function ParamInput({
           className="h-8 w-full rounded-md border px-2 text-[12px]"
           style={{
             background: "var(--bg-input)",
-            borderColor: "var(--border-color)",
+            borderColor: "var(--border)",
             color: "var(--text-primary)",
           }}
         >
@@ -256,7 +256,7 @@ function ParamInput({
           className="w-full resize-y rounded-md border p-2 text-[13px]"
           style={{
             background: "var(--bg-input)",
-            borderColor: "var(--border-color)",
+            borderColor: "var(--border)",
             color: "var(--text-primary)",
           }}
         />
@@ -270,7 +270,7 @@ function ParamInput({
             className="h-8 flex-1 rounded-md border px-2 font-mono text-[12px]"
             style={{
               background: "var(--bg-input)",
-              borderColor: "var(--border-color)",
+              borderColor: "var(--border)",
               color: "var(--text-primary)",
             }}
           />
@@ -288,7 +288,7 @@ function ParamInput({
             className="flex h-8 shrink-0 items-center gap-1 rounded-md border px-2 text-[12px]"
             style={{
               background: "transparent",
-              borderColor: "var(--border-color)",
+              borderColor: "var(--border)",
               color: "var(--text-primary)",
             }}
           >
@@ -304,7 +304,7 @@ function ParamInput({
           className="h-8 w-full rounded-md border px-2 text-[13px]"
           style={{
             background: "var(--bg-input)",
-            borderColor: "var(--border-color)",
+            borderColor: "var(--border)",
             color: "var(--text-primary)",
           }}
         />

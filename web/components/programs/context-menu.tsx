@@ -54,7 +54,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
         left: x,
         top: y,
         background: "var(--bg-tertiary)",
-        border: "1px solid var(--border-color)",
+        border: "1px solid var(--border)",
         borderRadius: "6px",
         boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
         minWidth: 180,
@@ -69,7 +69,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
             style={{
               height: 1,
               margin: "4px 0",
-              background: "var(--border-color)",
+              background: "var(--border)",
             }}
           />
         ) : (

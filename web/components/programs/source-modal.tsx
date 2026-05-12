@@ -57,13 +57,13 @@ export function SourceModal({ fn, onClose }: Props) {
         className="flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border"
         style={{
           background: "var(--bg-secondary)",
-          borderColor: "var(--border-color)",
+          borderColor: "var(--border)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
           className="flex items-center justify-between border-b px-5 py-3"
-          style={{ borderColor: "var(--border-color)" }}
+          style={{ borderColor: "var(--border)" }}
         >
           <div className="flex items-center gap-2">
             <FileCode

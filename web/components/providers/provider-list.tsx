@@ -25,12 +25,12 @@ export function ProviderList({ providers, activeName, onSelect }: Props) {
       className="overflow-hidden rounded-[10px] border"
       style={{
         background: "var(--bg-secondary)",
-        borderColor: "var(--border-color)",
+        borderColor: "var(--border)",
       }}
     >
       <div
         className="border-b px-4 py-3"
-        style={{ borderColor: "var(--border-color)" }}
+        style={{ borderColor: "var(--border)" }}
       >
         <h3
           className="text-[13px] font-semibold"

@@ -113,13 +113,13 @@ export function SetupWizard({ providerId, onClose }: Props) {
         className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-lg border"
         style={{
           background: "var(--bg-secondary)",
-          borderColor: "var(--border-color)",
+          borderColor: "var(--border)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
           className="flex items-center justify-between border-b px-5 py-3"
-          style={{ borderColor: "var(--border-color)" }}
+          style={{ borderColor: "var(--border)" }}
         >
           <h2
             className="text-[15px] font-semibold"
@@ -186,14 +186,14 @@ export function SetupWizard({ providerId, onClose }: Props) {
 
         <div
           className="flex justify-end border-t px-5 py-3"
-          style={{ borderColor: "var(--border-color)" }}
+          style={{ borderColor: "var(--border)" }}
         >
           <button
             onClick={onClose}
             className="h-8 rounded-md border px-3 text-[13px]"
             style={{
               background: "transparent",
-              borderColor: "var(--border-color)",
+              borderColor: "var(--border)",
               color: "var(--text-primary)",
             }}
           >
@@ -246,7 +246,7 @@ function StepRow({
   return (
     <div
       className="flex gap-3 border-b py-3 last:border-b-0"
-      style={{ borderColor: "var(--border-color)" }}
+      style={{ borderColor: "var(--border)" }}
     >
       <Icon
         className={`h-4 w-4 shrink-0 mt-0.5 ${running ? "animate-spin" : ""}`}
@@ -286,7 +286,7 @@ function StepRow({
                 onClick={onRetry}
                 className="h-7 rounded-md border px-3 text-[12px]"
                 style={{
-                  borderColor: "var(--border-color)",
+                  borderColor: "var(--border)",
                   color: "var(--text-primary)",
                 }}
               >
@@ -296,7 +296,7 @@ function StepRow({
                 onClick={onClose}
                 className="h-7 rounded-md border px-3 text-[12px]"
                 style={{
-                  borderColor: "var(--border-color)",
+                  borderColor: "var(--border)",
                   color: "var(--text-primary)",
                 }}
               >
@@ -335,7 +335,7 @@ function NeedsInputForm({
               key={o.value}
               className="flex cursor-pointer items-center gap-2 rounded-md border p-2 text-[12px]"
               style={{
-                borderColor: value === o.value ? "var(--accent-blue)" : "var(--border-color)",
+                borderColor: value === o.value ? "var(--accent-blue)" : "var(--border)",
                 background: value === o.value ? "var(--bg-tertiary)" : "transparent",
               }}
             >
@@ -359,7 +359,7 @@ function NeedsInputForm({
           className="h-8 w-full rounded-md border px-2 text-[12px]"
           style={{
             background: "var(--bg-input)",
-            borderColor: "var(--border-color)",
+            borderColor: "var(--border)",
             color: "var(--text-primary)",
           }}
         />

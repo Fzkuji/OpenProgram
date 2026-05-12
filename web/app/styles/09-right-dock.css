@@ -177,7 +177,7 @@
   position: absolute;
   pointer-events: none;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   color: var(--text-primary);
   padding: 6px 9px;
   border-radius: 6px;

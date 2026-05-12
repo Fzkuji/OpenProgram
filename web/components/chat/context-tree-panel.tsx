@@ -18,12 +18,12 @@ export function ContextTreePanel({ tree, onClose }: Props) {
       className="flex h-screen w-[360px] shrink-0 flex-col border-l"
       style={{
         background: "var(--bg-secondary)",
-        borderColor: "var(--border-color)",
+        borderColor: "var(--border)",
       }}
     >
       <div
         className="flex h-12 items-center justify-between border-b px-4"
-        style={{ borderColor: "var(--border-color)" }}
+        style={{ borderColor: "var(--border)" }}
       >
         <div className="flex items-center gap-2">
           <Activity
@@ -65,7 +65,7 @@ export function ContextTreePanel({ tree, onClose }: Props) {
       {selected && (
         <div
           className="max-h-[40%] overflow-y-auto border-t p-4"
-          style={{ borderColor: "var(--border-color)" }}
+          style={{ borderColor: "var(--border)" }}
         >
           <NodeDetail node={selected} />
         </div>

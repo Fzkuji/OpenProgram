@@ -96,7 +96,7 @@ export function AppSidebar() {
       style={{
         width: "var(--sidebar-width)",
         background: "var(--bg-secondary)",
-        borderColor: "var(--border-color)",
+        borderColor: "var(--border)",
       }}
     >
       <div className="flex h-12 items-center px-3">
@@ -181,7 +181,7 @@ export function AppSidebar() {
         </Section>
       </div>
 
-      <div className="relative border-t" style={{ borderColor: "var(--border-color)" }}>
+      <div className="relative border-t" style={{ borderColor: "var(--border)" }}>
         <button
           onClick={() => setMenuOpen((v) => !v)}
           className="flex w-full items-center gap-2 px-3 py-3 text-left transition-colors"
@@ -210,7 +210,7 @@ export function AppSidebar() {
             className="absolute bottom-full left-3 right-3 mb-1 overflow-hidden rounded-lg border py-1 shadow-lg"
             style={{
               background: "var(--bg-tertiary)",
-              borderColor: "var(--border-color)",
+              borderColor: "var(--border)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -225,7 +225,7 @@ export function AppSidebar() {
               <Cog6ToothIcon className="h-4 w-4" />
               Settings
             </Link>
-            <div className="my-1 border-t" style={{ borderColor: "var(--border-color)" }} />
+            <div className="my-1 border-t" style={{ borderColor: "var(--border)" }} />
             <a
               href="https://github.com/Fzkuji/OpenProgram"
               target="_blank"
