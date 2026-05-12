@@ -360,6 +360,12 @@ window.renderBranchesPanel = function () {
     var _raw = sessionStorage.getItem('agentic_branches_collapsed');
     var c = _raw === null ? true : _raw === '1';
     sessionStorage.setItem('agentic_branches_collapsed', c ? '0' : '1');
+    // Going from collapsed → expanded: tell the next render to
+    // position HEAD into the visible window. This is the ONE case
+    // where we want the panel to move on its own — the user just
+    // asked to "see more", so showing HEAD's neighbours is the
+    // sensible default. Plain checkouts still don't move.
+    if (c) window._branchesNextScrollToHead = true;
     window.renderBranchesPanel();
   });
 
@@ -407,6 +413,24 @@ window.renderBranchesPanel = function () {
   // self-motion on checkout. Any auto-scroll into view, even
   // block:'nearest', registers as a jump.
   list.scrollTop = _prevScrollTop;
+
+  // Exception: an explicit collapsed→expanded toggle wants HEAD in
+  // the visible window. Honour exactly once and clear the flag so
+  // the next checkout doesn't move the panel.
+  if (window._branchesNextScrollToHead) {
+    window._branchesNextScrollToHead = false;
+    var activeEl = list.querySelector('.branch-item.active');
+    if (activeEl) {
+      var aTop = activeEl.offsetTop;
+      var aH   = activeEl.offsetHeight;
+      var cH   = list.clientHeight;
+      if (aTop < list.scrollTop) {
+        list.scrollTop = aTop;
+      } else if (aTop + aH > list.scrollTop + cH) {
+        list.scrollTop = aTop + aH - cH;
+      }
+    }
+  }
 };
 window._onBranchesListMessage = _onBranchesListMessage;
 
