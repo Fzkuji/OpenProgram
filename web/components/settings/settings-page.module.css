@@ -122,9 +122,11 @@
   font-weight: 600;
   color: var(--text-bright);
   margin: 0;
-  /* Indented so the heading sits inside, not against the 2nd-level
-     nav divider. providersLayout below stays flush at the edges. */
-  padding: 12px 24px 8px;
+  /* Lives at the top of providersSidebar (3rd column) which has 8px
+     outer padding. With 8 (sidebar) + 8 (title) = 16 above text,
+     same as .detail's padding-top 16, the AI Providers heading and the
+     4th-level header ("Claude (Max plan)") sit on the same line. */
+  padding: 8px;
 }
 
 .card {

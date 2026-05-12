@@ -12,8 +12,9 @@ import { useState } from "react";
 import styles from "./settings-page.module.css";
 import { GeneralSection } from "./general-section";
 import { ProvidersSection } from "./providers-section";
+import { SearchProvidersSection } from "./search-providers-section";
 
-type Tab = "providers" | "general";
+type Tab = "providers" | "search" | "general";
 
 export function SettingsPage() {
   const [tab, setTab] = useState<Tab>("providers");
@@ -39,6 +40,14 @@ export function SettingsPage() {
             </div>
             <div
               className={
+                styles.navItem + (tab === "search" ? " " + styles.active : "")
+              }
+              onClick={() => setTab("search")}
+            >
+              Web Search
+            </div>
+            <div
+              className={
                 styles.navItem + (tab === "general" ? " " + styles.active : "")
               }
               onClick={() => setTab("general")}
@@ -47,7 +56,13 @@ export function SettingsPage() {
             </div>
           </div>
           <div className={styles.content}>
-            {tab === "providers" ? <ProvidersSection /> : <GeneralSection />}
+            {tab === "providers" ? (
+              <ProvidersSection />
+            ) : tab === "search" ? (
+              <SearchProvidersSection />
+            ) : (
+              <GeneralSection />
+            )}
           </div>
         </div>
       </div>

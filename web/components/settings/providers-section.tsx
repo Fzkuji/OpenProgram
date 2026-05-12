@@ -156,9 +156,9 @@ export function ProvidersSection() {
 
   return (
     <div className={styles.section}>
-      <h2 className={styles.sectionTitle}>AI Providers</h2>
       <div className={styles.providersLayout}>
         <div className={styles.providersSidebar} ref={sidebarRef}>
+          <h2 className={styles.sectionTitle}>AI Providers</h2>
           <div className={styles.providersSearch}>
             <input
               type="search"
@@ -405,7 +405,7 @@ function CliInfo({ provider }: { provider: Provider }) {
   );
 }
 
-function ApiKey({
+export function ApiKey({
   envVar,
   configured,
   onChanged,
