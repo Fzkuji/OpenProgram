@@ -184,7 +184,7 @@
   text-overflow: ellipsis;
 }
 .folderCount {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   background: var(--bg-tertiary);
   padding: 1px 6px;
@@ -217,7 +217,7 @@
   margin-bottom: 20px;
 }
 .catHeader {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -285,7 +285,7 @@
   text-overflow: ellipsis;
 }
 .cardDesc {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--text-secondary);
   line-height: 1.4;
   display: -webkit-box;
@@ -294,7 +294,7 @@
   overflow: hidden;
 }
 .cardMeta {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
   margin-top: 4px;
 }

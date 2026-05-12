@@ -87,7 +87,7 @@
 .menu-btn:hover { color: var(--text-bright); }
 
 .status-badge {
-  font-size: 11px;
+  font-size: 12px;
   padding: 2px 8px;
   border-radius: 3px;
   background: rgba(97, 175, 239, 0.12);
@@ -99,7 +99,7 @@
   background: rgba(97, 175, 239, 0.2);
 }
 .branch-badge {
-  font-size: 11px;
+  font-size: 12px;
   padding: 2px 8px;
   border-radius: 3px;
   background: rgba(180, 180, 180, 0.08);
@@ -244,10 +244,10 @@
   border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
 }
 .live-exec-tree .tree-title {
-  flex: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  flex: 1; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
 }
 .live-exec-tree .tree-body { padding: 6px 8px; }
-.live-exec-tree .tree-chevron { font-size: 10px; transition: transform 0.2s; }
+.live-exec-tree .tree-chevron { font-size: 12px; transition: transform 0.2s; }
 .live-exec-tree.collapsed .tree-body { display: none; }
 .live-exec-tree.collapsed .tree-chevron { transform: rotate(-90deg); }
 
@@ -255,7 +255,7 @@
 .node-live-status {
   display: flex; align-items: center; gap: 6px;
   padding: 2px 8px; margin: 2px 0;
-  color: var(--text-muted); font-size: 11px;
+  color: var(--text-muted); font-size: 12px;
   animation: msgAppear 0.2s ease forwards;
 }
 .node-live-status .spinner-sm {
@@ -384,7 +384,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0 6px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   user-select: none;
@@ -426,7 +426,7 @@
   background: var(--bg-primary);
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
 }
 .message-edit-btn:hover:not([disabled]) {
   background: var(--bg-hover, rgba(0,0,0,0.05));
@@ -499,7 +499,7 @@
 }
 
 .message-sender {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-bright);
 }
@@ -521,7 +521,7 @@
   margin: 8px 0;
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--text-primary);
   white-space: pre-wrap;
@@ -544,7 +544,7 @@
 .message-content a { color: var(--accent-blue); text-decoration: none; }
 .message-content a:hover { text-decoration: underline; }
 .message-content blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 4px 12px; color: var(--text-secondary); }
-.message-content table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.message-content table { border-collapse: collapse; margin: 8px 0; font-size: 14px; }
 .message-content th, .message-content td { border: 1px solid var(--border); padding: 4px 8px; }
 .message-content th { background: var(--bg-secondary); }
 
@@ -567,7 +567,7 @@
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-bright);
   cursor: pointer;
   user-select: none;
@@ -578,7 +578,7 @@
 .runtime-block.collapsed .runtime-block-footer { display: none; }
 .runtime-icon {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 14px;
   flex-shrink: 0;
   width: 18px;
   text-align: center;
@@ -591,7 +591,7 @@
 .runtime-block.collapsed .runtime-block-header .runtime-result-preview {
   display: inline;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 14px;
   margin-left: 8px;
   font-weight: normal;
 }
@@ -601,7 +601,7 @@
 }
 .runtime-params {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 .runtime-block-body {
   padding: 0;
@@ -661,7 +661,7 @@
 .runtime-footer-center { justify-content: center; }
 .runtime-footer-right { justify-content: flex-end; }
 .usage-footer-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   font-family: var(--font-mono);
   white-space: nowrap;
@@ -690,7 +690,7 @@
   gap: 8px;
   padding-left: 36px;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .spinner {
@@ -745,8 +745,8 @@
 }
 .exec-log-header:hover { background: var(--bg-hover); }
 .exec-log-header .spinner-sm { width: 12px; height: 12px; border: 1.5px solid var(--border); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
-.exec-log-title { flex: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-.exec-log-chevron { font-size: 10px; transition: transform 0.2s; }
+.exec-log-title { flex: 1; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.exec-log-chevron { font-size: 12px; transition: transform 0.2s; }
 .exec-log.collapsed .exec-log-body { display: none; }
 .exec-log.collapsed .exec-log-chevron { transform: rotate(-90deg); }
 .exec-log-body {
@@ -762,20 +762,20 @@
   to { opacity: 1; transform: translateY(0); }
 }
 .exec-log-indent { flex-shrink: 0; }
-.exec-log-icon { flex-shrink: 0; width: 14px; text-align: center; font-size: 11px; }
+.exec-log-icon { flex-shrink: 0; width: 14px; text-align: center; font-size: 12px; }
 .exec-log-icon.running { color: var(--accent-blue); }
 .exec-log-icon.done { color: var(--accent-green); }
 .exec-log-icon.error { color: var(--accent-red); }
 .exec-log-name { color: var(--text-bright); cursor: pointer; }
 .exec-log-name:hover { text-decoration: underline; }
 .exec-log-params { color: var(--text-muted); }
-.exec-log-time { color: var(--text-muted); margin-left: auto; flex-shrink: 0; font-size: 11px; }
-.exec-log-output { color: var(--text-secondary); padding-left: 20px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; }
+.exec-log-time { color: var(--text-muted); margin-left: auto; flex-shrink: 0; font-size: 12px; }
+.exec-log-output { color: var(--text-secondary); padding-left: 20px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; }
 
 .system-message {
   text-align: center;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   padding: 6px 0;
   opacity: 0.7;
 }
@@ -807,7 +807,7 @@
 
 /* Runtime info badge */
 .runtime-badge {
-  font-size: 11px;
+  font-size: 12px;
   padding: 2px 8px;
   border-radius: 3px;
   background: rgba(152,195,121,0.12);
@@ -819,7 +819,7 @@
   background: rgba(86,182,194,0.12);
   color: #56b6c2;
   font-family: monospace;
-  font-size: 10px;
+  font-size: 12px;
 }
 .runtime-badge.model {
   background: rgba(198,120,221,0.12);
@@ -833,11 +833,11 @@
 .agent-badge {
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 .token-badge {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   cursor: default;
   white-space: nowrap;
 }
@@ -875,7 +875,7 @@
   margin-bottom: 8px;
 }
 .agent-selector .provider-name {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--accent-green);
   margin: 4px 0 2px 0;
   font-weight: 600;
@@ -890,7 +890,7 @@
   background: transparent;
   color: var(--text);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
@@ -999,12 +999,12 @@
   cursor: pointer;
   user-select: none;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 .inline-tree-header:hover { background: var(--bg-hover); }
 .inline-tree-toggle {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   transition: transform var(--transition);
   display: inline-block;
 }
@@ -1019,7 +1019,7 @@
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
   padding: 2px 8px;
   border-radius: 3px;
@@ -1059,13 +1059,13 @@
   padding: 4px 10px;
   background: var(--bg-tertiary);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   user-select: none;
 }
 .stream-terminal-header:hover { color: var(--text-primary); }
 .stream-terminal-toggle {
-  font-size: 9px;
+  font-size: 12px;
   transition: transform var(--transition);
   display: inline-block;
   transform: rotate(90deg);
@@ -1076,7 +1076,7 @@
   padding: 8px 10px;
   background: #1a1a1a;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   max-height: 200px;
   overflow-y: auto;
@@ -1087,7 +1087,7 @@
 .stream-terminal .stream-text { color: #e0e0e0; }
 .stream-terminal .stream-tool { color: #56b6c2; font-weight: 600; }
 .stream-terminal .stream-status { color: #e5c07b; font-style: italic; }
-.stream-terminal .stream-time { color: var(--text-muted); font-size: 10px; }
+.stream-terminal .stream-time { color: var(--text-muted); font-size: 12px; }
 
 /* Error card */
 .error-content {
@@ -1098,7 +1098,7 @@
   margin: 8px 0;
   margin-left: 36px;
   color: var(--accent-red);
-  font-size: 13px;
+  font-size: 14px;
   font-family: var(--font-mono);
   white-space: pre-wrap;
   word-break: break-word;
@@ -1324,7 +1324,7 @@
 }
 
 .context-stats-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-bright);
   font-family: var(--font-mono);
   height: 30px; line-height: 28px;
@@ -1390,7 +1390,7 @@
 .stop-btn:hover { opacity: 1; }
 
 .input-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   text-align: center;
   margin-top: 6px;
@@ -1408,7 +1408,7 @@
 .thinking-selector {
   display: inline-flex; align-items: center; gap: 5px;
   height: 32px; padding: 0 10px; border-radius: 999px; cursor: pointer;
-  font-size: 13px; color: var(--text-secondary);
+  font-size: 14px; color: var(--text-secondary);
   background: transparent; border: none;
   transition: background var(--transition), color var(--transition);
   user-select: none; box-sizing: border-box;
@@ -1609,7 +1609,7 @@
 .thinking-option:hover { background: var(--bg-hover); color: var(--text-bright); }
 .thinking-option.selected { color: var(--text-bright); background: var(--bg-hover); }
 .thinking-opt-label { min-width: 55px; flex-shrink: 0; }
-.thinking-opt-desc { font-size: 11px; color: var(--text-muted); flex: 1; }
+.thinking-opt-desc { font-size: 12px; color: var(--text-muted); flex: 1; }
 .thinking-opt-check { width: 18px; flex-shrink: 0; text-align: center; color: var(--accent-blue); font-size: 14px; }
 
 /* ===== Function Form (replaces input-wrapper content) ===== */
@@ -1686,23 +1686,23 @@
 }
 .fn-form-label-name {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-bright);
 }
 .fn-form-label-type {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   opacity: 0.8;
 }
 .fn-form-label-required {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--accent-red);
   opacity: 0.7;
 }
 .fn-form-label-optional {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 .fn-form-label-desc {
@@ -1716,7 +1716,7 @@
   border-radius: 12px;
   padding: 8px 12px;
   color: var(--text-bright);
-  font-size: 13px;
+  font-size: 14px;
   font-family: var(--font-mono);
   outline: none;
   transition: border-color var(--transition);
@@ -1778,7 +1778,7 @@
   border-radius: 8px;
   color: var(--text-bright);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   outline: none;
   transition: border-color 0.15s;
   min-width: 0;
@@ -1921,7 +1921,7 @@ select.fn-form-input {
 /* No-params message */
 .fn-form-no-params {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 14px;
   padding: 4px 0;
 }
 
@@ -1988,7 +1988,7 @@ select.fn-form-input {
   padding: 0 7px;
   margin-left: 4px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 16px;
   display: inline-block;
   vertical-align: middle;
@@ -2019,7 +2019,7 @@ select.fn-form-input {
 .chat-fold-btn:hover { background: var(--bg-hover); color: var(--text-bright); }
 .chat-fold-caret {
   display: inline-block;
-  font-size: 9px;
+  font-size: 12px;
   width: 10px;
   color: var(--text-muted);
   transition: transform 150ms ease;
@@ -2038,7 +2038,7 @@ select.fn-form-input {
 .chat-fold-elapsed {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   flex-shrink: 0;
 }
 .chat-tool-name {
@@ -2071,7 +2071,7 @@ select.fn-form-input {
 .chat-tool-section + .chat-tool-section { margin-top: 8px; }
 .chat-tool-section-label {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   margin-bottom: 4px;

@@ -50,14 +50,14 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 14px;
   outline: none;
   transition: border-color 0.15s;
 }
 .chats-search:focus { border-color: var(--border-light); }
 .chats-search::placeholder { color: var(--text-muted); }
 .chats-meta {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-muted);
   padding: 12px 0 4px;
   border-bottom: 1px solid var(--border);
@@ -78,7 +78,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chats-row-meta { font-size: 13px; color: var(--text-muted); }
+.chats-row-meta { font-size: 14px; color: var(--text-muted); }
 .chats-empty {
   padding: 48px 0;
   text-align: center;
@@ -105,14 +105,14 @@
 .code-modal-overlay.active { opacity: 1; pointer-events: auto; }
 .code-modal { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-lg); width: 90%; max-width: 900px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
 .code-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
-.code-modal-title { font-family: var(--font-mono); font-size: 15px; color: var(--accent-blue); font-weight: 600; }
+.code-modal-title { font-family: var(--font-mono); font-size: 14px; color: var(--accent-blue); font-weight: 600; }
 .code-modal-close { background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
 .code-modal-close:hover { background: var(--bg-hover); color: var(--text-bright); }
 .code-modal-body { overflow: auto; flex: 1; }
-.code-modal-body pre { margin: 0; padding: 20px; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; color: var(--text-primary); white-space: pre; overflow-x: auto; }
+.code-modal-body pre { margin: 0; padding: 20px; font-family: var(--font-mono); font-size: 14px; line-height: 1.6; color: var(--text-primary); white-space: pre; overflow-x: auto; }
 .code-modal-body .line-num { color: var(--text-muted); margin-right: 16px; user-select: none; display: inline-block; text-align: right; width: 30px; }
 .code-modal-actions { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); }
-.code-modal-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 13px; transition: all var(--transition); }
+.code-modal-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 14px; transition: all var(--transition); }
 .code-modal-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
 .code-modal-btn.primary { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
 .code-modal-btn.primary:hover { opacity: 0.85; }
@@ -134,10 +134,10 @@
 .provider-item.unavailable { opacity: 0.4; }
 .provider-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; margin-left: 5px; margin-right: 5px; }
 .provider-item.configured .provider-dot { background: var(--accent-green); }
-.provider-type-tag { font-size: 10px; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.provider-type-tag { font-size: 12px; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
 .provider-item.configured .provider-type-tag { color: var(--accent-green); }
 .provider-name { flex: 1; }
-.config-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; text-decoration: none; background: rgba(75,82,99,0.3); color: var(--text-muted); border: 1px solid var(--border); transition: all 0.2s; cursor: pointer; }
+.config-badge { font-size: 12px; padding: 1px 5px; border-radius: 3px; text-decoration: none; background: rgba(75,82,99,0.3); color: var(--text-muted); border: 1px solid var(--border); transition: all 0.2s; cursor: pointer; }
 .config-badge.configured { background: rgba(97,175,239,0.12); color: var(--accent-blue); border-color: rgba(97,175,239,0.3); }
 .config-badge:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
 
