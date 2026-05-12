@@ -116,7 +116,7 @@
   margin: 0;
   /* Indented so the heading sits inside, not against the 2nd-level
      nav divider. providersLayout below stays flush at the edges. */
-  padding: 20px 24px 16px;
+  padding: 12px 24px 8px;
 }
 
 .card {
@@ -384,8 +384,10 @@
   flex-direction: column;
   gap: 16px;
   /* 4th-level content panel — internal padding so cards/labels don't
-     touch the 3rd-level divider on the left or viewport edge on the right. */
-  padding: 24px 32px 32px;
+     touch the 3rd-level divider on the left or viewport edge on the right.
+     Kept compact (16/20) — the panel is content-heavy, large gutters
+     waste space without improving readability. */
+  padding: 16px 20px 20px;
   /* No inner overflow — single page-level scroll. The sticky
      `.providersSidebar` keeps the provider picker on screen while
      the user scans this column's full content. */
