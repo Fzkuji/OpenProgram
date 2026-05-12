@@ -473,15 +473,15 @@ export function MemoryPage() {
 
         {/* ── Core ── */}
         {tab === "core" && (
-          <div className={styles.coreLayout}>
-            <div className={styles.coreInfo}>
-              <div className={styles.coreInfoIcon}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="3.5"/>
-                  <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M6.4 17L5 18.4"/>
-                </svg>
-              </div>
-              <div>
+          <div className={styles.layout}>
+            <div className={styles.tree}>
+              <div className={styles.coreSidebar}>
+                <div className={styles.coreInfoIcon}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3.5"/>
+                    <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M6.4 17L5 18.4"/>
+                  </svg>
+                </div>
                 <div className={styles.coreInfoTitle}>Core Memory</div>
                 <div className={styles.coreInfoDesc}>
                   Injected into every system prompt. Keep it under 2 KB — concise, high-signal facts about the user and current context.
@@ -491,7 +491,7 @@ export function MemoryPage() {
                     <span className={coreMeta.size > 2048 ? styles.metaWarn : styles.metaOk}>
                       {formatSize(coreMeta.size)}{coreMeta.size > 2048 ? " ⚠ exceeds 2 KB" : " / 2 KB"}
                     </span>
-                    {coreMeta.mtime > 0 && <span>· Modified {formatDate(coreMeta.mtime)}</span>}
+                    {coreMeta.mtime > 0 && <span>Modified {formatDate(coreMeta.mtime)}</span>}
                   </div>
                 )}
               </div>

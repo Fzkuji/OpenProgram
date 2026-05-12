@@ -489,21 +489,13 @@
 }
 
 /* Core tab */
-.coreLayout {
+/* Core tab — left-right layout shares .layout grid with Wiki/Journal.
+   The .tree column hosts a sidebar info card (.coreSidebar). */
+.coreSidebar {
+  padding: 16px 14px;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-
-.coreInfo {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  flex-shrink: 0;
+  gap: 10px;
 }
 
 .coreInfoIcon {
@@ -515,8 +507,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  color: var(--text-primary);
+  color: var(--nav-color);
 }
 
 .coreInfoIcon svg {
@@ -528,20 +519,19 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--text-bright);
-  margin-bottom: 4px;
 }
 
 .coreInfoDesc {
   font-size: 11px;
   color: var(--text-primary);
-  line-height: 1.5;
-  max-width: 560px;
+  line-height: 1.55;
 }
 
 .coreInfoMeta {
   display: flex;
-  gap: 8px;
-  margin-top: 6px;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
   font-size: 11px;
   color: var(--text-primary);
 }
