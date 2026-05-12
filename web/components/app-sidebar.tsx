@@ -104,13 +104,13 @@ export function AppSidebar() {
         <NavItem
           active={chatActive}
           onClick={newChat}
-          icon={<Plus className="h-[18px] w-[18px]" />}
+          icon={<Plus className="h-[18px] w-[18px]" strokeWidth={1.5} />}
           label="New chat"
         />
         <NavItem
           active={programsActive}
           onClick={() => router.push("/programs")}
-          icon={<LayoutGrid className="h-[18px] w-[18px]" />}
+          icon={<LayoutGrid className="h-[18px] w-[18px]" strokeWidth={1.5} />}
           label="Programs"
         />
         <NavItem
@@ -118,7 +118,7 @@ export function AppSidebar() {
           onClick={() => router.push("/memory")}
           icon={
             <span className="memory-icon-wrap">
-              <ListTree className="h-[18px] w-[18px]" />
+              <ListTree className="h-[18px] w-[18px]" strokeWidth={1.5} />
             </span>
           }
           label="Memory"
