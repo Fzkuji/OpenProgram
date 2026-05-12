@@ -31,8 +31,9 @@
   display: grid;
   /* sidebar inner content = 288 − 1px border = 287; match here. */
   grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
-  gap: 24px;
-  padding: 16px 24px 32px;
+  /* No horizontal padding/gap — nav column sits flush against the main
+     sidebar's right edge, same pattern as Settings + Memory. */
+  padding: 16px 0 32px;
   min-height: 0;
   overflow: hidden;
 }
@@ -40,6 +41,8 @@
 .content {
   min-width: 0;
   overflow-y: auto;
+  /* Breathing room since body no longer has horizontal padding */
+  padding: 0 24px;
 }
 
 /* Inline toolbar next to title */
