@@ -154,7 +154,7 @@ export function AppSidebar() {
                       )}
                       style={{
                         background: active ? "var(--bg-tertiary)" : "transparent",
-                        color: active ? "var(--text-bright)" : "var(--text-primary)",
+                        color: active ? "var(--nav-color-hover)" : "var(--nav-color)",
                       }}
                       onMouseEnter={(e) => {
                         if (!active)
@@ -263,18 +263,18 @@ function NavItem({
       className="group flex h-9 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] transition-colors"
       style={{
         background: active ? "var(--bg-tertiary)" : "transparent",
-        color: active ? "var(--text-bright)" : "var(--text-primary)",
+        color: active ? "var(--nav-color-hover)" : "var(--nav-color)",
       }}
       onMouseEnter={(e) => {
         if (!active) {
           e.currentTarget.style.background = "var(--bg-hover)";
-          e.currentTarget.style.color = "var(--text-bright)";
+          e.currentTarget.style.color = "var(--nav-color-hover)";
         }
       }}
       onMouseLeave={(e) => {
         if (!active) {
           e.currentTarget.style.background = "transparent";
-          e.currentTarget.style.color = "var(--text-primary)";
+          e.currentTarget.style.color = "var(--nav-color)";
         }
       }}
     >

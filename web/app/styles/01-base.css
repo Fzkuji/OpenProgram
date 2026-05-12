@@ -35,6 +35,8 @@
   --text-secondary: #97958c;
   --text-bright: #f8f8f6;
   --text-muted: #6b6a63;
+  --nav-color: #c3c2b7;       /* nav default — same as text-primary in dark */
+  --nav-color-hover: #f8f8f6; /* nav hover — same as text-bright */
   --user-msg-bg: #2a2a28;
   --assistant-msg-bg: #232322;
   --shadow: 0 2px 8px rgba(0,0,0,0.3);
@@ -55,6 +57,8 @@
   --text-secondary: #73726c;
   --text-bright: #141413;
   --text-muted: #97958c;
+  --nav-color: #73726c;       /* lighter than text-primary so light-mode icons aren't black */
+  --nav-color-hover: #141413; /* same as text-bright */
   --user-msg-bg: #e8e6dc;
   --assistant-msg-bg: #f0eee6;
   --shadow: 0 2px 8px rgba(0,0,0,0.08);

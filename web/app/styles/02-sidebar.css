@@ -152,7 +152,7 @@
 .sidebar-toggle {
   background: transparent;
   border: none;
-  color: var(--text-primary);
+  color: var(--nav-color);
   cursor: pointer;
   padding: 0;
   width: 32px;
@@ -169,7 +169,7 @@
 
 /* Claude pattern: bg darkens, icon brightens */
 .sidebar-toggle:hover {
-  color: var(--text-bright);
+  color: var(--nav-color-hover);
   background: rgba(0, 0, 0, 0.12);
 }
 .sidebar-toggle:active {
@@ -199,7 +199,7 @@
   padding: 6px 8px;
   height: 32px;
   border-radius: 6px;
-  color: var(--text-primary);
+  color: var(--nav-color);
   text-decoration: none;
   font-size: 14px;
   font-weight: 400;
@@ -210,14 +210,14 @@
 }
 .sidebar-nav-item:hover {
   background: var(--bg-hover);
-  color: var(--text-bright);
+  color: var(--nav-color-hover);
 }
 .sidebar-nav-item:active {
   background: rgba(0, 0, 0, 0.15);
 }
 .sidebar-nav-item.active {
   background: var(--bg-hover);
-  color: var(--text-bright);
+  color: var(--nav-color-hover);
 }
 
 /* Icon container — Claude: 16x16 container, 20x20 SVG (overflow visible) */
@@ -230,14 +230,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-primary);
+  color: var(--nav-color);
   flex-shrink: 0;
   transition: color 75ms;
   overflow: visible;
 }
 .sidebar-nav-item:hover .sidebar-nav-icon,
 .sidebar-nav-item.active .sidebar-nav-icon {
-  color: var(--text-bright);
+  color: var(--nav-color-hover);
 }
 .sidebar-nav-icon svg {
   width: 20px;

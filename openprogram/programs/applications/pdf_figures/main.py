@@ -70,21 +70,22 @@ def _parse_verdict(reply: str) -> dict:
     """Tolerantly parse the VLM's JSON verdict.
 
     Strips markdown fences and prose around the JSON object.
-    Returns ``{"ok": True}`` on parse failure (treat ambiguous reply
-    as "accept" to avoid infinite retry).
+    Returns ``{"_unparseable": True}`` when the VLM didn't produce
+    parseable JSON — caller exits the retry loop with verified=False
+    rather than silently accepting.
     """
     if reply is None:
-        return {"ok": True}
-    text = reply.strip()
+        return {"_unparseable": True}
+    text = str(reply).strip()
     if text.startswith("```"):
         text = "\n".join(line for line in text.splitlines() if not line.startswith("```"))
     m = _JSON_RE.search(text)
     if not m:
-        return {"ok": True}
+        return {"_unparseable": True}
     try:
         return json.loads(m.group(0))
     except json.JSONDecodeError:
-        return {"ok": True}
+        return {"_unparseable": True}
 
 
 def _page_dimensions(pdf_path: Path | str, page: int) -> tuple[float, float]:
@@ -223,13 +224,17 @@ def extract_pdf_figures(
                 cap_y1=current.bbox[3],
             )
             reply = runtime.exec(content=[
-                {"type": "image", "image_path": str(current.image_path)},
-                {"type": "image", "image_path": str(page_img)},
+                {"type": "image", "path": str(current.image_path)},
+                {"type": "image", "path": str(page_img)},
                 {"type": "text", "text": prompt},
             ])
             verdict = _parse_verdict(str(reply))
 
-            if verdict.get("ok", True):
+            if verdict.get("_unparseable"):
+                # VLM reply didn't parse — exit without claiming verified
+                break
+
+            if verdict.get("ok"):
                 verified = True
                 break
 
