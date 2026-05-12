@@ -25,9 +25,14 @@ def register(app):
         from openprogram.tools.web_search.registry import registry as _wsr
         import openprogram.tools.web_search.providers  # noqa: F401
         descs = {
-            "tavily": "LLM-tuned search (Tavily API). Free tier: 1000 queries/month.",
-            "exa": "Neural search (Exa API). Good for semantic queries.",
-            "duckduckgo": "Zero-key fallback. No setup required.",
+            "tavily": "LLM-tuned search (Tavily API). Snippets pre-summarised for agents. Free tier: 1000 queries/month.",
+            "exa": "Neural search (Exa API). Catches semantically related pages keyword engines miss.",
+            "perplexity": "Sonar API — returns an LLM-written answer with citations. Good for one-shot Q&A. Pay-as-you-go.",
+            "brave": "Independent index, privacy-first. Free tier (Data for AI): 2000 queries/month.",
+            "google": "Real Google results via Programmable Search Engine. Free tier: 100 queries/day. Needs GOOGLE_PSE_API_KEY + GOOGLE_PSE_CX.",
+            "firecrawl": "SERP + full page content in one call (no follow-up fetch needed). Free tier: 500 credits/month.",
+            "searxng": "Self-hosted meta search (aggregates Google/Bing/DDG). Set SEARXNG_URL to your instance. No API key.",
+            "duckduckgo": "Zero-key public fallback. No setup required.",
         }
         out = []
         for p in _wsr.all():

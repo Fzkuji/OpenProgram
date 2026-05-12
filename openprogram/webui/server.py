@@ -488,15 +488,35 @@ def _list_providers() -> list[dict]:
     result = []
     import urllib.request, urllib.error
     def _proxy_alive() -> bool:
-        url = os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:8765"
+        # Default is :3456 (where claude-max-api-proxy listens) — NOT :8765
+        # which is openprogram's own backend port and would always answer
+        # 200, masking proxy failure as "available".
+        url = os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:3456"
         try:
             with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=0.5):
                 return True
         except (urllib.error.URLError, ConnectionError, OSError):
             return False
+
+    def _codex_available() -> bool:
+        # The Codex provider needs OAuth credentials, NOT the `codex` CLI
+        # binary itself. The binary is only used once for `codex login`,
+        # after which OpenProgram reads ~/.codex/auth.json (or the
+        # adopted copy at ~/.openprogram/auth/openai-codex/default.json)
+        # and talks directly to chatgpt.com/backend-api — no proxy, no
+        # shell-out to `codex`.
+        import os as _os
+        from pathlib import Path
+        if (Path.home() / ".codex" / "auth.json").exists():
+            return True
+        if (Path.home() / ".openprogram" / "auth" / "openai-codex" /
+                "default.json").exists():
+            return True
+        return False
+
     checks = [
         # (name, label, available_check, env_keys_for_config_or_None_if_CLI)
-        ("chatgpt-subscription", "OpenAI Codex", lambda: shutil.which("codex") is not None, None),
+        ("chatgpt-subscription", "OpenAI Codex", _codex_available, None),
         ("gemini-cli", "Gemini CLI", lambda: shutil.which("gemini") is not None, None),
         ("anthropic", "Anthropic API", lambda: bool(_get_api_key("ANTHROPIC_API_KEY")), ["ANTHROPIC_API_KEY"]),
         ("openai", "OpenAI API", lambda: bool(_get_api_key("OPENAI_API_KEY")), ["OPENAI_API_KEY"]),
