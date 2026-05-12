@@ -1085,24 +1085,35 @@ def _resolve_model(profile: dict, override: Optional[str] = None):
 
     if get_model and requested:
         # Profile model can be "<provider>/<id>" or just "<id>".
+        model_id_only: Optional[str] = None
         if "/" in requested:
-            provider, model_id = requested.split("/", 1)
-            m = get_model(provider, model_id)
+            provider, model_id_only = requested.split("/", 1)
+            m = get_model(provider, model_id_only)
             if m:
                 return m
+            # The legacy provider-prefix form may not match: e.g.
+            # `claude-code/claude-sonnet-4-6` is a RUNTIME prefix
+            # whose actual model row lives under `anthropic/`. Fall
+            # through to the model-id probe below so we still find it.
+            if provider_hint is None:
+                provider_hint = provider
         else:
-            # Probe known providers, biased toward the dict's
-            # ``provider`` field if present so a malformed entry like
-            # ``{"provider": "chatgpt-subscription", "id": "gpt-5.5"}`` still
-            # tries the right backend first.
-            order = ["openai", "anthropic", "google", "amazon-bedrock",
-                     "cerebras", "claude-code", "github-copilot"]
-            if provider_hint and provider_hint not in order:
-                order.insert(0, provider_hint)
-            for provider in order:
-                m = get_model(provider, requested)
-                if m:
-                    return m
+            model_id_only = requested
+
+        # Probe known providers using just the model id. Biased toward
+        # the dict's ``provider`` field if present so an entry like
+        # ``{"provider": "chatgpt-subscription", "id": "gpt-5.5"}`` still
+        # tries the right backend first.
+        order = ["openai", "anthropic", "google", "amazon-bedrock",
+                 "cerebras", "claude-code", "github-copilot",
+                 "chatgpt-subscription", "openai-codex",
+                 "gemini-subscription", "openrouter"]
+        if provider_hint and provider_hint not in order:
+            order.insert(0, provider_hint)
+        for provider in order:
+            m = get_model(provider, model_id_only)
+            if m:
+                return m
 
     # Fallback stub — agent_loop validates pydantic but doesn't dial
     # the provider until stream_fn fires; tests stub stream_fn so
