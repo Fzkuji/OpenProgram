@@ -3752,7 +3752,7 @@ def create_app():
         # re-attach the window for the UI without a second round-trip.
         # The bare model_id (e.g. "gemini-2.5-pro") may match several
         # registry entries — github-copilot/gemini-2.5-pro caps at 128K,
-        # google-vertex/gemini-2.5-pro is 1M. Pick the entry with the
+        # gemini-subscription/gemini-2.5-pro is 1M. Pick the entry with the
         # largest context_window: pessimistic about the limit (smaller
         # window) would underreport headroom; the larger window is the
         # true upper bound the user can hit on their own provider.

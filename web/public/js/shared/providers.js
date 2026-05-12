@@ -86,9 +86,8 @@ async function loadModelPills() {
 var _MODEL_ICON_SLUGS = {
   'openai': 'openai', 'chatgpt-subscription': 'openai',
   'anthropic': 'claude', 'claude-code': 'claude',
-  'google': 'gemini', 'google-vertex': 'gemini',
+  'google': 'gemini',
   'gemini-subscription': 'gemini', 'gemini-cli': 'gemini',
-  'gemini-subscription-corp': 'gemini',
   'azure-openai-responses': 'azure',
   'amazon-bedrock': 'bedrock',
   'openrouter': 'openrouter',

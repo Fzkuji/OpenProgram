@@ -272,34 +272,14 @@
   transform: rotate(6deg) scale(0.98);
 }
 
-/* Programs icon — 2x2 grid, hover makes each square drift toward its corner */
-#navPrograms .sidebar-nav-icon svg rect {
-  transition: transform 0.3s cubic-bezier(0.165, 0.85, 0.45, 1);
-}
-#navPrograms:hover .sidebar-nav-icon svg rect:nth-of-type(1) { transform: translate(-0.5px, -0.5px); }
-#navPrograms:hover .sidebar-nav-icon svg rect:nth-of-type(2) { transform: translate( 0.5px, -0.5px); }
-#navPrograms:hover .sidebar-nav-icon svg rect:nth-of-type(3) { transform: translate(-0.5px,  0.5px); }
-#navPrograms:hover .sidebar-nav-icon svg rect:nth-of-type(4) { transform: translate( 0.5px,  0.5px); }
-#navPrograms:active .sidebar-nav-icon svg rect { transform: translate(0, 0); }
-
-/* Memory icon — search-dot rotates around the circle on hover */
-#navMemory .sidebar-nav-icon svg path:nth-of-type(2) {
-  transform-origin: 19px 18px;
-  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-#navMemory:hover .sidebar-nav-icon svg path:nth-of-type(2) {
-  transform: rotate(90deg);
-}
-
-/* Next.js sidebar — ListTree icon: subtle scale bounce on hover */
-.memory-icon-wrap {
-  display: contents;
-}
+/* Heroicons solid — uniform hover scale on every sidebar nav icon */
+.sidebar-nav-item .sidebar-nav-icon svg,
 .memory-icon-wrap svg {
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+.sidebar-nav-item:hover .sidebar-nav-icon svg,
 div:has(> .memory-icon-wrap):hover .memory-icon-wrap svg {
-  transform: scale(1.15);
+  transform: scale(1.12);
 }
 
 .sidebar-nav-label {

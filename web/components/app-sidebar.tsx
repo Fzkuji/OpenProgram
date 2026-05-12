@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
-import { Plus, LayoutGrid, Settings, Info, X, ListTree } from "lucide-react";
+import {
+  PencilSquareIcon,
+  Squares2X2Icon,
+  QueueListIcon,
+  Cog6ToothIcon,
+  InformationCircleIcon,
+  XMarkIcon,
+} from "@heroicons/react/20/solid";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/lib/session-store";
 import { useWS } from "@/lib/ws";
@@ -104,13 +111,13 @@ export function AppSidebar() {
         <NavItem
           active={chatActive}
           onClick={newChat}
-          icon={<Plus className="h-[18px] w-[18px]" strokeWidth={1.25} />}
+          icon={<PencilSquareIcon className="h-[18px] w-[18px]" />}
           label="New chat"
         />
         <NavItem
           active={programsActive}
           onClick={() => router.push("/programs")}
-          icon={<LayoutGrid className="h-[18px] w-[18px]" strokeWidth={1.25} />}
+          icon={<Squares2X2Icon className="h-[18px] w-[18px]" />}
           label="Programs"
         />
         <NavItem
@@ -118,7 +125,7 @@ export function AppSidebar() {
           onClick={() => router.push("/memory")}
           icon={
             <span className="memory-icon-wrap">
-              <ListTree className="h-[18px] w-[18px]" strokeWidth={1.25} />
+              <QueueListIcon className="h-[18px] w-[18px]" />
             </span>
           }
           label="Memory"
@@ -163,7 +170,7 @@ export function AppSidebar() {
                         className="opacity-0 transition-opacity group-hover:opacity-60 hover:opacity-100"
                         title="Delete"
                       >
-                        <X className="h-3 w-3" />
+                        <XMarkIcon className="h-3 w-3" />
                       </button>
                     </div>
                   </li>
@@ -215,7 +222,7 @@ export function AppSidebar() {
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
-              <Settings className="h-4 w-4" />
+              <Cog6ToothIcon className="h-4 w-4" />
               Settings
             </Link>
             <div className="my-1 border-t" style={{ borderColor: "var(--border-color)" }} />
@@ -229,7 +236,7 @@ export function AppSidebar() {
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
-              <Info className="h-4 w-4" />
+              <InformationCircleIcon className="h-4 w-4" />
               About
             </a>
           </div>
