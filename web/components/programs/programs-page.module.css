@@ -31,9 +31,11 @@
   display: grid;
   /* sidebar inner content = 288 − 1px border = 287; match here. */
   grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
-  /* No horizontal padding/gap — nav column sits flush against the main
-     sidebar's right edge, same pattern as Settings + Memory. */
-  padding: 16px 0 32px;
+  /* No horizontal padding — columns sit flush against sidebar + each other.
+     Vertical: 0 top so nav starts directly below the title's bottom border
+     (the inner .foldersNav has 8px padding to provide breathing room);
+     32 bottom for scroll-tail breathing room. */
+  padding: 0 0 32px;
   min-height: 0;
   overflow: hidden;
 }
@@ -41,8 +43,10 @@
 .content {
   min-width: 0;
   overflow-y: auto;
-  /* Breathing room since body no longer has horizontal padding */
-  padding: 0 24px;
+  /* Body no longer has horizontal/top padding; .content owns its own
+     breathing room. 16 top so cards sit clear of the title border;
+     24 horizontal for viewport-edge gap. */
+  padding: 16px 24px 0;
 }
 
 /* Inline toolbar next to title */
