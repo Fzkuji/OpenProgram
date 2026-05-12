@@ -317,15 +317,13 @@ export function MemoryPage() {
           </svg>
         }>Wiki</TabButton>
         <TabButton active={tab === "journal"} onClick={() => setTab("journal")} icon={
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
-            <circle cx="8" cy="8" r="6"/>
-            <path d="M8 5v3l2 1.5"/>
+          <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
+            <path d="M224,128v80a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V48A16,16,0,0,1,48,32h80a8,8,0,0,1,0,16H48V208H208V128a8,8,0,0,1,16,0Zm5.66-58.34-96,96A8,8,0,0,1,128,168H96a8,8,0,0,1-8-8V128a8,8,0,0,1,2.34-5.66l96-96a8,8,0,0,1,11.32,0l32,32A8,8,0,0,1,229.66,69.66Zm-17-5.66L192,43.31,179.31,56,200,76.69Z"/>
           </svg>
         }>Journal</TabButton>
         <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
-            <circle cx="8" cy="8" r="2.5"/>
-            <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1"/>
+          <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
+            <path d="M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z"/>
           </svg>
         }>Core</TabButton>
       </div>
@@ -477,9 +475,8 @@ export function MemoryPage() {
             <div className={styles.tree}>
               <div className={styles.coreSidebar}>
                 <div className={styles.coreInfoIcon}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="3.5"/>
-                    <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M6.4 17L5 18.4"/>
+                  <svg viewBox="0 0 256 256" fill="currentColor">
+                    <path d="M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z"/>
                   </svg>
                 </div>
                 <div className={styles.coreInfoTitle}>Core Memory</div>
