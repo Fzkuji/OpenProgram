@@ -221,7 +221,6 @@
 .providersLayout {
   display: grid;
   grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
-  gap: 24px;
 }
 .providersSidebar {
   display: flex;
