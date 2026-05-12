@@ -3631,101 +3631,13 @@ def create_app():
     app.routes.insert(0, WebSocketRoute("/ws", _websocket_handler))
 
     # REST endpoints
-    @app.get("/healthz")
-    async def healthz():
-        """Liveness + readiness probe.
-
-        Used by load balancers / k8s / docker-compose healthcheck +
-        humans curl-checking that the server is functioning. Reports
-        SessionDB connectivity, registered tool count, recent turn
-        count, and uptime.
-
-        Returns 200 even when degraded — the JSON ``status`` field
-        tells you the actual state. (200 + degraded vs 503 is a
-        deployment-policy choice; we let the caller decide based on
-        the body.)
-        """
-        import time as _time
-        info: dict = {
-            "status": "ok",
-            "checked_at": _time.time(),
-            "uptime_seconds": int(_time.time() - _SERVER_START_TIME),
-        }
-        # SessionDB ping — count sessions to prove the DB responds.
-        try:
-            from openprogram.agent.session_db import default_db
-            db = default_db()
-            session_count = len(db.list_sessions(limit=1))
-            info["db_ok"] = True
-            info["sessions_visible"] = session_count
-            # Recent activity: messages with timestamp in last 24h.
-            cutoff = _time.time() - 24 * 3600
-            recent = db.conn.execute(
-                "SELECT COUNT(*) AS c FROM messages WHERE timestamp >= ?",
-                (cutoff,),
-            ).fetchone()
-            info["messages_24h"] = recent["c"] if recent else 0
-        except Exception as e:
-            info["db_ok"] = False
-            info["db_error"] = f"{type(e).__name__}: {e}"
-            info["status"] = "degraded"
-        # Tool registry count — proves the @tool decorator's import
-        # side-effects fired and channels/webui can dispatch tools.
-        try:
-            from openprogram.tools import list_registered_agent_tools
-            info["tools_registered"] = len(list_registered_agent_tools())
-        except Exception:
-            info["tools_registered"] = 0
-        return JSONResponse(content=info)
-
     # Read-only catalog routes (tree, functions, tokens, programs meta)
     from openprogram.webui.routes import tree as _routes_tree
     _routes_tree.register(app)
 
-    @app.post("/api/chat")
-    async def post_chat(body: dict = None):
-        """Handle chat message via REST (alternative to WebSocket)."""
-        if body is None:
-            return JSONResponse(content={"error": "no body"}, status_code=400)
-        text = body.get("text", "").strip()
-        session_id = body.get("session_id")
-        if not text:
-            return JSONResponse(content={"error": "empty message"}, status_code=400)
-
-        conv = _get_or_create_session(session_id)
-        session_id = conv["id"]
-        msg_id = str(uuid.uuid4())[:8]
-
-        if not conv["messages"]:
-            conv["title"] = text[:50]
-
-        parsed = _parse_chat_input(text)
-        user_msg = {
-            "role": "user",
-            "id": msg_id,
-            "content": text,
-            "timestamp": time.time(),
-        }
-        if parsed["action"] == "run":
-            user_msg["display"] = "runtime"
-        _append_msg(conv, user_msg)
-
-        if parsed["action"] == "run":
-            threading.Thread(
-                target=_execute_in_context,
-                args=(session_id, msg_id, "run"),
-                kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"]},
-                daemon=True,
-            ).start()
-        elif parsed["action"] == "query":
-            threading.Thread(
-                target=_execute_in_context,
-                args=(session_id, msg_id, "query"),
-                kwargs={"query": parsed["raw"]},
-                daemon=True,
-            ).start()
-
-        return JSONResponse(content={"session_id": session_id, "msg_id": msg_id})
+    # /api/chat, /api/chat/branch, /api/run/{name} — routes.chat
+    from openprogram.webui.routes import chat as _routes_chat
+    _routes_chat.register(app)
 
     # Retry / Edit / Checkout routes live in _chat_routes.py — see
     # docs/design/contextgit.md. Keeping them out of this module keeps
@@ -3733,231 +3645,21 @@ def create_app():
     from ._chat_routes import router as _chat_router
     app.include_router(_chat_router)
 
-
-    @app.post("/api/chat/branch")
-    async def post_chat_branch(body: dict = None):
-        """Fork a conversation at a specific message.
-
-        Clones every message up to and including ``msg_id`` into a
-        brand new conversation and returns its id. Does not execute
-        anything — the caller navigates the user into the new conv
-        and the next message they send drives the fork forward.
-
-        Keeps things deliberately simple: no lineage tracking, no
-        "branch of" pointer. Two independent conversations that
-        happen to share a prefix. Good enough for the "what if I
-        asked X instead?" workflow without building a git DAG.
-        """
-        if body is None:
-            return JSONResponse(content={"error": "no body"}, status_code=400)
-        session_id = body.get("session_id")
-        pivot_id = body.get("msg_id")
-        if not session_id or not pivot_id:
-            return JSONResponse(
-                content={"error": "session_id and msg_id required"}, status_code=400,
-            )
-
-        import copy as _copy
-        with _sessions_lock:
-            src = _sessions.get(session_id)
-            if src is None:
-                return JSONResponse(content={"error": "unknown conv"}, status_code=404)
-            msgs = src["messages"]
-            pivot_idx = next(
-                (i for i, m in enumerate(msgs) if m.get("id") == pivot_id), -1,
-            )
-            if pivot_idx < 0:
-                return JSONResponse(content={"error": "unknown msg"}, status_code=404)
-
-            new_id = str(uuid.uuid4())[:8]
-            new_title = f"{src.get('title', 'branch')} (branch)"
-            _sessions[new_id] = {
-                "id": new_id,
-                "title": new_title,
-                "root_context": Context(
-                    name="chat_session", status="idle", start_time=time.time(),
-                ),
-                "runtime": None,
-                "provider_name": src.get("provider_name"),
-                "messages": _copy.deepcopy(msgs[: pivot_idx + 1]),
-                "function_trees": [],
-                "created_at": time.time(),
-                "branched_from": session_id,
-                "branched_at_msg": pivot_id,
-            }
-
-        _save_session(new_id)
-        return JSONResponse(content={
-            "session_id": new_id,
-            "title": new_title,
-            "branched_from": session_id,
-        })
-
-    @app.post("/api/run/{function_name}")
-    async def run_function(function_name: str, body: dict = None):
-        """Directly run a specific function.
-
-        The `work_dir` field in body is a runtime-level setting (not a function
-        argument) — it becomes the cwd for the exec runtime's subprocess. It is
-        required and validated server-side as a defense in depth (the UI also
-        disables Run when empty).
-        """
-        kwargs = body or {}
-        session_id = kwargs.pop("_session_id", None)
-        work_dir = kwargs.pop("work_dir", None)
-        if not work_dir or not str(work_dir).strip():
-            return JSONResponse(
-                content={"error": "work_dir is required"},
-                status_code=400,
-            )
-        kwargs["_work_dir"] = work_dir
-        conv = _get_or_create_session(session_id)
-        session_id = conv["id"]
-        msg_id = str(uuid.uuid4())[:8]
-
-        threading.Thread(
-            target=_execute_in_context,
-            args=(session_id, msg_id, "run"),
-            kwargs={"func_name": function_name, "kwargs": kwargs},
-            daemon=True,
-        ).start()
-
-        return JSONResponse(content={"session_id": session_id, "msg_id": msg_id})
-
     # Workdir picker, browse, history, canvas — registered from routes.workdir
     from openprogram.webui.routes import workdir as _routes_workdir
     _routes_workdir.register(app)
 
-    @app.post("/api/pause")
-    async def api_pause():
-        pause_execution()
-        _broadcast(json.dumps({"type": "status", "paused": True}))
-        return JSONResponse(content={"paused": True})
+    # Pause / Resume / Stop — routes.lifecycle
+    from openprogram.webui.routes import lifecycle as _routes_lifecycle
+    _routes_lifecycle.register(app)
 
-    @app.post("/api/resume")
-    async def api_resume():
-        resume_execution()
-        _broadcast(json.dumps({"type": "status", "paused": False}))
-        return JSONResponse(content={"paused": False})
+    # /api/providers, /api/provider/{name}, /api/models — routes.runtime
+    from openprogram.webui.routes import runtime as _routes_runtime
+    _routes_runtime.register(app)
 
-    @app.post("/api/stop")
-    async def api_stop(body: dict = None):
-        """Stop the currently running task for a conversation.
-
-        Flow: mark cancel flag → resume (in case paused) → kill exec subprocess
-        → unblock any pending ask_user queue. The exception path in
-        _execute_in_context detects the cancel flag and marks running tree
-        nodes as cancelled, then broadcasts the final tree.
-        """
-        session_id = (body or {}).get("session_id")
-        if not session_id:
-            return JSONResponse(
-                content={"stopped": False, "error": "missing session_id"},
-                status_code=400,
-            )
-        _mark_cancelled(session_id)
-        resume_execution()
-        _kill_active_runtime(session_id)
-        with _follow_up_lock:
-            q = _follow_up_queues.get(session_id)
-        if q is not None:
-            try:
-                q.put_nowait({"_cancelled": True})
-            except Exception:
-                pass
-        # Force-clear server-side run state immediately. If the worker
-        # task is stuck inside a provider HTTP read it may not honor
-        # cancel for a long time, but the UI should not stay frozen on
-        # the user's side waiting for that. Once these are gone:
-        #   * Edit / Retry stop greying out
-        #   * load_session / branch checkout no longer emits a
-        #     running_task event (no ghost "Agentic …" bubble)
-        # The cancel flag stays set so any straggler emit gets ignored.
-        with _running_tasks_lock:
-            _running_tasks.pop(session_id, None)
-        try:
-            _unregister_active_runtime(session_id)
-        except Exception:
-            pass
-        try:
-            _unregister_cancel_event(session_id)
-        except Exception:
-            pass
-        # Emit a terminal cancelled envelope so the frontend exits the
-        # "thinking" state and clears any in-flight placeholders for
-        # this turn. Without this, clients that loaded mid-run would
-        # keep their typing-indicator until the next message arrives.
-        _broadcast(json.dumps({
-            "type": "chat_response",
-            "data": {
-                "type": "cancelled",
-                "session_id": session_id,
-                "content": "Execution stopped by user.",
-                "cancelled": True,
-            },
-        }))
-        _broadcast(json.dumps({
-            "type": "status",
-            "paused": False,
-            "stopped": True,
-            "session_id": session_id,
-        }))
-        return JSONResponse(content={"stopped": True})
-
-    @app.get("/api/providers")
-    async def get_providers():
-        return JSONResponse(content=_list_providers())
-
-    # --- Model catalog (LobeChat-style settings) ---------------------------
-    # Routes registered from openprogram.webui.routes.providers
+    # Model catalog (LobeChat-style settings) — routes.providers
     from openprogram.webui.routes import providers as _routes_providers
     _routes_providers.register(app)
-
-    @app.post("/api/provider/{name}")
-    async def switch_provider(name: str, body: dict = None):
-        session_id = body.get("session_id") if body else None
-        # Check if already active for this conversation
-        if session_id:
-            with _sessions_lock:
-                conv = _sessions.get(session_id)
-            if conv and conv.get("provider_name") == name:
-                return JSONResponse(content={"switched": False, "already_active": True, "provider": name})
-        elif name == _runtime_management._default_provider:
-            return JSONResponse(content={"switched": False, "already_active": True, "provider": name})
-        try:
-            _switch_runtime(name, session_id=session_id)
-            return JSONResponse(content={"switched": True, "provider": name})
-        except Exception as e:
-            return JSONResponse(content={"error": str(e)}, status_code=400)
-
-    @app.get("/api/models")
-    async def list_models():
-        """List available models for the current provider."""
-        # Ensure runtime is initialized
-        with _runtime_management._runtime_lock:
-            if _runtime_management._default_provider is None:
-                _runtime_management._default_provider, _runtime_management._default_runtime = _detect_default_provider()
-
-        provider = _runtime_management._default_provider or "none"
-        runtime = _runtime_management._default_runtime
-        current_model = runtime.model if runtime else None
-
-        # Auto-detect models from the runtime
-        model_list = []
-        if runtime and hasattr(runtime, 'list_models'):
-            try:
-                model_list = runtime.list_models()
-            except Exception as e:
-                print(f"[list_models] {provider} error: {e}")
-        # Ensure current model is in the list
-        if current_model and current_model not in model_list:
-            model_list = [current_model] + model_list
-
-        return JSONResponse(content={
-            "provider": provider,
-            "current": current_model,
-            "models": model_list,
-        })
 
     @app.post("/api/model")
     async def switch_model(body: dict = None):
