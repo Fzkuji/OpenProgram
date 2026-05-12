@@ -28,10 +28,10 @@ Or programmatically:
 
 ```python
 from openprogram.programs.applications.pdf_figures import (
-    extract_pdf_figures_verified,
+    extract_pdf_figures,
 )
 
-results = extract_pdf_figures_verified(
+results = extract_pdf_figures(
     pdf_path="paper.pdf",
     out_dir="figures/",
     max_retries=3,
@@ -60,7 +60,7 @@ for r in results:
 
 Single public entry:
 
-- `extract_pdf_figures_verified(pdf_path, out_dir, runtime, ...)` —
+- `extract_pdf_figures(pdf_path, out_dir, runtime, ...)` —
   one-shot extraction with VLM verification loop. The function's
   docstring lists all options.
 

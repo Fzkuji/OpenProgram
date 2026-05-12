@@ -296,11 +296,24 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  /* Tinted plate so mono (black) brand SVGs stay visible on dark
+   * theme. Subtle in light mode, slightly stronger in dark mode.
+   * Brand-color SVGs sit on top fine — the plate just adds a small
+   * frame. */
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  padding: 3px;
+  box-sizing: border-box;
 }
 .providerIcon img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+/* Dark theme: lighter plate so black/mono SVGs read clearly.
+ * --bg-tertiary in dark mode is too close to bg-primary. */
+:global([data-theme="dark"]) .providerIcon {
+  background: rgba(255, 255, 255, 0.08);
 }
 .providerIconLetter {
   width: 24px;

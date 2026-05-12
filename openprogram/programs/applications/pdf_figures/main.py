@@ -15,7 +15,7 @@ hand-fix bad crops:
        Re-render via ``extract_with_bbox`` and ask again.
     4. Repeat up to ``max_retries`` times per figure, then accept.
 
-Public entry: :func:`extract_pdf_figures_verified`.
+Public entry: :func:`extract_pdf_figures`.
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def _page_dimensions(pdf_path: Path | str, page: int) -> tuple[float, float]:
     },
     "runtime": {"hidden": True},
 })
-def extract_pdf_figures_verified(
+def extract_pdf_figures(
     pdf_path: str,
     out_dir: str,
     max_retries: int = 3,
@@ -260,4 +260,4 @@ def extract_pdf_figures_verified(
     return results
 
 
-__all__ = ["extract_pdf_figures_verified"]
+__all__ = ["extract_pdf_figures"]
