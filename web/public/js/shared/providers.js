@@ -84,8 +84,8 @@ async function loadModelPills() {
 
 // Provider id → lobehub icon slug (mirror of settings.js table).
 var _MODEL_ICON_SLUGS = {
-  'openai': 'openai', 'chatgpt-subscription': 'openai',
-  'anthropic': 'claude', 'claude-code': 'claude',
+  'openai': 'openai', 'chatgpt-subscription': 'openai', 'openai-codex': 'openai',
+  'anthropic': 'claude', 'claude-code': 'claude', 'claude-max-proxy': 'claude',
   'google': 'gemini',
   'gemini-subscription': 'gemini', 'gemini-cli': 'gemini',
   'azure-openai-responses': 'azure',
@@ -98,13 +98,15 @@ var _MODEL_ICON_SLUGS = {
   'kimi-coding': 'moonshot',
   'vercel-ai-gateway': 'vercel',
   'opencode': 'opencode',
+  'xai': 'xai',
+  'zai': 'zai',
 };
 
 function _dropdownProviderIcon(pid) {
   var slug = _MODEL_ICON_SLUGS[pid];
   var letter = (pid[0] || '?').toUpperCase();
   if (!slug) return '<span class="provider-icon-letter">' + letter + '</span>';
-  var base = 'https://unpkg.com/@lobehub/icons-static-svg@1.4.0/icons/';
+  var base = 'https://unpkg.com/@lobehub/icons-static-svg@1.90.0/icons/';
   var colorUrl = base + slug + '-color.svg';
   var monoUrl = base + slug + '.svg';
   var letterSpan = '<span class=&quot;provider-icon-letter&quot;>' + letter + '</span>';

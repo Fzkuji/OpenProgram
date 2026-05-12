@@ -27,7 +27,7 @@ from pathlib import Path
 
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.tools.pdf.extract_figure import (
+from openprogram.programs.applications.pdf_figures._heuristic import (
     FigureCrop,
     extract_all_figures,
     extract_with_bbox,

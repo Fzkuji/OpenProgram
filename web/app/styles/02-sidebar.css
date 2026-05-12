@@ -230,9 +230,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* color inherits from .sidebar-nav-item → text-primary default, text-bright on hover/active */
+  color: var(--text-primary);
   flex-shrink: 0;
+  transition: color 75ms;
   overflow: visible;
+}
+.sidebar-nav-item:hover .sidebar-nav-icon,
+.sidebar-nav-item.active .sidebar-nav-icon {
+  color: var(--text-bright);
 }
 .sidebar-nav-icon svg {
   width: 20px;

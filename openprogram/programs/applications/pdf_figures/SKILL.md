@@ -5,16 +5,16 @@ description: "Extract figures from academic PDFs with VLM verification — heuri
 
 # PDF Figure Extraction (VLM-verified)
 
-Two-pass figure extraction for academic PDFs:
+Two-pass figure extraction for academic PDFs, both layers inside
+this application:
 
-1. **Heuristic pass** (`openprogram.tools.pdf.extract_figure`): pure
-   pymupdf, caption-anchored cropping. Fast, ~80% accurate on
-   standard NeurIPS / arXiv layouts.
-2. **VLM verification pass** (this application): for each candidate
-   crop, the agent looks at the crop + the full page and decides
-   whether the crop is correctly bounded. If not, the agent returns
-   a corrected bbox in PDF points and the tool re-renders. Loops up
-   to `max_retries` times per figure.
+1. **Heuristic pass** (`_heuristic.py`, private to this application):
+   pure pymupdf, caption-anchored cropping. Fast first guess.
+2. **VLM verification pass** (`main.py`): for each candidate crop,
+   the agent looks at the crop + the full page and decides whether
+   the crop is correctly bounded. If not, the agent returns a
+   corrected bbox in PDF points and we re-render. Loops up to
+   `max_retries` times per figure.
 
 The caller doesn't inspect intermediate results or tweak parameters.
 
@@ -50,24 +50,24 @@ for r in results:
 
 ## When NOT to use
 
-- Bulk processing 1000s of PDFs where VLM cost matters — use the
-  raw `openprogram.tools.pdf.extract_figure.extract_all_figures`
-  instead (no LLM call, deterministic).
+- Bulk processing 1000s of PDFs where VLM cost matters — import
+  the private heuristic helpers directly (`_heuristic.py`) and skip
+  the verification loop. Loses self-healing.
 - PDFs where you've verified the heuristic already works (same
   template as a paper you've extracted before).
 
 ## Available Functions
 
-- `extract_pdf_figures_verified(pdf_path, out_dir, runtime, ...)` —
-  the entry point.
+Single public entry:
 
-Underlying primitives in `openprogram.tools.pdf.extract_figure`
-(deterministic, no LLM):
-- `extract_all_figures` — one-shot discovery + heuristic crop
-- `extract_one_figure` — single caption-anchored crop
-- `extract_with_bbox` — render an explicit bbox (used by the retry loop)
-- `list_captions` — discovery only, no render
-- `render_full_page` — for VLM context
+- `extract_pdf_figures_verified(pdf_path, out_dir, runtime, ...)` —
+  one-shot extraction with VLM verification loop. The function's
+  docstring lists all options.
+
+`_heuristic.py` is private to this application but exposes the raw
+deterministic helpers (`extract_all_figures`, `extract_one_figure`,
+`extract_with_bbox`, `list_captions`, `render_full_page`) for
+advanced callers that want to bypass the LLM step.
 
 ## Runtime Requirements
 

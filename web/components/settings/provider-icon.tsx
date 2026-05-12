@@ -5,30 +5,43 @@ import { useState } from "react";
 import styles from "./settings-page.module.css";
 
 const SLUGS: Record<string, string> = {
+  // OpenAI family
   openai: "openai",
   "openai-codex": "openai",
   "chatgpt-subscription": "openai",
+  // Anthropic family
   anthropic: "claude",
+  "claude-code": "claude",
+  "claude-max-proxy": "claude",
+  // Google family
   google: "gemini",
   "google-gemini-cli": "gemini",
+  "gemini-cli": "gemini",
+  "gemini-subscription": "gemini",
+  // Cloud providers
   "azure-openai-responses": "azure",
   "amazon-bedrock": "bedrock",
+  // Inference gateways
   openrouter: "openrouter",
+  "vercel-ai-gateway": "vercel",
+  opencode: "opencode",
+  // Inference clouds
   groq: "groq",
   cerebras: "cerebras",
   mistral: "mistral",
+  huggingface: "huggingface",
+  // Chinese providers
   minimax: "minimax",
   "minimax-cn": "minimax",
-  huggingface: "huggingface",
-  "github-copilot": "githubcopilot",
   "kimi-coding": "moonshot",
-  "vercel-ai-gateway": "vercel",
-  opencode: "opencode",
-  "claude-code": "claude",
-  "claude-max-proxy": "claude",
-  "gemini-cli": "gemini",
+  zai: "zai",
+  // Other
+  "github-copilot": "githubcopilot",
+  xai: "xai",
 };
-const CDN = "https://unpkg.com/@lobehub/icons-static-svg@1.4.0/icons/";
+// v1.90.0: covers openai/openrouter/groq/githubcopilot/moonshot/vercel/
+// opencode/xai/zai (all mono-only) on top of the brand-color SVGs.
+const CDN = "https://unpkg.com/@lobehub/icons-static-svg@1.90.0/icons/";
 
 export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
   const slug = SLUGS[id];
