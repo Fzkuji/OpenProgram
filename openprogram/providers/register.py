@@ -97,29 +97,15 @@ def register_builtins() -> None:
         source_id="builtin",
     )
 
-    # Google Vertex AI
-    try:
-        from openprogram.providers.google_vertex import stream_google_vertex
-        from openprogram.providers.google_vertex import stream_simple_google_vertex
-        register_api_provider(
-            "google-vertex",
-            _StreamFnProvider(stream_google_vertex, stream_simple_google_vertex),
-            source_id="builtin",
-        )
-    except ImportError:
-        pass
-
     # Google Gemini CLI / Cloud Code Assist
+    # (google-vertex + gemini-subscription-corp/Antigravity intentionally
+    # not registered — the simpler "Google AI" + "Gemini CLI" pair
+    # covers the same model surface for personal users.)
     try:
         from openprogram.providers.google_gemini_cli import stream_google_gemini_cli
         from openprogram.providers.google_gemini_cli import stream_simple_google_gemini_cli
         register_api_provider(
             "gemini-subscription",
-            _StreamFnProvider(stream_google_gemini_cli, stream_simple_google_gemini_cli),
-            source_id="builtin",
-        )
-        register_api_provider(
-            "gemini-subscription-corp",
             _StreamFnProvider(stream_google_gemini_cli, stream_simple_google_gemini_cli),
             source_id="builtin",
         )
