@@ -283,7 +283,6 @@ export function MemoryPage() {
   }, [wikiPages, search]);
 
   const wikiGroups = groupByFolder(filteredWiki);
-  const totalPages = wikiPages.length;
   const filteredSystem = useMemo(
     () => systemPages.filter((p) => !search.trim() || p.path.toLowerCase().includes(search.toLowerCase()) || (p.title || "").toLowerCase().includes(search.toLowerCase())),
     [systemPages, search]

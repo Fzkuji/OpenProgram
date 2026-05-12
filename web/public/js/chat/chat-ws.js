@@ -32,6 +32,13 @@ function handleChatResponse(data) {
   // Final response (result or error) -- task done
   setRunning(false);
   loadAgentSettings();
+  // Refresh token counts: the assistant turn just persisted a new
+  // provider_usage row, so the branch's current_tokens + the topbar
+  // chip both need to re-read from the server. Without this the UI
+  // shows stale numbers until the user clicks somewhere or reloads.
+  if (typeof window.refreshTokenBadge === 'function') {
+    try { window.refreshTokenBadge(); } catch (e) {}
+  }
 
   // Tear down the elapsed-time ticker. Any surviving data-running attribute
   // after a terminal message (result / error / cancelled) is a zombie — the
