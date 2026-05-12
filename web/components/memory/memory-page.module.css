@@ -362,24 +362,27 @@
   flex-shrink: 0;
 }
 
-/* Segmented control: transparent container with border. Active button
-   gets a clearly-lighter bg-tertiary fill against the page bg-primary. */
+/* GitHub-style SegmentedControl: outer container is page-color + thin
+   border; active button has a clearly-lighter bg-hover fill (matches
+   GitHub's ~40-unit channel delta) and bold font weight. */
 .modeSwitcher {
   display: inline-flex;
+  height: 26px;
   border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--bg-primary);
   overflow: hidden;
 }
 
 .modeBtn {
-  padding: 4px 12px;
-  font-size: 11px;
+  padding: 0 12px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition: background 0.1s, color 0.1s, font-weight 0.1s;
 }
 
 .modeBtn + .modeBtn {
@@ -388,12 +391,13 @@
 
 .modeBtn:hover:not(.modeBtnActive) {
   color: var(--text-bright);
-  background: var(--bg-hover);
+  background: var(--bg-tertiary);
 }
 
 .modeBtnActive {
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   color: var(--text-bright);
+  font-weight: 600;
 }
 
 .saveOk {
