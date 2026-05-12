@@ -89,6 +89,18 @@ SPEC: dict[str, Any] = {
                     "skipped (filters icons / decorations). Default 80."
                 ),
             },
+            "figure_engine": {
+                "type": "string",
+                "enum": ["auto", "vector", "raster"],
+                "description": (
+                    "Figure extraction engine when extract_images is "
+                    "true. 'vector' uses the PDFFigures2-style detector "
+                    "(figures.py) — works for vector academic figures. "
+                    "'raster' uses the pymupdf xref dump (legacy). "
+                    "'auto' (default) tries vector first then falls back "
+                    "to raster if no figures detected."
+                ),
+            },
         },
         "required": ["file_path"],
     },
@@ -112,6 +124,7 @@ def execute(
     extract_images: bool | None = None,
     image_out_dir: str | None = None,
     min_image_side: int | None = None,
+    figure_engine: str | None = None,
     **kw: Any,
 ) -> str:
     file_path = file_path or read_string_param(kw, "file_path", "filePath", "path")
@@ -122,6 +135,9 @@ def execute(
         extract_images = bool(kw.get("extract_images") or kw.get("extractImages"))
     image_out_dir = image_out_dir or read_string_param(kw, "image_out_dir", "imageOutDir")
     min_image_side = read_int_param(kw, "min_image_side", "minImageSide", default=min_image_side or 80) or 80
+    figure_engine = (figure_engine or read_string_param(kw, "figure_engine", "figureEngine") or "auto").lower()
+    if figure_engine not in ("auto", "vector", "raster"):
+        figure_engine = "auto"
 
     if not file_path:
         return "Error: `file_path` is required."
@@ -205,6 +221,42 @@ def execute(
 
     os.makedirs(image_out_dir, exist_ok=True)
     figs: list[str] = []
+
+    # Try the PDFFigures2-style vector engine first when configured.
+    if figure_engine in ("auto", "vector"):
+        try:
+            from .figures import extract_figures  # local import; lazy
+
+            page_window = (start_idx + 1, end_idx)
+            vec = extract_figures(file_path, image_out_dir, pages=page_window)
+        except Exception as e:
+            vec = []
+            if figure_engine == "vector":
+                doc.close()
+                return text_result + (
+                    f"\n\n## Figures\n\n_vector engine failed: {type(e).__name__}: {e}_"
+                )
+        for f in vec:
+            figs.append(
+                f"- `{f.image_path}` — page {f.page}, {f.figure_label}: "
+                f"{f.caption_text[:120]}"
+            )
+        if figs or figure_engine == "vector":
+            doc.close()
+            if not figs:
+                return text_result + (
+                    "\n\n## Figures\n\n_vector engine found no figures in "
+                    f"pages {start_idx + 1}-{end_idx}._"
+                )
+            return (
+                text_result
+                + f"\n\n## Figures\n\nExtracted {len(figs)} figure(s) into "
+                f"`{image_out_dir}` (vector engine):\n\n"
+                + "\n".join(figs)
+                + "\n"
+            )
+        # else fall through to raster on auto
+
     for page_idx in range(len(doc)):
         # Honor the same page window as text extraction.
         if page_idx < start_idx or page_idx >= end_idx:
