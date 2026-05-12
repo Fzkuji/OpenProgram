@@ -6,53 +6,21 @@
   background: var(--bg-primary);
 }
 
-/* ─── Header ─────────────────────────────────────────── */
-.header {
+/* ─── Topbar — matches programs page pattern ─────────── */
+.topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 20px 12px;
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-  gap: 12px;
-}
-
-.headerLeft {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.headerIcon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-primary);
+  gap: 16px;
+  padding: 16px 24px 12px;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
-.headerIcon svg {
-  width: 18px;
-  height: 18px;
-}
-
-.headerTitle {
-  font-size: 15px;
+.title {
+  font-size: 18px;
   font-weight: 600;
   color: var(--text-bright);
-  margin: 0;
-  line-height: 1.2;
-}
-
-.headerSub {
-  font-size: 11px;
-  color: var(--text-primary);
-  margin: 2px 0 0;
+  flex-shrink: 0;
 }
 
 .headerStats {
@@ -571,12 +539,6 @@
   color: #f59e0b;
 }
 
-.coreEditorWrap {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
 
 /* ─── Tree toolbar (search + refresh) ─────────────────── */
 .treeToolbar {

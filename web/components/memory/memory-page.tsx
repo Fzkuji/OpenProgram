@@ -303,21 +303,9 @@ export function MemoryPage() {
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
     <div className={styles.view}>
-      {/* Header */}
-      <div className={styles.header}>
-        <div className={styles.headerLeft}>
-          <div className={styles.headerIcon}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 6h16M4 12h16M4 18h10"/>
-              <circle cx="19" cy="18" r="2.5"/>
-              <path d="M19 15.5V13"/>
-            </svg>
-          </div>
-          <div>
-            <h1 className={styles.headerTitle}>Memory</h1>
-            <p className={styles.headerSub}>Agent knowledge base &amp; context storage</p>
-          </div>
-        </div>
+      {/* Header — same pattern as programs page */}
+      <div className={styles.topbar}>
+        <span className={styles.title}>Memory</span>
         <div className={styles.headerStats}>
           {tab === "wiki" && !wikiLoading && <span className={styles.statChip}>{totalPages} pages</span>}
           {tab === "short-term" && !shortTermLoading && <span className={styles.statChip}>{shortTermEntries.length} sessions</span>}
@@ -514,18 +502,16 @@ export function MemoryPage() {
               </div>
             </div>
             {coreLoading ? (
-              <div className={styles.coreEditorWrap}><LoadingSkeleton /></div>
+              <LoadingSkeleton />
             ) : (
-              <div className={styles.coreEditorWrap}>
-                <EditorPanel
-                  title="core.md"
-                  meta={[]}
-                  state={coreEditor}
-                  onChange={(c) => setCoreEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
-                  onSave={saveCore}
-                  onViewMode={(m) => setCoreEditor((e) => ({ ...e, viewMode: m }))}
-                />
-              </div>
+              <EditorPanel
+                title="core.md"
+                meta={[]}
+                state={coreEditor}
+                onChange={(c) => setCoreEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
+                onSave={saveCore}
+                onViewMode={(m) => setCoreEditor((e) => ({ ...e, viewMode: m }))}
+              />
             )}
           </div>
         )}
