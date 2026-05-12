@@ -46,7 +46,7 @@ PROVIDERS = {
     # the previous CLI-spawning `claude-code` provider; tools come from
     # OpenProgram's own registry instead of the CLI's built-ins.
     "claude-code":        ("ClaudeCodeRuntime",             "openprogram.providers.anthropic._max_proxy_runtime",  "claude-sonnet-4-6"),
-    "chatgpt-subscription": ("OpenAICodexRuntime", "openprogram.providers.openai_codex.runtime",           "gpt-5.5"),
+    "openai-codex": ("OpenAICodexRuntime", "openprogram.providers.openai_codex.runtime",           "gpt-5.5"),
     "gemini-cli":        ("GeminiCLIRuntime",    "openprogram.providers.google_gemini_cli.runtime",     "gemini-2.5-flash"),
     "anthropic":        ("AnthropicRuntime",       "openprogram.providers.anthropic.runtime",             "claude-sonnet-4-6"),
     "openai":           ("OpenAIRuntime",          "openprogram.providers.openai_responses.runtime",      "gpt-4.1"),
@@ -62,7 +62,7 @@ def _detect_caller_env() -> tuple[str, str] | None:
     # Running inside Codex CLI?
     if os.environ.get("CODEX_CLI") or os.environ.get("CODEX_SANDBOX_TYPE"):
         if shutil.which("codex"):
-            return "chatgpt-subscription", None
+            return "openai-codex", None
 
     return None
 
@@ -126,7 +126,7 @@ def detect_provider() -> tuple[str, str]:
 
     # 4. CLI providers (no API key needed)
     if shutil.which("codex"):
-        return "chatgpt-subscription", None
+        return "openai-codex", None
     if shutil.which("gemini"):
         return "gemini-cli", "gemini-2.5-flash"
 
@@ -166,14 +166,14 @@ def check_providers() -> dict:
 
     Returns a dict with status of each provider:
         {
-            "chatgpt-subscription": {"available": True, "method": "CLI", "model": "gpt-5.5"},
+            "openai-codex": {"available": True, "method": "CLI", "model": "gpt-5.5"},
             "openai": {"available": True, "method": "API", "model": "gpt-4.1"},
             ...
         }
     """
     results = {}
     cli_checks = {
-        "chatgpt-subscription": "codex",
+        "openai-codex": "codex",
         "gemini-cli": "gemini",
     }
     api_checks = {

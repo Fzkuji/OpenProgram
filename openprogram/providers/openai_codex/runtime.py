@@ -64,18 +64,18 @@ def _augment_registry_with_codex_models() -> None:
 
     template = next(
         (m for m in MODELS.values()
-         if m.provider == "chatgpt-subscription" and m.api == "chatgpt-subscription-responses"),
+         if m.provider == "openai-codex" and m.api == "openai-codex"),
         None,
     )
     if template is None:
         return  # registry has no Codex entries at all; nothing to mirror.
 
     for mid in _KNOWN_CODEX_MODELS:
-        key = f"chatgpt-subscription/{mid}"
+        key = f"openai-codex/{mid}"
         display = _display_name_for_codex_model(mid)
         model = MODELS.get(key) or template.model_copy(update={"id": mid, "name": display})
         levels, default, variant = derive_thinking_fields(
-            "chatgpt-subscription",
+            "openai-codex",
             mid,
             True,
             _codex_supports_xhigh(mid),
@@ -175,16 +175,16 @@ class OpenAICodexRuntime(Runtime):
             # OpenAICodexRuntime targets the ChatGPT Responses backend
             # (requires a chatgpt-account-id header minted from the JWT).
             # Bare API keys don't carry that, so they belong under the
-            # `openai` pool, not `chatgpt-subscription`. Surface this clearly
+            # `openai` pool, not `openai-codex`. Surface this clearly
             # instead of crashing on a missing .access_token attribute.
             raise AuthConfigError(
-                f"chatgpt-subscription/{self._profile_id} credential is "
+                f"openai-codex/{self._profile_id} credential is "
                 f"{cred.kind!r}, but this runtime needs OAuth (ChatGPT "
                 "Responses backend). Run `codex login` (don't pick the "
                 "API-key option) to get OAuth tokens into "
                 "~/.codex/auth.json, then `openprogram providers adopt "
                 "codex_cli`. If you only have a bare OpenAI key, switch "
-                "your chat provider to `openai`, not `chatgpt-subscription`.",
+                "your chat provider to `openai`, not `openai-codex`.",
                 provider_id=auth_adapter.PROVIDER_ID,
                 profile_id=self._profile_id,
             )
@@ -192,7 +192,7 @@ class OpenAICodexRuntime(Runtime):
         account_id = _account_id_for(cred)
         self._cached_access_token = access
 
-        super().__init__(model=f"chatgpt-subscription:{model}", api_key=access)
+        super().__init__(model=f"openai-codex:{model}", api_key=access)
 
         # ChatGPT backend wants extra headers alongside Bearer. Attach them
         # to a per-runtime Model copy so we don't mutate the registry.

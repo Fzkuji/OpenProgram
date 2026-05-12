@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from openprogram.providers.types import Context, Model, SimpleStreamOptions
 
 _DEFAULT_API_VERSION = "v1"
-_AZURE_TOOL_CALL_PROVIDERS = frozenset({"openai", "chatgpt-subscription", "opencode", "azure-openai-responses"})
+_AZURE_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-codex", "opencode", "azure-openai-responses"})
 
 
 def stream_azure_openai_responses(

@@ -54,7 +54,7 @@ async def handle_switch_model(ws, cmd: dict):
             head, tail = model.split(":", 1)
             from openprogram.providers import get_providers as _get_providers
             known = set(_get_providers())
-            known.update({"claude-code", "chatgpt-subscription", "gemini-cli",
+            known.update({"claude-code", "openai-codex", "gemini-cli",
                           "anthropic", "openai", "gemini"})
             if head in known:
                 inferred_provider = head

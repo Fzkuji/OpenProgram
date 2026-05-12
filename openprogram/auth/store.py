@@ -181,7 +181,7 @@ class AuthStore:
         Returns the canonical path first; if that file doesn't exist,
         falls back to any directory whose alias resolves to this
         provider (so legacy login dirs like ``openai-codex/`` keep
-        working when the canonical id is ``chatgpt-subscription``).
+        working when the canonical id is ``openai-codex``).
         """
         canonical = self.base_dir() / provider_id / f"{profile_id}.json"
         if canonical.exists():

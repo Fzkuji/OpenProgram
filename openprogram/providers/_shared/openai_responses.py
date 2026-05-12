@@ -52,7 +52,7 @@ def _short_hash(s: str) -> str:
 # ---------------------------------------------------------------------------
 
 # Providers whose tool call IDs use the "callId|itemId" format
-_RESPONSES_ALLOWED_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-responses", "chatgpt-subscription"})
+_RESPONSES_ALLOWED_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-responses", "openai-codex"})
 
 
 def convert_responses_messages(

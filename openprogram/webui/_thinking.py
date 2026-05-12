@@ -32,7 +32,7 @@ THINKING_CONFIGS = {
         ],
         "default": "high",
     },
-    "chatgpt-subscription": {
+    "openai-codex": {
         "label": "reasoning effort",
         "options": [
             {"value": "off", "desc": "No reasoning"},
@@ -99,8 +99,8 @@ _LEVEL_DESC = {
 _RUNTIME_PROVIDER = {
     "ClaudeCodeRuntime": "claude-code",
     "ClaudeCodeRuntime": "claude-code",           # backward-compat alias
-    "OpenAICodexRuntime": "chatgpt-subscription",
-    "OpenAICodexRuntime": "chatgpt-subscription",    # backward-compat alias
+    "OpenAICodexRuntime": "openai-codex",
+    "OpenAICodexRuntime": "openai-codex",    # backward-compat alias
     "AnthropicRuntime": "anthropic",
     "OpenAIRuntime": "openai",
     "GeminiRuntime": "gemini",
@@ -111,8 +111,8 @@ _RUNTIME_PROVIDER = {
 
 
 def get_thinking_config(provider: str) -> dict:
-    """Static config for a provider. Falls back to chatgpt-subscription."""
-    return THINKING_CONFIGS.get(provider, THINKING_CONFIGS.get("chatgpt-subscription"))
+    """Static config for a provider. Falls back to openai-codex."""
+    return THINKING_CONFIGS.get(provider, THINKING_CONFIGS.get("openai-codex"))
 
 
 def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
@@ -152,7 +152,7 @@ def default_effort_for(runtime) -> str:
     fallback. Matches class name rather than duck-typing the provider
     because runtime instances don't uniformly expose it.
     """
-    provider = _RUNTIME_PROVIDER.get(type(runtime).__name__, "chatgpt-subscription")
+    provider = _RUNTIME_PROVIDER.get(type(runtime).__name__, "openai-codex")
     return THINKING_CONFIGS.get(provider, {}).get("default")
 
 

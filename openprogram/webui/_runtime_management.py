@@ -17,7 +17,7 @@ from typing import Optional
 # Globals — live here so server.py doesn't own provider state directly.
 # ---------------------------------------------------------------------------
 
-_CLI_PROVIDERS = {"chatgpt-subscription", "gemini-cli"}
+_CLI_PROVIDERS = {"openai-codex", "gemini-cli"}
 
 _runtime_lock = threading.Lock()
 
@@ -135,7 +135,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
 
     if provider in PROVIDERS:
         kwargs = {"provider": provider}
-        if provider == "chatgpt-subscription":
+        if provider == "openai-codex":
             kwargs["search"] = True
         if model:
             kwargs["model"] = model
@@ -154,8 +154,8 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     return Runtime(model=f"{provider}:{model}")
 
 
-_PROVIDER_PRIORITY = ("chatgpt-subscription", "gemini-cli", "anthropic", "gemini", "openai", "claude-code")
-_CLI_BINS = {"chatgpt-subscription": "codex", "gemini-cli": "gemini"}
+_PROVIDER_PRIORITY = ("openai-codex", "gemini-cli", "anthropic", "gemini", "openai", "claude-code")
+_CLI_BINS = {"openai-codex": "codex", "gemini-cli": "gemini"}
 
 
 def _build_model_caps(provider_name: str, model_ids: list[str]) -> dict[str, dict]:
@@ -373,10 +373,10 @@ def _get_exec_runtime(no_tools: bool = False):
         raise RuntimeError(
             "No provider available. Install a CLI (codex/gemini) or set an API key."
         )
-    if no_tools and _exec_provider == "chatgpt-subscription":
+    if no_tools and _exec_provider == "openai-codex":
         from openprogram.providers.registry import create_runtime
         rt = create_runtime(
-            provider="chatgpt-subscription", session_id=None, search=False,
+            provider="openai-codex", session_id=None, search=False,
             full_auto=False, sandbox="read-only",
         )
     else:

@@ -1,10 +1,9 @@
 """Provider alias table — short names users type on the CLI.
 
-The canonical provider id is long and punctuated (``chatgpt-subscription``,
-``gemini-subscription``, ``github-copilot``) so the WebUI model picker
-stays unambiguous. On the CLI though, people type what they say out
-loud: ``codex``, ``claude``, ``gemini``, ``copilot``. This module
-resolves those shortcuts.
+The canonical provider id matches OpenAI's official naming where one
+exists (``openai-codex``, ``gemini-subscription``, ``github-copilot``);
+on the CLI people type spoken-word shortcuts (``codex``, ``claude``,
+``gemini``, ``copilot``). This module resolves those shortcuts.
 
 Design:
 
@@ -23,18 +22,18 @@ from __future__ import annotations
 
 _ALIASES: dict[str, str] = {
     # Spoken-word shortcuts
-    "codex": "chatgpt-subscription",
+    "codex": "openai-codex",
     "claude": "anthropic",
     "gemini": "gemini-subscription",
     "copilot": "github-copilot",
     "bedrock": "amazon-bedrock",
     # Common typos / dropped hyphens
-    "openai-codex-cli": "chatgpt-subscription",
-    # Legacy directory name: older codex login flows wrote credentials
-    # under ~/.openprogram/auth/openai-codex/ rather than the canonical
-    # chatgpt-subscription/. Map it so existing user installs keep
-    # working without manual migration.
-    "openai-codex": "chatgpt-subscription",
+    "openai-codex-cli": "openai-codex",
+    # Back-compat: ``chatgpt-subscription`` was the canonical id for the
+    # OpenAI Codex provider before the rename. Any older agent.json,
+    # session record, env override, or external script that still
+    # references it keeps resolving to the same runtime / credentials.
+    "chatgpt-subscription": "openai-codex",
     # ClaudeCodeRuntime tags its model strings with the ``claude-max:``
     # prefix (named after the claude-max-api-proxy daemon it talks to),
     # but every actual claude model in the registry is registered under
@@ -44,8 +43,6 @@ _ALIASES: dict[str, str] = {
     # Legacy provider name kept as an alias so any session config /
     # external script still referencing "claude-code" continues to
     # resolve auth (it now routes through the same anthropic creds).
-    "claude-code": "anthropic",
-    "claude-code": "anthropic",
     "claude-code": "anthropic",
     "gemini-cli": "gemini-subscription",
     "github-copilot-cli": "github-copilot",

@@ -27,7 +27,7 @@ from openprogram.providers.utils.event_stream import EventStream
 if TYPE_CHECKING:
     from openprogram.providers.types import Context, Model, SimpleStreamOptions
 
-_OPENAI_TOOL_CALL_PROVIDERS = frozenset({"openai", "chatgpt-subscription", "opencode"})
+_OPENAI_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-codex", "opencode"})
 
 
 def stream_openai_responses(

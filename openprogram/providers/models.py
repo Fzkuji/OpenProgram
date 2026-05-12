@@ -13,7 +13,7 @@ def get_model(provider: str, model_id: str) -> Model | None:
     Falls back to alias-equivalent provider names. The model registry
     keys are historical (e.g. ``openai-codex/gpt-5.5``) while the
     canonical provider id from the runtime side is different (e.g.
-    ``chatgpt-subscription``). Alias-aware lookup keeps both spellings
+    ``openai-codex``). Alias-aware lookup keeps both spellings
     working without duplicating thousands of MODELS rows.
     """
     key = f"{provider}/{model_id}"

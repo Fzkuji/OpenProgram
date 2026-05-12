@@ -36,7 +36,7 @@ from openprogram.providers.anthropic import _claude_max_proxy_registry as _cmp_r
 # prettified id ("amazon-bedrock" -> "Amazon Bedrock").
 _PROVIDER_LABELS = {
     "openai": "OpenAI",
-    "chatgpt-subscription": "OpenAI Codex",
+    "openai-codex": "OpenAI Codex",
     "anthropic": "Anthropic",
     "google": "Google AI",
     "gemini-subscription": "Gemini CLI",
@@ -90,7 +90,7 @@ _FETCH_MODELS_PROVIDERS = frozenset({
     #   google*        — custom endpoints / OAuth
     #   azure-*        — needs deployment name not model id
     #   amazon-bedrock — AWS SigV4
-    #   chatgpt-subscription — ChatGPT backend, no public listing (403)
+    #   openai-codex — ChatGPT backend, no public listing (403)
     #   github-copilot — private OAuth with custom headers
     #   opencode       — not verified; add if/when tested
 })
@@ -114,7 +114,7 @@ _ENV_API_KEYS = {
     "kimi-coding": "MOONSHOT_API_KEY",
     "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
     "opencode": None,
-    "chatgpt-subscription": None,  # OAuth via ~/.codex/auth.json
+    "openai-codex": None,  # OAuth via ~/.codex/auth.json
 }
 
 
@@ -136,8 +136,8 @@ def _is_configured(provider_id: str) -> bool:
     for cli in _CLI_PROVIDERS:
         if cli["id"] == provider_id:
             return shutil.which(cli["cli_binary"]) is not None
-    # chatgpt-subscription: reads ~/.codex/auth.json
-    if provider_id == "chatgpt-subscription":
+    # openai-codex: reads ~/.codex/auth.json
+    if provider_id == "openai-codex":
         from pathlib import Path
         return (Path.home() / ".codex" / "auth.json").exists()
     # claude-max: there's no env-key path; the daemon is "ready"
@@ -683,7 +683,7 @@ def _fetch_claude_code(provider_id: str, timeout: float) -> Any:
 
 
 def _fetch_codex_static(provider_id: str, timeout: float) -> Any:
-    """OpenAI Codex (chatgpt-subscription) — no public list API.
+    """OpenAI Codex (openai-codex) — no public list API.
 
     The ChatGPT backend returns 403 on /models. Instead, re-emit the
     registry's curated Codex catalog so the Fetch button at least
@@ -693,7 +693,7 @@ def _fetch_codex_static(provider_id: str, timeout: float) -> Any:
     from openprogram.providers.models_generated import MODELS
     out = []
     for v in MODELS.values():
-        if v.provider != "chatgpt-subscription":
+        if v.provider != "openai-codex":
             continue
         out.append({
             "id": v.id,
@@ -713,7 +713,7 @@ def _fetch_codex_static(provider_id: str, timeout: float) -> Any:
 _FETCHERS: dict[str, Any] = {
     "anthropic": _fetch_anthropic,
     "claude-code": _fetch_claude_code,  # local proxy, no API key
-    "chatgpt-subscription": _fetch_codex_static,
+    "openai-codex": _fetch_codex_static,
     "google": _fetch_google,
     "amazon-bedrock": _fetch_bedrock,
     "github-copilot": _fetch_github_copilot,

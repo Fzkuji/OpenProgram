@@ -5,7 +5,7 @@ Routing (best → worst):
   1. provider_usage  — AssistantMessage already carries Usage with real
      input/output/cache_read/cache_write from the provider. Always wins.
   2. tiktoken        — for any OpenAI-family model (provider=openai,
-     chatgpt-subscription, azure-openai-responses, openrouter, ...).
+     openai-codex, azure-openai-responses, openrouter, ...).
   3. anthropic_count — anthropic.messages.count_tokens() if SDK + API
      key available, for claude-* models.
   4. heuristic       — 4 chars/token (2 for JSON dense content). Always
@@ -72,7 +72,7 @@ def _tiktoken_encoder(model_id: str):
 
 
 _OPENAI_FAMILY_PROVIDERS = frozenset({
-    "openai", "chatgpt-subscription", "azure-openai-responses",
+    "openai", "openai-codex", "azure-openai-responses",
     "azure-openai", "opencode", "openrouter", "github-copilot",
     "vercel-ai-gateway", "groq", "cerebras", "kimi-coding",
     "mistral", "xai", "zai", "minimax", "minimax-cn", "huggingface",

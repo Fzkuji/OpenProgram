@@ -84,7 +84,7 @@ def _build_configured(provider: str, model_id: str) -> Any:
     from openprogram.providers.registry import PROVIDERS, create_runtime
     if provider in PROVIDERS:
         kwargs: dict[str, Any] = {"provider": provider}
-        if provider == "chatgpt-subscription":
+        if provider == "openai-codex":
             kwargs["search"] = True
         if model_id:
             kwargs["model"] = model_id
@@ -106,7 +106,7 @@ def _build_autodetect() -> Any:
     Raises if none are configured.
     """
     from openprogram.providers.registry import create_runtime
-    for p in ("chatgpt-subscription", "gemini-cli",
+    for p in ("openai-codex", "gemini-cli",
               "anthropic", "gemini", "openai", "claude-code"):
         try:
             rt = create_runtime(provider=p)
