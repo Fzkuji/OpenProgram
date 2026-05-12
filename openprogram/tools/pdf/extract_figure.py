@@ -208,7 +208,15 @@ def _absorb_caption_lines(
 def _find_prev_body(
     text_blocks: list, cap_idx: int, cap_x0: float, cap_x1: float, cap_y0: float
 ) -> float:
-    """Walk UP to find the previous body / heading block bottom."""
+    """Walk UP to find the previous body / heading block bottom.
+
+    Returns the y-coordinate to use as the figure's top edge. When no
+    body block is found above the caption (e.g. figure sits at the top
+    of the page with nothing above it), instead of defaulting to the
+    page top (which produces a huge top whitespace margin), use the
+    *topmost* in-figure text block that overlaps the caption column as
+    the figure's actual top.
+    """
     cap_width = cap_x1 - cap_x0
     body_idx = None
     prev_y_bottom = 0.0
@@ -239,8 +247,26 @@ def _find_prev_body(
                 break
             cur = ny1
         prev_y_bottom = cur
+        return prev_y_bottom
 
-    return prev_y_bottom
+    # Fallback when no body block was found above: tighten to the
+    # topmost in-figure text block (axis label, panel title, etc.)
+    # that sits inside the caption column above the caption. Subtract
+    # a small margin so the actual figure top edge isn't clipped.
+    topmost_y = None
+    for k in range(cap_idx):
+        kx0, ky0, kx1, ky1, ktext, *_ = text_blocks[k]
+        if kx1 < cap_x0 - 5 or kx0 > cap_x1 + 5:
+            continue
+        if not ktext.strip():
+            continue
+        if topmost_y is None or ky0 < topmost_y:
+            topmost_y = ky0
+    if topmost_y is not None:
+        # Subtract more than the outer margin so figure plot box edges
+        # (rendered as vector strokes, not text) aren't clipped.
+        return max(0.0, topmost_y - 12.0)
+    return 0.0
 
 
 def _parse_caption_pairs(captions: str | Iterable) -> list[tuple[str, str]]:
