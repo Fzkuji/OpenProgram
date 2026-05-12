@@ -392,13 +392,12 @@
   flex-direction: column;
   gap: 16px;
   /* 4th-level content panel — internal padding so cards/labels don't
-     touch the 3rd-level divider on the left or viewport edge on the right.
+     touch the 3rd-level providers list on the left or viewport edge on the right.
      Kept compact (16/20) — the panel is content-heavy, large gutters
      waste space without improving readability. */
   padding: 16px 20px 20px;
-  /* Continuous 1px divider between 3rd-level providersSidebar and the
-     detail column. */
-  border-left: 1px solid var(--border);
+  /* No divider between 3rd and 4th — visual separation comes from the
+     padding gap alone (cleaner per user feedback). */
   /* No inner overflow — single page-level scroll. The sticky
      `.providersSidebar` keeps the provider picker on screen while
      the user scans this column's full content. */
