@@ -64,17 +64,12 @@ _PROVIDER_LABELS = {
 }
 
 
-# CLI-backed providers aren't in the HTTP provider registry. We describe them
-# here so the settings page can list them alongside registry providers.
-_CLI_PROVIDERS = [
-    {
-        "id": "gemini-cli",
-        "label": _PROVIDER_LABELS["gemini-cli"],
-        "kind": "cli",
-        "cli_binary": "gemini",
-        "api_key_env": None,
-    },
-]
+# CLI-backed providers aren't in the HTTP provider registry. Currently
+# empty: 'gemini-cli' historically lived here, but it shares one
+# Runtime + auth flow with 'gemini-subscription' (the Cloud Code Assist
+# endpoint), so listing it separately just duplicated the row. New
+# CLI-only backends with no HTTP counterpart can be added back here.
+_CLI_PROVIDERS: list[dict[str, Any]] = []
 
 
 # Providers whose base URL speaks the OpenAI-compatible /v1/models listing
