@@ -10,6 +10,10 @@
      scroller for the model list. */
   height: 100vh;
   overflow-y: auto;
+  /* Whole settings surface uses bg-secondary so the nav columns
+     blend with the content columns (no more 'gray AI Providers area
+     vs darker nav'). Cards inside use bg-tertiary to lift. */
+  background: var(--bg-secondary);
 }
 
 /* Match programs/memory topbar pattern. Sticky so the page title stays
@@ -22,7 +26,7 @@
   height: 64px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   flex-shrink: 0;
   position: sticky;
   top: 0;
@@ -50,6 +54,17 @@
   /* No outer margin — nav sits flush against topbar bottom, matching the
      programs/memory pattern. Inner breathing room lives on .content. */
   max-width: 1600px;
+  /* The left-column background + right-border are painted at the grid
+     level (not the nav element) so .nav can stay align-self:start and
+     position:sticky cleanly. View bg is already bg-secondary, so we only
+     need the 1px right divider on the column boundary. */
+  background:
+    linear-gradient(
+      to right,
+      transparent 0 calc(var(--sidebar-width) - 2px),
+      var(--border) calc(var(--sidebar-width) - 2px) calc(var(--sidebar-width) - 1px),
+      transparent calc(var(--sidebar-width) - 1px)
+    );
 }
 .body.providersWide {
   max-width: none;
@@ -61,12 +76,12 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  /* Fill the grid cell vertically so the right-border spans the
-     full column height (visual divider between 2nd-level and content). */
-  align-self: stretch;
+  /* align-self:start (default in grid) so sticky works correctly.
+     bg-secondary + border-right are painted by .body's background
+     gradient at the column boundary, so they extend full body height
+     without forcing .nav to stretch. */
+  align-self: start;
   padding: 8px;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
   position: sticky;
   /* Sticky just below the sticky topbar (64px) */
   top: 64px;
@@ -120,7 +135,8 @@
 }
 
 .card {
-  background: var(--bg-secondary);
+  /* View is now bg-secondary; cards use bg-tertiary to lift visually. */
+  background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px 20px;
@@ -243,15 +259,23 @@
 .providersLayout {
   display: grid;
   grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
+  /* Paint the providersSidebar's right divider at the grid level so
+     the sub-sidebar can stay align-self:start + sticky. */
+  background:
+    linear-gradient(
+      to right,
+      transparent 0 calc(var(--sidebar-width) - 2px),
+      var(--border) calc(var(--sidebar-width) - 2px) calc(var(--sidebar-width) - 1px),
+      transparent calc(var(--sidebar-width) - 1px)
+    );
 }
 .providersSidebar {
   display: flex;
   flex-direction: column;
   gap: 1px;
   padding: 8px;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
-  align-self: stretch;
+  /* bg + right divider are painted by .providersLayout gradient. */
+  align-self: start;
   /* Stay in view next to the scrolling detail column. The provider
      list can get long (20+ providers), so cap its own height and
      give it its own scrollbar — same shape as claude.ai's left

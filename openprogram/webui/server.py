@@ -853,7 +853,8 @@ from ._thinking import (  # noqa: E402
 def _execute_in_context(session_id: str, msg_id: str, action: str,
                         func_name: str = None, kwargs: dict = None, query: str = None,
                         thinking_effort: str = None, exec_thinking_effort: str = None,
-                        tools_flag=None, permission_mode: str = None):
+                        tools_flag=None, permission_mode: str = None,
+                        attachments: list = None):
     """Execute a chat query or function call within the conversation's Context tree.
 
     This is the core execution engine. Everything runs under the conversation's
@@ -1097,6 +1098,7 @@ def _execute_in_context(session_id: str, msg_id: str, action: str,
                     user_msg_id=msg_id,
                     user_already_persisted=True,
                     model_override=_model_override,
+                    attachments=attachments,
                 )
 
                 try:
@@ -2219,8 +2221,16 @@ async def _handle_ws_command(ws, cmd: dict):
         exec_thinking_effort = cmd.get("exec_thinking_effort") or None
         tools_flag = cmd.get("tools")
         permission_mode = cmd.get("permission_mode") or None
-        if not text:
+        raw_attachments = cmd.get("attachments") or None
+        attachments = None
+        if isinstance(raw_attachments, list) and raw_attachments:
+            attachments = [a for a in raw_attachments if isinstance(a, dict) and a.get("data")]
+            if not attachments:
+                attachments = None
+        if not text and not attachments:
             return
+        if not text and attachments:
+            text = "(see attachment)"
 
         # Optional channel binding for brand-new conversations. Ignored
         # silently for existing convs (call set_conversation_channel to
@@ -2268,6 +2278,13 @@ async def _handle_ws_command(ws, cmd: dict):
         }
         if parsed["action"] == "run":
             user_msg["display"] = "runtime"
+        if attachments:
+            manifest = [
+                {"type": a.get("type"), "media_type": a.get("media_type"),
+                 "size_b64": len(a.get("data") or "")}
+                for a in attachments
+            ]
+            user_msg["extra"] = json.dumps({"attachments": manifest}, default=str)
         _append_msg(conv, user_msg)
 
         # Send acknowledgment with session_id
@@ -2287,7 +2304,7 @@ async def _handle_ws_command(ws, cmd: dict):
             threading.Thread(
                 target=_execute_in_context,
                 args=(session_id, msg_id, "query"),
-                kwargs={"query": parsed["raw"], "thinking_effort": run_cfg.thinking_effort, "tools_flag": tools_flag, "permission_mode": run_cfg.permission_mode},
+                kwargs={"query": parsed["raw"], "thinking_effort": run_cfg.thinking_effort, "tools_flag": tools_flag, "permission_mode": run_cfg.permission_mode, "attachments": attachments},
                 daemon=True,
             ).start()
 

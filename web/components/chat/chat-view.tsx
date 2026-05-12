@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import {
   Send, Square, Pause, Play, Loader2, Zap, ChevronDown, Activity,
-  Copy, RefreshCw, GitBranch, Check, FileText,
+  Copy, RefreshCw, GitBranch, Check, FileText, Paperclip, Globe, X,
 } from "lucide-react";
 import {
   useSessionStore,
@@ -45,6 +45,9 @@ export function ChatView({ sessionId }: ChatViewProps) {
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [treeOpen, setTreeOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
+  const [attachments, setAttachments] = useState<{ name: string; mediaType: string; data: string }[]>([]);
+  const [webSearch, setWebSearch] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const tree = useSessionStore((s) =>
     sessionId ? s.trees[sessionId] ?? null : null
   );
@@ -102,17 +105,41 @@ export function ChatView({ sessionId }: ChatViewProps) {
   const busy = runningTask !== null;
   const isRunning = busy && runningTask?.session_id === (sessionId ?? currentSessionId);
 
+  async function onPickFiles(files: FileList | null) {
+    if (!files || !files.length) return;
+    const next: { name: string; mediaType: string; data: string }[] = [];
+    for (const f of Array.from(files)) {
+      if (!f.type.startsWith("image/")) continue;
+      const data = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => {
+          const s = String(r.result || "");
+          // strip "data:<mt>;base64,"
+          const comma = s.indexOf(",");
+          resolve(comma >= 0 ? s.slice(comma + 1) : s);
+        };
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(f);
+      });
+      next.push({ name: f.name, mediaType: f.type, data });
+    }
+    if (next.length) setAttachments((prev) => [...prev, ...next]);
+  }
+
   function submit() {
-    const text = input.trim();
-    if (!text || busy || wsStatus !== "open") return;
+    const trimmed = input.trim();
+    if (busy || wsStatus !== "open") return;
+    if (!trimmed && attachments.length === 0) return;
+    const text = webSearch && trimmed
+      ? `[Use the web_search tool] ${trimmed}`
+      : trimmed || "(see attachment)";
     const localId = "u-" + Math.random().toString(36).slice(2, 10);
-    // Optimistically append user message
     const targetConv = sessionId ?? currentSessionId;
     if (targetConv) {
       appendMessage(targetConv, {
         id: localId,
         role: "user",
-        content: text,
+        content: trimmed + (attachments.length ? ` [+${attachments.length} image${attachments.length > 1 ? "s" : ""}]` : ""),
         status: "done",
       });
     }
@@ -121,8 +148,12 @@ export function ChatView({ sessionId }: ChatViewProps) {
       text,
       session_id: sessionId ?? currentSessionId ?? null,
       thinking_effort: thinking,
+      attachments: attachments.length
+        ? attachments.map((a) => ({ type: "image", media_type: a.mediaType, data: a.data }))
+        : undefined,
     });
     setInput("");
+    setAttachments([]);
   }
 
   function stop() {
@@ -207,6 +238,43 @@ export function ChatView({ sessionId }: ChatViewProps) {
         style={{ borderColor: "var(--border)" }}
       >
         <div className="mx-auto max-w-3xl">
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {attachments.map((a, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-1 rounded border px-2 py-1 text-[11px]"
+                  style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`data:${a.mediaType};base64,${a.data}`}
+                    alt={a.name}
+                    className="h-6 w-6 rounded object-cover"
+                  />
+                  <span className="max-w-[160px] truncate">{a.name}</span>
+                  <button
+                    onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                    className="rounded p-0.5 hover:bg-[var(--bg-hover)]"
+                    title="Remove"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              onPickFiles(e.target.files);
+              if (e.target) e.target.value = "";
+            }}
+          />
           <div
             className="flex items-end gap-2 rounded-lg border p-2"
             style={{
@@ -214,6 +282,30 @@ export function ChatView({ sessionId }: ChatViewProps) {
               borderColor: "var(--border)",
             }}
           >
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex h-8 w-8 items-center justify-center rounded-md"
+              style={{ color: "var(--text-secondary)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              title="Attach image"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setWebSearch((v) => !v)}
+              className="flex h-8 items-center gap-1 rounded-md px-2 text-[11px]"
+              style={{
+                background: webSearch ? "var(--bg-tertiary)" : "transparent",
+                color: webSearch ? "var(--accent-blue)" : "var(--text-secondary)",
+              }}
+              onMouseEnter={(e) => { if (!webSearch) e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { if (!webSearch) e.currentTarget.style.background = "transparent"; }}
+              title="Web search"
+            >
+              <Globe className="h-3.5 w-3.5" />
+              Search
+            </button>
             <div className="relative">
               <button
                 onClick={() => setThinkingOpen((v) => !v)}
@@ -314,7 +406,7 @@ export function ChatView({ sessionId }: ChatViewProps) {
                 size="sm"
                 className="h-8"
                 onClick={submit}
-                disabled={!input.trim() || wsStatus !== "open"}
+                disabled={(!input.trim() && attachments.length === 0) || wsStatus !== "open"}
                 style={{ background: "var(--accent-blue)", color: "#fff" }}
               >
                 <Send className="h-3.5 w-3.5" />

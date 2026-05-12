@@ -25,7 +25,6 @@ from openprogram.agentic_programming.context import (
 )
 from openprogram.agentic_programming.function import (
     agentic_function, traced, auto_trace_module, auto_trace_package,
-    get_option_set, register_option,
 )
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.agentic_programming.dispatch import make_choice
@@ -40,8 +39,6 @@ __all__ = [
     "auto_trace_module",
     "auto_trace_package",
     "make_choice",
-    "get_option_set",
-    "register_option",
     "Runtime",
     "Context",
     "Session",
