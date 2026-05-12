@@ -3669,6 +3669,53 @@ def create_app():
     async def get_functions():
         return JSONResponse(content=_discover_functions())
 
+    @app.get("/api/sessions/{session_id}/branches/tokens")
+    async def get_branches_tokens(session_id: str):
+        """Lightweight token summary for every branch tip in this session.
+
+        Avoids N-many round-trips when the branches panel wants to show
+        "12K · 4K · 8K" beside each branch row. Re-uses the same
+        per-message token columns as the full /tokens endpoint but
+        skips the per-message list.
+        """
+        from openprogram.agent.session_db import default_db
+        from openprogram.providers.models_generated import MODELS
+
+        db = default_db()
+        branches = db.list_branches(session_id)
+        out: list[dict] = []
+        for b in branches:
+            head_id = b.get("id") or b.get("head_msg_id")
+            if not head_id:
+                continue
+            stats = db.get_branch_token_stats(session_id, head_id=head_id)
+            # Pick the biggest registry window matching the branch's
+            # recorded model — same disambiguation as the full
+            # /tokens endpoint. Avoids github-copilot's 128K cap
+            # eating the real 1M Gemini window.
+            window = stats.get("context_window") or 0
+            mid = stats.get("model")
+            if not window and mid:
+                cands = [v for v in MODELS.values() if v.id == mid]
+                if mid in MODELS:
+                    cands.insert(0, MODELS[mid])
+                if cands:
+                    window = max(
+                        int(getattr(c, "context_window", 0) or 0)
+                        for c in cands
+                    )
+            pct = (stats["current_tokens"] / window) if window else 0.0
+            out.append({
+                "head_id": head_id,
+                "current_tokens": stats["current_tokens"],
+                "context_window": window,
+                "pct_used": pct,
+                "cache_hit_rate": stats.get("cache_hit_rate", 0.0),
+                "cache_read_total": stats.get("cache_read_total", 0),
+                "model": mid,
+            })
+        return JSONResponse(content={"branches": out})
+
     @app.get("/api/sessions/{session_id}/tokens")
     async def get_session_tokens(session_id: str, head_id: str | None = None,
                                  model: str | None = None,

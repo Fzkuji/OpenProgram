@@ -283,12 +283,43 @@ function _onBranchesListMessage(payload) {
 // the history graph). Renders the same list with a collapsed/expanded
 // toggle: collapsed shows just the active branch as a chip; expanded
 // shows the whole list.
+// Per-branch token usage cache. Keyed by session, then head_msg_id.
+// Populated by _refreshBranchTokens off the batch endpoint, consumed
+// by renderBranchesPanel to paint a "12K (6%)" suffix on each row.
+var _branchTokensByConv = {};
+
+function _formatBranchTokens(n) {
+  if (!n) return '';
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000)    return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+async function _refreshBranchTokens() {
+  if (!currentSessionId) return;
+  try {
+    var r = await fetch('/api/sessions/' + encodeURIComponent(currentSessionId) + '/branches/tokens');
+    if (!r.ok) return;
+    var d = await r.json();
+    var map = {};
+    (d.branches || []).forEach(function (b) { map[b.head_id] = b; });
+    _branchTokensByConv[currentSessionId] = map;
+    if (typeof window.renderBranchesPanel === 'function') window.renderBranchesPanel();
+  } catch (e) {}
+}
+window._refreshBranchTokens = _refreshBranchTokens;
+
 window.renderBranchesPanel = function () {
   var host = document.getElementById('branchesPanel');
   if (!host) return;
   if (!currentSessionId) { host.innerHTML = ''; host.className = ''; return; }
   var rows = _branchesByConv[currentSessionId] || [];
   if (!rows.length) { host.innerHTML = ''; host.className = ''; return; }
+  var tokenMap = _branchTokensByConv[currentSessionId] || {};
+  if (!Object.keys(tokenMap).length) {
+    // First paint without data; kick off the fetch which will re-render.
+    _refreshBranchTokens();
+  }
 
   var _bcRaw = sessionStorage.getItem('agentic_branches_collapsed');
   var collapsed = _bcRaw === null ? true : _bcRaw === '1';
@@ -331,9 +362,24 @@ window.renderBranchesPanel = function () {
     var headItem = document.createElement('div');
     headItem.className = 'branch-item active';
     headItem.setAttribute('data-head', activeRow.head_msg_id);
+    var headTok = tokenMap[activeRow.head_msg_id];
+    var headTokTxt = '';
+    var headTokColor = '';
+    if (headTok && headTok.current_tokens) {
+      var pct = headTok.context_window
+        ? Math.round((headTok.current_tokens / headTok.context_window) * 100)
+        : null;
+      headTokTxt = _formatBranchTokens(headTok.current_tokens) + (pct !== null ? ' (' + pct + '%)' : '');
+      if (pct !== null) {
+        if (pct > 85)      headTokColor = 'var(--accent-red, #e5534b)';
+        else if (pct > 65) headTokColor = 'var(--accent-yellow, #d2a106)';
+        else               headTokColor = 'var(--text-muted)';
+      }
+    }
     headItem.innerHTML =
       '<span class="branch-item-dot" style="background:' + headColor + '"></span>' +
       '<span class="branch-item-name">' + escHtml(activeRow.name) + '</span>' +
+      (headTokTxt ? '<span class="branch-item-tokens" style="color:' + headTokColor + '">' + headTokTxt + '</span>' : '') +
       '<span class="branch-item-badge">HEAD</span>';
     host.insertBefore(headItem, list);
   }
@@ -346,9 +392,24 @@ window.renderBranchesPanel = function () {
     var item = document.createElement('div');
     item.className = 'branch-item';
     item.setAttribute('data-head', b.head_msg_id);
+    var bTok = tokenMap[b.head_msg_id];
+    var bTokTxt = '';
+    var bTokColor = '';
+    if (bTok && bTok.current_tokens) {
+      var bPct = bTok.context_window
+        ? Math.round((bTok.current_tokens / bTok.context_window) * 100)
+        : null;
+      bTokTxt = _formatBranchTokens(bTok.current_tokens) + (bPct !== null ? ' (' + bPct + '%)' : '');
+      if (bPct !== null) {
+        if (bPct > 85)      bTokColor = 'var(--accent-red, #e5534b)';
+        else if (bPct > 65) bTokColor = 'var(--accent-yellow, #d2a106)';
+        else                bTokColor = 'var(--text-muted)';
+      }
+    }
     item.innerHTML =
       '<span class="branch-item-dot" style="background:' + laneColor + '"></span>' +
-      '<span class="branch-item-name">' + escHtml(b.name) + '</span>';
+      '<span class="branch-item-name">' + escHtml(b.name) + '</span>' +
+      (bTokTxt ? '<span class="branch-item-tokens" style="color:' + bTokColor + '">' + bTokTxt + '</span>' : '');
     item.addEventListener('click', function () {
       if (b.active) return;
       if (ws && ws.readyState === WebSocket.OPEN) {

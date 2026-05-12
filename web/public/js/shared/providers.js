@@ -351,6 +351,12 @@ async function refreshTokenBadge() {
   } catch (e) {
     badge.style.display = 'none';
   }
+  // After the header badge updates, refresh per-branch numbers too.
+  // Cheap (batch endpoint) and keeps the side panel in sync with the
+  // header after the turn writes new token rows.
+  if (typeof window._refreshBranchTokens === 'function') {
+    try { window._refreshBranchTokens(); } catch (e) {}
+  }
 }
 window.refreshTokenBadge = refreshTokenBadge;
 
