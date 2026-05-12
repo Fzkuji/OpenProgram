@@ -33,11 +33,9 @@
   display: grid;
   /* sidebar inner content = 288 − 1px border = 287; match here. */
   grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
-  /* No horizontal padding — columns sit flush against sidebar + each other.
-     Vertical: 0 top so nav starts directly below the title's bottom border
-     (the inner .foldersNav has 8px padding to provide breathing room);
-     32 bottom for scroll-tail breathing room. */
-  padding: 0 0 32px;
+  /* No padding — nav and content extend the full body height.
+     Inner breathing room is owned by .content / .foldersNav themselves. */
+  padding: 0;
   min-height: 0;
   overflow: hidden;
 }
