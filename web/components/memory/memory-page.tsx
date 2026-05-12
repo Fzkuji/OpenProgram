@@ -596,9 +596,9 @@ function EditorPanel({ title, badge, meta, state, onChange, onSave, onViewMode, 
   meta: string[];
   state: EditorState;
   onChange: (c: string) => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   onViewMode: (m: "edit" | "preview") => void;
-  onDelete?: () => void;
+  onDelete?: () => void | Promise<void>;
   onPreviewClick?: (e: React.MouseEvent) => void;
 }) {
   const { frontmatter, body } = parseFrontmatter(state.content);

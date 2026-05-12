@@ -681,7 +681,9 @@ function ModelList({
     onReload();
   }
 
+  const [fetchStatus, setFetchStatus] = useState<string | null>(null);
   async function fetchRemote() {
+    setFetchStatus("Fetching…");
     try {
       const r = await fetch(
         `/api/providers/${encodeURIComponent(provider.id)}/fetch-models`,
@@ -693,19 +695,22 @@ function ModelList({
       );
       const d = await r.json();
       if (d.error) {
-        alert("Fetch failed: " + d.error);
+        setFetchStatus("Failed: " + d.error);
+        // Auto-clear failure message after 6s so the row resets.
+        setTimeout(() => setFetchStatus(null), 6_000);
         return;
       }
-      // Show a brief success summary so the user knows what changed.
-      // added > 0 → new rows were merged; added == 0 → registry already
-      // had everything the provider returned.
+      // Brief summary; added > 0 → new rows merged; added == 0 →
+      // registry already had everything the provider returned.
       const summary = d.added > 0
-        ? `Fetched ${d.fetched} models, added ${d.added} new (total ${d.total_custom})`
-        : `Fetched ${d.fetched} models — already up to date`;
-      alert(summary);
+        ? `Fetched ${d.fetched}, added ${d.added} new`
+        : `Fetched ${d.fetched} — already up to date`;
+      setFetchStatus(summary);
       onReload();
+      setTimeout(() => setFetchStatus(null), 4_000);
     } catch (e) {
-      alert("Fetch failed: " + (e as Error).message);
+      setFetchStatus("Failed: " + (e as Error).message);
+      setTimeout(() => setFetchStatus(null), 6_000);
     }
   }
 
@@ -718,7 +723,12 @@ function ModelList({
             {enabledCount} / {models.length} available
           </span>
         </span>
-        <span style={{ display: "flex", gap: 6 }}>
+        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {fetchStatus && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              {fetchStatus}
+            </span>
+          )}
           {provider.supports_fetch && (
             <button className={styles.miniAction} onClick={fetchRemote}>
               Fetch models
