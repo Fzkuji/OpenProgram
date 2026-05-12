@@ -32,7 +32,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   flex-shrink: 0;
 }
 
@@ -51,7 +51,7 @@
 
 .headerSub {
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   margin: 2px 0 0;
 }
 
@@ -67,7 +67,7 @@
   padding: 2px 8px;
   border-radius: 10px;
   background: var(--bg-tertiary);
-  color: var(--text-muted);
+  color: var(--text-primary);
   border: 1px solid var(--border-color);
 }
 
@@ -86,7 +86,7 @@
   gap: 5px;
   padding: 8px 14px;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -96,7 +96,7 @@
 }
 
 .tabBtn:hover {
-  color: var(--text-primary);
+  color: var(--text-bright);
 }
 
 .tabBtnActive {
@@ -159,14 +159,14 @@
   gap: 8px;
   padding: 40px 16px;
   text-align: center;
-  color: var(--text-muted);
+  color: var(--text-primary);
 }
 
 .emptyState p {
   margin: 0;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .emptyState span {
@@ -185,7 +185,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  color: var(--text-primary);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -194,7 +194,7 @@
 }
 
 .folderRow:hover {
-  color: var(--text-secondary);
+  color: var(--text-bright);
 }
 
 .chevron {
@@ -222,7 +222,7 @@
   padding: 0 5px;
   border-radius: 8px;
   background: var(--bg-tertiary);
-  color: var(--text-muted);
+  color: var(--text-primary);
   flex-shrink: 0;
 }
 
@@ -261,11 +261,7 @@
   width: 13px;
   height: 13px;
   flex-shrink: 0;
-  color: var(--text-muted);
-}
-
-.fileRowActive .fileIcon {
-  color: var(--accent-blue);
+  /* color inherits from parent row → primary default, bright on hover/active */
 }
 
 .fileName {
@@ -278,7 +274,7 @@
 
 .fileMeta {
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -375,7 +371,7 @@
 .modeBtn {
   padding: 3px 10px;
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -427,7 +423,7 @@
   gap: 12px;
   padding: 5px 18px;
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
   flex-shrink: 0;
@@ -466,7 +462,7 @@
 }
 
 .previewEmpty {
-  color: var(--text-muted);
+  color: var(--text-primary);
   font-style: italic;
 }
 
@@ -491,14 +487,14 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   background: var(--bg-primary);
 }
 
 .placeholder p {
   margin: 0;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 /* System section in wiki tree */
@@ -536,7 +532,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: var(--text-muted);
+  color: var(--text-primary);
 }
 
 .coreInfoIcon svg {
@@ -553,7 +549,7 @@
 
 .coreInfoDesc {
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   line-height: 1.5;
   max-width: 560px;
 }
@@ -563,7 +559,7 @@
   gap: 8px;
   margin-top: 6px;
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-primary);
 }
 
 .metaOk {
@@ -600,7 +596,7 @@
   border: 1px solid var(--border-color);
   border-radius: 5px;
   background: var(--bg-tertiary);
-  color: var(--text-muted);
+  color: var(--text-primary);
   transition: border-color 0.15s;
 }
 
@@ -619,13 +615,13 @@
 }
 
 .searchInput::placeholder {
-  color: var(--text-muted);
+  color: var(--text-primary);
 }
 
 .searchClear {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: var(--text-primary);
   cursor: pointer;
   font-size: 11px;
   padding: 0 2px;
@@ -642,7 +638,7 @@
   border: 1px solid var(--border-color);
   border-radius: 5px;
   background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -663,7 +659,7 @@
   border: 1px solid var(--border-color);
   border-radius: 5px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -682,7 +678,7 @@
   gap: 14px;
   padding: 5px 18px;
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   border-top: 1px solid var(--border-color);
   background: var(--bg-secondary);
   flex-shrink: 0;
@@ -704,7 +700,7 @@
 }
 
 .fmKey {
-  color: var(--text-muted);
+  color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 600;
@@ -794,7 +790,7 @@
   border-left: 3px solid var(--border-color);
   margin: 10px 0;
   padding: 2px 14px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   background: var(--bg-secondary);
 }
 
