@@ -35,6 +35,12 @@ _ALIASES: dict[str, str] = {
     # chatgpt-subscription/. Map it so existing user installs keep
     # working without manual migration.
     "openai-codex": "chatgpt-subscription",
+    # ClaudeCodeRuntime tags its model strings with the ``claude-max:``
+    # prefix (named after the claude-max-api-proxy daemon it talks to),
+    # but every actual claude model in the registry is registered under
+    # ``anthropic/``. Map the runtime prefix to anthropic so model
+    # lookups resolve.
+    "claude-max": "anthropic",
     # Legacy provider name kept as an alias so any session config /
     # external script still referencing "claude-code" continues to
     # resolve auth (it now routes through the same anthropic creds).

@@ -8,9 +8,38 @@ from .types import Model, Usage
 
 
 def get_model(provider: str, model_id: str) -> Model | None:
-    """Get a model by provider and model ID. Returns None if not found."""
+    """Get a model by provider and model ID. Returns None if not found.
+
+    Falls back to alias-equivalent provider names. The model registry
+    keys are historical (e.g. ``openai-codex/gpt-5.5``) while the
+    canonical provider id from the runtime side is different (e.g.
+    ``chatgpt-subscription``). Alias-aware lookup keeps both spellings
+    working without duplicating thousands of MODELS rows.
+    """
     key = f"{provider}/{model_id}"
-    return MODELS.get(key)
+    m = MODELS.get(key)
+    if m is not None:
+        return m
+    # Try alias-equivalent provider names: anything that resolves to
+    # `provider` via the alias table, plus the canonical form `provider`
+    # itself maps to.
+    try:
+        from openprogram.auth.aliases import known_aliases, resolve
+        candidates: set[str] = set()
+        canon = resolve(provider)
+        if canon != provider:
+            candidates.add(canon)
+        for alias, target in known_aliases().items():
+            if target == provider or target == canon:
+                if alias != provider:
+                    candidates.add(alias)
+        for alt in candidates:
+            m = MODELS.get(f"{alt}/{model_id}")
+            if m is not None:
+                return m
+    except Exception:
+        pass
+    return None
 
 
 def get_providers() -> list[str]:
