@@ -301,9 +301,82 @@ function _fmtTokens(n) {
   return String(n || 0);
 }
 
-// Branch token stats — pulls /api/sessions/{id}/tokens and renders the
-// "12.4K / 200K (6%) · cache 42%" pill into #tokenBadge. Hidden when the
-// session has no token data yet (e.g., bare-import wechat session).
+// Per-session timestamp of last cache write (ms). Used to determine if
+// Anthropic's 5-minute prompt cache TTL has elapsed.
+var _cacheWriteTs = {};   // sessionId → Date.now() at last cache write
+var _cacheTtlTimer = {};  // sessionId → setTimeout handle
+
+var CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Call this whenever a turn completes with cache_write_tokens > 0.
+function _recordCacheWrite(sessionId) {
+  _cacheWriteTs[sessionId] = Date.now();
+  // Clear any pending expiry timer and set a new one.
+  if (_cacheTtlTimer[sessionId]) clearTimeout(_cacheTtlTimer[sessionId]);
+  _cacheTtlTimer[sessionId] = setTimeout(function() {
+    delete _cacheTtlTimer[sessionId];
+    // Redraw badge to reflect expired cache.
+    if (typeof currentSessionId !== 'undefined' && currentSessionId === sessionId) {
+      refreshTokenBadge();
+    }
+  }, CACHE_TTL_MS);
+}
+window._recordCacheWrite = _recordCacheWrite;
+
+function _cacheAlive(sessionId) {
+  var ts = _cacheWriteTs[sessionId];
+  if (!ts) return false;
+  return (Date.now() - ts) < CACHE_TTL_MS;
+}
+
+// Renders token badge from already-fetched data. Extracted so both the
+// WS-driven path (no fetch) and the HTTP-fetch path share the same render logic.
+function _renderTokenBadge(data, sessionId) {
+  var badge = document.getElementById('tokenBadge');
+  if (!badge) return;
+  var cur = data.current_tokens || data.naive_sum || 0;
+  if (!cur && !data.last_assistant_usage) { badge.style.display = 'none'; return; }
+  var win = data.context_window || 0;
+  var pct = win ? Math.round((cur / win) * 100) : null;
+  var color = 'var(--text-muted)';
+  if (pct !== null) {
+    if (pct > 85)      color = 'var(--accent-red, #e5534b)';
+    else if (pct > 65) color = 'var(--accent-yellow, #d2a106)';
+  }
+  var cacheRate = Math.round((data.cache_hit_rate || 0) * 100);
+  var label = _fmtTokens(cur);
+  if (win) label += '/' + _fmtTokens(win) + ' (' + pct + '%)';
+  var cacheHtml = '';
+  if (data.cache_read_total > 0 || _cacheWriteTs[sessionId]) {
+    var alive = _cacheAlive(sessionId);
+    var dotColor = alive ? 'var(--accent-blue, #4f8ef7)' : 'var(--text-muted)';
+    var cacheStatus = alive ? 'Cache active' : 'Cache expired';
+    cacheHtml = ' · <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + dotColor + ';vertical-align:middle;margin-bottom:1px" title="' + cacheStatus + '"></span> ' + cacheRate + '%';
+  }
+  badge.innerHTML = label + cacheHtml;
+  badge.style.color = color;
+  badge.style.display = '';
+  var tip = win
+    ? 'Context: ' + cur.toLocaleString() + ' / ' + win.toLocaleString() + ' (' + pct + '%)'
+    : 'Context: ' + cur.toLocaleString() + ' tokens';
+  if (data.cache_read_total > 0) {
+    var ts = _cacheWriteTs[sessionId];
+    var remaining = ts ? Math.max(0, Math.round((CACHE_TTL_MS - (Date.now() - ts)) / 1000)) : 0;
+    tip += '\nCache: ' + data.cache_read_total.toLocaleString() + ' read (' + cacheRate + '% hit)';
+    if (_cacheAlive(sessionId) && remaining > 0) tip += ' · expires in ' + remaining + 's';
+    else if (_cacheWriteTs[sessionId]) tip += ' · expired';
+  }
+  if (data.model) tip += '\nModel: ' + data.model;
+  if (data.source_mix) {
+    var mix = Object.keys(data.source_mix).map(function(k){return k+': '+data.source_mix[k];}).join(', ');
+    if (mix) tip += '\nSources: ' + mix;
+  }
+  badge.title = tip;
+}
+window._renderTokenBadge = _renderTokenBadge;
+
+// Branch token stats — fetches /api/sessions/{id}/tokens (used on session
+// switch or manual refresh; WS-driven updates skip this via updateTokenBadgeFromWs).
 async function refreshTokenBadge() {
   var badge = document.getElementById('tokenBadge');
   if (!badge) return;
@@ -315,45 +388,10 @@ async function refreshTokenBadge() {
     var resp = await fetch('/api/sessions/' + encodeURIComponent(currentSessionId) + '/tokens');
     if (!resp.ok) { badge.style.display = 'none'; return; }
     var data = await resp.json();
-    var cur = data.current_tokens || data.naive_sum || 0;
-    if (!cur && !data.last_assistant_usage) {
-      badge.style.display = 'none';
-      return;
-    }
-    var win = data.context_window || 0;
-    var pct = win ? Math.round((cur / win) * 100) : null;
-    var color = 'var(--text-muted)';
-    if (pct !== null) {
-      if (pct > 85)      color = 'var(--accent-red, #e5534b)';
-      else if (pct > 65) color = 'var(--accent-yellow, #d2a106)';
-    }
-    var cacheRate = Math.round((data.cache_hit_rate || 0) * 100);
-    var label = _fmtTokens(cur);
-    if (win) label += '/' + _fmtTokens(win) + ' (' + pct + '%)';
-    if (data.cache_read_total > 0) label += ' · cache ' + cacheRate + '%';
-    badge.textContent = label;
-    badge.style.color = color;
-    badge.style.display = '';
-    var tip = win
-      ? 'Context: ' + cur.toLocaleString() + ' / ' + win.toLocaleString() + ' (' + pct + '%)'
-      : 'Context: ' + cur.toLocaleString() + ' tokens';
-    if (data.cache_read_total > 0) {
-      tip += '\nCache: ' + data.cache_read_total.toLocaleString() + ' read (' + cacheRate + '% hit)';
-    }
-    if (data.model) tip += '\nModel: ' + data.model;
-    if (data.source_mix) {
-      var mix = Object.keys(data.source_mix)
-        .map(function(k){return k + ': ' + data.source_mix[k];})
-        .join(', ');
-      if (mix) tip += '\nSources: ' + mix;
-    }
-    badge.title = tip;
+    _renderTokenBadge(data, currentSessionId);
   } catch (e) {
     badge.style.display = 'none';
   }
-  // After the header badge updates, refresh per-branch numbers too.
-  // Cheap (batch endpoint) and keeps the side panel in sync with the
-  // header after the turn writes new token rows.
   if (typeof window._refreshBranchTokens === 'function') {
     try { window._refreshBranchTokens(); } catch (e) {}
   }

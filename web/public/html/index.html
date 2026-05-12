@@ -26,7 +26,6 @@
         </span>
         <span id="chatAgentBadge" class="runtime-badge agent-badge" onclick="openAgentSelector('chat')" title="Chat agent model">Chat: ...</span>
         <span id="execAgentBadge" class="runtime-badge agent-badge" onclick="openAgentSelector('exec')" title="Execution agent model">Exec: ...</span>
-        <span id="tokenBadge" class="runtime-badge token-badge" style="display:none" title="Context token usage"></span>
       </div>
       <div class="topbar-right"></div>
     </div>
@@ -96,7 +95,7 @@
               </div>
               <div class="thinking-menu" id="thinkingMenu"></div>
             </div>
-            <div id="contextStats" class="context-stats-label"></div>
+            <span id="tokenBadge" class="context-stats-label" style="display:none" title="Context token usage"></span>
           </div>
         </div>
       </div>

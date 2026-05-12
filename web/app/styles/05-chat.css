@@ -1327,11 +1327,11 @@
   font-size: 11px;
   color: var(--text-bright);
   font-family: var(--font-mono);
-  height: 30px; line-height: 26px;
+  height: 30px; line-height: 28px;
   padding: 0 12px;
   border-radius: 999px;
   background: var(--bg-tertiary);
-  border: 2px solid var(--text-secondary);
+  border: 1px solid var(--border);
   box-sizing: border-box;
   white-space: nowrap;
   cursor: default;

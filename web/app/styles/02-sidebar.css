@@ -367,15 +367,19 @@
 
 /* Conversations section — Claude: padding-top 16px for group spacing */
 .sidebar-conversations {
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 0;
   padding: 16px 0 0;
+  display: flex;
+  flex-direction: column;
 }
 .sidebar-conv-list {
   display: flex;
   flex-direction: column;
   gap: 1px;
   padding: 0 8px;
-  max-height: calc(32px * 6 + 5px);
+  flex: 1;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
 }

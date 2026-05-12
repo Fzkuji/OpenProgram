@@ -139,20 +139,36 @@ function _handleInboundUserMessage(data) {
 
 function _handleContextStats(data) {
   var el = document.getElementById('contextStats');
-  if (!el) return;
-
-  console.log('[DEBUG] context_stats raw data:', JSON.stringify(data));
 
   var chat = data.chat || {};
   if (!data.chat && (data.input_tokens || data.output_tokens)) {
     chat = { input_tokens: data.input_tokens || 0, output_tokens: data.output_tokens || 0, cache_read: data.cache_read || 0 };
   }
 
-  console.log('[DEBUG] chat usage object:', JSON.stringify(chat));
+  // Record cache write timestamp so the token badge dot tracks TTL.
+  var cacheWrite = chat.cache_write || data.cache_write_tokens || 0;
+  if (cacheWrite > 0 && typeof currentSessionId !== 'undefined' && currentSessionId) {
+    if (typeof window._recordCacheWrite === 'function') window._recordCacheWrite(currentSessionId);
+  }
 
+  // Update token badge directly from WS data — no HTTP round-trip needed.
+  if (typeof window._renderTokenBadge === 'function' && typeof currentSessionId !== 'undefined' && currentSessionId) {
+    var wsTokenData = {
+      current_tokens: data.current_tokens || (chat.input_tokens || 0) + (chat.output_tokens || 0),
+      naive_sum: data.naive_sum || 0,
+      context_window: data.context_window || 0,
+      cache_hit_rate: data.cache_hit_rate || 0,
+      cache_read_total: data.cache_read_total || chat.cache_read || 0,
+      last_assistant_usage: data.last_assistant_usage || 0,
+      model: data.model || null,
+      source_mix: data.source_mix || null,
+    };
+    window._renderTokenBadge(wsTokenData, currentSessionId);
+  }
+
+  if (!el) return;
   var provider = data.provider || '';
   var result = _buildUsageText(chat, provider);
-  console.log('[DEBUG] result:', JSON.stringify(result), 'provider:', provider);
   if (result) {
     var t = typeof result === 'string' ? result : result.text;
     var tip = typeof result === 'object' && result.tooltip ? result.tooltip : '';

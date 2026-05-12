@@ -146,7 +146,6 @@ export function ChatView({ sessionId }: ChatViewProps) {
       >
         <div className="flex items-center gap-2">
           <ModelBadge />
-          <ContextBadge sessionId={sessionId} />
           <StatusDot status={wsStatus} />
         </div>
         <div className="flex items-center gap-1">
@@ -280,6 +279,8 @@ export function ChatView({ sessionId }: ChatViewProps) {
               className="max-h-[200px] min-h-[32px] flex-1 resize-none bg-transparent px-2 py-1 text-[13px] outline-none disabled:opacity-50"
               style={{ color: "var(--text-primary)" }}
             />
+
+            <ContextBadge sessionId={sessionId} />
 
             {isRunning ? (
               <>
