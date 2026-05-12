@@ -29,7 +29,8 @@
 .body {
   flex: 1;
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  /* sidebar inner content = 288 − 1px border = 287; match here. */
+  grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
   gap: 24px;
   padding: 16px 24px 32px;
   min-height: 0;

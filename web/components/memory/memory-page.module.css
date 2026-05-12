@@ -96,7 +96,7 @@
 
 .layout {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
   grid-template-rows: auto 1fr;
   height: 100%;
   min-height: 0;

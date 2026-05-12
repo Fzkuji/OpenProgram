@@ -29,7 +29,10 @@
 
 .body {
   display: grid;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  /* sidebar has a 1px border-right, so its inner content is 287px.
+     Match that here so the 2nd-level nav is the same width as the
+     1st-level sidebar visually. */
+  grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
   margin: 32px 0;
   max-width: 1600px;
 }
@@ -217,7 +220,7 @@
    in view while the user scans the long model list on the right. */
 .providersLayout {
   display: grid;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
   gap: 24px;
 }
 .providersSidebar {
