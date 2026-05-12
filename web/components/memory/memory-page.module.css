@@ -379,14 +379,14 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.modeBtn:hover {
+.modeBtn:hover:not(.modeBtnActive) {
   color: var(--text-bright);
   background: var(--bg-hover);
 }
 
 .modeBtnActive {
-  background: var(--bg-tertiary);
-  color: var(--text-bright);
+  background: var(--accent-blue);
+  color: #fff;
 }
 
 .saveOk {
