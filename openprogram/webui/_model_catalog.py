@@ -252,7 +252,7 @@ def list_providers() -> list[dict[str, Any]]:
             "default_base_url": default_base,
             "base_url": pcfg.get("base_url") or "",
             "use_responses_api": bool(pcfg.get("use_responses_api", False)),
-            "supports_fetch": pid in _FETCH_MODELS_PROVIDERS,
+            "supports_fetch": (pid in _FETCH_MODELS_PROVIDERS) or (pid in _FETCHERS),
             "model_count": len(models) + len(custom),
             "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
         }
@@ -484,48 +484,225 @@ def _resolve_api_key(provider_id: str) -> str | None:
     return None
 
 
-def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, Any]:
-    """Hit the provider's OpenAI-compatible `/v1/models` endpoint and return
-    what's there. Works for any provider that speaks OpenAI Completions
-    protocol (openrouter, groq, cerebras, mistral, huggingface, kimi,
-    minimax, opencode, vercel-ai-gateway, ...).
+# ─── Per-provider fetchers ──────────────────────────────────────────────
+#
+# Each fetcher takes (provider_id, timeout) and returns either
+#   * a list of native model items (dicts with {id, name?, ...}), or
+#   * {"error": "..."}
+# fetch_models_remote then normalises each item to the internal entry
+# schema (id / name / context_window / vision / reasoning / ...).
 
-    Returns dict: {"fetched": N, "added": N, "models": [ids...]} on success,
-    {"error": "..."} on failure.
-    """
-    if provider_id not in _FETCH_MODELS_PROVIDERS:
-        return {"error": (
-            f"{_label(provider_id)} has no public /v1/models endpoint. "
-            "Models are curated manually for this provider."
-        )}
-
+def _fetch_openai_compat(provider_id: str, timeout: float) -> Any:
+    """OpenAI-compatible /v1/models: GET base + '/models', Bearer auth."""
     import httpx
-
     api_key = _resolve_api_key(provider_id)
     if api_key is None and _ENV_API_KEYS.get(provider_id):
         return {"error": f"No API key for {provider_id} (set {_ENV_API_KEYS[provider_id]})"}
-
     base = _resolve_base_url(provider_id)
     if not base:
         return {"error": f"No base URL resolvable for {provider_id}"}
-
-    url = base + "/models"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-
     try:
-        r = httpx.get(url, headers=headers, timeout=timeout)
+        r = httpx.get(base + "/models", headers=headers, timeout=timeout)
         r.raise_for_status()
         data = r.json()
     except httpx.HTTPStatusError as e:
         return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
-    except httpx.RequestError as e:
-        return {"error": f"Request failed: {e}"}
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
-
     items = data.get("data") or data.get("models") or []
-    if not isinstance(items, list):
-        return {"error": "Unexpected /models response shape"}
+    return items if isinstance(items, list) else {"error": "unexpected response shape"}
+
+
+def _fetch_anthropic(provider_id: str, timeout: float) -> Any:
+    """Anthropic /v1/models — x-api-key header, returns {data:[{id,...}]}."""
+    import httpx
+    api_key = _resolve_api_key(provider_id)
+    if not api_key:
+        return {"error": "No ANTHROPIC_API_KEY set"}
+    try:
+        r = httpx.get(
+            "https://api.anthropic.com/v1/models",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except httpx.HTTPStatusError as e:
+        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    out = []
+    for it in (data.get("data") or []):
+        mid = it.get("id")
+        if not mid:
+            continue
+        out.append({
+            "id": mid,
+            "name": it.get("display_name") or mid,
+            # Anthropic doesn't expose context_window in /v1/models, but
+            # registry has it. Caller's normalization stage backfills.
+        })
+    return out
+
+
+def _fetch_google(provider_id: str, timeout: float) -> Any:
+    """Google AI Studio (generativelanguage.googleapis.com) /v1beta/models."""
+    import httpx
+    api_key = _resolve_api_key(provider_id)
+    if not api_key:
+        return {"error": "No GOOGLE_GENERATIVE_AI_API_KEY set"}
+    try:
+        r = httpx.get(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            params={"key": api_key},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except httpx.HTTPStatusError as e:
+        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    out = []
+    for it in (data.get("models") or []):
+        # name field is "models/gemini-2.5-flash" — strip prefix.
+        raw = it.get("name") or ""
+        mid = raw.split("/", 1)[1] if "/" in raw else raw
+        if not mid:
+            continue
+        methods = it.get("supportedGenerationMethods") or []
+        # Filter to chat-style models; skip embeddings, AQA, etc.
+        if methods and "generateContent" not in methods:
+            continue
+        entry = {
+            "id": mid,
+            "name": it.get("displayName") or mid,
+        }
+        ctx = it.get("inputTokenLimit")
+        if ctx:
+            entry["context_window"] = int(ctx)
+        out.append(entry)
+    return out
+
+
+def _fetch_bedrock(provider_id: str, timeout: float) -> Any:
+    """Amazon Bedrock list_foundation_models via boto3."""
+    try:
+        import boto3
+    except ImportError:
+        return {"error": "boto3 not installed (pip install boto3)"}
+    try:
+        client = boto3.client("bedrock")
+        resp = client.list_foundation_models()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    out = []
+    for m in resp.get("modelSummaries", []):
+        mid = m.get("modelId")
+        if not mid:
+            continue
+        # Filter to TEXT input/output models. Skip image/embedding.
+        if "TEXT" not in (m.get("inputModalities") or []):
+            continue
+        if "TEXT" not in (m.get("outputModalities") or []):
+            continue
+        out.append({
+            "id": mid,
+            "name": m.get("modelName") or mid,
+        })
+    return out
+
+
+def _fetch_github_copilot(provider_id: str, timeout: float) -> Any:
+    """GitHub Copilot /v1/models — needs the per-session bearer token
+    from the github-copilot provider's token cache. Live fetch only
+    works if a chat session has been opened recently (token in cache)."""
+    import httpx
+    try:
+        from openprogram.providers.github_copilot.token_cache import (
+            get_cached_token,
+        )
+        token = get_cached_token()
+    except Exception:
+        token = None
+    if not token:
+        return {"error": (
+            "Copilot needs a live session token. Open a chat with any "
+            "Copilot model once so the token cache populates, then retry."
+        )}
+    try:
+        r = httpx.get(
+            "https://api.githubcopilot.com/models",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Copilot-Integration-Id": "vscode-chat",
+            },
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except httpx.HTTPStatusError as e:
+        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    out = []
+    for it in (data.get("data") or []):
+        mid = it.get("id")
+        if not mid:
+            continue
+        caps = it.get("capabilities", {}) or {}
+        entry = {
+            "id": mid,
+            "name": it.get("name") or mid,
+        }
+        if caps.get("supports", {}).get("vision"):
+            entry["vision"] = True
+        ctx = caps.get("limits", {}).get("max_context_window_tokens")
+        if ctx:
+            entry["context_window"] = int(ctx)
+        out.append(entry)
+    return out
+
+
+# Provider id → fetcher function. Providers in _FETCH_MODELS_PROVIDERS
+# (OpenAI-compatible) use _fetch_openai_compat by default; explicit
+# entries here override.
+_FETCHERS: dict[str, Any] = {
+    "anthropic": _fetch_anthropic,
+    "claude-code": _fetch_anthropic,  # same API surface via the proxy
+    "google": _fetch_google,
+    "amazon-bedrock": _fetch_bedrock,
+    "github-copilot": _fetch_github_copilot,
+}
+
+
+def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, Any]:
+    """Dispatch to a provider-specific fetcher and merge into custom_models.
+
+    The fetcher returns either a list of model dicts (success) or a dict
+    with an "error" key (failure). Each provider needs its own auth +
+    response-shape handling — OpenAI-compatible providers share one
+    fetcher, anthropic/google/bedrock/copilot each have their own.
+
+    Returns dict: {"fetched": N, "added": N, "models": [ids...]} on success,
+    {"error": "..."} on failure.
+    """
+    fetcher = _FETCHERS.get(provider_id)
+    if fetcher is None and provider_id in _FETCH_MODELS_PROVIDERS:
+        fetcher = _fetch_openai_compat
+    if fetcher is None:
+        return {"error": (
+            f"{_label(provider_id)} has no list-models API available. "
+            "Models are curated manually for this provider."
+        )}
+
+    raw = fetcher(provider_id, timeout)
+    if isinstance(raw, dict) and "error" in raw:
+        return raw
+    items = raw if isinstance(raw, list) else []
+    if not items:
+        return {"error": "No models returned"}
 
     from openprogram.providers.thinking_catalog import derive_thinking_fields
 

@@ -235,6 +235,40 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'fetch-models':
+    case 'fetch_models': {
+      // /fetch-models <provider> — auto-discover models for a provider.
+      // Hits the REST endpoint the settings UI uses; persists results
+      // to custom_models in ~/.agentic/config.json. Next /model picker
+      // will include the newly fetched models.
+      if (args.length < 1) {
+        ctx.pushSystem('Usage: /fetch-models <provider>  (e.g. anthropic, google, openai)');
+        return true;
+      }
+      const provider = args[0]!;
+      const base = process.env.OPENPROGRAM_BACKEND_URL
+        || process.env.OPENPROGRAM_WS?.replace('ws://', 'http://').replace('/ws', '')
+        || 'http://127.0.0.1:8765';
+      ctx.pushSystem(`Fetching models for ${provider}...`);
+      void fetch(`${base}/api/providers/${encodeURIComponent(provider)}/fetch-models`, {
+        method: 'POST',
+      })
+        .then((r) => r.json())
+        .then((d: any) => {
+          if (d?.error) {
+            ctx.pushSystem(`Fetch failed: ${d.error}`);
+          } else {
+            ctx.pushSystem(
+              `${provider}: fetched ${d.fetched} models, added ${d.added} new ` +
+              `(total custom: ${d.total_custom})`,
+            );
+            ctx.client.send({ action: 'list_models' });
+          }
+        })
+        .catch((e) => ctx.pushSystem(`Fetch error: ${e}`));
+      return true;
+    }
+
     case 'effort': {
       if (!ctx.setThinkingEffort) {
         ctx.pushSystem('/effort is not available in this screen.');
