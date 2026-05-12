@@ -4848,6 +4848,91 @@ def create_app():
         threading.Thread(target=_do_create, daemon=True).start()
         return JSONResponse(content={"session_id": conv["id"], "msg_id": msg_id})
 
+    # ---------------------------------------------------------------------------
+    # Memory API
+    # ---------------------------------------------------------------------------
+
+    @app.get("/api/memory/wiki")
+    async def list_wiki_pages():
+        from openprogram.memory import store
+        from openprogram.memory.wiki import helpers as h
+        wdir = store.wiki_dir()
+        pages = []
+        for p in sorted(wdir.rglob("*.md")):
+            if p.name in store.GOVERNANCE_PAGES:
+                continue
+            rel = str(p.relative_to(wdir))
+            try:
+                text = p.read_text(encoding="utf-8")
+                fm, _ = h.parse_frontmatter(text)
+            except Exception:
+                fm = {}
+            stat = p.stat()
+            pages.append({
+                "path": rel,
+                "title": fm.get("title", p.stem),
+                "type": fm.get("type", ""),
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+            })
+        return JSONResponse(content=pages)
+
+    @app.get("/api/memory/wiki/{path:path}")
+    async def get_wiki_page(path: str):
+        from openprogram.memory import store
+        from openprogram.memory.wiki import helpers as h
+        wdir = store.wiki_dir()
+        target = (wdir / path).resolve()
+        if not str(target).startswith(str(wdir.resolve())):
+            return JSONResponse(content={"error": "invalid path"}, status_code=400)
+        if not target.exists():
+            return JSONResponse(content={"error": "not found"}, status_code=404)
+        text = target.read_text(encoding="utf-8")
+        fm, _ = h.parse_frontmatter(text)
+        return JSONResponse(content={"path": path, "content": text, "frontmatter": fm})
+
+    @app.put("/api/memory/wiki/{path:path}")
+    async def update_wiki_page(path: str, request: Request):
+        from openprogram.memory import store
+        wdir = store.wiki_dir()
+        target = (wdir / path).resolve()
+        if not str(target).startswith(str(wdir.resolve())):
+            return JSONResponse(content={"error": "invalid path"}, status_code=400)
+        body = await request.json()
+        content = body.get("content", "")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        return JSONResponse(content={"ok": True})
+
+    @app.delete("/api/memory/wiki/{path:path}")
+    async def delete_wiki_page(path: str):
+        from openprogram.memory import store
+        wdir = store.wiki_dir()
+        target = (wdir / path).resolve()
+        if not str(target).startswith(str(wdir.resolve())):
+            return JSONResponse(content={"error": "invalid path"}, status_code=400)
+        if not target.exists():
+            return JSONResponse(content={"error": "not found"}, status_code=404)
+        target.unlink()
+        return JSONResponse(content={"ok": True})
+
+    @app.get("/api/memory/short-term")
+    async def list_short_term():
+        from openprogram.memory import store
+        files = []
+        for p in sorted(store.short_term_dir().glob("*.md")):
+            stat = p.stat()
+            files.append({"date": p.stem, "size": stat.st_size, "mtime": stat.st_mtime})
+        return JSONResponse(content=files)
+
+    @app.get("/api/memory/short-term/{date}")
+    async def get_short_term(date: str):
+        from openprogram.memory import store
+        p = store.short_term_for(date)
+        if not p.exists():
+            return JSONResponse(content={"error": "not found"}, status_code=404)
+        return JSONResponse(content={"date": date, "content": p.read_text(encoding="utf-8")})
+
     @app.post("/api/register")
     async def register_external(body: dict = None):
         """Register an external module's functions (for GUI/Research Agent Harness integration)."""

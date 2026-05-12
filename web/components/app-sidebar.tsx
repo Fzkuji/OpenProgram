@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
-import { Plus, LayoutGrid, Settings, Info, X } from "lucide-react";
+import { Plus, LayoutGrid, Settings, Info, X, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/lib/session-store";
 import { useWS } from "@/lib/ws";
@@ -81,6 +81,7 @@ export function AppSidebar() {
 
   const chatActive = pathname === "/chat" || pathname === "/" || pathname.startsWith("/s/");
   const programsActive = pathname.startsWith("/programs");
+  const memoryActive = pathname.startsWith("/memory");
 
   return (
     <aside
@@ -111,6 +112,12 @@ export function AppSidebar() {
           onClick={() => router.push("/programs")}
           icon={<LayoutGrid className="h-[18px] w-[18px]" />}
           label="Programs"
+        />
+        <NavItem
+          active={memoryActive}
+          onClick={() => router.push("/memory")}
+          icon={<Brain className="h-[18px] w-[18px]" />}
+          label="Memory"
         />
       </div>
 

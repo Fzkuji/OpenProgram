@@ -134,6 +134,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const items: Array<[string, string]> = [
       ["navPrograms", "/programs"],
+      ["navMemory", "/memory"],
       ["navChats", "/chats"],
     ];
     for (const [id, path] of items) {
