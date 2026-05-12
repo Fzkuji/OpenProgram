@@ -184,14 +184,9 @@ html, body {
     box-shadow: -4px 0 20px rgba(0,0,0,0.5);
   }
 
-  /* Reserve 48px gutters for the collapsed rails so main content
-     starts past them, never under them. Box-sizing: border-box on
-     .main keeps its inner width math intact. */
-  .app > .main {
-    padding-left: 48px;
-    padding-right: 48px;
-    box-sizing: border-box;
-  }
+  /* No gutter reserved — collapsed sidebars are position:fixed at the
+     edges (z-index 100) and may overlap main content briefly when
+     dragging. User preferred edge-to-edge main over a 48px reserve. */
 }
 
 @media (max-width: 600px) {
