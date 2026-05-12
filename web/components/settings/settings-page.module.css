@@ -94,14 +94,14 @@
 .section {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  /* No outer horizontal padding — sub-columns (.providersLayout) live
+     edge-to-edge against the 2nd-level nav. The heading + cards inside
+     are indented individually so they don't touch the border. */
   border-bottom: 1px solid var(--border);
-  margin-bottom: 32px;
-  padding-bottom: 32px;
+  padding-bottom: 24px;
 }
 .section:last-child {
   border-bottom: none;
-  margin-bottom: 0;
   padding-bottom: 0;
 }
 .sectionTitle {
@@ -109,6 +109,9 @@
   font-weight: 600;
   color: var(--text-bright);
   margin: 0;
+  /* Indented so the heading sits inside, not against the 2nd-level
+     nav divider. providersLayout below stays flush at the edges. */
+  padding: 20px 24px 16px;
 }
 
 .card {
@@ -116,6 +119,10 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px 20px;
+  /* Body has no horizontal padding; the card gets its own margin so it
+     doesn't touch the 2nd-level nav divider on the left or the viewport
+     edge on the right. */
+  margin: 0 24px;
 }
 .card + .card {
   margin-top: 12px;
@@ -371,6 +378,9 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* 4th-level content panel — internal padding so cards/labels don't
+     touch the 3rd-level divider on the left or viewport edge on the right. */
+  padding: 24px 32px 32px;
   /* No inner overflow — single page-level scroll. The sticky
      `.providersSidebar` keeps the provider picker on screen while
      the user scans this column's full content. */
