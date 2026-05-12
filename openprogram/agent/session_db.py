@@ -743,15 +743,15 @@ class SessionDB:
                     "model": None, "source_mix": {}}
 
         cur = self.conn.execute(
-            "WITH RECURSIVE branch(id, parent_id, role, timestamp, content, "
+            "WITH RECURSIVE branch(id, parent_id, role, timestamp, "
             "  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
             "  token_source, token_model) AS ("
-            "  SELECT id, parent_id, role, timestamp, content, "
+            "  SELECT id, parent_id, role, timestamp, "
             "    input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
             "    token_source, token_model "
             "    FROM messages WHERE id=? AND session_id=?"
             "  UNION ALL"
-            "  SELECT m.id, m.parent_id, m.role, m.timestamp, m.content, "
+            "  SELECT m.id, m.parent_id, m.role, m.timestamp, "
             "    m.input_tokens, m.output_tokens, m.cache_read_tokens, m.cache_write_tokens, "
             "    m.token_source, m.token_model "
             "    FROM messages m JOIN branch b ON m.id = b.parent_id "
@@ -768,11 +768,6 @@ class SessionDB:
         last_assistant_usage = 0
         last_model: Optional[str] = None
         source_mix: dict[str, int] = {}
-        # Cumulative estimate from message content lengths — fallback when
-        # provider usage is missing (early sessions, channel paths that
-        # don't record tokens, etc.). ~4 chars per token is the standard
-        # rule of thumb across English + code.
-        content_estimate = 0
 
         for r in rows:
             inp = int(r["input_tokens"] or 0)
@@ -785,15 +780,6 @@ class SessionDB:
             input_total += inp
             source = r["token_source"] or "unknown"
             source_mix[source] = source_mix.get(source, 0) + 1
-            # Per-message char-based estimate (only counts this message's own
-            # content once — unlike input_tokens which already accumulates
-            # the prior context). For tracked messages we use the bigger of
-            # output_tokens vs estimate (since output is what this message
-            # CONTRIBUTES to context for downstream turns).
-            content = r["content"] if "content" in r.keys() else None
-            char_est = (len(content) // 4) if isinstance(content, str) else 0
-            per_msg_contrib = max(out, char_est) if (inp or cr or out) else char_est
-            content_estimate += per_msg_contrib
             if r["role"] in ("assistant", "model") and (inp or cr):
                 last_assistant_usage = inp + cr
                 if r["token_model"]:
@@ -811,14 +797,7 @@ class SessionDB:
                 "timestamp": r["timestamp"],
             })
 
-        # current_tokens = best available reading of the context size at HEAD.
-        # If provider reported usage on the last assistant turn, trust it —
-        # but check it's not absurdly small compared to the content estimate
-        # (that means most prior messages had no token recording).
-        if last_assistant_usage and last_assistant_usage >= content_estimate * 0.5:
-            current_tokens = last_assistant_usage
-        else:
-            current_tokens = max(last_assistant_usage, content_estimate, naive_sum)
+        current_tokens = last_assistant_usage or naive_sum
         ctx_window = 0
         model_id = None
         if model is not None:
@@ -835,7 +814,6 @@ class SessionDB:
             "branch": branch,
             "naive_sum": naive_sum,
             "last_assistant_usage": last_assistant_usage,
-            "content_estimate": content_estimate,
             "current_tokens": current_tokens,
             "context_window": ctx_window,
             "pct_used": pct,
