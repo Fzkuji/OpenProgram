@@ -221,6 +221,7 @@ export function MemoryPage() {
   const totalPages = wikiPages.length;
 
   return (
+    <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
     <div className={styles.view}>
       {/* Header */}
       <div className={styles.header}>
@@ -416,6 +417,7 @@ export function MemoryPage() {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }
