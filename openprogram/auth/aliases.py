@@ -30,6 +30,11 @@ _ALIASES: dict[str, str] = {
     "bedrock": "amazon-bedrock",
     # Common typos / dropped hyphens
     "openai-codex-cli": "chatgpt-subscription",
+    # Legacy directory name: older codex login flows wrote credentials
+    # under ~/.openprogram/auth/openai-codex/ rather than the canonical
+    # chatgpt-subscription/. Map it so existing user installs keep
+    # working without manual migration.
+    "openai-codex": "chatgpt-subscription",
     # Legacy provider name kept as an alias so any session config /
     # external script still referencing "claude-code" continues to
     # resolve auth (it now routes through the same anthropic creds).

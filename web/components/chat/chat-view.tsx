@@ -1,25 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { useRouter } from "next/navigation";
 import {
-  Send, Square, Pause, Play, Loader2, Zap, ChevronDown, Activity,
-  Copy, RefreshCw, GitBranch, Check, FileText, Paperclip, Globe, X,
+  Send, Square, Pause, Play, Zap, ChevronDown, Activity,
+  FileText, Paperclip, Globe, X,
 } from "lucide-react";
 import {
   useSessionStore,
-  useMessageById,
   useMessageIds,
-  type ChatMsg,
 } from "@/lib/session-store";
 import { useWS } from "@/lib/ws";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ContextTreePanel } from "./context-tree-panel";
 import { CanvasPanel } from "./canvas-panel";
+import { ModelBadge } from "./model-badge";
+import { StatusDot } from "./status-dot";
+import { ContextBadge } from "./context-badge";
+import { MessageBubble } from "./message-bubble";
 
 interface ChatViewProps {
   sessionId: string | null;

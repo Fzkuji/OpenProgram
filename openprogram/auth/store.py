@@ -176,7 +176,28 @@ class AuthStore:
         return self._root / "auth"
 
     def _pool_path(self, provider_id: str, profile_id: str) -> Path:
-        return self.base_dir() / provider_id / f"{profile_id}.json"
+        """Resolve the on-disk path for ``(provider, profile)``.
+
+        Returns the canonical path first; if that file doesn't exist,
+        falls back to any directory whose alias resolves to this
+        provider (so legacy login dirs like ``openai-codex/`` keep
+        working when the canonical id is ``chatgpt-subscription``).
+        """
+        canonical = self.base_dir() / provider_id / f"{profile_id}.json"
+        if canonical.exists():
+            return canonical
+        # Reverse-alias scan: any short name that resolves to this
+        # canonical id is also a valid on-disk directory.
+        try:
+            from openprogram.auth.aliases import known_aliases
+            for alias, target in known_aliases().items():
+                if target == provider_id and alias != provider_id:
+                    alt = self.base_dir() / alias / f"{profile_id}.json"
+                    if alt.exists():
+                        return alt
+        except Exception:
+            pass
+        return canonical
 
     # -- listeners ------------------------------------------------------------
 
