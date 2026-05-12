@@ -58,13 +58,16 @@
 
 .tabBtn {
   flex: 1;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 6px 8px;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
   font-size: 14px;
   font-weight: 400;
+  line-height: 1;
+  text-align: center;
   color: var(--nav-color);
   background: transparent;
   border: none;
