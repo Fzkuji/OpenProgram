@@ -129,12 +129,14 @@
 .folderItem {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   padding: 6px 8px;
   height: 32px;
   cursor: pointer;
+  font-family: inherit;
   font-size: 14px;
-  color: var(--text-secondary);
+  font-weight: 400;
+  color: var(--nav-color);
   border-radius: 8px;
   transition: background 75ms, color 75ms;
   white-space: nowrap;
@@ -167,6 +169,12 @@
 }
 .folderIcon {
   font-size: 14px;
+  line-height: 1;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
 .folderName {
