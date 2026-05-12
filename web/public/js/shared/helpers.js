@@ -166,7 +166,7 @@ function _isClaudeProvider(p) {
   return p === 'claude_code' || p === 'claude-code' || p === 'anthropic';
 }
 function _isCodexProvider(p) {
-  return p === 'openai-codex' || p === 'codex' || p === 'codex-cli';
+  return p === 'chatgpt-subscription' || p === 'codex' || p === 'codex-cli';
 }
 
 function _buildUsageText(usage, provider) {

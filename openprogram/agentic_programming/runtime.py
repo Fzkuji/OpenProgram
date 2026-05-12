@@ -828,9 +828,26 @@ def _build_pi_context(content: list[dict]):
         TextContent,
         ImageContent,
     )
+    from openprogram.providers.types import VideoContent, AudioContent
 
     system_text = None
     parts = []
+
+    _media_defaults = {
+        "image": "image/png",
+        "video": "video/mp4",
+        "audio": "audio/mp3",
+    }
+
+    def _load_media(block: dict, default_mime: str) -> tuple[str, str]:
+        data = block.get("data")
+        mime = block.get("mime_type")
+        if not data:
+            path = block["path"]
+            with open(path, "rb") as f:
+                data = base64.b64encode(f.read()).decode()
+            mime = mime or _guess_mime(path) or default_mime
+        return data, (mime or default_mime)
 
     for block in content:
         btype = block.get("type", "text")
@@ -845,15 +862,15 @@ def _build_pi_context(content: list[dict]):
         if btype == "text":
             parts.append(TextContent(type="text", text=block["text"]))
         elif btype == "image":
-            data = block.get("data")
-            mime = block.get("mime_type")
-            if not data:
-                path = block["path"]
-                with open(path, "rb") as f:
-                    data = base64.b64encode(f.read()).decode()
-                mime = mime or _guess_mime(path)
-            parts.append(ImageContent(type="image", data=data, mime_type=mime or "image/png"))
-        # audio / file / other blocks: skipped until upstream providers accept them
+            data, mime = _load_media(block, _media_defaults["image"])
+            parts.append(ImageContent(type="image", data=data, mime_type=mime))
+        elif btype == "video":
+            data, mime = _load_media(block, _media_defaults["video"])
+            parts.append(VideoContent(type="video", data=data, mime_type=mime))
+        elif btype == "audio":
+            data, mime = _load_media(block, _media_defaults["audio"])
+            parts.append(AudioContent(type="audio", data=data, mime_type=mime))
+        # other unknown block types are skipped silently
 
     if not parts:
         parts.append(TextContent(type="text", text=""))

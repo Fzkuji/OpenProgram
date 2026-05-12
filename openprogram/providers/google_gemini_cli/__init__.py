@@ -1,9 +1,9 @@
 """Google Gemini CLI / Cloud Code Assist provider."""
 from .google_gemini_cli import stream_google_gemini_cli, stream_simple_google_gemini_cli
-from .runtime import GoogleGeminiCLIRuntime
+from .runtime import GeminiCLIRuntime
 
 __all__ = [
     "stream_google_gemini_cli",
     "stream_simple_google_gemini_cli",
-    "GoogleGeminiCLIRuntime",
+    "GeminiCLIRuntime",
 ]

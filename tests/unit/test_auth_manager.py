@@ -28,7 +28,7 @@ from openprogram.auth.manager import (
 
 
 def _oauth(
-    provider="openai-codex",
+    provider="chatgpt-subscription",
     profile="default",
     access="A",
     refresh="R",
@@ -93,9 +93,9 @@ def test_fresh_oauth_is_not_refreshed(tmp_path: Path):
         return _oauth(access="SHOULD_NOT_HAPPEN")
 
     register_provider_config(ProviderAuthConfig(
-        provider_id="openai-codex", refresh=refresh,
+        provider_id="chatgpt-subscription", refresh=refresh,
     ))
-    cred = asyncio.run(m.acquire("openai-codex"))
+    cred = asyncio.run(m.acquire("chatgpt-subscription"))
     assert cred.payload.access_token == "A"
     assert calls == []
 
@@ -118,21 +118,21 @@ def test_expired_oauth_triggers_refresh(tmp_path: Path):
         )
 
     register_provider_config(ProviderAuthConfig(
-        provider_id="openai-codex", refresh=refresh,
+        provider_id="chatgpt-subscription", refresh=refresh,
     ))
-    cred = asyncio.run(m.acquire("openai-codex"))
+    cred = asyncio.run(m.acquire("chatgpt-subscription"))
     assert cred.payload.access_token == "new"
     # Persisted back
-    stored = store.get_pool("openai-codex", "default").credentials[0]
+    stored = store.get_pool("chatgpt-subscription", "default").credentials[0]
     assert stored.payload.access_token == "new"
 
 
 def test_missing_refresh_fn_raises_needs_reauth(tmp_path: Path):
     m, store = _manager(tmp_path)
     store.add_credential(_oauth(access="x", expires_at_ms=0))
-    register_provider_config(ProviderAuthConfig(provider_id="openai-codex"))
+    register_provider_config(ProviderAuthConfig(provider_id="chatgpt-subscription"))
     with pytest.raises(AuthNeedsReauthError):
-        asyncio.run(m.acquire("openai-codex"))
+        asyncio.run(m.acquire("chatgpt-subscription"))
 
 
 # ---- concurrent refresh dedup ---------------------------------------------
@@ -159,11 +159,11 @@ def test_concurrent_refresh_is_deduped(tmp_path: Path):
         )
 
     register_provider_config(ProviderAuthConfig(
-        provider_id="openai-codex", async_refresh=async_refresh,
+        provider_id="chatgpt-subscription", async_refresh=async_refresh,
     ))
 
     async def run():
-        return await asyncio.gather(*(m.acquire("openai-codex") for _ in range(10)))
+        return await asyncio.gather(*(m.acquire("chatgpt-subscription") for _ in range(10)))
 
     results = asyncio.run(run())
     # Every caller got the same result from a single refresh.
@@ -179,11 +179,11 @@ def test_read_only_expired_credential_raises_read_only(tmp_path: Path):
     cred.read_only = True
     store.add_credential(cred)
     register_provider_config(ProviderAuthConfig(
-        provider_id="openai-codex",
+        provider_id="chatgpt-subscription",
         refresh=lambda c: c,   # would mutate if called; must not be called
     ))
     with pytest.raises(AuthReadOnlyError):
-        asyncio.run(m.acquire("openai-codex"))
+        asyncio.run(m.acquire("chatgpt-subscription"))
 
 
 def test_read_only_fresh_credential_is_returned_asis(tmp_path: Path):
@@ -191,8 +191,8 @@ def test_read_only_fresh_credential_is_returned_asis(tmp_path: Path):
     cred = _oauth(access="fresh")
     cred.read_only = True
     store.add_credential(cred)
-    register_provider_config(ProviderAuthConfig(provider_id="openai-codex"))
-    out = asyncio.run(m.acquire("openai-codex"))
+    register_provider_config(ProviderAuthConfig(provider_id="chatgpt-subscription"))
+    out = asyncio.run(m.acquire("chatgpt-subscription"))
     assert out.payload.access_token == "fresh"
 
 
@@ -202,10 +202,10 @@ def test_fallback_chain_takes_over_when_primary_missing(tmp_path: Path):
     m, store = _manager(tmp_path)
     store.add_credential(_api(provider="anthropic", key="ant"))
     register_provider_config(ProviderAuthConfig(
-        provider_id="openai-codex",
+        provider_id="chatgpt-subscription",
         fallback_chain=[("anthropic", "default")],
     ))
-    cred = asyncio.run(m.acquire("openai-codex"))
+    cred = asyncio.run(m.acquire("chatgpt-subscription"))
     assert cred.provider_id == "anthropic"
     assert cred.payload.api_key == "ant"
 
@@ -225,27 +225,27 @@ def test_fallback_chain_cycle_is_broken(tmp_path: Path):
 def test_pool_exhausted_falls_through_to_next(tmp_path: Path):
     m, store = _manager(tmp_path)
     # Primary pool: revoked
-    dead = _api(provider="openai-codex", key="dead")
+    dead = _api(provider="chatgpt-subscription", key="dead")
     dead.status = "revoked"
     store.add_credential(dead)
     # Fallback: healthy api key on anthropic
     store.add_credential(_api(provider="anthropic", key="ant"))
     register_provider_config(ProviderAuthConfig(
-        provider_id="openai-codex",
+        provider_id="chatgpt-subscription",
         fallback_chain=[("anthropic", "default")],
     ))
-    cred = asyncio.run(m.acquire("openai-codex"))
+    cred = asyncio.run(m.acquire("chatgpt-subscription"))
     assert cred.provider_id == "anthropic"
 
 
 def test_pool_exhausted_with_no_fallback_raises(tmp_path: Path):
     m, store = _manager(tmp_path)
-    dead = _api(provider="openai-codex", key="dead")
+    dead = _api(provider="chatgpt-subscription", key="dead")
     dead.status = "revoked"
     store.add_credential(dead)
-    register_provider_config(ProviderAuthConfig(provider_id="openai-codex"))
+    register_provider_config(ProviderAuthConfig(provider_id="chatgpt-subscription"))
     with pytest.raises(AuthPoolExhaustedError):
-        asyncio.run(m.acquire("openai-codex"))
+        asyncio.run(m.acquire("chatgpt-subscription"))
 
 
 # ---- failure reporting -----------------------------------------------------
@@ -278,7 +278,7 @@ def test_refresh_emits_started_and_succeeded(tmp_path: Path):
     m, store = _manager(tmp_path)
     store.add_credential(_oauth(access="x", expires_at_ms=0))
     register_provider_config(ProviderAuthConfig(
-        provider_id="openai-codex",
+        provider_id="chatgpt-subscription",
         refresh=lambda c: Credential(
             provider_id=c.provider_id, profile_id=c.profile_id,
             kind="oauth", credential_id=c.credential_id,
@@ -291,7 +291,7 @@ def test_refresh_emits_started_and_succeeded(tmp_path: Path):
     ))
     events = []
     store.subscribe(events.append)
-    asyncio.run(m.acquire("openai-codex"))
+    asyncio.run(m.acquire("chatgpt-subscription"))
     types = {e.type for e in events}
     assert AuthEventType.REFRESH_STARTED in types
     assert AuthEventType.REFRESH_SUCCEEDED in types

@@ -1,7 +1,7 @@
 """Provider alias table — short names users type on the CLI.
 
-The canonical provider id is long and punctuated (``openai-codex``,
-``google-gemini-cli``, ``github-copilot``) so the WebUI model picker
+The canonical provider id is long and punctuated (``chatgpt-subscription``,
+``gemini-subscription``, ``github-copilot``) so the WebUI model picker
 stays unambiguous. On the CLI though, people type what they say out
 loud: ``codex``, ``claude``, ``gemini``, ``copilot``. This module
 resolves those shortcuts.
@@ -23,20 +23,21 @@ from __future__ import annotations
 
 _ALIASES: dict[str, str] = {
     # Spoken-word shortcuts
-    "codex": "openai-codex",
+    "codex": "chatgpt-subscription",
     "claude": "anthropic",
-    "gemini": "google-gemini-cli",
+    "gemini": "gemini-subscription",
     "copilot": "github-copilot",
     "bedrock": "amazon-bedrock",
     "vertex": "google-vertex",
     # Common typos / dropped hyphens
-    "openai-codex-cli": "openai-codex",
+    "openai-codex-cli": "chatgpt-subscription",
     # Legacy provider name kept as an alias so any session config /
     # external script still referencing "claude-code" continues to
     # resolve auth (it now routes through the same anthropic creds).
     "claude-code": "anthropic",
-    "claude-max-proxy": "anthropic",
-    "gemini-cli": "google-gemini-cli",
+    "claude-code": "anthropic",
+    "claude-code": "anthropic",
+    "gemini-cli": "gemini-subscription",
     "github-copilot-cli": "github-copilot",
     # Keep identity mappings so round-tripping through resolve is safe.
     # (Canonical ids go through unchanged.)

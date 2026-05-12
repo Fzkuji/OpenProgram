@@ -10,7 +10,7 @@ from pathlib import Path
 PROVIDER_ENV_VARS: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "google": "GEMINI_API_KEY",
-    "google-gemini-cli": "GEMINI_API_KEY",
+    "gemini-subscription": "GEMINI_API_KEY",
     "groq": "GROQ_API_KEY",
     "xai": "XAI_API_KEY",
     "mistral": "MISTRAL_API_KEY",

@@ -265,14 +265,14 @@ claude login
 
 ---
 
-## OpenAICodexRuntime
+## ChatGPTSubscriptionRuntime
 
-Codex CLI。适合已经在本机登录 `codex` 的开发环境。
+ChatGPT 订阅（OAuth HTTP）。适合已经在本机登录 `codex` 的开发环境。
 
 ```python
-from openprogram.providers import OpenAICodexRuntime
+from openprogram.providers import ChatGPTSubscriptionRuntime
 
-rt = OpenAICodexRuntime(
+rt = ChatGPTSubscriptionRuntime(
     model="gpt-5.4-mini",
     timeout=120,
     full_auto=True,
@@ -306,26 +306,26 @@ codex login --device-auth
 
 ---
 
-## GeminiCLIRuntime
+## GeminiSubscriptionRuntime
 
-Gemini CLI 兼容入口。`openprogram.providers.GeminiCLIRuntime` 仍然可用，但底层实现已经切到 `GoogleGeminiCLIRuntime`，用于保持旧代码不破。
+Gemini 订阅（OAuth HTTP）。`openprogram.providers.GeminiSubscriptionRuntime` 是当前正式类名，旧别名 `GeminiSubscriptionRuntime` 和 `GeminiSubscriptionRuntime` 均保留兼容。
 
 ```python
-from openprogram.providers import GeminiCLIRuntime
+from openprogram.providers import GeminiSubscriptionRuntime
 
-rt = GeminiCLIRuntime(
+rt = GeminiSubscriptionRuntime(
     model="gemini-2.5-flash",
     timeout=120,
     yolo=True,
 )
 ```
 
-如果你想显式使用新类名，也可以直接这样写：
+如果你想显式使用类，也可以直接这样写：
 
 ```python
-from openprogram.providers.google_gemini_cli import GoogleGeminiCLIRuntime
+from openprogram.providers.google_gemini_cli import GeminiSubscriptionRuntime
 
-rt = GoogleGeminiCLIRuntime(model="gemini-2.5-flash")
+rt = GeminiSubscriptionRuntime(model="gemini-2.5-flash")
 ```
 
 使用前先完成：

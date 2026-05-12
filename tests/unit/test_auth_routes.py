@@ -276,13 +276,13 @@ def test_event_listener_fans_out_to_subscribers(client):
             # Emit from the same thread; call_soon_threadsafe is no-op-ish.
             store._emit(AuthEvent(
                 type=AuthEventType.REFRESH_SUCCEEDED,
-                provider_id="openai-codex",
+                provider_id="chatgpt-subscription",
                 profile_id="default",
                 credential_id="cred_abc",
             ))
             event = await asyncio.wait_for(q.get(), timeout=1.0)
             assert event.type == AuthEventType.REFRESH_SUCCEEDED
-            assert event.provider_id == "openai-codex"
+            assert event.provider_id == "chatgpt-subscription"
             assert event.credential_id == "cred_abc"
         finally:
             _auth_routes._subscribers.discard(entry)
@@ -374,5 +374,5 @@ def test_aliases_route_returns_table(client):
     resp = c.get("/api/providers/aliases")
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("codex") == "openai-codex"
+    assert body.get("codex") == "chatgpt-subscription"
     assert body.get("claude") == "anthropic"

@@ -75,7 +75,7 @@ def register_builtins() -> None:
         from openprogram.providers.openai_codex.openai_codex import stream_simple_openai_codex_responses
         from openprogram.providers.openai_codex.openai_codex import stream_openai_codex_responses
         register_api_provider(
-            "openai-codex-responses",
+            "chatgpt-subscription",
             _StreamFnProvider(stream_openai_codex_responses, stream_simple_openai_codex_responses),
             source_id="builtin",
         )
@@ -84,7 +84,7 @@ def register_builtins() -> None:
         # ChatGPT OAuth access_token. Without this import,
         # register_codex_auth() never runs and acquiring credentials
         # via AuthManager raises ProviderConfigMissing — manifesting
-        # as "No API key for provider: openai-codex" the moment a
+        # as "No API key for provider: chatgpt-subscription" the moment a
         # channel-routed turn fires.
         from openprogram.providers.openai_codex import auth_adapter as _codex_auth  # noqa: F401
     except ImportError:
@@ -114,12 +114,12 @@ def register_builtins() -> None:
         from openprogram.providers.google_gemini_cli import stream_google_gemini_cli
         from openprogram.providers.google_gemini_cli import stream_simple_google_gemini_cli
         register_api_provider(
-            "google-gemini-cli",
+            "gemini-subscription",
             _StreamFnProvider(stream_google_gemini_cli, stream_simple_google_gemini_cli),
             source_id="builtin",
         )
         register_api_provider(
-            "google-antigravity",
+            "gemini-subscription-corp",
             _StreamFnProvider(stream_google_gemini_cli, stream_simple_google_gemini_cli),
             source_id="builtin",
         )

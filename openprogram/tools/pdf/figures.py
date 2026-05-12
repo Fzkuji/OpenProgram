@@ -109,6 +109,15 @@ _MARGIN = 4.0  # pt
 _MIN_FIG_DIM = 30.0  # pt — anything smaller is too tiny to be a real figure
 _COLUMN_GUTTER_MIN_WIDTH = 12.0  # pt
 _BOLD_FLAG = 1 << 4  # MuPDF font flag bit for bold
+# Body text in academic PDFs is almost always in 7–15pt range. Tick
+# labels, sub/superscripts, and figure axis numbers can run far smaller
+# (3–5pt) and on figure-dominated pages will outnumber prose tokens,
+# breaking pure char-count body-font detection. Clamp to this band.
+_BODY_SIZE_MIN = 7.0
+_BODY_SIZE_MAX = 15.0
+# A non-body span that is significantly larger than body is a section
+# heading, not figure label content; treat as a boundary not graphical.
+_HEADING_SIZE_RATIO = 1.2
 
 
 # ---------------------------------------------------------------------------
@@ -149,8 +158,16 @@ def _identify_body_family(spans: list[dict]) -> tuple[set[tuple[float, str]], fl
         text = s["text"].strip()
         if not text:
             continue
+        # Only count fonts in the plausible body-text size range — this
+        # prevents figure tick labels (3–5pt) from being picked as body
+        # on figure-dominated pages.
+        if not (_BODY_SIZE_MIN <= s["size"] <= _BODY_SIZE_MAX):
+            continue
         counter[(s["size"], s["font"])] += len(text)
     if not counter:
+        # Page has no plausible body-text font at all — pure figure page.
+        # Return empty family; downstream code treats the whole page as
+        # available for figure content.
         return set(), 0.0
     (dom_size, dom_font), _ = counter.most_common(1)[0]
     family: set[tuple[float, str]] = set()
@@ -456,10 +473,18 @@ def _solve_figure_region(
 def _tighten_to_content(
     region: tuple[float, float, float, float],
     graphical: list[tuple],
-    caption_bbox: tuple,
+    body_boxes: list[tuple],
+    caption_bbox: tuple | None = None,
 ) -> tuple[float, float, float, float]:
-    """Shrink region horizontally / vertically to the union of graphical
-    content inside it, plus the caption bbox.
+    """Shrink region to the actual graphical content inside it.
+
+    For wrapfigure layouts the column-detected region is full page
+    width but the figure's graphical content is concentrated in one
+    side (e.g. a right-column inset). Tightening to graphical content
+    keeps figure x-range honest. We avoid expanding back to include
+    body text on the other side by treating body_boxes as repellents:
+    if shrinking would exclude body that the original region included,
+    keep that body excluded.
     """
     inside = [g for g in graphical if _bbox_intersects(region, g)]
     if not inside:
@@ -473,7 +498,7 @@ def _tighten_to_content(
     gy0 = max(gy0, region[1])
     gx1 = min(gx1, region[2])
     gy1 = min(gy1, region[3])
-    # union with caption bbox if it's adjacent
+    # union with caption bbox so the rendered crop reaches the caption
     if caption_bbox is not None:
         gx0 = min(gx0, caption_bbox[0])
         gx1 = max(gx1, caption_bbox[2])
@@ -568,13 +593,24 @@ def extract_figures(
 
         # Step 5
         graphical = _graphical_content_bboxes(page, body_family, body_boxes)
-        # add non-body / non-caption text spans as graphical labels
+        # Non-body / non-caption text spans split into two roles:
+        #   (a) in-figure labels (axis ticks, panel titles, legends) →
+        #       count as graphical content
+        #   (b) section headings (large + isolated) → count as body-like
+        #       boundaries so the figure region search stops at them
+        heading_boxes: list[tuple] = []
+        heading_threshold = dom_size * _HEADING_SIZE_RATIO if dom_size > 0 else float("inf")
         for s in spans:
             if (s["size"], s["font"]) in body_family:
                 continue
             if any(_bbox_intersects(s["bbox"], cb) for cb in caption_bboxes):
                 continue
-            graphical.append(s["bbox"])
+            if s["size"] >= heading_threshold:
+                heading_boxes.append(s["bbox"])
+            else:
+                graphical.append(s["bbox"])
+        # Headings act as obstructions for clear-band search.
+        body_boxes = body_boxes + heading_boxes
 
         # column detection
         columns = _detect_columns(page_rect, body_boxes)
@@ -590,7 +626,7 @@ def extract_figures(
             )
             if region is None:
                 continue
-            region = _tighten_to_content(region, graphical, None)
+            region = _tighten_to_content(region, graphical, body_boxes, None)
             # validate
             if (region[2] - region[0]) < _MIN_FIG_DIM or (region[3] - region[1]) < _MIN_FIG_DIM:
                 continue

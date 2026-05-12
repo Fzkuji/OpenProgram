@@ -4248,7 +4248,7 @@ def create_app():
     @app.get("/api/providers/{name}/configure")
     async def get_provider_configure(name: str):
         """Return the configuration schema (label + step metadata) for a provider."""
-        from openprogram.legacy_providers import configuration as _cfg
+        from openprogram.providers import configuration as _cfg
         entry = _cfg.get_provider(name)
         if entry is None:
             return JSONResponse(
@@ -4266,7 +4266,7 @@ def create_app():
     @app.post("/api/providers/{name}/configure/step/{step_id}")
     async def run_configure_step(name: str, step_id: str, body: dict = None):
         """Execute one configuration step. Body is the step context (accumulates state)."""
-        from openprogram.legacy_providers import configuration as _cfg
+        from openprogram.providers import configuration as _cfg
         ctx = dict(body or {})
         result = _cfg.run_step(name, step_id, ctx)
         # Return both the result and the updated ctx so the client can keep state
@@ -4357,7 +4357,7 @@ def create_app():
         target_provider = explicit_provider or inferred_provider
 
         # Runtime construction may call into sync credential acquisition
-        # paths (ChatGPTSubscriptionRuntime.__init__ -> acquire_sync) that refuse
+        # paths (OpenAICodexRuntime.__init__ -> acquire_sync) that refuse
         # to run inside a running event loop. Off-load to a thread so the
         # first switch into codex / other async-hostile runtimes doesn't
         # 500 half-way through and leave global state ahead of the
@@ -4781,7 +4781,7 @@ def create_app():
         def _do_edit():
             try:
                 from openprogram.programs.functions.meta import edit
-                from openprogram.legacy_providers import create_runtime
+                from openprogram.providers.registry import create_runtime
                 mod = importlib.import_module(f"openprogram.programs.functions.{name}")
                 fn = getattr(mod, name)
                 runtime = create_runtime()

@@ -13,7 +13,7 @@ Supports:
 Requires: pip install google-genai
 
 Usage:
-    from openprogram.legacy_providers import GeminiRuntime
+    from openprogram.providers.registry import GeminiRuntime
 
     rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
 

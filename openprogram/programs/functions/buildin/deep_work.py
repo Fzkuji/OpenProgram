@@ -401,7 +401,7 @@ def deep_work(
         # --- Evaluation phase ---
         # Fresh runtime so the evaluator is not influenced by the
         # execution agent's accumulated context.
-        from openprogram.legacy_providers import create_runtime as _create_rt
+        from openprogram.providers.registry import create_runtime as _create_rt
 
         work_summary = _build_work_summary(state["history"])
 

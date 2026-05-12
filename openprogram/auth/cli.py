@@ -341,7 +341,7 @@ def _available_login_methods(provider: str) -> list[tuple[str, str]]:
     one button, opens a browser). API-key paste / import-from-cli are
     kept as the default for providers where OAuth isn't available.
     """
-    if provider == "openai-codex":
+    if provider == "chatgpt-subscription":
         # Codex has a first-class OAuth flow; no reason to show the
         # clunky "paste your CLI's auth.json" or "paste an api_key"
         # options. The Codex runtime can't even use an api_key.
@@ -350,7 +350,7 @@ def _available_login_methods(provider: str) -> list[tuple[str, str]]:
     choices: list[tuple[str, str]] = []
     if provider == "anthropic":
         choices.append(("import_from_cli", "Import from Claude Code's ~/.claude/.credentials.json"))
-    if provider == "google-gemini-cli":
+    if provider == "gemini-subscription":
         choices.append(("import_from_cli", "Import from ~/.gemini/oauth_creds.json"))
     if provider == "qwen":
         choices.append(("import_from_cli", "Import from ~/.qwen/oauth_creds.json"))
@@ -404,7 +404,7 @@ class _TerminalLoginUi:
 
 
 _LOGIN_NOTES: dict[str, tuple[str, list[str]]] = {
-    "openai-codex": (
+    "chatgpt-subscription": (
         "Sign in with ChatGPT",
         [
             "Browser will open for OpenAI authentication.",
@@ -422,7 +422,7 @@ def _login_pkce_oauth(provider: str, profile: str) -> Credential:
     from openprogram.auth.methods.pkce_oauth import PkceLoginMethod
     from .tui import print_note
 
-    if provider == "openai-codex":
+    if provider == "chatgpt-subscription":
         from openprogram.providers.openai_codex import auth_adapter
         config = auth_adapter.build_pkce_config()
     else:
@@ -457,7 +457,7 @@ def _login_import_from_cli(provider: str, profile: str) -> Credential:
     Adapters produce either writable OAuth (Codex — we rotate) or
     delegated read-only (Anthropic/Gemini/Qwen — external CLI rotates).
     The distinction is invisible here; we just hand off."""
-    if provider == "openai-codex":
+    if provider == "chatgpt-subscription":
         from openprogram.providers.openai_codex import auth_adapter
         cred = auth_adapter.import_from_codex_file(profile_id=profile)
         if cred is None:
@@ -475,7 +475,7 @@ def _login_import_from_cli(provider: str, profile: str) -> Credential:
                 f"Run `claude login` (Claude Code CLI) first."
             )
         return cred
-    if provider == "google-gemini-cli":
+    if provider == "gemini-subscription":
         from openprogram.providers.google_gemini_cli import auth_adapter
         cred = auth_adapter.import_from_gemini_cli(profile_id=profile)
         if cred is None:
@@ -1215,9 +1215,9 @@ def _run_setup() -> int:
     # --- step 3: manual login for missing popular providers ---------------
     print("\n[2/3] Manual login for providers not yet covered...\n")
     popular = [
-        ("openai-codex", "OpenAI via Codex CLI (ChatGPT account)"),
+        ("chatgpt-subscription", "OpenAI via Codex CLI (ChatGPT account)"),
         ("anthropic",    "Anthropic (Claude)"),
-        ("google-gemini-cli", "Google Gemini via CLI"),
+        ("gemini-subscription", "Google Gemini via CLI"),
         ("github-copilot", "GitHub Copilot"),
         ("openai",       "OpenAI (raw API key)"),
     ]

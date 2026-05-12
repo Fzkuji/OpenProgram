@@ -1206,14 +1206,14 @@ def _get_runtime(provider=None, model=None):
     """Get a Runtime via auto-detection or explicit provider.
 
     Args:
-        provider:  Provider name (e.g. "anthropic", "claude-max-proxy").
+        provider:  Provider name (e.g. "anthropic", "claude-code").
                    If None, auto-detects the best available.
         model:     Model name override.
 
     Returns:
         A ready-to-use Runtime instance.
     """
-    from openprogram.legacy_providers import create_runtime
+    from openprogram.providers.registry import create_runtime
     return create_runtime(provider=provider, model=model)
 
 
@@ -1223,8 +1223,8 @@ def _get_functions_dir():
 
 
 def _cmd_configure(provider: str | None):
-    """Interactive provider-setup. Drives openprogram.legacy_providers.configuration."""
-    from openprogram.legacy_providers import configuration
+    """Interactive provider-setup. Drives openprogram.providers.configuration."""
+    from openprogram.providers import configuration
 
     catalog = configuration.list_providers()
     if not catalog:

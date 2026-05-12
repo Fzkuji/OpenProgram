@@ -1416,9 +1416,9 @@
 .thinking-selector:hover, .thinking-selector.open { background: var(--bg-hover); color: var(--text-bright); }
 .thinking-arrow { opacity: 0.6; flex-shrink: 0; }
 
-/* Plus button — rounded square (Claude-style), subtle bg, no prominent border */
+/* Plus button — circle */
 .plus-btn {
-  width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+  width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
   background: transparent; border: none;
   color: var(--text-secondary); display: inline-flex; align-items: center;
   justify-content: center; padding: 0; box-sizing: border-box;
@@ -1532,17 +1532,21 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 32px;
   height: 32px;
-  padding: 0 8px;
-  border-radius: 8px;
+  padding: 0;
+  border-radius: 999px;
   background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 14%, transparent);
   color: var(--accent-blue, #6cb4ff);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, width 0.2s cubic-bezier(0.25,0.1,0.25,1), padding 0.2s;
   box-sizing: border-box;
+  overflow: hidden;
 }
 .tool-chip:hover {
   background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 22%, transparent);
+  width: 52px;
+  padding: 0 6px 0 8px;
 }
 .tool-chip-icon {
   display: inline-flex;
@@ -1557,15 +1561,16 @@
   align-items: center;
   justify-content: center;
   width: 0;
-  margin-left: 0;
   overflow: hidden;
   opacity: 0;
-  transition: width 0.15s ease, margin-left 0.15s ease, opacity 0.1s ease;
+  transition: width 0.2s cubic-bezier(0.25,0.1,0.25,1), opacity 0.15s, margin-left 0.2s;
+  margin-left: 0;
+  flex-shrink: 0;
 }
 .tool-chip:hover .tool-chip-close {
   width: 14px;
-  margin-left: 4px;
   opacity: 1;
+  margin-left: 4px;
 }
 /* Tooltip below the chip on hover */
 .tool-chip[data-tooltip]::after {

@@ -42,7 +42,7 @@ from openprogram.auth.types import (
 )
 
 
-PROVIDER_ID = "openai-codex"
+PROVIDER_ID = "chatgpt-subscription"
 
 OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"

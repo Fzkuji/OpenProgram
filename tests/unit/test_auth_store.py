@@ -23,7 +23,7 @@ from openprogram.auth import (
 )
 
 
-def _oauth_cred(provider="openai-codex", profile="default", access="A", refresh="R") -> Credential:
+def _oauth_cred(provider="chatgpt-subscription", profile="default", access="A", refresh="R") -> Credential:
     return Credential(
         provider_id=provider, profile_id=profile, kind="oauth",
         payload=OAuthPayload(
@@ -45,7 +45,7 @@ def _api_cred(provider="openai", profile="default", key="sk-xxx") -> Credential:
 def test_put_and_get_pool(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
-    pool = s.get_pool("openai-codex", "default")
+    pool = s.get_pool("chatgpt-subscription", "default")
     assert len(pool.credentials) == 1
     assert pool.credentials[0].payload.access_token == "A"
 
@@ -81,11 +81,11 @@ def test_remove_credential(tmp_path: Path):
 def test_delete_pool_removes_file(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
-    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    path = tmp_path / "auth" / "chatgpt-subscription" / "default.json"
     assert path.exists()
-    s.delete_pool("openai-codex", "default")
+    s.delete_pool("chatgpt-subscription", "default")
     assert not path.exists()
-    assert s.find_pool("openai-codex", "default") is None
+    assert s.find_pool("chatgpt-subscription", "default") is None
 
 
 # ---- persistence ----------------------------------------------------------
@@ -94,14 +94,14 @@ def test_reload_after_restart(tmp_path: Path):
     s1 = AuthStore(root=tmp_path)
     s1.add_credential(_oauth_cred(access="secret123"))
     s2 = AuthStore(root=tmp_path)
-    pool = s2.get_pool("openai-codex", "default")
+    pool = s2.get_pool("chatgpt-subscription", "default")
     assert pool.credentials[0].payload.access_token == "secret123"
 
 
 def test_file_permissions_are_0600(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
-    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    path = tmp_path / "auth" / "chatgpt-subscription" / "default.json"
     mode = stat.S_IMODE(path.stat().st_mode)
     # On Windows the check is a no-op (0o600 not enforced); skip there.
     if os.name == "posix":
@@ -111,23 +111,23 @@ def test_file_permissions_are_0600(tmp_path: Path):
 def test_corrupt_file_raises(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
-    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    path = tmp_path / "auth" / "chatgpt-subscription" / "default.json"
     path.write_text("{not: json}")
     s2 = AuthStore(root=tmp_path)
     with pytest.raises(AuthCorruptCredentialError):
-        s2.get_pool("openai-codex", "default")
+        s2.get_pool("chatgpt-subscription", "default")
 
 
 def test_schema_mismatch_raises(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
-    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    path = tmp_path / "auth" / "chatgpt-subscription" / "default.json"
     d = json.loads(path.read_text())
     d["credentials"][0]["v"] = 99
     path.write_text(json.dumps(d))
     s2 = AuthStore(root=tmp_path)
     with pytest.raises(AuthCorruptCredentialError):
-        s2.get_pool("openai-codex", "default")
+        s2.get_pool("chatgpt-subscription", "default")
 
 
 # ---- cross-process coherence ----------------------------------------------
@@ -136,28 +136,28 @@ def test_mtime_watch_reloads_on_external_write(tmp_path: Path):
     s1 = AuthStore(root=tmp_path)
     s1.add_credential(_oauth_cred(access="v1"))
     # Read once so s1 caches it.
-    assert s1.get_pool("openai-codex", "default").credentials[0].payload.access_token == "v1"
+    assert s1.get_pool("chatgpt-subscription", "default").credentials[0].payload.access_token == "v1"
 
     # A "different process" writes a new version by hand. Bump mtime to
     # make sure the watch notices even on filesystems with 1s resolution.
-    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    path = tmp_path / "auth" / "chatgpt-subscription" / "default.json"
     d = json.loads(path.read_text())
     d["credentials"][0]["payload"]["access_token"] = "v2"
     path.write_text(json.dumps(d))
     future = path.stat().st_mtime + 5
     os.utime(path, (future, future))
 
-    pool = s1.get_pool("openai-codex", "default")
+    pool = s1.get_pool("chatgpt-subscription", "default")
     assert pool.credentials[0].payload.access_token == "v2"
 
 
 def test_mtime_watch_handles_file_deletion(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
-    path = tmp_path / "auth" / "openai-codex" / "default.json"
+    path = tmp_path / "auth" / "chatgpt-subscription" / "default.json"
     path.unlink()
     # After external delete, the store should behave as "not configured".
-    assert s.find_pool("openai-codex", "default") is None
+    assert s.find_pool("chatgpt-subscription", "default") is None
 
 
 # ---- list_pools ------------------------------------------------------------
@@ -169,7 +169,7 @@ def test_list_pools_enumerates_multiple_providers(tmp_path: Path):
     s.add_credential(_api_cred(provider="anthropic", key="ant-k"))
     pools = s.list_pools()
     ids = sorted((p.provider_id, p.profile_id) for p in pools)
-    assert ids == [("anthropic", "default"), ("openai", "default"), ("openai-codex", "default")]
+    assert ids == [("anthropic", "default"), ("openai", "default"), ("chatgpt-subscription", "default")]
 
 
 # ---- events ----------------------------------------------------------------
@@ -182,7 +182,7 @@ def test_add_credential_emits_event(tmp_path: Path):
     s.add_credential(c)
     assert any(e.type == AuthEventType.POOL_MEMBER_ADDED for e in events)
     last = events[-1]
-    assert last.provider_id == "openai-codex"
+    assert last.provider_id == "chatgpt-subscription"
     assert last.credential_id == c.credential_id
 
 
@@ -192,7 +192,7 @@ def test_remove_credential_emits_event(tmp_path: Path):
     s.add_credential(c)
     events: list[AuthEvent] = []
     s.subscribe(events.append)
-    s.remove_credential("openai-codex", "default", c.credential_id)
+    s.remove_credential("chatgpt-subscription", "default", c.credential_id)
     assert any(e.type == AuthEventType.POOL_MEMBER_REMOVED for e in events)
 
 

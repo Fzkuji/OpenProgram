@@ -132,7 +132,7 @@ async def _wait_for_callback_code() -> str:
 
 
 class _GeminiCliOAuthProvider:
-    id = "google-gemini-cli"
+    id = "gemini-subscription"
     name = "Google Gemini CLI"
     uses_callback_server = True
 

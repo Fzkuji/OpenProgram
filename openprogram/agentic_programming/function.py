@@ -103,7 +103,7 @@ def _inject_runtime(sig, args, kwargs):
             rt = _current_runtime.get(None)
             if rt is None:
                 # Entry point — create runtime
-                from openprogram.legacy_providers import create_runtime
+                from openprogram.providers.registry import create_runtime
                 rt = create_runtime()
                 runtime_token = _current_runtime.set(rt)
                 owns_runtime = True
@@ -116,7 +116,7 @@ def _inject_runtime(sig, args, kwargs):
             if param_name in sig.parameters and param_name not in bound.arguments:
                 rt = _current_runtime.get(None)
                 if rt is None:
-                    from openprogram.legacy_providers import create_runtime
+                    from openprogram.providers.registry import create_runtime
                     rt = create_runtime()
                     runtime_token = _current_runtime.set(rt)
                     owns_runtime = True

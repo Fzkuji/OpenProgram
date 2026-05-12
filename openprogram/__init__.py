@@ -23,7 +23,7 @@ from openprogram.agentic_programming import (
     agentic_function, traced, auto_trace_module, auto_trace_package,
     Runtime,
 )
-from openprogram.legacy_providers import detect_provider, create_runtime, check_providers
+from openprogram.providers.registry import detect_provider, create_runtime, check_providers
 from openprogram.programs.functions.meta import (
     create, create_app, edit, fix, improve, create_skill,
 )

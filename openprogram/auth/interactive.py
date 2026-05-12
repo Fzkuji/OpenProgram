@@ -298,9 +298,9 @@ def _action_pick_provider_and_login() -> None:
     # Popular canonical providers, plus anything we already have a pool
     # for (so the user can re-login / add a second credential).
     popular = [
-        ("openai-codex",      "OpenAI via Codex CLI (ChatGPT account)"),
+        ("chatgpt-subscription",      "OpenAI via Codex CLI (ChatGPT account)"),
         ("anthropic",         "Anthropic (Claude)"),
-        ("google-gemini-cli", "Google Gemini via CLI"),
+        ("gemini-subscription", "Google Gemini via CLI"),
         ("github-copilot",    "GitHub Copilot"),
         ("openai",            "OpenAI (raw API key)"),
         ("openrouter",        "OpenRouter"),

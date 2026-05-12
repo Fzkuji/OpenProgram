@@ -123,7 +123,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
         groq, cerebras, minimax, mistral, ...): build a plain ``Runtime`` with
         ``model="<provider>:<id>"``. These go through AgentSession end-to-end.
     """
-    from openprogram.legacy_providers import create_runtime, PROVIDERS
+    from openprogram.providers.registry import create_runtime, PROVIDERS
 
     # If caller didn't pin a model, prefer user config (default_model or
     # the first entry in enabled_models) over the hardcoded PROVIDERS
@@ -374,7 +374,7 @@ def _get_exec_runtime(no_tools: bool = False):
             "No provider available. Install a CLI (codex/gemini) or set an API key."
         )
     if no_tools and _exec_provider == "chatgpt-subscription":
-        from openprogram.legacy_providers import create_runtime
+        from openprogram.providers.registry import create_runtime
         rt = create_runtime(
             provider="chatgpt-subscription", session_id=None, search=False,
             full_auto=False, sandbox="read-only",

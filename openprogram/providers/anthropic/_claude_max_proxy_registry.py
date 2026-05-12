@@ -1,10 +1,10 @@
-"""Register the Claude models under the ``claude-max-proxy`` provider.
+"""Register the Claude models under the ``claude-max`` provider.
 
 Mirrors :mod:`_claude_code_registry`: the curated model list from
 ``claude_models.json`` is the source of truth, but here every entry is
-attached to ``provider="claude-max-proxy"`` and to a ``base_url`` that
+attached to ``provider="claude-code"`` and to a ``base_url`` that
 points at the local ``claude-max-api-proxy`` daemon. The runtime
-:class:`ClaudeMaxProxyRuntime` consumes those models via the standard
+:class:`ClaudeCodeRuntime` consumes those models via the standard
 anthropic API client, so OpenProgram's tool registry actually wires
 through to Claude — unlike the CLI provider where tools come baked
 into the subprocess.
@@ -83,7 +83,7 @@ def _augment_registry_with_max_proxy_models() -> None:
     base_url = _proxy_base_url()
     for m in _PROXY_MODELS:
         mid = m["id"]
-        key = f"claude-max-proxy/{mid}"
+        key = f"claude-max/{mid}"
         if key in MODELS:
             continue
         family = m["family"]
@@ -96,7 +96,7 @@ def _augment_registry_with_max_proxy_models() -> None:
             # `anthropic-messages` would break — fields, streaming
             # event names, and tool-call schemas all differ.
             api="openai-completions",
-            provider="claude-max-proxy",
+            provider="claude-code",
             base_url=base_url,
             context_window=m["context_window"],
             max_tokens=m["max_tokens"],

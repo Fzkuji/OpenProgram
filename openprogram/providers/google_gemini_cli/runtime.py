@@ -1,23 +1,23 @@
-"""GoogleGeminiCLIRuntime — thin Runtime wrapper over the HTTP provider.
+"""GeminiCLIRuntime — thin Runtime wrapper over the HTTP provider.
 
 Replaces the subprocess ``GeminiCLIRuntime`` in legacy_providers. Reuses
 the ``gemini`` CLI's logged-in OAuth (``~/.gemini/oauth_creds.json``)
 but talks to Cloud Code Assist (``cloudcode-pa.googleapis.com``)
-directly via the registered ``google-gemini-cli`` stream provider — no
+directly via the registered ``gemini-subscription`` stream provider — no
 subprocess, no argv juggling, no stdout JSON parsing.
 
 Mirrors :class:`openprogram.providers.openai_codex.runtime.OpenAICodexRuntime`:
 
 - AuthManager-first credential acquisition with one-shot import from
   ``~/.gemini/oauth_creds.json`` if no pool exists yet
-- model id resolved via the ``google-gemini-cli/<id>`` registry entries
+- model id resolved via the ``gemini-subscription/<id>`` registry entries
   already populated in ``providers/models_generated.py``
 - streaming + tool-loop + exec-tree recording flow through the default
   ``Runtime`` → ``AgentSession`` → provider path
 
 Usage:
-    from openprogram.providers.google_gemini_cli import GoogleGeminiCLIRuntime
-    rt = GoogleGeminiCLIRuntime(model="gemini-2.5-flash")
+    from openprogram.providers.google_gemini_cli import GeminiCLIRuntime
+    rt = GeminiCLIRuntime(model="gemini-2.5-flash")
     reply = rt.exec([{"type": "text", "text": "hi"}])
 """
 from __future__ import annotations
@@ -89,19 +89,19 @@ def _access_token_for(cred: Credential) -> str:
             data = data[key]
         return str(data)
     raise AuthConfigError(
-        f"google-gemini-cli credential payload {type(payload).__name__} "
+        f"gemini-subscription credential payload {type(payload).__name__} "
         "has no access token path this runtime understands.",
         provider_id=auth_adapter.PROVIDER_ID,
         profile_id=cred.profile_id,
     )
 
 
-class GoogleGeminiCLIRuntime(Runtime):
+class GeminiCLIRuntime(Runtime):
     """Runtime burning a Gemini CLI (Google account) subscription via HTTP.
 
     Args:
         model:   Gemini model id (default ``gemini-2.5-flash``). Must
-                 match a ``google-gemini-cli/<id>`` entry in the registry.
+                 match a ``gemini-subscription/<id>`` entry in the registry.
         system:  Optional system prompt forwarded as ``instructions``.
         profile: Auth profile to consult. Defaults to current ContextVar
                  scope. Explicit override is for scripts that want to pin
@@ -126,7 +126,7 @@ class GoogleGeminiCLIRuntime(Runtime):
         cred = _ensure_credential(self._manager, self._profile_id)
         if cred.kind not in ("oauth", "cli_delegated"):
             raise AuthConfigError(
-                f"google-gemini-cli/{self._profile_id} credential is "
+                f"gemini-subscription/{self._profile_id} credential is "
                 f"{cred.kind!r}, but this runtime needs OAuth (Cloud Code "
                 "Assist backend). Run `gemini auth login` to populate "
                 "~/.gemini/oauth_creds.json, then retry.",
@@ -136,7 +136,7 @@ class GoogleGeminiCLIRuntime(Runtime):
         access = _access_token_for(cred)
         self._cached_access_token = access
 
-        super().__init__(model=f"google-gemini-cli:{model}", api_key=access)
+        super().__init__(model=f"gemini-subscription:{model}", api_key=access)
         self.system = system
 
     def list_models(self) -> list[str]:
@@ -154,4 +154,4 @@ class GoogleGeminiCLIRuntime(Runtime):
         return super().exec(*args, **kwargs)
 
 
-__all__ = ["GoogleGeminiCLIRuntime"]
+__all__ = ["GeminiCLIRuntime"]

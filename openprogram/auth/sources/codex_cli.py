@@ -44,7 +44,7 @@ from ..types import (
 class CodexCliSource:
     """Reads ``~/.codex/auth.json`` and adopts its tokens read-only."""
 
-    provider_id: str = "openai-codex"
+    provider_id: str = "chatgpt-subscription"
     profile_id: str = "default"
     # Allow tests to point at a fake file without monkey-patching $HOME.
     override_path: str = ""

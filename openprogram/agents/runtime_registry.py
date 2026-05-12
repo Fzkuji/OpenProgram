@@ -81,10 +81,10 @@ def _build_runtime(provider: str, model_id: str) -> Any:
 
 
 def _build_configured(provider: str, model_id: str) -> Any:
-    from openprogram.legacy_providers import PROVIDERS, create_runtime
+    from openprogram.providers.registry import PROVIDERS, create_runtime
     if provider in PROVIDERS:
         kwargs: dict[str, Any] = {"provider": provider}
-        if provider == "openai-codex":
+        if provider == "chatgpt-subscription":
             kwargs["search"] = True
         if model_id:
             kwargs["model"] = model_id
@@ -105,9 +105,9 @@ def _build_autodetect() -> Any:
     CLI / Anthropic / OpenAI / Google / Claude Max proxy in order.
     Raises if none are configured.
     """
-    from openprogram.legacy_providers import create_runtime
-    for p in ("openai-codex", "gemini-cli",
-              "anthropic", "gemini", "openai", "claude-max-proxy"):
+    from openprogram.providers.registry import create_runtime
+    for p in ("chatgpt-subscription", "gemini-cli",
+              "anthropic", "gemini", "openai", "claude-code"):
         try:
             rt = create_runtime(provider=p)
             if rt is not None:

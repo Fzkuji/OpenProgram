@@ -128,7 +128,7 @@ async def _wait_for_callback_code(callbacks: OAuthLoginCallbacks) -> str:
 
 
 class _AntigravityOAuthProvider:
-    id = "google-antigravity"
+    id = "gemini-subscription-corp"
     name = "Google Antigravity"
     uses_callback_server = True
 

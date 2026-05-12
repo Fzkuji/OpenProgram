@@ -16,7 +16,7 @@ Prerequisites:
 """
 
 from openprogram import agentic_function
-from openprogram.legacy_providers import ClaudeCodeRuntime
+from openprogram.providers.registry import ClaudeCodeRuntime
 
 # ── Step 1: Create a runtime (no API key needed) ────────────────
 

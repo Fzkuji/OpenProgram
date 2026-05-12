@@ -74,7 +74,7 @@ from .utils.validation import validate_tool_arguments, validate_tool_call
 from .utils.sanitize_unicode import sanitize_surrogates
 
 # Backward-compatible provider detection/runtime helpers.
-from openprogram.legacy_providers import PROVIDERS, check_providers, create_runtime, detect_provider
+from openprogram.providers.registry import PROVIDERS, check_providers, create_runtime, detect_provider
 
 __all__ = [
     # Types
@@ -97,7 +97,7 @@ __all__ = [
     "register_api_provider", "get_api_provider", "get_api_providers", "unregister_api_providers", "clear_api_providers",
     # Legacy runtime compatibility
     "PROVIDERS", "detect_provider", "create_runtime", "check_providers",
-    "AnthropicRuntime", "OpenAIRuntime", "GeminiRuntime", "ClaudeMaxProxyRuntime",
+    "AnthropicRuntime", "OpenAIRuntime", "GeminiRuntime", "ClaudeCodeRuntime",
     "OpenAICodexRuntime", "GeminiCLIRuntime",
     # Keys
     "get_env_api_key",
@@ -116,7 +116,7 @@ _DEFERRABLE_LEGACY_EXPORTS = {
     "AnthropicRuntime",
     "OpenAIRuntime",
     "GeminiRuntime",
-    "ClaudeMaxProxyRuntime",
+    "ClaudeCodeRuntime",
     "OpenAICodexRuntime",
     "GeminiCLIRuntime",
 }

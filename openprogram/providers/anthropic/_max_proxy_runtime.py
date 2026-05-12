@@ -27,7 +27,7 @@ Wire format gotcha: the proxy is OpenAI-compatible, NOT Anthropic
 Messages. Our model registry attaches ``api='openai-completions'`` so
 the standard stream layer routes through ``openai_completions``;
 this Runtime class therefore just configures the modern
-``Runtime(model="claude-max-proxy:<id>")`` path — no Anthropic SDK
+``Runtime(model="claude-max:<id>")`` path — no Anthropic SDK
 involvement.
 """
 
@@ -40,7 +40,7 @@ from openprogram.agentic_programming.runtime import Runtime
 
 
 _DEFAULT_PROXY_URL = "http://localhost:3456"
-_PLACEHOLDER_KEY = "claude-max-proxy"
+_PLACEHOLDER_KEY = "claude-code"
 
 
 def _resolve_base_url() -> str:
@@ -58,10 +58,10 @@ def _resolve_api_key() -> str:
     )
 
 
-class ClaudeMaxProxyRuntime(Runtime):
+class ClaudeCodeRuntime(Runtime):
     """Runtime that talks to ``claude-max-api-proxy`` (OpenAI-compatible).
 
-    Drives the modern AgentSession path via ``model="claude-max-proxy:<id>"``.
+    Drives the modern AgentSession path via ``model="claude-max:<id>"``.
     The model registry entry carries ``api='openai-completions'`` and
     ``base_url=http://localhost:3456/v1`` so the standard
     ``openai_completions.stream_simple`` picks the right wire format.
@@ -89,7 +89,7 @@ class ClaudeMaxProxyRuntime(Runtime):
         if not url.endswith("/v1"):
             url = url + "/v1"
         os.environ.setdefault("CLAUDE_MAX_PROXY_RESOLVED_URL", url)
-        super().__init__(model=f"claude-max-proxy:{model}", max_retries=max_retries)
+        super().__init__(model=f"claude-max:{model}", max_retries=max_retries)
 
 
-__all__ = ["ClaudeMaxProxyRuntime"]
+__all__ = ["ClaudeCodeRuntime"]

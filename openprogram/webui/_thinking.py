@@ -18,10 +18,10 @@ from __future__ import annotations
 
 
 # Per-user defaults (explicit; do not revert without asking):
-#   - Claude (claude-max-proxy, anthropic): auto / max available — adaptive thinking
+#   - Claude (claude-max, anthropic): auto / max available — adaptive thinking
 #   - GPT (codex, openai): maximum effort — the user wants the strongest setting
 THINKING_CONFIGS = {
-    "claude-max-proxy": {
+    "claude-code": {
         "label": "thinking",
         "options": [
             {"value": "off", "desc": "No extended thinking"},
@@ -32,7 +32,7 @@ THINKING_CONFIGS = {
         ],
         "default": "high",
     },
-    "openai-codex": {
+    "chatgpt-subscription": {
         "label": "reasoning effort",
         "options": [
             {"value": "off", "desc": "No reasoning"},
@@ -97,19 +97,22 @@ _LEVEL_DESC = {
 # without needing the live runtime's own provider attribute (which some
 # runtime classes don't expose cleanly).
 _RUNTIME_PROVIDER = {
-    "ClaudeMaxProxyRuntime": "claude-max-proxy",
-    "OpenAICodexRuntime": "openai-codex",
+    "ClaudeCodeRuntime": "claude-code",
+    "ClaudeCodeRuntime": "claude-code",           # backward-compat alias
+    "OpenAICodexRuntime": "chatgpt-subscription",
+    "OpenAICodexRuntime": "chatgpt-subscription",    # backward-compat alias
     "AnthropicRuntime": "anthropic",
     "OpenAIRuntime": "openai",
     "GeminiRuntime": "gemini",
-    "GeminiCLIRuntime": "gemini-cli",         # legacy class name
-    "GoogleGeminiCLIRuntime": "gemini-cli",   # new HTTP-direct runtime
+    "GeminiCLIRuntime": "gemini-subscription",
+    "GeminiCLIRuntime": "gemini-subscription",       # backward-compat alias
+    "GeminiCLIRuntime": "gemini-subscription", # backward-compat alias
 }
 
 
 def get_thinking_config(provider: str) -> dict:
-    """Static config for a provider. Falls back to openai-codex."""
-    return THINKING_CONFIGS.get(provider, THINKING_CONFIGS.get("openai-codex"))
+    """Static config for a provider. Falls back to chatgpt-subscription."""
+    return THINKING_CONFIGS.get(provider, THINKING_CONFIGS.get("chatgpt-subscription"))
 
 
 def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
@@ -149,7 +152,7 @@ def default_effort_for(runtime) -> str:
     fallback. Matches class name rather than duck-typing the provider
     because runtime instances don't uniformly expose it.
     """
-    provider = _RUNTIME_PROVIDER.get(type(runtime).__name__, "openai-codex")
+    provider = _RUNTIME_PROVIDER.get(type(runtime).__name__, "chatgpt-subscription")
     return THINKING_CONFIGS.get(provider, {}).get("default")
 
 
@@ -175,7 +178,7 @@ def apply_thinking_effort(runtime, effort: str) -> None:
     # directly from the subclass attribute to build its
     # --reasoning-effort flag. Keep that plumbing for the subprocess
     # path.
-    if rt_type == "OpenAICodexRuntime":
+    if rt_type in ("OpenAICodexRuntime", "OpenAICodexRuntime"):
         runtime._reasoning_effort = effort
 
     # Every Runtime (API + CLI subclasses) exposes the unified knob.

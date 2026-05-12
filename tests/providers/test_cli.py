@@ -24,11 +24,11 @@ def test_visualizer_codex_runtime_enables_search(monkeypatch):
         captured["kwargs"] = kwargs
         return object()
 
-    monkeypatch.setattr("openprogram.legacy_providers.create_runtime", fake_create_runtime)
+    monkeypatch.setattr("openprogram.providers.registry.create_runtime", fake_create_runtime)
 
-    server._create_runtime_for_visualizer("openai-codex")
+    server._create_runtime_for_visualizer("chatgpt-subscription")
 
-    assert captured["provider"] == "openai-codex"
+    assert captured["provider"] == "chatgpt-subscription"
     assert "session_id" not in captured["kwargs"]
     assert captured["kwargs"]["search"] is True
 
@@ -36,7 +36,7 @@ def test_visualizer_codex_runtime_enables_search(monkeypatch):
 
 # Note: ClaudeCodeRuntime and the shared CliRunner (CLAUDE_CODE_PLUGIN
 # / CLAUDE_CODE_CONFIG) have been removed. Claude now goes through the
-# HTTP-based ClaudeMaxProxyRuntime; its tests live alongside the
+# HTTP-based ClaudeCodeRuntime; its tests live alongside the
 # regular Anthropic runtime tests.
 
 

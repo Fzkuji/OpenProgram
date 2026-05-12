@@ -39,7 +39,7 @@ from openprogram.auth.types import (
 )
 
 
-PROVIDER_ID = "google-gemini-cli"
+PROVIDER_ID = "gemini-subscription"
 
 
 def gemini_cli_credentials_path() -> Path:

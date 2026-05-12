@@ -7,9 +7,9 @@ from openprogram.providers import env_api_keys
 
 
 def test_resolve_maps_common_aliases_to_canonical_ids() -> None:
-    assert resolve("codex") == "openai-codex"
+    assert resolve("codex") == "chatgpt-subscription"
     assert resolve("claude") == "anthropic"
-    assert resolve("gemini") == "google-gemini-cli"
+    assert resolve("gemini") == "gemini-subscription"
     assert resolve("copilot") == "github-copilot"
     assert resolve("unknown-provider") == "unknown-provider"
 
@@ -18,7 +18,7 @@ def test_known_aliases_returns_copy() -> None:
     aliases = known_aliases()
     aliases["codex"] = "mutated"
 
-    assert resolve("codex") == "openai-codex"
+    assert resolve("codex") == "chatgpt-subscription"
 
 
 def test_get_env_api_key_prefers_anthropic_oauth_token(monkeypatch) -> None:

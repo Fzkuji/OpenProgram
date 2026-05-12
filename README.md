@@ -162,7 +162,7 @@ You can always override detection explicitly:
 from openprogram import create_runtime
 
 runtime = create_runtime(provider="openai", model="gpt-5")
-# or: provider="anthropic" | "gemini" | "claude-code" | "openai-codex" | "gemini-cli"
+# or: provider="anthropic" | "gemini" | "claude-code" | "chatgpt-subscription" | "gemini-cli"
 ```
 
 To inspect what the library can see on your machine:

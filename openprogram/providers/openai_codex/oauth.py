@@ -147,7 +147,7 @@ async def _wait_for_callback_code() -> str:
 
 
 class _OpenAICodexOAuthProvider:
-    id = "openai-codex"
+    id = "chatgpt-subscription"
     name = "OpenAI Codex (ChatGPT Plus/Pro)"
     uses_callback_server = True
 

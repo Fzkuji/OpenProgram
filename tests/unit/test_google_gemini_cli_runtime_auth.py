@@ -1,4 +1,4 @@
-"""Auth-acquisition tests for GoogleGeminiCLIRuntime.
+"""Auth-acquisition tests for GeminiCLIRuntime.
 
 Mirrors tests/unit/test_openai_codex_runtime_auth.py — we exercise the
 narrow auth helpers without instantiating a full Runtime (which needs a

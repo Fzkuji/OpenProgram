@@ -86,7 +86,7 @@ def build_default_llm() -> Callable[[str, str], str] | None:
     # answers the user message in-character instead of following
     # instructions. Workaround: fold the system prompt into the user
     # turn for any provider known not to honour system messages.
-    _proxy_providers = {"claude-max-proxy"}
+    _proxy_providers = {"claude-code"}
     _inline_system = provider_name in _proxy_providers
 
     def _call(system_prompt: str, user_text: str) -> str:
