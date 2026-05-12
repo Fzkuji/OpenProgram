@@ -17,12 +17,17 @@ page; multi-page workflows can open multiple sessions.
 Playwright is an optional dependency. Without it, ``check_playwright``
 returns False so the runtime hides the tool. The first call still
 emits a clear install hint if the user forces it anyway.
+
+This module is the public face: SPEC, the shared per-process session
+table (``_sessions``), the small filesystem / introspection helpers,
+and the verb dispatch (``execute``). All verb implementations live in
+``openprogram/tools/browser/_actions/`` and reach back to this module
+for state via ``from .. import browser as _b``.
 """
 
 from __future__ import annotations
 
 import sys
-import uuid
 from typing import Any
 
 from .._helpers import read_string_param
@@ -153,17 +158,21 @@ SPEC: dict[str, Any] = {
 }
 
 
-# Per-process session table. Value shape: dict with playwright, browser, page.
-# Kept minimal — we don't persist across process exits.
+# ---------------------------------------------------------------------------
+# Process-local state. Shared with everything under ``_actions/`` via
+# attribute reach (``_b._sessions``); intentionally not persisted.
+# ---------------------------------------------------------------------------
+
 _sessions: dict[str, dict[str, Any]] = {}
 
 
-def _state_dir() -> str:
-    """Where saved login states live.
+# ---------------------------------------------------------------------------
+# Filesystem + introspection helpers (kept here because both the action
+# modules and external code import them off ``browser``).
+# ---------------------------------------------------------------------------
 
-    One JSON per host (cookies + localStorage). Created lazily.
-    """
-    import os
+def _state_dir() -> str:
+    """Where saved login states live — one JSON per host. Created lazily."""
     from pathlib import Path
     p = Path.home() / ".openprogram" / "browser-states"
     p.mkdir(parents=True, exist_ok=True)
@@ -180,7 +189,6 @@ def _state_path_for(name_or_url: str) -> str:
             name = urlparse(name_or_url).hostname or name_or_url
         except Exception:
             pass
-    # Sanitize for filesystem.
     safe = "".join(c if c.isalnum() or c in "-._" else "_" for c in name)
     return os.path.join(_state_dir(), f"{safe}.json")
 
@@ -223,858 +231,11 @@ def _current_page(sess: dict[str, Any]):
     return pages[idx] if 0 <= idx < len(pages) else pages[0]
 
 
-# Init script that patches the most commonly fingerprinted Playwright
-# tells. Cloudflare Turnstile / Distil / DataDome use these to flag
-# automation. Doesn't make us undetectable — sites with sophisticated
-# canvas / WebGL / TLS fingerprinting will still catch us — but
-# handles the trivial checks (navigator.webdriver, missing plugins,
-# languages, chrome runtime).
-_STEALTH_INIT_SCRIPT = """
-() => {
-  // 1. navigator.webdriver = undefined (default true under automation)
-  Object.defineProperty(Navigator.prototype, 'webdriver', {
-    get: () => undefined,
-    configurable: true,
-  });
-  // 2. window.chrome (real Chrome has this, headless doesn't)
-  if (!window.chrome) {
-    window.chrome = { runtime: {}, app: {}, csi: () => {}, loadTimes: () => {} };
-  }
-  // 3. plugins / mimeTypes — empty arrays in Playwright
-  Object.defineProperty(navigator, 'plugins', {
-    get: () => [
-      { name: 'PDF Viewer', filename: 'internal-pdf-viewer' },
-      { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer' },
-    ],
-    configurable: true,
-  });
-  // 4. languages — Playwright sets ['en-US'] by default; en-US is fine
-  //    but having the array fall through navigator.language is good
-  Object.defineProperty(navigator, 'languages', {
-    get: () => ['en-US', 'en'],
-    configurable: true,
-  });
-  // 5. permissions.query — return prompt for notifications instead of denied
-  if (window.navigator.permissions) {
-    const orig = window.navigator.permissions.query.bind(window.navigator.permissions);
-    window.navigator.permissions.query = (params) =>
-      params && params.name === 'notifications'
-        ? Promise.resolve({ state: 'prompt' })
-        : orig(params);
-  }
-  // 6. WebGL vendor / renderer — common gates
-  const getParam = WebGLRenderingContext.prototype.getParameter;
-  WebGLRenderingContext.prototype.getParameter = function (p) {
-    if (p === 37445) return 'Intel Inc.';                     // VENDOR
-    if (p === 37446) return 'Intel Iris OpenGL Engine';       // RENDERER
-    return getParam.call(this, p);
-  };
-}
-"""
-
-
-def _start_engine(engine: str):
-    """Start the playwright/patchright/camoufox runtime.
-
-    Returns (pw_instance, browser_kind) where browser_kind is the launcher
-    we'll call .launch() on. Falls back to chromium if the requested
-    engine isn't installed.
-    """
-    engine = (engine or "chromium").lower()
-    if engine == "patchright":
-        try:
-            from patchright.sync_api import sync_playwright as _sync_pw
-            pw = _sync_pw().start()
-            return pw, pw.chromium, "patchright"
-        except ImportError:
-            return None, None, (
-                "Error: patchright not installed. Run:\n"
-                "  pip install \"openprogram[browser-stealth]\"\n"
-                "  patchright install chromium"
-            )
-    if engine == "camoufox":
-        try:
-            from camoufox.sync_api import Camoufox  # type: ignore
-            cam = Camoufox(headless=True)  # caller will re-call with kwargs
-            return cam, None, "camoufox"
-        except ImportError:
-            return None, None, (
-                "Error: camoufox not installed. Run:\n"
-                "  pip install \"openprogram[browser-stealth]\"\n"
-                "  camoufox fetch"
-            )
-    # Default: stock playwright + chromium.
-    try:
-        from playwright.sync_api import sync_playwright as _sync_pw
-        pw = _sync_pw().start()
-        return pw, pw.chromium, "chromium"
-    except ImportError:
-        return None, None, _install_hint()
-
-
-def _read_cdp_port() -> int | None:
-    """If the user ran `openprogram browser attach` we wrote the port here."""
-    import os
-    from pathlib import Path
-    p = Path.home() / ".openprogram" / "browser-cdp-port"
-    if not p.exists():
-        return None
-    try:
-        return int(p.read_text().strip())
-    except (ValueError, OSError):
-        return None
-
-
-def _open(
-    *,
-    headless: bool = True,
-    timeout_ms: int = 30_000,
-    stealth: bool = True,
-    engine: str = "auto",
-    url: str | None = None,
-    storage_state: str | None = None,
-    cdp_url: str | None = None,
-) -> str:
-    """Open a browser session, optionally pre-loading a saved login.
-
-    UX flow:
-      - If `url` is given AND we already have a saved login for that
-        host, load the state and run headless — the agent gets a
-        logged-in session with no manual step.
-      - If `url` is given but we don't have a saved login, force
-        headless=False so the user can log in manually, then prompts
-        them to call `save_login` with the returned session id.
-      - If `storage_state` is given explicitly, that path overrides the
-        host-based lookup.
-    """
-    if not check_playwright():
-        return _install_hint()
-
-    # Auto-bootstrap path (default): when the caller didn't pin a
-    # specific engine and didn't pass cdp_url, ensure a sidecar Chrome
-    # is running and route through CDP. First call may take a minute
-    # because it copies the user's Chrome profile (~3GB) so saved
-    # logins / extensions are available; subsequent calls are instant.
-    auto_engine = engine in (None, "", "auto")
-    if cdp_url is None and auto_engine:
-        from openprogram.tools.browser._chrome_bootstrap import (
-            cdp_url_if_available, launch_sidecar_chrome,
-        )
-        cdp_url = cdp_url_if_available()
-        if cdp_url is None:
-            ok = launch_sidecar_chrome()
-            if ok:
-                cdp_url = cdp_url_if_available()
-        # If bootstrap failed (no Chrome installed, sandbox issues),
-        # fall through to plain chromium below.
-        if cdp_url is None:
-            engine = "chromium"
-
-    # Legacy-explicit path: caller asked for cdp via the auto port file.
-    if cdp_url is None and not auto_engine:
-        port = _read_cdp_port()
-        if port is not None:
-            cdp_url = f"http://localhost:{port}"
-
-    if cdp_url:
-        try:
-            from playwright.sync_api import sync_playwright
-            pw = sync_playwright().start()
-            browser = pw.chromium.connect_over_cdp(cdp_url)
-            # Real Chrome already has a default context with cookies/login.
-            context = browser.contexts[0] if browser.contexts else browser.new_context()
-            pages = list(context.pages) or [context.new_page()]
-            # Use a fresh page so we don't hijack whatever the user has open.
-            page = context.new_page()
-            page.set_default_timeout(timeout_ms)
-            if url:
-                try:
-                    page.goto(url)
-                except Exception:
-                    pass
-            session_id = "br_" + uuid.uuid4().hex[:10]
-            _sessions[session_id] = {
-                "engine": "cdp",
-                "playwright": pw,
-                "browser": browser,
-                "context": context,
-                "page": page,
-                "pages": [page],
-                "active": 0,
-                "default_timeout": timeout_ms,
-                "login_url": url,
-                "is_cdp": True,           # don't .close() the user's Chrome
-            }
-            existing_tabs = len(pages)
-            return (
-                f"Opened browser session `{session_id}` "
-                f"(engine=cdp via {cdp_url}, attached to your running Chrome). "
-                f"Found {existing_tabs} existing tab(s); created a new tab for this session."
-            )
-        except Exception as e:
-            return (
-                f"Error connecting to Chrome at {cdp_url}: {type(e).__name__}: {e}\n"
-                f"Did you run `openprogram browser attach` first?"
-            )
-
-    pw, kind, name_or_err = _start_engine(engine)
-    if pw is None:
-        return name_or_err  # error string from _start_engine
-
-    # Decide which storage_state file to load (if any).
-    state_path: str | None = None
-    auto_login_needed = False
-    if storage_state:
-        import os
-        state_path = (
-            os.path.expanduser(storage_state)
-            if not os.path.isabs(storage_state)
-            else storage_state
-        )
-        if not os.path.isfile(state_path):
-            return f"Error: storage_state file not found: {state_path}"
-    elif url and _has_saved_login(url):
-        state_path = _state_path_for(url)
-    elif url:
-        # No saved login for this host — flip to headed so the user can log in.
-        if headless:
-            headless = False
-            auto_login_needed = True
-    try:
-        if name_or_err == "camoufox":
-            # Camoufox manages its own context; everything below is
-            # redundant for it.
-            cam = pw  # alias for clarity
-            cm = cam.__enter__()  # equivalent to `with Camoufox(...) as cm:`
-            page = cm.new_page()
-            page.set_default_timeout(timeout_ms)
-            session_id = "br_" + uuid.uuid4().hex[:10]
-            _sessions[session_id] = {
-                "engine": "camoufox",
-                "playwright": cam,           # camoufox manager
-                "browser": cm,               # browser-like
-                "context": cm,
-                "page": page,
-                "pages": [page],
-                "active": 0,
-                "default_timeout": timeout_ms,
-            }
-            return (
-                f"Opened browser session `{session_id}` "
-                f"(engine=camoufox, headless=True, timeout={timeout_ms}ms)."
-            )
-
-        # playwright / patchright path (chromium-based)
-        launch_args = [
-            "--disable-blink-features=AutomationControlled",
-            "--disable-features=IsolateOrigins,site-per-process",
-        ] if stealth else []
-        browser = kind.launch(headless=headless, args=launch_args)
-        context_kwargs: dict[str, Any] = {
-            "viewport": {"width": 1280, "height": 800},
-            "locale": "en-US",
-        }
-        if stealth:
-            context_kwargs["user_agent"] = (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/130.0.0.0 Safari/537.36"
-            )
-        if state_path:
-            context_kwargs["storage_state"] = state_path
-        context = browser.new_context(**context_kwargs)
-        if stealth and name_or_err == "chromium":
-            # patchright already does deep patches; layering ours on top can
-            # actually re-introduce detectable inconsistencies, so only
-            # apply our init script when running stock chromium.
-            context.add_init_script(f"({_STEALTH_INIT_SCRIPT})()")
-        page = context.new_page()
-        page.set_default_timeout(timeout_ms)
-        if url:
-            try:
-                page.goto(url)
-            except Exception:
-                pass  # leave navigation issues to be reported by `navigate`
-        session_id = "br_" + uuid.uuid4().hex[:10]
-        _sessions[session_id] = {
-            "engine": name_or_err,
-            "playwright": pw,
-            "browser": browser,
-            "context": context,
-            "page": page,
-            "pages": [page],
-            "active": 0,
-            "default_timeout": timeout_ms,
-            "login_url": url,
-        }
-        msg = (
-            f"Opened browser session `{session_id}` "
-            f"(engine={name_or_err}, headless={headless}, "
-            f"stealth={stealth}, timeout={timeout_ms}ms)."
-        )
-        if state_path:
-            msg += f"\n  Loaded saved login from {state_path}."
-        if auto_login_needed:
-            msg += (
-                "\n\n  No saved login for this host yet. The browser opened "
-                "in headed mode at the URL.\n"
-                "  1. Log in manually in the window.\n"
-                "  2. Then call save_login (session_id=" + session_id + ").\n"
-                "  Future `open(url=...)` calls will pick up the saved state automatically."
-            )
-        return msg
-    except Exception as e:
-        return f"Error opening browser: {type(e).__name__}: {e}"
-
-
-def _frames(session_id: str) -> str:
-    """List the iframe tree of the active page."""
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    page = sess["page"]
-    try:
-        lines: list[str] = []
-        for f in page.frames:
-            indent = "  " * (len(f.url.split("/")) - 3 if f.parent_frame else 0)
-            tag = "main" if f == page.main_frame else f.name or "(no name)"
-            lines.append(f"{indent}- {tag}  {f.url}")
-        return "\n".join(lines) or "(no frames)"
-    except Exception as e:
-        return f"Error listing frames: {type(e).__name__}: {e}"
-
-
-def _frame_eval(session_id: str, selector: str, code: str) -> str:
-    """Run JS inside a specific iframe identified by name or URL substring."""
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not selector:
-        return "Error: `selector` is required for frame_eval (frame name or URL substring)."
-    if not code:
-        return "Error: `code` is required for frame_eval."
-    page = sess["page"]
-    try:
-        frame = next(
-            (f for f in page.frames
-             if f.name == selector or selector in (f.url or "")),
-            None,
-        )
-        if frame is None:
-            return f"(no frame matching `{selector}`)"
-        result = frame.evaluate(code)
-        text = str(result)
-        if len(text) > 2000:
-            text = text[:2000] + f"\n\n[truncated, {len(text) - 2000} more chars]"
-        return text
-    except Exception as e:
-        return f"Error in frame_eval: {type(e).__name__}: {e}"
-
-
-_console_buffers: dict[str, list[dict]] = {}
-
-
-def _console_subscribe(sess: dict, session_id: str) -> None:
-    """Lazily attach a console listener to the active page."""
-    if sess.get("_console_attached"):
-        return
-    page = sess["page"]
-    buf: list[dict] = []
-    _console_buffers[session_id] = buf
-
-    def _handler(msg) -> None:
-        try:
-            buf.append({
-                "type": msg.type,
-                "text": msg.text[:500],
-            })
-            if len(buf) > 200:
-                del buf[: len(buf) - 200]
-        except Exception:
-            pass
-
-    page.on("console", _handler)
-    sess["_console_attached"] = True
-
-
-def _console(session_id: str) -> str:
-    """Return any console.log/warn/error captured since session start."""
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    _console_subscribe(sess, session_id)
-    buf = _console_buffers.get(session_id) or []
-    if not buf:
-        return "(no console output captured yet)"
-    lines = [f"  [{m.get('type','log')}] {m.get('text','')}" for m in buf[-50:]]
-    return "Console (last 50):\n" + "\n".join(lines)
-
-
-def _block(session_id: str, selector: str) -> str:
-    """Block requests by URL pattern. `selector` is the URL glob.
-
-    Useful for cutting off ads, analytics, or heavy resources before
-    a navigation. Routing applies to all subsequent requests on the
-    page; pass an empty selector or "*" to clear all blocks.
-    """
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    page = sess["page"]
-    try:
-        if not selector or selector == "*":
-            page.unroute("**/*")
-            return "Cleared all request blocks."
-        page.route(selector, lambda route: route.abort())
-        return f"Blocking requests matching `{selector}`."
-    except Exception as e:
-        return f"Error setting block route: {type(e).__name__}: {e}"
-
-
-def _viewport(session_id: str, width: int, height: int) -> str:
-    """Resize the active page's viewport (mobile emulation, etc.)."""
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not (width and height):
-        return "Error: width and height required (e.g. width=375 height=812 for iPhone X)."
-    try:
-        sess["page"].set_viewport_size({"width": int(width), "height": int(height)})
-        return f"Viewport set to {width}x{height}."
-    except Exception as e:
-        return f"Error setting viewport: {type(e).__name__}: {e}"
-
-
-def _save_login(session_id: str, name: str | None = None) -> str:
-    """Snapshot the session's storage_state for later headless reuse.
-
-    Default `name` is the host of the URL the session was opened at.
-    """
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    target = name or sess.get("login_url") or ""
-    if not target:
-        return (
-            "Error: pass `name` (host or url) — couldn't infer one from the session."
-        )
-    path = _state_path_for(target)
-    try:
-        sess["context"].storage_state(path=path)
-        return (
-            f"Saved login for `{target}` → {path}\n"
-            f"  Future open(url='https://{target.lstrip('https://')}/...') "
-            f"calls will load this automatically and run headless."
-        )
-    except Exception as e:
-        return f"Error saving login: {type(e).__name__}: {e}"
-
-
-def _navigate(session_id: str, url: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not url:
-        return "Error: `url` is required for navigate."
-    try:
-        sess["page"].goto(url)
-        return f"Navigated {session_id} → {url}\nTitle: {sess['page'].title()}"
-    except Exception as e:
-        return f"Error navigating: {type(e).__name__}: {e}"
-
-
-def _click(session_id: str, selector: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not selector:
-        return "Error: `selector` is required for click."
-    try:
-        sess["page"].click(selector)
-        return f"Clicked `{selector}` in {session_id}."
-    except Exception as e:
-        return f"Error clicking: {type(e).__name__}: {e}"
-
-
-def _type(session_id: str, selector: str, text: str, submit: bool = False) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not selector:
-        return "Error: `selector` is required for type."
-    if text is None:
-        return "Error: `text` is required for type."
-    try:
-        sess["page"].fill(selector, text)
-        if submit:
-            sess["page"].press(selector, "Enter")
-        return f"Typed {len(text)} char(s) into `{selector}`{' + submitted' if submit else ''}."
-    except Exception as e:
-        return f"Error typing: {type(e).__name__}: {e}"
-
-
-def _extract(session_id: str, selector: str | None = None) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    try:
-        page = sess["page"]
-        if selector:
-            el = page.locator(selector)
-            count = el.count()
-            if count == 0:
-                return f"(no elements matched `{selector}`)"
-            pieces: list[str] = []
-            for i in range(min(count, 20)):
-                pieces.append(el.nth(i).inner_text())
-            return f"[{count} match(es) for `{selector}`, up to 20 shown]\n\n" + "\n---\n".join(pieces)
-        return page.inner_text("body")
-    except Exception as e:
-        return f"Error extracting: {type(e).__name__}: {e}"
-
-
-def _screenshot(session_id: str, path: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not path:
-        return "Error: `path` is required for screenshot."
-    try:
-        sess["page"].screenshot(path=path, full_page=True)
-        return f"Saved screenshot → {path}"
-    except Exception as e:
-        return f"Error taking screenshot: {type(e).__name__}: {e}"
-
-
-def _upload(session_id: str, selector: str, path: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not selector:
-        return "Error: `selector` is required for upload (target the <input type=file>)."
-    if not path:
-        return "Error: `path` is required for upload."
-    import os
-    if not os.path.isabs(path):
-        path = os.path.abspath(path)
-    if not os.path.isfile(path):
-        return f"Error: file not found: {path}"
-    try:
-        sess["page"].set_input_files(selector, path)
-        return f"Uploaded `{path}` → `{selector}`."
-    except Exception as e:
-        return f"Error uploading: {type(e).__name__}: {e}"
-
-
-def _wait(
-    session_id: str,
-    selector: str | None,
-    state: str | None,
-    timeout_ms: int,
-) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    page = sess["page"]
-    try:
-        if selector:
-            # Element-state wait. Default to "visible" if user didn't say.
-            element_state = state or "visible"
-            if element_state not in ("attached", "detached", "visible", "hidden"):
-                return (
-                    f"Error: with a selector, `state` must be attached / detached / "
-                    f"visible / hidden (got {element_state!r})."
-                )
-            page.wait_for_selector(selector, state=element_state, timeout=timeout_ms)
-            return f"Element `{selector}` reached state `{element_state}`."
-        # Page-state wait.
-        page_state = state or "networkidle"
-        if page_state not in ("load", "domcontentloaded", "networkidle"):
-            return (
-                f"Error: without a selector, `state` must be load / domcontentloaded / "
-                f"networkidle (got {page_state!r})."
-            )
-        page.wait_for_load_state(page_state, timeout=timeout_ms)
-        return f"Page reached state `{page_state}`."
-    except Exception as e:
-        return f"Error waiting: {type(e).__name__}: {e}"
-
-
-def _eval_js(session_id: str, code: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not code:
-        return "Error: `code` is required for eval."
-    try:
-        result = sess["page"].evaluate(code)
-        # Stringify and cap so a giant DOM dump can't flood the agent.
-        if isinstance(result, (dict, list)):
-            import json as _json
-            text = _json.dumps(result, default=str, ensure_ascii=False)
-        else:
-            text = str(result)
-        if len(text) > 2000:
-            text = text[:2000] + f"\n\n[truncated, {len(text) - 2000} more chars]"
-        return text
-    except Exception as e:
-        return f"Error evaluating: {type(e).__name__}: {e}"
-
-
-def _html(session_id: str, selector: str | None) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    page = sess["page"]
-    try:
-        if selector:
-            el = page.locator(selector)
-            count = el.count()
-            if count == 0:
-                return f"(no elements matched `{selector}`)"
-            html = el.first.inner_html()
-        else:
-            html = page.content()
-        # Cap at 5KB — enough for the model to skim structure / find ids.
-        if len(html) > 5000:
-            html = html[:5000] + f"\n\n[truncated, {len(html) - 5000} more chars]"
-        return html
-    except Exception as e:
-        return f"Error fetching HTML: {type(e).__name__}: {e}"
-
-
-def _hover(session_id: str, selector: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not selector:
-        return "Error: `selector` is required for hover."
-    try:
-        sess["page"].hover(selector)
-        return f"Hovered `{selector}`."
-    except Exception as e:
-        return f"Error hovering: {type(e).__name__}: {e}"
-
-
-def _select_option(session_id: str, selector: str, value: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not selector:
-        return "Error: `selector` is required for select."
-    if not value:
-        return "Error: `value` is required for select."
-    try:
-        # Accept comma-list for multi-select.
-        values = [v.strip() for v in value.split(",")] if "," in value else value
-        sess["page"].select_option(selector, values)
-        return f"Selected `{value}` in `{selector}`."
-    except Exception as e:
-        return f"Error selecting: {type(e).__name__}: {e}"
-
-
-def _press(session_id: str, key: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not key:
-        return "Error: `key` is required for press (e.g. 'Enter', 'Escape', 'Control+A')."
-    try:
-        sess["page"].keyboard.press(key)
-        return f"Pressed `{key}`."
-    except Exception as e:
-        return f"Error pressing key: {type(e).__name__}: {e}"
-
-
-def _accessibility(session_id: str, selector: str | None) -> str:
-    """Return a YAML-style aria snapshot of the page or a subtree.
-
-    Uses Playwright's locator.aria_snapshot(), which renders the
-    accessibility tree as a compact role/name outline. Useful as an
-    alternative to raw HTML when an LLM needs to find interactive
-    elements without parsing CSS selectors out of class soup.
-    """
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    try:
-        page = sess["page"]
-        target = page.locator(selector) if selector else page.locator("body")
-        if target.count() == 0:
-            return f"(no elements matched `{selector}`)"
-        snap = target.first.aria_snapshot()
-        if not snap:
-            return "(empty accessibility tree)"
-        if len(snap) > 8000:
-            snap = snap[:8000] + f"\n\n[truncated, {len(snap) - 8000} more chars]"
-        return snap
-    except Exception as e:
-        return f"Error fetching accessibility tree: {type(e).__name__}: {e}"
-
-
-def _screenshot_b64(session_id: str, selector: str | None = None) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    try:
-        page = sess["page"]
-        if selector:
-            el = page.locator(selector)
-            if el.count() == 0:
-                return f"(no elements matched `{selector}`)"
-            buf = el.first.screenshot()
-        else:
-            buf = page.screenshot(full_page=True)
-        import base64
-        b64 = base64.b64encode(buf).decode("ascii")
-        return f"data:image/png;base64,{b64}"
-    except Exception as e:
-        return f"Error taking screenshot: {type(e).__name__}: {e}"
-
-
-def _tabs(session_id: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    pages = sess.get("pages") or [sess.get("page")]
-    active = sess.get("active", 0)
-    lines = [f"Tabs (active = {active}):"]
-    for i, p in enumerate(pages):
-        try:
-            url = p.url
-            title = p.title()
-        except Exception:
-            url, title = "?", "?"
-        marker = "→" if i == active else " "
-        lines.append(f"  {marker} [{i}]  {title!r}  {url}")
-    return "\n".join(lines)
-
-
-def _new_tab(session_id: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    try:
-        page = sess["context"].new_page()
-        page.set_default_timeout(sess.get("default_timeout", 30_000))
-        sess.setdefault("pages", []).append(page)
-        sess["active"] = len(sess["pages"]) - 1
-        sess["page"] = page
-        return f"Opened tab [{sess['active']}], now active."
-    except Exception as e:
-        return f"Error opening tab: {type(e).__name__}: {e}"
-
-
-def _switch_tab(session_id: str, tab_index: int) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    pages = sess.get("pages") or []
-    if not (0 <= tab_index < len(pages)):
-        return f"Error: tab_index {tab_index} out of range (have {len(pages)} tab(s))."
-    sess["active"] = tab_index
-    sess["page"] = pages[tab_index]
-    try:
-        url = sess["page"].url
-    except Exception:
-        url = "?"
-    return f"Switched to tab [{tab_index}] ({url})."
-
-
-def _download(session_id: str, selector: str, path: str, timeout_ms: int) -> str:
-    """Click a selector and capture the resulting download to `path`."""
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    if not selector:
-        return "Error: `selector` is required for download (the trigger element)."
-    if not path:
-        return "Error: `path` is required for download (where to save the file)."
-    import os
-    if not os.path.isabs(path):
-        path = os.path.abspath(path)
-    try:
-        page = sess["page"]
-        with page.expect_download(timeout=timeout_ms) as info:
-            page.click(selector)
-        dl = info.value
-        dl.save_as(path)
-        return f"Downloaded {dl.suggested_filename!r} → {path}"
-    except Exception as e:
-        return f"Error downloading: {type(e).__name__}: {e}"
-
-
-def _cookies(session_id: str) -> str:
-    sess = _require_session(session_id)
-    if isinstance(sess, str):
-        return sess
-    try:
-        rows = sess["context"].cookies()
-        if not rows:
-            return "(no cookies)"
-        import json as _json
-        text = _json.dumps(rows, default=str, ensure_ascii=False, indent=2)
-        if len(text) > 4000:
-            text = text[:4000] + f"\n\n[truncated, {len(text) - 4000} more chars]"
-        return text
-    except Exception as e:
-        return f"Error reading cookies: {type(e).__name__}: {e}"
-
-
-def _close(session_id: str) -> str:
-    sess = _sessions.pop(session_id, None)
-    if sess is None:
-        return f"Error: no browser session with id {session_id!r}."
-    errors: list[str] = []
-    is_cdp = sess.get("is_cdp", False)
-    if is_cdp:
-        # Just close our own page — never tear down the user's real Chrome.
-        page = sess.get("page")
-        if page is not None:
-            try:
-                page.close()
-            except Exception as e:
-                errors.append(f"page: {e}")
-        pw = sess.get("playwright")
-        if pw is not None:
-            try:
-                pw.stop()
-            except Exception as e:
-                errors.append(f"playwright: {e}")
-        if errors:
-            return f"Detached from Chrome (session {session_id}) with warnings: {'; '.join(errors)}"
-        return f"Detached from Chrome (session {session_id}). Your Chrome window stays open."
-    for key in ("context", "browser"):
-        obj = sess.get(key)
-        if obj is None:
-            continue
-        try:
-            obj.close()
-        except Exception as e:
-            errors.append(f"{key}: {e}")
-    pw = sess.get("playwright")
-    if pw is not None:
-        try:
-            pw.stop()
-        except Exception as e:
-            errors.append(f"playwright: {e}")
-    if errors:
-        return f"Closed {session_id} with warnings: {'; '.join(errors)}"
-    return f"Closed browser session `{session_id}`."
-
-
-def _list() -> str:
-    if not _sessions:
-        return "(no open browser sessions)"
-    lines = [f"Open browser sessions: {len(_sessions)}"]
-    for sid, sess in _sessions.items():
-        try:
-            url = sess["page"].url
-        except Exception:
-            url = "?"
-        lines.append(f"  {sid}  {url}")
-    return "\n".join(lines)
-
+# ---------------------------------------------------------------------------
+# Verb dispatcher.  Each branch routes into ``_actions/*`` which holds the
+# real implementation.  Keeping this in one place gives a fast index of
+# every supported verb + which module to look in.
+# ---------------------------------------------------------------------------
 
 def execute(
     action: str | None = None,
@@ -1121,11 +282,22 @@ def execute(
             except (TypeError, ValueError):
                 tab_index = None
 
+    # Lazy-import the action modules so the per-process cost is paid
+    # only on first use of the tool. Each module is tiny (one topic).
+    from openprogram.tools.browser._actions import (
+        open_action,
+        interact,
+        read as read_mod,
+        console as console_mod,
+        tabs as tabs_mod,
+        lifecycle,
+    )
+
     if action == "open":
         eng = engine or read_string_param(kw, "engine", "backend") or "auto"
         ss = storage_state or read_string_param(kw, "storage_state", "state")
         cdp = read_string_param(kw, "cdp_url", "cdp")
-        return _open(
+        return open_action._open(
             headless=headless,
             timeout_ms=timeout_ms,
             stealth=stealth,
@@ -1136,61 +308,61 @@ def execute(
         )
     if action == "save_login":
         nm = name or read_string_param(kw, "name", "host", "label")
-        return _save_login(session_id or "", nm)
+        return lifecycle._save_login(session_id or "", nm)
     if action == "frames":
-        return _frames(session_id or "")
+        return console_mod._frames(session_id or "")
     if action == "frame_eval":
-        return _frame_eval(session_id or "", selector or "", code or "")
+        return console_mod._frame_eval(session_id or "", selector or "", code or "")
     if action == "console":
-        return _console(session_id or "")
+        return console_mod._console(session_id or "")
     if action == "block":
-        return _block(session_id or "", selector or "")
+        return console_mod._block(session_id or "", selector or "")
     if action == "viewport":
         w = width if width is not None else int(read_string_param(kw, "width") or 0)
         h = height if height is not None else int(read_string_param(kw, "height") or 0)
-        return _viewport(session_id or "", w, h)
+        return tabs_mod._viewport(session_id or "", w, h)
     if action == "navigate":
-        return _navigate(session_id or "", url or "")
+        return interact._navigate(session_id or "", url or "")
     if action == "click":
-        return _click(session_id or "", selector or "")
+        return interact._click(session_id or "", selector or "")
     if action == "type":
-        return _type(session_id or "", selector or "", text or "", submit=submit)
+        return interact._type(session_id or "", selector or "", text or "", submit=submit)
     if action == "extract":
-        return _extract(session_id or "", selector or None)
+        return read_mod._extract(session_id or "", selector or None)
     if action == "screenshot":
-        return _screenshot(session_id or "", path or "")
+        return read_mod._screenshot(session_id or "", path or "")
     if action == "upload":
-        return _upload(session_id or "", selector or "", path or "")
+        return interact._upload(session_id or "", selector or "", path or "")
     if action == "wait":
-        return _wait(session_id or "", selector or None, state, timeout_ms)
+        return interact._wait(session_id or "", selector or None, state, timeout_ms)
     if action == "eval":
-        return _eval_js(session_id or "", code or "")
+        return interact._eval_js(session_id or "", code or "")
     if action == "html":
-        return _html(session_id or "", selector or None)
+        return read_mod._html(session_id or "", selector or None)
     if action == "hover":
-        return _hover(session_id or "", selector or "")
+        return interact._hover(session_id or "", selector or "")
     if action == "select":
-        return _select_option(session_id or "", selector or "", value or "")
+        return interact._select_option(session_id or "", selector or "", value or "")
     if action == "press":
-        return _press(session_id or "", key or "")
+        return interact._press(session_id or "", key or "")
     if action == "accessibility":
-        return _accessibility(session_id or "", selector or None)
+        return read_mod._accessibility(session_id or "", selector or None)
     if action == "screenshot_b64":
-        return _screenshot_b64(session_id or "", selector or None)
+        return read_mod._screenshot_b64(session_id or "", selector or None)
     if action == "tabs":
-        return _tabs(session_id or "")
+        return tabs_mod._tabs(session_id or "")
     if action == "new_tab":
-        return _new_tab(session_id or "")
+        return tabs_mod._new_tab(session_id or "")
     if action == "switch_tab":
-        return _switch_tab(session_id or "", tab_index or 0)
+        return tabs_mod._switch_tab(session_id or "", tab_index or 0)
     if action == "download":
-        return _download(session_id or "", selector or "", path or "", timeout_ms)
+        return tabs_mod._download(session_id or "", selector or "", path or "", timeout_ms)
     if action == "cookies":
-        return _cookies(session_id or "")
+        return read_mod._cookies(session_id or "")
     if action == "close":
-        return _close(session_id or "")
+        return lifecycle._close(session_id or "")
     if action == "list":
-        return _list()
+        return lifecycle._list()
     return f"Error: unknown action {action!r}."
 
 
