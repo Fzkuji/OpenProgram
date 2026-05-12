@@ -9,7 +9,7 @@ Single entry function ``extract_pdf_figures`` for batch extraction;
 of ``extract_one_figure`` for the algorithm and its limitations.
 """
 
-from openprogram.programs.applications.pdf_figures.extract import (
+from openprogram.programs.applications.pdf_figures.main import (
     FigureCrop,
     extract_one_figure,
     extract_pdf_figures,

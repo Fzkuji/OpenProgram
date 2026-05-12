@@ -1,13 +1,14 @@
 """
-pdf_figures.extract — caption-anchored PDF figure extraction.
+pdf_figures.main — caption-anchored PDF figure extraction (application).
 
-Single entry function `extract_pdf_figures` plus a single-figure variant
-`extract_one_figure`. All work is deterministic (pymupdf only) — no LLM
-call, but the function keeps the `runtime` parameter for application
-protocol consistency.
+Single entry function ``extract_pdf_figures`` (batch) plus
+``extract_one_figure`` (single). All work is deterministic (pymupdf
+only), but the entry function carries the ``@agentic_function``
+decorator so it shows up in the OpenProgram webui / discovery —
+``runtime`` is accepted for protocol consistency and ignored at
+call time.
 
-The algorithm and its known limitations are documented in detail in the
-docstring of `extract_one_figure`.
+Algorithm + limitations documented in ``extract_one_figure``'s docstring.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
 
 
@@ -347,6 +349,34 @@ def _parse_caption_pairs(captions: str | Iterable) -> list[tuple[str, str]]:
     return [(p, f) for p, f in captions]
 
 
+@agentic_function(input={
+    "pdf_path": {
+        "description": "Path to source PDF",
+        "placeholder": "/path/to/paper.pdf",
+        "multiline": False,
+    },
+    "captions": {
+        "description": "Caption prefixes to extract, one per line as 'PREFIX => filename'",
+        "placeholder": "Figure 1: => fig1.png\nFigure 2: => fig2.png",
+        "multiline": True,
+    },
+    "out_dir": {
+        "description": "Output directory for PNGs",
+        "placeholder": "/path/to/figures/",
+        "multiline": False,
+    },
+    "dpi": {
+        "description": "Render DPI (default 300)",
+        "placeholder": "300",
+        "multiline": False,
+    },
+    "page_hints": {
+        "description": "Optional 'PREFIX => page_number' hints, one per line",
+        "placeholder": "Figure 2: => 4\nFigure 7: => 17",
+        "multiline": True,
+    },
+    "runtime": {"hidden": True},
+})
 def extract_pdf_figures(
     pdf_path: str,
     captions: str | Iterable,

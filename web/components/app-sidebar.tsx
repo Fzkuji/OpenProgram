@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
-import { Plus, LayoutGrid, Settings, Info, X, Brain } from "lucide-react";
+import { Plus, LayoutGrid, Settings, Info, X, ListTree } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/lib/session-store";
 import { useWS } from "@/lib/ws";
@@ -116,7 +116,7 @@ export function AppSidebar() {
         <NavItem
           active={memoryActive}
           onClick={() => router.push("/memory")}
-          icon={<Brain className="h-[18px] w-[18px]" />}
+          icon={<ListTree className="h-[18px] w-[18px]" />}
           label="Memory"
         />
       </div>

@@ -117,7 +117,7 @@ _BODY_SIZE_MIN = 7.0
 _BODY_SIZE_MAX = 15.0
 # A non-body span that is significantly larger than body is a section
 # heading, not figure label content; treat as a boundary not graphical.
-_HEADING_SIZE_RATIO = 1.2
+_HEADING_SIZE_RATIO = 1.1
 
 
 # ---------------------------------------------------------------------------
@@ -411,11 +411,20 @@ def _solve_figure_region(
     columns: list[tuple[float, float]],
     body_boxes: list[tuple],
     graphical: list[tuple],
+    graphical_explicit: list[tuple],
     occupied: list[tuple],
 ) -> tuple[float, float, float, float] | None:
     """Find the figure rectangle for one caption.
 
-    Tries above the caption first, then below.
+    Two strategies in order:
+    A. Clear-band search (PDFFigures2's main approach): find the band
+       in the caption's column free of body text that contains
+       graphical content.
+    B. Graphical-content-first fallback (for wrapfigure layouts and
+       figure-dominated pages where the band approach finds only tiny
+       gaps): use the union bbox of graphical_explicit content
+       above (or below) the caption, clipped by body blocks and by
+       already-occupied regions.
     """
     col = _column_for(caption["bbox"], columns)
     cap_top = caption["bbox"][1]
@@ -425,13 +434,9 @@ def _solve_figure_region(
     is_table = caption["kind"].lower().startswith("tab")
 
     def _pick(col_, search_y0, search_y1, prefer_near_top: bool):
-        """Among clear bands with graphical content, pick the one closest
-        to the caption (i.e., near the bottom of an above-search range,
-        or near the top of a below-search range)."""
         bands = _clear_bands(col_, search_y0, search_y1, body_boxes, occupied)
         if not bands:
             return None
-        # Iterate in the direction "closest to caption" first
         ordered = bands if prefer_near_top else list(reversed(bands))
         for b in ordered:
             region = (col_[0], b[0], col_[1], b[1])
@@ -439,35 +444,76 @@ def _solve_figure_region(
                 return region
         return None
 
-    # Tables: caption is usually ABOVE the table content -> search below first.
-    # Figures: caption is usually BELOW the figure content -> search above first.
-    if is_table:
-        first = _pick(col, cap_bot, page_bot, prefer_near_top=True)
-        if first:
-            return first
-        second = _pick(col, page_top, cap_top, prefer_near_top=False)
-        if second:
-            return second
-    else:
-        first = _pick(col, page_top, cap_top, prefer_near_top=False)
-        if first:
-            return first
-        second = _pick(col, cap_bot, page_bot, prefer_near_top=True)
-        if second:
-            return second
+    def _graphical_cluster_region(search_y0, search_y1):
+        """Union bbox of explicit graphical content within the search
+        range, excluding anything that overlaps an occupied region."""
+        in_range = []
+        for g in graphical_explicit:
+            if g[3] <= search_y0 or g[1] >= search_y1:
+                continue
+            if any(_bbox_intersects(g, occ) for occ in occupied):
+                continue
+            in_range.append(g)
+        if not in_range:
+            return None
+        gx0 = min(g[0] for g in in_range)
+        gy0 = min(g[1] for g in in_range)
+        gx1 = max(g[2] for g in in_range)
+        gy1 = max(g[3] for g in in_range)
+        # Clip to the search range and page rect
+        gx0 = max(gx0, page_rect[0])
+        gx1 = min(gx1, page_rect[2])
+        gy0 = max(gy0, search_y0)
+        gy1 = min(gy1, search_y1)
+        if (gx1 - gx0) < _MIN_FIG_DIM or (gy1 - gy0) < _MIN_FIG_DIM:
+            return None
+        return (gx0, gy0, gx1, gy1)
 
-    # Full-width fallback
-    full_col = (page_rect[0], page_rect[2])
+    # Strategy A — band-based (preferred)
     if is_table:
-        r = _pick(full_col, cap_bot, page_bot, prefer_near_top=True)
-        if r:
-            return r
-        return _pick(full_col, page_top, cap_top, prefer_near_top=False)
+        r = _pick(col, cap_bot, page_bot, prefer_near_top=True)
+        if r is None:
+            r = _pick(col, page_top, cap_top, prefer_near_top=False)
+        if r is None:
+            full_col = (page_rect[0], page_rect[2])
+            r = _pick(full_col, cap_bot, page_bot, prefer_near_top=True)
+            if r is None:
+                r = _pick(full_col, page_top, cap_top, prefer_near_top=False)
     else:
-        r = _pick(full_col, page_top, cap_top, prefer_near_top=False)
-        if r:
-            return r
-        return _pick(full_col, cap_bot, page_bot, prefer_near_top=True)
+        r = _pick(col, page_top, cap_top, prefer_near_top=False)
+        if r is None:
+            r = _pick(col, cap_bot, page_bot, prefer_near_top=True)
+        if r is None:
+            full_col = (page_rect[0], page_rect[2])
+            r = _pick(full_col, page_top, cap_top, prefer_near_top=False)
+            if r is None:
+                r = _pick(full_col, cap_bot, page_bot, prefer_near_top=True)
+
+    # Strategy B — graphical-content-first
+    if is_table:
+        b = _graphical_cluster_region(cap_bot, page_bot) or _graphical_cluster_region(page_top, cap_top)
+    else:
+        b = _graphical_cluster_region(page_top, cap_top) or _graphical_cluster_region(cap_bot, page_bot)
+
+    # Choose: if strategy A succeeded with reasonable size AND covers
+    # most of strategy B's vertical extent, prefer A (it respects body
+    # text obstructions, better for stacked figures). Otherwise prefer
+    # B (handles wrapfigure / figure-dominated pages).
+    def _area(rect):
+        return max(0.0, rect[2] - rect[0]) * max(0.0, rect[3] - rect[1])
+
+    a_valid = r is not None and (r[2] - r[0]) >= _MIN_FIG_DIM and (r[3] - r[1]) >= _MIN_FIG_DIM
+    b_valid = b is not None and (b[2] - b[0]) >= _MIN_FIG_DIM and (b[3] - b[1]) >= _MIN_FIG_DIM
+
+    if a_valid and b_valid:
+        # If A's region is substantially smaller than B's (wrapfigure
+        # case where bands are tiny but chart is big), prefer B.
+        return b if _area(b) > _area(r) * 1.5 else r
+    if a_valid:
+        return r
+    if b_valid:
+        return b
+    return None
 
 
 def _tighten_to_content(
@@ -592,12 +638,20 @@ def extract_figures(
         ]
 
         # Step 5
-        graphical = _graphical_content_bboxes(page, body_family, body_boxes)
-        # Non-body / non-caption text spans split into two roles:
-        #   (a) in-figure labels (axis ticks, panel titles, legends) →
-        #       count as graphical content
-        #   (b) section headings (large + isolated) → count as body-like
-        #       boundaries so the figure region search stops at them
+        # graphical_explicit: vector drawings + raster image rects.
+        # These are the only TRUSTABLE source for tightening a figure
+        # region's x-range — they cluster where the actual chart sits.
+        graphical_explicit = _graphical_content_bboxes(page, body_family, body_boxes)
+        # graphical: explicit + small non-body text (axis ticks, legends,
+        # panel labels). Used for has_graphical() validation that a
+        # candidate band actually contains figure content.
+        graphical = list(graphical_explicit)
+        # Non-body / non-caption text spans split into three roles:
+        #   (a) section headings (size ≥ body * ratio) → body-like
+        #       boundaries so figure region search stops at them
+        #   (b) small non-body text (in-figure labels) → graphical for
+        #       has_graphical() but NOT for tightening (scattered inline
+        #       math / footnote symbols would pollute the x-range)
         heading_boxes: list[tuple] = []
         heading_threshold = dom_size * _HEADING_SIZE_RATIO if dom_size > 0 else float("inf")
         for s in spans:
@@ -622,16 +676,27 @@ def extract_figures(
         for cap in captions:
             occ_with_caps = occupied + [c["bbox"] for c in captions]
             region = _solve_figure_region(
-                cap, page_rect, columns, body_boxes, graphical, occ_with_caps
+                cap, page_rect, columns, body_boxes, graphical,
+                graphical_explicit, occ_with_caps,
             )
             if region is None:
                 continue
-            region = _tighten_to_content(region, graphical, body_boxes, None)
-            # validate
-            if (region[2] - region[0]) < _MIN_FIG_DIM or (region[3] - region[1]) < _MIN_FIG_DIM:
+            tightened = _tighten_to_content(region, graphical_explicit, body_boxes, None)
+            # If tightening collapsed the region (wrapfigure case: noise
+            # in graphical_explicit pulls x or y to a wrong extreme),
+            # skip tightening and keep the band-based region instead.
+            tw = tightened[2] - tightened[0]
+            th = tightened[3] - tightened[1]
+            rw = region[2] - region[0]
+            rh = region[3] - region[1]
+            if tw >= _MIN_FIG_DIM and th >= _MIN_FIG_DIM and tw >= rw * 0.3 and th >= rh * 0.3:
+                final_region = tightened
+            elif rw >= _MIN_FIG_DIM and rh >= _MIN_FIG_DIM:
+                final_region = region
+            else:
                 continue
-            occupied.append(region)
-            page_results.append((cap, region))
+            occupied.append(final_region)
+            page_results.append((cap, final_region))
 
         # Step 8 — render
         for cap, region in page_results:
