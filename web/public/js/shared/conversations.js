@@ -393,6 +393,25 @@ window.renderBranchesPanel = function () {
     });
     list.appendChild(item);
   });
+
+  // After paint, scroll the active row into the list's own viewport
+  // if it's outside. Native scrollIntoView({block:'nearest'}) uses
+  // the page viewport, not the list's scroll box — so it does
+  // nothing when the active row is offscreen-within-list but
+  // onscreen-on-page. Compute scrollTop manually for minimum movement.
+  var activeEl = list.querySelector('.branch-item.active');
+  if (activeEl) {
+    var aTop = activeEl.offsetTop;
+    var aH   = activeEl.offsetHeight;
+    var sT   = list.scrollTop;
+    var cH   = list.clientHeight;
+    if (aTop < sT) {
+      list.scrollTop = aTop;                  // above viewport → align top
+    } else if (aTop + aH > sT + cH) {
+      list.scrollTop = aTop + aH - cH;         // below viewport → align bottom
+    }
+    // already visible → leave scroll alone, no "jump"
+  }
 };
 window._onBranchesListMessage = _onBranchesListMessage;
 

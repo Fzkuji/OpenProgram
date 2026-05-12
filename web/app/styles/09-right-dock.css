@@ -58,19 +58,16 @@
   padding: 16px 0 8px;
 }
 
-/* List mirrors .sidebar-fav-list / .sidebar-panel-list.
- * Tall ceiling so all branches stay visible without auto-scroll —
- * the previous 4-row cap made the browser auto-scroll the active
- * branch into view on every checkout, which felt like the row was
- * "jumping to the top". Past 12 rows we let the panel scroll, but
- * by then the user's session is genuinely cluttered and they want
- * a scroll affordance anyway. */
+/* List mirrors .sidebar-fav-list / .sidebar-panel-list. Cap at 4
+ * rows so long branch lists don't push the graph view off-screen.
+ * Auto-scroll-on-checkout is dampened in JS via scrollIntoView
+ * with block:'nearest' — active only moves if it's actually offscreen. */
 .branches-list {
   display: flex;
   flex-direction: column;
   gap: 1px;
   padding: 0 8px;
-  max-height: calc(32px * 12 + 3px);
+  max-height: calc(32px * 4 + 3px);
   overflow-y: auto;
   overflow-x: hidden;
 }
