@@ -48,7 +48,7 @@ def build_options(available: dict) -> str:
                 detail += f": {param_info['description']}"
             if "options" in param_info:
                 opts = ", ".join(f'"{o}"' for o in param_info["options"])
-                detail += f" (可选: {opts})"
+                detail += f" (options: {opts})"
             param_details.append(detail)
 
         # Function signature
@@ -63,14 +63,15 @@ def build_options(available: dict) -> str:
         for detail in param_details:
             lines.append(detail)
 
-        # Call example
+        # Call example (placeholders are <typename>, Python-style hints)
         if llm_params:
             example_args = ", ".join(
-                f'"{p.split(":")[0].strip()}": "..."' for p in llm_params
+                f'"{p.split(":")[0].strip()}": "<{p.split(":")[1].strip()}>"'
+                for p in llm_params
             )
-            lines.append(f'    调用: {{"call": "{name}", "args": {{{example_args}}}}}')
+            lines.append(f'    Call: {{"call": "{name}", "args": {{{example_args}}}}}')
         else:
-            lines.append(f'    调用: {{"call": "{name}"}}')
+            lines.append(f'    Call: {{"call": "{name}"}}')
 
         lines.append("")  # blank line
 

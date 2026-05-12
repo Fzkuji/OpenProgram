@@ -355,6 +355,32 @@ def process_user_turn(
         model_id = model_str or None
         provider_id = None
     has_usage = bool(usage.get("input_tokens") or usage.get("output_tokens"))
+    # Fallback for Anthropic-family models when the upstream proxy (e.g.
+    # claude-max-api-proxy) doesn't forward usage chunks. Hit Anthropic's
+    # /v1/messages/count_tokens — it's a real, authoritative count for the
+    # full message list we just sent, and it's free.
+    token_source = "provider_usage"
+    if not has_usage and _is_anthropic_family(model_id, provider_id):
+        try:
+            from openprogram.providers._shared.anthropic_token_count import (
+                count_tokens_via_anthropic,
+            )
+            counted = count_tokens_via_anthropic(
+                history + [{"role": "user", "content": req.user_text},
+                           {"role": "assistant", "content": final_text}],
+                model_id or "claude-sonnet-4-5",
+            )
+            if counted and counted.get("input_tokens"):
+                usage = {
+                    "input_tokens": int(counted["input_tokens"]),
+                    "output_tokens": 0,
+                    "cache_read_tokens": 0,
+                    "cache_write_tokens": 0,
+                }
+                has_usage = True
+                token_source = "anthropic_count_api"
+        except Exception:
+            pass
     assistant_msg = {
         "id": assistant_msg_id,
         "role": "assistant",
@@ -371,7 +397,7 @@ def process_user_turn(
             "output_tokens": int(usage.get("output_tokens") or 0),
             "cache_read_tokens":  int(usage.get("cache_read_tokens")  or 0),
             "cache_write_tokens": int(usage.get("cache_write_tokens") or 0),
-            "token_source": "provider_usage",
+            "token_source": token_source,
             "token_model":  model_id,
         })
     if tool_calls:
@@ -1079,6 +1105,20 @@ def _load_agent_profile(agent_id: str) -> dict:
     except Exception:
         pass
     return {"id": agent_id}
+
+
+def _is_anthropic_family(model_id: Optional[str], provider_id: Optional[str]) -> bool:
+    """True if this message should be counted by Anthropic's count_tokens.
+
+    Covers direct ``anthropic`` provider, the ``claude-max`` /
+    ``claude-code`` proxy paths, and any model id starting with
+    ``claude-``.
+    """
+    if provider_id in ("anthropic", "claude-code", "claude-max"):
+        return True
+    if model_id and model_id.lower().startswith("claude"):
+        return True
+    return False
 
 
 def _resolve_model(profile: dict, override: Optional[str] = None):
