@@ -111,12 +111,13 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  align-self: start;
+  /* Fill the column height so the right divider spans the full body. */
+  align-self: stretch;
   position: sticky;
-  top: 16px;
-  /* 8px inner padding so item visible width = 288 − 16 = 272, matching
-     the main sidebar nav item width. */
+  top: 0;
   padding: 8px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
 }
 .folderSep {
   height: 1px;
