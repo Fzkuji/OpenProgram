@@ -20,8 +20,6 @@ Public entry: :func:`extract_pdf_figures`.
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import asdict
 from pathlib import Path
 
@@ -33,6 +31,7 @@ from openprogram.programs.applications.pdf_figures._heuristic import (
     extract_with_bbox,
     render_full_page,
 )
+from openprogram.programs.functions.buildin._utils import parse_json
 
 
 _VERIFY_PROMPT = """\
@@ -63,28 +62,18 @@ reference. ``reason`` is a one-sentence explanation.\
 """
 
 
-_JSON_RE = re.compile(r"\{[\s\S]*\}")
+def _parse_verdict(reply) -> dict:
+    """Parse the VLM's JSON verdict via the project-standard parser.
 
-
-def _parse_verdict(reply: str) -> dict:
-    """Tolerantly parse the VLM's JSON verdict.
-
-    Strips markdown fences and prose around the JSON object.
     Returns ``{"_unparseable": True}`` when the VLM didn't produce
     parseable JSON — caller exits the retry loop with verified=False
     rather than silently accepting.
     """
     if reply is None:
         return {"_unparseable": True}
-    text = str(reply).strip()
-    if text.startswith("```"):
-        text = "\n".join(line for line in text.splitlines() if not line.startswith("```"))
-    m = _JSON_RE.search(text)
-    if not m:
-        return {"_unparseable": True}
     try:
-        return json.loads(m.group(0))
-    except json.JSONDecodeError:
+        return parse_json(str(reply))
+    except (ValueError, TypeError):
         return {"_unparseable": True}
 
 
