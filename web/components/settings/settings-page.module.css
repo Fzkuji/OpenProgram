@@ -29,7 +29,9 @@
 
 .body {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  /* nav column = sidebar-width − body padding-left (32) so the nav's right
+     edge aligns with the main sidebar's right edge. */
+  grid-template-columns: calc(var(--sidebar-width) - 32px) minmax(0, 1fr);
   gap: 0 32px;
   margin: 32px 0;
   padding: 0 32px;
@@ -217,7 +219,7 @@
    in view while the user scans the long model list on the right. */
 .providersLayout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   gap: 24px;
 }
 .providersSidebar {
