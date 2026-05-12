@@ -1,11 +1,11 @@
-"""SQLite FTS5 index over wiki + short-term — BM25 fallback path.
+"""SQLite FTS5 index over wiki + journal — BM25 fallback path.
 
 Two virtual tables:
 
 * ``wiki_fts(path, title, type, body)`` — one row per content .md
   under the vault. ``path`` is relative to the vault root.
-* ``short_fts(date, ts, kind, tags, text, session)`` — one row per
-  short-term entry.
+* ``journal_fts(date, ts, kind, tags, text, session)`` — one row per
+  journal entry.
 
 Used by :func:`recall_for_prompt` as a keyword fallback when the
 LLM doesn't know which wiki page to read. The primary read path is
@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator
 
-from . import short_term, store, wiki
+from . import journal, store, wiki
 from .wiki.helpers import parse_frontmatter
 
 _lock = threading.RLock()
@@ -46,7 +46,7 @@ def init() -> None:
             "tokenize='porter unicode61')"
         )
         c.execute(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS short_fts USING fts5("
+            "CREATE VIRTUAL TABLE IF NOT EXISTS journal_fts USING fts5("
             "date UNINDEXED, ts UNINDEXED, kind UNINDEXED, tags, text, "
             "session UNINDEXED, tokenize='porter unicode61')"
         )
@@ -74,7 +74,7 @@ def reindex_all() -> tuple[int, int]:
     from .wiki.helpers import extract_wikilinks
     with _conn() as c:
         c.execute("DELETE FROM wiki_fts")
-        c.execute("DELETE FROM short_fts")
+        c.execute("DELETE FROM journal_fts")
         c.execute("DELETE FROM wiki_links")
         wn = 0
         for path in wiki.iter_pages():
@@ -96,9 +96,9 @@ def reindex_all() -> tuple[int, int]:
                 )
             wn += 1
         sn = 0
-        for date_iso, entry in short_term.all_entries():
+        for date_iso, entry in journal.all_entries():
             c.execute(
-                "INSERT INTO short_fts (date, ts, kind, tags, text, session) "
+                "INSERT INTO journal_fts (date, ts, kind, tags, text, session) "
                 "VALUES (?,?,?,?,?,?)",
                 (date_iso, entry.timestamp, entry.type,
                  " ".join(entry.tags), entry.text, entry.session_id),
@@ -197,11 +197,11 @@ def outbound(src_path: str) -> list[str]:
     return [r["target_name"] for r in rows]
 
 
-def add_short_term(date_iso: str, entry) -> None:
+def add_journal(date_iso: str, entry) -> None:
     init()
     with _conn() as c:
         c.execute(
-            "INSERT INTO short_fts (date, ts, kind, tags, text, session) "
+            "INSERT INTO journal_fts (date, ts, kind, tags, text, session) "
             "VALUES (?,?,?,?,?,?)",
             (date_iso, entry.timestamp, entry.type,
              " ".join(entry.tags), entry.text, entry.session_id),
@@ -263,8 +263,8 @@ def search_short(query: str, limit: int = 10, days: int | None = 30) -> list[Sho
     if not q:
         return []
     sql = (
-        "SELECT date, ts, kind, tags, text, bm25(short_fts) AS score "
-        "FROM short_fts WHERE short_fts MATCH ?"
+        "SELECT date, ts, kind, tags, text, bm25(journal_fts) AS score "
+        "FROM journal_fts WHERE journal_fts MATCH ?"
     )
     params: list = [q]
     if days:
@@ -284,7 +284,7 @@ def stats() -> dict:
     init()
     with _conn() as c:
         wn = c.execute("SELECT COUNT(*) FROM wiki_fts").fetchone()[0]
-        sn = c.execute("SELECT COUNT(*) FROM short_fts").fetchone()[0]
+        sn = c.execute("SELECT COUNT(*) FROM journal_fts").fetchone()[0]
         last = c.execute(
             "SELECT value FROM index_meta WHERE key = 'last_reindex'"
         ).fetchone()

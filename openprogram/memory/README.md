@@ -10,7 +10,7 @@ directory, not a substitute.
 
 Three layers on disk under `<state>/memory/`:
 
-1. `short-term/YYYY-MM-DD.md` — raw daily notes appended after every
+1. `journal/YYYY-MM-DD.md` — raw daily notes appended after every
    conversation ends idle.
 2. `wiki/<kind>/<slug>.md` — curated knowledge pages with frontmatter,
    organised by `user/` / `entities/` / `concepts/` / `procedures/`.
@@ -18,9 +18,9 @@ Three layers on disk under `<state>/memory/`:
    prompt.
 
 A background "sleep" sweep at 03:00 local time promotes high-confidence
-short-term notes into the wiki and regenerates `core.md`. Plus an
+journal notes into the wiki and regenerates `core.md`. Plus an
 `on_session_end` hook that summarises freshly idle conversations into
-short-term.
+journal.
 
 ## File map
 
@@ -30,12 +30,12 @@ short-term.
 | `builtin/`            | Default `BuiltinMemoryProvider`                   |
 | `builtin/summarizer.py` | Session-end LLM prompt + JSON parser            |
 | `builtin/recall.py`   | FTS query + ranking for `memory_recall` tool      |
-| `short_term.py`       | Append-only daily file writer                     |
+| `journal.py`       | Append-only daily file writer                     |
 | `wiki.py`             | Wiki page read / write helpers                    |
 | `core.py`             | `core.md` render + write                          |
 | `index.py`            | SQLite FTS index management                       |
 | `store.py`            | Filesystem layout (paths)                         |
-| `schema.py`           | Dataclasses (`ShortTermEntry`, `WikiPage`, …)     |
+| `schema.py`           | Dataclasses (`JournalEntry`, `WikiPage`, …)     |
 | `session_watcher.py`  | Polls SessionDB; fires `on_session_end`           |
 | `scheduler.py`        | Daemon thread that runs sleep daily at 03:00      |
 | `llm_bridge.py`       | Provider-agnostic LLM callable factory            |
@@ -67,7 +67,7 @@ implementation detail of the builtin provider.
 
 ```bash
 # Look at today's raw observations
-cat ~/.agentic/memory/short-term/$(date +%Y-%m-%d).md
+cat ~/.agentic/memory/journal/$(date +%Y-%m-%d).md
 
 # See what's in the always-on core
 cat ~/.agentic/memory/core.md
@@ -82,7 +82,7 @@ python -c "from openprogram.memory.session_watcher import run_now; print(run_now
 python -c "from openprogram.memory.sleep import run_sweep; from openprogram.memory.llm_bridge import build_default_llm; print(run_sweep(llm=build_default_llm()))"
 
 # Wipe everything (will rebuild on next session-end)
-rm -rf ~/.agentic/memory/short-term ~/.agentic/memory/wiki ~/.agentic/memory/core.md ~/.agentic/memory/index.sqlite ~/.agentic/memory/.state
+rm -rf ~/.agentic/memory/journal ~/.agentic/memory/wiki ~/.agentic/memory/core.md ~/.agentic/memory/index.sqlite ~/.agentic/memory/.state
 ```
 
 ## Provider quirks

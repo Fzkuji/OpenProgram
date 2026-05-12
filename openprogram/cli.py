@@ -235,15 +235,15 @@ def main():
 
     # ---- memory (persistent, machine-wide knowledge) ----------------------
     p_memory = sub.add_parser("memory",
-        help="Inspect / manage persistent memory (short-term + wiki + core).")
+        help="Inspect / manage persistent memory (journal + wiki + core).")
     memory_sub = p_memory.add_subparsers(dest="memory_verb", metavar="verb")
     memory_sub.add_parser("status",
         help="Show paths, counts, last sleep timestamp.")
     p_mr = memory_sub.add_parser("recall",
-        help="Search wiki + recent short-term and print raw snippets.")
+        help="Search wiki + recent journal and print raw snippets.")
     p_mr.add_argument("query", nargs="+")
     p_mr.add_argument("--days", type=int, default=30,
-        help="Limit short-term search to last N days (default 30).")
+        help="Limit journal search to last N days (default 30).")
     p_ms = memory_sub.add_parser("show",
         help="Print a wiki page (slug or 'kind/slug').")
     p_ms.add_argument("path")

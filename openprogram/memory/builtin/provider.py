@@ -1,6 +1,6 @@
 """Builtin memory provider implementation.
 
-Thin adapter wiring the storage layer (short-term + wiki + core)
+Thin adapter wiring the storage layer (journal + wiki + core)
 to the agent runtime via :class:`MemoryProvider` lifecycle hooks.
 
 Under the hybrid wiki schema the heavy lifting moved out of this
@@ -9,7 +9,7 @@ file:
 * Ingest now goes through :func:`openprogram.memory.ingest.ingest_session`,
   driven by ``session_watcher`` — not by ``on_session_end`` here.
 * Per-turn pattern-matched extraction is gone — the LLM writes
-  short-term explicitly via ``memory_note``.
+  journal explicitly via ``memory_note``.
 
 Only the read path + system-prompt block remain wired here.
 """
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class BuiltinMemoryProvider(MemoryProvider):
-    """File-based memory: short-term + wiki + core."""
+    """File-based memory: journal + wiki + core."""
 
     @property
     def name(self) -> str:

@@ -1,6 +1,6 @@
 """Light phase — dedupe and stage candidates.
 
-Reads every short-term entry within ``max_age_days``, groups
+Reads every journal entry within ``max_age_days``, groups
 near-duplicate texts by normalized form, computes per-group scores,
 and writes a candidate list to ``.state/sleep-stage.json``.
 
@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .. import store, short_term
-from ..schema import ShortTermEntry
+from .. import store, journal
+from ..schema import JournalEntry
 from .scoring import (
     CandidateScore,
     THRESHOLDS,
@@ -70,7 +70,7 @@ def run() -> dict[str, Any]:
     })
 
     pruned_old = 0
-    for date_iso, entry in short_term.all_entries():
+    for date_iso, entry in journal.all_entries():
         try:
             day = datetime.strptime(date_iso, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         except ValueError:
@@ -146,7 +146,7 @@ def run() -> dict[str, Any]:
             "age_days": round(age_days, 2),
             "max_confidence": round(g["max_confidence"], 3),
             "sources": [
-                f"short-term/{e['date']}.md" for e in sorted(g["entries"], key=lambda x: x["date"])
+                f"journal/{e['date']}.md" for e in sorted(g["entries"], key=lambda x: x["date"])
             ],
         })
 

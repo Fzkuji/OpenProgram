@@ -59,7 +59,7 @@ def system_prompt_block() -> str:
     pointer = (
         "Memory tools: `memory_browse` (folder tree + recent days), "
         "`memory_get(target)` (read a wiki page by filename or a "
-        "`YYYY-MM-DD` short-term day), `memory_recall(query)` (FTS "
+        "`YYYY-MM-DD` journal day), `memory_recall(query)` (FTS "
         "fallback), `memory_reflect(query)` (multi-page synthesis), "
         "`memory_note(...)` (record observation), `memory_ingest` "
         "(manual consolidation), `memory_lint` (health check). "

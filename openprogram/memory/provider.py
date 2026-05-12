@@ -130,7 +130,7 @@ class MemoryProvider(ABC):
         """Called at session boundary (explicit close or idle timeout).
 
         Heavier extraction lives here — typically an LLM-summarize pass
-        producing 3–10 short-term notes from the full conversation.
+        producing 3–10 journal notes from the full conversation.
         """
 
     def on_pre_compress(self, messages: list[dict[str, Any]]) -> str:

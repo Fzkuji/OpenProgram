@@ -46,7 +46,7 @@ interface WikiPage {
   mtime: number;
 }
 
-interface ShortTermEntry {
+interface JournalEntry {
   date: string;
   size: number;
   mtime: number;
@@ -124,7 +124,7 @@ function groupByFolder(pages: WikiPage[]): Map<string, WikiPage[]> {
   return groups;
 }
 
-type Tab = "wiki" | "short-term" | "core";
+type Tab = "wiki" | "journal" | "core";
 
 interface EditorState {
   content: string;
@@ -146,11 +146,11 @@ export function MemoryPage() {
   const [showSystem, setShowSystem] = useState(false);
   const [search, setSearch] = useState("");
 
-  // Short-term state
-  const [shortTermEntries, setShortTermEntries] = useState<ShortTermEntry[]>([]);
-  const [shortTermLoading, setShortTermLoading] = useState(true);
+  // Journal state
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [journalLoading, setJournalLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [shortTermContent, setShortTermContent] = useState("");
+  const [journalContent, setJournalContent] = useState("");
 
   // Core state
   const [coreEditor, setCoreEditor] = useState<EditorState>({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
@@ -179,10 +179,10 @@ export function MemoryPage() {
   useEffect(() => { fetchWikiPages(); }, [fetchWikiPages]);
 
   useEffect(() => {
-    fetch("/api/memory/short-term")
+    fetch("/api/memory/journal")
       .then((r) => r.json())
-      .then((data) => { setShortTermEntries(Array.isArray(data) ? data : []); setShortTermLoading(false); })
-      .catch(() => setShortTermLoading(false));
+      .then((data) => { setJournalEntries(Array.isArray(data) ? data : []); setJournalLoading(false); })
+      .catch(() => setJournalLoading(false));
   }, []);
 
   useEffect(() => {
@@ -257,12 +257,12 @@ export function MemoryPage() {
     }
   }
 
-  function openShortTerm(date: string) {
+  function openJournal(date: string) {
     setSelectedDate(date);
-    setShortTermContent("");
-    fetch(`/api/memory/short-term/${date}`)
+    setJournalContent("");
+    fetch(`/api/memory/journal/${date}`)
       .then((r) => r.json())
-      .then((data) => setShortTermContent(data.content ?? ""));
+      .then((data) => setJournalContent(data.content ?? ""));
   }
 
   function toggleFolder(folder: string) {
@@ -308,7 +308,7 @@ export function MemoryPage() {
         <span className={styles.title}>Memory</span>
         <div className={styles.headerStats}>
           {tab === "wiki" && !wikiLoading && <span className={styles.statChip}>{totalPages} pages</span>}
-          {tab === "short-term" && !shortTermLoading && <span className={styles.statChip}>{shortTermEntries.length} sessions</span>}
+          {tab === "journal" && !journalLoading && <span className={styles.statChip}>{journalEntries.length} sessions</span>}
           {tab === "core" && coreMeta && <span className={styles.statChip}>{formatSize(coreMeta.size)}</span>}
         </div>
       </div>
@@ -321,12 +321,12 @@ export function MemoryPage() {
             <path d="M9.5 1v2.5H12M5 7h5M5 9.5h5M5 12h3"/>
           </svg>
         }>Wiki</TabButton>
-        <TabButton active={tab === "short-term"} onClick={() => setTab("short-term")} icon={
+        <TabButton active={tab === "journal"} onClick={() => setTab("journal")} icon={
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
             <circle cx="8" cy="8" r="6"/>
             <path d="M8 5v3l2 1.5"/>
           </svg>
-        }>Short-term</TabButton>
+        }>Journal</TabButton>
         <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
             <circle cx="8" cy="8" r="2.5"/>
@@ -430,19 +430,19 @@ export function MemoryPage() {
           </div>
         )}
 
-        {/* ── Short-term ── */}
-        {tab === "short-term" && (
+        {/* ── Journal ── */}
+        {tab === "journal" && (
           <div className={styles.layout}>
             <div className={styles.tree}>
-              {shortTermLoading ? <LoadingSkeleton /> : shortTermEntries.length === 0 ? (
-                <EmptyState icon="clock" text="No short-term memory" sub="Context snapshots appear here after sessions" />
+              {journalLoading ? <LoadingSkeleton /> : journalEntries.length === 0 ? (
+                <EmptyState icon="clock" text="No journal memory" sub="Context snapshots appear here after sessions" />
               ) : (
                 <div className={styles.treeContent}>
-                  {shortTermEntries.map((entry) => (
+                  {journalEntries.map((entry) => (
                     <button
                       key={entry.date}
                       className={`${styles.sessionRow} ${selectedDate === entry.date ? styles.fileRowActive : ""}`}
-                      onClick={() => openShortTerm(entry.date)}
+                      onClick={() => openJournal(entry.date)}
                     >
                       <ClockIcon className={styles.fileIcon} />
                       <div className={styles.sessionInfo}>
@@ -463,11 +463,11 @@ export function MemoryPage() {
                     <span className={styles.editorTitle}>{selectedDate}</span>
                   </div>
                   <div className={styles.editorActions}>
-                    <span className={styles.fileMeta}>{shortTermContent.length} chars</span>
+                    <span className={styles.fileMeta}>{journalContent.length} chars</span>
                   </div>
                 </div>
                 <div className={styles.preview}>
-                  <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: shortTermContent ? renderMarkdown(shortTermContent) : "<em>Loading…</em>" }} />
+                  <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: journalContent ? renderMarkdown(journalContent) : "<em>Loading…</em>" }} />
                 </div>
               </div>
             ) : (

@@ -4916,19 +4916,19 @@ def create_app():
         target.unlink()
         return JSONResponse(content={"ok": True})
 
-    @app.get("/api/memory/short-term")
-    async def list_short_term():
+    @app.get("/api/memory/journal")
+    async def list_journal():
         from openprogram.memory import store
         files = []
-        for p in sorted(store.short_term_dir().glob("*.md")):
+        for p in sorted(store.journal_dir().glob("*.md")):
             stat = p.stat()
             files.append({"date": p.stem, "size": stat.st_size, "mtime": stat.st_mtime})
         return JSONResponse(content=files)
 
-    @app.get("/api/memory/short-term/{date}")
-    async def get_short_term(date: str):
+    @app.get("/api/memory/journal/{date}")
+    async def get_journal(date: str):
         from openprogram.memory import store
-        p = store.short_term_for(date)
+        p = store.journal_for(date)
         if not p.exists():
             return JSONResponse(content={"error": "not found"}, status_code=404)
         return JSONResponse(content={"date": date, "content": p.read_text(encoding="utf-8")})

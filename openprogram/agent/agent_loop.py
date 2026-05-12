@@ -79,7 +79,7 @@ def _latest_user_text(messages: list) -> str:
 
 
 def _memory_sync_turn(messages: list, final_message) -> None:
-    """Best-effort post-turn write to short-term memory.
+    """Best-effort post-turn write to journal memory.
 
     Cheap pattern matching only — heavier extraction lives in the
     session-end watcher.

@@ -15,7 +15,7 @@ Hybrid design pulling from both upstream sources:
 
 Pipeline:
 
-  1. Python collects: conversation transcript + today's short-term
+  1. Python collects: conversation transcript + today's journal
      notes + folder tree + AGENTS/SCHEMA/purpose/index + existing
      wiki page bodies for context.
   2. Step 1 — Analysis: LLM emits structured analysis (key entities /
@@ -229,10 +229,10 @@ def _render_conversation(
     return text
 
 
-def _read_short_term_for(date_iso: str) -> str:
-    path = store.short_term_for(date_iso)
+def _read_journal_for(date_iso: str) -> str:
+    path = store.journal_for(date_iso)
     if not path.exists():
-        return "(no short-term notes today)"
+        return "(no journal notes today)"
     body = path.read_text(encoding="utf-8").strip()
     return body or "(empty)"
 
@@ -305,12 +305,12 @@ def ingest_session(
     slug = _session_slug(session_id, today)
 
     source = _render_conversation(messages)
-    short_term = _read_short_term_for(today)
-    if short_term and short_term != "(no short-term notes today)":
+    journal = _read_journal_for(today)
+    if journal and journal != "(no journal notes today)":
         source = (
             source
             + f"\n\n---\n\n## Short-term notes from {today}\n\n"
-            + short_term
+            + journal
         )
 
     purpose = _read_or_default(vault_root / "purpose.md", "(no purpose)")

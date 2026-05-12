@@ -2,7 +2,7 @@
 
 Signals (OpenClaw-derived defaults, tuned light for our smaller scale):
 
-  frequency        weight 0.24   how many short-term entries point at a fact
+  frequency        weight 0.24   how many journal entries point at a fact
   recall_count     weight 0.20   times this fact has been queried via prefetch
   query_diversity  weight 0.15   distinct queries that surfaced it
   recency          weight 0.15   time-decay over a 14-day half-life
@@ -15,7 +15,7 @@ A candidate must clear ALL of:
   min_recall_count   3
   min_unique_queries 2
 
-before promotion to wiki. Below threshold, it stays in short-term.
+before promotion to wiki. Below threshold, it stays in journal.
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ class CandidateScore:
     age_days: float
     type: str
     tags: list[str]
-    sources: list[str]            # short-term file references
+    sources: list[str]            # journal file references
 
 
 def recency_factor(age_days: float, half_life: float = 14.0) -> float:

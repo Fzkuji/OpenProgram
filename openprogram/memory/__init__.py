@@ -2,7 +2,7 @@
 
 Three layers:
 
-1. **Short-term** (``short-term/YYYY-MM-DD.md``)
+1. **Short-term** (``journal/YYYY-MM-DD.md``)
        Raw, append-only daily notes — agent observations, end-of-session
        summaries, candidate facts. Never edited. Source of truth for
        what was actually said / observed in conversations.
@@ -18,7 +18,7 @@ Three layers:
        wiki entries. Hermes-style frozen system-prompt block.
 
 Sleep (background consolidation) runs nightly via the worker cron and
-promotes short-term → wiki, regenerates core, surfaces reflections.
+promotes journal → wiki, regenerates core, surfaces reflections.
 
 The agent interacts via lifecycle hooks (``MemoryProvider``) and four
 tools: ``memory_note``, ``memory_recall``, ``memory_reflect``, ``memory_get``.

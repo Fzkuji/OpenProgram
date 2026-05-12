@@ -3,11 +3,11 @@
 Seven tools:
 
   WRITE:
-    memory_note     record a single observation into today's short-term log
+    memory_note     record a single observation into today's journal log
 
   READ:
     memory_browse   unified catalog (wiki folder tree + recent days)
-    memory_get      fetch a wiki page (by filename) or short-term day (YYYY-MM-DD)
+    memory_get      fetch a wiki page (by filename) or journal day (YYYY-MM-DD)
     memory_recall   keyword FTS over the whole memory store
     memory_reflect  multi-page LLM synthesis
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from openprogram.memory import short_term, store, wiki
+from openprogram.memory import journal, store, wiki
 from openprogram.memory.builtin.recall import recall_for_prompt
 from openprogram.memory.provider import sanitize_context
 
@@ -31,7 +31,7 @@ NOTE_NAME = "memory_note"
 NOTE_DESC = (
     "Record a fact, preference, decision, or lesson in long-term memory. "
     "Use when you learn something likely to matter in future conversations. "
-    "Appended to today's short-term file; the next session-end / sleep "
+    "Appended to today's journal file; the next session-end / sleep "
     "folds it into the wiki."
 )
 
@@ -68,7 +68,7 @@ def note(
     kind = (type or "fact").strip()
     tag_list = [str(t).lower() for t in (tags or []) if t][:3]
     conf = max(0.0, min(1.0, float(confidence if confidence is not None else 0.7)))
-    short_term.append_text(text, type=kind, tags=tag_list, confidence=conf)
+    journal.append_text(text, type=kind, tags=tag_list, confidence=conf)
     return f"Noted: ({kind}) {text}"
 
 
@@ -77,7 +77,7 @@ def note(
 BROWSE_NAME = "memory_browse"
 BROWSE_DESC = (
     "Return the unified memory catalog: wiki folder tree (topic axis) + "
-    "recent short-term days (time axis). Read this first; then "
+    "recent journal days (time axis). Read this first; then "
     "`memory_get <name>` on the pages or days that look relevant."
 )
 
@@ -94,14 +94,14 @@ def memory_browse(**_: Any) -> str:
     parts.append("")
     parts.append("=== Short-term (recent days) ===")
     parts.append("")
-    files = sorted(store.short_term_dir().glob("*.md"))[-14:]
+    files = sorted(store.journal_dir().glob("*.md"))[-14:]
     if not files:
-        parts.append("(no short-term notes yet)")
+        parts.append("(no journal notes yet)")
     else:
         for f in reversed(files):
             date = f.stem
             try:
-                entries = short_term.read_day(date)
+                entries = journal.read_day(date)
             except Exception:
                 entries = []
             preview = ""
@@ -114,7 +114,7 @@ def memory_browse(**_: Any) -> str:
     parts.append("")
     parts.append(
         "`memory_get \"<page filename>\"` reads a wiki page; "
-        "`memory_get \"<YYYY-MM-DD>\"` reads a short-term day."
+        "`memory_get \"<YYYY-MM-DD>\"` reads a journal day."
     )
     return "\n".join(parts)
 
@@ -125,7 +125,7 @@ GET_NAME = "memory_get"
 GET_DESC = (
     "Fetch a memory page. Accepts a wiki page filename (e.g. "
     "'Claude Max Proxy', case-insensitive) or an ISO date "
-    "('YYYY-MM-DD') for a short-term day."
+    "('YYYY-MM-DD') for a journal day."
 )
 
 GET_SPEC: dict[str, Any] = {
@@ -147,9 +147,9 @@ def memory_get(target: str | None = None, **_: Any) -> str:
     if not target:
         return "Error: memory_get requires `target`."
     if _DATE_RE.match(target):
-        path = store.short_term_for(target)
+        path = store.journal_for(target)
         if not path.exists():
-            return f"No short-term file for {target}."
+            return f"No journal file for {target}."
         return path.read_text(encoding="utf-8")
     content = wiki.read(target)
     if content is None:
@@ -442,7 +442,7 @@ def memory_status(**_: Any) -> str:
         "# Memory status", "",
         f"Vault: `{s.get('vault_root')}`",
         f"Total pages: **{s.get('pages_total', 0)}**",
-        f"FTS rows: wiki={s.get('fts_wiki_rows', 0)} short-term={s.get('fts_short_rows', 0)}",
+        f"FTS rows: wiki={s.get('fts_wiki_rows', 0)} journal={s.get('fts_short_rows', 0)}",
         f"Pending reviews: **{s.get('pending_reviews', 0)}**",
         f"Last reindex: {s.get('last_reindex') or '(never)'}",
         "", "## Pages by type",

@@ -7,7 +7,7 @@ Wiki layout — Obsidian-style hierarchical vault (RAH pattern), with
 nashsu-style `type:` frontmatter for semantic role enrichment:
 
     <state>/memory/
-        short-term/YYYY-MM-DD.md
+        journal/YYYY-MM-DD.md
         wiki/                          # Obsidian vault, git-tracked
             AGENTS.md                  # ingest-agent entrypoint (read-only)
             SCHEMA.md                  # protocol (read-only)
@@ -20,7 +20,7 @@ nashsu-style `type:` frontmatter for semantic role enrichment:
             <Leaf>.md                  # bare leaf
             ...
         core.md
-        index.sqlite                   # FTS over wiki + short-term
+        index.sqlite                   # FTS over wiki + journal
         .state/
             recall-counts.json
             sleep-stage.json
@@ -63,14 +63,24 @@ def root() -> Path:
     return p
 
 
-def short_term_dir() -> Path:
-    p = root() / "short-term"
+def journal_dir() -> Path:
+    p = root() / "journal"
+    # One-shot migration: legacy short-term/ → journal/. Renamed 2026-05
+    # because "short-term" was misleading — these files accumulate
+    # across years, they're a chronological journal not a transient
+    # buffer.
+    legacy = root() / "short-term"
+    if legacy.exists() and not p.exists():
+        try:
+            legacy.rename(p)
+        except OSError:
+            pass
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
-def short_term_for(date_iso: str) -> Path:
-    return short_term_dir() / f"{date_iso}.md"
+def journal_for(date_iso: str) -> Path:
+    return journal_dir() / f"{date_iso}.md"
 
 
 def wiki_dir() -> Path:
@@ -133,6 +143,6 @@ def iter_wiki_pages() -> Iterable[Path]:
         yield p
 
 
-def iter_short_term() -> Iterable[Path]:
-    for child in sorted(short_term_dir().glob("*.md")):
+def iter_journal() -> Iterable[Path]:
+    for child in sorted(journal_dir().glob("*.md")):
         yield child

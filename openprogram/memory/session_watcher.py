@@ -3,7 +3,7 @@
 Polls the session DB every ``poll_interval`` seconds. For any session
 whose ``updated_at`` exceeds ``idle_minutes`` and which we haven't
 already processed, hands the message list to the builtin provider's
-``on_session_end`` (which runs the LLM summarizer and appends short-term
+``on_session_end`` (which runs the LLM summarizer and appends journal
 notes).
 
 State (already-processed session IDs and their last update timestamp)
@@ -116,10 +116,10 @@ def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
     Returns False on retryable failure (LLM call failed, network error,
     etc.) so the next poll tries again.
 
-    Switched 2026-05-11 from a one-shot "extract facts → short-term"
+    Switched 2026-05-11 from a one-shot "extract facts → journal"
     summarizer to the Karpathy / nashsu LLM-Wiki ingest: a two-step
     analyse-then-generate pass that writes wiki pages directly. The
-    old short-term path is still available via
+    old journal path is still available via
     ``BuiltinMemoryProvider.on_session_end`` for back-compat or for
     plugin providers that don't implement ingest; if either step of
     the ingest fails we fall through to it.

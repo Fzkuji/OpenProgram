@@ -2,8 +2,8 @@
 
 Tools exposed:
 
-  memory_note      — record a fact in short-term
-  memory_recall    — search wiki + recent short-term, raw snippets
+  memory_note      — record a fact in journal
+  memory_recall    — search wiki + recent journal, raw snippets
   memory_reflect   — collect cross-cutting recall for LLM synthesis
   memory_get       — fetch a complete wiki page by slug
   memory_browse    — render the wiki folder tree

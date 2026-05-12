@@ -3,7 +3,7 @@
 The wiki side moved to an Obsidian-style folder vault with minimal
 frontmatter handled by ``wiki_helpers.py``. The ``WikiPage`` /
 ``Claim`` dataclasses that used to live here are gone — what remains
-is just what the short-term log needs.
+is just what the journal log needs.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 
 @dataclass
-class ShortTermEntry:
+class JournalEntry:
     timestamp: str                   # ISO 8601 or HH:MM
     text: str
     type: str = "observation"
@@ -46,7 +46,7 @@ _META_RE = re.compile(
 )
 
 
-def render_short_term_entry(e: ShortTermEntry) -> str:
+def render_journal_entry(e: JournalEntry) -> str:
     time = e.timestamp.split("T", 1)[-1][:5] if "T" in e.timestamp else e.timestamp[:5]
     header = f"## {time} — type: {e.type}"
     if e.tags:
@@ -55,8 +55,8 @@ def render_short_term_entry(e: ShortTermEntry) -> str:
     return f"{header}\n{e.text.strip()}\n{meta}\n"
 
 
-def parse_short_term_file(text: str) -> list[ShortTermEntry]:
-    entries: list[ShortTermEntry] = []
+def parse_journal_file(text: str) -> list[JournalEntry]:
+    entries: list[JournalEntry] = []
     lines = text.splitlines()
     i = 0
     while i < len(lines):
@@ -88,7 +88,7 @@ def parse_short_term_file(text: str) -> list[ShortTermEntry]:
         body = "\n".join(body_lines).strip()
         if not body:
             continue
-        entries.append(ShortTermEntry(
+        entries.append(JournalEntry(
             timestamp=time, text=body, type=kind, tags=tags,
             session_id=session_id, confidence=confidence,
         ))

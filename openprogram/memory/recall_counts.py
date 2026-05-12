@@ -1,7 +1,7 @@
 """Persisted recall-count signals.
 
 Sleep's deep phase uses ``recall_count`` and ``distinct_queries`` to
-decide which short-term candidates deserve promotion. Those signals
+decide which journal candidates deserve promotion. Those signals
 have to come from somewhere: every time the recall path surfaces an
 entry, we bump the count for that entry and remember which queries
 surfaced it.

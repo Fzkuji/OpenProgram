@@ -14,7 +14,7 @@ def recall_for_prompt(
     short_days: int = 7,
     record_signals: bool = True,
 ) -> str:
-    """Search wiki + recent short-term, return a single markdown block.
+    """Search wiki + recent journal, return a single markdown block.
 
     Returns an empty string if nothing matches. Caller is responsible
     for fencing the result before feeding it to the model.
@@ -28,7 +28,7 @@ def recall_for_prompt(
     wiki_hits = index.search_wiki(query, limit=wiki_k)
     short_hits = index.search_short(query, limit=short_k, days=short_days)
     if record_signals and short_hits:
-        # Only short-term hits feed the promotion signal — wiki entries
+        # Only journal hits feed the promotion signal — wiki entries
         # are already promoted, no point reinforcing them again.
         try:
             from .. import recall_counts
@@ -69,7 +69,7 @@ def cheap_extract(user_content: str, assistant_content: str) -> list[str]:
         "from now on, X"
         "always X" / "never X"
 
-    Returns short facts to append as short-term entries. Caller decides
+    Returns short facts to append as journal entries. Caller decides
     whether to write them; this layer only suggests.
     """
     import re
