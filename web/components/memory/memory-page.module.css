@@ -12,7 +12,7 @@
   align-items: center;
   gap: 16px;
   padding: 16px 24px;
-  min-height: 64px;
+  height: 64px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
