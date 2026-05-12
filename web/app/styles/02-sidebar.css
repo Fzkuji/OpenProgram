@@ -153,6 +153,7 @@
   background: transparent;
   border: none;
   color: var(--text-secondary);
+  opacity: 0.75;
   cursor: pointer;
   padding: 0;
   width: 32px;
@@ -170,6 +171,7 @@
 /* Claude pattern: bg darkens, icon brightens */
 .sidebar-toggle:hover {
   color: var(--text-bright);
+  opacity: 1;
   background: rgba(0, 0, 0, 0.12);
 }
 .sidebar-toggle:active {
@@ -230,9 +232,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-bright);
+  color: var(--text-secondary);
+  opacity: 0.75;
   flex-shrink: 0;
-  transition: color 75ms;
+  transition: color 75ms, opacity 75ms;
   overflow: visible;
 }
 .sidebar-nav-icon svg {
@@ -240,8 +243,8 @@
   height: 20px;
   flex-shrink: 0;
 }
-.sidebar-nav-item:hover .sidebar-nav-icon { color: var(--text-bright); }
-.sidebar-nav-item.active .sidebar-nav-icon { color: var(--text-bright); }
+.sidebar-nav-item:hover .sidebar-nav-icon { color: var(--text-bright); opacity: 1; }
+.sidebar-nav-item.active .sidebar-nav-icon { color: var(--text-bright); opacity: 1; }
 
 /* New Chat icon — circular bg + hover rotation/scale animation (Claude.ai) */
 /* Claude: size-[1.4rem] (22.4px) rounded-full, bg-text-500/15 */
