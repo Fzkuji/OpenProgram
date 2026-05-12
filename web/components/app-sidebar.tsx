@@ -116,7 +116,11 @@ export function AppSidebar() {
         <NavItem
           active={memoryActive}
           onClick={() => router.push("/memory")}
-          icon={<ListTree className="h-[18px] w-[18px]" />}
+          icon={
+            <span className="memory-icon-wrap">
+              <ListTree className="h-[18px] w-[18px]" />
+            </span>
+          }
           label="Memory"
         />
       </div>
