@@ -28,7 +28,7 @@ from openprogram.agentic_programming.function import (
     get_option_set, register_option,
 )
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.agentic_programming.dispatch import decide_loop
+from openprogram.agentic_programming.dispatch import make_choice
 from openprogram.agentic_programming.session import Session
 from openprogram.agentic_programming.skills import (
     Skill, load_skills, format_skills_for_prompt, default_skill_dirs,
@@ -39,7 +39,7 @@ __all__ = [
     "traced",
     "auto_trace_module",
     "auto_trace_package",
-    "decide_loop",
+    "make_choice",
     "get_option_set",
     "register_option",
     "Runtime",

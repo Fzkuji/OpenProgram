@@ -1,36 +1,36 @@
 """
-dispatch — decide_loop: let the LLM repeatedly pick one option from a
-named option_set and execute it, until it picks "done".
+dispatch — make_choice: ask the LLM to pick one option from a named
+option_set, then execute it and return that option's result.
+
+Single-shot decision. If you want repeated decisions (loop until
+"done"), wrap make_choice in your own loop or use ``agent_loop``.
 
 Pairs with the ``option_set`` and ``when`` parameters on
-``@agentic_function``. Functions tagged with the same ``option_set``
-name form the menu of choices the LLM sees each turn.
+``@agentic_function`` (LLM-driven options) and ``register_option``
+(plain Python functions). Functions tagged with the same option_set
+name form the menu the LLM picks from.
 
 Usage:
 
-    from openprogram import agentic_function, decide_loop, create_runtime
+    from openprogram import agentic_function, register_option, make_choice, create_runtime
 
-    @agentic_function(option_set="paper_pipeline", when="Call when you need to fetch a PDF from arxiv.")
-    def download_pdf(arxiv_id: str) -> str: ...
+    @agentic_function(option_set="route", when="Call when the user asks a research question.")
+    def research_branch(query: str, runtime=None) -> str: ...
 
-    @agentic_function(option_set="paper_pipeline", when="Call after PDF is downloaded, to extract figures.")
-    def extract_figures(pdf_path: str, out_dir: str, runtime=None) -> list[dict]: ...
+    @register_option("route", when="Call when the user just wants a plain web search.")
+    def web_search(query: str) -> list[str]: ...
 
     runtime = create_runtime()
-    result = decide_loop(
-        option_set="paper_pipeline",
-        goal="Process arxiv 2501.12345 into figures under ./out/",
+    result = make_choice(
+        option_set="route",
+        goal="User said: 'find me three papers on knowledge editing'",
         runtime=runtime,
     )
-
-The LLM emits ``{"call": "...", "args": {...}}`` each turn and exits
-with ``{"call": "done", "result": "..."}``.
 """
 
 from __future__ import annotations
 
 import inspect
-from typing import Optional
 
 from openprogram.agentic_programming.function import (
     agentic_function as _AF,
@@ -42,39 +42,36 @@ from openprogram.programs.functions.buildin._utils import parse_json
 from openprogram.programs.functions.buildin.parse_action import parse_action
 
 
-def _resolve(option) -> tuple:
-    """Return (callable_to_invoke, raw_fn_for_introspection, when, input_meta)."""
+def _resolve(option, extra_meta: dict | None = None) -> tuple:
+    """Return (callable_to_invoke, raw_fn_for_introspection, when, input_meta).
+
+    ``extra_meta`` is a fn→{when, input_meta} dict for locally-passed
+    options that aren't in the global ``_plain_option_meta``.
+    """
     if isinstance(option, _AF):
         return option, option._fn, option.when, option.input_meta
-    meta = _plain_option_meta.get(option, {})
+    meta = (extra_meta or {}).get(option) or _plain_option_meta.get(option, {})
     return option, option, meta.get("when"), meta.get("input_meta", {})
 
 
 _PROMPT_TEMPLATE = """\
-You are deciding which action to take next to reach a goal.
+You are picking exactly one action to take.
 
-Goal: {goal}
+Context / goal: {goal}
 
-History of actions taken so far:
-{history}
-
-Available actions ({option_set}):
+Available actions in option_set "{option_set}":
 {menu}
 
 Pick exactly one action. Reply with JSON only, no prose:
 
   {{"call": "<action_name>", "args": {{...}}}}
-
-When the goal is fully achieved, reply:
-
-  {{"call": "done", "result": "<final summary>"}}
 """
 
 
-def _format_menu(funcs: dict) -> str:
+def _format_menu(funcs: dict, extra_meta: dict | None = None) -> str:
     lines = []
     for name, opt in funcs.items():
-        _, raw_fn, when, input_meta = _resolve(opt)
+        _, raw_fn, when, input_meta = _resolve(opt, extra_meta)
         sig = inspect.signature(raw_fn)
         llm_params = [
             f"{p.name}: {p.annotation.__name__ if hasattr(p.annotation, '__name__') else 'any'}"
@@ -92,119 +89,122 @@ def _format_menu(funcs: dict) -> str:
     return "\n".join(lines) if lines else "(no actions registered)"
 
 
-def _format_history(history: list[dict]) -> str:
-    if not history:
-        return "(no actions yet)"
-    return "\n".join(
-        f"  {i+1}. {h['call']}({h.get('args', {})}) → {h.get('summary', h.get('error', ''))}"
-        for i, h in enumerate(history)
-    )
+def _build_local_options(options) -> tuple[dict, dict]:
+    """Normalize a local ``options=`` list into (funcs, local_meta).
+
+    Each item is either:
+      - a callable (uses fn.__name__; when=None unless already in
+        _plain_option_meta from a prior register_option)
+      - (callable, when_str)
+      - (callable, when_str, name_override)
+    """
+    funcs: dict = {}
+    local_meta: dict = {}
+    for item in options:
+        when = None
+        name = None
+        if callable(item):
+            fn = item
+        elif isinstance(item, tuple):
+            fn = item[0]
+            if len(item) >= 2:
+                when = item[1]
+            if len(item) >= 3:
+                name = item[2]
+        else:
+            raise TypeError(f"option must be callable or tuple, got {type(item)}")
+        key = name or getattr(fn, "__name__", repr(fn))
+        funcs[key] = fn
+        if when is not None:
+            local_meta[fn] = {"when": when, "input_meta": {}}
+    return funcs, local_meta
 
 
-def _summarize(result) -> str:
-    s = repr(result)
-    return s if len(s) <= 200 else s[:200] + "..."
+def make_choice(
+    option_set: str | None = None,
+    goal: str = "",
+    runtime: Runtime = None,
+    *,
+    options: list | None = None,
+    execute: bool = True,
+):
+    """Have the LLM pick one option and (by default) execute it.
 
+    Provide exactly one of:
+      - ``option_set="name"`` — look up globally-registered options
+        tagged with that name (via @agentic_function or register_option).
+      - ``options=[...]`` — a local list of choices, used only for
+        this call. Items may be ``callable``, ``(callable, when_str)``,
+        or ``(callable, when_str, name_override)``. Use this when the
+        decision is local to one file and you don't want to pollute
+        the global option_set namespace.
 
-def decide_loop(
-    option_set: str,
-    goal: str,
-    runtime: Runtime,
-    max_steps: int = 20,
-) -> dict:
-    """Let the LLM pick options from ``option_set`` until it picks done.
-
-    Each turn:
-      1. Render history + menu (all @agentic_function with this
-         option_set tag) into the prompt.
-      2. LLM replies with ``{"call": ..., "args": ...}``.
-      3. Look up the function by name, call it (auto-injects runtime
-         if the function takes a runtime parameter).
-      4. Append summary to history.
-
-    Exits when the LLM picks ``"call": "done"`` or ``max_steps`` is
-    reached. Unparseable replies and unknown calls are recorded in
-    history and the loop continues — the LLM sees its error next turn.
+    Args:
+        option_set:  Globally-registered option_set name. Mutually
+                     exclusive with ``options``.
+        goal:        Context the LLM uses to make the choice.
+        runtime:     Runtime used to call the LLM.
+        options:     Local list of choices. Mutually exclusive with
+                     ``option_set``.
+        execute:     If True (default), call the chosen function with
+                     the args the LLM provided and return its result.
+                     If False, return ``{"call": ..., "args": ...}``.
 
     Returns:
-        ``{"done": bool, "final": ..., "history": [...], "reason": ...}``
+        Result of the chosen function (or raw decision when execute=False).
     """
     if runtime is None:
-        raise ValueError("runtime is required for decide_loop()")
+        raise ValueError("runtime is required for make_choice()")
+    if (option_set is None) == (options is None):
+        raise ValueError("pass exactly one of option_set= or options=")
 
-    funcs = get_option_set(option_set)
-    if not funcs:
-        raise ValueError(
-            f"No @agentic_function found with option_set={option_set!r}. "
-            "Tag your functions with @agentic_function(option_set=..., when=...)."
-        )
+    local_meta: dict = {}
+    if option_set is not None:
+        funcs = get_option_set(option_set)
+        menu_label = option_set
+        if not funcs:
+            raise ValueError(
+                f"No options registered with option_set={option_set!r}. "
+                "Tag functions with @agentic_function(option_set=..., when=...) "
+                "or register_option(option_set, when=...)."
+            )
+    else:
+        funcs, local_meta = _build_local_options(options)
+        menu_label = "(local)"
+        if not funcs:
+            raise ValueError("options= list is empty")
 
-    history: list[dict] = []
-    final = None
-    reason = "max_steps_reached"
+    prompt = _PROMPT_TEMPLATE.format(
+        goal=goal,
+        option_set=menu_label,
+        menu=_format_menu(funcs, extra_meta=local_meta),
+    )
+    reply = runtime.exec(content=[{"type": "text", "text": prompt}])
 
-    for step in range(max_steps):
-        prompt = _PROMPT_TEMPLATE.format(
-            goal=goal,
-            history=_format_history(history),
-            option_set=option_set,
-            menu=_format_menu(funcs),
-        )
-        reply = runtime.exec(content=[{"type": "text", "text": prompt}])
-        action = parse_action(str(reply))
-
-        if action is None:
-            try:
-                action = parse_json(str(reply))
-            except (ValueError, TypeError):
-                history.append({
-                    "call": "(unparseable)",
-                    "error": f"could not parse JSON: {str(reply)[:120]}",
-                })
-                continue
-
-        call = action.get("call")
-        args = action.get("args", {}) or {}
-
-        if call == "done":
-            final = action.get("result")
-            reason = "done"
-            break
-
-        if call not in funcs:
-            history.append({
-                "call": str(call),
-                "error": f"unknown action; valid: {list(funcs.keys())}",
-            })
-            continue
-
-        callee, raw_fn, _, _ = _resolve(funcs[call])
-        fn_params = inspect.signature(raw_fn).parameters
-        if "runtime" in fn_params and "runtime" not in args:
-            args = {**args, "runtime": runtime}
-
+    action = parse_action(str(reply))
+    if action is None:
         try:
-            result = callee(**args)
-        except Exception as e:
-            history.append({
-                "call": call,
-                "args": {k: v for k, v in args.items() if k != "runtime"},
-                "error": f"{type(e).__name__}: {e}",
-            })
-            continue
+            action = parse_json(str(reply))
+        except (ValueError, TypeError):
+            raise ValueError(f"LLM reply was not parseable JSON: {str(reply)[:200]}")
 
-        history.append({
-            "call": call,
-            "args": {k: v for k, v in args.items() if k != "runtime"},
-            "summary": _summarize(result),
-        })
+    call = action.get("call")
+    args = action.get("args", {}) or {}
 
-    return {
-        "done": reason == "done",
-        "final": final,
-        "history": history,
-        "reason": reason,
-    }
+    if call not in funcs:
+        raise ValueError(
+            f"LLM picked unknown action {call!r}; valid: {list(funcs.keys())}"
+        )
+
+    if not execute:
+        return {"call": call, "args": args}
+
+    callee, raw_fn, _, _ = _resolve(funcs[call], local_meta)
+    fn_params = inspect.signature(raw_fn).parameters
+    if "runtime" in fn_params and "runtime" not in args:
+        args = {**args, "runtime": runtime}
+
+    return callee(**args)
 
 
-__all__ = ["decide_loop", "get_option_set"]
+__all__ = ["make_choice", "get_option_set"]

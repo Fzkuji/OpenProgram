@@ -42,6 +42,11 @@
      Match that here so the 2nd-level nav is the same width as the
      1st-level sidebar visually. */
   grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
+  /* Fill the rest of the view (100vh − topbar 64) so the nav column's
+     bg-secondary + border-right reach the viewport bottom even when
+     content (e.g. General tab) is short. Long content (Providers) still
+     grows past this minimum. */
+  min-height: calc(100vh - 64px);
   /* No outer margin — nav sits flush against topbar bottom, matching the
      programs/memory pattern. Inner breathing room lives on .content. */
   max-width: 1600px;
