@@ -1736,6 +1736,12 @@ a.user-menu-item { text-decoration: none; color: inherit; }
   font-family: var(--mono);
   font-size: 11px;
 }
+.token-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: default;
+  white-space: nowrap;
+}
 .agent-badge:hover {
   background: rgba(198,120,221,0.15);
   border-color: rgba(198,120,221,0.3);

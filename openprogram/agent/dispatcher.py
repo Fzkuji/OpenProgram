@@ -341,6 +341,9 @@ def process_user_turn(
         )
 
     # 5. Persist assistant message.
+    # Attach usage + model so session_db.append_message stamps real
+    # provider numbers (input/output/cache_read/cache_write) into the
+    # messages.* token columns instead of estimating from char count.
     assistant_msg = {
         "id": assistant_msg_id,
         "role": "assistant",
@@ -348,6 +351,14 @@ def process_user_turn(
         "timestamp": time.time(),
         "parent_id": user_msg_id,
         "source": req.source,
+        "model": getattr(model, "id", None),
+        "provider": getattr(model, "provider", None),
+        "input_tokens":  int(usage.get("input_tokens")  or 0),
+        "output_tokens": int(usage.get("output_tokens") or 0),
+        "cache_read_tokens":  int(usage.get("cache_read_tokens")  or 0),
+        "cache_write_tokens": int(usage.get("cache_write_tokens") or 0),
+        "token_source": "provider_usage" if (usage.get("input_tokens") or usage.get("output_tokens")) else "heuristic",
+        "token_model": getattr(model, "id", None),
     }
     if tool_calls:
         # Persist BOTH shapes:
@@ -756,7 +767,10 @@ def _run_loop_blocking(
                                     loop_cancel, stream_fn)
 
         final_text_parts: list[str] = []
-        usage_total: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
+        usage_total: dict[str, int] = {
+            "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "cache_write_tokens": 0,
+        }
         tool_calls: list[dict] = []
         # Capture tool_use inputs so we can rebuild the same
         # collapsible scaffold on reload. tool_execution_end events
@@ -799,8 +813,9 @@ def _run_loop_blocking(
                     if text:
                         final_text_parts.append(text)
                     usage = _extract_usage(msg)
-                    usage_total["input_tokens"] += usage.get("input_tokens", 0)
-                    usage_total["output_tokens"] += usage.get("output_tokens", 0)
+                    for k in ("input_tokens", "output_tokens",
+                              "cache_read_tokens", "cache_write_tokens"):
+                        usage_total[k] += usage.get(k, 0)
 
         return "".join(final_text_parts).strip(), usage_total, tool_calls
 
@@ -990,9 +1005,20 @@ def _extract_usage(msg) -> dict:
     usage = getattr(msg, "usage", None)
     if usage is None:
         return {}
+    # Providers report fields inconsistently (`input`/`output` vs
+    # `input_tokens`/`output_tokens`). Probe both and keep all four
+    # buckets so per-turn accounting can show cache hit rate.
+    def _g(*names):
+        for n in names:
+            v = getattr(usage, n, None)
+            if v:
+                return int(v)
+        return 0
     return {
-        "input_tokens": getattr(usage, "input_tokens", 0) or 0,
-        "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+        "input_tokens":  _g("input_tokens", "input"),
+        "output_tokens": _g("output_tokens", "output"),
+        "cache_read_tokens":  _g("cache_read_tokens",  "cache_read"),
+        "cache_write_tokens": _g("cache_write_tokens", "cache_write"),
     }
 
 
@@ -1067,10 +1093,10 @@ def _resolve_model(profile: dict, override: Optional[str] = None):
         else:
             # Probe known providers, biased toward the dict's
             # ``provider`` field if present so a malformed entry like
-            # ``{"provider": "openai-codex", "id": "gpt-5.5"}`` still
+            # ``{"provider": "chatgpt-subscription", "id": "gpt-5.5"}`` still
             # tries the right backend first.
             order = ["openai", "anthropic", "google", "amazon-bedrock",
-                     "cerebras", "claude-max-proxy", "github-copilot"]
+                     "cerebras", "claude-code", "github-copilot"]
             if provider_hint and provider_hint not in order:
                 order.insert(0, provider_hint)
             for provider in order:

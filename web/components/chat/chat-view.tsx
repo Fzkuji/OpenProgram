@@ -448,37 +448,104 @@ function ModelBadge() {
  * usage. Server tags every ``context_stats`` event with session_id, so the
  * store stays partitioned cleanly. Hidden when no usage yet.
  */
+interface BranchTokenStats {
+  current_tokens: number;
+  context_window: number;
+  pct_used: number;
+  cache_read_total: number;
+  cache_hit_rate: number;
+  model: string | null;
+  source_mix: Record<string, number>;
+  naive_sum: number;
+  last_assistant_usage: number;
+  branch: Array<{
+    message_id: string;
+    role: string;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    cache_write_tokens: number;
+    total: number;
+    token_source: string;
+    token_model: string | null;
+    timestamp: number;
+  }>;
+}
+
+function fmtTokens(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return `${n}`;
+}
+
 function ContextBadge({ sessionId }: { sessionId: string | null }) {
-  const tokens = useSessionStore(
-    (s) => (sessionId ? s.tokens[sessionId] : undefined),
-  );
-  const window = useSessionStore(
-    (s) => (sessionId ? s.contextWindow[sessionId] : undefined),
-  );
-  if (!tokens || !tokens.input) return null;
-  const fmt = (n: number) =>
-    n >= 10000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
-  const pct = window ? Math.round((tokens.input / window) * 100) : null;
+  // Re-fetch whenever the message list grows (cheap GET, ~ms). Driven
+  // off messageIds.length rather than a timer so idle sessions don't
+  // poll. Falls back to streaming-side store data only if the fetch
+  // never returns (network glitch).
+  const messageIds = useMessageIds(sessionId);
+  const { data } = useQuery<BranchTokenStats | null>({
+    queryKey: ["session-tokens", sessionId, messageIds.length],
+    enabled: !!sessionId,
+    queryFn: async () => {
+      if (!sessionId) return null;
+      const r = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/tokens`,
+      );
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 2_000,
+  });
+
+  if (!data || (!data.current_tokens && !data.naive_sum)) return null;
+
+  const current = data.current_tokens || data.naive_sum;
+  const window = data.context_window;
+  const pct = window ? Math.round((current / window) * 100) : null;
+  // Opencode/Claude-Code threshold scheme: dim below 65, yellow 65–85,
+  // red above 85. Red signals imminent compaction risk.
   const color =
     pct === null
       ? "var(--text-muted)"
       : pct > 85
-      ? "var(--accent-red)"
-      : pct > 65
-      ? "var(--accent-yellow)"
-      : "var(--text-muted)";
+        ? "var(--accent-red)"
+        : pct > 65
+          ? "var(--accent-yellow)"
+          : "var(--text-muted)";
+  const cachePct = Math.round(data.cache_hit_rate * 100);
+  const sourceMix = Object.entries(data.source_mix || {})
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(", ");
+  const tooltip = [
+    window
+      ? `Context: ${current.toLocaleString()} / ${window.toLocaleString()} (${pct}%)`
+      : `Context: ${current.toLocaleString()} tokens`,
+    data.cache_read_total
+      ? `Cache: ${data.cache_read_total.toLocaleString()} read (${cachePct}% hit rate)`
+      : null,
+    data.model ? `Model: ${data.model}` : null,
+    sourceMix ? `Sources: ${sourceMix}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   return (
     <span
-      className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px]"
+      className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[10px]"
       style={{ background: "var(--bg-tertiary)", color }}
-      title={
-        window
-          ? `${tokens.input.toLocaleString()} / ${window.toLocaleString()} tokens (${pct}%)`
-          : `${tokens.input.toLocaleString()} tokens`
-      }
+      title={tooltip}
     >
-      {fmt(tokens.input)}
-      {window ? `/${fmt(window)} (${pct}%)` : ""}
+      <span>
+        {fmtTokens(current)}
+        {window ? `/${fmtTokens(window)}` : ""}
+        {pct !== null ? ` (${pct}%)` : ""}
+      </span>
+      {data.cache_read_total > 0 && (
+        <span style={{ color: "var(--accent-green)" }}>
+          · cache {cachePct}%
+        </span>
+      )}
     </span>
   );
 }
@@ -506,6 +573,24 @@ function MessageBubble({ msgId, sessionId }: { msgId: string; sessionId: string 
   // on a *different* msgId, React.memo + this selector keep us from
   // re-rendering. Only the bubble owning the updated id re-renders.
   const msg = useMessageById(msgId);
+  // Token row for this specific message — same queryKey as ContextBadge,
+  // so React Query serves both from one fetch. Re-uses the
+  // messageIds.length cache invalidator implicitly via the shared key.
+  const messageIds = useMessageIds(sessionId);
+  const { data: tokenStats } = useQuery<BranchTokenStats | null>({
+    queryKey: ["session-tokens", sessionId, messageIds.length],
+    enabled: !!sessionId,
+    queryFn: async () => {
+      if (!sessionId) return null;
+      const r = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/tokens`,
+      );
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 2_000,
+  });
+  const myTokens = tokenStats?.branch.find((b) => b.message_id === msgId);
   if (!msg) return null;
 
   const isUser = msg.role === "user";
@@ -566,8 +651,54 @@ function MessageBubble({ msgId, sessionId }: { msgId: string; sessionId: string 
           </span>
         )}
       </div>
-      {actionable && <MessageActions msg={msg} sessionId={sessionId!} />}
+      <div
+        className={cn(
+          "flex items-center gap-2",
+          isUser ? "flex-row-reverse" : "flex-row",
+        )}
+      >
+        {actionable && <MessageActions msg={msg} sessionId={sessionId!} />}
+        {myTokens && (myTokens.total > 0 || myTokens.output_tokens > 0) && (
+          <MessageTokenBadge stats={myTokens} />
+        )}
+      </div>
     </div>
+  );
+}
+
+function MessageTokenBadge({
+  stats,
+}: {
+  stats: BranchTokenStats["branch"][number];
+}) {
+  // Per-message badge: total tokens for this row + cache slice if any.
+  // Source tag exposed via tooltip — 'heuristic' rows are estimates so
+  // the UI flags them with a subtle question mark.
+  const isEstimate = stats.token_source === "heuristic";
+  const parts: string[] = [];
+  if (stats.input_tokens) parts.push(`in ${fmtTokens(stats.input_tokens)}`);
+  if (stats.output_tokens)
+    parts.push(`out ${fmtTokens(stats.output_tokens)}`);
+  if (stats.cache_read_tokens)
+    parts.push(`cache ${fmtTokens(stats.cache_read_tokens)}`);
+  if (stats.cache_write_tokens)
+    parts.push(`cw ${fmtTokens(stats.cache_write_tokens)}`);
+  const tooltip = [
+    `Tokens: ${parts.join(" · ") || "—"}`,
+    `Source: ${stats.token_source}${isEstimate ? " (estimated)" : ""}`,
+    stats.token_model ? `Model: ${stats.token_model}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return (
+    <span
+      className="text-[10px] opacity-0 transition-opacity duration-100 group-hover/msg:opacity-100"
+      style={{ color: "var(--text-muted)" }}
+      title={tooltip}
+    >
+      {fmtTokens(stats.total)}
+      {isEstimate ? "?" : ""}
+    </span>
   );
 }
 

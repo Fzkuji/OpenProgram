@@ -261,4 +261,47 @@ function handleContextStats(d: ChatResponseData, c: WsEventsCtx): void {
   if (d.model && cid === c.conversationId) {
     c.setModel(stripProviderPrefix(d.model));
   }
+  // Pull branch-level stats (cache hit rate, source mix) from the
+  // dedicated REST endpoint. The WS context_stats doesn't carry the
+  // cache_read total or the precision-disclosure source_mix, so we
+  // round-trip once per turn. Cheap (single-digit ms) and only fires
+  // when a turn lands — idle sessions don't poll.
+  if (cid) {
+    void fetchBranchTokenStats(cid).then((stats) => {
+      if (!stats) return;
+      c.setTokenStatsByConv((m) => ({ ...m, [cid]: stats }));
+    });
+  }
+}
+
+interface BranchTokenStats {
+  current_tokens: number;
+  context_window: number;
+  cache_hit_rate: number;
+  cache_read_total: number;
+  source_mix: Record<string, number>;
+}
+
+async function fetchBranchTokenStats(
+  sessionId: string,
+): Promise<BranchTokenStats | null> {
+  try {
+    const base = process.env.OPENPROGRAM_BACKEND_URL
+      || process.env.OPENPROGRAM_WS?.replace('ws://', 'http://').replace('/ws', '')
+      || 'http://127.0.0.1:8765';
+    const r = await fetch(
+      `${base}/api/sessions/${encodeURIComponent(sessionId)}/tokens`,
+    );
+    if (!r.ok) return null;
+    const d = (await r.json()) as Partial<BranchTokenStats>;
+    return {
+      current_tokens: d.current_tokens || 0,
+      context_window: d.context_window || 0,
+      cache_hit_rate: d.cache_hit_rate || 0,
+      cache_read_total: d.cache_read_total || 0,
+      source_mix: d.source_mix || {},
+    };
+  } catch {
+    return null;
+  }
 }

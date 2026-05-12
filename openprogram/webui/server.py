@@ -496,12 +496,12 @@ def _list_providers() -> list[dict]:
             return False
     checks = [
         # (name, label, available_check, env_keys_for_config_or_None_if_CLI)
-        ("openai-codex", "Codex CLI", lambda: shutil.which("codex") is not None, None),
+        ("chatgpt-subscription", "ChatGPT Subscription", lambda: shutil.which("codex") is not None, None),
         ("gemini-cli", "Gemini CLI", lambda: shutil.which("gemini") is not None, None),
         ("anthropic", "Anthropic API", lambda: bool(_get_api_key("ANTHROPIC_API_KEY")), ["ANTHROPIC_API_KEY"]),
         ("openai", "OpenAI API", lambda: bool(_get_api_key("OPENAI_API_KEY")), ["OPENAI_API_KEY"]),
         ("gemini", "Gemini API", lambda: bool(_get_api_key("GOOGLE_API_KEY") or _get_api_key("GOOGLE_GENERATIVE_AI_API_KEY")), ["GOOGLE_API_KEY"]),
-        ("claude-max-proxy", "Claude (Max proxy)", _proxy_alive, ["CLAUDE_MAX_PROXY_URL"]),
+        ("claude-code", "Claude (Max plan)", _proxy_alive, ["CLAUDE_MAX_PROXY_URL"]),
     ]
     for name, label, check, env_keys in checks:
         available = check()
@@ -1898,7 +1898,7 @@ async def _handle_ws_command(ws, cmd: dict):
                 head, tail = model.split(":", 1)
                 from openprogram.providers import get_providers as _get_providers
                 known = set(_get_providers())
-                known.update({"claude-max-proxy", "openai-codex", "gemini-cli",
+                known.update({"claude-code", "chatgpt-subscription", "gemini-cli",
                               "anthropic", "openai", "gemini"})
                 if head in known:
                     inferred_provider = head
@@ -3669,6 +3669,64 @@ def create_app():
     async def get_functions():
         return JSONResponse(content=_discover_functions())
 
+    @app.get("/api/sessions/{session_id}/tokens")
+    async def get_session_tokens(session_id: str, head_id: str | None = None,
+                                 model: str | None = None,
+                                 provider: str | None = None):
+        """Branch-level token usage stats.
+
+        Path resolution:
+          * head_id missing → use the session's current head_id.
+          * model missing → fall back to the model recorded on the most
+            recent assistant message in the branch (token_model column).
+
+        Returns the dict from SessionDB.get_branch_token_stats with
+        current_tokens / context_window / pct_used / cache_hit_rate /
+        per-message breakdown.
+        """
+        from openprogram.agent.session_db import default_db
+        from openprogram.providers.models_generated import MODELS
+
+        model_obj = None
+        if model:
+            key = f"{provider}/{model}" if provider else None
+            model_obj = (MODELS.get(key) if key else None) or MODELS.get(model)
+            if model_obj is None:
+                for v in MODELS.values():
+                    if v.id == model:
+                        model_obj = v
+                        break
+
+        stats = default_db().get_branch_token_stats(
+            session_id, head_id=head_id, model=model_obj,
+        )
+
+        # If the caller didn't pass a model but the branch carries one,
+        # re-attach the window for the UI without a second round-trip.
+        # The bare model_id (e.g. "gemini-2.5-pro") may match several
+        # registry entries — github-copilot/gemini-2.5-pro caps at 128K,
+        # google-vertex/gemini-2.5-pro is 1M. Pick the entry with the
+        # largest context_window: pessimistic about the limit (smaller
+        # window) would underreport headroom; the larger window is the
+        # true upper bound the user can hit on their own provider.
+        if not stats["context_window"] and stats.get("model"):
+            mid = stats["model"]
+            candidates = [MODELS.get(mid)] if mid in MODELS else []
+            candidates.extend(v for v in MODELS.values() if v.id == mid)
+            candidates = [c for c in candidates if c is not None]
+            if candidates:
+                m = max(
+                    candidates,
+                    key=lambda c: int(getattr(c, "context_window", 0) or 0),
+                )
+                stats["context_window"] = int(getattr(m, "context_window", 0) or 0)
+                if stats["context_window"]:
+                    stats["pct_used"] = (
+                        stats["current_tokens"] / stats["context_window"]
+                    )
+
+        return JSONResponse(content=stats)
+
     @app.get("/api/programs/meta")
     async def get_programs_meta():
         meta_path = os.path.join(os.path.dirname(__file__), "programs_meta.json")
@@ -4244,7 +4302,7 @@ def create_app():
             # Only treat as provider prefix if head matches a known provider id.
             from openprogram.providers import get_providers as _get_providers
             known = set(_get_providers())
-            known.update({"claude-max-proxy", "openai-codex", "gemini-cli",
+            known.update({"claude-code", "chatgpt-subscription", "gemini-cli",
                           "anthropic", "openai", "gemini"})
             if head in known:
                 inferred_provider = head
@@ -4252,7 +4310,7 @@ def create_app():
         target_provider = explicit_provider or inferred_provider
 
         # Runtime construction may call into sync credential acquisition
-        # paths (OpenAICodexRuntime.__init__ -> acquire_sync) that refuse
+        # paths (ChatGPTSubscriptionRuntime.__init__ -> acquire_sync) that refuse
         # to run inside a running event loop. Off-load to a thread so the
         # first switch into codex / other async-hostile runtimes doesn't
         # 500 half-way through and leave global state ahead of the

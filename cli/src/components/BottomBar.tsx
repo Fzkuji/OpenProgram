@@ -24,6 +24,16 @@ export interface BottomBarProps {
   sessionStatus?: 'empty' | 'loaded' | 'active';
   /** Total context window in tokens (for the % indicator). */
   contextWindow?: number;
+  /** Cache statistics from /api/sessions/{id}/tokens. cache_hit_rate is
+   *  cache_read / (input + cache_read). cacheReadTotal is the running
+   *  cache_read count across the branch. Both surface when the model
+   *  is benefiting from prompt caching. */
+  cacheHitRate?: number;
+  cacheReadTotal?: number;
+  /** Token measurement source mix from the server (provider_usage /
+   *  tiktoken / heuristic). When mostly heuristic the bar prints a
+   *  trailing '~' so the user knows the numbers are estimates. */
+  tokenSourceMix?: Record<string, number>;
   /** True after the first Ctrl+C while the 800 ms double-press window
    *  is open. Replaces the regular hint with a confirm-to-exit prompt. */
   exitPending?: boolean;
@@ -54,6 +64,9 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   connState,
   sessionStatus = 'empty',
   contextWindow,
+  cacheHitRate,
+  cacheReadTotal,
+  tokenSourceMix,
   exitPending,
 }) => {
   const colors = useColors();
@@ -124,14 +137,32 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   }
   if (showContextPct) {
     const ratio = tokens.input! / contextWindow;
+    // Hint of measurement quality: if more than half the rows are
+    // heuristic estimates, append a tilde so the user knows the %
+    // is approximate. Provider-reported numbers print cleanly.
+    let estimateHint = '';
+    if (tokenSourceMix) {
+      const total = Object.values(tokenSourceMix).reduce((a, b) => a + b, 0);
+      const heur = tokenSourceMix['heuristic'] || 0;
+      if (total > 0 && heur / total > 0.5) estimateHint = '~';
+    }
     pushPart(
       <Text color={
         ratio > 0.85 ? colors.error
         : ratio > 0.65 ? colors.warning
         : colors.muted
       }>
-        {formatTokens(tokens.input)}/{formatTokens(contextWindow)} ({Math.round(ratio * 100)}%)
+        {formatTokens(tokens.input)}/{formatTokens(contextWindow)} ({Math.round(ratio * 100)}{estimateHint}%)
       </Text>,
+    );
+  }
+  // Cache pill — only show when caching is actually happening, and only
+  // on wide terminals so the bar stays compact. Green to celebrate the
+  // savings, but muted on narrow widths to avoid clutter.
+  if (cols >= 100 && (cacheReadTotal && cacheReadTotal > 0)) {
+    const cachePct = Math.round(((cacheHitRate ?? 0)) * 100);
+    pushPart(
+      <Text color={colors.success}>cache {cachePct}%</Text>,
     );
   }
   if (busy && showBusyTag) pushPart(<Text color={colors.warning}>working</Text>);

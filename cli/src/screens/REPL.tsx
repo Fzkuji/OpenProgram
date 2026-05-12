@@ -55,6 +55,18 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     Record<string, { input?: number; output?: number }>
   >({});
   const [windowByConv, setWindowByConv] = useState<Record<string, number>>({});
+  // Branch-level token stats from /api/sessions/{id}/tokens. Augments
+  // the per-turn input/output already tracked via WS events with
+  // cache_hit_rate / cache_read_total / source_mix for BottomBar pills.
+  const [tokenStatsByConv, setTokenStatsByConv] = useState<
+    Record<string, {
+      current_tokens: number;
+      context_window: number;
+      cache_hit_rate: number;
+      cache_read_total: number;
+      source_mix: Record<string, number>;
+    }>
+  >({});
   const [history, setHistory] = useState<string[]>(() => loadHistory());
   const [conversationTitle, setConversationTitle] = useState<string | undefined>(undefined);
   const [promptDraft, setPromptDraft] = useState<string | undefined>(undefined);
@@ -155,7 +167,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     pushSystem, finishTurn,
     bellEnabled, conversationId, chosenChannel, chosenAccount,
     setConversationId, setStreaming, setActivity, setCommitted,
-    setTokensByConv, setWindowByConv,
+    setTokensByConv, setWindowByConv, setTokenStatsByConv,
     setStats, setModel, setAgent, setAgentsList, setModelsList, setBranchesList,
     setChannelAccounts, setPastConversations,
     setQrAscii, setQrStatus,
@@ -451,6 +463,9 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           connState={connState}
           sessionStatus={sessionStatus}
           contextWindow={conversationId ? windowByConv[conversationId] : undefined}
+          cacheHitRate={conversationId ? tokenStatsByConv[conversationId]?.cache_hit_rate : undefined}
+          cacheReadTotal={conversationId ? tokenStatsByConv[conversationId]?.cache_read_total : undefined}
+          tokenSourceMix={conversationId ? tokenStatsByConv[conversationId]?.source_mix : undefined}
           exitPending={exitPending}
         />
     </Shell>

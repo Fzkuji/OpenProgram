@@ -84,11 +84,11 @@ async function loadModelPills() {
 
 // Provider id → lobehub icon slug (mirror of settings.js table).
 var _MODEL_ICON_SLUGS = {
-  'openai': 'openai', 'openai-codex': 'openai',
+  'openai': 'openai', 'chatgpt-subscription': 'openai',
   'anthropic': 'claude', 'claude-code': 'claude',
   'google': 'gemini', 'google-vertex': 'gemini',
-  'google-gemini-cli': 'gemini', 'gemini-cli': 'gemini',
-  'google-antigravity': 'gemini',
+  'gemini-subscription': 'gemini', 'gemini-cli': 'gemini',
+  'gemini-subscription-corp': 'gemini',
   'azure-openai-responses': 'azure',
   'amazon-bedrock': 'bedrock',
   'openrouter': 'openrouter',
@@ -290,7 +290,69 @@ function updateAgentBadges() {
       + '<span class="badge-details">' + _escAgentBadge(execDetails) + '</span>';
     execBadge.title = 'Execution agent' + execDetails;
   }
+  if (typeof refreshTokenBadge === 'function') {
+    try { refreshTokenBadge(); } catch (e) {}
+  }
 }
+
+function _fmtTokens(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000)    return (n / 1000).toFixed(1) + 'K';
+  return String(n || 0);
+}
+
+// Branch token stats — pulls /api/sessions/{id}/tokens and renders the
+// "12.4K / 200K (6%) · cache 42%" pill into #tokenBadge. Hidden when the
+// session has no token data yet (e.g., bare-import wechat session).
+async function refreshTokenBadge() {
+  var badge = document.getElementById('tokenBadge');
+  if (!badge) return;
+  if (typeof currentSessionId === 'undefined' || !currentSessionId) {
+    badge.style.display = 'none';
+    return;
+  }
+  try {
+    var resp = await fetch('/api/sessions/' + encodeURIComponent(currentSessionId) + '/tokens');
+    if (!resp.ok) { badge.style.display = 'none'; return; }
+    var data = await resp.json();
+    var cur = data.current_tokens || data.naive_sum || 0;
+    if (!cur && !data.last_assistant_usage) {
+      badge.style.display = 'none';
+      return;
+    }
+    var win = data.context_window || 0;
+    var pct = win ? Math.round((cur / win) * 100) : null;
+    var color = 'var(--text-muted)';
+    if (pct !== null) {
+      if (pct > 85)      color = 'var(--accent-red, #e5534b)';
+      else if (pct > 65) color = 'var(--accent-yellow, #d2a106)';
+    }
+    var cacheRate = Math.round((data.cache_hit_rate || 0) * 100);
+    var label = _fmtTokens(cur);
+    if (win) label += '/' + _fmtTokens(win) + ' (' + pct + '%)';
+    if (data.cache_read_total > 0) label += ' · cache ' + cacheRate + '%';
+    badge.textContent = label;
+    badge.style.color = color;
+    badge.style.display = '';
+    var tip = win
+      ? 'Context: ' + cur.toLocaleString() + ' / ' + win.toLocaleString() + ' (' + pct + '%)'
+      : 'Context: ' + cur.toLocaleString() + ' tokens';
+    if (data.cache_read_total > 0) {
+      tip += '\nCache: ' + data.cache_read_total.toLocaleString() + ' read (' + cacheRate + '% hit)';
+    }
+    if (data.model) tip += '\nModel: ' + data.model;
+    if (data.source_mix) {
+      var mix = Object.keys(data.source_mix)
+        .map(function(k){return k + ': ' + data.source_mix[k];})
+        .join(', ');
+      if (mix) tip += '\nSources: ' + mix;
+    }
+    badge.title = tip;
+  } catch (e) {
+    badge.style.display = 'none';
+  }
+}
+window.refreshTokenBadge = refreshTokenBadge;
 
 function _escAgentBadge(s) {
   return String(s)

@@ -17,7 +17,12 @@ function setRunning(running) {
 }
 
 function updateContextStats(messages) {
-  // No-op: real stats come from the server via _handleContextStats.
+  // Refresh the token badge on every conversational beat (send, response,
+  // turn end). Real per-message numbers come from SessionDB via
+  // /api/sessions/{id}/tokens — see refreshTokenBadge in providers.js.
+  if (typeof refreshTokenBadge === 'function') {
+    try { refreshTokenBadge(); } catch (e) {}
+  }
 }
 
 var _svgSend = '<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';

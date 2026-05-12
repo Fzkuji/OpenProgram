@@ -51,6 +51,13 @@ export interface WsEventsCtx {
   setCommitted: React.Dispatch<React.SetStateAction<Turn[]>>;
   setTokensByConv: React.Dispatch<React.SetStateAction<Record<string, { input?: number; output?: number }>>>;
   setWindowByConv: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  setTokenStatsByConv: React.Dispatch<React.SetStateAction<Record<string, {
+    current_tokens: number;
+    context_window: number;
+    cache_hit_rate: number;
+    cache_read_total: number;
+    source_mix: Record<string, number>;
+  }>>>;
   setStats: React.Dispatch<React.SetStateAction<StatsEnvelope['data'] | undefined>>;
   setModel: React.Dispatch<React.SetStateAction<string | undefined>>;
   setAgent: React.Dispatch<React.SetStateAction<string | undefined>>;

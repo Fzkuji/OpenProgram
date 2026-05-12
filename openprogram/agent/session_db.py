@@ -83,7 +83,13 @@ CREATE TABLE IF NOT EXISTS messages (
   peer_id TEXT,
   display TEXT,
   function TEXT,
-  extra TEXT
+  extra TEXT,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  cache_read_tokens INTEGER,
+  cache_write_tokens INTEGER,
+  token_source TEXT,
+  token_model TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session_ts
   ON messages(session_id, timestamp);
@@ -145,6 +151,12 @@ _SESSION_COLS = {
 _MESSAGE_COLS = {
     "id", "session_id", "parent_id", "role", "content", "timestamp",
     "source", "peer_display", "peer_id", "display", "function", "extra",
+    # Token accounting (added 2026-05). Filled by append_message via
+    # token_counter; provider_usage on assistant messages overrides the
+    # heuristic. NULL for legacy rows — backfill scans on demand.
+    "input_tokens", "output_tokens",
+    "cache_read_tokens", "cache_write_tokens",
+    "token_source", "token_model",
 }
 
 
@@ -200,6 +212,30 @@ class SessionDB:
         with self._write_lock:
             self.conn.executescript(SCHEMA)
             self.conn.executescript(TRIGGERS)
+            # Idempotent ADD COLUMN for upgrades from pre-token-stats
+            # schema. SQLite has no IF NOT EXISTS on ALTER, so we read
+            # the current column set and only add the missing ones.
+            try:
+                cur = self.conn.execute("PRAGMA table_info(messages)")
+                existing_cols = {r[1] for r in cur.fetchall()}
+            except Exception:
+                existing_cols = set()
+            for col, decl in (
+                ("input_tokens",       "INTEGER"),
+                ("output_tokens",      "INTEGER"),
+                ("cache_read_tokens",  "INTEGER"),
+                ("cache_write_tokens", "INTEGER"),
+                ("token_source",       "TEXT"),
+                ("token_model",        "TEXT"),
+            ):
+                if col not in existing_cols:
+                    try:
+                        self.conn.execute(
+                            f"ALTER TABLE messages ADD COLUMN {col} {decl}"
+                        )
+                    except sqlite3.OperationalError:
+                        # Race with another worker doing the same ALTER.
+                        pass
 
     def _execute_write(self, fn: Callable[[sqlite3.Connection], _T]) -> _T:
         """Run *fn(conn)* inside a BEGIN IMMEDIATE transaction with
@@ -385,6 +421,47 @@ class SessionDB:
                 extra[k] = v
         if extra:
             row["extra"] = json.dumps(extra, default=str)
+
+        # Auto-fill token columns if caller didn't supply them. Caller
+        # may override (e.g., backfill scans pass pre-computed values
+        # or trust the provider's usage block from an AssistantMessage).
+        if "input_tokens" not in row or row.get("input_tokens") is None:
+            try:
+                from openprogram.providers._shared.token_counter import count_tokens
+                # Best-effort: look up the model the assistant message
+                # came from. UserMessage has no model_id, so tiktoken
+                # falls back to heuristic — acceptable.
+                model_obj = None
+                model_id = msg.get("model") or extra.get("model")
+                provider_name = msg.get("provider") or extra.get("provider")
+                if model_id:
+                    try:
+                        from openprogram.providers.models_generated import MODELS
+                        key = (
+                            f"{provider_name}/{model_id}" if provider_name else None
+                        )
+                        model_obj = (MODELS.get(key) if key else None) or \
+                            MODELS.get(model_id)
+                        if model_obj is None:
+                            for v in MODELS.values():
+                                if v.id == model_id:
+                                    model_obj = v
+                                    break
+                    except Exception:
+                        model_obj = None
+                tc = count_tokens(msg, model_obj)
+                row.setdefault("input_tokens", tc.input)
+                row.setdefault("output_tokens", tc.output)
+                row.setdefault("cache_read_tokens", tc.cache_read)
+                row.setdefault("cache_write_tokens", tc.cache_write)
+                row.setdefault("token_source", tc.source)
+                if model_obj is not None:
+                    row.setdefault("token_model", getattr(model_obj, "id", None))
+                elif model_id:
+                    row.setdefault("token_model", str(model_id))
+            except Exception:
+                # Token counting must never block message persistence.
+                pass
         # Required columns
         if "id" not in row or "role" not in row or "content" not in row:
             raise ValueError(
@@ -613,6 +690,138 @@ class SessionDB:
             (head_id, session_id, session_id),
         )
         return [_row_to_message(r) for r in cur.fetchall()]
+
+    def get_branch_token_stats(self,
+                                session_id: str,
+                                head_id: Optional[str] = None,
+                                model: Any = None) -> dict[str, Any]:
+        """Token accounting for one branch.
+
+        Walks the branch (same CTE as get_branch) collecting token
+        columns + role + model. Returns:
+
+            {
+              "branch": [ {message_id, role, input_tokens, output_tokens,
+                           cache_read_tokens, cache_write_tokens, total,
+                           token_source, token_model, timestamp}, ... ],
+              "naive_sum":            int,  # sum of per-row totals
+              "last_assistant_usage": int,  # input + cache_read of newest
+                                            #   assistant message — the
+                                            #   provider's own ground truth
+                                            #   for "context the model just
+                                            #   saw on this branch"
+              "current_tokens":       int,  # last_assistant_usage if
+                                            #   available, else naive_sum
+              "context_window":       int,  # from model.context_window
+              "pct_used":             float, # current_tokens / window
+              "cache_read_total":     int,
+              "cache_hit_rate":       float, # cache_read / (input+cache_read)
+              "model":                str,
+              "source_mix":           dict   # source → count, for
+                                            #   precision disclosure
+            }
+
+        opencode insight: the newest assistant message's `usage.input`
+        already represents the FULL context the model just consumed for
+        this branch. Naive per-row summation over-counts (every turn
+        re-includes prior context). We surface both numbers so callers
+        can pick. Provider_usage rows beat tiktoken rows beat heuristic
+        rows — `source_mix` tells the UI how trustworthy the answer is.
+        """
+        if head_id is None:
+            sess = self.get_session(session_id)
+            if sess is None:
+                return {"branch": [], "naive_sum": 0, "last_assistant_usage": 0,
+                        "current_tokens": 0, "context_window": 0, "pct_used": 0.0,
+                        "cache_read_total": 0, "cache_hit_rate": 0.0,
+                        "model": None, "source_mix": {}}
+            head_id = sess.get("head_id")
+        if not head_id:
+            return {"branch": [], "naive_sum": 0, "last_assistant_usage": 0,
+                    "current_tokens": 0, "context_window": 0, "pct_used": 0.0,
+                    "cache_read_total": 0, "cache_hit_rate": 0.0,
+                    "model": None, "source_mix": {}}
+
+        cur = self.conn.execute(
+            "WITH RECURSIVE branch(id, parent_id, role, timestamp, "
+            "  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
+            "  token_source, token_model) AS ("
+            "  SELECT id, parent_id, role, timestamp, "
+            "    input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
+            "    token_source, token_model "
+            "    FROM messages WHERE id=? AND session_id=?"
+            "  UNION ALL"
+            "  SELECT m.id, m.parent_id, m.role, m.timestamp, "
+            "    m.input_tokens, m.output_tokens, m.cache_read_tokens, m.cache_write_tokens, "
+            "    m.token_source, m.token_model "
+            "    FROM messages m JOIN branch b ON m.id = b.parent_id "
+            "    WHERE m.session_id = ?"
+            ") SELECT * FROM branch ORDER BY timestamp ASC",
+            (head_id, session_id, session_id),
+        )
+        rows = cur.fetchall()
+
+        branch: list[dict[str, Any]] = []
+        naive_sum = 0
+        cache_read_total = 0
+        input_total = 0
+        last_assistant_usage = 0
+        last_model: Optional[str] = None
+        source_mix: dict[str, int] = {}
+
+        for r in rows:
+            inp = int(r["input_tokens"] or 0)
+            out = int(r["output_tokens"] or 0)
+            cr  = int(r["cache_read_tokens"]  or 0)
+            cw  = int(r["cache_write_tokens"] or 0)
+            total = inp + out + cr
+            naive_sum += total
+            cache_read_total += cr
+            input_total += inp
+            source = r["token_source"] or "unknown"
+            source_mix[source] = source_mix.get(source, 0) + 1
+            if r["role"] in ("assistant", "model") and (inp or cr):
+                last_assistant_usage = inp + cr
+                if r["token_model"]:
+                    last_model = r["token_model"]
+            branch.append({
+                "message_id": r["id"],
+                "role": r["role"],
+                "input_tokens":  inp,
+                "output_tokens": out,
+                "cache_read_tokens":  cr,
+                "cache_write_tokens": cw,
+                "total": total,
+                "token_source": source,
+                "token_model":  r["token_model"],
+                "timestamp": r["timestamp"],
+            })
+
+        current_tokens = last_assistant_usage or naive_sum
+        ctx_window = 0
+        model_id = None
+        if model is not None:
+            ctx_window = int(getattr(model, "context_window", 0) or 0)
+            model_id = getattr(model, "id", None)
+        if not model_id and last_model:
+            model_id = last_model
+        pct = (current_tokens / ctx_window) if ctx_window else 0.0
+        cache_hit_rate = 0.0
+        if input_total + cache_read_total > 0:
+            cache_hit_rate = cache_read_total / (input_total + cache_read_total)
+
+        return {
+            "branch": branch,
+            "naive_sum": naive_sum,
+            "last_assistant_usage": last_assistant_usage,
+            "current_tokens": current_tokens,
+            "context_window": ctx_window,
+            "pct_used": pct,
+            "cache_read_total": cache_read_total,
+            "cache_hit_rate": cache_hit_rate,
+            "model": model_id,
+            "source_mix": source_mix,
+        }
 
     def set_head(self, session_id: str, head_id: Optional[str]) -> None:
         """Switch a session's head_id. Used by retry / edit / branch
