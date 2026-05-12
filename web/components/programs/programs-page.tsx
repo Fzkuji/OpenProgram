@@ -427,26 +427,26 @@ export function ProgramsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <select
-              className={styles.select}
+            <CustomSelect
               value={sort}
-              onChange={(e) => setSort(e.target.value as typeof sort)}
-            >
-              <option value="category">Sort: Category</option>
-              <option value="name">Sort: Name</option>
-              <option value="recent">Sort: Recent</option>
-            </select>
-            <select
-              className={styles.select}
+              onChange={(v) => setSort(v)}
+              options={[
+                { value: "category", label: "Sort: Category" },
+                { value: "name", label: "Sort: Name" },
+                { value: "recent", label: "Sort: Recent" },
+              ]}
+            />
+            <CustomSelect
               value={filter}
-              onChange={(e) => setFilter(e.target.value as typeof filter)}
-            >
-              <option value="all">All</option>
-              <option value="app">Applications</option>
-              <option value="meta">Meta Functions</option>
-              <option value="builtin">Built-in</option>
-              <option value="favorites">Favorites</option>
-            </select>
+              onChange={(v) => setFilter(v)}
+              options={[
+                { value: "all", label: "All" },
+                { value: "app", label: "Applications" },
+                { value: "meta", label: "Meta Functions" },
+                { value: "builtin", label: "Built-in" },
+                { value: "favorites", label: "Favorites" },
+              ]}
+            />
             <button
               className={styles.toolbarBtn}
               onClick={() => setView((v) => (v === "grid" ? "list" : "grid"))}
@@ -753,4 +753,65 @@ function CtxMenu({
 
 function cls(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
+}
+
+function CustomSelect<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  const current = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className={styles.selectWrap}>
+      <button
+        type="button"
+        className={styles.select}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span>{current?.label}</span>
+        <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className={styles.selectMenu} role="listbox">
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              className={cls(
+                styles.selectOption,
+                o.value === value && styles.selectOptionActive,
+              )}
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
