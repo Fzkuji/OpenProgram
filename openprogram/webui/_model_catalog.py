@@ -41,7 +41,7 @@ _PROVIDER_LABELS = {
     "google": "Google AI",
     "google-vertex": "Google Vertex AI",
     "gemini-subscription": "Google Gemini (Cloud Code Assist)",
-    "gemini-subscription-corp": "Google Gemini (Corporate OAuth)",
+    "gemini-subscription-corp": "Google Antigravity",
     "azure-openai-responses": "Azure OpenAI",
     "amazon-bedrock": "Amazon Bedrock",
     "openrouter": "OpenRouter",

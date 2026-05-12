@@ -1,14 +1,82 @@
-"""
-pdf_figures.main — caption-anchored PDF figure extraction (application).
+"""figure_by_caption — caption-anchored PDF figure extraction.
 
-Single entry function ``extract_pdf_figures`` (batch) plus
-``extract_one_figure`` (single). All work is deterministic (pymupdf
-only), but the entry function carries the ``@agentic_function``
-decorator so it shows up in the OpenProgram webui / discovery —
-``runtime`` is accepted for protocol consistency and ignored at
-call time.
+A deterministic tool (no LLM call) for cropping individual figures from
+academic PDFs by their caption text. Pure pymupdf. Lives in
+``tools/pdf/`` because it doesn't need agent reasoning — given a
+``pdf_path`` and a ``caption_prefix`` the output is fully determined.
 
-Algorithm + limitations documented in ``extract_one_figure``'s docstring.
+How it works
+------------
+Academic figures are vector graphics + text, so the raster ``xref``
+table that ``pymupdf`` exposes via ``page.get_images()`` returns at
+best a logo or legend swatch. This module instead:
+
+1. Locates the caption text block via a caller-supplied prefix (e.g.
+   ``"Figure 2:"``). The first match across pages wins; a 1-indexed
+   ``page_hint`` short-circuits the scan.
+2. Walks UP from the caption to find the previous *real body block* —
+   either a paragraph (≥ 30 chars, sentence terminator, column-
+   spanning width) or a section heading (short capitalised title,
+   also column-spanning). Sub-figure captions ``"(a) ..."``, axis
+   ticks, narrow in-figure legend titles, and other figure labels are
+   all skipped via dedicated filters.
+3. Absorbs paragraph-continuation lines downward from the found body
+   block. PyMuPDF often splits one paragraph into per-line blocks; the
+   first found body block is only the FIRST line, so we walk down to
+   find the actual paragraph bottom.
+4. Treats any other ``Figure N:`` caption on the same page as a hard
+   vertical boundary — this prevents Figure 3 from bleeding into the
+   top of Figure 4 when both share a page.
+5. Conservatively accumulates caption-continuation lines below the
+   caption itself: small vertical gap (≤ 8 pt), inside caption
+   x-range, contains lowercase letters (excludes panel-title rows like
+   ``"Base Vanilla K-SFT OP-SFT+KΔ-FT"``), no crossing into the next
+   figure.
+6. Renders the resulting bbox via ``page.get_pixmap(clip=...)`` at
+   user-specified DPI.
+
+Known limitations
+-----------------
+* **Wrapfigure layouts** where body text flows around an inset figure:
+  the above-caption search will stop at the first body paragraph on
+  the wrap side, giving a too-short crop.
+* **Captions fused with prose** by PyMuPDF's text extractor may not
+  match the prefix anchor.
+* All thresholds tuned for ~10pt body text. Atypical text sizes may
+  need parameter adjustment.
+
+For an LLM-driven / 2D-layout approach (more general, more edge-case
+failure modes) see the experimental ``openprogram.tools.pdf.figures``.
+For an industrial-grade alternative shell out to Allen AI's Scala
+``pdffigures2.jar`` directly.
+
+Usage
+-----
+
+Single figure::
+
+    from openprogram.tools.pdf.figure_by_caption import extract_one_figure
+
+    result = extract_one_figure(
+        pdf_path="paper.pdf",
+        caption_prefix="Figure 2:",
+        out_path="figures/fig2.png",
+        page_hint=4,
+    )
+    print(result.page, result.bbox)
+
+Batch::
+
+    from openprogram.tools.pdf.figure_by_caption import extract_figures
+
+    results = extract_figures(
+        pdf_path="paper.pdf",
+        captions=[
+            ("Figure 1:", "fig1.png"),
+            ("Figure 2:", "fig2.png"),
+        ],
+        out_dir="figures/",
+    )
 """
 
 from __future__ import annotations
@@ -17,9 +85,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
-
-from openprogram.agentic_programming.function import agentic_function
-from openprogram.agentic_programming.runtime import Runtime
 
 
 # ---------------------------------------------------------------------------
@@ -178,8 +243,29 @@ def _find_prev_body(
     return prev_y_bottom
 
 
+def _parse_caption_pairs(captions: str | Iterable) -> list[tuple[str, str]]:
+    """Parse the captions parameter into (prefix, filename) pairs.
+
+    Accepts either:
+    - A multiline string with ``caption_prefix => filename`` per line
+    - An iterable of (prefix, filename) tuples
+    """
+    if isinstance(captions, str):
+        pairs: list[tuple[str, str]] = []
+        for line in captions.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if "=>" not in line:
+                raise ValueError(f"caption line missing ' => filename': {line!r}")
+            prefix, filename = line.split("=>", 1)
+            pairs.append((prefix.strip(), filename.strip()))
+        return pairs
+    return [(p, f) for p, f in captions]
+
+
 # ---------------------------------------------------------------------------
-# Public functions (the application entry points)
+# Public API
 # ---------------------------------------------------------------------------
 
 
@@ -196,33 +282,7 @@ def extract_one_figure(
 ) -> FigureCrop:
     """Crop one figure from a PDF, anchored on its caption.
 
-    The algorithm:
-
-    1. Locate the caption text block by matching `caption_prefix` (e.g.
-       ``"Figure 2:"``) against stripped text blocks. First match wins;
-       a 1-indexed ``page_hint`` short-circuits the scan.
-    2. Walk UP from the caption to find the previous body / section
-       heading block — skipping sub-figure captions, axis ticks,
-       in-figure legend titles, and other narrow / non-prose blocks.
-    3. Absorb paragraph-continuation lines downward (PyMuPDF often
-       splits one paragraph into per-line blocks).
-    4. Use other ``Figure N:`` captions on the same page as hard
-       y-bounds (prevents Figure 3 bleeding into Figure 4).
-    5. Conservatively absorb caption-continuation lines below the
-       caption itself (small gap, inside x-range, contains lowercase).
-    6. Render the resulting bbox via pymupdf at the requested DPI.
-
-    Known limitations (when this function will under-perform):
-
-    * **Wrapfigure layouts** — body text flowing around an inset
-      figure. The above-caption search stops at the first body
-      paragraph on the wrap side, producing too-short crops.
-    * **Atypical text sizes** — thresholds tuned for ~10pt body
-      text. Very small or very large body fonts may need parameter
-      tuning.
-    * **Caption fused with prose** — if PyMuPDF emitted the caption
-      glued to surrounding text in a single block, the prefix anchor
-      can fail.
+    See module docstring for the full algorithm and limitations.
 
     Parameters
     ----------
@@ -239,7 +299,7 @@ def extract_one_figure(
     page_hint : int | None
         1-indexed page to search first.
     max_caption_lines : int, default 6
-        Maximum continuation lines to absorb past the caption block.
+        Maximum continuation lines absorbed past the caption block.
     margin_pt : float, default 4.0
         Pixel padding on all sides of the bbox.
 
@@ -326,129 +386,48 @@ def extract_one_figure(
     raise ValueError(f"caption {caption_prefix!r} not found in {pdf_path}")
 
 
-def _parse_caption_pairs(captions: str | Iterable) -> list[tuple[str, str]]:
-    """Parse the captions parameter into (prefix, filename) pairs.
-
-    Accepts either:
-    - A multiline string with ``caption_prefix => filename`` per line
-    - An iterable of (prefix, filename) tuples
-    """
-    if isinstance(captions, str):
-        pairs: list[tuple[str, str]] = []
-        for line in captions.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            if "=>" not in line:
-                raise ValueError(
-                    f"caption line missing ' => filename': {line!r}"
-                )
-            prefix, filename = line.split("=>", 1)
-            pairs.append((prefix.strip(), filename.strip()))
-        return pairs
-    return [(p, f) for p, f in captions]
-
-
-@agentic_function(input={
-    "pdf_path": {
-        "description": "Path to source PDF",
-        "placeholder": "/path/to/paper.pdf",
-        "multiline": False,
-    },
-    "captions": {
-        "description": "Caption prefixes to extract, one per line as 'PREFIX => filename'",
-        "placeholder": "Figure 1: => fig1.png\nFigure 2: => fig2.png",
-        "multiline": True,
-    },
-    "out_dir": {
-        "description": "Output directory for PNGs",
-        "placeholder": "/path/to/figures/",
-        "multiline": False,
-    },
-    "dpi": {
-        "description": "Render DPI (default 300)",
-        "placeholder": "300",
-        "multiline": False,
-    },
-    "page_hints": {
-        "description": "Optional 'PREFIX => page_number' hints, one per line",
-        "placeholder": "Figure 2: => 4\nFigure 7: => 17",
-        "multiline": True,
-    },
-    "runtime": {"hidden": True},
-})
-def extract_pdf_figures(
-    pdf_path: str,
+def extract_figures(
+    pdf_path: Path | str,
     captions: str | Iterable,
-    out_dir: str,
+    out_dir: Path | str,
+    *,
     dpi: int = _DEFAULT_DPI,
     page_hints: str | dict | None = None,
-    *,
     include_caption: bool = True,
     skip_missing: bool = False,
     margin_pt: float = _DEFAULT_MARGIN_PT,
     max_caption_lines: int = _DEFAULT_MAX_CAPTION_LINES,
-    runtime: Runtime = None,
 ) -> list[FigureCrop]:
-    """Extract one or more figures from an academic PDF by caption prefix.
-
-    Application entry point. Single deterministic step (no LLM call) — the
-    `runtime` parameter is accepted for application-protocol consistency
-    but ignored.
-
-    Use this when you have an academic PDF and want clean PNG crops of
-    specific figures for embedding in markdown / wiki. Works well on
-    NeurIPS / arXiv layouts with ~10pt body text and clearly anchored
-    captions like ``"Figure 2:"`` / ``"Table 1:"``.
-
-    The two callable surfaces of this application:
-
-    - ``extract_pdf_figures`` (this function) — batch entry point. Pass a
-      newline-separated ``PREFIX => filename`` list to crop many figures
-      from one PDF in a single call.
-    - ``extract_one_figure`` — single-figure entry, returns a ``FigureCrop``
-      record. Use directly when you only need one figure or need full
-      control over per-figure parameters.
-
-    Both share the same underlying caption-anchored algorithm documented
-    on ``extract_one_figure``.
-
-    Known limitations:
-
-    - Wrapfigure layouts (body text flowing around an inset figure)
-      produce too-short crops.
-    - Captions fused with surrounding prose by PyMuPDF's text extractor
-      may not match the prefix anchor.
-    - Thresholds tuned for ~10pt body text.
+    """Batch-extract multiple figures from one PDF.
 
     Parameters
     ----------
-    pdf_path : str
-        Path to the source PDF.
+    pdf_path : path-like
+        Source PDF.
     captions : str or iterable
         Either a multiline string with ``PREFIX => filename`` per line
         (one figure to extract per line), or an iterable of
         ``(prefix, filename)`` tuples.
-    out_dir : str
-        Directory to write rendered PNGs. Created if missing. Filenames
-        in ``captions`` may be absolute or relative to this directory.
+    out_dir : path-like
+        Directory to write rendered PNGs. Created if missing.
+        Filenames in ``captions`` may be absolute or relative to this
+        directory.
     dpi : int, default 300
         Render resolution.
     page_hints : str or dict, optional
-        Page hints to speed up search. As a string: ``PREFIX => page``
-        per line. As a dict: ``{caption_prefix: page_number}``.
+        Page hints to speed up search. As string: ``PREFIX => page``
+        per line. As dict: ``{caption_prefix: page_number}``.
     include_caption : bool, default True
         Whether to include the caption block in the crop.
     skip_missing : bool, default False
-        When True, captions not found in the PDF yield no entry and no
-        exception. When False (default), missing captions raise
-        ``ValueError``.
+        When True, captions not found in the PDF yield no entry
+        and no exception. When False (default), missing captions
+        raise ``ValueError``.
     margin_pt : float, default 4.0
         Pixel padding around the computed bbox.
     max_caption_lines : int, default 6
-        Maximum caption-continuation lines absorbed past the caption block.
-    runtime : Runtime, optional
-        Unused. Accepted for application-protocol consistency.
+        Maximum caption-continuation lines absorbed past the
+        caption block.
 
     Returns
     -------
@@ -461,30 +440,6 @@ def extract_pdf_figures(
         Caption not found (unless ``skip_missing=True``).
     ImportError
         ``pymupdf`` not installed.
-
-    Examples
-    --------
-    Multiline-string captions form (most common when invoked by an
-    agent or as a CLI)::
-
-        extract_pdf_figures(
-            pdf_path="paper.pdf",
-            captions=(
-                "Figure 1: => fig1.png\\n"
-                "Figure 2: => fig2.png\\n"
-                "Figure 7: => fig7.png\\n"
-            ),
-            out_dir="figures/",
-            page_hints="Figure 7: => 17",
-        )
-
-    Programmatic tuple form::
-
-        extract_pdf_figures(
-            pdf_path="paper.pdf",
-            captions=[("Figure 1:", "fig1.png"), ("Figure 2:", "fig2.png")],
-            out_dir="figures/",
-        )
     """
     pairs = _parse_caption_pairs(captions)
     hints_dict: dict[str, int] = {}
@@ -527,4 +482,4 @@ def extract_pdf_figures(
     return results
 
 
-__all__ = ["FigureCrop", "extract_one_figure", "extract_pdf_figures"]
+__all__ = ["FigureCrop", "extract_one_figure", "extract_figures"]
