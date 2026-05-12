@@ -266,15 +266,19 @@ function NavItem({
         color: active ? "var(--text-bright)" : "var(--text-primary)",
       }}
       onMouseEnter={(e) => {
-        if (!active) e.currentTarget.style.background = "var(--bg-hover)";
+        if (!active) {
+          e.currentTarget.style.background = "var(--bg-hover)";
+          e.currentTarget.style.color = "var(--text-bright)";
+        }
       }}
       onMouseLeave={(e) => {
-        if (!active) e.currentTarget.style.background = "transparent";
+        if (!active) {
+          e.currentTarget.style.background = "transparent";
+          e.currentTarget.style.color = "var(--text-primary)";
+        }
       }}
     >
-      <span style={{ color: active ? "var(--text-bright)" : (label === "New chat" ? "var(--text-primary)" : "var(--text-bright)") }}>
-        {icon}
-      </span>
+      <span style={{ color: "inherit" }}>{icon}</span>
       <span className="flex-1 truncate">{label}</span>
     </div>
   );

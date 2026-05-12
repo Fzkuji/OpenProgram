@@ -152,7 +152,7 @@
 .sidebar-toggle {
   background: transparent;
   border: none;
-  color: var(--text-bright);
+  color: var(--text-primary);
   cursor: pointer;
   padding: 0;
   width: 32px;
@@ -230,9 +230,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-bright);
+  /* color inherits from .sidebar-nav-item → text-primary default, text-bright on hover/active */
   flex-shrink: 0;
-  transition: color 75ms;
   overflow: visible;
 }
 .sidebar-nav-icon svg {
@@ -240,10 +239,6 @@
   height: 20px;
   flex-shrink: 0;
 }
-/* New chat is the only nav icon Claude renders in the muted color */
-#navNewChat .sidebar-nav-icon { color: var(--text-primary); }
-.sidebar-nav-item:hover .sidebar-nav-icon { color: var(--text-bright); }
-.sidebar-nav-item.active .sidebar-nav-icon { color: var(--text-bright); }
 
 /* New Chat icon — circular bg + hover rotation/scale animation (Claude.ai) */
 /* Claude: size-[1.4rem] (22.4px) rounded-full, bg-text-500/15 */
