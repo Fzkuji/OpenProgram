@@ -152,7 +152,7 @@
 .sidebar-toggle {
   background: transparent;
   border: none;
-  color: var(--text-primary);
+  color: var(--text-bright);
   cursor: pointer;
   padding: 0;
   width: 32px;
@@ -230,7 +230,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-primary);
+  color: var(--text-bright);
   flex-shrink: 0;
   transition: color 75ms;
   overflow: visible;
@@ -240,6 +240,8 @@
   height: 20px;
   flex-shrink: 0;
 }
+/* New chat is the only nav icon Claude renders in the muted color */
+#navNewChat .sidebar-nav-icon { color: var(--text-primary); }
 .sidebar-nav-item:hover .sidebar-nav-icon { color: var(--text-bright); }
 .sidebar-nav-item.active .sidebar-nav-icon { color: var(--text-bright); }
 

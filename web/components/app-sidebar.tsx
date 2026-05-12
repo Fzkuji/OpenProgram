@@ -272,7 +272,7 @@ function NavItem({
         if (!active) e.currentTarget.style.background = "transparent";
       }}
     >
-      <span style={{ color: active ? "var(--text-bright)" : "var(--text-secondary)" }}>
+      <span style={{ color: active ? "var(--text-bright)" : (label === "New chat" ? "var(--text-primary)" : "var(--text-bright)") }}>
         {icon}
       </span>
       <span className="flex-1 truncate">{label}</span>
