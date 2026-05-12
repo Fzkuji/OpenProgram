@@ -392,6 +392,12 @@ window.renderBranchesPanel = function () {
         else if (bPct > 65) bTokColor = 'var(--accent-yellow, #d2a106)';
         else                bTokColor = 'var(--text-muted)';
       }
+    } else if (bTok) {
+      // current_tokens is null/0 — no provider usage on this branch yet.
+      // Show "—" so it's clear we don't have a real number to display
+      // (instead of fabricating one).
+      bTokTxt = '—';
+      bTokColor = 'var(--text-muted)';
     }
     item.innerHTML =
       '<span class="branch-item-dot" style="background:' + laneColor + '"></span>' +

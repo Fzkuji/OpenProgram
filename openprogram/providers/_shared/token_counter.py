@@ -256,13 +256,19 @@ def _from_heuristic(msg: dict[str, Any]) -> TokenCount:
 
 # ─── Public entry point ────────────────────────────────────────────────
 
-def count_tokens(msg: dict[str, Any], model: "Model | None" = None) -> TokenCount:
-    """Count tokens for a single message. Routes by source quality.
+def count_tokens(
+    msg: dict[str, Any], model: "Model | None" = None
+) -> TokenCount | None:
+    """Count tokens for a single message — only when an authoritative
+    source is available.
 
-    `msg` is a dict (already-serialized message — what append_message
-    receives). `model` is the registered Model that produced or will
-    consume this message. If model is None we skip tiktoken and go
-    straight to heuristic.
+    Returns None if neither the provider's own usage block nor a real
+    tokenizer (tiktoken) can produce a number. The earlier heuristic
+    (chars / 4) is intentionally NOT a fallback: any displayed token
+    count must come from a real measurement, never an estimate.
+
+    `msg` is the serialized message dict. `model` lets tiktoken pick
+    the right encoding; pass None to skip tiktoken too.
     """
     result = _from_provider_usage(msg)
     if result is not None:
@@ -270,7 +276,4 @@ def count_tokens(msg: dict[str, Any], model: "Model | None" = None) -> TokenCoun
     result = _from_tiktoken(msg, model)
     if result is not None:
         return result
-    # anthropic count_tokens intentionally skipped here — costs an API
-    # call per message. Provider_usage will correct the heuristic once
-    # the real LLM turn runs.
-    return _from_heuristic(msg)
+    return None

@@ -422,15 +422,16 @@ class SessionDB:
         if extra:
             row["extra"] = json.dumps(extra, default=str)
 
-        # Auto-fill token columns if caller didn't supply them. Caller
-        # may override (e.g., backfill scans pass pre-computed values
-        # or trust the provider's usage block from an AssistantMessage).
-        if "input_tokens" not in row or row.get("input_tokens") is None:
+        # Token columns: only populated when an authoritative source is
+        # available (provider's own usage block, or tiktoken for OpenAI
+        # models). For everything else the columns stay NULL — we never
+        # write estimated/heuristic numbers. The "context size at head"
+        # comes from the most recent assistant message's input_tokens
+        # + cache_read_tokens, which IS authoritative because provider
+        # reported it.
+        if row.get("input_tokens") is None:
             try:
                 from openprogram.providers._shared.token_counter import count_tokens
-                # Best-effort: look up the model the assistant message
-                # came from. UserMessage has no model_id, so tiktoken
-                # falls back to heuristic — acceptable.
                 model_obj = None
                 model_id = msg.get("model") or extra.get("model")
                 provider_name = msg.get("provider") or extra.get("provider")
@@ -450,15 +451,16 @@ class SessionDB:
                     except Exception:
                         model_obj = None
                 tc = count_tokens(msg, model_obj)
-                row.setdefault("input_tokens", tc.input)
-                row.setdefault("output_tokens", tc.output)
-                row.setdefault("cache_read_tokens", tc.cache_read)
-                row.setdefault("cache_write_tokens", tc.cache_write)
-                row.setdefault("token_source", tc.source)
-                if model_obj is not None:
-                    row.setdefault("token_model", getattr(model_obj, "id", None))
-                elif model_id:
-                    row.setdefault("token_model", str(model_id))
+                if tc is not None:
+                    row.setdefault("input_tokens", tc.input)
+                    row.setdefault("output_tokens", tc.output)
+                    row.setdefault("cache_read_tokens", tc.cache_read)
+                    row.setdefault("cache_write_tokens", tc.cache_write)
+                    row.setdefault("token_source", tc.source)
+                    if model_obj is not None:
+                        row.setdefault("token_model", getattr(model_obj, "id", None))
+                    elif model_id:
+                        row.setdefault("token_model", str(model_id))
             except Exception:
                 # Token counting must never block message persistence.
                 pass
@@ -797,7 +799,14 @@ class SessionDB:
                 "timestamp": r["timestamp"],
             })
 
-        current_tokens = last_assistant_usage or naive_sum
+        # Context size at HEAD = the most recent assistant message's
+        # input + cache_read (i.e. what the provider reported it saw for
+        # that call). If no assistant message on this branch has provider
+        # usage data, we don't fabricate one — callers see None and
+        # render it as "—".
+        current_tokens: Optional[int] = (
+            last_assistant_usage if last_assistant_usage > 0 else None
+        )
         ctx_window = 0
         model_id = None
         if model is not None:
@@ -805,7 +814,11 @@ class SessionDB:
             model_id = getattr(model, "id", None)
         if not model_id and last_model:
             model_id = last_model
-        pct = (current_tokens / ctx_window) if ctx_window else 0.0
+        pct = (
+            (current_tokens / ctx_window)
+            if ctx_window and current_tokens
+            else 0.0
+        )
         cache_hit_rate = 0.0
         if input_total + cache_read_total > 0:
             cache_hit_rate = cache_read_total / (input_total + cache_read_total)
@@ -974,7 +987,9 @@ class SessionDB:
                     row["extra"] = json.dumps(extra, default=str)
                 if "id" not in row or "role" not in row or "content" not in row:
                     continue
-                # Auto-fill token columns if not supplied.
+                # Auto-fill token columns ONLY when count_tokens returns
+                # an authoritative number (provider_usage / tiktoken).
+                # Heuristic estimation is intentionally not used.
                 if row.get("input_tokens") is None:
                     try:
                         model_obj = None
@@ -993,17 +1008,18 @@ class SessionDB:
                                         model_obj = v
                                         break
                         tc = count_tokens(m, model_obj)
-                        row.setdefault("input_tokens", tc.input)
-                        row.setdefault("output_tokens", tc.output)
-                        row.setdefault("cache_read_tokens", tc.cache_read)
-                        row.setdefault("cache_write_tokens", tc.cache_write)
-                        row.setdefault("token_source", tc.source)
-                        if model_obj is not None:
-                            row.setdefault(
-                                "token_model", getattr(model_obj, "id", None)
-                            )
-                        elif model_id:
-                            row.setdefault("token_model", str(model_id))
+                        if tc is not None:
+                            row.setdefault("input_tokens", tc.input)
+                            row.setdefault("output_tokens", tc.output)
+                            row.setdefault("cache_read_tokens", tc.cache_read)
+                            row.setdefault("cache_write_tokens", tc.cache_write)
+                            row.setdefault("token_source", tc.source)
+                            if model_obj is not None:
+                                row.setdefault(
+                                    "token_model", getattr(model_obj, "id", None)
+                                )
+                            elif model_id:
+                                row.setdefault("token_model", str(model_id))
                     except Exception:
                         pass
                 cols = list(row.keys())
@@ -1018,96 +1034,6 @@ class SessionDB:
             )
 
         self._execute_write(_do)
-
-    def backfill_token_counts(self, session_id: str | None = None) -> dict[str, Any]:
-        """Recompute token counts for messages where source is missing or
-        marked 'unknown'. Returns counts: {scanned, updated}.
-
-        Safe to call repeatedly — only rewrites rows that lack a real
-        token_source. Uses the same heuristic-or-tiktoken path as
-        append_message, so the result is identical to writing fresh.
-        """
-        from openprogram.providers._shared.token_counter import count_tokens
-        try:
-            from openprogram.providers.models_generated import MODELS
-        except Exception:
-            MODELS = {}  # type: ignore
-
-        # Pick rows to recompute. 'unknown' or NULL or missing input_tokens
-        # all qualify.
-        params: list[Any] = []
-        sql = (
-            "SELECT id, session_id, role, content, extra, model, "
-            "  input_tokens, output_tokens, cache_read_tokens, "
-            "  cache_write_tokens, token_source "
-            "FROM messages "
-            "WHERE token_source IS NULL OR token_source='unknown' "
-            "  OR input_tokens IS NULL"
-        )
-        if session_id:
-            sql += " AND session_id=?"
-            params.append(session_id)
-
-        cur = self.conn.execute(sql, params)
-        rows = cur.fetchall()
-        scanned = len(rows)
-        updates: list[tuple[Any, ...]] = []
-
-        for r in rows:
-            d = dict(r)
-            try:
-                content = d.get("content")
-                if isinstance(content, str) and content.startswith(("{", "[")):
-                    try:
-                        content = json.loads(content)
-                    except Exception:
-                        pass
-                msg = {
-                    "id": d["id"],
-                    "role": d["role"],
-                    "content": content,
-                    "model": d.get("model"),
-                }
-                extra_raw = d.get("extra")
-                if extra_raw:
-                    try:
-                        extra = json.loads(extra_raw)
-                        if isinstance(extra, dict):
-                            for k, v in extra.items():
-                                msg.setdefault(k, v)
-                    except Exception:
-                        pass
-                model_obj = None
-                mid = msg.get("model")
-                if mid:
-                    model_obj = MODELS.get(mid)
-                    if model_obj is None:
-                        for v in MODELS.values():
-                            if getattr(v, "id", None) == mid:
-                                model_obj = v
-                                break
-                tc = count_tokens(msg, model_obj)
-                updates.append((
-                    tc.input, tc.output, tc.cache_read, tc.cache_write,
-                    tc.source,
-                    getattr(model_obj, "id", None) if model_obj else mid,
-                    d["id"], d["session_id"],
-                ))
-            except Exception:
-                continue
-
-        def _do(conn: sqlite3.Connection) -> None:
-            conn.executemany(
-                "UPDATE messages SET input_tokens=?, output_tokens=?, "
-                "  cache_read_tokens=?, cache_write_tokens=?, "
-                "  token_source=?, token_model=? "
-                "WHERE id=? AND session_id=?",
-                updates,
-            )
-
-        if updates:
-            self._execute_write(_do)
-        return {"scanned": scanned, "updated": len(updates)}
 
     def close(self) -> None:
         try:
