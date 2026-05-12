@@ -496,7 +496,7 @@ def _list_providers() -> list[dict]:
             return False
     checks = [
         # (name, label, available_check, env_keys_for_config_or_None_if_CLI)
-        ("chatgpt-subscription", "ChatGPT Subscription", lambda: shutil.which("codex") is not None, None),
+        ("chatgpt-subscription", "ChatGPT Codex", lambda: shutil.which("codex") is not None, None),
         ("gemini-cli", "Gemini CLI", lambda: shutil.which("gemini") is not None, None),
         ("anthropic", "Anthropic API", lambda: bool(_get_api_key("ANTHROPIC_API_KEY")), ["ANTHROPIC_API_KEY"]),
         ("openai", "OpenAI API", lambda: bool(_get_api_key("OPENAI_API_KEY")), ["OPENAI_API_KEY"]),

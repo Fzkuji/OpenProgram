@@ -167,7 +167,7 @@ def _codex_save(ctx: dict) -> dict:
 
 PROVIDER_CONFIG: dict[str, dict] = {
     "chatgpt-subscription": {
-        "label": "ChatGPT Subscription (OAuth)",
+        "label": "ChatGPT Codex (OAuth)",
         "type": "cli-oauth",
         "description": (
             "Use your ChatGPT Plus/Pro/Business subscription via the Codex CLI. "

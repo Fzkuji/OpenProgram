@@ -7,6 +7,7 @@ import styles from "./settings-page.module.css";
 const SLUGS: Record<string, string> = {
   openai: "openai",
   "openai-codex": "openai",
+  "chatgpt-subscription": "openai",
   anthropic: "claude",
   google: "gemini",
   "google-vertex": "gemini",
