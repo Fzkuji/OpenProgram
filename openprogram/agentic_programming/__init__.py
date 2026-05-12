@@ -27,7 +27,6 @@ from openprogram.agentic_programming.function import (
     agentic_function, traced, auto_trace_module, auto_trace_package,
 )
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.agentic_programming.dispatch import make_choice
 from openprogram.agentic_programming.session import Session
 from openprogram.agentic_programming.skills import (
     Skill, load_skills, format_skills_for_prompt, default_skill_dirs,
@@ -38,7 +37,6 @@ __all__ = [
     "traced",
     "auto_trace_module",
     "auto_trace_package",
-    "make_choice",
     "Runtime",
     "Context",
     "Session",

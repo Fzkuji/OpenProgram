@@ -26,7 +26,10 @@ export function SettingsPage() {
         </div>
         <div
           className={
-            styles.body + (tab === "providers" ? " " + styles.providersWide : "")
+            styles.body +
+            (tab === "providers" || tab === "search"
+              ? " " + styles.providersWide
+              : "")
           }
         >
           <div className={styles.nav}>

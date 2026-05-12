@@ -1,25 +1,39 @@
 """
-dispatch — make_choice: ask the LLM to pick one option from an
-explicit list of callables, then execute the chosen one and return
-its result.
+dispatch — make_choice: ask the LLM to pick exactly one option from
+an explicit list, execute it, and return that function's return
+value as-is.
 
-Single-shot decision, single way to declare options: pass them
-inline as a list to the call. No global registry, no decorator
-side-effects, no import-order surprises. If you want to share the
-same list across files, just import the callables and build the
-list — same as any other Python function.
+Different semantics from ``runtime.exec(tools=[...])``:
+
+    runtime.exec(tools=[...])   LLM is primary; may call zero, one, or
+                                many tools, returns its own prose.
+    make_choice(options=[...])  Dispatcher: LLM picks exactly one,
+                                that function runs, its return value
+                                is returned verbatim. No LLM prose
+                                wraps the result.
+
+Use ``make_choice`` for branching decisions where the function's
+return value is the answer (route selection, strategy picking,
+plan-step dispatch). Use ``runtime.exec(tools=[...])`` when you
+want the LLM to reason over multiple tool calls and produce a
+synthesized reply.
+
+Options can be plain Python callables — no need to wrap them in
+``@agentic_function`` just to make them dispatchable. If they
+already are ``@agentic_function``, they're invoked through that
+wrapper so the context tree still records them.
 
 Usage:
 
     from openprogram import make_choice, create_runtime
 
-    def search_web(query: str) -> str: ...
-    def call_api(endpoint: str) -> str: ...
+    def search_web(query: str) -> list[str]: ...
+    def call_api(endpoint: str) -> dict: ...
     def reply_directly(text: str) -> str: ...
 
     runtime = create_runtime()
     result = make_choice(
-        goal="用户输入: '帮我找今天的天气'",
+        goal="用户输入: '今天天气'",
         options=[
             (search_web,     "Use when the user wants current external info."),
             (call_api,       "Use when the user wants to hit a specific service."),
@@ -27,11 +41,11 @@ Usage:
         ],
         runtime=runtime,
     )
+    # result is whatever the chosen function returned, verbatim.
 
-Each entry is either a bare ``callable`` or a ``(callable, when)``
-tuple. ``when`` is a short note telling the LLM when this option
-applies. ``@agentic_function``-wrapped callables work too — they're
-invoked through their wrapper so the context tree still records them.
+Each entry is either a bare ``callable`` or a ``(callable, when_str)``
+tuple. ``when_str`` is a short note telling the LLM when this
+option applies.
 """
 
 from __future__ import annotations
@@ -59,10 +73,6 @@ Pick exactly one action. Reply with JSON only, no prose:
 
 
 def _normalize(options: list) -> tuple[dict, dict]:
-    """Turn the options= list into (funcs_by_name, when_by_fn).
-
-    Each item is callable, (callable, when), or (callable, when, name_override).
-    """
     funcs: dict = {}
     when_by_fn: dict = {}
     for item in options:
@@ -124,18 +134,15 @@ def make_choice(
         options:  List of choices. Each item is ``callable`` or
                   ``(callable, when_str)`` or ``(callable, when_str, name_override)``.
         runtime:  Runtime used to call the LLM.
-        execute:  True (default) → invoke the chosen function with
-                  the args the LLM provided and return its result.
-                  False → return ``{"call": ..., "args": ...}`` without
-                  invoking; useful for human-in-the-loop confirmation.
+        execute:  True (default) → invoke the chosen function with the
+                  args the LLM provided and return its return value
+                  verbatim. False → return ``{"call": ..., "args": ...}``
+                  without invoking; useful for human-in-the-loop
+                  confirmation.
 
     Returns:
-        Whatever the chosen function returns (or the raw decision
+        Return value of the chosen function (or the raw decision dict
         when ``execute=False``).
-
-    Raises:
-        ValueError: if ``options`` is empty, the LLM reply doesn't
-                    parse, or the LLM names an unknown action.
     """
     if runtime is None:
         raise ValueError("runtime is required for make_choice()")
