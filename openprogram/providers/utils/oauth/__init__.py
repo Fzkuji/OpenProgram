@@ -19,11 +19,6 @@ from openprogram.providers.utils.oauth.github_copilot import (
     normalize_domain,
     refresh_github_copilot_token,
 )
-from openprogram.providers.utils.oauth.google_antigravity import (
-    antigravity_oauth_provider,
-    login_antigravity,
-    refresh_antigravity_token,
-)
 from openprogram.providers.utils.oauth.google_gemini_cli import (
     gemini_cli_oauth_provider,
     login_gemini_cli,
@@ -53,7 +48,6 @@ __all__ = [
     "anthropic_oauth_provider",
     "github_copilot_oauth_provider",
     "gemini_cli_oauth_provider",
-    "antigravity_oauth_provider",
     "openai_codex_oauth_provider",
 ]
 
@@ -65,7 +59,6 @@ _oauth_provider_registry: dict[str, OAuthProviderInterface] = {
     anthropic_oauth_provider.id: anthropic_oauth_provider,
     github_copilot_oauth_provider.id: github_copilot_oauth_provider,
     gemini_cli_oauth_provider.id: gemini_cli_oauth_provider,
-    antigravity_oauth_provider.id: antigravity_oauth_provider,
 }
 
 
