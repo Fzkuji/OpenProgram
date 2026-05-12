@@ -547,6 +547,84 @@ def extract_figures(
     return results
 
 
+def extract_with_bbox(
+    pdf_path: Path | str,
+    page: int,
+    bbox: tuple[float, float, float, float],
+    out_path: Path | str,
+    *,
+    dpi: int = _DEFAULT_DPI,
+) -> Path:
+    """Render a manually-specified bbox from a PDF page to PNG.
+
+    Use this when the caption-anchored algorithm picks the wrong bbox
+    and you (or a verifying agent) have a corrected one.
+
+    Parameters
+    ----------
+    pdf_path : path-like
+    page : int
+        1-indexed page number.
+    bbox : (x0, y0, x1, y1)
+        Region in PDF points.
+    out_path : path-like
+        Output PNG. Parent dir created.
+    dpi : int, default 300
+
+    Returns
+    -------
+    Path
+        Absolute path to the rendered PNG.
+    """
+    try:
+        import fitz  # type: ignore
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("pymupdf is required: pip install pymupdf") from e
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = fitz.open(str(pdf_path))
+    try:
+        p = doc[page - 1]
+        clip = fitz.Rect(*bbox)
+        pix = p.get_pixmap(clip=clip, matrix=fitz.Matrix(dpi / 72.0, dpi / 72.0))
+        pix.save(str(out_path))
+    finally:
+        doc.close()
+    return out_path.resolve()
+
+
+def render_full_page(
+    pdf_path: Path | str,
+    page: int,
+    out_path: Path | str,
+    *,
+    dpi: int = 144,
+) -> Path:
+    """Render an entire PDF page to PNG.
+
+    Used by the verifying-agent application to show the full page
+    alongside a candidate crop so the VLM can judge correctness.
+    """
+    try:
+        import fitz  # type: ignore
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("pymupdf is required: pip install pymupdf") from e
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = fitz.open(str(pdf_path))
+    try:
+        p = doc[page - 1]
+        pix = p.get_pixmap(matrix=fitz.Matrix(dpi / 72.0, dpi / 72.0))
+        pix.save(str(out_path))
+    finally:
+        doc.close()
+    return out_path.resolve()
+
+
 def list_captions(
     pdf_path: Path | str,
     *,
@@ -704,4 +782,5 @@ __all__ = [
     "FigureCrop", "CaptionRef",
     "extract_one_figure", "extract_figures",
     "list_captions", "extract_all_figures",
+    "extract_with_bbox", "render_full_page",
 ]
