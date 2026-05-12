@@ -1,7 +1,42 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { marked } from "marked";
 import styles from "./memory-page.module.css";
+
+// Parse frontmatter from raw markdown: returns { frontmatter, body }
+function parseFrontmatter(raw: string): { frontmatter: Record<string, string>; body: string } {
+  if (!raw.startsWith("---\n") && !raw.startsWith("---\r\n")) {
+    return { frontmatter: {}, body: raw };
+  }
+  const end = raw.indexOf("\n---", 4);
+  if (end < 0) return { frontmatter: {}, body: raw };
+  const fmText = raw.slice(4, end);
+  const body = raw.slice(end + 4).replace(/^\s*\n/, "");
+  const fm: Record<string, string> = {};
+  for (const line of fmText.split("\n")) {
+    const m = line.match(/^([\w-]+):\s*(.*)$/);
+    if (m) fm[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+  }
+  return { frontmatter: fm, body };
+}
+
+// Convert [[wikilink]] → clickable anchor before marked renders
+function expandWikilinks(md: string): string {
+  return md.replace(/\[\[([^\]|]+)(\|([^\]]+))?\]\]/g, (_m, target, _p, alias) => {
+    const label = alias || target;
+    const slug = String(target).trim();
+    return `<a class="wikilink" data-target="${slug}">${label}</a>`;
+  });
+}
+
+function renderMarkdown(md: string): string {
+  try {
+    return marked.parse(expandWikilinks(md), { breaks: true, async: false }) as string;
+  } catch {
+    return `<pre>${md.replace(/</g, "&lt;")}</pre>`;
+  }
+}
 
 interface WikiPage {
   path: string;
@@ -109,6 +144,7 @@ export function MemoryPage() {
   const [wikiEditor, setWikiEditor] = useState<EditorState>({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [showSystem, setShowSystem] = useState(false);
+  const [search, setSearch] = useState("");
 
   // Short-term state
   const [shortTermEntries, setShortTermEntries] = useState<ShortTermEntry[]>([]);
@@ -160,15 +196,36 @@ export function MemoryPage() {
       .catch(() => setCoreLoading(false));
   }, []);
 
-  function openWikiPage(page: WikiPage) {
+  const openWikiPage = useCallback((page: WikiPage) => {
     setSelectedWiki(page);
     setWikiEditor({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
-    const apiPath = page.path.startsWith("index") || page.path.endsWith("index.md") || ["log.md","overview.md","reflections.md"].includes(page.path)
-      ? `/api/memory/wiki-system-page/${page.path}`
-      : `/api/memory/wiki/${page.path}`;
     fetch(`/api/memory/wiki/${page.path}`)
       .then((r) => r.json())
       .then((data) => setWikiEditor((e) => ({ ...e, content: data.content ?? "" })));
+  }, []);
+
+  // Resolve wikilink target to a known page (match by slug or title)
+  const resolveWikilink = useCallback((target: string): WikiPage | null => {
+    const t = target.toLowerCase().trim();
+    const all = [...wikiPages, ...systemPages];
+    return (
+      all.find((p) => p.path.toLowerCase() === t + ".md") ||
+      all.find((p) => p.path.toLowerCase().endsWith("/" + t + ".md")) ||
+      all.find((p) => (p.title || "").toLowerCase() === t) ||
+      null
+    );
+  }, [wikiPages, systemPages]);
+
+  async function deleteWikiPage() {
+    if (!selectedWiki) return;
+    if (!confirm(`Delete "${selectedWiki.title || selectedWiki.path}"? This cannot be undone.`)) return;
+    const r = await fetch(`/api/memory/wiki/${selectedWiki.path}`, { method: "DELETE" });
+    if (r.ok) {
+      setSelectedWiki(null);
+      fetchWikiPages();
+    } else {
+      alert("Delete failed");
+    }
   }
 
   async function saveWikiPage() {
@@ -217,8 +274,31 @@ export function MemoryPage() {
     });
   }
 
-  const wikiGroups = groupByFolder(wikiPages);
+  const filteredWiki = useMemo(() => {
+    if (!search.trim()) return wikiPages;
+    const q = search.toLowerCase();
+    return wikiPages.filter(
+      (p) => p.path.toLowerCase().includes(q) || (p.title || "").toLowerCase().includes(q) || (p.type || "").toLowerCase().includes(q)
+    );
+  }, [wikiPages, search]);
+
+  const wikiGroups = groupByFolder(filteredWiki);
   const totalPages = wikiPages.length;
+  const filteredSystem = useMemo(
+    () => systemPages.filter((p) => !search.trim() || p.path.toLowerCase().includes(search.toLowerCase()) || (p.title || "").toLowerCase().includes(search.toLowerCase())),
+    [systemPages, search]
+  );
+
+  // Wikilink click handler: delegate from preview container
+  function handlePreviewClick(e: React.MouseEvent) {
+    const t = (e.target as HTMLElement).closest("a.wikilink") as HTMLAnchorElement | null;
+    if (!t) return;
+    e.preventDefault();
+    const target = t.getAttribute("data-target");
+    if (!target) return;
+    const page = resolveWikilink(target);
+    if (page) openWikiPage(page);
+  }
 
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
@@ -273,8 +353,33 @@ export function MemoryPage() {
         {tab === "wiki" && (
           <div className={styles.layout}>
             <div className={styles.tree}>
-              {wikiLoading ? <LoadingSkeleton /> : wikiPages.length === 0 ? (
-                <EmptyState icon="doc" text="No wiki pages found" sub="The agent will populate this as it runs" />
+              {/* Search + refresh */}
+              <div className={styles.treeToolbar}>
+                <div className={styles.searchWrap}>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" width="12" height="12" strokeLinecap="round">
+                    <circle cx="7" cy="7" r="4.5"/>
+                    <path d="M10.5 10.5L14 14"/>
+                  </svg>
+                  <input
+                    type="text"
+                    className={styles.searchInput}
+                    placeholder="Search pages…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                  {search && (
+                    <button className={styles.searchClear} onClick={() => setSearch("")} title="Clear">✕</button>
+                  )}
+                </div>
+                <button className={styles.iconBtn} onClick={fetchWikiPages} title="Refresh">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" width="12" height="12" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 8a6 6 0 1 1-1.76-4.24"/>
+                    <path d="M14 2v3h-3"/>
+                  </svg>
+                </button>
+              </div>
+              {wikiLoading ? <LoadingSkeleton /> : filteredWiki.length === 0 && filteredSystem.length === 0 ? (
+                <EmptyState icon="doc" text={search ? "No matches" : "No wiki pages found"} sub={search ? "Try a different query" : "The agent will populate this as it runs"} />
               ) : (
                 <div className={styles.treeContent}>
                   {Array.from(wikiGroups.entries()).map(([folder, pages]) => (
@@ -286,13 +391,14 @@ export function MemoryPage() {
                       onToggle={toggleFolder}
                       selected={selectedWiki}
                       onSelect={openWikiPage}
+                      forceOpen={!!search}
                     />
                   ))}
                   {/* System / governance section */}
-                  {systemPages.length > 0 && (
+                  {filteredSystem.length > 0 && (
                     <div className={styles.sysSection}>
                       <button className={styles.folderRow} onClick={() => setShowSystem((v) => !v)}>
-                        <svg viewBox="0 0 10 10" fill="currentColor" width="8" height="8" className={`${styles.chevron} ${showSystem ? styles.chevronOpen : ""}`}>
+                        <svg viewBox="0 0 10 10" fill="currentColor" width="8" height="8" className={`${styles.chevron} ${(showSystem || search) ? styles.chevronOpen : ""}`}>
                           <path d="M2 3l3 4 3-4H2z"/>
                         </svg>
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" width="12" height="12">
@@ -300,9 +406,9 @@ export function MemoryPage() {
                           <path d="M8 5v3M8 10.5v.5" strokeLinecap="round"/>
                         </svg>
                         <span className={styles.folderName}>System</span>
-                        <span className={styles.folderCount}>{systemPages.length}</span>
+                        <span className={styles.folderCount}>{filteredSystem.length}</span>
                       </button>
-                      {showSystem && systemPages.map((page) => (
+                      {(showSystem || search) && filteredSystem.map((page) => (
                         <button
                           key={page.path}
                           className={`${styles.fileRow} ${selectedWiki?.path === page.path ? styles.fileRowActive : ""}`}
@@ -326,7 +432,9 @@ export function MemoryPage() {
                 state={wikiEditor}
                 onChange={(c) => setWikiEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
                 onSave={saveWikiPage}
+                onDelete={deleteWikiPage}
                 onViewMode={(m) => setWikiEditor((e) => ({ ...e, viewMode: m }))}
+                onPreviewClick={handlePreviewClick}
               />
             ) : (
               <Placeholder icon="doc" text="Select a page to view or edit" />
@@ -366,8 +474,13 @@ export function MemoryPage() {
                     <ClockIcon className={styles.fileIcon} />
                     <span className={styles.editorTitle}>{selectedDate}</span>
                   </div>
+                  <div className={styles.editorActions}>
+                    <span className={styles.fileMeta}>{shortTermContent.length} chars</span>
+                  </div>
                 </div>
-                <pre className={styles.viewer}>{shortTermContent || "Loading…"}</pre>
+                <div className={styles.preview}>
+                  <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: shortTermContent ? renderMarkdown(shortTermContent) : "<em>Loading…</em>" }} />
+                </div>
               </div>
             ) : (
               <Placeholder icon="clock" text="Select a session to view its memory" />
@@ -433,15 +546,16 @@ function TabButton({ active, onClick, icon, children }: { active: boolean; onCli
   );
 }
 
-function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelect }: {
+function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelect, forceOpen }: {
   folder: string;
   pages: WikiPage[];
   expanded: Set<string>;
   onToggle: (f: string) => void;
   selected: WikiPage | null;
+  forceOpen?: boolean;
   onSelect: (p: WikiPage) => void;
 }) {
-  const isExpanded = !folder || expanded.has(folder);
+  const isExpanded = !folder || expanded.has(folder) || forceOpen;
   return (
     <div className={styles.treeGroup}>
       {folder && (
@@ -476,7 +590,7 @@ function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelect }: {
   );
 }
 
-function EditorPanel({ title, badge, meta, state, onChange, onSave, onViewMode }: {
+function EditorPanel({ title, badge, meta, state, onChange, onSave, onViewMode, onDelete, onPreviewClick }: {
   title: string;
   badge?: React.ReactNode;
   meta: string[];
@@ -484,7 +598,14 @@ function EditorPanel({ title, badge, meta, state, onChange, onSave, onViewMode }
   onChange: (c: string) => void;
   onSave: () => void;
   onViewMode: (m: "edit" | "preview") => void;
+  onDelete?: () => void;
+  onPreviewClick?: (e: React.MouseEvent) => void;
 }) {
+  const { frontmatter, body } = parseFrontmatter(state.content);
+  const lines = state.content.split("\n").length;
+  const words = state.content.trim() ? state.content.trim().split(/\s+/).length : 0;
+  const previewHtml = state.viewMode === "preview" ? renderMarkdown(body) : "";
+
   return (
     <div className={styles.editor}>
       <div className={styles.editorHeader}>
@@ -503,6 +624,13 @@ function EditorPanel({ title, badge, meta, state, onChange, onSave, onViewMode }
           <button className={styles.saveBtn} onClick={onSave} disabled={state.saving}>
             {state.saving ? "Saving…" : "Save"}
           </button>
+          {onDelete && (
+            <button className={styles.dangerBtn} onClick={onDelete} title="Delete page">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" width="12" height="12" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 4h10M6 4V2.5h4V4M5 4l.5 9.5h5L11 4M6.5 6.5v5M9.5 6.5v5"/>
+              </svg>
+            </button>
+          )}
         </div>
       </div>
       {meta.length > 0 && (
@@ -517,10 +645,29 @@ function EditorPanel({ title, badge, meta, state, onChange, onSave, onViewMode }
           placeholder="Empty…"
         />
       ) : (
-        <div className={styles.preview}>
-          <pre className={styles.previewContent}>{state.content || <span className={styles.previewEmpty}>Nothing to preview</span>}</pre>
+        <div className={styles.preview} onClick={onPreviewClick}>
+          {Object.keys(frontmatter).length > 0 && (
+            <div className={styles.frontmatter}>
+              {Object.entries(frontmatter).map(([k, v]) => (
+                <div key={k} className={styles.fmRow}>
+                  <span className={styles.fmKey}>{k}</span>
+                  <span className={styles.fmVal}>{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {body ? (
+            <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          ) : (
+            <div className={styles.previewEmpty}>Nothing to preview</div>
+          )}
         </div>
       )}
+      <div className={styles.editorFooter}>
+        <span>{lines} lines</span>
+        <span>{words} words</span>
+        <span>{state.content.length} chars</span>
+      </div>
     </div>
   );
 }

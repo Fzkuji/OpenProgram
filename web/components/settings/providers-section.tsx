@@ -692,8 +692,18 @@ function ModelList({
         },
       );
       const d = await r.json();
-      if (d.error) alert("Fetch failed: " + d.error);
-      else onReload();
+      if (d.error) {
+        alert("Fetch failed: " + d.error);
+        return;
+      }
+      // Show a brief success summary so the user knows what changed.
+      // added > 0 → new rows were merged; added == 0 → registry already
+      // had everything the provider returned.
+      const summary = d.added > 0
+        ? `Fetched ${d.fetched} models, added ${d.added} new (total ${d.total_custom})`
+        : `Fetched ${d.fetched} models — already up to date`;
+      alert(summary);
+      onReload();
     } catch (e) {
       alert("Fetch failed: " + (e as Error).message);
     }

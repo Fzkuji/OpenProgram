@@ -21,6 +21,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.8.0",
+    "marked": "^18.0.3",
     "next": "14.2.35",
     "react": "^18",
     "react-dom": "^18",

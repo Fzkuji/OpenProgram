@@ -580,3 +580,241 @@
   display: flex;
   flex-direction: column;
 }
+
+/* ─── Tree toolbar (search + refresh) ─────────────────── */
+.treeToolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.searchWrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  transition: border-color 0.15s;
+}
+
+.searchWrap:focus-within {
+  border-color: var(--accent-blue);
+}
+
+.searchInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.searchClear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.searchClear:hover {
+  color: var(--text-bright);
+}
+
+.iconBtn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+
+.iconBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+/* ─── Editor: delete + footer + frontmatter + markdown ─── */
+.dangerBtn {
+  width: 26px;
+  height: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.dangerBtn:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.editorFooter {
+  display: flex;
+  gap: 14px;
+  padding: 5px 18px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.frontmatter {
+  padding: 12px 24px;
+  margin: 0 0 4px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 11px;
+}
+
+.fmRow {
+  display: contents;
+}
+
+.fmKey {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.fmVal {
+  color: var(--text-primary);
+  font-family: "JetBrains Mono", monospace;
+  word-break: break-all;
+}
+
+/* Markdown rendered preview */
+.markdown {
+  padding: 20px 28px;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+  color: var(--text-bright);
+  font-weight: 600;
+  margin: 18px 0 8px;
+  line-height: 1.3;
+}
+.markdown h1 { font-size: 20px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); }
+.markdown h2 { font-size: 17px; }
+.markdown h3 { font-size: 15px; }
+.markdown h4 { font-size: 13.5px; }
+.markdown h1:first-child, .markdown h2:first-child, .markdown h3:first-child { margin-top: 0; }
+
+.markdown p { margin: 8px 0; }
+
+.markdown a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+.markdown a:hover { text-decoration: underline; }
+
+.markdown a.wikilink {
+  color: #7c6fcd;
+  background: rgba(124, 111, 205, 0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid rgba(124, 111, 205, 0.2);
+  font-size: 0.95em;
+}
+.markdown a.wikilink:hover {
+  background: rgba(124, 111, 205, 0.18);
+  text-decoration: none;
+}
+
+.markdown code {
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.9em;
+  color: var(--text-bright);
+}
+
+.markdown pre {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 10px 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.markdown ul, .markdown ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.markdown li { margin: 3px 0; }
+
+.markdown blockquote {
+  border-left: 3px solid var(--border-color);
+  margin: 10px 0;
+  padding: 2px 14px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
+.markdown table {
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.markdown th, .markdown td {
+  border: 1px solid var(--border-color);
+  padding: 5px 10px;
+  text-align: left;
+}
+.markdown th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 14px 0;
+}
