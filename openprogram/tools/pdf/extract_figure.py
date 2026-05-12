@@ -1,4 +1,4 @@
-"""figure_by_caption — caption-anchored PDF figure extraction.
+"""extract_figure — caption-anchored PDF figure extraction.
 
 A deterministic tool (no LLM call) for cropping individual figures from
 academic PDFs by their caption text. Pure pymupdf. Lives in
@@ -55,7 +55,7 @@ Usage
 
 Single figure::
 
-    from openprogram.tools.pdf.figure_by_caption import extract_one_figure
+    from openprogram.tools.pdf.extract_figure import extract_one_figure
 
     result = extract_one_figure(
         pdf_path="paper.pdf",
@@ -67,7 +67,7 @@ Single figure::
 
 Batch::
 
-    from openprogram.tools.pdf.figure_by_caption import extract_figures
+    from openprogram.tools.pdf.extract_figure import extract_figures
 
     results = extract_figures(
         pdf_path="paper.pdf",

@@ -83,8 +83,7 @@ _ANTHROPIC_FAMILY_PROVIDERS = frozenset({
 })
 
 _GOOGLE_FAMILY_PROVIDERS = frozenset({
-    "google", "google-vertex", "gemini-subscription",
-    "gemini-subscription-corp",
+    "google", "gemini-subscription",
 })
 
 

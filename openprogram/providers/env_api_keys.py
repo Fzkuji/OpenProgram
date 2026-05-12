@@ -45,31 +45,6 @@ def get_env_api_key(provider: str) -> str | None:
     if provider == "anthropic":
         return os.environ.get("ANTHROPIC_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
     
-    # Google Vertex: support GOOGLE_CLOUD_API_KEY or ADC
-    if provider == "google-vertex":
-        api_key = os.environ.get("GOOGLE_CLOUD_API_KEY")
-        if api_key:
-            return api_key
-        
-        # Check for ADC credentials
-        gac_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if gac_path and Path(gac_path).exists():
-            has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCLOUD_PROJECT"))
-            has_location = bool(os.environ.get("GOOGLE_CLOUD_LOCATION"))
-            if has_project and has_location:
-                return "<authenticated>"
-        
-        # Check default ADC path
-        home = Path.home()
-        default_adc = home / ".config" / "gcloud" / "application_default_credentials.json"
-        if default_adc.exists():
-            has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCLOUD_PROJECT"))
-            has_location = bool(os.environ.get("GOOGLE_CLOUD_LOCATION"))
-            if has_project and has_location:
-                return "<authenticated>"
-        
-        return None
-    
     # Amazon Bedrock: multiple credential sources
     if provider == "amazon-bedrock":
         if (

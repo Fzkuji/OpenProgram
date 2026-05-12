@@ -39,7 +39,6 @@ _PROVIDER_LABELS = {
     "chatgpt-subscription": "OpenAI Codex",
     "anthropic": "Anthropic",
     "google": "Google AI",
-    "google-vertex": "Google Vertex AI",
     "gemini-subscription": "Gemini CLI",
     "azure-openai-responses": "Azure OpenAI",
     "amazon-bedrock": "Amazon Bedrock",
@@ -101,9 +100,7 @@ _ENV_API_KEYS = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "google": "GOOGLE_GENERATIVE_AI_API_KEY",
-    "google-vertex": None,  # uses gcloud ADC
-    "gemini-subscription": None,  # uses OAuth
-    "gemini-subscription-corp": None,
+    "gemini-subscription": None,  # uses OAuth via gemini CLI
     "azure-openai-responses": "AZURE_OPENAI_API_KEY",
     "amazon-bedrock": None,  # AWS credentials chain
     "openrouter": "OPENROUTER_API_KEY",

@@ -28,7 +28,6 @@ _ALIASES: dict[str, str] = {
     "gemini": "gemini-subscription",
     "copilot": "github-copilot",
     "bedrock": "amazon-bedrock",
-    "vertex": "google-vertex",
     # Common typos / dropped hyphens
     "openai-codex-cli": "chatgpt-subscription",
     # Legacy provider name kept as an alias so any session config /

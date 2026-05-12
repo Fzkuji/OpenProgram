@@ -20,7 +20,6 @@ KnownApi = Literal[
     "bedrock-converse-stream",
     "google-generative-ai",
     "gemini-subscription",
-    "google-vertex",
 ]
 Api = str  # KnownApi or arbitrary string
 
@@ -29,8 +28,6 @@ KnownProvider = Literal[
     "anthropic",
     "google",
     "gemini-subscription",
-    "gemini-subscription-corp",
-    "google-vertex",
     "openai",
     "azure-openai-responses",
     "chatgpt-subscription",
