@@ -36,7 +36,7 @@ from openprogram.providers.anthropic import _claude_max_proxy_registry as _cmp_r
 # prettified id ("amazon-bedrock" -> "Amazon Bedrock").
 _PROVIDER_LABELS = {
     "openai": "OpenAI",
-    "chatgpt-subscription": "ChatGPT Codex",
+    "chatgpt-subscription": "OpenAI Codex",
     "anthropic": "Anthropic",
     "google": "Google AI",
     "google-vertex": "Google Vertex AI",
