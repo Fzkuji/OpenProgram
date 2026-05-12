@@ -306,11 +306,6 @@ export function MemoryPage() {
       {/* Header — same pattern as programs page */}
       <div className={styles.topbar}>
         <span className={styles.title}>Memory</span>
-        <div className={styles.headerStats}>
-          {tab === "wiki" && !wikiLoading && <span className={styles.statChip}>{totalPages} pages</span>}
-          {tab === "journal" && !journalLoading && <span className={styles.statChip}>{journalEntries.length} sessions</span>}
-          {tab === "core" && coreMeta && <span className={styles.statChip}>{formatSize(coreMeta.size)}</span>}
-        </div>
       </div>
 
       {/* Tab bar */}
