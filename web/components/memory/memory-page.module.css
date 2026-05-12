@@ -40,17 +40,17 @@
 }
 
 /* ─── Tab bar ─────────────────────────────────────────── */
-/* Tabs sit within the file-tree column width (240px) so they're visually
-   anchored to the list they switch. Sidebar-style chip buttons. */
+/* Tabs occupy row 1 column 1 of .layout grid (240px column).
+   Editor in column 2 spans both rows so it starts right under the topbar. */
 .tabBar {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   gap: 2px;
   padding: 6px 8px;
-  width: 240px;
   border-right: 1px solid var(--border-color);
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
-  flex-shrink: 0;
   box-sizing: border-box;
 }
 
@@ -97,17 +97,32 @@
 .layout {
   display: grid;
   grid-template-columns: 240px 1fr;
+  grid-template-rows: auto 1fr;
   height: 100%;
   min-height: 0;
 }
 
-/* ─── File tree (left) ────────────────────────────────── */
+/* ─── File tree (left col, row 2) ─────────────────────── */
 .tree {
+  grid-column: 1;
+  grid-row: 2;
   border-right: 1px solid var(--border-color);
   background: var(--bg-secondary);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+/* Right column spans both rows so editor starts at top of body, not below tabBar */
+.rightPane {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .treeContent {

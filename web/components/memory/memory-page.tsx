@@ -308,32 +308,34 @@ export function MemoryPage() {
         <span className={styles.title}>Memory</span>
       </div>
 
-      {/* Tab bar */}
-      <div className={styles.tabBar}>
-        <TabButton active={tab === "wiki"} onClick={() => setTab("wiki")} icon={
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
-            <path d="M3 2.5A1.5 1.5 0 0 1 4.5 1h5L12 3.5V14a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 3 14V2.5z"/>
-            <path d="M9.5 1v2.5H12M5 7h5M5 9.5h5M5 12h3"/>
-          </svg>
-        }>Wiki</TabButton>
-        <TabButton active={tab === "journal"} onClick={() => setTab("journal")} icon={
-          <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
-            <path d="M224,128v80a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V48A16,16,0,0,1,48,32h80a8,8,0,0,1,0,16H48V208H208V128a8,8,0,0,1,16,0Zm5.66-58.34-96,96A8,8,0,0,1,128,168H96a8,8,0,0,1-8-8V128a8,8,0,0,1,2.34-5.66l96-96a8,8,0,0,1,11.32,0l32,32A8,8,0,0,1,229.66,69.66Zm-17-5.66L192,43.31,179.31,56,200,76.69Z"/>
-          </svg>
-        }>Journal</TabButton>
-        <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={
-          <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
-            <path d="M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z"/>
-          </svg>
-        }>Core</TabButton>
-      </div>
-
-      {/* Body */}
+      {/* Body — single grid: tabBar (row 1 col 1) + tree (row 2 col 1) +
+          editor/placeholder (col 2 spans both rows so it starts right at
+          the topbar, ignoring the tab bar's height). */}
       <div className={styles.body}>
-        {/* ── Wiki ── */}
-        {tab === "wiki" && (
-          <div className={styles.layout}>
-            <div className={styles.tree}>
+        <div className={styles.layout}>
+          <div className={styles.tabBar}>
+            <TabButton active={tab === "wiki"} onClick={() => setTab("wiki")} icon={
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
+                <path d="M3 2.5A1.5 1.5 0 0 1 4.5 1h5L12 3.5V14a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 3 14V2.5z"/>
+                <path d="M9.5 1v2.5H12M5 7h5M5 9.5h5M5 12h3"/>
+              </svg>
+            }>Wiki</TabButton>
+            <TabButton active={tab === "journal"} onClick={() => setTab("journal")} icon={
+              <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
+                <path d="M224,128v80a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V48A16,16,0,0,1,48,32h80a8,8,0,0,1,0,16H48V208H208V128a8,8,0,0,1,16,0Zm5.66-58.34-96,96A8,8,0,0,1,128,168H96a8,8,0,0,1-8-8V128a8,8,0,0,1,2.34-5.66l96-96a8,8,0,0,1,11.32,0l32,32A8,8,0,0,1,229.66,69.66Zm-17-5.66L192,43.31,179.31,56,200,76.69Z"/>
+              </svg>
+            }>Journal</TabButton>
+            <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={
+              <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
+                <path d="M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z"/>
+              </svg>
+            }>Core</TabButton>
+          </div>
+
+          {/* ── Wiki ── */}
+          {tab === "wiki" && (
+            <>
+              <div className={styles.tree}>
               {/* Search + refresh */}
               <div className={styles.treeToolbar}>
                 <div className={styles.searchWrap}>
@@ -405,28 +407,30 @@ export function MemoryPage() {
                 </div>
               )}
             </div>
-            {selectedWiki ? (
-              <EditorPanel
-                title={selectedWiki.title || selectedWiki.path}
-                badge={selectedWiki.type ? <TypeBadge type={selectedWiki.type} /> : null}
-                meta={[selectedWiki.path, formatSize(selectedWiki.size), `Modified ${formatDate(selectedWiki.mtime)}`]}
-                state={wikiEditor}
-                onChange={(c) => setWikiEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
-                onSave={saveWikiPage}
-                onDelete={deleteWikiPage}
-                onViewMode={(m) => setWikiEditor((e) => ({ ...e, viewMode: m }))}
-                onPreviewClick={handlePreviewClick}
-              />
-            ) : (
-              <Placeholder icon="doc" text="Select a page to view or edit" />
-            )}
-          </div>
-        )}
+              <div className={styles.rightPane}>
+                {selectedWiki ? (
+                  <EditorPanel
+                    title={selectedWiki.title || selectedWiki.path}
+                    badge={selectedWiki.type ? <TypeBadge type={selectedWiki.type} /> : null}
+                    meta={[selectedWiki.path, formatSize(selectedWiki.size), `Modified ${formatDate(selectedWiki.mtime)}`]}
+                    state={wikiEditor}
+                    onChange={(c) => setWikiEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
+                    onSave={saveWikiPage}
+                    onDelete={deleteWikiPage}
+                    onViewMode={(m) => setWikiEditor((e) => ({ ...e, viewMode: m }))}
+                    onPreviewClick={handlePreviewClick}
+                  />
+                ) : (
+                  <Placeholder icon="doc" text="Select a page to view or edit" />
+                )}
+              </div>
+            </>
+          )}
 
-        {/* ── Journal ── */}
-        {tab === "journal" && (
-          <div className={styles.layout}>
-            <div className={styles.tree}>
+          {/* ── Journal ── */}
+          {tab === "journal" && (
+            <>
+              <div className={styles.tree}>
               {journalLoading ? <LoadingSkeleton /> : journalEntries.length === 0 ? (
                 <EmptyState icon="clock" text="No journal memory" sub="Context snapshots appear here after sessions" />
               ) : (
@@ -448,31 +452,33 @@ export function MemoryPage() {
                 </div>
               )}
             </div>
-            {selectedDate ? (
-              <div className={styles.editor}>
-                <div className={styles.editorHeader}>
-                  <div className={styles.editorHeaderLeft}>
-                    <ClockIcon className={styles.fileIcon} />
-                    <span className={styles.editorTitle}>{selectedDate}</span>
+              <div className={styles.rightPane}>
+                {selectedDate ? (
+                  <div className={styles.editor}>
+                    <div className={styles.editorHeader}>
+                      <div className={styles.editorHeaderLeft}>
+                        <ClockIcon className={styles.fileIcon} />
+                        <span className={styles.editorTitle}>{selectedDate}</span>
+                      </div>
+                      <div className={styles.editorActions}>
+                        <span className={styles.fileMeta}>{journalContent.length} chars</span>
+                      </div>
+                    </div>
+                    <div className={styles.preview}>
+                      <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: journalContent ? renderMarkdown(journalContent) : "<em>Loading…</em>" }} />
+                    </div>
                   </div>
-                  <div className={styles.editorActions}>
-                    <span className={styles.fileMeta}>{journalContent.length} chars</span>
-                  </div>
-                </div>
-                <div className={styles.preview}>
-                  <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: journalContent ? renderMarkdown(journalContent) : "<em>Loading…</em>" }} />
-                </div>
+                ) : (
+                  <Placeholder icon="clock" text="Select a session to view its memory" />
+                )}
               </div>
-            ) : (
-              <Placeholder icon="clock" text="Select a session to view its memory" />
-            )}
-          </div>
-        )}
+            </>
+          )}
 
-        {/* ── Core ── */}
-        {tab === "core" && (
-          <div className={styles.layout}>
-            <div className={styles.tree}>
+          {/* ── Core ── */}
+          {tab === "core" && (
+            <>
+              <div className={styles.tree}>
               <div className={styles.coreSidebar}>
                 <div className={styles.coreInfoIcon}>
                   <svg viewBox="0 0 256 256" fill="currentColor">
@@ -493,20 +499,23 @@ export function MemoryPage() {
                 )}
               </div>
             </div>
-            {coreLoading ? (
-              <LoadingSkeleton />
-            ) : (
-              <EditorPanel
-                title="core.md"
-                meta={[]}
-                state={coreEditor}
-                onChange={(c) => setCoreEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
-                onSave={saveCore}
-                onViewMode={(m) => setCoreEditor((e) => ({ ...e, viewMode: m }))}
-              />
-            )}
-          </div>
-        )}
+              <div className={styles.rightPane}>
+                {coreLoading ? (
+                  <LoadingSkeleton />
+                ) : (
+                  <EditorPanel
+                    title="core.md"
+                    meta={[]}
+                    state={coreEditor}
+                    onChange={(c) => setCoreEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
+                    onSave={saveCore}
+                    onViewMode={(m) => setCoreEditor((e) => ({ ...e, viewMode: m }))}
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
     </div>

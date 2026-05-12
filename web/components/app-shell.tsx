@@ -186,7 +186,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const detailTitle = document.getElementById("detailTitle");
       if (detailTitle) detailTitle.textContent = "";
     }
-  }, [pathname]);
+    // Depend on userMenuMount so this re-runs once the sidebar HTML lands.
+    // Otherwise on hard refresh, the first run finds no #navMemory etc.
+    // (sidebar is injected asynchronously) and the .active class is never set.
+  }, [pathname, userMenuMount]);
 
   useEffect(() => {
     // Expose a client-side navigation helper vanilla JS can call instead of
