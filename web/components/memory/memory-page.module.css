@@ -167,7 +167,7 @@
 
 .emptyState p {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
 }
@@ -414,7 +414,7 @@
 
 .saveBtn {
   padding: 4px 14px;
-  font-size: 12px;
+  font-size: 14px;
   border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--bg-tertiary);
@@ -451,7 +451,7 @@
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: "JetBrains Mono", "Fira Code", "Menlo", monospace;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
   padding: 20px 24px;
   min-height: 0;
@@ -467,7 +467,7 @@
 .previewContent {
   padding: 20px 24px;
   font-family: "JetBrains Mono", "Fira Code", "Menlo", monospace;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
   color: var(--text-primary);
   white-space: pre-wrap;
@@ -485,7 +485,7 @@
   overflow-y: auto;
   padding: 20px 24px;
   font-family: "JetBrains Mono", "Fira Code", "Menlo", monospace;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
   color: var(--text-primary);
   white-space: pre-wrap;
@@ -508,7 +508,7 @@
 
 .placeholder p {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-primary);
 }
 
@@ -547,7 +547,7 @@
 }
 
 .coreInfoTitle {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-bright);
 }
@@ -715,7 +715,7 @@
 .markdown {
   padding: 20px 28px;
   color: var(--text-primary);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.65;
 }
 
@@ -728,7 +728,7 @@
 .markdown h1 { font-size: 20px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .markdown h2 { font-size: 17px; }
 .markdown h3 { font-size: 15px; }
-.markdown h4 { font-size: 13.5px; }
+.markdown h4 { font-size: 14px; }
 .markdown h1:first-child, .markdown h2:first-child, .markdown h3:first-child { margin-top: 0; }
 
 .markdown p { margin: 8px 0; }

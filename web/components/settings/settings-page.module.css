@@ -128,7 +128,7 @@
   color: var(--text-primary);
 }
 .value {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
@@ -143,7 +143,7 @@
 }
 .themeBtn {
   padding: 4px 14px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
   background: transparent;
   border: none;
@@ -167,7 +167,7 @@
   padding: 0 10px;
   height: 28px;
   line-height: 26px;
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--text-primary);
   font-family: var(--font-mono);
   width: 280px;
@@ -189,7 +189,7 @@
   padding: 0 12px;
   height: 28px;
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 75ms;
@@ -266,7 +266,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 14px;
   outline: none;
 }
 .providersSearch input:focus {
@@ -331,7 +331,7 @@
   justify-content: center;
   background: var(--bg-tertiary);
   color: var(--text-bright);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
 }
 .providerLabel {
@@ -341,7 +341,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 14px;
 }
 .providerDot {
   width: 8px;
@@ -402,7 +402,7 @@
   color: var(--text-bright);
 }
 .detailSubtitle {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-muted);
 }
 .detailSection {
@@ -506,7 +506,7 @@
   flex-direction: column;
 }
 .modelItemName {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-bright);
   white-space: nowrap;
   overflow: hidden;
@@ -564,7 +564,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 14px;
   outline: none;
 }
 .miniAction {
