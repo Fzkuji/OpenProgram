@@ -329,8 +329,13 @@ window.renderBranchesPanel = function () {
   var _prevList = host.querySelector('.branches-list');
   if (_prevList) _prevScrollTop = _prevList.scrollTop;
 
-  var _bcRaw = sessionStorage.getItem('agentic_branches_collapsed');
-  var collapsed = _bcRaw === null ? true : _bcRaw === '1';
+  // Always start collapsed when the page loads / conversation changes.
+  // Persist expand state only in-memory for this single render cycle —
+  // the user explicitly wants "collapsed by default, expand on click".
+  if (typeof window._branchesPanelCollapsed === 'undefined') {
+    window._branchesPanelCollapsed = true;
+  }
+  var collapsed = window._branchesPanelCollapsed !== false;
 
   // Use lane colors from the history graph if available; fallback to index order.
   var _branchLaneColors = [
@@ -357,15 +362,10 @@ window.renderBranchesPanel = function () {
     '<div class="branches-list"></div>';
 
   host.querySelector('.sidebar-section-header').addEventListener('click', function () {
-    var _raw = sessionStorage.getItem('agentic_branches_collapsed');
-    var c = _raw === null ? true : _raw === '1';
-    sessionStorage.setItem('agentic_branches_collapsed', c ? '0' : '1');
-    // Going from collapsed → expanded: tell the next render to
-    // position HEAD into the visible window. This is the ONE case
-    // where we want the panel to move on its own — the user just
-    // asked to "see more", so showing HEAD's neighbours is the
-    // sensible default. Plain checkouts still don't move.
-    if (c) window._branchesNextScrollToHead = true;
+    var wasCollapsed = window._branchesPanelCollapsed !== false;
+    window._branchesPanelCollapsed = !wasCollapsed;
+    // Going from collapsed → expanded: position HEAD into view.
+    if (wasCollapsed) window._branchesNextScrollToHead = true;
     window.renderBranchesPanel();
   });
 
@@ -880,6 +880,8 @@ function loadSessionData(data) {
   // didn't always carry) survive when the load response lands.
   conversations[data.id] = Object.assign({}, conversations[data.id] || {}, data);
   renderSessions();
+  // Reset branches panel to collapsed on every new conversation load.
+  window._branchesPanelCollapsed = true;
   if (data.id === currentSessionId) {
     if (typeof window.refreshStatusSource === 'function') window.refreshStatusSource();
     if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
