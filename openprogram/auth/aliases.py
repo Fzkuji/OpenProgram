@@ -34,16 +34,12 @@ _ALIASES: dict[str, str] = {
     # session record, env override, or external script that still
     # references it keeps resolving to the same runtime / credentials.
     "chatgpt-subscription": "openai-codex",
-    # ClaudeCodeRuntime tags its model strings with the ``claude-max:``
-    # prefix (named after the claude-max-api-proxy daemon it talks to),
-    # but every actual claude model in the registry is registered under
-    # ``anthropic/``. Map the runtime prefix to anthropic so model
-    # lookups resolve.
-    "claude-max": "anthropic",
-    # Legacy provider name kept as an alias so any session config /
-    # external script still referencing "claude-code" continues to
-    # resolve auth (it now routes through the same anthropic creds).
-    "claude-code": "anthropic",
+    # Legacy runtime-prefix back-compat. Older sessions still carry
+    # ``claude-max:claude-opus-4`` model strings (from when the runtime
+    # tagged things after the underlying claude-max-api-proxy daemon).
+    # Map to the canonical ``claude-code`` provider id so model lookups
+    # resolve to the same registry entries.
+    "claude-max": "claude-code",
     "gemini-cli": "gemini-subscription",
     "github-copilot-cli": "github-copilot",
     # Keep identity mappings so round-tripping through resolve is safe.

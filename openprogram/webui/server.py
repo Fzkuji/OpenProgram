@@ -521,7 +521,7 @@ def _list_providers() -> list[dict]:
         ("anthropic", "Anthropic API", lambda: bool(_get_api_key("ANTHROPIC_API_KEY")), ["ANTHROPIC_API_KEY"]),
         ("openai", "OpenAI API", lambda: bool(_get_api_key("OPENAI_API_KEY")), ["OPENAI_API_KEY"]),
         ("gemini", "Gemini API", lambda: bool(_get_api_key("GOOGLE_API_KEY") or _get_api_key("GOOGLE_GENERATIVE_AI_API_KEY")), ["GOOGLE_API_KEY"]),
-        ("claude-code", "Claude (Max plan)", _proxy_alive, ["CLAUDE_MAX_PROXY_URL"]),
+        ("claude-code", "Claude Code", _proxy_alive, ["CLAUDE_MAX_PROXY_URL"]),
     ]
     for name, label, check, env_keys in checks:
         available = check()

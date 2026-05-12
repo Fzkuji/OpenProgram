@@ -56,7 +56,7 @@ _PROVIDER_LABELS = {
     # Claude via local HTTP proxy daemon (replaces the old Claude Code CLI
     # provider). Tools come from OpenProgram's own registry instead of the
     # CLI's built-ins.
-    "claude-code": "Claude (Max plan)",
+    "claude-code": "Claude Code",
     # CLI-backed:
     "gemini-cli": "Gemini CLI",
 }
@@ -169,7 +169,7 @@ def _is_configured(provider_id: str) -> bool:
 #   * Lines beginning with ``$ `` render as a command row (copy-able).
 _SETUP_HINTS: dict[str, str] = {
     "claude-code": (
-        "Claude (Max plan) auth lives in the Claude Code keychain — there's no API\n"
+        "Claude Code auth lives in the Claude Code keychain — there's no API\n"
         "key to paste here. Install the local proxy daemon once and keep it running:\n"
         "\n"
         "$ npm install -g @anthropic-ai/claude-code\n"
@@ -657,7 +657,7 @@ def _fetch_github_copilot(provider_id: str, timeout: float) -> Any:
 
 
 def _fetch_claude_code(provider_id: str, timeout: float) -> Any:
-    """Claude (Max plan) proxy daemon — OpenAI-compatible /v1/models.
+    """Claude Code proxy daemon — OpenAI-compatible /v1/models.
 
     The proxy speaks OpenAI Completions protocol and exposes the
     Claude models available through the user's Claude Code session.

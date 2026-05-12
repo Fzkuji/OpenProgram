@@ -89,7 +89,7 @@ class ClaudeCodeRuntime(Runtime):
         if not url.endswith("/v1"):
             url = url + "/v1"
         os.environ.setdefault("CLAUDE_MAX_PROXY_RESOLVED_URL", url)
-        super().__init__(model=f"claude-max:{model}", max_retries=max_retries)
+        super().__init__(model=f"claude-code:{model}", max_retries=max_retries)
 
 
 __all__ = ["ClaudeCodeRuntime"]

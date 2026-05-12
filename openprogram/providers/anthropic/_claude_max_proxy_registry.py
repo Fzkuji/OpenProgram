@@ -83,7 +83,7 @@ def _augment_registry_with_max_proxy_models() -> None:
     base_url = _proxy_base_url()
     for m in _PROXY_MODELS:
         mid = m["id"]
-        key = f"claude-max/{mid}"
+        key = f"claude-code/{mid}"
         if key in MODELS:
             continue
         family = m["family"]
