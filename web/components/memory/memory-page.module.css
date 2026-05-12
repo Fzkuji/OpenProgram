@@ -3,162 +3,353 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--bg-primary);
 }
 
-.topbar {
+/* ─── Header ─────────────────────────────────────────── */
+.header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 24px 12px;
-  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.headerIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
-.title {
-  font-size: 18px;
+.headerIcon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.headerTitle {
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-bright);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.headerSub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 2px 0 0;
+}
+
+.headerStats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
 }
 
-.tabs {
+.statChip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+/* ─── Tab bar ─────────────────────────────────────────── */
+.tabBar {
   display: flex;
-  gap: 4px;
+  gap: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
-.tab {
-  padding: 4px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
+.tabBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
+  border: none;
+  border-bottom: 2px solid transparent;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
 }
 
-.tab:hover {
-  background: var(--bg-hover);
+.tabBtn:hover {
   color: var(--text-primary);
 }
 
-.tabActive {
-  background: var(--bg-tertiary);
+.tabBtnActive {
   color: var(--text-bright);
-  border-color: var(--border);
+  border-bottom-color: var(--accent-blue);
 }
 
+/* ─── Main layout ─────────────────────────────────────── */
 .body {
   flex: 1;
   min-height: 0;
-  padding: 16px 24px;
   overflow: hidden;
 }
 
-.wikiLayout {
+.layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 16px;
+  grid-template-columns: 240px 1fr;
   height: 100%;
   min-height: 0;
 }
 
-.list {
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+/* ─── File tree (left) ────────────────────────────────── */
+.tree {
+  border-right: 1px solid var(--border-color);
   background: var(--bg-secondary);
-  padding: 4px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
-.empty {
-  padding: 12px;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-style: italic;
+.treeContent {
+  padding: 6px 0;
 }
 
-.listItem {
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.1s;
+.treeLoading {
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.listItem:hover {
-  background: var(--bg-hover);
-}
-
-.listItemActive {
+.skeleton {
+  height: 14px;
+  border-radius: 4px;
   background: var(--bg-tertiary);
+  width: 100%;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
-.listItemMain {
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.emptyState p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.emptyState span {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* Folder row */
+.folderRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.1s;
+}
+
+.folderRow:hover {
+  color: var(--text-secondary);
+}
+
+.chevron {
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+
+.chevronOpen {
+  transform: rotate(0deg);
+}
+
+.chevron:not(.chevronOpen) {
+  transform: rotate(-90deg);
+}
+
+.folderName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderCount {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.folderChildren {
+  padding-left: 14px;
+}
+
+/* File row */
+.fileRow {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+  border-radius: 0;
 }
 
-.listItemTitle {
-  font-size: 13px;
+.fileRow:hover {
+  background: var(--bg-hover);
   color: var(--text-bright);
-  font-weight: 500;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.badge {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+.fileRowActive {
+  background: rgba(99, 155, 255, 0.12) !important;
+  color: var(--text-bright) !important;
+}
+
+.fileIcon {
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
-}
-
-.listItemMeta {
-  display: flex;
-  gap: 8px;
-  margin-top: 2px;
-  font-size: 11px;
   color: var(--text-muted);
-  overflow: hidden;
 }
 
-.listItemMeta span:first-child {
+.fileRowActive .fileIcon {
+  color: var(--accent-blue);
+}
+
+.fileName {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 12px;
 }
 
-.panel {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  min-height: 0;
-  overflow: hidden;
+.fileMeta {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-.panelHeader {
+/* Type badge */
+.typeBadge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid;
+  flex-shrink: 0;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Session row */
+.sessionRow {
   display: flex;
   align-items: center;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  gap: 10px;
-  flex-shrink: 0;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
 }
 
-.panelTitle {
+.sessionRow:hover {
+  background: var(--bg-hover);
+}
+
+.sessionInfo {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+/* ─── Editor panel (right) ────────────────────────────── */
+.editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.editorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.editorHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.editorTitle {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-bright);
@@ -167,28 +358,55 @@
   white-space: nowrap;
 }
 
-.panelActions {
+.editorActions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
 
+.modeSwitcher {
+  display: flex;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.modeBtn {
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.modeBtn:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+
+.modeBtnActive {
+  background: var(--bg-tertiary);
+  color: var(--text-bright);
+}
+
 .saveOk {
-  font-size: 12px;
-  color: var(--accent-green, #4caf50);
+  font-size: 11px;
+  color: #4caf50;
 }
 
 .saveErr {
-  font-size: 12px;
-  color: var(--accent-red, #f44336);
+  font-size: 11px;
+  color: #f44336;
 }
 
 .saveBtn {
+  padding: 4px 14px;
   font-size: 12px;
-  padding: 3px 12px;
   border-radius: 5px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   background: var(--bg-tertiary);
   color: var(--text-bright);
   cursor: pointer;
@@ -204,54 +422,161 @@
   cursor: default;
 }
 
-.closeBtn {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
+.editorMeta {
+  display: flex;
+  gap: 12px;
+  padding: 5px 18px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
 }
 
-.closeBtn:hover {
-  background: var(--bg-hover);
-  color: var(--text-bright);
-}
-
-.editor {
+.textarea {
   flex: 1;
   resize: none;
   border: none;
   outline: none;
-  background: transparent;
+  background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: "JetBrains Mono", "Fira Code", "Menlo", monospace;
   font-size: 13px;
-  line-height: 1.6;
-  padding: 14px;
+  line-height: 1.7;
+  padding: 20px 24px;
+  min-height: 0;
+  tab-size: 2;
+}
+
+.preview {
+  flex: 1;
+  overflow-y: auto;
   min-height: 0;
 }
 
-.viewer {
-  flex: 1;
-  overflow-y: auto;
-  padding: 14px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+.previewContent {
+  padding: 20px 24px;
+  font-family: "JetBrains Mono", "Fira Code", "Menlo", monospace;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
 }
 
+.previewEmpty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.viewer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  font-family: "JetBrains Mono", "Fira Code", "Menlo", monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  min-height: 0;
+}
+
+/* ─── Placeholder ─────────────────────────────────────── */
 .placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+}
+
+.placeholder p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* System section in wiki tree */
+.sysSection {
+  margin-top: 8px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 4px;
+}
+
+/* Core tab */
+.coreLayout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.coreInfo {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.coreInfoIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   color: var(--text-muted);
+}
+
+.coreInfoIcon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.coreInfoTitle {
   font-size: 13px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-bottom: 4px;
+}
+
+.coreInfoDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 560px;
+}
+
+.coreInfoMeta {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.metaOk {
+  color: #4caf50;
+}
+
+.metaWarn {
+  color: #f59e0b;
+}
+
+.coreEditorWrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }

@@ -4933,6 +4933,41 @@ def create_app():
             return JSONResponse(content={"error": "not found"}, status_code=404)
         return JSONResponse(content={"date": date, "content": p.read_text(encoding="utf-8")})
 
+    @app.get("/api/memory/core")
+    async def get_core():
+        from openprogram.memory import store
+        p = store.core()
+        content = p.read_text(encoding="utf-8") if p.exists() else ""
+        size = p.stat().st_size if p.exists() else 0
+        mtime = int(p.stat().st_mtime) if p.exists() else 0
+        return JSONResponse(content={"content": content, "size": size, "mtime": mtime})
+
+    @app.put("/api/memory/core")
+    async def put_core(body: dict):
+        from openprogram.memory import store
+        p = store.core()
+        p.write_text(body.get("content", ""), encoding="utf-8")
+        return JSONResponse(content={"ok": True})
+
+    @app.get("/api/memory/wiki-system")
+    async def get_wiki_system():
+        """Return governance/system wiki pages (index, log, overview, reflections)."""
+        from openprogram.memory import store
+        from openprogram.memory.wiki import helpers as h
+        names = ["index.md", "log.md", "overview.md", "reflections.md"]
+        result = []
+        for name in names:
+            p = store.wiki_dir() / name
+            if p.exists():
+                stat = p.stat()
+                result.append({
+                    "path": name,
+                    "title": name.replace(".md", "").capitalize(),
+                    "size": stat.st_size,
+                    "mtime": int(stat.st_mtime),
+                })
+        return JSONResponse(content=result)
+
     @app.post("/api/register")
     async def register_external(body: dict = None):
         """Register an external module's functions (for GUI/Research Agent Harness integration)."""
