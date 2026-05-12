@@ -22,6 +22,7 @@ from openprogram.agentic_programming import (
     Context,
     agentic_function, traced, auto_trace_module, auto_trace_package,
     Runtime,
+    decide_loop, get_option_set, register_option,
 )
 from openprogram.providers.registry import detect_provider, create_runtime, check_providers
 from openprogram.programs.functions.meta import (
@@ -60,4 +61,7 @@ __all__ = [
     "wait",
     "deep_work",
     "init_research",
+    "decide_loop",
+    "get_option_set",
+    "register_option",
 ]

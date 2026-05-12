@@ -79,6 +79,77 @@ def _run_pre_invocation_hooks() -> None:
 _registry: dict[str, "agentic_function"] = {}
 
 
+def get_option_set(name: str) -> dict[str, object]:
+    """Return all callables tagged with option_set=name.
+
+    Merges two sources:
+      1. @agentic_function-decorated functions tagged via
+         ``@agentic_function(option_set=...)``.
+      2. Plain Python functions registered via ``register_option(...)``.
+
+    Used by decide_loop to assemble the menu of choices the LLM picks
+    from. Returns ``{function_name: callable_or_agentic_function}``.
+    """
+    out: dict[str, object] = {
+        fn_name: af for fn_name, af in _registry.items()
+        if getattr(af, "option_set", None) == name
+    }
+    out.update(_plain_options.get(name, {}))
+    return out
+
+
+# Plain (non-agentic) option registry: option_set → {fn_name: callable}.
+# Used so a regular Python function can be a choice in decide_loop
+# without being wrapped in @agentic_function.
+_plain_options: dict[str, dict[str, Callable]] = {}
+
+# Per-callable metadata for plain options: callable → {"when": str, "input_meta": dict}
+_plain_option_meta: dict[Callable, dict] = {}
+
+
+def register_option(
+    option_set: str,
+    *,
+    when: Optional[str] = None,
+    name: Optional[str] = None,
+    input: Optional[dict] = None,
+) -> Callable:
+    """Register a plain Python function as a choice in an option_set.
+
+    Use this when the action is just a regular function and doesn't
+    need ``@agentic_function``'s context-tree recording / LLM-call
+    plumbing. The function still appears in ``decide_loop``'s menu
+    alongside agentic ones.
+
+    Usage as decorator::
+
+        @register_option("paper_pipeline", when="Call to save a JSON record to disk.")
+        def save_json(path: str, data: dict) -> None:
+            with open(path, "w") as f:
+                json.dump(data, f)
+
+    Or to register an existing function::
+
+        register_option("paper_pipeline", when="...")(existing_fn)
+
+    Args:
+        option_set:  Name of the option set this function joins.
+        when:        Short note telling the LLM when to pick this function.
+        name:        Override the function name shown in the menu
+                     (defaults to ``fn.__name__``).
+        input:       Optional UI/parameter metadata, same shape as
+                     ``@agentic_function(input=...)``. Used to hide
+                     parameters from the menu (e.g. ``{"path": {"hidden": True}}``).
+    """
+    def _decorate(fn: Callable) -> Callable:
+        key = name or fn.__name__
+        _plain_options.setdefault(option_set, {})[key] = fn
+        _plain_option_meta[fn] = {"when": when, "input_meta": input or {}}
+        return fn
+
+    return _decorate
+
+
 def _inject_runtime(sig, args, kwargs):
     """Auto-inject runtime into function call if needed.
 
@@ -207,6 +278,8 @@ class agentic_function:
         input: Optional[dict] = None,
         no_tools: bool = False,
         system: Optional[str] = None,
+        option_set: Optional[str] = None,
+        when: Optional[str] = None,
     ):
         if expose not in ("io", "full", "hidden"):
             raise ValueError(f"expose must be 'io', 'full', or 'hidden', got {expose!r}")
@@ -215,6 +288,8 @@ class agentic_function:
         self.input_meta = input or {}
         self.no_tools = no_tools
         self.system = system
+        self.option_set = option_set
+        self.when = when
 
         self.context = None  # Last executed Context tree (set after top-level call)
 

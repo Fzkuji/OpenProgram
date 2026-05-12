@@ -12,7 +12,8 @@
   overflow-y: auto;
 }
 
-/* Match programs/memory topbar pattern. */
+/* Match programs/memory topbar pattern. Sticky so the page title stays
+   visible while the long providers/models content scrolls below. */
 .topbar {
   display: flex;
   align-items: center;
@@ -21,7 +22,11 @@
   height: 64px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .title {
@@ -37,7 +42,8 @@
      Match that here so the 2nd-level nav is the same width as the
      1st-level sidebar visually. */
   grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
-  margin: 32px 0;
+  /* No outer margin — nav sits flush against topbar bottom, matching the
+     programs/memory pattern. Inner breathing room lives on .content. */
   max-width: 1600px;
 }
 .body.providersWide {
@@ -57,7 +63,8 @@
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   position: sticky;
-  top: 0;
+  /* Sticky just below the sticky topbar (64px) */
+  top: 64px;
 }
 .navItem {
   padding: 6px 8px;
@@ -238,8 +245,8 @@
      give it its own scrollbar — same shape as claude.ai's left
      settings nav. */
   position: sticky;
-  top: 16px;
-  max-height: calc(100vh - 32px);
+  top: 64px;
+  max-height: calc(100vh - 64px);
   overflow-y: auto;
   /* No overscroll-behavior — default chaining. The wheel scrolls
      this sidebar internally until it hits top/bottom, then naturally
