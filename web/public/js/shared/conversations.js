@@ -320,6 +320,14 @@ window.renderBranchesPanel = function () {
     // First paint without data; kick off the fetch which will re-render.
     _refreshBranchTokens();
   }
+  // Preserve the user's scroll position across re-renders. innerHTML
+  // rewrite below tears down the .branches-list element, so the
+  // browser resets scrollTop to 0 — exactly the "panel jumps" the
+  // user is complaining about. Capture the value before the rewrite
+  // and restore it after.
+  var _prevScrollTop = 0;
+  var _prevList = host.querySelector('.branches-list');
+  if (_prevList) _prevScrollTop = _prevList.scrollTop;
 
   var _bcRaw = sessionStorage.getItem('agentic_branches_collapsed');
   var collapsed = _bcRaw === null ? true : _bcRaw === '1';
@@ -394,24 +402,11 @@ window.renderBranchesPanel = function () {
     list.appendChild(item);
   });
 
-  // After paint, scroll the active row into the list's own viewport
-  // if it's outside. Native scrollIntoView({block:'nearest'}) uses
-  // the page viewport, not the list's scroll box — so it does
-  // nothing when the active row is offscreen-within-list but
-  // onscreen-on-page. Compute scrollTop manually for minimum movement.
-  var activeEl = list.querySelector('.branch-item.active');
-  if (activeEl) {
-    var aTop = activeEl.offsetTop;
-    var aH   = activeEl.offsetHeight;
-    var sT   = list.scrollTop;
-    var cH   = list.clientHeight;
-    if (aTop < sT) {
-      list.scrollTop = aTop;                  // above viewport → align top
-    } else if (aTop + aH > sT + cH) {
-      list.scrollTop = aTop + aH - cH;         // below viewport → align bottom
-    }
-    // already visible → leave scroll alone, no "jump"
-  }
+  // Restore the user's scroll position. Do NOT compute / adjust based
+  // on the active branch — the user explicitly asked for zero
+  // self-motion on checkout. Any auto-scroll into view, even
+  // block:'nearest', registers as a jump.
+  list.scrollTop = _prevScrollTop;
 };
 window._onBranchesListMessage = _onBranchesListMessage;
 
