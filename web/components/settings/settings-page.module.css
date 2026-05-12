@@ -30,7 +30,6 @@
 .body {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  gap: 0 32px;
   margin: 32px 0;
   max-width: 1600px;
 }
