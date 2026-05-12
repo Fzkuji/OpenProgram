@@ -362,28 +362,28 @@
   flex-shrink: 0;
 }
 
-/* GitHub-style segmented control: outer border container, inner active
-   button gets bg-tertiary "lift", inactive buttons split by separator. */
+/* Segmented control: transparent container with border. Active button
+   gets a clearly-lighter bg-tertiary fill against the page bg-primary. */
 .modeSwitcher {
   display: inline-flex;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 2px;
-  background: var(--bg-secondary);
-  gap: 1px;
+  overflow: hidden;
 }
 
 .modeBtn {
-  position: relative;
-  padding: 3px 12px;
+  padding: 4px 12px;
   font-size: 11px;
   font-weight: 500;
   color: var(--text-primary);
   background: transparent;
   border: none;
-  border-radius: 4px;
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
+}
+
+.modeBtn + .modeBtn {
+  border-left: 1px solid var(--border);
 }
 
 .modeBtn:hover:not(.modeBtnActive) {
@@ -391,12 +391,9 @@
   background: var(--bg-hover);
 }
 
-/* Active: solid lifted background that clearly stands out from the
-   bg-secondary container behind it. */
 .modeBtnActive {
-  background: var(--bg-primary);
+  background: var(--bg-tertiary);
   color: var(--text-bright);
-  box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(0,0,0,0.15);
 }
 
 .saveOk {
