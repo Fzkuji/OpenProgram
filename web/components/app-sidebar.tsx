@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
 import {
-  PencilSquareIcon,
+  PencilIcon,
   Squares2X2Icon,
   QueueListIcon,
   Cog6ToothIcon,
@@ -111,7 +111,7 @@ export function AppSidebar() {
         <NavItem
           active={chatActive}
           onClick={newChat}
-          icon={<PencilSquareIcon className="h-[18px] w-[18px]" />}
+          icon={<PencilIcon className="h-[18px] w-[18px]" />}
           label="New chat"
         />
         <NavItem
