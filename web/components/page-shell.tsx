@@ -90,6 +90,19 @@ function extractMainArea(bodyHtml: string): { main: string; inlineScripts: strin
   return { main: body.trim(), inlineScripts };
 }
 
+/* The legacy `.input-area` block contains nested divs that regex can't
+   reliably balance. Strip it post-injection in the DOM instead, then
+   leave a `#composer-mount` placeholder so the React <Composer />
+   portal lands in the right spot inside #chatView. */
+function stripLegacyInputArea(host: HTMLElement) {
+  const inputArea = host.querySelector(".input-area");
+  if (!inputArea) return;
+  const mount = document.createElement("div");
+  mount.id = "composer-mount";
+  mount.setAttribute("data-composer-mount", "1");
+  inputArea.replaceWith(mount);
+}
+
 export function PageShell({ page }: { page: Page }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -116,6 +129,7 @@ export function PageShell({ page }: { page: Page }) {
 
         if (!hostRef.current || cancelled) return;
         hostRef.current.innerHTML = main;
+        if (page === "chat") stripLegacyInputArea(hostRef.current);
 
         // Wait for AppShell's shared JS to finish loading before running
         // page-specific scripts (which depend on globals like renderSessions,

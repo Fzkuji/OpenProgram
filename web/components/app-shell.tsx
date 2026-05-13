@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { UserMenuFooter } from "./user-menu-footer";
+import { Composer } from "./chat/composer";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -127,6 +128,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       clearInterval(t);
     };
   }, [userMenuMount]);
+
+  // Mount target for the React <Composer />. PageShell injects a
+  // `<div id="composer-mount">` placeholder where the legacy
+  // `.input-area` used to live; the composer portal renders into it.
+  // Re-checked on pathname changes because the chat page re-injects
+  // its HTML on route entry.
+  const [composerMount, setComposerMount] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setComposerMount(null);
+    function findMount() {
+      const el = document.getElementById("composer-mount");
+      if (el && !cancelled) {
+        setComposerMount(el);
+        return true;
+      }
+      return false;
+    }
+    if (findMount()) return;
+    const t = setInterval(() => {
+      if (findMount()) clearInterval(t);
+    }, 100);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [pathname]);
 
   // Sync `.active` on sidebar nav items to the current route and close any
   // open popover when navigating. The programs page inline script also sets
@@ -298,6 +326,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ display: showChat ? "contents" : "none" }}
       />
       {userMenuMount && createPortal(<UserMenuFooter />, userMenuMount)}
+      {composerMount && createPortal(<Composer />, composerMount)}
     </div>
   );
 }
