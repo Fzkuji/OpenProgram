@@ -125,12 +125,17 @@ function autoResize(el) {
 }
 
 function setWelcomeVisible(show) {
-  var w = document.getElementById('welcomeScreen');
-  var ex = document.getElementById('welcomeExamples');
+  // Welcome panel is rendered by the React <WelcomeScreen /> component
+  // (web/components/chat/welcome-screen.tsx). Legacy callers go
+  // through this helper to flip visibility; forward to the store.
+  // Layout-side tweaks (#chatArea welcome-visible class, #chatMessages
+  // padding) stay until the chat-area itself is migrated.
+  var store = window.__sessionStore;
+  if (store && typeof store.getState === 'function') {
+    store.getState().setWelcomeVisible(!!show);
+  }
   var cm = document.getElementById('chatMessages');
   var ca = document.getElementById('chatArea');
-  if (w) w.style.display = show ? '' : 'none';
-  if (ex) ex.style.display = show ? '' : 'none';
   if (cm) cm.style.paddingBottom = show ? '0' : '';
   if (ca) ca.classList.toggle('welcome-visible', !!show);
 }

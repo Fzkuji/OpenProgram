@@ -103,6 +103,22 @@ interface ConvState {
   setRunningTask: (t: RunningTask | null) => void;
   setPaused: (p: boolean) => void;
   setProviderInfo: (p: ConvState["providerInfo"]) => void;
+
+  /** Welcome screen visibility — true when chat-area should show the
+   *  logo / title / example buttons. Owned by React; legacy
+   *  setWelcomeVisible() in helpers.js writes through here. */
+  welcomeVisible: boolean;
+  setWelcomeVisible: (v: boolean) => void;
+
+  /** Controlled value of the Composer's textarea. Lifted into the
+   *  store so outside callers (welcome example buttons, retry
+   *  helpers, etc.) can fill the input. */
+  composerInput: string;
+  setComposerInput: (s: string) => void;
+  /** Bump to ask the Composer to call .focus() on its textarea. The
+   *  Composer reacts to changes in this counter via useEffect. */
+  composerFocusTick: number;
+  focusComposer: () => void;
 }
 
 export const useSessionStore = create<ConvState>((set) => ({
@@ -225,6 +241,15 @@ export const useSessionStore = create<ConvState>((set) => ({
   setRunningTask: (t) => set({ runningTask: t }),
   setPaused: (p) => set({ paused: p }),
   setProviderInfo: (p) => set({ providerInfo: p }),
+
+  welcomeVisible: false,
+  setWelcomeVisible: (v) => set({ welcomeVisible: v }),
+
+  composerInput: "",
+  setComposerInput: (s) => set({ composerInput: s }),
+  composerFocusTick: 0,
+  focusComposer: () =>
+    set((state) => ({ composerFocusTick: state.composerFocusTick + 1 })),
 }));
 
 

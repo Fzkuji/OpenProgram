@@ -150,11 +150,13 @@ export function Composer() {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
   const runningTask = useSessionStore((s) => s.runningTask);
+  const input = useSessionStore((s) => s.composerInput);
+  const setInput = useSessionStore((s) => s.setComposerInput);
+  const focusTick = useSessionStore((s) => s.composerFocusTick);
   const send = wsSend;
 
   const isRunning = runningTask !== null;
 
-  const [input, setInput] = useState("");
   const [thinking, setThinking] = useState<ThinkingEffort>(DEFAULT_THINKING);
   const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
@@ -179,6 +181,13 @@ export function Composer() {
     t.style.height = "auto";
     t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
   }, [input]);
+
+  // External focus requests via the store (welcome buttons,
+  // retry helpers, etc.).
+  useEffect(() => {
+    if (focusTick === 0) return;
+    textareaRef.current?.focus();
+  }, [focusTick]);
 
   // Close any open popovers when clicking outside.
   useEffect(() => {

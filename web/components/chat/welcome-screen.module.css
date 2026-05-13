@@ -1,0 +1,153 @@
+/* Welcome screen — logo / title / description / example buttons.
+   Visual mirrors what the legacy .welcome + .welcome-examples
+   blocks looked like in 05-chat.css, scoped via CSS Module. */
+
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  padding: 40px;
+}
+
+.top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.logo {
+  font-size: 48px;
+  color: var(--accent-blue);
+  font-weight: 700;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.l1,
+.l2,
+.m {
+  font-size: 0;
+}
+.l1 {
+  animation: logoType1 4s steps(1, end) infinite;
+}
+.l2 {
+  animation: logoType2 4s steps(1, end) infinite;
+}
+.m {
+  animation: logoType3 4s steps(1, end) infinite;
+}
+@keyframes logoType1 {
+  0%, 12% {
+    font-size: 0;
+  }
+  15%, 82% {
+    font-size: 48px;
+  }
+  85%, 100% {
+    font-size: 0;
+  }
+}
+@keyframes logoType2 {
+  0%, 22% {
+    font-size: 0;
+  }
+  25%, 77% {
+    font-size: 48px;
+  }
+  80%, 100% {
+    font-size: 0;
+  }
+}
+@keyframes logoType3 {
+  0%, 32% {
+    font-size: 0;
+  }
+  35%, 72% {
+    font-size: 48px;
+  }
+  75%, 100% {
+    font-size: 0;
+  }
+}
+
+.caret {
+  display: inline-block;
+  width: 0.08em;
+  height: 0.7em;
+  background: currentColor;
+  vertical-align: -0.04em;
+  margin: 0 0.04em;
+  animation: logoCaretBlink 0.9s steps(2) infinite;
+}
+@keyframes logoCaretBlink {
+  0%, 50% {
+    opacity: 0.85;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+.title {
+  font-size: 20px;
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.text {
+  font-size: 14px;
+  text-align: center;
+  max-width: 500px;
+  line-height: 1.6;
+}
+
+/* Example-button row — sits just under the welcome card, just above
+   the composer when the welcome is visible. */
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 24px 24px 0;
+  justify-content: center;
+  max-width: 800px;
+  margin: 0 auto;
+  transition: opacity 200ms ease;
+}
+:global(body.slash-menu-open) .examples {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.example {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg-primary);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.example svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.example:hover {
+  border-color: transparent;
+  background: var(--bg-hover-contrast);
+  color: var(--text-bright);
+}
+.example:hover svg {
+  color: var(--text-bright);
+}

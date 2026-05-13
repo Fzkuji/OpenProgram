@@ -90,17 +90,31 @@ function extractMainArea(bodyHtml: string): { main: string; inlineScripts: strin
   return { main: body.trim(), inlineScripts };
 }
 
-/* The legacy `.input-area` block contains nested divs that regex can't
-   reliably balance. Strip it post-injection in the DOM instead, then
-   leave a `#composer-mount` placeholder so the React <Composer />
-   portal lands in the right spot inside #chatView. */
-function stripLegacyInputArea(host: HTMLElement) {
+/* The legacy `.input-area`, `#welcomeScreen`, and `.welcome-examples`
+   blocks all contain nested DOM that regex can't reliably balance.
+   Strip them post-injection in the DOM and drop in mount placeholders
+   so the React portals (<Composer />, <WelcomeScreen />) land in the
+   right spots inside #chatView. */
+function stripLegacyChatChrome(host: HTMLElement) {
   const inputArea = host.querySelector(".input-area");
-  if (!inputArea) return;
-  const mount = document.createElement("div");
-  mount.id = "composer-mount";
-  mount.setAttribute("data-composer-mount", "1");
-  inputArea.replaceWith(mount);
+  if (inputArea) {
+    const mount = document.createElement("div");
+    mount.id = "composer-mount";
+    inputArea.replaceWith(mount);
+  }
+  const welcome = host.querySelector("#welcomeScreen");
+  if (welcome) welcome.remove();
+  const welcomeExamples = host.querySelector("#welcomeExamples");
+  if (welcomeExamples) welcomeExamples.remove();
+  // Where the welcome screen used to live: inside #chatMessages. The
+  // React portal renders into a new placeholder appended there so the
+  // logo + buttons sit in roughly the same vertical region.
+  const chatMessages = host.querySelector("#chatMessages");
+  if (chatMessages) {
+    const wmount = document.createElement("div");
+    wmount.id = "welcome-mount";
+    chatMessages.appendChild(wmount);
+  }
 }
 
 export function PageShell({ page }: { page: Page }) {
@@ -129,7 +143,7 @@ export function PageShell({ page }: { page: Page }) {
 
         if (!hostRef.current || cancelled) return;
         hostRef.current.innerHTML = main;
-        if (page === "chat") stripLegacyInputArea(hostRef.current);
+        if (page === "chat") stripLegacyChatChrome(hostRef.current);
 
         // Wait for AppShell's shared JS to finish loading before running
         // page-specific scripts (which depend on globals like renderSessions,

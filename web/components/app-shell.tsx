@@ -6,6 +6,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { UserMenuFooter } from "./user-menu-footer";
 import { Composer } from "./chat/composer";
+import { WelcomeScreen } from "./chat/welcome-screen";
+import { useSessionStore } from "@/lib/session-store";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -107,6 +109,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Mount target for the React UserMenuFooter portal. Set after the
   // legacy sidebar HTML lands in the DOM. Re-checked on every render
   // (and explicitly bumped after sidebar inject) so we don't miss it.
+  // Expose the React store to the legacy JS scripts so they can write
+  // through to it. Each legacy caller that touches React-owned state
+  // (setWelcomeVisible, welcome example clicks once migrated, etc.)
+  // goes through useSessionStore.getState(); this single global is
+  // their access point. Removed once every legacy caller is migrated.
+  useEffect(() => {
+    (window as unknown as { __sessionStore?: unknown }).__sessionStore =
+      useSessionStore;
+    return () => {
+      delete (window as unknown as { __sessionStore?: unknown })
+        .__sessionStore;
+    };
+  }, []);
+
   const [userMenuMount, setUserMenuMount] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (userMenuMount) return;
@@ -129,26 +145,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [userMenuMount]);
 
-  // Mount target for the React <Composer />. PageShell injects a
-  // `<div id="composer-mount">` placeholder where the legacy
-  // `.input-area` used to live; the composer portal renders into it.
+  // Mount targets for chat-page React portals. PageShell injects
+  // `<div id="composer-mount">` and `<div id="welcome-mount">`
+  // placeholders into the legacy template; we portal React into each.
   // Re-checked on pathname changes because the chat page re-injects
   // its HTML on route entry.
   const [composerMount, setComposerMount] = useState<HTMLElement | null>(null);
+  const [welcomeMount, setWelcomeMount] = useState<HTMLElement | null>(null);
   useEffect(() => {
     let cancelled = false;
     setComposerMount(null);
-    function findMount() {
-      const el = document.getElementById("composer-mount");
-      if (el && !cancelled) {
-        setComposerMount(el);
-        return true;
-      }
-      return false;
+    setWelcomeMount(null);
+    function findMounts() {
+      const composer = document.getElementById("composer-mount");
+      const welcome = document.getElementById("welcome-mount");
+      if (cancelled) return false;
+      if (composer) setComposerMount(composer);
+      if (welcome) setWelcomeMount(welcome);
+      return !!(composer && welcome);
     }
-    if (findMount()) return;
+    if (findMounts()) return;
     const t = setInterval(() => {
-      if (findMount()) clearInterval(t);
+      if (findMounts()) clearInterval(t);
     }, 100);
     return () => {
       cancelled = true;
@@ -327,6 +345,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       />
       {userMenuMount && createPortal(<UserMenuFooter />, userMenuMount)}
       {composerMount && createPortal(<Composer />, composerMount)}
+      {welcomeMount && createPortal(<WelcomeScreen />, welcomeMount)}
     </div>
   );
 }
