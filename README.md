@@ -41,7 +41,7 @@ Then chat with it — either in the terminal or the browser:
 openprogram                                         # full-screen TUI
 ```
 
-For the web UI, just open your browser at **http://localhost:3000** — `openprogram setup` starts the worker in the background (FastAPI backend on 8765 + Next.js frontend on 3000) so the page is already live.
+For the web UI, just open your browser at **http://localhost:8764** — `openprogram setup` starts the worker in the background (frontend on 8764, FastAPI backend on 8765) so the page is already live.
 
 Both surfaces share the same backend — sessions, settings, web-search defaults are persisted in `~/.agentic/` and visible from either entry point.
 
@@ -95,7 +95,7 @@ pip install dir not on PATH. Use `python3 -m openprogram <args>` instead, or add
 <details>
 <summary><b>Web UI port in use</b></summary>
 
-Set `OPENPROGRAM_WEB_PORT=3001` (frontend) or `OPENPROGRAM_BACKEND_PORT=8766` (FastAPI) before starting the worker. Or store the preference via `openprogram config ui`.
+Set `OPENPROGRAM_WEB_PORT=8767` (frontend) or `OPENPROGRAM_BACKEND_PORT=8766` (FastAPI) before starting the worker. Or store the preference via `openprogram config ui`.
 
 </details>
 
@@ -122,66 +122,7 @@ rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Har
 
 </details>
 
-### Retry and recovery
-
-Transient provider failures are handled at the `Runtime` layer, so you can retry just the LLM call instead of restarting the whole workflow:
-
-```python
-from openprogram import Runtime
-
-runtime = Runtime(call=my_llm_call, max_retries=3)
-```
-
-`max_retries` counts the total number of attempts, including the first call. In other words:
-
-- `max_retries=1` means try once, then fail immediately
-- `max_retries=2` means first call + one retry
-- `max_retries=3` means first call + up to two retries
-- `max_retries=0` is invalid and raises `ValueError` at `Runtime(...)` construction time
-
-The retry loop is designed for transient provider failures such as rate limits, flaky network requests, and temporary upstream errors. `TypeError` and `NotImplementedError` are treated as implementation errors and are raised immediately instead of being retried.
-
-Retry attempts are recorded in the execution tree, so `context.traceback()` and `context.save("trace.jsonl")` preserve the full failure history:
-
-```python
-[
-    {"attempt": 1, "reply": None, "error": "ConnectionError: timeout"},
-    {"attempt": 2, "reply": "ok", "error": None},
-]
-```
-
-That retry history also feeds into `fix()`, which means a later repair pass can see what actually failed instead of guessing from scratch.
-
-### `fix()` for broken generated functions
-
-When a generated function fails, `fix()` uses the function source plus recent error context to rewrite it:
-
-```python
-from openprogram.programs.functions.meta import create, fix
-
-extract_emails = create("Extract all emails from text as a JSON array", runtime=runtime)
-
-try:
-    extract_emails(text="Contact us at hello@example.com")
-except Exception:
-    extract_emails = fix(
-        fn=extract_emails,
-        runtime=runtime,
-        instruction="Always return valid JSON array output.",
-    )
-```
-
-Internally this runs a clarify → generate → verify loop, which makes it a good fit for tightening output formats after real failures instead of regenerating from scratch.
-
-A few practical details matter:
-
-- `fix()` can inspect the function source, function name, and recent `Context` failure history
-- if retries already happened, those recorded attempts become part of the repair context
-- if the verifier never accepts a rewrite within `max_rounds`, `fix()` returns a summary string instead of raising
-- if more information is needed and no `ask_user` handler is installed, it can return a follow-up payload like `{"type": "follow_up", "question": "..."}`
-- call sites should branch on the return type: `callable` means a repaired function, `dict` means follow-up is required, and `str` means repair exhausted its rounds and returned a failure summary
-
-Use `Runtime(max_retries=...)` for transient API problems, and `fix()` for structural problems in the generated function itself. They complement each other rather than overlapping.
+For platform-builder topics — `Runtime` retry semantics, the `fix()` repair loop, the full `agentic_function` decorator API — see [docs/API.md](docs/API.md) and the per-topic notes under [docs/api/](docs/api/).
 
 ---
 
