@@ -357,8 +357,9 @@ def process_user_turn(
     if isinstance(model_str, dict):
         model_id = model_str.get("id") or model_str.get("model")
         provider_id = model_str.get("provider")
-    elif isinstance(model_str, str) and "/" in model_str:
-        provider_id, model_id = model_str.split("/", 1)
+    elif isinstance(model_str, str) and ("/" in model_str or ":" in model_str):
+        sep = "/" if "/" in model_str else ":"
+        provider_id, model_id = model_str.split(sep, 1)
     else:
         model_id = model_str or None
         provider_id = None
@@ -441,6 +442,34 @@ def process_user_turn(
         model=req.model_override or session.get("model"),
     )
 
+    # 6.4. Feed real provider usage back into the context engine so
+    # subsequent prepare() calls budget against true numbers instead of
+    # our estimate. We re-resolve the engine here (cheap registry
+    # lookup) because _run_loop_blocking's local _ctx_engine is out of
+    # scope — and pass a lightweight prep-equivalent so the engine can
+    # still decide whether to emit a recommendation event.
+    try:
+        from openprogram.context import resolve_engine_for as _resolve_eng
+        from openprogram.context.types import (
+            BudgetAllocation as _BA, TurnPrep as _TurnPrep,
+        )
+        from openprogram.context.tokens import real_context_window as _rcw
+        _profile = _load_agent_profile(req.agent_id)
+        _engine = _resolve_eng(_profile)
+        _ctx_win = _rcw(_resolve_model(_profile, req.model_override))
+        _shim_prep = _TurnPrep(
+            system_prompt="",
+            budget=_BA(context_window=_ctx_win),
+        )
+        _engine.after_turn(
+            req.session_id,
+            usage=usage,
+            prep=_shim_prep,
+            on_event=on_event,
+        )
+    except Exception:
+        pass
+
     # 6.5. Auto-title: if the session is still using the placeholder
     # title (or hasn't been titled by an explicit user action), set a
     # readable label from the user's first message. Cheap version —
@@ -460,16 +489,9 @@ def process_user_turn(
     # ``model.context_window`` (the truth), not ``model.max_tokens``
     # (which is the OUTPUT cap, typically 10-30% of the real window
     # and would fire compaction at ~10-30% utilization).
-    try:
-        from openprogram.context.tokens import real_context_window
-        _ctx_window = real_context_window(
-            _resolve_model(_load_agent_profile(req.agent_id),
-                            req.model_override),
-        )
-    except Exception:
-        _ctx_window = 200_000
-    _maybe_signal_compaction(db, req.session_id, on_event,
-                              context_window=_ctx_window)
+    # (Compaction-recommended emission moved into ctx_engine.after_turn,
+    # which uses provider-reported usage instead of re-estimating the
+    # whole branch here.)
 
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal.
@@ -528,45 +550,6 @@ def _maybe_auto_title(db, session_id: str, session: dict,
         pass
 
 
-# Conservative threshold: emit "compaction_recommended" once we're at
-# 70% of the context window. Lower than Hermes' 80% so the UI has
-# room to react before truncation hits.
-_COMPACTION_RECOMMEND_THRESHOLD = 0.7
-
-
-def _maybe_signal_compaction(db, session_id: str,
-                              on_event: EventCallback,
-                              *, context_window: int) -> None:
-    """Estimate current branch token usage; emit a recommendation
-    envelope when it crosses the threshold. Single signal per turn —
-    debounced via session.extra_meta._compaction_recommended_at so
-    the UI doesn't get spammed."""
-    try:
-        from openprogram.agent.compaction import should_compact
-    except Exception:
-        return
-    try:
-        msgs = db.get_branch(session_id) or []
-    except Exception:
-        return
-    if not msgs:
-        return
-    # Convert SessionDB row dicts to the shape should_compact expects
-    # (objects with role + content). The estimator is lenient — plain
-    # dicts work too.
-    if not should_compact(msgs, context_window=context_window,
-                           threshold=_COMPACTION_RECOMMEND_THRESHOLD):
-        return
-    on_event({
-        "type": "chat_response",
-        "data": {
-            "type": "compaction_recommended",
-            "session_id": session_id,
-            "branch_messages": len(msgs),
-        },
-    })
-
-
 def trigger_compaction(session_id: str, agent_id: str = "main",
                         on_event: Optional[EventCallback] = None,
                         *,
@@ -595,7 +578,7 @@ def trigger_compaction(session_id: str, agent_id: str = "main",
     """
     on_event = on_event or _noop
     from openprogram.agent.session_db import default_db
-    from openprogram.agent.compaction import compact_context
+    from openprogram.context import resolve_engine_for
 
     db = default_db()
     sess = db.get_session(session_id)
@@ -607,102 +590,28 @@ def trigger_compaction(session_id: str, agent_id: str = "main",
 
     profile = _load_agent_profile(agent_id)
     model = _resolve_model(profile, None)
-    system_prompt = profile.get("system_prompt") or ""
+    engine = resolve_engine_for(profile)
 
-    # compact_context expects dict-shaped messages — its internal
-    # cut-point logic does ``entry["message"].get("role", "")``, which
-    # blows up on pydantic Message objects. Pass the raw SessionDB
-    # rows (already dicts) and let the summarizer build its own
-    # serialized form.
-    #
-    # Async-in-sync: run in a fresh loop off any caller async loop.
-    settings: Optional[dict] = None
-    if keep_recent_tokens is not None:
-        settings = {"enabled": True,
-                    "keepRecentTokens": int(keep_recent_tokens),
-                    "reserveTokens": 16384}
     loop = asyncio.new_event_loop()
     try:
-        new_messages, summary = loop.run_until_complete(
-            compact_context(
-                messages=history,
-                system_prompt=system_prompt,
-                stream_fn=None,
+        result = loop.run_until_complete(
+            engine.compact(
+                agent=profile,
+                session_id=session_id,
                 model=model,
-                settings=settings,
+                on_event=on_event,
+                user_initiated=True,
+                keep_recent_tokens=keep_recent_tokens,
             )
         )
     finally:
         loop.close()
 
-    if not summary:
-        return {"summary": "", "kept_count": len(history), "summary_id": ""}
-
-    # Persist the summary as a new root-level message (parent_id=None).
-    # Old chain stays in DB; readers walk only the new branch.
-    summary_id = uuid.uuid4().hex[:12]
-    db.append_message(session_id, {
-        "id": summary_id,
-        "role": "user",
-        "content": f"[Previous conversation summary]\n{summary}",
-        "timestamp": time.time(),
-        "parent_id": None,
-        "source": "compaction",
-        "extra": json.dumps({
-            "compaction": True,
-            "logical_parent_id": sess.get("head_id"),
-            "summarized_count": len(history) - max(0, len(new_messages) - 1),
-        }, default=str),
-    })
-    # The kept tail (new_messages[1:]) gets re-parented to the summary.
-    # Each kept message gets a fresh id so it doesn't collide with the
-    # original row. Sequential parent chain through the tail.
-    last_id = summary_id
-    for src_msg in (new_messages[1:] if len(new_messages) > 1 else []):
-        new_id = uuid.uuid4().hex[:12]
-        # src_msg may be a SessionDB row dict (we passed dict-shaped
-        # history) OR a pydantic Message (compact_context's prepended
-        # summary block — already handled above as new_messages[0]).
-        # Normalize both.
-        if isinstance(src_msg, dict):
-            role = src_msg.get("role", "user")
-            content = src_msg.get("content", "")
-        else:
-            role = getattr(src_msg, "role", "user")
-            c = getattr(src_msg, "content", None)
-            if isinstance(c, str):
-                content = c
-            elif isinstance(c, list):
-                parts = []
-                for blk in c:
-                    t = getattr(blk, "text", None)
-                    if t:
-                        parts.append(t)
-                content = "\n".join(parts)
-            else:
-                content = str(c) if c is not None else ""
-        db.append_message(session_id, {
-            "id": new_id,
-            "role": role if role != "toolResult" else "assistant",
-            "content": content,
-            "timestamp": time.time(),
-            "parent_id": last_id,
-            "source": "compaction",
-        })
-        last_id = new_id
-
-    db.set_head(session_id, last_id)
-    on_event({
-        "type": "chat_response",
-        "data": {"type": "compaction_done",
-                 "session_id": session_id,
-                 "summary_id": summary_id,
-                 "summary": summary},
-    })
-    return {"summary": summary,
-             "kept_count": max(0, len(new_messages) - 1),
-             "summary_id": summary_id}
-
+    return {
+        "summary": result.summary_text or "",
+        "kept_count": result.summarised_count,
+        "summary_id": result.summary_id or "",
+    }
 
 def _run_loop_blocking(
     *,
@@ -743,12 +652,18 @@ def _run_loop_blocking(
     # aging in-memory, computes an accurate token budget against the
     # model's real context window, surfaces whether auto-compact should
     # fire before we burn tokens on this turn.
-    from openprogram.context import default_engine as _ctx_engine
+    from openprogram.context import resolve_engine_for
+    from openprogram.agent.session_db import default_db
+    _ctx_engine = resolve_engine_for(agent_profile)
+    _ctx_engine.on_session_start(req.session_id)
+    db = default_db()
+    session = db.get_session(req.session_id) or {}
     prep = _ctx_engine.prepare(
         agent=agent_profile,
         session=session,
         history=history,
         model=model,
+        tools=tools,
     )
 
     # Auto-compact: when budget crosses the engine's threshold, run the
@@ -782,6 +697,7 @@ def _run_loop_blocking(
                     session=db.get_session(req.session_id) or session,
                     history=history,
                     model=model,
+                    tools=tools,
                 )
         except Exception as e:  # noqa: BLE001
             # Auto-compact must never crash the turn.

@@ -39,6 +39,19 @@ function handleChatResponse(data) {
   if (typeof window.refreshTokenBadge === 'function') {
     try { window.refreshTokenBadge(); } catch (e) {}
   }
+  // The turn just appended new messages (and possibly created a new
+  // branch tip). Force-refresh the branches cache so the right
+  // sidebar visualization picks up new nodes without requiring a
+  // session reload.
+  if (typeof fetchBranches === 'function' && currentSessionId) {
+    try {
+      fetchBranches(currentSessionId, { force: true }).then(function () {
+        if (typeof window._refreshBranchTokens === 'function') {
+          try { window._refreshBranchTokens(); } catch (e) {}
+        }
+      });
+    } catch (e) {}
+  }
 
   // Tear down the elapsed-time ticker. Any surviving data-running attribute
   // after a terminal message (result / error / cancelled) is a zombie — the
@@ -167,6 +180,10 @@ function _handleContextStats(data) {
       cache_hit_rate: data.cache_hit_rate || 0,
       cache_read_total: data.cache_read_total || chat.cache_read || 0,
       last_assistant_usage: data.last_assistant_usage || 0,
+      last_assistant_input: data.last_assistant_input || 0,
+      last_assistant_cache_read: data.last_assistant_cache_read || 0,
+      last_turn_hit_rate: data.last_turn_hit_rate || 0,
+      input_total: data.input_total || 0,
       model: data.model || null,
       source_mix: data.source_mix || null,
     };

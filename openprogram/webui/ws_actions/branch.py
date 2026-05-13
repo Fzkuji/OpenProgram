@@ -9,12 +9,31 @@ async def handle_list_branches(ws, cmd: dict):
     session_id = cmd.get("session_id")
     rows: list[dict] = []
     active_head = None
+    graph: list[dict] = []
     if session_id:
         try:
             from openprogram.agent.session_db import default_db
             db = default_db()
             sess = db.get_session(session_id)
             active_head = (sess or {}).get("head_id")
+            try:
+                full_msgs = db.get_messages(session_id) or []
+            except Exception:
+                full_msgs = []
+            for m in full_msgs:
+                content = m.get("content") or ""
+                preview = content.strip().replace("\n", " ")
+                if len(preview) > 80:
+                    preview = preview[:77] + "…"
+                graph.append({
+                    "id": m.get("id"),
+                    "parent_id": m.get("parent_id"),
+                    "role": m.get("role"),
+                    "function": m.get("function"),
+                    "display": m.get("display"),
+                    "preview": preview,
+                    "created_at": m.get("created_at"),
+                })
             leaves = db.list_branches(session_id)
             for row in leaves:
                 mid = row["head_msg_id"]
@@ -50,7 +69,7 @@ async def handle_list_branches(ws, cmd: dict):
             _s._log(f"[list_branches] {session_id}: {e}")
     await ws.send_text(json.dumps({
         "type": "branches_list",
-        "data": {"session_id": session_id, "branches": rows, "active": active_head},
+        "data": {"session_id": session_id, "branches": rows, "active": active_head, "graph": graph},
     }, default=str))
 
 

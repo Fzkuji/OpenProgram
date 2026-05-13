@@ -236,8 +236,10 @@ function _closeChannelDropdown() {
 var _branchesByConv = {};   // session_id → [{head_msg_id, name, active, ...}]
 var _branchesPending = {};  // session_id → resolve fn
 
-function fetchBranches(sessionId) {
+function fetchBranches(sessionId, opts) {
   if (!sessionId) return Promise.resolve([]);
+  var force = !!(opts && opts.force);
+  if (force) delete _branchesByConv[sessionId];
   if (_branchesByConv[sessionId]) return Promise.resolve(_branchesByConv[sessionId]);
   if (_branchesPending[sessionId]) {
     return new Promise(function(res) {
@@ -275,6 +277,19 @@ function _onBranchesListMessage(payload) {
     if (typeof window.refreshBranchBadge === 'function') window.refreshBranchBadge();
     if (typeof window.repaintBranchTags === 'function') window.repaintBranchTags();
     if (typeof window.renderBranchesPanel === 'function') window.renderBranchesPanel();
+    // History DAG visualization (right rail): re-render whenever the
+    // branches payload carries a fresh graph snapshot. This lets nodes
+    // appear in real time the moment a user message (or assistant
+    // reply) lands in the DB, without waiting for the next
+    // load_session round-trip.
+    if (Array.isArray(payload.graph) && typeof window.renderHistoryGraph === 'function') {
+      try { window.renderHistoryGraph(payload.graph, payload.active || null); } catch (e) {}
+      // Keep the in-memory conversation snapshot in sync too.
+      if (conversations[payload.session_id]) {
+        conversations[payload.session_id].graph = payload.graph;
+        if (payload.active) conversations[payload.session_id].head_id = payload.active;
+      }
+    }
   }
 }
 
@@ -379,30 +394,9 @@ window.renderBranchesPanel = function () {
     // order is preserved when re-expanded. Avoids CSS :nth-child games.
     if (collapsed && !b.active) item.style.display = 'none';
     item.setAttribute('data-head', b.head_msg_id);
-    var bTok = tokenMap[b.head_msg_id];
-    var bTokTxt = '';
-    var bTokColor = '';
-    if (bTok && bTok.current_tokens) {
-      var bPct = bTok.context_window
-        ? Math.round((bTok.current_tokens / bTok.context_window) * 100)
-        : null;
-      bTokTxt = _formatBranchTokens(bTok.current_tokens) + (bPct !== null ? ' (' + bPct + '%)' : '');
-      if (bPct !== null) {
-        if (bPct > 85)      bTokColor = 'var(--accent-red, #e5534b)';
-        else if (bPct > 65) bTokColor = 'var(--accent-yellow, #d2a106)';
-        else                bTokColor = 'var(--text-muted)';
-      }
-    } else if (bTok) {
-      // current_tokens is null/0 — no provider usage on this branch yet.
-      // Show "—" so it's clear we don't have a real number to display
-      // (instead of fabricating one).
-      bTokTxt = '—';
-      bTokColor = 'var(--text-muted)';
-    }
     item.innerHTML =
       '<span class="branch-item-dot" style="background:' + laneColor + '"></span>' +
       '<span class="branch-item-name">' + escHtml(b.name) + '</span>' +
-      (bTokTxt ? '<span class="branch-item-tokens" style="color:' + bTokColor + '">' + bTokTxt + '</span>' : '') +
       (b.active ? '<span class="branch-item-badge">HEAD</span>' : '');
     item.addEventListener('click', function () {
       if (b.active) return;

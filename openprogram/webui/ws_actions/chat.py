@@ -21,7 +21,36 @@ async def handle_chat(ws, cmd: dict):
     thinking_effort = cmd.get("thinking_effort") or None
     exec_thinking_effort = cmd.get("exec_thinking_effort") or None
     tools_flag = cmd.get("tools")
+    web_search_flag = bool(cmd.get("web_search"))
     permission_mode = cmd.get("permission_mode") or None
+    # "Web Search" plus-menu toggle: layer ``web_search`` on top of
+    # whatever the Tools toggle resolves to. Three useful states:
+    #   * tools=False, web_search=False → tools_override=[]  (no tools)
+    #   * tools=False, web_search=True  → tools_override=["web_search"]
+    #   * tools=True,  web_search=*     → DEFAULT_TOOLS [+web_search]
+    #   * tools=None (defer to agent profile), web_search=True
+    #       → agent's tools list with "web_search" guaranteed
+    if web_search_flag:
+        try:
+            from openprogram.tools import DEFAULT_TOOLS as _DEFAULT_TOOLS
+        except Exception:
+            _DEFAULT_TOOLS = []
+        if isinstance(tools_flag, list):
+            base = list(tools_flag)
+        elif tools_flag is True:
+            base = list(_DEFAULT_TOOLS)
+        elif tools_flag is False:
+            base = []
+        else:
+            # tools_flag is None — caller wants "use the agent profile's
+            # configured tools". We don't have those resolved here, so
+            # fall back to DEFAULT_TOOLS for the explicit override list
+            # the dispatcher will see. Better to be slightly broader
+            # than to drop the agent's other tools entirely.
+            base = list(_DEFAULT_TOOLS)
+        if "web_search" not in base:
+            base.append("web_search")
+        tools_flag = base
     raw_attachments = cmd.get("attachments") or None
     attachments = None
     if isinstance(raw_attachments, list) and raw_attachments:

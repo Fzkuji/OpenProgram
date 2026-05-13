@@ -344,15 +344,27 @@ function _renderTokenBadge(data, sessionId) {
     if (pct > 85)      color = 'var(--accent-red, #e5534b)';
     else if (pct > 65) color = 'var(--accent-yellow, #d2a106)';
   }
-  var cacheRate = Math.round((data.cache_hit_rate || 0) * 100);
-  var label = _fmtTokens(cur);
-  if (win) label += '/' + _fmtTokens(win) + ' (' + pct + '%)';
+  // Two cache numbers live on different time scales:
+  //   * last-turn hit rate — matches "Context" (also last-turn) and is
+  //     what most users actually want to see at a glance.
+  //   * branch-cumulative — total caching over the whole conversation,
+  //     useful for cost auditing.
+  // Chip shows the per-turn number (in scope with Context). Tooltip
+  // exposes both for clarity.
+  var lastRate = Math.round((data.last_turn_hit_rate || 0) * 100);
+  var cumRate  = Math.round((data.cache_hit_rate || 0) * 100);
+  var lastCR   = data.last_assistant_cache_read || 0;
+  // Badge format: "{used}/{window} · ● {cache_hit_pct}%"
+  // - first segment = used / model context window (e.g. "5K/200K")
+  // - second segment = last-turn cache hit rate (percent)
+  // Falls back to bare token count when context_window is unknown.
+  var label = win ? (_fmtTokens(cur) + '/' + _fmtTokens(win)) : _fmtTokens(cur);
   var cacheHtml = '';
-  if (data.cache_read_total > 0 || _cacheWriteTs[sessionId]) {
+  if (lastCR > 0 || data.cache_read_total > 0 || _cacheWriteTs[sessionId]) {
     var alive = _cacheAlive(sessionId);
     var dotColor = alive ? 'var(--accent-blue, #4f8ef7)' : 'var(--text-muted)';
     var cacheStatus = alive ? 'Cache active' : 'Cache expired';
-    cacheHtml = ' · <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + dotColor + ';vertical-align:middle;margin-bottom:1px" title="' + cacheStatus + '"></span> ' + cacheRate + '%';
+    cacheHtml = ' · <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + dotColor + ';vertical-align:middle;margin-bottom:1px" title="' + cacheStatus + '"></span> ' + lastRate + '%';
   }
   badge.innerHTML = label + cacheHtml;
   badge.style.color = color;
@@ -360,12 +372,12 @@ function _renderTokenBadge(data, sessionId) {
   var tip = win
     ? 'Context: ' + cur.toLocaleString() + ' / ' + win.toLocaleString() + ' (' + pct + '%)'
     : 'Context: ' + cur.toLocaleString() + ' tokens';
-  if (data.cache_read_total > 0) {
+  if (lastCR > 0 || data.cache_read_total > 0) {
+    tip += '\nCache: ' + lastCR.toLocaleString() + ' cached (' + lastRate + '% hit)';
     var ts = _cacheWriteTs[sessionId];
     var remaining = ts ? Math.max(0, Math.round((CACHE_TTL_MS - (Date.now() - ts)) / 1000)) : 0;
-    tip += '\nCache: ' + data.cache_read_total.toLocaleString() + ' read (' + cacheRate + '% hit)';
-    if (_cacheAlive(sessionId) && remaining > 0) tip += ' · expires in ' + remaining + 's';
-    else if (_cacheWriteTs[sessionId]) tip += ' · expired';
+    if (_cacheAlive(sessionId) && remaining > 0) tip += '\nExpires in ' + remaining + 's';
+    else if (_cacheWriteTs[sessionId]) tip += '\nCache expired';
   }
   if (data.model) tip += '\nModel: ' + data.model;
   if (data.source_mix) {

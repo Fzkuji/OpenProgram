@@ -414,11 +414,25 @@ class SessionDB:
             "timestamp": msg.get("timestamp") or time.time(),
         }
         extra: dict[str, Any] = {}
+        preserialized_extra = None
         for k, v in msg.items():
-            if k in _MESSAGE_COLS:
+            if k == "extra" and isinstance(v, str):
+                # Caller already serialized extra (dispatcher does this
+                # for tool_calls/blocks). Capture it so we can merge
+                # with the implicit extras (model/provider/etc.) below
+                # instead of letting the auto-pack clobber it.
+                preserialized_extra = v
+            elif k in _MESSAGE_COLS:
                 row[k] = v
             else:
                 extra[k] = v
+        if preserialized_extra is not None:
+            try:
+                base = json.loads(preserialized_extra) or {}
+            except Exception:
+                base = {}
+            base.update(extra)
+            extra = base
         if extra:
             row["extra"] = json.dumps(extra, default=str)
 
@@ -768,6 +782,8 @@ class SessionDB:
         cache_read_total = 0
         input_total = 0
         last_assistant_usage = 0
+        last_assistant_input = 0
+        last_assistant_cache_read = 0
         last_model: Optional[str] = None
         source_mix: dict[str, int] = {}
 
@@ -784,6 +800,8 @@ class SessionDB:
             source_mix[source] = source_mix.get(source, 0) + 1
             if r["role"] in ("assistant", "model") and (inp or cr):
                 last_assistant_usage = inp + cr
+                last_assistant_input = inp
+                last_assistant_cache_read = cr
                 if r["token_model"]:
                     last_model = r["token_model"]
             branch.append({
@@ -819,6 +837,19 @@ class SessionDB:
             if ctx_window and current_tokens
             else 0.0
         )
+        # Last-turn cache hit rate: cache_read of the most recent
+        # assistant turn divided by its full prompt (input + cache_read).
+        # This matches the "Context" scope (also last-turn) so the two
+        # numbers in the UI tooltip are on the same time scale, instead
+        # of mixing "current state" with "cumulative across branch".
+        last_turn_hit_rate = 0.0
+        if last_assistant_input + last_assistant_cache_read > 0:
+            last_turn_hit_rate = (
+                last_assistant_cache_read /
+                (last_assistant_input + last_assistant_cache_read)
+            )
+        # Branch-cumulative hit rate kept for callers that want the
+        # long-running average.
         cache_hit_rate = 0.0
         if input_total + cache_read_total > 0:
             cache_hit_rate = cache_read_total / (input_total + cache_read_total)
@@ -827,11 +858,15 @@ class SessionDB:
             "branch": branch,
             "naive_sum": naive_sum,
             "last_assistant_usage": last_assistant_usage,
+            "last_assistant_input": last_assistant_input,
+            "last_assistant_cache_read": last_assistant_cache_read,
+            "last_turn_hit_rate": last_turn_hit_rate,
             "current_tokens": current_tokens,
             "context_window": ctx_window,
             "pct_used": pct,
             "cache_read_total": cache_read_total,
             "cache_hit_rate": cache_hit_rate,
+            "input_total": input_total,
             "model": model_id,
             "source_mix": source_mix,
         }
@@ -978,11 +1013,21 @@ class SessionDB:
                     "timestamp": m.get("timestamp") or time.time(),
                 }
                 extra: dict[str, Any] = {}
+                preserialized = None
                 for k, v in m.items():
-                    if k in _MESSAGE_COLS:
+                    if k == "extra" and isinstance(v, str):
+                        preserialized = v
+                    elif k in _MESSAGE_COLS:
                         row[k] = v
                     else:
                         extra[k] = v
+                if preserialized is not None:
+                    try:
+                        base = json.loads(preserialized) or {}
+                    except Exception:
+                        base = {}
+                    base.update(extra)
+                    extra = base
                 if extra:
                     row["extra"] = json.dumps(extra, default=str)
                 if "id" not in row or "role" not in row or "content" not in row:
