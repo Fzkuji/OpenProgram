@@ -11,22 +11,41 @@
 ### Step 1: Install
 
 ```bash
-# Clone the repo
-git clone https://github.com/Fzkuji/OpenProgram.git
-cd OpenProgram
-
-# Install (zero dependencies for core)
-pip install -e .
+pip install openprogram                             # core (~10 MB, pure Python)
+# or, from source:
+git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram && pip install -e .
 ```
 
-### Step 2: Write Your First Agentic Function
+Requires Python ≥ 3.11. Heavy features (web UI, browser, GUI harness) are opt-in — see [README → Optional extras](../README.md#optional-extras).
+
+### Step 2: Connect a provider
+
+The interactive wizard imports credentials from any CLI you've already logged into (Claude Code / Codex / Gemini CLI) and asks for missing API keys:
+
+```bash
+openprogram setup
+```
+
+Or set one of these manually and skip the wizard:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...                 # Claude
+export OPENAI_API_KEY=sk-...                        # GPT
+export GOOGLE_API_KEY=...                           # Gemini
+# Or CLI-based (no API key, uses your existing subscription):
+#   npm i -g @anthropic-ai/claude-code && claude login
+#   npm i -g @openai/codex && codex auth
+#   npm i -g @google/gemini-cli && gemini auth login
+```
+
+Sanity-check: `openprogram providers` lists what's detected.
+
+### Step 3: Write your first agentic function
 
 ```python
-from openprogram import agentic_function, Runtime
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram import agentic_function, create_runtime
 
-# ClaudeCodeRuntime uses Claude Code CLI — no API key needed
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime()                          # auto-picks the first available provider
 
 @agentic_function
 def greet(name):
@@ -35,11 +54,8 @@ def greet(name):
         {"type": "text", "text": f"Say hello to {name} in a creative way. Keep it short (1-2 sentences)."},
     ])
 
-result = greet(name="World")
-print(result)
+print(greet(name="World"))
 ```
-
-### Step 3: Run It
 
 ```bash
 python your_script.py

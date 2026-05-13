@@ -28,86 +28,103 @@
 
 ## Quick Start
 
-### Prerequisites
-
-Agentic Programming requires at least one LLM provider. Set up any one:
-
-| Provider | Setup |
-|----------|-------|
-| Claude Code CLI | `npm i -g @anthropic-ai/claude-code && claude login` |
-| Codex CLI | `npm i -g @openai/codex && codex auth` |
-| Gemini CLI | `npm i -g @google/gemini-cli` |
-| Anthropic API | `export ANTHROPIC_API_KEY=...` |
-| OpenAI API | `export OPENAI_API_KEY=...` |
-| Gemini API | `export GOOGLE_API_KEY=...` |
-
-Then choose how you want to use it:
-
-### Option A: Python — write agentic code
-
-Install the package and start coding:
+Requires **Python 3.11+**.
 
 ```bash
-pip install openprogram                   # core package (pure Python, no deps)
-pip install "openprogram[all]"            # everything: providers + web UI + GUI harness + browser
-# …or pick what you need:
-pip install "openprogram[openai]"         #   just the OpenAI SDK  (also [anthropic], [gemini])
-pip install "openprogram[web]"            #   just the web UI
-pip install "openprogram[gui]"            #   GUI-Agent-Harness deps (opencv / torch / ultralytics — ~2GB)
-pip install "openprogram[browser]"        #   Playwright + Chromium for the browser tool
-playwright install chromium               #   one-time chromium binary fetch (~150MB) for the browser tool
-pip install "openprogram[browser-stealth]" #  + patchright + camoufox for Cloudflare-protected sites
-patchright install chromium               #   stealth-patched chromium binary
-camoufox fetch                            #   stealth-patched firefox binary (alternative engine)
-npm install -g agent-browser              #   LLM-friendly ariaSnapshot+refid wrapper for the agent_browser tool
-agent-browser install                     #   one-time chromium fetch for agent-browser
+pip install openprogram                             # install
+openprogram setup                                   # connect a provider (interactive)
 ```
 
-```python
-from openprogram import agentic_function, create_runtime
+Then use it any of three ways:
 
-# Auto-detects the best available provider (checks API keys and CLIs)
-runtime = create_runtime()
-# Or be explicit: create_runtime(provider="anthropic", model="claude-sonnet-4-6")
+```python
+# Python — write agentic code
+from openprogram import agentic_function, create_runtime
+runtime = create_runtime()                          # auto-picks the first available provider
 
 @agentic_function
 def summarize(text):
     """Summarize the given text into 3 bullet points."""
-    return runtime.exec(content=[
-        {"type": "text", "text": f"Summarize this into 3 bullet points:\n{text}"},
-    ])
-
-result = summarize(text="Agentic Programming is a paradigm where ...")
-print(result)
+    return runtime.exec(content=[{"type": "text", "text": text}])
 ```
-
-### Option B: Skills — let your LLM agent use it
 
 ```bash
-pip install openprogram
-openprogram install-skills                # auto-detects Claude Code / Gemini CLI
+# Web UI — browser chat
+pip install "openprogram[web]" && openprogram web   # http://localhost:8765
 ```
+
+```bash
+# Skill — let Claude Code / Gemini CLI use it
+openprogram install-skills                          # then ask your agent to create a function
+```
+
+## Setup
+
+`openprogram setup` is a wizard that imports credentials from any CLI you've already logged into and asks for missing API keys. Skip it by setting one of these env vars yourself:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...                 # Claude
+export OPENAI_API_KEY=sk-...                        # GPT
+export GOOGLE_API_KEY=...                           # Gemini
+```
+
+Or use a CLI provider (no API key, uses your existing subscription):
+
+```bash
+npm i -g @anthropic-ai/claude-code && claude login
+npm i -g @openai/codex && codex auth
+npm i -g @google/gemini-cli && gemini auth login
+```
+
+Check what's detected with `openprogram providers`. `create_runtime()` picks the first available in this order: **Claude Code → Codex → Gemini CLI → Anthropic API → OpenAI API → Gemini API**. Override with `create_runtime(provider="openai", model="gpt-5")`.
+
+## Optional extras
+
+| Extra | Adds | Post-install |
+|---|---|---|
+| `[web]` | Browser chat UI | — |
+| `[anthropic]` / `[openai]` / `[gemini]` | Provider SDKs | — |
+| `[browser]` | Playwright (~150 MB) | `playwright install chromium` |
+| `[browser-stealth]` | Cloudflare-bypassing browsers | `patchright install chromium && camoufox fetch` |
+| `[gui]` | Vision/control deps for GUI harness (~2 GB) | — |
+| `[channels]` | Discord / Slack / WeChat bots | — |
+| `[all]` | Everything except `[browser-stealth]` | run post-install commands as needed |
+
+## Troubleshooting
 
 <details>
-<summary><b>Local development (editable) — OpenProgram + harnesses</b></summary>
+<summary><b>"No provider available"</b></summary>
 
-The reference layout is three co-located repos, each installed editable:
+`openprogram providers` shows what's detected. Common causes: forgot `claude login` / `codex auth`; API key set in a different shell than you're running in; token expired (re-login).
 
-```
-~/Documents/LLM Agent Harness/OpenProgram/          # this repo
-~/Documents/GUI Agent/GUI-Agent-Harness/            # GUI harness
-~/Documents/Research-Agent-Harness/                 # research harness
-```
+</details>
 
-Install order matters (harnesses depend on `openprogram`):
+<details>
+<summary><b>"command not found: openprogram"</b></summary>
+
+pip install dir not on PATH. Use `python3 -m openprogram <args>` instead, or add `$(python3 -m site --user-base)/bin` to your PATH.
+
+</details>
+
+<details>
+<summary><b>Web UI port in use</b></summary>
+
+`openprogram web --port 8766` — or store the preference via `openprogram config ui`.
+
+</details>
+
+<details>
+<summary><b>Local-development install (multi-repo)</b></summary>
+
+For [GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness) / [Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness):
 
 ```bash
-pip install -e "$OPENPROGRAM_DIR"                   # 1
-pip install -e "$GUI_HARNESS_DIR"                   # 2  (pulls openprogram from step 1)
-pip install -e "$RESEARCH_HARNESS_DIR"              # 3
+pip install -e "$OPENPROGRAM_DIR"                   # first
+pip install -e "$GUI_HARNESS_DIR"                   # depends on openprogram
+pip install -e "$RESEARCH_HARNESS_DIR"
 ```
 
-`openprogram/programs/applications/{GUI,Research}-Agent-Harness` are **symlinks** into the harness repos so application discovery can walk into them and find `@agentic_function` exports. If you move any repo, the symlink breaks silently — recreate it:
+`openprogram/programs/applications/{GUI,Research}-Agent-Harness` are symlinks — recreate if a repo moves:
 
 ```bash
 cd openprogram/programs/applications
@@ -115,63 +132,9 @@ rm -f GUI-Agent-Harness && ln -s "$GUI_HARNESS_DIR" GUI-Agent-Harness
 rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Harness
 ```
 
-Same caveat for `pip install -e` itself: it writes an absolute path into a `.pth` file. Rename a parent folder and every import breaks until you rerun `pip install -e .` from the new location. There is no relative-path escape — the only fix is rerun the install.
+`pip install -e` writes absolute paths — rerun it from the new location if you rename a parent folder.
 
 </details>
-
-
-Or manually:
-
-```bash
-git clone https://github.com/Fzkuji/OpenProgram.git
-cp -r OpenProgram/skills/* ~/.claude/skills/    # Claude Code
-cp -r OpenProgram/skills/* ~/.gemini/skills/    # Gemini CLI
-```
-
-Then talk to your agent: *"Create a function that extracts emails from text"*
-
-The agent picks up the skill, calls `openprogram create`, and the generated function handles everything from there.
-
-Verify your setup with `openprogram providers`.
-
-### Option C: Web UI
-
-A browser-based interface for running functions, managing conversations, and viewing execution trees in real time.
-
-```bash
-pip install "openprogram[web]"
-openprogram web
-```
-
-This opens `http://localhost:8765` with a chat interface where you can create, run, and fix functions interactively. Supports light/dark themes (Settings → General).
-
-### Provider configuration at a glance
-
-`create_runtime()` auto-detects the first available provider in this order:
-
-1. Claude Code CLI (`claude`)
-2. Codex CLI (`codex`)
-3. Gemini CLI (`gemini`)
-4. Anthropic API (`ANTHROPIC_API_KEY`)
-5. OpenAI API (`OPENAI_API_KEY`)
-6. Gemini API (`GOOGLE_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY`)
-
-You can always override detection explicitly:
-
-```python
-from openprogram import create_runtime
-
-runtime = create_runtime(provider="openai", model="gpt-5")
-# or: provider="anthropic" | "gemini" | "claude-code" | "chatgpt-subscription" | "gemini-cli"
-```
-
-To inspect what the library can see on your machine:
-
-```bash
-openprogram providers
-```
-
-For CLI-backed providers, plugin authors can also attach `text_transforms` at the runner boundary. Input transforms rewrite prompts and system prompts before they reach the CLI, and output transforms rewrite streamed assistant text deltas after parsing, without mutating tool-call payloads.
 
 ### Retry and recovery
 

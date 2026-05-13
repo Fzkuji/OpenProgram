@@ -1,120 +1,314 @@
-/* /chats list — ported from web/app/styles/07-chats.css.
-   Scoped to this component via CSS Modules so class names don't collide
-   with other pages. Visual parity with the legacy version is intentional
-   while we migrate; we'll iterate on the design separately. */
+/* /chats — shell structure mirrors programs / memory pages:
+   sticky topbar (title + toolbar), 287px folders nav on the left,
+   scrollable content column on the right. Tokens (--bg-*, --border,
+   --nav-color, --sidebar-width) come from globals. */
 
 .view {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 48px 32px 64px;
-  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
 }
 
-.header {
+.topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
+  gap: 16px;
+  padding: 16px 24px;
+  height: 64px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-primary);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .title {
-  font-size: 32px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
   color: var(--text-bright);
+  flex-shrink: 0;
 }
 
-.newBtn {
-  display: inline-flex;
+.toolbar {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  background: var(--text-bright);
-  color: var(--bg-main);
-  border: none;
-  padding: 8px 14px;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.newBtn:hover {
-  opacity: 0.85;
+  gap: 10px;
+  margin-left: auto;
 }
 
-.searchWrap {
-  position: relative;
-  margin-bottom: 20px;
-}
-
-.searchIcon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.searchInput {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 12px 14px 12px 40px;
-  background: rgba(255, 255, 255, 0.04);
+.search {
+  flex: 1;
+  max-width: 320px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
+  background: var(--bg-input);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 14px;
   outline: none;
   transition: border-color 0.15s;
 }
-.searchInput:focus {
-  border-color: var(--border-light);
+.search:focus {
+  border-color: var(--accent-blue);
 }
-.searchInput::placeholder {
+.search::placeholder {
   color: var(--text-muted);
 }
 
-.meta {
-  font-size: 13px;
-  color: var(--text-muted);
-  padding: 12px 0 4px;
-  border-bottom: 1px solid var(--border);
+/* Custom select — replaces native <select> so the dropdown menu can be
+   themed. Same look as Programs page selects. */
+.selectWrap {
+  position: relative;
+  display: inline-block;
 }
-
-.list {
+.select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s;
+}
+.select:hover {
+  border-color: var(--text-muted);
+  color: var(--text-bright);
+}
+.select svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.selectMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  z-index: 100;
   display: flex;
   flex-direction: column;
+  gap: 1px;
 }
-
-.row {
-  padding: 16px 4px;
-  border-bottom: 1px solid var(--border);
+.selectOption {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.15s;
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
 }
-.row:hover {
-  background: rgba(255, 255, 255, 0.03);
+.selectOption:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.selectOptionActive {
+  background: var(--bg-selected);
+  color: var(--text-bright);
 }
 
-.rowTitle {
-  font-size: 16px;
+.body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Left rail — date/channel filters. Mirrors .foldersNav in programs. */
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-self: stretch;
+  position: sticky;
+  top: 0;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+}
+
+.navGroupLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 12px 8px 4px;
+}
+.navGroupLabel:first-child {
+  padding-top: 4px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  height: 32px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--nav-color);
+  border-radius: 8px;
+  transition: background 75ms, color 75ms;
+  white-space: nowrap;
+}
+.navItem:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.navItem.active {
   color: var(--text-bright);
-  margin-bottom: 4px;
+  background: var(--bg-tertiary);
+}
+
+.navIcon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+.navName {
+  flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.navCount {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+/* Main content column */
+.content {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 24px 24px;
+}
+
+/* Chat row — card-style, hover state mirrors program card */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.row:hover {
+  border-color: var(--text-muted);
+  background: var(--bg-tertiary);
+}
+.row + .row {
+  margin-top: 6px;
+}
+
+.rowAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rowTitle {
+  font-size: 14px;
+  color: var(--text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
 
 .rowMeta {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rowTime {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Section header — date grouping inside content */
+.section {
+  margin-bottom: 20px;
+}
+.section:last-child {
+  margin-bottom: 0;
+}
+.sectionHeader {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
 }
 
 .empty {
-  padding: 48px 0;
+  padding: 64px 0;
   text-align: center;
   color: var(--text-muted);
+}
+.emptyIcon {
+  font-size: 32px;
+  opacity: 0.6;
+  margin-bottom: 12px;
+}
+.emptyText {
   font-size: 14px;
 }

@@ -1,15 +1,8 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import dynamic from "next/dynamic";
-
-// Migrated from PageShell injection of /html/settings.html. Native
-// React component with co-located CSS module.
-const SettingsPage = dynamic(
-  () =>
-    import("@/components/settings/settings-page").then((m) => m.SettingsPage),
-  { ssr: false },
-);
-
+// /settings → default to the LLM Providers tab. Each tab is now a
+// distinct URL (/settings/providers | /settings/search | /settings/general)
+// so refresh and back-button preserve the active section.
 export default function Page() {
-  return <SettingsPage />;
+  redirect("/settings/providers");
 }

@@ -3,18 +3,18 @@
 import dynamic from "next/dynamic";
 import { SettingsTabsLayout } from "@/components/settings/settings-tabs-layout";
 
-const ProvidersSection = dynamic(
+const SearchProvidersSection = dynamic(
   () =>
-    import("@/components/settings/providers-section").then(
-      (m) => m.ProvidersSection,
+    import("@/components/settings/search-providers-section").then(
+      (m) => m.SearchProvidersSection,
     ),
   { ssr: false },
 );
 
 export default function Page() {
   return (
-    <SettingsTabsLayout active="providers">
-      <ProvidersSection />
+    <SettingsTabsLayout active="search">
+      <SearchProvidersSection />
     </SettingsTabsLayout>
   );
 }

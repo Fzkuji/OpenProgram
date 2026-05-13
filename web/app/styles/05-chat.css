@@ -266,7 +266,10 @@
 
 .chat-messages {
   flex: 1;
-  padding: 24px 0 40vh 0;
+  /* Bottom padding ≈ viewport height so the most recent user message
+     can be scrolled to the top of the chat area with empty room below
+     for the assistant reply (ChatGPT/Claude behavior). */
+  padding: 24px 0 calc(100vh - 220px) 0;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1451,7 +1454,7 @@
   max-width: 320px;
   z-index: 100;
 }
-.plus-menu.open { display: block; }
+.plus-menu.open { display: flex; flex-direction: column; gap: 1px; }
 .plus-menu-item {
   display: flex;
   align-items: center;
