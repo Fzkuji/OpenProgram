@@ -302,13 +302,21 @@ def process_user_turn(
     #    a system message so the conversation isn't left in a stuck
     #    "agent is thinking…" state.
     try:
-        # When the caller pre-persisted the user msg, ``history`` was
-        # reloaded above and already includes it — passing it twice
-        # would prepend a duplicate user turn into the LLM context.
-        if req.user_already_persisted:
-            loop_history = history
+        # In both paths we pass history WITHOUT the new user message:
+        # * user_already_persisted=False: history was loaded before the
+        #   DB append, so it doesn't include user_msg. agent_loop will
+        #   add UserMessage prompt to context.messages itself.
+        # * user_already_persisted=True: history was reloaded post-append
+        #   and DOES include user_msg — but we trim it back off, and
+        #   call agent_loop (not _continue) so the prompt mechanism
+        #   adds it exactly once. Previously this branch passed history
+        #   as-is (with user_msg) to agent_loop_continue which left
+        #   the new user msg duplicated at the tail of every request
+        #   prefix and broke OpenAI prompt caching.
+        if req.user_already_persisted and history and history[-1].get("id") == user_msg_id:
+            loop_history = history[:-1]
         else:
-            loop_history = history + [user_msg]
+            loop_history = history
         final_text, usage, tool_calls = _run_loop_blocking(
             req=req,
             history=loop_history,
@@ -448,15 +456,16 @@ def process_user_turn(
     # call is exposed as ``trigger_compaction(session_id)`` for clients
     # to invoke explicitly.
     #
-    # Best-effort resolution of the context window; conservative
-    # 200k default if anything goes wrong (signal stays late but
-    # never crashes the turn).
+    # Context-window resolution via context.tokens — reads
+    # ``model.context_window`` (the truth), not ``model.max_tokens``
+    # (which is the OUTPUT cap, typically 10-30% of the real window
+    # and would fire compaction at ~10-30% utilization).
     try:
-        _ctx_window = int(getattr(
+        from openprogram.context.tokens import real_context_window
+        _ctx_window = real_context_window(
             _resolve_model(_load_agent_profile(req.agent_id),
                             req.model_override),
-            "max_tokens", 0,
-        )) or 200_000
+        )
     except Exception:
         _ctx_window = 200_000
     _maybe_signal_compaction(db, req.session_id, on_event,
@@ -730,9 +739,61 @@ def _run_loop_blocking(
     )
     model = _resolve_model(agent_profile, req.model_override)
 
+    # Route history through the context engine: applies tool-result
+    # aging in-memory, computes an accurate token budget against the
+    # model's real context window, surfaces whether auto-compact should
+    # fire before we burn tokens on this turn.
+    from openprogram.context import default_engine as _ctx_engine
+    prep = _ctx_engine.prepare(
+        agent=agent_profile,
+        session=session,
+        history=history,
+        model=model,
+    )
+
+    # Auto-compact: when budget crosses the engine's threshold, run the
+    # LLM summariser INLINE so the request that follows fits the window.
+    # Manual /compact still works (see ``trigger_compaction`` below) —
+    # the threshold here only catches the "agent loop overflows mid-
+    # turn" case. We disable auto-compact when the caller passed a
+    # history_override (retry / branch flows) because that history is
+    # often a curated subset we shouldn't second-guess.
+    if req.history_override is None and _ctx_engine.should_auto_compact(prep):
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                compact_res = loop.run_until_complete(
+                    _ctx_engine.compact(
+                        agent=agent_profile,
+                        session_id=req.session_id,
+                        model=model,
+                        on_event=on_event,
+                        user_initiated=False,
+                    )
+                )
+            finally:
+                loop.close()
+            if compact_res.summary_id:
+                # Re-load the post-compact branch so the LLM call sees
+                # the shorter chain.
+                history = db.get_branch(req.session_id) or history
+                prep = _ctx_engine.prepare(
+                    agent=agent_profile,
+                    session=db.get_session(req.session_id) or session,
+                    history=history,
+                    model=model,
+                )
+        except Exception as e:  # noqa: BLE001
+            # Auto-compact must never crash the turn.
+            on_event({"type": "chat_response",
+                      "data": {"type": "compaction_failed",
+                               "session_id": req.session_id,
+                               "error": f"{type(e).__name__}: {e}",
+                               "user_initiated": False}})
+
     context = AgentContext(
         system_prompt=system_prompt,
-        messages=_history_to_agent_messages(history),
+        messages=prep.agent_messages,
         tools=tools,
     )
 
@@ -743,6 +804,13 @@ def _run_loop_blocking(
     config = AgentLoopConfig(
         model=model,
         convert_to_llm=_default_convert_to_llm,
+        # Pass session_id so providers that support it
+        # (openai_codex/openai_responses/azure) set prompt_cache_key on
+        # every request. Without it OpenAI prompt cache can only match
+        # the anonymous static prefix (~ instructions), so longer
+        # conversations sit at ~10-20% hit rate even though the message
+        # tail is identical turn-to-turn.
+        session_id=req.session_id,
         reasoning=reasoning_from_config(SessionRunConfig(
             thinking_effort=req.thinking_effort
             if req.thinking_effort is not None
@@ -765,46 +833,41 @@ def _run_loop_blocking(
                 asyncio_loop.call_soon_threadsafe(loop_cancel.set)
             threading.Thread(target=_watch, daemon=True).start()
 
-        if req.user_already_persisted:
-            # User msg is already the tail of ``context.messages``
-            # (loaded from SessionDB above). agent_loop_continue uses
-            # it as-is without inserting another prompt — no duplicate
-            # user turn in the LLM context.
-            ev_stream = agent_loop_continue(context, config,
-                                              loop_cancel, stream_fn)
-        else:
-            # Channels / TUI / first-time webui call: history excludes
-            # the new user turn. Wrap user_text as a UserMessage prompt
-            # plus any attached images. Agent_loop appends to
-            # context.messages internally.
-            from openprogram.providers.types import (
-                ImageContent, TextContent, UserMessage,
-            )
-            content_blocks: list = []
-            if req.user_text:
-                content_blocks.append(TextContent(text=req.user_text))
-            for att in (req.attachments or []):
-                if not isinstance(att, dict):
-                    continue
-                if att.get("type") == "image":
-                    try:
-                        content_blocks.append(ImageContent(
-                            data=att.get("data") or "",
-                            mime_type=att.get("media_type") or "image/png",
-                        ))
-                    except Exception:
-                        # Malformed attachment — skip silently rather
-                        # than aborting the whole turn. Provider will
-                        # see the text-only fallback.
-                        pass
-            if not content_blocks:
-                content_blocks = [TextContent(text="")]
-            prompt = UserMessage(
-                content=content_blocks,
-                timestamp=int(time.time() * 1000),
-            )
-            ev_stream = agent_loop([prompt], context, config,
-                                    loop_cancel, stream_fn)
+        # Single code path: history (trimmed of the new user_msg)
+        # plus UserMessage prompt added by agent_loop exactly once.
+        # The old user_already_persisted branch used agent_loop_continue
+        # with history that included the duplicated user_msg as both
+        # the tail of context.messages AND the "current turn" prompt,
+        # which broke OpenAI prompt cache because the prefix's last
+        # item flipped between turns (user N's duplicate → user N's
+        # assistant reply).
+        from openprogram.providers.types import (
+            ImageContent, TextContent, UserMessage,
+        )
+        content_blocks: list = []
+        if req.user_text:
+            content_blocks.append(TextContent(text=req.user_text))
+        for att in (req.attachments or []):
+            if not isinstance(att, dict):
+                continue
+            if att.get("type") == "image":
+                try:
+                    content_blocks.append(ImageContent(
+                        data=att.get("data") or "",
+                        mime_type=att.get("media_type") or "image/png",
+                    ))
+                except Exception:
+                    # Malformed attachment — skip silently rather
+                    # than aborting the whole turn.
+                    pass
+        if not content_blocks:
+            content_blocks = [TextContent(text="")]
+        prompt = UserMessage(
+            content=content_blocks,
+            timestamp=int(time.time() * 1000),
+        )
+        ev_stream = agent_loop([prompt], context, config,
+                                loop_cancel, stream_fn)
 
         final_text_parts: list[str] = []
         usage_total: dict[str, int] = {
@@ -1073,11 +1136,30 @@ def _extract_usage(msg) -> dict:
             if v:
                 return int(v)
         return 0
+    input_tokens = _g("input_tokens", "input", "prompt_tokens")
+    output_tokens = _g("output_tokens", "output", "completion_tokens")
+    cache_read = _g("cache_read_tokens", "cache_read", "cached_tokens")
+    cache_write = _g("cache_write_tokens", "cache_write", "cache_creation_input_tokens")
+    # OpenAI semantics: prompt_tokens INCLUDES cached_tokens. Anthropic
+    # semantics: input_tokens EXCLUDES cache_read_input_tokens. Normalize
+    # to Anthropic shape (input = fresh only) so the downstream
+    # cache_hit_rate = cache_read / (input + cache_read) formula is
+    # correct for both providers.
+    def _has(*names):
+        for n in names:
+            if isinstance(usage, dict):
+                if usage.get(n):
+                    return True
+            elif getattr(usage, n, None):
+                return True
+        return False
+    if _has("prompt_tokens") and cache_read and input_tokens >= cache_read:
+        input_tokens -= cache_read
     return {
-        "input_tokens":  _g("input_tokens", "input", "prompt_tokens"),
-        "output_tokens": _g("output_tokens", "output", "completion_tokens"),
-        "cache_read_tokens":  _g("cache_read_tokens",  "cache_read",  "cached_tokens"),
-        "cache_write_tokens": _g("cache_write_tokens", "cache_write", "cache_creation_input_tokens"),
+        "input_tokens":  input_tokens,
+        "output_tokens": output_tokens,
+        "cache_read_tokens":  cache_read,
+        "cache_write_tokens": cache_write,
     }
 
 
@@ -1175,11 +1257,11 @@ def _resolve_model(profile: dict, override: Optional[str] = None):
 
         # Probe known providers using just the model id. Biased toward
         # the dict's ``provider`` field if present so an entry like
-        # ``{"provider": "chatgpt-subscription", "id": "gpt-5.5"}`` still
+        # ``{"provider": "openai-codex", "id": "gpt-5.5"}`` still
         # tries the right backend first.
         order = ["openai", "anthropic", "google", "amazon-bedrock",
                  "cerebras", "claude-code", "github-copilot",
-                 "chatgpt-subscription", "openai-codex",
+                 "openai-codex", "openai-codex",
                  "gemini-subscription", "openrouter"]
         if provider_hint and provider_hint not in order:
             order.insert(0, provider_hint)
