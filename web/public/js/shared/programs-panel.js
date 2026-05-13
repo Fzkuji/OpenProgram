@@ -81,14 +81,6 @@ async function fixFunction(name) {
 function clickFunction(name, category) {
   var fn = availableFunctions.find(function(f) { return f.name === name; });
   if (!fn) return;
-  // Always route through /chat (new chat) when clicked from anywhere
-  // OTHER than the chat page itself. The previous check looked for
-  // `.input-wrapper` in the DOM, but app-shell keeps that element
-  // mounted-but-hidden on every page — so the click silently opened
-  // an invisible fn form on /settings, /memory, /programs, etc.
-  //
-  // Path test catches both the empty-chat shell (/chat) and an active
-  // conversation (/s/<id>); both have a real visible input.
   var p = location.pathname;
   var onChat = p === '/chat' || p.indexOf('/s/') === 0;
   if (!onChat) {
@@ -96,12 +88,23 @@ function clickFunction(name, category) {
     if (window.__navigate) window.__navigate('/chat');
     return;
   }
+  // showFnForm targets the legacy .input-wrapper DOM. The Composer is
+  // now React-rendered with CSS-Module class names, so the legacy
+  // selector misses. Until the fn-form gets migrated, fall back to
+  // pre-filling the Composer with "run <name> " so the click still
+  // gives the user a useful starting point.
+  var legacyWrapper = document.querySelector('.input-wrapper');
+  if (!legacyWrapper) {
+    setInput('run ' + name + ' ');
+    return;
+  }
   showFnForm(fn);
 }
 
 function clickFnExample(fnName) {
   var fn = availableFunctions.find(function(f) { return f.name === fnName; });
-  if (fn) {
+  var legacyWrapper = document.querySelector('.input-wrapper');
+  if (fn && legacyWrapper) {
     showFnForm(fn);
   } else {
     setInput('run ' + fnName + ' ');
@@ -110,9 +113,23 @@ function clickFnExample(fnName) {
 
 function setInput(text) {
   if (_fnFormActive) closeFnForm();
+  // Composer's input value lives in the React store now. Forward
+  // through; the Composer's useEffect on composerInput drives the
+  // textarea, and focusComposer() bumps the focus tick so the
+  // textarea takes focus.
+  var store = window.__sessionStore;
+  if (store && typeof store.getState === 'function') {
+    var s = store.getState();
+    s.setComposerInput(text);
+    s.focusComposer();
+    return;
+  }
+  // Fallback if the store hasn't attached yet (e.g. legacy-only page).
   var input = document.getElementById('chatInput');
-  input.value = text;
-  input.focus();
-  autoResize(input);
+  if (input) {
+    input.value = text;
+    input.focus();
+    if (typeof autoResize === 'function') autoResize(input);
+  }
 }
 
