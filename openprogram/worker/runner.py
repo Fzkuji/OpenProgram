@@ -38,7 +38,7 @@ def _port_available(port: int) -> bool:
     Sets ``SO_REUSEADDR`` before ``bind()`` so a port that only sits
     in ``TIME_WAIT`` (left by a worker we just stopped) is reported
     as available. Without this, every quick restart shifts the
-    backend off ``8765`` to a random port for ~60s, which forces a
+    backend off ``8110`` to a random port for ~60s, which forces a
     Next.js bundle rebuild + makes every open browser tab lose its
     WebSocket. ``uvicorn`` also sets ``SO_REUSEADDR`` on its server
     socket, so the actual subsequent bind succeeds too.
@@ -130,16 +130,16 @@ def run_foreground() -> int:
         return 1
 
     # Bring up the webui first — that's the worker's primary job.
-    # Backend port is fixed (default 8765) so the bundled Next.js
+    # Backend port is fixed (default 8110) so the bundled Next.js
     # frontend's rewrites compile against a stable target.
     import os
     from openprogram.webui import start_web
 
-    port = int(os.environ.get("OPENPROGRAM_BACKEND_PORT", "8765"))
+    port = int(os.environ.get("OPENPROGRAM_BACKEND_PORT", "8110"))
     if not _port_available(port):
         port = _find_free_port()
         print(
-            f"[worker] backend port {os.environ.get('OPENPROGRAM_BACKEND_PORT', '8765')} taken; using free port {port}"
+            f"[worker] backend port {os.environ.get('OPENPROGRAM_BACKEND_PORT', '8110')} taken; using free port {port}"
         )
     start_web(port=port, open_browser=False)
     write_port_file(port)

@@ -41,7 +41,7 @@ Then chat with it — either in the terminal or the browser:
 openprogram                                         # full-screen TUI
 ```
 
-For the web UI, just open your browser at **http://localhost:8764** — `openprogram setup` starts the worker in the background (frontend on 8764, FastAPI backend on 8765) so the page is already live.
+For the web UI, just open your browser at **http://localhost:8109** — `openprogram setup` starts the worker in the background (frontend on 8109, FastAPI backend on 8110) so the page is already live.
 
 Both surfaces share the same backend — sessions, settings, web-search defaults are persisted in `~/.agentic/` and visible from either entry point.
 
@@ -95,7 +95,7 @@ pip install dir not on PATH. Use `python3 -m openprogram <args>` instead, or add
 <details>
 <summary><b>Web UI port in use</b></summary>
 
-Set `OPENPROGRAM_WEB_PORT=8767` (frontend) or `OPENPROGRAM_BACKEND_PORT=8766` (FastAPI) before starting the worker. Or store the preference via `openprogram config ui`.
+Set `OPENPROGRAM_WEB_PORT=8111` (frontend) or `OPENPROGRAM_BACKEND_PORT=8112` (FastAPI) before starting the worker. Or store the preference via `openprogram config ui`.
 
 </details>
 

@@ -667,7 +667,7 @@ def generate_code(task: str, runtime: Runtime) -> str:
     3. Content vs instruction separation
        `runtime.exec(content=[...])` carries DATA only — never put behavior
        instructions in `content`. Instructions live in the function's
-       docstring.
+       docstring (the framework injects the docstring as the system prompt).
 
            # CORRECT — content is data
            runtime.exec(content=[{"type": "text", "text": text}])
@@ -675,6 +675,20 @@ def generate_code(task: str, runtime: Runtime) -> str:
            # WRONG — instructions in content
            runtime.exec(content=[{"type": "text",
                                   "text": f"Please analyze: {text}. Return one word."}])
+
+       Content shape (hard rule):
+       - `content` is ALWAYS a `list[dict]`. Each item is a dict like
+         `{"type": "text", "text": ...}` or `{"type": "image", "path": ...}`.
+       - NEVER pass a bare string in the list: `content=[text]` is wrong.
+       - NEVER pass a string instead of a list: `content=text` is wrong.
+
+       runtime.exec accepted kwargs (use only these):
+         content, response_format, model, tools, toolset, tools_source,
+         tools_allow, tools_deny, tool_choice, parallel_tool_calls,
+         max_iterations
+       runtime.exec does NOT accept a `system=` parameter. Do not pass one.
+       Behavior instructions go in the function's docstring, not in any
+       exec kwarg.
 
     4. LLM-driven dispatch uses native tool_use
        To let the LLM choose between sub-functions, pass them to
@@ -712,15 +726,40 @@ def generate_code(task: str, runtime: Runtime) -> str:
         str: LLM reply containing the code in a ```python fence.
     """
     spec = _load_metadata_spec()
+
+    # Hard rules that LLMs (especially codex/gpt-5.5) tend to miss when
+    # they live only in the system-side docstring. Repeat them in the
+    # user-side content where they sit right next to the task.
+    body_rules = (
+        "=== runtime.exec hard rules (do not violate) ===\n"
+        "1. content MUST be a list[dict]. Each item is a dict like\n"
+        "     {\"type\": \"text\", \"text\": \"...\"}\n"
+        "   or {\"type\": \"image\", \"path\": \"...\"}.\n"
+        "   Never pass a bare string in the list (`content=[text]` is wrong).\n"
+        "   Never pass a string instead of a list.\n"
+        "2. runtime.exec accepts ONLY these kwargs:\n"
+        "     content, response_format, model, tools, toolset, tools_source,\n"
+        "     tools_allow, tools_deny, tool_choice, parallel_tool_calls,\n"
+        "     max_iterations.\n"
+        "   It does NOT accept `system=`. Do not invent kwargs.\n"
+        "   Behavior instructions go in the function's docstring, NOT in any\n"
+        "   exec kwarg, NOT in content.\n"
+        "3. The docstring is the system prompt. Put behavioral instructions\n"
+        "   (output format, constraints) in the docstring. content carries\n"
+        "   data only.\n"
+        "\n"
+        "Example of a correct minimal call:\n"
+        "    return runtime.exec(content=[{\"type\": \"text\", \"text\": text}])\n"
+        "=== End of hard rules ===\n\n"
+    )
+
+    parts = []
     if spec:
-        text = (
-            "=== Function metadata specification (must follow) ===\n\n"
-            f"{spec}\n\n"
-            "=== End of specification ===\n\n"
-            f"{task}"
-        )
-    else:
-        text = task
+        parts.append("=== Function metadata specification (must follow) ===\n\n")
+        parts.append(spec)
+        parts.append("\n\n=== End of specification ===\n\n")
+    parts.append(body_rules)
+    parts.append(task)
     return runtime.exec(content=[
-        {"type": "text", "text": text},
+        {"type": "text", "text": "".join(parts)},
     ])

@@ -29,7 +29,7 @@ def _cmd_web(port, open_browser):
         except Exception:
             pass
     if port is None:
-        port = 8765
+        port = 8110
     if open_browser is None:
         open_browser = True
 

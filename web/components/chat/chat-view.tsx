@@ -125,10 +125,67 @@ export function ChatView({ sessionId }: ChatViewProps) {
     if (next.length) setAttachments((prev) => [...prev, ...next]);
   }
 
+  // Slash commands registered in the chat input. Each entry is what the
+  // suggestion menu shows; ``run`` returns true when the command was
+  // recognised and consumed (so submit() doesn't fall through to
+  // sending it as a chat message).
+  const SLASH_COMMANDS: Array<{
+    name: string;
+    args?: string;
+    description: string;
+    run: (rest: string, sessionId: string) => boolean;
+  }> = [
+    {
+      name: "/compact",
+      args: "[keep_recent_tokens]",
+      description: "Summarise older history; keep recent N tokens verbatim (default: model-window adaptive)",
+      run: (rest, sessionId) => {
+        const n = parseInt(rest.trim(), 10);
+        send({
+          action: "compact",
+          session_id: sessionId,
+          keep_recent_tokens: Number.isFinite(n) && n > 0 ? n : undefined,
+        });
+        return true;
+      },
+    },
+  ];
+
+  function handleSlashCommand(text: string, sessionId: string): boolean {
+    const space = text.indexOf(" ");
+    const cmd = space === -1 ? text : text.slice(0, space);
+    const rest = space === -1 ? "" : text.slice(space + 1);
+    const entry = SLASH_COMMANDS.find((c) => c.name === cmd);
+    if (!entry) return false;
+    return entry.run(rest, sessionId);
+  }
+
+  // Suggestions dropdown: show matching commands while user is typing
+  // ``/...`` and hasn't yet typed a space. Selecting one fills the input.
+  const slashQuery = input.startsWith("/") && !input.includes(" ")
+    ? input.toLowerCase()
+    : null;
+  const slashSuggestions = slashQuery
+    ? SLASH_COMMANDS.filter((c) => c.name.toLowerCase().startsWith(slashQuery))
+    : [];
+
   function submit() {
     const trimmed = input.trim();
     if (busy || wsStatus !== "open") return;
     if (!trimmed && attachments.length === 0) return;
+
+    // Slash-command interception. These commands replace the normal
+    // chat turn with a direct WS action so the message never reaches
+    // the LLM as user content.
+    const targetSession = sessionId ?? currentSessionId;
+    if (trimmed.startsWith("/") && targetSession) {
+      const handled = handleSlashCommand(trimmed, targetSession);
+      if (handled) {
+        setInput("");
+        return;
+      }
+    }
+
     const text = webSearch && trimmed
       ? `[Use the web_search tool] ${trimmed}`
       : trimmed || "(see attachment)";
@@ -274,6 +331,51 @@ export function ChatView({ sessionId }: ChatViewProps) {
               if (e.target) e.target.value = "";
             }}
           />
+          <div className="relative">
+            {slashSuggestions.length > 0 && (
+              <div
+                className="absolute bottom-full mb-1 left-0 right-0 overflow-hidden rounded-md border shadow-lg"
+                style={{
+                  background: "var(--bg-secondary)",
+                  borderColor: "var(--border)",
+                }}
+              >
+                {slashSuggestions.map((cmd) => (
+                  <button
+                    key={cmd.name}
+                    type="button"
+                    onClick={() => {
+                      setInput(cmd.args ? cmd.name + " " : cmd.name);
+                      textareaRef.current?.focus();
+                    }}
+                    className="block w-full px-3 py-1.5 text-left text-[12px]"
+                    style={{ color: "var(--text-primary)" }}
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background = "var(--bg-hover)")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.background = "transparent")
+                    }
+                  >
+                    <span style={{ color: "var(--text-bright)" }}>
+                      {cmd.name}
+                    </span>
+                    {cmd.args && (
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {" "}
+                        {cmd.args}
+                      </span>
+                    )}
+                    <span
+                      className="block text-[11px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {cmd.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           <div
             className="flex items-end gap-2 rounded-lg border p-2"
             style={{
@@ -412,11 +514,12 @@ export function ChatView({ sessionId }: ChatViewProps) {
               </Button>
             )}
           </div>
+          </div>
           <p
             className="mt-2 text-center text-[10px]"
             style={{ color: "var(--text-muted)" }}
           >
-            Enter to send · Shift+Enter for new line
+            Enter to send · Shift+Enter for new line · Type / for commands
           </p>
         </div>
       </footer>

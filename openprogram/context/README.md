@@ -175,23 +175,98 @@ turn 距离闸门           有            有            无         无
 
 文件：`summarize.py::Summarizer` + `prompts.py` + `persistence.py::Persister`
 
-**触发条件**
+策略综合了 Claude Code、Hermes Agent、OpenClaw 三家的实战经验，每个参数都有明确出处：
 
 ```
-自动     prep.budget_pct ≥ 0.85   dispatcher 在 LLM 调用前内联跑
-手动     /compact 或 trigger_compaction(keep_recent_tokens=N)
-推荐     prep.budget_pct ≥ 0.70   只发事件不动手，UI 显示提示
+参数                  默认值        来源
+────────────────────  ────────────  ────────────────────────────────────────
+trigger_pct           0.80          Hermes 50% 太激进 cache 失效频繁
+                                    Claude Code 93% 太晚 compact 时已紧张
+emergency_pct         0.95          紧急 fallback，保证下一轮不会爆窗
+recommend_pct         0.70          只发 UI 事件不动手
+keep_min_tokens       8_000         Claude Code 的 minTokens 思路
+keep_max_tokens       40_000        Claude Code 的 maxTokens 直接采用
+keep_ratio            0.10          按 window × 比例算 tail
+keep_min_messages     5             Claude Code 的 minTextBlockMessages
+                                    防止 tail 全是大 tool_result 没真对话
+protect_first_n       3             Hermes（任务描述+首回复+澄清）
+protect_last_n        20            Hermes，作为 tail-budget 之外的兜底
+min_prompt_budget     8_000         OpenClaw 的 small-window cap
+min_prompt_ratio      0.25          head 至少留 25% 窗口给 system+新轮
 ```
 
-### 4.1 找切点 `find_cut_index`
+### 4.1 触发判定（两段式）
 
-从末尾倒走累计 token，越过 `keep_recent_tokens`（默认 20000）后再向前 snap 到下一个 user 消息边界——保证 kept tail 一定从 user 消息开始，否则 LLM 看到一上来就是 assistant 回复会困惑。
+```python
+if prep.budget_pct >= EMERGENCY_PCT:        # 0.95
+    # 紧急 — 必须 compact，下一轮会爆
+    fire auto-compact
+elif prep.budget_pct >= AUTO_COMPACT_PCT:   # 0.80
+    # 主动 compact — 仍有 budget 留给 summary call
+    fire auto-compact
+elif prep.budget_pct >= RECOMMEND_PCT:      # 0.70
+    # 只发事件 UI 提示
+    emit compaction_recommended
+```
 
-切点 ≤ `protect_first_n` 时返回 0（不切），避免把保护区切掉。
+两段触发的意义：80% 时主动 compact 享受充足的 summary 预算（call 本身要占 8-15K tokens），95% 兜底保证不会真爆窗。
 
-`keep_recent_tokens` 可以通过 `engine.compact(keep_recent_tokens=...)` 临时覆盖，用户手动 `/compact 200` 时走的就是这条路。
+### 4.2 找切点 `find_cut_index`
 
-### 4.2 链式 summary
+六步算法：
+
+```python
+# 1. 算理想 tail 大小：按比例 + 上下界 clamp
+desired = clamp(window × keep_ratio, keep_min_tokens, keep_max_tokens)
+
+# 2. 小窗口 cap：head 必须留出 min_prompt 空间
+min_prompt = min(min_prompt_budget, window × min_prompt_ratio)
+effective_keep = min(desired, window - min_prompt)
+
+# 3. 从尾巴往前累积 token + 数 text-block 消息
+#    双闸门：token 数够 AND text-block 消息数够
+for i from end downto protect_first_n:
+    tail_tokens += estimate(messages[i])
+    if has_text_block(messages[i]):
+        tail_text_msgs += 1
+    if tail_tokens >= effective_keep and tail_text_msgs >= keep_min_messages:
+        cut = i; break
+
+# 4. protect_last_n 兜底：cut 不能晚于 len - protect_last_n
+cut = min(cut, len - protect_last_n)
+
+# 5. protect_first_n 兜底：cut 不能早于 protect_first_n
+cut = max(cut, protect_first_n)
+
+# 6. snap 到 user 消息边界（tail 必须从 user 起）
+while messages[cut].role != "user":
+    cut += 1
+```
+
+**双闸门**（token 数 + text-block 消息数）是 Claude Code 的关键设计。没有 min_messages 时一个 50K 的 tool_result 会单独满足 token budget，结果 tail 里实际对话只剩 1-2 条。加上 ≥5 条 text-block 这个第二闸门后，tail 一定有最少 5 轮真对话原文。
+
+**`has_text_block` 判定**：role 是 user/assistant/system 且 content 非空。纯 tool_result wrapper（content="" + extra.blocks 里有 tool_result）不算。
+
+**不同窗口下的实际行为**：
+
+```
+context_window  desired_keep    max_safe_keep   effective_keep   tail 占比
+──────────────  ──────────────  ──────────────  ──────────────  ─────────
+8K              800 → 8K min    ~6K (cap)       6K              75%
+32K             3.2K → 8K min   24K             8K              25%
+64K             6.4K → 8K min   56K             8K              12.5%
+200K            20K             192K            20K             10%
+272K (GPT-5)    27.2K           264K            27.2K           10%
+1M              100K → 40K max  ~992K           40K             4%
+```
+
+小窗口（8K-32K）自动 cap，大窗口（>400K）自动 ceiling。中间区间按比例伸缩。
+
+### 4.3 legacy `keep_recent_tokens` 覆盖
+
+`engine.compact(keep_recent_tokens=N)` 调用方可以传一个固定数字强制覆盖整套自适应逻辑，跳过 ratio/clamp/cap 直接用 N。webui `/compact <N>` 按钮走这条路，给用户手动微调的逃生通道。
+
+### 4.4 链式 summary
 
 不是每次都从头总结，而是基于上一次的 summary 增量更新。
 
@@ -216,7 +291,7 @@ compact 完成后    把新 summary 写回 session.extra_meta._last_summary_text
 
 **SYSTEM_PROMPT** 框定 summariser 的工作风格：要具体（路径、id、命令名、错误信息），不要 hedging、不要前言"Here is a summary..."、不要 moralising。
 
-### 4.3 LLM 失败兜底
+### 4.5 LLM 失败兜底
 
 `Summarizer.summarise` 包了一层 try/except：
 
@@ -240,11 +315,11 @@ except Exception as e:
 
 这样即使 provider 401 / 网络挂 / token 超限，summary 也能产出**某种**总结，agent loop 不会因为 compaction 失败而崩溃。CompactResult 里带 `fell_back_to_structural=true` 标记和 `error` 字段，调用方可以日志告警。
 
-### 4.4 可取消
+### 4.6 可取消
 
 `summarise(cancel_event=threading.Event)`。LLM 调用前后都检查 `cancel_event.is_set()`，set 了就 raise CancelledError 走 structural 兜底。用户在长 summary 跑到一半中断时，agent 不会卡死。
 
-### 4.5 持久化到 DAG
+### 4.7 持久化到 DAG
 
 `Persister.insert_summary_node(session_id, summary_text, cut_idx, history)`：
 
@@ -271,7 +346,7 @@ extra         {"compaction": true}
 
 **为什么 parent_id = None**：如果 summary 的 parent_id 指向被折叠的最后一条原消息，`get_branch` 会从 head 沿 parent_id 走回去，一路走到 summary，然后继续走到 summary.parent，再继续走到 m0——把整段被折叠的历史又走出来了，compaction 等于白做。设成 None 才是真切断。
 
-### 4.6 原始历史不丢
+### 4.8 原始历史不丢
 
 原历史行（m0..m_{cut-1}）还在 messages 表里，只是不在当前活动分支上。`get_descendants(m0)` 还能拿到。这意味着：
 
@@ -284,14 +359,19 @@ extra         {"compaction": true}
 **对比**
 
 ```
-                            OpenProgram   Claude Code   OpenClaw   Hermes
-自动 compact（阈值触发）     有            有            无         有
-手动 /compact                有            有            无         有
-增量 summary 链              有            有            无         有
-LLM 失败 structural 兜底     有            无            无         无
-可取消的 summarisation       有            有            无         无
-DAG re-parent 保留原始分支   有            无            无         无
-压缩后可回放调试             有            无            无         无
+                              OpenProgram   Claude Code   OpenClaw   Hermes
+两段式触发 (auto + emergency)  有            无            无         无
+按 window 比例自适应 tail       有            部分          无         有
+绝对值上下界 clamp              有            有            无         无
+小窗口 cap（防死循环）          有            无            有         无
+text-block 消息数双闸门         有            有            无         无
+protect_first_n 保护任务描述    有            无            无         有
+protect_last_n 保护最近 N 条    有            无            无         有
+增量 summary 链                有            有            无         有
+LLM 失败 structural 兜底       有            无            无         无
+可取消的 summarisation         有            有            无         无
+DAG re-parent 保留原始分支     有            无            无         无
+压缩后可回放调试               有            无            无         无
 ```
 
 ## 5. 生命周期与插件化

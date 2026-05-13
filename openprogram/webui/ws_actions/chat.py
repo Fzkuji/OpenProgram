@@ -411,10 +411,70 @@ async def handle_set_conversation_channel(ws, cmd: dict):
     }, default=str))
 
 
+async def handle_compact(ws, cmd: dict):
+    """Manual /compact entry point — user-initiated compaction.
+
+    Frontend sends ``{action: "compact", session_id, keep_recent_tokens?}``.
+    We delegate to ``dispatcher.trigger_compaction`` which walks the full
+    ``engine.compact`` pipeline (LLM summary, DAG re-parent, event
+    broadcast).
+    """
+    from openprogram.webui import server as _s
+    from openprogram.agent.dispatcher import trigger_compaction
+
+    session_id = cmd.get("session_id")
+    if not session_id:
+        await ws.send(json.dumps({
+            "type": "chat_response",
+            "data": {"type": "error",
+                     "content": "compact: missing session_id"},
+        }))
+        return
+
+    conv = _s._get_or_create_session(session_id)
+    agent_id = conv.get("agent_id") or "main"
+    keep_recent_tokens = cmd.get("keep_recent_tokens")
+    if keep_recent_tokens is not None:
+        try:
+            keep_recent_tokens = int(keep_recent_tokens)
+        except (TypeError, ValueError):
+            keep_recent_tokens = None
+
+    def _emit(envelope: dict) -> None:
+        # Re-shape to the standard chat-response wire frame and
+        # broadcast so every connected client sees compaction progress.
+        if envelope.get("type") == "chat_response":
+            _s._broadcast_chat_response(
+                session_id, "compact", envelope.get("data") or {},
+            )
+
+    # Compaction is a blocking sync call (it runs an LLM under the hood
+    # via its own event loop). Run it off the WS loop so the websocket
+    # stays responsive.
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(
+            None,
+            lambda: trigger_compaction(
+                session_id,
+                agent_id=agent_id,
+                on_event=_emit,
+                keep_recent_tokens=keep_recent_tokens,
+            ),
+        )
+    except Exception as e:  # noqa: BLE001
+        _s._broadcast_chat_response(session_id, "compact", {
+            "type": "error",
+            "content": f"compact failed: {type(e).__name__}: {e}",
+        })
+
+
 ACTIONS = {
     "chat": handle_chat,
     "retry_node": handle_retry_node,
     "retry_overwrite": handle_retry_overwrite,
     "switch_attempt": handle_switch_attempt,
     "set_conversation_channel": handle_set_conversation_channel,
+    "compact": handle_compact,
 }

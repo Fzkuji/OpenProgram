@@ -488,7 +488,7 @@ def _list_providers() -> list[dict]:
     result = []
     import urllib.request, urllib.error
     def _proxy_alive() -> bool:
-        # Default is :3456 (where claude-max-api-proxy listens) — NOT :8765
+        # Default is :3456 (where claude-max-api-proxy listens) — NOT :8110
         # which is openprogram's own backend port and would always answer
         # 200, masking proxy failure as "available".
         url = os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:3456"
@@ -1909,7 +1909,7 @@ def create_app():
 _server_thread: Optional[threading.Thread] = None
 
 
-def start_server(port: int = 8765, open_browser: bool = True) -> threading.Thread:
+def start_server(port: int = 8110, open_browser: bool = True) -> threading.Thread:
     """
     Start the visualization server in a background daemon thread.
 

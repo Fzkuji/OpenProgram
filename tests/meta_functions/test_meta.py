@@ -130,12 +130,21 @@ def summarize(text):
             # Subsequent calls: the generated function calling runtime
             return "This is a summary."
 
-    runtime = Runtime(call=mock_call)
-    fn = create(description="Summarize text", runtime=runtime)
+    # create() only runs clarify when an ask_user handler is reachable
+    # (otherwise the clarify follow-up would bounce off None). Register
+    # a no-op handler so clarify fires and consumes mock call #1 the
+    # way this test expects.
+    from openprogram.programs.functions.buildin.ask_user import set_ask_user
+    set_ask_user(lambda question: "")
+    try:
+        runtime = Runtime(call=mock_call)
+        fn = create(description="Summarize text", runtime=runtime)
 
-    result = fn(text="Long article about AI...")
-    assert result == "This is a summary."
-    assert call_count[0] == 3  # 1 for clarify, 1 for create, 1 for the function call
+        result = fn(text="Long article about AI...")
+        assert result == "This is a summary."
+        assert call_count[0] == 3  # 1 for clarify, 1 for create, 1 for the function call
+    finally:
+        set_ask_user(None)
 
 
 def test_create_invalid_code():

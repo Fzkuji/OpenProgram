@@ -151,7 +151,7 @@ def run_ui_section() -> int:
     from openprogram.setup import _confirm, _read_config, _text, _write_config
     cfg = _read_config()
     ui = cfg.get("ui", {}) or {}
-    cur_port = int(ui.get("port") or 8765)
+    cur_port = int(ui.get("port") or 8110)
     cur_open = bool(ui.get("open_browser", True))
 
     port_raw = _text("Web UI port:", default=str(cur_port))

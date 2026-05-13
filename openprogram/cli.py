@@ -129,7 +129,7 @@ def main():
     parser.add_argument("--print", dest="print_prompt", metavar="PROMPT",
         help="One-shot prompt; send, print reply, exit")
     parser.add_argument("--port", type=int, default=None,
-        help="Port for --web / `web` (default: stored UI pref, then 8765)")
+        help="Port for --web / `web` (default: stored UI pref, then 8110)")
     parser.add_argument("--no-browser", action="store_true",
         help="Don't auto-open browser with --web")
     parser.add_argument("--profile", default=None,
@@ -230,7 +230,7 @@ def main():
     # ---- web --------------------------------------------------------------
     p_web = sub.add_parser("web", help="Start the Web UI")
     p_web.add_argument("--port", type=int, default=None,
-        help="Port (default: stored UI pref, then 8765)")
+        help="Port (default: stored UI pref, then 8110)")
     p_web.add_argument("--no-browser", action="store_true", help="Don't open browser")
 
     # ---- memory (persistent, machine-wide knowledge) ----------------------
