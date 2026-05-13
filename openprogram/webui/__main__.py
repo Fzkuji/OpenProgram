@@ -15,8 +15,8 @@ def main():
         description="Start the Agentic Programming web UI.",
     )
     parser.add_argument(
-        "--port", "-p", type=int, default=8110,
-        help="Port to serve on (default: 8110)",
+        "--port", "-p", type=int, default=8109,
+        help="Port to serve on (default: 8109)",
     )
     parser.add_argument(
         "--no-browser", action="store_true",

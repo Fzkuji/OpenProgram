@@ -59,7 +59,7 @@ _ADVANCED_EXTRA_SECTIONS = [
      run_tts_section),
     ("ui", "Web UI preferences",
      "Port and auto-open-browser for `openprogram web`. "
-     "QuickStart uses 8110 with auto-open.",
+     "QuickStart uses 8109 with auto-open.",
      run_ui_section),
     ("memory", "Memory backend",
      "Local JSON store or 'none' (disables the memory tool). "

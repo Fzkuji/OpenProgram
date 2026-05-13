@@ -8,10 +8,10 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
 const parentPid = parseInt(process.env.OPENPROGRAM_PARENT_PID || "0", 10);
-// Default frontend port pairs with the backend (8110) so the URL pair
-// is memorable. The Python worker overrides via PORT, but this
-// fallback handles direct invocation from npm scripts too.
-const port = process.env.PORT || "8109";
+// Default frontend port 8100 pairs with the backend on 8109 — both
+// live in the rarely-squatted 8100-8109 block. The Python worker
+// overrides via PORT; this fallback handles direct npm invocations.
+const port = process.env.PORT || "8100";
 
 const nextBin = resolve(process.cwd(), "node_modules/.bin/next");
 const child = spawn(nextBin, ["start", "-p", String(port)], {

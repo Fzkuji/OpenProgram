@@ -132,7 +132,7 @@ def read_ui_prefs() -> dict[str, Any]:
     cfg = _read_config()
     ui = cfg.get("ui", {}) or {}
     return {
-        "port": int(ui.get("port") or 8110),
+        "port": int(ui.get("port") or 8109),
         "open_browser": bool(ui.get("open_browser", True)),
     }
 

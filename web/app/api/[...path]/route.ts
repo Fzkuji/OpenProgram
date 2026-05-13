@@ -39,7 +39,7 @@ function resolveBackendPort(): number {
   if (_cachedPort !== null && now - _cachedAt < PORT_TTL_MS) {
     return _cachedPort;
   }
-  // Order: env (set by worker at spawn time) → worker.port file → 8110.
+  // Order: env (set by worker at spawn time) → worker.port file → 8109.
   const envUrl = process.env.OPENPROGRAM_BACKEND_URL;
   if (envUrl) {
     const m = envUrl.match(/:(\d+)/);
@@ -61,9 +61,9 @@ function resolveBackendPort(): number {
   } catch {
     /* ignore — fall through to default */
   }
-  _cachedPort = 8110;
+  _cachedPort = 8109;
   _cachedAt = now;
-  return 8110;
+  return 8109;
 }
 
 async function proxy(req: NextRequest): Promise<Response> {
