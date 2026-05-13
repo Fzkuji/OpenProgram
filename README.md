@@ -31,32 +31,19 @@
 Requires **Python 3.11+**.
 
 ```bash
-pip install openprogram                             # install
+pip install "openprogram[web]"                      # install (with web UI)
 openprogram setup                                   # connect a provider (interactive)
 ```
 
-Then use it any of three ways:
-
-```python
-# Python — write agentic code
-from openprogram import agentic_function, create_runtime
-runtime = create_runtime()                          # auto-picks the first available provider
-
-@agentic_function
-def summarize(text):
-    """Summarize the given text into 3 bullet points."""
-    return runtime.exec(content=[{"type": "text", "text": text}])
-```
+Then chat with it — either in the terminal or the browser:
 
 ```bash
-# Web UI — browser chat
-pip install "openprogram[web]" && openprogram web   # http://localhost:8765
+openprogram                                         # full-screen TUI
 ```
 
-```bash
-# Skill — let Claude Code / Gemini CLI use it
-openprogram install-skills                          # then ask your agent to create a function
-```
+For the web UI, just open your browser at **http://localhost:8765** — `openprogram setup` starts the worker in the background so the page is already live.
+
+Both surfaces share the same backend — sessions, settings, web-search defaults are persisted in `~/.agentic/` and visible from either entry point.
 
 ## Setup
 
@@ -76,7 +63,7 @@ npm i -g @openai/codex && codex auth
 npm i -g @google/gemini-cli && gemini auth login
 ```
 
-Check what's detected with `openprogram providers`. `create_runtime()` picks the first available in this order: **Claude Code → Codex → Gemini CLI → Anthropic API → OpenAI API → Gemini API**. Override with `create_runtime(provider="openai", model="gpt-5")`.
+Check what's detected with `openprogram providers`. Auto-detection order: **Claude Code → Codex → Gemini CLI → Anthropic API → OpenAI API → Gemini API**.
 
 ## Optional extras
 
