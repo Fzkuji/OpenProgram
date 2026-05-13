@@ -554,31 +554,8 @@ function togglePanel() {}
 
 // Thinking menu close-on-outside now handled by unified popover logic in ui.js
 
-// The chat input lives in a React component (Composer) that mounts
-// AFTER PageShell injects the legacy HTML and runs init.js. Wait for
-// the textarea to appear before wiring its keydown handler.
-function _wireChatInputKeydown() {
-  var chatInput = document.getElementById('chatInput');
-  if (!chatInput || chatInput.__keydownWired) return !!chatInput;
-  chatInput.__keydownWired = true;
-  chatInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-  return true;
-}
-if (!_wireChatInputKeydown()) {
-  var _chatInputObserver = new MutationObserver(function() {
-    if (_wireChatInputKeydown()) _chatInputObserver.disconnect();
-  });
-  _chatInputObserver.observe(document.body, { childList: true, subtree: true });
-  setTimeout(function() {
-    _chatInputObserver.disconnect();
-    _wireChatInputKeydown();
-  }, 5000);
-}
+// The chat textarea lives in the React <Composer />; Enter-to-send
+// is handled in-component there. init.js no longer touches it.
 
 document.addEventListener('keydown', function(e) {
   if (!_fnFormActive) return;
@@ -598,27 +575,8 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-// Auto-resize wiring — same deferred pattern as the keydown handler:
-// the textarea is owned by the React Composer and mounts after init.
-function _wireChatInputAutoResize() {
-  var chatInput = document.getElementById('chatInput');
-  if (!chatInput || chatInput.__autoResizeWired) return !!chatInput;
-  chatInput.__autoResizeWired = true;
-  chatInput.addEventListener('input', function() {
-    autoResize(chatInput);
-  });
-  return true;
-}
-if (!_wireChatInputAutoResize()) {
-  var _chatInputResizeObserver = new MutationObserver(function() {
-    if (_wireChatInputAutoResize()) _chatInputResizeObserver.disconnect();
-  });
-  _chatInputResizeObserver.observe(document.body, { childList: true, subtree: true });
-  setTimeout(function() {
-    _chatInputResizeObserver.disconnect();
-    _wireChatInputAutoResize();
-  }, 5000);
-}
+// Auto-resize is handled inside the React Composer via a useEffect
+// driven by the controlled value — init.js no longer wires it.
 
 // ===== Keepalive =====
 setInterval(function() {

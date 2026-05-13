@@ -1,0 +1,400 @@
+/* Composer — chat input box, slash menu, plus menu, effort selector.
+   Scoped via CSS Module so class names don't collide with the legacy
+   stylesheet while it still exists. Values mirror the visual the user
+   approved before this React migration. */
+
+.inputArea {
+  padding: 12px 24px 24px;
+  background: var(--bg-primary);
+  flex-shrink: 0;
+  position: relative;
+}
+.inputArea::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: linear-gradient(to top, var(--bg-primary), transparent);
+  pointer-events: none;
+}
+
+/* Wrapper — the rounded rectangle the textarea sits inside. */
+.inputWrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 800px;
+  margin: 0 auto;
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 26px;
+  padding: 12px 12px 54px;
+  box-shadow: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.inputWrapper:focus-within {
+  border-color: rgba(0, 0, 0, 0.55);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.10);
+}
+
+@media (prefers-color-scheme: dark) {
+  .inputWrapper {
+    border-color: rgba(255, 255, 255, 0.10);
+  }
+  .inputWrapper:focus-within {
+    border-color: rgba(255, 245, 220, 0.55);
+    box-shadow: 0 4px 18px rgba(255, 255, 255, 0.06);
+  }
+}
+
+/* Textarea + top row */
+.inputTopRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-height: 30px;
+  padding-right: 38px;
+}
+.chatInput {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-bright);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  outline: none;
+  resize: none;
+  min-height: 24px;
+  max-height: 200px;
+  line-height: 1.5;
+  flex: 1;
+}
+.chatInput::placeholder {
+  color: var(--text-muted);
+}
+
+/* Bottom row holds the option buttons + token badge. */
+.inputBottomRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  height: 32px;
+}
+.inputOptions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+/* Send / stop button — circular, top-right of wrapper. */
+.sendBtn,
+.stopBtn {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% - 42px);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--text-secondary);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 2;
+  transition: border-color 180ms ease, color 180ms ease, opacity 180ms ease;
+}
+.sendBtn svg,
+.stopBtn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+.sendBtn:hover,
+.stopBtn:hover {
+  border-color: var(--text-bright);
+  color: var(--text-bright);
+}
+.sendBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Plus button + chips */
+.plusBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.plusBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.plusBtn.hasActive {
+  color: var(--accent-blue, #6cb4ff);
+}
+
+.activeToolChips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.toolChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  background: var(--bg-hover);
+  color: var(--text-bright);
+  font-size: 11px;
+  cursor: pointer;
+}
+.toolChip:hover {
+  background: var(--bg-hover-contrast, var(--bg-hover));
+}
+.toolChipIcon {
+  display: inline-flex;
+}
+.toolChipClose {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+/* Plus dropdown */
+.plusMenu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  min-width: 192px;
+  max-width: 320px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  z-index: 100;
+}
+.plusMenuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, color 0.15s;
+}
+.plusMenuItem:hover {
+  background: var(--bg-hover);
+}
+.plusMenuItem.active {
+  color: var(--accent-blue, #6cb4ff);
+  background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 10%, transparent);
+}
+.plusMenuLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.plusMenuIcon {
+  display: inline-flex;
+  color: currentColor;
+}
+.plusMenuLabel {
+  color: currentColor;
+}
+.plusMenuRight {
+  display: inline-flex;
+  color: currentColor;
+}
+
+/* Thinking effort selector */
+.thinkingSelector {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.thinkingSelector:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.thinkingSelector.open {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.thinkingArrow {
+  flex-shrink: 0;
+}
+.thinkingMenu {
+  position: absolute;
+  bottom: 100%;
+  left: 60px;
+  margin-bottom: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  z-index: 100;
+}
+.thinkingMenuItem {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 6px 14px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.thinkingMenuItem:hover {
+  background: var(--bg-hover);
+}
+.thinkingMenuItem.active {
+  background: color-mix(
+    in srgb,
+    var(--accent-blue, #6cb4ff) 12%,
+    transparent
+  );
+  color: var(--accent-blue, #6cb4ff);
+}
+
+/* Slash menu (popup above input that rolls up out of the input box) */
+.slashClip {
+  position: absolute;
+  top: -2000px;
+  left: 0;
+  right: 0;
+  bottom: 120px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.slashMenu {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: 50% 100%;
+  pointer-events: auto;
+  max-width: 720px;
+  width: min(90%, 720px);
+  padding: 8px 8px 11px;
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 14px 14px 0 0;
+  border-bottom: none;
+  box-shadow: none;
+  max-height: 270px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.slashMenu::-webkit-scrollbar {
+  width: 6px;
+}
+.slashMenu::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 3px;
+}
+
+.opening {
+  animation: slashOpen 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.closing {
+  animation: slashClose 380ms cubic-bezier(0.4, 0, 0.84, 0) forwards;
+  pointer-events: none;
+}
+@keyframes slashOpen {
+  from {
+    transform: translateX(-50%) translateY(100%);
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+  }
+}
+@keyframes slashClose {
+  from {
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    transform: translateX(-50%) translateY(100%);
+  }
+}
+
+.slashMenuItem {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+  text-align: left;
+}
+.slashMenuItem:hover {
+  background: var(--bg-hover);
+}
+.slashMenuName {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  color: var(--text-bright, #111);
+  font-weight: 600;
+}
+.slashMenuArgs {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.slashMenuDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+@media (prefers-color-scheme: dark) {
+  .slashMenu {
+    border-color: rgba(255, 255, 255, 0.10);
+  }
+  .slashMenu::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .slashMenuName {
+    color: var(--text-bright, #fff);
+  }
+}
