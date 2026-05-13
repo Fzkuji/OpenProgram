@@ -101,6 +101,33 @@ def read_disabled_skills() -> set[str]:
     return set((agent.skills or {}).get("disabled") or [])
 
 
+def read_search_default_provider() -> str | None:
+    """User-pinned default web_search backend, or None to use priority order.
+
+    Stored as ``cfg["search"]["default_provider"]``. Resolved at every
+    web_search call so a change in settings takes effect immediately
+    without a worker restart.
+    """
+    cfg = _read_config()
+    name = ((cfg.get("search") or {}).get("default_provider") or "").strip()
+    return name or None
+
+
+def write_search_default_provider(name: str | None) -> None:
+    """Persist the user's default web_search backend (or clear it)."""
+    cfg = _read_config()
+    section = dict(cfg.get("search") or {})
+    if name:
+        section["default_provider"] = name
+    else:
+        section.pop("default_provider", None)
+    if section:
+        cfg["search"] = section
+    else:
+        cfg.pop("search", None)
+    _write_config(cfg)
+
+
 def read_ui_prefs() -> dict[str, Any]:
     cfg = _read_config()
     ui = cfg.get("ui", {}) or {}
@@ -345,6 +372,7 @@ from openprogram._setup_sections.sections import (  # noqa: E402,F401
     run_ui_section,
     run_memory_section,
     run_profile_section,
+    run_search_section,
     run_tts_section,
 )
 from openprogram._setup_sections.channels import (  # noqa: E402,F401

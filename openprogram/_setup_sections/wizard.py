@@ -15,6 +15,7 @@ from openprogram._setup_sections.sections import (
     run_ui_section,
     run_memory_section,
     run_profile_section,
+    run_search_section,
     run_tts_section,
 )
 from openprogram._setup_sections.channels import run_channels_section
@@ -64,6 +65,11 @@ _ADVANCED_EXTRA_SECTIONS = [
      "Local JSON store or 'none' (disables the memory tool). "
      "QuickStart uses local.",
      run_memory_section),
+    ("search", "Web search backend",
+     "Default backend for the `web_search` tool. 'auto' picks the "
+     "highest-priority configured provider; pin one (Tavily / Brave / "
+     "Google PSE / …) to force it.",
+     run_search_section),
     ("profile", "Named profile",
      "Stored profile name. Per-profile state-dir isolation is done via "
      "`--profile <name>` at launch. QuickStart uses 'default'.",

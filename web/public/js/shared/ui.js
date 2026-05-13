@@ -308,15 +308,30 @@ function renderPlusMenu() {
   var toolsItem = document.getElementById('plusMenuTools');
   var check = document.getElementById('plusMenuToolsCheck');
   if (toolsItem) toolsItem.classList.toggle('active', !!window._toolsEnabled);
-  if (check) check.innerHTML = window._toolsEnabled
-    ? '<svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M15.188 5.11a.5.5 0 0 1 .752.626l-.056.084-7.5 9a.5.5 0 0 1-.738.033l-3.5-3.5-.064-.078a.501.501 0 0 1 .693-.693l.078.064 3.113 3.113 7.15-8.58z"/></svg>'
-    : '';
+  if (check) check.innerHTML = window._toolsEnabled ? _PLUS_CHECK_SVG : '';
+
+  var wsItem = document.getElementById('plusMenuWebSearch');
+  var wsCheck = document.getElementById('plusMenuWebSearchCheck');
+  var wsSub = document.getElementById('plusMenuWebSearchSub');
+  if (wsItem) wsItem.classList.toggle('active', !!window._webSearchEnabled);
+  if (wsCheck) wsCheck.innerHTML = window._webSearchEnabled ? _PLUS_CHECK_SVG : '';
+  if (wsSub) {
+    var provName = window._webSearchProviderLabel || '';
+    wsSub.textContent = provName ? ' · ' + provName : '';
+  }
   _updatePlusBtnIndicator();
 }
 
+// Shared check-mark glyph used by every plus-menu toggle.
+var _PLUS_CHECK_SVG =
+  '<svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">' +
+    '<path d="M15.188 5.11a.5.5 0 0 1 .752.626l-.056.084-7.5 9a.5.5 0 0 1-.738.033l-3.5-3.5-.064-.078a.501.501 0 0 1 .693-.693l.078.064 3.113 3.113 7.15-8.58z"/>' +
+  '</svg>';
+
 function _updatePlusBtnIndicator() {
   var btn = document.getElementById('plusBtn');
-  if (btn) btn.classList.toggle('has-active', !!window._toolsEnabled);
+  var anyActive = !!window._toolsEnabled || !!window._webSearchEnabled;
+  if (btn) btn.classList.toggle('has-active', anyActive);
   _renderActiveToolChips();
 }
 
@@ -335,6 +350,27 @@ function _renderActiveToolChips() {
         '</span>' +
       '</div>';
   }
+  if (window._webSearchEnabled) {
+    var label = window._webSearchProviderLabel
+      ? 'Web Search · ' + window._webSearchProviderLabel
+      : 'Web Search';
+    // _refreshWebSearchProviderLabel stashes the tier (e.g. "Free 2000
+    // q/mo") for the active provider so the tooltip can answer
+    // "what's the cost?" without making the user open the settings
+    // page. Empty string when the catalog has no entry.
+    if (window._webSearchProviderTier) {
+      label += ' · ' + window._webSearchProviderTier;
+    }
+    chips +=
+      '<div class="tool-chip" data-tooltip="' + escAttr(label) + '" onclick="toggleWebSearchEnabled(event); _updatePlusBtnIndicator();" title="">' +
+        '<span class="tool-chip-icon">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' +
+        '</span>' +
+        '<span class="tool-chip-close" aria-label="Remove">' +
+          '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg>' +
+        '</span>' +
+      '</div>';
+  }
   host.innerHTML = chips;
 }
 
@@ -344,6 +380,41 @@ function toggleToolsEnabled(e) {
   try { localStorage.setItem('agentic_tools_enabled', window._toolsEnabled ? '1' : '0'); } catch (_) {}
   _updatePlusBtnIndicator();
 }
+
+function toggleWebSearchEnabled(e) {
+  if (e) e.stopPropagation();
+  window._webSearchEnabled = !window._webSearchEnabled;
+  try { localStorage.setItem('agentic_web_search_enabled', window._webSearchEnabled ? '1' : '0'); } catch (_) {}
+  // First-time enable: fetch the configured default-provider label so
+  // the menu/chip can show "Web Search · Tavily" instead of just
+  // "Web Search". Cached on window after the first lookup.
+  if (window._webSearchEnabled && !window._webSearchProviderLabel) {
+    _refreshWebSearchProviderLabel();
+  }
+  _updatePlusBtnIndicator();
+}
+
+function _refreshWebSearchProviderLabel() {
+  try {
+    fetch('/api/search-providers/list')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        var def = d.default;
+        var prov = (d.providers || []).find(function (p) {
+          return def ? p.id === def : (p.available && p.is_default !== false);
+        }) || (d.providers || []).find(function (p) { return p.available; });
+        window._webSearchProviderLabel = prov ? prov.name : '';
+        // Catalog tier (e.g. "Free 2000 q/mo"). Optional — older API
+        // builds don't return this field, in which case the tooltip
+        // shows just "Web Search · <name>".
+        window._webSearchProviderTier = (prov && prov.tier) ? prov.tier : '';
+        renderPlusMenu();
+      })
+      .catch(function () {});
+  } catch (_) {}
+}
+window._refreshWebSearchProviderLabel = _refreshWebSearchProviderLabel;
 
 // Unified click-outside: close any open popover (thinking / plus / model)
 // when the click isn't on its own trigger or panel.

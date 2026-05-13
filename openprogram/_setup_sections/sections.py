@@ -212,6 +212,109 @@ def run_profile_section() -> int:
     return 0
 
 
+def run_search_section() -> int:
+    """Pick the default web_search backend.
+
+    "auto" means "use priority order, take the highest-priority available
+    one at search time"; any explicit pick wins over priority if available.
+    Each entry is annotated with its env var + configured/unconfigured
+    status so users know which need an API key first.
+    """
+    from openprogram.setup import (
+        _choose_one,
+        read_search_default_provider,
+        write_search_default_provider,
+    )
+    # Import the registry the same way the tool does — populates the
+    # builtin provider list as a side effect of importing `providers`.
+    from openprogram.tools.web_search.registry import registry as _wsr
+    import openprogram.tools.web_search.providers  # noqa: F401
+
+    providers = list(_wsr.all())
+    if not providers:
+        print("No web_search providers registered.")
+        return 1
+
+    current = read_search_default_provider() or "auto"
+
+    def _key_set(env_var: str | None) -> bool:
+        if not env_var:
+            return True
+        if os.environ.get(env_var):
+            return True
+        try:
+            from openprogram.setup import _read_config
+            return bool((_read_config().get("api_keys") or {}).get(env_var))
+        except Exception:
+            return False
+
+    rows = ["auto  (highest-priority available)"]
+    values = ["auto"]
+    for p in providers:
+        env_var = (list(getattr(p, "requires_env", ()) or []) or [None])[0]
+        configured = _key_set(env_var)
+        try:
+            available = bool(p.is_available())
+        except Exception:
+            available = False
+        if env_var:
+            status = "available" if available else (
+                "configured but inactive" if configured else f"needs {env_var}"
+            )
+        else:
+            status = "no key needed"
+        rows.append(f"{p.name}  ({status})")
+        values.append(p.name)
+
+    current_label = None
+    for lbl, val in zip(rows, values):
+        if val == current:
+            current_label = lbl
+            break
+
+    picked = _choose_one("Default web search backend:", rows, current_label)
+    if picked is None:
+        print("Cancelled.")
+        return 1
+    name = values[rows.index(picked)]
+    write_search_default_provider(None if name == "auto" else name)
+    if name == "auto":
+        print("Default search backend: auto (priority order)")
+    else:
+        print(f"Default search backend: {name}")
+
+    # If the user picked a backend that isn't ready (its required env
+    # var is missing or its is_available() returns False), surface the
+    # catalog setup hint so the CLI flow tells them where to go next
+    # instead of leaving them staring at "configured but inactive".
+    # We don't try to handle key entry in the TUI — the webui Settings
+    # page owns that. The TUI just hints the path forward.
+    if name != "auto":
+        picked_provider = next(
+            (p for p in providers if p.name == name), None,
+        )
+        try:
+            picked_available = bool(picked_provider and picked_provider.is_available())
+        except Exception:
+            picked_available = False
+        if picked_provider and not picked_available:
+            from openprogram.tools.web_search import catalog as _wsc
+            info = _wsc.get(name)
+            if info and (info.signup_url or info.setup_steps):
+                print()
+                print(f"To enable {info.name}:")
+                for i, step in enumerate(info.setup_steps or [], 1):
+                    print(f"  {i}. {step}")
+                if info.signup_url:
+                    print(f"  Signup: {info.signup_url}")
+                if info.docs_url:
+                    print(f"  Docs:   {info.docs_url}")
+                print(
+                    "  Finish key entry in Settings → Web Search in the webui."
+                )
+    return 0
+
+
 def run_tts_section() -> int:
     """Text-to-speech backend + credentials."""
     from openprogram.setup import _choose_one, _password, _read_config, _write_config

@@ -20,34 +20,127 @@ def register(app):
     async def api_search_providers_list():
         """Web-search backend catalog (Tavily / Exa / DuckDuckGo).
         Mirrors /api/providers/list shape so the settings UI can reuse
-        the same row-and-key-field components."""
+        the same row-and-key-field components.
+
+        ``default`` (str|null) tells callers which provider the user has
+        pinned as default; ``providers[*].is_default`` mirrors the same
+        info per-row for convenient list rendering.
+
+        Each row now also carries the catalog metadata (``name``,
+        ``description``, ``tier``, ``signup_url``, ``docs_url``,
+        ``setup_steps``) sourced from
+        ``openprogram.tools.web_search.catalog``. Unknown providers
+        fall back to a synthesised display name + empty metadata so the
+        UI can still render the row.
+        """
         from openprogram.webui import server as _s
         from openprogram.tools.web_search.registry import registry as _wsr
+        from openprogram.tools.web_search import catalog as _wsc
         import openprogram.tools.web_search.providers  # noqa: F401
-        descs = {
-            "tavily": "LLM-tuned search (Tavily API). Snippets pre-summarised for agents. Free tier: 1000 queries/month.",
-            "exa": "Neural search (Exa API). Catches semantically related pages keyword engines miss.",
-            "perplexity": "Sonar API — returns an LLM-written answer with citations. Good for one-shot Q&A. Pay-as-you-go.",
-            "brave": "Independent index, privacy-first. Free tier (Data for AI): 2000 queries/month.",
-            "google": "Real Google results via Programmable Search Engine. Free tier: 100 queries/day. Needs GOOGLE_PSE_API_KEY + GOOGLE_PSE_CX.",
-            "firecrawl": "SERP + full page content in one call (no follow-up fetch needed). Free tier: 500 credits/month.",
-            "searxng": "Self-hosted meta search (aggregates Google/Bing/DDG). Set SEARXNG_URL to your instance. No API key.",
-            "duckduckgo": "Zero-key public fallback. No setup required.",
-        }
+        from openprogram.setup import read_search_default_provider
+        default = read_search_default_provider()
         out = []
         for p in _wsr.all():
             env_var = (list(getattr(p, "requires_env", ()) or []) or [None])[0]
             configured = bool(_s._get_api_key(env_var)) if env_var else True
+            meta = _wsc.get_dict(p.name) or {}
             out.append({
                 "id": p.name,
-                "name": p.name.capitalize(),
-                "description": descs.get(p.name, ""),
+                # Prefer the catalog's display name (e.g. "Google PSE")
+                # over the raw registry id (.capitalize() of "google"
+                # would lose the "PSE" qualifier).
+                "name": meta.get("name") or p.name.capitalize(),
+                "description": meta.get("description", ""),
+                "tier": meta.get("tier", ""),
+                "signup_url": meta.get("signup_url"),
+                "docs_url": meta.get("docs_url"),
+                "setup_steps": meta.get("setup_steps") or [],
                 "priority": p.priority,
                 "env_var": env_var,
                 "configured": configured,
                 "available": bool(getattr(p, "is_available", lambda: False)()),
+                "is_default": (default == p.name),
             })
-        return JSONResponse(content={"providers": out})
+        return JSONResponse(content={"providers": out, "default": default})
+
+    @app.get("/api/search-providers/default")
+    async def api_search_providers_default():
+        from openprogram.setup import read_search_default_provider
+        return JSONResponse(content={"provider": read_search_default_provider()})
+
+    @app.post("/api/search-providers/{provider_id}/test")
+    async def api_test_search_provider(provider_id: str, body: dict = None):
+        """Run a tiny live query against the named search backend.
+
+        Mirrors /api/providers/{name}/test (the LLM provider connectivity
+        check). Returns ``{ok, latency_ms, error?}`` so the UI can show a
+        green check or red X with the failure reason. Uses a stable
+        zero-result-friendly query ("openprogram health check") and asks
+        for 1 result to minimise API quota burn.
+        """
+        import time as _t
+        from openprogram.tools.web_search.registry import registry as _wsr
+        import openprogram.tools.web_search.providers  # noqa: F401
+        if not _wsr.has(provider_id):
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": f"unknown provider {provider_id!r}"},
+            )
+        backend = _wsr.get(provider_id)
+        # is_available() catches missing env vars before we burn a
+        # request budget on a guaranteed-to-fail call.
+        try:
+            if not backend.is_available():
+                missing = [e for e in (getattr(backend, "requires_env", None) or [])
+                           if not os.environ.get(e)]
+                return JSONResponse(content={
+                    "ok": False,
+                    "error": (
+                        f"Backend not available — set env: {missing}"
+                        if missing
+                        else "Backend reports unavailable"
+                    ),
+                })
+        except Exception as e:
+            return JSONResponse(content={
+                "ok": False,
+                "error": f"is_available() raised: {type(e).__name__}: {e}",
+            })
+
+        started = _t.time()
+        try:
+            results = backend.search("openprogram health check", num_results=1)
+            latency_ms = int((_t.time() - started) * 1000)
+            return JSONResponse(content={
+                "ok": True,
+                "latency_ms": latency_ms,
+                "result_count": len(results or []),
+            })
+        except Exception as e:
+            latency_ms = int((_t.time() - started) * 1000)
+            return JSONResponse(content={
+                "ok": False,
+                "latency_ms": latency_ms,
+                "error": f"{type(e).__name__}: {e}",
+            })
+
+    @app.post("/api/search-providers/default")
+    async def api_set_search_providers_default(body: dict = None):
+        from openprogram.setup import write_search_default_provider
+        from openprogram.tools.web_search.registry import registry as _wsr
+        import openprogram.tools.web_search.providers  # noqa: F401
+        name = (body or {}).get("provider")
+        if name in (None, "", "auto"):
+            write_search_default_provider(None)
+            return JSONResponse(content={"ok": True, "provider": None})
+        name = str(name).strip().lower()
+        if not _wsr.has(name):
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": f"unknown provider {name!r}"},
+            )
+        write_search_default_provider(name)
+        return JSONResponse(content={"ok": True, "provider": name})
 
     @app.get("/api/providers/list")
     async def api_providers_list():

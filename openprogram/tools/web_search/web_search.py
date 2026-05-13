@@ -91,6 +91,17 @@ def execute(
     num_results = max(1, min(int(num_results), 25))
     provider = read_string_param(kw, "provider", "backend", default=provider)
 
+    # Caller didn't pin a backend → use the user's saved default if any,
+    # otherwise fall through to priority-based auto-select.
+    if not provider:
+        try:
+            from openprogram.setup import read_search_default_provider
+            stored = read_search_default_provider()
+            if stored and registry.has(stored):
+                provider = stored
+        except Exception:
+            pass
+
     try:
         backend = registry.select(prefer=provider)
     except LookupError as e:

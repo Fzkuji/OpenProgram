@@ -81,7 +81,8 @@ function sendMessage(textOverride) {
       session_id: currentSessionId,
       thinking_effort: _thinkingEffort,
       exec_thinking_effort: _execThinkingEffort,
-      tools: !!window._toolsEnabled
+      tools: !!window._toolsEnabled,
+      web_search: !!window._webSearchEnabled
     };
     // First message of a brand-new conversation: attach the user's
     // channel choice from the welcome-screen picker, if any. Ignored by
@@ -288,10 +289,17 @@ function addUserMessage(text) {
   if (typeof window.ensureMessageActions === 'function') {
     window.ensureMessageActions(div);
   }
-  // Sending a message is an explicit user action — anchor to the new
-  // bubble even if they had scrolled up previously, so they see what
-  // they just sent.
-  scrollToBottom({ force: true });
+  // ChatGPT/Claude pattern: pin the just-sent user bubble to the top
+  // of the scroll viewport so the upcoming reply streams in below it.
+  // The bottom padding on .chat-messages provides the empty space that
+  // makes this scroll position reachable.
+  requestAnimationFrame(function () {
+    var area = document.getElementById('chatArea');
+    if (!area) return;
+    var areaRect = area.getBoundingClientRect();
+    var msgRect = div.getBoundingClientRect();
+    area.scrollTop += (msgRect.top - areaRect.top) - 16;
+  });
 
   if (currentSessionId && conversations[currentSessionId]) {
     if (!conversations[currentSessionId].messages) conversations[currentSessionId].messages = [];

@@ -615,9 +615,18 @@ if (!window.location.pathname.match(/^\/s\//)) {
     if (localStorage.getItem('agentic_tools_enabled') === '1') {
       window._toolsEnabled = true;
     }
+    if (localStorage.getItem('agentic_web_search_enabled') === '1') {
+      window._webSearchEnabled = true;
+    }
   } catch (_) {}
   if (typeof _updatePlusBtnIndicator === 'function') {
     _updatePlusBtnIndicator();
+  }
+  // Prefetch the user's configured default-search-provider label so the
+  // chip/menu can read "Web Search · Tavily" on first paint instead of
+  // showing a bare label until the user opens the menu.
+  if (typeof _refreshWebSearchProviderLabel === 'function') {
+    _refreshWebSearchProviderLabel();
   }
 })();
 

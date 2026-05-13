@@ -450,6 +450,8 @@ def main():
         help="Pick the memory backend for the `memory` tool")
     p_config_sub.add_parser("profile",
         help="Active profile name (config-path isolation pending)")
+    p_config_sub.add_parser("search",
+        help="Default web search backend (Tavily / Brave / Google PSE / …)")
     p_config_sub.add_parser("tts",
         help="Text-to-speech provider (runtime hookup pending)")
     p_config_sub.add_parser("channels",
@@ -800,6 +802,7 @@ def main():
             "ui":       _sw.run_ui_section,
             "memory":   _sw.run_memory_section,
             "profile":  _sw.run_profile_section,
+            "search":   _sw.run_search_section,
             "tts":      _sw.run_tts_section,
             "channels": _sw.run_channels_section,
             "backend":  _sw.run_backend_section,

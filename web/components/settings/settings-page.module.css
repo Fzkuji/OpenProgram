@@ -389,6 +389,21 @@
   border: 1px solid var(--text-muted);
 }
 
+/* "Default" pill next to the provider label in the search-providers
+   list. Subtle so it doesn't compete with the status dot, but bright
+   enough to read at a glance. */
+.providerDefaultBadge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-blue-bg, rgba(79, 142, 247, 0.16));
+  color: var(--accent-blue, #4f8ef7);
+  flex-shrink: 0;
+}
+
 .detail {
   display: flex;
   flex-direction: column;
@@ -631,4 +646,60 @@
 }
 .testResult.err {
   color: var(--accent-red);
+}
+
+/* Search-provider tier chip — sits next to the detail-panel title so
+   "Free 1000 q/mo" / "Pay-as-you-go" / "Self-hosted" is visible at a
+   glance without making the user read the description prose. Muted
+   surface to stay below the default-pill in visual hierarchy. */
+.searchTierChip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  margin-left: 8px;
+  vertical-align: middle;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* "Get API key →" button + numbered setup steps for search providers.
+   Reuses the surface look of the description box (bg-tertiary + 1px
+   border) so the Setup card sits visually beside it instead of
+   competing for attention. */
+.searchSetupGetKey {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--accent-blue, #4f8ef7);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  transition: filter 0.15s;
+}
+.searchSetupGetKey:hover {
+  filter: brightness(1.08);
+}
+.searchSetupSteps {
+  margin: 4px 0 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.searchSetupSteps li {
+  padding-left: 2px;
 }

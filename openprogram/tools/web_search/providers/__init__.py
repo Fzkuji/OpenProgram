@@ -14,6 +14,9 @@ from .duckduckgo import DuckDuckGoProvider
 from .exa import ExaProvider
 from .firecrawl import FirecrawlProvider
 from .google import GoogleProvider
+from .minimax import MiniMaxProvider
+from .moonshot import MoonshotProvider
+from .ollama import OllamaProvider
 from .perplexity import PerplexityProvider
 from .searxng import SearxngProvider
 from .tavily import TavilyProvider
@@ -28,7 +31,10 @@ def _register_builtins() -> None:
     #    80 google      — real Google results via Programmable Search Engine
     #    75 firecrawl   — SERP + page content, no second fetch needed
     #    70 searxng     — self-hosted meta search, privacy-first
-    #    50 duckduckgo  — zero-key public fallback
+    #    65 minimax     — Coding Plan search API, structured snippets
+    #    60 moonshot    — Kimi $web_search tool-call, AI-synth answers + citations
+    #    55 ollama      — local/cloud Ollama experimental web search
+    #    10 duckduckgo  — zero-key public fallback
     # Ordering matters only for auto-select; explicit ``prefer=`` overrides.
     registry.register(TavilyProvider())
     registry.register(ExaProvider())
@@ -37,6 +43,9 @@ def _register_builtins() -> None:
     registry.register(GoogleProvider())
     registry.register(FirecrawlProvider())
     registry.register(SearxngProvider())
+    registry.register(MiniMaxProvider())
+    registry.register(MoonshotProvider())
+    registry.register(OllamaProvider())
     registry.register(DuckDuckGoProvider())
 
 
@@ -49,6 +58,9 @@ __all__ = [
     "ExaProvider",
     "FirecrawlProvider",
     "GoogleProvider",
+    "MiniMaxProvider",
+    "MoonshotProvider",
+    "OllamaProvider",
     "PerplexityProvider",
     "SearxngProvider",
     "TavilyProvider",
