@@ -15,14 +15,14 @@ from openprogram.providers.models import get_model
 
 
 def test_dict_model_normalizes_to_string() -> None:
-    """Profile model = {"provider": "chatgpt-subscription", "id": "gpt-5.5"}
+    """Profile model = {"provider": "openai-codex", "id": "gpt-5.5"}
     must resolve to a real Model, not a dict-id stub."""
     m = _resolve_model({
-        "model": {"provider": "chatgpt-subscription", "id": "gpt-5.5"},
+        "model": {"provider": "openai-codex", "id": "gpt-5.5"},
     })
     assert isinstance(m.id, str)
     assert m.id == "gpt-5.5"
-    assert m.provider == "chatgpt-subscription"
+    assert m.provider == "openai-codex"
 
 
 def test_bare_string_model_still_works() -> None:
@@ -60,7 +60,7 @@ def test_codex_55_exposes_full_thinking_levels() -> None:
     """Runtime-injected Codex models must keep the full abstract picker set."""
     import openprogram.providers.openai_codex.runtime  # noqa: F401
 
-    m = get_model("chatgpt-subscription", "gpt-5.5")
+    m = get_model("openai-codex", "gpt-5.5")
     assert m is not None
     assert m.thinking_levels == ["minimal", "low", "medium", "high", "xhigh"]
     assert m.default_thinking_level == "xhigh"

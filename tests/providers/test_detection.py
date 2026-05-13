@@ -4,6 +4,19 @@ import importlib
 import pytest
 from unittest.mock import MagicMock, patch
 
+
+@pytest.fixture(autouse=True)
+def _isolate_user_config(tmp_path, monkeypatch):
+    """detect_provider() reads ~/.agentic/config.json which on a real dev
+    box has a default_provider preset that defeats every env-only test
+    here. Redirect get_config_path to a tmp file that doesn't exist so
+    config-file lookup always misses."""
+    monkeypatch.setattr(
+        "openprogram.paths.get_config_path",
+        lambda: str(tmp_path / "no-such-config.json"),
+    )
+
+
 class TestProviderDetection:
     """Tests for detect_provider() and create_runtime() wiring."""
 
@@ -65,7 +78,7 @@ class TestProviderDetection:
         from openprogram import providers
         importlib.reload(providers)
 
-        assert providers.detect_provider() == ("chatgpt-subscription", None)
+        assert providers.detect_provider() == ("openai-codex", None)
 
     def test_check_providers_marks_env_selected_provider_default(self, monkeypatch):
         """check_providers() marks the configured provider as the auto-selected default."""

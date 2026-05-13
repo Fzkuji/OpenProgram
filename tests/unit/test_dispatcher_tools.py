@@ -276,7 +276,7 @@ def test_tool_use_event_runs_tool_and_emits_result(
 
     with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
         result = D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="run probe", agent_id="main",
+            D.TurnRequest(session_id="c1", user_text="run probe", agent_id="main",
                           source="tui", permission_mode="bypass"),
             on_event=collector,
         )
@@ -316,7 +316,7 @@ def test_oversized_tool_result_is_truncated(
 
     with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="run", agent_id="main",
+            D.TurnRequest(session_id="c1", user_text="run", agent_id="main",
                           source="tui", permission_mode="bypass"),
             on_event=collector,
         )
@@ -361,7 +361,7 @@ def test_persist_full_writes_file(
 
     with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="run", agent_id="main",
+            D.TurnRequest(session_id="c1", user_text="run", agent_id="main",
                           source="tui", permission_mode="bypass"),
             on_event=collector,
         )
@@ -410,7 +410,7 @@ def test_approval_required_blocks_until_approved(
     def _run():
         with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
             result_holder["r"] = D.process_user_turn(
-                D.TurnRequest(conv_id="c1", user_text="run", agent_id="main",
+                D.TurnRequest(session_id="c1", user_text="run", agent_id="main",
                               source="tui", permission_mode="ask"),
                 on_event=relay,
             )
@@ -460,7 +460,7 @@ def test_approval_denied_aborts_run(
     def _run():
         with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
             D.process_user_turn(
-                D.TurnRequest(conv_id="c1", user_text="run", agent_id="main",
+                D.TurnRequest(session_id="c1", user_text="run", agent_id="main",
                               source="tui", permission_mode="ask"),
                 on_event=relay,
             )
@@ -519,7 +519,7 @@ def test_cancel_propagates_to_tool(
 
     with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="go", agent_id="main",
+            D.TurnRequest(session_id="c1", user_text="go", agent_id="main",
                           source="tui", permission_mode="bypass"),
             on_event=collector,
             cancel_event=cancel_flag,

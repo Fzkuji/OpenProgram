@@ -1,6 +1,6 @@
 """End-to-end test that OpenAICodexRuntime uses AuthManager correctly.
 
-These tests don't construct a real Runtime (that needs the chatgpt-subscription
+These tests don't construct a real Runtime (that needs the openai-codex
 provider registry + HTTP client setup); instead they exercise the
 narrow auth-acquisition helpers in ``runtime.py`` that were the point
 of the v2 migration. If _ensure_credential / _account_id_for work,

@@ -40,10 +40,12 @@ from openprogram.providers.types import (
 )
 
 
-def _stub_model(max_tokens: int = 200_000) -> Model:
+def _stub_model(max_tokens: int = 200_000,
+                context_window: int | None = None) -> Model:
     return Model(id="stub", name="stub", api="completion",
                  provider="openai", base_url="https://x",
-                 max_tokens=max_tokens)
+                 max_tokens=max_tokens,
+                 context_window=context_window or max_tokens)
 
 
 def _build_partial(t: str = "") -> AssistantMessage:
@@ -63,13 +65,23 @@ def _build_final(t: str) -> AssistantMessage:
     )
 
 
-def make_text_stream(text: str):
+def make_text_stream(text: str, *, input_tokens: int = 1):
+    """Fake stream. ``input_tokens`` controls the synthetic usage on
+    the final message — set high to trigger budget-based events that
+    care about provider-reported input size."""
+    def _final(t: str) -> AssistantMessage:
+        return AssistantMessage(
+            content=[TextContent(text=t)],
+            api="completion", provider="openai", model="stub",
+            usage=Usage(input=input_tokens, output=1), stop_reason="stop",
+            timestamp=int(time.time() * 1000),
+        )
     async def _fn(model, ctx, opts) -> AsyncGenerator[AssistantMessageEvent, None]:
         yield EventStart(partial=_build_partial(""))
         yield EventTextStart(content_index=0, partial=_build_partial(""))
         yield EventTextDelta(content_index=0, delta=text, partial=_build_partial(text))
         yield EventTextEnd(content_index=0, content=text, partial=_build_partial(text))
-        yield EventDone(reason="stop", message=_build_final(text))
+        yield EventDone(reason="stop", message=_final(text))
     return _fn
 
 
@@ -104,7 +116,7 @@ def test_auto_title_stamps_from_first_user_message(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="What is the weather?",
+            D.TurnRequest(session_id="c1", user_text="What is the weather?",
                           agent_id="main", source="tui"),
         )
 
@@ -125,7 +137,7 @@ def test_auto_title_truncates_long_input(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text=long_msg,
+            D.TurnRequest(session_id="c1", user_text=long_msg,
                           agent_id="main", source="tui"),
         )
 
@@ -147,7 +159,7 @@ def test_auto_title_is_idempotent_across_turns(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="first",
+            D.TurnRequest(session_id="c1", user_text="first",
                           agent_id="main", source="tui"),
         )
 
@@ -156,7 +168,7 @@ def test_auto_title_is_idempotent_across_turns(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="completely different topic",
+            D.TurnRequest(session_id="c1", user_text="completely different topic",
                           agent_id="main", source="tui"),
         )
 
@@ -179,7 +191,7 @@ def test_auto_title_skips_empty_input(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="   \n  ",  # whitespace only
+            D.TurnRequest(session_id="c1", user_text="   \n  ",  # whitespace only
                           agent_id="main", source="tui"),
         )
 
@@ -215,7 +227,10 @@ def test_compaction_recommended_fires_when_branch_large(
     tmp_db.set_head("c1", last)
 
     captured: list[dict] = []
-    fake = make_text_stream("ok")
+    # Report 400 input tokens on the assistant turn — crosses 70% of
+    # the 500-token window stub so engine.after_turn emits the
+    # recommendation envelope.
+    fake = make_text_stream("ok", input_tokens=400)
     orig = D._run_loop_blocking
 
     def _w(*, req, history, on_event, cancel_event, **_):
@@ -224,7 +239,7 @@ def test_compaction_recommended_fires_when_branch_large(
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="more",
+            D.TurnRequest(session_id="c1", user_text="more",
                           agent_id="main", source="tui"),
             on_event=captured.append,
         )
@@ -233,8 +248,12 @@ def test_compaction_recommended_fires_when_branch_large(
             if e.get("type") == "chat_response"
             and e["data"].get("type") == "compaction_recommended"]
     assert recs, "expected at least one compaction_recommended envelope"
-    assert recs[0]["data"]["conv_id"] == "c1"
-    assert recs[0]["data"]["branch_messages"] >= 50
+    assert recs[0]["data"]["session_id"] == "c1"
+    # New schema (from engine.after_turn): includes budget_pct + window.
+    # The legacy ``branch_messages`` field is gone — engine now reasons
+    # in tokens, not message counts.
+    assert recs[0]["data"]["budget_pct"] >= 0.70
+    assert recs[0]["data"]["context_window"] == 500
 
 
 def test_compaction_signal_silent_under_threshold(tmp_db: SessionDB) -> None:
@@ -249,7 +268,7 @@ def test_compaction_signal_silent_under_threshold(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi",
+            D.TurnRequest(session_id="c1", user_text="hi",
                           agent_id="main", source="tui"),
             on_event=captured.append,
         )
@@ -283,11 +302,13 @@ def test_trigger_compaction_inserts_summary_and_moves_head(
     tmp_db.set_head("c1", last)
     pre_count = len(tmp_db.get_messages("c1"))
 
-    # Stub generate_summary to avoid hitting a real provider
+    # Stub the LLM summary call to avoid hitting a real provider
     async def _fake_gen(*args, **kwargs):
         return "compressed summary of earlier discussion"
-    monkeypatch.setattr("openprogram.agent.compaction.compaction.generate_summary",
-                        _fake_gen)
+    monkeypatch.setattr(
+        "openprogram.context.summarize.Summarizer._llm_summary",
+        _fake_gen,
+    )
 
     captured: list[dict] = []
     # keep_recent_tokens=200 → most of the seeded turns get summarized,
@@ -322,7 +343,7 @@ def test_trigger_compaction_inserts_summary_and_moves_head(
     old_ids = {m["id"] for m in all_msgs} & {f"m{i}" for i in range(20)}
     assert old_ids == {f"m{i}" for i in range(20)}, "old messages must stay in DB"
 
-    # And one compaction_done envelope was emitted
+    # And one compaction_finished envelope was emitted
     done = [e for e in captured
-            if e["data"].get("type") == "compaction_done"]
+            if e["data"].get("type") == "compaction_finished"]
     assert len(done) == 1

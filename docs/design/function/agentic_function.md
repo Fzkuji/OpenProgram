@@ -73,7 +73,7 @@ research_pipeline
 
 把子函数塞进 `runtime.exec(tools=[...])`，让 provider 原生 tool_use 协议处理
 分发。`@agentic_function` 自带 `.spec`（JSON Schema，自动从签名 + docstring
-生成）和 `.execute`，不需要写任何 build_options/render_options/parse_args 中间层。
+生成）和 `.execute`，不需要写任何 render_options + parse_args 中间层。
 
 ```python
 @agentic_function

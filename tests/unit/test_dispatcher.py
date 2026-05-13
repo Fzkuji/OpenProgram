@@ -77,7 +77,7 @@ def test_persists_user_and_assistant(tmp_db: SessionDB, collector) -> None:
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("hello world")):
         result = D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
 
@@ -98,7 +98,7 @@ def test_creates_session_if_missing(tmp_db: SessionDB) -> None:
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("ok")):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main",
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                           source="wechat", peer_display="alice"),
         )
     sess = tmp_db.get_session("c1")
@@ -113,7 +113,7 @@ def test_emits_chat_ack_then_stream_then_result(tmp_db, captured, collector) -> 
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("hello")):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
     types = [(e["type"], e["data"].get("type")) for e in captured]
@@ -131,7 +131,7 @@ def test_updates_head_id_and_tokens(tmp_db) -> None:
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("done", usage={"input_tokens": 42, "output_tokens": 7})):
         result = D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
         )
     sess = tmp_db.get_session("c1")
     assert sess["head_id"] == result.assistant_msg_id
@@ -143,7 +143,7 @@ def test_history_is_passed_to_loop(tmp_db) -> None:
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("first reply")):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
         )
 
     seen_history: list[list[dict]] = []
@@ -153,15 +153,17 @@ def test_history_is_passed_to_loop(tmp_db) -> None:
 
     with patch.object(D, "_run_loop_blocking", _capture_stub):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="follow-up", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="follow-up", agent_id="main", source="tui"),
         )
 
     [history] = seen_history
-    # 2 prior msgs (user+assistant) + the new user turn
-    assert len(history) == 3
+    # Dispatcher passes prior history (user+assistant) WITHOUT the new
+    # user message — agent_loop adds the prompt itself via
+    # context.messages, so duplicating it here would break OpenAI
+    # prompt cache.
+    assert len(history) == 2
     assert history[0]["content"] == "hi"
     assert history[1]["content"] == "first reply"
-    assert history[2]["content"] == "follow-up"
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +175,7 @@ def test_loop_exception_persisted_as_system_message(tmp_db, captured, collector)
         raise RuntimeError("boom")
     with patch.object(D, "_run_loop_blocking", _raise):
         result = D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
 
@@ -204,7 +206,7 @@ def test_approval_bypass_skips_check(tmp_db, captured, collector) -> None:
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("ok")):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main",
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                           source="wechat", permission_mode="bypass"),
             on_event=collector,
         )
@@ -241,7 +243,7 @@ def test_await_user_approval_emits_envelope_and_resolves(captured, collector) ->
     per-tool wrapper calls into when permission_mode is "ask"."""
     import asyncio
 
-    req = D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main",
+    req = D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                         source="tui", permission_mode="ask")
 
     def _resolver():
@@ -267,4 +269,4 @@ def test_await_user_approval_emits_envelope_and_resolves(captured, collector) ->
     assert len(requests) == 1
     assert requests[0]["data"]["tool"] == "bash"
     assert requests[0]["data"]["args"] == {"command": "ls"}
-    assert requests[0]["data"]["conv_id"] == "c1"
+    assert requests[0]["data"]["session_id"] == "c1"

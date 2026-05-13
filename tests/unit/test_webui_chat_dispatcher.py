@@ -86,10 +86,10 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                                             "system_prompt": "",
                                             "tools": []})
     from openprogram.webui import server as srv
-    srv._conversations.clear()
+    srv._sessions.clear()
     srv._msg_cache.clear()
 
-    # Stub _get_conv_runtime so we don't try to instantiate a real
+    # Stub _get_session_runtime so we don't try to instantiate a real
     # CLI provider runtime — the dispatcher path doesn't actually
     # use it for chat, but _execute_in_context still resolves it.
     class _FakeRuntime:
@@ -97,7 +97,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         last_blocks = []
         model = "stub"
         _session_id = None
-    monkeypatch.setattr(srv, "_get_conv_runtime",
+    monkeypatch.setattr(srv, "_get_session_runtime",
                         lambda conv_id, msg_id=None: _FakeRuntime())
     # Bypass thinking-effort apply (it pokes at runtime internals)
     monkeypatch.setattr(srv, "_apply_thinking_effort",
@@ -127,7 +127,7 @@ def test_query_action_writes_via_dispatcher(env, monkeypatch: pytest.MonkeyPatch
 
     # Pre-append the user message (mimics the WS chat handler at
     # server.py around line 1972).
-    conv = srv._get_or_create_conversation("c1", agent_id="main")
+    conv = srv._get_or_create_session("c1", agent_id="main")
     user_msg_id = "u-frontend"
     srv._append_msg(conv, {
         "id": user_msg_id, "role": "user", "content": "hello",
@@ -179,7 +179,7 @@ def test_query_action_writes_via_dispatcher(env, monkeypatch: pytest.MonkeyPatch
 def test_query_action_failure_emits_error_envelope(env) -> None:
     srv, db, captured = env
 
-    conv = srv._get_or_create_conversation("c1", agent_id="main")
+    conv = srv._get_or_create_session("c1", agent_id="main")
     user_msg_id = "u-fail"
     srv._append_msg(conv, {
         "id": user_msg_id, "role": "user", "content": "fail me",

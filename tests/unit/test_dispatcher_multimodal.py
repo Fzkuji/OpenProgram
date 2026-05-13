@@ -114,7 +114,7 @@ def test_attachments_become_image_content_blocks(
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
             D.TurnRequest(
-                conv_id="c1", user_text="What's in this image?",
+                session_id="c1", user_text="What's in this image?",
                 agent_id="main", source="tui",
                 attachments=[{
                     "type": "image", "data": fake_b64,
@@ -159,7 +159,7 @@ def test_attachment_manifest_in_session_db(
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
             D.TurnRequest(
-                conv_id="c1", user_text="caption pls",
+                session_id="c1", user_text="caption pls",
                 agent_id="main", source="tui",
                 attachments=[
                     {"type": "image", "data": "AAAA", "media_type": "image/png"},
@@ -201,7 +201,7 @@ def test_malformed_attachment_skipped_gracefully(
     with patch.object(D, "_run_loop_blocking", _w):
         result = D.process_user_turn(
             D.TurnRequest(
-                conv_id="c1", user_text="hi",
+                session_id="c1", user_text="hi",
                 agent_id="main", source="tui",
                 attachments=[
                     {"type": "image", "data": None},  # missing data
@@ -242,7 +242,7 @@ def test_agent_profile_tools_field_filters_registry(
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi",
+            D.TurnRequest(session_id="c1", user_text="hi",
                           agent_id="main", source="tui",
                           permission_mode="bypass"),
         )
@@ -275,7 +275,7 @@ def test_per_turn_tools_override_beats_profile(
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi",
+            D.TurnRequest(session_id="c1", user_text="hi",
                           agent_id="main", source="tui",
                           tools_override=["read"],   # narrower than profile
                           permission_mode="bypass"),

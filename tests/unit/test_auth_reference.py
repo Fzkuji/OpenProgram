@@ -23,10 +23,10 @@ def test_external_file_requires_store_path():
 def test_credential_ref_shape():
     ref = AuthReference(
         kind="credential_ref",
-        provider_id="chatgpt-subscription",
+        provider_id="openai-codex",
         profile_id="work",
     )
-    assert ref.provider_id == "chatgpt-subscription"
+    assert ref.provider_id == "openai-codex"
     assert ref.profile_id == "work"
 
 

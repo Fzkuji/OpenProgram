@@ -9,16 +9,16 @@ import pytest
 from openprogram.webui.messages import Block, Message, MessageStore, SCHEMA_VERSION
 
 
-def _write_v2_jsonl(root: Path, conv_id: str, messages: list[Message]) -> None:
-    d = root / conv_id
+def _write_v2_jsonl(root: Path, session_id: str, messages: list[Message]) -> None:
+    d = root / session_id
     d.mkdir(parents=True, exist_ok=True)
     with (d / "messages.jsonl").open("w", encoding="utf-8") as f:
         for m in messages:
             f.write(json.dumps({"v": SCHEMA_VERSION, "message": m.to_dict()}) + "\n")
 
 
-def _msg(msg_id: str, conv_id: str, text: str) -> Message:
-    m = Message(id=msg_id, conv_id=conv_id, role="assistant", status="complete")
+def _msg(msg_id: str, session_id: str, text: str) -> Message:
+    m = Message(id=msg_id, session_id=session_id, role="assistant", status="complete")
     m.content.append(Block(type="text", text=text))
     return m
 
@@ -90,7 +90,7 @@ def test_load_all_skips_wrong_schema_version(tmp_path):
     d = tmp_path / "conv-x"
     d.mkdir()
     (d / "messages.jsonl").write_text(
-        json.dumps({"v": 999, "message": {"id": "mX", "conv_id": "conv-x", "role": "assistant"}}) + "\n",
+        json.dumps({"v": 999, "message": {"id": "mX", "session_id": "conv-x", "role": "assistant"}}) + "\n",
         encoding="utf-8",
     )
     store = MessageStore(persist_dir=tmp_path)

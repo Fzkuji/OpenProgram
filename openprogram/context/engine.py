@@ -1,169 +1,249 @@
-"""ContextEngine — the per-turn orchestrator.
+"""ContextEngine — lifecycle orchestrator.
 
-Lifecycle, per turn:
+Composes the single-responsibility components into one production
+pipeline. Replaces the old monolithic engine.
 
-    1. ``prepare(agent, session, history, model)`` runs *before* the LLM
-       call. Applies tool-result aging in memory, computes a token
-       budget, builds the final ``messages`` list + system prompt.
-       Returns ``TurnPrep``.
+Lifecycle (every method optional in the ABC, default-impl supplies all):
 
-    2. Caller inspects ``TurnPrep.budget_pct`` and calls
-       ``engine.should_auto_compact(prep)`` to decide whether to
-       summarise BEFORE issuing the LLM request. Auto-compact is
-       transparent: it writes a synthetic summary into SessionDB so
-       the next prepare() picks up the shorter branch.
+    on_session_start(session_id)
+        Called when a session is first loaded or created. Engines that
+        keep per-session state (UsageTracker) hydrate from DB here.
 
-    3. After the turn completes, ``record_turn(prep, usage)`` lets the
-       engine update telemetry (recommended compaction events,
-       running token estimates).
+    ingest(session_id, message)
+        Called when a message lands in the DB. Default-impl no-ops —
+        SessionDB is the canonical store. Custom engines can use this
+        to maintain incremental indexes (e.g. a vector store for
+        retrieval-augmented context).
 
-Plugin contract — anyone can subclass ``ContextEngine`` and register a
-custom policy. The default impl encodes our standard three-tier
-strategy (aging → auto-compact → manual). To swap policies per agent,
-set ``agent.context_engine = "<engine_name>"`` and add the impl to
-``CONTEXT_ENGINE_REGISTRY``.
+    prepare(agent, session, history, model)
+        Called BEFORE every LLM exec. Returns TurnPrep with the
+        ready-to-send messages, system prompt, and a budget breakdown.
+
+    should_auto_compact(prep) -> bool
+        Cheap check the dispatcher uses to decide whether to fire
+        compact() before the LLM call.
+
+    compact(agent, session_id, model, ...)
+        Either auto (inline) or manual (/compact). Persists the
+        summary as a DAG node.
+
+    after_turn(session_id, usage)
+        Called AFTER each LLM exec with the provider's real usage
+        dict. UsageTracker swaps in the real numbers; the engine can
+        emit a recommend event if budget is rising fast.
+
+    on_session_end(session_id)
+        Called when a session is closed (CLI exit, /reset, gateway
+        ttl). Frees in-memory state.
+
+Subclassing: override the method whose behaviour you want different.
+The default impl is structured so each step calls one helper —
+``_age``, ``_assemble_messages``, ``_build_system_prompt`` — that
+subclasses commonly want to override on its own.
 """
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+import threading
 from typing import Any, Callable, Optional
 
-from openprogram.context.aging import age_tool_results
-from openprogram.context.tokens import (
-    estimate_history_tokens,
-    estimate_message_tokens,
-    real_context_window,
+from openprogram.context.aging import TurnAger, default_ager
+from openprogram.context.budget import BudgetAllocator, default_allocator
+from openprogram.context.persistence import Persister, default_persister
+from openprogram.context.references import ReferenceTracker, default_tracker as _ref_tracker
+from openprogram.context.summarize import Summarizer, default_summarizer
+from openprogram.context.tokens import real_context_window
+from openprogram.context.types import (
+    BudgetAllocation,
+    CompactResult,
+    TurnPrep,
+    UsageSnapshot,
 )
+from openprogram.context.usage import UsageTracker, default_tracker as _usage_tracker
 
-
-# ---------------------------------------------------------------------------
-# Result dataclasses
-# ---------------------------------------------------------------------------
-
-@dataclass
-class TurnPrep:
-    """What ``prepare()`` returns — the LLM-ready context for one turn.
-
-    Fields:
-        system_prompt:    Final system-prompt string after layered build.
-        agent_messages:   ``UserMessage``/``AssistantMessage`` list, the
-                          structured shape AgentContext expects.
-        history_dicts:    The same content as ``agent_messages`` but in
-                          raw SessionDB dict shape — kept around so the
-                          caller can persist mutations (e.g. aged tool
-                          results) back to disk if desired.
-        estimated_tokens: Conservative estimate of tokens we're sending.
-        context_window:   Model's true max input window (NOT max_tokens).
-        budget_pct:       ``estimated_tokens / context_window`` clamped 0-1.
-        tool_results_redacted: How many tool-result blocks got aged out.
-        tokens_freed_by_aging: How many tokens that saved.
-        summary_id:       SessionDB id of the summary node, if one is in
-                          play for this branch.
-    """
-    system_prompt: str
-    agent_messages: list[Any] = field(default_factory=list)
-    history_dicts: list[dict] = field(default_factory=list)
-    estimated_tokens: int = 0
-    context_window: int = 0
-    budget_pct: float = 0.0
-    tool_results_redacted: int = 0
-    tokens_freed_by_aging: int = 0
-    summary_id: Optional[str] = None
-
-
-@dataclass
-class CompactResult:
-    """Outcome of an LLM summarisation pass."""
-    summary_text: str
-    summary_id: Optional[str]      # SessionDB row id, when persisted
-    summarised_count: int          # how many old messages folded
-    summarised_tokens: int         # token weight that got freed
-    previous_summary_used: bool
-
-
-# ---------------------------------------------------------------------------
-# Base class
-# ---------------------------------------------------------------------------
 
 EventCallback = Callable[[dict], None]
 
 
+# ---------------------------------------------------------------------------
+# Abstract base class
+# ---------------------------------------------------------------------------
+
 class ContextEngine:
-    """Override these four methods to implement a custom policy."""
+    """The pluggable contract. Subclasses override what they need; the
+    default impl satisfies every method."""
 
     name: str = "abstract"
 
-    def prepare(self, *, agent, session, history, model) -> TurnPrep:
-        raise NotImplementedError
+    # ---- Session lifecycle --------------------------------------------
 
-    def should_auto_compact(self, prep: TurnPrep) -> bool:
+    def on_session_start(self, session_id: str) -> None:
+        pass
+
+    def on_session_end(self, session_id: str) -> None:
+        pass
+
+    # ---- Per-message ingest -------------------------------------------
+
+    def ingest(self, session_id: str, message: dict) -> None:
+        pass
+
+    # ---- Per-turn prepare ---------------------------------------------
+
+    def prepare(self, *,
+                agent: Any,
+                session: dict,
+                history: list[dict],
+                model: Any,
+                tools: list[Any] | None = None,
+                ) -> TurnPrep:
         raise NotImplementedError
 
     def should_recommend(self, prep: TurnPrep) -> bool:
-        """Cheaper threshold — UI shows the user a 'context filling up'
-        toast but we don't actually summarise yet."""
-        raise NotImplementedError
+        return False
 
-    async def compact(self, *, agent, session_id, model,
+    def should_auto_compact(self, prep: TurnPrep) -> bool:
+        return False
+
+    # ---- Compaction ----------------------------------------------------
+
+    async def compact(self, *,
+                      agent: Any,
+                      session_id: str,
+                      model: Any,
                       on_event: Optional[EventCallback] = None,
                       previous_summary: Optional[str] = None,
-                      user_initiated: bool = False) -> CompactResult:
+                      user_initiated: bool = False,
+                      cancel_event: Optional[threading.Event] = None,
+                      keep_recent_tokens: Optional[int] = None,
+                      ) -> CompactResult:
         raise NotImplementedError
+
+    # ---- Post-turn -----------------------------------------------------
+
+    def after_turn(self,
+                   session_id: str,
+                   *,
+                   usage: dict | None,
+                   prep: Optional[TurnPrep] = None,
+                   on_event: Optional[EventCallback] = None,
+                   ) -> None:
+        pass
 
 
 # ---------------------------------------------------------------------------
-# Default implementation — three-tier compaction
+# Default implementation — composes the components
 # ---------------------------------------------------------------------------
 
 class DefaultContextEngine(ContextEngine):
-    """Standard policy:
+    """Production engine. Three-tier policy with full lifecycle.
 
-    Tier 1 — tool-result aging (cheap, every turn). Stale tool outputs
-        get replaced with a short stub. Preserves turn structure so
-        prompt cache only invalidates around the redaction boundary.
-
-    Tier 2 — auto-compact threshold. Once estimated input crosses
-        ``AUTO_COMPACT_PCT`` of the context window, we invoke LLM
-        summarisation INLINE before issuing the next request. The
-        summary persists as a SessionDB row so subsequent prepare()
-        calls just see the shorter branch.
-
-    Tier 3 — manual ``/compact``. User-initiated full compaction, same
-        underlying summariser but bypasses the threshold check.
+    Thresholds (overridable via constructor):
+        RECOMMEND_PCT  = 0.70   surface "context filling up" event
+        AUTO_COMPACT_PCT = 0.85 inline compaction before next LLM call
     """
 
     name = "default"
 
-    # Recommend at 70% (UI shows a toast); auto-compact at 85% (we act).
-    # Both compare estimated input tokens against the real context window.
+    # Two-tier triggers (see README §4):
+    #   RECOMMEND_PCT       surface compaction_recommended event
+    #   AUTO_COMPACT_PCT    proactive compact — still have summary budget
+    #   EMERGENCY_PCT       last-resort compact before the next call dies
     RECOMMEND_PCT = 0.70
-    AUTO_COMPACT_PCT = 0.85
+    AUTO_COMPACT_PCT = 0.80
+    EMERGENCY_PCT = 0.95
 
-    # Tail to keep verbatim when the summariser runs.
-    KEEP_RECENT_TOKENS = 20_000
+    def __init__(self,
+                 *,
+                 usage_tracker: UsageTracker | None = None,
+                 budget_allocator: BudgetAllocator | None = None,
+                 ager: TurnAger | None = None,
+                 summarizer: Summarizer | None = None,
+                 persister: Persister | None = None,
+                 references: ReferenceTracker | None = None,
+                 recommend_pct: float | None = None,
+                 auto_compact_pct: float | None = None,
+                 ):
+        self.usage = usage_tracker or _usage_tracker
+        self.budgets = budget_allocator or default_allocator
+        self.ager = ager or default_ager
+        self.summarizer = summarizer or default_summarizer
+        self.persister = persister or default_persister
+        self.references = references or _ref_tracker
+        if recommend_pct is not None:
+            self.RECOMMEND_PCT = recommend_pct
+        if auto_compact_pct is not None:
+            self.AUTO_COMPACT_PCT = auto_compact_pct
 
-    # ---- prepare ----------------------------------------------------------
+    # ---- Lifecycle -----------------------------------------------------
 
-    def prepare(self, *, agent, session, history, model) -> TurnPrep:
-        # 1. Apply tool-result aging in memory.
-        aged_history, n_redacted, tokens_freed = age_tool_results(history)
+    def on_session_start(self, session_id: str) -> None:
+        # Pre-warm the usage cache so the first prepare() doesn't pay
+        # the DB-read cost.
+        self.usage.get(session_id)
 
-        # 2. Build the structured messages list.
-        agent_messages = _to_agent_messages(aged_history)
+    def on_session_end(self, session_id: str) -> None:
+        self.usage.on_session_end(session_id)
 
-        # 3. System prompt — uses the existing builder if available.
-        system_prompt = _build_system_prompt(agent)
+    def ingest(self, session_id: str, message: dict) -> None:
+        # Default no-op. Future engines could update inverted indexes here.
+        return None
 
-        # 4. Token estimate + budget pct.
-        tokens = estimate_history_tokens(aged_history)
-        # System prompt is sent every turn too — count it toward the budget.
-        tokens += len(system_prompt) // 4  # rough: 4 chars/token
-        window = real_context_window(model)
-        pct = (tokens / window) if window else 0.0
+    # ---- Prepare -------------------------------------------------------
 
-        # 5. Look up the active summary id, if one's stamped on the
-        #    session (the dispatcher trigger_compaction writes one).
+    def prepare(self, *,
+                agent: Any,
+                session: dict,
+                history: list[dict],
+                model: Any,
+                tools: list[Any] | None = None,
+                ) -> TurnPrep:
+        decision: list[str] = []
+        session_id = (session or {}).get("id") or ""
+
+        # 1. Reference scan — once per prepare, shared with ager.
+        ref_map = self.references.build(history)
+        if ref_map.cited_tool_use_ids:
+            decision.append(
+                f"references:protected={len(ref_map.cited_tool_use_ids)}"
+            )
+
+        # 2. Apply aging.
+        aged_history, n_redacted, tokens_freed = self.ager.age(
+            history, ref_map=ref_map,
+        )
+        if n_redacted:
+            decision.append(
+                f"aged:n={n_redacted},freed≈{tokens_freed}tok"
+            )
+
+        # 3. Build messages + system prompt.
+        agent_messages = self._assemble_messages(aged_history)
+        system_prompt = self._build_system_prompt(agent)
+
+        # 4. Allocate budget.
+        budget = self.budgets.allocate(
+            context_window=real_context_window(model),
+            system_prompt=system_prompt,
+            history=aged_history,
+            tools=tools,
+        )
+
+        # 5. Hybridise with provider-reported usage if we have it.
+        usage = self.usage.get(session_id) if session_id else UsageSnapshot()
+        if usage.source == "provider" and usage.last_prompt_tokens > 0:
+            # Trust the provider on the prefix; add our estimated delta
+            # for anything added since.
+            blended, src = self.usage.estimated_input(
+                session_id, budget.history,
+            )
+            # Replace history with the blended number.
+            budget.history = blended
+            decision.append(f"usage:source={src}")
+        else:
+            decision.append(f"usage:source={usage.source}")
+
+        # 6. Note any active summary id stamped on session.extra_meta.
         summary_id = None
         try:
             extra_meta = (session or {}).get("extra_meta") or {}
@@ -175,15 +255,14 @@ class DefaultContextEngine(ContextEngine):
             system_prompt=system_prompt,
             agent_messages=agent_messages,
             history_dicts=aged_history,
-            estimated_tokens=tokens,
-            context_window=window,
-            budget_pct=pct,
+            budget=budget,
+            usage=usage,
             tool_results_redacted=n_redacted,
             tokens_freed_by_aging=tokens_freed,
+            references_protected=len(ref_map.cited_tool_use_ids),
             summary_id=summary_id,
+            decision_path=decision,
         )
-
-    # ---- thresholds -------------------------------------------------------
 
     def should_recommend(self, prep: TurnPrep) -> bool:
         return prep.budget_pct >= self.RECOMMEND_PCT
@@ -191,202 +270,187 @@ class DefaultContextEngine(ContextEngine):
     def should_auto_compact(self, prep: TurnPrep) -> bool:
         return prep.budget_pct >= self.AUTO_COMPACT_PCT
 
-    # ---- compact ----------------------------------------------------------
+    # ---- Compaction ----------------------------------------------------
 
-    async def compact(self, *, agent, session_id, model,
+    async def compact(self, *,
+                      agent: Any,
+                      session_id: str,
+                      model: Any,
                       on_event: Optional[EventCallback] = None,
                       previous_summary: Optional[str] = None,
-                      user_initiated: bool = False) -> CompactResult:
-        """Run summarisation and persist the result.
-
-        Returns the summary text + the new SessionDB row id.
-
-        Auto-compact path: caller passes ``user_initiated=False``. We
-        still emit a ``compaction_started`` / ``compaction_finished``
-        envelope so any UI tailing the session can show a status line
-        while the summariser runs.
-        """
+                      user_initiated: bool = False,
+                      cancel_event: Optional[threading.Event] = None,
+                      keep_recent_tokens: Optional[int] = None,
+                      ) -> CompactResult:
+        import time
         from openprogram.agent.session_db import default_db
-        from openprogram.context.summarize import summarise_prefix
 
+        started = time.time()
         db = default_db()
         sess = db.get_session(session_id) or {}
         history = db.get_branch(session_id) or []
+        tokens_before = self._estimate(history)
+
         if len(history) < 4:
             return CompactResult(
-                summary_text="",
-                summary_id=None,
-                summarised_count=0,
-                summarised_tokens=0,
-                previous_summary_used=False,
+                ok=True,
+                tokens_before=tokens_before,
+                tokens_after=tokens_before,
+                reason="auto" if not user_initiated else "manual",
             )
 
-        if on_event:
-            on_event({
-                "type": "chat_response",
-                "data": {
-                    "type": "compaction_started",
-                    "session_id": session_id,
-                    "user_initiated": user_initiated,
-                },
-            })
-
-        # Inherit previous summary if not supplied — incremental
-        # summary chain.
+        # Chain on previous summary if not supplied.
         if previous_summary is None:
             extra_meta = sess.get("extra_meta") or {}
             previous_summary = extra_meta.get("_last_summary_text")
 
-        summary = await summarise_prefix(
+        if on_event:
+            on_event({"type": "chat_response", "data": {
+                "type": "compaction_started",
+                "session_id": session_id,
+                "user_initiated": user_initiated,
+                "tokens_before": tokens_before,
+            }})
+
+        summary = await self.summarizer.summarise(
             messages=history,
             model=model,
-            keep_recent_tokens=self.KEEP_RECENT_TOKENS,
             previous_summary=previous_summary,
+            cancel_event=cancel_event,
+            keep_recent_tokens=keep_recent_tokens,
+            context_window=real_context_window(model),
         )
 
-        summary_id = None
+        # Persist + re-parent.
+        summary_id: Optional[str] = None
         if summary.summary_text:
-            summary_id = _persist_summary_node(
-                db, session_id, summary.summary_text,
-                cut_idx=summary.cut_idx, history=history,
+            summary_id = self.persister.insert_summary_node(
+                session_id,
+                summary_text=summary.summary_text,
+                cut_idx=summary.cut_idx,
+                history=history,
             )
 
-        # Stamp session meta so the next prepare() knows we have an
-        # active summary AND so the next compaction can chain off it.
+        # Update session meta for incremental chain + usage counters.
         if summary_id:
             try:
                 db.update_session(
                     session_id,
                     _last_summary_id=summary_id,
                     _last_summary_text=summary.summary_text,
-                    _last_compacted_at=__import__("time").time(),
+                    _last_compacted_at=time.time(),
                 )
             except Exception:
                 pass
+            self.usage.record_compaction(session_id)
 
-        if on_event:
-            on_event({
-                "type": "chat_response",
-                "data": {
-                    "type": "compaction_finished",
-                    "session_id": session_id,
-                    "summary_id": summary_id,
-                    "summarised_count": summary.summarised_count,
-                    "summarised_tokens": summary.summarised_tokens,
-                    "previous_summary_used": summary.previous_summary_used,
-                    "user_initiated": user_initiated,
-                },
-            })
+        new_history = db.get_branch(session_id) or history
+        tokens_after = self._estimate(new_history)
 
-        return CompactResult(
+        result = CompactResult(
+            ok=bool(summary_id),
             summary_text=summary.summary_text,
             summary_id=summary_id,
             summarised_count=summary.summarised_count,
             summarised_tokens=summary.summarised_tokens,
-            previous_summary_used=summary.previous_summary_used,
+            tokens_before=tokens_before,
+            tokens_after=tokens_after,
+            duration_ms=int((time.time() - started) * 1000),
+            used_previous_summary=summary.previous_summary_used,
+            reason=("manual" if user_initiated
+                    else ("recovered" if summary.fell_back_to_structural
+                          else "auto")),
+            error=summary.error,
+            fell_back_to_structural=summary.fell_back_to_structural,
         )
 
+        if on_event:
+            on_event({"type": "chat_response", "data": {
+                "type": "compaction_finished",
+                "session_id": session_id,
+                "user_initiated": user_initiated,
+                "summary_id": summary_id,
+                "summarised_count": result.summarised_count,
+                "summarised_tokens": result.summarised_tokens,
+                "tokens_before": result.tokens_before,
+                "tokens_after": result.tokens_after,
+                "duration_ms": result.duration_ms,
+                "fell_back_to_structural": result.fell_back_to_structural,
+                "used_previous_summary": result.used_previous_summary,
+            }})
 
-# ---------------------------------------------------------------------------
-# Helpers used by DefaultContextEngine
-# ---------------------------------------------------------------------------
+        return result
 
-def _to_agent_messages(history: list[dict]) -> list:
-    """Turn SessionDB dict rows into structured AgentMessage objects.
+    # ---- Post-turn -----------------------------------------------------
 
-    Same shape as the dispatcher's legacy ``_history_to_agent_messages``
-    but lives here so context decisions are made in one place.
-    """
-    import time
-    from openprogram.providers.types import (
-        AssistantMessage, TextContent, UserMessage,
-    )
-    out: list = []
-    for m in history:
-        role = m.get("role")
-        content = m.get("content") or ""
-        ts = int((m.get("timestamp") or time.time()) * 1000)
-        if role == "user":
-            out.append(UserMessage(
-                content=[TextContent(text=content)],
-                timestamp=ts,
-            ))
-        elif role == "assistant":
-            try:
-                out.append(AssistantMessage(
+    def after_turn(self,
+                   session_id: str,
+                   *,
+                   usage: dict | None,
+                   prep: Optional[TurnPrep] = None,
+                   on_event: Optional[EventCallback] = None,
+                   ) -> None:
+        # Feed real numbers back into the tracker.
+        snap = self.usage.record_turn(session_id, usage=usage)
+        # Emit recommend if this turn pushed us over.
+        if prep is None or not on_event:
+            return
+        # Re-derive a fresh budget_pct from the post-turn numbers.
+        if prep.context_window > 0:
+            pct = snap.last_prompt_tokens / prep.context_window
+        else:
+            pct = 0.0
+        if pct >= self.RECOMMEND_PCT:
+            on_event({"type": "chat_response", "data": {
+                "type": "compaction_recommended",
+                "session_id": session_id,
+                "input_tokens": snap.last_prompt_tokens,
+                "context_window": prep.context_window,
+                "budget_pct": pct,
+                "source": snap.source,
+            }})
+
+    # ---- Internals -----------------------------------------------------
+
+    def _assemble_messages(self, history: list[dict]) -> list:
+        import time
+        from openprogram.providers.types import (
+            AssistantMessage, TextContent, UserMessage,
+        )
+        out: list = []
+        for m in history:
+            role = m.get("role")
+            content = m.get("content") or ""
+            ts = int((m.get("timestamp") or time.time()) * 1000)
+            if role == "user":
+                out.append(UserMessage(
                     content=[TextContent(text=content)],
-                    api="completion",
-                    provider="openai",
-                    model="gpt-5",
                     timestamp=ts,
                 ))
-            except Exception:
-                pass
-    return out
+            elif role == "assistant":
+                try:
+                    out.append(AssistantMessage(
+                        content=[TextContent(text=content)],
+                        api="completion",
+                        provider="openai",
+                        model="gpt-5",
+                        timestamp=ts,
+                    ))
+                except Exception:
+                    pass
+        return out
 
+    def _build_system_prompt(self, agent: Any) -> str:
+        from openprogram.context.system_prompt import build_system_prompt
+        return build_system_prompt(agent)
 
-def _build_system_prompt(agent: Any) -> str:
-    """Defer to the legacy engine's system-prompt builder."""
-    try:
-        from openprogram.agents.context_engine import ContextEngine as _Legacy
-        return _Legacy().build_system_prompt(agent)
-    except Exception:
-        return getattr(agent, "system_prompt", "") or ""
-
-
-def _persist_summary_node(db, session_id: str, summary_text: str,
-                          *, cut_idx: int, history: list[dict]) -> str:
-    """Insert a synthetic ``compactionSummary`` row into SessionDB.
-
-    The summary becomes a new message anchored at the same parent the
-    pre-cut prefix was hanging off, and the kept tail gets re-parented
-    onto it. Mirrors the original ``trigger_compaction`` flow but
-    centralised here so all compaction paths produce the same DB shape.
-    """
-    import time
-    import uuid
-    summary_id = "summary_" + uuid.uuid4().hex[:10]
-
-    # Place the summary just before ``history[cut_idx]``. Parent it to
-    # whatever was the parent of history[cut_idx] (or None if cut_idx==0).
-    parent_id = None
-    if cut_idx > 0 and cut_idx < len(history):
-        parent_id = history[cut_idx].get("parent_id")
-    elif history:
-        parent_id = history[-1].get("parent_id")
-
-    row = {
-        "id": summary_id,
-        "role": "system",
-        "content": f"[Previous conversation summary]\n{summary_text}",
-        "parent_id": parent_id,
-        "timestamp": time.time(),
-        "type": "compactionSummary",
-        "extra": '{"compaction": true}',
-    }
-    try:
-        db.append_message(session_id, row)
-        # Re-parent the kept tail so the active branch flows
-        # parent → summary → first-kept → ... → leaf
-        prev = summary_id
-        for tail_msg in history[cut_idx:]:
-            new_id = "k_" + uuid.uuid4().hex[:10]
-            tail_copy = dict(tail_msg)
-            tail_copy["id"] = new_id
-            tail_copy["parent_id"] = prev
-            db.append_message(session_id, tail_copy)
-            prev = new_id
-        # Advance head to the new leaf.
-        db.set_head(session_id, prev)
-    except Exception:
-        # Best-effort: if DB write fails, callers still get the summary
-        # text in the in-memory result.
-        return ""
-    return summary_id
+    def _estimate(self, history: list[dict]) -> int:
+        from openprogram.context.tokens import estimate_history_tokens
+        return estimate_history_tokens(history)
 
 
 # ---------------------------------------------------------------------------
-# Plugin registry + module singleton
+# Plugin registry — config-driven engine selection (Hermes-style)
 # ---------------------------------------------------------------------------
 
 CONTEXT_ENGINE_REGISTRY: dict[str, ContextEngine] = {}
@@ -398,12 +462,39 @@ def register_engine(engine: ContextEngine) -> ContextEngine:
 
 
 def get_engine(name: str | None = None) -> ContextEngine:
-    """Look up an engine by name, falling back to the default."""
     if name and name in CONTEXT_ENGINE_REGISTRY:
         return CONTEXT_ENGINE_REGISTRY[name]
     return default_engine
 
 
-# Module-level default — register self.
+def resolve_engine_for(agent: Any) -> ContextEngine:
+    """Pick the engine for ``agent``, honouring config order:
+
+    1. ``agent.context_engine`` field (per-agent override)
+    2. ``config.context.engine`` (global setting, future)
+    3. ``default_engine``
+    """
+    requested = getattr(agent, "context_engine", None)
+    if not requested:
+        try:
+            from openprogram.setup import _read_config
+            requested = (_read_config().get("context") or {}).get("engine")
+        except Exception:
+            requested = None
+    return get_engine(requested)
+
+
+# Module-level singleton + register
 default_engine: ContextEngine = DefaultContextEngine()
 register_engine(default_engine)
+
+
+__all__ = [
+    "ContextEngine",
+    "DefaultContextEngine",
+    "default_engine",
+    "register_engine",
+    "get_engine",
+    "resolve_engine_for",
+    "CONTEXT_ENGINE_REGISTRY",
+]

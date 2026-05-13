@@ -96,7 +96,7 @@ available = {
 
 ### 调用流程
 
-直接用原生 tool_use，没有 build_options/render_options/parse_args 这些中间层：
+直接用原生 tool_use，没有 render_options + parse_args 这些中间层：
 
 ```python
 # 把子函数放进 tools=[...]，LLM 发 function_call 事件，runtime 本地分发

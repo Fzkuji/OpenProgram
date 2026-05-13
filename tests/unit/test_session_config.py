@@ -20,6 +20,10 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
 
 
 def test_session_run_config_round_trip(tmp_db: SessionDB) -> None:
+    # save_session_run_config is a no-op when the session row doesn't
+    # exist (we don't ghost-create rows for a settings touch). Pre-create
+    # so the persisted config sticks.
+    tmp_db.create_session("c1", "main")
     cfg = save_session_run_config(
         "c1",
         agent_id="main",
@@ -46,6 +50,7 @@ def test_tools_enabled_uses_default_tool_names(
     import openprogram.tools as tools_pkg
 
     monkeypatch.setattr(tools_pkg, "DEFAULT_TOOLS", ["read", "list"])
+    tmp_db.create_session("c1", "main")
 
     cfg = save_session_run_config(
         "c1",
@@ -61,6 +66,7 @@ def test_tools_enabled_uses_default_tool_names(
 
 
 def test_thinking_aliases_normalize(tmp_db: SessionDB) -> None:
+    tmp_db.create_session("c1", "main")
     cfg = save_session_run_config(
         "c1",
         agent_id="main",

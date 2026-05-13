@@ -1,6 +1,6 @@
 """Webui's active-branch messages cache + SessionDB hydration.
 
-The webui used to mirror chat messages in an in-memory ``_conversations``
+The webui used to mirror chat messages in an in-memory ``_sessions``
 dict, with SessionDB writes happening as a separate side-effect. Plan B
 makes SessionDB the truth source: ``_get_messages(conv_id)`` walks the
 branch from the session's head_id, with an LRU cache so we don't pay
@@ -24,7 +24,7 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Fresh SessionDB + isolated webui module state.
 
     We import server fresh per test so its module-level
-    ``_conversations`` and ``_msg_cache`` start clean. We also point
+    ``_sessions`` and ``_msg_cache`` start clean. We also point
     SessionDB.default_db at a per-test sqlite file so the cache
     actually has somewhere to read from.
     """

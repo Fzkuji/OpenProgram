@@ -41,6 +41,32 @@ def set_ask_user(handler: Optional[Callable[[str], str]]) -> None:
         _ask_user_handler_global = handler
 
 
+def has_ask_user_handler() -> bool:
+    """True if a subsequent ``ask_user()`` call would have somewhere to send the question.
+
+    Checks the same chain as ``ask_user`` itself:
+      1. Per-node handler on the current Context (or any ancestor)
+      2. Global handler set via ``set_ask_user``
+      3. TTY-backed stdin (terminal interactive mode)
+
+    Returns False only when none of the above is available — i.e. the
+    caller is running headless / in a subprocess with no registered
+    handler. Use this to decide whether to skip interactive steps like
+    ``clarify`` that would just bounce off a None answer.
+    """
+    ctx = _current_ctx.get(None)
+    while ctx is not None:
+        if ctx.ask_user_handler is not None:
+            return True
+        ctx = ctx.parent
+    with _ask_user_lock:
+        if _ask_user_handler_global is not None:
+            return True
+    if sys.stdin is not None and sys.stdin.isatty():
+        return True
+    return False
+
+
 def ask_user(question: str) -> Optional[str]:
     """
     在 @agentic_function 执行中向用户提问。
@@ -180,6 +206,7 @@ def run_with_follow_up(func, *args, **kwargs):
 __all__ = [
     "ask_user",
     "set_ask_user",
+    "has_ask_user_handler",
     "FollowUp",
     "run_with_follow_up",
 ]

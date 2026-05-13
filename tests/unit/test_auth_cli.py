@@ -312,7 +312,7 @@ def test_login_codex_only_offers_pkce(isolated):
     """Codex has a real OAuth flow, so the CLI deliberately hides the
     api_key and import_from_cli methods. Matches OpenClaw's setup UX."""
     from openprogram.auth.cli import _available_login_methods
-    methods = _available_login_methods("chatgpt-subscription")
+    methods = _available_login_methods("openai-codex")
     assert [m[0] for m in methods] == ["pkce_oauth"]
 
 
@@ -323,7 +323,7 @@ def test_login_codex_rejects_legacy_methods(isolated):
     longer want to expose."""
     _, _, _, cap = isolated
     for bad in ("api_key", "import_from_cli"):
-        rc = dispatch(_parse(["login", "chatgpt-subscription", "--method", bad]))
+        rc = dispatch(_parse(["login", "openai-codex", "--method", bad]))
         assert rc == 1, f"expected failure for --method {bad}"
 
 
@@ -335,7 +335,7 @@ def test_aliases_list_shows_canonical(isolated):
     assert rc == 0
     out = cap.readouterr().out
     assert "codex" in out
-    assert "chatgpt-subscription" in out
+    assert "openai-codex" in out
     assert "claude" in out and "anthropic" in out
 
 
@@ -344,7 +344,7 @@ def test_aliases_json_is_parseable(isolated):
     rc = dispatch(_parse(["aliases", "--json"]))
     assert rc == 0
     body = json.loads(cap.readouterr().out)
-    assert body["codex"] == "chatgpt-subscription"
+    assert body["codex"] == "openai-codex"
 
 
 def test_login_resolves_alias(isolated, monkeypatch):
@@ -428,9 +428,9 @@ def test_doctor_flags_missing_source_file(isolated, tmp_path):
     # Pretend we imported from a file that no longer exists.
     ghost = tmp_path / "gone.json"
     store.put_pool(CredentialPool(
-        provider_id="chatgpt-subscription", profile_id="default",
+        provider_id="openai-codex", profile_id="default",
         credentials=[Credential(
-            provider_id="chatgpt-subscription", profile_id="default", kind="api_key",
+            provider_id="openai-codex", profile_id="default", kind="api_key",
             payload=ApiKeyPayload(api_key="sk-orphaned-123456"),
             source="codex_cli_import",
             metadata={"source_path": str(ghost), "imported_from": "codex_cli"},

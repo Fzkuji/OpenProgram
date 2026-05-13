@@ -58,10 +58,34 @@ def get_env_api_key(provider: str) -> str | None:
             return "<authenticated>"
         return None
     
+    # Google Vertex AI: ADC (Application Default Credentials).
+    # Either a real GOOGLE_APPLICATION_CREDENTIALS file path, or the
+    # default ADC json at ~/.config/gcloud/application_default_credentials.json.
+    # Both also need a project (GOOGLE_CLOUD_PROJECT or GCLOUD_PROJECT) and
+    # a location (GOOGLE_CLOUD_LOCATION).
+    if provider == "google-vertex":
+        project = (
+            os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or os.environ.get("GCLOUD_PROJECT")
+        )
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION")
+        if not project or not location:
+            return None
+        explicit = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if explicit and Path(explicit).is_file():
+            return "<authenticated>"
+        default_adc = (
+            Path.home() / ".config" / "gcloud"
+            / "application_default_credentials.json"
+        )
+        if default_adc.is_file():
+            return "<authenticated>"
+        return None
+
     # Standard lookup
     env_var = PROVIDER_ENV_VARS.get(provider)
     if env_var:
         return os.environ.get(env_var)
-    
+
     return None
 

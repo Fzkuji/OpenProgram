@@ -8,11 +8,35 @@ import ast
 import inspect
 import os
 import re
+from pathlib import Path
 from typing import Optional
 
 from openprogram.agentic_programming.function import agentic_function, traced
 from openprogram.programs.functions.buildin._utils import parse_json
 from openprogram.agentic_programming.runtime import Runtime
+
+
+# ── Canonical metadata specification, loaded once and injected into
+#    generate_code's prompt so all create/edit/fix/improve flows produce
+#    code that conforms to docs/design/function/function_metadata.md. ────
+
+_METADATA_SPEC_CACHE: Optional[str] = None
+
+
+def _load_metadata_spec() -> str:
+    """Return the contents of function_metadata.md, cached."""
+    global _METADATA_SPEC_CACHE
+    if _METADATA_SPEC_CACHE is not None:
+        return _METADATA_SPEC_CACHE
+    try:
+        spec_path = (
+            Path(__file__).resolve().parents[4]
+            / "docs" / "design" / "function" / "function_metadata.md"
+        )
+        _METADATA_SPEC_CACHE = spec_path.read_text()
+    except (FileNotFoundError, OSError):
+        _METADATA_SPEC_CACHE = ""
+    return _METADATA_SPEC_CACHE
 
 
 # ── Safety ────────���─────────────────────────────────────────────
@@ -621,276 +645,82 @@ def check_task(task: str, runtime: Runtime) -> dict:
 
 @agentic_function
 def generate_code(task: str, runtime: Runtime) -> str:
-    """Generate or modify Python code following the Agentic Programming specification.
+    """Generate or modify Python code for an @agentic_function.
 
-    This is the base meta function. All code generation/modification meta functions
-    (create, fix, improve, etc.) call this function. The design specification below
-    is the single source of truth.
+    The canonical metadata + style specification is in
+    docs/design/function/function_metadata.md and is automatically prepended
+    to the task below. Follow it strictly. Framework-side rules that
+    complement the spec:
 
-    ── Framework basics ──
+    1. Function shape
+       - If the function needs LLM reasoning: decorate with @agentic_function,
+         take `runtime: Runtime`, and call `runtime.exec(content=[...])` at
+         most ONCE for the LLM-driven work. For multiple LLM calls split into
+         several @agentic_function and have one orchestrate the others.
+       - Pure Python (no LLM): no decorator, no runtime parameter,
+         no `runtime.exec`.
 
-    In Agentic Programming, the function's docstring IS the LLM prompt.
-    When runtime.exec() is called, the framework automatically sends:
-    1. The full execution context (parent functions, sibling results)
-    2. The current function's docstring
-    3. The current function's parameters and their values
-    4. Whatever the function passes in content=[...]
+    2. Imports already provided by the framework — do NOT re-import:
+           from openprogram.agentic_programming.function import agentic_function
+           from openprogram.agentic_programming.runtime import Runtime
 
-    So the docstring tells the LLM what to do; content ONLY carries data.
+    3. Content vs instruction separation
+       `runtime.exec(content=[...])` carries DATA only — never put behavior
+       instructions in `content`. Instructions live in the function's
+       docstring.
 
-    ── Function type decision ──
+           # CORRECT — content is data
+           runtime.exec(content=[{"type": "text", "text": text}])
 
-    | Condition                     | Type                | @agentic_function? | runtime.exec()? |
-    |-------------------------------|---------------------|--------------------|-----------------|
-    | Needs LLM reasoning           | agentic function    | Yes                | Yes             |
-    | Purely deterministic logic    | plain Python        | No                 | No              |
+           # WRONG — instructions in content
+           runtime.exec(content=[{"type": "text",
+                                  "text": f"Please analyze: {text}. Return one word."}])
 
-    ── Core rules ──
+    4. LLM-driven dispatch uses native tool_use
+       To let the LLM choose between sub-functions, pass them to
+       `runtime.exec(tools=[...])`. Do not hand-roll prompt menus — the
+       framework auto-generates the JSON-schema tool spec from each
+       @agentic_function's signature + docstring + `input=` metadata.
 
-    - One @agentic_function calls runtime.exec() AT MOST once.
-    - If you need multiple LLM calls, split into multiple @agentic_function
-      and have one function call the others.
-    - `agentic_function` and `runtime` are already available in scope.
-    - Standard library imports allowed (os, json, re, pathlib, math, etc.).
-    - No async/await.
-    - Type hints on all parameters and return type.
-    - Google-style docstring: one-line summary, Args, Returns.
-    - Docstrings must contain only actionable instructions (output format,
-      constraints, requirements). Never write filler like
-      "You are a helpful assistant" or "Complete the task".
+    5. Output format
+       Reply with ONE ```python code fence containing the complete function
+       (and any helpers it needs). No commentary outside the fence.
 
-    ── Three usage patterns ──
+    6. Editing constraints
+       When modifying existing code: preserve function name, parameter names
+       and order, type hints, and existing `@agentic_function(input=..., ...)`
+       arguments unless the instruction explicitly asks to change them.
+       Never change `runtime: Runtime` to `Any`.
 
-    Pattern 1: Single task (leaf function)
-    One function, one exec(), returns result. Most common case.
+    7. Standard library imports allowed (os, json, re, pathlib, etc.).
+       No async/await. Type hints required on every parameter and return.
 
-        @agentic_function
-        def sentiment(text: str, runtime: Runtime) -> str:
-            \"\"\"Analyze the sentiment of the given text.
-            Return exactly one word: positive, negative, or neutral.
-
-            Args:
-                text: The text to analyze.
-
-            Returns:
-                One of: positive, negative, neutral.
-            \"\"\"
-            return runtime.exec(content=[
-                {"type": "text", "text": text},
-            ])
-
-    Pattern 2: Fixed sequence (orchestrator function)
-    Calls multiple @agentic_function in a fixed order decided by Python code.
-    May optionally call exec() once for a final summary.
-
-        @agentic_function
-        def research_pipeline(task: str, runtime: Runtime) -> dict:
-            \"\"\"Execute research pipeline: survey -> gaps -> ideas.
-
-            Args:
-                task: The research topic.
-                runtime: LLM runtime instance.
-
-            Returns:
-                Dict with survey, gaps, and ideas.
-            \"\"\"
-            survey = survey_topic(topic=task, runtime=runtime)
-            gaps = identify_gaps(survey=survey, runtime=runtime)
-            ideas = generate_ideas(gaps=gaps, runtime=runtime)
-            return {"survey": survey, "gaps": gaps, "ideas": ideas}
-
-    Pattern 3: LLM-driven dispatch (LLM chooses which function to call)
-    The function calls runtime.exec() with `tools=[...]` listing the
-    sub-functions that the LLM may invoke. The LLM emits structured
-    function_call events via the provider's native tool_use protocol; the
-    runtime dispatches locally and feeds results back until the LLM returns
-    a plain text reply.
-
-    No build_options/render_options/parse_args glue needed — @agentic_function exposes a
-    JSON-schema tool spec automatically via its `.spec` property, and the
-    runtime's tool loop handles everything else.
-
-    Full example:
-
-        @agentic_function
-        def summarize_text(text: str, runtime: Runtime) -> str:
-            \"\"\"Summarize the given text into a concise paragraph.
-
-            Args:
-                text: The text to summarize.
-
-            Returns:
-                A concise summary.
-            \"\"\"
-            return runtime.exec(content=[
-                {"type": "text", "text": text},
-            ])
-
-        @agentic_function
-        def polish_text(text: str, style: str, runtime: Runtime) -> str:
-            \"\"\"Polish text in the specified style.
-
-            Args:
-                text: The text to polish.
-                style: One of "academic", "casual", "concise".
-
-            Returns:
-                Polished text.
-            \"\"\"
-            return runtime.exec(content=[
-                {"type": "text", "text": f"Polish in {style} style:\\n\\n{text}"},
-            ])
-
-        @agentic_function
-        def research_assistant(task: str, runtime: Runtime) -> str:
-            \"\"\"Analyze the task and let the LLM choose the right sub-function.
-
-            Args:
-                task: User's task description.
-                runtime: LLM runtime instance.
-
-            Returns:
-                LLM's final reply after running any chosen sub-functions.
-            \"\"\"
-            return runtime.exec(
-                content=[{"type": "text", "text": task}],
-                tools=[summarize_text, polish_text],
-                tool_choice="auto",          # or "required" to force a call
-            )
-
-    ── Tool-choice options ──
-
-    tool_choice="auto"         — model decides whether to call a tool
-    tool_choice="required"     — model must call at least one tool
-    tool_choice={"type":"function","name":"X"}  — model must call X
-
-    ── What the LLM sees for each tool ──
-
-    Each @agentic_function passed to tools=[...] is exposed to the LLM as a
-    JSON-schema function spec auto-generated from its Python signature +
-    docstring + input= metadata:
-
-      - Function name becomes the tool name.
-      - Docstring becomes the tool description.
-      - Parameters become JSON-schema properties (type from annotation,
-        default = optional, runtime-injection params like `runtime` are hidden).
-      - input=... with `hidden: True` also hides a param from the LLM.
-
-    The LLM picks a tool, emits structured args per the schema, and the
-    runtime calls the function locally with those args — no parsing needed.
-
-    ── Docstring rules ──
-
-    The docstring IS the LLM prompt. It must be concise, actionable,
-    and follow Google-style format exactly.
-
-    Must include:
-    - One-line summary of what the function does
-    - Specific instructions (output format, constraints)
-    - Args section with parameter descriptions
-    - Returns section
-
-    Must NOT include:
-    - Role-playing ("You are a helpful assistant")
-    - Empty directives ("Complete the task", "Do your best")
-    - Data that's already in content
-
-    Example:
-
-        @agentic_function
-        def sentiment(text: str, runtime: Runtime) -> str:
-            \"\"\"Analyze the sentiment of the given text.
-            Return exactly one word: positive, negative, or neutral.
-
-            Args:
-                text: The text to analyze.
-
-            Returns:
-                One of 'positive', 'negative', or 'neutral'.
-            \"\"\"
-            return runtime.exec(content=[
-                {"type": "text", "text": text},
-            ])
-
-    ── Content rules ──
-
-    runtime.exec(content=[...]) only carries data, never instructions:
-
-        # CORRECT: data only
-        runtime.exec(content=[{"type": "text", "text": text}])
-
-        # WRONG: instructions in content
-        runtime.exec(content=[{"type": "text", "text": f"Please analyze: {text}. Return one word."}])
-
-    ── Robustness rules ──
-
-    - Specific output format: define precisely in docstring, don't let LLM guess.
-    - Text input: handle special characters, escaping, edge cases.
-    - External state (files, APIs): validate inputs, clear error messages.
-    - Result used by other functions: prefer structured data (dict/JSON).
-    - Formatting matters: include example in docstring.
-
-    ── Error handling for dispatch (Pattern 3) ──
-
-    Most edge cases the old render_options flow worried about are gone under
-    tool_use:
-
-    | Situation                 | Why it's handled                         |
-    |---------------------------|------------------------------------------|
-    | Wrong function name       | Only declared tools are reachable        |
-    | Extra parameters          | Schema rejects them before dispatch      |
-    | Missing required params   | Schema requires them, model retries      |
-    | JSON parse failure        | Structured event — no text parsing       |
-
-    What you still might want to handle yourself:
-    - tool_call raises an exception → runtime feeds the error back into the
-      next turn as a function_call_output so the model can correct course.
-    - max_iterations exceeded → runtime.exec() raises RuntimeError; bubble up.
-
-    ── Scope restriction ──
-
-    You are ONLY allowed to modify the target function's code.
-    Do NOT read, modify, or create any other files in the project.
-    Do NOT modify framework files, configuration, or other functions.
-    Your entire output must be the fixed/generated function code — nothing else.
-
-    ── Generated code boundaries ──
-
-    The generated code will be saved into a module that already provides:
-        from openprogram.agentic_programming.function import agentic_function
-    So do NOT include these imports in your output.
-
-    Your output should contain ONLY:
-    - The @agentic_function decorator and function definition
-    - Any helper functions/constants the main function needs
-    - Additional imports the function needs (standard library, etc.)
-
-    Do NOT include:
-    - Module-level docstrings or comments (the framework adds its own)
-    - `from openprogram.agentic_programming.function import agentic_function` (already provided)
-    - `from openprogram.agentic_programming.runtime import Runtime` (already provided)
-
-    Preserve the original function signature (name, parameters, type hints)
-    unless the instruction explicitly asks to change it. In particular:
-    - Keep `runtime: Runtime` — do not change to `Any` or other types
-    - Keep the original parameter names and order
-    - Keep the original @agentic_function decorator arguments (input={...})
-
-    ── Output format ──
-
-    Respond with ONLY the Python code inside a ```python code fence.
-    No explanation, no commentary outside the fence.
+    8. Robustness
+       - Define exact output format in the docstring; do not let the LLM guess.
+       - Validate external inputs (files, APIs) and raise on bad input.
+       - When a result feeds another function, prefer structured types
+         (TypedDict / dataclass / dict).
+       - Never role-play ("You are a helpful assistant") or write filler
+         ("Complete the task", "Please do X").
 
     Args:
-        task: Complete task description including all necessary data
-              (source code, errors, instructions, etc.).
-              Prior Q/A or retry feedback should be treated as context, not
-              as a new instruction to repeat or re-ask.
+        task: Complete task description (source code, errors, instructions).
+              Any prior Q/A is context, not a new instruction to repeat.
         runtime: LLM runtime instance.
 
     Returns:
-        str: LLM's raw reply containing the code in a ```python fence.
+        str: LLM reply containing the code in a ```python fence.
     """
+    spec = _load_metadata_spec()
+    if spec:
+        text = (
+            "=== Function metadata specification (must follow) ===\n\n"
+            f"{spec}\n\n"
+            "=== End of specification ===\n\n"
+            f"{task}"
+        )
+    else:
+        text = task
     return runtime.exec(content=[
-        {"type": "text", "text": task},
+        {"type": "text", "text": text},
     ])

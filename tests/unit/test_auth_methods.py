@@ -194,7 +194,7 @@ def test_cli_import_link_mode_creates_delegated_payload(tmp_path: Path):
         metadata_paths={"account_id": ["tokens", "account_id"]},
         mode="link",
     )
-    m = CliImportMethod("chatgpt-subscription", cfg)
+    m = CliImportMethod("openai-codex", cfg)
     cred = asyncio.run(m.run(FakeUi()))
     assert cred.kind == "cli_delegated"
     assert isinstance(cred.payload, CliDelegatedPayload)
@@ -222,7 +222,7 @@ def test_cli_import_copy_mode_creates_oauth_payload(tmp_path: Path):
         mode="copy",
         client_id_hint="app_EMoamEEZ73f0CkXaXp7hrann",
     )
-    m = CliImportMethod("chatgpt-subscription", cfg)
+    m = CliImportMethod("openai-codex", cfg)
     cred = asyncio.run(m.run(FakeUi()))
     assert cred.kind == "oauth"
     assert isinstance(cred.payload, OAuthPayload)
@@ -238,7 +238,7 @@ def test_cli_import_missing_file_raises(tmp_path: Path):
         store_path=str(tmp_path / "nope.json"),
         access_path=["tokens", "access_token"],
     )
-    m = CliImportMethod("chatgpt-subscription", cfg)
+    m = CliImportMethod("openai-codex", cfg)
     with pytest.raises(FileNotFoundError):
         asyncio.run(m.run(FakeUi()))
 

@@ -2,17 +2,22 @@
 from __future__ import annotations
 
 
+_HISTORY_CHAR_BUDGET = 60_000
+
+
 def _run_turn_with_history(agent, session_id: str, message: str) -> str:
     """Run one CLI chat turn, persisted to
     ``<state>/agents/<agent_id>/sessions/<session_id>/``.
 
-    Loads the session's prior messages, runs them through the per-agent
-    context engine, calls rt.exec, and appends + saves both sides.
+    Loads the session's prior messages, builds the layered system prompt
+    via ``openprogram.context.system_prompt``, renders history as a
+    plain-text prefix bounded by a char budget, calls rt.exec, and
+    appends + saves both sides.
     """
     import time as _time
     import uuid as _uuid
     from openprogram.agents import runtime_registry as _runtimes
-    from openprogram.agents.context_engine import default_engine as _engine
+    from openprogram.context.system_prompt import build_system_prompt
     from openprogram.webui import persistence as _persist
 
     data = _persist.load_session(agent.id, session_id) or {}
@@ -36,15 +41,16 @@ def _run_turn_with_history(agent, session_id: str, message: str) -> str:
         "content": message, "timestamp": _time.time(),
         "source": "cli", "peer_display": "you",
     }
-    _engine.ingest(messages, user_msg)
+    messages.append(user_msg)
 
-    assembled = _engine.assemble(agent, meta, messages[:-1])
+    system_prompt = build_system_prompt(agent)
+    rendered_history = _render_history_plain(messages[:-1], _HISTORY_CHAR_BUDGET)
+
     exec_content: list[dict] = []
-    if assembled.system_prompt_addition:
-        exec_content.append({
-            "type": "text", "text": assembled.system_prompt_addition,
-        })
-    exec_content.extend(assembled.messages)
+    if system_prompt:
+        exec_content.append({"type": "text", "text": system_prompt})
+    if rendered_history:
+        exec_content.append({"type": "text", "text": rendered_history})
     exec_content.append({"type": "text", "text": message})
 
     try:
@@ -59,11 +65,29 @@ def _run_turn_with_history(agent, session_id: str, message: str) -> str:
         "parent_id": user_id,
         "content": reply_text, "timestamp": _time.time(), "source": "cli",
     }
-    _engine.ingest(messages, reply_msg)
-    _engine.after_turn(agent, meta, messages)
+    messages.append(reply_msg)
     meta["head_id"] = reply_msg["id"]
     meta["_last_touched"] = _time.time()
 
     _persist.save_meta(agent.id, session_id, meta)
     _persist.save_messages(agent.id, session_id, messages)
     return reply_text
+
+
+def _render_history_plain(messages: list[dict], budget: int) -> str:
+    """Render history as a text prefix from newest end, capped to
+    ``budget`` chars. Drops oldest messages to fit."""
+    if not messages:
+        return ""
+    kept: list[str] = []
+    running = 0
+    for m in reversed(messages):
+        role = m.get("role") or "user"
+        content = m.get("content") or ""
+        line = f"[{role}] {content}".strip()
+        if running + len(line) > budget and kept:
+            break
+        running += len(line) + 2
+        kept.append(line)
+    kept.reverse()
+    return "\n\n".join(kept)

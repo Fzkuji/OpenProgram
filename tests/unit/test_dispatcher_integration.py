@@ -166,7 +166,7 @@ def test_real_loop_text_only(tmp_db: SessionDB, captured, collector) -> None:
 
     with patch.object(D, "_run_loop_blocking", _wrapped):
         result = D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
 
@@ -219,7 +219,7 @@ def test_real_loop_persists_session_meta(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         result = D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main",
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                           source="wechat", peer_display="alice"),
         )
     sess = tmp_db.get_session("c1")
@@ -241,7 +241,7 @@ def test_real_loop_history_replay(tmp_db: SessionDB, captured, collector) -> Non
                     cancel_event=cancel_event, stream_fn=fake_stream)
     with patch.object(D, "_run_loop_blocking", _w1):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
         )
 
     # Second turn — capture context.messages length seen by stream_fn
@@ -262,7 +262,7 @@ def test_real_loop_history_replay(tmp_db: SessionDB, captured, collector) -> Non
                     cancel_event=cancel_event, stream_fn=_capturing_stream_fn)
     with patch.object(D, "_run_loop_blocking", _w2):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="follow up", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="follow up", agent_id="main", source="tui"),
         )
 
     # Context at LLM call time should have prior history (user, assistant)
@@ -288,7 +288,7 @@ def test_parent_id_forks_sibling_branch(
                     cancel_event=cancel_event, stream_fn=s1)
     with patch.object(D, "_run_loop_blocking", _w1):
         r1 = D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="ask one", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="ask one", agent_id="main", source="tui"),
         )
 
     # Turn 2: branch-fork from BEFORE turn 1's user message
@@ -301,7 +301,7 @@ def test_parent_id_forks_sibling_branch(
                     cancel_event=cancel_event, stream_fn=s2)
     with patch.object(D, "_run_loop_blocking", _w2):
         r2 = D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="ask one (retry)",
+            D.TurnRequest(session_id="c1", user_text="ask one (retry)",
                           agent_id="main", source="tui",
                           parent_id=None),  # root-level fork
         )
@@ -359,7 +359,7 @@ def test_history_override_skips_session_db_walk(
     ]
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="next",
+            D.TurnRequest(session_id="c1", user_text="next",
                           agent_id="main", source="tui",
                           history_override=fake_history),
         )
@@ -412,7 +412,7 @@ def test_user_already_persisted_skips_duplicate_user_msg(
     with patch.object(D, "_run_loop_blocking", _w):
         result = D.process_user_turn(
             D.TurnRequest(
-                conv_id="c1", user_text="hello",
+                session_id="c1", user_text="hello",
                 agent_id="main", source="web",
                 user_msg_id="uExt",
                 user_already_persisted=True,
@@ -466,7 +466,7 @@ def test_provider_error_persists_as_system_message(
 
     with patch.object(D, "_run_loop_blocking", _w):
         result = D.process_user_turn(
-            D.TurnRequest(conv_id="c1", user_text="hi", agent_id="main", source="tui"),
+            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
 

@@ -106,6 +106,11 @@ def test_reader_sees_writer_progress(db_path: Path) -> None:
                 "timestamp": time.time(), "parent_id": None,
             })
             time.sleep(0.005)
+        # Give the reader a couple more polling intervals after the
+        # last append so it has a chance to observe message 20 before
+        # we signal stop. Without this the reader thread sometimes
+        # exits the loop between the 19th and 20th read iteration.
+        time.sleep(0.05)
     finally:
         stop.set()
         t.join(timeout=1.0)

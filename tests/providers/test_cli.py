@@ -26,9 +26,9 @@ def test_visualizer_codex_runtime_enables_search(monkeypatch):
 
     monkeypatch.setattr("openprogram.providers.registry.create_runtime", fake_create_runtime)
 
-    server._create_runtime_for_visualizer("chatgpt-subscription")
+    server._create_runtime_for_visualizer("openai-codex")
 
-    assert captured["provider"] == "chatgpt-subscription"
+    assert captured["provider"] == "openai-codex"
     assert "session_id" not in captured["kwargs"]
     assert captured["kwargs"]["search"] is True
 

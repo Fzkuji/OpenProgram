@@ -1,148 +1,278 @@
-"""LLM-driven history summarisation.
+"""Summarizer — LLM-driven prefix-summary pipeline with recovery.
 
-This is the heavyweight compaction step: when even tool-result aging
-can't fit history under budget, we ask the model to summarise the
-older prefix into a few hundred tokens and replace it with a synthetic
-"[Previous conversation summary]" message.
+Three improvements over the old ``compact_context``:
 
-Differences from the legacy ``agent/compaction/compaction.py``:
+1. **Cancellable**: takes a ``cancel_event`` so a user ctrl-C aborts
+   the LLM call cleanly instead of hanging.
 
-* Incremental summaries: subsequent compactions pass the previous
-  summary as ``previous_summary`` so the second pass refines rather
-  than re-summarising the entire branch from scratch. (The old
-  ``trigger_compaction`` hard-coded ``previous_summary=None``.)
-* Picks the cut point by **walking from the newest end** with a token
-  budget rather than from the oldest — matches Claude Code's
-  ``find_cut_point`` semantics (keep the last N tokens of work
-  verbatim, summarise everything before).
-* Doesn't mutate SessionDB itself; returns a ``Summary`` record and
-  lets the caller (engine.compact) decide whether to persist.
+2. **Recoverable**: when the summariser LLM throws / times out, the
+   Summarizer falls back to a deterministic *structural* summary
+   ("dropped N messages totalling M tokens") so the calling
+   ``compact()`` can still cut history. Way better than leaving the
+   agent stuck with full history during an outage.
 
-The actual SUMMARIZATION_PROMPT is shared with the legacy module to
-keep behavior identical.
+3. **Cut-point picker is pluggable**: default picks at user-turn
+   boundaries by walking from the newest end with a token budget
+   (Hermes-style ``protect_last_n``). Subclasses can override
+   ``find_cut_index`` for different strategies.
 """
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
-from openprogram.context.tokens import (
-    estimate_message_tokens, estimate_history_tokens,
+from openprogram.context.prompts import (
+    FRESH_PROMPT,
+    SYSTEM_PROMPT,
+    UPDATE_PROMPT,
 )
+from openprogram.context.tokens import (
+    estimate_history_tokens,
+    estimate_message_tokens,
+)
+
+
+# Defaults synthesised from Claude Code (min/max range + text-block gate),
+# Hermes (ratio-of-window + protect_last_n), and OpenClaw (small-window cap).
+# See openprogram/context/README.md §4 for the rationale per number.
+DEFAULT_KEEP_RECENT_TOKENS = 20_000     # legacy override; new path uses range
+DEFAULT_KEEP_MIN_TOKENS = 8_000         # tail floor: enough for ~5-6 turns
+DEFAULT_KEEP_MAX_TOKENS = 40_000        # tail ceiling: more is wasteful
+DEFAULT_KEEP_RATIO = 0.10               # tail = window × ratio, clamped
+DEFAULT_KEEP_MIN_MESSAGES = 5           # ≥ N messages with text content in tail
+DEFAULT_PROTECT_FIRST_N = 3             # initial task description always kept
+DEFAULT_PROTECT_LAST_N = 20             # final N messages always kept
+DEFAULT_MIN_PROMPT_BUDGET = 8_000       # head must have ≥ this many tokens free
+DEFAULT_MIN_PROMPT_RATIO = 0.25         # OR ≥ 25% of window — whichever smaller
 
 
 @dataclass
 class Summary:
-    """One LLM-generated summary.
-
-    ``summary_text`` is the model's output; ``cut_idx`` is the index
-    in the original history where the summary's coverage ends — every
-    message at or after that index is kept verbatim.
-    """
     summary_text: str
     cut_idx: int
-    summarised_count: int          # messages folded into the summary
-    summarised_tokens: int         # token weight of the folded prefix
-    previous_summary_used: bool    # whether we built on a prior summary
+    summarised_count: int
+    summarised_tokens: int
+    previous_summary_used: bool
+    duration_ms: int
+    fell_back_to_structural: bool = False
+    error: Optional[str] = None
 
 
-# Default tail-preservation budget (tokens). We aim to keep the last
-# ~20K tokens of conversation verbatim so the model still has fresh
-# context to act on after the summary takes over the prefix.
-DEFAULT_KEEP_RECENT_TOKENS = 20_000
+class Summarizer:
+    """Top-level summarisation entry point used by ContextEngine.compact."""
 
+    def __init__(self,
+                 *,
+                 keep_recent_tokens: int = DEFAULT_KEEP_RECENT_TOKENS,
+                 keep_min_tokens: int = DEFAULT_KEEP_MIN_TOKENS,
+                 keep_max_tokens: int = DEFAULT_KEEP_MAX_TOKENS,
+                 keep_ratio: float = DEFAULT_KEEP_RATIO,
+                 keep_min_messages: int = DEFAULT_KEEP_MIN_MESSAGES,
+                 protect_first_n: int = DEFAULT_PROTECT_FIRST_N,
+                 protect_last_n: int = DEFAULT_PROTECT_LAST_N,
+                 min_prompt_budget: int = DEFAULT_MIN_PROMPT_BUDGET,
+                 min_prompt_ratio: float = DEFAULT_MIN_PROMPT_RATIO,
+                 max_summary_tokens: int = 4000):
+        # Legacy single-budget knob — still honoured when caller passes
+        # ``keep_recent_tokens=N`` to summarise() for back-compat with
+        # ``trigger_compaction(keep_recent_tokens=…)``.
+        self.keep_recent_tokens = keep_recent_tokens
+        self.keep_min_tokens = keep_min_tokens
+        self.keep_max_tokens = keep_max_tokens
+        self.keep_ratio = keep_ratio
+        self.keep_min_messages = keep_min_messages
+        self.protect_first_n = protect_first_n
+        self.protect_last_n = protect_last_n
+        self.min_prompt_budget = min_prompt_budget
+        self.min_prompt_ratio = min_prompt_ratio
+        self.max_summary_tokens = max_summary_tokens
 
-def _find_cut_index(messages: list[dict], keep_recent_tokens: int) -> int:
-    """Return the smallest index such that messages[idx:] fits under
-    ``keep_recent_tokens``. Walks backward summing token estimates.
+    # ---- Public API ----------------------------------------------------
 
-    Always returns at least 1 (don't summarise the only message); also
-    snaps to a user-turn boundary so the summary doesn't cut mid-tool-
-    call.
-    """
-    if len(messages) < 4:
-        return 0
-    running = 0
-    cut = len(messages)
-    for i in range(len(messages) - 1, -1, -1):
-        running += estimate_message_tokens(messages[i])
-        if running > keep_recent_tokens:
-            cut = i + 1
-            break
-        cut = i
-    # Snap forward to the next user-turn boundary if we landed
-    # mid-tool. Avoids leaving a dangling assistant turn at the head
-    # of the kept tail, which confuses the model.
-    while cut < len(messages) and messages[cut].get("role") != "user":
-        cut += 1
-    # Don't summarise the entire history away — keep at least one turn
-    # verbatim.
-    if cut >= len(messages):
-        cut = max(1, len(messages) - 2)
-    return cut
+    async def summarise(self,
+                        *,
+                        messages: list[dict],
+                        model: Any,
+                        previous_summary: str | None = None,
+                        cancel_event: threading.Event | None = None,
+                        keep_recent_tokens: int | None = None,
+                        context_window: int | None = None,
+                        ) -> Summary:
+        started = time.time()
+        # context_window lets find_cut_index scale the kept tail to the
+        # model's actual window. Without it we fall back to the legacy
+        # fixed budget. Caller (engine.compact) resolves real_context_window
+        # from the model and passes it through.
+        if context_window is None:
+            try:
+                from openprogram.context.tokens import real_context_window
+                context_window = real_context_window(model)
+            except Exception:
+                context_window = 0
+        cut = self.find_cut_index(
+            messages,
+            keep_recent_tokens=keep_recent_tokens,
+            context_window=context_window,
+        )
+        if cut <= self.protect_first_n:
+            return Summary(
+                summary_text="",
+                cut_idx=0,
+                summarised_count=0,
+                summarised_tokens=0,
+                previous_summary_used=False,
+                duration_ms=int((time.time() - started) * 1000),
+            )
 
+        prefix = messages[self.protect_first_n:cut]
+        prefix_tokens = estimate_history_tokens(prefix)
 
-_SYSTEM_PROMPT = (
-    "You are a summariser preserving conversation context across a "
-    "model context-window boundary. Output a faithful summary of the "
-    "user's intent, every decision the assistant made, and the final "
-    "state of work in progress. Be specific: include file paths, ids, "
-    "command names, error messages. Do NOT moralise or add commentary; "
-    "do NOT include preamble like 'Here is a summary'. Just the summary."
-)
+        try:
+            text = await self._llm_summary(
+                prefix=prefix,
+                model=model,
+                previous_summary=previous_summary,
+                cancel_event=cancel_event,
+            )
+            fell_back = False
+            err: Optional[str] = None
+        except Exception as e:  # noqa: BLE001
+            text = self._structural_summary(prefix)
+            fell_back = True
+            err = f"{type(e).__name__}: {e}"
 
-_FRESH_PROMPT = (
-    "Summarise the conversation above. The user is about to send the "
-    "next message and you will continue the work — the summary REPLACES "
-    "the older transcript in your context window. Cover, in this order: "
-    "(1) the user's overall goal, (2) every concrete decision / "
-    "instruction / preference the user has expressed, (3) what the "
-    "assistant has done so far (files written / commands run / data "
-    "found), (4) any outstanding tasks or follow-ups."
-)
+        return Summary(
+            summary_text=text,
+            cut_idx=cut,
+            summarised_count=cut - self.protect_first_n,
+            summarised_tokens=prefix_tokens,
+            previous_summary_used=bool(previous_summary),
+            duration_ms=int((time.time() - started) * 1000),
+            fell_back_to_structural=fell_back,
+            error=err,
+        )
 
-_UPDATE_PROMPT = (
-    "Incorporate the NEW messages above into the EXISTING "
-    "summary inside <previous-summary> below. Output a single revised "
-    "summary that supersedes the previous one. Treat the new messages "
-    "as authoritative — if they contradict the prior summary, the new "
-    "info wins. Same structure as the prior summary."
-)
+    # ---- Cut-point picker (overridable) -------------------------------
 
+    def find_cut_index(self, messages: list[dict],
+                       *,
+                       keep_recent_tokens: int | None = None,
+                       context_window: int = 0,
+                       ) -> int:
+        """Pick the cut point — everything before goes into the summary,
+        everything at or after is preserved verbatim as the kept tail.
 
-async def generate_summary(
-    *,
-    messages: list[Any],          # messages to summarise (the prefix)
-    model: Any,
-    previous_summary: str | None = None,
-    max_tokens: int = 4000,
-) -> str:
-    """Ask ``model`` to summarise ``messages``.
+        Algorithm (synthesised from Claude Code, Hermes, OpenClaw — see
+        openprogram/context/README.md §4):
 
-    Falls back to a deterministic stub if the LLM call fails, so the
-    caller's compaction pass never crashes the turn.
-    """
-    from openprogram.providers import complete_simple
-    from openprogram.providers.types import (
-        Context, SimpleStreamOptions, TextContent, UserMessage,
-    )
+          1. Compute the *desired* tail size:
+                desired = clamp(window × keep_ratio, keep_min_tokens, keep_max_tokens)
+             ``keep_recent_tokens`` overrides this when the caller forces
+             a specific budget (legacy /compact path).
+          2. Apply small-window cap so the head still has room to breathe:
+                min_prompt = min(min_prompt_budget, window × min_prompt_ratio)
+                effective = min(desired, window - min_prompt)
+          3. Walk from newest backward. Accept the cut when BOTH
+             tail_tokens ≥ effective AND tail_text_block_messages ≥
+             keep_min_messages. The double gate prevents a tail full of
+             one giant tool_result with no real conversation.
+          4. Apply protect_last_n: cut must not eat into the last N msgs.
+          5. Apply protect_first_n: cut must not be inside the protected
+             head.
+          6. Snap forward to the next user-message boundary so the kept
+             tail starts with a user turn (otherwise the model sees an
+             orphan assistant reply).
+        """
+        n = len(messages)
+        if n < 4:
+            return 0
 
-    conv = _serialize(messages)
-    prompt = f"<conversation>\n{conv}\n</conversation>\n\n"
-    if previous_summary:
-        prompt += f"<previous-summary>\n{previous_summary}\n</previous-summary>\n\n"
-        prompt += _UPDATE_PROMPT
-    else:
-        prompt += _FRESH_PROMPT
+        # 1. Desired tail size
+        if keep_recent_tokens is not None:
+            effective_keep = max(0, int(keep_recent_tokens))
+        else:
+            if context_window > 0:
+                desired = int(context_window * self.keep_ratio)
+            else:
+                desired = self.keep_recent_tokens
+            effective_keep = max(self.keep_min_tokens,
+                                  min(self.keep_max_tokens, desired))
 
-    opts_kwargs: dict[str, Any] = {"max_tokens": max_tokens}
-    if getattr(model, "reasoning", False):
-        opts_kwargs["reasoning"] = "high"
-    opts = SimpleStreamOptions(**opts_kwargs)
+        # 2. Small-window cap — the head must always retain at least
+        #    min_prompt tokens of room for system prompt + new turn.
+        if context_window > 0:
+            min_prompt = min(self.min_prompt_budget,
+                             int(context_window * self.min_prompt_ratio))
+            max_safe_keep = max(0, context_window - min_prompt)
+            effective_keep = min(effective_keep, max_safe_keep)
 
-    try:
+        # 3. Walk backward accumulating tokens + text-block messages
+        tail_tokens = 0
+        tail_text_msgs = 0
+        cut = n
+        lower = self.protect_first_n
+        for i in range(n - 1, lower - 1, -1):
+            tail_tokens += estimate_message_tokens(messages[i])
+            if _has_text_block(messages[i]):
+                tail_text_msgs += 1
+            if (tail_tokens >= effective_keep
+                    and tail_text_msgs >= self.keep_min_messages):
+                cut = i
+                break
+            cut = i
+
+        # 4. protect_last_n — never fold the most recent N messages.
+        last_n_floor = max(0, n - self.protect_last_n)
+        cut = min(cut, last_n_floor)
+
+        # 5. protect_first_n — cut sits at or after the protected head.
+        cut = max(cut, self.protect_first_n)
+
+        # 6. Snap forward to a user-message boundary.
+        while cut < n and messages[cut].get("role") != "user":
+            cut += 1
+        if cut >= n:
+            # Couldn't find a user boundary in the kept tail. Fall back
+            # to the latest sensible cut so the call still makes progress.
+            cut = max(self.protect_first_n + 1, n - 2)
+        return cut
+
+    # ---- LLM call ------------------------------------------------------
+
+    async def _llm_summary(self,
+                           *,
+                           prefix: list[dict],
+                           model: Any,
+                           previous_summary: str | None,
+                           cancel_event: threading.Event | None,
+                           ) -> str:
+        from openprogram.providers import complete_simple
+        from openprogram.providers.types import (
+            Context, SimpleStreamOptions, TextContent, UserMessage,
+        )
+
+        conv = self._serialize(prefix)
+        prompt = f"<conversation>\n{conv}\n</conversation>\n\n"
+        if previous_summary:
+            prompt += (
+                f"<previous-summary>\n{previous_summary}\n"
+                f"</previous-summary>\n\n{UPDATE_PROMPT}"
+            )
+        else:
+            prompt += FRESH_PROMPT
+
+        opts_kwargs: dict[str, Any] = {"max_tokens": self.max_summary_tokens}
+        if getattr(model, "reasoning", False):
+            opts_kwargs["reasoning"] = "high"
+        # Cancellation: the provider layer reads ``signal`` if supplied.
+        if cancel_event is not None:
+            opts_kwargs["signal"] = cancel_event
+        opts = SimpleStreamOptions(**opts_kwargs)
+
         ctx = Context(
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=SYSTEM_PROMPT,
             messages=[UserMessage(
                 role="user",
                 content=[TextContent(type="text", text=prompt)],
@@ -151,82 +281,68 @@ async def generate_summary(
         )
         response = await complete_simple(model, ctx, opts)
         if getattr(response, "stop_reason", None) == "error":
-            return _fallback_stub(messages)
+            raise RuntimeError(
+                f"Summariser provider error: "
+                f"{getattr(response, 'error_message', 'unknown')}"
+            )
         return " ".join(
-            b.text for b in response.content if isinstance(b, TextContent)
+            b.text for b in response.content
+            if isinstance(b, TextContent)
         )
-    except Exception:
-        return _fallback_stub(messages)
 
+    # ---- Helpers -------------------------------------------------------
 
-def _serialize(messages: list[Any]) -> str:
-    """Render messages as plain "Role: content" so the summariser sees
-    a transcript it can reason over. Order preserved."""
-    out: list[str] = []
-    for m in messages:
-        if isinstance(m, dict):
+    @staticmethod
+    def _serialize(messages: list[dict]) -> str:
+        out: list[str] = []
+        for m in messages:
             role = (m.get("role") or "user").capitalize()
             text = (m.get("content") or "").strip()
-        else:
-            role = (getattr(m, "role", "user") or "user").capitalize()
-            content = getattr(m, "content", None)
-            if isinstance(content, list):
-                parts = []
-                for blk in content:
-                    t = getattr(blk, "text", None) or getattr(blk, "content", None)
-                    if t:
-                        parts.append(str(t))
-                text = "\n".join(parts).strip()
-            else:
-                text = str(content or "").strip()
-        if text:
-            out.append(f"{role}: {text}")
-    return "\n\n".join(out)
+            if text:
+                out.append(f"{role}: {text}")
+        return "\n\n".join(out)
+
+    @staticmethod
+    def _structural_summary(prefix: list[dict]) -> str:
+        """Deterministic fallback when the LLM call fails.
+
+        Lists per-message role + first 60 chars so the model has SOME
+        idea what got dropped, even if the LLM couldn't summarise it
+        properly. Better than ``[N messages elided]`` which the prior
+        impl produced.
+        """
+        n = len(prefix)
+        tokens = estimate_history_tokens(prefix)
+        lines = [
+            f"[Context summary unavailable — LLM summariser failed. "
+            f"The following {n} message(s) were dropped to free "
+            f"≈{tokens} tokens. Each line shows role + opening of the "
+            f"original content; the agent can ask the user for missing "
+            f"details if a particular item turns out to be relevant.]",
+        ]
+        for m in prefix:
+            role = (m.get("role") or "?").capitalize()
+            head = (m.get("content") or "").strip().replace("\n", " ")
+            if len(head) > 60:
+                head = head[:57] + "…"
+            lines.append(f"  · {role}: {head or '(empty)'}")
+        return "\n".join(lines)
 
 
-def _fallback_stub(messages: list[Any]) -> str:
-    """Deterministic stub used when the LLM summariser fails."""
-    n = len(messages)
-    tokens = estimate_history_tokens(messages)
-    return (
-        f"[Context summary unavailable — {n} earlier message(s), "
-        f"≈{tokens} tokens, elided. The model could not generate a "
-        f"summary on this attempt.]"
-    )
-
-
-async def summarise_prefix(
-    *,
-    messages: list[dict],
-    model: Any,
-    keep_recent_tokens: int = DEFAULT_KEEP_RECENT_TOKENS,
-    previous_summary: str | None = None,
-) -> Summary:
-    """End-to-end: pick a cut point, summarise the prefix, return result.
-
-    ``messages`` should be the full active branch (dicts). The caller
-    decides what to do with the result (typically: persist the
-    summary as a new message in SessionDB and re-parent the kept tail).
+def _has_text_block(msg: dict) -> bool:
+    """A 'text-block message' is one whose content carries some real
+    text — i.e. a user message, a textual assistant reply, or any
+    message with non-empty content. Pure tool-result wrappers with an
+    empty content string don't count. Used by find_cut_index to keep
+    enough conversational turns in the tail even when one giant
+    tool_result block would otherwise satisfy the token budget alone.
     """
-    cut = _find_cut_index(messages, keep_recent_tokens)
-    if cut <= 0:
-        return Summary(
-            summary_text="",
-            cut_idx=0,
-            summarised_count=0,
-            summarised_tokens=0,
-            previous_summary_used=False,
-        )
-    prefix = messages[:cut]
-    text = await generate_summary(
-        messages=prefix,
-        model=model,
-        previous_summary=previous_summary,
-    )
-    return Summary(
-        summary_text=text,
-        cut_idx=cut,
-        summarised_count=cut,
-        summarised_tokens=estimate_history_tokens(prefix),
-        previous_summary_used=bool(previous_summary),
-    )
+    role = msg.get("role")
+    if role in ("user", "assistant", "system"):
+        content = msg.get("content")
+        if content and str(content).strip():
+            return True
+    return False
+
+
+default_summarizer = Summarizer()
