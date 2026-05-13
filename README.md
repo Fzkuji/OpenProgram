@@ -31,7 +31,7 @@
 Requires **Python 3.11+**.
 
 ```bash
-pip install "openprogram[web]"                      # install (with web UI)
+pip install openprogram                             # install (TUI + web UI included)
 openprogram setup                                   # connect a provider (interactive)
 ```
 
@@ -69,7 +69,6 @@ Check what's detected with `openprogram providers`. Auto-detection order: **Clau
 
 | Extra | Adds | Post-install |
 |---|---|---|
-| `[web]` | Browser chat UI | — |
 | `[anthropic]` / `[openai]` / `[gemini]` | Provider SDKs | — |
 | `[browser]` | Playwright (~150 MB) | `playwright install chromium` |
 | `[browser-stealth]` | Cloudflare-bypassing browsers | `patchright install chromium && camoufox fetch` |

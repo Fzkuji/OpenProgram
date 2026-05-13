@@ -37,6 +37,14 @@ dependencies = [
     # interface (sidebar + scrollback + command palette). Falls
     # through to the Rich-based REPL when TUI is unavailable.
     "textual>=0.80",
+    # Web UI is a first-class entry point alongside the TUI (the
+    # whole platform pitch is "TUI or browser, same backend"), so the
+    # FastAPI/uvicorn/websockets stack ships with the core package
+    # instead of being a `[web]` extra. Keeps `pip install openprogram`
+    # a single line on the landing page.
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "websockets>=12.0",
 ]
 
 [project.optional-dependencies]
@@ -52,17 +60,12 @@ openai = [
 gemini = [
     "google-genai>=1.0.0",
 ]
-web = [
-    "fastapi>=0.110.0",
-    "uvicorn[standard]>=0.29.0",
-    "websockets>=12.0",
-]
-# Back-compat alias
-visualize = [
-    "fastapi>=0.110.0",
-    "uvicorn[standard]>=0.29.0",
-    "websockets>=12.0",
-]
+# Back-compat alias — the web stack moved into base `dependencies`
+# above. Keeping these extras as empty markers so existing
+# `pip install "openprogram[web]"` / `[visualize]` lines in the wild
+# don't break, they just no-op.
+web = []
+visualize = []
 # GUI-Agent-Harness deps (vision + input control).
 # Note: ultralytics pulls in torch (~2GB); opencv-python-headless avoids the
 # system libGL runtime. Add `easyocr` yourself if you need OCR on non-macOS.
@@ -109,10 +112,6 @@ all = [
     "anthropic>=0.30.0",
     "openai>=1.30.0",
     "google-genai>=1.0.0",
-    # Web UI
-    "fastapi>=0.110.0",
-    "uvicorn[standard]>=0.29.0",
-    "websockets>=12.0",
     # GUI harness
     "opencv-python-headless>=4.8.0",
     "numpy>=1.24.0",
