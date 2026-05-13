@@ -126,6 +126,57 @@
   white-space: nowrap;
 }
 
+/* Hover-revealed action buttons (rename / delete) on each branch
+   row. Wrapped in a single .branch-item-actions container so the
+   two buttons can sit tight against each other (gap:2px) without
+   inheriting the row's wider gap:8 between dot/name/badge. Sizing
+   (22×22) and border-radius match the topbar dropdown's
+   .branch-selector .branch-del so the two surfaces feel identical. */
+.branch-item-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.branch-item:hover .branch-item-actions {
+  display: inline-flex;
+}
+.branch-item-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 24×24 matches the topbar branch-dropdown's inline-styled
+     buttons (see conversations.js: `var BTN = 24`). The CSS
+     22×22 you'll find in 05-chat.css is overridden there. */
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 75ms, color 75ms;
+}
+.branch-item-action svg { display: block; }
+.branch-item-rename:hover {
+  /* The right-dock sits on `--bg-secondary`, which itself is darker
+     than `--bg-primary`. Hovering with `--bg-hover` (the *lighter*
+     hover token) made the button blend into the row instead of
+     standing out, so use `--bg-hover-contrast` (the deeper-than-primary
+     token) — the button visibly darkens, making the affordance
+     clear on the dark surface. */
+  background: var(--bg-hover-contrast, rgba(0, 0, 0, 0.3));
+  color: var(--text-bright);
+}
+.branch-item-del:hover {
+  background: var(--accent-red);
+  color: #fff;
+}
+/* When hovering the row, the HEAD badge collides visually with the
+   action buttons. Hide the badge during hover so the action icons
+   take its spot — HEAD identity is already conveyed by the row's
+   .active styling. */
+.branch-item:hover .branch-item-badge { display: none; }
+
 /* ============ History DAG view ============ */
 
 .history-body {

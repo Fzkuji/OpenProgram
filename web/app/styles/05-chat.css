@@ -25,8 +25,9 @@
   flex-shrink: 0;
   background: var(--bg-primary);
   z-index: 5;
-  /* Container query target — badges below collapse based on this
-     element's inline-size so narrow viewports don't overflow. */
+  /* Container query target — badges below adapt in stages based on
+     this element's inline-size, so the four chips never overlap or
+     push siblings off-screen. */
   container-type: inline-size;
   container-name: topbar;
 }
@@ -39,27 +40,58 @@
      ellipsis on individual badges activates instead of pushing
      siblings off-screen. */
   min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
-/* Two-part badges: a short always-visible label + a details span
-   that holds the secondary info (channel, model, title, …). */
+/* Each badge in the topbar (status / branch / chat / exec) is a
+   two-part chip: an always-visible short label + an optional details
+   span that shrinks-then-disappears as the topbar narrows. Making
+   the badge itself an inline-flex container lets the details span
+   ellipsis-truncate independently of the short label. */
+.status-badge,
+.runtime-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 1;
+}
 .badge-short {
   font-weight: 500;
+  flex-shrink: 0;
 }
 .badge-details {
-  /* Show by default; container query below hides on narrow widths. */
   margin-left: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 22ch;
-  display: inline-block;
-  vertical-align: bottom;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
-@container topbar (max-width: 720px) {
-  .badge-details {
-    display: none;
+/* Four-stage responsive collapse — driven by the topbar's own width
+   (container query) so the sidebar's collapse / expand also adjusts
+   the badges without depending on viewport size.
+   • >1080px:        full details (default)
+   • 760-1080px:    details ellipsis-truncate at ~18ch each
+   • 560-760px:     details disappear, only the short label remains
+                     ("connected" / "main (1)" / "Chat" / "Exec")
+   • <560px:        even the short label collapses to its leading
+                     letter, leaving four single-glyph chips that fit
+                     side-by-side without overflow. Dropdowns still
+                     open on click, so functionality is preserved. */
+@container topbar (max-width: 1080px) {
+  .badge-details { max-width: 18ch; }
+}
+@container topbar (max-width: 760px) {
+  .badge-details { display: none; }
+}
+@container topbar (max-width: 560px) {
+  .badge-short {
+    max-width: 1ch;
+    overflow: hidden;
+    /* Letter-spacing 0 keeps the single glyph snug inside the chip. */
+    letter-spacing: 0;
   }
 }
 
@@ -90,28 +122,74 @@
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 3px;
-  background: rgba(97, 175, 239, 0.12);
-  color: var(--accent-blue);
-  border: 1px solid rgba(97, 175, 239, 0.25);
+  background: rgba(152, 195, 121, 0.10);
+  color: var(--accent-green);
+  border: 1px solid rgba(152, 195, 121, 0.22);
   cursor: pointer;
 }
 .status-badge:hover {
-  background: rgba(97, 175, 239, 0.2);
+  background: rgba(152, 195, 121, 0.18);
 }
-.branch-badge {
+/* Initial / probing state — yellow until the worker has actually
+   answered (set in HTML as the bootstrap class, removed by
+   updateStatus once the WS receives its first envelope). */
+.status-badge.connecting {
+  background: rgba(198, 144, 38, 0.10);
+  color: var(--accent-yellow);
+  border-color: rgba(198, 144, 38, 0.22);
+}
+.status-badge.connecting:hover {
+  background: rgba(198, 144, 38, 0.18);
+}
+/* Status badge carries a source name (potentially long, e.g.
+   "WeChat (xxx) · run analyze_sentiment") inside its short label.
+   Allow it to ellipsis-shrink — the other badges' .badge-short
+   (Chat / Exec / branch name) stays whole because they're short
+   already, so the default flex-shrink:0 rule above is fine for
+   them. */
+.status-badge .badge-short {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Connection-state dot inside the status badge. */
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+  background: var(--accent-blue);
+}
+.status-dot.ok {
+  background: var(--accent-green);
+  box-shadow: 0 0 4px rgba(152, 195, 121, 0.5);
+}
+.status-dot.warn { background: var(--accent-yellow); }
+.status-dot.err { background: var(--accent-red); }
+/* Double-class selector so this beats `.runtime-badge`'s green
+   default (defined later in the file at L886). Without the extra
+   `.runtime-badge` qualifier these rules and that block tie on
+   specificity and the later one wins. */
+.runtime-badge.branch-badge {
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 3px;
-  background: rgba(180, 180, 180, 0.08);
-  color: var(--text-primary);
-  border: 1px solid rgba(180, 180, 180, 0.18);
+  /* Orange — same family as git's branch / tag color so the
+     "this is a VCS-ish branch" association reads quickly. */
+  background: rgba(209, 154, 102, 0.10);
+  color: var(--accent-orange);
+  border: 1px solid rgba(209, 154, 102, 0.25);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
-.branch-badge:hover {
-  background: rgba(180, 180, 180, 0.18);
+.runtime-badge.branch-badge:hover {
+  background: rgba(209, 154, 102, 0.18);
 }
 .branch-badge .branch-icon {
   display: inline-flex;
@@ -833,10 +911,20 @@
 .runtime-badge.model:hover {
   background: rgba(198,120,221,0.2);
 }
-.agent-badge {
+.runtime-badge.agent-badge {
   cursor: pointer;
   font-family: var(--mono);
   font-size: 12px;
+  /* Blue chip for the model selectors (chat + exec). Distinct from
+     the status badge's green ("Local / connected") and the branch
+     badge's orange, so the topbar reads as three different roles
+     at a glance even when all chips collapse to a single letter.
+     The `.runtime-badge` qualifier keeps this from being tied with
+     the plain `.runtime-badge` default that lives later in the
+     file — without it that green default wins on cascade order. */
+  background: rgba(56, 134, 229, 0.10);
+  color: var(--accent-blue);
+  border-color: rgba(56, 134, 229, 0.25);
 }
 .token-badge {
   font-family: var(--mono);
@@ -844,9 +932,9 @@
   cursor: default;
   white-space: nowrap;
 }
-.agent-badge:hover {
-  background: rgba(198,120,221,0.15);
-  border-color: rgba(198,120,221,0.3);
+.runtime-badge.agent-badge:hover {
+  background: rgba(56, 134, 229, 0.18);
+  border-color: rgba(56, 134, 229, 0.35);
 }
 .agent-badge.locked {
   cursor: default;
@@ -1255,25 +1343,36 @@
   max-width: 800px;
   margin: 0 auto;
   background: var(--bg-tertiary);
-  /* Hairline ring is the second shadow — avoids a pixel-quantized 1px border
-     that would jitter between selected/unselected states. Drop shadow is
-     subtle at rest, deeper on focus. Matches the claude.ai chat input. */
-  border: 0 solid transparent;
+  /* Rest state: thin black 1px border (light mode). No shadow, no
+     hover reaction — the input only "lights up" when the user is
+     actually focused on it. */
+  border: 1px solid rgba(0, 0, 0, 0.18);
   border-radius: 26px;
   padding: 12px 12px 54px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035),
-              0 0 0 0.5px rgba(0, 0, 0, 0.08);
-  transition: box-shadow 180ms cubic-bezier(0.165, 0.85, 0.45, 1);
+  box-shadow: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
-.input-wrapper:hover {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04),
-              0 0 0 0.5px rgba(0, 0, 0, 0.14);
-}
-
+/* Focus = the user is actually typing into the box. Deepen the black
+   border and add a soft drop shadow so the active input is obvious. */
 .input-wrapper:focus-within {
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.075),
-              0 0 0 0.5px rgba(0, 0, 0, 0.18);
+  border-color: rgba(0, 0, 0, 0.55);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.10);
+}
+
+/* Dark mode: invert — white border + white glow on focus. At rest a
+   barely-there white hairline so the rounded shape is still visible
+   against bg-tertiary. */
+@media (prefers-color-scheme: dark) {
+  .input-wrapper {
+    border-color: rgba(255, 255, 255, 0.10);
+  }
+  .input-wrapper:focus-within {
+    /* Just brighten the existing 1px border — no outer ring so the
+       focused state doesn't visually thicken. */
+    border-color: rgba(255, 255, 255, 0.55);
+    box-shadow: 0 4px 18px rgba(255, 255, 255, 0.06);
+  }
 }
 
 .chat-input {
@@ -1455,6 +1554,151 @@
   z-index: 100;
 }
 .plus-menu.open { display: flex; flex-direction: column; gap: 1px; }
+
+/* Slash-command suggestion menu. Plain popover floating above the
+   input — no overlap, no mask, no z-index hack on input-wrapper. The
+   input's border / focus halo stays untouched. */
+/* Slash-command menu — anchored to .input-area (positioned ancestor),
+   sits above the input-wrapper with its bottom edge tucked INTO the
+   wrapper. Since the menu is BEFORE input-wrapper in DOM order, the
+   wrapper paints over the menu's bottom strip — natural masking, no
+   z-index or pseudo-element trickery. */
+/* Clip container — only the area ABOVE the input-wrapper top is
+   visible. Anything sliding past this bottom edge gets clipped
+   automatically by overflow:hidden, no matter how tall the menu is. */
+.slash-clip {
+  position: absolute;
+  top: -2000px;             /* extend high so tall menus aren't cut off above */
+  left: 0;
+  right: 0;
+  bottom: 120px;            /* matches the previous menu rest position */
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.slash-menu {
+  position: absolute;
+  /* Anchored to the clip container's bottom — same on-screen rest
+     position as before, but now any vertical translate down past
+     this line gets clipped by .slash-clip. */
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: 50% 100%;
+  pointer-events: auto;
+  max-width: 720px;
+  width: calc(min(90%, 720px));
+  /* Top: padding-top (8) + border-top (1) = 9px visible.
+     Bottom: padding-bottom - overlap (2) = visible; +3 to match the
+     1px missing border-bottom and the 2px overlap into wrapper. */
+  padding: 8px 8px 11px;
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 14px 14px 0 0;
+  border-bottom: none;
+  box-shadow: none;
+  /* Cap height around 4.5 items + outer padding so a half-item peek
+     hints there's more to scroll. Below that the menu hugs the
+     actual item count naturally. */
+  max-height: 270px;
+  overflow-y: auto;
+  /* Hide scrollbar visually but keep it usable. */
+  scrollbar-width: thin;
+  /* Animations are class-triggered (.opening / .closing) so the menu
+     can play a closing animation before being hidden. */
+}
+.slash-menu.opening {
+  animation: slashMenuPopOut 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.slash-menu.closing {
+  /* Same duration as opening — symmetric feel. Slides the menu down
+     by its OWN height (+ 80px buffer so any extra padding / shadow
+     also leaves the visible area) before JS removes it from layout. */
+  animation: slashMenuPopIn 380ms cubic-bezier(0.4, 0, 0.84, 0) forwards;
+  pointer-events: none;
+}
+.slash-menu::-webkit-scrollbar { width: 6px; }
+.slash-menu::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 3px;
+}
+
+@keyframes slashMenuPopOut {
+  from {
+    /* translateY(100%) = menu's OWN height. Combined with the
+       overflow:hidden on .slash-clip, this means the menu starts
+       fully clipped (entirely past the clip's bottom edge), then
+       slides up into view. Works for any menu height. */
+    transform: translateX(-50%) translateY(100%);
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+  }
+}
+@keyframes slashMenuPopIn {
+  from {
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    /* Reverse — slides down by menu's full height, ending fully
+       clipped. As it passes the clip's bottom edge, it gets
+       progressively cut off — a clean "retract into the input"
+       reveal. */
+    transform: translateX(-50%) translateY(100%);
+  }
+}
+
+/* Hide the welcome-screen example button row while the slash-command
+   menu is open — they share vertical space with the menu and would
+   otherwise be visually crowded. Fades back in when menu closes. */
+#welcomeExamples,
+.welcome-examples {
+  transition: opacity 200ms ease;
+}
+body.slash-menu-open #welcomeExamples,
+body.slash-menu-open .welcome-examples {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.slash-menu-item {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+  text-align: left;
+}
+.slash-menu-item:hover { background: var(--bg-hover); }
+.slash-menu-name {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  color: var(--text-bright, #111);
+  font-weight: 600;
+}
+.slash-menu-args {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.slash-menu-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+@media (prefers-color-scheme: dark) {
+  .slash-menu {
+    border-color: rgba(255, 255, 255, 0.10);
+    box-shadow: none;
+  }
+  .slash-menu-name { color: var(--text-bright, #fff); }
+  .slash-menu::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+  }
+}
 .plus-menu-item {
   display: flex;
   align-items: center;

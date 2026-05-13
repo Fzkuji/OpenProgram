@@ -3,6 +3,87 @@ function _channelLabel(channel, accountId) {
   return accountId ? channel + ':' + accountId : channel;
 }
 
+// Map a channel platform id to a brand-icon URL on simple-icons'
+// public CDN. simple-icons ships official-mark SVGs for hundreds of
+// platforms under an open license, intended exactly for "your app
+// integrates with X" indicators. Each URL embeds the brand's own
+// primary color so the icons read like the real platform — WeChat
+// shows as its #07C160 green, Discord as its blurple, etc. Falls
+// back to a single-letter chip if the icon fails to load.
+var _CHANNEL_ICON_URL = {
+  wechat:   'https://cdn.simpleicons.org/wechat/07C160',
+  discord:  'https://cdn.simpleicons.org/discord/5865F2',
+  telegram: 'https://cdn.simpleicons.org/telegram/26A5E4',
+  slack:    'https://cdn.simpleicons.org/slack/4A154B',
+};
+
+// Channel health poller. When the active conv binds to a channel
+// (wechat / discord / telegram / slack), poll the backend heartbeat
+// endpoint every 5s and toggle the status-badge dot via
+// `setStatusDotHealth(state)`. The badge *text* keeps showing
+// "WeChat (xxx) · …" — only the dot reflects liveness.
+//
+// Backend semantics (see openprogram/webui/routes/channels.py):
+//   alive=true            → adapter thread heartbeated within 30s → green
+//   alive=false, unknown  → never seen (not started yet)          → yellow
+//   alive=false, stale    → was alive, heartbeat went silent      → red
+var _channelHealthTimer = null;
+var _channelHealthKey = null;
+
+function _stopChannelHealthPoll() {
+  if (_channelHealthTimer) {
+    clearInterval(_channelHealthTimer);
+    _channelHealthTimer = null;
+  }
+  _channelHealthKey = null;
+}
+window._stopChannelHealthPoll = _stopChannelHealthPoll;
+
+function _startChannelHealthPoll(channel, account_id) {
+  var key = channel + ':' + (account_id || 'default');
+  if (_channelHealthKey === key) return;  // already polling this one
+  _stopChannelHealthPoll();
+  _channelHealthKey = key;
+
+  function _probe() {
+    if (_channelHealthKey !== key) return;
+    var url = '/api/channels/' + encodeURIComponent(channel)
+            + '/' + encodeURIComponent(account_id || 'default') + '/status';
+    fetch(url, { cache: 'no-store' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (_channelHealthKey !== key) return;
+        if (typeof window.setStatusDotHealth !== 'function') return;
+        var state = 'err';
+        if (data.alive) state = 'ok';
+        else if (data.state === 'unknown') state = 'warn';
+        window.setStatusDotHealth(state);
+      })
+      .catch(function() {
+        if (_channelHealthKey !== key) return;
+        if (typeof window.setStatusDotHealth === 'function') {
+          window.setStatusDotHealth('err');
+        }
+      });
+  }
+  _probe();
+  _channelHealthTimer = setInterval(_probe, 5000);
+}
+window._startChannelHealthPoll = _startChannelHealthPoll;
+
+function _channelIcon(plat) {
+  var lc = String(plat || '').toLowerCase();
+  var url = _CHANNEL_ICON_URL[lc];
+  var letter = ((plat || '?')[0] || '?').toUpperCase();
+  // The fallback letter chip is also what dropdown providers use, so
+  // a broken icon still looks intentional rather than empty.
+  var letterSpan = '<span class="provider-icon-letter">' + letter + '</span>';
+  if (!url) return letterSpan;
+  return '<img src="' + url + '" alt="" '
+       + 'onerror="this.outerHTML=&quot;' + letterSpan.replace(/"/g, '&amp;quot;') + '&quot;">';
+}
+window._channelIcon = _channelIcon;
+
 function renderSessions() {
   var container = document.getElementById('convList');
   var html = '';
@@ -158,7 +239,7 @@ function openChannelDropdown(evt) {
       order.forEach(function(plat) {
         html += '<div class="model-dd-group-label">' +
                   '<span class="provider-icon" style="width:14px;height:14px">' +
-                    (typeof _dropdownProviderIcon === 'function' ? _dropdownProviderIcon(plat) : '') +
+                    _channelIcon(plat) +
                   '</span>' +
                   '<span>' + escHtml(brandFor(plat)) + '</span>' +
                 '</div>';
@@ -324,6 +405,64 @@ async function _refreshBranchTokens() {
 }
 window._refreshBranchTokens = _refreshBranchTokens;
 
+// Inline-rename for a branch row — used by both the right-dock
+// panel (renderBranchesPanel) and (eventually) the topbar dropdown.
+// Replaces `nameEl`'s text with a focused <input>; Enter/blur commit,
+// Esc/empty cancel. Empty submit is treated as cancel (consistent
+// with the dropdown's behavior after the recent fix), not as an
+// "AI auto-name" request.
+function _inlineRenameBranchRow(nameEl, headMsgId, currentName) {
+  if (!nameEl || nameEl.dataset.editing === '1') return;
+  nameEl.dataset.editing = '1';
+  var originalText = nameEl.textContent;
+  var current = currentName || '';
+  var inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = current;
+  inp.placeholder = 'new branch name (empty = cancel)';
+  inp.style.width = '100%';
+  inp.style.boxSizing = 'border-box';
+  inp.style.font = 'inherit';
+  inp.style.color = 'var(--text-bright)';
+  inp.style.background = 'var(--bg-input, rgba(255,255,255,0.06))';
+  inp.style.border = '1px solid var(--accent-blue, #6cb4ff)';
+  inp.style.borderRadius = '4px';
+  inp.style.padding = '2px 6px';
+  inp.style.outline = 'none';
+  nameEl.textContent = '';
+  nameEl.appendChild(inp);
+  setTimeout(function () { inp.focus(); inp.select(); }, 0);
+  var submitted = false;
+  function commit(value) {
+    if (submitted) return;
+    submitted = true;
+    var trimmed = (value || '').trim();
+    if (trimmed && trimmed !== current
+        && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        action: 'rename_branch',
+        session_id: currentSessionId,
+        head_msg_id: headMsgId,
+        name: trimmed,
+      }));
+    }
+    delete nameEl.dataset.editing;
+    nameEl.textContent = originalText;
+  }
+  function cancel() {
+    if (submitted) return;
+    submitted = true;
+    delete nameEl.dataset.editing;
+    nameEl.textContent = originalText;
+  }
+  inp.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); commit(inp.value); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+  });
+  inp.addEventListener('blur', function () { commit(inp.value); });
+  inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
+}
+
 window.renderBranchesPanel = function () {
   var host = document.getElementById('branchesPanel');
   if (!host) return;
@@ -394,11 +533,63 @@ window.renderBranchesPanel = function () {
     // order is preserved when re-expanded. Avoids CSS :nth-child games.
     if (collapsed && !b.active) item.style.display = 'none';
     item.setAttribute('data-head', b.head_msg_id);
+    // Hover-revealed rename + delete buttons live to the right of
+    // the name (mirrors the topbar branch-dropdown). The HEAD badge,
+    // when present, sits before them so the action buttons always
+    // anchor flush-right.
+    // Match the topbar branch-dropdown's exact SVGs (size, viewBox,
+    // stroke-width, path) so both surfaces render identical icons.
+    var renameSvg = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L5 13l-3 1 1-3 8.5-8.5z"/></svg>';
+    var delSvg = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>';
     item.innerHTML =
       '<span class="branch-item-dot" style="background:' + laneColor + '"></span>' +
       '<span class="branch-item-name">' + escHtml(b.name) + '</span>' +
-      (b.active ? '<span class="branch-item-badge">HEAD</span>' : '');
-    item.addEventListener('click', function () {
+      (b.active ? '<span class="branch-item-badge">HEAD</span>' : '') +
+      '<span class="branch-item-actions">' +
+        '<span class="branch-item-action branch-item-rename" title="Rename branch" data-rename="' + escAttr(b.head_msg_id) + '">' + renameSvg + '</span>' +
+        '<span class="branch-item-action branch-item-del" title="Delete branch" data-del="' + escAttr(b.head_msg_id) + '">' + delSvg + '</span>' +
+      '</span>';
+
+    var nameEl = item.querySelector('.branch-item-name');
+    var renameBtn = item.querySelector('.branch-item-rename');
+    var delBtn = item.querySelector('.branch-item-del');
+
+    if (renameBtn) {
+      renameBtn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        // If the topbar branch-dropdown is open, close it — otherwise
+        // it shows a stale name after the rename round-trips, and the
+        // two surfaces feel like they're fighting over who owns the
+        // current state.
+        if (typeof _closeBranchDropdown === 'function') _closeBranchDropdown();
+        _inlineRenameBranchRow(nameEl, b.head_msg_id, b.name || '');
+      });
+    }
+    if (delBtn) {
+      delBtn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (!confirm('Delete this branch and its messages? This cannot be undone.')) return;
+        // Same reasoning as rename: the topbar dropdown would
+        // otherwise still list the now-deleted branch.
+        if (typeof _closeBranchDropdown === 'function') _closeBranchDropdown();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            action: 'delete_branch',
+            session_id: currentSessionId,
+            head_msg_id: b.head_msg_id,
+          }));
+          ws.send(JSON.stringify({
+            action: 'load_session',
+            session_id: currentSessionId,
+          }));
+        }
+      });
+    }
+    item.addEventListener('click', function (ev) {
+      // Don't fire checkout if the click landed inside the inline
+      // rename input or on either action button — those have their
+      // own handlers and stopPropagation.
+      if (nameEl && nameEl.dataset.editing === '1') return;
       if (b.active) return;
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ action: 'checkout_branch', session_id: currentSessionId, head_msg_id: b.head_msg_id }));
@@ -638,7 +829,7 @@ function openBranchDropdown(evt) {
         var inp = document.createElement('input');
         inp.type = 'text';
         inp.value = current;
-        inp.placeholder = 'name (empty = AI auto-name)';
+        inp.placeholder = 'new branch name (empty = cancel)';
         inp.style.width = '100%';
         inp.style.boxSizing = 'border-box';
         inp.style.font = 'inherit';
@@ -657,21 +848,19 @@ function openBranchDropdown(evt) {
           if (submitted) return;
           submitted = true;
           var trimmed = (value || '').trim();
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            if (!trimmed) {
-              ws.send(JSON.stringify({
-                action: 'auto_name_branch',
-                session_id: currentSessionId,
-                head_msg_id: rhead,
-              }));
-            } else if (trimmed !== current) {
-              ws.send(JSON.stringify({
-                action: 'rename_branch',
-                session_id: currentSessionId,
-                head_msg_id: rhead,
-                name: trimmed,
-              }));
-            }
+          // Empty submit = cancel. Previously this fired
+          // `auto_name_branch`, which left the row stuck waiting on
+          // an AI round-trip; users expect "I changed my mind" not
+          // "now rename it for me". Esc / blur with empty value
+          // also lands here.
+          if (trimmed && trimmed !== current
+              && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              action: 'rename_branch',
+              session_id: currentSessionId,
+              head_msg_id: rhead,
+              name: trimmed,
+            }));
           }
           delete nameEl.dataset.editing;
           // Restore the row's text — list_branches reply will overwrite.

@@ -259,8 +259,16 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 8px;
-  /* bg + right divider are painted by .providersLayout gradient. */
+  /* No top padding — the sticky header below provides its own 8px
+     padding-top. That way the sticky header can stick at top:0 with
+     no negative-margin trickery, which was making the sticky
+     position calc unreliable (scroll content leaked above it). */
+  padding: 0 8px 8px 8px;
+  /* Sidebar gets its own solid background so the sticky header and
+     the padding gutters never show through to scrolling content
+     behind them — the gradient comment below was aspirational; no
+     parent actually paints a background here. */
+  background: var(--bg-primary);
   align-self: start;
   /* Stay in view next to the scrolling detail column. The provider
      list can get long (20+ providers), so cap its own height and
@@ -270,20 +278,24 @@
   top: 64px;
   max-height: calc(100vh - 64px);
   overflow-y: auto;
-  /* No overscroll-behavior — default chaining. The wheel scrolls
-     this sidebar internally until it hits top/bottom, then naturally
-     propagates to `.view`. `contain` would trap the wheel here and
-     make the user "force" past the boundary to continue page
-     scrolling, which felt stuck. */
 }
-.providersSidebar > .providersSearch { margin-bottom: 8px; }
+/* Title + search wrapped in a sticky header — pinned to the top of
+   the (scrollable) sidebar while the provider list scrolls
+   underneath. */
+.providersStickyHeader {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-primary);
+  padding: 8px 0;
+}
+.providersStickyHeader > .providersSearch { margin-top: 0; }
 .providersSidebar > .providersGroupLabel { margin-top: 20px; }
-/* First group label sits directly under the search box — keep that
-   gap tight (8px) so the search has visual continuity with the
-   "Enabled" header it introduces. Only the later "Not enabled"
-   label (or any subsequent group break) gets the larger breathing
-   room above. */
-.providersSidebar > .providersSearch + .providersGroupLabel { margin-top: 8px; }
+/* First group label sits directly under the sticky header — keep
+   the gap tight (8px) so the "Enabled" label visually attaches to
+   the search box above. Later group breaks ("Not enabled") get the
+   larger 20px margin from the rule above. */
+.providersStickyHeader + .providersGroupLabel { margin-top: 8px; }
 .providersSearch {
   position: relative;
 }

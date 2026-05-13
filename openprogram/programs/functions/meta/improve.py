@@ -6,12 +6,13 @@ from __future__ import annotations
 
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.programs.functions.meta._helpers import (
-    extract_code, validate_code, compile_function,
-    save_function, get_source,
-    _canonicalize_function_code,
-    clarify, generate_code,
-)
+from openprogram.programs.functions.meta.generation.clarify import clarify
+from openprogram.programs.functions.meta.validation.compile_function import compile_function
+from openprogram.programs.functions.meta.generation.extract_code import extract_code
+from openprogram.programs.functions.meta.generation.generate_code import generate_code
+from openprogram.programs.functions.meta.introspection.get_source import get_source
+from openprogram.programs.functions.meta.storage.save_function import save_function
+from openprogram.programs.functions.meta.validation.validate_code import validate_code
 
 
 @agentic_function(input={
@@ -99,7 +100,6 @@ def improve(
     # Step 2: Generate code
     response = generate_code(task=generation_task, runtime=runtime)
     improved_code = extract_code(response)
-    improved_code = _canonicalize_function_code(improved_code, fn_name)
     save_function(
         improved_code,
         fn_name,

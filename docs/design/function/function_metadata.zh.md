@@ -59,19 +59,35 @@
 
 **核心原则**：能在 signature / annotation 里表达的，不在装饰器里重复；能用 `input=` 装饰器表达的结构化信息，不在 docstring 里重复。
 
-## 4. docstring 的角色
+## 4. docstring 与 `content` 的分工
 
-docstring 既是给读源码的人看的，也是 LLM 在多个环节会读到的。它的责任是：
+两者职责不同，谁都不能替代谁：
 
-- **第一段（首段）**：一句话总结，回答"这个函数干啥 / 何时该调它"。被 catalog 菜单当"何时选"，被 tool_use spec 当 description，被 meta/create 当生成函数的目标。
-- **正文**：详细行为指令。被 `runtime.exec` 当默认 system prompt 注入到 LLM 调用里。可以说明输出格式、约束、注意事项。
+| 通道 | 范围 | 写什么 |
+|---|---|---|
+| docstring | 整个函数级。描述函数整体在干啥（可能有预处理、多次 LLM 调用、后处理）。读者：人、catalog 菜单、tool_use spec、meta 工具链。 | 第一段是一行总结（必需）。正文可以详细描述每次 LLM 调用做什么、期望输出、注意事项——想写多详细都行，是给读代码的人和上下文用的。 |
+| `runtime.exec(content=[...])` | 函数内每一次具体的 LLM 调用。函数里可能有多次 exec，每次有自己的 prompt。 | 这一次 LLM 调用真正的 prompt + 数据：任务、输出格式、约束、加上要操作的数据。**即使 docstring 已经描述过，这里仍然必须写。** |
+
+一个函数 docstring 可以详细解释"我用 LLM 做分类、再把回复归一化"，但函数体仍然要写显式的 `runtime.exec(content=[...])`，里面带真正发给 LLM 的指令和数据。**docstring 的内容不会自动传到 LLM 调用里**——框架把 docstring 当描述性上下文渲染进 tree，不当权威指令；部分 provider（如 codex CLI）完全不读 docstring 当指令。每次调用都把 per-call prompt 写进 `content`。
 
 docstring 写法约束：
 
-- 不要扮演角色（不要 "You are a helpful assistant"）
-- 不要空指令（不要 "Complete the task"）
-- 不要重复 content 里已经有的数据
-- 输出格式要在 docstring 里精确定义，不留给 LLM 猜
+- 第一段必须有，一行总结（catalog 菜单、tool_use spec 读这一段）。
+- 正文想写多详细都行，包括描述每次 LLM 调用做什么。
+- 不要扮演角色（不要 "You are a helpful assistant"）、不要空指令（不要 "Complete the task"）。
+- docstring 写得详细**不能**省略具体 exec 调用里 `content=[...]` 的文字。
+
+`content` 写法约束：
+
+- 每项是 `{"type": "text", "text": ...}` 或 `{"type": "image", "path": ...}` 这种 dict。
+- 这一次的指令 **和** 数据一起塞进 content。例：
+  ```python
+  runtime.exec(content=[{"type": "text", "text": (
+      f"Classify the sentiment of the following text. Reply with exactly one "
+      f"word: positive, negative, or neutral.\n\nText:\n{text}"
+  )}])
+  ```
+- 输出格式在 content 里精确写明，不依赖 docstring 或外部上下文传达。
 
 ## 5. `input=` 与 docstring `Args:` 段的关系
 

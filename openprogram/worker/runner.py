@@ -105,7 +105,44 @@ def _start_channel_threads() -> tuple[
 
     if not threads:
         return None, []
+    # Health watcher: stamps a heartbeat for each (channel, account_id)
+    # whose adapter thread is still alive. The webui status endpoint
+    # reads these to surface a live/dead signal in the UI. Coarse
+    # (5s resolution) but accurate for "thread crashed vs running".
+    _start_heartbeat_watcher(threads, stop)
     return stop, threads
+
+
+def _start_heartbeat_watcher(
+    threads: list[tuple[str, threading.Thread]],
+    stop: threading.Event,
+) -> threading.Thread:
+    from openprogram.channels._heartbeats import heartbeat, clear
+
+    # Parse "channel:account_id" labels once so the hot loop just does
+    # is_alive() + dict writes — no string ops per tick.
+    parsed = []
+    for label, t in threads:
+        ch, _, acct = label.partition(":")
+        parsed.append((ch, acct or "default", t))
+        # Prime each entry so a status query right after startup
+        # (before the first 5s tick lands) already sees a heartbeat.
+        heartbeat(ch, acct or "default")
+
+    def _loop() -> None:
+        while not stop.is_set():
+            for ch, acct, t in parsed:
+                if t.is_alive():
+                    heartbeat(ch, acct)
+                else:
+                    clear(ch, acct)
+            stop.wait(5.0)
+
+    watcher = threading.Thread(
+        target=_loop, name="channel-heartbeat-watcher", daemon=True
+    )
+    watcher.start()
+    return watcher
 
 
 def _safe_run_channel(label: str, channel, stop: threading.Event) -> None:

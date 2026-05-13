@@ -40,7 +40,7 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 | Parameter types | annotation | `param.annotation` |
 | Parameter defaults | annotation default | `param.default` |
 | One-line summary (what / when-to-pick) | first paragraph of docstring (up to first blank line) | `inspect.getdoc(fn)`, first paragraph |
-| Detailed execution instructions (LLM-facing system prompt) | full docstring | `inspect.getdoc(fn)` |
+| Per-call LLM instructions (prompt + data for one specific `runtime.exec`) | the `content=[...]` list of that exec call | passed directly at call time |
 | Per-parameter description | `@agentic_function(input={"x": {"description": ...}})` | `fn.input_meta["x"]["description"]` |
 | Per-parameter enum | `@agentic_function(input={"x": {"options": [...]}})` | `fn.input_meta["x"]["options"]` |
 | Whether the parameter is LLM-visible | `@agentic_function(input={"x": {"hidden": True}})` | `fn.input_meta["x"]["hidden"]` |
@@ -57,19 +57,35 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 
 **Core principle**: anything expressible in the signature / annotation is not repeated in the decorator; anything expressible in `input=` is not repeated in the docstring.
 
-## 4. The role of the docstring
+## 4. The role of the docstring vs `content`
 
-The docstring serves both human readers and the LLM. Its responsibilities:
+These two channels can carry overlapping information, but they have **different responsibilities** — neither replaces the other:
 
-- **First paragraph**: one-line summary answering "what does this function do / when should it be picked." Used by the catalog menu as the when-to-pick hint, by the tool_use spec as the function description, and by meta/create as the generation target.
-- **Body**: detailed behavior instructions. `runtime.exec` injects this as the default system prompt for the LLM call inside the function. Use it to define output format, constraints, edge cases.
+| Channel | Scope | What goes here |
+|---|---|---|
+| docstring | Whole-function level. Describes what the function as a whole does (it may run preprocessing, several LLM calls, and postprocessing). Read by humans, catalog menus, tool_use specs, and meta tooling. | One-line summary required. May also describe in detail what each LLM call does, expected output, edge cases — as much detail as you want, for readers and for context. |
+| `runtime.exec(content=[...])` | One specific LLM call inside the function. Each `exec` is its own "ask"; the function may make several with different prompts. | The actual prompt + data for *this* LLM call: what task, what output format, what constraints, plus the data to operate on. **This must be written even if the docstring already describes it.** |
+
+A function may have a rich docstring explaining "this function classifies sentiment by asking the LLM and normalizing the reply", but the body still needs an explicit `runtime.exec(content=[...])` containing the actual instruction + data going to the LLM. **Documentation in the docstring does not propagate into the LLM call** — the framework sends docstring as descriptive context (rendered in the tree), not as authoritative instruction. Provider behavior varies; codex CLI in particular ignores docstring as instruction. Always put the per-call prompt in `content`.
 
 Docstring writing rules:
 
-- No role-play ("You are a helpful assistant")
-- No empty directives ("Complete the task", "Do your best")
-- No data already supplied via `content=[...]` at the call site
-- Output format must be precisely defined, not left for the LLM to guess
+- One-line summary (the first paragraph) is required — that's what catalog menus and tool_use specs read.
+- The body may be as detailed as is useful for code readers — including describing what each LLM call does.
+- Do not write filler ("You are a helpful assistant", "Complete the task").
+- A detailed docstring does NOT eliminate the need for explicit `content=[...]` text on each exec call.
+
+`content` writing rules:
+
+- Each item is a dict like `{"type": "text", "text": ...}` or `{"type": "image", "path": ...}`.
+- Embed both the instruction *and* the data for this LLM call. Example:
+  ```python
+  runtime.exec(content=[{"type": "text", "text": (
+      f"Classify the sentiment of the following text. Reply with exactly one "
+      f"word: positive, negative, or neutral.\n\nText:\n{text}"
+  )}])
+  ```
+- Define the exact output format inline; don't rely on the docstring or external context to convey it.
 
 ## 5. `input=` vs. docstring `Args:` section
 

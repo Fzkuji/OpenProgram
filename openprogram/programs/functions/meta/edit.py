@@ -16,12 +16,13 @@ from typing import Optional
 
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.programs.functions.meta._helpers import (
-    extract_code, validate_code, compile_function,
-    save_function, get_source, get_error_log,
-    _canonicalize_function_code,
-    clarify, generate_code,
-)
+from openprogram.programs.functions.meta.generation.clarify import clarify
+from openprogram.programs.functions.meta.validation.compile_function import compile_function
+from openprogram.programs.functions.meta.generation.extract_code import extract_code
+from openprogram.programs.functions.meta.generation.generate_code import generate_code
+from openprogram.programs.functions.meta.introspection.get_source import get_error_log, get_source
+from openprogram.programs.functions.meta.storage.save_function import save_function
+from openprogram.programs.functions.meta.validation.validate_code import validate_code
 
 
 _EDIT_GENERATION_SUFFIX = (
@@ -79,7 +80,6 @@ def _edit_round(
 
     try:
         edited_code = extract_code(response)
-        edited_code = _canonicalize_function_code(edited_code, fn_name)
         validate_code(edited_code, response)
         compiled_fn = compile_function(edited_code, runtime, fn_name)
     except (SyntaxError, ValueError, RuntimeError) as e:

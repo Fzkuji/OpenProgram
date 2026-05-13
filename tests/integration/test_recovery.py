@@ -5,7 +5,7 @@ Tests for error recovery: attempts tracking, edit() with new API.
 import pytest
 from openprogram import agentic_function, Runtime
 from openprogram.programs.functions.meta import edit
-from openprogram.programs.functions.meta._helpers import check_task
+from openprogram.programs.functions.meta.generation.clarify import check_task
 
 
 # ── attempts tracking ──────────────────────────────────────────

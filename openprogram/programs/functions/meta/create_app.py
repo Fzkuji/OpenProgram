@@ -14,7 +14,7 @@ import os
 
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.programs.functions.meta._helpers import extract_code
+from openprogram.programs.functions.meta.generation.extract_code import extract_code
 
 
 @agentic_function(input={

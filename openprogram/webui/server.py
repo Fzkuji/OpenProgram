@@ -1899,6 +1899,10 @@ def create_app():
     from openprogram.webui.routes import misc as _routes_misc
     _routes_misc.register(app)
 
+    # /api/channels/{platform}/{account_id}/status — adapter heartbeat
+    from openprogram.webui.routes import channels as _routes_channels
+    _routes_channels.register(app)
+
     return app
 
 

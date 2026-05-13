@@ -158,14 +158,16 @@ export function ProvidersSection() {
     <div className={styles.section}>
       <div className={styles.providersLayout}>
         <div className={styles.providersSidebar} ref={sidebarRef}>
-          <h2 className={styles.sectionTitle}>AI Providers</h2>
-          <div className={styles.providersSearch}>
-            <input
-              type="search"
-              placeholder="Search providers…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <div className={styles.providersStickyHeader}>
+            <h2 className={styles.sectionTitle}>AI Providers</h2>
+            <div className={styles.providersSearch}>
+              <input
+                type="search"
+                placeholder="Search providers…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
           </div>
           {enabled.filter(matches).length > 0 && (
             <>

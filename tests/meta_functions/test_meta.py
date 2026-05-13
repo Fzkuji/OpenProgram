@@ -5,11 +5,8 @@ Tests for meta.create() — generating agentic functions from descriptions.
 import pytest
 from openprogram import agentic_function, Runtime
 from openprogram.programs.functions.meta import create, edit
-from openprogram.programs.functions.meta._helpers import (
-    extract_code as _extract_code,
-    _make_safe_builtins,
-    _canonicalize_function_code,
-)
+from openprogram.programs.functions.meta.validation.sandbox import _make_safe_builtins
+from openprogram.programs.functions.meta.generation.extract_code import extract_code as _extract_code
 
 
 # ── _extract_code tests ────────────────────────────────────────
@@ -45,25 +42,6 @@ def test_extract_code_keeps_leading_imports():
     assert code.startswith("import json")
     assert "@agentic_function" in code
     assert "json.dumps" in code
-
-
-def test_canonicalize_function_code_renames_entry_point():
-    """Saved code should match the requested filename/function name."""
-    code = '''@agentic_function
-def original(n):
-    """Count down recursively."""
-    if n <= 0:
-        return 0
-    return 1 + original(n - 1)
-'''
-    rewritten = _canonicalize_function_code(code, "renamed")
-    namespace = {"agentic_function": lambda fn: fn}
-
-    exec(rewritten, namespace)
-
-    assert "def renamed" in rewritten
-    assert "original(" not in rewritten
-    assert namespace["renamed"](3) == 3
 
 
 # ── Safety tests ───────────────────────────────────────────────

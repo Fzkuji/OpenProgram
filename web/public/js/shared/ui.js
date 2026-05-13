@@ -24,6 +24,29 @@ var _svgSend = '<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 
 var _svgPause = '<svg viewBox="0 0 24 24"><rect x="5" y="4" width="4" height="16" rx="1"/><rect x="15" y="4" width="4" height="16" rx="1"/></svg>';
 var _svgResume = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 
+function _renderStatusBadge(badge, text, klass, dotKlass) {
+  // Shared shape: a colored dot + a short label. Used by both the
+  // connection-state path (updateStatus) and the run-state path
+  // (updateSendBtn for paused/running) so the dot is never lost.
+  badge.innerHTML = ''
+    + '<span class="' + dotKlass + '" aria-hidden="true"></span>'
+    + '<span class="badge-short">' + escapeHtml(text) + '</span>';
+  badge.className = klass;
+}
+
+// Override only the dot color without re-rendering the badge text.
+// Used by the channel-health poller to flip green↔red as the bound
+// adapter's heartbeat changes, while keeping "WeChat (xxx) · …" in
+// place as the label.
+function setStatusDotHealth(state) {
+  var badge = document.getElementById('statusBadge');
+  if (!badge) return;
+  var dot = badge.querySelector('.status-dot');
+  if (!dot) return;
+  dot.className = 'status-dot' + (state ? ' ' + state : '');
+}
+window.setStatusDotHealth = setStatusDotHealth;
+
 function updateSendBtn() {
   var sendBtn = document.getElementById('sendBtn');
   var stopBtn = document.getElementById('stopBtn');
@@ -39,39 +62,41 @@ function updateSendBtn() {
     sendBtn.title = 'Resume';
     sendBtn.className = 'send-btn paused-state';
     stopBtn.style.display = 'flex';
-    badge.textContent = 'paused';
-    badge.className = 'status-badge paused';
+    if (badge) _renderStatusBadge(badge, 'paused', 'status-badge paused', 'status-dot warn');
   } else {
     sendBtn.innerHTML = _svgPause;
     sendBtn.title = 'Pause';
     sendBtn.className = 'send-btn';
     stopBtn.style.display = 'none';
-    badge.textContent = 'running';
-    badge.className = 'status-badge';
+    if (badge) _renderStatusBadge(badge, 'running', 'status-badge', 'status-dot ok');
   }
 }
 
 function updatePauseBtn() { updateSendBtn(); }
 
 function updateStatus(status, source) {
-  // Two-part badge: a `.badge-short` always-visible label
-  // ("connected" / "disconnected") + a `.badge-details` span that the
-  // CSS container query hides when the topbar is narrow. The details
-  // are also stuffed into `title` so a hover still surfaces them when
-  // collapsed. This keeps the layout from overflowing on narrow
-  // viewports without losing information.
+  // Compact: a colored dot conveys the state (green=ok, red=error)
+  // and a single short label carries the source — either a channel
+  // binding / running program (when bound), or "Local" as the
+  // default for a vanilla local worker. Hover title carries the
+  // full state for screen readers.
+  // The short label receives ellipsis + max-width:1ch under the
+  // container queries in 05-chat.css, so it gracefully collapses
+  // through narrow viewports.
   var badge = document.getElementById('statusBadge');
   if (!badge) return;
   var connected = status === 'connected';
-  var shortLabel = connected ? 'connected' : 'disconnected';
-  var details = connected && source ? ' · ' + source : '';
-  badge.innerHTML = ''
-    + '<span class="badge-short">' + shortLabel + '</span>'
-    + (details
-        ? '<span class="badge-details">' + escapeHtml(details) + '</span>'
-        : '');
-  badge.title = connected && source ? 'session source: ' + source : '';
-  badge.className = connected ? 'status-badge' : 'status-badge disconnected';
+  var dotKlass = connected ? 'status-dot ok' : 'status-dot err';
+  var text = connected ? (source || 'Local') : 'disconnected';
+  _renderStatusBadge(
+    badge,
+    text,
+    connected ? 'status-badge' : 'status-badge disconnected',
+    dotKlass,
+  );
+  badge.title = connected
+    ? (source ? 'connected · ' + source : 'connected · local worker')
+    : 'disconnected';
 }
 
 function escapeHtml(s) {
@@ -141,6 +166,17 @@ function refreshStatusSource() {
   var title = _displayTitleFor(conv);
   if (title) parts.push(title);
   updateStatus('connected', parts.join(' · '));
+
+  // Channel health: when the conv is bound to a wechat/discord/…
+  // adapter, poll the backend heartbeat endpoint so the dot reflects
+  // *actual* adapter liveness, not just "the user picked this in
+  // the dropdown". When unbound (Local), stop polling — the dot
+  // stays green by default.
+  if (ch && typeof window._startChannelHealthPoll === 'function') {
+    window._startChannelHealthPoll(ch, acct || 'default');
+  } else if (typeof window._stopChannelHealthPoll === 'function') {
+    window._stopChannelHealthPoll();
+  }
 }
 window.refreshStatusSource = refreshStatusSource;
 
