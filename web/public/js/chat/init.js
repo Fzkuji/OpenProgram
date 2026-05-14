@@ -66,13 +66,11 @@ function handleMessage(msg) {
     case 'functions_list':
       availableFunctions = msg.data || [];
       loadProgramsMeta().then(function() { renderFunctions(); });
-      // Drain any pending hand-off from the programs page right
-      // away so users don't see a 200-400ms idle before the fn-form
-      // pops. The polling fallback in __triggerPendingRunFunction
-      // covers the inverse case (URL-only, scripts not yet loaded).
-      if (typeof window.__triggerPendingRunFunction === 'function') {
-        window.__triggerPendingRunFunction();
-      }
+      // The /programs → /chat hand-off used to be drained here via
+      // `window.__triggerPendingRunFunction()`. That trigger now
+      // lives in page-shell.tsx's chat-route effect and polls
+      // `availableFunctions` until this assignment lands, so we
+      // no longer need to ping it from the legacy side.
       break;
     case 'history_list':
       (msg.data || []).forEach(function(c) {
@@ -605,48 +603,9 @@ if (!window.location.pathname.match(/^\/s\//)) {
   }
 })();
 
-// Programs-page hand-off. Two entry points:
-//   * URL: /chat?run=name&cat=cat (hard refresh / direct link)
-//   * window.__pendingRunFunction: SPA-pushed in-process from
-//     /programs (router.push doesn't re-run this script's top level)
-// page-shell.tsx calls window.__triggerPendingRunFunction() on every
-// chat-route mount so the in-process path also fires reliably.
-window.__triggerPendingRunFunction = function () {
-  var pending = window.__pendingRunFunction;
-  var runName, runCat;
-  if (pending && pending.name) {
-    runName = pending.name;
-    runCat = pending.cat || '';
-    window.__pendingRunFunction = null;
-  } else {
-    var params = new URLSearchParams(window.location.search);
-    runName = params.get('run');
-    runCat = params.get('cat');
-    if (!runName) return;
-    history.replaceState(null, '', '/chat');
-  }
-  // Try immediately; if the data isn't ready yet, fall back to a
-  // tight poll. The functions_list ws handler also re-fires the
-  // trigger as soon as data arrives, so the typical fast path ends
-  // up being event-driven (~10ms after envelope) rather than waiting
-  // for a polling tick.
-  function attempt() {
-    if (typeof availableFunctions === 'undefined' || availableFunctions.length === 0) return false;
-    if (typeof clickFunction !== 'function') return false;
-    clickFunction(runName, runCat || 'user');
-    return true;
-  }
-  if (attempt()) return;
-  var deadline = Date.now() + 30000;
-  var poll = setInterval(function () {
-    if (Date.now() > deadline) {
-      clearInterval(poll);
-      console.warn('[?run] timeout waiting for functions_list');
-      return;
-    }
-    if (attempt()) clearInterval(poll);
-  }, 50);
-};
-// Run once at script load — covers a hard refresh that lands on
-// /chat?run=...
-window.__triggerPendingRunFunction();
+// `__triggerPendingRunFunction` was removed when the
+// `/programs → /chat` hand-off was migrated to a React effect in
+// page-shell.tsx. The `?run=NAME` / `window.__pendingRunFunction`
+// entry points still work — the React effect handles both, polling
+// `window.availableFunctions` (still legacy-populated) until the
+// `functions_list` WS envelope arrives.
