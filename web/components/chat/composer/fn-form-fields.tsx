@@ -8,6 +8,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 import type { FnParam } from "@/lib/session-store";
+import { useLegacyGlobals } from "@/components/sidebar/use-legacy-globals";
 
 import styles from "./fn-form.module.css";
 
@@ -189,10 +190,8 @@ function FunctionSelect({
   value: string;
   onChange: (v: string) => void;
 }) {
-  const w = window as unknown as {
-    availableFunctions?: { name: string; category?: string }[];
-  };
-  const fns = (w.availableFunctions ?? []).filter((f) => {
+  const { availableFunctions } = useLegacyGlobals();
+  const fns = availableFunctions.filter((f) => {
     const cat = f.category || "user";
     return cat !== "meta" && cat !== "builtin";
   });

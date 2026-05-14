@@ -12,7 +12,8 @@
  */
 "use client";
 
-import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
+import { useSessionStore } from "@/lib/session-store";
+import { useLegacyGlobals } from "@/components/sidebar/use-legacy-globals";
 
 import styles from "./welcome-screen.module.css";
 
@@ -51,6 +52,7 @@ export function WelcomeScreen() {
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const setComposerInput = useSessionStore((s) => s.setComposerInput);
   const focusComposer = useSessionStore((s) => s.focusComposer);
+  const { availableFunctions } = useLegacyGlobals();
 
   if (!visible) return null;
 
@@ -64,8 +66,7 @@ export function WelcomeScreen() {
     else if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
-    const w = window as unknown as { availableFunctions?: AgenticFunction[] };
-    const fn = (w.availableFunctions ?? []).find((f) => f.name === name);
+    const fn = availableFunctions.find((f) => f.name === name);
     if (fn) {
       openFnForm(fn);
       return;

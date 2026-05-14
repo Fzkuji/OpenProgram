@@ -3,11 +3,15 @@
 /**
  * Favorite programs list — reads `window.availableFunctions` and
  * `window.programsMeta.favorites` to produce a filtered, category-
- * ordered list. Clicking a favourite delegates to the legacy
- * `clickFunction(name, category)` which opens the fn form via the
- * shared zustand `openFnForm` action (or routes to /chat first if
- * we're elsewhere).
+ * ordered list. Clicking a favourite opens the fn-form (chat route)
+ * or routes to /chat first (other routes), via the zustand store +
+ * Next router — no longer delegates to the legacy `clickFunction`
+ * window global.
  */
+
+import { usePathname, useRouter } from "next/navigation";
+
+import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 
 import { useLegacyGlobals } from "./use-legacy-globals";
 
@@ -22,6 +26,9 @@ const CAT_ICONS: Record<string, string> = {
 
 export function FavoritesList(): React.ReactElement | null {
   const { availableFunctions, programsMeta } = useLegacyGlobals();
+  const openFnForm = useSessionStore((s) => s.openFnForm);
+  const pathname = usePathname();
+  const router = useRouter();
   const favSet = new Set(programsMeta.favorites || []);
   const filtered = (availableFunctions || []).filter((f) => favSet.has(f.name));
   // Stable category-first ordering (matches legacy renderFunctions).
@@ -34,10 +41,23 @@ export function FavoritesList(): React.ReactElement | null {
   if (ordered.length === 0) return null;
 
   function onClick(name: string, category: string) {
-    const w = window as unknown as {
-      clickFunction?: (name: string, category: string) => void;
-    };
-    if (typeof w.clickFunction === "function") w.clickFunction(name, category);
+    const fn = availableFunctions.find(
+      (f: AgenticFunction) => f.name === name,
+    );
+    if (!fn) return;
+    const onChat = pathname === "/chat" || pathname.startsWith("/s/");
+    if (!onChat) {
+      // Stash on window for init.js / page-shell hand-off effect to
+      // pick up after the chat route mounts. (When init.js migrates
+      // this becomes a `searchParams.get("run")` style hand-off.)
+      const w = window as unknown as {
+        __pendingRunFunction?: { name: string; cat: string };
+      };
+      w.__pendingRunFunction = { name, cat: category || "" };
+      router.push("/chat");
+      return;
+    }
+    openFnForm(fn);
   }
 
   return (
