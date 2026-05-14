@@ -12,15 +12,9 @@
  */
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
+import { useSessionStore } from "@/lib/session-store";
 
 import { ContextBadge } from "../context-badge";
 import { FunctionForm, visibleParams } from "./fn-form";
@@ -35,6 +29,7 @@ import {
 import { PlusMenuItem, ToolChip } from "./menu-pieces";
 import { type SlashCommand } from "./slash-commands";
 import { useFnFormState } from "./use-fn-form-state";
+import { useFnFormWrapper } from "./use-fn-form-wrapper";
 import { useSlashMenu } from "./use-slash-menu";
 import { useThinkingEffort } from "./use-thinking-effort";
 import { useToolsToggles } from "./use-tools-toggles";
@@ -87,193 +82,24 @@ export function Composer() {
   // flag) is owned by `./use-fn-form-state`; it also runs the
   // default-value seeding effect on fn change.
   const fnForm = useFnFormState(fnFormFunction);
-  // `displayFn` lags the store's `fnFormFunction` by one render so we
-  // can capture the previous fn into `outgoingFn` before React replaces
-  // its DOM. Outgoing renders as an absolutely-positioned overlay that
-  // fades out while the new fn-form fades in underneath, giving a
-  // proper crossfade instead of a snap.
-  const [outgoingFn, setOutgoingFn] = useState<AgenticFunction | null>(null);
-  // Track the previous store value so we can spot A → B transitions.
-  const prevFnRef = useRef<AgenticFunction | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
 
-  // Crossfade on fn-form switch: when the store flips from fn A to fn
-  // B (both non-null), stash A in `outgoingFn` so its DOM stays
-  // mounted as an absolute overlay while the new fn-form fades in
-  // underneath. The overlay's CSS animation drops opacity 1 → 0 over
-  // one composer fade duration; we clear `outgoingFn` shortly after
-  // (slightly longer than the fade so the unmount happens after the
-  // visual transition completes).
-  useLayoutEffect(() => {
-    const prev = prevFnRef.current;
-    prevFnRef.current = fnFormFunction;
-    if (prev && fnFormFunction && prev !== fnFormFunction) {
-      setOutgoingFn(prev);
-    }
-  }, [fnFormFunction]);
-
-  useEffect(() => {
-    if (!outgoingFn) return;
-    const id = setTimeout(() => setOutgoingFn(null), 300);
-    return () => clearTimeout(id);
-  }, [outgoingFn]);
-
-  // Wrapper height transition — declarative CSS transition + a single
-  // rAF to commit the "starting" height for the browser to interpolate
-  // FROM. No state, no rAF juggling, no transitionend race:
-  //
-  // Open: useLayoutEffect runs after React commits the panel into the
-  // DOM (panel intrinsic height is now measurable). We synchronously
-  // pin wrapper.style.height to the previously-cached chat-mode
-  // height. That gives the next paint a known starting point. One
-  // rAF later we set height to panel.scrollHeight + 54 — the CSS
-  // transition does the rest.
-  //
-  // Close: previous effect left inline height at fn-form-h. The new
-  // run sets it to the cached chat-mode height; the CSS transition
-  // shrinks the wrapper, and on transitionend we clear inline so the
-  // wrapper goes back to natural-auto.
-  const chatHeightRef = useRef<number>(98);
-  // True from the moment a wrapper-height transition starts until
-  // `transitionend` fires. Currently only used to gate chat-height
-  // caching (don't measure a value that's mid-animation).
-  const [wrapperTransitioning, setWrapperTransitioning] = useState(false);
-  // Pixels: action-button offset (16) + size (32). The fn-form steady
-  // state pins the button to `wrapper.height - ACTION_BTN_BOTTOM_OFFSET`
-  // so its bottom edge sits `--composer-button-offset` above the
-  // wrapper's bottom. Kept here as a constant to avoid reading the
-  // CSS variable in JS — the tokens it maps to live in 01-base.css.
-  const ACTION_BTN_BOTTOM_OFFSET = 48;
-
-  useEffect(() => {
-    // Cache natural chat-mode height while we're in chat mode AND not
-    // currently animating (no inline `height`). Updated continuously
-    // so textarea auto-resize doesn't desync.
-    if (fnFormFunction || wrapperTransitioning) return;
-    const el = wrapperRef.current;
-    if (!el || el.style.height) return;
-    chatHeightRef.current = el.offsetHeight;
+  // Wrapper height transition (open / close / A→B switch crossfade)
+  // is all in one hook — see `./use-fn-form-wrapper`. `outgoingFn`
+  // drives the absolute-positioned crossfade overlay below.
+  const { outgoingFn } = useFnFormWrapper({
+    fnFormFunction,
+    fnFormClosing: fnForm.closing,
+    onCloseComplete: useCallback(() => {
+      closeFnFormStore();
+      fnForm.setClosing(false);
+    }, [closeFnFormStore, fnForm]),
+    wrapperRef,
+    sendBtnRef,
   });
-
-  useLayoutEffect(() => {
-    const el = wrapperRef.current;
-    if (!el) return;
-    if (fnForm.closing) {
-      // Close — animate wrapper shrink WITH the form still mounted, so
-      // the body / header retreat downward into the bottom row (mirror
-      // image of the open animation where they emerge upward out of
-      // it). The `.closing` class on header/body fades opacity 1→0 in
-      // parallel with the height transition. The action button glides
-      // back to the chat-mode top in lockstep (same transition curve).
-      // Once height settles we unmount the form (closeFnFormStore) —
-      // only then can the inline `height` be cleared, otherwise the
-      // wrapper momentarily snaps back to fn-form natural height while
-      // React is still committing the unmount.
-      setWrapperTransitioning(true);
-      const current = el.offsetHeight;
-      el.style.height = `${current}px`;
-      void el.offsetHeight;
-      el.style.height = `${chatHeightRef.current}px`;
-      const btn = sendBtnRef.current;
-      if (btn) btn.style.top = `${16}px`;
-      const onEnd = (ev: TransitionEvent) => {
-        if (ev.target !== el || ev.propertyName !== "height") return;
-        el.removeEventListener("transitionend", onEnd);
-        closeFnFormStore();
-        fnForm.setClosing(false);
-        setWrapperTransitioning(false);
-      };
-      el.addEventListener("transitionend", onEnd);
-      return () => el.removeEventListener("transitionend", onEnd);
-    }
-    if (fnFormFunction) {
-      setWrapperTransitioning(true);
-      // Starting height for the CSS transition:
-      //   * chat → fn-form: wrapper has no inline height (chat-mode
-      //     auto-sizes). Snap to the cached `chatHeight` first +
-      //     force a reflow so the browser registers it as the
-      //     transition origin.
-      //   * fn-form A → fn-form B: wrapper already has an inline
-      //     height equal to A's natural size — leave it untouched and
-      //     just transition straight to B's natural size below.
-      if (!el.style.height) {
-        el.style.height = `${chatHeightRef.current}px`;
-        void el.offsetHeight;
-      }
-      // Compute the target wrapper height by measuring the form
-      // contents directly. We CAN'T trust `body.scrollHeight` here:
-      // body has `flex:1 + overflow-y:auto`, so when the wrapper's
-      // inline height is currently large (e.g. a previous, taller fn
-      // is still showing), the body is also large and any small
-      // content (the new fn) fits inside it — scrollHeight ends up
-      // equal to body's box height, not its content size, which
-      // would lock the wrapper at the old big height.
-      //
-      // Workaround: temporarily take body out of the flex constraint
-      // and let it size to its content (`height:auto`, `flex:0 0
-      // auto`, `overflow:visible`), read its `offsetHeight`, then
-      // restore the inline styles.
-      const header = el.querySelector(
-        "[data-fn-form-header]",
-      ) as HTMLElement | null;
-      const body = el.querySelector(
-        "[data-fn-form-body]",
-      ) as HTMLElement | null;
-      const padBottom = parseFloat(getComputedStyle(el).paddingBottom);
-      let natural: number;
-      if (header && body) {
-        const prevBodyStyle = body.getAttribute("style") || "";
-        body.style.flex = "0 0 auto";
-        body.style.height = "auto";
-        body.style.maxHeight = "none";
-        body.style.minHeight = "auto";
-        body.style.overflow = "visible";
-        const bodyContentH = body.offsetHeight;
-        if (prevBodyStyle) {
-          body.setAttribute("style", prevBodyStyle);
-        } else {
-          body.removeAttribute("style");
-        }
-        natural = header.offsetHeight + bodyContentH + padBottom;
-      } else {
-        natural = el.scrollHeight;
-      }
-      el.style.height = `${natural}px`;
-      // Glide the action button from its current top (chat: 16, or
-      // previous fn-form's bottom) to the new fn-form bottom
-      // (natural − offset). Same CSS transition curve as the wrapper
-      // height so they stay in sync visually.
-      const btn = sendBtnRef.current;
-      if (btn) btn.style.top = `${natural - ACTION_BTN_BOTTOM_OFFSET}px`;
-      const onEnd = (ev: TransitionEvent) => {
-        if (ev.target !== el || ev.propertyName !== "height") return;
-        setWrapperTransitioning(false);
-        el.removeEventListener("transitionend", onEnd);
-      };
-      el.addEventListener("transitionend", onEnd);
-      return () => {
-        el.removeEventListener("transitionend", onEnd);
-      };
-    }
-  }, [fnFormFunction, fnForm, closeFnFormStore]);
-
-  // After the form unmounts, drop the inline `height` we left behind
-  // during the close transition so the wrapper can size itself
-  // naturally for chat-mode content (textarea auto-resize, etc.).
-  useEffect(() => {
-    if (fnFormFunction) return;
-    const el = wrapperRef.current;
-    if (!el || !el.style.height) return;
-    el.style.height = "";
-  }, [fnFormFunction]);
-
-  // No ResizeObserver here: with hover-expand replaced by native
-  // tooltips, body content size doesn't change at runtime — the
-  // wrapper height only needs to be set once per fn (by the open /
-  // switch useLayoutEffect above) and stays put.
 
   // Auto-resize the textarea as content changes.
   useEffect(() => {
