@@ -16,7 +16,6 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -38,11 +37,10 @@ import {
   WebSearchIcon,
 } from "./icons";
 import { PlusMenuItem, ToolChip } from "./menu-pieces";
-import {
-  SLASH_COMMANDS,
-  type SlashCommand,
-  type SlashContext,
-} from "./slash-commands";
+import { type SlashCommand } from "./slash-commands";
+import { useSlashMenu } from "./use-slash-menu";
+import { useThinkingEffort } from "./use-thinking-effort";
+import { useToolsToggles } from "./use-tools-toggles";
 import styles from "./composer.module.css";
 
 /* Single shared WebSocket. The legacy chat-ws.js script opens it as
@@ -56,54 +54,10 @@ function wsSend(payload: unknown): boolean {
   return true;
 }
 
-// Default options when legacy providers.js hasn't populated
-// `window._thinkingConfig` yet. Real list comes from the backend per
-// chat-agent provider and is read live in the Composer below.
-const THINKING_LEVELS_FALLBACK = [
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-] as const;
-type ThinkingEffort = string;
-
-interface ThinkingOption {
-  value: string;
-  desc?: string;
-}
-
-const DEFAULT_THINKING: ThinkingEffort = "medium";
-const ANIM_MS = 380;
 const noop = () => {};
-
-function readThinkingOptions(): ThinkingOption[] {
-  const w = window as unknown as {
-    _thinkingConfig?: { options?: ThinkingOption[] };
-  };
-  const opts = w._thinkingConfig?.options;
-  if (Array.isArray(opts) && opts.length > 0) return opts;
-  return THINKING_LEVELS_FALLBACK.map((v) => ({ value: v }));
-}
-
-function persistBool(key: string, value: boolean) {
-  try {
-    localStorage.setItem(key, value ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
-}
-
-function readPersistedBool(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === "1";
-  } catch {
-    return false;
-  }
-}
 
 export function Composer() {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
   const runningTask = useSessionStore((s) => s.runningTask);
   const input = useSessionStore((s) => s.composerInput);
   const setInput = useSessionStore((s) => s.setComposerInput);
@@ -115,16 +69,23 @@ export function Composer() {
   const isRunning = runningTask !== null;
   const fnFormActive = fnFormFunction !== null;
 
-  const [thinking, setThinking] = useState<ThinkingEffort>(DEFAULT_THINKING);
-  const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
-  const [thinkingOptions, setThinkingOptions] = useState<ThinkingOption[]>(
-    () => readThinkingOptions(),
-  );
+  // Thinking-effort + plus-menu + tools toggles each live in their own
+  // dedicated hooks now — see ./use-thinking-effort, ./use-tools-toggles.
+  const {
+    thinking,
+    options: thinkingOptions,
+    menuOpen: thinkingMenuOpen,
+    setMenuOpen: setThinkingMenuOpen,
+    pick: pickThinking,
+  } = useThinkingEffort();
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-  const [toolsEnabled, setToolsEnabled] = useState(false);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
-  const [slashQuery, setSlashQuery] = useState<string | null>(null);
-  const [slashClosing, setSlashClosing] = useState(false);
+  const {
+    tools: toolsEnabled,
+    webSearch: webSearchEnabled,
+    toggleTools,
+    toggleWebSearch,
+  } = useToolsToggles();
+  // Slash-menu state lives in its own hook (./use-slash-menu).
   const [fnFormValues, setFnFormValues] = useState<Record<string, string>>({});
   const [fnFormWorkdir, setFnFormWorkdir] = useState("");
   const [fnFormError, setFnFormError] = useState<string | null>(null);
@@ -141,7 +102,6 @@ export function Composer() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Seed field state with defaults each time the function changes; also
   // clears errors / workdir between forms.
@@ -338,40 +298,6 @@ export function Composer() {
   // wrapper height only needs to be set once per fn (by the open /
   // switch useLayoutEffect above) and stays put.
 
-  // Hydrate tools / web-search toggles from localStorage.
-  useEffect(() => {
-    setToolsEnabled(readPersistedBool("agentic_tools_enabled"));
-    setWebSearchEnabled(readPersistedBool("agentic_web_search_enabled"));
-  }, []);
-
-  // Poll for legacy `window._thinkingConfig` updates — providers.js
-  // writes it after agent_settings_changed arrives. Polling at 500ms
-  // is plenty (the value only changes on agent switch).
-  useEffect(() => {
-    let prevSig = "";
-    const tick = () => {
-      const opts = readThinkingOptions();
-      const sig = opts.map((o) => o.value).join("|");
-      if (sig !== prevSig) {
-        prevSig = sig;
-        setThinkingOptions(opts);
-        // Snap the selected effort to the new option list's default if
-        // the current pick isn't available anymore.
-        const w = window as unknown as {
-          _thinkingConfig?: { default?: string };
-        };
-        setThinking((cur) =>
-          opts.some((o) => o.value === cur)
-            ? cur
-            : w._thinkingConfig?.default ?? opts[0]?.value ?? cur,
-        );
-      }
-    };
-    tick();
-    const id = setInterval(tick, 500);
-    return () => clearInterval(id);
-  }, []);
-
   // Auto-resize the textarea as content changes.
   useEffect(() => {
     const t = textareaRef.current;
@@ -402,103 +328,8 @@ export function Composer() {
     return () => document.removeEventListener("click", onDoc);
   }, []);
 
-  /* ---- Slash menu ---------------------------------------------------- */
-
-  const openMenu = useCallback((q: string) => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-    setSlashClosing(false);
-    setSlashQuery(q);
-    document.body.classList.add("slash-menu-open");
-  }, []);
-
-  const closeMenu = useCallback(() => {
-    setSlashClosing(true);
-    document.body.classList.remove("slash-menu-open");
-    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = setTimeout(() => {
-      setSlashQuery(null);
-      setSlashClosing(false);
-      closeTimerRef.current = null;
-    }, ANIM_MS);
-  }, []);
-
-  // Drive slash-menu open/close off the controlled input value.
-  useEffect(() => {
-    const v = input.trim();
-    if (v.startsWith("/") && !v.includes(" ")) {
-      openMenu(v.toLowerCase());
-    } else if (slashQuery !== null) {
-      closeMenu();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input]);
-
-  const slashMatches = useMemo(() => {
-    if (slashQuery === null) return [];
-    return SLASH_COMMANDS.filter((c) =>
-      c.name.toLowerCase().startsWith(slashQuery),
-    );
-  }, [slashQuery]);
-
-  const slashContext = useMemo<SlashContext>(
-    () => ({
-      sessionId: currentSessionId,
-      send,
-      newConversation: () => {
-        // Until the welcome-screen migration lands we just clear the
-        // active conversation; subsequent navigation handles the rest.
-        setCurrentConv(null);
-        setInput("");
-      },
-      setInput: (value, focus) => {
-        setInput(value);
-        if (focus) {
-          requestAnimationFrame(() => textareaRef.current?.focus());
-        }
-      },
-    }),
-    [currentSessionId, send, setCurrentConv],
-  );
-
-  const handleSlashCommand = useCallback(
-    (text: string): boolean => {
-      if (!text.startsWith("/")) return false;
-      const space = text.indexOf(" ");
-      const cmdName = space === -1 ? text : text.slice(0, space);
-      const rest = space === -1 ? "" : text.slice(space + 1);
-      const cmd = SLASH_COMMANDS.find((c) => c.name === cmdName);
-      if (!cmd) return false;
-      cmd.run(rest, slashContext);
-      return true;
-    },
-    [slashContext],
-  );
-
-  /* ---- Plus + effort menus ------------------------------------------ */
-
-  function toggleTools() {
-    setToolsEnabled((v) => {
-      const next = !v;
-      persistBool("agentic_tools_enabled", next);
-      return next;
-    });
-  }
-
-  function toggleWebSearch() {
-    setWebSearchEnabled((v) => {
-      const next = !v;
-      persistBool("agentic_web_search_enabled", next);
-      return next;
-    });
-  }
-
-  function pickThinking(level: ThinkingEffort) {
-    setThinking(level);
-    setThinkingMenuOpen(false);
-  }
+  // Slash menu (state + open/close timing + command dispatch).
+  const slash = useSlashMenu({ input, textareaRef, send });
 
   /* ---- Submit -------------------------------------------------------- */
 
@@ -506,9 +337,9 @@ export function Composer() {
     if (isRunning) return;
     const trimmed = input.trim();
     if (!trimmed) return;
-    if (slashQuery !== null && handleSlashCommand(trimmed)) {
+    if (slash.query !== null && slash.runCommand(trimmed)) {
       setInput("");
-      closeMenu();
+      slash.close();
       return;
     }
     const ok = send({
@@ -521,15 +352,14 @@ export function Composer() {
     });
     if (!ok) return; // ws not open — leave input intact so the user can retry
     setInput("");
-    closeMenu();
+    slash.close();
   }, [
-    closeMenu,
     currentSessionId,
-    handleSlashCommand,
     input,
     isRunning,
     send,
-    slashQuery,
+    setInput,
+    slash,
     thinking,
     toolsEnabled,
     webSearchEnabled,
@@ -642,17 +472,16 @@ export function Composer() {
 
   /* ---- Render -------------------------------------------------------- */
 
-  const menuVisible = slashQuery !== null && slashMatches.length > 0;
   const anyToolActive = toolsEnabled || webSearchEnabled;
 
   return (
     <div className={styles.inputArea}>
       <div className={styles.slashClip}>
-        {menuVisible && (
+        {slash.visible && (
           <div
-            className={`${styles.slashMenu} ${slashClosing ? styles.closing : styles.opening}`}
+            className={`${styles.slashMenu} ${slash.closing ? styles.closing : styles.opening}`}
           >
-            {slashMatches.map((c) => (
+            {slash.matches.map((c) => (
               <div
                 key={c.name}
                 className={styles.slashMenuItem}
