@@ -658,27 +658,35 @@ const ThinkingEffortPill = React.forwardRef<
       >
         {expanded ? (
           <>
-            {/* Current value (live-updates while dragging). Fixed-width
-                font + min-width so the slider doesn't reflow as the
-                label text changes between values like `off` ↔ `minimal`. */}
-            <span className="shrink-0 font-mono text-text-bright font-medium min-w-[56px]">
+            {/* Current value (live-updates while dragging). `min-width`
+                holds 56px so the slider doesn't reflow as the label
+                changes between values like `off` ↔ `minimal`. Uses
+                the default UI font (sans) — the value is a regular
+                label, not an identifier. */}
+            <span className="shrink-0 min-w-[56px] text-text-bright font-medium">
               {value}
             </span>
-            {/* Left icon — thin/small Lightning glyph = "less effort".
-                The size + opacity gap to the right icon gives a strong
-                directional cue (the user can read "from small toward
-                big" without needing a text label). */}
+            {/* Left icon — thin/small Lightning glyph = "less effort"
+                AND a click-to-min shortcut. The icon visually marks the
+                slider's start position, so the corresponding inner tick
+                circle is suppressed via `innerTicksOnly` below. */}
             <Lightning
               size={11}
               weight="regular"
-              className="shrink-0 text-text-muted"
+              className="shrink-0 cursor-pointer text-text-muted transition-colors hover:text-text-bright"
               aria-label="less effort"
+              onClick={(e) => {
+                e.stopPropagation();
+                const first = options[0];
+                if (first) onChange(first.value);
+              }}
             />
             <Slider
               min={0}
               max={maxIndex}
               step={1}
               stops={options.length}
+              innerTicksOnly
               value={[valueIndex]}
               onValueChange={(v) => {
                 const idx = v[0] ?? 0;
@@ -690,12 +698,19 @@ const ThinkingEffortPill = React.forwardRef<
               onClick={(e) => e.stopPropagation()}
               className="flex-1"
             />
-            {/* Right icon — fat/bold Lightning = "more effort". */}
+            {/* Right icon — fat/bold Lightning = "more effort" + click-
+                to-max shortcut. Marks the slider's end position so the
+                corresponding inner tick circle is also suppressed. */}
             <Lightning
               size={17}
               weight="fill"
-              className="shrink-0 text-text-primary"
+              className="shrink-0 cursor-pointer text-text-primary transition-colors hover:text-text-bright"
               aria-label="more effort"
+              onClick={(e) => {
+                e.stopPropagation();
+                const last = options[maxIndex];
+                if (last) onChange(last.value);
+              }}
             />
           </>
         ) : (
