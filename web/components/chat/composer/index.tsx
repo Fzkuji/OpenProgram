@@ -23,11 +23,7 @@ import {
 import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 
 import { ContextBadge } from "../context-badge";
-import {
-  FunctionForm,
-  defaultParamValue,
-  visibleParams,
-} from "./fn-form";
+import { FunctionForm, visibleParams } from "./fn-form";
 import {
   CaretIcon,
   PlusIcon,
@@ -38,6 +34,7 @@ import {
 } from "./icons";
 import { PlusMenuItem, ToolChip } from "./menu-pieces";
 import { type SlashCommand } from "./slash-commands";
+import { useFnFormState } from "./use-fn-form-state";
 import { useSlashMenu } from "./use-slash-menu";
 import { useThinkingEffort } from "./use-thinking-effort";
 import { useToolsToggles } from "./use-tools-toggles";
@@ -86,10 +83,10 @@ export function Composer() {
     toggleWebSearch,
   } = useToolsToggles();
   // Slash-menu state lives in its own hook (./use-slash-menu).
-  const [fnFormValues, setFnFormValues] = useState<Record<string, string>>({});
-  const [fnFormWorkdir, setFnFormWorkdir] = useState("");
-  const [fnFormError, setFnFormError] = useState<string | null>(null);
-  const [fnFormClosing, setFnFormClosing] = useState(false);
+  // fn-form field state (values, workdir, error highlight, closing
+  // flag) is owned by `./use-fn-form-state`; it also runs the
+  // default-value seeding effect on fn change.
+  const fnForm = useFnFormState(fnFormFunction);
   // `displayFn` lags the store's `fnFormFunction` by one render so we
   // can capture the previous fn into `outgoingFn` before React replaces
   // its DOM. Outgoing renders as an absolutely-positioned overlay that
@@ -102,26 +99,6 @@ export function Composer() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
-
-  // Seed field state with defaults each time the function changes; also
-  // clears errors / workdir between forms.
-  useEffect(() => {
-    if (!fnFormFunction) {
-      setFnFormValues({});
-      setFnFormWorkdir("");
-      setFnFormError(null);
-      setFnFormClosing(false);
-      return;
-    }
-    const seed: Record<string, string> = {};
-    for (const p of visibleParams(fnFormFunction)) {
-      const v = defaultParamValue(p);
-      if (v) seed[p.name] = v;
-    }
-    setFnFormValues(seed);
-    setFnFormWorkdir("");
-    setFnFormError(null);
-  }, [fnFormFunction]);
 
   // Crossfade on fn-form switch: when the store flips from fn A to fn
   // B (both non-null), stash A in `outgoingFn` so its DOM stays
@@ -184,7 +161,7 @@ export function Composer() {
   useLayoutEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
-    if (fnFormClosing) {
+    if (fnForm.closing) {
       // Close — animate wrapper shrink WITH the form still mounted, so
       // the body / header retreat downward into the bottom row (mirror
       // image of the open animation where they emerge upward out of
@@ -206,7 +183,7 @@ export function Composer() {
         if (ev.target !== el || ev.propertyName !== "height") return;
         el.removeEventListener("transitionend", onEnd);
         closeFnFormStore();
-        setFnFormClosing(false);
+        fnForm.setClosing(false);
         setWrapperTransitioning(false);
       };
       el.addEventListener("transitionend", onEnd);
@@ -281,7 +258,7 @@ export function Composer() {
         el.removeEventListener("transitionend", onEnd);
       };
     }
-  }, [fnFormFunction, fnFormClosing, closeFnFormStore]);
+  }, [fnFormFunction, fnForm, closeFnFormStore]);
 
   // After the form unmounts, drop the inline `height` we left behind
   // during the close transition so the wrapper can size itself
@@ -390,27 +367,27 @@ export function Composer() {
   // `.closing` class. Store unmount happens after the height
   // transition ends (handled inside the useLayoutEffect).
   const handleFnFormClose = useCallback(() => {
-    setFnFormClosing(true);
-  }, []);
+    fnForm.setClosing(true);
+  }, [fnForm]);
 
   const submitFnForm = useCallback(() => {
     if (!fnFormFunction || isRunning) return;
     const fn = fnFormFunction;
     const workdirMode = fn.workdir_mode ?? "optional";
-    const wd = fnFormWorkdir.trim();
+    const wd = fnForm.workdir.trim();
     if (workdirMode === "required" && !wd) {
-      setFnFormError("__workdir");
+      fnForm.setError("__workdir");
       return;
     }
 
     const parts: string[] = ["run", fn.name];
     for (const p of visibleParams(fn)) {
       const isBool = p.type === "bool" || p.type === "boolean";
-      let v = (fnFormValues[p.name] ?? "").trim();
+      let v = (fnForm.values[p.name] ?? "").trim();
       if (!v && isBool) v = "False";
       if (!v && !p.required) continue;
       if (!v && p.required) {
-        setFnFormError(p.name);
+        fnForm.setError(p.name);
         return;
       }
       if (v.indexOf(" ") !== -1 || v.indexOf('"') !== -1) {
@@ -441,8 +418,7 @@ export function Composer() {
   }, [
     currentSessionId,
     fnFormFunction,
-    fnFormValues,
-    fnFormWorkdir,
+    fnForm,
     handleFnFormClose,
     isRunning,
     send,
@@ -459,10 +435,10 @@ export function Composer() {
     ? (() => {
         const fn = fnFormFunction!;
         const workdirMode = fn.workdir_mode ?? "optional";
-        if (workdirMode === "required" && !fnFormWorkdir.trim()) return true;
+        if (workdirMode === "required" && !fnForm.workdir.trim()) return true;
         for (const p of visibleParams(fn)) {
           if (!p.required) continue;
-          const v = (fnFormValues[p.name] ?? "").trim();
+          const v = (fnForm.values[p.name] ?? "").trim();
           if (!v) return true;
         }
         return false;
@@ -516,18 +492,12 @@ export function Composer() {
             // outgoing overlay below.
             key={fnFormFunction.name}
             fn={fnFormFunction}
-            values={fnFormValues}
-            setValue={(name, v) => {
-              setFnFormValues((s) => ({ ...s, [name]: v }));
-              if (fnFormError === name) setFnFormError(null);
-            }}
-            workdir={fnFormWorkdir}
-            setWorkdir={(v) => {
-              setFnFormWorkdir(v);
-              if (fnFormError === "__workdir" && v.trim()) setFnFormError(null);
-            }}
-            errorParam={fnFormError}
-            closing={fnFormClosing}
+            values={fnForm.values}
+            setValue={fnForm.setValue}
+            workdir={fnForm.workdir}
+            setWorkdir={fnForm.setWorkdir}
+            errorParam={fnForm.error}
+            closing={fnForm.closing}
             onClose={handleFnFormClose}
             onSubmit={submitFnForm}
           />
@@ -682,7 +652,7 @@ export function Composer() {
             fn-form switches (no blink on the icon when the header
             unmounts/remounts with a new key). Only visible while
             fn-form is open and not in the middle of closing. */}
-        {fnFormActive && !fnFormClosing && (
+        {fnFormActive && !fnForm.closing && (
           <button
             className={styles.closeBtn}
             type="button"
