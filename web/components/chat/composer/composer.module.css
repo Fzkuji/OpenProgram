@@ -457,35 +457,10 @@
   color: currentColor;
 }
 
-/* Thinking effort selector — same height as plus button so the bottom
-   row's vertical rhythm stays consistent. */
-.thinkingSelector {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: var(--composer-button-size);
-  font-size: 14px;
-  color: var(--text-secondary);
-  padding: 0 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  user-select: none;
-}
-.thinkingSelector:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.thinkingSelector.open {
-  background: var(--bg-hover);
-  color: var(--text-bright);
-}
-.thinkingArrow {
-  flex-shrink: 0;
-}
-/* Thinking-effort popover panel + tick labels were ported to Tailwind
-   utilities inline on `<ThinkingEffortPanel />` in `composer/index.tsx`.
-   The Radix `<Slider />` (in `components/ui/slider.tsx`) is already
-   styled with Tailwind. Nothing remains here for the effort UI. */
+/* Thinking-effort pill (`<ThinkingEffortPill />` in composer/index.tsx)
+   is fully Tailwind. The pill collapses to a `effort: {value} ⌄` chip
+   inline in the bottom row and expands rightward to a 340px slider
+   when clicked — no module CSS lives here for the effort UI. */
 
 /* Slash menu (popup above input that rolls up out of the input box) */
 .slashClip {

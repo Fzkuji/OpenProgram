@@ -95,20 +95,18 @@ export function Composer() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
-  // Refs for the menu triggers + portal containers, so we can:
-  //  (a) measure the trigger to position the floating menu (portal'd
-  //      out of the wrapper so `.inputWrapper { overflow: hidden }`
-  //      doesn't clip the popup), and
-  //  (b) treat clicks inside the portal'd menu as "still inside the
-  //      composer" — the document-level click-outside handler reads
-  //      these refs to skip the close.
+  // Refs:
+  //  - `plusTriggerRef` / `plusMenuRef`: the plus menu is still portal'd
+  //    into `document.body` to escape `.inputWrapper { overflow: hidden }`.
+  //    We measure the trigger to place the popover and use the menu ref
+  //    so the click-outside handler treats clicks inside the menu as
+  //    "still inside the composer".
+  //  - `thinkingTriggerRef`: the effort pill expands inline (no portal).
+  //    Since it lives inside `.inputWrapper`, the wrapper-contains check
+  //    already covers clicks on it — no separate menu ref needed.
   const thinkingTriggerRef = useRef<HTMLDivElement>(null);
   const plusTriggerRef = useRef<HTMLButtonElement>(null);
-  const thinkingMenuRef = useRef<HTMLDivElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
-  const [thinkingMenuPos, setThinkingMenuPos] = useState<
-    { left: number; bottom: number } | null
-  >(null);
   const [plusMenuPos, setPlusMenuPos] = useState<
     { left: number; bottom: number } | null
   >(null);
@@ -142,44 +140,39 @@ export function Composer() {
     textareaRef.current?.focus();
   }, [focusTick]);
 
-  // Close any open popovers when clicking outside.
-  // The plus / thinking menus are portal'd into `document.body` to
-  // escape `.inputWrapper { overflow: hidden }`, so a "click outside"
-  // check on the wrapper alone would close them on every click inside
-  // the menu itself. Treat the portaled menus as part of the composer
-  // by also testing their refs.
+  // Close popovers on outside click — but the two popovers have
+  // different "what counts as outside" rules:
+  //
+  // - Effort pill is INLINE inside the composer wrapper. A click in
+  //   the textarea or on any other composer control should collapse
+  //   it (otherwise expanded state lingers as the user keeps typing).
+  //   So we check `thinkingTriggerRef.contains` directly — anything
+  //   outside the pill itself counts as outside.
+  //
+  // - Plus menu is PORTAL'D into `document.body` to escape
+  //   `.inputWrapper { overflow: hidden }`. Its trigger is in the
+  //   wrapper but its menu lives at the document root, so the "stays
+  //   open" set is `wrapper ∪ plusMenuRef`. Anywhere else closes it.
   useEffect(() => {
     function onDoc(ev: MouseEvent) {
       const t = ev.target as Node | null;
       if (!t) return;
       const wrapper = textareaRef.current?.closest(`.${styles.inputWrapper}`);
       if (!wrapper) return;
-      if (wrapper.contains(t)) return;
-      if (thinkingMenuRef.current?.contains(t)) return;
-      if (plusMenuRef.current?.contains(t)) return;
-      setPlusMenuOpen(false);
-      setThinkingMenuOpen(false);
+
+      if (
+        thinkingTriggerRef.current &&
+        !thinkingTriggerRef.current.contains(t)
+      ) {
+        setThinkingMenuOpen(false);
+      }
+      if (!wrapper.contains(t) && !plusMenuRef.current?.contains(t)) {
+        setPlusMenuOpen(false);
+      }
     }
     document.addEventListener("click", onDoc);
     return () => document.removeEventListener("click", onDoc);
   }, []);
-
-  // Position the portal'd thinking menu so its bottom sits 4px above
-  // the trigger row (the popup grows upward to mimic the old in-flow
-  // `bottom: 100%` behaviour). Recomputed every time the menu opens.
-  useLayoutEffect(() => {
-    if (!thinkingMenuOpen) {
-      setThinkingMenuPos(null);
-      return;
-    }
-    const trigger = thinkingTriggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    setThinkingMenuPos({
-      left: rect.left,
-      bottom: window.innerHeight - rect.top + 4,
-    });
-  }, [thinkingMenuOpen]);
 
   useLayoutEffect(() => {
     if (!plusMenuOpen) {
@@ -525,36 +518,17 @@ export function Composer() {
                 )
               : null}
 
-            <div
+            <ThinkingEffortPill
               ref={thinkingTriggerRef}
-              className={`${styles.thinkingSelector} ${thinkingMenuOpen ? styles.open : ""}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setThinkingMenuOpen((v) => !v);
+              expanded={thinkingMenuOpen}
+              onExpand={() => {
+                setThinkingMenuOpen(true);
                 setPlusMenuOpen(false);
               }}
-            >
-              <span>effort: {thinking}</span>
-              <CaretIcon className={styles.thinkingArrow} />
-            </div>
-            {thinkingMenuOpen && thinkingMenuPos && typeof document !== "undefined"
-              ? createPortal(
-                  <ThinkingEffortPanel
-                    ref={thinkingMenuRef}
-                    options={thinkingOptions}
-                    value={thinking}
-                    onChange={setThinking}
-                    style={{
-                      position: "fixed",
-                      left: thinkingMenuPos.left,
-                      bottom: thinkingMenuPos.bottom,
-                      top: "auto",
-                      marginBottom: 0,
-                    }}
-                  />,
-                  document.body,
-                )
-              : null}
+              options={thinkingOptions}
+              value={thinking}
+              onChange={setThinking}
+            />
           </div>
           <div className={styles.inputBottomRight}>
             <ContextBadge />
@@ -610,120 +584,107 @@ export function Composer() {
 }
 
 /**
- * Effort slider popover. Replaces the old vertical option list — the
- * thinking levels are a strictly ordered 6-step scale (off → xhigh),
- * so a horizontal slider with step=1 reads as "intensity dial" and
- * lets the user sweep through values instead of click-targeting each
- * row. Uses the shadcn `Slider` (Radix under the hood) so keyboard
- * (arrow keys, Home/End) and pointer drag both work out of the box.
+ * Effort pill — the trigger IS the picker.
  *
- * Index ↔ value mapping: Radix Slider works in numbers, but the
- * backend options are strings (`"off" / "minimal" / ...`). We pick by
- * array index — `valueIndex` is the current option's position; the
- * `onValueChange` callback writes back the option at that index.
+ * Collapsed: a pill that reads `effort: medium ⌄`, sized to its content
+ * (~131px). Click to expand.
  *
- * The popover does NOT auto-close on slider change — that would make
- * dragging impossible (the menu would unmount mid-drag). Closes only
- * on click-outside, handled by the document listener in the parent.
+ * Expanded: the same pill animates its width out to ~340px and the
+ * caret/text content swaps for `{value}` + an inline `<Slider />`.
+ * Dragging the slider only updates the value — it doesn't collapse.
+ * Closes when the user clicks anywhere outside the composer wrapper
+ * (the document-level click-outside handler in the parent flips
+ * `thinkingMenuOpen` back to `false`).
+ *
+ * Layout: the pill is wrapped in a `position: relative` host that
+ * keeps the collapsed footprint reserved in the bottom-row flex flow.
+ * The visible pill is `position: absolute` on top of that footprint,
+ * so when it expands to 340px it floats over the rest of the row
+ * without shoving the context badge / other controls aside.
  */
-const ThinkingEffortPanel = React.forwardRef<
+const ThinkingEffortPill = React.forwardRef<
   HTMLDivElement,
   {
+    expanded: boolean;
+    onExpand: () => void;
     options: { value: string; desc?: string }[];
     value: string;
     onChange: (v: string) => void;
-    style?: React.CSSProperties;
   }
->(function ThinkingEffortPanel({ options, value, onChange, style }, ref) {
+>(function ThinkingEffortPill(
+  { expanded, onExpand, options, value, onChange },
+  ref,
+) {
   const valueIndex = Math.max(
     0,
     options.findIndex((o) => o.value === value),
   );
-  const current = options[valueIndex];
   const maxIndex = Math.max(0, options.length - 1);
 
   return (
     <div
       ref={ref}
-      // Panel chrome: same soft shadow + 12px corner as the plus menu.
-      // Position values (top/left/bottom/fixed) come from the inline
-      // `style` prop the parent passes after measuring the trigger.
-      className={[
-        "w-[280px] rounded-[12px] border border-[var(--border)] bg-bg-tertiary",
-        "p-[14px_16px_12px] z-[100]",
-        "shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_6px_-2px_rgba(0,0,0,0.06),0_12px_24px_-8px_rgba(0,0,0,0.1)]",
-      ].join(" ")}
-      style={style}
-      onClick={(e) => e.stopPropagation()}
+      className="relative inline-flex h-[32px] items-center"
     >
-      <div className="mb-[14px] flex items-baseline gap-[8px]">
-        <span className="font-mono text-[14px] font-semibold text-text-bright">
-          {current?.value}
-        </span>
-        {current?.desc ? (
-          <span className="text-[12px] text-text-muted">{current.desc}</span>
-        ) : null}
-      </div>
-      <Slider
-        min={0}
-        max={maxIndex}
-        step={1}
-        value={[valueIndex]}
-        onValueChange={(v) => {
-          const idx = v[0] ?? 0;
-          const next = options[idx];
-          if (next) onChange(next.value);
-        }}
-        className="my-[4px] mb-[10px]"
-      />
+      {/* Invisible spacer keeps the collapsed pill's footprint in the
+          flex layout so expanding doesn't push the context badge or
+          other controls. Mirrors the collapsed pill content exactly. */}
+      <span
+        aria-hidden="true"
+        className="invisible inline-flex items-center gap-[5px] px-[10px] text-[14px]"
+      >
+        <span>effort: {value}</span>
+        <CaretIcon />
+      </span>
+
+      {/* Visible pill, absolutely positioned over the spacer. Width
+          animates between auto (collapsed) and 340px (expanded). */}
       <div
-        // The tick row is a single 28px-tall click target. Click x →
-        // nearest stop via the same thumb-center math Radix uses.
-        // Labels are absolutely positioned children with no own click
-        // handler, so a click ANYWHERE in the strip — including the
-        // gaps between glyphs — snaps to the closest stop.
-        className="relative h-[28px] cursor-pointer text-[11px] text-text-muted"
+        className={[
+          "absolute left-0 top-0 flex h-[32px] items-center overflow-hidden",
+          "rounded-full cursor-pointer select-none",
+          "text-[14px]",
+          "transition-[width,background-color,color,padding] duration-200 ease-out",
+          expanded
+            ? "bg-bg-hover text-text-bright px-[14px] gap-[12px]"
+            : "bg-transparent text-text-secondary px-[10px] gap-[5px] hover:bg-bg-hover hover:text-text-primary",
+        ].join(" ")}
+        style={expanded ? { width: 340 } : undefined}
         onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const thumbHalf = 7;
-          const usable = rect.width - thumbHalf * 2;
-          if (usable <= 0) return;
-          const ratio = Math.max(
-            0,
-            Math.min(1, (x - thumbHalf) / usable),
-          );
-          const idx = Math.round(ratio * maxIndex);
-          const next = options[idx];
-          if (next) onChange(next.value);
+          e.stopPropagation();
+          if (!expanded) onExpand();
         }}
       >
-        {options.map((opt, i) => {
-          const ratio = maxIndex > 0 ? i / maxIndex : 0;
-          const isActive = i === valueIndex;
-          return (
-            <span
-              key={opt.value}
-              // Each tick's CENTER lines up with the matching slider
-              // stop. `left: calc(ratio * (100% - 14px) + 7px)`
-              // mirrors Radix's thumb-center coordinate (14px thumb,
-              // half-width 7). `translate(-50%, -50%)` then pulls the
-              // label's own center onto that x/y.
-              className={[
-                "absolute top-1/2 -translate-x-1/2 -translate-y-1/2",
-                "transition-colors duration-150 ease-out select-none whitespace-nowrap",
-                isActive
-                  ? "font-medium text-[var(--accent-blue,#6cb4ff)]"
-                  : "",
-              ].join(" ")}
-              data-active={isActive || undefined}
-              style={{ left: `calc(${ratio} * (100% - 14px) + 7px)` }}
-              title={opt.desc ?? opt.value}
-            >
-              {opt.value}
+        {expanded ? (
+          <>
+            {/* Current value (live-updates while dragging). Fixed-width
+                font + min-width so the slider doesn't reflow as the
+                label text changes between values like `off` ↔ `minimal`. */}
+            <span className="shrink-0 font-mono text-text-bright font-medium min-w-[56px]">
+              {value}
             </span>
-          );
-        })}
+            <Slider
+              min={0}
+              max={maxIndex}
+              step={1}
+              value={[valueIndex]}
+              onValueChange={(v) => {
+                const idx = v[0] ?? 0;
+                const next = options[idx];
+                if (next) onChange(next.value);
+              }}
+              // Stop click from bubbling to the pill's onClick (which
+              // would otherwise treat slider clicks as "expand again").
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1"
+            />
+          </>
+        ) : (
+          <>
+            <span>effort: {value}</span>
+            <CaretIcon />
+          </>
+        )}
       </div>
     </div>
   );
