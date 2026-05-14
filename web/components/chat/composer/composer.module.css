@@ -55,8 +55,26 @@
   transition: box-shadow 180ms ease,
     height var(--composer-height-transition);
 }
-.inputWrapper:focus-within {
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.10);
+/* Focus indicator on the chat-input wrapper: a 1px border drawn via
+   `::after` so it stacks ABOVE `.inputBottomRow` (z-index 1 +
+   opaque background, which covered the bottom strip of any
+   inset-shadow / outline approach). The pseudo fills the wrapper
+   (`inset: 0`), inherits its border-radius, and is `pointer-events:
+   none` so it doesn't intercept clicks. `--text-secondary` keeps
+   the edge readable without the harsh contrast `--text-bright`
+   produces; the token auto-flips with light / dark theme. */
+.inputWrapper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+  transition: border-color 180ms ease;
+}
+.inputWrapper:focus-within::after {
+  border-color: var(--text-secondary);
 }
 
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
@@ -90,11 +108,9 @@
   to { opacity: 0; }
 }
 
-@media (prefers-color-scheme: dark) {
-  .inputWrapper:focus-within {
-    box-shadow: 0 4px 18px rgba(255, 255, 255, 0.06);
-  }
-}
+/* Dark-mode override removed — `var(--text-bright)` already swaps
+   between near-black (light) and near-white (dark) via the theme
+   tokens in 01-base.css, so a single rule covers both. */
 
 /* Top row — chat mode only. Mirrors `.inputBottomRow` except for
    `padding-bottom: 0`. The bottom row's `padding-top: 16` provides
@@ -233,6 +249,38 @@
 }
 .stopBtn:hover {
   opacity: 1;
+}
+
+/* Close button — solid filled circle in the same family as the send
+   button (color-mix tint, no border). Pinned to the wrapper's top-
+   right corner with `--composer-button-offset`, so its centre sits
+   on the corner-radius centre, matching the plus / send buttons. */
+.closeBtn {
+  position: absolute;
+  top: var(--composer-button-offset);
+  right: var(--composer-button-offset);
+  width: var(--composer-button-size);
+  height: var(--composer-button-size);
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, opacity 180ms ease;
+  z-index: 2;
+}
+.closeBtn:hover {
+  background: color-mix(in srgb, var(--text-secondary) 22%, transparent);
+  color: var(--text-bright);
+}
+.closeBtn svg {
+  display: block;
 }
 
 /* Right-aligned group in the bottom row (context badge + optional

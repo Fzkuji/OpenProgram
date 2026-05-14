@@ -39,8 +39,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--composer-bottom-row-pad) var(--composer-bottom-row-pad)
-    calc(var(--composer-bottom-row-pad) - 1px);
+  /* Right padding reserves space for the wrapper-level close button
+     (16 offset + 32 size + 8 breathing room = 56), mirroring how
+     `.inputTopRow` reserves space for the action button. */
+  padding: var(--composer-bottom-row-pad)
+    calc(var(--composer-bottom-row-pad) + var(--composer-button-size) + 8px)
+    calc(var(--composer-bottom-row-pad) - 1px)
+    var(--composer-bottom-row-pad);
+  /* Lock the header height to `--composer-bottom-row-h` (= 64), so it
+     matches the bottom row and centres the absolute-positioned close
+     button (top: 16, size: 32 → centre 32 = header centre when h=64).
+     Otherwise, with the close button hoisted out, the header would
+     shrink to whatever the title text needs. */
+  min-height: var(--composer-bottom-row-h);
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
   flex-shrink: 0;
@@ -62,20 +73,36 @@
      height. */
   transition: opacity var(--composer-fade-duration) ease;
 }
+/* Header title — same single-line + fade-on-overflow + hover-to-expand
+   treatment as the field labels below, so long function descriptions
+   don't get cut with an ellipsis but instead trail off with a mask
+   gradient and reveal fully when the user hovers the row. */
 .title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  /* Grow to fill the header width so `.desc` can ellipsize when
-     content overflows. */
+  display: block;
   flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - 48px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - 48px),
+    transparent 100%
+  );
+  cursor: default;
 }
+/* No hover-expand on the header title either — same reason as .label.
+   The full text is reachable via the `title` attribute set in the
+   FunctionForm header. */
 .name {
   font-family: var(--font-mono);
   font-size: var(--fs-base);
   font-weight: 600;
-  color: var(--text-bright);
+  color: var(--accent-orange);
   flex-shrink: 0;
 }
 .keyword {
@@ -92,38 +119,10 @@
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-/* Close button — same circle geometry as the other corner buttons,
-   but laid out as a normal flex child of `.header` (no `position:
-   absolute`). The `.header` flexbox's `space-between` + right padding
-   put its centre at exactly the wrapper's top-right corner-radius
-   centre, mirroring the plus button at the bottom-left. */
-.close {
-  background: none;
-  border: 2px solid var(--text-secondary);
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0;
-  width: var(--composer-button-size);
-  height: var(--composer-button-size);
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 180ms ease, border-color 180ms ease;
-  flex-shrink: 0;
-  box-sizing: border-box;
-}
-.close svg {
-  display: block;
-}
-.close:hover {
-  color: var(--text-bright);
-  border-color: var(--text-bright);
-}
+/* Close button moved out to composer.module.css (.closeBtn) — it
+   lives at the wrapper level so it stays mounted across fn-form
+   switches. */
 
 .body {
   padding: 12px 18px;
@@ -191,16 +190,16 @@
   );
   cursor: default;
 }
-.label:hover {
-  white-space: normal;
-  overflow: visible;
-  -webkit-mask-image: none;
-  mask-image: none;
-}
+/* No hover-expand on the label any more — the inline-grow caused
+   the wrapper to resize on every hover, which read as jarring.
+   Full text is now shown via a native `title` tooltip set in
+   FieldRow (fn-form-fields.tsx) so the layout doesn't move at all. */
 .labelName {
   font-family: var(--font-mono);
   font-weight: 600;
-  color: var(--text-bright);
+  /* Cream / off-white — dimmer than `--text-bright` so it doesn't
+     glare next to the muted prose around it. */
+  color: var(--text-primary);
 }
 .labelMeta {
   font-style: italic;
@@ -213,11 +212,17 @@
   color: var(--text-secondary);
 }
 
+/* Single-line inputs (.input, .select, .workdirInput) all share the
+   same 32px height / 8px radius / 0 12 padding so they line up as a
+   matched set. The multi-line textarea variant breaks out of these
+   constraints below. */
 .input {
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 8px 12px;
+  border-radius: 8px;
+  padding: 0 12px;
+  height: 32px;
+  line-height: 30px;
   color: var(--text-bright);
   font-size: var(--fs-base);
   font-family: var(--font-mono);
@@ -227,7 +232,7 @@
   box-sizing: border-box;
 }
 .input:focus {
-  border-color: var(--border-light);
+  border-color: var(--text-secondary);
 }
 .input::placeholder {
   color: var(--text-muted);
@@ -235,6 +240,13 @@
   font-size: var(--fs-base);
 }
 .input.textarea {
+  /* Multi-line textareas grow with content (auto-resized by
+     fn-form-fields.tsx) so the height + line-height that the single-
+     line variants share don't apply. Reset to natural so the
+     min-height 48 / max-height 160 govern. */
+  height: auto;
+  line-height: 1.5;
+  padding: 8px 12px;
   min-height: 48px;
   max-height: 160px;
   resize: none;
@@ -260,29 +272,34 @@
   gap: 8px;
   margin-top: 2px;
 }
+/* Solid pill — no border. Idle state uses a low-opacity tint, hover
+   bumps it a notch, active flips to the accent-blue tint that the
+   send button uses. Same visual family as `.toolChip`. */
 .toggleBtn {
   padding: 0 14px;
   height: 30px;
-  line-height: 26px;
+  line-height: 30px;
   border-radius: 999px;
-  border: 2px solid var(--border);
-  background: var(--bg-primary);
+  border: none;
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-secondary);
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   cursor: pointer;
-  transition: all 180ms ease;
+  transition: background 180ms ease, color 180ms ease;
   user-select: none;
   box-sizing: border-box;
 }
 .toggleBtn:hover {
-  border-color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
   color: var(--text-primary);
 }
 .toggleBtn.toggleActive {
-  background: transparent;
-  border-color: var(--text-primary);
-  color: var(--text-bright);
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  color: var(--accent-blue);
+}
+.toggleBtn.toggleActive:hover {
+  background: color-mix(in srgb, var(--accent-blue) 26%, transparent);
 }
 
 /* Option chips */
@@ -295,44 +312,55 @@
 .chip {
   padding: 0 14px;
   height: 30px;
-  line-height: 26px;
+  line-height: 30px;
   border-radius: 999px;
-  border: 2px solid var(--border);
-  background: var(--bg-primary);
+  border: none;
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: var(--fs-base);
   cursor: pointer;
-  transition: all 180ms ease;
+  transition: background 180ms ease, color 180ms ease;
   user-select: none;
   box-sizing: border-box;
 }
 .chip:hover {
-  border-color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
   color: var(--text-primary);
 }
 .chip.chipActive {
-  background: transparent;
-  border-color: var(--text-primary);
-  color: var(--text-bright);
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  color: var(--accent-blue);
 }
+.chip.chipActive:hover {
+  background: color-mix(in srgb, var(--accent-blue) 26%, transparent);
+}
+/* chipCustom is a text input alongside the option chips — same
+   pill geometry. Idle state matches `.chip`'s tinted-fill so it
+   visually reads as another chip in the row. When the user actually
+   focuses it (about to type), it flips to a solid input look — solid
+   `bg-primary` background + a 1px `text-secondary` border. */
 .chipCustom {
-  padding: 0 8px;
+  padding: 0 12px;
   height: 30px;
-  line-height: 26px;
+  line-height: 30px;
   border-radius: 999px;
-  border: 2px solid var(--border);
-  background: var(--bg-primary);
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--fs-base);
   width: 60px;
   outline: none;
-  transition: border-color 180ms ease;
+  transition: background 180ms ease, border-color 180ms ease;
   box-sizing: border-box;
 }
+.chipCustom:hover {
+  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+}
 .chipCustom:focus {
-  border-color: var(--border-light);
+  background: var(--bg-primary);
+  border-color: var(--text-secondary);
 }
 
 .noParams {
@@ -354,9 +382,9 @@
   align-items: center;
   gap: 6px;
   height: 32px;
-  padding: 0 10px;
+  padding: 0 12px;
   background: var(--bg-primary);
-  border: 0.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-family: var(--font-sans);
   font-size: var(--fs-base);
@@ -378,9 +406,9 @@
 .workdirInput {
   flex: 1 1 auto;
   height: 32px;
-  padding: 0 10px;
+  padding: 0 12px;
   background: var(--bg-primary);
-  border: 0.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text-bright);
   font-family: var(--font-mono);
@@ -390,7 +418,7 @@
   min-width: 0;
 }
 .workdirInput:focus {
-  border-color: var(--border-light);
+  border-color: var(--text-secondary);
 }
 .workdirInput::placeholder {
   color: var(--text-muted);

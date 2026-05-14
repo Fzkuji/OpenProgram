@@ -333,13 +333,10 @@ export function Composer() {
     el.style.height = "";
   }, [fnFormFunction]);
 
-  // The wrapper's inline `height` is set ONCE per fn — by the open /
-  // switch useLayoutEffect — and stays put. We deliberately do NOT
-  // resize the wrapper when content inside the body changes (hovering
-  // a label to reveal its full description, validation message
-  // appearing, textarea autoresize, etc.); instead the body is
-  // `flex: 1` + `overflow-y: auto`, so it scrolls internally and the
-  // bottom row + divider stay locked at a fixed viewport position.
+  // No ResizeObserver here: with hover-expand replaced by native
+  // tooltips, body content size doesn't change at runtime — the
+  // wrapper height only needs to be set once per fn (by the open /
+  // switch useLayoutEffect above) and stays put.
 
   // Hydrate tools / web-search toggles from localStorage.
   useEffect(() => {
@@ -851,6 +848,32 @@ export function Composer() {
         >
           {isRunning ? <StopIcon /> : <SendIcon />}
         </button>
+
+        {/* Close button — wrapper-level so it stays mounted across
+            fn-form switches (no blink on the icon when the header
+            unmounts/remounts with a new key). Only visible while
+            fn-form is open and not in the middle of closing. */}
+        {fnFormActive && !fnFormClosing && (
+          <button
+            className={styles.closeBtn}
+            type="button"
+            onClick={handleFnFormClose}
+            onMouseDown={(e) => e.preventDefault()}
+            tabIndex={-1}
+            title="Close"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
+              <path
+                d="M2 2L10 10M10 2L2 10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

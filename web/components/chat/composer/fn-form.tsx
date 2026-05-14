@@ -145,37 +145,28 @@ export function FunctionForm({
         className={`${styles.header} ${closing ? styles.closing : ""}`}
         onKeyDown={onKey}
       >
-        <div className={styles.title}>
+        <div
+          className={styles.title}
+          title={
+            fn.description
+              ? `function ${fn.name} – ${fn.description}`
+              : `function ${fn.name}`
+          }
+        >
           <span className={styles.name}>
             <span className={styles.keyword}>function </span>
             {fn.name}
           </span>
           {fn.description ? (
             <>
-              <span className={styles.dash}>–</span>
+              <span className={styles.dash}>{" – "}</span>
               <span className={styles.desc}>{fn.description}</span>
             </>
           ) : null}
         </div>
-        <button
-          className={styles.close}
-          type="button"
-          onClick={onClose}
-          onMouseDown={(e) => e.preventDefault()}
-          tabIndex={-1}
-          title="Close"
-          aria-label="Close"
-        >
-          <svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
-            <path
-              d="M2 2L10 10M10 2L2 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+        {/* Close button now lives at the wrapper level (rendered by
+            Composer) so it stays mounted across fn switches and
+            doesn't blink. The header only carries title content. */}
       </div>
       <div
         data-fn-form-body

@@ -114,6 +114,11 @@
   --user-msg-bg: #e8e6dc;
   --assistant-msg-bg: #f0eee6;
   --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  /* Deeper orange in light mode — the default `#d19a66` reads as a
+     wash against the cream background; this burnt-orange has enough
+     contrast for the function-name token + the user / pg-card icons
+     in the various theme-aware components that reference it. */
+  --accent-orange: #b8651f;
   color-scheme: light;
 }
 

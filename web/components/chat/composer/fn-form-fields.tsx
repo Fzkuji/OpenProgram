@@ -128,8 +128,14 @@ function FieldLabel({ p }: { p: FnParam }) {
   const meta = [p.type || "any", p.required ? null : "optional"]
     .filter(Boolean)
     .join(", ");
+  // Full description goes into a native `title` tooltip — the visible
+  // line is mask-faded on overflow, hovering shows the full text via
+  // the browser's own tooltip overlay (no inline layout shift).
+  const tooltip = p.description
+    ? `${p.label ?? p.name} (${meta}) – ${p.description}`
+    : `${p.label ?? p.name} (${meta})`;
   return (
-    <div className={styles.label}>
+    <div className={styles.label} title={tooltip}>
       <span className={styles.labelName}>{p.label ?? p.name}</span>
       <span className={styles.labelMeta}>{` (${meta})`}</span>
       {p.description ? (
