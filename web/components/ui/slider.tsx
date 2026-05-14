@@ -24,12 +24,17 @@ type SliderProps = React.ComponentPropsWithoutRef<
   /** Element rendered IN PLACE of the last tick — centred on the
       thumb's max position (cx = 100% − 7px). */
   endIcon?: React.ReactNode;
+  /** Content rendered INSIDE the thumb element. When provided, the
+      thumb's default round bg/border is dropped — the child takes
+      over the visual (e.g. an icon that travels with the thumb).
+      Thumb keeps its 14px hit-area for click/drag. */
+  thumb?: React.ReactNode;
 };
 
 const Slider = React.forwardRef<
   React.ElementRef<typeof SliderPrimitive.Root>,
   SliderProps
->(({ className, stops, innerTicksOnly, startIcon, endIcon, ...props }, ref) => {
+>(({ className, stops, innerTicksOnly, startIcon, endIcon, thumb, ...props }, ref) => {
   // Read current step value so each tick (and downstream coloured
   // elements) can know if it sits in the filled half or the unfilled
   // half. Filled = i < currentValue → blue; otherwise grey.
@@ -117,16 +122,28 @@ const Slider = React.forwardRef<
     ) : null}
     <SliderPrimitive.Thumb
       className={cn(
+        // Hit area stays 14px so Radix's thumb-center math (the
+        // `100% - 14px + 7px` calc shared with ticks/icons) still
+        // lines up. When a `thumb` child is provided it takes over
+        // the visual — bg / border are dropped so the child renders
+        // unobstructed; otherwise we fall back to the default soft
+        // round bullet.
         "relative block size-[14px] rounded-full",
-        "bg-[var(--slider-active)]",
-        "border-2 border-[var(--bg-tertiary)]",
-        "shadow-[0_1px_2px_rgba(0,0,0,0.15)]",
+        thumb
+          ? "bg-transparent"
+          : cn(
+              "bg-[var(--slider-active)]",
+              "border-2 border-[var(--bg-tertiary)]",
+              "shadow-[0_1px_2px_rgba(0,0,0,0.15)]",
+            ),
         "transition-transform duration-150 ease-out",
         "hover:scale-110",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--slider-active)]",
         "disabled:pointer-events-none disabled:opacity-50",
       )}
-    />
+    >
+      {thumb}
+    </SliderPrimitive.Thumb>
   </SliderPrimitive.Root>
   );
 });

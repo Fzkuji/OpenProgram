@@ -38,7 +38,6 @@ import { type SlashCommand } from "./slash-commands";
 import { sendChatMessage } from "./legacy-send";
 import { Slider } from "@/components/ui/slider";
 import { Lightning } from "@phosphor-icons/react/dist/ssr";
-import { cn } from "@/lib/utils";
 import { useFnFormState } from "./use-fn-form-state";
 import { useFnFormWrapper } from "./use-fn-form-wrapper";
 import { useSlashMenu } from "./use-slash-menu";
@@ -622,11 +621,14 @@ const ThinkingEffortPill = React.forwardRef<
     options.findIndex((o) => o.value === value),
   );
   const maxIndex = Math.max(0, options.length - 1);
-  // Endpoint-selected state. Used both to colour the corresponding
-  // Lightning bolt (selected → blue; unselected → grey) and to hide
-  // the round thumb so the bolt itself reads as the marker.
-  const atMin = valueIndex === 0;
-  const atMax = valueIndex === maxIndex;
+  // Lightning size scales linearly with effort: from 10px at the
+  // `off` end to 22px at `xhigh`. A single bolt rides on the thumb
+  // — its position tells "where on the scale" and its size tells
+  // "how much effort" at a glance.
+  const lightningSize =
+    maxIndex > 0
+      ? Math.round(10 + (valueIndex / maxIndex) * 12)
+      : 10;
   // Effort-level tint for the COLLAPSED pill. Ramps from a faint
   // bright-white wash at `off` (just barely lifting off the panel
   // bg) through accent-yellow / orange / red as effort climbs.
@@ -764,53 +766,6 @@ const ThinkingEffortPill = React.forwardRef<
             max={maxIndex}
             step={1}
             stops={options.length}
-            innerTicksOnly
-            startIcon={
-              // Filled bolt, 14px so it fully covers the thumb
-              // diameter when the thumb hides at this endpoint.
-              // Colour: soft accent-blue (mixed 70% with
-              // transparent) when `off` is selected, otherwise
-              // `border-light` to match the unfilled track and
-              // unselected tick dots.
-              <Lightning
-                size={14}
-                weight="fill"
-                className={cn(
-                  "cursor-pointer transition-colors",
-                  atMin
-                    ? "text-[var(--slider-active)]"
-                    : "text-[var(--border-light)] hover:text-text-secondary",
-                )}
-                aria-label="less effort"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const first = options[0];
-                  if (first) onChange(first.value);
-                }}
-              />
-            }
-            endIcon={
-              // Larger filled bolt (20px) at the right endpoint —
-              // the size asymmetry vs the left bolt (14px) is the
-              // direct visual cue for "more effort". Same fill
-              // weight and colour logic as the left one.
-              <Lightning
-                size={20}
-                weight="fill"
-                className={cn(
-                  "cursor-pointer transition-colors",
-                  atMax
-                    ? "text-[var(--slider-active)]"
-                    : "text-[var(--border-light)] hover:text-text-secondary",
-                )}
-                aria-label="more effort"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const last = options[maxIndex];
-                  if (last) onChange(last.value);
-                }}
-              />
-            }
             value={[valueIndex]}
             onValueChange={(v) => {
               const idx = v[0] ?? 0;
@@ -819,13 +774,22 @@ const ThinkingEffortPill = React.forwardRef<
             }}
             // Stop click from bubbling to the pill's onClick.
             onClick={(e) => e.stopPropagation()}
-            // When the value is at min or max the thumb sits ON TOP
-            // of one of the Lightning icons — hide the round thumb
-            // there so the bolt itself is the selected marker.
-            className={[
-              "flex-1",
-              atMin || atMax ? "[&_[role=slider]]:opacity-0" : "",
-            ].join(" ")}
+            // The thumb itself is a Lightning bolt that travels with
+            // the value. Size scales from 10px (off) → 22px (xhigh)
+            // so position tells you "where" and size tells you
+            // "how much" simultaneously. Colour is the same effort
+            // hue used by the filled range (via `--slider-active`).
+            // `aria-hidden` on the icon since the slider Root
+            // already announces value/min/max.
+            thumb={
+              <Lightning
+                size={lightningSize}
+                weight="fill"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active)] pointer-events-none transition-[width,height] duration-150 ease-out"
+                aria-hidden="true"
+              />
+            }
+            className="flex-1"
           />
         </div>
       </div>
