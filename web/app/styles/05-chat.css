@@ -266,27 +266,6 @@
   border-color: rgba(229, 192, 123, 0.25);
 }
 
-.btn {
-  padding: 5px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all var(--transition);
-  outline: none;
-  white-space: nowrap;
-}
-
-.btn:hover { background: var(--bg-hover); border-color: var(--accent-blue); color: var(--text-bright); }
-.btn.active { background: rgba(97,175,239,0.12); border-color: var(--accent-blue); color: var(--accent-blue); }
-
-.btn-pause.paused {
-  background: rgba(229,192,123,0.12);
-  border-color: var(--accent-yellow);
-  color: var(--accent-yellow);
-}
 
 /* Chat messages */
 .chat-area {
@@ -298,56 +277,17 @@
 }
 .chat-area.welcome-visible { overflow: hidden; }
 
-/* Live execution tree */
-.live-exec-tree {
-  margin: 8px 24px 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  overflow: hidden;
-  max-height: 300px;
-  overflow-y: auto;
-}
-.live-exec-tree .tree-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px; border-bottom: 1px solid var(--border);
-  color: var(--text-secondary); user-select: none; cursor: pointer;
-}
-.live-exec-tree .tree-header:hover { background: var(--bg-hover); }
-.live-exec-tree .tree-header .spinner-sm {
-  width: 12px; height: 12px;
-  border: 1.5px solid var(--border); border-top-color: var(--accent-blue);
-  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
-}
-.live-exec-tree .tree-title {
-  flex: 1; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
-}
-.live-exec-tree .tree-body { padding: 6px 8px; }
-.live-exec-tree .tree-chevron { font-size: 12px; transition: transform 0.2s; }
-.live-exec-tree.collapsed .tree-body { display: none; }
-.live-exec-tree.collapsed .tree-chevron { transform: rotate(-90deg); }
 
-/* Running node status bar */
-.node-live-status {
-  display: flex; align-items: center; gap: 6px;
-  padding: 2px 8px; margin: 2px 0;
-  color: var(--text-muted); font-size: 12px;
-  animation: msgAppear 0.2s ease forwards;
-}
-.node-live-status .spinner-sm {
-  width: 10px; height: 10px;
-  border: 1.5px solid var(--border); border-top-color: var(--accent-blue);
-  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
-}
 
 .chat-messages {
   flex: 1;
-  /* Bottom padding ≈ viewport height so the most recent user message
-     can be scrolled to the top of the chat area with empty room below
-     for the assistant reply (ChatGPT/Claude behavior). */
-  padding: 24px 0 calc(100vh - 220px) 0;
+  /* Bottom padding gives the latest message room to scroll up to the
+     top of the viewport so the assistant reply lands underneath it
+     (ChatGPT / Claude behaviour). Capped at 25vh — a full
+     `100vh - 220px` was so tall the chat-area could open with the
+     entire viewport empty below the last message even on a fresh
+     short conversation. */
+  padding: 24px 0 25vh 0;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -764,15 +704,6 @@
   padding-left: 0;
 }
 
-/* Status message */
-.message-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-left: 36px;
-  color: var(--text-secondary);
-  font-size: 14px;
-}
 
 .spinner {
   width: 16px;
@@ -787,25 +718,6 @@
   to { transform: rotate(360deg); }
 }
 
-/* Inline status line (replaces previous, not a full bubble) */
-.status-line {
-  padding: 4px 24px 4px 60px;
-  color: var(--text-muted);
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  animation: msgAppear 0.2s ease forwards;
-}
-.status-line .spinner-sm {
-  width: 12px;
-  height: 12px;
-  border: 1.5px solid var(--border);
-  border-top-color: var(--accent-blue);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  flex-shrink: 0;
-}
 
 /* Execution log */
 .exec-log {
@@ -925,12 +837,6 @@
   background: rgba(56, 134, 229, 0.10);
   color: var(--accent-blue);
   border-color: rgba(56, 134, 229, 0.25);
-}
-.token-badge {
-  font-family: var(--mono);
-  font-size: 12px;
-  cursor: default;
-  white-space: nowrap;
 }
 .runtime-badge.agent-badge:hover {
   background: rgba(56, 134, 229, 0.18);
