@@ -638,87 +638,110 @@ const ThinkingEffortPill = React.forwardRef<
         <CaretIcon />
       </span>
 
-      {/* Visible pill, absolutely positioned over the spacer. Width
-          animates between auto (collapsed) and 340px (expanded). */}
+      {/* Visible pill. Only the WIDTH and the background colour
+          animate — the two content layers below switch via
+          `display: none` rather than opacity, so there's no
+          fade-in/fade-out crossfade (the user explicitly wanted
+          this gone). The slider lives in a fixed-260px-wide layer,
+          so as the pill expands the slider's internal layout never
+          recalculates — `overflow: hidden` on the pill just reveals
+          progressively more of the same stable layer.
+
+          Pill widths: 132px collapsed → 260px expanded (narrower
+          than the previous 340 since the slider track + icons
+          read fine in a tighter footprint). */}
       <div
         className={[
-          "absolute left-0 top-0 flex h-[32px] items-center overflow-hidden",
+          "absolute left-0 top-0 h-[32px] overflow-hidden",
           "rounded-full cursor-pointer select-none",
           "text-[14px]",
-          "transition-[width,background-color,color,padding] duration-200 ease-out",
+          "transition-[width,background-color] duration-[220ms] ease-out",
           expanded
-            ? "bg-bg-hover text-text-bright px-[14px] gap-[12px]"
-            : "bg-transparent text-text-secondary px-[10px] gap-[5px] hover:bg-bg-hover hover:text-text-primary",
+            ? "bg-bg-hover text-text-bright"
+            : "bg-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary",
         ].join(" ")}
-        style={expanded ? { width: 340 } : undefined}
+        style={{ width: expanded ? 260 : 132 }}
         onClick={(e) => {
           e.stopPropagation();
           if (!expanded) onExpand();
         }}
       >
-        {expanded ? (
-          <>
-            {/* Current value (live-updates while dragging). `min-width`
-                holds 56px so the slider doesn't reflow as the label
-                changes between values like `off` ↔ `minimal`. Uses
-                the default UI font (sans) — the value is a regular
-                label, not an identifier. */}
-            <span className="shrink-0 min-w-[56px] text-text-bright font-medium">
-              {value}
-            </span>
-            {/* Left icon — thin/small Lightning glyph = "less effort"
-                AND a click-to-min shortcut. The icon visually marks the
-                slider's start position, so the corresponding inner tick
-                circle is suppressed via `innerTicksOnly` below. */}
-            <Lightning
-              size={11}
-              weight="regular"
-              className="shrink-0 cursor-pointer text-text-muted transition-colors hover:text-text-bright"
-              aria-label="less effort"
-              onClick={(e) => {
-                e.stopPropagation();
-                const first = options[0];
-                if (first) onChange(first.value);
-              }}
-            />
-            <Slider
-              min={0}
-              max={maxIndex}
-              step={1}
-              stops={options.length}
-              innerTicksOnly
-              value={[valueIndex]}
-              onValueChange={(v) => {
-                const idx = v[0] ?? 0;
-                const next = options[idx];
-                if (next) onChange(next.value);
-              }}
-              // Stop click from bubbling to the pill's onClick (which
-              // would otherwise treat slider clicks as "expand again").
-              onClick={(e) => e.stopPropagation()}
-              className="flex-1"
-            />
-            {/* Right icon — fat/bold Lightning = "more effort" + click-
-                to-max shortcut. Marks the slider's end position so the
-                corresponding inner tick circle is also suppressed. */}
-            <Lightning
-              size={17}
-              weight="fill"
-              className="shrink-0 cursor-pointer text-text-primary transition-colors hover:text-text-bright"
-              aria-label="more effort"
-              onClick={(e) => {
-                e.stopPropagation();
-                const last = options[maxIndex];
-                if (last) onChange(last.value);
-              }}
-            />
-          </>
-        ) : (
-          <>
-            <span>effort: {value}</span>
-            <CaretIcon />
-          </>
-        )}
+        {/* Collapsed content. `hidden` (display: none) when expanded
+            so there's no overlap / fade — instant swap on toggle. */}
+        <div
+          className={[
+            "h-full flex items-center gap-[5px] px-[10px]",
+            expanded ? "hidden" : "",
+          ].join(" ")}
+        >
+          <span>effort: {value}</span>
+          <CaretIcon />
+        </div>
+
+        {/* Expanded content. Fixed 260px wide so the slider track +
+            tick math don't recompute mid-transition. Hidden via
+            display:none when collapsed. */}
+        <div
+          className={[
+            "h-full flex items-center gap-[10px] px-[12px]",
+            !expanded ? "hidden" : "",
+          ].join(" ")}
+          style={{ width: 260 }}
+        >
+          <span className="shrink-0 min-w-[56px] text-text-bright font-medium">
+            {value}
+          </span>
+          <Slider
+            min={0}
+            max={maxIndex}
+            step={1}
+            stops={options.length}
+            innerTicksOnly
+            startIcon={
+              <Lightning
+                size={11}
+                weight="regular"
+                className="cursor-pointer text-text-muted transition-colors hover:text-text-bright"
+                aria-label="less effort"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const first = options[0];
+                  if (first) onChange(first.value);
+                }}
+              />
+            }
+            endIcon={
+              <Lightning
+                size={17}
+                weight="fill"
+                className="cursor-pointer text-text-primary transition-colors hover:text-text-bright"
+                aria-label="more effort"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const last = options[maxIndex];
+                  if (last) onChange(last.value);
+                }}
+              />
+            }
+            value={[valueIndex]}
+            onValueChange={(v) => {
+              const idx = v[0] ?? 0;
+              const next = options[idx];
+              if (next) onChange(next.value);
+            }}
+            // Stop click from bubbling to the pill's onClick.
+            onClick={(e) => e.stopPropagation()}
+            // When the value is at min or max the thumb sits ON TOP
+            // of one of the Lightning icons — hide the round thumb
+            // there so the bolt itself is the selected marker.
+            className={[
+              "flex-1",
+              valueIndex === 0 || valueIndex === maxIndex
+                ? "[&_[role=slider]]:opacity-0"
+                : "",
+            ].join(" ")}
+          />
+        </div>
       </div>
     </div>
   );

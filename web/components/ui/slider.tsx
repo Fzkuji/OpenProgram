@@ -12,16 +12,24 @@ type SliderProps = React.ComponentPropsWithoutRef<
       Pass `options.length` for a discrete step slider; omit / pass
       < 2 for a smooth slider. */
   stops?: number;
-  /** Skip drawing the first and last tick. Use this when something
-      outside the slider (e.g. an icon on each end) already marks
-      the min/max stops. */
+  /** Skip drawing the first and last tick. Use when the start/end
+      markers are filled by `startIcon` / `endIcon` (or some other
+      external marker) instead of plain tick dots. */
   innerTicksOnly?: boolean;
+  /** Element rendered IN PLACE of the first tick — sits centred on
+      the thumb's min position (cx = 7px) on the track. Use this to
+      put an icon (e.g. a small lightning bolt) at the slider's left
+      end. Receives `pointer-events: auto` so it can be clickable. */
+  startIcon?: React.ReactNode;
+  /** Element rendered IN PLACE of the last tick — centred on the
+      thumb's max position (cx = 100% − 7px). */
+  endIcon?: React.ReactNode;
 };
 
 const Slider = React.forwardRef<
   React.ElementRef<typeof SliderPrimitive.Root>,
   SliderProps
->(({ className, stops, innerTicksOnly, ...props }, ref) => {
+>(({ className, stops, innerTicksOnly, startIcon, endIcon, ...props }, ref) => {
   return (
   <SliderPrimitive.Root
     ref={ref}
@@ -73,6 +81,28 @@ const Slider = React.forwardRef<
         );
         })
       : null}
+    {/* Start / end icons replace the leftmost / rightmost tick. They
+        sit at the same cx coordinate as the thumb at its min / max
+        position, so when the thumb travels to either end it lines up
+        on top of the icon. `pointer-events-auto` overrides Radix's
+        `touch-none` on the Root so the icon stays clickable (e.g. as
+        a jump-to-min / jump-to-max shortcut). */}
+    {startIcon ? (
+      <div
+        className="pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{ left: "7px" }}
+      >
+        {startIcon}
+      </div>
+    ) : null}
+    {endIcon ? (
+      <div
+        className="pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{ left: "calc(100% - 7px)" }}
+      >
+        {endIcon}
+      </div>
+    ) : null}
     <SliderPrimitive.Thumb
       className={cn(
         "relative block size-[14px] rounded-full bg-[var(--accent-blue)]",
