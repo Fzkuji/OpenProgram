@@ -1,25 +1,12 @@
-/* ===== Left Sidebar ===== */
-.sidebar {
-  width: var(--sidebar-width);
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  overflow: hidden;
-  /* `position: relative` is the anchor for the absolutely-positioned
-     `#userMenuFooterMount` below — the footer leaves the flex flow so
-     the avatar's x/y don't reflow when conversations / favourites get
-     `display: none` on collapse. */
-  position: relative;
-  transition: width 0.3s ease, min-width 0.3s ease;
-}
-
-.sidebar.collapsed {
-  width: 48px;
-  min-width: 48px;
-  overflow: hidden;
-}
+/* ===== Left + Right Sidebar (collapsed cascade only) ===== */
+/* `.sidebar` shell layout + width transition moved to Tailwind
+   utilities inline on the root divs in `components/sidebar/sidebar.tsx`
+   and `components/right-sidebar/right-sidebar.tsx`. The collapsed
+   width / min-width is now a conditional Tailwind class on the same
+   roots. Only the `.collapsed`-driven cascade rules remain here, since
+   they target descendant elements (nav label/action/footer-info) and
+   are easier to keep as a single CSS cascade than to thread an `open`
+   prop through every nav row. */
 .sidebar.collapsed * {
   overflow: hidden !important;
   scrollbar-width: none !important;
@@ -114,19 +101,6 @@
    `components/sidebar/nav-classes.ts` (the shared class constants)
    and inline utilities in `sidebar.tsx` / `right-sidebar.tsx`. */
 
-/* Shared scrollable panel list — used by Favorites, Recents, and Branches */
-.sidebar-panel-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 0 8px;
-  max-height: calc(32px * 4 + 3px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
-}
-.sidebar-panel-list::-webkit-scrollbar { display: none; }
-
 /* `.sidebar-favorites / .sidebar-conversations / .sidebar-fav-list /
    .sidebar-conv-list` outer-container layout + scrollbar-hide moved
    to Tailwind utilities inline in `<SidebarSection />` (sidebar.tsx).
@@ -134,38 +108,11 @@
    hide-rules are now React conditional rendering driven by
    `hasFavorites` + `open`. */
 
-/* Refresh button */
-.refresh-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, color 0.15s, opacity 0.15s;
-}
-.refresh-btn:hover {
-  background: var(--bg-hover);
-  opacity: 1 !important;
-  color: var(--text-bright);
-}
-.refresh-btn:active {
-  background: var(--bg-tertiary);
-}
-@keyframes spin-refresh {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-.refresh-btn.spinning svg {
-  animation: spin-refresh 0.6s ease-in-out;
-}
-.refresh-btn.spinning {
-  opacity: 1 !important;
-}
-.refresh-btn.done {
-  color: #4ade80 !important;
-  opacity: 1 !important;
-}
+/* `.refresh-btn` + `@keyframes spin-refresh` moved to Tailwind:
+   the sizing / hover / active / spinning / done states are inline
+   utilities on the Programs row's refresh action in `sidebar.tsx`,
+   and `spin-refresh` is registered in `tailwind.config.ts` under
+   `keyframes` + `animation` (use `animate-spin-refresh`). */
 
 /* ===== Legacy sidebar footer + avatar popup =====
    `.sidebar-footer / .sidebar-user / .user-info / .user-name /

@@ -160,7 +160,21 @@ export function RightSidebar() {
   return (
     <aside
       id="rightSidebar"
-      className={"sidebar right-sidebar" + (open ? "" : " collapsed")}
+      // Shell layout via Tailwind (parity with the left `<Sidebar />`).
+      // `border-l` instead of `border-r` is the only directional diff.
+      // `.sidebar` + `.right-sidebar` + `.collapsed` classes are kept
+      // for the cascade rules in 09-right-dock.css (`.right-sidebar
+      // [data-view="..."]` view switching, `.right-sidebar.collapsed
+      // .right-view-host { display: none }`) and the small
+      // `.sidebar.collapsed *` override in 02-sidebar.css.
+      className={
+        "sidebar right-sidebar relative flex shrink-0 flex-col overflow-hidden " +
+        "bg-bg-secondary border-l border-[var(--border)] " +
+        "[transition:width_0.3s_ease,min-width_0.3s_ease] " +
+        (open
+          ? "w-sidebar-w"
+          : "w-[48px] min-w-[48px] collapsed")
+      }
       data-view={view}
     >
       {/* Header — same 48px row + 8px padding as the left sidebar

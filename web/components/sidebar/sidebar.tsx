@@ -175,7 +175,26 @@ export function Sidebar() {
   };
 
   return (
-    <div id="sidebar" className={"sidebar" + (open ? "" : " collapsed")}>
+    <div
+      id="sidebar"
+      className={
+        // Shell layout — bg / border / flex column / width transition.
+        // `relative` is the anchor for the (legacy) `#userMenuFooterMount`
+        // portal target; we keep it even though UserMenuFooter is now
+        // rendered directly here. `.sidebar` + `.collapsed` classes are
+        // retained as hooks for: legacy scrollbar.js (selects .sidebar),
+        // right-dock.css's `[data-view]` cascade, and the small
+        // `.sidebar.collapsed *` overflow/scrollbar-width override + the
+        // `.sidebar-nav-item/-label/-action/.user-menu-footer-info`
+        // collapsed-state rules in 02-sidebar.css.
+        "sidebar relative flex shrink-0 flex-col overflow-hidden " +
+        "bg-bg-secondary border-r border-[var(--border)] " +
+        "[transition:width_0.3s_ease,min-width_0.3s_ease] " +
+        (open
+          ? "w-sidebar-w"
+          : "w-[48px] min-w-[48px] collapsed")
+      }
+    >
       <div className="flex h-[48px] shrink-0 items-center justify-between p-[8px] box-border">
         <div
           className={
@@ -244,9 +263,12 @@ export function Sidebar() {
           <span
             className={
               sidebarNavActionClass +
-              " refresh-btn" +
-              (refreshing ? " spinning" : "") +
-              (refreshDone ? " done" : "")
+              " inline-flex size-[24px] items-center justify-center rounded-[6px]" +
+              " [transition:background_0.15s,color_0.15s,opacity_0.15s]" +
+              " hover:bg-bg-hover hover:text-text-bright hover:!opacity-100" +
+              " active:bg-bg-tertiary" +
+              (refreshing || refreshDone ? " !opacity-100" : "") +
+              (refreshDone ? " !text-[#4ade80]" : "")
             }
             onClick={(e) => {
               e.preventDefault();
@@ -264,6 +286,7 @@ export function Sidebar() {
                 height="12"
                 viewBox="0 0 16 16"
                 fill="currentColor"
+                className={refreshing ? "animate-spin-refresh" : ""}
               >
                 <path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5h-1.5A5 5 0 1 1 8 3V1.5z" />
                 <path d="M8 0l3 3-3 3V0z" />

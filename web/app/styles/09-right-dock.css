@@ -1,25 +1,20 @@
-/* Right sidebar — mirror of the left sidebar. Reuses .sidebar,
-   .sidebar-header, .sidebar-toggle, .sidebar-nav-group, .sidebar-nav-item
-   etc. so heights/colors/strokes stay aligned. Only diffs:
-     * border on the LEFT, not the right
+/* Right sidebar — mirror of the left sidebar. The shell layout
+   (`flex flex-col`, bg, width, transitions, border-LEFT) is now
+   Tailwind utilities on the root `<aside>` in `right-sidebar.tsx`.
+   The nav rows, icons, labels and toggle use the same class constants
+   from `components/sidebar/nav-classes.ts` so heights / colors /
+   strokes stay aligned. Diffs vs. left sidebar:
+     * border on the LEFT, not the right (Tailwind `border-l`)
      * `.right-view-host` replaces the favorites/conversations blocks
-     * active nav item uses --bg-hover tint
+     * active nav item uses --bg-hover tint (rule below)
      * collapsed state hides view-host (instead of favorites/conversations)
 */
 
-.right-sidebar {
-  border-right: none;
-  border-left: 1px solid var(--border);
-}
-
-/* Header layout (justify-start, h-12, p-2) moved to Tailwind inline
-   in `right-sidebar.tsx`. */
-
-/* Active nav item (currently showing view). */
-.right-sidebar .sidebar-nav-item.active {
-  background: var(--bg-hover);
-  color: var(--text-bright);
-}
+/* Active nav-item state (currently-showing view) is applied via
+   `sidebarNavItemActiveClass` from `nav-classes.ts` in
+   `right-sidebar.tsx`. The legacy `.right-sidebar .sidebar-nav-item.active`
+   rule no longer matches since nav rows are class strings of Tailwind
+   utilities now (no `.sidebar-nav-item` class). */
 
 /* View host — one child visible at a time, matching data-view. */
 .right-view-host {
@@ -48,6 +43,38 @@
 }
 
 /* ============ Branches panel — mirrors left sidebar section style ============ */
+/* `.sidebar-section-header / -title / -hint` are emitted by
+   `conversations.js::renderBranchesPanel()` (build innerHTML), so the
+   styling still has to live in a global stylesheet. The same classes
+   used to be a generic sidebar utility but the left-sidebar version
+   was migrated to `<SidebarSection />` Tailwind utilities — only the
+   right-dock Branches header still consumes them. */
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 16px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.sidebar-section-title {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.sidebar-section-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+.sidebar-section-header:hover .sidebar-section-hint { opacity: 0.75; }
+.sidebar-section-header.is-collapsed .sidebar-section-hint,
+.is-collapsed > .sidebar-section-header .sidebar-section-hint {
+  opacity: 0.75;
+}
+
 
 /* Wrapper mirrors .sidebar-favorites */
 .branches-section {
@@ -55,8 +82,8 @@
   padding: 16px 0 8px;
 }
 
-/* List mirrors .sidebar-fav-list / .sidebar-panel-list. Cap at 4
- * rows so long branch lists don't push the graph view off-screen.
+/* List mirrors the favorites/conversations panel in `<SidebarSection />`.
+ * Cap at 4 rows so long branch lists don't push the graph view off-screen.
  * Auto-scroll-on-checkout is dampened in JS via scrollIntoView
  * with block:'nearest' — active only moves if it's actually offscreen. */
 .branches-list {
