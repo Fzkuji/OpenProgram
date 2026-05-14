@@ -64,7 +64,6 @@ function sendMessage(textOverride) {
   if (text.toLowerCase().startsWith('run ')) _lastRunCommand = text;
 
   setWelcomeVisible(false);
-  closeFnForm();
 
   var isRunCommand = /^(run\s|create\s|fix\s)/i.test(text);
 

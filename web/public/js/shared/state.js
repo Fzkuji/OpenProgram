@@ -45,6 +45,4 @@ var _lastChatModel = null;
 var _lastExecProvider = null;
 var _lastExecModel = null;
 var _agentSettings = { chat: {}, exec: {}, available: {} };
-var _inputWrapperOriginal = '';
-var _fnFormActive = false;
 var _elapsedTimer = null;

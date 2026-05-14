@@ -1,0 +1,351 @@
+/* Styles for the function parameter form. The Composer's own module
+   keeps the rules that toggle the *wrapper* into fn-form mode (padding,
+   bottom-row separator, send-button position); everything that lives
+   inside the form itself is here. */
+
+/* Panel is anchored to the top edge of the input-bottom-row (54px
+   tall) so its bottom edge always sits flush against the divider.
+   The wrapper has `overflow: hidden` and an inline `height` driven by
+   React. As the wrapper's height grows from chat-mode to fn-form-mode,
+   the panel's top edge slides UP into view from behind the bottom row,
+   matching the "growing out from behind the divider" feel the user
+   asked for. */
+/* Header, body, and inputBottomRow are three flat siblings of the
+   wrapper. No `.panel` div wraps the body — body is the middle row.
+*/
+
+/* Header / body fade in with the staggered timings shared by the
+   composer (header first, body slightly later) so the form reads as
+   one continuous reveal. Close fades both out together over 0.12s
+   before the wrapper begins its height transition.
+
+   Header height mirrors `--composer-bottom-row-h` so the form's top
+   strip and the input options strip read as a matched pair (same
+   thickness, same vertical breathing room). */
+/* Header — mirror of `.inputBottomRow` in fn-form-mode, flipped top↔
+   bottom. The bottom row has a 1px `border-top` divider and shaves
+   1px off its top padding to keep the plus-button equidistant from
+   the divider above and the wrapper edge below. The header does the
+   same flipped: 1px `border-bottom` divider, 1px shaved off its
+   bottom padding.
+       1 (border-bottom)
+       + 15 (padding-bottom = pad − 1)
+       + 32 (button-size)
+       + 16 (padding-top = pad)
+       = 64 = --composer-bottom-row-h
+*/
+.header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--composer-bottom-row-pad) var(--composer-bottom-row-pad)
+    calc(var(--composer-bottom-row-pad) - 1px);
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+  flex-shrink: 0;
+  opacity: 0;
+  animation: fnFormFadeIn var(--composer-fade-duration) ease
+    var(--composer-fade-delay-header) forwards;
+}
+@keyframes fnFormFadeIn {
+  to { opacity: 1; }
+}
+
+.header.closing,
+.body.closing {
+  animation: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  /* Grow to fill the header width so `.desc` can ellipsize when
+     content overflows. */
+  flex: 1 1 auto;
+}
+.name {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bright);
+  flex-shrink: 0;
+}
+.keyword {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Close button — same circle geometry as the other corner buttons,
+   but laid out as a normal flex child of `.header` (no `position:
+   absolute`). The `.header` flexbox's `space-between` + right padding
+   put its centre at exactly the wrapper's top-right corner-radius
+   centre, mirroring the plus button at the bottom-left. */
+.close {
+  background: none;
+  border: 2px solid var(--text-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  width: var(--composer-button-size);
+  height: var(--composer-button-size);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 180ms ease, border-color 180ms ease;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.close svg {
+  display: block;
+}
+.close:hover {
+  color: var(--text-bright);
+  border-color: var(--text-bright);
+}
+
+.body {
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Divider between the form fields and the bottom row. Living here
+     (rather than on the bottom row as a `border-top`) keeps the
+     bottom row's geometry identical between chat mode and fn-form
+     mode — only the body adds the line. */
+  border-bottom: 1px solid var(--border);
+  opacity: 0;
+  animation: fnFormFadeIn var(--composer-fade-duration) ease
+    var(--composer-fade-delay-body) forwards;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.labelName {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.labelType {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+.labelRequired {
+  font-size: 12px;
+  color: var(--accent-red);
+  opacity: 0.7;
+}
+.labelOptional {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.labelDesc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 12px;
+  color: var(--text-bright);
+  font-size: 14px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color 180ms ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+.input:focus {
+  border-color: var(--border-light);
+}
+.input::placeholder {
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+.input.textarea {
+  min-height: 48px;
+  max-height: 160px;
+  resize: none;
+  overflow-y: auto;
+}
+.inputError {
+  border-color: var(--accent-red) !important;
+}
+
+.select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23636d83'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 30px;
+  cursor: pointer;
+}
+
+/* Bool toggle */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.toggleBtn {
+  padding: 0 14px;
+  height: 30px;
+  line-height: 26px;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 180ms ease;
+  user-select: none;
+  box-sizing: border-box;
+}
+.toggleBtn:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+.toggleBtn.toggleActive {
+  background: transparent;
+  border-color: var(--text-primary);
+  color: var(--text-bright);
+}
+
+/* Option chips */
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+.chip {
+  padding: 0 14px;
+  height: 30px;
+  line-height: 26px;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 180ms ease;
+  user-select: none;
+  box-sizing: border-box;
+}
+.chip:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+.chip.chipActive {
+  background: transparent;
+  border-color: var(--text-primary);
+  color: var(--text-bright);
+}
+.chipCustom {
+  padding: 0 8px;
+  height: 30px;
+  line-height: 26px;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  width: 60px;
+  outline: none;
+  transition: border-color 180ms ease;
+  box-sizing: border-box;
+}
+.chipCustom:focus {
+  border-color: var(--border-light);
+}
+
+.noParams {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 4px 0;
+}
+
+/* workdir row — folder picker + path input. */
+.workdirRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.workdirBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg-primary);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.workdirBtn svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.workdirBtn:hover {
+  border-color: transparent;
+  background: var(--bg-hover-contrast);
+  color: var(--text-bright);
+}
+.workdirInput {
+  flex: 1 1 auto;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg-primary);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  min-width: 0;
+}
+.workdirInput:focus {
+  border-color: var(--border-light);
+}
+.workdirInput::placeholder {
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+}
+.workdirError {
+  border-color: var(--accent-red) !important;
+}

@@ -1,0 +1,36 @@
+/* TopBar — chat-page header strip with hamburger + 4 badges.
+   Visual mirrors the legacy `.topbar` block from 05-chat.css. The
+   container-query collapse stages live in 05-chat.css against the
+   `.topbar` selector and still apply here because we keep that class
+   name on the outer wrapper. CSS module rules below add badge-level
+   layout that we used to do via inline IDs. */
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  height: 48px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-primary);
+  z-index: 5;
+  container-type: inline-size;
+  container-name: topbar;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

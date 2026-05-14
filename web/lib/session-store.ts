@@ -3,6 +3,31 @@ import { useShallow } from "zustand/react/shallow";
 
 export type MessageStatus = "pending" | "streaming" | "done" | "error" | "cancelled";
 
+export interface FnParam {
+  name: string;
+  /** Friendly label shown in the function form. Falls back to `name`
+   *  when omitted; backend `@agentic_function(input={...})` can set
+   *  `label: "..."` to rename cryptic param names (e.g. `fn` → "function"). */
+  label?: string;
+  type?: string;
+  required?: boolean;
+  description?: string;
+  default?: string;
+  placeholder?: string;
+  hidden?: boolean;
+  multiline?: boolean;
+  options?: string[];
+  options_from?: string;
+}
+
+export interface AgenticFunction {
+  name: string;
+  description?: string;
+  category?: string;
+  workdir_mode?: "optional" | "required" | "hidden";
+  params_detail?: FnParam[];
+}
+
 export interface ChatMsg {
   id: string;                  // msg_id from server, or local generated for user msgs
   role: "user" | "assistant" | "system";
@@ -57,9 +82,59 @@ export interface TreeNode {
  * from the order map AND removes the referenced messages from
  * ``messagesById`` (no dangling entries).
  */
+/** Per-agent settings snapshot, mirrors legacy ``window._agentSettings``
+ *  shape. The TopBar reads this to render the Chat / Exec badges; legacy
+ *  ``loadAgentSettings`` in providers.js pushes through to ``setAgentSettings``
+ *  in the same place it used to call ``updateAgentBadges``. Only the fields
+ *  the React TopBar needs are typed here — the legacy payload has more. */
+export interface AgentBadgeInfo {
+  provider?: string;
+  model?: string;
+  session_id?: string;
+  locked?: boolean;
+}
+export interface AgentSettingsSnapshot {
+  chat?: AgentBadgeInfo;
+  exec?: AgentBadgeInfo;
+}
+
+/** Branch chip state for the current conversation. ``visible`` is false
+ *  when there's no session or the session has no branches. ``count`` is
+ *  the branch tally shown in the label suffix. */
+export interface BranchBadgeInfo {
+  visible: boolean;
+  name: string;
+  count: number;
+}
+
+/** Status badge text + tone. ``tone`` maps to the legacy CSS class
+ *  modifiers (status-badge / .connecting / .disconnected / .paused) and
+ *  to the inner dot's color. ``label`` is the short text shown next to
+ *  the dot — channel name, "connecting", "connected · Local", etc. */
+export type StatusTone = "connecting" | "ok" | "warn" | "err";
+export interface StatusBadgeInfo {
+  label: string;
+  tone: StatusTone;
+  /** True when the chat is currently paused. Drives the "paused" class
+   *  so the badge takes the warning hue without touching the dot. */
+  paused?: boolean;
+  /** Title attribute / hover tooltip. */
+  title?: string;
+}
+
 interface ConvState {
   /** WS status for UI. */
   wsStatus: "connecting" | "open" | "closed";
+  /** Agent settings snapshot for the topbar Chat / Exec badges. Mirror
+   *  of ``window._agentSettings``; populated by legacy providers.js. */
+  agentSettings: AgentSettingsSnapshot;
+  setAgentSettings: (s: AgentSettingsSnapshot) => void;
+  /** Branch chip display state for the current conversation. */
+  branchInfo: BranchBadgeInfo;
+  setBranchInfo: (b: BranchBadgeInfo) => void;
+  /** Status badge label + tone for the topbar. */
+  statusBadge: StatusBadgeInfo;
+  setStatusBadge: (b: StatusBadgeInfo) => void;
   /** Summary for sidebar Recents list. */
   conversations: Record<string, ConvSummary>;
   /** Every message ever loaded, keyed by id. */
@@ -119,10 +194,68 @@ interface ConvState {
    *  Composer reacts to changes in this counter via useEffect. */
   composerFocusTick: number;
   focusComposer: () => void;
+
+  /** When non-null, the Composer swaps its textarea for a parameter
+   *  form for this function. Submit builds a `run <name> ...` command
+   *  and sends it through the chat WS channel, then clears this. */
+  fnFormFunction: AgenticFunction | null;
+  openFnForm: (fn: AgenticFunction) => void;
+  closeFnForm: () => void;
+
+  /** Right sidebar dock state. `open` = expanded (icons + content
+   *  visible); when false, only the icon rail shows (collapsed).
+   *  `view` selects which child of `.right-view-host` is visible
+   *  (matches the legacy `data-view` attribute: "history" | "detail").
+   *  Persisted to localStorage under `rightSidebarOpen` /
+   *  `rightSidebarView` so the legacy keys keep working — that's the
+   *  same shape the old right-dock.js wrote. */
+  rightDock: { open: boolean; view: string };
+  setRightDockOpen: (open: boolean) => void;
+  setRightDockView: (view: string) => void;
+}
+
+const RIGHT_LS_OPEN = "rightSidebarOpen";
+const RIGHT_LS_VIEW = "rightSidebarView";
+
+function readRightDock(): { open: boolean; view: string } {
+  if (typeof window === "undefined") return { open: false, view: "history" };
+  let open = false;
+  let view = "history";
+  try {
+    const o = localStorage.getItem(RIGHT_LS_OPEN);
+    if (o === "1") open = true;
+    else if (o === "0") open = false;
+    const v = localStorage.getItem(RIGHT_LS_VIEW);
+    if (v) view = v;
+  } catch {
+    /* ignore */
+  }
+  return { open, view };
+}
+
+function persistRightDock(state: { open: boolean; view: string }) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(RIGHT_LS_OPEN, state.open ? "1" : "0");
+    if (state.view) localStorage.setItem(RIGHT_LS_VIEW, state.view);
+  } catch {
+    /* ignore */
+  }
 }
 
 export const useSessionStore = create<ConvState>((set) => ({
   wsStatus: "connecting",
+  agentSettings: {},
+  setAgentSettings: (s) => set({ agentSettings: s }),
+  branchInfo: { visible: false, name: "main", count: 0 },
+  setBranchInfo: (b) => set({ branchInfo: b }),
+  statusBadge: {
+    label: "connecting…",
+    tone: "connecting",
+    paused: false,
+    title: "Connecting…",
+  },
+  setStatusBadge: (b) => set({ statusBadge: b }),
   conversations: {},
   messagesById: {},
   messageOrder: {},
@@ -250,6 +383,24 @@ export const useSessionStore = create<ConvState>((set) => ({
   composerFocusTick: 0,
   focusComposer: () =>
     set((state) => ({ composerFocusTick: state.composerFocusTick + 1 })),
+
+  fnFormFunction: null,
+  openFnForm: (fn) => set({ fnFormFunction: fn }),
+  closeFnForm: () => set({ fnFormFunction: null }),
+
+  rightDock: readRightDock(),
+  setRightDockOpen: (open) =>
+    set((s) => {
+      const next = { ...s.rightDock, open };
+      persistRightDock(next);
+      return { rightDock: next };
+    }),
+  setRightDockView: (view) =>
+    set((s) => {
+      const next = { ...s.rightDock, view };
+      persistRightDock(next);
+      return { rightDock: next };
+    }),
 }));
 
 

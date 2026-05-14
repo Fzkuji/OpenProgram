@@ -15,20 +15,10 @@
 
   <!-- Main Area -->
   <div class="main">
-    <!-- Top bar -->
-    <div class="topbar" id="mainTopbar">
-      <div class="topbar-left">
-        <button class="menu-btn" id="menuBtn" onclick="toggleSidebar()"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M16.5 4A1.5 1.5 0 0 1 18 5.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 14.5v-9A1.5 1.5 0 0 1 3.5 4zM7 15h9.5a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5H7zM3.5 5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5H6V5z"/></svg></button>
-        <span id="statusBadge" class="status-badge connecting" onclick="openChannelDropdown(event)" title="Connecting…"><span class="status-dot warn" aria-hidden="true"></span><span class="badge-short">connecting…</span></span>
-        <span id="branchBadge" class="runtime-badge branch-badge" onclick="openBranchDropdown(event)" title="Conversation branches" style="display:none">
-          <span class="branch-icon" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4.5" y1="3" x2="4.5" y2="11"/><circle cx="11.5" cy="4" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><path d="M11.5 5.6a6 6 0 0 1-6 6"/></svg></span>
-          <span class="branch-name">main</span>
-        </span>
-        <span id="chatAgentBadge" class="runtime-badge agent-badge" onclick="openAgentSelector('chat')" title="Chat agent model">Chat: ...</span>
-        <span id="execAgentBadge" class="runtime-badge agent-badge" onclick="openAgentSelector('exec')" title="Execution agent model">Exec: ...</span>
-      </div>
-      <div class="topbar-right"></div>
-    </div>
+    <!-- Top bar — React <TopBar /> portals into this placeholder.
+         PageShell.stripLegacyChatChrome leaves the <div id="topbar-mount">
+         intact; AppShell creates a portal here on chat routes. -->
+    <div id="topbar-mount"></div>
 
     <!-- Chat area -->
     <div id="chatView">
@@ -103,7 +93,6 @@
 <script src="/js/shared/helpers.js?v=15"></script>
 <script src="/js/chat/tree.js?v=8"></script>
 <script src="/js/chat/chat.js?v=10"></script>
-<script src="/js/chat/workdir.js?v=3"></script>
 <script src="/js/shared/sidebar.js?v=34"></script>
 <script src="/js/shared/providers.js?v=8"></script>
 <script src="/js/shared/settings.js?v=13"></script>

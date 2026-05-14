@@ -1,0 +1,24 @@
+/* React Sidebar — companion module to web/app/styles/02-sidebar.css.
+   Visual rules for sidebar shell / nav-items / fav-items / conv-items
+   live in 02-sidebar.css (and 03-settings.css for `.conv-item`). This
+   module only adds:
+     - tiny extras for the React-only "no conversations / favorites"
+       empty-state hints
+     - the `clearAll` row hover (mirrors the legacy `.conv-clear-all`).
+   Everything else relies on the existing global selectors so visual
+   parity is exact. */
+
+.empty {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.clearAll {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+}
+.clearAll:hover { color: var(--accent-red); }

@@ -554,29 +554,10 @@ function togglePanel() {}
 
 // Thinking menu close-on-outside now handled by unified popover logic in ui.js
 
-// The chat textarea lives in the React <Composer />; Enter-to-send
-// is handled in-component there. init.js no longer touches it.
-
-document.addEventListener('keydown', function(e) {
-  if (!_fnFormActive) return;
-  var wrapper = document.querySelector('.input-wrapper');
-  if (!wrapper || !wrapper.dataset.fnName) return;
-  if (e.key === 'Escape') {
-    closeFnForm();
-    e.preventDefault();
-  }
-  if (e.key === 'Enter' && !e.shiftKey && e.target.classList.contains('fn-form-input') && e.target.tagName !== 'TEXTAREA') {
-    e.preventDefault();
-    submitFnForm(wrapper.dataset.fnName);
-  }
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.target.classList.contains('fn-form-input')) {
-    e.preventDefault();
-    submitFnForm(wrapper.dataset.fnName);
-  }
-});
-
-// Auto-resize is handled inside the React Composer via a useEffect
-// driven by the controlled value — init.js no longer wires it.
+// The chat textarea + function form both live in the React Composer
+// (web/components/chat/composer.tsx, web/components/chat/fn-form.tsx).
+// Enter / Escape / Cmd-Enter handling is in those components; init.js
+// no longer wires anything to the input wrapper.
 
 // ===== Keepalive =====
 setInterval(function() {

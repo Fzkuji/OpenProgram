@@ -85,6 +85,13 @@ function _channelIcon(plat) {
 window._channelIcon = _channelIcon;
 
 function renderSessions() {
+  // React owns this rendering now (components/sidebar/sessions-list.tsx).
+  // Early return so legacy callers (WS sessions_list handler, etc.)
+  // don't fight the React reconciler by overwriting #convList with
+  // innerHTML strings.
+  return;
+}
+function _legacyRenderSessions_deprecated() {
   var container = document.getElementById('convList');
   var html = '';
   var convs = Object.values(conversations).sort(function(a, b) { return (b.created_at || 0) - (a.created_at || 0); });

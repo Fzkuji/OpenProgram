@@ -310,6 +310,23 @@ div:has(> .memory-icon-wrap):hover .memory-icon-wrap svg {
   max-height: calc(32px * 4 + 3px);
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-width: none;
+}
+.sidebar-panel-list::-webkit-scrollbar { display: none; }
+
+/* Hide native scrollbars on every scrollable area inside the sidebar.
+   `scrollbar.js` installs a custom overlay thumb on top. */
+.sidebar-fav-list,
+.sidebar-conv-list,
+.sidebar-conversations,
+.sidebar-favorites {
+  scrollbar-width: none;
+}
+.sidebar-fav-list::-webkit-scrollbar,
+.sidebar-conv-list::-webkit-scrollbar,
+.sidebar-conversations::-webkit-scrollbar,
+.sidebar-favorites::-webkit-scrollbar {
+  display: none;
 }
 
 /* Favorites section */

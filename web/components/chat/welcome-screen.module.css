@@ -7,17 +7,23 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   color: var(--text-secondary);
-  padding: 40px;
+  padding: 40px 40px 0;
 }
 
+/* Top section (logo + title + description) sits at a fixed
+   viewport-relative offset from the top of the welcome area so it
+   stays put even as the wrapper below grows when a function form
+   opens. `flex-shrink: 0` keeps the natural content height; the
+   examples row uses `margin-top: auto` to anchor itself to the bottom
+   of the welcome region (right above the composer). */
 .top {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 16px;
+  margin-top: 20vh;
+  flex-shrink: 0;
 }
 
 .logo {
@@ -106,17 +112,37 @@
   line-height: 1.6;
 }
 
-/* Example-button row — sits just under the welcome card, just above
-   the composer when the welcome is visible. */
+/* Example-button row — sits just above the composer when the welcome
+   panel is visible. `.top` above grows to fill the rest of the chat
+   area, so this row stays anchored to the bottom of the welcome
+   region (which is directly above the composer wrapper). */
 .examples {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 24px 24px 0;
+  padding: 24px 24px 12px;
   justify-content: center;
   max-width: 800px;
-  margin: 0 auto;
-  transition: opacity 200ms ease;
+  /* `margin-top: auto` anchors this row to the bottom of `.welcome`
+     (i.e. directly above the composer) — without it the row sticks
+     to `.top` and leaves a big gap below. */
+  margin: auto auto 0;
+  flex-shrink: 0;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.18s ease,
+    transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+/* Collapsed state — triggered when the function-form opens. The row
+   slides down toward the composer and fades out, mirroring the
+   legacy welcome-examples drop animation. `visibility: hidden` after
+   the transition removes the row from focus / hit-testing while
+   keeping the layout slot intact. */
+.examples[data-collapsed="true"] {
+  opacity: 0;
+  transform: translateY(24px);
+  pointer-events: none;
 }
 :global(body.slash-menu-open) .examples {
   opacity: 0;

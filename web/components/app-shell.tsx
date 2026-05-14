@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
-import { UserMenuFooter } from "./user-menu-footer";
+import { Sidebar } from "./sidebar/sidebar";
+import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { Composer } from "./chat/composer";
+import { TopBar } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
 import { useSessionStore } from "@/lib/session-store";
 
@@ -18,14 +20,14 @@ import { useSessionStore } from "@/lib/session-store";
 const SHARED_JS = [
   "shared/state.js",
   "shared/helpers.js",
-  "shared/sidebar.js",
   "shared/conversations.js",
   "shared/programs-panel.js",
-  "shared/fn-form.js",
   "shared/providers.js",
   "shared/ui.js",
   "shared/scrollbar.js",
-  "shared/right-dock.js",
+  // `shared/right-dock.js` is no longer loaded — `<RightSidebar />`
+  // owns open/close + view switching now and installs the
+  // `window.rightDock` shim itself for any still-vanilla callers.
   "shared/history-graph.js",
 ];
 
@@ -102,13 +104,8 @@ function isChatRoute(pathname: string) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const rightSidebarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
-  // Mount target for the React UserMenuFooter portal. Set after the
-  // legacy sidebar HTML lands in the DOM. Re-checked on every render
-  // (and explicitly bumped after sidebar inject) so we don't miss it.
   // Expose the React store to the legacy JS scripts so they can write
   // through to it. Each legacy caller that touches React-owned state
   // (setWelcomeVisible, welcome example clicks once migrated, etc.)
@@ -123,28 +120,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const [userMenuMount, setUserMenuMount] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    if (userMenuMount) return;
-    let cancelled = false;
-    function findMount() {
-      const el = document.getElementById("userMenuFooterMount");
-      if (el && !cancelled) {
-        setUserMenuMount(el);
-        return true;
-      }
-      return false;
-    }
-    if (findMount()) return;
-    const t = setInterval(() => {
-      if (findMount()) clearInterval(t);
-    }, 100);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [userMenuMount]);
-
   // Mount targets for chat-page React portals. PageShell injects
   // `<div id="composer-mount">` and `<div id="welcome-mount">`
   // placeholders into the legacy template; we portal React into each.
@@ -152,17 +127,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // its HTML on route entry.
   const [composerMount, setComposerMount] = useState<HTMLElement | null>(null);
   const [welcomeMount, setWelcomeMount] = useState<HTMLElement | null>(null);
+  const [topbarMount, setTopbarMount] = useState<HTMLElement | null>(null);
   useEffect(() => {
     let cancelled = false;
     setComposerMount(null);
     setWelcomeMount(null);
+    setTopbarMount(null);
     function findMounts() {
       const composer = document.getElementById("composer-mount");
       const welcome = document.getElementById("welcome-mount");
+      const topbar = document.getElementById("topbar-mount");
       if (cancelled) return false;
       if (composer) setComposerMount(composer);
       if (welcome) setWelcomeMount(welcome);
-      return !!(composer && welcome);
+      if (topbar) setTopbarMount(topbar);
+      return !!(composer && welcome && topbar);
     }
     if (findMounts()) return;
     const t = setInterval(() => {
@@ -232,10 +211,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const detailTitle = document.getElementById("detailTitle");
       if (detailTitle) detailTitle.textContent = "";
     }
-    // Depend on userMenuMount so this re-runs once the sidebar HTML lands.
-    // Otherwise on hard refresh, the first run finds no #navMemory etc.
-    // (sidebar is injected asynchronously) and the .active class is never set.
-  }, [pathname, userMenuMount]);
+    // The React `<Sidebar />` renders nav items synchronously on mount,
+    // so depending on `pathname` alone is sufficient now — no need to
+    // wait for an async HTML inject before the first .active sync.
+  }, [pathname]);
 
   useEffect(() => {
     // Expose a client-side navigation helper vanilla JS can call instead of
@@ -256,7 +235,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
     document.addEventListener("click", onClick);
 
-    // First-mount init: inject sidebar HTML + load external libs + shared JS.
+    // First-mount init: load external libs + shared JS. Both the left
+    // sidebar and the right sidebar are real React components now
+    // (`<Sidebar />` / `<RightSidebar />` below), so no `_*.html`
+    // fetch+inject is needed at this stage.
     const w = window as unknown as { __sharedScriptsReady?: Promise<void> };
     if (!w.__sharedScriptsReady) {
       w.__sharedScriptsReady = (async () => {
@@ -264,10 +246,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css"
         );
 
-        // Kick off all network fetches in parallel: sidebar HTML, 3 CDN libs,
-        // and 13 inline scripts. Serial `await` in the old version made this
-        // ~13 sequential round trips on every hard refresh.
-        const sidebarP = fetch("/html/_sidebar.html").then((r) => r.text());
+        // Kick off all network fetches in parallel: 3 CDN libs + inline
+        // scripts. Serial `await` in the old version made this ~13
+        // sequential round trips on every hard refresh.
         const externalsP = Promise.all(EXTERNAL_LIBS.map(loadExternalScript));
         const inlineSources = SHARED_JS.map((name) => `/js/${name}`);
         const inlineFetches = await Promise.all(inlineSources.map(fetchInlineScript));
@@ -279,44 +260,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           if (f) injectInlineScript(f.src, f.code);
         }
 
-        const sidebarHtml = await sidebarP;
-        if (sidebarRef.current) sidebarRef.current.innerHTML = sidebarHtml;
-        // Reapply persisted collapsed state immediately after inject so
-        // a refresh doesn't momentarily flash the default layout.
-        const wr = window as unknown as {
-          restoreSidebarState?: () => void;
-          rightDock?: { restore?: () => void };
-        };
-        if (wr.restoreSidebarState) wr.restoreSidebarState();
-        // Right sidebar fetched + injected alongside the left. Kept on
-        // AppShell so chat routes see one persistent instance across
-        // conversation switches.
-        const rightHtml = await fetch("/html/_right-sidebar.html").then((r) => r.text());
-        if (rightSidebarRef.current) rightSidebarRef.current.innerHTML = rightHtml;
-        if (wr.rightDock?.restore) wr.rightDock.restore();
         await externalsP;
       })();
-    } else {
-      const wr = window as unknown as {
-        restoreSidebarState?: () => void;
-        rightDock?: { restore?: () => void };
-      };
-      if (sidebarRef.current && !sidebarRef.current.innerHTML) {
-        fetch("/html/_sidebar.html")
-          .then((r) => r.text())
-          .then((html) => {
-            if (sidebarRef.current) sidebarRef.current.innerHTML = html;
-            if (wr.restoreSidebarState) wr.restoreSidebarState();
-          });
-      }
-      if (rightSidebarRef.current && !rightSidebarRef.current.innerHTML) {
-        fetch("/html/_right-sidebar.html")
-          .then((r) => r.text())
-          .then((html) => {
-            if (rightSidebarRef.current) rightSidebarRef.current.innerHTML = html;
-            if (wr.rightDock?.restore) wr.rightDock.restore();
-          });
-      }
     }
 
     return () => {
@@ -327,7 +272,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showChat = isChatRoute(pathname);
   return (
     <div className="app">
-      <div ref={sidebarRef} style={{ display: "contents" }} />
+      <Sidebar />
       <div className="col-resize" id="sidebarResize"></div>
       {/* Chat shell is mounted ONCE at the layout level and kept alive
          across /chat ↔ /c/:id navigations. Hidden (not unmounted) when
@@ -338,14 +283,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       {/* Non-chat routes render their own page content via the router. */}
       {!showChat && children}
-      {/* Right sidebar — persistent across conversations. */}
-      <div
-        ref={rightSidebarRef}
-        style={{ display: showChat ? "contents" : "none" }}
-      />
-      {userMenuMount && createPortal(<UserMenuFooter />, userMenuMount)}
+      {/* Right sidebar — persistent across conversations. Hidden (not
+         unmounted) on non-chat routes so its state survives. */}
+      <div style={{ display: showChat ? "contents" : "none" }}>
+        <RightSidebar />
+      </div>
       {composerMount && createPortal(<Composer />, composerMount)}
       {welcomeMount && createPortal(<WelcomeScreen />, welcomeMount)}
+      {topbarMount && createPortal(<TopBar />, topbarMount)}
     </div>
   );
 }

@@ -17,7 +17,7 @@ const PAGE_HTML: Record<Page, string> = {
 const JS_FILES_BY_PAGE: Record<Page, string[]> = {
   chat: [
     "chat/tree.js", "chat/tree-render.js", "chat/tree-retry.js", "chat/tree-log.js",
-    "chat/chat.js", "chat/chat-ws.js", "chat/workdir.js",
+    "chat/chat.js", "chat/chat-ws.js",
     "chat/message-actions.js", "chat/message-actions-edit.js", "chat/message-actions-nav.js",
     "chat/init.js",
   ],
@@ -96,6 +96,17 @@ function extractMainArea(bodyHtml: string): { main: string; inlineScripts: strin
    so the React portals (<Composer />, <WelcomeScreen />) land in the
    right spots inside #chatView. */
 function stripLegacyChatChrome(host: HTMLElement) {
+  // TopBar: index.html now ships a bare `<div id="topbar-mount"></div>`
+  // where `<div class="topbar" id="mainTopbar">` used to live. Replace
+  // it with a fresh empty div on every mount so the React portal renders
+  // into a clean node (no stale dataset / handlers / etc. surviving across
+  // re-injections).
+  const topbar = host.querySelector("#topbar-mount");
+  if (topbar) {
+    const fresh = document.createElement("div");
+    fresh.id = "topbar-mount";
+    topbar.replaceWith(fresh);
+  }
   const inputArea = host.querySelector(".input-area");
   if (inputArea) {
     const mount = document.createElement("div");
@@ -113,6 +124,12 @@ function stripLegacyChatChrome(host: HTMLElement) {
   if (chatMessages) {
     const wmount = document.createElement("div");
     wmount.id = "welcome-mount";
+    // `display: contents` makes the mount point invisible to layout —
+    // its child (<WelcomeScreen />) becomes a direct flex child of
+    // `#chatMessages` so the welcome panel can grow to fill the
+    // remaining height (and its bottom-anchored examples row sits
+    // right above the composer).
+    wmount.style.display = "contents";
     chatMessages.appendChild(wmount);
   }
 }

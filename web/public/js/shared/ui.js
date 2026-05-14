@@ -230,33 +230,31 @@ function stopExecution() {
 // ===== Thinking Effort =====
 
 function buildThinkingMenu() {
-  var cfg = _fnFormActive
-    ? (_agentSettings && _agentSettings.exec && _agentSettings.exec.thinking) || _thinkingConfig
-    : _thinkingConfig;
+  // The thinking selector now lives in the React Composer; legacy DOM
+  // (#thinkingMenu / #thinkingLabel / #thinkingSelector) is gone. This
+  // function is kept as a no-op for the few legacy code paths that
+  // still call it (providers.js after agent_settings update etc.).
+  var cfg = _thinkingConfig;
   if (!cfg) return;
   var menu = document.getElementById('thinkingMenu');
   var label = document.getElementById('thinkingLabel');
   var selector = document.getElementById('thinkingSelector');
   if (!menu || !label) return;
 
-  // Model-driven: empty options = this model doesn't support thinking.
-  // Hide the whole selector+menu instead of showing an empty dropdown.
   var options = (cfg.options || []).slice();
   if (!options.length) {
     if (selector) selector.style.display = 'none';
     menu.classList.remove('open');
-    if (_fnFormActive) _execThinkingEffort = null;
-    else _thinkingEffort = null;
+    _thinkingEffort = null;
     return;
   }
   if (selector) selector.style.display = '';
 
-  var currentEffort = _fnFormActive ? _execThinkingEffort : _thinkingEffort;
+  var currentEffort = _thinkingEffort;
   var values = options.map(function(o) { return o.value; });
   if (values.indexOf(currentEffort) < 0) {
     currentEffort = cfg.default || values[0];
-    if (_fnFormActive) _execThinkingEffort = currentEffort;
-    else _thinkingEffort = currentEffort;
+    _thinkingEffort = currentEffort;
   }
   label.textContent = 'effort: ' + currentEffort;
 
@@ -316,14 +314,12 @@ function toggleThinkingMenu(e) {
 }
 
 function setThinkingEffort(level) {
-  if (_fnFormActive) {
-    _execThinkingEffort = level;
-  } else {
-    _thinkingEffort = level;
-  }
+  _thinkingEffort = level;
   buildThinkingMenu();
-  document.getElementById('thinkingMenu').classList.remove('open');
-  document.getElementById('thinkingSelector').classList.remove('open');
+  var menu = document.getElementById('thinkingMenu');
+  var sel = document.getElementById('thinkingSelector');
+  if (menu) menu.classList.remove('open');
+  if (sel) sel.classList.remove('open');
 }
 
 // ===== Plus menu (+ popover in chat input) =====

@@ -1985,54 +1985,6 @@ body.slash-menu-open .welcome-examples {
   overflow-y: auto;
 }
 
-/* workdir — button + path input, styled like welcome-example chips */
-.workdir-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-.workdir-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 10px;
-  background: var(--bg-primary);
-  border: 0.5px solid var(--border);
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: var(--font-sans);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-.workdir-btn svg { flex-shrink: 0; color: var(--text-secondary); }
-.workdir-btn:hover {
-  border-color: transparent;
-  background: var(--bg-hover-contrast);
-  color: var(--text-bright);
-}
-.workdir-btn:hover svg { opacity: 1; }
-.workdir-input {
-  flex: 1 1 auto;
-  height: 32px;
-  padding: 0 10px;
-  background: var(--bg-primary);
-  border: 0.5px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-bright);
-  font-family: var(--font-mono);
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.15s;
-  min-width: 0;
-}
-.workdir-input:focus { border-color: var(--border-light); }
-.workdir-input::placeholder { color: var(--text-muted); font-family: var(--font-sans); }
-.workdir-input-error { border-color: var(--accent-red); }
 .fn-form-footer {
   display: flex;
   align-items: center;

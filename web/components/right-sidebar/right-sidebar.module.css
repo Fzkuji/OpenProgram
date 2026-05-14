@@ -1,0 +1,11 @@
+/* React Right Sidebar — companion module to
+   web/app/styles/09-right-dock.css. All visual rules for the right
+   sidebar shell, icon rail, view host, history graph and branches
+   panel live in the global stylesheet (so the still-loaded legacy
+   right-dock.js + history-graph.js + conversations.js paint into the
+   same DOM with the same look).
+
+   This module is intentionally empty — we keep it around as the
+   companion file for the React component (mirrors the left
+   sidebar.module.css convention) so future React-only overrides have
+   a home that doesn't pollute the global cascade. */

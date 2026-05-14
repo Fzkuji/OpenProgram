@@ -9,6 +9,13 @@ async function loadProgramsMeta() {
 }
 
 function renderFunctions() {
+  // React owns this rendering now (components/sidebar/favorites-list.tsx).
+  // Early return so legacy callers (refreshFunctions, WS functions_list
+  // handler, etc.) don't fight the React reconciler by overwriting
+  // #favList with innerHTML strings.
+  return;
+}
+function _legacyRenderFunctions_deprecated() {
   var container = document.getElementById('favList');
   var section = document.getElementById('favSection');
   if (!container || !section) return;
@@ -78,6 +85,11 @@ async function fixFunction(name) {
 
 // ===== Function Form =====
 
+function _storeState() {
+  var s = window.__sessionStore;
+  return (s && typeof s.getState === 'function') ? s.getState() : null;
+}
+
 function clickFunction(name, category) {
   var fn = availableFunctions.find(function(f) { return f.name === name; });
   if (!fn) return;
@@ -88,48 +100,23 @@ function clickFunction(name, category) {
     if (window.__navigate) window.__navigate('/chat');
     return;
   }
-  // showFnForm targets the legacy .input-wrapper DOM. The Composer is
-  // now React-rendered with CSS-Module class names, so the legacy
-  // selector misses. Until the fn-form gets migrated, fall back to
-  // pre-filling the Composer with "run <name> " so the click still
-  // gives the user a useful starting point.
-  var legacyWrapper = document.querySelector('.input-wrapper');
-  if (!legacyWrapper) {
-    setInput('run ' + name + ' ');
-    return;
-  }
-  showFnForm(fn);
+  var state = _storeState();
+  if (state) state.openFnForm(fn);
 }
 
 function clickFnExample(fnName) {
   var fn = availableFunctions.find(function(f) { return f.name === fnName; });
-  var legacyWrapper = document.querySelector('.input-wrapper');
-  if (fn && legacyWrapper) {
-    showFnForm(fn);
-  } else {
-    setInput('run ' + fnName + ' ');
-  }
+  if (!fn) return;
+  var state = _storeState();
+  if (state) state.openFnForm(fn);
 }
 
 function setInput(text) {
-  if (_fnFormActive) closeFnForm();
-  // Composer's input value lives in the React store now. Forward
-  // through; the Composer's useEffect on composerInput drives the
-  // textarea, and focusComposer() bumps the focus tick so the
-  // textarea takes focus.
-  var store = window.__sessionStore;
-  if (store && typeof store.getState === 'function') {
-    var s = store.getState();
-    s.setComposerInput(text);
-    s.focusComposer();
-    return;
-  }
-  // Fallback if the store hasn't attached yet (e.g. legacy-only page).
-  var input = document.getElementById('chatInput');
-  if (input) {
-    input.value = text;
-    input.focus();
-    if (typeof autoResize === 'function') autoResize(input);
+  var state = _storeState();
+  if (state) {
+    if (state.fnFormFunction) state.closeFnForm();
+    state.setComposerInput(text);
+    state.focusComposer();
   }
 }
 

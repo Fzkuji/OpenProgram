@@ -7,14 +7,12 @@
  * session store says so; mounted as a portal inside #welcome-mount
  * placeholder that PageShell leaves in the chat area.
  *
- * Example buttons currently fill the Composer with `run <name> ` and
- * focus it. The richer fn-form flow (interactive parameter form in
- * place of the input box) is still legacy and will be migrated in a
- * later slice.
+ * Example buttons hand off to `clickFnExample` which now opens the
+ * React FunctionForm in the Composer.
  */
 "use client";
 
-import { useSessionStore } from "@/lib/session-store";
+import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 
 import styles from "./welcome-screen.module.css";
 
@@ -49,12 +47,31 @@ const EXAMPLES: Example[] = [
 
 export function WelcomeScreen() {
   const visible = useSessionStore((s) => s.welcomeVisible);
+  const openFnForm = useSessionStore((s) => s.openFnForm);
+  const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const setComposerInput = useSessionStore((s) => s.setComposerInput);
   const focusComposer = useSessionStore((s) => s.focusComposer);
 
   if (!visible) return null;
 
-  function pickExample(name: string) {
+  const collapsed = fnFormFunction !== null;
+
+  function pickExample(name: string, ev?: React.MouseEvent<HTMLButtonElement>) {
+    // Blur the clicked button BEFORE flipping state — once `collapsed`
+    // becomes true the example row gets `aria-hidden=true`, which
+    // browsers complain about if the focused element is inside.
+    if (ev?.currentTarget) ev.currentTarget.blur();
+    else if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    const w = window as unknown as { availableFunctions?: AgenticFunction[] };
+    const fn = (w.availableFunctions ?? []).find((f) => f.name === name);
+    if (fn) {
+      openFnForm(fn);
+      return;
+    }
+    // Functions list hasn't streamed in yet — fall back to filling the
+    // composer with "run <name> " so the click still does something.
     setComposerInput(`run ${name} `);
     focusComposer();
   }
@@ -76,13 +93,18 @@ export function WelcomeScreen() {
           command or natural language below.
         </div>
       </div>
-      <div className={styles.examples}>
+      <div
+        className={styles.examples}
+        data-collapsed={collapsed ? "true" : "false"}
+        aria-hidden={collapsed ? true : undefined}
+        inert={collapsed || undefined}
+      >
         {EXAMPLES.map((ex) => (
           <button
             key={ex.name}
             type="button"
             className={styles.example}
-            onClick={() => pickExample(ex.name)}
+            onClick={(e) => pickExample(ex.name, e)}
           >
             {ex.icon}
             {ex.label}

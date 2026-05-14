@@ -19,6 +19,38 @@
   --accent-purple: #a371f7;
   --accent-cyan: #3bc9db;
   --accent-orange: #d19a66;
+
+  /* ===== Composer / fn-form geometry tokens ============================
+     The chat input wrapper, its corner buttons (send / stop / close /
+     plus) and the function-form panel all share a single geometry so
+     every circular control is *concentric* with the wrapper's corner
+     radius. Change one token here and the whole composer re-aligns.
+
+     Design rule: every circular button (send / stop / close / plus) is
+     the same outer diameter — `--composer-button-size` — so they read
+     as a matched set regardless of border thickness. They're anchored
+     `(corner − size/2)` from the wrapper's edges so each button's
+     centre sits on the wrapper's corner-radius centre.
+
+       size       = 32  (outer diameter — borders counted in via
+                          `box-sizing: border-box`)
+       offset     = 16  (= corner − size/2 → centre at corner)
+       corner     = 32  (= size, so button outer is tangent to the
+                          wrapper's outer arc on the diagonal)
+  */
+  --composer-button-size: 32px;       /* every corner button — outer diameter */
+  --composer-button-offset: 16px;     /* edge distance: corner − size/2     */
+  --composer-corner: 32px;            /* wrapper border-radius = button size */
+  --composer-bottom-row-pad: 16px;    /* bottom-row padding all around      */
+  --composer-bottom-row-h: 64px;      /* size + 2 × pad = 32 + 32           */
+  --composer-wrapper-pad-x: 16px;     /* wrapper left/right padding         */
+  --composer-wrapper-pad-top: 16px;   /* wrapper top padding (chat mode)    */
+
+  /* Composer animation timings */
+  --composer-height-transition: 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+  --composer-fade-duration: 0.25s;
+  --composer-fade-delay-header: 0.10s;
+  --composer-fade-delay-body: 0.15s;
 }
 
 /* Dark theme (default) — based on Claude dark */
