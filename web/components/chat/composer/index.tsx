@@ -21,7 +21,7 @@ import {
   useState,
 } from "react";
 
-import { useSessionStore } from "@/lib/session-store";
+import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 
 import { ContextBadge } from "../context-badge";
 import {
@@ -74,6 +74,7 @@ interface ThinkingOption {
 
 const DEFAULT_THINKING: ThinkingEffort = "medium";
 const ANIM_MS = 380;
+const noop = () => {};
 
 function readThinkingOptions(): ThinkingOption[] {
   const w = window as unknown as {
@@ -128,6 +129,14 @@ export function Composer() {
   const [fnFormWorkdir, setFnFormWorkdir] = useState("");
   const [fnFormError, setFnFormError] = useState<string | null>(null);
   const [fnFormClosing, setFnFormClosing] = useState(false);
+  // `displayFn` lags the store's `fnFormFunction` by one render so we
+  // can capture the previous fn into `outgoingFn` before React replaces
+  // its DOM. Outgoing renders as an absolutely-positioned overlay that
+  // fades out while the new fn-form fades in underneath, giving a
+  // proper crossfade instead of a snap.
+  const [outgoingFn, setOutgoingFn] = useState<AgenticFunction | null>(null);
+  // Track the previous store value so we can spot A → B transitions.
+  const prevFnRef = useRef<AgenticFunction | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -153,6 +162,27 @@ export function Composer() {
     setFnFormWorkdir("");
     setFnFormError(null);
   }, [fnFormFunction]);
+
+  // Crossfade on fn-form switch: when the store flips from fn A to fn
+  // B (both non-null), stash A in `outgoingFn` so its DOM stays
+  // mounted as an absolute overlay while the new fn-form fades in
+  // underneath. The overlay's CSS animation drops opacity 1 → 0 over
+  // one composer fade duration; we clear `outgoingFn` shortly after
+  // (slightly longer than the fade so the unmount happens after the
+  // visual transition completes).
+  useLayoutEffect(() => {
+    const prev = prevFnRef.current;
+    prevFnRef.current = fnFormFunction;
+    if (prev && fnFormFunction && prev !== fnFormFunction) {
+      setOutgoingFn(prev);
+    }
+  }, [fnFormFunction]);
+
+  useEffect(() => {
+    if (!outgoingFn) return;
+    const id = setTimeout(() => setOutgoingFn(null), 300);
+    return () => clearTimeout(id);
+  }, [outgoingFn]);
 
   // Wrapper height transition — declarative CSS transition + a single
   // rAF to commit the "starting" height for the browser to interpolate
@@ -224,20 +254,63 @@ export function Composer() {
     }
     if (fnFormFunction) {
       setWrapperTransitioning(true);
-      el.style.height = `${chatHeightRef.current}px`;
-      const raf = requestAnimationFrame(() => {
-        const prev = el.style.height;
-        el.style.height = "";
-        const natural = el.scrollHeight;
-        el.style.height = prev;
+      // Starting height for the CSS transition:
+      //   * chat → fn-form: wrapper has no inline height (chat-mode
+      //     auto-sizes). Snap to the cached `chatHeight` first +
+      //     force a reflow so the browser registers it as the
+      //     transition origin.
+      //   * fn-form A → fn-form B: wrapper already has an inline
+      //     height equal to A's natural size — leave it untouched and
+      //     just transition straight to B's natural size below.
+      if (!el.style.height) {
+        el.style.height = `${chatHeightRef.current}px`;
         void el.offsetHeight;
-        el.style.height = `${natural}px`;
-        // Glide the action button from chat top (16) to fn-form bottom
-        // (natural − offset). Same CSS transition curve as the wrapper
-        // height so they stay in sync visually.
-        const btn = sendBtnRef.current;
-        if (btn) btn.style.top = `${natural - ACTION_BTN_BOTTOM_OFFSET}px`;
-      });
+      }
+      // Compute the target wrapper height by measuring the form
+      // contents directly. We CAN'T trust `body.scrollHeight` here:
+      // body has `flex:1 + overflow-y:auto`, so when the wrapper's
+      // inline height is currently large (e.g. a previous, taller fn
+      // is still showing), the body is also large and any small
+      // content (the new fn) fits inside it — scrollHeight ends up
+      // equal to body's box height, not its content size, which
+      // would lock the wrapper at the old big height.
+      //
+      // Workaround: temporarily take body out of the flex constraint
+      // and let it size to its content (`height:auto`, `flex:0 0
+      // auto`, `overflow:visible`), read its `offsetHeight`, then
+      // restore the inline styles.
+      const header = el.querySelector(
+        "[data-fn-form-header]",
+      ) as HTMLElement | null;
+      const body = el.querySelector(
+        "[data-fn-form-body]",
+      ) as HTMLElement | null;
+      const padBottom = parseFloat(getComputedStyle(el).paddingBottom);
+      let natural: number;
+      if (header && body) {
+        const prevBodyStyle = body.getAttribute("style") || "";
+        body.style.flex = "0 0 auto";
+        body.style.height = "auto";
+        body.style.maxHeight = "none";
+        body.style.minHeight = "auto";
+        body.style.overflow = "visible";
+        const bodyContentH = body.offsetHeight;
+        if (prevBodyStyle) {
+          body.setAttribute("style", prevBodyStyle);
+        } else {
+          body.removeAttribute("style");
+        }
+        natural = header.offsetHeight + bodyContentH + padBottom;
+      } else {
+        natural = el.scrollHeight;
+      }
+      el.style.height = `${natural}px`;
+      // Glide the action button from its current top (chat: 16, or
+      // previous fn-form's bottom) to the new fn-form bottom
+      // (natural − offset). Same CSS transition curve as the wrapper
+      // height so they stay in sync visually.
+      const btn = sendBtnRef.current;
+      if (btn) btn.style.top = `${natural - ACTION_BTN_BOTTOM_OFFSET}px`;
       const onEnd = (ev: TransitionEvent) => {
         if (ev.target !== el || ev.propertyName !== "height") return;
         setWrapperTransitioning(false);
@@ -245,7 +318,6 @@ export function Composer() {
       };
       el.addEventListener("transitionend", onEnd);
       return () => {
-        cancelAnimationFrame(raf);
         el.removeEventListener("transitionend", onEnd);
       };
     }
@@ -261,50 +333,13 @@ export function Composer() {
     el.style.height = "";
   }, [fnFormFunction]);
 
-  // Keep the wrapper's inline `height` in sync with the form's natural
-  // content size while it's open and idle (no transition running).
-  // Without this, anything that resizes the body after the open
-  // animation finishes — textarea auto-resize as the user types,
-  // validation messages appearing, etc. — leaves the wrapper stuck at
-  // its initial measurement, producing empty space below the content.
-  useEffect(() => {
-    if (!fnFormFunction || fnFormClosing || wrapperTransitioning) return;
-    const el = wrapperRef.current;
-    if (!el) return;
-    const header = el.querySelector(
-      "[data-fn-form-header]",
-    ) as HTMLElement | null;
-    const body = el.querySelector(
-      "[data-fn-form-body]",
-    ) as HTMLElement | null;
-    if (!header || !body) return;
-
-    let pending: number | null = null;
-    const sync = () => {
-      pending = null;
-      // Measure header + body + bottom-row reservation directly so we
-      // don't have to round-trip through clearing wrapper height.
-      const natural =
-        header.offsetHeight +
-        body.offsetHeight +
-        parseFloat(getComputedStyle(el).paddingBottom);
-      if (`${natural}px` === el.style.height) return;
-      el.style.height = `${natural}px`;
-      const btn = sendBtnRef.current;
-      if (btn) btn.style.top = `${natural - ACTION_BTN_BOTTOM_OFFSET}px`;
-    };
-    const schedule = () => {
-      if (pending !== null) return;
-      pending = requestAnimationFrame(sync);
-    };
-    const ro = new ResizeObserver(schedule);
-    ro.observe(header);
-    ro.observe(body);
-    return () => {
-      ro.disconnect();
-      if (pending !== null) cancelAnimationFrame(pending);
-    };
-  }, [fnFormFunction, fnFormClosing, wrapperTransitioning]);
+  // The wrapper's inline `height` is set ONCE per fn — by the open /
+  // switch useLayoutEffect — and stays put. We deliberately do NOT
+  // resize the wrapper when content inside the body changes (hovering
+  // a label to reveal its full description, validation message
+  // appearing, textarea autoresize, etc.); instead the body is
+  // `flex: 1` + `overflow-y: auto`, so it scrolls internally and the
+  // bottom row + divider stay locked at a fixed viewport position.
 
   // Hydrate tools / web-search toggles from localStorage.
   useEffect(() => {
@@ -649,7 +684,11 @@ export function Composer() {
       >
         {fnFormFunction ? (
           <FunctionForm
-            key="top-half"
+            // `key` ties to fn name so React re-mounts on every
+            // switch — the freshly mounted header/body run their own
+            // fadeIn animation, completing the crossfade with the
+            // outgoing overlay below.
+            key={fnFormFunction.name}
             fn={fnFormFunction}
             values={fnFormValues}
             setValue={(name, v) => {
@@ -679,6 +718,31 @@ export function Composer() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
+            />
+          </div>
+        )}
+        {/* Outgoing fn-form overlay — only present during a fn → fn
+            switch. Rendered AFTER the main form so that
+            `querySelector('[data-fn-form-header]')` in the wrapper
+            height measurement matches the main form first (the
+            outgoing layer's cloned header/body would otherwise lock
+            wrapper height to the previous form's size). Absolute +
+            z-index 1 still puts it visually on top during the fade. */}
+        {outgoingFn && (
+          <div
+            key={`${outgoingFn.name}-outgoing`}
+            className={styles.outgoingLayer}
+            aria-hidden="true"
+          >
+            <FunctionForm
+              fn={outgoingFn}
+              values={{}}
+              setValue={noop}
+              workdir=""
+              setWorkdir={noop}
+              errorParam={null}
+              onClose={noop}
+              onSubmit={noop}
             />
           </div>
         )}

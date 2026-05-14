@@ -138,6 +138,22 @@
   opacity: 0;
   animation: fnFormFadeIn var(--composer-fade-duration) ease
     var(--composer-fade-delay-body) forwards;
+  /* Pin the body to the middle of the wrapper:
+     - `flex: 1` fills the remaining flex column space between the
+       fixed-size header (`flex-shrink: 0`) above and the absolutely-
+       positioned bottom row below. That keeps body.bottom flush
+       against the bottom row, so the divider sits at a fixed
+       viewport position — it never jiggles when content inside
+       changes (e.g. label hover-expand, validation message appears).
+     - `min-height: 0` is required so a flex child can shrink below
+       its content size; without it, body's natural height becomes a
+       lower bound and the wrapper would grow when the body grows.
+     - `overflow-y: auto` lets the form scroll internally if its
+       intrinsic content exceeds the body's allotted height. The
+       wrapper height stays put. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .field {
   display: flex;

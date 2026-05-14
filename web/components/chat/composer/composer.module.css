@@ -59,6 +59,37 @@
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.10);
 }
 
+/* Crossfade overlay shown briefly during fn-form A → fn-form B
+   switches. Sits on top of the new form (z-index 1, same as
+   `.inputBottomRow`) and fades opacity 1→0 over one composer fade
+   duration. `inset: 0` + `bottom: --composer-bottom-row-h` lets it
+   cover the header + body region only, leaving the bottom row
+   visible underneath. */
+.outgoingLayer {
+  position: absolute;
+  inset: 0;
+  bottom: var(--composer-bottom-row-h);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  background: var(--bg-tertiary);
+  border-radius: var(--composer-corner) var(--composer-corner) 0 0;
+  animation: outgoingLayerFade var(--composer-fade-duration) ease forwards;
+}
+/* Suppress the cloned header/body's own fadeIn animation — we want
+   them visible at opacity 1 while the LAYER fades from 1 to 0. */
+.outgoingLayer [data-fn-form-header],
+.outgoingLayer [data-fn-form-body] {
+  animation: none;
+  opacity: 1;
+}
+@keyframes outgoingLayerFade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 @media (prefers-color-scheme: dark) {
   .inputWrapper:focus-within {
     box-shadow: 0 4px 18px rgba(255, 255, 255, 0.06);
