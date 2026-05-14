@@ -395,7 +395,9 @@
   opacity: 1;
 }
 
-/* Plus dropdown */
+/* Plus dropdown. Shadow stack mirrors shadcn's `shadow-md` (a soft 1-2px
+   ambient + a wider 12-24px diffuse) instead of one heavy 16px / 0.32 alpha
+   drop, which read as too dark on the light theme's beige surface. */
 .plusMenu {
   position: absolute;
   bottom: 100%;
@@ -406,7 +408,10 @@
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 6px -2px rgba(0, 0, 0, 0.06),
+    0 12px 24px -8px rgba(0, 0, 0, 0.1);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -477,16 +482,24 @@
 .thinkingArrow {
   flex-shrink: 0;
 }
+/* Thinking-effort dropdown. Same soft shadow stack as `.plusMenu` above.
+   `min-width` is sized to the longest label (`minimal`, `medium`, etc.)
+   plus comfortable side padding — without it the menu auto-shrunk to
+   ~88px and felt cramped. Rounded to 12px for parity with `.plusMenu`. */
 .thinkingMenu {
   position: absolute;
   bottom: 100%;
   left: 60px;
   margin-bottom: 4px;
+  min-width: 160px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32);
-  padding: 4px;
+  border-radius: 12px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 6px -2px rgba(0, 0, 0, 0.06),
+    0 12px 24px -8px rgba(0, 0, 0, 0.1);
+  padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -496,11 +509,14 @@
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-size: 13px;
-  padding: 6px 14px;
+  font-size: 14px;
+  line-height: 20px;
+  padding: 6px 12px;
+  min-height: 32px;
   text-align: left;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .thinkingMenuItem:hover {
   background: var(--bg-hover);
