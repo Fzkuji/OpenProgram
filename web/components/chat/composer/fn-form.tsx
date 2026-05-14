@@ -47,6 +47,10 @@ interface FunctionFormProps {
   closing?: boolean;
   onClose: () => void;
   onSubmit: () => void;
+  /** When true, suppress `id` attributes on the form inputs so the
+      ghost overlay (rendered alongside the main form during fn→fn
+      crossfade) doesn't duplicate input IDs in the DOM. */
+  ghost?: boolean;
 }
 
 export function FunctionForm({
@@ -59,6 +63,7 @@ export function FunctionForm({
   closing,
   onClose,
   onSubmit,
+  ghost,
 }: FunctionFormProps) {
   const params = visibleParams(fn);
   const workdirMode = fn.workdir_mode ?? "optional";
@@ -179,6 +184,7 @@ export function FunctionForm({
             onChange={setWorkdir}
             onPick={pickWorkdir}
             error={errorParam === "__workdir"}
+            noId={ghost}
           />
         )}
         {params.length === 0 ? (
@@ -193,6 +199,7 @@ export function FunctionForm({
               value={values[p.name] ?? ""}
               setValue={(v) => setValue(p.name, v)}
               error={errorParam === p.name}
+              noId={ghost}
             />
           ))
         )}
@@ -206,11 +213,13 @@ function WorkdirRow({
   onChange,
   onPick,
   error,
+  noId,
 }: {
   value: string;
   onChange: (v: string) => void;
   onPick: () => void;
   error: boolean;
+  noId?: boolean;
 }) {
   return (
     <div className={styles.workdirRow}>
@@ -225,7 +234,7 @@ function WorkdirRow({
       </button>
       <input
         type="text"
-        id="fn-form-workdir"
+        {...(noId ? {} : { id: "fn-form-workdir" })}
         name="work_dir"
         className={`${styles.workdirInput} ${error ? styles.workdirError : ""}`}
         placeholder="/path/to/your/project"

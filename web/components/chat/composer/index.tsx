@@ -448,6 +448,11 @@ export function Composer() {
               errorParam={null}
               onClose={noop}
               onSubmit={noop}
+              // Outgoing crossfade copy — strip input `id`s so the
+              // browser doesn't complain about duplicate-id form
+              // fields while both the live and ghost forms are
+              // mounted simultaneously during the fade.
+              ghost
             />
           </div>
         )}

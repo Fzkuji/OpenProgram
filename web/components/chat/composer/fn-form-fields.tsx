@@ -21,11 +21,15 @@ export function FieldRow({
   value,
   setValue,
   error,
+  noId,
 }: {
   param: FnParam;
   value: string;
   setValue: (v: string) => void;
   error: boolean;
+  /** When true, suppress the generated `id` attribute so the ghost
+      overlay's inputs don't collide with the live form's. */
+  noId?: boolean;
 }) {
   const defaultVal = stripQuotes(p.default ?? "");
   const isBool = p.type === "bool" || p.type === "boolean";
@@ -62,7 +66,7 @@ export function FieldRow({
     setValue(ghost);
   };
 
-  const fieldId = `fn-field-${p.name}`;
+  const fieldId = noId ? undefined : `fn-field-${p.name}`;
   let node: ReactNode;
   if (isBool) {
     node = <BoolToggle value={value} onChange={setValue} />;

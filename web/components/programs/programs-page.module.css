@@ -163,13 +163,17 @@
   color: var(--text-bright);
 }
 
-/* Folders nav */
+/* Folders nav. The folder rows match the left sidebar's nav rows
+   (`components/sidebar/nav-classes.ts::sidebarNavItemClass`) — same
+   32px height, 6px corner, `--nav-color` text + `--nav-color-hover`
+   on hover/active, 150ms transition. `gap: 1px` between rows so
+   they read as a stacked group with subtle separation. */
 .foldersNav {
   width: 100%;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 1px;
   /* Fill the column height so the right divider spans the full body. */
   align-self: stretch;
   position: sticky;
@@ -194,17 +198,17 @@
   font-size: 14px;
   font-weight: 400;
   color: var(--nav-color);
-  border-radius: 8px;
-  transition: background 75ms, color 75ms;
+  border-radius: 6px;
+  transition: background 150ms ease-out, color 150ms ease-out;
   white-space: nowrap;
 }
 .folderItem:hover {
   background: var(--bg-hover);
-  color: var(--text-primary);
+  color: var(--nav-color-hover);
 }
 .folderItem.active {
-  color: var(--text-bright);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
+  color: var(--nav-color-hover);
 }
 .folderItem.dragOver {
   background: rgba(24, 169, 107, 0.08);
