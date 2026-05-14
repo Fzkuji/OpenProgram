@@ -95,6 +95,7 @@ def _append_function_call_entry(
     function_name: str,
     arguments: dict,
     expose: str,
+    render_range,
     entry_head,
     started_at,
 ) -> None:
@@ -103,6 +104,11 @@ def _append_function_call_entry(
     The node has ``output=None`` (function hasn't returned yet) and
     ``metadata.status='running'``. The matching
     :func:`_update_function_call_exit` fills these in at exit.
+
+    ``render_range`` is stamped into metadata so the runtime's
+    ``compute_reads`` (which reads frame settings off the in-DAG code
+    Call) can apply depth / siblings limits without needing a separate
+    in-memory frame object.
 
     No-op when:
       - the active runtime has no DAG store attached (standalone)
@@ -115,6 +121,12 @@ def _append_function_call_entry(
 
     from openprogram.context.nodes import Call, ROLE_CODE
 
+    meta: dict = {
+        "expose": expose,
+        "status": "running",
+    }
+    if render_range:
+        meta["render_range"] = dict(render_range)
     node = Call(
         id=pending_id,
         created_at=started_at or time.time(),
@@ -123,10 +135,7 @@ def _append_function_call_entry(
         input=_sanitize_function_args(arguments or {}),
         output=None,
         called_by=entry_head or "",
-        metadata={
-            "expose": expose,
-            "status": "running",
-        },
+        metadata=meta,
     )
     try:
         runtime.append_node(node)
@@ -445,6 +454,7 @@ class agentic_function:
                 function_name=fn.__name__,
                 arguments=ctx.params,
                 expose=expose,
+                render_range=render_range,
                 entry_head=_entry_head,
                 started_at=ctx.start_time,
             )
@@ -552,6 +562,7 @@ class agentic_function:
                 function_name=fn.__name__,
                 arguments=ctx.params,
                 expose=expose,
+                render_range=render_range,
                 entry_head=_entry_head,
                 started_at=ctx.start_time,
             )

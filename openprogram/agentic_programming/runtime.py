@@ -272,6 +272,80 @@ class Runtime:
         except Exception:
             pass
 
+    def _render_dag_messages_for_exec(self, content) -> Optional[list]:
+        """Build the provider message list for an in-progress exec()
+        from the attached GraphStore.
+
+        Returns ``None`` when no store is attached — callers fall back
+        to the tree-Context render path.
+
+        Algorithm:
+          1. Load the current DAG snapshot from the store.
+          2. Find the active @agentic_function frame (if any) via
+             ``_current_function_frame`` ContextVar — pull its node
+             from the graph, read seq + metadata.render_range.
+          3. Compute reads with that frame_entry_seq + render_range.
+          4. Render reads → pi-ai messages.
+          5. Append a fresh UserMessage built from ``content`` for
+             the turn that's about to fire.
+        """
+        if self.store is None:
+            return None
+
+        try:
+            from openprogram.context.nodes import compute_reads
+            from openprogram.context.render import render_dag_messages
+            from openprogram.providers.types import UserMessage, TextContent
+            # Local import: function.py drags openprogram.providers
+            # registry via _inject_runtime; importing it at module
+            # load creates a cycle.
+            from openprogram.agentic_programming.function import (
+                _current_function_frame,
+            )
+
+            graph = self.store.load()
+            frame_node_id = _current_function_frame.get(None)
+            frame_entry_seq = -1
+            render_range = None
+            if frame_node_id and frame_node_id in graph.nodes:
+                frame_node = graph.nodes[frame_node_id]
+                frame_entry_seq = frame_node.seq
+                render_range = (frame_node.metadata or {}).get(
+                    "render_range"
+                )
+
+            head_seq = max(
+                (n.seq for n in graph.nodes.values()), default=-1,
+            )
+            read_ids = compute_reads(
+                graph,
+                head_seq=head_seq,
+                frame_entry_seq=frame_entry_seq,
+                render_range=render_range,
+            )
+            history = render_dag_messages(graph, read_ids)
+
+            # Synthesize the current turn from ``content`` blocks. Most
+            # callers pass a single ``{"type":"text","text":"..."}``
+            # block; we concatenate all text blocks and skip non-text
+            # ones for now (multimodal is a future extension).
+            text_parts: list[str] = []
+            for block in content or []:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text_parts.append(block.get("text", ""))
+            current_text = "\n".join(p for p in text_parts if p)
+            import time as _time
+            current_msg = UserMessage(
+                role="user",
+                content=[TextContent(type="text", text=current_text)],
+                timestamp=int(_time.time() * 1000),
+            )
+            return history + [current_msg]
+        except Exception:
+            # If anything goes wrong building DAG messages, fall back
+            # to the legacy render_messages path. Never break exec().
+            return None
+
     def _record_llm_call(
         self,
         *,
@@ -722,7 +796,20 @@ class Runtime:
             # Explicit `tools=[]` — caller wanted no tools, honour it.
             agent_tools = None
 
-        if exec_ctx is not None:
+        # Prompt-composition source: prefer the DAG when a store is
+        # attached, fall back to the tree-Context render_messages
+        # path for standalone runs / legacy callers.
+        dag_messages = self._render_dag_messages_for_exec(content)
+        if dag_messages is not None:
+            # DAG path. The last message is the current turn's input
+            # (synthesized from ``content``).
+            system_prompt = (
+                _find_system_prompt(exec_ctx.parent)
+                if exec_ctx is not None else ""
+            ) or ""
+            history = dag_messages[:-1]
+            current = dag_messages[-1]
+        elif exec_ctx is not None:
             messages = exec_ctx.render_messages()
             system_prompt = _find_system_prompt(exec_ctx.parent) or ""
             history = messages[:-1]
