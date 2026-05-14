@@ -782,12 +782,28 @@ const ThinkingEffortPill = React.forwardRef<
             // `aria-hidden` on the icon since the slider Root
             // already announces value/min/max.
             thumb={
-              <Lightning
-                size={lightningSize}
-                weight="fill"
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active)] pointer-events-none transition-[width,height] duration-150 ease-out"
-                aria-hidden="true"
-              />
+              <>
+                {/* Mask circle painted in the expanded pill's
+                    background colour — sits underneath the bolt and
+                    visually "cuts" the slider track + any tick at
+                    the thumb's position so the bolt doesn't have a
+                    line running through it. Sized 4px wider than
+                    the bolt so the cut feels generous, not flush. */}
+                <span
+                  aria-hidden="true"
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover transition-[width,height] duration-150 ease-out"
+                  style={{
+                    width: lightningSize + 4,
+                    height: lightningSize + 4,
+                  }}
+                />
+                <Lightning
+                  size={lightningSize}
+                  weight="fill"
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active)] pointer-events-none transition-[width,height] duration-150 ease-out"
+                  aria-hidden="true"
+                />
+              </>
             }
             className="flex-1"
           />
