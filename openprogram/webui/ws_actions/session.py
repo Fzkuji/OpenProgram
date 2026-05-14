@@ -152,16 +152,9 @@ async def handle_load_session(ws, cmd: dict):
                     _s._running_tasks.pop(session_id, None)
                 task_info = None
         if task_info:
-            partial_tree = None
-            loaded_ref = task_info.get("loaded_func_ref")
-            if loaded_ref:
-                try:
-                    ctx = _s._get_last_ctx(loaded_ref)
-                    if ctx:
-                        partial_tree = ctx._to_dict()
-                        partial_tree["_in_progress"] = True
-                except Exception:
-                    pass
+            # Live partial-tree snapshot retired with the tree-Context
+            # event system. The DAG nodes the function has produced so
+            # far are already queryable via the GraphStore.
             await ws.send_text(json.dumps({
                 "type": "running_task",
                 "data": {
@@ -170,7 +163,7 @@ async def handle_load_session(ws, cmd: dict):
                     "func_name": task_info["func_name"],
                     "started_at": task_info["started_at"],
                     "display_params": task_info.get("display_params", ""),
-                    "partial_tree": partial_tree,
+                    "partial_tree": None,
                     "stream_events": task_info.get("stream_events", []),
                 },
             }, default=str))

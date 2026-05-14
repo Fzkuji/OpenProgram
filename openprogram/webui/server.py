@@ -596,8 +596,6 @@ from openprogram.webui._functions import (
     _extract_all_functions,
     _inject_runtime,
     _format_result,
-    _find_node_by_path,
-    _find_in_tree,
     _FunctionStub,
     _make_stub_from_file,
     _load_function,

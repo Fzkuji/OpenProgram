@@ -21,13 +21,13 @@ from fastapi.responses import JSONResponse
 def register(app):
     @app.get("/api/node/{path:path}")
     async def get_node(path: str):
-        from openprogram.webui import server as _s
-        trees = _s._get_full_tree()
-        for tree in trees:
-            node = _s._find_node_by_path(tree, path)
-            if node is not None:
-                return JSONResponse(content=node)
-        return JSONResponse(content={"error": "not found"}, status_code=404)
+        """Legacy tree-Context node lookup. Returns 410 — the tree
+        snapshot list it walked is gone; DAG-based node fetching will
+        replace this endpoint once the new viewer ships."""
+        return JSONResponse(
+            content={"error": "tree-Context node lookup retired"},
+            status_code=410,
+        )
 
     @app.get("/api/function/{name}/source")
     async def get_function_source(name: str):

@@ -173,22 +173,3 @@ def kill_active_runtime(session_id: str) -> None:
         pass
 
 
-# ---------------------------------------------------------------------------
-# Mark a cancelled tree's running nodes as errored (used on cancellation).
-# ---------------------------------------------------------------------------
-
-def mark_context_cancelled(ctx) -> None:
-    """Recursively mark every running node in the tree as cancelled."""
-    if ctx is None:
-        return
-    try:
-        if getattr(ctx, "status", "") == "running":
-            ctx.status = "error"
-            if not getattr(ctx, "error", ""):
-                ctx.error = "Cancelled by user"
-            if getattr(ctx, "end_time", 0) == 0:
-                ctx.end_time = time.time()
-        for child in getattr(ctx, "children", []) or []:
-            mark_context_cancelled(child)
-    except Exception:
-        pass

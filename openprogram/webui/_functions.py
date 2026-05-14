@@ -341,20 +341,6 @@ def _extract_all_functions(filepath: str, category: str) -> list[dict]:
     return results
 
 
-# ---------------------------------------------------------------------------
-# Context helpers
-# ---------------------------------------------------------------------------
-
-def _get_last_ctx(func):
-    """Get _last_ctx from a function, checking wrapper for @agentic_function instances."""
-    ctx = getattr(func, '_last_ctx', None)
-    if ctx is None and hasattr(func, '_wrapper'):
-        ctx = getattr(func._wrapper, '_last_ctx', None)
-    if ctx is None and hasattr(func, 'context'):
-        ctx = getattr(func, 'context', None)
-    return ctx
-
-
 def _inject_runtime(loaded_func, kwargs: dict, runtime: Runtime):
     """Inject runtime into function kwargs if the function accepts it."""
     unwrapped_func = loaded_func._fn if hasattr(loaded_func, '_fn') else loaded_func
@@ -408,34 +394,6 @@ def _format_result(result, action: str = "create") -> str:
             return json.dumps(result, indent=2, default=str, ensure_ascii=False)
         except (TypeError, ValueError):
             return str(result)
-
-
-# ---------------------------------------------------------------------------
-# Tree lookups
-# ---------------------------------------------------------------------------
-
-def _find_node_by_path(tree: dict, path: str) -> Optional[dict]:
-    """Find a node in a tree dict by its path."""
-    if tree.get("path") == path:
-        return tree
-    for child in tree.get("children", []):
-        result = _find_node_by_path(child, path)
-        if result is not None:
-            return result
-    return None
-
-
-def _find_in_tree(tree: dict, path: str) -> dict | None:
-    """Find a node in a tree dict by path or name."""
-    if not tree or not path:
-        return None
-    if tree.get("path") == path or tree.get("name") == path:
-        return tree
-    for child in tree.get("children", []):
-        found = _find_in_tree(child, path)
-        if found:
-            return found
-    return None
 
 
 # ---------------------------------------------------------------------------
