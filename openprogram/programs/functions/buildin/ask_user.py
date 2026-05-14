@@ -8,7 +8,9 @@ ask_user —— 在 @agentic_function 执行途中向用户提问。
   - FollowUp                      "函数暂停"的载体对象
   - run_with_follow_up(func, ...) 把 ask_user 转成非阻塞返回值
 
-唯一依赖引擎的一行：`_current_ctx.get()`，用来定位当前 Context 节点。
+实现是 stateless 的：所有 handler 都通过 ``set_ask_user`` 注册到一个
+模块级全局变量，跨线程安全（_ask_user_lock 保护）。没有 ContextVar，
+没有 per-node 注册——WebUI / channels / CLI 都用同一个 global 路径。
 """
 
 from __future__ import annotations
@@ -17,8 +19,6 @@ import queue as _queue
 import sys
 import threading
 from typing import Callable, Optional
-
-from openprogram.agentic_programming.context import Context, _current_ctx
 
 
 # ---------------------------------------------------------------------------
@@ -44,21 +44,15 @@ def set_ask_user(handler: Optional[Callable[[str], str]]) -> None:
 def has_ask_user_handler() -> bool:
     """True if a subsequent ``ask_user()`` call would have somewhere to send the question.
 
-    Checks the same chain as ``ask_user`` itself:
-      1. Per-node handler on the current Context (or any ancestor)
-      2. Global handler set via ``set_ask_user``
-      3. TTY-backed stdin (terminal interactive mode)
+    Checks:
+      1. Global handler set via ``set_ask_user`` (WebUI / channels register this)
+      2. TTY-backed stdin (terminal interactive mode)
 
     Returns False only when none of the above is available — i.e. the
     caller is running headless / in a subprocess with no registered
     handler. Use this to decide whether to skip interactive steps like
     ``clarify`` that would just bounce off a None answer.
     """
-    ctx = _current_ctx.get(None)
-    while ctx is not None:
-        if ctx.ask_user_handler is not None:
-            return True
-        ctx = ctx.parent
     with _ask_user_lock:
         if _ask_user_handler_global is not None:
             return True
@@ -72,34 +66,91 @@ def ask_user(question: str) -> Optional[str]:
     在 @agentic_function 执行中向用户提问。
 
     回调查找顺序：
-      1. 当前 Context 节点上的 `ask_user_handler` 字段（若设置）
-      2. 逐级向上走 parent 链，第一个带 handler 的祖先胜出
-      3. 全局 handler（由 set_ask_user 注册，WebUI 用这个）
-      4. 默认终端 `input()`（仅当 stdin 是 TTY 时）
+      1. 全局 handler（由 set_ask_user 注册，WebUI / 后台服务用）
+      2. 默认终端 ``input()``（仅当 stdin 是 TTY 时）
 
     返回用户答案；如果没有任何 handler 可用，返回 None。
-    """
-    # 1-2. 爬 Context 链找 per-node handler
-    ctx = _current_ctx.get(None)
-    while ctx is not None:
-        if ctx.ask_user_handler is not None:
-            return ctx.ask_user_handler(question)
-        ctx = ctx.parent
 
-    # 3. 全局 handler（给 WebUI / 后台服务用）
+    DAG 集成：把这次询问建模成一个 user-role Call —— caller 是
+    LLM/代码（called_by 指向 enclosing @agentic_function），
+    callee 是人类（产生 output = 用户的回答）。入口 append 占位
+    （output=None，metadata.status="awaiting"），handler 返回后
+    update output。跟用户主动发消息通过 ``input is not None`` 区分。
+    """
+    pending_id, runtime = _begin_ask_user_node(question)
+
+    # 1. 全局 handler（给 WebUI / 后台服务用）
     with _ask_user_lock:
         handler = _ask_user_handler_global
     if handler is not None:
-        return handler(question)
+        answer = handler(question)
+        _finish_ask_user_node(runtime, pending_id, answer)
+        return answer
 
-    # 4. 终端输入（交互模式最后兜底）
+    # 2. 终端输入（交互模式最后兜底）
     if sys.stdin is not None and sys.stdin.isatty():
         try:
-            return input(f"[follow-up] {question}\n> ")
+            answer = input(f"[follow-up] {question}\n> ")
         except EOFError:
-            return None
+            answer = None
+        _finish_ask_user_node(runtime, pending_id, answer)
+        return answer
 
+    _finish_ask_user_node(runtime, pending_id, None)
     return None
+
+
+# ---------------------------------------------------------------------------
+# DAG bookkeeping for ask_user calls
+# ---------------------------------------------------------------------------
+
+
+def _begin_ask_user_node(question: str):
+    """Append a placeholder user-Call for an in-flight ask_user request.
+
+    Returns ``(pending_id, runtime)``. Both are None when no
+    GraphStore is attached (standalone scripts, tests without
+    dispatcher); finish-side then becomes a no-op too.
+    """
+    try:
+        from openprogram.agentic_programming.function import (
+            _current_runtime, _current_function_frame,
+        )
+        from openprogram.context.nodes import Call, ROLE_USER
+    except Exception:
+        return None, None
+
+    runtime = _current_runtime.get(None)
+    if runtime is None or getattr(runtime, "store", None) is None:
+        return None, runtime
+
+    caller_id = _current_function_frame.get(None) or ""
+    node = Call(
+        role=ROLE_USER,
+        input={"question": question},
+        output=None,
+        called_by=caller_id,
+        metadata={"status": "awaiting"},
+    )
+    try:
+        runtime.append_node(node)
+        return node.id, runtime
+    except Exception:
+        return None, runtime
+
+
+def _finish_ask_user_node(runtime, pending_id, answer) -> None:
+    """Fill the placeholder Call's output with the user's answer."""
+    if pending_id is None or runtime is None:
+        return
+    try:
+        runtime.update_node(
+            pending_id,
+            output=answer,
+            metadata={"status": "answered" if answer else "unanswered"},
+        )
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
