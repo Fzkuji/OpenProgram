@@ -1022,19 +1022,18 @@ function newSession() {
   pendingResponses = {};
   trees = [];
   var container = document.getElementById('chatMessages');
-  container.innerHTML = '';
-  var welcome = document.createElement('div');
-  welcome.className = 'welcome';
-  welcome.id = 'welcomeScreen';
-  welcome.innerHTML =
-    '<div class="welcome-top">' +
-      '<div class="welcome-logo">{<span class="logo-l1">L</span><span class="logo-l2">L</span><span class="logo-m">M</span><span class="welcome-logo-caret"></span>}</div>' +
-      '<div class="welcome-title">Agentic Programming</div>' +
-      '<div class="welcome-text">Run agentic functions, create new ones, or ask questions. Type a command or natural language below.</div>' +
-    '</div>';
+  // Remove every child EXCEPT the React `#welcome-mount` placeholder
+  // so the React `<WelcomeScreen />` portal stays alive. Wiping the
+  // whole container would tear down the portal target and React
+  // couldn't re-render the welcome panel into #chatMessages.
+  if (container) {
+    Array.from(container.children).forEach(function (ch) {
+      if (ch.id === 'welcome-mount') return;
+      container.removeChild(ch);
+    });
+  }
   window._pendingChannelChoice = null;
   if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
-  container.appendChild(welcome);
   setWelcomeVisible(true);
   renderSessions();
   // Clear the right-sidebar Branches panel — without this the previous
