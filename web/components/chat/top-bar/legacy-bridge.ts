@@ -86,6 +86,21 @@ function wrapBranchBadge(w: LegacyTopbarGlobals): void {
   pushBranchInfo();
 }
 
+/**
+ * `refreshStatusSource` builds the legacy badge text by joining
+ * `channel · account · title` with ` · `. The title slot ends up
+ * displaying the conversation's first message in the badge, which
+ * isn't what we want — the topbar status badge should show
+ * connection / channel state, not chat content. Take only the first
+ * segment for the React badge label; keep the full source string in
+ * the tooltip so the title is still reachable on hover.
+ */
+function badgeLabelFromSource(source: string | undefined): string {
+  if (!source) return "Local";
+  const idx = source.indexOf(" · ");
+  return idx >= 0 ? source.slice(0, idx) : source;
+}
+
 function wrapUpdateStatus(w: LegacyTopbarGlobals): void {
   if (!w.updateStatus || w.__origUpdateStatus) return;
   w.__origUpdateStatus = w.updateStatus;
@@ -95,7 +110,7 @@ function wrapUpdateStatus(w: LegacyTopbarGlobals): void {
     w._lastStatusSource = source || "Local";
     const connected = status === "connected";
     pushStatusBadge({
-      label: connected ? (source || "Local") : "disconnected",
+      label: connected ? badgeLabelFromSource(source) : "disconnected",
       tone: connected ? "ok" : "err",
       title: connected
         ? source

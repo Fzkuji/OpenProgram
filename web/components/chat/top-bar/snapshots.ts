@@ -86,5 +86,10 @@ export function deriveStatusBadgeFromGlobals(): StatusBadgeInfo {
     };
   }
   const source = w._lastStatusSource || "Local";
-  return { label: source, tone: "ok", title: `connected · ${source}` };
+  // Strip the trailing ` · title` segment that `refreshStatusSource`
+  // appends — we only want channel / account info on the badge,
+  // not the conversation's title text.
+  const idx = source.indexOf(" · ");
+  const label = idx >= 0 ? source.slice(0, idx) : source;
+  return { label, tone: "ok", title: `connected · ${source}` };
 }

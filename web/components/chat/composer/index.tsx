@@ -539,7 +539,7 @@ export function Composer() {
               name="chat_input"
               autoComplete="off"
               className={styles.chatInput}
-              placeholder="create / run / edit or ask anything... (type / for commands)"
+              placeholder=" create / run / edit or ask anything... (type / for commands)"
               rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
