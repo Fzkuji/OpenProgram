@@ -645,6 +645,18 @@ const ThinkingEffortPill = React.forwardRef<
       xhigh: "color-mix(in srgb, var(--accent-red) 32%, transparent)",
     }[value] ?? "color-mix(in srgb, var(--text-bright) 10%, transparent)";
 
+  // Measure the spacer so the collapsed pill width exactly matches
+  // its content. Hard-coding 132px gave the same chip the same
+  // footprint regardless of label text — `effort: xhigh` left a
+  // ~30px trailing gap. Re-measures whenever the value changes.
+  const spacerRef = useRef<HTMLSpanElement>(null);
+  const [collapsedWidth, setCollapsedWidth] = useState<number>(120);
+  useLayoutEffect(() => {
+    if (spacerRef.current) {
+      setCollapsedWidth(spacerRef.current.offsetWidth);
+    }
+  }, [value]);
+
   return (
     <div
       ref={ref}
@@ -654,6 +666,7 @@ const ThinkingEffortPill = React.forwardRef<
           flex layout so expanding doesn't push the context badge or
           other controls. Mirrors the collapsed pill content exactly. */}
       <span
+        ref={spacerRef}
         aria-hidden="true"
         className="invisible inline-flex items-center gap-[5px] px-[10px] text-[14px]"
       >
@@ -682,7 +695,7 @@ const ThinkingEffortPill = React.forwardRef<
           expanded ? "bg-bg-hover text-text-bright" : "text-text-primary",
         ].join(" ")}
         style={{
-          width: expanded ? 260 : 132,
+          width: expanded ? 260 : collapsedWidth,
           // Tint the collapsed pill by current effort level (neutral
           // white-grey at `off`, ramps to soft red at `xhigh`). When
           // expanded we hand the bg back to the Tailwind class
