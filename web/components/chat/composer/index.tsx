@@ -131,6 +131,7 @@ export function Composer() {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const sendBtnRef = useRef<HTMLButtonElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Seed field state with defaults each time the function changes; also
@@ -170,11 +171,15 @@ export function Composer() {
   // wrapper goes back to natural-auto.
   const chatHeightRef = useRef<number>(98);
   // True from the moment a wrapper-height transition starts until
-  // `transitionend` fires. While true, the send button stays anchored
-  // to the bottom row even if `fnFormFunction` has already flipped to
-  // null — that prevents the button from riding up/down with the
-  // wrapper as it animates back to chat height.
+  // `transitionend` fires. Currently only used to gate chat-height
+  // caching (don't measure a value that's mid-animation).
   const [wrapperTransitioning, setWrapperTransitioning] = useState(false);
+  // Pixels: action-button offset (16) + size (32). The fn-form steady
+  // state pins the button to `wrapper.height - ACTION_BTN_BOTTOM_OFFSET`
+  // so its bottom edge sits `--composer-button-offset` above the
+  // wrapper's bottom. Kept here as a constant to avoid reading the
+  // CSS variable in JS — the tokens it maps to live in 01-base.css.
+  const ACTION_BTN_BOTTOM_OFFSET = 48;
 
   useEffect(() => {
     // Cache natural chat-mode height while we're in chat mode AND not
@@ -189,6 +194,34 @@ export function Composer() {
   useLayoutEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
+    if (fnFormClosing) {
+      // Close — animate wrapper shrink WITH the form still mounted, so
+      // the body / header retreat downward into the bottom row (mirror
+      // image of the open animation where they emerge upward out of
+      // it). The `.closing` class on header/body fades opacity 1→0 in
+      // parallel with the height transition. The action button glides
+      // back to the chat-mode top in lockstep (same transition curve).
+      // Once height settles we unmount the form (closeFnFormStore) —
+      // only then can the inline `height` be cleared, otherwise the
+      // wrapper momentarily snaps back to fn-form natural height while
+      // React is still committing the unmount.
+      setWrapperTransitioning(true);
+      const current = el.offsetHeight;
+      el.style.height = `${current}px`;
+      void el.offsetHeight;
+      el.style.height = `${chatHeightRef.current}px`;
+      const btn = sendBtnRef.current;
+      if (btn) btn.style.top = `${16}px`;
+      const onEnd = (ev: TransitionEvent) => {
+        if (ev.target !== el || ev.propertyName !== "height") return;
+        el.removeEventListener("transitionend", onEnd);
+        closeFnFormStore();
+        setFnFormClosing(false);
+        setWrapperTransitioning(false);
+      };
+      el.addEventListener("transitionend", onEnd);
+      return () => el.removeEventListener("transitionend", onEnd);
+    }
     if (fnFormFunction) {
       setWrapperTransitioning(true);
       el.style.height = `${chatHeightRef.current}px`;
@@ -199,6 +232,11 @@ export function Composer() {
         el.style.height = prev;
         void el.offsetHeight;
         el.style.height = `${natural}px`;
+        // Glide the action button from chat top (16) to fn-form bottom
+        // (natural − offset). Same CSS transition curve as the wrapper
+        // height so they stay in sync visually.
+        const btn = sendBtnRef.current;
+        if (btn) btn.style.top = `${natural - ACTION_BTN_BOTTOM_OFFSET}px`;
       });
       const onEnd = (ev: TransitionEvent) => {
         if (ev.target !== el || ev.propertyName !== "height") return;
@@ -210,20 +248,63 @@ export function Composer() {
         cancelAnimationFrame(raf);
         el.removeEventListener("transitionend", onEnd);
       };
-    } else {
-      if (!el.style.height) return;
-      setWrapperTransitioning(true);
-      el.style.height = `${chatHeightRef.current}px`;
-      const onEnd = (ev: TransitionEvent) => {
-        if (ev.target !== el || ev.propertyName !== "height") return;
-        el.style.height = "";
-        setWrapperTransitioning(false);
-        el.removeEventListener("transitionend", onEnd);
-      };
-      el.addEventListener("transitionend", onEnd);
-      return () => el.removeEventListener("transitionend", onEnd);
     }
+  }, [fnFormFunction, fnFormClosing, closeFnFormStore]);
+
+  // After the form unmounts, drop the inline `height` we left behind
+  // during the close transition so the wrapper can size itself
+  // naturally for chat-mode content (textarea auto-resize, etc.).
+  useEffect(() => {
+    if (fnFormFunction) return;
+    const el = wrapperRef.current;
+    if (!el || !el.style.height) return;
+    el.style.height = "";
   }, [fnFormFunction]);
+
+  // Keep the wrapper's inline `height` in sync with the form's natural
+  // content size while it's open and idle (no transition running).
+  // Without this, anything that resizes the body after the open
+  // animation finishes — textarea auto-resize as the user types,
+  // validation messages appearing, etc. — leaves the wrapper stuck at
+  // its initial measurement, producing empty space below the content.
+  useEffect(() => {
+    if (!fnFormFunction || fnFormClosing || wrapperTransitioning) return;
+    const el = wrapperRef.current;
+    if (!el) return;
+    const header = el.querySelector(
+      "[data-fn-form-header]",
+    ) as HTMLElement | null;
+    const body = el.querySelector(
+      "[data-fn-form-body]",
+    ) as HTMLElement | null;
+    if (!header || !body) return;
+
+    let pending: number | null = null;
+    const sync = () => {
+      pending = null;
+      // Measure header + body + bottom-row reservation directly so we
+      // don't have to round-trip through clearing wrapper height.
+      const natural =
+        header.offsetHeight +
+        body.offsetHeight +
+        parseFloat(getComputedStyle(el).paddingBottom);
+      if (`${natural}px` === el.style.height) return;
+      el.style.height = `${natural}px`;
+      const btn = sendBtnRef.current;
+      if (btn) btn.style.top = `${natural - ACTION_BTN_BOTTOM_OFFSET}px`;
+    };
+    const schedule = () => {
+      if (pending !== null) return;
+      pending = requestAnimationFrame(sync);
+    };
+    const ro = new ResizeObserver(schedule);
+    ro.observe(header);
+    ro.observe(body);
+    return () => {
+      ro.disconnect();
+      if (pending !== null) cancelAnimationFrame(pending);
+    };
+  }, [fnFormFunction, fnFormClosing, wrapperTransitioning]);
 
   // Hydrate tools / web-search toggles from localStorage.
   useEffect(() => {
@@ -441,16 +522,14 @@ export function Composer() {
 
   /* ---- Function form submit ---------------------------------------- */
 
-  // Two-phase close: fade .fn-form-header / .fn-form-body first (the
-  // FunctionForm reads `closing` and applies the fade-out class), then
-  // unmount via the store so the wrapper's height transition runs on
-  // the now-empty content. 130ms = 120ms fade + 10ms slack.
+  // Close = mirror of open. Flip `fnFormClosing` so the
+  // wrapper-height useLayoutEffect runs its shrink branch while the
+  // form is still mounted; header/body fade out in parallel via the
+  // `.closing` class. Store unmount happens after the height
+  // transition ends (handled inside the useLayoutEffect).
   const handleFnFormClose = useCallback(() => {
     setFnFormClosing(true);
-    setTimeout(() => {
-      closeFnFormStore();
-    }, 130);
-  }, [closeFnFormStore]);
+  }, []);
 
   const submitFnForm = useCallback(() => {
     if (!fnFormFunction || isRunning) return;
@@ -601,34 +680,6 @@ export function Composer() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
             />
-            {/* Chat-mode send/stop button: top-right next to textarea.
-                Suppressed while the wrapper is mid-transition back from
-                fn-form so the button doesn't visibly slide up here from
-                the bottom — it stays anchored in the bottom row until
-                the height animation completes, then teleports up. */}
-            {!wrapperTransitioning &&
-              (isRunning ? (
-                <button
-                  key="corner-btn-top"
-                  className={styles.stopBtn}
-                  onClick={stop}
-                  title="Stop"
-                  type="button"
-                >
-                  <StopIcon />
-                </button>
-              ) : (
-                <button
-                  key="corner-btn-top"
-                  className={styles.sendBtn}
-                  onClick={onSendButtonClick}
-                  disabled={sendDisabled}
-                  title={sendTitle}
-                  type="button"
-                >
-                  <SendIcon />
-                </button>
-              ))}
           </div>
         )}
 
@@ -716,36 +767,26 @@ export function Composer() {
           </div>
           <div className={styles.inputBottomRight}>
             <ContextBadge />
-            {/* Bottom-row send/stop button — shown whenever fn-form is
-                active OR while the wrapper is mid-transition (so the
-                button stays put down here during the close animation
-                and only teleports up to the top row after the height
-                animation fully finishes). */}
-            {(fnFormFunction || wrapperTransitioning) &&
-              (isRunning ? (
-                <button
-                  key="corner-btn-bottom"
-                  className={styles.stopBtn}
-                  onClick={stop}
-                  title="Stop"
-                  type="button"
-                >
-                  <StopIcon />
-                </button>
-              ) : (
-                <button
-                  key="corner-btn-bottom"
-                  className={styles.sendBtn}
-                  onClick={onSendButtonClick}
-                  disabled={sendDisabled}
-                  title={sendTitle}
-                  type="button"
-                >
-                  <SendIcon />
-                </button>
-              ))}
           </div>
         </div>
+
+        {/* Single send/stop button anchored at the wrapper level.
+            `top` is mutated via inline style by the wrapper-height
+            useLayoutEffect so the button glides between its chat-mode
+            position (top: 16) and the fn-form position
+            (top: wrapper.height − 48) over the same 0.3s curve as the
+            wrapper itself — one continuous motion instead of a row-to
+            -row teleport. */}
+        <button
+          ref={sendBtnRef}
+          className={`${styles.actionBtn} ${isRunning ? styles.stopBtn : styles.sendBtn}`}
+          onClick={isRunning ? stop : onSendButtonClick}
+          disabled={!isRunning && sendDisabled}
+          title={isRunning ? "Stop" : sendTitle}
+          type="button"
+        >
+          {isRunning ? <StopIcon /> : <SendIcon />}
+        </button>
       </div>
     </div>
   );

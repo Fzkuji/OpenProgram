@@ -141,6 +141,7 @@ export function FunctionForm({
   return (
     <>
       <div
+        data-fn-form-header
         className={`${styles.header} ${closing ? styles.closing : ""}`}
         onKeyDown={onKey}
       >
@@ -150,7 +151,10 @@ export function FunctionForm({
             {fn.name}
           </span>
           {fn.description ? (
-            <span className={styles.desc}>{fn.description}</span>
+            <>
+              <span className={styles.dash}>–</span>
+              <span className={styles.desc}>{fn.description}</span>
+            </>
           ) : null}
         </div>
         <button
@@ -174,6 +178,7 @@ export function FunctionForm({
         </button>
       </div>
       <div
+        data-fn-form-body
         className={`${styles.body} ${closing ? styles.closing : ""}`}
         onKeyDown={onKey}
       >

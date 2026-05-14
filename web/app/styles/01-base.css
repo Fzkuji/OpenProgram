@@ -51,6 +51,24 @@
   --composer-fade-duration: 0.25s;
   --composer-fade-delay-header: 0.10s;
   --composer-fade-delay-body: 0.15s;
+
+  /* ===== Typography scale ===============================================
+     Fixed steps. Stick to these instead of arbitrary px values so font
+     sizes don't drift across the app. New UI should pick one of:
+
+       --fs-sm    13px — secondary labels, helper text, placeholders,
+                          metadata tags. Don't go below this.
+       --fs-base  14px — default body / form field / button text.
+       --fs-md    16px — emphasized inline text, larger button labels.
+       --fs-lg    20px — section / panel headings (e.g. welcome title).
+
+     12px is intentionally absent — it tested as too small to read in
+     the form panel. Anything that previously used 12px should bump up
+     to `--fs-sm` (13px). */
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
 }
 
 /* Dark theme (default) — based on Claude dark */

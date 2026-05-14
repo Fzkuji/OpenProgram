@@ -33,16 +33,33 @@ export function FieldRow({
       ? p.multiline
       : !isBool && (p.type === "str" || p.type === "string" || !p.type);
 
+  // Placeholder = raw default value (no "default:" prefix). It already
+  // reads as ghost text inside the field — labelling it as "default" a
+  // second time would be redundant noise; pressing Tab promotes the
+  // ghost into the actual value.
   const placeholder = (() => {
     if (p.placeholder) return p.placeholder;
     if (defaultVal && defaultVal !== "None" && !defaultVal.startsWith("_")) {
-      return `default: ${defaultVal}`;
+      return defaultVal;
     }
     return "";
   })();
 
   const errorClass = error ? styles.inputError : "";
   const inputClass = `${styles.input} ${errorClass}`.trim();
+
+  // Tab autocomplete: when the field is empty and a default exists,
+  // Tab inserts the default as the real value (rather than moving
+  // focus). The placeholder ghost text becomes the actual content.
+  const ghost = defaultVal && defaultVal !== "None" ? defaultVal : "";
+  const onAutocompleteKey = (
+    e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    if (e.key !== "Tab" || e.shiftKey) return;
+    if (value !== "" || !ghost) return;
+    e.preventDefault();
+    setValue(ghost);
+  };
 
   const fieldId = `fn-field-${p.name}`;
   let node: ReactNode;
@@ -76,6 +93,7 @@ export function FieldRow({
         placeholder={placeholder}
         value={value}
         onChange={setValue}
+        onKeyDown={onAutocompleteKey}
       />
     );
   } else {
@@ -88,6 +106,7 @@ export function FieldRow({
         placeholder={placeholder}
         value={value}
         onChange={(e) => setValue(e.target.value)}
+        onKeyDown={onAutocompleteKey}
       />
     );
   }
@@ -101,17 +120,23 @@ export function FieldRow({
 }
 
 function FieldLabel({ p }: { p: FnParam }) {
+  // Mirrors the PyTorch-docs convention:
+  //   param_name (type, optional) – description.
+  // The default value isn't repeated here — the input below already
+  // shows it as placeholder ghost text, and Tab autocompletes it into
+  // the real value.
+  const meta = [p.type || "any", p.required ? null : "optional"]
+    .filter(Boolean)
+    .join(", ");
   return (
     <div className={styles.label}>
       <span className={styles.labelName}>{p.label ?? p.name}</span>
-      {p.type ? <span className={styles.labelType}>{p.type}</span> : null}
-      {p.required ? (
-        <span className={styles.labelRequired}>*</span>
-      ) : (
-        <span className={styles.labelOptional}>optional</span>
-      )}
+      <span className={styles.labelMeta}>{` (${meta})`}</span>
       {p.description ? (
-        <span className={styles.labelDesc}>{p.description}</span>
+        <>
+          <span className={styles.labelDash}>{" – "}</span>
+          <span className={styles.labelDesc}>{p.description}</span>
+        </>
       ) : null}
     </div>
   );
@@ -228,6 +253,7 @@ function AutoTextarea({
   placeholder,
   value,
   onChange,
+  onKeyDown,
 }: {
   id?: string;
   name?: string;
@@ -235,6 +261,7 @@ function AutoTextarea({
   placeholder: string;
   value: string;
   onChange: (v: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -254,6 +281,7 @@ function AutoTextarea({
       placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
     />
   );
 }

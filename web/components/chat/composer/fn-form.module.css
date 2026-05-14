@@ -56,7 +56,11 @@
 .body.closing {
   animation: none;
   opacity: 0;
-  transition: opacity 0.12s ease;
+  /* Matches the open fade-in duration so the close is a true mirror
+     image: wrapper shrinks (0.3s) while header/body fade 1→0 (0.25s)
+     in parallel, instead of fading out first and then animating the
+     height. */
+  transition: opacity var(--composer-fade-duration) ease;
 }
 .title {
   display: flex;
@@ -69,7 +73,7 @@
 }
 .name {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--text-bright);
   flex-shrink: 0;
@@ -78,8 +82,15 @@
   color: var(--text-secondary);
   font-weight: 400;
 }
+.dash {
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
 .desc {
-  font-size: 12px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -133,36 +144,57 @@
   flex-direction: column;
   gap: 6px;
 }
+/* Field label — PyTorch-docs style, all on one line at the same size.
+   The only typographic distinction is `--font-mono` on the param name
+   (to mark it as a code identifier). Everything else is plain
+   sans-serif prose so the row reads as a single sentence:
+     param_name (type, optional) – description.
+
+   Long descriptions are clipped to a single line by default; the
+   trailing edge fades out via a mask gradient (no ellipsis dots) so
+   the truncation reads as "more content here" rather than a hard cut.
+   Hovering the row drops the clip + mask so the full description
+   wraps and reveals. */
 .label {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+  display: block;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - 48px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - 48px),
+    transparent 100%
+  );
+  cursor: default;
+}
+.label:hover {
+  white-space: normal;
+  overflow: visible;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 .labelName {
   font-family: var(--font-mono);
-  font-size: 14px;
   font-weight: 600;
   color: var(--text-bright);
 }
-.labelType {
-  font-family: var(--font-mono);
-  font-size: 12px;
+.labelMeta {
+  font-style: italic;
   color: var(--text-secondary);
-  opacity: 0.8;
 }
-.labelRequired {
-  font-size: 12px;
-  color: var(--accent-red);
-  opacity: 0.7;
-}
-.labelOptional {
-  font-size: 12px;
+.labelDash {
   color: var(--text-muted);
 }
 .labelDesc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-left: 4px;
+  color: var(--text-secondary);
 }
 
 .input {
@@ -171,7 +203,7 @@
   border-radius: 12px;
   padding: 8px 12px;
   color: var(--text-bright);
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-family: var(--font-mono);
   outline: none;
   transition: border-color 180ms ease;
@@ -184,7 +216,7 @@
 .input::placeholder {
   color: var(--text-muted);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--fs-base);
 }
 .input.textarea {
   min-height: 48px;
@@ -220,7 +252,8 @@
   border: 2px solid var(--border);
   background: var(--bg-primary);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   cursor: pointer;
   transition: all 180ms ease;
   user-select: none;
@@ -251,8 +284,8 @@
   border: 2px solid var(--border);
   background: var(--bg-primary);
   color: var(--text-secondary);
-  font-size: 12px;
   font-family: var(--font-mono);
+  font-size: var(--fs-base);
   cursor: pointer;
   transition: all 180ms ease;
   user-select: none;
@@ -275,8 +308,8 @@
   border: 2px solid var(--border);
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-size: 12px;
   font-family: var(--font-mono);
+  font-size: var(--fs-base);
   width: 60px;
   outline: none;
   transition: border-color 180ms ease;
@@ -288,7 +321,8 @@
 
 .noParams {
   color: var(--text-muted);
-  font-size: 14px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   padding: 4px 0;
 }
 
@@ -308,8 +342,8 @@
   background: var(--bg-primary);
   border: 0.5px solid var(--border);
   border-radius: 8px;
-  font-size: 14px;
   font-family: var(--font-sans);
+  font-size: var(--fs-base);
   color: var(--text-primary);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
@@ -334,7 +368,7 @@
   border-radius: 8px;
   color: var(--text-bright);
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-base);
   outline: none;
   transition: border-color 0.15s;
   min-width: 0;
@@ -345,6 +379,7 @@
 .workdirInput::placeholder {
   color: var(--text-muted);
   font-family: var(--font-sans);
+  font-size: var(--fs-base);
 }
 .workdirError {
   border-color: var(--accent-red) !important;

@@ -79,7 +79,12 @@
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  padding: var(--composer-bottom-row-pad) var(--composer-bottom-row-pad) 0;
+  /* Right padding reserves space for the absolute-positioned action
+     button (send / stop) that lives at the wrapper level: 16 (right
+     offset) + 32 (button-size) + 8 (breathing space) = 56. */
+  padding: var(--composer-bottom-row-pad)
+    calc(var(--composer-bottom-row-pad) + var(--composer-button-size) + 8px) 0
+    var(--composer-bottom-row-pad);
   flex-shrink: 0;
 }
 .chatInput {
@@ -124,6 +129,14 @@
   border-radius: 0 0 var(--composer-corner) var(--composer-corner);
   z-index: 1;
 }
+/* In fn-form mode the wrapper-level action button glides into the
+   bottom-right corner of the row. Reserve right-side padding equal to
+   `--composer-bottom-row-pad + button-size + 8 (gap)` so the
+   ContextBadge can never sit under it. */
+.fnFormMode .inputBottomRow {
+  padding-right: calc(var(--composer-bottom-row-pad)
+    + var(--composer-button-size) + 8px);
+}
 .inputOptions {
   display: flex;
   align-items: center;
@@ -131,19 +144,21 @@
   position: relative;
 }
 
-/* Send / stop buttons — solid filled circles in the accent-blue tint,
-   visually matching `.toolChip`. They are normal flex children of
-   their row (top row in chat mode, bottom row in fn-form mode); they
-   are NOT absolutely positioned, so they never drift when the wrapper
-   resizes. The button effectively snaps between the two rows when the
-   mode flips — a clean teleport with no in-between animation. */
-.sendBtn {
+/* Send / stop button — a single absolute-positioned circle anchored
+   to the wrapper. Its `top` is driven by inline style (set in
+   composer/index.tsx) so it interpolates linearly between the chat
+   position (top: button-offset) and the fn-form position
+   (top: wrapper.height - button-offset - button-size), in sync with
+   the wrapper's own height transition. The result is one continuous
+   motion instead of the previous two-row teleport. */
+.actionBtn {
+  position: absolute;
+  right: var(--composer-button-offset);
+  top: var(--composer-button-offset);
   width: var(--composer-button-size);
   height: var(--composer-button-size);
   border-radius: 50%;
   border: none;
-  background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 14%, transparent);
-  color: var(--accent-blue, #6cb4ff);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -151,7 +166,26 @@
   padding: 0;
   box-sizing: border-box;
   flex-shrink: 0;
-  transition: background 0.15s, opacity 180ms ease;
+  /* `top` and the wrapper's `height` share the same transition curve
+     so they advance in lockstep — the button glides between rows
+     instead of snapping. */
+  transition: top var(--composer-height-transition),
+    background 0.15s,
+    opacity 180ms ease;
+  /* Bottom-row sits at z-index 1 to hide the form body retracting
+     behind it; we need a higher value so the action button stays
+     visible while it's mid-glide through that band. */
+  z-index: 2;
+}
+.actionBtn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.sendBtn {
+  background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 14%, transparent);
+  color: var(--accent-blue, #6cb4ff);
 }
 .sendBtn:hover {
   background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 22%, transparent);
@@ -160,36 +194,14 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
-.sendBtn svg {
-  width: 14px;
-  height: 14px;
-  fill: currentColor;
-}
 
 .stopBtn {
-  width: var(--composer-button-size);
-  height: var(--composer-button-size);
-  border-radius: 50%;
-  border: none;
   background: var(--accent-red);
   color: #fff;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  box-sizing: border-box;
-  flex-shrink: 0;
   opacity: 0.85;
-  transition: opacity 180ms ease;
 }
 .stopBtn:hover {
   opacity: 1;
-}
-.stopBtn svg {
-  width: 14px;
-  height: 14px;
-  fill: currentColor;
 }
 
 /* Right-aligned group in the bottom row (context badge + optional

@@ -236,14 +236,49 @@ def _extract_function_info(filepath: str, name: Optional[str], category: str) ->
                         })
 
         if full_doc:
-            args_match = re.search(r'Args:\s*\n((?:\s+\w+.*\n?)+)', full_doc)
+            # Capture everything after `Args:` until the next docstring
+            # section (Returns:, Raises:, Yields:, Examples:, ...) or
+            # end of docstring. The old regex required each line to
+            # start with `\s+\w+`, which excluded continuation lines
+            # that start with non-word chars like `"phd"` or `(int)`,
+            # cutting descriptions short.
+            args_match = re.search(
+                r'Args:\s*\n(.*?)(?:\n\s*(?:Returns|Return|Raises|Yields|Example|Examples|Note|Notes|Attributes)\s*:|\Z)',
+                full_doc,
+                re.DOTALL,
+            )
             if args_match:
                 args_block = args_match.group(1)
+                args_lines = args_block.splitlines()
+                # Google-style continuation lines are indented deeper
+                # than the parameter key. Collect them and join with a
+                # single space so the description reads as one sentence
+                # instead of getting truncated at the first newline.
                 for pd in params_detail:
-                    arg_pat = rf'^\s+{re.escape(pd["name"])}(?:\s*\([^)]*\))?\s*:\s*(.+)'
-                    arg_m = re.search(arg_pat, args_block, re.MULTILINE)
-                    if arg_m:
-                        pd["description"] = arg_m.group(1).strip()
+                    head_re = re.compile(
+                        rf'^(\s+){re.escape(pd["name"])}'
+                        rf'(?:\s*\([^)]*\))?\s*:\s*(.*)'
+                    )
+                    desc_parts: list[str] = []
+                    head_indent: int | None = None
+                    for line in args_lines:
+                        if head_indent is None:
+                            m = head_re.match(line)
+                            if not m:
+                                continue
+                            head_indent = len(m.group(1))
+                            first = m.group(2).strip()
+                            if first:
+                                desc_parts.append(first)
+                            continue
+                        if not line.strip():
+                            continue
+                        indent = len(line) - len(line.lstrip())
+                        if indent <= head_indent:
+                            break
+                        desc_parts.append(line.strip())
+                    if desc_parts:
+                        pd["description"] = " ".join(desc_parts)
 
         input_meta = _extract_input_meta(content, name)
         if input_meta:
@@ -262,6 +297,8 @@ def _extract_function_info(filepath: str, name: Optional[str], category: str) ->
                         pd["options_from"] = meta["options_from"]
                     if "hidden" in meta:
                         pd["hidden"] = meta["hidden"]
+                    if "label" in meta:
+                        pd["label"] = meta["label"]
 
         workdir_mode = _extract_workdir_mode(content, name)
 
