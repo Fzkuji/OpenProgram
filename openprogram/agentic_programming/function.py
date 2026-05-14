@@ -442,7 +442,11 @@ class agentic_function:
             import uuid as _uuid
             _pending_call_id = _uuid.uuid4().hex[:12]
             _rt_for_dag = _current_runtime.get(None)
-            _entry_head = _rt_for_dag.head_id if _rt_for_dag is not None else None
+            # _rt_for_dag may be a sentinel ``object()`` from buildin
+            # functions whose default ``runtime=`` is a marker (e.g.
+            # ``_MISSING_RUNTIME`` in general_action / wait). Use getattr
+            # so we treat it the same as "no DAG store attached".
+            _entry_head = getattr(_rt_for_dag, "head_id", None)
             # Bind args ahead of the try block so the entry-time DAG
             # write has the real argument values.
             bound = sig.bind(*new_args, **new_kwargs)
@@ -552,7 +556,10 @@ class agentic_function:
             import uuid as _uuid
             _pending_call_id = _uuid.uuid4().hex[:12]
             _rt_for_dag = _current_runtime.get(None)
-            _entry_head = _rt_for_dag.head_id if _rt_for_dag is not None else None
+            # See sync wrapper above — buildin functions stash a sentinel
+            # ``object()`` in ``_current_runtime`` when the caller omits
+            # ``runtime=``; treat it like an unattached runtime.
+            _entry_head = getattr(_rt_for_dag, "head_id", None)
             bound = sig.bind(*new_args, **new_kwargs)
             bound.apply_defaults()
             ctx.params = dict(bound.arguments)
