@@ -37,6 +37,7 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useSessionStore } from "@/lib/session-store";
+import { refreshFunctionsList } from "@/lib/programs-actions";
 import { UserMenuFooter } from "../user-menu-footer";
 import { SessionsList } from "./sessions-list";
 import { FavoritesList } from "./favorites-list";
@@ -128,10 +129,11 @@ export function Sidebar() {
   function doRefresh() {
     if (refreshing) return;
     setRefreshing(true);
-    const w = window as unknown as { refreshFunctions?: () => Promise<void> };
-    if (typeof w.refreshFunctions === "function") {
-      void w.refreshFunctions();
-    }
+    // Re-fetch /api/functions via the React-side helper; it mirrors
+    // the result into both the zustand store and the legacy
+    // `window.availableFunctions` global so React + legacy consumers
+    // stay in sync.
+    void refreshFunctionsList();
     // Mirror legacy spin → tick → revert timing.
     const svg = refreshSvgRef.current;
     if (svg) {

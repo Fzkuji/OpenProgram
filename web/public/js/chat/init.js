@@ -500,7 +500,7 @@ function _handleRunningTask(rt) {
   }
 }
 
-// (toggleConvList, toggleFavList, doRefreshFunctions moved to sidebar.js)
+// (toggleConvList, toggleFavList, doRefreshFunctions are now React state in components/sidebar/sidebar.tsx)
 function togglePanel() {}
 
 // ===== Column Resize =====
@@ -510,8 +510,6 @@ function togglePanel() {}
 // `app-shell.tsx`. The legacy IIFE has been removed.
 
 // (Panel resize removed — single conversations list now)
-
-// (doRefreshFunctions moved to sidebar.js)
 
 // ===== Event Listeners =====
 

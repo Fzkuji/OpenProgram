@@ -51,13 +51,9 @@ function _legacyRenderFunctions_deprecated() {
   container.innerHTML = html;
 }
 
-async function refreshFunctions() {
-  try {
-    var resp = await fetch('/api/functions');
-    availableFunctions = await resp.json();
-    renderFunctions();
-  } catch(e) { console.error('Refresh failed:', e); }
-}
+// `refreshFunctions` was migrated to `web/lib/programs-actions.ts`
+// (`refreshFunctionsList`) — the React Sidebar's refresh button
+// calls it directly. Nothing on the legacy side reads it anymore.
 
 async function deleteFunction(name) {
   if (!confirm('Delete function "' + name + '"?')) return;
