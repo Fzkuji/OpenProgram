@@ -39,22 +39,18 @@ async def handle_list_branches(ws, cmd: dict):
                 mid = row["head_msg_id"]
                 name = row.get("name")
                 if not name:
-                    cur = db.conn.execute(
-                        "WITH RECURSIVE chain(id, parent_id, role, content, ts) AS ("
-                        "  SELECT id, parent_id, role, content, timestamp "
-                        "    FROM messages WHERE id=? AND session_id=?"
-                        "  UNION ALL"
-                        "  SELECT m.id, m.parent_id, m.role, m.content, m.timestamp"
-                        "    FROM messages m JOIN chain c ON m.id = c.parent_id"
-                        "    WHERE m.session_id=?"
-                        ") SELECT content FROM chain "
-                        "WHERE role IN ('user','assistant') "
-                        "ORDER BY ts DESC LIMIT 1",
-                        (mid, session_id, session_id),
-                    )
-                    r = cur.fetchone()
-                    if r and isinstance(r[0], str):
-                        txt = r[0].strip().replace("\n", " ")
+                    # Walk the chain back from the tip; pick the most
+                    # recent user/assistant message's content as the
+                    # auto-label.
+                    chain = db.get_branch(session_id, mid) or []
+                    latest_text = None
+                    for r in reversed(chain):
+                        if r.get("role") in ("user", "assistant") \
+                                and isinstance(r.get("content"), str):
+                            latest_text = r["content"]
+                            break
+                    if latest_text:
+                        txt = latest_text.strip().replace("\n", " ")
                         name = (txt[:40] + "…") if len(txt) > 40 else txt
                     else:
                         name = mid[:8]
@@ -85,11 +81,7 @@ async def handle_checkout_branch(ws, cmd: dict):
         try:
             from openprogram.agent.session_db import default_db
             db = default_db()
-            cur = db.conn.execute(
-                "SELECT 1 FROM messages WHERE id=? AND session_id=?",
-                (head_msg_id, session_id),
-            )
-            if not cur.fetchone():
+            if not db.message_exists(session_id, head_msg_id):
                 err = f"unknown message {head_msg_id!r}"
             else:
                 db.set_head(session_id, head_msg_id)
@@ -160,22 +152,11 @@ async def handle_auto_name_branch(ws, cmd: dict):
         try:
             from openprogram.agent.session_db import default_db
             db = default_db()
-            chain = []
-            cur = head_msg_id
-            while cur:
-                row = db.conn.execute(
-                    "SELECT id, parent_id, role, content "
-                    "FROM messages WHERE session_id=? AND id=?",
-                    (session_id, cur),
-                ).fetchone()
-                if row is None:
-                    break
-                chain.insert(0, row)
-                cur = row[1]
+            chain = db.get_branch(session_id, head_msg_id) or []
             recent = chain[-6:]
             transcript = "\n\n".join(
-                f"[{r[2] or '?'}] {(r[3] or '').strip()}"
-                for r in recent if r[3]
+                f"[{m.get('role') or '?'}] {(m.get('content') or '').strip()}"
+                for m in recent if m.get("content")
             )[:2000]
             prompt = (
                 "Summarize the topic of this conversation as a "
@@ -264,18 +245,8 @@ async def handle_delete_branch(ws, cmd: dict):
             cur_head = sess.get("head_id")
             head_in_branch = False
             if cur_head:
-                walk = cur_head
-                while walk:
-                    if walk == head_msg_id:
-                        head_in_branch = True
-                        break
-                    row = db.conn.execute(
-                        "SELECT parent_id FROM messages WHERE session_id=? AND id=?",
-                        (session_id, walk),
-                    ).fetchone()
-                    if row is None:
-                        break
-                    walk = row[0]
+                chain = db.get_branch(session_id, cur_head) or []
+                head_in_branch = any(m.get("id") == head_msg_id for m in chain)
             if head_in_branch:
                 leaves = db.list_branches(session_id)
                 for lf in leaves:

@@ -298,7 +298,43 @@ def process_user_turn(
         if req.history_override is None:
             history = db.get_branch(req.session_id) or history
 
-    # 3. Run the agent loop. Errors below get caught and reported as
+    # 3. Attach a Runtime with the session's GraphStore so any
+    #    @agentic_function the agent_loop invokes records its
+    #    placeholder / internal / exit nodes into the same DAG. The
+    #    Runtime is shared via the ``_current_runtime`` ContextVar
+    #    that @agentic_function's _inject_runtime consults.
+    #
+    #    Critical: we use ``create_runtime()`` (real provider) instead
+    #    of a stub. @agentic_function's _inject_runtime would otherwise
+    #    pick up our stub and any ``runtime.exec`` inside the function
+    #    body would return whatever the stub's ``call`` does (a fixed
+    #    string or empty) rather than actually calling an LLM. If
+    #    real-runtime construction fails (e.g. no provider configured),
+    #    fall back to NOT setting _current_runtime so @agentic_function
+    #    can create its own runtime as before — DAG persistence
+    #    gracefully degrades to off for this turn.
+    from openprogram.context.storage import GraphStore as _GraphStore
+    from openprogram.agentic_programming.function import (
+        _current_runtime as _current_runtime_var,
+    )
+    _dag_runtime = None
+    _runtime_token = None
+    try:
+        from openprogram.providers.registry import create_runtime as _create_rt
+        _dag_runtime = _create_rt()
+        _dag_runtime.attach_store(
+            _GraphStore(db.db_path, req.session_id),
+            head_id=user_msg_id,
+        )
+        _runtime_token = _current_runtime_var.set(_dag_runtime)
+    except Exception:
+        # No provider configured / runtime construction blew up.
+        # Skip the attach; @agentic_function will still work, just
+        # without its nodes landing in the DAG.
+        _dag_runtime = None
+        _runtime_token = None
+
+    # 4. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck
     #    "agent is thinking…" state.
     try:
@@ -347,6 +383,18 @@ def process_user_turn(
             error=str(e),
             duration_ms=int((time.time() - started_at) * 1000),
         )
+    finally:
+        # Release the @agentic_function runtime hook. Runs on success,
+        # exception, AND inside the early-return above (finally fires
+        # before return is actually executed). Guarded because attach
+        # may have silently failed (no provider configured).
+        try:
+            if _dag_runtime is not None:
+                _dag_runtime.detach_store()
+            if _runtime_token is not None:
+                _current_runtime_var.reset(_runtime_token)
+        except Exception:
+            pass
 
     # 5. Persist assistant message.
     # Attach usage + model so session_db.append_message stamps real

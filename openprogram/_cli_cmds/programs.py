@@ -122,49 +122,30 @@ def _cmd_list():
         print(f"  {name:20s}  {desc}")
 
 
-def _cmd_create(description, name, as_skill, provider=None, model=None):
-    """Create a new function."""
-    from openprogram.programs.functions.meta import create
-    runtime = _get_runtime(provider, model)
+_REMOVED_MSG = (
+    "This subcommand has been removed. Authoring agentic functions now goes\n"
+    "through the `agentic-program` skill — load it in a chat session and let\n"
+    "the agent write/edit .py files directly using its file-editing tools.\n"
+    "See skills/agentic-program/SKILL.md for the full spec."
+)
 
-    print(f"Creating '{name}' (provider: {runtime.__class__.__name__})...")
-    create(description=description, runtime=runtime, name=name, as_skill=as_skill)
-    print(f"  Saved to openprogram/programs/functions/third_party/{name}.py")
-    if as_skill:
-        print(f"  Skill created at skills/{name}/SKILL.md")
+
+def _cmd_create(description, name, as_skill, provider=None, model=None):
+    """Deprecated — use the agentic-program skill."""
+    print(_REMOVED_MSG)
+    sys.exit(2)
 
 
 def _cmd_create_app(description, name, provider=None, model=None):
-    """Create a complete runnable app."""
-    from openprogram.programs.functions.meta import create_app
-    runtime = _get_runtime(provider, model)
-
-    print(f"Creating app '{name}' (provider: {runtime.__class__.__name__})...")
-    filepath = create_app(description=description, runtime=runtime, name=name)
-    print(f"  Saved to {filepath}")
-    print(f"  Run with: python {filepath}")
+    """Deprecated — use the agentic-program skill."""
+    print(_REMOVED_MSG)
+    sys.exit(2)
 
 
 def _cmd_edit(name, instruction, provider=None, model=None):
-    """Edit an existing function."""
-    from openprogram.programs.functions.meta import edit
-    runtime = _get_runtime(provider, model)
-
-    try:
-        from openprogram.programs.functions import resolve_function_module
-        mod = resolve_function_module(name)
-        target_func = getattr(mod, name)
-    except (ImportError, AttributeError):
-        print(f"Error: function '{name}' not found in openprogram/programs/functions/third_party/")
-        sys.exit(1)
-
-    print(f"Editing '{name}' (provider: {runtime.__class__.__name__})...")
-    result = edit(fn=target_func, runtime=runtime, instruction=instruction)
-    if isinstance(result, dict) and result.get("type") == "follow_up":
-        print(f"  LLM needs more info: {result['question']}")
-        print(f"  Re-run with: openprogram edit {name} --instruction '<your answer>'")
-    else:
-        print(f"  Edited and saved to openprogram/programs/functions/third_party/{name}.py")
+    """Deprecated — use the agentic-program skill."""
+    print(_REMOVED_MSG)
+    sys.exit(2)
 
 
 def _cmd_run(name, arg_list, provider=None, model=None):
@@ -206,27 +187,6 @@ def _cmd_run(name, arg_list, provider=None, model=None):
 
 
 def _cmd_create_skill(name, provider=None, model=None):
-    """Create a SKILL.md for an existing function."""
-    import inspect
-    from openprogram.programs.functions.meta import create_skill
-    runtime = _get_runtime(provider, model)
-
-    try:
-        from openprogram.programs.functions import resolve_function_module
-        mod = resolve_function_module(name)
-        loaded_func = getattr(mod, name)
-    except (ImportError, AttributeError):
-        print(f"Error: function '{name}' not found in openprogram/programs/functions/third_party/")
-        sys.exit(1)
-
-    unwrapped_func = loaded_func._fn if hasattr(loaded_func, "_fn") else loaded_func
-    try:
-        code = inspect.getsource(unwrapped_func)
-    except (OSError, TypeError):
-        code = f"# Source not available for {name}"
-
-    description = getattr(loaded_func, "__doc__", "") or name
-
-    print(f"Creating skill for '{name}'...")
-    path = create_skill(fn_name=name, description=description, code=code, runtime=runtime)
-    print(f"  Skill created at {path}")
+    """Deprecated — use the agentic-program skill."""
+    print(_REMOVED_MSG)
+    sys.exit(2)

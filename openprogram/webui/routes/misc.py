@@ -24,11 +24,7 @@ def register(app):
             info["db_ok"] = True
             info["sessions_visible"] = session_count
             cutoff = _time.time() - 24 * 3600
-            recent = db.conn.execute(
-                "SELECT COUNT(*) AS c FROM messages WHERE timestamp >= ?",
-                (cutoff,),
-            ).fetchone()
-            info["messages_24h"] = recent["c"] if recent else 0
+            info["messages_24h"] = db.count_recent_nodes(cutoff)
         except Exception as e:
             info["db_ok"] = False
             info["db_error"] = f"{type(e).__name__}: {e}"

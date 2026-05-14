@@ -14,8 +14,8 @@ OpenProgram — Agentic Programming 理念的产品化实现。
     Runtime             LLM 调用的运行时基类
     Context             执行上下文树
     ask_user            在函数里向用户提问
-    create / edit / improve / create_app / create_skill
-                        元函数：让 LLM 帮你写 / 改 agentic_function
+    新建 / 编辑 / 改进函数走 skill ``agentic-program``，由 agent 直接
+    用 Read / Write / Edit 工具操作 .py 文件，不再有专门的 meta 函数。
 """
 
 from openprogram.agentic_programming import (
@@ -24,9 +24,6 @@ from openprogram.agentic_programming import (
     Runtime,
 )
 from openprogram.providers.registry import detect_provider, create_runtime, check_providers
-from openprogram.programs.functions.meta import (
-    create, create_app, edit, fix, improve, create_skill,
-)
 from openprogram.programs.functions.buildin.ask_user import (
     ask_user, set_ask_user, FollowUp, run_with_follow_up,
 )
@@ -46,12 +43,6 @@ __all__ = [
     "FollowUp",
     "run_with_follow_up",
     "ask_user",
-    "create",
-    "create_app",
-    "edit",
-    "fix",
-    "improve",
-    "create_skill",
     "detect_provider",
     "create_runtime",
     "check_providers",

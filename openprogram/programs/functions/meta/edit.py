@@ -183,6 +183,7 @@ def conclude_edit(task: str, runtime: Runtime) -> str:
 
 @agentic_function(input={
     "fn": {
+        "label": "function",
         "description": "Function to edit",
         "options_from": "functions",
         "multiline": False,

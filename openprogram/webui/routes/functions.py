@@ -163,22 +163,14 @@ def register(app):
         msg_id = str(uuid.uuid4())[:8]
 
         def _do_edit():
-            try:
-                from openprogram.programs.functions.meta import edit
-                from openprogram.providers.registry import create_runtime
-                mod = importlib.import_module(f"openprogram.programs.functions.{name}")
-                fn = getattr(mod, name)
-                runtime = create_runtime()
-                edit(fn=fn, runtime=runtime, instruction=instruction or None)
-                _s._broadcast_chat_response(session_id, msg_id, {
-                    "type": "result",
-                    "content": f"Edited function '{name}' successfully.",
-                })
-            except Exception as e:
-                _s._broadcast_chat_response(session_id, msg_id, {
-                    "type": "error",
-                    "content": f"Edit failed: {e}",
-                })
+            _s._broadcast_chat_response(session_id, msg_id, {
+                "type": "error",
+                "content": (
+                    "The /edit endpoint has been removed. Open the chat "
+                    "and load the agentic-program skill — the agent will "
+                    "edit .py files directly using its file-editing tools."
+                ),
+            })
 
         threading.Thread(target=_do_edit, daemon=True).start()
         return JSONResponse(content={"session_id": conv["id"], "msg_id": msg_id})
@@ -213,21 +205,14 @@ def register(app):
         desc = body["description"]
 
         def _do_create():
-            try:
-                from openprogram.programs.functions.meta import create
-                runtime = _s._get_runtime()
-                create(description=desc, runtime=runtime, name=name)
-                _s._broadcast_chat_response(session_id, msg_id, {
-                    "type": "result",
-                    "content": f"Created function '{name}' successfully.",
-                })
-                functions = _s._discover_functions()
-                _s._broadcast(json.dumps({"type": "functions_list", "data": functions}, default=str))
-            except Exception as e:
-                _s._broadcast_chat_response(session_id, msg_id, {
-                    "type": "error",
-                    "content": f"Create failed: {e}",
-                })
+            _s._broadcast_chat_response(session_id, msg_id, {
+                "type": "error",
+                "content": (
+                    "The /create endpoint has been removed. Open the chat "
+                    "and load the agentic-program skill — the agent will "
+                    "create the .py file directly using its file-editing tools."
+                ),
+            })
 
         threading.Thread(target=_do_create, daemon=True).start()
         return JSONResponse(content={"session_id": conv["id"], "msg_id": msg_id})

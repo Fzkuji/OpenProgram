@@ -221,11 +221,7 @@ async def post_chat_checkout(body: dict = None):
     # off-branch clicks always 404'd.
     from openprogram.agent.session_db import default_db
     db = default_db()
-    cur = db.conn.execute(
-        "SELECT 1 FROM messages WHERE id=? AND session_id=?",
-        (target_id, session_id),
-    )
-    if not cur.fetchone():
+    if not db.message_exists(session_id, target_id):
         return JSONResponse(content={"error": "unknown msg"}, status_code=404)
     db.set_head(session_id, target_id)
     with _srv._sessions_lock:

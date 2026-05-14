@@ -1,8 +1,187 @@
 # openprogram/context — 上下文管理
 
-OpenProgram 每个 turn 喂给 LLM 的内容由这个包决定：系统提示怎么拼、历史保留哪些、token 预算怎么分、什么时候触发 compaction、compaction 之后历史怎么持久化。
+OpenProgram 每个 turn 喂给 LLM 的内容由这个包决定：对话历史怎么存、节点怎么组织、系统提示怎么拼、token 预算怎么分、什么时候触发 compaction、compaction 之后历史怎么持久化。
 
-整个包由 10 个单一职责的文件组成，由 `DefaultContextEngine` 编排。设计目标是把 Claude Code、Hermes、OpenClaw 三个参考系统各自的强项拿过来，再加上 OpenProgram 独有的 DAG 持久化层。
+整个包**分两层**：
+
+```
+数据底座（DAG）           节点定义、SQLite 存储、Session 管理、Runtime
+                              ↑
+上下文编排                 system_prompt / budget / aging / summarize / persistence
+```
+
+**底座**定义"对话历史长什么样、存哪里、怎么读写"——所有内容是一张有向无环图（DAG），只有一种节点类型 `Call`，靠 `role` 字段（`user` / `llm` / `code`）区分用户消息、LLM 调用、代码调用。时间顺序由节点的 `seq` 整数表达；两套真正的"边"是 `called_by`（谁调起我，嵌套关系）和 `reads`（这次 LLM 调用读了哪些节点，prompt 引用）。
+
+**编排层**定义"每个 turn 给 LLM 看什么"——拿底座里的历史，按 token 预算切片、把旧 tool_result 脱水、必要时调 LLM 做增量总结，最后把折叠结果写回底座成为新节点。
+
+设计目标：把 Claude Code、Hermes、OpenClaw 三个参考系统各自的强项拿过来，叠加 OpenProgram 独有的扁平 DAG 模型 + DAG re-parent 持久化。
+
+---
+
+## 0. 数据底座（DAG）
+
+### 0.1 节点模型 `nodes.py`
+
+**只有一种节点类型 `Call`**：
+
+```python
+@dataclass
+class Call:
+    id: str
+    seq: int                    # append 时单调递增 — 唯一的时间排序依据
+    created_at: float
+    role: str                   # "user" | "llm" | "code"
+    name: str                   # 模型 id / 函数名 / 用户名
+    input: Any                  # 这次调用收到的输入
+    output: Any                 # 这次调用产出的输出
+    called_by: str              # 调起我的节点 id（嵌套边）
+    reads: list[str]            # 这次 LLM 调用读了哪些节点（上下文边）
+    metadata: dict              # passthrough 字段袋
+```
+
+三种 role 共用同一个数据结构：
+
+```
+role="user"   ─ 用户消息       output = 消息文本
+role="llm"    ─ 一次 LLM 调用   input = {system: "..."}
+                                output = 模型回复
+                                reads  = prompt 中包含的节点 ids
+                                called_by = 调起这次 LLM 调用的 @agentic_function id（如果有）
+role="code"   ─ 一次函数调用    input  = arguments dict
+                                output = 函数返回值
+                                called_by = 调起这个函数的 LLM 或父函数 id
+```
+
+**DAG 上的"边"有两套**：
+
+```
+called_by    调用关系图   "谁调起我"           形成 fan-out 的嵌套树
+reads        上下文引用    "我看了哪些节点"      fan-in 的 LLM prompt 组成
+```
+
+**时间顺序由 `seq` 表达，不是图的边**。`seq` 是节点 append 到 DB 时单调递增的整数，按 seq 升序排就是发生顺序。没有 `predecessor` 字段——那是把"时间链"和"逻辑边"混在一起的过度建模。
+
+`Graph` 是一个轻量容器：`nodes: dict[id → Call]` + `_next_seq` 整数。`add(node)` 自动分配 seq；`update(node_id, **fields)` 用于"入口 append 占位、出口 update output"的 @agentic_function 生命周期（这是 DAG 中**唯一**违反 append-only 的操作，专门支持实时观察）。
+
+**算法 helper**：
+
+```
+last_user_message(graph)             找最近一条 user-role Call
+linear_back_to(graph, target)        seq ≥ target.seq 的所有节点，按 seq 升序
+branch_terminals(spawn_id, graph)    沿 called_by 链找每个分支的末端
+branch_internal(spawn_id, term, g)   单个分支从 spawn 到 terminal 的内部节点链
+fold_history(current_id, graph)      把历史按 turn 折叠：每个 prior turn 留 (user, final-llm) 对
+compute_reads(graph,                 按 expose / render_range 算出
+              head_seq=...,           @agentic_function 下次 LLM 调用的 reads
+              frame_entry_seq=...,
+              render_range=...)
+```
+
+**Backward-compat 工厂**：保留 `UserMessage(content=...)` / `ModelCall(model=..., reads=..., output=...)` / `FunctionCall(function_name=..., arguments=..., result=..., called_by=...)` 三个名字作为工厂函数，内部都返回 `Call` 实例。让老代码改动最小。但 `isinstance(node, UserMessage)` 不再可用——必须用 `node.is_user()` / `is_llm()` / `is_code()` 检查 role。
+
+`Call` 类上还有几个 property 别名：`.content` → `.output`、`.model` / `.function_name` → `.name`、`.arguments` → `.input`、`.result` → `.output`、`.system_prompt` → `.input["system"]`。
+
+### 0.2 SQLite 存储 `storage.py`
+
+`GraphStore(db_path, session_id)` 是一个 session 对应一个 GraphStore 实例。三张表：
+
+```
+sessions      id / title / created_at / updated_at / model / agent_id /
+              source / extra_json / last_node_id
+nodes         id / session_id / type / predecessor / created_at / seq / data_json
+              ↑                  ↑     ↑
+              所有节点 id        role   存 metadata.parent_id（legacy 消息树边）
+nodes_fts     FTS5 虚表  text / session_id / node_id  全文搜索
+```
+
+`nodes.type` 列存 role 字符串（`user` / `llm` / `code`）；`nodes.seq` 是时间排序；`data_json` 把非列字段（input / output / reads / called_by / metadata）打包成 JSON。FTS5 索引节点的可搜索文本（output + name + 等）。
+
+`nodes.predecessor` 列保留但**装的是 `metadata.parent_id`**——legacy 消息树的父 id。dispatcher / channels / webui 对消息树的依赖（fork / rewind / list_branches 等）通过这个 SQL 索引继续工作，不影响新 DAG 模型的纯净性。
+
+`append(node)` 是单调 append-only——重复 append 同 id 报错。`append` 时自动给 `node.seq` 赋值（如果 caller 没指定）。`update(node_id, **fields)` 用于 @agentic_function 出口填占位节点的 output，同时刷 FTS。`load()` 把整个 session 重建成内存 Graph。`search(query, limit)` 走 FTS5 在 session 内搜，模块级 `search_across_sessions(db, query)` 跨 session 搜。
+
+### 0.3 Session 抽象 `session.py`
+
+`DagSession` = `SessionMeta` + `Graph` + `GraphStore` + `DagRuntime`，一个对象包一整个会话的所有状态。
+
+`DagSessionManager(db_path)` 是多会话管理器：`create()` / `load()` / `list()` / `rename()` / `delete()` / `exists()`，一个 SQLite 文件可以存任意多个 session，按 `updated_at` 排序返回。
+
+### 0.4 SessionDB 适配器 `session_db.py`
+
+`DagSessionDB` 提供**跟老 `SessionDB` 同名同签名的 API**——`create_session` / `append_message` / `get_messages` / `get_branch` / `set_head` / `list_branches` / `get_branch_token_stats` / `search_messages` 等 14 个方法，但底下走 DAG schema。
+
+外部 `from openprogram.agent.session_db import SessionDB` 其实是 `SessionDB = DagSessionDB` 的别名（`agent/session_db.py` 是个 16 行 re-export）。dispatcher / channels / webui 代码一行没改、全部跑在 DAG 后端上。
+
+message dict ↔ Call 的双向映射在这一层：
+- legacy `role="user"` ↔ `Call(role="user", output=content)`
+- legacy `role="assistant"` ↔ `Call(role="llm", name=model, output=content)`
+- legacy `role="tool"` ↔ `Call(role="code", name=function, input=arguments, output=result)`
+- legacy `role="system"` ↔ `Call(role="llm", metadata.role="system")`（roundtrip 保留原 role）
+- 非核心字段（source / attachments / `parent_id` / `_titled` flag / ...）一律塞 `node.metadata`，读出时 hoist 回 dict 顶层
+
+`get_branch(session_id, head_msg_id)` 沿 `metadata.parent_id` 链回溯——保留 chat 消息树的 fork/rewind 语义；默认 head 读 sessions 表的 `last_node_id`。
+
+### 0.5 LLM Runtime `runtime.py`
+
+`DagRuntime(provider_call, graph, store, default_model)` — **干净的 DAG 原生 runtime**：
+
+- `exec(content, reads, model, system, tools)` — 拿 `reads` 列表的节点 id 渲染成 messages，调 `provider_call`，把回复写成一个新的 llm-role `Call` 节点 append 到 graph，**同时持久化到 store**
+- `add_user_message(content)` — 在 graph 上加一条 user-role Call
+- `record_function_call(name, arguments, called_by, result)` — 调用方自己执行完函数后调这个登记结果
+
+跟老的 `agentic_programming.Runtime` 区别：DagRuntime 不维护 tree Context、不操作 `_current_ctx` thread-local、不感知 `@agentic_function`。它就是一个"给定 graph + reads，调一次 LLM"的纯函数 wrapper。`reads` 谁来算，由调用方负责。
+
+### 0.6 Chat 循环 `chat.py`
+
+`chat_turn(user_input, runtime, tools, max_iterations)` — 一个 LLM↔tool 循环：
+
+```
+循环：
+  1. fold_history 折叠之前 turn 的细节，加上本轮用户输入
+  2. runtime.exec → 拿到 LLM 回复
+  3. parse_tool_call(reply) → 看 LLM 要不要调工具
+     - 调 → 执行 + 写 code Call + 继续循环
+     - 不调（纯文本）→ 返回回复，结束
+  4. 最多 max_iterations 轮，超过强制停
+```
+
+`parse_tool_call(text)` 容忍 LLM 用 bare JSON、围栏 JSON、或者文本里夹 JSON 多种格式表达"调用工具"。
+
+### 0.7 @agentic_function ↔ DAG 集成
+
+旧设计有一个粘合层 `bridge.py`；新设计把它的职责拆回各自归属，文件已删。
+
+**`@agentic_function` 装饰器**（在 `openprogram/agentic_programming/function.py`）：
+- 入口生成 `pending_id` + 立即 `runtime.append_node(Call(role=code, output=None, metadata.status="running"))` ——webui / 调试器可以实时看到正在跑的函数
+- 入口 `_current_function_frame.set(pending_id)` ——单 slot ContextVar，给 `runtime.exec` 拿当前函数 id 做 `called_by` 标记
+- 出口 `runtime.update_node(pending_id, output=..., status="success")` ——同一个节点的 output 字段被填上，**不写第二个节点**
+- 异常路径：`output={"error": ...}` + `status="error"` 在原节点上更新
+
+**`Runtime.exec` / `async_exec`** 调 LLM 成功后调内部 `_record_llm_call()`：
+- 读 `_current_function_frame.get()` 拿到 caller_id
+- append 一个 `Call(role=llm, name=model, output=reply, called_by=caller_id)` 到 store
+- 没有 frame 时（顶层 chat）`called_by=""`
+- 没有 store 时全部 no-op（standalone 跑 @agentic_function 不依赖持久化）
+
+**`dispatcher.process_user_turn`** 入口：
+- 创建一个 `Runtime`，调 `attach_store(GraphStore(...), head_id=user_msg_id)`
+- `_current_runtime.set(runtime)` ——后续 `@agentic_function._inject_runtime` 通过 ContextVar 拿到这个 attached runtime
+- finally：`runtime.detach_store()` + `_current_runtime.reset(token)`
+
+**`compute_reads(graph, head_seq, frame_entry_seq, render_range)`**（在 `nodes.py`）—— 纯函数，按 DAG 结构算下一次 LLM 调用要读哪些节点：
+
+```
+顶层聊天                       seq ≤ head_seq 的所有节点，按 seq 升序
+@agentic_function 内部          frame_entry_seq 之前 + frame 内部新增节点
+expose='io' 的 code Call        把它内部 llm Call（called_by == this）从 reads 里去掉
+expose='full'                  保留内部所有 llm Call
+render_range['depth']           pre-frame 节点最多保留多少（0 = 完全隔离）
+render_range['siblings']        in-frame 节点最多保留多少（最近 N 个）
+```
+
+所有节点**始终写进 DAG**（不影响存储），expose 只影响算 reads 时的可见性过滤。`compute_reads` 目前还没真正接入 `runtime.exec`——prompt 拼接还走 legacy `render_context`；这是有意保守的渐进，等下一阶段再切。
+
+---
 
 ## 总体流程
 
@@ -450,8 +629,21 @@ Per-agent engine override      有            无            有         有
 ## 6. 文件清单
 
 ```
+─── 数据底座（DAG） ─────────────────────────────────────────
+nodes.py           Call 节点类型 + Graph 容器 + helpers (last_user_message /
+                    linear_back_to / branch_terminals / branch_internal /
+                    fold_history / compute_reads) + backward-compat 工厂
+                    (UserMessage / ModelCall / FunctionCall)
+storage.py         GraphStore：SQLite 三表（sessions/nodes/nodes_fts），
+                    append + update + FTS5
+session.py         DagSession + DagSessionManager：一个 SQLite 文件多 session
+session_db.py      DagSessionDB：跟老 SessionDB 同 API 的适配器（chat msg ↔ Call 映射）
+runtime.py         DagRuntime：provider_call wrapper，exec → 写 llm-role Call
+chat.py            chat_turn：LLM↔tool 循环 + parse_tool_call
+
+─── 上下文编排 ─────────────────────────────────────────────
 __init__.py        公开 API：default_engine / resolve_engine_for / TurnPrep / CompactResult / ...
-types.py           纯 dataclass：UsageSnapshot / BudgetAllocation / TurnPrep / CompactResult / ReferenceMap
+types.py           编排 dataclass：UsageSnapshot / BudgetAllocation / TurnPrep / CompactResult / ReferenceMap
 tokens.py          token 估算 + real_context_window + CJK 比例
 usage.py           UsageTracker：provider usage 缓存 + hybrid 估算
 budget.py          BudgetAllocator：context_window → 四段切分
@@ -503,6 +695,40 @@ ReferenceMap           cited_tool_use_ids: set[str]
                        last_built_at: float
 ```
 
+**DAG 节点类型**（底座，`nodes.py`）：
+
+```
+Call                   id: str
+                       seq: int                    时间排序，append 时单调递增（-1 = 未存）
+                       created_at: float
+                       role: str                   "user" | "llm" | "code"
+                       name: str                   model id / 函数名 / 用户名
+                       input: Any                  prompt 信息 / arguments dict
+                       output: Any                 reply text / result / None
+                       called_by: str              调起我的节点 id（嵌套关系边）
+                       reads: list[str]            这次 LLM 调用 prompt 包含的节点 id
+                       metadata: dict              passthrough 字段袋（source / expose / status / parent_id / ...）
+
+# backward-compat factory functions（返回 Call）：
+UserMessage(content)         → Call(role="user", output=content)
+ModelCall(model, reads,      → Call(role="llm", name=model, reads=reads, output=output,
+        output, system_prompt)         input={"system": system_prompt})
+FunctionCall(function_name,  → Call(role="code", name=function_name, input=arguments,
+            arguments, result,           output=result, called_by=called_by)
+            called_by)
+```
+
+**Backward-compat property accessors on Call**：
+
+```
+.content       → .output         (UserMessage 风格)
+.model         → .name           (ModelCall 风格)
+.system_prompt → .input["system"]
+.function_name → .name           (FunctionCall 风格)
+.arguments     → .input
+.result        → .output
+```
+
 ## 8. 与其他平台的整体对比
 
 下面是把上面所有维度合并起来的总表。"有" = 原生支持，"部分" = 有但不完整，"无" = 不支持。
@@ -510,6 +736,15 @@ ReferenceMap           cited_tool_use_ids: set[str]
 ```
 维度                              OpenProgram   Claude Code   OpenClaw   Hermes
 ─────────────────────────────────  ───────────   ───────────   ────────   ──────
+扁平 DAG (单一 Call 类型 + role 区分)  有        无            无         无
+called_by / reads 双套边               有        无            无         无
+seq 时间排序（不混入图结构）           有        无            无         无
+统一持久化（chat + agent 同 DAG）      有        部分          无         无
+@agentic_function 入口 placeholder      有        无            无         无
++ 出口 in-place update（实时观察）
+FTS5 节点级全文搜索                    有        无            无         无
+SessionDB 兼容适配器                   有        —             —          —
+
 分层 system prompt 装配            有            有            有         有
 工作区文件 (AGENTS/SOUL/USER.md)   有            有            有         无
 Skill 索引                         有            有            无         部分
@@ -546,6 +781,10 @@ Per-agent engine override          有            无            有         有
 
 **OpenProgram 独有的设计点**
 
+- 扁平 DAG：所有事件都是同一种 `Call` 节点，靠 `role` 字段区分（user / llm / code）——一种数据结构表达全部历史，分支/嵌套/合并都靠 `called_by` 和 `reads` 两套边表达
+- `seq` 整数承担时间排序，跟"图的边"完全解耦——纯净 DAG 模型
+- 聊天对话 + `@agentic_function` 内部调用统一落在同一张 DAG，按 seq 自然交错，没有"主聊天 DAG vs agent 内部 DAG"的切分
+- `@agentic_function` 入口 append placeholder + 出口 update output 模式——函数运行期间 DAG 上就能看到 `status="running"` 节点，方便实时观察 / 调试 / webui 进度展示
 - DAG re-parent 持久化（compact 后原始分支不丢，可回放）
 - LLM summary 失败 structural 兜底（agent loop 永远不因 compaction 崩溃）
 - 三闸门 + 保护前 N + 引用追踪同时启用

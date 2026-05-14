@@ -32,6 +32,15 @@ from openprogram.agentic_programming.events import _emit_event
 # Entry-point functions auto-create a runtime; child functions inherit it.
 _current_runtime: ContextVar = ContextVar('_current_runtime', default=None)
 
+# pending_id of the @agentic_function currently being executed in this
+# task. Single-slot ContextVar — Python set/reset gives us stack semantics
+# automatically: each wrapper sets at entry, the saved token is reset at
+# exit which restores the previous (caller's) value. ``runtime.exec``
+# reads this to stamp ModelCall.called_by with the enclosing function.
+_current_function_frame: ContextVar = ContextVar(
+    '_current_function_frame', default=None,
+)
+
 # Parameter names that receive the runtime injection
 _RUNTIME_PARAMS = {"runtime", "exec_runtime", "review_runtime"}
 
@@ -77,6 +86,113 @@ def _run_pre_invocation_hooks() -> None:
 # Maps function name → agentic_function instance.
 # Used by the visualizer to look up source code for any decorated function.
 _registry: dict[str, "agentic_function"] = {}
+
+
+def _append_function_call_entry(
+    *,
+    runtime,
+    pending_id: str,
+    function_name: str,
+    arguments: dict,
+    expose: str,
+    entry_head,
+    started_at,
+) -> None:
+    """Append a placeholder code Call at @agentic_function entry.
+
+    The node has ``output=None`` (function hasn't returned yet) and
+    ``metadata.status='running'``. The matching
+    :func:`_update_function_call_exit` fills these in at exit.
+
+    No-op when:
+      - the active runtime has no DAG store attached (standalone)
+      - ``expose='hidden'`` (caller wants no trace in the DAG)
+    """
+    if runtime is None or getattr(runtime, "store", None) is None:
+        return
+    if expose == "hidden":
+        return
+
+    from openprogram.context.nodes import Call, ROLE_CODE
+
+    node = Call(
+        id=pending_id,
+        created_at=started_at or time.time(),
+        role=ROLE_CODE,
+        name=function_name,
+        input=_sanitize_function_args(arguments or {}),
+        output=None,
+        called_by=entry_head or "",
+        metadata={
+            "expose": expose,
+            "status": "running",
+        },
+    )
+    try:
+        runtime.append_node(node)
+    except Exception:
+        # DAG persistence failure must never break the user's function call.
+        pass
+
+
+def _update_function_call_exit(
+    *,
+    runtime,
+    pending_id: str,
+    output,
+    error,
+    status: str,
+    expose: str,
+    started_at,
+    ended_at,
+) -> None:
+    """Fill in output + status on the placeholder Call written at entry.
+
+    Mirror of :func:`_append_function_call_entry` — same no-op rules.
+    """
+    if runtime is None or getattr(runtime, "store", None) is None:
+        return
+    if expose == "hidden":
+        return
+
+    duration = None
+    if started_at is not None and ended_at is not None:
+        duration = float(ended_at) - float(started_at)
+
+    if status == "error":
+        result_payload = {"error": error or "unknown"}
+    else:
+        result_payload = output
+
+    runtime.update_node(
+        pending_id,
+        output=result_payload,
+        metadata={
+            "status": status,
+            "duration_seconds": duration,
+        },
+    )
+
+
+def _sanitize_function_args(params: dict) -> dict:
+    """Trim non-JSON-friendly param values so they fit a data_json blob.
+
+    - Runtime injections become a type tag (we don't want to serialise
+      a whole Runtime object into SQLite on every call).
+    - Anything that JSON-doesn't-like is repr'd and truncated to 500 chars.
+    """
+    out: dict = {}
+    for k, v in params.items():
+        if k in _RUNTIME_PARAMS:
+            out[k] = f"<{type(v).__name__}>"
+            continue
+        try:
+            import json as _json
+            _json.dumps(v, default=str)
+            out[k] = v
+        except (TypeError, ValueError):
+            out[k] = repr(v)[:500]
+    return out
 
 
 
@@ -312,16 +428,35 @@ class agentic_function:
             wrapper._last_ctx = ctx
 
             ctx_token = _current_ctx.set(ctx)
+            # DAG entry: assign a stable id for the code Call we'll
+            # append now (output=None placeholder) and update on exit.
+            import uuid as _uuid
+            _pending_call_id = _uuid.uuid4().hex[:12]
+            _rt_for_dag = _current_runtime.get(None)
+            _entry_head = _rt_for_dag.head_id if _rt_for_dag is not None else None
+            # Bind args ahead of the try block so the entry-time DAG
+            # write has the real argument values.
+            bound = sig.bind(*new_args, **new_kwargs)
+            bound.apply_defaults()
+            ctx.params = dict(bound.arguments)
+            _append_function_call_entry(
+                runtime=_rt_for_dag,
+                pending_id=_pending_call_id,
+                function_name=fn.__name__,
+                arguments=ctx.params,
+                expose=expose,
+                entry_head=_entry_head,
+                started_at=ctx.start_time,
+            )
+            # Push this function onto the frame stack so runtime.exec
+            # called from the body can stamp its ModelCall.called_by.
+            _frame_token = _current_function_frame.set(_pending_call_id)
             try:
                 # Emit node_created inside the try block so any pre-invocation
                 # hook fired by the emit (e.g. pause → stop → CancelledError)
                 # is caught by the except branches below and the ctx is marked
                 # as cancelled/error rather than orphaned.
                 _emit_event("node_created", ctx)
-                bound = sig.bind(*new_args, **new_kwargs)
-                bound.apply_defaults()
-                ctx.params = dict(bound.arguments)
-
                 result = await fn(*new_args, **new_kwargs)
                 ctx.output = result
                 ctx.status = "success"
@@ -337,6 +472,20 @@ class agentic_function:
             finally:
                 ctx.end_time = time.time()
                 _emit_event("node_completed", ctx)
+                # DAG exit: fill in output / status on the placeholder
+                # that was appended at entry. Update is no-op when no
+                # store was attached.
+                _update_function_call_exit(
+                    runtime=_rt_for_dag,
+                    pending_id=_pending_call_id,
+                    output=ctx.output,
+                    error=ctx.error,
+                    status=ctx.status or "success",
+                    expose=expose,
+                    started_at=ctx.start_time,
+                    ended_at=ctx.end_time,
+                )
+                _current_function_frame.reset(_frame_token)
                 _current_ctx.reset(ctx_token)
                 if runtime_token is not None:
                     _current_runtime.reset(runtime_token)
@@ -388,17 +537,33 @@ class agentic_function:
 
             # Set as current context for the duration of the call
             ctx_token = _current_ctx.set(ctx)
+            # DAG entry: assign a stable id and append the placeholder
+            # code Call now (output=None); exit handler fills it in.
+            import uuid as _uuid
+            _pending_call_id = _uuid.uuid4().hex[:12]
+            _rt_for_dag = _current_runtime.get(None)
+            _entry_head = _rt_for_dag.head_id if _rt_for_dag is not None else None
+            bound = sig.bind(*new_args, **new_kwargs)
+            bound.apply_defaults()
+            ctx.params = dict(bound.arguments)
+            _append_function_call_entry(
+                runtime=_rt_for_dag,
+                pending_id=_pending_call_id,
+                function_name=fn.__name__,
+                arguments=ctx.params,
+                expose=expose,
+                entry_head=_entry_head,
+                started_at=ctx.start_time,
+            )
+            # Push this function onto the frame stack so runtime.exec
+            # called from the body can stamp its ModelCall.called_by.
+            _frame_token = _current_function_frame.set(_pending_call_id)
             try:
                 # Emit node_created inside the try block so any pre-invocation
                 # hook fired by the emit (e.g. pause → stop → CancelledError)
                 # is caught by the except branches below and the ctx is marked
                 # as cancelled/error rather than orphaned.
                 _emit_event("node_created", ctx)
-                # Bind arguments to record params
-                bound = sig.bind(*new_args, **new_kwargs)
-                bound.apply_defaults()
-                ctx.params = dict(bound.arguments)
-
                 result = fn(*new_args, **new_kwargs)
                 ctx.output = result
                 ctx.status = "success"
@@ -415,6 +580,18 @@ class agentic_function:
                 ctx.end_time = time.time()
                 wrapper._last_ctx = ctx
                 _emit_event("node_completed", ctx)
+                # DAG exit: fill in output / status on the placeholder.
+                _update_function_call_exit(
+                    runtime=_rt_for_dag,
+                    pending_id=_pending_call_id,
+                    output=ctx.output,
+                    error=ctx.error,
+                    status=ctx.status or "success",
+                    expose=expose,
+                    started_at=ctx.start_time,
+                    ended_at=ctx.end_time,
+                )
+                _current_function_frame.reset(_frame_token)
                 _current_ctx.reset(ctx_token)
                 # Clean up runtime if we created it
                 if runtime_token is not None:

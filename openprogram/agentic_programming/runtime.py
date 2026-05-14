@@ -139,6 +139,14 @@ class Runtime:
         # prompt_cache_key (Codex) so repeat prefixes hit the cache.
         self.session_id = f"op-{_uuid.uuid4().hex[:16]}"
 
+        # DAG write target. dispatcher (or any caller managing a real
+        # session) installs these at turn entry so every exec/agentic
+        # function in the call chain appends nodes to the same DAG.
+        # When None, the runtime is "standalone" — no persistence, no
+        # node tracking. @agentic_function and exec stay functional.
+        self.store = None        # GraphStore | None
+        self.head_id = None      # str | None — last appended node id
+
         # Resolve "provider:model_id" form against the pi-ai model registry.
         self.api_model = None
         if call is None and isinstance(model, str) and ":" in model:
@@ -206,6 +214,107 @@ class Runtime:
         if self._call_fn is not None:
             return True
         return type(self)._call is not Runtime._call
+
+    # --- DAG node tracking ---
+
+    def attach_store(self, store, *, head_id=None) -> None:
+        """Install a GraphStore as this runtime's DAG write target.
+
+        Called by the dispatcher at turn entry. After this call, every
+        ``append_node()`` (from runtime.exec or @agentic_function
+        wrappers) persists to ``store`` and advances ``head_id``.
+
+        Args:
+            store: a GraphStore (or anything with ``append(node)``).
+            head_id: the last existing node id in the DAG (so the first
+                     node appended this turn gets the right predecessor).
+                     Pass session.head_id from SessionDB.
+        """
+        self.store = store
+        self.head_id = head_id
+
+    def detach_store(self) -> str | None:
+        """Release the DAG store. Returns the final head_id so the
+        dispatcher can persist it back to the session row.
+        """
+        final_head = self.head_id
+        self.store = None
+        self.head_id = None
+        return final_head
+
+    def append_node(self, node) -> None:
+        """Append a node to the attached DAG and advance head_id.
+
+        ``store.append()`` assigns ``node.seq``. We track the most
+        recently appended id so subsequent @agentic_function entries
+        / exit-time code Calls can use it as their ``called_by``.
+
+        No-op when no store is attached — @agentic_function /
+        runtime.exec also work in standalone scripts without persistence.
+        """
+        if self.store is None:
+            return
+        self.store.append(node)
+        self.head_id = node.id
+
+    def update_node(self, node_id, **fields) -> None:
+        """Update fields on an already-appended node. Used by the
+        @agentic_function exit path to fill in ``output`` / ``status``
+        on the placeholder code Call that was appended at entry.
+
+        No-op when no store is attached, or when persistence fails —
+        DAG bookkeeping must never break the user's function call.
+        """
+        if self.store is None:
+            return
+        try:
+            self.store.update(node_id, **fields)
+        except Exception:
+            pass
+
+    def _record_llm_call(
+        self,
+        *,
+        reply: str,
+        model: str,
+        system_prompt: Optional[str] = None,
+        content_text: str = "",
+    ) -> None:
+        """Append an llm-role Call after a successful provider call.
+
+        No-op when no store is attached. Picks up the enclosing
+        ``@agentic_function``'s pending id (if any) and stamps it as
+        ``called_by`` so the read-side can group LLM calls under
+        their function.
+
+        ``reads`` is intentionally left empty for now — the prompt
+        contents are still composed by the legacy ``render_context``
+        path. Once prompts are DAG-driven this will carry the read ids.
+        """
+        if self.store is None:
+            return
+        try:
+            from openprogram.context.nodes import Call, ROLE_LLM
+            from openprogram.agentic_programming.function import (
+                _current_function_frame,
+            )
+            caller_id = _current_function_frame.get(None) or ""
+            node = Call(
+                role=ROLE_LLM,
+                name=model or self.model or "",
+                input=({"system": system_prompt} if system_prompt else None),
+                output=reply,
+                reads=[],
+                called_by=caller_id,
+                metadata=(
+                    {"prompt_text": content_text[:8000]}
+                    if content_text else {}
+                ),
+            )
+            self.append_node(node)
+        except Exception:
+            # DAG bookkeeping failure must not break the LLM call.
+            pass
 
     # --- Working directory ---
 
@@ -393,6 +502,11 @@ class Runtime:
                         _emit_event("node_completed", exec_ctx)
                         # Backward compat: parent function also gets latest reply
                         parent_ctx.raw_reply = reply
+                    self._record_llm_call(
+                        reply=reply,
+                        model=use_model,
+                        content_text=content_text,
+                    )
                     return reply
                 except (TypeError, NotImplementedError):
                     raise  # Programming errors — don't retry
@@ -490,6 +604,11 @@ class Runtime:
                         exec_ctx.end_time = _time.time()
                         _emit_event("node_completed", exec_ctx)
                         parent_ctx.raw_reply = reply
+                    self._record_llm_call(
+                        reply=reply,
+                        model=use_model,
+                        content_text=content_text,
+                    )
                     return reply
                 except (TypeError, NotImplementedError):
                     raise

@@ -1,1 +1,1 @@
-# Generated apps — created by openprogram.programs.functions.meta.create_app()
+# Generated apps — authored via the agentic-program skill in a chat session.
