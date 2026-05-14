@@ -1,12 +1,11 @@
 """clarify tool — pause the agent and ask the user a question.
 
 Thin wrapper over the existing ``ask_user`` infrastructure in
-``openprogram.programs.functions.buildin.ask_user``, which already
-handles:
+``openprogram.programs.functions.buildin.ask_user``, which handles:
   * WebUI ↔ backend round-trip via registered global handler
-  * Per-Context-node overrides (ask_user_handler attribute)
   * TTY fallback using ``input()``
   * "no handler anywhere" graceful None return
+  * DAG persistence (records the Q&A as a user-role Call)
 
 We surface it as a plain tool so any @agentic_function can ask the
 user without the caller having to import ask_user directly. Useful for

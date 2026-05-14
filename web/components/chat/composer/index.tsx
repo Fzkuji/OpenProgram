@@ -28,6 +28,7 @@ import {
 } from "./icons";
 import { PlusMenuItem, ToolChip } from "./menu-pieces";
 import { type SlashCommand } from "./slash-commands";
+import { sendChatMessage } from "./legacy-send";
 import { useFnFormState } from "./use-fn-form-state";
 import { useFnFormWrapper } from "./use-fn-form-wrapper";
 import { useSlashMenu } from "./use-slash-menu";
@@ -145,15 +146,29 @@ export function Composer() {
       slash.close();
       return;
     }
-    const ok = send({
-      action: "chat",
+    // Delegate to legacy `sendMessage` (chat.js) so the user bubble +
+    // welcome-hide + assistant placeholder + isRunning flip all fire
+    // before the WS payload goes out. Composer is just the trigger.
+    const handled = sendChatMessage({
       text: trimmed,
-      session_id: currentSessionId ?? null,
-      thinking_effort: thinking,
-      tools: toolsEnabled,
-      web_search: webSearchEnabled,
+      thinking,
+      toolsEnabled,
+      webSearchEnabled,
     });
-    if (!ok) return; // ws not open — leave input intact so the user can retry
+    if (!handled) {
+      // chat.js hasn't loaded yet (shouldn't happen in steady state).
+      // Fall back to a raw send so we don't lose the user's text; the
+      // welcome-screen / user-bubble update is out of scope here.
+      const ok = send({
+        action: "chat",
+        text: trimmed,
+        session_id: currentSessionId ?? null,
+        thinking_effort: thinking,
+        tools: toolsEnabled,
+        web_search: webSearchEnabled,
+      });
+      if (!ok) return;
+    }
     setInput("");
     slash.close();
   }, [
@@ -231,15 +246,26 @@ export function Composer() {
     }
 
     const command = parts.join(" ");
-    const ok = send({
-      action: "chat",
+    // Same legacy hand-off as plain chat — sendMessage detects the
+    // `run ...` prefix and renders the runtime block instead of a
+    // user message bubble, then writes the WS payload.
+    const handled = sendChatMessage({
       text: command,
-      session_id: currentSessionId ?? null,
-      thinking_effort: thinking,
-      tools: toolsEnabled,
-      web_search: webSearchEnabled,
+      thinking,
+      toolsEnabled,
+      webSearchEnabled,
     });
-    if (!ok) return;
+    if (!handled) {
+      const ok = send({
+        action: "chat",
+        text: command,
+        session_id: currentSessionId ?? null,
+        thinking_effort: thinking,
+        tools: toolsEnabled,
+        web_search: webSearchEnabled,
+      });
+      if (!ok) return;
+    }
     handleFnFormClose();
   }, [
     currentSessionId,

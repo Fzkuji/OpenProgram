@@ -21,7 +21,7 @@ import traceback
 import uuid
 from typing import Any, Optional
 
-from openprogram.agentic_programming.context import Context, _current_ctx
+from openprogram.agentic_programming.context import Context
 from openprogram.programs.functions.buildin.ask_user import set_ask_user, ask_user
 from openprogram.agentic_programming.events import on_event, off_event
 from openprogram.agentic_programming.function import agentic_function
@@ -629,19 +629,15 @@ def _log(text: str):
 
 
 def _get_full_tree() -> list[dict]:
-    """Get current root-level context trees by walking active contexts."""
-    # First check if there's a currently running context
-    try:
-        current = _current_ctx.get(None)
-        if current is not None:
-            # Walk up to root
-            root = current
-            while root.parent is not None:
-                root = root.parent
-            return [root._to_dict()]
-    except Exception:
-        pass
+    """Return the recorded root-level context trees.
 
+    This runs from the webui request thread; ``_current_ctx`` lives
+    in the agent_loop's own thread/task and is None here. The
+    in-flight tree (when an agent is actively running) is mirrored
+    into ``_root_contexts`` via the event stream as nodes are
+    created/completed, so callers always see the same source of
+    truth regardless of who's currently mid-exec.
+    """
     with _root_contexts_lock:
         return list(_root_contexts)
 
