@@ -92,16 +92,71 @@ def _node_to_data_json(node: Call) -> str:
     return json.dumps(d, ensure_ascii=False, default=str)
 
 
+_LEGACY_TYPE_TO_ROLE = {
+    "UserMessage":  ROLE_USER,
+    "ModelCall":    ROLE_LLM,
+    "FunctionCall": ROLE_CODE,
+}
+
+
 def _row_to_node(row: sqlite3.Row) -> Call:
     """Reconstruct a Call from a nodes row. The ``type`` column carries
-    the role string; ``seq`` carries the time-order integer."""
+    the role string; ``seq`` carries the time-order integer.
+
+    Tolerates legacy data: pre-Call rows used types ``UserMessage`` /
+    ``ModelCall`` / ``FunctionCall`` with field names ``content`` /
+    ``model`` / ``function_name`` / ``arguments`` / ``result`` /
+    ``system_prompt``. We translate them on the way out so old DBs
+    still load.
+    """
     kwargs = json.loads(row["data_json"])
-    # Drop legacy fields that older DB rows may carry.
+    # Drop fields that aren't on the Call dataclass.
     kwargs.pop("predecessor", None)
+    kwargs.pop("type", None)
+
+    role_or_type = row["type"]
+    # Legacy: type column held the dataclass name; translate.
+    if role_or_type in _LEGACY_TYPE_TO_ROLE:
+        role = _LEGACY_TYPE_TO_ROLE[role_or_type]
+        # Migrate legacy data_json field names.
+        if "content" in kwargs:
+            kwargs.setdefault("output", kwargs.pop("content"))
+        if "model" in kwargs:
+            kwargs.setdefault("name", kwargs.pop("model"))
+        if "function_name" in kwargs:
+            kwargs.setdefault("name", kwargs.pop("function_name"))
+        if "arguments" in kwargs:
+            kwargs.setdefault("input", kwargs.pop("arguments"))
+        if "result" in kwargs:
+            kwargs.setdefault("output", kwargs.pop("result"))
+        if "system_prompt" in kwargs:
+            sp = kwargs.pop("system_prompt")
+            if sp:
+                existing_input = kwargs.get("input")
+                if isinstance(existing_input, dict):
+                    existing_input.setdefault("system", sp)
+                else:
+                    kwargs["input"] = {"system": sp}
+        if "triggered_by" in kwargs and "called_by" not in kwargs:
+            kwargs["called_by"] = kwargs.pop("triggered_by") or ""
+        else:
+            kwargs.pop("triggered_by", None)
+    else:
+        role = role_or_type
+
     kwargs["id"] = row["id"]
     kwargs["created_at"] = row["created_at"]
-    kwargs["role"] = row["type"]
+    kwargs["role"] = role
     kwargs["seq"] = row["seq"]
+
+    # Final defense: drop any unknown kwargs so an unknown legacy
+    # field never crashes Call construction.
+    valid_fields = {
+        "id", "seq", "created_at", "role", "name",
+        "input", "output", "called_by", "reads", "metadata",
+    }
+    kwargs = {k: v for k, v in kwargs.items() if k in valid_fields}
+
     return Call(**kwargs)
 
 
