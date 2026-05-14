@@ -163,8 +163,11 @@ function refreshStatusSource() {
   } else if (conv && conv.source) {
     parts.push(conv.source);
   }
-  var title = _displayTitleFor(conv);
-  if (title) parts.push(title);
+  // Conversation TITLE is deliberately NOT pushed into the status
+  // badge source — the badge is for "where am I connected" (channel
+  // + account), not chat content. The full conversation title is
+  // surfaced elsewhere (sidebar, branch chip, etc.) so users still
+  // have it; this just keeps the topbar status indicator narrow.
   updateStatus('connected', parts.join(' · '));
 
   // Channel health: when the conv is bound to a wechat/discord/…
