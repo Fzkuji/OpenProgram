@@ -758,7 +758,7 @@ const ThinkingEffortPill = React.forwardRef<
           ].join(" ")}
           style={{ width: 260 }}
         >
-          <span className="shrink-0 min-w-[56px] text-text-bright font-medium">
+          <span className="shrink-0 min-w-[56px] text-center text-text-bright font-medium">
             {value}
           </span>
           <Slider
@@ -796,10 +796,10 @@ const ThinkingEffortPill = React.forwardRef<
                     generous and the ring frames the glyph cleanly. */}
                 <span
                   aria-hidden="true"
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover border border-[color-mix(in_srgb,var(--text-bright)_25%,transparent)] transition-[width,height] duration-150 ease-out"
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover border-2 border-[color-mix(in_srgb,var(--text-bright)_35%,transparent)] transition-[width,height] duration-150 ease-out"
                   style={{
-                    width: lightningSize + 4,
-                    height: lightningSize + 4,
+                    width: lightningSize + 8,
+                    height: lightningSize + 8,
                   }}
                 />
                 <Lightning

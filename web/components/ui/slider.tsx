@@ -125,21 +125,24 @@ const Slider = React.forwardRef<
         // Hit area stays 14px so Radix's thumb-center math (the
         // `100% - 14px + 7px` calc shared with ticks/icons) still
         // lines up. When a `thumb` child is provided it takes over
-        // the visual — bg / border are dropped so the child renders
-        // unobstructed; otherwise we fall back to the default soft
-        // round bullet.
+        // the visual — bg / border / focus ring are dropped so the
+        // child renders unobstructed (otherwise the default focus
+        // ring would draw a second concentric circle around the
+        // custom thumb element). Without a child, fall back to the
+        // default soft round bullet + standard focus ring.
         "relative block size-[14px] rounded-full",
+        "transition-transform duration-150 ease-out",
+        "outline-none",
+        "disabled:pointer-events-none disabled:opacity-50",
         thumb
           ? "bg-transparent"
           : cn(
               "bg-[var(--slider-active)]",
               "border-2 border-[var(--bg-tertiary)]",
               "shadow-[0_1px_2px_rgba(0,0,0,0.15)]",
+              "hover:scale-110",
+              "focus-visible:ring-2 focus-visible:ring-[var(--slider-active)]",
             ),
-        "transition-transform duration-150 ease-out",
-        "hover:scale-110",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--slider-active)]",
-        "disabled:pointer-events-none disabled:opacity-50",
       )}
     >
       {thumb}
