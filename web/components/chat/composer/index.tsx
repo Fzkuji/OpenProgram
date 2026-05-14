@@ -796,11 +796,13 @@ const ThinkingEffortPill = React.forwardRef<
                     generous and the ring frames the glyph cleanly. */}
                 <span
                   aria-hidden="true"
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover border-[3px] border-[color-mix(in_srgb,var(--text-bright)_40%,transparent)] transition-[width,height] duration-150 ease-out"
-                  style={{
-                    width: lightningSize + 8,
-                    height: lightningSize + 8,
-                  }}
+                  // Ring size is fixed at the SMALLEST bolt + 8 (so
+                  // 18px). Lightning grows past it as effort rises,
+                  // so high-effort glyphs visually burst out of the
+                  // ring — gives the slider a much stronger "more
+                  // = bigger" signal than a ring that scales lockstep.
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover border-[3px] border-[color-mix(in_srgb,var(--text-bright)_40%,transparent)]"
+                  style={{ width: 18, height: 18 }}
                 />
                 <Lightning
                   size={lightningSize}
