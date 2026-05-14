@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
+import { usePendingRunFunction } from "@/lib/use-pending-run-function";
+
 type Page = "chat" | "settings" | "programs" | "chats";
 
 const PAGE_HTML: Record<Page, string> = {
@@ -230,71 +232,9 @@ export function PageShell({ page }: { page: Page }) {
   //     reply later overwrites with canonical state
   //   * new chat (/chat) — call newSession() which resets the
   //     chat area in place (welcome screen + cleared state)
-  // SPA hand-off from /programs to /chat: open the fn-form
-  // identified by `window.__pendingRunFunction` (set by FavoritesList
-  // / ProgramsPage) or by the `?run=NAME&cat=CAT` query string.
-  // Migrated from init.js's `__triggerPendingRunFunction`. Polls
-  // `window.availableFunctions` (still legacy-populated) for up to
-  // 30s so a hard refresh into `/chat?run=...` can wait for the WS
-  // `functions_list` envelope before opening.
-  useEffect(() => {
-    if (page !== "chat") return;
-    const w = window as unknown as {
-      __pendingRunFunction?: { name: string; cat?: string } | null;
-      availableFunctions?: { name: string }[];
-      __sessionStore?: {
-        getState: () => { openFnForm: (fn: unknown) => void };
-      };
-    };
-    const pending = w.__pendingRunFunction;
-    let runName: string | null = null;
-    let runCat: string = "";
-    if (pending && pending.name) {
-      runName = pending.name;
-      runCat = pending.cat || "";
-      w.__pendingRunFunction = null;
-    } else {
-      const params = new URLSearchParams(window.location.search);
-      runName = params.get("run");
-      runCat = params.get("cat") || "";
-      if (runName) {
-        history.replaceState(null, "", "/chat");
-      }
-    }
-    if (!runName) return;
-    const targetName = runName;
-    const targetCat = runCat || "user";
-    let canceled = false;
-    function tryOpen(): boolean {
-      const fns = w.availableFunctions ?? [];
-      if (fns.length === 0) return false;
-      const fn = fns.find((f) => f.name === targetName);
-      if (!fn) return false;
-      // Honour the legacy clickFunction signature — find the typed
-      // entry (which may include params_detail) and pass it through
-      // the store.
-      const store = w.__sessionStore;
-      if (!store) return false;
-      store.getState().openFnForm(fn);
-      return true;
-    }
-    if (tryOpen()) return;
-    const deadline = Date.now() + 30000;
-    const poll = setInterval(() => {
-      if (canceled) return;
-      if (Date.now() > deadline) {
-        clearInterval(poll);
-        console.warn(`[?run] timeout waiting for ${targetName}`);
-        return;
-      }
-      if (tryOpen()) clearInterval(poll);
-    }, 50);
-    void targetCat; // currently unused — kept for future store action
-    return () => {
-      canceled = true;
-      clearInterval(poll);
-    };
-  }, [page, pathname]);
+  // SPA hand-off from /programs → /chat lives in its own hook —
+  // see lib/use-pending-run-function.ts.
+  usePendingRunFunction(page === "chat");
 
   useEffect(() => {
     if (page !== "chat") return;
