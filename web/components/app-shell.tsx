@@ -10,6 +10,7 @@ import { Composer } from "./chat/composer";
 import { TopBar } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
 import { useSessionStore } from "@/lib/session-store";
+import { useColResize } from "@/lib/use-col-resize";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -268,6 +269,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       document.removeEventListener("click", onClick);
     };
   }, [router]);
+
+  // Column-resize handles (sidebar / right detail). Replaces the IIFE
+  // at the bottom of init.js. Each call attaches a `mousedown` listener
+  // to the handle and drags the target element's `width`.
+  useColResize({
+    handleId: "sidebarResize",
+    targetId: "sidebar",
+    direction: 1,
+    minWidth: 180,
+  });
+  useColResize({
+    handleId: "detailResize",
+    targetId: "detailPanel",
+    direction: -1,
+    minWidth: 200,
+  });
 
   const showChat = isChatRoute(pathname);
   return (

@@ -504,45 +504,10 @@ function _handleRunningTask(rt) {
 function togglePanel() {}
 
 // ===== Column Resize =====
-
-(function() {
-  function setupColResize(handleId, getTarget, setSide, minW) {
-    var handle = document.getElementById(handleId);
-    if (!handle) return;
-    var startX, startW, target;
-
-    handle.addEventListener('mousedown', function(e) {
-      target = getTarget();
-      if (!target) return;
-      e.preventDefault();
-      startX = e.clientX;
-      startW = target.offsetWidth;
-      handle.classList.add('dragging');
-      target.style.transition = 'none';
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-
-      function onMove(ev) {
-        var dx = ev.clientX - startX;
-        var newW = Math.max(minW, startW + dx * setSide);
-        target.style.width = newW + 'px';
-      }
-      function onUp() {
-        handle.classList.remove('dragging');
-        target.style.transition = '';
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-      }
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-  }
-
-  setupColResize('sidebarResize', function() { return document.getElementById('sidebar'); }, 1, 180);
-  setupColResize('detailResize', function() { return document.getElementById('detailPanel'); }, -1, 200);
-})();
+//
+// Sidebar / detail column drag handles are now wired up by
+// `useColResize()` in `web/lib/use-col-resize.ts`, invoked from
+// `app-shell.tsx`. The legacy IIFE has been removed.
 
 // (Panel resize removed — single conversations list now)
 

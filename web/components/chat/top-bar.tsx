@@ -358,6 +358,7 @@ export function TopBar() {
         </button>
 
         <span
+          id="statusBadge"
           className={statusClass}
           onClick={onStatusClick}
           title={statusBadge.title || statusBadge.label}
@@ -368,6 +369,7 @@ export function TopBar() {
 
         {branchInfo.visible ? (
           <span
+            id="branchBadge"
             className="runtime-badge branch-badge"
             onClick={onBranchClick}
             title={`${branchInfo.name} (${branchInfo.count} branches)`}
@@ -406,6 +408,7 @@ export function TopBar() {
         ) : null}
 
         <span
+          id="chatAgentBadge"
           className={"runtime-badge agent-badge" + (chatLocked ? " locked" : "")}
           onClick={onChatAgentClick}
           title={"Chat agent" + chatDetails}
@@ -415,6 +418,7 @@ export function TopBar() {
         </span>
 
         <span
+          id="execAgentBadge"
           className="runtime-badge agent-badge"
           onClick={onExecAgentClick}
           title={"Execution agent" + execDetails}
