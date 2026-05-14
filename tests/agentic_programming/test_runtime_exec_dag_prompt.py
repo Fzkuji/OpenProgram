@@ -1,7 +1,7 @@
 """Runtime._call_via_providers (AgentSession path) builds its prompt
 from the DAG when a store is attached.
 
-Verified by spying on ``_render_dag_messages_for_exec``: when the
+Verified by spying on ``_render_history_messages``: when the
 runtime has a store, this returns a non-None list pulled from the
 graph; when no store is attached, it returns None (legacy path
 kicks in).
@@ -38,7 +38,7 @@ def rt() -> Runtime:
 def test_no_store_returns_none(rt):
     """Without an attached store the DAG helper must return None so
     the legacy render_messages path stays active."""
-    msgs = rt._render_dag_messages_for_exec(
+    msgs = rt._render_history_messages(
         content=[{"type": "text", "text": "hello"}],
     )
     assert msgs is None
@@ -55,7 +55,7 @@ def test_with_store_builds_history_plus_current(rt, store):
     rt.append_node(Call(role=ROLE_USER, output="hi"))
     rt.append_node(Call(role=ROLE_LLM, output="hello back"))
 
-    msgs = rt._render_dag_messages_for_exec(
+    msgs = rt._render_history_messages(
         content=[{"type": "text", "text": "what next?"}],
     )
     assert msgs is not None
@@ -70,7 +70,7 @@ def test_empty_store_yields_only_current_turn(rt, store):
     """Attached but empty store: history is empty; current-turn user
     message still gets synthesized."""
     rt.attach_store(store)
-    msgs = rt._render_dag_messages_for_exec(
+    msgs = rt._render_history_messages(
         content=[{"type": "text", "text": "first ping"}],
     )
     assert msgs is not None
@@ -81,7 +81,7 @@ def test_empty_store_yields_only_current_turn(rt, store):
 
 def test_multiple_text_blocks_joined_with_newline(rt, store):
     rt.attach_store(store)
-    msgs = rt._render_dag_messages_for_exec(content=[
+    msgs = rt._render_history_messages(content=[
         {"type": "text", "text": "line 1"},
         {"type": "text", "text": "line 2"},
     ])
@@ -128,7 +128,7 @@ def test_dag_prompt_inside_io_function_frame(rt, store):
 
     token = _current_function_frame.set(plan_node.id)
     try:
-        msgs = rt._render_dag_messages_for_exec(
+        msgs = rt._render_history_messages(
             content=[{"type": "text", "text": "step 1"}],
         )
     finally:
@@ -164,7 +164,7 @@ def test_render_range_depth_zero_hides_history(rt, store):
 
     token = _current_function_frame.set(isolated.id)
     try:
-        msgs = rt._render_dag_messages_for_exec(
+        msgs = rt._render_history_messages(
             content=[{"type": "text", "text": "isolated turn"}],
         )
     finally:

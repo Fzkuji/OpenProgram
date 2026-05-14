@@ -24,7 +24,7 @@ different provider).
 
 ``ActiveContext`` decouples the cursor from any runtime: the dispatcher
 ``set_active(store, head_id)`` once at turn entry; everyone reading
-the cursor (``Runtime._render_dag_messages_for_exec``,
+the cursor (``Runtime._render_history_messages``,
 ``@agentic_function`` entry/exit) calls ``active.current()``; everyone
 writing to the DAG calls ``active.append_node(node)``.
 

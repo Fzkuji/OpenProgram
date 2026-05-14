@@ -272,7 +272,7 @@ class Runtime:
         except Exception:
             pass
 
-    def _render_dag_messages_for_exec(self, content) -> Optional[list]:
+    def _render_history_messages(self, content) -> Optional[list]:
         """Build the provider message list for an in-progress exec()
         from the DAG.
 
@@ -361,7 +361,7 @@ class Runtime:
             # to the legacy render_messages path. Never break exec().
             return None
 
-    def _record_llm_call(
+    def _append_model_call_node(
         self,
         *,
         reply: str,
@@ -371,7 +371,7 @@ class Runtime:
     ) -> None:
         """Append an llm-role Call after a successful provider call.
 
-        Resolution mirrors ``_render_dag_messages_for_exec``:
+        Resolution mirrors ``_render_history_messages``:
         prefer ``active.current()`` and write via ``active.append_node``;
         fall back to ``self.append_node`` when no active context is
         installed (standalone scripts). No-op when neither is wired.
@@ -602,7 +602,7 @@ class Runtime:
                         _emit_event("node_completed", exec_ctx)
                         # Backward compat: parent function also gets latest reply
                         parent_ctx.raw_reply = reply
-                    self._record_llm_call(
+                    self._append_model_call_node(
                         reply=reply,
                         model=use_model,
                         content_text=content_text,
@@ -704,7 +704,7 @@ class Runtime:
                         exec_ctx.end_time = _time.time()
                         _emit_event("node_completed", exec_ctx)
                         parent_ctx.raw_reply = reply
-                    self._record_llm_call(
+                    self._append_model_call_node(
                         reply=reply,
                         model=use_model,
                         content_text=content_text,
@@ -825,7 +825,7 @@ class Runtime:
         # Prompt-composition source: prefer the DAG when a store is
         # attached, fall back to the tree-Context render_messages
         # path for standalone runs / legacy callers.
-        dag_messages = self._render_dag_messages_for_exec(content)
+        dag_messages = self._render_history_messages(content)
         if dag_messages is not None:
             # DAG path. The last message is the current turn's input
             # (synthesized from ``content``).
