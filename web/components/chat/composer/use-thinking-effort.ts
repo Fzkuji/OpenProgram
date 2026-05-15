@@ -65,41 +65,40 @@ export interface ThinkingEffortHook {
 }
 
 export function useThinkingEffort(): ThinkingEffortHook {
-  // Seed from localStorage so a page refresh keeps the last pick;
-  // fall back to `medium` for a first-ever visit.
-  const [thinking, setThinking] = useState<ThinkingEffort>(
+  // `stored` is the user's raw last pick (seeded from localStorage so
+  // a refresh keeps it). It is NOT sent as-is — the exposed `thinking`
+  // below is always re-derived against the CURRENT model's options.
+  const [stored, setStored] = useState<ThinkingEffort>(
     () => readPersistedEffort() ?? DEFAULT_THINKING,
   );
   const [menuOpen, setMenuOpen] = useState(false);
-  const [options, setOptions] = useState<ThinkingOption[]>(() =>
-    readThinkingOptions(),
-  );
-
+  // `_thinkingConfig` is mutated in place by legacy providers.js when
+  // the agent/model changes. A 500ms poll just bumps a counter to
+  // force a re-render so `options` / `thinking` below pick up the
+  // new config — they're read live, not cached in state.
+  const [, forceTick] = useState(0);
   useEffect(() => {
-    let prevSig = "";
-    function tick() {
-      const opts = readThinkingOptions();
-      const sig = opts.map((o) => o.value).join("|");
-      if (sig === prevSig) return;
-      prevSig = sig;
-      setOptions(opts);
-      // Snap the selection back to a valid value ONLY if the current
-      // pick isn't part of the new option list (e.g. the agent
-      // switched to a provider that doesn't offer it). A valid
-      // persisted pick is left untouched — refresh keeps the choice.
-      setThinking((cur) =>
-        opts.some((o) => o.value === cur)
-          ? cur
-          : readBackendDefault() ?? opts[0]?.value ?? cur,
-      );
-    }
-    tick();
-    const id = setInterval(tick, 500);
+    const id = setInterval(() => forceTick((t) => t + 1), 500);
     return () => clearInterval(id);
   }, []);
 
+  // Read live every render so a model switch is reflected immediately
+  // on the next render (no stale-state window).
+  const options = readThinkingOptions();
+
+  // CLAMP: the value actually exposed (and sent with chat turns) must
+  // be one the current model supports. If the stored pick isn't in
+  // the current option list — e.g. `minimal` persisted, then the
+  // agent switched to gpt-5.5 which only does none/low/medium/high/
+  // xhigh — fall back to the backend default (or the first option).
+  // Without this clamp the stale pick reached the API and 400'd:
+  // "'minimal' is not supported with the 'gpt-5.5' model".
+  const thinking = options.some((o) => o.value === stored)
+    ? stored
+    : readBackendDefault() ?? options[0]?.value ?? stored;
+
   const set = useCallback((level: ThinkingEffort) => {
-    setThinking(level);
+    setStored(level);
     writePersistedEffort(level);
   }, []);
 

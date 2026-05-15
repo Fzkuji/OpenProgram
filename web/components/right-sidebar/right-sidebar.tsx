@@ -41,6 +41,7 @@ import {
 // the legacy template exactly: "history" picks `<div data-view="history">`,
 // "detail" picks `<div data-view="detail">`.
 const VIEW_HISTORY = "history";
+const VIEW_DAG = "dag";
 const VIEW_DETAIL = "detail";
 
 export function RightSidebar() {
@@ -220,6 +221,22 @@ export function RightSidebar() {
         <div
           className={
             sidebarNavItemClass + " right-nav-item" +
+            (view === VIEW_DAG ? " " + sidebarNavItemActiveClass : "")
+          }
+          data-view={VIEW_DAG}
+          onClick={() => onNavClick(VIEW_DAG)}
+          role="button"
+        >
+          <span className={sidebarNavIconClass}>
+            <svg className={sidebarNavIconSvgClass} viewBox="0 0 256 256" fill="currentColor">
+              <path d="M200,152a31.84,31.84,0,0,0-19.53,6.68l-23.11-18A31.65,31.65,0,0,0,160,128c0-1.36-.09-2.7-.24-4l28.06-9.36A32,32,0,1,0,184,80a32,32,0,0,0,.24,4l-28.06,9.36A32,32,0,0,0,128,80a32.06,32.06,0,0,0-30.7,23H68.92a32,32,0,1,0,0,16H97.3a32.06,32.06,0,0,0,12.41,18.92l-13.74,30.18A32.06,32.06,0,1,0,110.6,182l13.74-30.18a32.39,32.39,0,0,0,7.32,0l23.11,18A31.84,31.84,0,1,0,200,152Z" />
+            </svg>
+          </span>
+          <span className={sidebarNavLabelClass}>DAG Visualization</span>
+        </div>
+        <div
+          className={
+            sidebarNavItemClass + " right-nav-item" +
             (view === VIEW_DETAIL ? " " + sidebarNavItemActiveClass : "")
           }
           data-view={VIEW_DETAIL}
@@ -242,6 +259,13 @@ export function RightSidebar() {
             so existing query selectors keep working. */}
         <div id="historyPanel" className="right-view" data-view={VIEW_HISTORY}>
           <HistoryGraphPanel />
+        </div>
+        {/* DAG Visualization view: dag-tree.js fetches
+            /api/sessions/{id}/dag-tree and renders the full call-DAG
+            (user messages + LLM calls + @agentic_function code calls)
+            into `#dagVizBody` via tree-render.js's renderTreeNode. */}
+        <div id="dagVizPanel" className="right-view" data-view={VIEW_DAG}>
+          <DagVizPanel />
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template
@@ -269,6 +293,20 @@ function HistoryGraphPanel() {
       <div id="branchesPanel"></div>
       <div className="history-body"></div>
     </>
+  );
+}
+
+/**
+ * DAG Visualization placeholder. `dag-tree.js::renderDagViz()` replaces
+ * the innerHTML of `#dagVizBody` with the nested call-DAG built by
+ * tree-render.js's `renderTreeNode`. We render only the empty-state
+ * wrapper; the fetch fires on `session_loaded` and after each result.
+ */
+function DagVizPanel() {
+  return (
+    <div id="dagVizBody" className="dag-viz-body">
+      <div className="dag-viz-empty">No session loaded.</div>
+    </div>
   );
 }
 
