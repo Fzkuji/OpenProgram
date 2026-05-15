@@ -31,6 +31,20 @@ THINKING_OVERRIDES: dict[str, dict] = {
 }
 
 
+def supports_minimal_effort(model_id: str) -> bool:
+    """Whether a model accepts the ``minimal`` reasoning-effort level.
+
+    OpenAI's gpt-5 / o-series accept it, but the gpt-5.5 family dropped
+    it — the API 400s ("Supported values: none, low, medium, high,
+    xhigh"). A model-id capability probe, in the same string-match
+    style as ``models.supports_xhigh`` /
+    ``openai_codex.runtime._codex_supports_xhigh``. Single source of
+    truth for the ``minimal`` level so the picker, the catalog, and
+    any per-model derivation all agree.
+    """
+    return "gpt-5.5" not in model_id
+
+
 def derive_thinking_fields(
     provider_id: str,
     model_id: str,
@@ -50,11 +64,7 @@ def derive_thinking_fields(
     variant = override.get("thinking_variant")
 
     if levels is None and reasoning:
-        # The gpt-5.5 family dropped the `minimal` reasoning level —
-        # OpenAI's API rejects it ("Supported values are: none, low,
-        # medium, high, xhigh"). Earlier gpt-5 / o-series models still
-        # accept it, so only the 5.5 ids are excluded.
-        minimal = [] if "gpt-5.5" in model_id else ["minimal"]
+        minimal = ["minimal"] if supports_minimal_effort(model_id) else []
         if supports_xhigh:
             levels = minimal + ["low", "medium", "high", "xhigh"]
         else:
