@@ -1201,6 +1201,12 @@ function renderSessionMessages(conv) {
   var container = document.getElementById('chatMessages');
   trees = [];
 
+  // Phase 3: mirror the loaded conversation into the React message
+  // store. Dormant until the MessageList portal is mounted.
+  if (typeof window.__feedStoreFromConv === 'function') {
+    try { window.__feedStoreFromConv(conv); } catch (e) {}
+  }
+
   if (!conv.messages || conv.messages.length === 0) {
     _clearChatMessages(container);
     setWelcomeVisible(true);

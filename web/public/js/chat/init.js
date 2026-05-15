@@ -56,6 +56,15 @@ function connect() {
 }
 
 function handleMessage(msg) {
+  // Phase 3: mirror chat envelopes into the React message store. The
+  // store is dormant (MessageList not yet mounted) so this is a no-op
+  // for the visible legacy DOM; once the cutover flips it becomes the
+  // sole renderer.
+  if (msg.type === 'chat_ack' || msg.type === 'chat_response') {
+    if (typeof window.__applyChatWsMessage === 'function') {
+      try { window.__applyChatWsMessage(msg); } catch (e) {}
+    }
+  }
   switch (msg.type) {
     case 'full_tree':
       trees = msg.data || [];

@@ -10,6 +10,8 @@ import { Composer } from "./chat/composer";
 import { TopBar } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
 import { useSessionStore } from "@/lib/session-store";
+import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/chat-stream";
+import { legacyConvToChatMsgs } from "@/lib/legacy-conv-map";
 import { useColResize } from "@/lib/use-col-resize";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
@@ -113,11 +115,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // goes through useSessionStore.getState(); this single global is
   // their access point. Removed once every legacy caller is migrated.
   useEffect(() => {
-    (window as unknown as { __sessionStore?: unknown }).__sessionStore =
-      useSessionStore;
+    interface ConvLike { id?: string; messages?: unknown[] }
+    const w = window as unknown as {
+      __sessionStore?: unknown;
+      __applyChatWsMessage?: unknown;
+      __appendLocalUserTurn?: unknown;
+      __feedStoreFromConv?: unknown;
+    };
+    w.__sessionStore = useSessionStore;
+    // Phase 3 bridge — legacy chat JS feeds the React message store
+    // through these globals. Dormant until the MessageList portal is
+    // mounted; populating the store in parallel is a no-op for the
+    // still-live legacy DOM renderer.
+    w.__applyChatWsMessage = (msg: { type: string; data?: unknown }) =>
+      applyChatWsMessage(msg);
+    w.__appendLocalUserTurn = (
+      sessionId: string,
+      msgId: string,
+      text: string,
+      display?: "runtime" | "normal",
+    ) => appendLocalUserTurn(sessionId, msgId, text, display);
+    w.__feedStoreFromConv = (conv: ConvLike) => {
+      if (!conv || !conv.id) return;
+      useSessionStore
+        .getState()
+        .setMessages(
+          conv.id,
+          legacyConvToChatMsgs((conv.messages as never[]) || []),
+        );
+    };
     return () => {
-      delete (window as unknown as { __sessionStore?: unknown })
-        .__sessionStore;
+      delete w.__sessionStore;
+      delete w.__applyChatWsMessage;
+      delete w.__appendLocalUserTurn;
+      delete w.__feedStoreFromConv;
     };
   }, []);
 
