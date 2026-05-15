@@ -1065,6 +1065,13 @@ function newSession() {
   if (typeof window.renderBranchesPanel === 'function') {
     try { window.renderBranchesPanel(); } catch (e) {}
   }
+  // Also clear the right-sidebar History DAG graph. Without this an
+  // empty `newSession()` (e.g. after deleting the current chat) leaves
+  // the previous conversation's node graph rendered in the History
+  // panel — the chat content is gone but the graph display lingers.
+  if (typeof window.renderHistoryGraph === 'function') {
+    try { window.renderHistoryGraph([], null); } catch (e) {}
+  }
   var ctxEl = document.getElementById('contextStats');
   if (ctxEl) ctxEl.textContent = '';
   _hasActiveSession = false;
