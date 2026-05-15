@@ -682,18 +682,27 @@ const ThinkingEffortPill = React.forwardRef<
   const spacerRef = useRef<HTMLSpanElement>(null);
   const [collapsedWidth, setCollapsedWidth] = useState<number>(120);
   // `measured` gates the width transition. On first mount the pill
-  // renders at the 120px placeholder, then this effect measures the
-  // real width and updates it — if the transition were live the pill
-  // would visibly "bounce" from 120 → real width on every page load.
-  // Keep the transition off until after that first measurement;
-  // expand/collapse toggles afterwards still animate.
+  // renders at the 120px placeholder (also what SSR ships), then the
+  // layout effect below corrects it to the real measured width. If
+  // the transition were live, that 120 → real correction would
+  // visibly "bounce" on every page load.
+  //
+  // Critically, `measured` must flip to true in a LATER render than
+  // the width correction — if both happen in the same render the
+  // transition class lands at the same moment the width changes and
+  // the browser still animates from the SSR-painted 120px. So:
+  //   useLayoutEffect → correct width (transition still off)
+  //   rAF in useEffect → enable transition one frame later
   const [measured, setMeasured] = useState(false);
   useLayoutEffect(() => {
     if (spacerRef.current) {
       setCollapsedWidth(spacerRef.current.offsetWidth);
-      setMeasured(true);
     }
   }, [value]);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMeasured(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   return (
     <div
