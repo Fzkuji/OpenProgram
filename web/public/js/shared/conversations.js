@@ -1186,22 +1186,29 @@ function extractMessagesFromTree(tree) {
   return messages;
 }
 
+// Clear #chatMessages WITHOUT destroying the React `#welcome-mount`
+// placeholder. `innerHTML = ''` would tear down the portal target, so
+// the <WelcomeScreen /> could never render into it again (e.g. after
+// loading a conversation and then clicking "New chat").
+function _clearChatMessages(container) {
+  Array.from(container.children).forEach(function (ch) {
+    if (ch.id === 'welcome-mount') return;
+    container.removeChild(ch);
+  });
+}
+
 function renderSessionMessages(conv) {
   var container = document.getElementById('chatMessages');
   trees = [];
 
   if (!conv.messages || conv.messages.length === 0) {
-    container.innerHTML = '';
-    var welcome = document.getElementById('welcomeScreen');
-    if (welcome) {
-      container.appendChild(welcome);
-    }
+    _clearChatMessages(container);
     setWelcomeVisible(true);
     return;
   }
 
   setWelcomeVisible(false);
-  container.innerHTML = '';
+  _clearChatMessages(container);
 
   for (var mi = 0; mi < conv.messages.length; mi++) {
     var msg = conv.messages[mi];
