@@ -1,19 +1,25 @@
 "use client";
 
 /**
- * Component preview harness for the message-stream port (phase 2).
+ * Component preview harness for the message-stream port.
  *
- * Seeds the session store with fixture messages covering every bubble
- * state, then renders the real `<MessageList />` against them. Lets
- * each component be eyeballed in isolation before the phase-3 cutover
- * touches the live chat. Throwaway route — deleted once phase 3 lands.
+ * Two sections:
+ *  - Static gallery — every bubble state rendered from fixtures.
+ *  - Streaming replay — drives the real `applyChatWsMessage` reducer
+ *    with a scripted WS sequence so the live streaming path (ack →
+ *    thinking → tool → text → result) can be eyeballed without a
+ *    backend. Verifies the L2 data layer end-to-end.
+ *
+ * Throwaway route — deleted once the phase-3 cutover lands.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MessageList } from "@/components/chat/messages/message-list";
+import { applyChatWsMessage } from "@/lib/chat-stream";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 
-const PREVIEW_SID = "__preview__";
+const GALLERY_SID = "__preview_gallery__";
+const STREAM_SID = "__preview_stream__";
 
 const FIXTURES: ChatMsg[] = [
   {
@@ -67,18 +73,8 @@ const FIXTURES: ChatMsg[] = [
     ],
     status: "done",
   },
-  {
-    id: "a4",
-    role: "assistant",
-    content: "",
-    status: "streaming",
-  },
-  {
-    id: "a5",
-    role: "assistant",
-    content: "",
-    status: "error",
-  },
+  { id: "a4", role: "assistant", content: "", status: "streaming" },
+  { id: "a5", role: "assistant", content: "", status: "error" },
   {
     id: "u2",
     role: "user",
@@ -97,30 +93,130 @@ const FIXTURES: ChatMsg[] = [
   },
 ];
 
+/** A scripted WS sequence: `[delayMs, envelope]` pairs fed to
+ *  `applyChatWsMessage` to mimic one live streaming turn. */
+function streamScript(): Array<[number, unknown]> {
+  const sid = STREAM_SID;
+  const mid = "demo1";
+  const se = (event: unknown) => ({
+    type: "chat_response",
+    data: { type: "stream_event", session_id: sid, msg_id: mid, event },
+  });
+  return [
+    [
+      0,
+      {
+        type: "chat_response",
+        data: {
+          type: "user_message",
+          session_id: sid,
+          msg_id: mid,
+          content: "Trace the token-rotation bug and fix it.",
+        },
+      },
+    ],
+    [400, { type: "chat_ack", data: { session_id: sid, msg_id: mid } }],
+    [500, se({ type: "thinking", text: "Looking at the rotation timer. " })],
+    [400, se({ type: "thinking", text: "It resets on every request — " })],
+    [400, se({ type: "thinking", text: "that's the leak." })],
+    [
+      500,
+      se({
+        type: "tool_use",
+        tool: "read_file",
+        input: '{"path": "src/auth/rotate.ts"}',
+        tool_call_id: "tc1",
+      }),
+    ],
+    [
+      700,
+      se({
+        type: "tool_result",
+        tool_call_id: "tc1",
+        result: "let timer = setInterval(rotate, 60000)",
+        is_error: false,
+      }),
+    ],
+    [500, se({ type: "text", text: "Found it — the rotation timer " })],
+    [350, se({ type: "text", text: "is re-armed on **every** request " })],
+    [350, se({ type: "text", text: "instead of once.\n\n```ts\n" })],
+    [350, se({ type: "text", text: "if (!timer) timer = setInterval(...)\n```" })],
+    [
+      500,
+      {
+        type: "chat_response",
+        data: { type: "result", session_id: sid, msg_id: mid },
+      },
+    ],
+  ];
+}
+
 export default function ChatPreviewPage() {
   const setMessages = useSessionStore((s) => s.setMessages);
   const [ready, setReady] = useState(false);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
-    setMessages(PREVIEW_SID, FIXTURES);
+    setMessages(GALLERY_SID, FIXTURES);
+    setMessages(STREAM_SID, []);
     setReady(true);
+    return () => {
+      for (const t of timers.current) clearTimeout(t);
+    };
   }, [setMessages]);
+
+  const replay = useCallback(() => {
+    for (const t of timers.current) clearTimeout(t);
+    timers.current = [];
+    setMessages(STREAM_SID, []);
+    let at = 0;
+    for (const [delay, env] of streamScript()) {
+      at += delay;
+      timers.current.push(
+        setTimeout(() => applyChatWsMessage(env as never), at),
+      );
+    }
+  }, [setMessages]);
+
+  const box: React.CSSProperties = {
+    overflow: "auto",
+    border: "1px solid var(--border)",
+    borderRadius: 12,
+    background: "var(--bg-primary)",
+  };
 
   return (
     <div style={{ padding: "24px", maxWidth: 860, margin: "0 auto" }}>
-      <h2 style={{ marginBottom: 16, color: "var(--text-bright)" }}>
-        Message components preview
+      <h2 style={{ marginBottom: 6, color: "var(--text-bright)" }}>
+        Streaming replay
       </h2>
-      <div
+      <p style={{ marginBottom: 10, color: "var(--text-muted)", fontSize: 13 }}>
+        Drives the real WS reducer with a scripted sequence.
+      </p>
+      <button
+        type="button"
+        onClick={replay}
         style={{
-          height: "70vh",
-          overflow: "auto",
+          marginBottom: 12,
+          padding: "6px 14px",
+          borderRadius: 8,
           border: "1px solid var(--border)",
-          borderRadius: 12,
-          background: "var(--bg-primary)",
+          background: "var(--bg-hover)",
+          color: "var(--text-bright)",
+          cursor: "pointer",
         }}
       >
-        {ready ? <MessageList sessionId={PREVIEW_SID} /> : null}
+        ▶ Replay streaming turn
+      </button>
+      <div style={{ ...box, height: "42vh", marginBottom: 28 }}>
+        {ready ? <MessageList sessionId={STREAM_SID} /> : null}
+      </div>
+
+      <h2 style={{ marginBottom: 16, color: "var(--text-bright)" }}>
+        Static gallery
+      </h2>
+      <div style={{ ...box, height: "60vh" }}>
+        {ready ? <MessageList sessionId={GALLERY_SID} /> : null}
       </div>
     </div>
   );

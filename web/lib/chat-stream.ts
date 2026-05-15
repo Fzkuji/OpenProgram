@@ -90,6 +90,15 @@ function handleAck(d: { session_id?: string; msg_id?: string } | undefined): voi
 
 function handleResponse(d: ChatResponseData | undefined): void {
   if (!d || !d.session_id || !d.msg_id) return;
+
+  // A user turn — either echoed back by the server or broadcast from a
+  // peer. Keyed by the bare `msg_id` (the reply takes the `_reply`
+  // suffix), so it never collides with its own assistant bubble.
+  if (d.type === "user_message") {
+    handleUserMessage(d);
+    return;
+  }
+
   const rid = replyId(d.msg_id);
 
   if (d.type === "stream_event" && d.event) {
@@ -99,6 +108,42 @@ function handleResponse(d: ChatResponseData | undefined): void {
   if (d.type === "result" || d.type === "error" || d.type === "cancelled") {
     finalize(d.session_id, rid, d);
   }
+}
+
+function handleUserMessage(d: ChatResponseData): void {
+  if (!d.session_id || !d.msg_id) return;
+  const store = useSessionStore.getState();
+  if (store.messagesById[d.msg_id]) return;
+  store.appendMessage(d.session_id, {
+    id: d.msg_id,
+    role: "user",
+    content: d.content ?? d.text ?? "",
+    display: d.display === "runtime" ? "runtime" : undefined,
+    status: "done",
+  });
+}
+
+/**
+ * Optimistically add the just-sent user turn to the store so the
+ * bubble appears immediately — before the server echoes it back.
+ * The composer's send path calls this; the later `user_message` /
+ * `chat_ack` for the same id is de-duped by id.
+ */
+export function appendLocalUserTurn(
+  sessionId: string,
+  msgId: string,
+  text: string,
+  display?: "runtime" | "normal",
+): void {
+  const store = useSessionStore.getState();
+  if (store.messagesById[msgId]) return;
+  store.appendMessage(sessionId, {
+    id: msgId,
+    role: "user",
+    content: text,
+    display: display === "runtime" ? "runtime" : undefined,
+    status: "done",
+  });
 }
 
 function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
