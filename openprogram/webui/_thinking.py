@@ -21,16 +21,15 @@ from __future__ import annotations
 #   - Claude (claude-max, anthropic): auto / max available — adaptive thinking
 #   - GPT (codex, openai): maximum effort — the user wants the strongest setting
 THINKING_CONFIGS = {
+    # claude-max-api-proxy exposes no thinking knob — it drops
+    # reasoning_effort and the underlying Claude Code CLI decides
+    # thinking on its own. A single fixed "Auto" entry, not a picker.
     "claude-code": {
         "label": "thinking",
         "options": [
-            {"value": "off", "desc": "No extended thinking"},
-            {"value": "minimal", "desc": "Minimal thinking"},
-            {"value": "low", "desc": "Brief thinking"},
-            {"value": "medium", "desc": "Balanced"},
-            {"value": "high", "desc": "Extended thinking"},
+            {"value": "auto", "desc": "Claude Code decides"},
         ],
-        "default": "high",
+        "default": "auto",
     },
     "openai-codex": {
         "label": "reasoning effort",
@@ -118,6 +117,12 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
     gpt-5 shows minimal/low/medium/high, Codex Max adds xhigh).
     """
     from openprogram.providers import get_model
+
+    # claude-code (claude-max-api-proxy) has no per-model thinking knob:
+    # the proxy ignores reasoning_effort and Claude Code CLI picks its
+    # own thinking. Always the fixed "Auto" config, regardless of model.
+    if provider == "claude-code":
+        return get_thinking_config("claude-code")
 
     def _build(levels: list[str], default: str | None, variant: str | None) -> dict:
         values = ["off", *levels]

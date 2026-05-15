@@ -88,6 +88,13 @@ def _augment_registry_with_max_proxy_models() -> None:
             continue
         family = m["family"]
         reasoning = family in ("opus", "sonnet")
+        # No thinking picker for any claude-max-api-proxy model. The
+        # proxy's `openaiToCli()` adapter only forwards prompt + model +
+        # sessionId to `claude --print`; `reasoning_effort` (and
+        # max_tokens, temperature, tools) are silently dropped. An
+        # effort control here would be dead UI — the budget is fixed at
+        # Claude Code CLI's default.
+        thinking_levels: list[str] = []
         MODELS[key] = Model(
             id=mid,
             name=m["name"],
@@ -102,6 +109,8 @@ def _augment_registry_with_max_proxy_models() -> None:
             max_tokens=m["max_tokens"],
             input=["text", "image"],
             reasoning=reasoning,
+            thinking_levels=thinking_levels,
+            default_thinking_level=None,
             # Cost figures are intentionally zero: the Max plan is
             # flat-rate at the human-account level, the proxy doesn't
             # bill per token. Showing 0 in the UI is more honest than

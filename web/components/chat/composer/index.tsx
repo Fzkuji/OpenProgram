@@ -608,6 +608,8 @@ export function Composer() {
  * so when it expands to 340px it floats over the rest of the row
  * without shoving the context badge / other controls aside.
  */
+const capEffort = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
 const ThinkingEffortPill = React.forwardRef<
   HTMLDivElement,
   {
@@ -618,6 +620,55 @@ const ThinkingEffortPill = React.forwardRef<
     onChange: (v: string) => void;
   }
 >(function ThinkingEffortPill(
+  { expanded, onToggle, options, value, onChange },
+  ref,
+) {
+  // No options → provider/model exposes no thinking knob (e.g. gpt-4o,
+  // or a model whose picker is hidden): render nothing at all.
+  if (options.length === 0) return null;
+
+  // Exactly one option → the effort is fixed (e.g. claude-code, where
+  // the proxy ignores reasoning_effort and the value is always
+  // "auto"). Show it as a static label — no caret, no expand, no
+  // slider, not clickable. A dropdown with a single choice is dead UI.
+  if (options.length === 1) {
+    return (
+      <div
+        ref={ref}
+        className="inline-flex h-[32px] items-center rounded-full pl-[14px] pr-[18px] text-[14px] text-text-primary select-none whitespace-nowrap"
+        style={{ backgroundColor: "var(--effort-off-bg)" }}
+      >
+        <span>Effort: {capEffort(options[0].value)}</span>
+      </div>
+    );
+  }
+
+  // Two or more options → the interactive slider pill. Split into its
+  // own component so the hooks below never sit behind the conditional
+  // returns above (rules of hooks: the hook count must not change when
+  // `options.length` flips as the user switches agents).
+  return (
+    <ThinkingEffortSliderPill
+      ref={ref}
+      expanded={expanded}
+      onToggle={onToggle}
+      options={options}
+      value={value}
+      onChange={onChange}
+    />
+  );
+});
+
+const ThinkingEffortSliderPill = React.forwardRef<
+  HTMLDivElement,
+  {
+    expanded: boolean;
+    onToggle: () => void;
+    options: { value: string; desc?: string }[];
+    value: string;
+    onChange: (v: string) => void;
+  }
+>(function ThinkingEffortSliderPill(
   { expanded, onToggle, options, value, onChange },
   ref,
 ) {
@@ -717,9 +768,9 @@ const ThinkingEffortPill = React.forwardRef<
         // flex row would otherwise compress it (which would wrap the
         // text and make the spacer report a too-narrow offsetWidth,
         // dragging the pill down with it).
-        className="invisible inline-flex shrink-0 items-center gap-[5px] px-[10px] text-[14px] whitespace-nowrap"
+        className="invisible inline-flex shrink-0 items-center gap-[5px] pl-[14px] pr-[10px] text-[14px] whitespace-nowrap"
       >
-        <span>effort: {value}</span>
+        <span>Effort: {capEffort(value)}</span>
         <CaretIcon />
       </span>
 
@@ -774,11 +825,11 @@ const ThinkingEffortPill = React.forwardRef<
             the same width the spacer measured. */}
         <div
           className={[
-            "h-full flex items-center gap-[5px] px-[10px] whitespace-nowrap",
+            "h-full flex items-center gap-[5px] pl-[14px] pr-[10px] whitespace-nowrap",
             expanded ? "hidden" : "",
           ].join(" ")}
         >
-          <span>effort: {value}</span>
+          <span>Effort: {capEffort(value)}</span>
           <CaretIcon />
         </div>
 
@@ -792,8 +843,8 @@ const ThinkingEffortPill = React.forwardRef<
           ].join(" ")}
           style={{ width: 260 }}
         >
-          <span className="shrink-0 min-w-[56px] text-center text-text-bright font-medium">
-            {value}
+          <span className="shrink-0 min-w-[56px] text-center text-text-primary">
+            {capEffort(value)}
           </span>
           <Slider
             min={0}

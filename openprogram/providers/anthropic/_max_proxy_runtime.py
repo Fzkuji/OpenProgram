@@ -42,6 +42,32 @@ from openprogram.agentic_programming.runtime import Runtime
 _DEFAULT_PROXY_URL = "http://localhost:3456"
 _PLACEHOLDER_KEY = "claude-code"
 
+# The only three model ids the ``claude-max-api`` proxy recognises (see
+# ``_claude_max_proxy_registry._PROXY_MODELS``). Anything else the proxy
+# silently downgrades to Haiku, so callers must land on one of these.
+_PROXY_ALIASES = ("claude-opus-4", "claude-sonnet-4", "claude-haiku-4")
+
+
+def _normalize_proxy_model(model: str) -> str:
+    """Fold an arbitrary Claude model id onto a proxy-recognised alias.
+
+    The runtime can be handed all sorts of ids — a bare alias, a
+    version-suffixed catalog id (``claude-opus-4-7``), or even the
+    env-detected agent model (``claude-opus-4-7[1m]``). The proxy only
+    accepts the three bare family aliases, so match on the family
+    substring and return the alias. Unknown ids fall back to Sonnet
+    (the constructor default) rather than letting the proxy downgrade
+    to Haiku unannounced.
+    """
+    m = (model or "").lower()
+    if m in _PROXY_ALIASES:
+        return m
+    if "opus" in m:
+        return "claude-opus-4"
+    if "haiku" in m:
+        return "claude-haiku-4"
+    return "claude-sonnet-4"
+
 
 def _resolve_base_url() -> str:
     val = os.environ.get("CLAUDE_MAX_PROXY_URL")
@@ -89,6 +115,7 @@ class ClaudeCodeRuntime(Runtime):
         if not url.endswith("/v1"):
             url = url + "/v1"
         os.environ.setdefault("CLAUDE_MAX_PROXY_RESOLVED_URL", url)
+        model = _normalize_proxy_model(model)
         super().__init__(model=f"claude-code:{model}", max_retries=max_retries)
 
 
