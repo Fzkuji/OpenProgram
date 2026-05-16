@@ -18,6 +18,7 @@ import { useColResize } from "@/lib/use-col-resize";
 // their `window.*` bridges for the still-legacy scripts).
 import "@/lib/providers";
 import "@/lib/programs-panel";
+import { initOverlayScrollbars } from "@/lib/scrollbar";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -31,6 +32,7 @@ const SHARED_JS = [
   "shared/state.js",
   "shared/helpers.js",
   "shared/ui.js",
+  // scrollbar.js migrated → lib/scrollbar.ts
   "shared/scrollbar.js",
   // `shared/right-dock.js` is no longer loaded — `<RightSidebar />`
   // owns open/close + view switching now and installs the
@@ -288,6 +290,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       router.push(href);
     };
     document.addEventListener("click", onClick);
+
+    // Overlay scrollbars (was shared/scrollbar.js).
+    initOverlayScrollbars();
 
     // First-mount init: load external libs + shared JS. Both the left
     // sidebar and the right sidebar are real React components now
