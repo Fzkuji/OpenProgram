@@ -41,6 +41,10 @@ interface WsWindow {
   _onChannelAccountsMessage?: (data: unknown) => void;
   _onBranchesListMessage?: (data: unknown) => void;
   _onBranchCheckedOut?: (data: unknown) => void;
+  loadSessionData?: (data: unknown) => void;
+  _handleSessionsList?: (data: unknown) => void;
+  refreshStatusSource?: () => void;
+  refreshChannelBadge?: () => void;
 }
 
 export function useWS(): void {
@@ -146,6 +150,27 @@ export function useWS(): void {
         case "branch_checked_out":
           w._onBranchCheckedOut?.(d);
           return true;
+        case "session_loaded":
+          w.loadSessionData?.(d);
+          return true;
+        case "sessions_list":
+          w._handleSessionsList?.(d);
+          return true;
+        case "session_channel_updated": {
+          const sid = d?.session_id as string | undefined;
+          const conv = sid ? w.conversations?.[sid] : undefined;
+          if (d?.ok && conv) {
+            conv.channel = (d.channel as string) || null;
+            conv.account_id = (d.account_id as string) || null;
+            conv.peer = (d.peer as string) || null;
+            w.renderSessions?.();
+            if (sid === w.currentSessionId) {
+              w.refreshStatusSource?.();
+              w.refreshChannelBadge?.();
+            }
+          }
+          return true;
+        }
         default:
           return false;
       }

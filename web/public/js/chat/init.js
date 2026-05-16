@@ -121,24 +121,6 @@ function handleMessage(msg) {
         setRunActive(false);
       }
       break;
-    case 'session_loaded':
-      loadSessionData(msg.data);
-      break;
-    case 'sessions_list':
-      _handleSessionsList(msg.data);
-      break;
-    case 'session_channel_updated':
-      if (msg.data && msg.data.ok && msg.data.session_id && conversations[msg.data.session_id]) {
-        conversations[msg.data.session_id].channel = msg.data.channel || null;
-        conversations[msg.data.session_id].account_id = msg.data.account_id || null;
-        conversations[msg.data.session_id].peer = msg.data.peer || null;
-        renderSessions();
-        if (msg.data.session_id === currentSessionId) {
-          if (typeof window.refreshStatusSource === 'function') window.refreshStatusSource();
-          if (typeof window.refreshChannelBadge === 'function') window.refreshChannelBadge();
-        }
-      }
-      break;
     case 'status':
       isPaused = msg.paused;
       if (msg.stopped) {
