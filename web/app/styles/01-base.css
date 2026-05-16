@@ -268,3 +268,45 @@ html, body {
   transform: translateX(0);
 }
 
+/* ===== Sidebar collapsed-state cascade (was 02-sidebar.css) =====
+   These target descendant stable classes across the sidebar tree, so
+   they stay a single global cascade rather than threading an `open`
+   prop through every nav row / the portal-mounted footer. */
+.sidebar.collapsed * {
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+}
+.sidebar.collapsed .sidebar-nav-item { gap: 0; }
+.sidebar.collapsed .sidebar-nav-label { display: none; }
+.sidebar.collapsed .sidebar-nav-action { display: none; }
+
+/* React UserMenuFooter companion-class overrides — see the component's
+   own module CSS (user-menu-footer.module.css) for the base styling. */
+.user-menu-footer { padding: 8px 0 !important; }
+.user-menu-footer-trigger { padding: 8px 10px !important; }
+.user-menu-footer-info {
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, max-width 0.3s ease, margin 0.3s ease;
+}
+.sidebar.collapsed .user-menu-footer-info {
+  opacity: 0;
+  max-width: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+/* User-message avatar (chat stream — React <UserBubble />). */
+.user-avatar {
+  box-sizing: content-box;
+  width: 36px; height: 36px;
+  border-radius: 9999px;
+  border: 0.5px solid transparent;
+  background: var(--text-primary);
+  color: var(--bg-secondary);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 530;
+  flex-shrink: 0;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+
