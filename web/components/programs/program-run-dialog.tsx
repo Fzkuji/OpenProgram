@@ -52,6 +52,12 @@ export function ProgramRunDialog({ fn, onClose }: Props) {
         else if (p.type === "float") payload[p.name] = Number(v);
         else payload[p.name] = v;
       }
+      // Run into the conversation the user last had open (the chat
+      // PageShell stays mounted across routes and keeps this global
+      // current). Falls back to a fresh session when there's none.
+      const curSession = (window as unknown as { currentSessionId?: string | null })
+        .currentSessionId;
+      if (curSession) payload._session_id = curSession;
       const r = await api.runFunction(fn.name, payload);
       setResult(JSON.stringify(r.result ?? r.error ?? r, null, 2));
     } catch (e) {

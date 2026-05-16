@@ -496,14 +496,11 @@
   box-shadow: none;
   max-height: 270px;
   overflow-y: auto;
-  scrollbar-width: thin;
+  /* Scrolls when the list overflows, but with no visible scrollbar. */
+  scrollbar-width: none;
 }
 .slashMenu::-webkit-scrollbar {
-  width: 6px;
-}
-.slashMenu::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
-  border-radius: 3px;
+  display: none;
 }
 
 .opening {
@@ -564,9 +561,6 @@
 @media (prefers-color-scheme: dark) {
   .slashMenu {
     border-color: rgba(255, 255, 255, 0.10);
-  }
-  .slashMenu::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.18);
   }
   .slashMenuName {
     color: var(--text-bright, #fff);

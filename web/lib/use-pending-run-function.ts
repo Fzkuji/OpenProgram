@@ -59,13 +59,23 @@ function tryOpen(name: string): boolean {
   return true;
 }
 
+function isChatRoute(p: string): boolean {
+  return p === "/chat" || p.startsWith("/s/");
+}
+
 /**
- * Fires on `active` rising edges (chat route mount + each pathname
- * change while on a chat route). Cleans up its own poll on unmount.
+ * Re-runs on every `pathname` change. The drain MUST be keyed on the
+ * route, not on a constant flag: `<PageShell page="chat">` is mounted
+ * once at the layout level and kept alive (hidden) across routes, so a
+ * `page === "chat"` boolean never changes and a `[active]` effect would
+ * fire only once — missing every `/programs → /chat` hand-off after the
+ * first. Keying on `pathname` makes the effect re-fire when the user
+ * navigates back onto a chat route, which is exactly when a stashed
+ * `__pendingRunFunction` needs draining.
  */
-export function usePendingRunFunction(active: boolean): void {
+export function usePendingRunFunction(pathname: string): void {
   useEffect(() => {
-    if (!active) return;
+    if (!isChatRoute(pathname)) return;
     const pending = takePending();
     if (!pending) return;
     if (tryOpen(pending.name)) return;
@@ -85,5 +95,5 @@ export function usePendingRunFunction(active: boolean): void {
       stopped = true;
       clearInterval(poll);
     };
-  }, [active]);
+  }, [pathname]);
 }

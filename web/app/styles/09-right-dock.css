@@ -247,6 +247,12 @@
 }
 .history-node.is-head { filter: drop-shadow(0 0 4px rgba(255,255,255,0.35)); }
 
+/* Next-message context range: nodes/edges outside the active branch
+   the next chat message will carry are faded. Transition so the range
+   updating after a turn reads as a soft change, not a flash. */
+.history-node.out-of-context { opacity: 0.3; transition: opacity 0.2s ease; }
+.history-edge.out-of-context { opacity: 0.15; transition: opacity 0.2s ease; }
+
 /* Inline row labels — message preview / function name beside each node. */
 .history-label {
   font-size: 11px;
@@ -258,6 +264,18 @@
 }
 .history-label.on-head { fill: var(--text-secondary); }
 .history-label.is-head { fill: var(--text-primary); font-weight: 600; }
+
+/* Collapsible code subtree: fold/unfold count badge + affordance. */
+.history-fold-badge {
+  font-size: 9px;
+  font-family: var(--font-sans, sans-serif);
+  font-weight: 600;
+  fill: var(--text-secondary);
+  dominant-baseline: middle;
+}
+.history-node.is-collapsible:hover .history-fold-badge {
+  fill: var(--text-primary);
+}
 
 .history-tooltip {
   position: absolute;

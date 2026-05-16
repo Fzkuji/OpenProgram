@@ -341,10 +341,21 @@ function _assignLanes(
     if (!byId[id].children!.length) leaves.push(byId[id]);
   });
 
+  // Internal execution nodes (an @agentic_function's LLM / tool calls)
+  // always sort LAST, regardless of created_at. An internal call
+  // usually has an earlier seq than the conversation that continues
+  // after the run, so by raw created_at it would claim lane 0 and
+  // shove the conversation trunk onto a side lane — the trunk would
+  // change colour just by expanding a run. Forcing internal leaves to
+  // the back keeps the conversation on lane 0 and makes internal calls
+  // branch off to the side: detail hanging off the trunk, not a peer.
   leaves.forEach((leaf) => {
     leaf._anchor = _branchAnchor(leaf, byId);
   });
   leaves.sort((a, b) => {
+    const ax = a._internal ? 1 : 0;
+    const bx = b._internal ? 1 : 0;
+    if (ax !== bx) return ax - bx;
     const dt = (a._anchor!.created_at || 0) - (b._anchor!.created_at || 0);
     if (dt !== 0) return dt;
     const ai = a._anchor!.id;
