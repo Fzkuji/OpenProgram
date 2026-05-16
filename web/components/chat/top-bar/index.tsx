@@ -19,6 +19,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "@/lib/session-store";
 
 import { AgentSelector } from "./agent-selector";
+import { BranchMenu } from "./branch-menu";
 import { ChannelMenu } from "./channel-menu";
 import { installLegacyWrappers, legacyTopbarReady } from "./legacy-bridge";
 import { formatAgentDetails } from "./format";
@@ -176,15 +177,30 @@ function BranchBadge({
 }: {
   branchInfo: ReturnType<typeof useSessionStore.getState>["branchInfo"];
 }) {
-  function onClick(e: React.MouseEvent) {
-    // Close the React agent-selector menus before opening this legacy
-    // popover, so the two can't sit open at the same time.
+  const ref = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const close = () => setOpen(false);
+    window.addEventListener("topbar-close-menus", close);
+    return () => window.removeEventListener("topbar-close-menus", close);
+  }, []);
+
+  function onClick() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
     window.dispatchEvent(new Event("topbar-close-menus"));
-    const w = window as unknown as { openBranchDropdown?: (e: MouseEvent) => void };
-    w.openBranchDropdown?.(e.nativeEvent);
+    (
+      window as unknown as { _closeAllPopovers?: () => void }
+    )._closeAllPopovers?.();
+    setOpen(true);
   }
   return (
+    <>
     <span
+      ref={ref}
       id="branchBadge"
       className="runtime-badge branch-badge"
       onClick={onClick}
@@ -221,6 +237,10 @@ function BranchBadge({
         {branchInfo.name} ({branchInfo.count})
       </span>
     </span>
+    {open ? (
+      <BranchMenu anchorRef={ref} onClose={() => setOpen(false)} />
+    ) : null}
+    </>
   );
 }
 
