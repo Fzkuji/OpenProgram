@@ -28,6 +28,7 @@
 
 import { useEffect } from "react";
 import { useSessionStore } from "@/lib/session-store";
+import { BranchesPanel } from "./branches-panel";
 import {
   sidebarNavIconClass,
   sidebarNavIconSvgClass,
@@ -256,17 +257,15 @@ export function RightSidebar() {
 }
 
 /**
- * History graph placeholder. The actual SVG is built by
- * `renderHistoryGraph()` in `web/public/js/shared/history-graph.js`,
- * which selects `#historyPanel .history-body` and replaces children.
- * We render the wrapper divs only; the branches panel host is
- * `#branchesPanel`, which `window.renderBranchesPanel()` in
- * `conversations.js` writes into.
+ * History view: the React <BranchesPanel /> on top, the history-graph
+ * DAG body below. The SVG is still built by `renderHistoryGraph()` in
+ * `web/public/js/shared/history-graph.js`, which selects
+ * `#historyPanel .history-body` and replaces its children.
  */
 function HistoryGraphPanel() {
   return (
     <>
-      <div id="branchesPanel"></div>
+      <BranchesPanel />
       <div className="history-body"></div>
     </>
   );
