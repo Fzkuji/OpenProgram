@@ -18,10 +18,9 @@ const PAGE_HTML: Record<Page, string> = {
 // Only page-specific scripts — shared ones (state/helpers/sidebar/providers/
 // settings/ui/scrollbar) are loaded once by AppShell.
 const JS_FILES_BY_PAGE: Record<Page, string[]> = {
-  chat: [
-    "chat/chat.js", "chat/chat-ws.js",
-    "chat/init.js",
-  ],
+  // Chat WS handlers are TS now — see web/lib/chat-handlers.ts
+  // (imported by useWS).
+  chat: [],
   settings: [],
   programs: ["programs/programs.js"],
   chats: [],

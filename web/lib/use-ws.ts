@@ -23,6 +23,14 @@ import {
   onBranchesListMessage,
   onChannelAccountsMessage,
 } from "./conversations";
+import {
+  handleRunningTask,
+  handleSessionsList,
+  initChatPage,
+  wsHandleChatAck,
+  wsHandleChatResponse,
+  wsHandleStatus,
+} from "./chat-handlers";
 
 interface WsWindow {
   ws?: WebSocket | null;
@@ -79,14 +87,14 @@ export function useWS(): void {
         case "pong":
           return true;
         case "chat_ack":
-          // Mirror into the React message store, then the legacy
+          // Mirror into the React message store, then the
           // session/badge bookkeeping.
           try {
             w.__applyChatWsMessage?.(msg);
           } catch (err) {
             console.error("[useWS] reducer error:", err);
           }
-          w._wsHandleChatAck?.(d);
+          wsHandleChatAck((d ?? {}) as never);
           return true;
         case "chat_response":
           try {
@@ -94,10 +102,10 @@ export function useWS(): void {
           } catch (err) {
             console.error("[useWS] reducer error:", err);
           }
-          w._wsHandleChatResponse?.(d);
+          wsHandleChatResponse((d ?? {}) as never);
           return true;
         case "status":
-          w._wsHandleStatus?.(msg);
+          wsHandleStatus(msg as never);
           return true;
         case "session_reload": {
           const sid = d?.session_id as string | undefined;
@@ -120,7 +128,7 @@ export function useWS(): void {
           return true;
         }
         case "running_task":
-          w._handleRunningTask?.(d);
+          handleRunningTask(d);
           return true;
         case "provider_info":
         case "provider_changed":
@@ -187,7 +195,7 @@ export function useWS(): void {
           loadSessionData(d as never);
           return true;
         case "sessions_list":
-          w._handleSessionsList?.(d);
+          handleSessionsList((d ?? []) as never);
           return true;
         case "session_channel_updated": {
           const sid = d?.session_id as string | undefined;
@@ -259,13 +267,27 @@ export function useWS(): void {
       socket.onerror = () => socket?.close();
     }
 
-    // The legacy WS handlers (`_wsHandleChatResponse` etc.) are defined
-    // by the `init.js` page script, injected asynchronously by
-    // PageShell. Poll until init.js has run, then open the socket.
-    function start(): void {
+    // The shared legacy scripts (state.js / helpers.js / ui.js /
+    // providers.js) are fetched + injected asynchronously by AppShell.
+    // state.js runs `var ws = null` at the global scope, so connecting
+    // before it loads would have the socket reference clobbered right
+    // after assignment. initChatPage() also depends on shared-script
+    // globals (loadProviders / setWelcomeVisible). So: wait for
+    // AppShell to publish `__sharedScriptsReady`, await it, then init.
+    async function start(): Promise<void> {
+      const sw = window as unknown as { __sharedScriptsReady?: Promise<void> };
+      while (!stopped && !sw.__sharedScriptsReady) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
       if (stopped) return;
-      if (typeof w._wsHandleChatResponse === "function") connect();
-      else setTimeout(start, 50);
+      try {
+        await sw.__sharedScriptsReady;
+      } catch {
+        /* ignore — connect anyway */
+      }
+      if (stopped) return;
+      initChatPage();
+      connect();
     }
     start();
 
