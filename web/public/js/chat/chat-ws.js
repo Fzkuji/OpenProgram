@@ -1,8 +1,15 @@
 // ===== Response Handling =====
+//
+// `chat_response` envelopes are rendered by the React message store —
+// `useWS` calls the chat-stream reducer (`__applyChatWsMessage`) before
+// this legacy handler runs. So `handleChatResponse` is now pure
+// bookkeeping: token badge / branch cache / session-store feed / title.
+// stream_event / tree_update / user_message / result-rendering all
+// belong to the reducer; only `context_stats`, `status` and
+// `follow_up_question` still have legacy-side work.
 
 function handleChatResponse(data) {
   var type = data.type;
-  console.log('[DEBUG] handleChatResponse type:', type, 'display:', data.display, 'function:', data.function);
 
   if (type === 'context_stats') {
     _handleContextStats(data);
@@ -12,37 +19,28 @@ function handleChatResponse(data) {
     _handleStatusResponse(data);
     return;
   }
-  if (type === 'stream_event' && data.event) {
-    _handleStreamEvent(data);
-    return;
-  }
-  if (type === 'user_message') {
-    _handleInboundUserMessage(data);
-    return;
-  }
   if (type === 'follow_up_question') {
     _handleFollowUpQuestion(data);
     return;
   }
-  if (type === 'tree_update') {
-    _handleTreeUpdate(data);
+  // stream_event / tree_update / user_message are rendered by the
+  // React reducer — nothing left to do legacy-side.
+  if (type === 'stream_event' || type === 'tree_update' || type === 'user_message') {
     return;
   }
 
-  // Final response (result or error) -- task done
+  // Final response (result / error / retry_result) -- task done
   setRunning(false);
   loadAgentSettings();
   // Refresh token counts: the assistant turn just persisted a new
   // provider_usage row, so the branch's current_tokens + the topbar
-  // chip both need to re-read from the server. Without this the UI
-  // shows stale numbers until the user clicks somewhere or reloads.
+  // chip both need to re-read from the server.
   if (typeof window.refreshTokenBadge === 'function') {
     try { window.refreshTokenBadge(); } catch (e) {}
   }
   // The turn just appended new messages (and possibly created a new
   // branch tip). Force-refresh the branches cache so the right
-  // sidebar visualization picks up new nodes without requiring a
-  // session reload.
+  // sidebar visualization picks up new nodes without a session reload.
   if (typeof fetchBranches === 'function' && currentSessionId) {
     try {
       fetchBranches(currentSessionId, { force: true }).then(function () {
@@ -53,39 +51,10 @@ function handleChatResponse(data) {
     } catch (e) {}
   }
 
-  // Tear down the elapsed-time ticker. Any surviving data-running attribute
-  // after a terminal message (result / error / cancelled) is a zombie — the
-  // tree won't receive further updates, so the numbers would tick forever.
+  // Tear down the elapsed-time ticker.
   if (_elapsedTimer) { clearInterval(_elapsedTimer); _elapsedTimer = null; }
-  document.querySelectorAll('.node-duration[data-running]').forEach(function(el) {
-    el.removeAttribute('data-running');
-  });
-
-  if (type === 'retry_result' && data.function && data.attempts) {
-    _handleRetryResult(data);
-    return;
-  }
-
-  // Legacy retry result
-  if (data.is_retry && data.context_tree && (data.context_tree.path || data.context_tree.name)) {
-    var ct = data.context_tree;
-    var rootKey = ct.path || ct.name;
-    var idx = trees.findIndex(function(t) { return t.path === rootKey || t.name === ct.name; });
-    if (idx >= 0) { trees[idx] = ct; } else { trees.push(ct); }
-    expandedNodes.add(rootKey);
-  }
-
-  // Remove status line
-  var statusLine = document.getElementById('currentStatusLine');
-  if (statusLine) statusLine.remove();
 
   var isRuntimeResult = data.display === 'runtime' || (data.function && data.function !== 'chat');
-
-  if (isRuntimeResult) {
-    _handleRuntimeResult(data, type);
-  } else {
-    _handleChatResult(data, type);
-  }
 
   // Store assistant message
   if (currentSessionId && conversations[currentSessionId]) {
@@ -127,39 +96,7 @@ function handleChatResponse(data) {
 
 // --- Internal response handlers ---
 
-function _handleInboundUserMessage(data) {
-  // Only render when this user message belongs to the session the
-  // browser is currently viewing. dispatcher broadcasts globally, so
-  // every connected client gets every session's events.
-  if (!data || !data.session_id || data.session_id !== currentSessionId) return;
-  // Web-side sends already render an optimistic bubble locally — skip
-  // the broadcast for that path to avoid double-rendering.
-  if (data.source === 'web') return;
-  // DOM-level dedup: if a bubble with this msg_id is already in the
-  // transcript (we've seen this envelope before, or load_session
-  // already rendered it), don't append again.
-  if (data.msg_id && document.querySelector('.message[data-msg-id="' + data.msg_id + '"]')) {
-    return;
-  }
-  if (typeof addUserMessage !== 'function') return;
-  addUserMessage(data.content || '');
-  var bubble = window._pendingUserBubble;
-  if (bubble) {
-    if (data.msg_id) bubble.setAttribute('data-msg-id', data.msg_id);
-    if (data.peer_display) {
-      var label = bubble.querySelector('.message-sender');
-      if (label) label.textContent = data.peer_display;
-    }
-    window._pendingUserBubble = null;
-  }
-  // Hide the welcome screen if it's still up — fresh inbound message
-  // means this session is no longer empty.
-  if (typeof setWelcomeVisible === 'function') setWelcomeVisible(false);
-}
-
 function _handleContextStats(data) {
-  var el = document.getElementById('contextStats');
-
   var chat = data.chat || {};
   if (!data.chat && (data.input_tokens || data.output_tokens)) {
     chat = { input_tokens: data.input_tokens || 0, output_tokens: data.output_tokens || 0, cache_read: data.cache_read || 0 };
@@ -172,9 +109,7 @@ function _handleContextStats(data) {
   }
 
   // Feed the React store — this is what the composer's <ContextBadge />
-  // actually renders from. The legacy #contextStats / _renderTokenBadge
-  // DOM paths below are dead after the React migration (those nodes no
-  // longer exist), so without this push the badge stays invisible.
+  // renders from.
   if (window.__sessionStore && typeof currentSessionId !== 'undefined' && currentSessionId) {
     try {
       window.__sessionStore.getState().setContextStats(
@@ -189,7 +124,7 @@ function _handleContextStats(data) {
     } catch (e) { /* store not ready yet — a later stats event will land */ }
   }
 
-  // Update token badge directly from WS data — no HTTP round-trip needed.
+  // Token badge — fed straight from WS data, no HTTP round-trip.
   if (typeof window._renderTokenBadge === 'function' && typeof currentSessionId !== 'undefined' && currentSessionId) {
     var wsTokenData = {
       current_tokens: data.current_tokens || (chat.input_tokens || 0) + (chat.output_tokens || 0),
@@ -214,19 +149,6 @@ function _handleContextStats(data) {
       && typeof currentSessionId !== 'undefined' && currentSessionId) {
     window.refreshHistoryContextRange(currentSessionId);
   }
-
-  if (!el) return;
-  var provider = data.provider || '';
-  var result = _buildUsageText(chat, provider);
-  if (result) {
-    var t = typeof result === 'string' ? result : result.text;
-    var tip = typeof result === 'object' && result.tooltip ? result.tooltip : '';
-    el.textContent = 'chat: ' + t;
-    el.title = tip;
-  } else {
-    el.textContent = '';
-    el.title = '';
-  }
 }
 
 function _handleStatusResponse(data) {
@@ -242,31 +164,6 @@ function _handleStatusResponse(data) {
     }
   }
   scrollToBottom();
-}
-
-// Distill a tool's raw JSON args into a one-glance label.
-//   * file_path / path → trimmed to a path relative to $HOME or repo root
-//   * command          → just the command string
-//   * pattern / query  → the search string
-//   * fallback         → first 60 chars of raw JSON
-// Keeps the chat narrow: full args still available in the unfolded body.
-// Render a single stream event inside the current assistant bubble for a
-// plain chat (no runtime_pending block). Supports three event types:
-//   text      — streamed reply, rendered as markdown in .chat-text
-//   thinking  — reasoning tokens, folded into a collapsible .chat-thinking
-//   tool_use  — tool call, shown as a collapsible .chat-tool
-//   tool_result — result for a prior tool_use, filled into matching .chat-tool
-// Rebuild the streamed scaffold HTML from persisted blocks. Used when
-// reloading a conversation — the live DOM is gone but msg.blocks has
-// everything needed to regenerate the same collapsible layout.
-// Toggle the outer chat-tools card. Header click target is the
-// header div itself, so parent is the .chat-tools element.
-// Copy all tool rows in this card as a single JSON blob.
-function _handleStreamEvent(data) {
-  // Phase 3: streaming deltas (text / thinking / tool calls, and the
-  // /run CLI terminal) are rendered by React — the chat-stream reducer
-  // applies stream events to the message store. Legacy DOM renderer
-  // retired — no-op so the dispatch path holds.
 }
 
 function _handleFollowUpQuestion(data) {
@@ -294,31 +191,4 @@ function _handleFollowUpQuestion(data) {
   var inp = document.getElementById('followUpInput');
   if (inp) inp.focus();
   scrollToBottom();
-}
-
-function _handleTreeUpdate(data) {
-  // Phase 3: the live execution tree is rendered by the React
-  // <ExecutionTree /> inside <RuntimeBlock /> now — the chat-stream
-  // reducer stores `tree_update` payloads on the reply message. This
-  // legacy DOM renderer is retired; kept as a no-op so the
-  // `handleChatResponse` dispatch doesn't throw.
-}
-
-function _handleRetryResult(data) {
-  // Phase 3: retry results will be applied through the chat-stream
-  // reducer in a later slice. Legacy DOM renderer retired — just clear
-  // the running flag + refresh badges.
-  setRunning(false);
-  loadAgentSettings();
-}
-
-function _handleRuntimeResult(data, type) {
-  // Phase 3: the runtime block is rendered by React <RuntimeBlock />
-  // now (fed by the chat-stream reducer's `finalize`). This legacy DOM
-  // renderer is retired — kept as a no-op so the dispatch path holds.
-}
-
-function _handleChatResult(data, type) {
-  // Phase 3: plain-chat replies are rendered by React <AssistantBubble />
-  // (chat-stream reducer). Legacy DOM renderer retired — no-op.
 }
