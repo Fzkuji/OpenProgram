@@ -31,6 +31,42 @@ export function useWS(): void {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
 
+    /** React-side dispatch for migrated message types. Returns true if
+     *  the message was handled here — false means fall through to the
+     *  legacy `window.handleMessage`. Slice E migrates types into here
+     *  one batch at a time until the legacy dispatcher is empty. */
+    function dispatch(msg: {
+      type?: string;
+      data?: { session_id?: string };
+    }): boolean {
+      switch (msg.type) {
+        case "pong":
+          return true;
+        case "session_reload": {
+          const sid = msg.data?.session_id;
+          if (sid && sid === w.currentSessionId) {
+            socket?.send(
+              JSON.stringify({ action: "load_session", session_id: sid }),
+            );
+          }
+          return true;
+        }
+        case "branch_renamed":
+        case "branch_name_deleted":
+        case "branch_deleted": {
+          const sid = msg.data?.session_id;
+          if (sid) {
+            socket?.send(
+              JSON.stringify({ action: "list_branches", session_id: sid }),
+            );
+          }
+          return true;
+        }
+        default:
+          return false;
+      }
+    }
+
     function connect(): void {
       if (stopped) return;
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -60,7 +96,14 @@ export function useWS(): void {
 
       socket.onmessage = (e) => {
         try {
-          w.handleMessage?.(JSON.parse(e.data));
+          const msg = JSON.parse(e.data) as {
+            type?: string;
+            data?: { session_id?: string };
+          };
+          if (!dispatch(msg)) {
+            // Not yet migrated — hand to the legacy dispatcher.
+            w.handleMessage?.(msg);
+          }
         } catch (err) {
           console.error("[useWS] onmessage parse error:", err);
         }

@@ -145,11 +145,6 @@ function handleMessage(msg) {
     case 'session_loaded':
       loadSessionData(msg.data);
       break;
-    case 'session_reload':
-      if (msg.data && msg.data.session_id === currentSessionId && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: 'load_session', session_id: currentSessionId }));
-      }
-      break;
     case 'attempt_switched':
       handleAttemptSwitched(msg.data);
       break;
@@ -169,15 +164,6 @@ function handleMessage(msg) {
     case 'branch_checked_out':
       if (typeof window._onBranchCheckedOut === 'function') {
         window._onBranchCheckedOut(msg.data);
-      }
-      break;
-    case 'branch_renamed':
-    case 'branch_name_deleted':
-    case 'branch_deleted':
-      if (msg.data && msg.data.session_id) {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ action: 'list_branches', session_id: msg.data.session_id }));
-        }
       }
       break;
     case 'session_channel_updated':
@@ -276,8 +262,6 @@ function handleMessage(msg) {
         _agentSettings.chat.session_id = msg.data.session_id;
         updateAgentBadges();
       }
-      break;
-    case 'pong':
       break;
   }
 }
