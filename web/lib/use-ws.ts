@@ -30,6 +30,17 @@ interface WsWindow {
   formatProviderLabel?: (data: unknown) => string;
   updateAgentBadges?: () => void;
   _agentSettings?: { chat?: Record<string, unknown>; exec?: Record<string, unknown> };
+  trees?: unknown;
+  availableFunctions?: unknown;
+  conversations?: Record<string, Record<string, unknown>>;
+  updateTreeData?: (data: unknown) => void;
+  loadProgramsMeta?: () => Promise<unknown>;
+  renderFunctions?: () => void;
+  renderSessions?: () => void;
+  handleAttemptSwitched?: (data: unknown) => void;
+  _onChannelAccountsMessage?: (data: unknown) => void;
+  _onBranchesListMessage?: (data: unknown) => void;
+  _onBranchCheckedOut?: (data: unknown) => void;
 }
 
 export function useWS(): void {
@@ -99,6 +110,41 @@ export function useWS(): void {
             w._agentSettings.chat.session_id = d.session_id;
             w.updateAgentBadges?.();
           }
+          return true;
+        case "full_tree":
+          w.trees = d || [];
+          return true;
+        case "event":
+          w.updateTreeData?.(d);
+          return true;
+        case "functions_list":
+          w.availableFunctions = d || [];
+          w.loadProgramsMeta?.().then(() => w.renderFunctions?.());
+          return true;
+        case "history_list": {
+          const list = (d as unknown as { id: string; title?: string }[]) || [];
+          const convs = w.conversations;
+          if (convs) {
+            for (const c of list) {
+              if (!convs[c.id]) {
+                convs[c.id] = { id: c.id, title: c.title, messages: [] };
+              }
+            }
+          }
+          w.renderSessions?.();
+          return true;
+        }
+        case "attempt_switched":
+          w.handleAttemptSwitched?.(d);
+          return true;
+        case "channel_accounts":
+          w._onChannelAccountsMessage?.(d);
+          return true;
+        case "branches_list":
+          w._onBranchesListMessage?.(d);
+          return true;
+        case "branch_checked_out":
+          w._onBranchCheckedOut?.(d);
           return true;
         default:
           return false;

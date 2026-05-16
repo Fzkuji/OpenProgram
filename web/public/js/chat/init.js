@@ -35,27 +35,6 @@ function handleMessage(msg) {
     }
   }
   switch (msg.type) {
-    case 'full_tree':
-      trees = msg.data || [];
-      break;
-    case 'event':
-      handleContextEvent(msg.event, msg.data);
-      break;
-    case 'functions_list':
-      availableFunctions = msg.data || [];
-      loadProgramsMeta().then(function() { renderFunctions(); });
-      // The /programs → /chat hand-off used to be drained here via
-      // `window.__triggerPendingRunFunction()`. That trigger now
-      // lives in page-shell.tsx's chat-route effect and polls
-      // `availableFunctions` until this assignment lands, so we
-      // no longer need to ping it from the legacy side.
-      break;
-    case 'history_list':
-      (msg.data || []).forEach(function(c) {
-        conversations[c.id] = conversations[c.id] || { id: c.id, title: c.title, messages: [] };
-      });
-      renderSessions();
-      break;
     case 'chat_ack':
       if (msg.data.session_id) {
         currentSessionId = msg.data.session_id;
@@ -145,26 +124,8 @@ function handleMessage(msg) {
     case 'session_loaded':
       loadSessionData(msg.data);
       break;
-    case 'attempt_switched':
-      handleAttemptSwitched(msg.data);
-      break;
     case 'sessions_list':
       _handleSessionsList(msg.data);
-      break;
-    case 'channel_accounts':
-      if (typeof window._onChannelAccountsMessage === 'function') {
-        window._onChannelAccountsMessage(msg.data);
-      }
-      break;
-    case 'branches_list':
-      if (typeof window._onBranchesListMessage === 'function') {
-        window._onBranchesListMessage(msg.data);
-      }
-      break;
-    case 'branch_checked_out':
-      if (typeof window._onBranchCheckedOut === 'function') {
-        window._onBranchCheckedOut(msg.data);
-      }
       break;
     case 'session_channel_updated':
       if (msg.data && msg.data.ok && msg.data.session_id && conversations[msg.data.session_id]) {
