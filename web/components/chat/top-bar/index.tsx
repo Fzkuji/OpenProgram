@@ -13,7 +13,7 @@
  */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useSessionStore } from "@/lib/session-store";
@@ -267,54 +267,52 @@ function AgentBadge({
   provider?: string;
   model?: string;
 }) {
-  const ref = useRef<HTMLSpanElement>(null);
   const [open, setOpen] = useState(false);
 
-  // A `topbar-close-menus` event (fired by the other agent badge, or
-  // by the legacy branch/channel popovers) closes this menu, so only
-  // one top-bar dropdown is ever open.
+  // A `topbar-close-menus` event (fired by another top-bar dropdown)
+  // closes this menu, so only one is ever open.
   useEffect(() => {
     const close = () => setOpen(false);
     window.addEventListener("topbar-close-menus", close);
     return () => window.removeEventListener("topbar-close-menus", close);
   }, []);
 
-  function onClick() {
+  function onOpenChange(next: boolean) {
     if (locked) return;
-    if (open) {
-      setOpen(false);
-      return;
+    if (next) {
+      window.dispatchEvent(new Event("topbar-close-menus"));
+      (window as unknown as { _closeAllPopovers?: () => void })._closeAllPopovers?.();
     }
-    // Close every other top-bar dropdown — the sibling agent badge
-    // (via the event) and the legacy branch/channel popovers.
-    window.dispatchEvent(new Event("topbar-close-menus"));
-    (window as unknown as { _closeAllPopovers?: () => void })._closeAllPopovers?.();
-    setOpen(true);
+    setOpen(next);
   }
 
   const label = kind === "chat" ? "Chat" : "Exec";
   const tooltip = (kind === "chat" ? "Chat agent" : "Execution agent") + details;
   return (
-    <>
-      <span
-        ref={ref}
-        id={id}
-        className={"runtime-badge agent-badge" + (locked ? " locked" : "")}
-        onClick={onClick}
-        title={tooltip}
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <span
+          id={id}
+          className={"runtime-badge agent-badge" + (locked ? " locked" : "")}
+          title={tooltip}
+        >
+          <span className="badge-short">{label}</span>
+          <span className="badge-details">{details}</span>
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={4}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="w-auto border-0 bg-transparent p-0 shadow-none"
       >
-        <span className="badge-short">{label}</span>
-        <span className="badge-details">{details}</span>
-      </span>
-      {open ? (
         <AgentSelector
           kind={kind}
-          anchorRef={ref}
           currentProvider={provider}
           currentModel={model}
           onClose={() => setOpen(false)}
         />
-      ) : null}
-    </>
+      </PopoverContent>
+    </Popover>
   );
 }
