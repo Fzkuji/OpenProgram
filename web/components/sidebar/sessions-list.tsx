@@ -11,9 +11,66 @@
  * hook should switch to a store subscription.
  */
 
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { useLegacyGlobals, useCurrentSessionId } from "./use-legacy-globals";
 import styles from "./sidebar.module.css";
+
+interface SessionWindow {
+  ws?: WebSocket;
+  conversations?: Record<string, unknown>;
+  currentSessionId?: string | null;
+  newSession?: () => void;
+}
+
+function wsSend(payload: unknown): void {
+  const w = window as unknown as SessionWindow;
+  if (w.ws && w.ws.readyState === WebSocket.OPEN) {
+    w.ws.send(JSON.stringify(payload));
+  }
+}
+
+/** Modal confirm — React port of legacy `_showConfirm`. Reuses the
+ *  `.confirm-overlay` / `.confirm-dialog` CSS so it looks identical. */
+function ConfirmDialog({
+  title,
+  message,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="confirm-overlay visible"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div className="confirm-dialog">
+        <div className="confirm-title">{title}</div>
+        <div className="confirm-message">{message}</div>
+        <div className="confirm-actions">
+          <button className="confirm-btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            className="confirm-btn confirm-btn-danger"
+            onClick={onConfirm}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 interface LegacyConv {
   id: string;
@@ -83,18 +140,42 @@ export function SessionsList() {
     router.push("/s/" + id);
   }
 
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    message: string;
+    run: () => void;
+  } | null>(null);
+
   function del(id: string, e: React.MouseEvent) {
     e.stopPropagation();
-    // Delegate to the legacy helper — it already handles the confirm
-    // dialog, the WS `delete_session` action, the in-memory cleanup
-    // and the redirect to /chat when the active conv is deleted.
-    const w = window as unknown as { deleteSession?: (id: string) => void };
-    if (typeof w.deleteSession === "function") w.deleteSession(id);
+    const conv = conversations[id] as { title?: string } | undefined;
+    setConfirm({
+      title: "Delete chat",
+      message: `Are you sure you want to delete "${conv?.title || "Untitled"}"?`,
+      run: () => {
+        const w = window as unknown as SessionWindow;
+        wsSend({ action: "delete_session", session_id: id });
+        if (w.conversations) delete w.conversations[id];
+        if (w.currentSessionId === id) w.newSession?.();
+      },
+    });
   }
 
   function clearAll() {
-    const w = window as unknown as { clearAllSessions?: () => void };
-    if (typeof w.clearAllSessions === "function") w.clearAllSessions();
+    const count = Object.keys(conversations).length;
+    if (!count) return;
+    setConfirm({
+      title: "Delete all chats",
+      message: `Are you sure you want to delete all ${count} conversations? This cannot be undone.`,
+      run: () => {
+        const w = window as unknown as SessionWindow;
+        wsSend({ action: "clear_sessions" });
+        if (w.conversations) {
+          for (const k of Object.keys(w.conversations)) delete w.conversations[k];
+        }
+        w.newSession?.();
+      },
+    });
   }
 
   if (list.length === 0) {
@@ -119,6 +200,17 @@ export function SessionsList() {
       <div className={styles.clearAll} onClick={clearAll}>
         Clear all
       </div>
+      {confirm ? (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            confirm.run();
+            setConfirm(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }

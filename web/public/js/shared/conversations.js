@@ -833,91 +833,9 @@ function _closeBranchDropdown() {
   document.removeEventListener('click', _branchDropdownDocClick);
 }
 
-function switchSession(sessionId) {
-  // If already on this conversation, just reload in-place
-  if (sessionId === currentSessionId && window.location.pathname === '/s/' + sessionId) {
-    return;
-  }
-  if (window.__navigate) { window.__navigate('/s/' + sessionId); return; }
-  window.location.href = '/s/' + sessionId;
-}
-
-function _showConfirm(title, message, onConfirm) {
-  var overlay = document.createElement('div');
-  overlay.className = 'confirm-overlay';
-  overlay.innerHTML =
-    '<div class="confirm-dialog">' +
-      '<div class="confirm-title">' + title + '</div>' +
-      '<div class="confirm-message">' + message + '</div>' +
-      '<div class="confirm-actions">' +
-        '<button class="confirm-btn" id="_confirmCancel">Cancel</button>' +
-        '<button class="confirm-btn confirm-btn-danger" id="_confirmOk">Delete</button>' +
-      '</div>' +
-    '</div>';
-  document.body.appendChild(overlay);
-  // Force the browser to register the initial style (opacity 0) BEFORE
-  // we flip to `.visible` (opacity 1), so the 150ms fade transition
-  // actually runs. We used `requestAnimationFrame` for this previously,
-  // but rAF is heavily throttled / paused on hidden tabs — the overlay
-  // would stay at opacity 0 forever in that case, making the dialog
-  // invisible to users who Cmd-Tab'd to another window between clicks.
-  // A synchronous read of `offsetWidth` flushes layout once, which is
-  // enough to make the subsequent class change a transition trigger.
-  void overlay.offsetWidth;
-  overlay.classList.add('visible');
-
-  function close() {
-    overlay.classList.remove('visible');
-    var removed = false;
-    overlay.addEventListener('transitionend', function() {
-      if (removed) return;
-      removed = true;
-      overlay.remove();
-    });
-    // Fallback in case transitionend never fires (e.g. tab was hidden
-    // when `.visible` got added so the fade didn't actually run, or
-    // some other style override killed the transition). Without this
-    // safety net, a "Cancel" click could leave a fully-opaque modal
-    // stuck on screen.
-    setTimeout(function () {
-      if (removed) return;
-      removed = true;
-      overlay.remove();
-    }, 300);
-  }
-  overlay.querySelector('#_confirmCancel').onclick = close;
-  overlay.querySelector('#_confirmOk').onclick = function() { close(); onConfirm(); };
-  overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
-}
-
-function deleteSession(sessionId) {
-  var conv = conversations[sessionId];
-  var title = (conv && conv.title) || 'Untitled';
-  _showConfirm('Delete chat', 'Are you sure you want to delete "' + title + '"?', function() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'delete_session', session_id: sessionId }));
-    }
-    delete conversations[sessionId];
-    if (currentSessionId === sessionId) {
-      newSession();
-    }
-    renderSessions();
-  });
-}
-
-function clearAllSessions() {
-  var count = Object.keys(conversations).length;
-  if (!count) return;
-  _showConfirm('Delete all chats', 'Are you sure you want to delete all ' + count + ' conversations? This cannot be undone.', function() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: 'clear_sessions' }));
-    }
-    conversations = {};
-    newSession();
-    renderSessions();
-  });
-}
-
+// Session delete / clear-all + the confirm modal are React now
+// (components/sidebar/sessions-list.tsx). switchSession is gone —
+// the React sessions list navigates with the router directly.
 function newSession() {
   if (window.location.pathname !== '/chat') {
     if (window.__navigate) { window.__navigate('/chat'); return; }
