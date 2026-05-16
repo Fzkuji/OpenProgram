@@ -1,21 +1,22 @@
 "use client";
 
 /**
- * Bridge from the React composer to the legacy `sendMessage(text)` in
- * `web/public/js/chat/chat.js`.
+ * Chat send path — owned by the React composer.
  *
- * Why we don't just `ws.send(...)`: the legacy chat.js owns the full
- * "user clicks send" pipeline — it appends the user message bubble
- * (`addUserMessage`), hides the welcome screen (`setWelcomeVisible(false)`),
- * flips the running flag (`setRunning(true)`), adds the assistant
- * placeholder bubble, and *then* writes to the WebSocket. Bypassing
- * it leaves the React side without any of those visible updates —
- * the user's text disappears into the void until the model reply
- * arrives.
+ * Slice F: this used to delegate to the legacy `window.sendMessage`
+ * (chat.js), which built the user bubble / assistant placeholder DOM
+ * before writing the socket. Those bubbles are now rendered by the
+ * React message store — the chat-stream reducer's `handleAck` builds
+ * the user turn from `window.__pendingUserText`. So this just writes
+ * the WS payload directly and flips the visible run state.
  *
- * Legacy `sendMessage` reads `_thinkingEffort`, `_toolsEnabled`,
- * `_webSearchEnabled` off the window for the WS payload, so we mirror
- * the React-side values onto window before calling.
+ * What still rides `window.*`:
+ *   - `setWelcomeVisible(false)` — hides the React <WelcomeScreen />
+ *     immediately (before the ack round-trip).
+ *   - `setRunning(true)` — legacy run flag (ui.js).
+ *   - `_lastRunCommand` — retry helpers' fallback (chat.js retryCurrentBlock).
+ *   - `_pendingChannelChoice` — first-message channel attach (channel-menu).
+ *   - `_execThinkingEffort` — exec-side effort, set by the agent settings.
  */
 
 interface SendMessageBridgeArgs {
@@ -25,11 +26,14 @@ interface SendMessageBridgeArgs {
   webSearchEnabled: boolean;
 }
 
-interface LegacyChatGlobals {
-  sendMessage?: (text: string) => void;
-  _thinkingEffort?: string;
-  _toolsEnabled?: boolean;
-  _webSearchEnabled?: boolean;
+interface SendWindow {
+  ws?: WebSocket | null;
+  currentSessionId?: string | null;
+  _execThinkingEffort?: string;
+  _lastRunCommand?: string | null;
+  _pendingChannelChoice?: { channel: string | null; account_id?: string | null } | null;
+  setWelcomeVisible?: (show: boolean) => void;
+  setRunning?: (running: boolean) => void;
   /** Stashed for the chat-stream reducer: the server never echoes a
    *  web-originated user turn back, so `handleAck` reads this to build
    *  the user bubble once `chat_ack` assigns the msg_id. */
@@ -37,9 +41,9 @@ interface LegacyChatGlobals {
 }
 
 /**
- * Hand the typed text off to `window.sendMessage`. Returns `true` if
- * the legacy entry point was available and called; `false` otherwise
- * (caller decides on the fallback — typically a direct `ws.send`).
+ * Write a `chat` turn to the WebSocket. Returns `true` if the socket
+ * was open and the payload was sent; `false` otherwise (caller keeps
+ * the user's text so it isn't lost).
  */
 export function sendChatMessage({
   text,
@@ -47,12 +51,38 @@ export function sendChatMessage({
   toolsEnabled,
   webSearchEnabled,
 }: SendMessageBridgeArgs): boolean {
-  const w = window as unknown as LegacyChatGlobals;
-  w._thinkingEffort = thinking;
-  w._toolsEnabled = toolsEnabled;
-  w._webSearchEnabled = webSearchEnabled;
-  if (typeof w.sendMessage !== "function") return false;
+  const w = window as unknown as SendWindow;
+  const ws = w.ws;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+  const sessionId = w.currentSessionId ?? null;
+
+  if (/^run\s/i.test(text)) w._lastRunCommand = text;
+
+  // Hide the welcome panel right away — before the ack round-trip.
+  w.setWelcomeVisible?.(false);
+
+  const payload: Record<string, unknown> = {
+    action: "chat",
+    text,
+    session_id: sessionId,
+    thinking_effort: thinking,
+    exec_thinking_effort: w._execThinkingEffort,
+    tools: toolsEnabled,
+    web_search: webSearchEnabled,
+  };
+  // First message of a brand-new conversation: attach the channel
+  // choice from the welcome-screen picker, if any. Ignored by the
+  // backend for existing convs.
+  if (!sessionId && w._pendingChannelChoice?.channel) {
+    payload.channel = w._pendingChannelChoice.channel;
+    payload.account_id = w._pendingChannelChoice.account_id || "";
+  }
+
+  // The reducer's `handleAck` builds the user bubble from this once
+  // the server assigns a msg_id.
   w.__pendingUserText = text;
-  w.sendMessage(text);
+  ws.send(JSON.stringify(payload));
+  w.setRunning?.(true);
   return true;
 }

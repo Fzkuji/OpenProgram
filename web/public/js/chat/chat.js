@@ -1,32 +1,10 @@
 // ===== Chat Messaging =====
-
-function buildRuntimeBlockHtml(funcName, params, contentHtml, treeHtml, attemptNavHtml, rerunHtml, usage) {
-  var tempDiv = document.createElement('div');
-  tempDiv.innerHTML = contentHtml;
-  var plainPreview = (tempDiv.textContent || '').trim().substring(0, 60);
-  if (plainPreview.length >= 60) plainPreview += '...';
-
-  var headerHtml = '<div class="runtime-block-header" onclick="toggleRuntimeBlock(this)">' +
-    '<span class="runtime-icon">&#9654;</span>' +
-    '<span class="runtime-func">' + escHtml(funcName) + (params ? '(<span class="runtime-params">' + escHtml(params) + '</span>)' : '()') + '</span>' +
-    '<span class="runtime-result-preview">-> ' + escHtml(plainPreview) + '</span>' +
-  '</div>';
-  var bodyHtml = '<div class="runtime-block-body"><div class="runtime-block-content">' +
-    '<div class="runtime-result"><span class="runtime-return-label">return:</span></div>' +
-    '<div class="runtime-output">' + contentHtml + '</div>' +
-    (treeHtml || '') +
-  '</div></div>';
-  var usageFooter = formatUsageFooterLabel(usage);
-  var footerHtml = '';
-  if (rerunHtml || attemptNavHtml || usageFooter) {
-    footerHtml = '<div class="runtime-block-footer">' +
-      '<div class="runtime-footer-left">' + (rerunHtml || '') + '</div>' +
-      '<div class="runtime-footer-center">' + (attemptNavHtml || '') + '</div>' +
-      '<div class="runtime-footer-right">' + usageFooter + '</div>' +
-    '</div>';
-  }
-  return headerHtml + bodyHtml + footerHtml;
-}
+//
+// The send path (`sendMessage` + user/assistant/runtime bubble builders)
+// moved to the React composer — see web/components/chat/composer/
+// legacy-send.ts and the chat-stream reducer. What remains here is the
+// retry / pause-retry / follow-up glue still called from legacy WS
+// handlers and React components.
 
 // ===== Follow-up =====
 
@@ -46,103 +24,13 @@ function submitFollowUp() {
   }
 }
 
-// ===== Send & Retry =====
+// ===== Retry =====
 
-function sendMessage(textOverride) {
-  if (isRunning) return;
-
-  var input = document.getElementById('chatInput');
-  var text = textOverride ? textOverride.trim() : input.value.trim();
-  if (!text) return;
-
-  // Slash commands are owned by the React <Composer />; if the user
-  // submits a /... line directly through this legacy path (welcome
-  // buttons, retry helpers, etc.), drop it — slash commands MUST go
-  // through the composer.
-  if (text.startsWith("/")) return;
-
-  if (text.toLowerCase().startsWith('run ')) _lastRunCommand = text;
-
-  setWelcomeVisible(false);
-
-  var isRunCommand = /^(run\s|create\s|fix\s)/i.test(text);
-
-  if (isRunCommand) {
-    var parsed = parseRunCommandForDisplay(text);
-    addRuntimeBlockPending(text, parsed.funcName, parsed.params);
-  } else {
-    addUserMessage(text);
-  }
-  if (!textOverride) {
-    input.value = '';
-    autoResize(input);
-  }
-
-  setRunning(true);
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    var _payload = {
-      action: 'chat',
-      text: text,
-      session_id: currentSessionId,
-      thinking_effort: _thinkingEffort,
-      exec_thinking_effort: _execThinkingEffort,
-      tools: !!window._toolsEnabled,
-      web_search: !!window._webSearchEnabled
-    };
-    // First message of a brand-new conversation: attach the user's
-    // channel choice from the welcome-screen picker, if any. Ignored by
-    // the backend for existing convs.
-    if (!currentSessionId && window._pendingChannelChoice && window._pendingChannelChoice.channel) {
-      _payload.channel = window._pendingChannelChoice.channel;
-      _payload.account_id = window._pendingChannelChoice.account_id || '';
-    }
-    ws.send(JSON.stringify(_payload));
-  } else {
-    var errDiv = document.createElement('div');
-    errDiv.className = 'message assistant';
-    errDiv.innerHTML = '<div class="error-content">WebSocket disconnected. Reconnecting...</div>';
-    appendToChat(errDiv);
-    return;
-  }
-
-  if (!isRunCommand) {
-    var msgId = 'pending_' + Date.now();
-    addAssistantPlaceholder(msgId);
-  }
-}
-
-function rerunFunction() {
-  if (!_lastRunCommand) return;
-  var input = document.getElementById('chatInput');
-  input.value = _lastRunCommand;
-  input.focus();
-  autoResize(input);
-}
-
-function rerunFromNode(path) {
-  // Phase 3: per-node retry is handled by the React <ExecutionTree />
-  // retry panel now (sends `retry_node` directly). Legacy path retired.
-}
-
-function retryChatQuery(text, btn) {
-  if (!text || isRunning) return;
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  if (btn) btn.disabled = true;
-  var bubble = btn ? btn.closest('.message.assistant') : null;
-  if (bubble && bubble.parentNode) bubble.parentNode.removeChild(bubble);
-
-  setRunning(true);
-  ws.send(JSON.stringify({
-    action: 'chat',
-    text: text,
-    session_id: currentSessionId,
-    thinking_effort: _thinkingEffort,
-    exec_thinking_effort: _execThinkingEffort,
-    tools: !!window._toolsEnabled
-  }));
-  var msgId = 'pending_' + Date.now();
-  addAssistantPlaceholder(msgId);
-}
+// Per-node retry is handled by the React <ExecutionTree /> retry panel
+// now (sends `retry_node` directly). The legacy node-detail panel in
+// ui.js still generates an `onclick="rerunFromNode(...)"` button, so
+// this no-op stub stays until ui.js is migrated.
+function rerunFromNode(path) {}
 
 function _injectPauseRetryButtons() {
   var blocks = document.querySelectorAll('.runtime-block[data-function]');
@@ -274,61 +162,6 @@ function retryCurrentBlock(funcName) {
 
 // ===== Message Rendering =====
 
-function addUserMessage(text) {
-  var div = document.createElement('div');
-  div.className = 'message user';
-  // Stamp the send-time timestamp so the action bar can render the
-  // hover badge without waiting for a server reload.
-  div.setAttribute('data-created-at', String(Date.now()));
-  div.innerHTML =
-    '<div class="message-header">' +
-      '<div class="message-avatar user-avatar">U</div>' +
-      '<div class="message-sender">You</div>' +
-    '</div>' +
-    '<div class="message-content">' + escHtml(text) + '</div>';
-  // Track this bubble so the chat_ack handler can stamp the
-  // server-assigned msg_id on it (see init.js). Until then, the
-  // action bar's retry/branch buttons stay present but inert — they
-  // check for data-msg-id before firing.
-  window._pendingUserBubble = div;
-  appendToChat(div);
-  if (typeof window.ensureMessageActions === 'function') {
-    window.ensureMessageActions(div);
-  }
-  // ChatGPT/Claude pattern: pin the just-sent user bubble to the top
-  // of the scroll viewport so the upcoming reply streams in below it.
-  // The bottom padding on .chat-messages provides the empty space that
-  // makes this scroll position reachable.
-  requestAnimationFrame(function () {
-    var area = document.getElementById('chatArea');
-    if (!area) return;
-    var areaRect = area.getBoundingClientRect();
-    var msgRect = div.getBoundingClientRect();
-    area.scrollTop += (msgRect.top - areaRect.top) - 16;
-  });
-
-  if (currentSessionId && conversations[currentSessionId]) {
-    if (!conversations[currentSessionId].messages) conversations[currentSessionId].messages = [];
-    conversations[currentSessionId].messages.push({ role: 'user', content: text });
-    updateContextStats(conversations[currentSessionId].messages);
-  }
-}
-
-function addAssistantPlaceholder(id) {
-  var div = document.createElement('div');
-  div.className = 'message assistant';
-  div.id = 'msg_' + id;
-  div.innerHTML =
-    '<div class="message-header">' +
-      '<div class="message-avatar bot-avatar">A</div>' +
-      '<div class="message-sender">Agentic</div>' +
-    '</div>' +
-    '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
-  appendToChat(div);
-  pendingResponses[id] = div;
-  scrollToBottom();
-}
-
 function addAssistantMessage(text) {
   setWelcomeVisible(false);
   var div = document.createElement('div');
@@ -342,26 +175,3 @@ function addAssistantMessage(text) {
   appendToChat(div);
   scrollToBottom();
 }
-
-function addRuntimeBlockPending(rawText, funcName, params) {
-  var div = document.createElement('div');
-  div.className = 'runtime-block runtime-block-pending';
-  div.id = 'runtime_pending';
-  var headerHtml = '<div class="runtime-block-header" onclick="toggleRuntimeBlock(this)">' +
-    '<span class="runtime-icon">&#9654;</span>' +
-    '<span class="runtime-func">' + escHtml(funcName) + (params ? '(<span class="runtime-params">' + escHtml(params) + '</span>)' : '()') + '</span>' +
-  '</div>';
-  div.innerHTML = headerHtml +
-    '<div class="runtime-block-body"><div class="runtime-block-content">' +
-      '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
-    '</div></div>';
-  appendToChat(div);
-  scrollToBottom();
-
-  if (currentSessionId && conversations[currentSessionId]) {
-    if (!conversations[currentSessionId].messages) conversations[currentSessionId].messages = [];
-    conversations[currentSessionId].messages.push({ role: 'user', content: rawText, display: 'runtime' });
-    updateContextStats(conversations[currentSessionId].messages);
-  }
-}
-
