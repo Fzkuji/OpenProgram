@@ -204,61 +204,9 @@
 }
 .branch-badge .branch-icon svg { display: block; }
 
-/* Branch dropdown: suppress global ::after checkmark. */
-.branch-selector .model-dd-item.active::after { display: none; content: none; }
-
-/* Override .model-dropdown's min-width:300px / max-width:480px so the
-   dropdown sizes purely to the longest branch row's content. The
-   double-class boost is needed because 08-dropdown.css loads after
-   05-chat.css. */
-.model-dropdown.branch-selector { min-width: 0; max-width: none; }
-
-.branch-selector .model-dd-item {
-  position: relative;
-  padding-right: 0;
-  gap: 0;
-}
-/* Name shrinks to its content; the slot follows directly. Together
-   with the dropdown's content-fit width above, this gives every
-   row a chip flush-right against the dropdown's right edge with the
-   text ending right next to it (only an 8px breathing margin). */
-.branch-selector .model-dd-item .model-dd-name {
-  flex: 0 1 auto;
-  min-width: 0;
-  padding-right: 8px;
-}
-.branch-selector .branch-action-slot {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  flex-shrink: 0;
-}
-.branch-selector .branch-action-slot .branch-head {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-.branch-selector .branch-action-slot .branch-del {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 22px; height: 22px;
-  display: none;
-  align-items: center; justify-content: center;
-  border-radius: 4px;
-  color: var(--text-muted);
-  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
-  cursor: pointer;
-}
-.branch-selector .model-dd-item:hover .branch-del { display: flex; }
-.branch-selector .model-dd-item:hover .branch-head { visibility: hidden; }
-.branch-selector .branch-del:hover {
-  background: var(--accent-red);
-  color: #fff;
-}
+/* The topbar branch dropdown is the React <BranchMenu /> (shadcn
+   <Popover> + Tailwind) now — its `.branch-selector` / `.model-dd-*`
+   rules were removed. */
 
 .status-badge.disconnected {
   background: rgba(224, 108, 117, 0.12);
@@ -859,85 +807,9 @@
   background: inherit;
   border-color: inherit;
 }
-.agent-selector {
-  position: fixed;
-  z-index: 1000;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  min-width: 200px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-.agent-selector h4 {
-  margin: 0 0 8px 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.agent-selector .provider-group {
-  margin-bottom: 8px;
-}
-.agent-selector .provider-name {
-  font-size: 12px;
-  color: var(--accent-green);
-  margin: 4px 0 2px 0;
-  font-weight: 600;
-}
-.agent-selector .model-item {
-  display: block;
-  width: 100%;
-  padding: 4px 8px;
-  margin: 1px 0;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-.agent-selector .model-item:hover {
-  background: rgba(198,120,221,0.15);
-  color: var(--accent-purple);
-}
-.agent-selector .model-item.active {
-  background: rgba(198,120,221,0.12);
-  color: var(--accent-purple);
-  font-weight: 600;
-}
-.model-dropdown {
-  position: fixed;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-  z-index: 1000;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 6px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.32);
-}
-.model-dropdown .runtime-badge.model {
-  background: rgba(75,82,99,0.3);
-  border-color: var(--border);
-  color: var(--text-muted);
-}
-.model-dropdown .runtime-badge.model:hover {
-  color: var(--accent-purple);
-  border-color: rgba(198,120,221,0.3);
-  background: rgba(198,120,221,0.1);
-}
-.model-dropdown .runtime-badge.model.active {
-  color: var(--accent-purple);
-  background: rgba(198,120,221,0.12);
-  border-color: rgba(198,120,221,0.25);
-}
+/* The topbar agent / channel / branch dropdowns are React popovers
+   (shadcn <Popover> + Tailwind) now — the `.agent-selector` and
+   `.model-dropdown` chrome rules were removed. */
 
 /* Context tree card (inline in chat) */
 .context-card {

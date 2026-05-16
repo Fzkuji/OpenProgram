@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { Badge } from "@/components/ui/badge";
+import { GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
 
 interface BranchRow {
   head_msg_id: string;
@@ -126,7 +127,7 @@ function BranchRowItem({
 
   return (
     <div
-      className={"model-dd-item" + (branch.active ? " active" : "")}
+      className={itemCls(branch.active ?? false)}
       style={{ gap: 0, position: "relative", paddingRight: 64 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -165,17 +166,14 @@ function BranchRowItem({
           }}
         />
       ) : (
-        <span
-          className="model-dd-name"
-          style={{ flex: "1 1 auto", minWidth: 0, maxWidth: 320 }}
-        >
+        <span className="flex-1 truncate" style={{ maxWidth: 320 }}>
           {branch.name}
         </span>
       )}
       {branch.active && !hovered ? (
         <Badge
           variant="secondary"
-          className="branch-head rounded-[4px] text-[12px] font-normal text-[var(--text-secondary)]"
+          className="rounded-[4px] text-[12px] font-normal text-[var(--text-secondary)]"
           style={{
             position: "absolute",
             right: 8,
@@ -239,20 +237,12 @@ export function BranchMenu({ onClose }: { onClose: () => void }) {
   }, [sessionId]);
 
   return (
-    <div
-      className="agent-selector model-dropdown branch-selector"
-      style={{
-        minWidth: 0,
-        maxWidth: "none",
-        width: "auto",
-        boxShadow: "0 12px 32px rgba(0, 0, 0, 0.5)",
-      }}
-    >
-      <div className="model-dd-group-label" style={{ paddingTop: 6 }}>
+    <div className={`${MENU_PANEL} w-auto`}>
+      <div className={GROUP_LABEL}>
         <span>Branches</span>
       </div>
       {rows !== null && rows.length === 0 ? (
-        <div className="model-dd-group-label" style={{ fontSize: 11 }}>
+        <div className={`${GROUP_LABEL} text-[11px]`}>
           <span>No branches yet — retry or edit a message to fork.</span>
         </div>
       ) : null}

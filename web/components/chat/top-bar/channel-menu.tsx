@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { Badge } from "@/components/ui/badge";
+import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
 
 interface ChannelAccount {
   channel: string;
@@ -107,27 +108,19 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="agent-selector model-dropdown channel-selector">
-      <div className="model-dd-group-label" style={{ paddingTop: 6 }}>
+    <div className={`${MENU_PANEL} min-w-[300px] max-w-[480px]`}>
+      <div className={GROUP_LABEL}>
         <span>Conversation channel</span>
       </div>
 
-      <div
-        className={"model-dd-item" + (!cur.channel ? " active" : "")}
-        onClick={() => pick("", "")}
-      >
-        <span className="model-dd-name">Local</span>
+      <div className={itemCls(!cur.channel)} onClick={() => pick("", "")}>
+        <span className="flex-1 truncate">Local</span>
+        {!cur.channel ? <span className={CHECK}>✓</span> : null}
       </div>
 
       {rows !== null && enabled.length === 0 ? (
-        <div
-          className="model-dd-group-label"
-          style={{ paddingTop: 10, fontSize: 11 }}
-        >
-          <a
-            href="/settings"
-            style={{ color: "var(--accent-blue)", textDecoration: "none" }}
-          >
+        <div className={`${GROUP_LABEL} text-[11px]`}>
+          <a href="/settings" className="text-[var(--accent-blue)] no-underline">
             Add a channel in Settings →
           </a>
         </div>
@@ -135,7 +128,7 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
 
       {groups.map((g) => (
         <div key={g.plat}>
-          <div className="model-dd-group-label">
+          <div className={GROUP_LABEL}>
             <span
               className="provider-icon"
               style={{ width: 14, height: 14 }}
@@ -152,20 +145,19 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
             return (
               <div
                 key={r.channel + ":" + r.account_id}
-                className={"model-dd-item" + (active ? " active" : "")}
+                className={itemCls(active)}
                 onClick={() => pick(r.channel, r.account_id)}
               >
-                <span className="model-dd-name">{r.account_id}</span>
+                <span className="flex-1 truncate">{r.account_id}</span>
                 {meta ? (
-                  <div className="model-dd-caps">
-                    <Badge
-                      variant="secondary"
-                      className="h-[18px] rounded-[4px] px-[5px] py-0 text-[12px] font-normal text-[var(--text-secondary)]"
-                    >
-                      {meta}
-                    </Badge>
-                  </div>
+                  <Badge
+                    variant="secondary"
+                    className="h-[18px] shrink-0 rounded-[4px] px-[5px] py-0 text-[12px] font-normal text-[var(--text-secondary)]"
+                  >
+                    {meta}
+                  </Badge>
                 ) : null}
+                {active ? <span className={CHECK}>✓</span> : null}
               </div>
             );
           })}

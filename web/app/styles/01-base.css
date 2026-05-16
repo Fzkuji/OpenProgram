@@ -310,3 +310,29 @@ html, body {
   transition: border-color 0.15s, opacity 0.15s;
 }
 
+/* Provider letter glyph (was 08-dropdown.css). Stays global: emitted
+   as a raw HTML string by `lib/conversations.ts::channelIcon` and used
+   by the settings provider list — neither can take a hashed module
+   class. */
+.provider-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #f5f5f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.provider-icon img {
+  width: 72%;
+  height: 72%;
+  object-fit: contain;
+}
+.provider-icon-letter {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
