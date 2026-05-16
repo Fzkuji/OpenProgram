@@ -234,8 +234,6 @@ function _handleRunningTask(rt) {
 }
 
 // (toggleConvList, toggleFavList, doRefreshFunctions are now React state in components/sidebar/sidebar.tsx)
-function togglePanel() {}
-
 // ===== Column Resize =====
 //
 // Sidebar / detail column drag handles are now wired up by

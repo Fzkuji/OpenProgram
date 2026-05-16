@@ -1,8 +1,3 @@
-function _channelLabel(channel, accountId) {
-  if (!channel) return 'local';
-  return accountId ? channel + ':' + accountId : channel;
-}
-
 // Map a channel platform id to a brand-icon URL on simple-icons'
 // public CDN. simple-icons ships official-mark SVGs for hundreds of
 // platforms under an open license, intended exactly for "your app
@@ -91,46 +86,6 @@ function renderSessions() {
   // innerHTML strings.
   return;
 }
-function _legacyRenderSessions_deprecated() {
-  var container = document.getElementById('convList');
-  var html = '';
-  var convs = Object.values(conversations).sort(function(a, b) { return (b.created_at || 0) - (a.created_at || 0); });
-  if (convs.length === 0) {
-    html += '<div style="padding:8px 16px;font-size:12px;color:var(--text-muted)">No conversations yet</div>';
-  } else {
-    for (var ci = 0; ci < convs.length; ci++) {
-      var c = convs[ci];
-      var active = c.id === currentSessionId ? ' active' : '';
-      // Build a clean display label: "<channel> (<account>) · <title>"
-      // when the conv is bound to a channel; otherwise just the title.
-      // Strip backend placeholder titles ("WeChat: o9cq..." etc.) so
-      // the raw account id doesn't leak into the list.
-      var prefix = (typeof window._channelPrefixFor === 'function') ?
-                   window._channelPrefixFor(c.channel, c.account_id) : '';
-      var realTitle = (typeof window._displayTitleFor === 'function') ?
-                      window._displayTitleFor(c) : (c.title || '');
-      // When the title is a backend placeholder, fall back to a
-      // preview of the most recent user message so the user keeps
-      // seeing some content. Pulled in from the server snapshot.
-      if (!realTitle && c.preview) {
-        var pv = String(c.preview).trim();
-        realTitle = pv.length > 30 ? pv.slice(0, 30) + '…' : pv;
-      }
-      var label;
-      if (prefix && realTitle)      label = prefix + ': ' + realTitle;
-      else if (prefix)              label = prefix;
-      else if (realTitle)           label = realTitle;
-      else                          label = c.title || 'Untitled';
-      html += '<div class="conv-item' + active + '" onclick="switchSession(\'' + c.id + '\')" title="' + escAttr(label) + '">' +
-        '<span class="conv-title">' + escHtml(label) + '</span>' +
-        '<span class="conv-del" onclick="event.stopPropagation();deleteSession(\'' + c.id + '\')" title="Delete"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg></span>' +
-      '</div>';
-    }
-    html += '<div class="conv-clear-all" onclick="clearAllSessions()">Clear all</div>';
-  }
-  container.innerHTML = html;
-}
-
 // Cached list of channel accounts (filled lazily). Each entry:
 // { channel, account_id, name, enabled, configured }.
 var _channelAccountsCache = null;
@@ -257,6 +212,9 @@ function _onBranchesListMessage(payload) {
     // load_session round-trip.
     if (Array.isArray(payload.graph) && typeof window.renderHistoryGraph === 'function') {
       try { window.renderHistoryGraph(payload.graph, payload.active || null); } catch (e) {}
+      if (typeof window.refreshHistoryContextRange === 'function' && payload.session_id) {
+        window.refreshHistoryContextRange(payload.session_id);
+      }
       // Keep the in-memory conversation snapshot in sync too.
       if (conversations[payload.session_id]) {
         conversations[payload.session_id].graph = payload.graph;
@@ -275,13 +233,6 @@ function _onBranchesListMessage(payload) {
 // Populated by _refreshBranchTokens off the batch endpoint, consumed
 // by renderBranchesPanel to paint a "12K (6%)" suffix on each row.
 var _branchTokensByConv = {};
-
-function _formatBranchTokens(n) {
-  if (!n) return '';
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  if (n >= 1000)    return (n / 1000).toFixed(1) + 'K';
-  return String(n);
-}
 
 async function _refreshBranchTokens() {
   if (!currentSessionId) return;
@@ -562,6 +513,9 @@ function renderSessionMessages(conv) {
   // it comes from a separate field on the server payload.
   if (typeof window.renderHistoryGraph === 'function') {
     window.renderHistoryGraph(conv.graph || [], conv.head_id || null);
+    if (typeof window.refreshHistoryContextRange === 'function' && currentSessionId) {
+      window.refreshHistoryContextRange(currentSessionId);
+    }
   }
   // Container-level run_active flag — CSS greys out Edit/Retry when
   // true. Flipped elsewhere when runs start / end; set it from the
