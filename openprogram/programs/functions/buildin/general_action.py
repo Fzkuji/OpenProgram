@@ -60,12 +60,15 @@ def general_action(instruction: str, runtime: Runtime = _MISSING_RUNTIME) -> dic
     if runtime is _MISSING_RUNTIME or runtime is None:
         raise ValueError("runtime is required for general_action()")
 
-    reply = runtime.exec(content=[
-        {"type": "text", "text": (
-            f"Task: {instruction}\n\n"
-            "Complete this task. Return JSON with success/output/error."
-        )},
-    ])
+    reply = runtime.exec(
+        content=[
+            {"type": "text", "text": (
+                f"Task: {instruction}\n\n"
+                "Complete this task. Return JSON with success/output/error."
+            )},
+        ],
+        toolset="default",  # general_action runs tools — opt in explicitly
+    )
 
     try:
         return parse_json(reply)

@@ -180,9 +180,10 @@ def _step(task: str, standard: str, step_number: int,
         "action/result/next/ready_for_review/error."
     )
 
-    reply = runtime.exec(content=[
-        {"type": "text", "text": "\n\n".join(parts)},
-    ])
+    reply = runtime.exec(
+        content=[{"type": "text", "text": "\n\n".join(parts)}],
+        toolset="default",  # the work step runs tools — opt in explicitly
+    )
 
     try:
         return parse_json(reply)

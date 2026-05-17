@@ -77,14 +77,17 @@ def _step(goal: str, step_number: int, runtime: Runtime) -> dict:
 
     Set done=true ONLY when the overall goal is fully complete.
     """
-    reply = runtime.exec(content=[
-        {"type": "text", "text": (
-            f"Goal: {goal}\n"
-            f"Step #{step_number}\n\n"
-            "Decide what to do next, do it, then return JSON with "
-            "done/action/result/next/error."
-        )},
-    ])
+    reply = runtime.exec(
+        content=[
+            {"type": "text", "text": (
+                f"Goal: {goal}\n"
+                f"Step #{step_number}\n\n"
+                "Decide what to do next, do it, then return JSON with "
+                "done/action/result/next/error."
+            )},
+        ],
+        toolset="default",  # agent_loop runs tools — opt in explicitly
+    )
 
     try:
         return parse_json(reply)

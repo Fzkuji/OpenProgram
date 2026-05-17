@@ -601,23 +601,28 @@ class Runtime:
 
         raw_tools = _current_tools.get(None)
         policy = _current_tool_policy.get(None) or {}
-        # Default-on semantics: `tools=` unset (None) → resolve the
-        # caller's preset (or DEFAULT_TOOLS) and run the OpenClaw-style
-        # filter chain. Matches Hermes' "all toolsets, then filter"
-        # behaviour so every provider exposes a non-trivial tool list
-        # by default, not just the old claude-code CLI path.
+        # Tools are OPT-IN. A bare `runtime.exec(content=...)` with no
+        # `tools=` and no `toolset=` is a pure reasoning call — the model
+        # gets NO tools. This matches the Agentic Programming paradigm:
+        # the LLM reasons when asked; it only *acts* (runs tools) when
+        # the function explicitly hands it tools. To get tools, pass
+        # `tools=[...]` or `toolset="default"` (or a named preset).
         if raw_tools is None:
-            from openprogram.tools import (
-                agent_tools as _resolve_agent_tools,
-            )
             preset = policy.get("toolset") if policy else None
-            tools_for_session = _resolve_agent_tools(
-                toolset=preset,
-                source=policy.get("source") if policy else None,
-                allow=policy.get("allow") if policy else None,
-                deny=policy.get("deny") if policy else None,
-            )
-            agent_tools = tools_for_session or None
+            if preset is None:
+                # Nothing requested — reasoning-only call, no tools.
+                agent_tools = None
+            else:
+                from openprogram.tools import (
+                    agent_tools as _resolve_agent_tools,
+                )
+                tools_for_session = _resolve_agent_tools(
+                    toolset=preset,
+                    source=policy.get("source") if policy else None,
+                    allow=policy.get("allow") if policy else None,
+                    deny=policy.get("deny") if policy else None,
+                )
+                agent_tools = tools_for_session or None
         elif raw_tools:
             from openprogram.tools import apply_tool_policy as _apply_policy
             adapted = _adapt_tools(raw_tools) or []
