@@ -32,7 +32,35 @@ import contextvars
 import inspect
 import json
 import os
+import time
 from typing import Any, Optional
+
+# Backoff base (seconds) between exec() retry attempts. Retries sleep
+# _RETRY_BACKOFF * 2**attempt before the next try. Transient provider
+# failures (session errors, 5xx, SSL EOF) recover within a second or
+# two; an immediate retry just re-hits the same outage window.
+_RETRY_BACKOFF = 1.5
+
+# Substrings marking a *permanent* provider error. Retrying these only
+# burns attempts and wall-clock time — the request is malformed or the
+# credentials are bad, so the next identical attempt fails identically.
+_PERMANENT_ERROR_MARKERS = (
+    "not a valid image",
+    "invalid image",
+    "image data is not",
+    "login expired",
+    "login failed",
+    "re-auth",
+    "unauthorized",
+    "invalid api key",
+    "invalid_api_key",
+)
+
+
+def _is_permanent_error(exc: Exception) -> bool:
+    """True if retrying ``exc`` is pointless (malformed request / bad auth)."""
+    msg = f"{type(exc).__name__}: {exc}".lower()
+    return any(marker in msg for marker in _PERMANENT_ERROR_MARKERS)
 
 # Context var for the tools passed into the current exec() call.
 # _call_via_providers reads it to feed AgentSession without changing
@@ -71,7 +99,7 @@ class Runtime:
         self,
         call: Optional[callable] = None,
         model: str = "default",
-        max_retries: int = 2,
+        max_retries: int = 3,
         api_key: Optional[str] = None,
         skills: "bool | list[str] | None" = None,
     ):
@@ -88,7 +116,10 @@ class Runtime:
                          - Any other string → legacy path (subclass overrides
                            _call, or pass a `call` function).
             max_retries: Maximum number of exec() attempts before raising.
-                         Default 2 (try once, retry once on failure).
+                         Default 3 (try once, retry twice on transient
+                         failure, with exponential backoff between tries).
+                         Permanent errors (bad image, expired auth) are
+                         not retried regardless of this value.
             api_key:     Optional API key. If omitted, resolved from the
                          provider's standard env var (OPENAI_API_KEY, etc).
             skills:      Skill discovery for the system prompt. Three shapes:
@@ -472,11 +503,13 @@ class Runtime:
                     raise  # Programming errors — don't retry
                 except Exception as e:
                     errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
-                    if attempt == self.max_retries - 1:
+                    permanent = _is_permanent_error(e)
+                    if permanent or attempt == self.max_retries - 1:
+                        reason = "permanently" if permanent else f"after {attempt + 1} attempts"
                         raise RuntimeError(
-                            f"exec() failed after {self.max_retries} attempts:\n"
-                            + "\n".join(errors)
+                            f"exec() failed {reason}:\n" + "\n".join(errors)
                         ) from e
+                    time.sleep(_RETRY_BACKOFF * (2 ** attempt))
         finally:
             if tools_token is not None:
                 _current_tools.reset(tools_token)
@@ -533,11 +566,13 @@ class Runtime:
                 raise
             except Exception as e:
                 errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
-                if attempt == self.max_retries - 1:
+                permanent = _is_permanent_error(e)
+                if permanent or attempt == self.max_retries - 1:
+                    reason = "permanently" if permanent else f"after {attempt + 1} attempts"
                     raise RuntimeError(
-                        f"async_exec() failed after {self.max_retries} attempts:\n"
-                        + "\n".join(errors)
+                        f"async_exec() failed {reason}:\n" + "\n".join(errors)
                     ) from e
+                await asyncio.sleep(_RETRY_BACKOFF * (2 ** attempt))
 
     def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """
