@@ -5,10 +5,8 @@ Under the hybrid schema the wiki no longer carries structured
 claim-promotion logic that lived here previously is gone; writes
 to the wiki go through the agentic ``ingest`` pipeline instead.
 
-What deep still owns:
-
-  1. Regenerate ``core.md`` from the wiki (deterministic).
-  2. (TODO) Detect journal residue and trigger synthetic ingest.
+What deep still owns: regenerating ``core.md`` from the wiki
+(deterministic).
 """
 from __future__ import annotations
 
