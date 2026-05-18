@@ -244,9 +244,7 @@ The recommended order for migrating existing code to this spec; not strictly req
 1. Add a shared helper `_parse_docstring_args(fn) -> dict[name, description]` in `agentic_programming/function.py`
 2. `_build_agentic_tool_spec` calls this helper as a fallback (currently the spec does not read docstring `Args:` at all)
 3. `render_options` calls the same helper for the same fallback
-4. Update the "docstring rules" block in `meta/_helpers.py` (around line 657) to prefer `input=`, demoting the `Args:` section to optional
-5. Sync `meta/create.md` and any other meta-function references to docstring style
-6. Existing `@agentic_function` functions do not need immediate rewriting; convert opportunistically when you touch them
+4. Existing `@agentic_function` functions do not need immediate rewriting; convert opportunistically when you touch them
 
 ## 11. Style checklist
 
@@ -264,9 +262,6 @@ When writing a new `@agentic_function`:
 ## 12. References
 
 - `openprogram/agentic_programming/function.py` — `@agentic_function` decorator implementation
-- `openprogram/programs/functions/buildin/render_options.py` — catalog menu rendering
-- `openprogram/programs/functions/buildin/parse_args.py` — catalog decision extraction + dispatch + retry
-- `openprogram/programs/functions/buildin/_retry_choice.py` — internal retry helper used by `parse_args`
-- `openprogram/programs/functions/meta/_helpers.py` — meta-function generation constraints
+- `openprogram/agentic_programming/decision.py` — options-menu rendering, reply parsing, and the next-step decision primitive (`decision.make`, `render_options`, `parse_args`, `DecisionError`)
 - `docs/design/function/agentic_function.md` — decorator usage guide
 - `docs/design/function/function_calling/llm_call.md` — native tool_use protocol

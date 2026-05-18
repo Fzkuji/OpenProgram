@@ -246,9 +246,7 @@ WebUI 表单按以下规则渲染每个参数（在 `openprogram/webui/static/js
 1. 在 `agentic_programming/function.py` 加共用 helper `_parse_docstring_args(fn) -> dict[name, description]`
 2. `_build_agentic_tool_spec` 调这个 helper 做 fallback（目前 spec 完全不读 docstring Args）
 3. `render_options` 同样调这个 helper 做 fallback
-4. 把 `meta/_helpers.py` 第 657 行起的"docstring rules"文档块改成 `input=` 优先、`Args:` 段降级为可选
-5. 同步 `meta/create.md` 和其他 meta 函数引用 docstring 风格的地方
-6. 现有 `@agentic_function` 不需要立刻改写；后续接触到时顺手改成新风格
+4. 现有 `@agentic_function` 不需要立刻改写；后续接触到时顺手改成新风格
 
 ## 11. 风格速查
 
@@ -266,9 +264,6 @@ WebUI 表单按以下规则渲染每个参数（在 `openprogram/webui/static/js
 ## 12. 参考
 
 - `openprogram/agentic_programming/function.py` — `@agentic_function` 装饰器实现
-- `openprogram/programs/functions/buildin/build_options.py` — catalog 菜单渲染
-- `openprogram/programs/functions/buildin/parse_args.py` — catalog 决策抽取 + 派发 + 重试
-- `openprogram/programs/functions/buildin/_retry_choice.py` — `parse_args` 内部重试 helper
-- `openprogram/programs/functions/meta/_helpers.py` — meta 函数生成约束
+- `openprogram/agentic_programming/decision.py` — 选项菜单渲染、回复解析,以及下一步决策原语(`decision.make`、`render_options`、`parse_args`、`DecisionError`)
 - `docs/design/function/agentic_function.md` — 装饰器使用指南
 - `docs/design/function/function_calling/llm_call.md` — 原生 tool_use 协议
