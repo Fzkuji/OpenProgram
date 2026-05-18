@@ -201,31 +201,32 @@ class DefaultContextEngine(ContextEngine):
         decision: list[str] = []
         session_id = (session or {}).get("id") or ""
 
-        # 1. Reference scan — once per prepare, shared with ager.
+        # 1. Reference scan — once per prepare, surfaced in TurnPrep.
         ref_map = self.references.build(history)
         if ref_map.cited_tool_use_ids:
             decision.append(
                 f"references:protected={len(ref_map.cited_tool_use_ids)}"
             )
 
-        # 2. Apply microcompact.
-        aged_history, n_redacted, tokens_freed = self.microcompactor.microcompact(
-            history, ref_map=ref_map,
+        # 2. Apply microcompact (no-op unless the session has been idle
+        #    longer than the gap threshold).
+        compacted_history, n_redacted, tokens_freed = self.microcompactor.microcompact(
+            history,
         )
         if n_redacted:
             decision.append(
-                f"aged:n={n_redacted},freed≈{tokens_freed}tok"
+                f"microcompact:n={n_redacted},freed≈{tokens_freed}tok"
             )
 
         # 3. Build messages + system prompt.
-        agent_messages = self._assemble_messages(aged_history)
+        agent_messages = self._assemble_messages(compacted_history)
         system_prompt = self._build_system_prompt(agent)
 
         # 4. Allocate budget.
         budget = self.budgets.allocate(
             context_window=real_context_window(model),
             system_prompt=system_prompt,
-            history=aged_history,
+            history=compacted_history,
             tools=tools,
         )
 
@@ -254,7 +255,7 @@ class DefaultContextEngine(ContextEngine):
         return TurnPrep(
             system_prompt=system_prompt,
             agent_messages=agent_messages,
-            history_dicts=aged_history,
+            history_dicts=compacted_history,
             budget=budget,
             usage=usage,
             tool_results_redacted=n_redacted,
