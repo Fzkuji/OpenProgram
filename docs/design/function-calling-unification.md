@@ -428,10 +428,14 @@ openprogram/agent/agent_loop.py
                                                        schemas appear on
                                                        the next call)
 
-openprogram/programs/functions/buildin/*               @agentic_function
-openprogram/programs/functions/third_party/*           tools live here
-openprogram/programs/applications/*                    larger agentic
-                                                       harnesses
+openprogram/functions/agentics/*/__init__.py           @agentic_function
+                                                       modules (each its
+                                                       own directory).
+                                                       Includes harness
+                                                       symlinks
+                                                       GUI-Agent-Harness,
+                                                       Research-Agent-Harness,
+                                                       Wiki-Agent-Harness.
 ```
 
 ## Test invariants (what the suite locks down)

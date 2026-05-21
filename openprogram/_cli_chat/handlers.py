@@ -8,8 +8,8 @@ SLASH_HELP = [
     ("/model", "show current chat model"),
     ("/tools", "list available tools"),
     ("/skills", "list discovered skills"),
-    ("/functions", "list agentic functions (programs/functions/)"),
-    ("/apps", "list applications (programs/applications/)"),
+    ("/functions", "list agentic functions (functions/agentics/)"),
+    ("/apps", "list harness apps (functions/agentics/*-Agent-Harness/)"),
     ("/session", "show the current session id + agent"),
     ("/login <channel> [--id X]",
                  "log in to a channel bot (wechat: QR, others: paste "

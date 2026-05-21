@@ -31,43 +31,51 @@ def _skill_inventory() -> tuple[int, list[tuple[str, str]]]:
 
 
 def _function_inventory() -> tuple[int, list[str]]:
-    """Return (count, [name, ...]) of agentic functions in programs/functions/."""
+    """Return (count, [name, ...]) of agentic functions in functions/agentics/.
+
+    Harness apps (the *-Agent-Harness symlinks) are reported separately
+    by :func:`_application_inventory`.
+    """
     import os
     import openprogram
     base = os.path.join(os.path.dirname(openprogram.__file__),
-                        "programs", "functions")
-    names: list[str] = []
-    for sub in ("buildin", "third_party", "meta"):
-        d = os.path.join(base, sub)
-        if not os.path.isdir(d):
-            continue
-        for fname in sorted(os.listdir(d)):
-            if not fname.endswith(".py"):
-                continue
-            stem = fname[:-3]
-            if stem.startswith("_") or stem == "__init__":
-                continue
-            names.append(stem)
-    return len(names), names
-
-
-def _application_inventory() -> tuple[int, list[str]]:
-    """Return (count, [name, ...]) of applications in programs/applications/."""
-    import os
-    import openprogram
-    d = os.path.join(os.path.dirname(openprogram.__file__),
-                     "programs", "applications")
-    if not os.path.isdir(d):
+                        "functions", "agentics")
+    if not os.path.isdir(base):
         return 0, []
     names: list[str] = []
-    for entry in sorted(os.listdir(d)):
-        full = os.path.join(d, entry)
+    for entry in sorted(os.listdir(base)):
         if entry.startswith("_") or entry.startswith("."):
+            continue
+        full = os.path.join(base, entry)
+        # Skip harness apps — those are listed under "applications".
+        if entry.endswith("-Agent-Harness"):
             continue
         if os.path.isdir(full) and not entry.startswith("__"):
             names.append(entry)
         elif entry.endswith(".py") and entry != "__init__.py":
             names.append(entry[:-3])
+    return len(names), names
+
+
+def _application_inventory() -> tuple[int, list[str]]:
+    """Return (count, [name, ...]) of harness apps in functions/agentics/.
+
+    Harness apps are subdirectories whose name ends with
+    ``-Agent-Harness`` (typically symlinks to external repos).
+    """
+    import os
+    import openprogram
+    base = os.path.join(os.path.dirname(openprogram.__file__),
+                        "functions", "agentics")
+    if not os.path.isdir(base):
+        return 0, []
+    names: list[str] = []
+    for entry in sorted(os.listdir(base)):
+        full = os.path.join(base, entry)
+        if entry.startswith("_") or entry.startswith("."):
+            continue
+        if os.path.isdir(full) and entry.endswith("-Agent-Harness"):
+            names.append(entry)
     return len(names), names
 
 

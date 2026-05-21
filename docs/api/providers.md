@@ -359,7 +359,7 @@ gemini
 所有内置 provider 都是 `Runtime` 的子类。你可以用同样的方式创建自己的：
 
 ```python
-from openprogram import Runtime
+from openprogram.agentic_programming.runtime import Runtime
 
 class MyRuntime(Runtime):
     def __init__(self, api_key, model="my-model"):

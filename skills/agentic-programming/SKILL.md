@@ -298,7 +298,7 @@ When the function is new or significantly changed, run a quick import-and-call c
 ```bash
 python -c "
 from <path.to.module> import <fn_name>
-from openprogram import create_runtime
+from openprogram.providers.registry import create_runtime
 rt = create_runtime()
 result = <fn_name>(..., runtime=rt)
 print(result)

@@ -23,8 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Internal reorganization**:
   - `openprogram/agentic_programming/` — core engine (Context / Runtime / @agentic_function), the philosophy's home.
   - `openprogram/providers/` — LLM provider runtimes (unchanged content).
-  - `openprogram/programs/applications/` — end-user apps (was `agentic/apps/`).
-  - `openprogram/programs/functions/{meta,buildin,third_party}/` — function library, split by origin.
+  - `openprogram/functions/tools/` — `@function` leaf tools (was `openprogram/tools/`).
+  - `openprogram/functions/agentics/` — `@agentic_function` modules, each its own directory with code in `__init__.py` (replaces the old `programs/functions/{buildin,third_party}/` + `programs/applications/` split). Harness apps live here as symlinks.
+  - `openprogram/functions/_registry.py` — single unified registry (merges the deleted `_app_registry` / `_agentic_registry`).
   - `openprogram/webui/` — web UI (was standalone `agentic_web/`, now a sub-package).
 - **`@agentic_function` decorator name preserved** — the paradigm's hallmark symbol stays, OpenProgram is its product realization.
 - **MCP sub-package removed** — not part of the product scope.
@@ -33,7 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - **CLI runner text transforms** for provider plugins — `text_transforms.input` rewrites prompts/system prompts before launch, and `text_transforms.output` rewrites streamed assistant text deltas without altering tool payloads
 - **Real-time web UI** (`python -m openprogram.webui`, also accepts `openprogram.webui.visualize` alias) — interactive Context tree viewer with WebSocket streaming
-- **Built-in agentic functions**: `general_action`, `agent_loop`, `wait`, `deep_work`
+- **Built-in agentic functions**: `deep_work`, `ask_user`, PDF helpers (`extract_pdf_figures`, `extract_pdf_tables`), `research`, `word_count`, etc.
 - **`deep_work`** — autonomous plan-execute-evaluate loop with quality levels (high_school → professor)
 - **Session continuity** for CLI providers (Claude Code, Codex, Gemini CLI)
 - **Interactive mode** for Claude Code CLI with full tool access

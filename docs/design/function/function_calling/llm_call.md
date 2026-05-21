@@ -32,7 +32,7 @@ def research_assistant(task: str, runtime: Runtime) -> str:
 完整实现见：
 - `openprogram/agentic_programming/runtime.py` 的 `Runtime.exec(tools=...)`
 - `openprogram/providers/openai_codex.py` 的 `exec_with_tools` 和 SSE 解析
-- 运行样例 `openprogram/programs/functions/third_party/llm_call_example.py`
+- 运行样例 `openprogram/functions/agentics/llm_call_example/__init__.py`
 
 ## 为什么换
 

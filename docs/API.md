@@ -19,13 +19,18 @@
 ## 导入
 
 ```python
-from openprogram import agentic_function, Runtime, create_runtime
+from openprogram import agentic_function
+from openprogram.agentic_programming.runtime import Runtime
+from openprogram.providers.registry import create_runtime
 ```
+
+只有 `agentic_function` 是 `openprogram` 顶层再导出的符号；`Runtime` 和 `create_runtime` 等都需要按完整路径导入。
 
 ## 快速示例
 
 ```python
-from openprogram import agentic_function, create_runtime
+from openprogram import agentic_function
+from openprogram.providers.registry import create_runtime
 
 @agentic_function
 def observe(task: str, runtime) -> str:

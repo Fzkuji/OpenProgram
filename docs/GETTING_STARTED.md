@@ -43,7 +43,8 @@ Sanity-check: `openprogram providers` lists what's detected.
 ### Step 3: Write your first agentic function
 
 ```python
-from openprogram import agentic_function, create_runtime
+from openprogram import agentic_function
+from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime()                          # auto-picks the first available provider
 
@@ -319,7 +320,7 @@ pip install -e .
 ### 第 2 步：写你的第一个 Agentic Function
 
 ```python
-from openprogram import agentic_function, Runtime
+from openprogram import agentic_function
 from openprogram.providers import ClaudeCodeRuntime
 
 # ClaudeCodeRuntime 使用 Claude Code CLI，不需要 API key

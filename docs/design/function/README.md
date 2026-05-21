@@ -23,7 +23,7 @@ function/
 
 ## 相关文件
 
-- 原子工具：`openprogram/tools/<name>/`（bash / read / write / edit / glob / grep 等）
-- 完整样例：`openprogram/programs/functions/third_party/llm_call_example.py`
+- 原子工具：`openprogram/functions/tools/<name>/`（bash / read / write / edit / glob / grep 等）
+- 完整样例：`openprogram/functions/agentics/llm_call_example/__init__.py`
 - 框架核心：`openprogram/agentic_programming/function.py`（`@agentic_function` 装饰器、`.spec` 属性）
 - 框架核心：`openprogram/agentic_programming/runtime.py`（`Runtime.exec()` 的 `tools=` 参数）

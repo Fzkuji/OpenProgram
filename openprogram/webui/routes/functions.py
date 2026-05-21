@@ -34,12 +34,15 @@ def register(app):
         """Return full source code of a function."""
         from openprogram.webui import server as _s
         base = os.path.dirname(os.path.dirname(_s.__file__))
-        for rel_subdir, category in (
-            (("programs", "functions", "meta"), "meta"),
-            (("programs", "functions", "buildin"), "builtin"),
-            (("programs", "functions", "third_party"), "external"),
-        ):
-            filepath = os.path.join(base, *rel_subdir, f"{name}.py")
+        # Unified agentics layout: each function is its own package
+        # (functions/agentics/<name>/__init__.py), or a flat
+        # functions/agentics/<name>.py for legacy entries.
+        agentics_base = os.path.join(base, "functions", "agentics")
+        candidates = [
+            (os.path.join(agentics_base, name, "__init__.py"), "agentic"),
+            (os.path.join(agentics_base, f"{name}.py"), "agentic"),
+        ]
+        for filepath, category in candidates:
             if os.path.isfile(filepath):
                 with open(filepath) as f:
                     source = f.read()
@@ -49,12 +52,13 @@ def register(app):
                     "filepath": filepath,
                     "category": category,
                 })
-        # Subdirectory app projects
-        fn_dir = os.path.join(base, "programs", "applications")
-        if os.path.isdir(fn_dir):
-            for d in os.listdir(fn_dir):
-                full_path = os.path.join(fn_dir, d)
-                if os.path.isdir(full_path) and not d.startswith("_"):
+        # Harness apps: <agentics>/<*-Agent-Harness>/.../main.py
+        if os.path.isdir(agentics_base):
+            for d in os.listdir(agentics_base):
+                if not d.endswith("-Agent-Harness"):
+                    continue
+                full_path = os.path.join(agentics_base, d)
+                if os.path.isdir(full_path):
                     for root, dirs, files in os.walk(full_path):
                         dirs[:] = [x for x in dirs if not x.startswith(("_", "."))]
                         if "main.py" in files:
@@ -101,8 +105,8 @@ def register(app):
             except (OSError, TypeError):
                 pass
 
-        # Grep app project directories (handles symlinked externals)
-        apps_dir = os.path.join(base, "programs", "applications")
+        # Grep harness-app directories (handles symlinked externals)
+        apps_dir = os.path.join(base, "functions", "agentics")
         func_pattern = re.compile(rf'def\s+{re.escape(name)}\s*\(')
         if os.path.isdir(apps_dir):
             for root, dirs, files in os.walk(apps_dir, followlinks=True):
@@ -137,7 +141,13 @@ def register(app):
         if not body or "source" not in body:
             return JSONResponse(content={"error": "no source provided"}, status_code=400)
         base = os.path.dirname(os.path.dirname(_s.__file__))
-        filepath = os.path.join(base, "programs", "functions", "third_party", f"{name}.py")
+        # Save edited source to the unified agentics layout. Prefer the
+        # package form (<name>/__init__.py); fall back to a flat file
+        # only when one already exists from a legacy path.
+        agentics_base = os.path.join(base, "functions", "agentics")
+        pkg_init = os.path.join(agentics_base, name, "__init__.py")
+        flat_py = os.path.join(agentics_base, f"{name}.py")
+        filepath = flat_py if os.path.isfile(flat_py) else pkg_init
         try:
             compile(body["source"], filepath, "exec")
         except SyntaxError as e:
@@ -180,10 +190,19 @@ def register(app):
         """Delete a user function file."""
         from openprogram.webui import server as _s
         base = os.path.dirname(os.path.dirname(_s.__file__))
-        filepath = os.path.join(base, "programs", "functions", "third_party", f"{name}.py")
-        if not os.path.isfile(filepath):
+        # Agentic functions live as packages under functions/agentics/<name>/__init__.py.
+        agentics_dir = os.path.join(base, "functions", "agentics", name)
+        filepath_pkg = os.path.join(agentics_dir, "__init__.py")
+        filepath_flat = os.path.join(base, "functions", "agentics", f"{name}.py")
+        if os.path.isfile(filepath_pkg):
+            filepath = filepath_pkg
+        elif os.path.isfile(filepath_flat):
+            filepath = filepath_flat
+        else:
             return JSONResponse(content={"error": "not found"}, status_code=404)
-        builtin_names = ["general_action", "agent_loop", "wait", "deep_work", "_utils"]
+        builtin_names = ["ask_user", "deep_work", "research", "extract_pdf_figures",
+                         "extract_pdf_tables", "word_count", "llm_call_example",
+                         "test_framework", "test_resume", "_utils", "_layout"]
         if name in builtin_names:
             return JSONResponse(content={"error": "cannot delete built-in function"}, status_code=403)
         os.remove(filepath)

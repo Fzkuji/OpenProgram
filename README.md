@@ -110,10 +110,10 @@ pip install -e "$GUI_HARNESS_DIR"                   # depends on openprogram
 pip install -e "$RESEARCH_HARNESS_DIR"
 ```
 
-`openprogram/programs/applications/{GUI,Research}-Agent-Harness` are symlinks — recreate if a repo moves:
+`openprogram/functions/agentics/{GUI,Research}-Agent-Harness` are symlinks — recreate if a repo moves:
 
 ```bash
-cd openprogram/programs/applications
+cd openprogram/functions/agentics
 rm -f GUI-Agent-Harness && ln -s "$GUI_HARNESS_DIR" GUI-Agent-Harness
 rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Harness
 ```
@@ -128,7 +128,7 @@ For platform-builder topics — `Runtime` retry semantics, the full `agentic_fun
 
 ## Supported Projects
 
-Three agent applications ship with OpenProgram, under `openprogram/programs/applications/` — each a full agent built on the `@agentic_function` paradigm:
+Three agent applications ship with OpenProgram, under `openprogram/functions/agentics/` — each a full agent built on the `@agentic_function` paradigm:
 
 | Project | What it does |
 |---------|--------------|
@@ -198,7 +198,7 @@ When `verify` calls the LLM, it automatically sees what `observe` and `click` re
 For complex tasks that demand sustained effort and high standards, `deep_work` runs an autonomous plan-execute-evaluate loop until the result meets the specified quality level:
 
 ```python
-from openprogram.programs.functions.buildin.deep_work import deep_work
+from openprogram.functions.agentics.deep_work import deep_work
 
 result = deep_work(
     task="Write a survey on context management in LLM agents.",
@@ -222,8 +222,8 @@ The skill is the complete spec — where the file goes, the decorator's metadata
 | Import | What it does |
 |--------|-------------|
 | `from openprogram import agentic_function` | Decorator. Records each call as a node in the session DAG |
-| `from openprogram import Runtime` | LLM runtime. `exec()` calls the LLM with DAG-derived context |
-| `from openprogram import create_runtime` | Create a Runtime with auto-detection or explicit provider (`create_runtime()` checks API keys and CLIs in priority order) |
+| `from openprogram.agentic_programming.runtime import Runtime` | LLM runtime. `exec()` calls the LLM with DAG-derived context |
+| `from openprogram.providers.registry import create_runtime` | Create a Runtime with auto-detection or explicit provider (`create_runtime()` checks API keys and CLIs in priority order) |
 
 ### Authoring functions
 
@@ -238,10 +238,8 @@ and a rule-based validation checklist.
 
 | Import | What it does |
 |--------|-------------|
-| `from openprogram.programs.functions.buildin.deep_work import deep_work` | Autonomous plan-execute-evaluate loop with quality levels |
-| `from openprogram.programs.functions.buildin.agent_loop import agent_loop` | General-purpose autonomous agent loop |
-| `from openprogram.programs.functions.buildin.general_action import general_action` | Give the LLM full freedom to complete a single task |
-| `from openprogram.programs.functions.buildin.wait import wait` | LLM decides how long to wait based on context |
+| `from openprogram.functions.agentics.deep_work import deep_work` | Autonomous plan-execute-evaluate loop with quality levels |
+| `from openprogram.functions.agentics.ask_user import ask_user` | Ask the user a clarifying question and block until an answer arrives |
 
 ### Providers
 
@@ -267,7 +265,7 @@ Six built-in providers: Anthropic, OpenAI, Gemini (API), Claude Code, Codex, Gem
 
 ```
 openprogram/
-├── __init__.py                      # agentic_function, Runtime, create_runtime
+├── __init__.py                      # agentic_function re-export
 ├── cli.py                           # `openprogram` command entry point
 ├── agentic_programming/             # engine — paradigm-essential primitives
 │   ├── function.py                  #   @agentic_function decorator
@@ -276,15 +274,17 @@ openprogram/
 │   └── skills.py                    #   SKILL.md discovery
 ├── context/                         # flat-DAG context model — nodes, storage, render, compute_reads
 ├── providers/                       # Anthropic, OpenAI, Gemini, Claude Code, Codex, Gemini CLI
-├── programs/
-│   ├── functions/
-│   │   ├── registry.py              #   explicit list of exposed functions
-│   │   ├── buildin/                 #   deep_work / agent_loop / general_action / wait / ask_user
-│   │   └── third_party/             #   general-purpose functions (incl. pdf/)
-│   └── applications/                # full apps built on OpenProgram
-│       ├── GUI-Agent-Harness/       #   GUI agent (separate repo, checked out here)
-│       ├── Research-Agent-Harness/  #   Research agent (separate repo)
-│       └── Wiki-Agent-Harness/      #   Wiki agent (separate repo)
+├── functions/
+│   ├── _registry.py                 #   unified registry for tools + agentic functions
+│   ├── tools/                       #   @function leaves — bash, read, edit, web_search, …
+│   └── agentics/                    #   @agentic_function modules (each its own dir, code in __init__.py)
+│       ├── ask_user/                #     ask the user a clarifying question
+│       ├── deep_work/               #     autonomous plan-execute-evaluate loop
+│       ├── extract_pdf_figures/     #     PDF figure extraction
+│       ├── …                        #     other agentics …
+│       ├── GUI-Agent-Harness/       #     GUI agent (separate repo, symlink)
+│       ├── Research-Agent-Harness/  #     Research agent (separate repo, symlink)
+│       └── Wiki-Agent-Harness/      #     Wiki agent (separate repo, symlink)
 └── webui/                           # `openprogram web` — browser UI
 skills/                              # SKILL.md files for agent integration
 examples/                            # runnable demos

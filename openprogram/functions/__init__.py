@@ -399,6 +399,39 @@ def list_registered_agent_tools() -> list[str]:
     return [t.name for t in _all_agent_tools() if t.name in exposed]
 
 
+def resolve_function_module(name: str):
+    """Return the imported Python module that defines an @agentic_function
+    of the given name.
+
+    Walks the agentic local registry (populated when @agentic_function
+    fires its side-effect on import) and returns the module the
+    callable belongs to. Used by the ``openprogram programs run <name>``
+    CLI path and the webui's function-source / function-edit endpoints.
+
+    Raises ``ImportError`` if the name isn't a registered agentic
+    function — the caller decides how to surface that.
+    """
+    from openprogram.agentic_programming.function import (
+        _registry as _agentic_local_registry,
+    )
+    import importlib
+    instance = _agentic_local_registry.get(name)
+    if instance is not None and instance._fn is not None:
+        return importlib.import_module(instance._fn.__module__)
+    # Fallback: standard agentics layout — agentics/<name>/__init__.py
+    # might exist even if registration didn't fire (e.g. listed in
+    # AGENTIC_MODULES but skipped at load time).
+    try:
+        return importlib.import_module(
+            f"openprogram.functions.agentics.{name}"
+        )
+    except ImportError:
+        raise ImportError(
+            f"No @agentic_function named {name!r} found in the "
+            f"agentic registry or under openprogram/functions/agentics/."
+        )
+
+
 __all__ = [
     "DEFAULT_TOOLS",
     "TOOLSETS",
@@ -407,6 +440,7 @@ __all__ = [
     "agent_tools",
     "apply_tool_policy",
     "function",
+    "resolve_function_module",
     "get_agent_tool",
     "list_available",
     "list_registered_agent_tools",

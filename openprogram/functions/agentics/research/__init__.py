@@ -5,7 +5,7 @@ A complete research pipeline from project initialization to submission,
 built on the Agentic Programming framework.
 
 Stages:
-    0. init        — project directory structure (init_research)
+    0. init        — project directory structure
     1. literature  — literature survey and gap identification
     2. idea        — idea generation, novelty check, ranking
     3. experiment  — experiment design and execution

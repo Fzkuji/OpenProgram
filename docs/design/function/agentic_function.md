@@ -215,28 +215,28 @@ runtime.exec(content=[{"type": "text", "text": f"Please analyze: {text}. Return 
 
 ## 内置原子工具
 
-放在 `openprogram/tools/<name>/`，每个工具一个目录，对齐 Claude Code 风格：
+放在 `openprogram/functions/tools/<name>/`，每个工具一个目录，对齐 Claude Code 风格：
 
 | tool | 目录 | 作用 |
 |------|------|------|
-| `bash` | `tools/bash/` | 跑 shell 命令 |
-| `read` | `tools/read/` | 按行读文件（支持 offset/limit） |
-| `write` | `tools/write/` | 创建或覆盖文件 |
-| `edit` | `tools/edit/` | 按字符串替换编辑文件 |
-| `glob` | `tools/glob/` | 文件名模式匹配 |
-| `grep` | `tools/grep/` | 内容正则搜索（优先调 ripgrep） |
+| `bash` | `functions/tools/bash/` | 跑 shell 命令 |
+| `read` | `functions/tools/read/` | 按行读文件（支持 offset/limit） |
+| `write` | `functions/tools/write/` | 创建或覆盖文件 |
+| `edit` | `functions/tools/edit/` | 按字符串替换编辑文件 |
+| `glob` | `functions/tools/glob/` | 文件名模式匹配 |
+| `grep` | `functions/tools/grep/` | 内容正则搜索（优先调 ripgrep） |
 
 用法：
 
 ```python
-from openprogram.tools import get_many
+from openprogram.functions import get_agent_tool
 
 reply = runtime.exec(
     content=[{"type": "text", "text": "列出 cwd 下所有 Python 文件"}],
-    tools=get_many(["bash", "glob"]),
+    tools=[get_agent_tool("bash"), get_agent_tool("glob")],
 )
 ```
 
 ## 完整样例
 
-见 `openprogram/programs/functions/third_party/llm_call_example.py`。
+见 `openprogram/functions/agentics/llm_call_example/__init__.py`。

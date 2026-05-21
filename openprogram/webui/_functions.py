@@ -18,22 +18,23 @@ from typing import Optional
 from openprogram.agentic_programming.runtime import Runtime
 
 
-# Base of the openprogram package. Discovery scans under programs/functions/.
+# Base of the openprogram package. Discovery scans under functions/agentics/.
 import openprogram as _op_pkg
 _PKG_BASE = os.path.dirname(os.path.abspath(_op_pkg.__file__))
 
 
 # ---------------------------------------------------------------------------
-# Function discovery — registry-driven (functions/ + applications/ registries)
+# Function discovery — registry-driven (unified functions/_registry.py)
 # ---------------------------------------------------------------------------
 
 def _discover_functions() -> list[dict]:
-    """Scan openprogram/programs/functions/ to build the function list.
+    """Scan openprogram/functions/agentics/ to build the function list.
 
-    Supports three kinds of entries in functions/:
-      1. Single .py files (e.g. sentiment.py)
-      2. Subdirectories with a main.py entry point (e.g. Research-Agent-Harness/main.py)
-         The function name is extracted from the @agentic_function in main.py.
+    Each agentic function lives in its own directory with code in
+    ``__init__.py``. Harness apps (e.g. Research-Agent-Harness) are
+    symlinked subdirectories with a ``main.py`` entry point — the
+    function name is extracted from the @agentic_function decorator
+    inside that entry file.
     """
     result: list[dict] = []
     base = _PKG_BASE
@@ -406,12 +407,12 @@ def _load_function(func_name: str):
 
     Search target: every module listed in
     ``openprogram.functions._registry.AGENTIC_MODULES`` (covers both
-    flat agentic functions and the harness apps, replaces the old
-    buildin/third_party + app-registry split). For each registered
-    module we import, reload, and look up ``func_name`` as a top-level
-    attribute. Harness apps go through the same path but are loaded
-    via ``spec_from_file_location`` since their external dirs have
-    hyphen names that can't be imported normally.
+    flat agentic functions and the harness apps under the unified
+    ``functions/agentics/`` tree). For each registered module we import,
+    reload, and look up ``func_name`` as a top-level attribute. Harness
+    apps go through the same path but are loaded via
+    ``spec_from_file_location`` since their external dirs have hyphen
+    names that can't be imported normally.
 
     If a module fails to import, falls back to a stub with the source
     code so edit() can still operate on it.

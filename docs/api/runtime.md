@@ -136,7 +136,8 @@ await Runtime._async_call(content, model="default", response_format=None) -> str
 ### 方式一：传入 call 函数
 
 ```python
-from openprogram import Runtime, agentic_function
+from openprogram import agentic_function
+from openprogram.agentic_programming.runtime import Runtime
 
 def my_llm(content, model="sonnet", response_format=None):
     # 把 content 转成你的 provider 格式，发请求

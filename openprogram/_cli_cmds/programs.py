@@ -129,7 +129,7 @@ def _cmd_run(name, arg_list, provider=None, model=None):
         mod = resolve_function_module(name)
         loaded_func = getattr(mod, name)
     except (ImportError, AttributeError):
-        print(f"Error: function '{name}' not found in openprogram/programs/functions/third_party/")
+        print(f"Error: function '{name}' not found in openprogram/functions/agentics/")
         sys.exit(1)
 
     unwrapped_func = loaded_func._fn if hasattr(loaded_func, "_fn") else loaded_func

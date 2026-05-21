@@ -98,7 +98,8 @@ The worker, web UI, and TUI all read and write the same conversation database â€
 ## A 30-second example
 
 ```python
-from openprogram import agentic_function, create_runtime
+from openprogram import agentic_function
+from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime()              # auto-detects provider
 
@@ -137,8 +138,7 @@ MCP is a *transport* protocol. Agentic Programming is an *execution model*. They
 | [Getting Started](docs/GETTING_STARTED.md) | Three-minute install + first runnable example |
 | [API Reference](docs/API.md) | `@agentic_function`, `Runtime`, `Context`, `create_runtime` |
 | [Providers](docs/api/providers.md) | All six providers, detection order, CLI vs API trade-offs |
-| [Meta Functions](docs/api/meta_function.md) | `create()`, `create_app()`, `fix()`, `create_skill()` |
-| [Built-in Functions](docs/api/buildin.md) | `deep_work`, `agent_loop`, `general_action`, `wait` |
+| Built-in Functions | `deep_work`, `ask_user`, PDF helpers, etc. â€” see `openprogram/functions/agentics/` |
 | [Worker & Channels](docs/WORKER.md) | Persistent process, system service install, Discord / Telegram / WeChat |
 | [Web UI](docs/WEB_UI.md) | Browser interface, execution tree, history graph |
 | [Skills Integration](docs/INTEGRATION_CLAUDE_CODE.md) | Use as a Claude Code / Gemini CLI / OpenClaw skill pack |
@@ -151,7 +151,6 @@ MCP is a *transport* protocol. Agentic Programming is an *execution model*. They
 ```bash
 openprogram run sentiment text="I love this!"        # generated function
 openprogram run deep_work task="..." level=phd       # autonomous quality loop
-openprogram run create_app description="..."         # scaffold a new app
 openprogram providers                                # what's available on this machine
 openprogram worker status                            # is the background process up?
 openprogram web                                      # open the browser UI

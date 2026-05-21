@@ -41,5 +41,5 @@ def assistant(task: str, runtime: Runtime) -> str:
 > provider（OpenAI / Anthropic / Gemini）都原生支持 tool_use，没必要再维护。
 
 完整样例参考：
-- `openprogram/programs/functions/third_party/llm_call_example.py`
-- 工具实现：`openprogram/tools/<name>/`
+- `openprogram/functions/agentics/llm_call_example/__init__.py`
+- 工具实现：`openprogram/functions/tools/<name>/`

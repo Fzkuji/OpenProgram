@@ -57,7 +57,8 @@ pip install "openprogram[gui]"            #   GUI-Agent-Harness 依赖（opencv/
 ```
 
 ```python
-from openprogram import agentic_function, create_runtime
+from openprogram import agentic_function
+from openprogram.providers.registry import create_runtime
 
 runtime = create_runtime()
 
@@ -105,7 +106,7 @@ openprogram web
 
 ## 支持的项目
 
-OpenProgram 自带三个 agent 应用,位于 `openprogram/programs/applications/`——每个都是基于 `@agentic_function` 范式构建的完整 agent:
+OpenProgram 自带三个 agent 应用,位于 `openprogram/functions/agentics/`——每个都是基于 `@agentic_function` 范式构建的完整 agent:
 
 | 项目 | 功能 |
 |------|------|
@@ -202,8 +203,8 @@ skill 是完整规范——文件放哪、装饰器元数据、docstring 与 `co
 | 导入 | 功能 |
 |------|------|
 | `from openprogram import agentic_function` | 装饰器。每次调用记录为 session DAG 的一个节点 |
-| `from openprogram import Runtime` | LLM 运行时。`exec()` 调用 LLM，上下文从 DAG 自动算出 |
-| `from openprogram import create_runtime` | 创建 Runtime，支持自动检测或指定提供方 |
+| `from openprogram.agentic_programming.runtime import Runtime` | LLM 运行时。`exec()` 调用 LLM，上下文从 DAG 自动算出 |
+| `from openprogram.providers.registry import create_runtime` | 创建 Runtime，支持自动检测或指定提供方 |
 
 ### 编写函数
 
@@ -214,9 +215,7 @@ skill 是完整规范——文件放哪、装饰器元数据、docstring 与 `co
 | 导入 | 功能 |
 |------|------|
 | `from openprogram.functions.agentics.deep_work import deep_work` | 自主计划-执行-评估循环，支持质量等级 |
-| `from openprogram.functions.agentics.agent_loop import agent_loop` | 通用自主 agent 循环 |
-| `from openprogram.functions.agentics.general_action import general_action` | 给 LLM 完全自由完成单个任务 |
-| `from openprogram.functions.agentics.wait import wait` | LLM 根据上下文决定等待时长 |
+| `from openprogram.functions.agentics.ask_user import ask_user` | 向用户提一个澄清问题并阻塞等待答复 |
 
 ### 提供方
 
@@ -236,7 +235,7 @@ skill 是完整规范——文件放哪、装饰器元数据、docstring 与 `co
 
 ```
 openprogram/
-├── __init__.py                      # agentic_function, Runtime, create_runtime
+├── __init__.py                      # agentic_function 再导出
 ├── cli.py                           # `openprogram` 命令入口
 ├── agentic_programming/             # 范式引擎
 │   ├── function.py                  #   @agentic_function 装饰器
@@ -245,15 +244,17 @@ openprogram/
 │   └── skills.py                    #   SKILL.md 发现
 ├── context/                         # 扁平 DAG 上下文模型 — nodes / storage / render / compute_reads
 ├── providers/                       # Anthropic、OpenAI、Gemini、Claude Code、Codex、Gemini CLI
-├── programs/
-│   ├── functions/
-│   │   ├── registry.py              #   显式注册的函数列表
-│   │   ├── buildin/                 #   deep_work / agent_loop / general_action / wait / ask_user
-│   │   └── third_party/             #   通用函数（含 pdf/）
-│   └── applications/                # 基于 OpenProgram 构建的完整应用
-│       ├── GUI-Agent-Harness/       #   自主 GUI agent
-│       ├── Research-Agent-Harness/  #   自主研究 agent
-│       └── Wiki-Agent-Harness/      #   自主 wiki 构建 agent
+├── functions/
+│   ├── _registry.py                 #   tools + agentic functions 的统一注册表
+│   ├── tools/                       #   @function 叶子工具 — bash / read / edit / web_search 等
+│   └── agentics/                    #   @agentic_function 模块（每个一个目录，代码写在 __init__.py）
+│       ├── ask_user/                #     向用户提澄清问题
+│       ├── deep_work/               #     自主计划-执行-评估循环
+│       ├── extract_pdf_figures/     #     PDF 图表抽取
+│       ├── …                        #     其它 agentic functions …
+│       ├── GUI-Agent-Harness/       #     自主 GUI agent（独立仓库，符号链接）
+│       ├── Research-Agent-Harness/  #     自主研究 agent（独立仓库，符号链接）
+│       └── Wiki-Agent-Harness/      #     自主 wiki 构建 agent（独立仓库，符号链接）
 └── webui/                           # `openprogram web` 浏览器 UI
 skills/                              # 用于 agent 集成的 SKILL.md 文件
 examples/                            # 可运行的示例
