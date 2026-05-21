@@ -339,59 +339,117 @@ function DetailView({
         <div className={styles.errorBox}>{server.error}</div>
       )}
 
-      <div className={styles.sectionHead}>Config</div>
-      <div className={styles.metaGrid}>
-        <div className={styles.metaKey}>Transport</div>
-        <div className={styles.metaVal}>{server.type}</div>
-
-        <div className={styles.metaKey}>Command</div>
-        <div className={styles.metaVal}>
-          <code>{server.command.join(" ")}</code>
-        </div>
-
-        <div className={styles.metaKey}>Environment</div>
-        <div className={styles.metaVal}>
-          {Object.keys(server.env).length === 0
-            ? "(inherits worker env)"
-            : Object.entries(server.env).map(([k, v]) => (
-                <div key={k}>
-                  <code>{k}</code>=<code>{v}</code>
-                </div>
-              ))}
-        </div>
-
-        <div className={styles.metaKey}>Timeout (s)</div>
-        <div className={styles.metaVal}>{server.timeout_seconds}</div>
-
-        <div className={styles.metaKey}>Tool prefix</div>
-        <div className={styles.metaVal}>
-          <code>{server.name}__</code>
-        </div>
+      <div className={styles.configBar}>
+        <span className={styles.configChip}>
+          <span className={styles.configChipKey}>Transport</span>
+          <span className={styles.configChipVal}>{server.type}</span>
+        </span>
+        <span className={styles.configChip}>
+          <span className={styles.configChipKey}>Command</span>
+          <span className={styles.configChipVal} title={server.command.join(" ")}>
+            <code>{server.command.join(" ")}</code>
+          </span>
+        </span>
+        <span className={styles.configChip}>
+          <span className={styles.configChipKey}>Timeout</span>
+          <span className={styles.configChipVal}>{server.timeout_seconds}s</span>
+        </span>
+        <span className={styles.configChip}>
+          <span className={styles.configChipKey}>Prefix</span>
+          <span className={styles.configChipVal}>
+            <code>{server.name}__</code>
+          </span>
+        </span>
       </div>
+
+      {Object.keys(server.env).length > 0 && (
+        <div className={styles.envBlock}>
+          <span className={styles.envBlockHead}>Environment</span>
+          {Object.entries(server.env).map(([k, v]) => (
+            <div key={k}>
+              {k}=<span style={{ color: "var(--text-primary)" }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className={styles.sectionHead}>
         Tools ({server.tool_count})
       </div>
-      {!detail ? (
-        <div className={styles.subtitle}>Loading tools…</div>
-      ) : (detail.tool_schemas || []).length === 0 ? (
-        <div className={styles.subtitle}>
-          {server.error === "disabled"
-            ? "Server is disabled. Click Enable to spawn it and load its tools."
-            : server.error
-              ? "Server failed to start — see error above. Tool list unavailable."
-              : server.ready
-                ? "No tools exposed by this server."
-                : "Server starting — tool list will appear shortly."}
-        </div>
-      ) : (
-        <div className={styles.toolList}>
-          {(detail.tool_schemas || []).map((t) => (
-            <ToolItem key={t.name} server={server.name} tool={t} />
-          ))}
-        </div>
-      )}
+      <div className={styles.toolsSection}>
+        {!detail ? (
+          <div className={styles.toolsEmpty}>
+            <div className={styles.toolsEmptyIcon}>⏳</div>
+            <div className={styles.toolsEmptyText}>Loading tools…</div>
+          </div>
+        ) : (detail.tool_schemas || []).length === 0 ? (
+          <EmptyToolsState server={server} onEnable={onEnable} busy={busy} />
+        ) : (
+          <div className={styles.toolList}>
+            {(detail.tool_schemas || []).map((t) => (
+              <ToolItem key={t.name} server={server.name} tool={t} />
+            ))}
+          </div>
+        )}
+      </div>
     </>
+  );
+}
+
+function EmptyToolsState({
+  server, onEnable, busy,
+}: {
+  server: ServerStatus;
+  onEnable: () => void;
+  busy: boolean;
+}) {
+  if (server.error === "disabled") {
+    return (
+      <div className={styles.toolsEmpty}>
+        <div className={styles.toolsEmptyIcon}>💤</div>
+        <div className={styles.toolsEmptyText}>
+          This server is disabled. Enable it to spawn the subprocess and
+          load its tool list.
+        </div>
+        <button
+          className={cls(styles.iconBtn, styles.primary, styles.toolsEmptyCta)}
+          onClick={onEnable}
+          disabled={busy}
+        >
+          Enable server
+        </button>
+      </div>
+    );
+  }
+  if (server.error) {
+    return (
+      <div className={styles.toolsEmpty}>
+        <div className={styles.toolsEmptyIcon}>⚠️</div>
+        <div className={styles.toolsEmptyText}>
+          Server failed to start — see error above. Tool list unavailable
+          until the server reaches the <b>ready</b> state.
+        </div>
+      </div>
+    );
+  }
+  if (!server.ready) {
+    return (
+      <div className={styles.toolsEmpty}>
+        <div className={styles.toolsEmptyIcon}>⏳</div>
+        <div className={styles.toolsEmptyText}>
+          Server starting — tool list will appear once <code>initialize</code>
+          + <code>tools/list</code> complete.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.toolsEmpty}>
+      <div className={styles.toolsEmptyIcon}>🛠️</div>
+      <div className={styles.toolsEmptyText}>
+        This server is ready but exposes no tools.
+      </div>
+    </div>
   );
 }
 

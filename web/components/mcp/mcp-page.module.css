@@ -147,11 +147,16 @@
   border-color: var(--accent-blue);
 }
 
-/* Right content — selected server's detail view. */
+/* Right content — selected server's detail view.
+   Flex column so the Tools section can ``flex: 1`` and fill the
+   leftover height, instead of leaving the lower 60% blank. */
 .detail {
   min-width: 0;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .detailEmpty {
@@ -173,7 +178,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  flex-shrink: 0;
 }
 .detailIcon {
   width: 36px;
@@ -250,29 +255,71 @@
   background: rgba(239, 68, 68, 0.06);
 }
 
-/* Meta fields (command / env / timeout). */
-.metaGrid {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: 6px 16px;
-  margin-bottom: 20px;
-  font-size: 13px;
+/* Config — compact horizontal bar, one row of pill chips so the
+   detail header doesn't eat half the page height. */
+.configBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: 12px;
 }
-.metaKey {
+.configChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.configChipKey {
   color: var(--text-muted);
-  padding: 4px 0;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  flex-shrink: 0;
 }
-.metaVal {
+.configChipVal {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  padding: 4px 0;
-  word-break: break-all;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 380px;
 }
-.metaVal code {
-  background: var(--bg-secondary);
-  padding: 1px 6px;
+.configChipVal code {
+  background: var(--bg-primary);
+  padding: 2px 8px;
   border-radius: var(--radius);
   font-size: 12px;
+}
+
+.envBlock {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.envBlockHead {
+  font-family: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .errorBox {
@@ -294,13 +341,57 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
-  margin: 8px 0 10px;
+  flex-shrink: 0;
 }
 
-.toolList {
+/* Tools section is the main content area — flex:1 so its scroll
+   area fills the rest of the right column instead of leaving a
+   blank lower half. */
+.toolsSection {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.toolList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+/* Big centred empty state for "no tools yet" cases (disabled /
+   starting / errored / really has zero tools). Fills the Tools
+   area instead of being a single grey line. */
+.toolsEmpty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-muted);
+  gap: 12px;
+  padding: 40px 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+}
+.toolsEmptyIcon {
+  font-size: 40px;
+  opacity: 0.4;
+}
+.toolsEmptyText {
+  font-size: 14px;
+  max-width: 380px;
+  line-height: 1.5;
+}
+.toolsEmptyCta {
+  margin-top: 8px;
 }
 .toolRow {
   border: 1px solid var(--border);
