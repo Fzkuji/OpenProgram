@@ -54,7 +54,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     bypass_words = {
         "agents", "sessions", "channels", "config", "programs", "skills",
         "providers", "web", "resume", "init", "doctor", "browser",
-        "worker", "update", "memory",
+        "worker", "update", "memory", "mcp",
     }
     bypass_flags = {
         "--print", "-p", "--no-tui", "--web", "--help", "-h", "--version",
@@ -332,6 +332,48 @@ def main():
     p_chb_rm = p_chb_sub.add_parser("rm",
         help="Remove a binding by its id (see `bindings list`)")
     p_chb_rm.add_argument("binding_id")
+
+    # ---- mcp -------------------------------------------------------------
+    p_mcp = sub.add_parser("mcp",
+        help="Manage MCP (Model Context Protocol) servers. Talks to "
+             "the running worker — start it first with `openprogram "
+             "worker start`. Same backend as the webui /mcp page and "
+             "the TUI /mcp command.")
+    p_mcp_sub = p_mcp.add_subparsers(dest="mcp_verb", metavar="verb")
+    p_mcp_sub.add_parser("list", help="List every configured MCP server with state")
+    p_mcp_show = p_mcp_sub.add_parser("show", help="Show one server's tools + full schemas")
+    p_mcp_show.add_argument("name")
+    p_mcp_add = p_mcp_sub.add_parser("add",
+        help="Add a new MCP server (stdio command). Persists to "
+             "mcp_servers.json and spawns immediately.")
+    p_mcp_add.add_argument("name", help="Short identifier (used as tool prefix)")
+    p_mcp_add.add_argument("command", nargs="+",
+        help="Command and args to spawn the server, e.g. `npx -y @drawio/mcp`")
+    p_mcp_add.add_argument("--env", action="append", default=None,
+        metavar="KEY=VALUE",
+        help="Env var to inject into the subprocess (repeatable)")
+    p_mcp_add.add_argument("--timeout", type=float, default=30.0,
+        help="Startup + per-call timeout (s)")
+    p_mcp_add.add_argument("--disabled", action="store_true",
+        help="Create the entry but don't start it")
+    p_mcp_rm = p_mcp_sub.add_parser("rm", help="Remove a server (stop + delete config)")
+    p_mcp_rm.add_argument("name")
+    p_mcp_rs = p_mcp_sub.add_parser("restart", help="Stop + respawn one server")
+    p_mcp_rs.add_argument("name")
+    p_mcp_en = p_mcp_sub.add_parser("enable", help="Enable + spawn")
+    p_mcp_en.add_argument("name")
+    p_mcp_dis = p_mcp_sub.add_parser("disable", help="Stop + mark disabled (config kept)")
+    p_mcp_dis.add_argument("name")
+    p_mcp_sub.add_parser("edit",
+        help="Open mcp_servers.json in $EDITOR for raw editing")
+    p_mcp_test = p_mcp_sub.add_parser("test",
+        help="Spawn an ad-hoc config and verify the server starts + "
+             "returns a tool list. Doesn't write disk.")
+    p_mcp_test.add_argument("name")
+    p_mcp_test.add_argument("command", nargs="+")
+    p_mcp_test.add_argument("--env", action="append", default=None,
+        metavar="KEY=VALUE")
+    p_mcp_test.add_argument("--timeout", type=float, default=30.0)
 
     # ---- browser ---------------------------------------------------------
     p_browser = sub.add_parser("browser",
@@ -715,6 +757,33 @@ def main():
         p_channels.print_help()
         return
 
+    if args.command == "mcp":
+        verb = getattr(args, "mcp_verb", None)
+        if verb == "list":
+            sys.exit(_cmd_mcp_list())
+        if verb == "show":
+            sys.exit(_cmd_mcp_show(args.name))
+        if verb == "add":
+            sys.exit(_cmd_mcp_add(args.name, args.command,
+                                   env=args.env,
+                                   timeout=args.timeout,
+                                   enabled=not args.disabled))
+        if verb == "rm":
+            sys.exit(_cmd_mcp_rm(args.name))
+        if verb == "restart":
+            sys.exit(_cmd_mcp_restart(args.name))
+        if verb == "enable":
+            sys.exit(_cmd_mcp_enable(args.name))
+        if verb == "disable":
+            sys.exit(_cmd_mcp_disable(args.name))
+        if verb == "edit":
+            sys.exit(_cmd_mcp_edit())
+        if verb == "test":
+            sys.exit(_cmd_mcp_test(args.name, args.command,
+                                    env=args.env, timeout=args.timeout))
+        p_mcp.print_help()
+        sys.exit(2)
+
     if args.command == "browser":
         verb = getattr(args, "browser_verb", None)
         if verb == "install":
@@ -834,6 +903,17 @@ from openprogram._cli_cmds.chat import (  # noqa: E402,F401
     _cmd_deep_work,
 )
 from openprogram._cli_cmds.cron import _cmd_cron_worker  # noqa: E402,F401
+from openprogram._cli_cmds.mcp import (  # noqa: E402,F401
+    _cmd_mcp_list,
+    _cmd_mcp_show,
+    _cmd_mcp_add,
+    _cmd_mcp_rm,
+    _cmd_mcp_restart,
+    _cmd_mcp_enable,
+    _cmd_mcp_disable,
+    _cmd_mcp_edit,
+    _cmd_mcp_test,
+)
 
 
 

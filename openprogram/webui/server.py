@@ -1703,6 +1703,29 @@ def create_app():
         except Exception as e:
             _log(f"[v2-restore] failed: {e}")
 
+    @app.on_event("startup")
+    async def _start_mcp_servers():
+        """Spawn every enabled MCP server from ``mcp_servers.json``.
+
+        Each server's ``tools/list`` output is registered as AgentTool
+        entries (namespaced ``{server}__{tool}``). Failures are non-
+        fatal — a misconfigured server logs and the worker keeps
+        booting.
+        """
+        try:
+            from openprogram.mcp import load_mcp_servers
+            await load_mcp_servers()
+        except Exception as e:  # noqa: BLE001
+            _log(f"[mcp] startup failed: {type(e).__name__}: {e}")
+
+    @app.on_event("shutdown")
+    async def _stop_mcp_servers():
+        try:
+            from openprogram.mcp import shutdown_mcp_servers
+            await shutdown_mcp_servers()
+        except Exception as e:  # noqa: BLE001
+            _log(f"[mcp] shutdown failed: {type(e).__name__}: {e}")
+
     # The previous boot-time refresh of `claude_models.json` relied on
     # the now-removed Claude Code CLI runtime to enumerate models. The
     # static catalog shipped with the repo is the source of truth now;
@@ -1764,6 +1787,10 @@ def create_app():
     # /api/channels/{platform}/{account_id}/status — adapter heartbeat
     from openprogram.webui.routes import channels as _routes_channels
     _routes_channels.register(app)
+
+    # /api/mcp/* — MCP server management (shared by webui / CLI / TUI)
+    from openprogram.webui.routes import mcp as _routes_mcp
+    _routes_mcp.register(app)
 
     return app
 

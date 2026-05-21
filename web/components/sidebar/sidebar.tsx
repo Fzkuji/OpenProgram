@@ -169,6 +169,7 @@ export function Sidebar() {
   // Sync `.active` highlighting on nav items based on the route — purely
   // visual; the AppShell click-interceptor handles the actual routing.
   const navActive = {
+    mcp: pathname.startsWith("/mcp"),
     programs: pathname.startsWith("/programs"),
     memory: pathname.startsWith("/memory"),
     chats: pathname.startsWith("/chats"),
@@ -309,6 +310,22 @@ export function Sidebar() {
             </svg>
           </span>
           <span className={sidebarNavLabelClass}>Memory</span>
+        </Link>
+
+        <Link
+          href="/mcp"
+          className={
+            sidebarNavItemClass +
+            (navActive.mcp ? " " + sidebarNavItemActiveClass : "")
+          }
+          id="navMcp"
+        >
+          <span className={sidebarNavIconClass}>
+            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3 4.5A2.5 2.5 0 0 1 5.5 2h9A2.5 2.5 0 0 1 17 4.5v3A2.5 2.5 0 0 1 14.5 10h-9A2.5 2.5 0 0 1 3 7.5v-3Zm2 0a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H5Zm0 8A2.5 2.5 0 0 0 2.5 15v.5A2.5 2.5 0 0 0 5 18h10a2.5 2.5 0 0 0 2.5-2.5V15A2.5 2.5 0 0 0 15 12.5H5Zm0 2h2a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1Z" />
+            </svg>
+          </span>
+          <span className={sidebarNavLabelClass}>MCP</span>
         </Link>
 
         <Link

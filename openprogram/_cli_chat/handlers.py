@@ -10,6 +10,9 @@ SLASH_HELP = [
     ("/skills", "list discovered skills"),
     ("/functions", "list agentic functions (functions/agentics/)"),
     ("/apps", "list harness apps (functions/agentics/*-Agent-Harness/)"),
+    ("/mcp [verb]", "manage MCP servers: list (default), show <name>, "
+                     "restart <name>, enable <name>, disable <name>, "
+                     "rm <name>"),
     ("/session", "show the current session id + agent"),
     ("/login <channel> [--id X]",
                  "log in to a channel bot (wechat: QR, others: paste "
@@ -135,6 +138,9 @@ def _handle_slash(cmd: str, console, rt,
         for n in names:
             console.print(f"  [yellow]{n}[/]")
         return False
+
+    if verb == "mcp":
+        return _handle_mcp(args, console)
 
     if verb == "clear":
         console.clear()
@@ -490,6 +496,45 @@ def _handle_detach(args: list[str], console) -> bool:
                       f"{channel}:{account_id}:{peer_kind}:{peer}")
     else:
         console.print("[yellow]No matching alias.[/]")
+    return False
+
+
+def _handle_mcp(args: list[str], console) -> bool:
+    """Dispatch /mcp [verb] inside the TUI/REPL.
+
+    Verbs reuse the CLI implementations (which HTTP-hit the running
+    worker), so behaviour matches `openprogram mcp ...` exactly.
+    """
+    from openprogram._cli_cmds.mcp import (
+        _cmd_mcp_list, _cmd_mcp_show, _cmd_mcp_restart,
+        _cmd_mcp_enable, _cmd_mcp_disable, _cmd_mcp_rm,
+    )
+    verb = args[0].lower() if args else "list"
+    rest = args[1:]
+    if verb == "list":
+        _cmd_mcp_list()
+        return False
+    if verb == "show" and rest:
+        _cmd_mcp_show(rest[0])
+        return False
+    if verb == "restart" and rest:
+        _cmd_mcp_restart(rest[0])
+        return False
+    if verb == "enable" and rest:
+        _cmd_mcp_enable(rest[0])
+        return False
+    if verb == "disable" and rest:
+        _cmd_mcp_disable(rest[0])
+        return False
+    if verb == "rm" and rest:
+        _cmd_mcp_rm(rest[0])
+        return False
+    console.print(
+        "[yellow]Usage: /mcp [list | show <name> | restart <name> | "
+        "enable <name> | disable <name> | rm <name>][/]\n"
+        "[dim]For add/edit/test use `openprogram mcp ...` in a "
+        "separate shell.[/]"
+    )
     return False
 
 

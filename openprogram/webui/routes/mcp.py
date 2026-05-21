@@ -1,0 +1,188 @@
+"""MCP server management endpoints.
+
+Used by the webui ``/mcp`` settings page, the CLI ``openprogram mcp``
+subcommands, and the TUI ``/mcp`` slash command. All three frontends
+talk to this single backend so config edits propagate to the live
+worker without requiring a process restart.
+
+Endpoints
+---------
+
+``GET    /api/mcp/servers``               list all (incl. disabled)
+``GET    /api/mcp/servers/{name}``        single server + tool schemas
+``POST   /api/mcp/servers``               add a new server
+``PATCH  /api/mcp/servers/{name}``        edit an existing server
+``DELETE /api/mcp/servers/{name}``        remove
+``POST   /api/mcp/servers/{name}/restart``  stop + respawn one server
+``POST   /api/mcp/servers/{name}/enable``   shortcut: set enabled=true + restart
+``POST   /api/mcp/servers/{name}/disable``  shortcut: set enabled=false + stop
+``POST   /api/mcp/test``                  spawn a config in a sandbox without persisting
+
+All write endpoints persist to ``<state>/mcp_servers.json`` so the
+server set survives worker restarts.
+"""
+from __future__ import annotations
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+
+from openprogram.mcp import (
+    add_server,
+    get_server,
+    remove_server,
+    restart_server,
+    server_status,
+)
+from openprogram.mcp.config import (
+    MCPServerConfig,
+    load_configs,
+    parse_entry,
+    save_configs,
+)
+
+
+def register(app: FastAPI) -> None:
+    @app.get("/api/mcp/servers")
+    async def list_servers():
+        """List every loaded server (enabled and disabled). The
+        list is built from the in-memory registry, so it reflects
+        actual run-time state, not just on-disk config.
+        """
+        return JSONResponse(content={"servers": server_status()})
+
+    @app.get("/api/mcp/servers/{name}")
+    async def get_one(name: str):
+        snap = get_server(name)
+        if snap is None:
+            raise HTTPException(status_code=404,
+                                detail=f"server '{name}' not loaded")
+        return JSONResponse(content=snap)
+
+    @app.post("/api/mcp/servers")
+    async def add_one(body: dict):
+        """Body shape::
+
+            {"name": "drawio", "type": "local",
+             "command": ["npx", "-y", "@drawio/mcp"],
+             "env": {...},
+             "enabled": true,
+             "timeout_seconds": 30}
+        """
+        cfg = _parse_body(body)
+        # Persist alongside existing entries (read-modify-write).
+        all_cfgs = load_configs(include_disabled=True)
+        if any(c.name == cfg.name for c in all_cfgs):
+            raise HTTPException(status_code=409,
+                                detail=f"server '{cfg.name}' already exists")
+        all_cfgs.append(cfg)
+        save_configs(all_cfgs)
+        status = await add_server(cfg)
+        return JSONResponse(content=status, status_code=201)
+
+    @app.patch("/api/mcp/servers/{name}")
+    async def patch_one(name: str, body: dict):
+        """Body may include any of ``command`` / ``env`` / ``enabled``
+        / ``timeout_seconds`` / ``type``. The server is restarted with
+        the new config.
+        """
+        all_cfgs = load_configs(include_disabled=True)
+        match = next((c for c in all_cfgs if c.name == name), None)
+        if match is None:
+            raise HTTPException(status_code=404,
+                                detail=f"server '{name}' not in config")
+        merged = match.to_dict()
+        for k in ("type", "command", "env", "enabled", "timeout_seconds"):
+            if k in body:
+                merged[k] = body[k]
+        new_cfg = parse_entry(name, merged)
+        if new_cfg is None:
+            raise HTTPException(status_code=400, detail="invalid config")
+        # Replace in list, persist, then restart.
+        new_list = [c if c.name != name else new_cfg for c in all_cfgs]
+        save_configs(new_list)
+        try:
+            status = await restart_server(name, new_cfg=new_cfg)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500,
+                                detail=f"restart failed: {type(e).__name__}: {e}")
+        return JSONResponse(content=status)
+
+    @app.delete("/api/mcp/servers/{name}")
+    async def delete_one(name: str):
+        all_cfgs = load_configs(include_disabled=True)
+        new_list = [c for c in all_cfgs if c.name != name]
+        if len(new_list) == len(all_cfgs):
+            raise HTTPException(status_code=404,
+                                detail=f"server '{name}' not in config")
+        save_configs(new_list)
+        await remove_server(name)
+        return JSONResponse(content={"removed": name})
+
+    @app.post("/api/mcp/servers/{name}/restart")
+    async def restart_one(name: str):
+        try:
+            status = await restart_server(name)
+        except KeyError:
+            raise HTTPException(status_code=404,
+                                detail=f"server '{name}' not loaded")
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500,
+                                detail=f"restart failed: {type(e).__name__}: {e}")
+        return JSONResponse(content=status)
+
+    @app.post("/api/mcp/servers/{name}/enable")
+    async def enable_one(name: str):
+        return await patch_one(name, {"enabled": True})
+
+    @app.post("/api/mcp/servers/{name}/disable")
+    async def disable_one(name: str):
+        return await patch_one(name, {"enabled": False})
+
+    @app.post("/api/mcp/test")
+    async def test_config(body: dict):
+        """Spawn a config in a one-shot sandbox to verify the command
+        actually starts up and returns a ``tools/list``. Doesn't write
+        to disk and doesn't touch the live registry.
+
+        Body: same shape as ``POST /api/mcp/servers``.
+        """
+        cfg = _parse_body(body)
+        from openprogram.mcp.client import MCPClient
+        client = MCPClient(cfg)
+        try:
+            await client.start()
+            ok = client.is_ready and client.error is None
+            return JSONResponse(content={
+                "ok": ok,
+                "ready": client.is_ready,
+                "error": client.error,
+                "tool_count": len(client.tools),
+                "tools": [t.name for t in client.tools],
+            })
+        finally:
+            try:
+                await client.stop()
+            except Exception:  # noqa: BLE001
+                pass
+
+    @app.get("/api/mcp/config-path")
+    async def config_path():
+        from openprogram.mcp.config import get_config_path as _p
+        return JSONResponse(content={"path": str(_p())})
+
+
+def _parse_body(body: dict) -> MCPServerConfig:
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise HTTPException(status_code=400,
+                            detail="missing/empty 'name'")
+    cfg = parse_entry(name.strip(), {
+        "type": body.get("type", "local"),
+        "command": body.get("command"),
+        "env": body.get("env", {}),
+        "enabled": body.get("enabled", True),
+        "timeout_seconds": body.get("timeout_seconds", 30.0),
+    })
+    if cfg is None:
+        raise HTTPException(status_code=400, detail="invalid config")
+    return cfg
