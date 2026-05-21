@@ -3,18 +3,23 @@
 /**
  * /mcp — MCP server management page (master / detail).
  *
- * Layout parity with /functions:
- *   .view (full height flex col)
- *     .topbar (64px sticky, title + actions)
- *     .body grid: .serversNav (left, server list) + .detail (right)
- *
- * Click a server in the left nav → its config + tool schemas render
- * on the right with action buttons (Restart / Edit / Enable / Disable
- * / Delete). + Add server at the bottom of the nav opens the modal.
+ * All UI built from shadcn primitives in @/components/ui — no
+ * bespoke CSS module. Disabled / ready / starting / error states
+ * share the same layout; only the action button (Enable vs Disable),
+ * the state badge, and an inline disabled-hint differ.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import styles from "./mcp-page.module.css";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 interface ServerStatus {
   name: string;
@@ -38,16 +43,18 @@ interface ServerDetail extends ServerStatus {
   tool_schemas?: ToolSchema[];
 }
 
-function cls(...xs: (string | false | null | undefined)[]) {
-  return xs.filter(Boolean).join(" ");
-}
+type BusyAction = null | "enable" | "disable" | "restart" | "delete";
 
-function statePill(s: ServerStatus) {
-  if (s.ready) return { label: "ready", pill: styles.stateReady, dot: styles.dotReady };
+function stateLabel(s: ServerStatus): {
+  text: string;
+  variant: "default" | "secondary" | "destructive" | "outline";
+  dot: string;
+} {
+  if (s.ready) return { text: "ready",    variant: "default",     dot: "bg-emerald-500" };
   if (s.error === "disabled")
-    return { label: "disabled", pill: styles.stateDisabled, dot: styles.dotDisabled };
-  if (s.error) return { label: "error", pill: styles.stateError, dot: styles.dotError };
-  return { label: "starting", pill: styles.stateStarting, dot: styles.dotStarting };
+    return       { text: "disabled", variant: "secondary",   dot: "bg-slate-400" };
+  if (s.error) return { text: "error",    variant: "destructive", dot: "bg-red-500" };
+  return         { text: "starting", variant: "outline",     dot: "bg-yellow-400" };
 }
 
 export function McpPage() {
@@ -57,9 +64,7 @@ export function McpPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ServerDetail | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
-  // ``busy`` is now a tagged action so we can show "Enabling…" /
-  // "Restarting…" instead of a silent disabled button.
-  const [busy, setBusy] = useState<null | "enable" | "disable" | "restart" | "delete">(null);
+  const [busy, setBusy] = useState<BusyAction>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -69,11 +74,7 @@ export function McpPage() {
       const list = (data.servers as ServerStatus[]) || [];
       setServers(list);
       setLoadErr(null);
-      // First load: auto-select first server.
-      if (selected === null && list.length > 0) {
-        setSelected(list[0].name);
-      }
-      // Drop selection if it disappeared.
+      if (selected === null && list.length > 0) setSelected(list[0].name);
       if (selected !== null && !list.some((s) => s.name === selected)) {
         setSelected(list[0]?.name ?? null);
       }
@@ -93,10 +94,7 @@ export function McpPage() {
   const fetchDetail = useCallback(async (name: string) => {
     try {
       const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`);
-      if (!r.ok) {
-        setDetail(null);
-        return;
-      }
+      if (!r.ok) { setDetail(null); return; }
       setDetail((await r.json()) as ServerDetail);
     } catch {
       setDetail(null);
@@ -110,48 +108,36 @@ export function McpPage() {
     }
   }, [selected, fetchDetail]);
 
-  async function runAction(
-    action: "enable" | "disable" | "restart" | "delete",
-    name: string,
-    fn: () => Promise<void>,
-  ) {
+  async function runAction(action: Exclude<BusyAction, null>, fn: () => Promise<void>) {
     setBusy(action);
-    try {
-      await fn();
-    } finally {
-      setBusy(null);
-    }
+    try { await fn(); } finally { setBusy(null); }
   }
 
   async function doRestart(name: string) {
-    await runAction("restart", name, async () => {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/restart`,
-        { method: "POST" });
+    await runAction("restart", async () => {
+      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/restart`, { method: "POST" });
       await reload();
       await fetchDetail(name);
     });
   }
   async function doEnable(name: string) {
-    await runAction("enable", name, async () => {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/enable`,
-        { method: "POST" });
+    await runAction("enable", async () => {
+      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/enable`, { method: "POST" });
       await reload();
       await fetchDetail(name);
     });
   }
   async function doDisable(name: string) {
-    await runAction("disable", name, async () => {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disable`,
-        { method: "POST" });
+    await runAction("disable", async () => {
+      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disable`, { method: "POST" });
       await reload();
       await fetchDetail(name);
     });
   }
   async function doDelete(name: string) {
     if (!confirm(`Remove MCP server "${name}"? Config will be deleted.`)) return;
-    await runAction("delete", name, async () => {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`,
-        { method: "DELETE" });
+    await runAction("delete", async () => {
+      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
       await reload();
       if (selected === name) setSelected(null);
     });
@@ -159,8 +145,7 @@ export function McpPage() {
 
   function openEdit(s: ServerStatus) {
     setEditing({
-      mode: "edit",
-      name: s.name,
+      mode: "edit", name: s.name,
       command: s.command.join(" "),
       env: Object.entries(s.env).map(([k, v]) => `${k}=${v}`).join("\n"),
       enabled: s.enabled,
@@ -169,8 +154,7 @@ export function McpPage() {
   }
   function openAdd() {
     setEditing({
-      mode: "add",
-      name: "",
+      mode: "add", name: "",
       command: "npx -y @modelcontextprotocol/server-...",
       env: "",
       enabled: true,
@@ -181,80 +165,79 @@ export function McpPage() {
   const selectedServer = servers.find((s) => s.name === selected) || null;
 
   return (
-    <div className={styles.view}>
-      <div className={styles.topbar}>
-        <span className={styles.title}>MCP Servers</span>
-        <span className={styles.subtitle}>
-          External tool processes — config at <code>~/.agentic/mcp_servers.json</code>
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Topbar */}
+      <div className="flex h-16 flex-shrink-0 items-center gap-4 border-b px-6">
+        <span className="text-lg font-semibold">MCP Servers</span>
+        <span className="truncate text-sm text-muted-foreground">
+          External tool processes — config at <code className="font-mono text-xs">~/.agentic/mcp_servers.json</code>
         </span>
-        <div className={styles.toolbar}>
-          <button className={styles.iconBtn} onClick={() => void reload()}>
+        <div className="ml-auto flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => void reload()}>
             Refresh
-          </button>
-          <button
-            className={cls(styles.iconBtn, styles.primary)}
-            onClick={openAdd}
-          >
-            + Add server
-          </button>
+          </Button>
+          <Button size="sm" onClick={openAdd}>+ Add server</Button>
         </div>
       </div>
 
-      <div className={styles.body}>
-        <div className={styles.serversNav}>
-          {loadErr && <div className={styles.errorBox}>{loadErr}</div>}
-
+      {/* Body: left nav + right detail */}
+      <div className="grid min-h-0 flex-1 [grid-template-columns:calc(var(--sidebar-width)-1px)_1fr]">
+        {/* Left nav */}
+        <aside className="flex flex-col gap-1 overflow-y-auto border-r bg-secondary/40 p-2">
+          {loadErr && (
+            <div className="rounded-md border border-red-500/30 bg-red-500/5 p-2 text-xs text-red-400">
+              {loadErr}
+            </div>
+          )}
           {loading && servers.length === 0 ? (
-            <div className={styles.serverItem} style={{ color: "var(--text-muted)" }}>
-              Loading…
-            </div>
+            <div className="px-2 py-1 text-sm text-muted-foreground">Loading…</div>
           ) : servers.length === 0 ? (
-            <div className={styles.serverItem} style={{ color: "var(--text-muted)" }}>
-              No servers
-            </div>
+            <div className="px-2 py-1 text-sm text-muted-foreground">No servers</div>
           ) : (
             servers.map((s) => {
-              const { dot } = statePill(s);
+              const { dot } = stateLabel(s);
+              const active = selected === s.name;
               return (
-                <div
+                <button
                   key={s.name}
-                  className={cls(
-                    styles.serverItem,
-                    selected === s.name && styles.active,
-                  )}
                   onClick={() => setSelected(s.name)}
+                  className={cn(
+                    "flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors",
+                    active
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                  )}
                 >
-                  <span className={cls(styles.serverDot, dot)} />
-                  <span className={styles.serverNavName}>{s.name}</span>
-                  <span className={styles.serverNavCount}>{s.tool_count}</span>
-                </div>
+                  <span className={cn("h-2 w-2 flex-shrink-0 rounded-full", dot)} />
+                  <span className="flex-1 truncate text-left font-mono">{s.name}</span>
+                  <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">
+                    {s.tool_count}
+                  </span>
+                </button>
               );
             })
           )}
 
-          <div className={styles.navSep} />
-          <button className={styles.navAddBtn} onClick={openAdd}>
-            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
-            Add server
-          </button>
-        </div>
+          <Separator className="my-2" />
+          <Button variant="ghost" size="sm" className="justify-start" onClick={openAdd}>
+            + Add server
+          </Button>
+        </aside>
 
-        <div className={styles.detail}>
+        {/* Right detail */}
+        <div className="min-w-0 overflow-y-auto p-6">
           {selectedServer === null ? (
-            <div className={styles.detailEmpty}>
+            <div className="flex h-full items-center justify-center text-center text-muted-foreground">
               <div>
-                <div className={styles.detailEmptyIcon}>🔌</div>
+                <div className="mb-4 text-5xl opacity-50">🔌</div>
                 <div>Select a server on the left to view tools and settings.</div>
-                <div style={{ marginTop: 12, fontSize: 13 }}>
-                  Or click <b>+ Add server</b> to attach a new one.
-                </div>
               </div>
             </div>
           ) : (
             <DetailView
               server={selectedServer}
               detail={detail}
-              busyAction={busy}
+              busy={busy}
               onRestart={() => void doRestart(selectedServer.name)}
               onEnable={() => void doEnable(selectedServer.name)}
               onDisable={() => void doDisable(selectedServer.name)}
@@ -271,10 +254,6 @@ export function McpPage() {
           onClose={() => setEditing(null)}
           onSaved={async (newName) => {
             setEditing(null);
-            // Reload BEFORE selecting so the new entry is in
-            // ``servers`` by the time the right pane re-renders —
-            // otherwise it briefly falls back to the "select a
-            // server" empty state until the 4s poll catches up.
             await reload();
             if (newName) setSelected(newName);
           }}
@@ -285,193 +264,143 @@ export function McpPage() {
 }
 
 function DetailView({
-  server, detail, busyAction,
+  server, detail, busy,
   onRestart, onEnable, onDisable, onDelete, onEdit,
 }: {
   server: ServerStatus;
   detail: ServerDetail | null;
-  busyAction: null | "enable" | "disable" | "restart" | "delete";
+  busy: BusyAction;
   onRestart: () => void;
   onEnable: () => void;
   onDisable: () => void;
   onDelete: () => void;
   onEdit: () => void;
 }) {
-  const { label, pill } = statePill(server);
-  const busy = busyAction !== null;
+  const st = stateLabel(server);
+  const isBusy = busy !== null;
   return (
-    <>
-      <div className={styles.detailHeader}>
-        <div className={styles.detailIcon}>🔌</div>
-        <span className={styles.detailName}>{server.name}</span>
-        <span className={cls(styles.statePill, pill)}>{label}</span>
-        <div className={styles.detailActions}>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-lg">
+          🔌
+        </div>
+        <span className="font-mono text-lg font-semibold text-primary">{server.name}</span>
+        <Badge variant={st.variant} className="uppercase">{st.text}</Badge>
+
+        <div className="ml-auto flex gap-2">
           {server.enabled ? (
-            <button className={styles.iconBtn} onClick={onDisable} disabled={busy}>
-              {busyAction === "disable" ? "Disabling…" : "Disable"}
-            </button>
+            <Button variant="outline" size="sm" onClick={onDisable} disabled={isBusy}>
+              {busy === "disable" ? "Disabling…" : "Disable"}
+            </Button>
           ) : (
-            <button className={styles.iconBtn} onClick={onEnable} disabled={busy}>
-              {busyAction === "enable" ? "Enabling…" : "Enable"}
-            </button>
+            <Button variant="outline" size="sm" onClick={onEnable} disabled={isBusy}>
+              {busy === "enable" ? "Enabling…" : "Enable"}
+            </Button>
           )}
-          <button
-            className={styles.iconBtn}
+          <Button
+            variant="outline" size="sm"
             onClick={onRestart}
-            disabled={busy || !server.enabled}
+            disabled={isBusy || !server.enabled}
           >
-            {busyAction === "restart" ? "Restarting…" : "Restart"}
-          </button>
-          <button className={styles.iconBtn} onClick={onEdit} disabled={busy}>
+            {busy === "restart" ? "Restarting…" : "Restart"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={onEdit} disabled={isBusy}>
             Edit
-          </button>
-          <button
-            className={cls(styles.iconBtn, styles.danger)}
-            onClick={onDelete}
-            disabled={busy}
-          >
-            {busyAction === "delete" ? "Deleting…" : "Delete"}
-          </button>
+          </Button>
+          <Button variant="outline" size="sm" onClick={onDelete} disabled={isBusy}
+            className="text-red-400 hover:text-red-300 hover:border-red-400">
+            {busy === "delete" ? "Deleting…" : "Delete"}
+          </Button>
         </div>
       </div>
 
       {server.error && server.error !== "disabled" && (
-        <div className={styles.errorBox}>{server.error}</div>
+        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 font-mono text-xs text-red-400">
+          {server.error}
+        </div>
       )}
 
-      <div className={styles.configBar}>
-        <span className={styles.configChip}>
-          <span className={styles.configChipKey}>Transport</span>
-          <span className={styles.configChipVal}>{server.type}</span>
-        </span>
-        <span className={styles.configChip}>
-          <span className={styles.configChipKey}>Command</span>
-          <span className={styles.configChipVal} title={server.command.join(" ")}>
-            <code>{server.command.join(" ")}</code>
-          </span>
-        </span>
-        <span className={styles.configChip}>
-          <span className={styles.configChipKey}>Timeout</span>
-          <span className={styles.configChipVal}>{server.timeout_seconds}s</span>
-        </span>
-        <span className={styles.configChip}>
-          <span className={styles.configChipKey}>Prefix</span>
-          <span className={styles.configChipVal}>
-            <code>{server.name}__</code>
-          </span>
-        </span>
-      </div>
+      <ConfigChips server={server} />
 
       {Object.keys(server.env).length > 0 && (
-        <div className={styles.envBlock}>
-          <span className={styles.envBlockHead}>Environment</span>
+        <div className="rounded-md border bg-secondary/40 p-3 font-mono text-xs">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Environment
+          </div>
           {Object.entries(server.env).map(([k, v]) => (
-            <div key={k}>
-              {k}=<span style={{ color: "var(--text-primary)" }}>{v}</span>
-            </div>
+            <div key={k}>{k}=<span className="text-foreground">{v}</span></div>
           ))}
         </div>
       )}
 
-      <div className={styles.sectionHead}>
-        Tools ({server.tool_count})
-      </div>
-      <div className={styles.toolsSection}>
-        {!detail ? (
-          <div className={styles.toolsEmpty}>
-            <div className={styles.toolsEmptyIcon}>⏳</div>
-            <div className={styles.toolsEmptyText}>Loading tools…</div>
-          </div>
-        ) : (detail.tool_schemas || []).length === 0 ? (
-          <EmptyToolsState server={server} onEnable={onEnable} busy={busy} />
-        ) : (
-          <div className={styles.toolList}>
-            {(detail.tool_schemas || []).map((t) => (
-              <ToolItem key={t.name} server={server.name} tool={t} />
-            ))}
-          </div>
+      <div className="flex items-center gap-2 pt-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Tools
+        </span>
+        <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+          {server.tool_count}
+        </Badge>
+        {!server.enabled && (
+          <span className="text-xs text-muted-foreground">
+            (server disabled — enable to load tool list)
+          </span>
         )}
       </div>
-    </>
-  );
-}
 
-function EmptyToolsState({
-  server, onEnable, busy,
-}: {
-  server: ServerStatus;
-  onEnable: () => void;
-  busy: boolean;
-}) {
-  if (server.error === "disabled") {
-    return (
-      <div className={styles.toolsEmpty}>
-        <div className={styles.toolsEmptyIcon}>💤</div>
-        <div className={styles.toolsEmptyText}>
-          This server is disabled. Enable it to spawn the subprocess and
-          load its tool list.
+      {!detail ? (
+        <div className="text-sm text-muted-foreground">Loading tools…</div>
+      ) : (detail.tool_schemas || []).length === 0 ? (
+        <div className="text-sm text-muted-foreground">
+          {server.error === "disabled"
+            ? "Tool list will appear here after you enable the server."
+            : server.error
+              ? "Tool list unavailable — see error above."
+              : !server.ready
+                ? "Server starting — tools will load shortly."
+                : "This server exposes no tools."}
         </div>
-        <button
-          className={cls(styles.iconBtn, styles.primary, styles.toolsEmptyCta)}
-          onClick={onEnable}
-          disabled={busy}
-        >
-          Enable server
-        </button>
-      </div>
-    );
-  }
-  if (server.error) {
-    return (
-      <div className={styles.toolsEmpty}>
-        <div className={styles.toolsEmptyIcon}>⚠️</div>
-        <div className={styles.toolsEmptyText}>
-          Server failed to start — see error above. Tool list unavailable
-          until the server reaches the <b>ready</b> state.
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {(detail.tool_schemas || []).map((t) => (
+            <ToolRow key={t.name} server={server.name} tool={t} />
+          ))}
         </div>
-      </div>
-    );
-  }
-  if (!server.ready) {
-    return (
-      <div className={styles.toolsEmpty}>
-        <div className={styles.toolsEmptyIcon}>⏳</div>
-        <div className={styles.toolsEmptyText}>
-          Server starting — tool list will appear once <code>initialize</code>
-          + <code>tools/list</code> complete.
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className={styles.toolsEmpty}>
-      <div className={styles.toolsEmptyIcon}>🛠️</div>
-      <div className={styles.toolsEmptyText}>
-        This server is ready but exposes no tools.
-      </div>
+      )}
     </div>
   );
 }
 
-function ToolItem({ server, tool }: { server: string; tool: ToolSchema }) {
-  const [show, setShow] = useState(false);
+function ConfigChips({ server }: { server: ServerStatus }) {
+  const chips: Array<[string, React.ReactNode]> = [
+    ["Transport", server.type],
+    ["Command", <code key="cmd" className="rounded bg-background px-1.5 py-0.5">{server.command.join(" ")}</code>],
+    ["Timeout", `${server.timeout_seconds}s`],
+    ["Prefix", <code key="pfx" className="rounded bg-background px-1.5 py-0.5">{server.name}__</code>],
+  ];
   return (
-    <div className={styles.toolRow} onClick={() => setShow((v) => !v)}>
-      <div className={styles.toolRowHead}>
-        <span className={styles.toolName}>{server}__{tool.name}</span>
-        <span className={styles.toolExpand}>{show ? "▾" : "▸"}</span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md border bg-secondary/40 px-3 py-2 text-xs">
+      {chips.map(([k, v], i) => (
+        <span key={k} className="flex items-center gap-1.5">
+          {i > 0 && <span className="text-muted-foreground/40">·</span>}
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {k}
+          </span>
+          <span className="font-mono text-foreground">{v}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ToolRow({ server, tool }: { server: string; tool: ToolSchema }) {
+  return (
+    <div className="rounded-md border bg-secondary/40 px-3 py-2 transition-colors hover:border-primary hover:bg-secondary">
+      <div className="truncate font-mono text-sm font-medium text-primary">
+        {server}__{tool.name}
       </div>
-      <div className={styles.toolDesc}>
+      <div className="mt-0.5 truncate text-xs text-muted-foreground">
         {tool.description || tool.title || "—"}
       </div>
-      {show && (
-        <div
-          className={styles.toolSchema}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {JSON.stringify(tool.input_schema, null, 2)}
-        </div>
-      )}
     </div>
   );
 }
@@ -513,23 +442,15 @@ function EditDialog({
     }
     return out;
   }
-
   function splitCommand(text: string): string[] {
     return text.trim().split(/\s+/).filter(Boolean);
   }
 
   async function save() {
-    setErr(null);
-    setNote(null);
-    if (!state.name.trim()) {
-      setErr("name is required");
-      return;
-    }
+    setErr(null); setNote(null);
+    if (!state.name.trim()) { setErr("name is required"); return; }
     const cmd = splitCommand(state.command);
-    if (cmd.length === 0) {
-      setErr("command is required");
-      return;
-    }
+    if (cmd.length === 0) { setErr("command is required"); return; }
     const body = {
       name: state.name.trim(),
       type: "local",
@@ -541,15 +462,17 @@ function EditDialog({
     setSaving(true);
     try {
       const r = isAdd
-        ? await fetch("/api/mcp/servers",
-            { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body) })
-        : await fetch(`/api/mcp/servers/${encodeURIComponent(state.name)}`,
-            { method: "PATCH", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body) });
+        ? await fetch("/api/mcp/servers", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+        : await fetch(`/api/mcp/servers/${encodeURIComponent(state.name)}`, {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
       if (!r.ok) {
-        const detail = await r.json().catch(() => ({}));
-        setErr(detail.detail || `HTTP ${r.status}`);
+        const d = await r.json().catch(() => ({}));
+        setErr(d.detail || `HTTP ${r.status}`);
         return;
       }
       onSaved(body.name);
@@ -561,24 +484,16 @@ function EditDialog({
   }
 
   async function testRun() {
-    setErr(null);
-    setNote(null);
+    setErr(null); setNote(null);
     const cmd = splitCommand(state.command);
-    if (cmd.length === 0) {
-      setErr("command is required to test");
-      return;
-    }
+    if (cmd.length === 0) { setErr("command is required to test"); return; }
     setSaving(true);
     try {
       const r = await fetch("/api/mcp/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: state.name || "test",
-          type: "local",
-          command: cmd,
-          env: parseEnv(state.env),
-          enabled: true,
+          name: state.name || "test", type: "local", command: cmd,
+          env: parseEnv(state.env), enabled: true,
           timeout_seconds: state.timeout_seconds,
         }),
       });
@@ -596,110 +511,105 @@ function EditDialog({
   }
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalHeader}>
-          <div className={styles.modalTitle}>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-[560px]">
+        <DialogHeader>
+          <DialogTitle>
             {isAdd ? "Add MCP server" : `Edit ${target.name}`}
-          </div>
-          <button className={styles.iconBtn} onClick={onClose}>✕</button>
-        </div>
+          </DialogTitle>
+        </DialogHeader>
 
-        <div className={styles.modalBody}>
-          <div className={styles.field}>
-            <label className={styles.fieldLabel}>Name</label>
-            <input
-              className={styles.fieldInput}
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="mcp-name">Name</Label>
+            <Input
+              id="mcp-name"
               value={state.name}
               disabled={!isAdd}
               onChange={(e) => setState({ ...state, name: e.target.value })}
               placeholder="drawio"
+              className="font-mono"
             />
-            <span className={styles.fieldHint}>
+            <p className="text-[11px] text-muted-foreground">
               Tool prefix — exposed to the LLM as <code>&lt;name&gt;__&lt;tool&gt;</code>.
-            </span>
+            </p>
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.fieldLabel}>Command</label>
-            <input
-              className={styles.fieldInput}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="mcp-cmd">Command</Label>
+            <Input
+              id="mcp-cmd"
               value={state.command}
               onChange={(e) => setState({ ...state, command: e.target.value })}
               placeholder="npx -y @drawio/mcp"
+              className="font-mono"
             />
-            <span className={styles.fieldHint}>
+            <p className="text-[11px] text-muted-foreground">
               Whitespace-separated. Resolved against worker&apos;s $PATH.
-            </span>
+            </p>
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.fieldLabel}>
-              Environment (KEY=VALUE per line)
-            </label>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="mcp-env">Environment (KEY=VALUE per line)</Label>
             <textarea
-              className={styles.fieldTextarea}
+              id="mcp-env"
               value={state.env}
               onChange={(e) => setState({ ...state, env: e.target.value })}
               placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_..."
-            />
-            <span className={styles.fieldHint}>
-              Inherits the worker&apos;s environment. Anything here adds / overrides.
-            </span>
-          </div>
-
-          <div className={styles.field}>
-            <label className={styles.fieldLabel}>
-              Startup / per-call timeout (s)
-            </label>
-            <input
-              className={styles.fieldInput}
-              type="number"
-              value={state.timeout_seconds}
-              onChange={(e) => setState({
-                ...state,
-                timeout_seconds: Number(e.target.value) || 30,
-              })}
-              min={1}
-              max={300}
+              className="flex min-h-[100px] rounded-md border border-input bg-background px-3 py-2 font-mono text-sm
+                          ring-offset-background placeholder:text-muted-foreground
+                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.fieldLabel}>
-              <input
-                type="checkbox"
+          <div className="flex items-center gap-4">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="mcp-timeout">Timeout (s)</Label>
+              <Input
+                id="mcp-timeout"
+                type="number"
+                value={state.timeout_seconds}
+                min={1} max={300}
+                onChange={(e) =>
+                  setState({ ...state, timeout_seconds: Number(e.target.value) || 30 })}
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-7">
+              <Switch
+                id="mcp-enabled"
                 checked={state.enabled}
-                onChange={(e) => setState({ ...state, enabled: e.target.checked })}
-              />{" "}
-              Enabled (spawn on save)
-            </label>
+                onCheckedChange={(c) => setState({ ...state, enabled: c })}
+              />
+              <Label htmlFor="mcp-enabled" className="cursor-pointer">
+                Enabled
+              </Label>
+            </div>
           </div>
 
-          {err && <div className={styles.errorBox}>{err}</div>}
-          {note && <div className={styles.okBox}>{note}</div>}
+          {err && (
+            <div className="rounded-md border border-red-500/30 bg-red-500/5 p-2 font-mono text-xs text-red-400">
+              {err}
+            </div>
+          )}
+          {note && (
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2 font-mono text-xs text-emerald-400">
+              {note}
+            </div>
+          )}
         </div>
 
-        <div className={styles.modalFooter}>
-          <button
-            className={styles.iconBtn}
-            onClick={() => void testRun()}
-            disabled={saving}
-          >
+        <DialogFooter>
+          <Button variant="outline" onClick={() => void testRun()} disabled={saving}>
             Test
-          </button>
-          <button className={styles.iconBtn} onClick={onClose} disabled={saving}>
+          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
-          </button>
-          <button
-            className={cls(styles.iconBtn, styles.primary)}
-            onClick={() => void save()}
-            disabled={saving}
-          >
+          </Button>
+          <Button onClick={() => void save()} disabled={saving}>
             {saving ? "Saving…" : isAdd ? "Add" : "Save"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
