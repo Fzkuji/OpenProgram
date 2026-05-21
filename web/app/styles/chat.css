@@ -249,9 +249,12 @@
 /* Descendant (not `> .welcome`): the React <WelcomeScreen /> renders
    inside a `#welcome-mount` host, so `.welcome` is not a direct child
    of `.chat-messages`. Bottom padding clears the absolutely-anchored
-   composer so the welcome examples row sits just above it. */
+   composer so the welcome examples row sits just above it. Tuned to
+   the composer's actual occupied height (top/bottom padding +
+   textarea + bottom-row) plus a small visual gap — was 150px which
+   left a noticeable air-gap between the example chips and composer. */
 .chat-messages:has(.welcome) {
-  padding-bottom: 150px;
+  padding-bottom: 90px;
 }
 
 .message {
