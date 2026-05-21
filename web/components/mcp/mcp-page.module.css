@@ -1,6 +1,5 @@
-/* /mcp — visual structure mirrors /programs (web/components/programs/
-   programs-page.module.css) for layout parity: same .view / .topbar /
-   .content three-part shell. Card markup is MCP-specific. */
+/* /mcp — master/detail layout, parity with /functions:
+   .view → .topbar (64px) + .body (grid: left nav + right content). */
 
 .view {
   height: 100%;
@@ -40,63 +39,163 @@
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-left: auto;
-  padding-bottom: 2px;
 }
 
-.content {
+.body {
   flex: 1;
+  display: grid;
+  grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Left nav — server list. Visual rules mirror /functions
+   `.foldersNav` from programs-page.module.css. */
+.serversNav {
+  width: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-self: stretch;
+  position: sticky;
+  top: 0;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.serverItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  min-height: 32px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--nav-color);
+  border-radius: 6px;
+  transition: background 150ms ease-out, color 150ms ease-out;
+}
+.serverItem:hover {
+  background: var(--bg-hover);
+  color: var(--nav-color-hover);
+}
+.serverItem.active {
+  background: var(--bg-hover);
+  color: var(--nav-color-hover);
+}
+
+.serverDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dotReady    { background: rgb(74, 222, 128); }
+.dotError    { background: rgb(248, 113, 113); }
+.dotDisabled { background: rgb(148, 163, 184); }
+.dotStarting { background: rgb(250, 204, 21); }
+
+.serverNavName {
+  flex: 1;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.serverNavCount {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.navSep {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+.navAddBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  min-height: 32px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  border-radius: 6px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  transition: background 150ms, color 150ms, border-color 150ms;
+  font-family: inherit;
+}
+.navAddBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
+}
+
+/* Right content — selected server's detail view. */
+.detail {
   min-width: 0;
   overflow-y: auto;
-  padding: 16px 24px 24px;
+  padding: 24px;
 }
 
-/* Card list — vertical stack of full-width server cards. */
-.list {
+.detailEmpty {
+  height: 100%;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-muted);
+  padding: 60px 20px;
+}
+.detailEmptyIcon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.6;
 }
 
-.card {
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: 14px 16px;
-  transition: border-color 0.15s, background 0.15s;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.card:hover {
-  border-color: var(--accent-blue);
-  background: var(--bg-tertiary);
-}
-
-.cardHeader {
+.detailHeader {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-bottom: 16px;
 }
-
-.iconWrap {
-  width: 32px;
-  height: 32px;
+.detailIcon {
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   background: var(--bg-primary);
   border-radius: var(--radius);
-  font-size: 18px;
+  font-size: 20px;
 }
-
-.name {
+.detailName {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--accent-blue);
+}
+.detailActions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
 }
 
 .statePill {
@@ -111,76 +210,39 @@
   letter-spacing: 0.05em;
   flex-shrink: 0;
 }
-.stateReady {
-  background: rgba(34, 197, 94, 0.15);
-  color: rgb(74, 222, 128);
-}
-.stateError {
-  background: rgba(239, 68, 68, 0.15);
-  color: rgb(248, 113, 113);
-}
-.stateDisabled {
-  background: rgba(148, 163, 184, 0.15);
-  color: rgb(148, 163, 184);
-}
-.stateStarting {
-  background: rgba(234, 179, 8, 0.15);
-  color: rgb(250, 204, 21);
-}
-
-.meta {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-}
-.metaCmd {
-  font-family: var(--font-mono);
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  padding: 2px 8px;
-  border-radius: var(--radius);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 360px;
-}
-.metaCount {
-  flex-shrink: 0;
-}
-
-.actions {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
+.stateReady    { background: rgba(34,197,94,0.15);  color: rgb(74,222,128); }
+.stateError    { background: rgba(239,68,68,0.15);  color: rgb(248,113,113); }
+.stateDisabled { background: rgba(148,163,184,0.15);color: rgb(148,163,184); }
+.stateStarting { background: rgba(234,179,8,0.15);  color: rgb(250,204,21); }
 
 .iconBtn {
   background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-muted);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
   cursor: pointer;
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: var(--radius);
-  font-size: 12px;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .iconBtn:hover:not(:disabled) {
-  border-color: var(--border);
   background: var(--bg-tertiary);
-  color: var(--text-primary);
+  border-color: var(--accent-blue);
 }
 .iconBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+.iconBtn.primary {
+  background: var(--accent-blue);
+  color: #fff;
+  border-color: var(--accent-blue);
+}
+.iconBtn.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
 }
 .iconBtn.danger:hover:not(:disabled) {
   color: rgb(248, 113, 113);
@@ -188,63 +250,74 @@
   background: rgba(239, 68, 68, 0.06);
 }
 
-.expandBtn {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  line-height: 1;
+/* Meta fields (command / env / timeout). */
+.metaGrid {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 6px 16px;
+  margin-bottom: 20px;
+  font-size: 13px;
 }
-.expandBtn:hover {
-  background: var(--bg-tertiary);
+.metaKey {
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+.metaVal {
   color: var(--text-primary);
+  font-family: var(--font-mono);
+  padding: 4px 0;
+  word-break: break-all;
+}
+.metaVal code {
+  background: var(--bg-secondary);
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  font-size: 12px;
 }
 
 .errorBox {
   background: rgba(239, 68, 68, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: var(--radius);
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: rgb(248, 113, 113);
   white-space: pre-wrap;
   word-break: break-all;
+  margin-bottom: 16px;
 }
 
-/* Expanded tools section. */
-.toolsSection {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 4px;
-  margin-top: 4px;
-  border-top: 1px solid var(--border);
-}
-.toolsHeading {
-  font-size: 11px;
+.sectionHead {
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--text-muted);
   letter-spacing: 0.06em;
-  padding-top: 6px;
+  color: var(--text-muted);
+  margin: 8px 0 10px;
+}
+
+.toolList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .toolRow {
-  display: grid;
-  grid-template-columns: minmax(220px, max-content) 1fr;
-  gap: 14px;
-  padding: 6px 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
   border-radius: var(--radius);
+  padding: 10px 14px;
   cursor: pointer;
-  font-size: 13px;
-  border: 1px solid transparent;
+  transition: border-color 0.15s, background 0.15s;
 }
 .toolRow:hover {
-  background: var(--bg-primary);
-  border-color: var(--border);
+  border-color: var(--accent-blue);
+  background: var(--bg-tertiary);
+}
+.toolRowHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .toolName {
   font-family: var(--font-mono);
@@ -252,14 +325,16 @@
   font-size: 13px;
   font-weight: 500;
 }
+.toolExpand {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
 .toolDesc {
   color: var(--text-secondary);
   font-size: 12px;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 .toolSchema {
   background: var(--bg-primary);
@@ -271,28 +346,12 @@
   color: var(--text-secondary);
   white-space: pre-wrap;
   overflow-x: auto;
-  margin-top: 4px;
-}
-
-.empty {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--text-muted);
-}
-.emptyIcon {
-  font-size: 40px;
-  margin-bottom: 12px;
-}
-.emptyText {
-  font-size: 14px;
-}
-.emptyHint {
   margin-top: 8px;
-  font-size: 13px;
+  max-height: 280px;
+  overflow-y: auto;
 }
 
-/* Modal — match the pattern from icon-picker.module.css /
-   ctx-menu.module.css for visual parity. */
+/* Modal (Add/Edit dialog). */
 .modalOverlay {
   position: fixed;
   inset: 0;
@@ -365,4 +424,14 @@
 .fieldHint {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.okBox {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 12px;
+  color: rgb(74, 222, 128);
+  font-family: var(--font-mono);
 }

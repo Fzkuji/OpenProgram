@@ -1,18 +1,16 @@
 "use client";
 
 /**
- * /mcp — MCP server management page.
+ * /mcp — MCP server management page (master / detail).
  *
- * Visual structure mirrors /functions (programs-page):
- *   .view (height:100%, flex col)
- *     .topbar (64px, sticky)  ← title + actions
- *     .content (flex:1, scroll) ← server cards stacked vertically
+ * Layout parity with /functions:
+ *   .view (full height flex col)
+ *     .topbar (64px sticky, title + actions)
+ *     .body grid: .serversNav (left, server list) + .detail (right)
  *
- * Cards are vertical full-width rows (server has too much info for a
- * grid cell) with an inline-expand to show that server's tool
- * schemas. Add / Edit live in a modal — the modal's "Test" button
- * shows a green success note when the spawn round-trips, red box on
- * failure.
+ * Click a server in the left nav → its config + tool schemas render
+ * on the right with action buttons (Restart / Edit / Enable / Disable
+ * / Delete). + Add server at the bottom of the nav opens the modal.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -30,52 +28,59 @@ interface ServerStatus {
   tool_count: number;
   tools: string[];
 }
-
 interface ToolSchema {
   name: string;
   title?: string | null;
   description: string;
   input_schema: unknown;
 }
-
 interface ServerDetail extends ServerStatus {
   tool_schemas?: ToolSchema[];
-  registered_tool_names?: string[];
 }
 
 function cls(...xs: (string | false | null | undefined)[]) {
   return xs.filter(Boolean).join(" ");
 }
 
-function statePill(s: ServerStatus): { label: string; cls: string } {
-  if (s.ready) return { label: "ready", cls: styles.stateReady };
-  if (s.error === "disabled") return { label: "disabled", cls: styles.stateDisabled };
-  if (s.error) return { label: "error", cls: styles.stateError };
-  return { label: "starting", cls: styles.stateStarting };
+function statePill(s: ServerStatus) {
+  if (s.ready) return { label: "ready", pill: styles.stateReady, dot: styles.dotReady };
+  if (s.error === "disabled")
+    return { label: "disabled", pill: styles.stateDisabled, dot: styles.dotDisabled };
+  if (s.error) return { label: "error", pill: styles.stateError, dot: styles.dotError };
+  return { label: "starting", pill: styles.stateStarting, dot: styles.dotStarting };
 }
 
 export function McpPage() {
   const [servers, setServers] = useState<ServerStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ServerDetail | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
     try {
       const r = await fetch("/api/mcp/servers");
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
-      setServers((data.servers as ServerStatus[]) || []);
+      const list = (data.servers as ServerStatus[]) || [];
+      setServers(list);
       setLoadErr(null);
+      // First load: auto-select first server.
+      if (selected === null && list.length > 0) {
+        setSelected(list[0].name);
+      }
+      // Drop selection if it disappeared.
+      if (selected !== null && !list.some((s) => s.name === selected)) {
+        setSelected(list[0]?.name ?? null);
+      }
     } catch (e) {
       setLoadErr(String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selected]);
 
   useEffect(() => {
     void reload();
@@ -90,65 +95,59 @@ export function McpPage() {
         setDetail(null);
         return;
       }
-      const data = await r.json();
-      setDetail(data as ServerDetail);
+      setDetail((await r.json()) as ServerDetail);
     } catch {
       setDetail(null);
     }
   }, []);
 
-  function toggleExpand(name: string) {
-    if (expanded === name) {
-      setExpanded(null);
+  useEffect(() => {
+    if (selected) {
       setDetail(null);
-    } else {
-      setExpanded(name);
-      setDetail(null);
-      void fetchDetail(name);
+      void fetchDetail(selected);
     }
-  }
+  }, [selected, fetchDetail]);
 
-  async function withBusy(name: string, fn: () => Promise<void>) {
-    setBusy(name);
+  async function withBusy(fn: () => Promise<void>) {
+    setBusy(true);
     try {
       await fn();
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
   async function doRestart(name: string) {
-    await withBusy(name, async () => {
+    await withBusy(async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/restart`,
         { method: "POST" });
       await reload();
-      if (expanded === name) await fetchDetail(name);
+      await fetchDetail(name);
     });
   }
   async function doEnable(name: string) {
-    await withBusy(name, async () => {
+    await withBusy(async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/enable`,
         { method: "POST" });
       await reload();
+      await fetchDetail(name);
     });
   }
   async function doDisable(name: string) {
-    await withBusy(name, async () => {
+    await withBusy(async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disable`,
         { method: "POST" });
       await reload();
+      await fetchDetail(name);
     });
   }
   async function doDelete(name: string) {
     if (!confirm(`Remove MCP server "${name}"? Config will be deleted.`)) return;
-    await withBusy(name, async () => {
+    await withBusy(async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`,
         { method: "DELETE" });
       await reload();
-      if (expanded === name) {
-        setExpanded(null);
-        setDetail(null);
-      }
+      if (selected === name) setSelected(null);
     });
   }
 
@@ -173,24 +172,21 @@ export function McpPage() {
     });
   }
 
+  const selectedServer = servers.find((s) => s.name === selected) || null;
+
   return (
     <div className={styles.view}>
       <div className={styles.topbar}>
         <span className={styles.title}>MCP Servers</span>
         <span className={styles.subtitle}>
-          External tool processes — managed at <code>~/.agentic/mcp_servers.json</code>
+          External tool processes — config at <code>~/.agentic/mcp_servers.json</code>
         </span>
         <div className={styles.toolbar}>
           <button className={styles.iconBtn} onClick={() => void reload()}>
             Refresh
           </button>
           <button
-            className={cls(styles.iconBtn)}
-            style={{
-              background: "var(--accent-blue)",
-              color: "#fff",
-              borderColor: "var(--accent-blue)",
-            }}
+            className={cls(styles.iconBtn, styles.primary)}
             onClick={openAdd}
           >
             + Add server
@@ -198,49 +194,78 @@ export function McpPage() {
         </div>
       </div>
 
-      <div className={styles.content}>
-        {loadErr && <div className={styles.errorBox}>load failed: {loadErr}</div>}
+      <div className={styles.body}>
+        <div className={styles.serversNav}>
+          {loadErr && <div className={styles.errorBox}>{loadErr}</div>}
 
-        {loading ? (
-          <div className={styles.empty}>
-            <div className={styles.emptyIcon}>⏳</div>
-            <div className={styles.emptyText}>Loading…</div>
-          </div>
-        ) : servers.length === 0 ? (
-          <div className={styles.empty}>
-            <div className={styles.emptyIcon}>🔌</div>
-            <div className={styles.emptyText}>No MCP servers configured.</div>
-            <div className={styles.emptyHint}>
-              Click <b>+ Add server</b> to attach one (e.g. <code>@drawio/mcp</code>).
+          {loading && servers.length === 0 ? (
+            <div className={styles.serverItem} style={{ color: "var(--text-muted)" }}>
+              Loading…
             </div>
-          </div>
-        ) : (
-          <div className={styles.list}>
-            {servers.map((s) => (
-              <ServerRow
-                key={s.name}
-                s={s}
-                expanded={expanded === s.name}
-                detail={expanded === s.name ? detail : null}
-                busy={busy === s.name}
-                onToggle={() => toggleExpand(s.name)}
-                onRestart={() => void doRestart(s.name)}
-                onEnable={() => void doEnable(s.name)}
-                onDisable={() => void doDisable(s.name)}
-                onDelete={() => void doDelete(s.name)}
-                onEdit={() => openEdit(s)}
-              />
-            ))}
-          </div>
-        )}
+          ) : servers.length === 0 ? (
+            <div className={styles.serverItem} style={{ color: "var(--text-muted)" }}>
+              No servers
+            </div>
+          ) : (
+            servers.map((s) => {
+              const { dot } = statePill(s);
+              return (
+                <div
+                  key={s.name}
+                  className={cls(
+                    styles.serverItem,
+                    selected === s.name && styles.active,
+                  )}
+                  onClick={() => setSelected(s.name)}
+                >
+                  <span className={cls(styles.serverDot, dot)} />
+                  <span className={styles.serverNavName}>{s.name}</span>
+                  <span className={styles.serverNavCount}>{s.tool_count}</span>
+                </div>
+              );
+            })
+          )}
+
+          <div className={styles.navSep} />
+          <button className={styles.navAddBtn} onClick={openAdd}>
+            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+            Add server
+          </button>
+        </div>
+
+        <div className={styles.detail}>
+          {selectedServer === null ? (
+            <div className={styles.detailEmpty}>
+              <div>
+                <div className={styles.detailEmptyIcon}>🔌</div>
+                <div>Select a server on the left to view tools and settings.</div>
+                <div style={{ marginTop: 12, fontSize: 13 }}>
+                  Or click <b>+ Add server</b> to attach a new one.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <DetailView
+              server={selectedServer}
+              detail={detail}
+              busy={busy}
+              onRestart={() => void doRestart(selectedServer.name)}
+              onEnable={() => void doEnable(selectedServer.name)}
+              onDisable={() => void doDisable(selectedServer.name)}
+              onDelete={() => void doDelete(selectedServer.name)}
+              onEdit={() => openEdit(selectedServer)}
+            />
+          )}
+        </div>
       </div>
 
       {editing !== null && (
         <EditDialog
           target={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => {
+          onSaved={(newName) => {
             setEditing(null);
+            if (newName) setSelected(newName);
             void reload();
           }}
         />
@@ -249,36 +274,28 @@ export function McpPage() {
   );
 }
 
-function ServerRow({
-  s, expanded, detail, busy,
-  onToggle, onRestart, onEnable, onDisable, onDelete, onEdit,
+function DetailView({
+  server, detail, busy,
+  onRestart, onEnable, onDisable, onDelete, onEdit,
 }: {
-  s: ServerStatus;
-  expanded: boolean;
+  server: ServerStatus;
   detail: ServerDetail | null;
   busy: boolean;
-  onToggle: () => void;
   onRestart: () => void;
   onEnable: () => void;
   onDisable: () => void;
   onDelete: () => void;
   onEdit: () => void;
 }) {
-  const { label, cls: stateCls } = statePill(s);
+  const { label, pill } = statePill(server);
   return (
-    <div className={styles.card}>
-      <div className={styles.cardHeader}>
-        <div className={styles.iconWrap}>🔌</div>
-        <span className={styles.name}>{s.name}</span>
-        <span className={cls(styles.statePill, stateCls)}>{label}</span>
-        <div className={styles.meta}>
-          <span className={styles.metaCmd}>{s.command.join(" ")}</span>
-          <span className={styles.metaCount}>
-            {s.tool_count} tool{s.tool_count === 1 ? "" : "s"}
-          </span>
-        </div>
-        <div className={styles.actions}>
-          {s.enabled ? (
+    <>
+      <div className={styles.detailHeader}>
+        <div className={styles.detailIcon}>🔌</div>
+        <span className={styles.detailName}>{server.name}</span>
+        <span className={cls(styles.statePill, pill)}>{label}</span>
+        <div className={styles.detailActions}>
+          {server.enabled ? (
             <button className={styles.iconBtn} onClick={onDisable} disabled={busy}>
               Disable
             </button>
@@ -290,7 +307,7 @@ function ServerRow({
           <button
             className={styles.iconBtn}
             onClick={onRestart}
-            disabled={busy || !s.enabled}
+            disabled={busy || !server.enabled}
           >
             Restart
           </button>
@@ -304,57 +321,81 @@ function ServerRow({
           >
             Delete
           </button>
-          <button
-            className={styles.expandBtn}
-            onClick={onToggle}
-            title={expanded ? "Collapse" : "Expand"}
-            aria-label={expanded ? "Collapse" : "Expand"}
-          >
-            {expanded ? "▾" : "▸"}
-          </button>
         </div>
       </div>
 
-      {s.error && s.error !== "disabled" && (
-        <div className={styles.errorBox}>{s.error}</div>
+      {server.error && server.error !== "disabled" && (
+        <div className={styles.errorBox}>{server.error}</div>
       )}
 
-      {expanded && (
-        <div className={styles.toolsSection}>
-          <div className={styles.toolsHeading}>
-            Tools ({s.tool_count})
-          </div>
-          {!detail ? (
-            <div className={styles.subtitle}>Loading tools…</div>
-          ) : (detail.tool_schemas || []).length === 0 ? (
-            <div className={styles.subtitle}>
-              {s.ready
-                ? "No tools exposed."
-                : "Server not ready — no tool list available yet."}
-            </div>
-          ) : (
-            (detail.tool_schemas || []).map((t) => (
-              <ToolItem key={t.name} server={s.name} tool={t} />
-            ))
-          )}
+      <div className={styles.sectionHead}>Config</div>
+      <div className={styles.metaGrid}>
+        <div className={styles.metaKey}>Transport</div>
+        <div className={styles.metaVal}>{server.type}</div>
+
+        <div className={styles.metaKey}>Command</div>
+        <div className={styles.metaVal}>
+          <code>{server.command.join(" ")}</code>
+        </div>
+
+        <div className={styles.metaKey}>Environment</div>
+        <div className={styles.metaVal}>
+          {Object.keys(server.env).length === 0
+            ? "(inherits worker env)"
+            : Object.entries(server.env).map(([k, v]) => (
+                <div key={k}>
+                  <code>{k}</code>=<code>{v}</code>
+                </div>
+              ))}
+        </div>
+
+        <div className={styles.metaKey}>Timeout (s)</div>
+        <div className={styles.metaVal}>{server.timeout_seconds}</div>
+
+        <div className={styles.metaKey}>Tool prefix</div>
+        <div className={styles.metaVal}>
+          <code>{server.name}__</code>
+        </div>
+      </div>
+
+      <div className={styles.sectionHead}>
+        Tools ({server.tool_count})
+      </div>
+      {!detail ? (
+        <div className={styles.subtitle}>Loading tools…</div>
+      ) : (detail.tool_schemas || []).length === 0 ? (
+        <div className={styles.subtitle}>
+          {server.ready
+            ? "No tools exposed by this server."
+            : "Server not ready — no tool list available yet."}
+        </div>
+      ) : (
+        <div className={styles.toolList}>
+          {(detail.tool_schemas || []).map((t) => (
+            <ToolItem key={t.name} server={server.name} tool={t} />
+          ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
 function ToolItem({ server, tool }: { server: string; tool: ToolSchema }) {
   const [show, setShow] = useState(false);
   return (
-    <div>
-      <div className={styles.toolRow} onClick={() => setShow((v) => !v)}>
-        <div className={styles.toolName}>{server}__{tool.name}</div>
-        <div className={styles.toolDesc}>
-          {tool.description || tool.title || "—"}
-        </div>
+    <div className={styles.toolRow} onClick={() => setShow((v) => !v)}>
+      <div className={styles.toolRowHead}>
+        <span className={styles.toolName}>{server}__{tool.name}</span>
+        <span className={styles.toolExpand}>{show ? "▾" : "▸"}</span>
+      </div>
+      <div className={styles.toolDesc}>
+        {tool.description || tool.title || "—"}
       </div>
       {show && (
-        <div className={styles.toolSchema}>
+        <div
+          className={styles.toolSchema}
+          onClick={(e) => e.stopPropagation()}
+        >
           {JSON.stringify(tool.input_schema, null, 2)}
         </div>
       )}
@@ -380,11 +421,9 @@ function EditDialog({
 }: {
   target: EditTarget;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (newName?: string) => void;
 }) {
   const [state, setState] = useState<EditTarget>(target);
-  // ``err`` shows red; ``note`` shows green (test success). Mutually
-  // exclusive — setting one clears the other.
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -440,7 +479,7 @@ function EditDialog({
         setErr(detail.detail || `HTTP ${r.status}`);
         return;
       }
-      onSaved();
+      onSaved(body.name);
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -517,8 +556,7 @@ function EditDialog({
               placeholder="npx -y @drawio/mcp"
             />
             <span className={styles.fieldHint}>
-              Whitespace-separated. Run with current $PATH; if it requires{" "}
-              <code>npx</code>, install Node first.
+              Whitespace-separated. Resolved against worker&apos;s $PATH.
             </span>
           </div>
 
@@ -566,21 +604,7 @@ function EditDialog({
           </div>
 
           {err && <div className={styles.errorBox}>{err}</div>}
-          {note && (
-            <div
-              style={{
-                background: "rgba(34, 197, 94, 0.08)",
-                border: "1px solid rgba(34, 197, 94, 0.35)",
-                borderRadius: "var(--radius)",
-                padding: "8px 12px",
-                fontSize: 12,
-                color: "rgb(74, 222, 128)",
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              {note}
-            </div>
-          )}
+          {note && <div className={styles.okBox}>{note}</div>}
         </div>
 
         <div className={styles.modalFooter}>
@@ -591,20 +615,11 @@ function EditDialog({
           >
             Test
           </button>
-          <button
-            className={styles.iconBtn}
-            onClick={onClose}
-            disabled={saving}
-          >
+          <button className={styles.iconBtn} onClick={onClose} disabled={saving}>
             Cancel
           </button>
           <button
-            className={styles.iconBtn}
-            style={{
-              background: "var(--accent-blue)",
-              color: "#fff",
-              borderColor: "var(--accent-blue)",
-            }}
+            className={cls(styles.iconBtn, styles.primary)}
             onClick={() => void save()}
             disabled={saving}
           >
