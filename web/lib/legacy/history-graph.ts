@@ -386,34 +386,50 @@ function _assignLanes(
     }
   }
 
-  // ── off-trunk nodes: column = call depth ───────────────────────────
-  // A node off the trunk takes its parent's lane + 1, so its column is
-  // its depth in the call / branch tree. The graph then mirrors the
-  // indented Execution DAG: gui_step one column in from gui_agent,
-  // plan_next_action one in from gui_step, the LLM one in again.
-  // Sequential runs reuse the same columns — they sit at different
-  // rows, so they never collide.
-  function _laneDFS(node: GNode, parentLane: number): void {
-    if (node._lane === undefined) node._lane = parentLane + 1;
-    const lane = node._lane;
-    if (lane + 1 > laneCount) laneCount = lane + 1;
-    (node.children || []).forEach((c) => _laneDFS(c, lane));
-  }
-  // Roots: a trunk root keeps lane 0 (its descendants step out from
-  // there); a detached non-trunk root starts at lane 1.
-  Object.keys(byId)
-    .map((id) => byId[id])
-    .filter((n) => !n.parent_id || !byId[n.parent_id])
-    .forEach((r) => _laneDFS(r, 0));
+  // ── leaf-based lanes: each leaf owns a column ────────────────────
+  // Previously we used "lane = parent's lane + 1", which nested every
+  // off-trunk node deeper. That made retry produce a staircase: each
+  // sibling user message stepped one column further right, and its
+  // assistant subchain stepped further still. Visually retries looked
+  // like deeper nesting instead of parallel branches.
+  //
+  // Correct model: lane = the column of the branch tip my chain ends
+  // at. Trunk tip → lane 0. Every other leaf claims a fresh lane
+  // (1, 2, …) ordered by created_at so older retries sit closer to
+  // the trunk. A node inherits its leaf's lane, so all members of one
+  // branch share a column — siblings of any kind (retries, edits)
+  // appear side-by-side at lane 0 / lane 1 / lane 2, never staircased.
 
-  // leafOfNode: map each node to a branch tip, for node-click checkout.
-  // Trunk nodes were already mapped above; this fills the rest.
+  // First fill in leafOfNode for every node — both trunk and off-trunk.
+  // Trunk entries are already populated above; this covers the rest.
   leaves.forEach((leaf) => {
     let cur: GNode | null = leaf;
     while (cur && !(cur.id in leafOfNode)) {
       leafOfNode[cur.id] = leaf.id;
       cur = cur.parent_id ? byId[cur.parent_id] : null;
     }
+  });
+
+  // Assign each leaf a lane. Trunk leaf = 0; the rest by ascending
+  // created_at so retry siblings appear in the order they were
+  // produced.
+  const leafLane: Record<string, number> = Object.create(null);
+  const trunkLeafId = trunkTip?.id || null;
+  if (trunkLeafId) leafLane[trunkLeafId] = 0;
+  leaves
+    .filter((l) => l.id !== trunkLeafId)
+    .sort((a, b) => (a.created_at || 0) - (b.created_at || 0))
+    .forEach((leaf, i) => {
+      leafLane[leaf.id] = i + 1;
+    });
+  laneCount = Math.max(laneCount, Object.keys(leafLane).length);
+
+  // Project leaf lanes onto every node along the chain.
+  Object.keys(byId).forEach((id) => {
+    const lid = leafOfNode[id];
+    const lane = lid && lid in leafLane ? leafLane[lid] : 0;
+    byId[id]._lane = lane;
+    if (lane + 1 > laneCount) laneCount = lane + 1;
   });
 
   Object.keys(byId).forEach((id) => {
