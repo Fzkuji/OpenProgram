@@ -37,25 +37,79 @@ def annotate_graph(graph_entries: list[dict], head_id: Optional[str]) -> list[di
         pid = m.get("parent_id")
         if pid and pid in by_id:
             children.setdefault(pid, []).append(m["id"])
+    # SessionDB writes the wall-clock under ``timestamp``; some
+    # graph-build paths normalize that to ``created_at``. Honour
+    # whichever is present so sort order survives both shapes.
+    def _ts(nid: str) -> float:
+        m = by_id.get(nid) or {}
+        return float(m.get("created_at") or m.get("timestamp") or 0)
+
     # Children sort: by created_at ascending so older retries appear
     # first (= leftmost columns).
     for pid in children:
-        children[pid].sort(key=lambda cid: by_id[cid].get("created_at") or 0)
+        children[pid].sort(key=_ts)
 
-    # ── depth (tree depth from root) ──────────────────────────────
+    # ── depth (tree depth from root, with tools stacked) ─────────
+    # Plain tree-depth would put every tool child of one assistant
+    # at the same row, dropping 10 of them onto one point. Tools
+    # are sequential within their parent, so stack them: each tool
+    # bumps the depth so subsequent tools (and any non-tool sibling
+    # that comes after) sit below it.
     roots = [
         m["id"] for m in by_id.values()
         if not m.get("parent_id") or m.get("parent_id") not in by_id
     ]
     depth: dict[str, int] = {}
-    stack: list[tuple[str, int]] = [(rid, 0) for rid in roots]
-    while stack:
-        nid, d = stack.pop()
+
+    def _walk(nid: str, start_depth: int) -> int:
+        """Visit ``nid`` at ``start_depth`` and recurse.
+
+        Returns the last row occupied by this subtree so an outer
+        chronological successor (a sibling tool, etc.) can stack
+        below it.
+
+        Tree-depth model with one twist for tools:
+          * non-tool children all sit at ``start_depth + 1``
+            (siblings share a row → parallel branches),
+          * tool children each occupy their own row, stacked
+            chronologically starting at ``start_depth + 1`` so a
+            multi-tool assistant turn reads vertically instead of
+            piling every tool on the same point.
+        """
         if nid in depth:
-            continue
-        depth[nid] = d
-        for cid in children.get(nid, []):
-            stack.append((cid, d + 1))
+            return start_depth
+        depth[nid] = start_depth
+        kids = children.get(nid, [])
+        last_row = start_depth
+        # First handle non-tool children — they all sit on the same
+        # row (start_depth + 1). Their own subtrees may extend the
+        # last_row counter independently.
+        non_tool_row = start_depth + 1
+        for cid in kids:
+            if by_id.get(cid, {}).get("role") == "tool":
+                continue
+            sub_last = _walk(cid, non_tool_row)
+            if sub_last > last_row:
+                last_row = sub_last
+        # Now stack tool children chronologically. First tool starts
+        # at start_depth + 1 (same level as non-tools, but its own
+        # column via lane); subsequent tools at last_row + 1.
+        first_tool = True
+        for cid in kids:
+            if by_id.get(cid, {}).get("role") != "tool":
+                continue
+            tool_row = (start_depth + 1) if first_tool else last_row + 1
+            first_tool = False
+            sub_last = _walk(cid, tool_row)
+            if sub_last > last_row:
+                last_row = sub_last
+        return last_row
+
+    for rid in sorted(
+        roots,
+        key=lambda x: _ts(x),
+    ):
+        _walk(rid, 0)
 
     # ── lane (leaf-based column) ──────────────────────────────────
     # Leaves are the branch tips after we strip tool attachments —
@@ -99,12 +153,12 @@ def annotate_graph(graph_entries: list[dict], head_id: Optional[str]) -> list[di
     else:
         # trunk_leaf isn't a (non-tool) leaf — pick the most recent
         # leaf instead so the active branch still gets lane 0.
-        trunk_leaf = max(leaves, key=lambda lid: by_id[lid].get("created_at") or 0) if leaves else None
+        trunk_leaf = max(leaves, key=lambda lid: _ts(lid)) if leaves else None
         if trunk_leaf:
             leaf_lane[trunk_leaf] = 0
     other_leaves = sorted(
         (lid for lid in leaves if lid != trunk_leaf),
-        key=lambda lid: by_id[lid].get("created_at") or 0,
+        key=lambda lid: _ts(lid),
     )
     for i, lid in enumerate(other_leaves):
         leaf_lane[lid] = i + 1
