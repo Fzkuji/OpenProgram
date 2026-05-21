@@ -24,24 +24,24 @@ interface Example {
 
 const EXAMPLES: Example[] = [
   {
-    name: "analyze_sentiment",
-    label: "Run analyze_sentiment",
-    icon: <SmileIcon />,
+    name: "gui_agent",
+    label: "Run gui_agent",
+    icon: <MonitorIcon />,
   },
   {
-    name: "deep_work",
-    label: "Deep work",
+    name: "research_agent",
+    label: "Run research_agent",
+    icon: <SearchIcon />,
+  },
+  {
+    name: "wiki_agent",
+    label: "Run wiki_agent",
     icon: <BookIcon />,
   },
   {
-    name: "word_count",
-    label: "Run word_count",
-    icon: <DocumentIcon />,
-  },
-  {
-    name: "extract_action_items",
-    label: "Run extract_action_items",
-    icon: <WandIcon />,
+    name: "extract_pdf_figures",
+    label: "Run extract_pdf_figures",
+    icon: <ImageIcon />,
   },
 ];
 
@@ -121,7 +121,7 @@ export function WelcomeScreen() {
 
 /* ---- Icons (Phosphor-style, currentColor) -------------------------- */
 
-function SmileIcon() {
+function MonitorIcon() {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -130,7 +130,7 @@ function SmileIcon() {
       fill="currentColor"
       viewBox="0 0 256 256"
     >
-      <path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216ZM80,108a12,12,0,1,1,12,12A12,12,0,0,1,80,108Zm96,0a12,12,0,1,1-12-12A12,12,0,0,1,176,108Zm-1.07,48c-10.29,17.79-27.4,28-46.93,28s-36.63-10.2-46.92-28a8,8,0,1,1,13.84-8c7.47,12.91,19.21,20,33.08,20s25.61-7.1,33.07-20a8,8,0,0,1,13.86,8Z" />
+      <path d="M208,40H48A24,24,0,0,0,24,64V176a24,24,0,0,0,24,24h72v16H88a8,8,0,0,0,0,16h80a8,8,0,0,0,0-16H136V200h72a24,24,0,0,0,24-24V64A24,24,0,0,0,208,40Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V64a8,8,0,0,1,8-8H208a8,8,0,0,1,8,8Z" />
     </svg>
   );
 }
@@ -149,7 +149,7 @@ function BookIcon() {
   );
 }
 
-function DocumentIcon() {
+function SearchIcon() {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -158,12 +158,12 @@ function DocumentIcon() {
       fill="currentColor"
       viewBox="0 0 256 256"
     >
-      <path d="M80,64a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,64Zm8,48h80a8,8,0,0,0,0-16H88a8,8,0,0,0,0,16Zm40,16H88a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16ZM216,88V216a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V40A16,16,0,0,1,56,24H168a8,8,0,0,1,5.66,2.34l40,40A8,8,0,0,1,216,72Zm-56-8h28.69L176,67.31V80ZM200,216V96H168a8,8,0,0,1-8-8V56H56V216H200Z" />
+      <path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z" />
     </svg>
   );
 }
 
-function WandIcon() {
+function ImageIcon() {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -172,7 +172,7 @@ function WandIcon() {
       fill="currentColor"
       viewBox="0 0 256 256"
     >
-      <path d="M226.76,69a8,8,0,0,0-12.84-2.88l-40.3,37.19-17.23-3.7-3.7-17.23,37.19-40.3A8,8,0,0,0,187,29.24,72,72,0,0,0,88,96a72.34,72.34,0,0,0,3.79,16.76L33.17,159.05a32,32,0,0,0,45.26,45.26l46.29-58.58A72.34,72.34,0,0,0,144,152,72,72,0,0,0,226.76,69ZM144,136a56.5,56.5,0,0,1-18-2.93,8,8,0,0,0-8.58,2.13L67.06,193.25a16,16,0,0,1-22.62-22.62l58.05-50.31a8,8,0,0,0,2.13-8.58A56.5,56.5,0,0,1,104,96a56,56,0,0,1,97.61-37.42l-30.69,33.24a8,8,0,0,0-1.85,6.36l5.21,24.23a8,8,0,0,0,6.15,6.15l24.23,5.21,33.24-30.69A56,56,0,0,1,144,136Z" />
+      <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,16V158.75l-26.07-26.06a16,16,0,0,0-22.63,0l-20,20-44-44a16,16,0,0,0-22.62,0L40,149.37V56ZM40,172l52-52,80,80H40Zm176,28H194.63l-36-36,20-20L216,181.38V200ZM144,100a12,12,0,1,1,12,12A12,12,0,0,1,144,100Z" />
     </svg>
   );
 }
