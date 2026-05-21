@@ -98,7 +98,11 @@ async def load_mcp_servers() -> None:
             return
         _loaded = True
 
-    for cfg in load_configs():
+    # Include disabled entries — they still need to appear in the
+    # management UI's left nav so users can re-enable them. The
+    # ``_spawn_and_register`` helper handles the "disabled" branch:
+    # marks the client with ``error='disabled'``, skips ``start()``.
+    for cfg in load_configs(include_disabled=True):
         await _spawn_and_register(cfg)
 
 
