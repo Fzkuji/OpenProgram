@@ -73,30 +73,44 @@ export function McpPage() {
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
 
+  // ``reload`` only refreshes the server list; it never touches
+  // ``selected``. Selection bookkeeping lives in a separate effect
+  // below so a transient empty list (e.g. ``restart_server`` briefly
+  // empties ``_clients`` between stop and respawn) can't reset the
+  // user's selection — the right pane just shows "Loading…" for a
+  // beat and then snaps back when the server reappears.
   const reload = useCallback(async () => {
     try {
       const r = await fetch("/api/mcp/servers");
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
-      const list = (data.servers as ServerStatus[]) || [];
-      setServers(list);
+      setServers((data.servers as ServerStatus[]) || []);
       setLoadErr(null);
-      if (selected === null && list.length > 0) setSelected(list[0].name);
-      if (selected !== null && !list.some((s) => s.name === selected)) {
-        setSelected(list[0]?.name ?? null);
-      }
     } catch (e) {
       setLoadErr(String(e));
     } finally {
       setLoading(false);
     }
-  }, [selected]);
+  }, []);
 
   useEffect(() => {
     void reload();
-    const t = setInterval(reload, 4000);
+    // Pause polling while an action is in flight so we don't race the
+    // backend's stop→spawn window mid-restart.
+    const t = setInterval(() => {
+      if (busy === null) void reload();
+    }, 4000);
     return () => clearInterval(t);
-  }, [reload]);
+  }, [reload, busy]);
+
+  // Selection bookkeeping — only auto-select on initial load
+  // (selected is null and we have servers). Don't auto-reset when
+  // a server temporarily disappears.
+  useEffect(() => {
+    if (selected === null && servers.length > 0) {
+      setSelected(servers[0].name);
+    }
+  }, [servers, selected]);
 
   const fetchDetail = useCallback(async (name: string) => {
     try {
@@ -171,7 +185,7 @@ export function McpPage() {
         <div className={styles.topbar}>
           <span className={styles.title}>MCP</span>
           <div className={styles.toolbar}>
-            <Button variant="outline" size="sm" onClick={() => void reload()}>
+            <Button variant="secondary" size="sm" onClick={() => void reload()}>
               Refresh
             </Button>
             <Button size="sm" onClick={openAdd}>+ Add server</Button>
@@ -298,23 +312,22 @@ function DetailView({
 
         <div className="ml-auto flex gap-2">
           {server.enabled ? (
-            <Button variant="outline" size="sm" onClick={onDisable} disabled={isBusy}>
+            <Button variant="secondary" size="sm" onClick={onDisable} disabled={isBusy}>
               {busy === "disable" ? "Disabling…" : "Disable"}
             </Button>
           ) : (
-            <Button variant="outline" size="sm" onClick={onEnable} disabled={isBusy}>
+            <Button variant="secondary" size="sm" onClick={onEnable} disabled={isBusy}>
               {busy === "enable" ? "Enabling…" : "Enable"}
             </Button>
           )}
-          <Button variant="outline" size="sm"
+          <Button variant="secondary" size="sm"
                   onClick={onRestart} disabled={isBusy || !server.enabled}>
             {busy === "restart" ? "Restarting…" : "Restart"}
           </Button>
-          <Button variant="outline" size="sm" onClick={onEdit} disabled={isBusy}>
+          <Button variant="secondary" size="sm" onClick={onEdit} disabled={isBusy}>
             Edit
           </Button>
-          <Button variant="outline" size="sm" onClick={onDelete} disabled={isBusy}
-                  style={{ color: "var(--accent-red)" }}>
+          <Button variant="destructive" size="sm" onClick={onDelete} disabled={isBusy}>
             {busy === "delete" ? "Deleting…" : "Delete"}
           </Button>
         </div>
