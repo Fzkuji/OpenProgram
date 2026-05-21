@@ -54,3 +54,6 @@ web/tsconfig.tsbuildinfo
 # Local duplicate/generated lockfiles
 cli/package-lock 2.json
 cli/vendor/ink/package-lock.json
+
+# Per-user webui runtime state (favourites, folders, icons) — not code
+openprogram/webui/programs_meta.json
