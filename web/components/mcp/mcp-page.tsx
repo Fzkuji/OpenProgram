@@ -57,7 +57,9 @@ export function McpPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ServerDetail | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
-  const [busy, setBusy] = useState(false);
+  // ``busy`` is now a tagged action so we can show "Enabling…" /
+  // "Restarting…" instead of a silent disabled button.
+  const [busy, setBusy] = useState<null | "enable" | "disable" | "restart" | "delete">(null);
 
   const reload = useCallback(async () => {
     try {
@@ -108,17 +110,21 @@ export function McpPage() {
     }
   }, [selected, fetchDetail]);
 
-  async function withBusy(fn: () => Promise<void>) {
-    setBusy(true);
+  async function runAction(
+    action: "enable" | "disable" | "restart" | "delete",
+    name: string,
+    fn: () => Promise<void>,
+  ) {
+    setBusy(action);
     try {
       await fn();
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function doRestart(name: string) {
-    await withBusy(async () => {
+    await runAction("restart", name, async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/restart`,
         { method: "POST" });
       await reload();
@@ -126,7 +132,7 @@ export function McpPage() {
     });
   }
   async function doEnable(name: string) {
-    await withBusy(async () => {
+    await runAction("enable", name, async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/enable`,
         { method: "POST" });
       await reload();
@@ -134,7 +140,7 @@ export function McpPage() {
     });
   }
   async function doDisable(name: string) {
-    await withBusy(async () => {
+    await runAction("disable", name, async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disable`,
         { method: "POST" });
       await reload();
@@ -143,7 +149,7 @@ export function McpPage() {
   }
   async function doDelete(name: string) {
     if (!confirm(`Remove MCP server "${name}"? Config will be deleted.`)) return;
-    await withBusy(async () => {
+    await runAction("delete", name, async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`,
         { method: "DELETE" });
       await reload();
@@ -248,7 +254,7 @@ export function McpPage() {
             <DetailView
               server={selectedServer}
               detail={detail}
-              busy={busy}
+              busyAction={busy}
               onRestart={() => void doRestart(selectedServer.name)}
               onEnable={() => void doEnable(selectedServer.name)}
               onDisable={() => void doDisable(selectedServer.name)}
@@ -263,10 +269,14 @@ export function McpPage() {
         <EditDialog
           target={editing}
           onClose={() => setEditing(null)}
-          onSaved={(newName) => {
+          onSaved={async (newName) => {
             setEditing(null);
+            // Reload BEFORE selecting so the new entry is in
+            // ``servers`` by the time the right pane re-renders —
+            // otherwise it briefly falls back to the "select a
+            // server" empty state until the 4s poll catches up.
+            await reload();
             if (newName) setSelected(newName);
-            void reload();
           }}
         />
       )}
@@ -275,12 +285,12 @@ export function McpPage() {
 }
 
 function DetailView({
-  server, detail, busy,
+  server, detail, busyAction,
   onRestart, onEnable, onDisable, onDelete, onEdit,
 }: {
   server: ServerStatus;
   detail: ServerDetail | null;
-  busy: boolean;
+  busyAction: null | "enable" | "disable" | "restart" | "delete";
   onRestart: () => void;
   onEnable: () => void;
   onDisable: () => void;
@@ -288,6 +298,7 @@ function DetailView({
   onEdit: () => void;
 }) {
   const { label, pill } = statePill(server);
+  const busy = busyAction !== null;
   return (
     <>
       <div className={styles.detailHeader}>
@@ -297,11 +308,11 @@ function DetailView({
         <div className={styles.detailActions}>
           {server.enabled ? (
             <button className={styles.iconBtn} onClick={onDisable} disabled={busy}>
-              Disable
+              {busyAction === "disable" ? "Disabling…" : "Disable"}
             </button>
           ) : (
             <button className={styles.iconBtn} onClick={onEnable} disabled={busy}>
-              Enable
+              {busyAction === "enable" ? "Enabling…" : "Enable"}
             </button>
           )}
           <button
@@ -309,7 +320,7 @@ function DetailView({
             onClick={onRestart}
             disabled={busy || !server.enabled}
           >
-            Restart
+            {busyAction === "restart" ? "Restarting…" : "Restart"}
           </button>
           <button className={styles.iconBtn} onClick={onEdit} disabled={busy}>
             Edit
@@ -319,7 +330,7 @@ function DetailView({
             onClick={onDelete}
             disabled={busy}
           >
-            Delete
+            {busyAction === "delete" ? "Deleting…" : "Delete"}
           </button>
         </div>
       </div>
