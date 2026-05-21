@@ -1,12 +1,23 @@
 "use client";
 
 /**
- * /mcp — MCP server management page (master / detail).
+ * /mcp — MCP server management page.
  *
- * All UI built from shadcn primitives in @/components/ui — no
- * bespoke CSS module. Disabled / ready / starting / error states
- * share the same layout; only the action button (Enable vs Disable),
- * the state badge, and an inline disabled-hint differ.
+ * Outer shell is identical to /functions (programs-page.tsx):
+ *   <div className="main">
+ *     <div className={styles.view}>
+ *       <div className={styles.topbar}>...</div>
+ *       <div className={styles.body}>
+ *         <div className={styles.serversNav}>...</div>
+ *         <div className={styles.content}>...</div>
+ *       </div>
+ *     </div>
+ *   </div>
+ *
+ * Same heights, same borders, same nav-row visuals as the
+ * folders nav. Everything inside the right pane uses the shared
+ * CSS variables (--border, --text-bright, --accent-blue, ...)
+ * instead of bespoke colours.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -18,8 +29,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import styles from "./mcp-page.module.css";
 
 interface ServerStatus {
   name: string;
@@ -45,16 +56,12 @@ interface ServerDetail extends ServerStatus {
 
 type BusyAction = null | "enable" | "disable" | "restart" | "delete";
 
-function stateLabel(s: ServerStatus): {
-  text: string;
-  variant: "default" | "secondary" | "destructive" | "outline";
-  dot: string;
-} {
-  if (s.ready) return { text: "ready",    variant: "default",     dot: "bg-emerald-500" };
+function stateBadge(s: ServerStatus) {
+  if (s.ready) return { label: "ready", dotCls: styles.dotReady };
   if (s.error === "disabled")
-    return       { text: "disabled", variant: "secondary",   dot: "bg-slate-400" };
-  if (s.error) return { text: "error",    variant: "destructive", dot: "bg-red-500" };
-  return         { text: "starting", variant: "outline",     dot: "bg-yellow-400" };
+    return { label: "disabled", dotCls: styles.dotDisabled };
+  if (s.error) return { label: "error", dotCls: styles.dotError };
+  return { label: "starting", dotCls: styles.dotStarting };
 }
 
 export function McpPage() {
@@ -102,10 +109,7 @@ export function McpPage() {
   }, []);
 
   useEffect(() => {
-    if (selected) {
-      setDetail(null);
-      void fetchDetail(selected);
-    }
+    if (selected) { setDetail(null); void fetchDetail(selected); }
   }, [selected, fetchDetail]);
 
   async function runAction(action: Exclude<BusyAction, null>, fn: () => Promise<void>) {
@@ -116,22 +120,19 @@ export function McpPage() {
   async function doRestart(name: string) {
     await runAction("restart", async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/restart`, { method: "POST" });
-      await reload();
-      await fetchDetail(name);
+      await reload(); await fetchDetail(name);
     });
   }
   async function doEnable(name: string) {
     await runAction("enable", async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/enable`, { method: "POST" });
-      await reload();
-      await fetchDetail(name);
+      await reload(); await fetchDetail(name);
     });
   }
   async function doDisable(name: string) {
     await runAction("disable", async () => {
       await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disable`, { method: "POST" });
-      await reload();
-      await fetchDetail(name);
+      await reload(); await fetchDetail(name);
     });
   }
   async function doDelete(name: string) {
@@ -165,86 +166,84 @@ export function McpPage() {
   const selectedServer = servers.find((s) => s.name === selected) || null;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Topbar */}
-      <div className="flex h-16 flex-shrink-0 items-center gap-4 border-b px-6">
-        <span className="text-lg font-semibold">MCP Servers</span>
-        <span className="truncate text-sm text-muted-foreground">
-          External tool processes — config at <code className="font-mono text-xs">~/.agentic/mcp_servers.json</code>
-        </span>
-        <div className="ml-auto flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void reload()}>
-            Refresh
-          </Button>
-          <Button size="sm" onClick={openAdd}>+ Add server</Button>
+    <div className="main">
+      <div className={styles.view}>
+        <div className={styles.topbar}>
+          <span className={styles.title}>MCP</span>
+          <div className={styles.toolbar}>
+            <Button variant="outline" size="sm" onClick={() => void reload()}>
+              Refresh
+            </Button>
+            <Button size="sm" onClick={openAdd}>+ Add server</Button>
+          </div>
         </div>
-      </div>
 
-      {/* Body: left nav + right detail */}
-      <div className="grid min-h-0 flex-1 [grid-template-columns:calc(var(--sidebar-width)-1px)_1fr]">
-        {/* Left nav */}
-        <aside className="flex flex-col gap-1 overflow-y-auto border-r bg-secondary/40 p-2">
-          {loadErr && (
-            <div className="rounded-md border border-red-500/30 bg-red-500/5 p-2 text-xs text-red-400">
-              {loadErr}
-            </div>
-          )}
-          {loading && servers.length === 0 ? (
-            <div className="px-2 py-1 text-sm text-muted-foreground">Loading…</div>
-          ) : servers.length === 0 ? (
-            <div className="px-2 py-1 text-sm text-muted-foreground">No servers</div>
-          ) : (
-            servers.map((s) => {
-              const { dot } = stateLabel(s);
-              const active = selected === s.name;
-              return (
-                <button
-                  key={s.name}
-                  onClick={() => setSelected(s.name)}
-                  className={cn(
-                    "flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors",
-                    active
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                  )}
-                >
-                  <span className={cn("h-2 w-2 flex-shrink-0 rounded-full", dot)} />
-                  <span className="flex-1 truncate text-left font-mono">{s.name}</span>
-                  <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">
-                    {s.tool_count}
-                  </span>
-                </button>
-              );
-            })
-          )}
-
-          <Separator className="my-2" />
-          <Button variant="ghost" size="sm" className="justify-start" onClick={openAdd}>
-            + Add server
-          </Button>
-        </aside>
-
-        {/* Right detail */}
-        <div className="min-w-0 overflow-y-auto p-6">
-          {selectedServer === null ? (
-            <div className="flex h-full items-center justify-center text-center text-muted-foreground">
-              <div>
-                <div className="mb-4 text-5xl opacity-50">🔌</div>
-                <div>Select a server on the left to view tools and settings.</div>
+        <div className={styles.body}>
+          <div className={styles.serversNav}>
+            {loading && servers.length === 0 ? (
+              <div className={styles.serverItem} style={{ cursor: "default" }}>
+                <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
+                  Loading…
+                </span>
               </div>
-            </div>
-          ) : (
-            <DetailView
-              server={selectedServer}
-              detail={detail}
-              busy={busy}
-              onRestart={() => void doRestart(selectedServer.name)}
-              onEnable={() => void doEnable(selectedServer.name)}
-              onDisable={() => void doDisable(selectedServer.name)}
-              onDelete={() => void doDelete(selectedServer.name)}
-              onEdit={() => openEdit(selectedServer)}
-            />
-          )}
+            ) : servers.length === 0 ? (
+              <div className={styles.serverItem} style={{ cursor: "default" }}>
+                <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
+                  No servers
+                </span>
+              </div>
+            ) : (
+              servers.map((s) => {
+                const { dotCls } = stateBadge(s);
+                return (
+                  <div
+                    key={s.name}
+                    className={cn(
+                      styles.serverItem,
+                      selected === s.name && styles.active,
+                    )}
+                    onClick={() => setSelected(s.name)}
+                  >
+                    <span className={cn(styles.serverDot, dotCls)} />
+                    <span className={styles.serverName}>{s.name}</span>
+                    <span className={styles.serverCount}>{s.tool_count}</span>
+                  </div>
+                );
+              })
+            )}
+            <div className={styles.navSep} />
+            <button className={cn(styles.serverItem, styles.navAddItem)} onClick={openAdd}>
+              <span className={styles.serverName}>+ Add server</span>
+            </button>
+          </div>
+
+          <div className={styles.content}>
+            {loadErr && (
+              <div className="mb-4 rounded-md border p-3 font-mono text-xs"
+                   style={{ borderColor: "var(--accent-red)", color: "var(--accent-red)" }}>
+                {loadErr}
+              </div>
+            )}
+            {selectedServer === null ? (
+              <div className={styles.empty}>
+                <div className={styles.emptyIcon}>🔌</div>
+                <div className={styles.emptyText}>
+                  Select a server on the left to view tools and settings.
+                </div>
+              </div>
+            ) : (
+              <DetailView
+                server={selectedServer}
+                detail={detail}
+                busy={busy}
+                onRestart={() => void doRestart(selectedServer.name)}
+                onEnable={() => void doEnable(selectedServer.name)}
+                onDisable={() => void doDisable(selectedServer.name)}
+                onDelete={() => void doDelete(selectedServer.name)}
+                onEdit={() => openEdit(selectedServer)}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -276,16 +275,26 @@ function DetailView({
   onDelete: () => void;
   onEdit: () => void;
 }) {
-  const st = stateLabel(server);
+  const st = stateBadge(server);
   const isBusy = busy !== null;
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex w-full flex-col gap-4">
+      {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-lg">
-          🔌
-        </div>
-        <span className="font-mono text-lg font-semibold text-primary">{server.name}</span>
-        <Badge variant={st.variant} className="uppercase">{st.text}</Badge>
+        <span className="text-xl">🔌</span>
+        <span style={{ color: "var(--accent-blue)" }}
+              className="font-mono text-lg font-semibold">
+          {server.name}
+        </span>
+        <Badge
+          variant="outline"
+          className="uppercase"
+          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+        >
+          <span className={cn(styles.serverDot, st.dotCls)}
+                style={{ marginRight: 6 }} />
+          {st.label}
+        </Badge>
 
         <div className="ml-auto flex gap-2">
           {server.enabled ? (
@@ -297,60 +306,75 @@ function DetailView({
               {busy === "enable" ? "Enabling…" : "Enable"}
             </Button>
           )}
-          <Button
-            variant="outline" size="sm"
-            onClick={onRestart}
-            disabled={isBusy || !server.enabled}
-          >
+          <Button variant="outline" size="sm"
+                  onClick={onRestart} disabled={isBusy || !server.enabled}>
             {busy === "restart" ? "Restarting…" : "Restart"}
           </Button>
           <Button variant="outline" size="sm" onClick={onEdit} disabled={isBusy}>
             Edit
           </Button>
           <Button variant="outline" size="sm" onClick={onDelete} disabled={isBusy}
-            className="text-red-400 hover:text-red-300 hover:border-red-400">
+                  style={{ color: "var(--accent-red)" }}>
             {busy === "delete" ? "Deleting…" : "Delete"}
           </Button>
         </div>
       </div>
 
       {server.error && server.error !== "disabled" && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 font-mono text-xs text-red-400">
+        <div className="rounded-md border p-3 font-mono text-xs"
+             style={{ borderColor: "var(--accent-red)", color: "var(--accent-red)" }}>
           {server.error}
         </div>
       )}
 
-      <ConfigChips server={server} />
+      {/* Config */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border px-3 py-2 text-xs"
+           style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+        <ConfigChip k="Transport" v={server.type} />
+        <Sep />
+        <ConfigChip k="Command" v={<code>{server.command.join(" ")}</code>} />
+        <Sep />
+        <ConfigChip k="Timeout" v={`${server.timeout_seconds}s`} />
+        <Sep />
+        <ConfigChip k="Prefix" v={<code>{server.name}__</code>} />
+      </div>
 
       {Object.keys(server.env).length > 0 && (
-        <div className="rounded-md border bg-secondary/40 p-3 font-mono text-xs">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="rounded-md border p-3 font-mono text-xs"
+             style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider"
+               style={{ color: "var(--text-muted)" }}>
             Environment
           </div>
           {Object.entries(server.env).map(([k, v]) => (
-            <div key={k}>{k}=<span className="text-foreground">{v}</span></div>
+            <div key={k}>{k}=<span style={{ color: "var(--text-primary)" }}>{v}</span></div>
           ))}
         </div>
       )}
 
-      <div className="flex items-center gap-2 pt-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {/* Tools */}
+      <div className="mt-2 flex items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--text-muted)" }}>
           Tools
         </span>
-        <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+        <span className="rounded-full px-1.5 text-[10px]"
+              style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)" }}>
           {server.tool_count}
-        </Badge>
+        </span>
         {!server.enabled && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
             (server disabled — enable to load tool list)
           </span>
         )}
       </div>
 
       {!detail ? (
-        <div className="text-sm text-muted-foreground">Loading tools…</div>
+        <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+          Loading tools…
+        </div>
       ) : (detail.tool_schemas || []).length === 0 ? (
-        <div className="text-sm text-muted-foreground">
+        <div className="text-sm" style={{ color: "var(--text-muted)" }}>
           {server.error === "disabled"
             ? "Tool list will appear here after you enable the server."
             : server.error
@@ -370,35 +394,33 @@ function DetailView({
   );
 }
 
-function ConfigChips({ server }: { server: ServerStatus }) {
-  const chips: Array<[string, React.ReactNode]> = [
-    ["Transport", server.type],
-    ["Command", <code key="cmd" className="rounded bg-background px-1.5 py-0.5">{server.command.join(" ")}</code>],
-    ["Timeout", `${server.timeout_seconds}s`],
-    ["Prefix", <code key="pfx" className="rounded bg-background px-1.5 py-0.5">{server.name}__</code>],
-  ];
+function Sep() {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md border bg-secondary/40 px-3 py-2 text-xs">
-      {chips.map(([k, v], i) => (
-        <span key={k} className="flex items-center gap-1.5">
-          {i > 0 && <span className="text-muted-foreground/40">·</span>}
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {k}
-          </span>
-          <span className="font-mono text-foreground">{v}</span>
-        </span>
-      ))}
-    </div>
+    <span aria-hidden style={{ color: "var(--text-muted)", opacity: 0.5 }}>·</span>
+  );
+}
+
+function ConfigChip({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--text-muted)" }}>
+        {k}
+      </span>
+      <span className="font-mono">{v}</span>
+    </span>
   );
 }
 
 function ToolRow({ server, tool }: { server: string; tool: ToolSchema }) {
   return (
-    <div className="rounded-md border bg-secondary/40 px-3 py-2 transition-colors hover:border-primary hover:bg-secondary">
-      <div className="truncate font-mono text-sm font-medium text-primary">
+    <div className="rounded-md border px-3 py-2 transition-colors"
+         style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+      <div className="truncate font-mono text-sm font-medium"
+           style={{ color: "var(--accent-blue)" }}>
         {server}__{tool.name}
       </div>
-      <div className="mt-0.5 truncate text-xs text-muted-foreground">
+      <div className="mt-0.5 truncate text-xs" style={{ color: "var(--text-muted)" }}>
         {tool.description || tool.title || "—"}
       </div>
     </div>
@@ -452,12 +474,9 @@ function EditDialog({
     const cmd = splitCommand(state.command);
     if (cmd.length === 0) { setErr("command is required"); return; }
     const body = {
-      name: state.name.trim(),
-      type: "local",
-      command: cmd,
+      name: state.name.trim(), type: "local", command: cmd,
       env: parseEnv(state.env),
-      enabled: state.enabled,
-      timeout_seconds: state.timeout_seconds,
+      enabled: state.enabled, timeout_seconds: state.timeout_seconds,
     };
     setSaving(true);
     try {
@@ -511,7 +530,7 @@ function EditDialog({
   }
 
   return (
-    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>
@@ -530,9 +549,6 @@ function EditDialog({
               placeholder="drawio"
               className="font-mono"
             />
-            <p className="text-[11px] text-muted-foreground">
-              Tool prefix — exposed to the LLM as <code>&lt;name&gt;__&lt;tool&gt;</code>.
-            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -544,9 +560,6 @@ function EditDialog({
               placeholder="npx -y @drawio/mcp"
               className="font-mono"
             />
-            <p className="text-[11px] text-muted-foreground">
-              Whitespace-separated. Resolved against worker&apos;s $PATH.
-            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -556,8 +569,8 @@ function EditDialog({
               value={state.env}
               onChange={(e) => setState({ ...state, env: e.target.value })}
               placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_..."
-              className="flex min-h-[100px] rounded-md border border-input bg-background px-3 py-2 font-mono text-sm
-                          ring-offset-background placeholder:text-muted-foreground
+              className="flex min-h-[100px] rounded-md border bg-background px-3 py-2 font-mono text-sm
+                          placeholder:text-muted-foreground
                           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
@@ -566,8 +579,7 @@ function EditDialog({
             <div className="flex flex-1 flex-col gap-1.5">
               <Label htmlFor="mcp-timeout">Timeout (s)</Label>
               <Input
-                id="mcp-timeout"
-                type="number"
+                id="mcp-timeout" type="number"
                 value={state.timeout_seconds}
                 min={1} max={300}
                 onChange={(e) =>
@@ -580,19 +592,19 @@ function EditDialog({
                 checked={state.enabled}
                 onCheckedChange={(c) => setState({ ...state, enabled: c })}
               />
-              <Label htmlFor="mcp-enabled" className="cursor-pointer">
-                Enabled
-              </Label>
+              <Label htmlFor="mcp-enabled" className="cursor-pointer">Enabled</Label>
             </div>
           </div>
 
           {err && (
-            <div className="rounded-md border border-red-500/30 bg-red-500/5 p-2 font-mono text-xs text-red-400">
+            <div className="rounded-md border p-2 font-mono text-xs"
+                 style={{ borderColor: "var(--accent-red)", color: "var(--accent-red)" }}>
               {err}
             </div>
           )}
           {note && (
-            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2 font-mono text-xs text-emerald-400">
+            <div className="rounded-md border p-2 font-mono text-xs"
+                 style={{ borderColor: "var(--accent-green)", color: "var(--accent-green)" }}>
               {note}
             </div>
           )}
