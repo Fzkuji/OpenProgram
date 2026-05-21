@@ -35,7 +35,12 @@
   padding: 1px 6px;
   border-radius: 4px;
 }
-.reset {
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btnGhost {
   font-size: 12px;
   color: var(--text-muted);
   background: transparent;
@@ -45,7 +50,7 @@
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.reset:hover {
+.btnGhost:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }

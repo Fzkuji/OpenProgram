@@ -565,11 +565,7 @@ export function ProgramsPage() {
         <IconPicker
           name={iconPickerFor}
           current={meta.icons[iconPickerFor] || DEFAULT_ICON}
-          onPick={async (icon) => {
-            const target = iconPickerFor;
-            setIconPickerFor(null);
-            if (target) await applyIcon(target, icon);
-          }}
+          onPick={(icon) => applyIcon(iconPickerFor, icon)}
           onClose={() => setIconPickerFor(null)}
         />
       )}

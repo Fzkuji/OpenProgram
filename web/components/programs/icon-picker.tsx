@@ -38,14 +38,24 @@ export function IconPicker({
           <span className={styles.title}>
             Pick an icon for <code>{name}</code>
           </span>
-          <button
-            type="button"
-            className={styles.reset}
-            onClick={() => onPick(null)}
-            title="Reset to default"
-          >
-            Reset
-          </button>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={() => onPick(null)}
+              title="Reset to default"
+            >
+              Reset
+            </button>
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={onClose}
+              title="Close"
+            >
+              Close
+            </button>
+          </div>
         </div>
         <div className={styles.grid}>
           {ICON_CHOICES.map((emoji) => (
