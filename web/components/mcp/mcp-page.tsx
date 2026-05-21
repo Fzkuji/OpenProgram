@@ -365,9 +365,13 @@ function DetailView({
         <div className={styles.subtitle}>Loading tools…</div>
       ) : (detail.tool_schemas || []).length === 0 ? (
         <div className={styles.subtitle}>
-          {server.ready
-            ? "No tools exposed by this server."
-            : "Server not ready — no tool list available yet."}
+          {server.error === "disabled"
+            ? "Server is disabled. Click Enable to spawn it and load its tools."
+            : server.error
+              ? "Server failed to start — see error above. Tool list unavailable."
+              : server.ready
+                ? "No tools exposed by this server."
+                : "Server starting — tool list will appear shortly."}
         </div>
       ) : (
         <div className={styles.toolList}>
