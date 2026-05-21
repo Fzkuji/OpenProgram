@@ -37,12 +37,9 @@ const CAT_ICONS: Record<string, string> = {
 };
 const CAT_LABELS: Record<string, string> = {
   app: "Applications",
-  meta: "Meta Functions",
-  builtin: "Built-in",
-  generated: "Generated",
-  user: "User",
+  agentic: "Agentic Functions",
 };
-const CAT_ORDER = ["app", "generated", "user", "meta", "builtin"] as const;
+const CAT_ORDER = ["app", "agentic"] as const;
 
 interface CtxItem {
   type?: "sep";
@@ -64,7 +61,7 @@ export function ProgramsPage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"category" | "name" | "recent">("category");
   const [filter, setFilter] = useState<
-    "all" | "app" | "meta" | "builtin" | "favorites"
+    "all" | "app" | "agentic" | "favorites"
   >("all");
   const [ctx, setCtx] = useState<CtxMenuState | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -391,6 +388,12 @@ export function ProgramsPage() {
   }
 
   // ---- Render ---------------------------------------------------------
+  const existingNames = useMemo(
+    () => new Set(programs.map((p) => p.name)),
+    [programs],
+  );
+  const liveCount = (names: string[] | undefined) =>
+    (names || []).filter((n) => existingNames.has(n)).length;
   const builtinFolders = [
     {
       id: "__all__",
@@ -402,7 +405,7 @@ export function ProgramsPage() {
       id: "__favorites__",
       name: "Favorites",
       icon: "★",
-      count: (meta.favorites || []).length,
+      count: liveCount(meta.favorites),
     },
     {
       id: "__uncategorized__",
@@ -451,8 +454,7 @@ export function ProgramsPage() {
               options={[
                 { value: "all", label: "All" },
                 { value: "app", label: "Applications" },
-                { value: "meta", label: "Meta Functions" },
-                { value: "builtin", label: "Built-in" },
+                { value: "agentic", label: "Agentic Functions" },
                 { value: "favorites", label: "Favorites" },
               ]}
             />
@@ -512,7 +514,7 @@ export function ProgramsPage() {
                   </div>
                 );
               }
-              const count = (meta.folders[name] || []).length;
+              const count = liveCount(meta.folders[name]);
               return (
                 <div
                   key={name}
