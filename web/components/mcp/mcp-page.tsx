@@ -20,7 +20,7 @@
  * instead of bespoke colours.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -92,15 +92,21 @@ export function McpPage() {
     }
   }, []);
 
+  // ``busy`` shadowed in a ref so the polling effect doesn't re-mount
+  // when an action starts. The previous version listed ``busy`` in
+  // useEffect's deps — every busy-state flip restarted the effect,
+  // which fired an immediate ``void reload()`` and slammed straight
+  // into the backend's stop→respawn window, blanking the server list.
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+
   useEffect(() => {
     void reload();
-    // Pause polling while an action is in flight so we don't race the
-    // backend's stop→spawn window mid-restart.
     const t = setInterval(() => {
-      if (busy === null) void reload();
+      if (busyRef.current === null) void reload();
     }, 4000);
     return () => clearInterval(t);
-  }, [reload, busy]);
+  }, [reload]);
 
   // Selection bookkeeping — only auto-select on initial load
   // (selected is null and we have servers). Don't auto-reset when
@@ -130,30 +136,60 @@ export function McpPage() {
     try { await fn(); } finally { setBusy(null); }
   }
 
+  // Merge a server's fresh status (returned from a POST/PATCH) into
+  // local state without nuking the list — restart_server() empties
+  // ``_clients`` briefly between stop and respawn, so a blanket
+  // ``await reload()`` here would replace the whole list with [] for
+  // a beat, dropping the selection.
+  function upsertServer(s: ServerStatus) {
+    setServers((prev) => {
+      const i = prev.findIndex((p) => p.name === s.name);
+      if (i < 0) return [...prev, s];
+      const next = prev.slice();
+      next[i] = s;
+      return next;
+    });
+  }
+
   async function doRestart(name: string) {
     await runAction("restart", async () => {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/restart`, { method: "POST" });
-      await reload(); await fetchDetail(name);
+      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/restart`,
+        { method: "POST" });
+      if (r.ok) {
+        upsertServer(await r.json());
+        await fetchDetail(name);
+      }
     });
   }
   async function doEnable(name: string) {
     await runAction("enable", async () => {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/enable`, { method: "POST" });
-      await reload(); await fetchDetail(name);
+      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/enable`,
+        { method: "POST" });
+      if (r.ok) {
+        upsertServer(await r.json());
+        await fetchDetail(name);
+      }
     });
   }
   async function doDisable(name: string) {
     await runAction("disable", async () => {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disable`, { method: "POST" });
-      await reload(); await fetchDetail(name);
+      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disable`,
+        { method: "POST" });
+      if (r.ok) {
+        upsertServer(await r.json());
+        await fetchDetail(name);
+      }
     });
   }
   async function doDelete(name: string) {
     if (!confirm(`Remove MCP server "${name}"? Config will be deleted.`)) return;
     await runAction("delete", async () => {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
-      await reload();
-      if (selected === name) setSelected(null);
+      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`,
+        { method: "DELETE" });
+      if (r.ok) {
+        setServers((prev) => prev.filter((p) => p.name !== name));
+        if (selected === name) setSelected(null);
+      }
     });
   }
 
@@ -474,7 +510,11 @@ function EditDialog({
   const [state, setState] = useState<EditTarget>(target);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  // Tagged busy state so Test and Save buttons each show their own
+  // working text — "Testing…" vs "Saving…" — instead of both silently
+  // disabling on one shared flag.
+  const [busy, setBusy] = useState<null | "save" | "test">(null);
+  const saving = busy !== null;
   const isAdd = target.mode === "add";
 
   function parseEnv(text: string): Record<string, string> {
@@ -502,7 +542,7 @@ function EditDialog({
       env: parseEnv(state.env),
       enabled: state.enabled, timeout_seconds: state.timeout_seconds,
     };
-    setSaving(true);
+    setBusy("save");
     try {
       const r = isAdd
         ? await fetch("/api/mcp/servers", {
@@ -522,7 +562,7 @@ function EditDialog({
     } catch (e) {
       setErr(String(e));
     } finally {
-      setSaving(false);
+      setBusy(null);
     }
   }
 
@@ -530,7 +570,7 @@ function EditDialog({
     setErr(null); setNote(null);
     const cmd = splitCommand(state.command);
     if (cmd.length === 0) { setErr("command is required to test"); return; }
-    setSaving(true);
+    setBusy("test");
     try {
       const r = await fetch("/api/mcp/test", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -549,7 +589,7 @@ function EditDialog({
     } catch (e) {
       setErr(String(e));
     } finally {
-      setSaving(false);
+      setBusy(null);
     }
   }
 
@@ -635,8 +675,12 @@ function EditDialog({
         </div>
 
         <DialogFooter>
-          <button className={styles.actionBtn} onClick={() => void testRun()} disabled={saving}>
-            Test
+          <button
+            className={styles.actionBtn}
+            onClick={() => void testRun()}
+            disabled={saving}
+          >
+            {busy === "test" ? "Testing…" : "Test"}
           </button>
           <button className={styles.actionBtn} onClick={onClose} disabled={saving}>
             Cancel
@@ -646,7 +690,7 @@ function EditDialog({
             onClick={() => void save()}
             disabled={saving}
           >
-            {saving ? "Saving…" : isAdd ? "Add" : "Save"}
+            {busy === "save" ? "Saving…" : isAdd ? "Add" : "Save"}
           </button>
         </DialogFooter>
       </DialogContent>
