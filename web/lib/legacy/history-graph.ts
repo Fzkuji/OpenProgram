@@ -679,8 +679,8 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     const t = tree.byId[id]._tier;
     if (typeof t === "number" && t > maxTier) maxTier = t;
   });
-  const subForkMargin = maxTier > 1
-    ? COL_W * 0.55 + (maxTier - 2) * COL_W * 0.4 + NODE_R * 2
+  const subForkMargin = maxTier >= 1
+    ? COL_W * 0.55 + Math.max(0, maxTier - 1) * COL_W * 0.4 + NODE_R * 2
     : 0;
   const panelW = (body && body.clientWidth) || 240;
   const width = Math.max(panelW - 4, laneArea + subForkMargin + PAD_X);
@@ -699,13 +699,19 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   svg.appendChild(nodeG);
 
   function pos(n: GNode): { x: number; y: number } {
-    // Tier ≥ 2 nodes (tool calls, tool-spawned LLM calls) offset
-    // sideways from their branch's main column so they read as
-    // sub-forks instead of part of the main chain. Tier 1
-    // (user/assistant on the branch trunk) stays on its lane's
-    // axis. Sub-tiers stack horizontally with diminishing offset.
+    // Tier 0 (user ↔ assistant on the main conversation thread)
+    // stays on the lane's main column — no fork. Tier ≥ 1 means
+    // we're inside a sub-call (tool, or tool-spawned LLM) and
+    // should branch off to the right so the structure is visible:
+    //   user (t=0)
+    //    │
+    //   assistant (t=0)
+    //    ├──── tool (t=1)        ← fork right
+    //    │     └── sub-LLM (t=2) ← further right
+    //    │
+    //   user (t=0)               ← back on main column
     const tier = typeof n._tier === "number" ? n._tier : 0;
-    const tierOff = tier <= 1 ? 0 : COL_W * 0.55 + (tier - 2) * COL_W * 0.4;
+    const tierOff = tier <= 0 ? 0 : COL_W * 0.55 + (tier - 1) * COL_W * 0.4;
     return {
       x: PAD_X + (n._lane || 0) * COL_W + tierOff,
       y: PAD_Y + (n._depth || 0) * ROW_H,
