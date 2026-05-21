@@ -1105,6 +1105,11 @@ async function _checkout(msgId: string): Promise<void> {
   }
 }
 
+// Single click on a node: toggle collapse / expand if the node has
+// a collapsible subtree. Nothing else — switching branches /
+// scrolling to a message moved to double-click (below) so that
+// accidental clicks while exploring the graph don't yank the chat
+// off to a different turn.
 document.addEventListener("click", (e) => {
   const tgt = e.target as HTMLElement;
   const g = tgt.closest && tgt.closest(".history-node");
@@ -1118,8 +1123,21 @@ document.addEventListener("click", (e) => {
       _lastSignature = null;
       render(_lastGraph, _lastHeadId);
     }
-    return;
   }
+});
+
+// Double click on a node: switch HEAD to that branch (or just scroll
+// the chat into view when the clicked node already sits on the
+// current HEAD chain).
+document.addEventListener("dblclick", (e) => {
+  const tgt = e.target as HTMLElement;
+  const g = tgt.closest && tgt.closest(".history-node");
+  if (!g) return;
+  const id = g.getAttribute("data-msg-id");
+  if (!id) return;
+  // The two ``click`` events that precede a dblclick may have
+  // toggled a collapsible node twice — net zero — so the visible
+  // state is unchanged by the time we get here.
   if (g.getAttribute("data-internal") === "1") {
     const owner = g.getAttribute("data-owner");
     if (owner) _scrollChatTo(owner);
