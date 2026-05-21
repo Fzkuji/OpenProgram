@@ -104,12 +104,36 @@ async def handle_load_session(ws, cmd: dict):
             all_msgs = aggregate_tool_messages(raw_msgs)
         except Exception:
             all_msgs = conv.get("messages", []) or []
+            raw_msgs = all_msgs
         try:
             _sess_for_load = _db_load.get_session(conv["id"]) or {}
             _persisted_head = _sess_for_load.get("head_id")
         except Exception:
             _persisted_head = None
         head = _persisted_head or head_or_tip(conv, all_msgs)
+        # If the persisted head points at a row that aggregation just
+        # folded away (e.g. a role="tool" child of an assistant whose
+        # turn never reached step 6's ``update_session(head_id=...)``
+        # — common after a worker restart mid-turn), walk up the raw
+        # parent_id chain until we hit a row that survived
+        # aggregation. Without this the linear_history call below
+        # returns [] and the page renders the empty Welcome screen
+        # despite the DAG clearly having history.
+        if head:
+            agg_ids = {m.get("id") for m in all_msgs}
+            if head not in agg_ids:
+                raw_by_id = {m.get("id"): m for m in raw_msgs}
+                cur = head
+                hops = 0
+                while cur and cur not in agg_ids and hops < 100:
+                    parent = (raw_by_id.get(cur) or {}).get("parent_id")
+                    if not parent or parent == cur:
+                        cur = None
+                        break
+                    cur = parent
+                    hops += 1
+                if cur and cur in agg_ids:
+                    head = cur
         chain = linear_history(all_msgs, head) if head else list(all_msgs)
         conv["messages"] = chain
         conv["head_id"] = head
