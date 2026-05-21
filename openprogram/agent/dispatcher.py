@@ -1265,10 +1265,46 @@ def _extract_usage(msg) -> dict:
 
 
 def _shorten(value, limit: int = 4000) -> str:
-    s = value if isinstance(value, str) else json.dumps(value, default=str)
+    s = _stringify_tool_result(value)
     if len(s) <= limit:
         return s
     return s[:limit] + f"... (+{len(s) - limit} more)"
+
+
+def _stringify_tool_result(value) -> str:
+    """Turn whatever ``AgentEventToolEnd.result`` carries into a string
+    the UI can render directly.
+
+    ``result`` is typically an :class:`AgentToolResult` whose
+    ``content`` is a list of TextContent / ImageContent / etc. blocks.
+    Naïvely ``str()``-ing it produces a Pydantic ``repr`` like
+    ``content=[TextContent(type='text', text='(no todos)', ...)]
+    details=None`` — that is what the user sees in the chat. Pull
+    the actual text out of the blocks instead.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    # AgentToolResult / similar — has ``content`` attribute that's a
+    # list of blocks each carrying a ``text`` field.
+    content = getattr(value, "content", None)
+    if content is not None:
+        parts: list[str] = []
+        try:
+            for block in content:
+                txt = getattr(block, "text", None)
+                if txt:
+                    parts.append(txt)
+        except TypeError:
+            parts = []
+        if parts:
+            return "\n".join(parts)
+    # Fallback — anything else, dump as JSON (dict, list, primitives).
+    try:
+        return json.dumps(value, default=str)
+    except Exception:  # noqa: BLE001
+        return str(value)
 
 
 # ---------------------------------------------------------------------------
