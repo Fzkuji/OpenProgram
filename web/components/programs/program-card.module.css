@@ -57,7 +57,7 @@
   opacity: 0;
   transition: opacity 0.15s;
 }
-.card:hover .cardIconEditBtn {
+.cardIcon:hover .cardIconEditBtn {
   opacity: 1;
 }
 .cardIconEditBtn:focus-visible {
