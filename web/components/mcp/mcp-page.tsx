@@ -182,7 +182,7 @@ export function McpPage() {
     <div className="main">
       <div className={styles.view}>
         <div className={styles.topbar}>
-          <span className={styles.title}>MCP</span>
+          <span className={styles.title}>MCP Servers</span>
           <div className={styles.toolbar}>
             <button className={styles.actionBtn} onClick={() => void reload()}>
               Refresh
