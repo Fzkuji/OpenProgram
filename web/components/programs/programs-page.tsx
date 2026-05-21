@@ -29,6 +29,13 @@ interface ProgramsMeta {
 
 const DEFAULT_ICON = "📦";
 
+const ICON_CHOICES = [
+  "📦", "🤖", "🌐", "🔍", "📚", "🖥",
+  "📄", "📊", "🎨", "✏️", "🛠", "⚡",
+  "💡", "🔥", "⭐", "🎯", "📷", "🎵",
+  "🧠", "💬", "🎮", "🚀", "🧪", "✨",
+];
+
 interface CtxItem {
   type?: "sep";
   label?: string;
@@ -57,6 +64,7 @@ export function ProgramsPage() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
+  const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
   const draggedRef = useRef<string | null>(null);
 
   // Initial data load (functions list + saved meta).
@@ -256,16 +264,9 @@ export function ProgramsPage() {
     await saveMeta(next);
   }
 
-  async function setIcon(name: string) {
-    const current = meta.icons[name] || "";
-    const value = window.prompt(
-      `Choose an emoji icon for "${name}" (leave empty to reset to ${DEFAULT_ICON}):`,
-      current,
-    );
-    if (value === null) return;
+  async function applyIcon(name: string, icon: string | null) {
     const next = cloneMeta();
-    const trimmed = value.trim();
-    if (trimmed) next.icons[name] = trimmed;
+    if (icon) next.icons[name] = icon;
     else delete next.icons[name];
     await saveMeta(next);
   }
@@ -314,7 +315,7 @@ export function ProgramsPage() {
             stopPropagation: () => {},
           } as unknown as React.MouseEvent),
       },
-      { label: "🎨 Change icon...", action: () => setIcon(name) },
+      { label: "🎨 Change icon...", action: () => setIconPickerFor(name) },
       { label: "✎ Edit...", action: () => editProgram(name) },
       { type: "sep" },
     ];
@@ -576,6 +577,18 @@ export function ProgramsPage() {
         </div>
       </div>
       {ctx && <CtxMenu state={ctx} onClose={() => setCtx(null)} />}
+      {iconPickerFor && (
+        <IconPicker
+          name={iconPickerFor}
+          current={meta.icons[iconPickerFor] || DEFAULT_ICON}
+          onPick={async (icon) => {
+            const target = iconPickerFor;
+            setIconPickerFor(null);
+            if (target) await applyIcon(target, icon);
+          }}
+          onClose={() => setIconPickerFor(null)}
+        />
+      )}
     </div>
   );
 }
@@ -778,6 +791,67 @@ function CustomSelect<T extends string>({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function IconPicker({
+  name,
+  current,
+  onPick,
+  onClose,
+}: {
+  name: string;
+  current: string;
+  onPick: (icon: string | null) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className={styles.iconPickerOverlay}
+      onClick={onClose}
+    >
+      <div
+        className={styles.iconPicker}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className={styles.iconPickerHead}>
+          <span className={styles.iconPickerTitle}>
+            Pick an icon for <code>{name}</code>
+          </span>
+          <button
+            type="button"
+            className={styles.iconPickerReset}
+            onClick={() => onPick(null)}
+            title="Reset to default"
+          >
+            Reset
+          </button>
+        </div>
+        <div className={styles.iconPickerGrid}>
+          {ICON_CHOICES.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              className={cls(
+                styles.iconPickerBtn,
+                emoji === current && styles.iconPickerBtnActive,
+              )}
+              onClick={() => onPick(emoji)}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
