@@ -161,7 +161,7 @@ def load_session(agent_id: str, session_id: str) -> Optional[dict]:
         return None
 
     raw_messages = db.get_messages(session_id)
-    messages = _aggregate_tool_messages(raw_messages)
+    messages = aggregate_tool_messages(raw_messages)
     result = dict(sess)
     result["id"] = session_id
     result["agent_id"] = agent_id
@@ -169,7 +169,7 @@ def load_session(agent_id: str, session_id: str) -> Optional[dict]:
     return result
 
 
-def _aggregate_tool_messages(messages: list[dict]) -> list[dict]:
+def aggregate_tool_messages(messages: list[dict]) -> list[dict]:
     """Fold ``role="tool"`` rows into their parent assistant message.
 
     The SessionDB stores each tool call as a standalone ``role="tool"``

@@ -94,9 +94,14 @@ async def handle_load_session(ws, cmd: dict):
             siblings as _siblings,
         )
         from openprogram.agent.session_db import default_db as _db_for_load
+        from openprogram.webui.persistence import aggregate_tool_messages
         _db_load = _db_for_load()
         try:
-            all_msgs = _db_load.get_messages(conv["id"]) or []
+            raw_msgs = _db_load.get_messages(conv["id"]) or []
+            # Fold standalone role="tool" rows into their parent assistant's
+            # tool_calls[] so the chat UI sees the same shape on refresh
+            # as it does on live WS stream.
+            all_msgs = aggregate_tool_messages(raw_msgs)
         except Exception:
             all_msgs = conv.get("messages", []) or []
         try:
