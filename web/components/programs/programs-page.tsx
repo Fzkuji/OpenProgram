@@ -13,38 +13,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./programs-page.module.css";
 import { Button } from "@/components/ui/button";
+import { CustomSelect } from "./custom-select";
+import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
+import { IconPicker, DEFAULT_ICON } from "./icon-picker";
+import { ProgramCard, cardGridClass, cardListClass } from "./program-card";
 
-interface Program {
+type Program = {
   name: string;
   category?: string;
   description?: string;
   mtime?: number;
-}
+};
 
 interface ProgramsMeta {
   favorites: string[];
   folders: Record<string, string[]>;
   icons: Record<string, string>;
-}
-
-const DEFAULT_ICON = "📦";
-
-const ICON_CHOICES = [
-  "📦", "🤖", "🌐", "🔍", "📚", "🖥",
-  "📄", "📊", "🎨", "✏️", "🛠", "⚡",
-  "💡", "🔥", "⭐", "🎯", "📷", "🎵",
-  "🧠", "💬", "🎮", "🚀", "🧪", "✨",
-];
-
-interface CtxItem {
-  type?: "sep";
-  label?: string;
-  action?: () => void;
-}
-interface CtxMenuState {
-  x: number;
-  y: number;
-  items: CtxItem[];
 }
 
 export function ProgramsPage() {
@@ -368,7 +352,7 @@ export function ProgramsPage() {
   }
 
   function contentCtx(e: React.MouseEvent) {
-    if ((e.target as HTMLElement).closest(`.${styles.card}`)) return;
+    if ((e.target as HTMLElement).closest("[data-program-card]")) return;
     e.preventDefault();
     setCtx({
       x: e.clientX,
@@ -556,9 +540,9 @@ export function ProgramsPage() {
                 </div>
               </div>
             ) : (
-              <div className={view === "grid" ? styles.grid : styles.list}>
+              <div className={view === "grid" ? cardGridClass : cardListClass}>
                 {visiblePrograms.map((p) => (
-                  <Card
+                  <ProgramCard
                     key={p.name}
                     p={p}
                     icon={meta.icons[p.name] || DEFAULT_ICON}
@@ -589,55 +573,6 @@ export function ProgramsPage() {
           onClose={() => setIconPickerFor(null)}
         />
       )}
-    </div>
-  );
-}
-
-function Card({
-  p,
-  icon,
-  fav,
-  folderName,
-  formatDate,
-  onClick,
-  onContextMenu,
-  onDragStart,
-  onToggleFav,
-}: {
-  p: Program;
-  icon: string;
-  fav: boolean;
-  folderName: string | null;
-  formatDate: (ts?: number) => string;
-  onClick: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-  onDragStart: (e: React.DragEvent) => void;
-  onToggleFav: (e: React.MouseEvent) => void;
-}) {
-  const desc = p.description ? p.description.split(".")[0] : "";
-  return (
-    <div
-      className={styles.card}
-      draggable
-      onDragStart={onDragStart}
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-    >
-      <div className={styles.cardIcon}>{icon}</div>
-      <div className={styles.cardInfo}>
-        <div className={styles.cardName}>{p.name}</div>
-        <div className={styles.cardDesc}>{desc}</div>
-        <div className={styles.cardMeta}>
-          {folderName ? `📁 ${folderName} · ` : ""}
-          {formatDate(p.mtime)}
-        </div>
-      </div>
-      <button
-        className={cls(styles.favBtn, fav && styles.favorited)}
-        onClick={onToggleFav}
-      >
-        {fav ? "★" : "☆"}
-      </button>
     </div>
   );
 }
@@ -682,176 +617,6 @@ function RenameInput({
   );
 }
 
-function CtxMenu({
-  state,
-  onClose,
-}: {
-  state: CtxMenuState;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: state.x, top: state.y });
-
-  useEffect(() => {
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
-    let { left, top } = pos;
-    if (r.right > window.innerWidth) left = window.innerWidth - r.width - 4;
-    if (r.bottom > window.innerHeight)
-      top = window.innerHeight - r.height - 4;
-    if (left !== pos.left || top !== pos.top) setPos({ left, top });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      className={styles.ctxMenu}
-      style={{ left: pos.left, top: pos.top }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {state.items.map((it, i) =>
-        it.type === "sep" ? (
-          <div key={i} className={styles.ctxSep} />
-        ) : (
-          <div
-            key={i}
-            className={styles.ctxItem}
-            onClick={() => {
-              onClose();
-              it.action?.();
-            }}
-          >
-            {it.label}
-          </div>
-        ),
-      )}
-    </div>
-  );
-}
-
 function cls(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
-}
-
-function CustomSelect<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
-
-  const current = options.find((o) => o.value === value);
-
-  return (
-    <div ref={ref} className={styles.selectWrap}>
-      <button
-        type="button"
-        className={styles.select}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span>{current?.label}</span>
-        <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden>
-          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-      {open && (
-        <div className={styles.selectMenu} role="listbox">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              className={cls(
-                styles.selectOption,
-                o.value === value && styles.selectOptionActive,
-              )}
-              onClick={() => {
-                onChange(o.value);
-                setOpen(false);
-              }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function IconPicker({
-  name,
-  current,
-  onPick,
-  onClose,
-}: {
-  name: string;
-  current: string;
-  onPick: (icon: string | null) => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div
-      className={styles.iconPickerOverlay}
-      onClick={onClose}
-    >
-      <div
-        className={styles.iconPicker}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={styles.iconPickerHead}>
-          <span className={styles.iconPickerTitle}>
-            Pick an icon for <code>{name}</code>
-          </span>
-          <button
-            type="button"
-            className={styles.iconPickerReset}
-            onClick={() => onPick(null)}
-            title="Reset to default"
-          >
-            Reset
-          </button>
-        </div>
-        <div className={styles.iconPickerGrid}>
-          {ICON_CHOICES.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              className={cls(
-                styles.iconPickerBtn,
-                emoji === current && styles.iconPickerBtnActive,
-              )}
-              onClick={() => onPick(emoji)}
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
 }
