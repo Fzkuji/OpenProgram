@@ -267,6 +267,16 @@ export function Composer() {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Don't hijack Enter while an IME is composing — the user is
+    // confirming a Chinese / Japanese / Korean candidate, not
+    // sending. ``isComposing`` is set during the IME session;
+    // Chromium also reports keyCode 229 for the same window.
+    // Reading off ``nativeEvent`` because React's synthetic event
+    // type doesn't include the flag yet.
+    const native = e.nativeEvent as KeyboardEvent;
+    if (native.isComposing || native.keyCode === 229) {
+      return;
+    }
     // While the slash menu is open it captures the arrow keys (move the
     // highlight), Enter (pick the highlighted command) and Escape.
     if (slash.visible) {

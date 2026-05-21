@@ -124,6 +124,12 @@ export function FunctionForm({
       onClose();
       return;
     }
+    // Skip Enter handling while an IME is composing (CN/JP/KR
+    // candidate picker uses Enter to commit a candidate).
+    const native = e.nativeEvent as KeyboardEvent;
+    if (native.isComposing || native.keyCode === 229) {
+      return;
+    }
     const t = e.target as HTMLElement;
     const isTextarea = t.tagName === "TEXTAREA";
     if (e.key === "Enter") {
