@@ -141,16 +141,10 @@ export function RightSidebar() {
     setRightDockOpen(!open);
   }
   function onNavClick(v: string) {
-    if (!open) {
-      setRightDockView(v);
-      setRightDockOpen(true);
-      return;
-    }
-    if (view === v) {
-      setRightDockOpen(false);
-    } else {
-      setRightDockView(v);
-    }
+    // History / Execution Detail nav buttons only switch view +
+    // ensure the panel is open. Collapsing is the top toggle's job.
+    setRightDockView(v);
+    if (!open) setRightDockOpen(true);
   }
 
   // `data-view` attr is preserved so the legacy CSS rules in
