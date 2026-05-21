@@ -35,20 +35,23 @@ That's it. Every step is something you do with your normal tools.
 | Situation | Where the file goes |
 |---|---|
 | User said "save to X" | Exactly X. |
-| Brand new general-purpose function | `openprogram/programs/functions/third_party/<name>.py` |
+| Brand new general-purpose function | `openprogram/functions/agentics/<name>/__init__.py` |
 | Editing an existing function | The file you found it in (don't move it). |
 | User's project / non-framework function | Wherever fits their layout (ask if unclear). |
 
-Filename convention: lowercase snake_case, matching the function name (`analyze_sentiment.py` contains `def analyze_sentiment`).
+Directory + filename convention: lowercase snake_case folder matching the function name (e.g. `analyze_sentiment/__init__.py` contains `def analyze_sentiment`). The folder layout (one directory per agentic function, code in `__init__.py`) replaced the old flat `<name>.py` layout in the function-calling unification — see ``docs/design/function-calling-unification.md``. Single-file helpers inside the same logical agentic can sit next to ``__init__.py`` (e.g. ``analyze_sentiment/_prompt.py``) without polluting the top-level namespace.
 
-## 2. agentic_function vs plain Python
+## 2. agentic_function vs plain Python vs @function
 
-| Needs LLM reasoning at runtime? | Use |
-|---|---|
-| Yes — the function asks the model to analyze, classify, generate, decide | `@agentic_function` + `runtime: Runtime` + `runtime.exec(content=[...])` |
-| No — pure deterministic logic (parsing, math, file munging, calling an API) | plain function, no decorator, no `runtime` parameter |
+| What you're building | Decorator | Where it lives |
+|---|---|---|
+| LLM-reasoning logic (analyze / classify / generate / decide) | `@agentic_function` + `runtime: Runtime` + `runtime.exec(content=[...])` | `openprogram/functions/agentics/<name>/__init__.py` |
+| Deterministic helper (parsing / math / file munging / API wrapper) | plain function, no decorator, no `runtime` parameter | wherever it's used; if shared, `agentics/_utils/`-style |
+| **Framework-level deterministic LLM tool** (bash / read / web_search / etc.) | `@function` (different decorator!) | `openprogram/functions/tools/<name>/` |
 
-Don't decorate a function just to "make it discoverable"; the decorator implies an LLM call.
+**This skill is about `@agentic_function`.** The `@function` decorator is a different mechanism for framework-level leaf tools and is out of scope here — see ``docs/design/function-calling-unification.md`` if you need it. Both decorators ultimately produce ``AgentTool`` entries in the same shared registry, but they target different kinds of work: `@function` for deterministic Python tools called by the LLM, `@agentic_function` for higher-order functions whose body itself drives an LLM round.
+
+Don't decorate a function just to "make it discoverable"; `@agentic_function` implies an LLM call inside the body.
 
 ## 3. Function metadata specification
 
@@ -309,7 +312,7 @@ If it crashes, read the traceback and fix before declaring done. For functions w
 
 Once a function is saved, there are two ways to run it.
 
-**CLI** — for functions discoverable under `openprogram/programs/functions/`:
+**CLI** — for functions discoverable under `openprogram/functions/agentics/` (listed in `openprogram/functions/_registry.py::AGENTIC_MODULES`):
 
 ```bash
 openprogram programs list                       # see what's available
@@ -324,7 +327,7 @@ LLM if the function calls one.
 
 ```python
 from openprogram.functions.agentics.<name> import <name>
-from openprogram import create_runtime
+from openprogram.providers.registry import create_runtime
 
 rt = create_runtime()
 result = <name>(..., runtime=rt)   # pass runtime= only if the signature has it
@@ -372,4 +375,5 @@ If you remember nothing else from this skill, remember these:
 4. No `system=` kwarg on `runtime.exec`.
 5. Every LLM-visible parameter needs a `description` in `input={...}`.
 6. No `Args:` / `Returns:` sections in the docstring.
-7. Save to `openprogram/programs/functions/third_party/<name>.py` unless the user said otherwise.
+7. Save to `openprogram/functions/agentics/<name>/__init__.py` unless the user said otherwise. Add `("<name>", None)` to `openprogram/functions/_registry.py::AGENTIC_MODULES` so the loader actually imports it (otherwise the @agentic_function decorator never fires and the function won't be discoverable).
+8. If the LLM should also see it as a callable tool, add `"<name>"` to `openprogram/functions/__init__.py::TOOLSETS["full"]["tools"]` (the Layer 2 exposure whitelist). Without this the function exists but is invisible to LLMs.
