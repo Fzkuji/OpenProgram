@@ -24,7 +24,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -185,10 +184,15 @@ export function McpPage() {
         <div className={styles.topbar}>
           <span className={styles.title}>MCP</span>
           <div className={styles.toolbar}>
-            <Button variant="secondary" size="sm" onClick={() => void reload()}>
+            <button className={styles.actionBtn} onClick={() => void reload()}>
               Refresh
-            </Button>
-            <Button size="sm" onClick={openAdd}>+ Add server</Button>
+            </button>
+            <button
+              className={cn(styles.actionBtn, styles.actionBtnPrimary)}
+              onClick={openAdd}
+            >
+              + Add server
+            </button>
           </div>
         </div>
 
@@ -312,28 +316,31 @@ function DetailView({
 
         <div className="ml-auto flex gap-2">
           {server.enabled ? (
-            <Button variant="secondary" size="sm" onClick={onDisable} disabled={isBusy}>
+            <button className={styles.actionBtn} onClick={onDisable} disabled={isBusy}>
               {busy === "disable" ? "Disabling…" : "Disable"}
-            </Button>
+            </button>
           ) : (
-            <Button variant="secondary" size="sm" onClick={onEnable} disabled={isBusy}>
+            <button className={styles.actionBtn} onClick={onEnable} disabled={isBusy}>
               {busy === "enable" ? "Enabling…" : "Enable"}
-            </Button>
+            </button>
           )}
-          <Button variant="secondary" size="sm"
-                  onClick={onRestart} disabled={isBusy || !server.enabled}>
+          <button
+            className={styles.actionBtn}
+            onClick={onRestart}
+            disabled={isBusy || !server.enabled}
+          >
             {busy === "restart" ? "Restarting…" : "Restart"}
-          </Button>
-          <Button variant="secondary" size="sm" onClick={onEdit} disabled={isBusy}>
+          </button>
+          <button className={styles.actionBtn} onClick={onEdit} disabled={isBusy}>
             Edit
-          </Button>
-          <Button
-            variant="secondary" size="sm"
-            onClick={onDelete} disabled={isBusy}
-            className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+          </button>
+          <button
+            className={cn(styles.actionBtn, styles.actionBtnDanger)}
+            onClick={onDelete}
+            disabled={isBusy}
           >
             {busy === "delete" ? "Deleting…" : "Delete"}
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -628,15 +635,19 @@ function EditDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => void testRun()} disabled={saving}>
+          <button className={styles.actionBtn} onClick={() => void testRun()} disabled={saving}>
             Test
-          </Button>
-          <Button variant="ghost" onClick={onClose} disabled={saving}>
+          </button>
+          <button className={styles.actionBtn} onClick={onClose} disabled={saving}>
             Cancel
-          </Button>
-          <Button onClick={() => void save()} disabled={saving}>
+          </button>
+          <button
+            className={cn(styles.actionBtn, styles.actionBtnPrimary)}
+            onClick={() => void save()}
+            disabled={saving}
+          >
             {saving ? "Saving…" : isAdd ? "Add" : "Save"}
-          </Button>
+          </button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

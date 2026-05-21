@@ -139,6 +139,54 @@
   font-style: normal;
 }
 
+/* Action button — mirrors welcome-screen.module.css .example so
+   action rows on /mcp read with the same weight as the welcome
+   tile buttons elsewhere in the app. */
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--bg-primary);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.actionBtn:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--bg-hover-contrast, var(--bg-hover));
+  color: var(--text-bright);
+}
+.actionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.actionBtnDanger {
+  color: var(--accent-red);
+}
+.actionBtnDanger:hover:not(:disabled) {
+  color: var(--text-bright);
+  background: var(--accent-red);
+  border-color: transparent;
+}
+.actionBtnPrimary {
+  background: var(--accent-blue);
+  color: var(--text-bright, #fff);
+  border-color: var(--accent-blue);
+}
+.actionBtnPrimary:hover:not(:disabled) {
+  background: var(--accent-blue);
+  filter: brightness(1.1);
+  color: #fff;
+  border-color: var(--accent-blue);
+}
+
 /* Empty state in the content pane (no server selected, etc.) */
 .empty {
   text-align: center;
