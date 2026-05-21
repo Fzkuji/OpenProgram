@@ -31,6 +31,7 @@ interface LegacyConv {
 interface ProgramsMeta {
   favorites: string[];
   folders: Record<string, string[]>;
+  icons: Record<string, string>;
 }
 
 interface LegacySnapshot {
@@ -40,7 +41,7 @@ interface LegacySnapshot {
   sidebarOpen: boolean;
 }
 
-const EMPTY_META: ProgramsMeta = { favorites: [], folders: {} };
+const EMPTY_META: ProgramsMeta = { favorites: [], folders: {}, icons: {} };
 const EMPTY_FNS: AgenticFunction[] = [];
 const EMPTY_CONVS: Record<string, LegacyConv> = {};
 

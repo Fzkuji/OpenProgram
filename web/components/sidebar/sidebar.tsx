@@ -259,7 +259,7 @@ export function Sidebar() {
               <path d="M4.25 2A2.25 2.25 0 0 0 2 4.25v2.5A2.25 2.25 0 0 0 4.25 9h2.5A2.25 2.25 0 0 0 9 6.75v-2.5A2.25 2.25 0 0 0 6.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 2 13.25v2.5A2.25 2.25 0 0 0 4.25 18h2.5A2.25 2.25 0 0 0 9 15.75v-2.5A2.25 2.25 0 0 0 6.75 11h-2.5Zm9-9A2.25 2.25 0 0 0 11 4.25v2.5A2.25 2.25 0 0 0 13.25 9h2.5A2.25 2.25 0 0 0 18 6.75v-2.5A2.25 2.25 0 0 0 15.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 11 13.25v2.5A2.25 2.25 0 0 0 13.25 18h2.5A2.25 2.25 0 0 0 18 15.75v-2.5A2.25 2.25 0 0 0 15.75 11h-2.5Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>Programs</span>
+          <span className={sidebarNavLabelClass}>Functions</span>
           <span
             className={
               sidebarNavActionClass +
@@ -341,12 +341,12 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* Favorite programs — only when at least one favourite exists
+      {/* Favorite functions — only when at least one favourite exists
           and the sidebar isn't collapsed. */}
       {open && hasFavorites && (
         <SidebarSection
           id="favSection"
-          title="Favorite Programs"
+          title="Favorite Functions"
           collapsed={favCollapsed}
           onToggle={() => setFavCollapsed((v) => !v)}
           className="shrink-0 pt-[16px]"

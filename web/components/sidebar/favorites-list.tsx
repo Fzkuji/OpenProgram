@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Favorite programs list — reads `window.availableFunctions` and
- * `window.programsMeta.favorites` to produce a filtered, category-
- * ordered list. Clicking a favourite opens the fn-form (chat route)
+ * Favorite functions list — reads `window.availableFunctions` and
+ * `window.programsMeta.{favorites,icons}` to produce an alphabetised
+ * list of starred functions with their user-chosen emoji icon (or a
+ * default box). Clicking a favourite opens the fn-form (chat route)
  * or routes to /chat first (other routes), via the zustand store +
  * Next router — no longer delegates to the legacy `clickFunction`
  * window global.
@@ -15,14 +16,7 @@ import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 
 import { useLegacyGlobals } from "./use-legacy-globals";
 
-const CAT_ORDER = ["app", "generated", "user", "meta", "builtin"] as const;
-const CAT_ICONS: Record<string, string> = {
-  app: "\u{1F4E6}",       // 📦
-  meta: "\u{1F6E0}",      // 🛠
-  builtin: "⚙",       // ⚙
-  generated: "⚙",     // ⚙
-  user: "✎",          // ✎
-};
+const DEFAULT_ICON = "📦";
 
 export function FavoritesList(): React.ReactElement | null {
   const { availableFunctions, programsMeta } = useLegacyGlobals();
@@ -30,14 +24,9 @@ export function FavoritesList(): React.ReactElement | null {
   const pathname = usePathname();
   const router = useRouter();
   const favSet = new Set(programsMeta.favorites || []);
-  const filtered = (availableFunctions || []).filter((f) => favSet.has(f.name));
-  // Stable category-first ordering (matches legacy renderFunctions).
-  const ordered: typeof filtered = [];
-  for (const cat of CAT_ORDER) {
-    for (const f of filtered) {
-      if ((f.category || "user") === cat) ordered.push(f);
-    }
-  }
+  const ordered = (availableFunctions || [])
+    .filter((f) => favSet.has(f.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
   if (ordered.length === 0) return null;
 
   function onClick(name: string, category: string) {
@@ -67,7 +56,7 @@ export function FavoritesList(): React.ReactElement | null {
     <>
       {ordered.map((f) => {
         const cat = f.category || "user";
-        const icon = CAT_ICONS[cat] || "✎";
+        const icon = programsMeta.icons?.[f.name] || DEFAULT_ICON;
         return (
           <div
             key={f.name}

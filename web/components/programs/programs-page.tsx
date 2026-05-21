@@ -1,15 +1,13 @@
 "use client";
 
 /**
- * /programs — port of web/public/html/programs.html +
- * web/public/js/programs/programs.js (440 lines).
+ * /programs — Functions catalog page.
  *
- * Native React + scoped CSS module. Behaviors preserved verbatim:
- * built-in folders (All / Favorites / Uncategorized) + user folders
- * with rename / delete; program drag-and-drop into folders;
- * favourites toggle; search; filter; sort; category grouping;
- * grid/list view toggle; right-click context menus on programs,
- * folders, sidebar background, and content background.
+ * No built-in categories: every entry is "a function". Organisation is
+ * entirely user-driven — built-in folders (All / Favorites /
+ * Uncategorized) + user folders with rename / delete; drag-and-drop
+ * into folders; favourites toggle; per-function emoji icon override
+ * (right-click → Change Icon…); search; sort; grid/list view toggle.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,20 +24,10 @@ interface Program {
 interface ProgramsMeta {
   favorites: string[];
   folders: Record<string, string[]>;
+  icons: Record<string, string>;
 }
 
-const CAT_ICONS: Record<string, string> = {
-  app: "\u{1F4E6}",
-  meta: "\u{1F6E0}",
-  builtin: "⚙",
-  generated: "⚙",
-  user: "✎",
-};
-const CAT_LABELS: Record<string, string> = {
-  app: "Applications",
-  agentic: "Agentic Functions",
-};
-const CAT_ORDER = ["app", "agentic"] as const;
+const DEFAULT_ICON = "📦";
 
 interface CtxItem {
   type?: "sep";
@@ -55,14 +43,16 @@ interface CtxMenuState {
 export function ProgramsPage() {
   const router = useRouter();
   const [programs, setPrograms] = useState<Program[]>([]);
-  const [meta, setMeta] = useState<ProgramsMeta>({ favorites: [], folders: {} });
+  const [meta, setMeta] = useState<ProgramsMeta>({
+    favorites: [],
+    folders: {},
+    icons: {},
+  });
   const [folder, setFolder] = useState<string>("__all__");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<"category" | "name" | "recent">("category");
-  const [filter, setFilter] = useState<
-    "all" | "app" | "agentic" | "favorites"
-  >("all");
+  const [sort, setSort] = useState<"name" | "recent">("name");
+  const [filter, setFilter] = useState<"all" | "favorites">("all");
   const [ctx, setCtx] = useState<CtxMenuState | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
@@ -77,14 +67,15 @@ export function ProgramsPage() {
         fetch("/api/programs/meta").then((r) => r.json()),
       ]);
       setPrograms(a as Program[]);
-      const m = b as ProgramsMeta;
+      const m = b as Partial<ProgramsMeta>;
       setMeta({
         favorites: m.favorites ?? [],
         folders: m.folders ?? {},
+        icons: m.icons ?? {},
       });
     } catch {
       setPrograms([]);
-      setMeta({ favorites: [], folders: {} });
+      setMeta({ favorites: [], folders: {}, icons: {} });
     }
   }, []);
 
@@ -108,6 +99,7 @@ export function ProgramsPage() {
     if (typeof w.programsMeta === "object") {
       (w.programsMeta as Record<string, unknown>).favorites = [...next.favorites];
       (w.programsMeta as Record<string, unknown>).folders = { ...next.folders };
+      (w.programsMeta as Record<string, unknown>).icons = { ...next.icons };
     }
     if (typeof w.renderFunctions === "function") (w.renderFunctions as () => void)();
   }, []);
@@ -170,19 +162,9 @@ export function ProgramsPage() {
     if (filter === "favorites") {
       const fav = new Set(meta.favorites);
       arr = arr.filter((p) => fav.has(p.name));
-    } else if (filter !== "all") {
-      arr = arr.filter((p) => p.category === filter);
     }
     if (sort === "recent")
       arr = [...arr].sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
-    else if (sort === "category")
-      arr = [...arr].sort(
-        (a, b) =>
-          (CAT_ORDER.indexOf((a.category || "user") as typeof CAT_ORDER[number]) +
-            (CAT_ORDER.indexOf((a.category || "user") as typeof CAT_ORDER[number]) < 0 ? 9 : 0)) -
-          (CAT_ORDER.indexOf((b.category || "user") as typeof CAT_ORDER[number]) +
-            (CAT_ORDER.indexOf((b.category || "user") as typeof CAT_ORDER[number]) < 0 ? 9 : 0)),
-      );
     else arr = [...arr].sort((a, b) => a.name.localeCompare(b.name));
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -214,9 +196,19 @@ export function ProgramsPage() {
     router.push(chatTarget());
   }
 
+  function cloneMeta(): ProgramsMeta {
+    return {
+      favorites: [...meta.favorites],
+      folders: Object.fromEntries(
+        Object.entries(meta.folders).map(([k, v]) => [k, [...v]]),
+      ),
+      icons: { ...meta.icons },
+    };
+  }
+
   async function toggleFav(name: string, e: React.MouseEvent) {
     e.stopPropagation();
-    const next = { ...meta, favorites: [...(meta.favorites || [])] };
+    const next = cloneMeta();
     const idx = next.favorites.indexOf(name);
     if (idx >= 0) next.favorites.splice(idx, 1);
     else next.favorites.push(name);
@@ -224,15 +216,10 @@ export function ProgramsPage() {
   }
 
   async function moveToFolder(name: string, target: string | null) {
-    const next: ProgramsMeta = {
-      favorites: [...meta.favorites],
-      folders: Object.fromEntries(
-        Object.entries(meta.folders).map(([k, v]) => [
-          k,
-          v.filter((x) => x !== name),
-        ]),
-      ),
-    };
+    const next = cloneMeta();
+    for (const k of Object.keys(next.folders)) {
+      next.folders[k] = next.folders[k].filter((x) => x !== name);
+    }
     if (target) next.folders[target] = [...(next.folders[target] || []), name];
     await saveMeta(next);
   }
@@ -240,14 +227,11 @@ export function ProgramsPage() {
   async function deleteFolder(name: string) {
     if (
       !confirm(
-        `Delete folder "${name}"? Programs will be moved to Uncategorized.`,
+        `Delete folder "${name}"? Functions will be moved to Uncategorized.`,
       )
     )
       return;
-    const next: ProgramsMeta = {
-      favorites: [...meta.favorites],
-      folders: { ...meta.folders },
-    };
+    const next = cloneMeta();
     delete next.folders[name];
     if (folder === name) setFolder("__all__");
     await saveMeta(next);
@@ -256,10 +240,8 @@ export function ProgramsPage() {
   async function createFolder(name: string) {
     name = name.trim();
     if (!name || meta.folders[name]) return;
-    const next: ProgramsMeta = {
-      favorites: [...meta.favorites],
-      folders: { ...meta.folders, [name]: [] },
-    };
+    const next = cloneMeta();
+    next.folders[name] = [];
     await saveMeta(next);
     setFolder(name);
   }
@@ -267,13 +249,24 @@ export function ProgramsPage() {
   async function renameFolder(oldName: string, newName: string) {
     newName = newName.trim();
     if (!newName || newName === oldName || meta.folders[newName]) return;
-    const next: ProgramsMeta = {
-      favorites: [...meta.favorites],
-      folders: { ...meta.folders },
-    };
+    const next = cloneMeta();
     next.folders[newName] = next.folders[oldName] || [];
     delete next.folders[oldName];
     if (folder === oldName) setFolder(newName);
+    await saveMeta(next);
+  }
+
+  async function setIcon(name: string) {
+    const current = meta.icons[name] || "";
+    const value = window.prompt(
+      `Choose an emoji icon for "${name}" (leave empty to reset to ${DEFAULT_ICON}):`,
+      current,
+    );
+    if (value === null) return;
+    const next = cloneMeta();
+    const trimmed = value.trim();
+    if (trimmed) next.icons[name] = trimmed;
+    else delete next.icons[name];
     await saveMeta(next);
   }
 
@@ -321,6 +314,7 @@ export function ProgramsPage() {
             stopPropagation: () => {},
           } as unknown as React.MouseEvent),
       },
+      { label: "🎨 Change icon...", action: () => setIcon(name) },
       { label: "✎ Edit...", action: () => editProgram(name) },
       { type: "sep" },
     ];
@@ -397,7 +391,7 @@ export function ProgramsPage() {
   const builtinFolders = [
     {
       id: "__all__",
-      name: "All Programs",
+      name: "All Functions",
       icon: "📋",
       count: programs.length,
     },
@@ -416,26 +410,16 @@ export function ProgramsPage() {
   ];
   const userFolders = Object.keys(meta.folders).sort();
 
-  const grouped = useMemo(() => {
-    if (sort !== "category") return null;
-    const out: Record<string, Program[]> = {};
-    for (const p of visiblePrograms) {
-      const c = p.category || "user";
-      (out[c] ??= []).push(p);
-    }
-    return out;
-  }, [visiblePrograms, sort]);
-
   return (
     <div className="main">
       <div className={styles.view}>
         <div className={styles.topbar}>
-          <span className={styles.title}>Programs</span>
+          <span className={styles.title}>Functions</span>
           <div className={styles.toolbar}>
             <input
               type="text"
               className={styles.search}
-              placeholder="Search programs..."
+              placeholder="Search functions..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -443,7 +427,6 @@ export function ProgramsPage() {
               value={sort}
               onChange={(v) => setSort(v)}
               options={[
-                { value: "category", label: "Sort: Category" },
                 { value: "name", label: "Sort: Name" },
                 { value: "recent", label: "Sort: Recent" },
               ]}
@@ -453,8 +436,6 @@ export function ProgramsPage() {
               onChange={(v) => setFilter(v)}
               options={[
                 { value: "all", label: "All" },
-                { value: "app", label: "Applications" },
-                { value: "agentic", label: "Agentic Functions" },
                 { value: "favorites", label: "Favorites" },
               ]}
             />
@@ -567,43 +548,19 @@ export function ProgramsPage() {
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}>📂</div>
                 <div className={styles.emptyText}>
-                  {search ? "No matching programs" : "This folder is empty"}
+                  {search ? "No matching functions" : "This folder is empty"}
                 </div>
                 <div className={styles.emptyHint}>
-                  Drag programs here to organize
+                  Drag functions here to organize
                 </div>
               </div>
-            ) : sort === "category" && grouped ? (
-              <>
-                {CAT_ORDER.filter((c) => grouped[c]).map((c) => (
-                  <div className={styles.catSection} key={c}>
-                    <div className={styles.catHeader}>
-                      {CAT_LABELS[c] || c} ({grouped[c].length})
-                    </div>
-                    <div className={view === "grid" ? styles.grid : styles.list}>
-                      {grouped[c].map((p) => (
-                        <Card
-                          key={p.name}
-                          p={p}
-                          fav={isFavorite(p.name)}
-                          folderName={getFolderForProgram(p.name)}
-                          formatDate={formatDate}
-                          onClick={() => runProgram(p.name, p.category)}
-                          onContextMenu={(e) => programCtx(e, p.name)}
-                          onDragStart={(e) => onProgramDragStart(e, p.name)}
-                          onToggleFav={(e) => toggleFav(p.name, e)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </>
             ) : (
               <div className={view === "grid" ? styles.grid : styles.list}>
                 {visiblePrograms.map((p) => (
                   <Card
                     key={p.name}
                     p={p}
+                    icon={meta.icons[p.name] || DEFAULT_ICON}
                     fav={isFavorite(p.name)}
                     folderName={getFolderForProgram(p.name)}
                     formatDate={formatDate}
@@ -625,6 +582,7 @@ export function ProgramsPage() {
 
 function Card({
   p,
+  icon,
   fav,
   folderName,
   formatDate,
@@ -634,6 +592,7 @@ function Card({
   onToggleFav,
 }: {
   p: Program;
+  icon: string;
   fav: boolean;
   folderName: string | null;
   formatDate: (ts?: number) => string;
@@ -642,7 +601,6 @@ function Card({
   onDragStart: (e: React.DragEvent) => void;
   onToggleFav: (e: React.MouseEvent) => void;
 }) {
-  const cat = p.category || "user";
   const desc = p.description ? p.description.split(".")[0] : "";
   return (
     <div
@@ -652,16 +610,12 @@ function Card({
       onClick={onClick}
       onContextMenu={onContextMenu}
     >
-      <div className={cls(styles.cardIcon, styles[cat])}>
-        {CAT_ICONS[cat] || "✎"}
-      </div>
+      <div className={styles.cardIcon}>{icon}</div>
       <div className={styles.cardInfo}>
         <div className={styles.cardName}>{p.name}</div>
         <div className={styles.cardDesc}>{desc}</div>
         <div className={styles.cardMeta}>
-          {cat}
-          {folderName ? ` · 📁 ${folderName}` : ""}
-          {" · "}
+          {folderName ? `📁 ${folderName} · ` : ""}
           {formatDate(p.mtime)}
         </div>
       </div>
