@@ -238,7 +238,62 @@ function newSessionImport(): void {
 }
 
 export function handleRunningTask(rt: unknown): void {
-  if (rt) W.setRunning?.(true);
+  if (!rt) return;
+  const t = rt as {
+    session_id?: string;
+    msg_id?: string;
+    func_name?: string;
+    started_at?: number;
+    display_params?: string;
+    stream_events?: unknown[];
+  };
+
+  // 1) Flip the composer's send/stop button immediately.
+  W.setRunning?.(true);
+
+  // 2) Mark the in-flight assistant message as "running" in the
+  //    React store so its bubble shows the waiting indicator. The
+  //    backend has already persisted the assistant placeholder + any
+  //    tool rows that fired before the refresh; the WS load gave us
+  //    the message but with status="done" (placeholder content is
+  //    empty). Without this patch, the chat looked finished even
+  //    though the turn was still running server-side.
+  const sid = t.session_id;
+  const mid = t.msg_id;
+  if (!sid || !mid) return;
+  try {
+    const w = window as unknown as {
+      __sessionStore?: {
+        getState: () => {
+          messagesById?: Record<string, { id: string; status?: string }>;
+          updateMessage?: (
+            sessionId: string,
+            msgId: string,
+            patch: Record<string, unknown>,
+          ) => void;
+          setRunningTask?: (task: unknown) => void;
+        };
+      };
+    };
+    const store = w.__sessionStore?.getState();
+    if (!store) return;
+    const replyId = mid + "_reply";
+    const replyMsg = store.messagesById?.[replyId];
+    if (replyMsg && store.updateMessage) {
+      store.updateMessage(sid, replyId, { status: "running" });
+    } else if (store.updateMessage) {
+      store.updateMessage(sid, mid, { status: "running" });
+    }
+    store.setRunningTask?.({
+      session_id: sid,
+      msg_id: mid,
+      func_name: t.func_name,
+      started_at: t.started_at,
+    });
+  } catch {
+    // store not yet mounted (legacy-only page) — fall back to the
+    // simple button flip above.
+  }
 }
 
 /* ===== handleChatResponse (bookkeeping) ========================== */

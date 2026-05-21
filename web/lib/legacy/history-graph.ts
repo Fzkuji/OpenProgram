@@ -29,6 +29,7 @@ interface GNode {
   children?: GNode[];
   _depth?: number;
   _lane?: number;
+  _tier?: number;
   _anchor?: GNode;
   _internal?: boolean;
   _runNode?: boolean;
@@ -485,25 +486,9 @@ function _shapeFor(node: GNode): string {
   return "circle";
 }
 
-function _labelFor(node: GNode): string {
-  if (node.role === "tool") return node.function || node.name || "function";
-  // display=runtime: the run reply carries `function` (→ "gui_agent");
-  // the run *command* turn has none — show its text ("run gui_agent
-  // task=…") rather than the bare, uninformative word "runtime".
-  if (node.display === "runtime") {
-    return node.function || node.preview || "runtime";
-  }
-  if (node.preview) return node.preview;
-  if (node.role === "user") return "You";
-  if (node.role === "assistant") return "Agent";
-  return node.role || "?";
-}
-
-function _fitLabel(text: string, maxW: number): string {
-  const max = Math.max(4, Math.floor(maxW / 6.2));
-  if (text.length <= max) return text;
-  return text.slice(0, max - 1) + "…";
-}
+// Note: _labelFor / _fitLabel previously decided the inline text
+// next to each node. With inline labels removed (hover-tooltip
+// now), they're unused; deleted to keep the file small.
 
 function _applyShapeSize(shape: SVGElement, isCurrent: boolean): void {
   const r = isCurrent ? NODE_R + 1.8 : NODE_R;
@@ -679,10 +664,10 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   _internalOwner = internalOwner;
 
   const laneArea = PAD_X + COL_W * Math.max(lanes.laneCount - 1, 0);
-  const labelX = laneArea + 16;
   const panelW = (body && body.clientWidth) || 240;
-  const width = Math.max(panelW - 4, labelX + 90);
-  const labelMaxW = width - labelX - 10;
+  // Width = lane area + a small right margin. Labels are no longer
+  // inline so they don't dictate width any more.
+  const width = Math.max(panelW - 4, laneArea + PAD_X);
   const height = PAD_Y * 2 + ROW_H * maxDepth;
 
   const svg = _svg("svg", {
@@ -754,7 +739,15 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     });
     g.appendChild(hit);
     (g as SVGGraphicsElement).style.cursor = "pointer";
-    const r = onHead ? NODE_R : NODE_R * 0.7;
+    // Node size tapers with call-stack depth (``_tier``) so nested
+    // sub-calls visually nest under their parents: user / top-level
+    // assistant are largest, tool calls smaller, tool-spawned
+    // sub-LLM calls smaller still. Independent of ``_depth`` (which
+    // is purely the visual y row, including tool stacking).
+    const tier = typeof node._tier === "number" ? node._tier : 0;
+    const tierShrink = Math.min(0.5, tier * 0.08);
+    const headBoost = onHead ? 1.0 : 0.7;
+    const r = NODE_R * headBoost * (1 - tierShrink);
     const el = _buildShapeEl(_shapeFor(node), color, r);
     if (el) {
       el.setAttribute("pointer-events", "none");
@@ -775,22 +768,11 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     nodeG.appendChild(g);
   });
 
-  const labelG = _svg("g", { class: "history-labels" });
-  Object.keys(tree.byId).forEach((id) => {
-    const node = tree.byId[id];
-    const p = pos(node);
-    const onHead = !!headAncestors[id];
-    const text = _svg("text", {
-      x: String(labelX),
-      y: String(p.y),
-      class:
-        "history-label" + (onHead ? " on-head" : "") + (id === headId ? " is-head" : ""),
-      "data-msg-id": id,
-    });
-    text.textContent = _fitLabel(_labelFor(node), labelMaxW);
-    labelG.appendChild(text);
-  });
-  svg.appendChild(labelG);
+  // Inline labels were removed: hovering a node fires the tooltip
+  // (``_showTooltip``) which carries the role + preview text in a
+  // floating panel,without the chronic clutter of one text run per
+  // node. The wider SVG also lets the lane columns breathe — labels
+  // used to dictate svg width.
 
   (function _drawBranchTags() {
     const sid = HGW.currentSessionId;

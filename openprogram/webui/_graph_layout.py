@@ -111,6 +111,25 @@ def annotate_graph(graph_entries: list[dict], head_id: Optional[str]) -> list[di
     ):
         _walk(rid, 0)
 
+    # ── tier (call-stack depth) ──────────────────────────────────
+    # Distinct from ``_depth``: depth is the visual y-row that
+    # respects tool stacking, tier is "how many nesting levels deep
+    # am I in the call stack" — a logical concept the renderer uses
+    # to taper node size / opacity for sub-calls. Every parent →
+    # child edge bumps tier by 1, regardless of whether the child is
+    # a sibling tool or a true nested call.
+    tier: dict[str, int] = {}
+
+    def _walk_tier(nid: str, t: int) -> None:
+        if nid in tier:
+            return
+        tier[nid] = t
+        for cid in children.get(nid, []):
+            _walk_tier(cid, t + 1)
+
+    for rid in sorted(roots, key=lambda x: _ts(x)):
+        _walk_tier(rid, 0)
+
     # ── lane (leaf-based column) ──────────────────────────────────
     # Leaves are the branch tips after we strip tool attachments —
     # a node is a leaf if none of its children (transitively, through
@@ -211,6 +230,7 @@ def annotate_graph(graph_entries: list[dict], head_id: Optional[str]) -> list[di
             continue
         m["_depth"] = depth.get(nid, 0)
         m["_lane"] = lane.get(nid, 0)
+        m["_tier"] = tier.get(nid, 0)
     return graph_entries
 
 
