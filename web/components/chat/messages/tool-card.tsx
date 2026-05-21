@@ -81,6 +81,7 @@ function ToolRow({ call }: { call: ChatToolCall }) {
 export function ToolsBlock({ tools }: { tools: ChatToolCall[] }) {
   const [collapsed, setCollapsed] = useState(true);
   if (!tools.length) return null;
+  const hasRunning = tools.some((t) => t.status === "running");
   return (
     <div className="chat-tools inline-tree" data-collapsed={collapsed ? "1" : "0"}>
       <div
@@ -88,7 +89,18 @@ export function ToolsBlock({ tools }: { tools: ChatToolCall[] }) {
         onClick={() => setCollapsed((c) => !c)}
       >
         <span>
-          <span style={{ color: "var(--accent-cyan)" }}>◆</span> Tool calls{" "}
+          <span
+            style={{
+              color: "var(--accent-cyan)",
+              display: "inline-block",
+              animation: hasRunning
+                ? "tool-dot-pulse 1.1s ease-in-out infinite"
+                : undefined,
+            }}
+          >
+            ◆
+          </span>
+          {" Tool calls "}
           <span className="chat-tools-count">{tools.length}</span>
         </span>
         <span className="inline-tree-actions">
@@ -100,6 +112,13 @@ export function ToolsBlock({ tools }: { tools: ChatToolCall[] }) {
           <ToolRow key={t.id} call={t} />
         ))}
       </div>
+      {/* Pulse keyframe — colocated so this file owns the animation. */}
+      <style jsx>{`
+        @keyframes tool-dot-pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50%      { transform: scale(1.35); opacity: 0.55; }
+        }
+      `}</style>
     </div>
   );
 }
