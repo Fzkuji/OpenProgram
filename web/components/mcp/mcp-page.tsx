@@ -327,7 +327,11 @@ function DetailView({
           <Button variant="secondary" size="sm" onClick={onEdit} disabled={isBusy}>
             Edit
           </Button>
-          <Button variant="destructive" size="sm" onClick={onDelete} disabled={isBusy}>
+          <Button
+            variant="secondary" size="sm"
+            onClick={onDelete} disabled={isBusy}
+            className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+          >
             {busy === "delete" ? "Deleting…" : "Delete"}
           </Button>
         </div>
