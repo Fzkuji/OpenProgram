@@ -1,3 +1,0 @@
-
-
-* * * * * /bin/date >> /tmp/openprogram-cron-test.log 2>&1 # OPENPROGRAM_CRON_TEST

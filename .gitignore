@@ -59,3 +59,4 @@ cli/vendor/ink/package-lock.json
 openprogram/webui/programs_meta.json
 .agent_cron_test/
 .cron-test.log
+.cron-test/

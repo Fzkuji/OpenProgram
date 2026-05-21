@@ -1,3 +1,0 @@
-
-
-* * * * * /bin/sh -c '/bin/date >> "/Users/fzkuji/Documents/LLM Agent Harness/OpenProgram/.cron-test/openprogram-cron-test.log"' # OPENPROGRAM_CRON_TEST
