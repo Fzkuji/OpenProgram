@@ -40,6 +40,11 @@ def build_branches_payload(session_id: str | None) -> dict:
                     "preview": preview,
                     "created_at": m.get("created_at"),
                 })
+            # Server-side layout — keeps the parallel-branch geometry
+            # consistent across load_session, list_branches, and any
+            # other path that ships ``graph`` to the frontend.
+            from openprogram.webui._graph_layout import annotate_graph
+            annotate_graph(graph, active_head)
             leaves = db.list_branches(session_id)
             for row in leaves:
                 mid = row["head_msg_id"]

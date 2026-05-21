@@ -329,6 +329,29 @@ function _applyCollapse(graph: GNode[]): {
 }
 
 function _assignDepth(ordered: GNode[], byId: Record<string, GNode>): number {
+  // Honour ``_depth`` if the backend already computed it (the layout
+  // pass in webui/_graph_layout.py adds depth/lane to every graph
+  // entry it emits); otherwise fall back to "one row per node in
+  // list order", matching the original behaviour.
+  let maxRow = 0;
+  let anyAuthoritative = false;
+  ordered.forEach((m) => {
+    const n = byId[m.id];
+    if (!n) return;
+    if (typeof n._depth === "number") {
+      anyAuthoritative = true;
+      if (n._depth > maxRow) maxRow = n._depth;
+    }
+  });
+  if (anyAuthoritative) {
+    Object.keys(byId).forEach((id) => {
+      const n = byId[id];
+      if (typeof n._depth !== "number") n._depth = 0;
+      else if (n._depth > maxRow) maxRow = n._depth;
+    });
+    return maxRow;
+  }
+  // Legacy fallback — never hit when backend layout is in play.
   let row = 0;
   ordered.forEach((m) => {
     const n = byId[m.id];
@@ -362,17 +385,20 @@ function _assignLanes(
   const leafOfNode: Record<string, string> = Object.create(null);
   let laneCount = 1;
 
+  // Detect whether the backend's _graph_layout pass already filled
+  // ``_lane`` on these nodes. If so we MUST NOT overwrite it — the
+  // old "pin head's ancestry to lane 0" block (preserved below for
+  // the legacy no-backend-layout case) would otherwise flatten
+  // every retry sibling that sits on a head-ancestor onto column 0.
+  const backendLanesPreset = Object.keys(byId).some(
+    (id) => typeof byId[id]._lane === "number",
+  );
+
   // ── lane 0 = the trunk = the HEAD conversation chain ───────────────
-  // The chat window shows the chain root→HEAD; that exact chain IS the
-  // main branch. Walk up from HEAD by parent_id and pin every node on
-  // it to lane 0. Everything else — @agentic_function call subtrees,
-  // diverged conversation branches — packs into lanes ≥ 1. A run's
-  // internal nodes hang OFF a trunk node (they are its children), they
-  // are never ON the trunk, so they can't land on the main branch.
+  // (Legacy path — only when backend didn't pre-compute lanes.)
   let trunkTip: GNode | null =
     headId && byId[headId] ? byId[headId] : null;
   if (!trunkTip) {
-    // No HEAD — fall back to the most recent leaf.
     trunkTip = leaves
       .slice()
       .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0] || null;
@@ -380,28 +406,15 @@ function _assignLanes(
   if (trunkTip) {
     let cur: GNode | null = trunkTip;
     while (cur) {
-      cur._lane = 0;
+      if (!backendLanesPreset) cur._lane = 0;
       leafOfNode[cur.id] = trunkTip.id;
       cur = cur.parent_id ? byId[cur.parent_id] : null;
     }
   }
 
-  // ── leaf-based lanes: each leaf owns a column ────────────────────
-  // Previously we used "lane = parent's lane + 1", which nested every
-  // off-trunk node deeper. That made retry produce a staircase: each
-  // sibling user message stepped one column further right, and its
-  // assistant subchain stepped further still. Visually retries looked
-  // like deeper nesting instead of parallel branches.
-  //
-  // Correct model: lane = the column of the branch tip my chain ends
-  // at. Trunk tip → lane 0. Every other leaf claims a fresh lane
-  // (1, 2, …) ordered by created_at so older retries sit closer to
-  // the trunk. A node inherits its leaf's lane, so all members of one
-  // branch share a column — siblings of any kind (retries, edits)
-  // appear side-by-side at lane 0 / lane 1 / lane 2, never staircased.
-
-  // First fill in leafOfNode for every node — both trunk and off-trunk.
-  // Trunk entries are already populated above; this covers the rest.
+  // Honour backend-supplied lanes if the layout pass attached
+  // ``_lane`` to every node. The leafOfNode map is still built
+  // locally for click-to-checkout (we need a leaf id per node).
   leaves.forEach((leaf) => {
     let cur: GNode | null = leaf;
     while (cur && !(cur.id in leafOfNode)) {
@@ -410,27 +423,35 @@ function _assignLanes(
     }
   });
 
-  // Assign each leaf a lane. Trunk leaf = 0; the rest by ascending
-  // created_at so retry siblings appear in the order they were
-  // produced.
-  const leafLane: Record<string, number> = Object.create(null);
-  const trunkLeafId = trunkTip?.id || null;
-  if (trunkLeafId) leafLane[trunkLeafId] = 0;
-  leaves
-    .filter((l) => l.id !== trunkLeafId)
-    .sort((a, b) => (a.created_at || 0) - (b.created_at || 0))
-    .forEach((leaf, i) => {
-      leafLane[leaf.id] = i + 1;
+  const backendLanes = Object.keys(byId).some(
+    (id) => typeof byId[id]._lane === "number",
+  );
+  if (backendLanes) {
+    Object.keys(byId).forEach((id) => {
+      const n = byId[id];
+      if (typeof n._lane !== "number") n._lane = 0;
+      if ((n._lane as number) + 1 > laneCount) laneCount = (n._lane as number) + 1;
     });
-  laneCount = Math.max(laneCount, Object.keys(leafLane).length);
-
-  // Project leaf lanes onto every node along the chain.
-  Object.keys(byId).forEach((id) => {
-    const lid = leafOfNode[id];
-    const lane = lid && lid in leafLane ? leafLane[lid] : 0;
-    byId[id]._lane = lane;
-    if (lane + 1 > laneCount) laneCount = lane + 1;
-  });
+  } else {
+    // Legacy fallback (was leaf-based lane assignment): never reached
+    // when backend layout is in play.
+    const leafLane: Record<string, number> = Object.create(null);
+    const trunkLeafId = trunkTip?.id || null;
+    if (trunkLeafId) leafLane[trunkLeafId] = 0;
+    leaves
+      .filter((l) => l.id !== trunkLeafId)
+      .sort((a, b) => (a.created_at || 0) - (b.created_at || 0))
+      .forEach((leaf, i) => {
+        leafLane[leaf.id] = i + 1;
+      });
+    laneCount = Math.max(laneCount, Object.keys(leafLane).length);
+    Object.keys(byId).forEach((id) => {
+      const lid = leafOfNode[id];
+      const lane = lid && lid in leafLane ? leafLane[lid] : 0;
+      byId[id]._lane = lane;
+      if (lane + 1 > laneCount) laneCount = lane + 1;
+    });
+  }
 
   Object.keys(byId).forEach((id) => {
     if (byId[id]._lane === undefined) byId[id]._lane = 0;

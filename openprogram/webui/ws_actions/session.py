@@ -164,6 +164,7 @@ async def handle_load_session(ws, cmd: dict):
             full_msgs = default_db().get_messages(conv["id"])
         except Exception:
             full_msgs = all_msgs
+        from openprogram.webui._graph_layout import annotate_graph
         graph = []
         for m in full_msgs:
             content = m.get("content") or ""
@@ -179,6 +180,9 @@ async def handle_load_session(ws, cmd: dict):
                 "preview": preview,
                 "created_at": m.get("created_at"),
             })
+        # Compute (depth, lane) server-side so the frontend renders
+        # parallel branches correctly without re-deriving topology.
+        annotate_graph(graph, head)
         from openprogram.agent.session_config import load_session_run_config
         run_cfg = load_session_run_config(conv["id"])
         await ws.send_text(json.dumps({
