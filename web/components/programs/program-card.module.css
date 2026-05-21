@@ -28,6 +28,7 @@
   background: var(--bg-tertiary);
 }
 .cardIcon {
+  position: relative;
   font-size: 18px;
   width: 30px;
   height: 30px;
@@ -37,6 +38,32 @@
   flex-shrink: 0;
   border-radius: var(--radius);
   background: var(--bg-primary);
+}
+.cardIconEmoji {
+  line-height: 1;
+}
+.cardIconEditBtn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.card:hover .cardIconEditBtn {
+  opacity: 1;
+}
+.cardIconEditBtn:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }
 .cardInfo {
   flex: 1;

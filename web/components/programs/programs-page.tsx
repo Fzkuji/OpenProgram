@@ -553,6 +553,10 @@ export function ProgramsPage() {
                     onContextMenu={(e) => programCtx(e, p.name)}
                     onDragStart={(e) => onProgramDragStart(e, p.name)}
                     onToggleFav={(e) => toggleFav(p.name, e)}
+                    onChangeIcon={(e) => {
+                      e.stopPropagation();
+                      setIconPickerFor(p.name);
+                    }}
                   />
                 ))}
               </div>

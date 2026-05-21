@@ -19,6 +19,7 @@ export function ProgramCard({
   onContextMenu,
   onDragStart,
   onToggleFav,
+  onChangeIcon,
 }: {
   p: ProgramSummary;
   icon: string;
@@ -29,6 +30,7 @@ export function ProgramCard({
   onContextMenu: (e: React.MouseEvent) => void;
   onDragStart: (e: React.DragEvent) => void;
   onToggleFav: (e: React.MouseEvent) => void;
+  onChangeIcon: (e: React.MouseEvent) => void;
 }) {
   const desc = p.description ? p.description.split(".")[0] : "";
   return (
@@ -40,7 +42,30 @@ export function ProgramCard({
       onClick={onClick}
       onContextMenu={onContextMenu}
     >
-      <div className={styles.cardIcon}>{icon}</div>
+      <div className={styles.cardIcon}>
+        <span className={styles.cardIconEmoji}>{icon}</span>
+        <button
+          type="button"
+          className={styles.cardIconEditBtn}
+          onClick={onChangeIcon}
+          title="Change icon"
+          aria-label="Change icon"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="12"
+            height="12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+          </svg>
+        </button>
+      </div>
       <div className={styles.cardInfo}>
         <div className={styles.cardName}>{p.name}</div>
         <div className={styles.cardDesc}>{desc}</div>
