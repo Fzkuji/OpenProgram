@@ -350,6 +350,30 @@ def process_user_turn(
         _runtime_token = None
         _store_token = None
 
+    # 3b. Persist an assistant *placeholder* row so the row exists in
+    #     the DB before tool_execution_end events start firing. This
+    #     lets the in-flight tool rows (added below in the agent loop)
+    #     hang off ``parent_id = assistant_msg_id`` — and lets a mid-
+    #     turn page refresh actually find them via the parent
+    #     aggregation in webui/persistence._aggregate_tool_messages.
+    #     We update this row's content + tool_calls/blocks at turn
+    #     end (step 5) once the LLM's final text is known.
+    _placeholder_inserted = False
+    try:
+        db.append_message(req.session_id, {
+            "id": assistant_msg_id,
+            "role": "assistant",
+            "content": "",
+            "timestamp": time.time(),
+            "parent_id": user_msg_id,
+            "source": req.source,
+        })
+        _placeholder_inserted = True
+    except Exception:
+        # Non-fatal — the canonical write happens in step 5. Refresh
+        # mid-turn just falls back to the prior behaviour for this turn.
+        pass
+
     # 4. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck
     #    "agent is thinking…" state.
@@ -369,10 +393,66 @@ def process_user_turn(
             loop_history = history[:-1]
         else:
             loop_history = history
+        # Wrap on_event so we can sniff tool_execution_end envelopes
+        # and write each completed tool row to the DB incrementally —
+        # without changing _run_loop_blocking's signature (test
+        # mocks wrap it positionally and would break on a new kwarg).
+        _tool_args_by_id: dict[str, dict] = {}
+
+        def _on_event_persist(env: dict) -> None:
+            on_event(env)
+            if not _placeholder_inserted:
+                return
+            try:
+                if env.get("type") != "chat_response":
+                    return
+                payload = env.get("data") or {}
+                if payload.get("type") != "stream_event":
+                    return
+                evt = payload.get("event") or {}
+                etype = evt.get("type")
+                if etype == "tool_use":
+                    tid = evt.get("tool_call_id")
+                    if tid:
+                        _tool_args_by_id[tid] = {
+                            "tool": evt.get("tool"),
+                            "input": evt.get("input"),
+                        }
+                elif etype == "tool_result":
+                    tid = evt.get("tool_call_id")
+                    if not tid:
+                        return
+                    meta = _tool_args_by_id.get(tid, {})
+                    try:
+                        from openprogram.agent.session_db import (
+                            default_db as _db,
+                        )
+                        _db().append_message(req.session_id, {
+                            "id": f"{assistant_msg_id}_t_{tid}",
+                            "role": "tool",
+                            "content": str(evt.get("result") or ""),
+                            "function": meta.get("tool") or evt.get("tool") or "",
+                            "parent_id": assistant_msg_id,
+                            "timestamp": time.time(),
+                            "is_error": bool(evt.get("is_error")),
+                            "extra": json.dumps({
+                                "tool_use": {
+                                    "name": meta.get("tool")
+                                            or evt.get("tool") or "",
+                                    "arguments": meta.get("input") or "",
+                                    "called_by": assistant_msg_id,
+                                },
+                            }, default=str),
+                        })
+                    except Exception:
+                        pass  # canonical write in step 5 covers it
+            except Exception:
+                pass
+
         final_text, usage, tool_calls = _run_loop_blocking(
             req=req,
             history=loop_history,
-            on_event=on_event,
+            on_event=_on_event_persist,
             cancel_event=cancel_event,
         )
     except Exception as e:
@@ -496,7 +576,25 @@ def process_user_turn(
             {"tool_calls": tool_calls, "blocks": blocks},
             default=str,
         )
-    db.append_message(req.session_id, assistant_msg)
+    if _placeholder_inserted:
+        # Update the placeholder row (step 3b) in place — same id,
+        # now with final content + tool_calls/blocks.
+        try:
+            from openprogram.context.session_db import _msg_to_node as _to_node
+            from openprogram.context.storage import GraphStore as _GS
+            _store = _GS(db.db_path, req.session_id)
+            _node = _to_node(assistant_msg)
+            _store.update(
+                assistant_msg["id"],
+                output=_node.output,
+                metadata=_node.metadata,
+            )
+        except Exception:
+            # If the update path failed for any reason, fall back to
+            # append (idempotent — duplicate id raises, swallowed).
+            db.append_message(req.session_id, assistant_msg)
+    else:
+        db.append_message(req.session_id, assistant_msg)
 
     # 6. Update session bookkeeping (head_id, token tracking, model).
     db.update_session(
@@ -904,14 +1002,15 @@ def _run_loop_blocking(
                 if ev.type == "tool_execution_end":
                     _tid = getattr(ev, "tool_call_id", None)
                     _meta = tool_inputs_by_id.get(_tid, {})
-                    tool_calls.append({
+                    _tc = {
                         "id": _tid,
                         "tool_call_id": _tid,
                         "tool": getattr(ev, "tool_name", None) or _meta.get("tool"),
                         "input": _meta.get("input"),
                         "result": _shorten(getattr(ev, "result", "")),
                         "is_error": bool(getattr(ev, "is_error", False)),
-                    })
+                    }
+                    tool_calls.append(_tc)
                 if ev.type == "turn_end":
                     msg = getattr(ev, "message", None)
                     text = _extract_text(msg)
