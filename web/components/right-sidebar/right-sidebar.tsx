@@ -26,7 +26,7 @@
  * working without touching the legacy JS until those callers migrate.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { BranchesPanel } from "./branches-panel";
 import {
@@ -260,8 +260,62 @@ function HistoryGraphPanel() {
   return (
     <>
       <BranchesPanel />
+      <HighlightModeToggle />
       <div className="history-body"></div>
     </>
+  );
+}
+
+/** Toggle: white-fill on DAG nodes follows the chat scroll
+ *  position (viewport) or the next-LLM-call context range
+ *  (context). Drives ``window.setHistoryHighlightMode``. */
+function HighlightModeToggle() {
+  const [mode, setMode] = useState<"viewport" | "context">("viewport");
+  function pick(next: "viewport" | "context") {
+    setMode(next);
+    const w = window as unknown as {
+      setHistoryHighlightMode?: (m: string) => void;
+    };
+    w.setHistoryHighlightMode?.(next);
+  }
+  const style = (active: boolean): React.CSSProperties => ({
+    flex: 1,
+    padding: "4px 8px",
+    fontSize: 12,
+    fontFamily: "inherit",
+    border: "1px solid var(--border)",
+    background: active ? "var(--bg-hover)" : "transparent",
+    color: active ? "var(--text-bright)" : "var(--text-muted)",
+    cursor: "pointer",
+    borderRadius: 6,
+    transition: "background 0.15s, color 0.15s",
+  });
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 4,
+        padding: "6px 8px",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => pick("viewport")}
+        style={style(mode === "viewport")}
+        title="High light follows chat scroll position"
+      >
+        Viewport
+      </button>
+      <button
+        type="button"
+        onClick={() => pick("context")}
+        style={style(mode === "context")}
+        title="Highlight the message set the next LLM turn will load"
+      >
+        Context
+      </button>
+    </div>
   );
 }
 

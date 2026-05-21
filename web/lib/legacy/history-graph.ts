@@ -79,6 +79,13 @@ const LANE_COLORS = [
 
 let _currentHead: string | null = null;
 let _contextSet: Record<string, boolean> | null = null;
+// "viewport": white-fill follows chat-scroll position (which message
+// the user is currently looking at).
+// "context":  white-fill marks the message set the next LLM call
+// will load as context (read from /api/sessions/:id/context-range).
+// Toolbar in <HistoryGraphPanel /> flips between the two.
+type HighlightMode = "viewport" | "context";
+let _highlightMode: HighlightMode = "viewport";
 let _visibleIds: Record<string, boolean> = Object.create(null);
 let _headAncestorSet: Record<string, boolean> = Object.create(null);
 let _internalSet: Record<string, boolean> = Object.create(null);
@@ -664,10 +671,19 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   _internalOwner = internalOwner;
 
   const laneArea = PAD_X + COL_W * Math.max(lanes.laneCount - 1, 0);
+  // Tool / nested-call sub-forks add a horizontal offset (see
+  // ``pos()``). Reserve the widest tier offset present in the graph
+  // so the right edge doesn't clip those nodes.
+  let maxTier = 0;
+  Object.keys(tree.byId).forEach((id) => {
+    const t = tree.byId[id]._tier;
+    if (typeof t === "number" && t > maxTier) maxTier = t;
+  });
+  const subForkMargin = maxTier > 1
+    ? COL_W * 0.55 + (maxTier - 2) * COL_W * 0.4 + NODE_R * 2
+    : 0;
   const panelW = (body && body.clientWidth) || 240;
-  // Width = lane area + a small right margin. Labels are no longer
-  // inline so they don't dictate width any more.
-  const width = Math.max(panelW - 4, laneArea + PAD_X);
+  const width = Math.max(panelW - 4, laneArea + subForkMargin + PAD_X);
   const height = PAD_Y * 2 + ROW_H * maxDepth;
 
   const svg = _svg("svg", {
@@ -683,7 +699,17 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   svg.appendChild(nodeG);
 
   function pos(n: GNode): { x: number; y: number } {
-    return { x: PAD_X + (n._lane || 0) * COL_W, y: PAD_Y + (n._depth || 0) * ROW_H };
+    // Tier ≥ 2 nodes (tool calls, tool-spawned LLM calls) offset
+    // sideways from their branch's main column so they read as
+    // sub-forks instead of part of the main chain. Tier 1
+    // (user/assistant on the branch trunk) stays on its lane's
+    // axis. Sub-tiers stack horizontally with diminishing offset.
+    const tier = typeof n._tier === "number" ? n._tier : 0;
+    const tierOff = tier <= 1 ? 0 : COL_W * 0.55 + (tier - 2) * COL_W * 0.4;
+    return {
+      x: PAD_X + (n._lane || 0) * COL_W + tierOff,
+      y: PAD_Y + (n._depth || 0) * ROW_H,
+    };
   }
 
   Object.keys(tree.byId).forEach((id) => {
@@ -944,6 +970,16 @@ function _wireGraphManualScroll(): void {
 }
 
 function _recomputeVisibility(): void {
+  // "context" mode bypasses chat-scroll entirely: the white-fill
+  // marks the nodes the next LLM turn will see as context.
+  if (_highlightMode === "context") {
+    const newSet: Record<string, boolean> = Object.create(null);
+    if (_contextSet) {
+      for (const id in _contextSet) newSet[id] = true;
+    }
+    _setVisibleSet(newSet);
+    return;
+  }
   const area = document.getElementById("chatArea");
   if (!area) return;
   const container = document.getElementById("chatMessages");
@@ -1135,6 +1171,24 @@ export function recomputeHistoryVisibility(): void {
   _recomputeVisibility();
 }
 
+export function getHistoryHighlightMode(): HighlightMode {
+  return _highlightMode;
+}
+
+export function setHistoryHighlightMode(mode: HighlightMode): void {
+  if (mode !== "viewport" && mode !== "context") return;
+  if (_highlightMode === mode) return;
+  _highlightMode = mode;
+  // Context mode needs the latest context-range. Refresh on each
+  // entry so a freshly switched HEAD shows the right set; the
+  // viewport-mode path doesn't depend on it.
+  if (mode === "context") {
+    const sid = HGW.currentSessionId;
+    if (sid) refreshHistoryContextRange(sid);
+  }
+  _recomputeVisibility();
+}
+
 let _panelResizeWired = false;
 function _wirePanelResize(): void {
   if (_panelResizeWired) return;
@@ -1167,5 +1221,7 @@ HGW.repaintBranchTags = repaintBranchTags;
 HGW.setHistoryContextRange = setHistoryContextRange;
 HGW.refreshHistoryContextRange = refreshHistoryContextRange;
 HGW.recomputeHistoryVisibility = recomputeHistoryVisibility;
+HGW.setHistoryHighlightMode = setHistoryHighlightMode;
+HGW.getHistoryHighlightMode = getHistoryHighlightMode;
 
 void _internalSet;

@@ -112,20 +112,40 @@ def annotate_graph(graph_entries: list[dict], head_id: Optional[str]) -> list[di
         _walk(rid, 0)
 
     # ── tier (call-stack depth) ──────────────────────────────────
-    # Distinct from ``_depth``: depth is the visual y-row that
-    # respects tool stacking, tier is "how many nesting levels deep
-    # am I in the call stack" — a logical concept the renderer uses
-    # to taper node size / opacity for sub-calls. Every parent →
-    # child edge bumps tier by 1, regardless of whether the child is
-    # a sibling tool or a true nested call.
+    # Tier captures "who is talking to whom":
+    #
+    #   user ↔ assistant on the main thread are PEERS — same tier,
+    #   because the assistant's reply is for the user.
+    #
+    #   When assistant calls a tool, the tool's result is for the
+    #   ASSISTANT (not for the user), so the tool is one tier deeper.
+    #
+    #   When that tool spawns another LLM call (e.g. an
+    #   @agentic_function invoking ``runtime.exec``), the new LLM
+    #   reports back to the TOOL — another tier deeper.
+    #
+    # Sibling tools issued by the same assistant turn share the
+    # tool's tier (they're all on the same call layer). And once a
+    # tool / sub-LLM completes and control returns to the outer
+    # assistant, the next user turn drops back to the outer tier.
+    PEER_PAIRS = {
+        ("user", "assistant"),
+        ("assistant", "user"),
+        ("tool", "tool"),
+    }
     tier: dict[str, int] = {}
 
     def _walk_tier(nid: str, t: int) -> None:
         if nid in tier:
             return
         tier[nid] = t
+        parent_role = (by_id.get(nid) or {}).get("role")
         for cid in children.get(nid, []):
-            _walk_tier(cid, t + 1)
+            child_role = (by_id.get(cid) or {}).get("role")
+            if (parent_role, child_role) in PEER_PAIRS:
+                _walk_tier(cid, t)
+            else:
+                _walk_tier(cid, t + 1)
 
     for rid in sorted(roots, key=lambda x: _ts(x)):
         _walk_tier(rid, 0)
