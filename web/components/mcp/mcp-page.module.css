@@ -176,15 +176,12 @@
   border-color: transparent;
 }
 .actionBtnPrimary {
-  background: var(--accent-blue);
-  color: var(--text-bright, #fff);
-  border-color: var(--accent-blue);
+  color: var(--accent-blue);
 }
 .actionBtnPrimary:hover:not(:disabled) {
-  background: var(--accent-blue);
-  filter: brightness(1.1);
   color: #fff;
-  border-color: var(--accent-blue);
+  background: var(--accent-blue);
+  border-color: transparent;
 }
 
 /* Empty state in the content pane (no server selected, etc.) */

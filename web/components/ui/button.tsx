@@ -9,10 +9,14 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // Coloured-text default; the brand colour only fills on hover.
+        // Keeps the page calm and consistent with .actionBtn /
+        // .actionBtnDanger pattern used on /mcp.
         default:
-          "bg-[color-mix(in_srgb,var(--primary)_85%,#000)] text-primary-foreground hover:bg-primary",
+          "border border-input bg-background text-primary hover:bg-primary hover:text-primary-foreground hover:border-transparent",
+        // Same mirror for destructive: red text default, red fill on hover.
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+          "border border-input bg-background text-destructive hover:bg-destructive hover:text-destructive-foreground hover:border-transparent",
         outline:
           "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
         secondary:
