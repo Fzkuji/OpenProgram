@@ -170,7 +170,7 @@ export function Sidebar() {
   // visual; the AppShell click-interceptor handles the actual routing.
   const navActive = {
     mcp: pathname.startsWith("/mcp"),
-    programs: pathname.startsWith("/programs"),
+    programs: pathname.startsWith("/functions"),
     memory: pathname.startsWith("/memory"),
     chats: pathname.startsWith("/chats"),
   };
@@ -248,7 +248,7 @@ export function Sidebar() {
         </div>
 
         <Link
-          href="/programs"
+          href="/functions"
           className={
             sidebarNavItemClass +
             (navActive.programs ? " " + sidebarNavItemActiveClass : "")

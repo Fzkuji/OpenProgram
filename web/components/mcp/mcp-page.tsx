@@ -1,5 +1,20 @@
 "use client";
 
+/**
+ * /mcp — MCP server management page.
+ *
+ * Visual structure mirrors /functions (programs-page):
+ *   .view (height:100%, flex col)
+ *     .topbar (64px, sticky)  ← title + actions
+ *     .content (flex:1, scroll) ← server cards stacked vertically
+ *
+ * Cards are vertical full-width rows (server has too much info for a
+ * grid cell) with an inline-expand to show that server's tool
+ * schemas. Add / Edit live in a modal — the modal's "Test" button
+ * shows a green success note when the spawn round-trips, red box on
+ * failure.
+ */
+
 import { useCallback, useEffect, useState } from "react";
 import styles from "./mcp-page.module.css";
 
@@ -42,7 +57,7 @@ function statePill(s: ServerStatus): { label: string; cls: string } {
 export function McpPage() {
   const [servers, setServers] = useState<ServerStatus[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detail, setDetail] = useState<ServerDetail | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
@@ -54,9 +69,9 @@ export function McpPage() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       setServers((data.servers as ServerStatus[]) || []);
-      setError(null);
+      setLoadErr(null);
     } catch (e) {
-      setError(String(e));
+      setLoadErr(String(e));
     } finally {
       setLoading(false);
     }
@@ -72,18 +87,15 @@ export function McpPage() {
     try {
       const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`);
       if (!r.ok) {
-        setDetail({
-          ...(servers.find((s) => s.name === name) as ServerStatus),
-          tool_schemas: [],
-        });
+        setDetail(null);
         return;
       }
       const data = await r.json();
       setDetail(data as ServerDetail);
     } catch {
-      // ignore
+      setDetail(null);
     }
-  }, [servers]);
+  }, []);
 
   function toggleExpand(name: string) {
     if (expanded === name) {
@@ -162,20 +174,23 @@ export function McpPage() {
   }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <div>
-          <div className={styles.title}>MCP Servers</div>
-          <div className={styles.subtitle}>
-            外部 MCP 进程提供的工具,LLM 自动调用。配置保存在 <code>~/.agentic/mcp_servers.json</code>。
-          </div>
-        </div>
-        <div className={styles.actions}>
-          <button className={styles.btn} onClick={() => void reload()}>
+    <div className={styles.view}>
+      <div className={styles.topbar}>
+        <span className={styles.title}>MCP Servers</span>
+        <span className={styles.subtitle}>
+          External tool processes — managed at <code>~/.agentic/mcp_servers.json</code>
+        </span>
+        <div className={styles.toolbar}>
+          <button className={styles.iconBtn} onClick={() => void reload()}>
             Refresh
           </button>
           <button
-            className={cls(styles.btn, styles.btnPrimary)}
+            className={cls(styles.iconBtn)}
+            style={{
+              background: "var(--accent-blue)",
+              color: "#fff",
+              borderColor: "var(--accent-blue)",
+            }}
             onClick={openAdd}
           >
             + Add server
@@ -183,33 +198,42 @@ export function McpPage() {
         </div>
       </div>
 
-      {error && <div className={styles.errorBox}>load failed: {error}</div>}
+      <div className={styles.content}>
+        {loadErr && <div className={styles.errorBox}>load failed: {loadErr}</div>}
 
-      {loading ? (
-        <div className={styles.emptyState}>Loading…</div>
-      ) : servers.length === 0 ? (
-        <div className={styles.emptyState}>
-          No MCP servers configured. Click <b>+ Add server</b> to add one.
-        </div>
-      ) : (
-        <div className={styles.list}>
-          {servers.map((s) => (
-            <ServerRow
-              key={s.name}
-              s={s}
-              expanded={expanded === s.name}
-              detail={expanded === s.name ? detail : null}
-              busy={busy === s.name}
-              onToggle={() => toggleExpand(s.name)}
-              onRestart={() => void doRestart(s.name)}
-              onEnable={() => void doEnable(s.name)}
-              onDisable={() => void doDisable(s.name)}
-              onDelete={() => void doDelete(s.name)}
-              onEdit={() => openEdit(s)}
-            />
-          ))}
-        </div>
-      )}
+        {loading ? (
+          <div className={styles.empty}>
+            <div className={styles.emptyIcon}>⏳</div>
+            <div className={styles.emptyText}>Loading…</div>
+          </div>
+        ) : servers.length === 0 ? (
+          <div className={styles.empty}>
+            <div className={styles.emptyIcon}>🔌</div>
+            <div className={styles.emptyText}>No MCP servers configured.</div>
+            <div className={styles.emptyHint}>
+              Click <b>+ Add server</b> to attach one (e.g. <code>@drawio/mcp</code>).
+            </div>
+          </div>
+        ) : (
+          <div className={styles.list}>
+            {servers.map((s) => (
+              <ServerRow
+                key={s.name}
+                s={s}
+                expanded={expanded === s.name}
+                detail={expanded === s.name ? detail : null}
+                busy={busy === s.name}
+                onToggle={() => toggleExpand(s.name)}
+                onRestart={() => void doRestart(s.name)}
+                onEnable={() => void doEnable(s.name)}
+                onDisable={() => void doDisable(s.name)}
+                onDelete={() => void doDelete(s.name)}
+                onEdit={() => openEdit(s)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {editing !== null && (
         <EditDialog
@@ -242,40 +266,24 @@ function ServerRow({
 }) {
   const { label, cls: stateCls } = statePill(s);
   return (
-    <div className={styles.serverCard}>
-      <div className={styles.serverHeaderRow}>
-        <span className={styles.serverName}>{s.name}</span>
+    <div className={styles.card}>
+      <div className={styles.cardHeader}>
+        <div className={styles.iconWrap}>🔌</div>
+        <span className={styles.name}>{s.name}</span>
         <span className={cls(styles.statePill, stateCls)}>{label}</span>
-        <div className={styles.serverMeta}>
-          <span className={styles.serverCommand}>{s.command.join(" ")}</span>
-          {" · "}
-          {s.tool_count} tool{s.tool_count === 1 ? "" : "s"}
+        <div className={styles.meta}>
+          <span className={styles.metaCmd}>{s.command.join(" ")}</span>
+          <span className={styles.metaCount}>
+            {s.tool_count} tool{s.tool_count === 1 ? "" : "s"}
+          </span>
         </div>
-        <div className={styles.serverActions}>
-          <button
-            className={styles.iconBtn}
-            onClick={onToggle}
-            disabled={busy}
-            title={expanded ? "Collapse" : "Expand"}
-          >
-            {expanded ? "▾" : "▸"}
-          </button>
+        <div className={styles.actions}>
           {s.enabled ? (
-            <button
-              className={styles.iconBtn}
-              onClick={onDisable}
-              disabled={busy}
-              title="Disable (stop)"
-            >
+            <button className={styles.iconBtn} onClick={onDisable} disabled={busy}>
               Disable
             </button>
           ) : (
-            <button
-              className={styles.iconBtn}
-              onClick={onEnable}
-              disabled={busy}
-              title="Enable (start)"
-            >
+            <button className={styles.iconBtn} onClick={onEnable} disabled={busy}>
               Enable
             </button>
           )}
@@ -283,25 +291,26 @@ function ServerRow({
             className={styles.iconBtn}
             onClick={onRestart}
             disabled={busy || !s.enabled}
-            title="Restart"
           >
             Restart
           </button>
-          <button
-            className={styles.iconBtn}
-            onClick={onEdit}
-            disabled={busy}
-            title="Edit config"
-          >
+          <button className={styles.iconBtn} onClick={onEdit} disabled={busy}>
             Edit
           </button>
           <button
             className={cls(styles.iconBtn, styles.danger)}
             onClick={onDelete}
             disabled={busy}
-            title="Delete"
           >
             Delete
+          </button>
+          <button
+            className={styles.expandBtn}
+            onClick={onToggle}
+            title={expanded ? "Collapse" : "Expand"}
+            aria-label={expanded ? "Collapse" : "Expand"}
+          >
+            {expanded ? "▾" : "▸"}
           </button>
         </div>
       </div>
@@ -311,12 +320,17 @@ function ServerRow({
       )}
 
       {expanded && (
-        <div className={styles.toolList}>
+        <div className={styles.toolsSection}>
+          <div className={styles.toolsHeading}>
+            Tools ({s.tool_count})
+          </div>
           {!detail ? (
             <div className={styles.subtitle}>Loading tools…</div>
           ) : (detail.tool_schemas || []).length === 0 ? (
             <div className={styles.subtitle}>
-              {s.ready ? "No tools exposed." : "Server not ready — no tool list yet."}
+              {s.ready
+                ? "No tools exposed."
+                : "Server not ready — no tool list available yet."}
             </div>
           ) : (
             (detail.tool_schemas || []).map((t) => (
@@ -334,10 +348,10 @@ function ToolItem({ server, tool }: { server: string; tool: ToolSchema }) {
   return (
     <div>
       <div className={styles.toolRow} onClick={() => setShow((v) => !v)}>
-        <div>
-          <div className={styles.toolName}>{server}__{tool.name}</div>
+        <div className={styles.toolName}>{server}__{tool.name}</div>
+        <div className={styles.toolDesc}>
+          {tool.description || tool.title || "—"}
         </div>
-        <div className={styles.toolDesc}>{tool.description || tool.title || "—"}</div>
       </div>
       {show && (
         <div className={styles.toolSchema}>
@@ -369,7 +383,10 @@ function EditDialog({
   onSaved: () => void;
 }) {
   const [state, setState] = useState<EditTarget>(target);
+  // ``err`` shows red; ``note`` shows green (test success). Mutually
+  // exclusive — setting one clears the other.
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const isAdd = target.mode === "add";
 
@@ -391,6 +408,7 @@ function EditDialog({
 
   async function save() {
     setErr(null);
+    setNote(null);
     if (!state.name.trim()) {
       setErr("name is required");
       return;
@@ -432,6 +450,7 @@ function EditDialog({
 
   async function testRun() {
     setErr(null);
+    setNote(null);
     const cmd = splitCommand(state.command);
     if (cmd.length === 0) {
       setErr("command is required to test");
@@ -456,7 +475,7 @@ function EditDialog({
         setErr(`test failed: ${data.error || data.detail || `HTTP ${r.status}`}`);
         return;
       }
-      setErr(`✓ test ok — ${data.tool_count} tool(s): ${data.tools.join(", ")}`);
+      setNote(`✓ test ok — ${data.tool_count} tool(s): ${data.tools.join(", ")}`);
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -498,13 +517,15 @@ function EditDialog({
               placeholder="npx -y @drawio/mcp"
             />
             <span className={styles.fieldHint}>
-              Whitespace-separated. Run with current $PATH; if it requires <code>npx</code>,
-              install Node first.
+              Whitespace-separated. Run with current $PATH; if it requires{" "}
+              <code>npx</code>, install Node first.
             </span>
           </div>
 
           <div className={styles.field}>
-            <label className={styles.fieldLabel}>Environment (KEY=VALUE per line)</label>
+            <label className={styles.fieldLabel}>
+              Environment (KEY=VALUE per line)
+            </label>
             <textarea
               className={styles.fieldTextarea}
               value={state.env}
@@ -517,7 +538,9 @@ function EditDialog({
           </div>
 
           <div className={styles.field}>
-            <label className={styles.fieldLabel}>Startup / per-call timeout (s)</label>
+            <label className={styles.fieldLabel}>
+              Startup / per-call timeout (s)
+            </label>
             <input
               className={styles.fieldInput}
               type="number"
@@ -543,18 +566,45 @@ function EditDialog({
           </div>
 
           {err && <div className={styles.errorBox}>{err}</div>}
+          {note && (
+            <div
+              style={{
+                background: "rgba(34, 197, 94, 0.08)",
+                border: "1px solid rgba(34, 197, 94, 0.35)",
+                borderRadius: "var(--radius)",
+                padding: "8px 12px",
+                fontSize: 12,
+                color: "rgb(74, 222, 128)",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              {note}
+            </div>
+          )}
         </div>
 
         <div className={styles.modalFooter}>
-          <button className={styles.btn} onClick={() => void testRun()}
-            disabled={saving}>
+          <button
+            className={styles.iconBtn}
+            onClick={() => void testRun()}
+            disabled={saving}
+          >
             Test
           </button>
-          <button className={styles.btn} onClick={onClose} disabled={saving}>
+          <button
+            className={styles.iconBtn}
+            onClick={onClose}
+            disabled={saving}
+          >
             Cancel
           </button>
           <button
-            className={cls(styles.btn, styles.btnPrimary)}
+            className={styles.iconBtn}
+            style={{
+              background: "var(--accent-blue)",
+              color: "#fff",
+              borderColor: "var(--accent-blue)",
+            }}
             onClick={() => void save()}
             disabled={saving}
           >
