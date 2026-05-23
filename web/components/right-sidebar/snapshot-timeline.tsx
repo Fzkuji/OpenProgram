@@ -298,7 +298,10 @@ function SnapshotRow(props: {
       >
         <SnapMetaContent meta={meta} counts={counts} />
       </div>
-      {open && (
+      {/* Wrapper is always mounted so the open/close transition runs
+          both directions; grid-template-rows 0fr↔1fr animates the
+          height, which smoothly pushes everything below. */}
+      <div className={styles.popoutWrap + (open ? " " + styles.open : "")}>
         <div className={styles.popoutClip}>
           <div className={styles.popout}>
             {!detail && (
@@ -317,7 +320,7 @@ function SnapshotRow(props: {
             )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

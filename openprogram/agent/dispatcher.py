@@ -612,6 +612,9 @@ def process_user_turn(
                 if _item.source_node_id == assistant_msg_id:
                     if _final_text and _item.rendered != _final_text:
                         _item.rendered = _final_text
+                        # tokens were estimated from "" at turn-start;
+                        # recompute against the final text.
+                        _item.tokens = max(4, len(_final_text) // 4)
                     _assistant_idx = _i
                     _patched = True
                     break
