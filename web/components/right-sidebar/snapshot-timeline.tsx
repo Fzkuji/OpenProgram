@@ -380,7 +380,7 @@ function ItemRow(props: { item: SnapshotItem }) {
       role="button"
     >
       <div className={styles.itemHead}>
-        <span className={styles.itemLabel}>/{it.role}</span>
+        <span className={styles.itemLabel}>{it.role}</span>
         <span className={styles.itemPreview}>
           {oneLine || "(empty)"}
         </span>
