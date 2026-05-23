@@ -719,6 +719,21 @@ def process_user_turn(
     # which uses provider-reported usage instead of re-estimating the
     # whole branch here.)
 
+    # 6.8. Git commit the turn — the session's git repo is the source
+    # of truth (git-as-truth). Every successful turn becomes one
+    # commit on the session's branch, picking up new history files +
+    # rewritten context/messages.json + context/commit.json + meta.json
+    # in a single diff. Best-effort: if git fails the data is still
+    # on disk, next turn's commit will sweep it up.
+    try:
+        from openprogram.store import default_store
+        _store = default_store()
+        if _store is db or hasattr(db, "commit_turn"):
+            _msg = (req.user_text or "").strip().splitlines()[0][:60] or "turn"
+            db.commit_turn(req.session_id, f"turn: {_msg}")
+    except Exception:
+        pass
+
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal.
     on_event({"type": "chat_response",
