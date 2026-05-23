@@ -19,7 +19,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useSessionStore } from "@/lib/session-store";
-import styles from "./right-sidebar.module.css";
+import styles from "./snapshot-timeline.module.css";
 
 type StateName = "full" | "aged" | "cleared" | "summarized" | "summary";
 
@@ -313,18 +313,20 @@ function SnapshotRow(props: {
         </div>
       </div>
       {open && (
-        <div style={{ padding: "4px 10px 10px 10px", background: "var(--bg-tertiary, rgba(0,0,0,0.15))" }}>
+        <div className={styles.popout}>
           {!detail && (
-            <div style={{ color: "var(--text-muted)", padding: 8 }}>Loading…</div>
+            <div className={styles.empty}>Loading…</div>
           )}
           {detail?.error && (
-            <div style={{ color: "var(--red, #f85149)", padding: 8 }}>{detail.error}</div>
+            <div className={styles.empty} style={{ color: "var(--red, #f85149)" }}>
+              {detail.error}
+            </div>
           )}
           {detail?.items?.map((it, idx) => (
             <ItemRow key={`${it.source_node_id}-${idx}`} item={it} />
           ))}
           {detail && detail.items && detail.items.length === 0 && !detail.error && (
-            <div style={{ color: "var(--text-muted)", padding: 8 }}>(empty)</div>
+            <div className={styles.empty}>(empty)</div>
           )}
         </div>
       )}
@@ -354,62 +356,23 @@ function StateBadge(props: { state: StateName; count?: number }) {
 function ItemRow(props: { item: SnapshotItem }) {
   const it = props.item;
   const [open, setOpen] = useState(false);
-  // Strip newlines + leading whitespace so the one-line preview stays a
-  // single line. CSS noWrap + ellipsis truncates the visible width.
   const oneLine = (it.rendered || "").replace(/\s+/g, " ").trim();
   return (
-    <div>
-      <div
-        onClick={() => setOpen((v) => !v)}
-        role="button"
-        className={open ? styles.itemRowOpen : undefined}
-        style={{
-          padding: "4px 6px",
-          display: "flex",
-          gap: 6,
-          alignItems: "center",
-          cursor: "pointer",
-          borderTop: "1px solid var(--border)",
-        }}
-      >
-        <span
-          style={{
-            color: "var(--text-muted)",
-            border: "1px solid var(--border)",
-            borderRadius: 3,
-            padding: "0 4px",
-            fontSize: 10,
-            flexShrink: 0,
-          }}
-        >
-          {it.role}
+    <div
+      className={styles.item + (open ? " " + styles.itemOpen : "")}
+      onClick={() => setOpen((v) => !v)}
+      role="button"
+    >
+      <div className={styles.itemHead}>
+        <span className={styles.itemLabel}>/{it.role}</span>
+        <span className={styles.itemPreview}>
+          {oneLine || "(empty)"}
         </span>
-        <span
-          style={{
-            color: "var(--text-bright)",
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            fontSize: 12,
-          }}
-        >
-          {oneLine || <span style={{ color: "var(--text-muted)" }}>(empty)</span>}
-        </span>
-        <span
-          style={{
-            color: "var(--text-muted)",
-            fontSize: 10,
-            flexShrink: 0,
-          }}
-        >
-          {it.tokens}t
-        </span>
+        <span className={styles.itemTokens}>{it.tokens}t</span>
       </div>
       {open && (
-        <div className={styles.itemPopup}>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <div className={styles.itemBody}>
+          <div className={styles.itemChips}>
             <StateBadge state={it.state} />
             {it.is_anchor && (
               <span style={{ color: "var(--orange, #e3b341)", fontSize: 10 }}>anchor</span>
@@ -423,15 +386,7 @@ function ItemRow(props: { item: SnapshotItem }) {
               </span>
             )}
           </div>
-          <div
-            style={{
-              color: "var(--text-bright)",
-              lineHeight: 1.4,
-              wordBreak: "break-word",
-              whiteSpace: "pre-wrap",
-              fontSize: 12,
-            }}
-          >
+          <div className={styles.itemText}>
             {it.rendered || <span style={{ color: "var(--text-muted)" }}>(empty)</span>}
           </div>
         </div>
