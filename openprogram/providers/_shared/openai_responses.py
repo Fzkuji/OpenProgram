@@ -67,7 +67,11 @@ def convert_responses_messages(
     if allowed_tool_call_providers is None:
         allowed_tool_call_providers = _RESPONSES_ALLOWED_TOOL_CALL_PROVIDERS
 
-    def normalize_tool_call_id(id_: str) -> str:
+    # transform_messages calls this with 3 args (id, model, msg) per its
+    # NormalizeToolCallIdFn signature. We only need the id — model is in
+    # closure, msg is unused here — but the parameter count must match
+    # the protocol.
+    def normalize_tool_call_id(id_: str, _model=None, _msg=None) -> str:
         if model.provider not in allowed_tool_call_providers:
             return id_
         if "|" not in id_:

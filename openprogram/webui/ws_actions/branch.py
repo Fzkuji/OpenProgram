@@ -34,6 +34,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                 graph.append({
                     "id": m.get("id"),
                     "parent_id": m.get("parent_id"),
+                    "caller": m.get("caller") or "",
                     "role": m.get("role"),
                     "function": m.get("function"),
                     "display": m.get("display"),
@@ -43,8 +44,11 @@ def build_branches_payload(session_id: str | None) -> dict:
             # Server-side layout — keeps the parallel-branch geometry
             # consistent across load_session, list_branches, and any
             # other path that ships ``graph`` to the frontend.
-            from openprogram.webui._graph_layout import annotate_graph
-            annotate_graph(graph, active_head)
+            from openprogram.webui.graph_layout import annotate_graph
+            # ``annotate_graph`` filters out microcompact synthetic
+            # nodes (summary_*/k_*) — reassign so the WS payload
+            # ships only the DAG-visible subset.
+            graph = annotate_graph(graph, active_head)
             leaves = db.list_branches(session_id)
             for row in leaves:
                 mid = row["head_msg_id"]

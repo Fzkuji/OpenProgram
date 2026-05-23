@@ -37,7 +37,14 @@ interface ChatWindow {
     getState: () => {
       setContextStats: (
         sid: string,
-        t: { input: number; output: number; cache_read: number },
+        t: {
+          input: number;
+          output: number;
+          cache_read: number;
+          cache_create?: number;
+          model?: string | null;
+          provider?: string | null;
+        },
         ctx: number | null,
       ) => void;
     };
@@ -213,6 +220,12 @@ export function handleSessionsList(data: SessionRow[]): void {
         if ("peer" in c) convs[c.id].peer = c.peer || null;
         if ("peer_display" in c) convs[c.id].peer_display = c.peer_display || null;
         if ("preview" in c) convs[c.id].preview = c.preview || null;
+        // session_loaded 早到时 conv 没 created_at, 这里 sessions_list
+        // 后到要补上, 不然 sidebar 排序拿不到时间戳, 新会话沉底.
+        if (c.created_at != null && convs[c.id].created_at == null) {
+          convs[c.id].created_at = c.created_at;
+        }
+        if (c.title && !convs[c.id].title) convs[c.id].title = c.title;
       }
     }
   }
@@ -248,8 +261,14 @@ export function handleRunningTask(rt: unknown): void {
     stream_events?: unknown[];
   };
 
-  // 1) Flip the composer's send/stop button immediately.
-  W.setRunning?.(true);
+  // 1) Flip the composer's send/stop button immediately — but only
+  //    if this event targets the currently-active session. Without
+  //    this guard, a background session starting a turn would also
+  //    flip the composer for whatever other session the user is
+  //    looking at right now.
+  if (!t.session_id || t.session_id === W.currentSessionId) {
+    W.setRunning?.(true);
+  }
 
   // 2) Mark the in-flight assistant message as "running" in the
   //    React store so its bubble shows the waiting indicator. The
@@ -272,6 +291,10 @@ export function handleRunningTask(rt: unknown): void {
             patch: Record<string, unknown>,
           ) => void;
           setRunningTask?: (task: unknown) => void;
+          setRunningTaskFor?: (
+            sessionId: string,
+            task: unknown,
+          ) => void;
         };
       };
     };
@@ -284,15 +307,39 @@ export function handleRunningTask(rt: unknown): void {
     } else if (store.updateMessage) {
       store.updateMessage(sid, mid, { status: "running" });
     }
-    store.setRunningTask?.({
+    const taskPayload = {
       session_id: sid,
       msg_id: mid,
       func_name: t.func_name,
       started_at: t.started_at,
-    });
+    };
+    store.setRunningTaskFor?.(sid, taskPayload);
   } catch {
     // store not yet mounted (legacy-only page) — fall back to the
     // simple button flip above.
+  }
+}
+
+export function handleRunningTaskClear(sessionId: string | undefined): void {
+  if (!sessionId) return;
+  try {
+    const w = window as unknown as {
+      __sessionStore?: {
+        getState: () => {
+          currentSessionId?: string | null;
+          setRunningTaskFor?: (sid: string, t: unknown) => void;
+        };
+      };
+    };
+    const store = w.__sessionStore?.getState();
+    store?.setRunningTaskFor?.(sessionId, null);
+    // If the clear is for the currently-active session, also drop the
+    // legacy single-task / button state so the composer un-locks.
+    if (store?.currentSessionId === sessionId) {
+      W.setRunning?.(false);
+    }
+  } catch {
+    /* ignore */
   }
 }
 
@@ -318,7 +365,12 @@ export function handleChatResponse(data: ChatResponseData): void {
   }
 
   // Final response (result / error / retry_result) -- task done.
-  W.setRunning?.(false);
+  // Clear per-session running state from the response's session_id
+  // (NOT W.currentSessionId — the user may have switched away while
+  // the background turn was finishing). The clear helper itself
+  // flips the legacy button if the cleared session is the active one.
+  const respSid = (data as { session_id?: string }).session_id;
+  handleRunningTaskClear(respSid || W.currentSessionId || undefined);
   W.loadAgentSettings?.();
   if (typeof W.refreshTokenBadge === "function") {
     try {
@@ -435,6 +487,9 @@ function handleContextStats(data: ContextStatsData): void {
           input: chat.input_tokens || 0,
           output: chat.output_tokens || 0,
           cache_read: chat.cache_read || 0,
+          cache_create: cacheWrite,
+          model: data.model || null,
+          provider: (data as unknown as {provider?: string}).provider || null,
         },
         data.context_window || null,
       );

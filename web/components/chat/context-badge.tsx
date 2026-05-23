@@ -38,7 +38,8 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const sid = sessionId ?? currentSessionId;
 
   const usage = useSessionStore((s) => (sid ? s.tokens[sid] : undefined));
-  const provider = useSessionStore((s) => s.agentSettings.chat?.provider);
+  const fallbackProvider = useSessionStore((s) => s.agentSettings.chat?.provider);
+  const fallbackModel = useSessionStore((s) => s.agentSettings.chat?.model);
 
   if (!sid || !usage) return null;
 
@@ -47,13 +48,24 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
       input_tokens: usage.input,
       output_tokens: usage.output,
       cache_read: usage.cache_read,
+      cache_create: usage.cache_create,
     },
-    provider ?? null,
+    usage.provider ?? fallbackProvider ?? null,
   );
   if (!text) return null;
 
+  // tooltip: 详细 breakdown + 模型/provider 元信息. usage 里的 model 来自
+  // backend context_stats 事件, 比 agentSettings 更精确 (单 turn 内可能
+  // 切了 provider, agentSettings 是最终值).
+  const modelLabel = usage.model || fallbackModel || "";
+  const providerLabel = usage.provider || fallbackProvider || "";
+  const metaLine = [providerLabel, modelLabel].filter(Boolean).join(" · ");
+  const tooltip = metaLine
+    ? `${text.tooltip}\n${metaLine}`
+    : text.tooltip;
+
   return (
-    <span className="context-stats-label" title={text.tooltip}>
+    <span className="context-stats-label" title={tooltip}>
       {text.text}
     </span>
   );

@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from typing import Optional
 
@@ -195,18 +196,28 @@ def live_progress(session_id: str, msg_id: str, func_name: str):
 # ── Interrupted-run repair ───────────────────────────────────────────
 
 def reconcile_interrupted_runs() -> int:
-    """Flip every DAG node still at ``status="running"`` to ``"error"``.
+    """Flip every DAG node still at ``status="running"`` to ``"interrupted"``.
 
-    The ``@agentic_function`` wrapper stamps a node ``running`` on entry
-    and ``success`` / ``error`` in its ``finally``. If the process
-    executing it dies first — worker restart, crash, SIGKILL — the
-    ``finally`` never runs and the node is frozen at ``running``. The UI
-    then spins forever, waiting on a terminal event from a process that
-    no longer exists.
+    Two writers stamp ``status="running"``:
+      * ``@agentic_function`` on entry (FunctionCall sub-call nodes),
+        flipping to ``success`` / ``error`` in its ``finally``.
+      * The chat dispatcher on assistant placeholder insert (step 3b),
+        flipping to ``completed`` / ``error`` / ``cancelled`` at turn
+        end.
+    If the worker process dies before either path's terminal flip runs
+    (SIGKILL, crash, restart), the node is frozen at ``running`` and
+    the UI spins forever waiting on a terminal event nobody will fire.
 
-    Call once on worker startup: a fresh worker has nothing running, so
-    any ``running`` node is a zombie from a dead process. Returns the
-    count fixed.
+    Call once on worker startup: a fresh worker has nothing running,
+    so any ``running`` node is a zombie from a dead process. We tag
+    these as ``interrupted`` rather than ``error`` so the UI can
+    distinguish "the model / network blew up" (red) from "the worker
+    got restarted mid-turn" (amber). We also stuff a short marker
+    into ``output`` so an otherwise-empty assistant bubble doesn't
+    render as a silent ghost — the user sees explicitly what
+    happened.
+
+    Returns the count fixed.
     """
     from openprogram.agent.session_db import default_db
 
@@ -225,12 +236,18 @@ def reconcile_interrupted_runs() -> int:
             meta = data.get("metadata") or {}
             if meta.get("status") != "running":
                 continue
-            meta["status"] = "error"
+            meta["status"] = "interrupted"
             meta.setdefault(
                 "error",
-                "Interrupted — the worker stopped before this run finished",
+                "Worker restarted before this turn finished",
             )
+            meta["interrupted_at"] = time.time()
             data["metadata"] = meta
+            # Don't clobber a partial streamed output — the model may
+            # have emitted some text before the worker died. Only
+            # write the marker if output is empty.
+            if not data.get("output"):
+                data["output"] = "[interrupted] worker restarted mid-turn"
             conn.execute(
                 "UPDATE nodes SET data_json = ? "
                 "WHERE session_id = ? AND id = ?",

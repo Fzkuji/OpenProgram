@@ -33,14 +33,25 @@ import contextvars
 import inspect
 import json
 import os
+import random
 import time
 from typing import Any, Optional
 
 # Backoff base (seconds) between exec() retry attempts. Retries sleep
-# _RETRY_BACKOFF * 2**attempt before the next try. Transient provider
-# failures (session errors, 5xx, SSL EOF) recover within a second or
-# two; an immediate retry just re-hits the same outage window.
+# _RETRY_BACKOFF * 2**attempt before the next try, with ±25% jitter
+# so multiple concurrent retries don't fire in lock-step against the
+# same upstream and re-trigger whatever connection-pool / rate-limit
+# threshold caused the original failure.
 _RETRY_BACKOFF = 1.5
+
+
+def _retry_sleep_seconds(attempt: int) -> float:
+    """Exponential backoff + jitter. Attempt 0 sleeps ~1.5s, attempt 1
+    ~3s, attempt 2 ~6s, ... up to ~48s at attempt 5. Each delay is
+    randomly scaled by [0.75, 1.25] so a burst of retries spreads out
+    instead of slamming the upstream simultaneously."""
+    base = _RETRY_BACKOFF * (2 ** attempt)
+    return base * random.uniform(0.75, 1.25)
 
 # Substrings marking a *permanent* provider error. Retrying these only
 # burns attempts and wall-clock time — the request is malformed or the
@@ -100,7 +111,7 @@ class Runtime:
         self,
         call: Optional[callable] = None,
         model: str = "default",
-        max_retries: int = 3,
+        max_retries: int = 6,
         api_key: Optional[str] = None,
         skills: "bool | list[str] | None" = None,
     ):
@@ -117,8 +128,12 @@ class Runtime:
                          - Any other string → legacy path (subclass overrides
                            _call, or pass a `call` function).
             max_retries: Maximum number of exec() attempts before raising.
-                         Default 3 (try once, retry twice on transient
-                         failure, with exponential backoff between tries).
+                         Default 6 (try once, retry five times on transient
+                         failure, with exponential backoff + ±25% jitter).
+                         Total wall-clock at worst ≈ 1.5 + 3 + 6 + 12 + 24
+                         = 46s of sleeping before giving up — enough for
+                         provider gateway connection-pool / rate-limit
+                         spikes during tool-heavy turns to recover.
                          Permanent errors (bad image, expired auth) are
                          not retried regardless of this value.
             api_key:     Optional API key. If omitted, resolved from the
@@ -542,7 +557,7 @@ class Runtime:
                         raise RuntimeError(
                             f"exec() failed {reason}:\n" + "\n".join(errors)
                         ) from e
-                    time.sleep(_RETRY_BACKOFF * (2 ** attempt))
+                    time.sleep(_retry_sleep_seconds(attempt))
         finally:
             if tools_token is not None:
                 _current_tools.reset(tools_token)
@@ -615,7 +630,7 @@ class Runtime:
                     raise RuntimeError(
                         f"async_exec() failed {reason}:\n" + "\n".join(errors)
                     ) from e
-                await asyncio.sleep(_RETRY_BACKOFF * (2 ** attempt))
+                await asyncio.sleep(_retry_sleep_seconds(attempt))
 
     def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """

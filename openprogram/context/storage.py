@@ -53,7 +53,15 @@ CREATE TABLE IF NOT EXISTS nodes (
     id           TEXT PRIMARY KEY,
     session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     type         TEXT NOT NULL,
+    -- predecessor: conversation edge (user→assistant→user).
+    --   Set for user/assistant nodes. Subsequent conv turns chain
+    --   through this column.
+    -- caller: call edge (assistant→tool→sub-llm).
+    --   Set for FunctionCall/sub-call nodes. These are NOT on the
+    --   conversation chain and CANNOT be branch tips.
+    -- The two are mutually exclusive: each node sets at most one.
     predecessor  TEXT,
+    caller       TEXT,
     created_at   REAL NOT NULL,
     seq          INTEGER NOT NULL,
     data_json    TEXT NOT NULL
@@ -63,6 +71,8 @@ CREATE INDEX IF NOT EXISTS idx_nodes_session_seq
     ON nodes(session_id, seq);
 CREATE INDEX IF NOT EXISTS idx_nodes_predecessor
     ON nodes(predecessor);
+-- idx_nodes_caller is created in init_db() after the ALTER TABLE
+-- migration so older DBs without the column don't choke here.
 
 CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
     text,
@@ -73,11 +83,23 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
 
 
 def init_db(db_path: str | Path) -> None:
-    """Create the schema in ``db_path`` if not already present."""
+    """Create the schema in ``db_path`` if not already present.
+
+    Also runs in-place ALTER TABLE migrations for older DBs that
+    predate the ``caller`` column.
+    """
     db_path = Path(db_path).expanduser()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(str(db_path)) as conn:
         conn.executescript(_SCHEMA)
+        # In-place migrations for pre-existing DBs.
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(nodes)")}
+        if "caller" not in cols:
+            conn.execute("ALTER TABLE nodes ADD COLUMN caller TEXT")
+        # Index outside the IF so a freshly-created DB also picks it up.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nodes_caller ON nodes(caller)"
+        )
         conn.commit()
 
 
@@ -310,22 +332,38 @@ class GraphStore:
             data_json = _node_to_data_json(node)
             text = _node_text_for_fts(node)
 
-            # The nodes table still has a ``predecessor`` column from
-            # the legacy schema. We use it as the SQL-queryable index
-            # for the message-tree edge: fill it with metadata.parent_id
-            # (the legacy chat-tree parent) so list_branches /
-            # delete_branch_tail / etc. can do plain SQL traversals.
-            parent_for_sql = (node.metadata or {}).get("parent_id") or None
+            # Two independent parent edges, mutually exclusive:
+            #   - caller:      this node is a sub-call (tool / FunctionCall
+            #                   / sub-LLM) of another node. Set this and
+            #                   leave predecessor NULL — sub-calls are not
+            #                   on the conversation chain and cannot be
+            #                   branch tips.
+            #   - predecessor: this node is the next conversation turn
+            #                   after another conversation node.
+            # Decision: if Call.called_by is set, OR the legacy
+            # metadata.called_by is set (older code path), treat this as
+            # a sub-call. Otherwise it's a conversation node and we keep
+            # metadata.parent_id as the conv edge.
+            legacy_caller = (node.metadata or {}).get("called_by") or None
+            caller_for_sql = (node.called_by or legacy_caller) or None
+            if caller_for_sql:
+                predecessor_for_sql = None
+            else:
+                predecessor_for_sql = (
+                    (node.metadata or {}).get("parent_id") or None
+                )
             try:
                 conn.execute(
                     """INSERT INTO nodes
-                       (id, session_id, type, predecessor, created_at, seq, data_json)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       (id, session_id, type, predecessor, caller,
+                        created_at, seq, data_json)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         node.id,
                         self.session_id,
                         node.role,
-                        parent_for_sql,
+                        predecessor_for_sql,
+                        caller_for_sql,
                         node.created_at,
                         node.seq,
                         data_json,
@@ -351,7 +389,7 @@ class GraphStore:
             # leaves it stranded on an internal node, so get_branch
             # threads the chat through code nodes and the renderer
             # mis-reports finished runs as "Execution interrupted".
-            if node.called_by:
+            if caller_for_sql:
                 conn.execute(
                     "UPDATE sessions SET updated_at = ? WHERE id = ?",
                     (time.time(), self.session_id),
@@ -474,7 +512,13 @@ def read_session_row(db_path: str | Path, session_id: str) -> Optional[dict]:
 
 
 def delete_session(db_path: str | Path, session_id: str) -> bool:
-    """Remove a session and all its nodes. Returns True if a session was deleted."""
+    """Remove a session, its nodes, snapshots, and drop blob refs.
+
+    Returns True if a session was deleted.
+
+    Snapshot blob 处理: 先把这个 session 所有 snapshot 引用的 hash 拿出
+    来做 refcount -1, 然后删 snapshot 行, 最后 GC refcount=0 的 blob.
+    """
     p = Path(db_path).expanduser()
     if not p.exists():
         return False
@@ -484,6 +528,37 @@ def delete_session(db_path: str | Path, session_id: str) -> bool:
         conn.execute(
             "DELETE FROM nodes_fts WHERE session_id = ?", (session_id,),
         )
+        # Snapshot blob refcount: 把这个 session 的所有 snapshot.items_json
+        # 解析出来, 对每个 rendered_hash refcount -1. 然后删 snapshot
+        # 行, 最后 GC.
+        try:
+            import json
+            rows = conn.execute(
+                "SELECT items_json FROM context_snapshots WHERE session_id = ?",
+                (session_id,),
+            ).fetchall()
+            for (items_json,) in rows:
+                try:
+                    items = json.loads(items_json)
+                except (TypeError, ValueError):
+                    continue
+                for it in items:
+                    h = it.get("rendered_hash") or ""
+                    if h:
+                        conn.execute(
+                            "UPDATE context_blobs SET refcount = refcount - 1 "
+                            "WHERE hash = ?",
+                            (h,),
+                        )
+            conn.execute(
+                "DELETE FROM context_snapshots WHERE session_id = ?",
+                (session_id,),
+            )
+            # GC blob refcount <= 0
+            conn.execute("DELETE FROM context_blobs WHERE refcount <= 0")
+        except sqlite3.OperationalError:
+            # snapshot/blob 表可能还没建 (老 DB), 跳过
+            pass
         cur = conn.execute(
             "DELETE FROM sessions WHERE id = ?", (session_id,),
         )

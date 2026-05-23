@@ -100,9 +100,19 @@ def _msg_to_node(msg: dict) -> Call:
         leftover_extra = {k: v for k, v in extra.items() if k != "tool_use"}
         if leftover_extra:
             meta["extra"] = leftover_extra
+        # Tool messages are sub-calls of an assistant — their "parent"
+        # in the chat tree IS the calling assistant. Set Call.called_by
+        # directly so the storage layer routes this to the `caller`
+        # column (sub-call edge), NOT the `predecessor` column
+        # (conversation edge). This is what makes list_branches /
+        # _graph_layout / sessions.last_node_id all stop mis-treating
+        # tool rows as branch tips / conversation nodes.
         called_by = tool_use.get("called_by") or predecessor or ""
-        if called_by:
-            meta["called_by"] = called_by
+        # Drop parent_id from metadata for sub-calls: the parent
+        # relationship is now expressed via Call.called_by, and leaving
+        # parent_id around would make storage.append() also set the
+        # predecessor column, breaking the mutual-exclusion invariant.
+        meta.pop("parent_id", None)
         return Call(
             id=base_id,
             created_at=created_at,
@@ -110,6 +120,7 @@ def _msg_to_node(msg: dict) -> Call:
             name=tool_use.get("name") or msg.get("function") or "",
             input=tool_use.get("arguments") or {},
             output=msg.get("content"),
+            called_by=called_by,
             metadata=meta,
         )
     # assistant / system / anything else → llm Call
@@ -138,6 +149,11 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
     """
     meta = dict(node.metadata or {})
 
+    # `caller` is the SQL-column-backed sub-call edge. We expose it
+    # alongside `parent_id` so downstream layout code can tell a
+    # conversation-tree parent (parent_id) from a sub-call parent
+    # (caller) without re-parsing metadata. Empty string means "no
+    # caller" — i.e. this is a conversation node, not a sub-call.
     if node.is_user():
         base = {
             "id": node.id,
@@ -145,6 +161,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "role": "user",
             "content": node.output or "",
             "parent_id": node.called_by,
+            "caller": node.called_by or "",
             "timestamp": node.created_at,
         }
         base.update(meta)
@@ -170,6 +187,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "role": "tool",
             "content": content,
             "parent_id": node.called_by,
+            "caller": node.called_by or called_by or "",
             "timestamp": node.created_at,
             "function": node.name,
             "extra": json.dumps(extra_blob, default=str),
@@ -187,6 +205,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "role": legacy_role,
             "content": node.output or "",
             "parent_id": node.called_by,
+            "caller": node.called_by or "",
             "timestamp": node.created_at,
             "token_model": node.name,
         }
@@ -231,6 +250,15 @@ class DagSessionDB:
         self.db_path = Path(db_path).expanduser() if db_path else _default_dag_db_path()
         init_db(self.db_path)
         self._ensure_aux_tables()
+        # Snapshot 子系统的表跟 DAG 同 DB 共存. 表用 IF NOT EXISTS 创建,
+        # 重复跑无副作用.
+        try:
+            from openprogram.context.snapshot import init_schema as _snap_init
+            _snap_init(self.db_path)
+        except Exception:
+            # Snapshot 模块出问题不该影响 session_db 启动 — 老的 mutate
+            # path 还能跑.
+            pass
 
     def _ensure_aux_tables(self) -> None:
         """Adapter-owned tables: branch names, etc. Lives alongside
@@ -452,8 +480,7 @@ class DagSessionDB:
                 SELECT n.id, n.created_at
                 FROM nodes n
                 WHERE n.session_id = ?
-                  AND COALESCE(
-                        json_extract(n.data_json, '$.called_by'), '') = ''
+                  AND n.caller IS NULL
                   AND NOT EXISTS (
                     SELECT 1 FROM nodes c
                     WHERE c.session_id = n.session_id

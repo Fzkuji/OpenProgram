@@ -201,25 +201,47 @@ class DefaultContextEngine(ContextEngine):
         decision: list[str] = []
         session_id = (session or {}).get("id") or ""
 
-        # 1. Reference scan — once per prepare, surfaced in TurnPrep.
+        # 1. Reference scan — surfaces cited tool_use ids in TurnPrep.
+        #    Snapshot rules don't yet consume this (they use locked= flag
+        #    on items instead), but the TurnPrep caller still expects
+        #    n_redacted / ref counts in its log line — keep computing it.
         ref_map = self.references.build(history)
         if ref_map.cited_tool_use_ids:
             decision.append(
                 f"references:protected={len(ref_map.cited_tool_use_ids)}"
             )
 
-        # 2. Apply microcompact (no-op unless the session has been idle
-        #    longer than the gap threshold).
-        compacted_history, n_redacted, tokens_freed = self.microcompactor.microcompact(
-            history,
-        )
-        if n_redacted:
-            decision.append(
-                f"microcompact:n={n_redacted},freed≈{tokens_freed}tok"
+        # 2-3. Build LLM input from snapshot chain (replaces the old
+        #    microcompact + tool_aging.prepare_history + _assemble_messages
+        #    pipeline). All compression decisions are now lived in
+        #    immutable per-turn snapshots — see
+        #    docs/design/context-snapshot-chain.md.
+        #    On failure we fall back to the legacy assembly path so a
+        #    broken snapshot doesn't take down the whole turn.
+        compacted_history = history
+        n_redacted = 0
+        tokens_freed = 0
+        agent_messages: list = []
+        snap_used = False
+        try:
+            agent_messages = self._build_messages_from_snapshot(
+                session_id=session_id,
+                history=history,
+                model=model,
             )
+            snap_used = True
+            decision.append("input:snapshot")
+        except Exception as e:
+            # 这条路径出错就退回老 mutate path. 失败时记日志便于排查,
+            # 但不阻断 turn.
+            decision.append(f"input:snapshot_failed:{type(e).__name__}")
+            compacted_history, n_redacted, tokens_freed = self.microcompactor.microcompact(history)
+            if n_redacted:
+                decision.append(f"microcompact:n={n_redacted},freed≈{tokens_freed}tok")
+            from openprogram.context.tool_aging import prepare_history
+            prepare_history(compacted_history, session_id)
+            agent_messages = self._assemble_messages(compacted_history)
 
-        # 3. Build messages + system prompt.
-        agent_messages = self._assemble_messages(compacted_history)
         system_prompt = self._build_system_prompt(agent)
 
         # 4. Allocate budget.
@@ -414,9 +436,22 @@ class DefaultContextEngine(ContextEngine):
     # ---- Internals -----------------------------------------------------
 
     def _assemble_messages(self, history: list[dict]) -> list:
+        """Translate the chat-dict history into provider Message objects.
+
+        Per turn, an assistant with ``tool_calls`` becomes:
+            AssistantMessage(content=[TextContent, ToolCall, ToolCall, …])
+            ToolResultMessage(...)   # one per tool call, in emit order
+            ToolResultMessage(...)
+        The next user/assistant follows. Older turns have their tool
+        results aged into ``[aged] …`` stubs by
+        ``tool_aging.prepare_history`` before we get here; we just
+        emit them as-is. The model still sees the tool_call_id chain
+        and so can refer to "the read I did earlier".
+        """
         import time
         from openprogram.providers.types import (
-            AssistantMessage, TextContent, UserMessage,
+            AssistantMessage, TextContent, ToolCall,
+            ToolResultMessage, UserMessage,
         )
         out: list = []
         for m in history:
@@ -428,22 +463,125 @@ class DefaultContextEngine(ContextEngine):
                     content=[TextContent(text=content)],
                     timestamp=ts,
                 ))
-            elif role == "assistant":
+                continue
+            if role != "assistant":
+                continue
+            tool_calls = m.get("tool_calls") or []
+            asst_content: list = []
+            if content:
+                asst_content.append(TextContent(text=content))
+            for tc in tool_calls:
+                tc_input = tc.get("input")
+                if isinstance(tc_input, str):
+                    try:
+                        import json as _json
+                        tc_input = _json.loads(tc_input)
+                    except (ValueError, TypeError):
+                        tc_input = {"_raw": tc_input}
+                if not isinstance(tc_input, dict):
+                    tc_input = {"_raw": str(tc_input)}
+                asst_content.append(ToolCall(
+                    id=tc.get("tool_call_id") or tc.get("id") or "",
+                    name=tc.get("tool") or "",
+                    arguments=tc_input,
+                ))
+            try:
+                out.append(AssistantMessage(
+                    content=asst_content or [TextContent(text="")],
+                    api="completion",
+                    provider="openai",
+                    model="gpt-5",
+                    timestamp=ts,
+                ))
+            except Exception:
+                continue
+            # ToolResultMessage AFTER the assistant emits the calls —
+            # mirrors the wire shape every provider expects.
+            for tc in tool_calls:
+                result_text = tc.get("result") or ""
+                if not isinstance(result_text, str):
+                    result_text = str(result_text)
                 try:
-                    out.append(AssistantMessage(
-                        content=[TextContent(text=content)],
-                        api="completion",
-                        provider="openai",
-                        model="gpt-5",
+                    out.append(ToolResultMessage(
+                        tool_call_id=(
+                            tc.get("tool_call_id") or tc.get("id") or ""
+                        ),
+                        tool_name=tc.get("tool") or "",
+                        content=[TextContent(text=result_text)],
+                        is_error=bool(tc.get("is_error")),
                         timestamp=ts,
                     ))
                 except Exception:
-                    pass
+                    continue
         return out
 
     def _build_system_prompt(self, agent: Any) -> str:
         from openprogram.context.system_prompt import build_system_prompt
         return build_system_prompt(agent)
+
+    def _build_messages_from_snapshot(
+        self,
+        *,
+        session_id: str,
+        history: list[dict],
+        model: Any,
+    ) -> list:
+        """Build provider Message[] via the snapshot chain pipeline.
+
+        每个 turn 走这条路径:
+          1. 从 DB 拉最新 history — caller 传进来的 history 是 LLM
+             调用前的 (dispatcher 步骤里还没包含 user_msg 和 placeholder),
+             snapshot 需要看最新状态. 重新拉一遍.
+          2. ensure_latest_snapshot — 拿到 (或增量生成) 最新 snapshot.
+          3. render_snapshot — 翻成 provider Message[].
+
+        失败抛异常, 上层 prepare() catch 后退回老 path.
+        """
+        if not session_id:
+            raise RuntimeError("snapshot path requires session_id")
+        from openprogram.context.snapshot import (
+            ensure_latest_snapshot,
+            render_snapshot,
+        )
+        from openprogram.context.tokens import real_context_window
+        from openprogram.agent.session_db import default_db
+
+        db = default_db()
+        # 直接从 DB 拉最新 conv 链 — 不信任 caller 传进来的 history,
+        # 因为 dispatcher 在写 user/placeholder 之后才调 prepare, 但
+        # 它传的 history 是写之前的快照.
+        fresh_history = db.get_branch(session_id) or history or []
+
+        _msg_cache: dict[str, dict] | None = None
+
+        def fetch_node(node_id: str):
+            nonlocal _msg_cache
+            if node_id.startswith("sm_"):
+                return None   # synthetic summary id, 不在 DAG
+            if _msg_cache is None:
+                _msg_cache = {
+                    m.get("id"): m
+                    for m in db.get_messages(session_id) or []
+                    if m.get("id")
+                }
+            return _msg_cache.get(node_id)
+
+        head_id = (
+            fresh_history[-1].get("id") if fresh_history
+            else (db.get_session(session_id) or {}).get("head_id") or ""
+        )
+        budget_total = real_context_window(model) or 200_000
+        snap = ensure_latest_snapshot(
+            db_path=str(db.db_path),
+            session_id=session_id,
+            history=fresh_history,
+            head_node_id=head_id,
+            budget_total=budget_total,
+            budget_summarize_threshold=int(budget_total * 0.85),
+            fetch_node=fetch_node,
+            llm_summarize=None,  # 暂不接 LLM summarize, phase 5 再加
+        )
+        return render_snapshot(snap)
 
     def _estimate(self, history: list[dict]) -> int:
         from openprogram.context.tokens import estimate_history_tokens

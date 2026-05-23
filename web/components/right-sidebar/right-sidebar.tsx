@@ -26,9 +26,10 @@
  * working without touching the legacy JS until those callers migrate.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { BranchesPanel } from "./branches-panel";
+import { SnapshotTimeline } from "./snapshot-timeline";
 import {
   sidebarNavIconClass,
   sidebarNavIconSvgClass,
@@ -43,12 +44,70 @@ import {
 // "detail" picks `<div data-view="detail">`.
 const VIEW_HISTORY = "history";
 const VIEW_DETAIL = "detail";
+const VIEW_SNAPSHOTS = "snapshots";
+
+// Right sidebar width is independent of the left one — the left
+// uses --sidebar-width (288px default), the right persists its own
+// value in localStorage so users can widen the History DAG panel
+// without dragging the left sidebar along.
+const RIGHT_W_KEY = "rightSidebar.width";
+const RIGHT_W_MIN = 240;
+const RIGHT_W_MAX = 720;
+const RIGHT_W_DEFAULT = 288;
+
+function _readStoredWidth(): number {
+  if (typeof window === "undefined") return RIGHT_W_DEFAULT;
+  try {
+    const v = parseInt(localStorage.getItem(RIGHT_W_KEY) || "", 10);
+    if (Number.isFinite(v) && v >= RIGHT_W_MIN && v <= RIGHT_W_MAX) return v;
+  } catch { /* ignore */ }
+  return RIGHT_W_DEFAULT;
+}
 
 export function RightSidebar() {
   const open = useSessionStore((s) => s.rightDock.open);
   const view = useSessionStore((s) => s.rightDock.view);
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
+  const [width, setWidth] = useState<number>(RIGHT_W_DEFAULT);
+  const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  // Hydrate from localStorage on mount (avoids SSR mismatch).
+  useEffect(() => {
+    setWidth(_readStoredWidth());
+  }, []);
+
+  const onResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startW: width };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      // Right sidebar grows when dragging LEFT (toward the chat), so
+      // delta is startX - clientX.
+      const delta = dragRef.current.startX - ev.clientX;
+      const next = Math.max(
+        RIGHT_W_MIN,
+        Math.min(RIGHT_W_MAX, dragRef.current.startW + delta),
+      );
+      setWidth(next);
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      try { localStorage.setItem(RIGHT_W_KEY, String(width)); } catch { /* */ }
+      // Re-read so the persisted value reflects the final width
+      // (state above is captured at handler binding time).
+      try {
+        const cur = document.getElementById("rightSidebar")?.clientWidth;
+        if (cur && cur >= RIGHT_W_MIN && cur <= RIGHT_W_MAX) {
+          localStorage.setItem(RIGHT_W_KEY, String(cur));
+        }
+      } catch { /* */ }
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
 
   // Install window.rightDock + legacy shims so the still-loaded shared
   // JS (ui.js showDetail, branches code, topbar history-panel toggles)
@@ -165,13 +224,37 @@ export function RightSidebar() {
       className={
         "sidebar right-sidebar relative flex shrink-0 flex-col overflow-hidden " +
         "bg-bg-secondary border-l border-[var(--border)] " +
-        "[transition:width_0.3s_ease,min-width_0.3s_ease] " +
-        (open
-          ? "w-sidebar-w"
-          : "w-[48px] min-w-[48px] collapsed")
+        // Skip the width transition while dragging so the handle
+        // feels responsive; the only transition we still want is the
+        // open/close collapse animation.
+        (dragRef.current ? "" : "[transition:width_0.3s_ease,min-width_0.3s_ease] ") +
+        (open ? "" : "collapsed")
       }
+      style={open
+        ? { width: `${width}px`, minWidth: `${RIGHT_W_MIN}px` }
+        : { width: "48px", minWidth: "48px" }}
       data-view={view}
     >
+      {/* Resize handle — 6px-wide strip on the LEFT edge, drag
+          inward to widen the panel, outward to shrink it. Cursor
+          hint is ew-resize when hovered. Only shown when the panel
+          is open; in collapsed state the icon rail handles itself. */}
+      {open && (
+        <div
+          onMouseDown={onResizeMouseDown}
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: "6px",
+            cursor: "ew-resize",
+            zIndex: 10,
+            background: "transparent",
+          }}
+          title="Drag to resize panel"
+        />
+      )}
       {/* Header — same 48px row + 8px padding as the left sidebar
           header, but `justify-start` keeps the toggle pinned to the
           LEFT edge so it mirrors the left sidebar's toggle (which
@@ -228,6 +311,23 @@ export function RightSidebar() {
           </span>
           <span className={sidebarNavLabelClass}>Execution Detail</span>
         </div>
+        <div
+          className={
+            sidebarNavItemClass + " right-nav-item" +
+            (view === VIEW_SNAPSHOTS ? " " + sidebarNavItemActiveClass : "")
+          }
+          data-view={VIEW_SNAPSHOTS}
+          onClick={() => onNavClick(VIEW_SNAPSHOTS)}
+          role="button"
+          title="Context snapshots"
+        >
+          <span className={sidebarNavIconClass}>
+            <svg className={sidebarNavIconSvgClass} viewBox="0 0 256 256" fill="currentColor">
+              <path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM72,48v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24V80H48V48ZM208,208H48V96H208V208Zm-68-76a12,12,0,1,1-12-12A12,12,0,0,1,140,132Zm44,0a12,12,0,1,1-12-12A12,12,0,0,1,184,132ZM96,172a12,12,0,1,1-12-12A12,12,0,0,1,96,172Zm44,0a12,12,0,1,1-12-12A12,12,0,0,1,140,172Zm44,0a12,12,0,1,1-12-12A12,12,0,0,1,184,172Z" />
+            </svg>
+          </span>
+          <span className={sidebarNavLabelClass}>Snapshots</span>
+        </div>
       </div>
 
       <div className="right-view-host">
@@ -244,6 +344,9 @@ export function RightSidebar() {
             HTML used; the AppShell's /chat-route reset re-applies it. */}
         <div id="detailPanel" className="right-view" data-view={VIEW_DETAIL}>
           <DetailPanel />
+        </div>
+        <div id="snapshotsPanel" className="right-view" data-view={VIEW_SNAPSHOTS}>
+          <SnapshotTimeline />
         </div>
       </div>
     </aside>

@@ -79,7 +79,9 @@ def convert_messages(model: "Model", context: "Context") -> list[dict[str, Any]]
     """Convert internal messages to Gemini Content[] format."""
     from openprogram.providers._shared.transform_messages import transform_messages
 
-    def normalize_tool_call_id(id_: str) -> str:
+    # transform_messages 用 3 参签名 (id, model, msg) 调; 闭包里 model
+    # 已经在了, msg 这里不用, 但参数数量必须对齐。
+    def normalize_tool_call_id(id_: str, _model=None, _msg=None) -> str:
         if not requires_tool_call_id(model.id):
             return id_
         return re.sub(r"[^a-zA-Z0-9_-]", "_", id_)[:64]

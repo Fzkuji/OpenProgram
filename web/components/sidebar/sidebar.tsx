@@ -297,22 +297,6 @@ export function Sidebar() {
         </Link>
 
         <Link
-          href="/memory"
-          className={
-            sidebarNavItemClass +
-            (navActive.memory ? " " + sidebarNavItemActiveClass : "")
-          }
-          id="navMemory"
-        >
-          <span className={sidebarNavIconClass}>
-            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
-              <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2h11a2.5 2.5 0 0 1 0 5h-11A2.5 2.5 0 0 1 2 4.5ZM2.75 9.083a.75.75 0 0 0 0 1.5h14.5a.75.75 0 0 0 0-1.5H2.75ZM2.75 12.663a.75.75 0 0 0 0 1.5h14.5a.75.75 0 0 0 0-1.5H2.75ZM2.75 16.25a.75.75 0 0 0 0 1.5h14.5a.75.75 0 1 0 0-1.5H2.75Z" />
-            </svg>
-          </span>
-          <span className={sidebarNavLabelClass}>Memory</span>
-        </Link>
-
-        <Link
           href="/mcp"
           className={
             sidebarNavItemClass +
@@ -326,6 +310,22 @@ export function Sidebar() {
             </svg>
           </span>
           <span className={sidebarNavLabelClass}>MCP Servers</span>
+        </Link>
+
+        <Link
+          href="/memory"
+          className={
+            sidebarNavItemClass +
+            (navActive.memory ? " " + sidebarNavItemActiveClass : "")
+          }
+          id="navMemory"
+        >
+          <span className={sidebarNavIconClass}>
+            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
+              <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2h11a2.5 2.5 0 0 1 0 5h-11A2.5 2.5 0 0 1 2 4.5ZM2.75 9.083a.75.75 0 0 0 0 1.5h14.5a.75.75 0 0 0 0-1.5H2.75ZM2.75 12.663a.75.75 0 0 0 0 1.5h14.5a.75.75 0 0 0 0-1.5H2.75ZM2.75 16.25a.75.75 0 0 0 0 1.5h14.5a.75.75 0 1 0 0-1.5H2.75Z" />
+            </svg>
+          </span>
+          <span className={sidebarNavLabelClass}>Memory</span>
         </Link>
 
         <Link

@@ -10,6 +10,7 @@
  */
 import { useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 
 import { MessageActions } from "./message-actions";
@@ -85,22 +86,24 @@ function EditBox({
         }}
       />
       <div className="message-edit-actions">
-        <button
+        <Button
           type="button"
-          className="message-edit-btn message-edit-cancel"
+          variant="outline"
+          size="sm"
           onClick={onDone}
           disabled={submitting}
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className="message-edit-btn message-edit-save"
+          variant="default"
+          size="sm"
           onClick={save}
           disabled={submitting}
         >
           {submitting ? "Submitting…" : "Save & resend"}
-        </button>
+        </Button>
       </div>
     </>
   );

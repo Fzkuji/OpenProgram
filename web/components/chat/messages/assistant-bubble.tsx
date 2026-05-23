@@ -58,6 +58,23 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
             />
           ) : null}
+          {/* Terminal-state badges. "interrupted" = worker restarted
+              mid-turn (amber); "cancelled" = user clicked stop (gray).
+              Real model / network errors fall into the status==="error"
+              branch above which renders the whole bubble as an error
+              block — these other terminal states are softer and sit at
+              the bottom of the bubble so any partial output above
+              stays readable. */}
+          {msg.status === "interrupted" ? (
+            <div className="bubble-badge bubble-badge-interrupted">
+              Interrupted — worker restarted mid-turn
+            </div>
+          ) : null}
+          {msg.status === "cancelled" ? (
+            <div className="bubble-badge bubble-badge-cancelled">
+              Cancelled
+            </div>
+          ) : null}
         </div>
       )}
     </div>

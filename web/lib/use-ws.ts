@@ -25,6 +25,7 @@ import {
 } from "./legacy/conversations";
 import {
   handleRunningTask,
+  handleRunningTaskClear,
   handleSessionsList,
   initChatPage,
   wsHandleChatAck,
@@ -129,6 +130,11 @@ export function useWS(): void {
         }
         case "running_task":
           handleRunningTask(d);
+          return true;
+        case "running_task_clear":
+          handleRunningTaskClear(
+            (d as { session_id?: string } | undefined)?.session_id,
+          );
           return true;
         case "provider_info":
         case "provider_changed":

@@ -446,7 +446,13 @@ export function loadSessionData(data: LegacyConv): void {
   if (!data.messages) data.messages = [];
   const id = data.id as string;
   const convs = W.conversations || (W.conversations = {});
-  convs[id] = Object.assign({}, convs[id] || {}, data);
+  // Merge data into existing conv. data 里没有的字段 (例如 created_at)
+  // 不该被覆盖为 undefined; 显式 filter 一下 data 里的 undefined 值.
+  const cleanedData: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== undefined) cleanedData[k] = v;
+  }
+  convs[id] = Object.assign({}, convs[id] || {}, cleanedData);
   renderSessions();
   W._branchesPanelCollapsed = true;
   if (id === W.currentSessionId) {

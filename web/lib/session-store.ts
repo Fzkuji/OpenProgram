@@ -1,7 +1,15 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 
-export type MessageStatus = "pending" | "streaming" | "done" | "error" | "cancelled";
+export type MessageStatus =
+  | "pending"
+  | "streaming"
+  | "running"
+  | "done"
+  | "completed"
+  | "error"
+  | "cancelled"
+  | "interrupted";
 
 export interface FnParam {
   name: string;
@@ -175,8 +183,15 @@ interface ConvState {
   messageOrder: Record<string, string[]>;
   /** Currently active conversation id. */
   currentSessionId: string | null;
-  /** Currently running task (show Stop button). */
+  /** Currently running task (show Stop button).
+   *  Deprecated single-session field — read ``runningTasks[sid]``
+   *  instead. Kept here so legacy ``setRunning(false)`` keeps working
+   *  while callers migrate. */
   runningTask: RunningTask | null;
+  /** Per-session running task map. Drives the composer send/stop
+   *  button (current session) and the sidebar breathing indicator
+   *  (all sessions). */
+  runningTasks: Record<string, RunningTask>;
   /** Paused flag. */
   paused: boolean;
   /** Provider info shown in header. */
@@ -185,13 +200,30 @@ interface ConvState {
   trees: Record<string, TreeNode>;
   setTree: (sessionId: string, tree: TreeNode) => void;
 
-  /** Per-conversation token usage from the latest context_stats event. */
-  tokens: Record<string, { input?: number; output?: number; cache_read?: number }>;
+  /** Per-conversation token usage from the latest context_stats event.
+   *  cache_create = cache write tokens (Anthropic-style); model / provider
+   *  are also surfaced so the badge can render "gpt-5" / "claude-sonnet"
+   *  next to the numbers. */
+  tokens: Record<string, {
+    input?: number;
+    output?: number;
+    cache_read?: number;
+    cache_create?: number;
+    model?: string | null;
+    provider?: string | null;
+  }>;
   /** Per-conversation context window size (model-dependent). */
   contextWindow: Record<string, number>;
   setContextStats: (
     sessionId: string,
-    chat: { input?: number; output?: number; cache_read?: number } | null,
+    chat: {
+      input?: number;
+      output?: number;
+      cache_read?: number;
+      cache_create?: number;
+      model?: string | null;
+      provider?: string | null;
+    } | null,
     contextWindow?: number | null,
   ) => void;
 
@@ -208,6 +240,10 @@ interface ConvState {
    *  stale reply before the new one streams in. */
   truncateFrom: (sessionId: string, msgId: string) => void;
   setRunningTask: (t: RunningTask | null) => void;
+  /** Set / clear the running task for a specific session. Pass null
+   *  to clear. Used by the per-session running-task WS events so two
+   *  sessions can have independent run state. */
+  setRunningTaskFor: (sessionId: string, t: RunningTask | null) => void;
   setPaused: (p: boolean) => void;
   setProviderInfo: (p: ConvState["providerInfo"]) => void;
 
@@ -302,6 +338,7 @@ export const useSessionStore = create<ConvState>((set) => ({
   messageOrder: {},
   currentSessionId: null,
   runningTask: null,
+  runningTasks: {},
   paused: false,
   providerInfo: null,
   trees: {},
@@ -320,6 +357,9 @@ export const useSessionStore = create<ConvState>((set) => ({
             input: chat.input,
             output: chat.output,
             cache_read: chat.cache_read,
+            cache_create: chat.cache_create,
+            model: chat.model,
+            provider: chat.provider,
           },
         };
       }
@@ -364,7 +404,14 @@ export const useSessionStore = create<ConvState>((set) => ({
       currentSessionId: null,
     }),
 
-  setCurrentConv: (id) => set({ currentSessionId: id }),
+  setCurrentConv: (id) =>
+    set((s) => ({
+      currentSessionId: id,
+      // Keep the legacy single-task mirror pointed at whatever the
+      // newly-active session's task is. This is what makes the
+      // composer flip between send/stop instantly on session switch.
+      runningTask: id ? (s.runningTasks[id] ?? null) : null,
+    })),
 
   setMessages: (sessionId, msgs) =>
     set((s) => {
@@ -413,6 +460,20 @@ export const useSessionStore = create<ConvState>((set) => ({
     }),
 
   setRunningTask: (t) => set({ runningTask: t }),
+  setRunningTaskFor: (sessionId, t) =>
+    set((s) => {
+      const next = { ...s.runningTasks };
+      if (t) next[sessionId] = t;
+      else delete next[sessionId];
+      // Mirror to the legacy single-task field if this is the active
+      // session, so anything still reading ``runningTask`` (e.g. older
+      // call sites) keeps in sync with the composer's view.
+      const isCurrent = s.currentSessionId === sessionId;
+      return {
+        runningTasks: next,
+        runningTask: isCurrent ? t : s.runningTask,
+      };
+    }),
   setPaused: (p) => set({ paused: p }),
   setProviderInfo: (p) => set({ providerInfo: p }),
 

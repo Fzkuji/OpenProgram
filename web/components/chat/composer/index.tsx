@@ -60,7 +60,13 @@ const noop = () => {};
 
 export function Composer() {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const runningTask = useSessionStore((s) => s.runningTask);
+  // Per-session running state: send/stop button binds to the current
+  // session's running task, not a global flag. This is what lets the
+  // user switch from a running session A to session B and immediately
+  // send a new message in B while A is still streaming.
+  const runningTask = useSessionStore((s) =>
+    s.currentSessionId ? (s.runningTasks[s.currentSessionId] ?? null) : null,
+  );
   const input = useSessionStore((s) => s.composerInput);
   const setInput = useSessionStore((s) => s.setComposerInput);
   const focusTick = useSessionStore((s) => s.composerFocusTick);

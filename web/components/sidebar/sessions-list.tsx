@@ -11,9 +11,10 @@
  * hook should switch to a store subscription.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useLegacyGlobals, useCurrentSessionId } from "./use-legacy-globals";
+import { useSessionStore } from "@/lib/session-store";
 import {
   Dialog,
   DialogContent,
@@ -145,9 +146,17 @@ export function SessionsList() {
   const pathname = usePathname();
   const { conversations } = useLegacyGlobals();
   const currentId = useCurrentSessionId();
+  // Per-session running map drives the breathing colored indicator
+  // on each conversation row — the visual "this session is still
+  // processing" cue so the user can fan out work across sessions
+  // and see at a glance which ones are working.
+  const runningTasks = useSessionStore((s) => s.runningTasks);
 
+  // 没有 created_at 的会话视为"刚刚创建" (now), 让新建会话立刻
+  // 出现在顶部, 而不是因为 fallback=0 沉到最底.
+  const nowTs = Date.now() / 1000;
   const list = Object.values(conversations).sort(
-    (a, b) => (b.created_at || 0) - (a.created_at || 0)
+    (a, b) => (b.created_at || nowTs) - (a.created_at || nowTs),
   );
 
   function switchTo(id: string) {
@@ -207,6 +216,7 @@ export function SessionsList() {
             key={c.id}
             label={label}
             active={active}
+            running={!!runningTasks[c.id]}
             onClick={() => switchTo(c.id)}
             onDelete={(e) => del(c.id, e)}
           />
@@ -237,11 +247,13 @@ export function SessionsList() {
 function ConvItem({
   label,
   active,
+  running,
   onClick,
   onDelete,
 }: {
   label: string;
   active: boolean;
+  running: boolean;
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
@@ -268,11 +280,33 @@ function ConvItem({
     " group-focus-within:[text-overflow:clip]" +
     " group-focus-within:[-webkit-mask-image:linear-gradient(to_right,#000_78%,transparent_95%)]" +
     " group-focus-within:[mask-image:linear-gradient(to_right,#000_78%,transparent_95%)]";
+  // 两阶段动画状态:
+  //   running=true       → .convRunning (彩色无缝循环 + 呼吸)
+  //   刚 running→false   → .convFinishing (wipe 1.1s 从右往左擦)
+  //   wipe 结束          → 普通样子
+  // 用 ref 记上一帧 running, useEffect 检测 true→false 边沿触发.
+  const prevRunning = useRef(running);
+  const [finishing, setFinishing] = useState(false);
+  useEffect(() => {
+    if (prevRunning.current && !running) {
+      setFinishing(true);
+      const t = setTimeout(() => setFinishing(false), 1200);
+      prevRunning.current = running;
+      return () => clearTimeout(t);
+    }
+    prevRunning.current = running;
+  }, [running]);
+
+  const stateCls = running
+    ? styles.convRunning
+    : finishing
+      ? styles.convFinishing
+      : "";
   return (
     <div
-      className={`${base} ${colorCls}`}
+      className={`${base} ${colorCls} ${stateCls}`}
       onClick={onClick}
-      title={label}
+      title={running ? `${label} (running)` : label}
     >
       <span
         className={`flex-1 overflow-hidden truncate text-fs-base leading-[20px] ${maskOnHover}`}

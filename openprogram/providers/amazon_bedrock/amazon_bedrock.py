@@ -71,7 +71,8 @@ def _resolve_cache_retention(cache_retention: "CacheRetention | None") -> "Cache
     return "short"
 
 
-def _normalize_tool_call_id(id_: str) -> str:
+def _normalize_tool_call_id(id_: str, _model=None, _msg=None) -> str:
+    # transform_messages 用 3 参签名 (id, model, msg) 调; 这里只用 id.
     import re
     sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", id_)
     return sanitized[:64]

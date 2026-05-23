@@ -31,6 +31,17 @@ from openprogram.agent.session_config import reasoning_from_config, SessionRunCo
 PermissionMode = Literal["ask", "auto", "bypass"]
 EventCallback = Callable[[dict], None]
 
+# Lifecycle helpers (placeholder insert / status flip / error fold) —
+# see openprogram/agent/_turn_lifecycle.py for the per-turn DB
+# protocol. Kept in a sibling module so this file doesn't grow past
+# its already-1500-line mark.
+from openprogram.agent._turn_lifecycle import (
+    insert_placeholder as _insert_placeholder,
+    mark_terminal_status as _mark_terminal_status,
+    fold_error_into_placeholder as _fold_error_into_placeholder,
+    write_standalone_error_node as _write_standalone_error_node,
+)
+
 
 # Sentinel: "caller did not specify parent_id, dispatcher should pick"
 # vs explicit ``None`` which means "fork from root". The two cases need
@@ -358,21 +369,9 @@ def process_user_turn(
     #     aggregation in webui/persistence._aggregate_tool_messages.
     #     We update this row's content + tool_calls/blocks at turn
     #     end (step 5) once the LLM's final text is known.
-    _placeholder_inserted = False
-    try:
-        db.append_message(req.session_id, {
-            "id": assistant_msg_id,
-            "role": "assistant",
-            "content": "",
-            "timestamp": time.time(),
-            "parent_id": user_msg_id,
-            "source": req.source,
-        })
-        _placeholder_inserted = True
-    except Exception:
-        # Non-fatal — the canonical write happens in step 5. Refresh
-        # mid-turn just falls back to the prior behaviour for this turn.
-        pass
+    _placeholder_inserted = _insert_placeholder(
+        db, req.session_id, assistant_msg_id, user_msg_id, req.source,
+    )
 
     # 4. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck
@@ -456,25 +455,39 @@ def process_user_turn(
             cancel_event=cancel_event,
         )
     except Exception as e:
-        err_text = f"[error] {type(e).__name__}: {e}"
-        # Persist error as a system message — visible in resume + indexed in FTS
-        err_id = uuid.uuid4().hex[:12]
-        db.append_message(req.session_id, {
-            "id": err_id,
-            "role": "system",
-            "content": err_text,
-            "timestamp": time.time(),
-            "parent_id": user_msg_id,
-            "source": req.source,
-            "extra": json.dumps({"trace": traceback.format_exc()[:2000]}),
-        })
+        # Two paths, both delegated to _turn_lifecycle:
+        #   * placeholder present → fold the error into the same row
+        #     so the chat UI shows a red assistant bubble (not an
+        #     orphan system message next to an empty bubble).
+        #   * placeholder missing → standalone system error node.
+        head_for_next: Optional[str] = None
+        err_text: Optional[str] = None
+        if _placeholder_inserted:
+            err_text = _fold_error_into_placeholder(
+                db.db_path, req.session_id, assistant_msg_id, e,
+            )
+            if err_text is not None:
+                head_for_next = assistant_msg_id
+        if err_text is None:
+            err_id = _write_standalone_error_node(
+                db, req.session_id, user_msg_id, req.source, e,
+            )
+            err_text = f"[error] {type(e).__name__}: {e}"
+            head_for_next = err_id
+        # Move head to the failed turn so the next user message
+        # chains off it, not off the user message that triggered it.
+        try:
+            db.update_session(req.session_id, head_id=head_for_next)
+        except Exception:
+            pass
         on_event({"type": "chat_response",
                   "data": {"type": "error", "session_id": req.session_id,
                            "content": err_text}})
         return TurnResult(
             final_text="",
             user_msg_id=user_msg_id,
-            assistant_msg_id="",
+            assistant_msg_id=(
+                assistant_msg_id if _placeholder_inserted else ""),
             failed=True,
             error=str(e),
             duration_ms=int((time.time() - started_at) * 1000),
@@ -544,6 +557,14 @@ def process_user_turn(
         "model": model_id,
         "provider": provider_id,
     }
+    # Stamp terminal lifecycle status — see _turn_lifecycle for the
+    # state machine. ``cancel_event.is_set()`` here means the user
+    # clicked stop mid-stream and the agent loop returned early with
+    # partial output → record as "cancelled", not "completed".
+    _mark_terminal_status(
+        assistant_msg,
+        cancelled=bool(cancel_event and cancel_event.is_set()),
+    )
     if has_usage:
         assistant_msg.update({
             "input_tokens":  int(usage.get("input_tokens")  or 0),

@@ -49,19 +49,21 @@ export function setRunning(running: boolean): void {
   // call ``setRunning(true)``) actually flip the button.
   const w = W as unknown as {
     __sessionStore?: {
-      getState: () => { setRunningTask: (t: unknown) => void };
+      getState: () => {
+        setRunningTask: (t: unknown) => void;
+        setRunningTaskFor: (sid: string, t: unknown) => void;
+      };
     };
     currentSessionId?: string;
   };
   const store = w.__sessionStore;
-  if (store?.getState) {
+  const sid = w.currentSessionId || "";
+  if (store?.getState && sid) {
     if (running) {
-      store.getState().setRunningTask({
-        session_id: w.currentSessionId || "",
-        msg_id: "",
-      });
+      const task = { session_id: sid, msg_id: "" };
+      store.getState().setRunningTaskFor(sid, task);
     } else {
-      store.getState().setRunningTask(null);
+      store.getState().setRunningTaskFor(sid, null);
     }
   }
 

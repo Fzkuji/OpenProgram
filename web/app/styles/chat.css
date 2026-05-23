@@ -993,6 +993,29 @@
   margin-top: 4px;
 }
 
+/* Soft terminal-state badges below the chat body — interrupted and
+   cancelled are not full-on errors but still mark the turn as not
+   reaching a clean "done", so they hint at it with a small inline
+   strip rather than recolouring the whole bubble. */
+.bubble-badge {
+  margin: 8px 0 0 36px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  display: inline-block;
+}
+.bubble-badge-interrupted {
+  background: rgba(224,170,80,0.10);
+  border: 1px solid rgba(224,170,80,0.25);
+  color: #c98a30;
+}
+.bubble-badge-cancelled {
+  background: rgba(160,160,160,0.10);
+  border: 1px solid rgba(160,160,160,0.25);
+  color: var(--text-muted);
+}
+
 /* Welcome screen styles moved to
    `components/chat/welcome-screen.module.css`. The legacy
    `newSession()` no longer injects `.welcome*` DOM — it leaves the
@@ -1197,3 +1220,25 @@
   overflow: auto;
 }
 
+
+/* Per-conversation token-usage pill in the composer's bottom-right slot.
+   Rendered by <ContextBadge> (web/components/chat/context-badge.tsx) as a
+   global class. The rule lived in the old 05-chat.css and was dropped in
+   58e7709 along with the rest of the legacy composer CSS; restore it here
+   so the badge stops rendering as unstyled text. */
+.context-stats-label {
+  font-size: 12px;
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  height: 30px;
+  line-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  white-space: nowrap;
+  cursor: default;
+  display: inline-flex;
+  align-items: center;
+}

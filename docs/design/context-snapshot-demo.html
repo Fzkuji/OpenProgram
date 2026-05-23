@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Context Snapshot Demo — DAG + Snapshot 联动演示</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --bg-elev: #161b22;
+  --bg-card: #1c2128;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --text-bright: #f0f6fc;
+  --accent: #58a6ff;
+  --green: #56d364;
+  --orange: #e3b341;
+  --red: #f85149;
+  --purple: #bc8cff;
+  --gray: #6e7681;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+body {
+  font-family: var(--sans);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-elev);
+}
+header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+header .controls {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+button {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  transition: background 0.1s, border-color 0.1s;
+}
+button:hover { background: rgba(88, 166, 255, 0.12); border-color: var(--accent); color: var(--text-bright); }
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+button.primary:hover { background: #4493f8; }
+
+.turn-info {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-right: 12px;
+}
+
+main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.pane {
+  background: var(--bg);
+  overflow: auto;
+  padding: 16px;
+}
+.pane-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── DAG (left) ────────────────────────────────────── */
+#dagSvg {
+  width: 100%;
+  min-height: 400px;
+}
+.dag-node {
+  fill: var(--accent);
+  stroke: var(--text-bright);
+  stroke-width: 0;
+  transition: stroke-width 0.2s, fill 0.3s;
+}
+.dag-node.new {
+  animation: pulse 0.6s ease-out;
+}
+@keyframes pulse {
+  0%   { stroke-width: 0; fill: var(--green); }
+  50%  { stroke-width: 4; }
+  100% { stroke-width: 0; }
+}
+.dag-edge {
+  stroke: var(--gray);
+  stroke-width: 1.5;
+  fill: none;
+  opacity: 0.6;
+}
+.dag-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: var(--text-dim);
+}
+.role-user      { fill: var(--accent); }
+.role-assistant { fill: var(--purple); }
+.role-tool      { fill: var(--orange); }
+.role-summary   { fill: var(--green); }
+
+/* ── Snapshot (right) ───────────────────────────────── */
+.snap-meta {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.snap-meta-item { color: var(--text-dim); }
+.snap-meta-item strong { color: var(--text-bright); font-weight: 600; }
+
+.context-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: var(--bg-card);
+  transition: background 0.2s, border-color 0.2s, transform 0.3s, opacity 0.3s;
+  align-items: flex-start;
+  position: relative;
+}
+.context-item.changed {
+  border-color: var(--green);
+  background: rgba(86, 211, 100, 0.08);
+}
+.context-item.state-full    .state-badge { background: rgba(88, 166, 255, 0.18); color: var(--accent); }
+.context-item.state-aged    .state-badge { background: rgba(227, 179, 65, 0.18); color: var(--orange); }
+.context-item.state-aged    { opacity: 0.85; }
+.context-item.state-cleared .state-badge { background: rgba(248, 81, 73, 0.16); color: var(--red); }
+.context-item.state-cleared { opacity: 0.65; }
+.context-item.state-summarized { opacity: 0.35; }
+.context-item.state-summarized .state-badge { background: rgba(110, 118, 129, 0.18); color: var(--gray); }
+.context-item.state-summary    .state-badge { background: rgba(86, 211, 100, 0.18); color: var(--green); }
+
+.role-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 56px;
+  text-align: center;
+}
+.role-chip.user      { color: var(--accent); }
+.role-chip.assistant { color: var(--purple); }
+.role-chip.tool      { color: var(--orange); }
+.role-chip.summary   { color: var(--green); }
+
+.state-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.item-body {
+  flex: 1;
+  font-size: 13px;
+  word-break: break-word;
+  line-height: 1.5;
+  color: var(--text);
+}
+.item-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.legend {
+  margin-top: 24px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.legend-row { margin: 3px 0; }
+.legend strong { color: var(--text-bright); }
+
+.empty-hint {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 80px 20px;
+  font-style: italic;
+  font-size: 13px;
+}
+
+.budget-bar {
+  height: 6px;
+  background: var(--bg-elev);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 6px;
+  width: 100%;
+}
+.budget-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease, background 0.3s;
+}
+.budget-bar-fill.warn { background: var(--orange); }
+.budget-bar-fill.over { background: var(--red); }
+
+.script-hint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 6px 12px;
+  background: var(--bg-elev);
+  border-radius: 4px;
+  border: 1px dashed var(--border);
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Context Snapshot Demo</h1>
+  <span class="turn-info" id="turnInfo">Turn 0 / snap: none</span>
+  <span class="script-hint" id="scriptHint">点 "下一轮" 开始</span>
+  <div class="controls">
+    <button id="prevBtn" disabled>← 上一轮</button>
+    <button id="nextBtn" class="primary">下一轮 →</button>
+    <button id="resetBtn">重置</button>
+  </div>
+</header>
+
+<main>
+  <section class="pane">
+    <div class="pane-header">Layer 1 · DAG (append-only, 真源)</div>
+    <svg id="dagSvg" viewBox="0 0 400 600" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="legend">
+      <div class="legend-row"><strong>圆</strong> = user, <strong>三角</strong> = assistant, <strong>方块</strong> = tool</div>
+      <div class="legend-row">绿色边框闪烁 = 本轮新增节点</div>
+      <div class="legend-row">连线 = predecessor (主线) / caller (子调用)</div>
+    </div>
+  </section>
+
+  <section class="pane">
+    <div class="pane-header">Layer 2 · Context Snapshot (LLM 看到的内容)</div>
+    <div class="snap-meta" id="snapMeta">
+      <div class="snap-meta-item">snap: <strong>—</strong></div>
+      <div class="snap-meta-item">parent: <strong>—</strong></div>
+      <div class="snap-meta-item">items: <strong>0</strong></div>
+      <div class="snap-meta-item">tokens: <strong>0 / 1500</strong></div>
+    </div>
+    <div class="budget-bar"><div class="budget-bar-fill" id="budgetBar" style="width:0%"></div></div>
+    <div id="snapItems" style="margin-top:16px;">
+      <div class="empty-hint">等待第一轮 ...</div>
+    </div>
+    <div class="legend">
+      <div class="legend-row"><strong style="color:var(--accent)">full</strong>: 全文进 context</div>
+      <div class="legend-row"><strong style="color:var(--orange)">aged</strong>: 替成语义 stub</div>
+      <div class="legend-row"><strong style="color:var(--red)">cleared</strong>: 替成固定占位符</div>
+      <div class="legend-row"><strong style="color:var(--gray)">summarized</strong>: 已合进 summary item, 不渲染</div>
+      <div class="legend-row"><strong style="color:var(--green)">summary</strong>: 合成的摘要节点, 不在 DAG 里</div>
+      <div class="legend-row">绿色高亮 = 本轮新增 / 状态变化的 item</div>
+    </div>
+  </section>
+</main>
+
+<script>
+// ─────────────────────────────────────────────────────────
+// Scripted turns (假对话, 演示用)
+// ─────────────────────────────────────────────────────────
+const SCRIPTED_TURNS = [
+  {
+    user: "scan repo and find wiki agent code",
+    asst: "Let me search the codebase",
+    tools: [
+      { name: "list", args: "/repo", result: "82 files, agentics/, memory/, ..." },
+      { name: "grep", args: "wiki|Wikipedia", result: "39 matches in 12 files" },
+    ],
+    hint: "Turn 1: 用户提问, 模型调 2 个 tool",
+  },
+  {
+    user: "read wiki_agent.py",
+    asst: "Sure, reading the file now",
+    tools: [
+      { name: "read", args: "wiki_agent.py", result: "245 lines, def WikiAgent(...)" },
+      { name: "read", args: "research_wiki.py", result: "510 lines, helper funcs" },
+    ],
+    hint: "Turn 2: 又调 2 个 tool",
+  },
+  {
+    user: "what about the memory subsystem?",
+    asst: "Looking at memory/ now",
+    tools: [
+      { name: "list", args: "memory/", result: "12 files" },
+      { name: "read", args: "memory/wiki/ops.py", result: "745 lines" },
+      { name: "grep", args: "ingest", result: "8 matches" },
+    ],
+    hint: "Turn 3: tail=3 边界, 老 turn 1 的 tool 即将 aging",
+  },
+  {
+    user: "how does dedup work?",
+    asst: "Reading dedup logic",
+    tools: [
+      { name: "read", args: "memory/wiki/dedup.py", result: "320 lines" },
+      { name: "grep", args: "dedup", result: "23 matches" },
+    ],
+    hint: "Turn 4: turn 1 的 tool 已经超 tail, 被 aged",
+  },
+  {
+    user: "and the journal?",
+    asst: "Checking journal.py",
+    tools: [
+      { name: "read", args: "memory/journal.py", result: "180 lines" },
+    ],
+    hint: "Turn 5: turn 2 也超 tail 被 aged",
+  },
+  {
+    user: "explain core.md",
+    asst: "Sure, here's how core.md works",
+    tools: [
+      { name: "read", args: "memory/core.py", result: "95 lines" },
+    ],
+    hint: "Turn 6: 还在演化",
+  },
+  {
+    user: "summarize everything",
+    asst: "Here's a summary of the memory subsystem...",
+    tools: [],
+    hint: "Turn 7: token 超阈值, 触发 summarize, 老的几个 turn 合并",
+    forceSummarize: true,
+  },
+];
+
+const BUDGET_TOTAL = 1500;
+const TAIL_TURNS = 3;
+const SUMMARIZE_THRESHOLD = 1200;
+
+// ─────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────
+let dagNodes = [];      // {id, role, label, parent, caller, turn}
+let snapshots = [];     // array of {id, items, totalTokens, parent}
+let currentSnapIdx = -1;
+
+function estTokens(text) {
+  // crude: 1 token ≈ 4 chars
+  return Math.max(4, Math.ceil((text || '').length / 4));
+}
+
+function uid(prefix) {
+  return prefix + Math.random().toString(36).slice(2, 6);
+}
+
+// ─────────────────────────────────────────────────────────
+// Generate snapshot from previous + new nodes
+// ─────────────────────────────────────────────────────────
+function generateSnapshot(parentIdx, newNodes, turnIdx, forceSummarize) {
+  const prev = parentIdx >= 0 ? snapshots[parentIdx] : null;
+  const items = prev ? prev.items.map(i => ({ ...i })) : [];
+
+  // Step 1: append new items (state=full, locked=false)
+  for (const n of newNodes) {
+    items.push({
+      sourceId: n.id,
+      role: n.role,
+      label: n.label,
+      state: 'full',
+      locked: false,
+      rendered: n.rendered,
+      tokens: estTokens(n.rendered),
+      reason: 'new',
+      bornAtSnap: snapshots.length,
+      changedThisSnap: true,
+    });
+  }
+
+  // mark all prev items as not-changed-this-snap
+  for (const item of items) {
+    if (item.bornAtSnap !== snapshots.length) item.changedThisSnap = false;
+  }
+
+  // Step 2: apply rules
+
+  // Rule: tool_aging — tool items beyond tail turn, age them
+  // Determine current turn-of-item: assistant items mark turn boundaries
+  let turnsBack = 0;
+  let scanTurn = null;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.role === 'user') {
+      // user opens a turn (turn starts at user, ends at next user)
+    }
+    if (item.role === 'assistant') {
+      turnsBack++;
+    }
+    if (item.role === 'tool') {
+      if (turnsBack > TAIL_TURNS && !item.locked) {
+        item.state = 'aged';
+        item.rendered = `[aged] ${item.label} → ${item.rendered.slice(0, 24)}...`;
+        item.tokens = estTokens(item.rendered);
+        item.locked = true;
+        item.reason = `tail>${TAIL_TURNS}`;
+        item.changedThisSnap = true;
+      }
+    }
+  }
+
+  // Rule: summarize_old — if total > threshold OR forced
+  let total = items.reduce((s, i) => s + i.tokens, 0);
+  if (forceSummarize || total > SUMMARIZE_THRESHOLD) {
+    // collapse oldest non-summary items (state=full or aged) into a summary
+    // Take first 5 items that are not already summarized.
+    const toSummarize = [];
+    for (let i = 0; i < items.length && toSummarize.length < 5; i++) {
+      if (items[i].state !== 'summarized' && items[i].role !== 'summary') {
+        toSummarize.push(i);
+      }
+    }
+    if (toSummarize.length >= 3) {
+      const summaryId = uid('sm_');
+      const labels = toSummarize.map(i => items[i].label).slice(0, 3).join(', ');
+      const summaryItem = {
+        sourceId: summaryId,
+        role: 'summary',
+        label: '[summary]',
+        state: 'summary',
+        locked: true,
+        rendered: `Earlier: ${labels} ...`,
+        tokens: 80,
+        reason: 'summarized',
+        bornAtSnap: snapshots.length,
+        changedThisSnap: true,
+      };
+      // mark targets as summarized
+      for (const i of toSummarize) {
+        items[i].state = 'summarized';
+        items[i].locked = true;
+        items[i].reason = `merged into ${summaryId}`;
+        items[i].mergedInto = summaryId;
+        items[i].changedThisSnap = true;
+        items[i].tokens = 0;
+      }
+      // insert summary item at the position of the first summarized
+      items.splice(toSummarize[0], 0, summaryItem);
+    }
+  }
+
+  total = items.reduce((s, i) => s + i.tokens, 0);
+  return {
+    id: uid('snap_'),
+    parent: prev ? prev.id : null,
+    items,
+    totalTokens: total,
+    turn: turnIdx,
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// Step forward one turn
+// ─────────────────────────────────────────────────────────
+function stepForward() {
+  const turnIdx = snapshots.length;
+  if (turnIdx >= SCRIPTED_TURNS.length) return;
+  const turn = SCRIPTED_TURNS[turnIdx];
+
+  const newDagNodes = [];
+
+  // user
+  const userId = `u${turnIdx + 1}`;
+  const lastAssistantId = [...dagNodes].reverse().find(n => n.role === 'assistant')?.id || null;
+  newDagNodes.push({
+    id: userId, role: 'user', label: turn.user,
+    parent: lastAssistantId, caller: null, turn: turnIdx,
+    rendered: turn.user,
+  });
+
+  // assistant
+  const asstId = `a${turnIdx + 1}`;
+  newDagNodes.push({
+    id: asstId, role: 'assistant', label: turn.asst,
+    parent: userId, caller: null, turn: turnIdx,
+    rendered: turn.asst,
+  });
+
+  // tools
+  for (let i = 0; i < turn.tools.length; i++) {
+    const t = turn.tools[i];
+    newDagNodes.push({
+      id: `${asstId}_t${i + 1}`,
+      role: 'tool',
+      label: `${t.name}(${t.args})`,
+      parent: null, caller: asstId, turn: turnIdx,
+      rendered: t.result,
+    });
+  }
+
+  // Update dagNodes (mark new ones for animation)
+  dagNodes.forEach(n => n._isNew = false);
+  newDagNodes.forEach(n => n._isNew = true);
+  dagNodes = dagNodes.concat(newDagNodes);
+
+  // Generate snapshot
+  const snap = generateSnapshot(currentSnapIdx, newDagNodes, turnIdx, turn.forceSummarize);
+  snapshots.push(snap);
+  currentSnapIdx = snapshots.length - 1;
+
+  render();
+}
+
+function stepBack() {
+  if (currentSnapIdx <= 0) return;
+  currentSnapIdx--;
+  // also rewind dagNodes to that snap
+  const targetTurn = snapshots[currentSnapIdx].turn;
+  dagNodes = dagNodes.filter(n => n.turn <= targetTurn);
+  dagNodes.forEach(n => n._isNew = false);
+  render();
+}
+
+function reset() {
+  dagNodes = [];
+  snapshots = [];
+  currentSnapIdx = -1;
+  render();
+}
+
+// ─────────────────────────────────────────────────────────
+// Render
+// ─────────────────────────────────────────────────────────
+function render() {
+  renderDag();
+  renderSnap();
+  renderControls();
+}
+
+function renderDag() {
+  const svg = document.getElementById('dagSvg');
+  svg.innerHTML = '';
+
+  if (!dagNodes.length) {
+    svg.setAttribute('viewBox', '0 0 400 200');
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', '200');
+    text.setAttribute('y', '100');
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('fill', 'var(--text-dim)');
+    text.setAttribute('font-family', 'var(--sans)');
+    text.setAttribute('font-style', 'italic');
+    text.setAttribute('font-size', '13');
+    text.textContent = '等待第一轮 ...';
+    svg.appendChild(text);
+    return;
+  }
+
+  // Layout: main chain center, tools to the right
+  const ROW = 38;
+  const PAD_TOP = 30;
+  const CENTER_X = 140;
+  const TOOL_X_BASE = 220;
+  let y = PAD_TOP;
+  const positions = {};
+  const mainChainOrder = [];
+
+  for (const n of dagNodes) {
+    if (n.role === 'user' || n.role === 'assistant') {
+      positions[n.id] = { x: CENTER_X, y };
+      mainChainOrder.push(n.id);
+      y += ROW;
+    }
+  }
+  // tools: stack vertically next to their caller
+  const toolsByCaller = {};
+  for (const n of dagNodes) {
+    if (n.role === 'tool') {
+      toolsByCaller[n.caller] = toolsByCaller[n.caller] || [];
+      toolsByCaller[n.caller].push(n);
+    }
+  }
+  for (const callerId in toolsByCaller) {
+    const callerPos = positions[callerId];
+    if (!callerPos) continue;
+    toolsByCaller[callerId].forEach((t, i) => {
+      positions[t.id] = { x: TOOL_X_BASE + i * 30, y: callerPos.y };
+    });
+  }
+
+  const height = y + 30;
+  svg.setAttribute('viewBox', `0 0 400 ${Math.max(height, 200)}`);
+
+  // edges
+  for (const n of dagNodes) {
+    const me = positions[n.id];
+    if (!me) continue;
+    let from = null;
+    if (n.parent && positions[n.parent]) from = positions[n.parent];
+    if (n.caller && positions[n.caller]) from = positions[n.caller];
+    if (from) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      const c1x = from.x;
+      const c1y = (from.y + me.y) / 2;
+      const c2x = me.x;
+      const c2y = c1y;
+      path.setAttribute('d', `M ${from.x} ${from.y} C ${c1x} ${c1y} ${c2x} ${c2y} ${me.x} ${me.y}`);
+      path.setAttribute('class', 'dag-edge');
+      svg.appendChild(path);
+    }
+  }
+
+  // nodes
+  for (const n of dagNodes) {
+    const p = positions[n.id];
+    if (!p) continue;
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(${p.x}, ${p.y})`);
+
+    let shape;
+    if (n.role === 'user') {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      shape.setAttribute('r', '8');
+      shape.setAttribute('class', `dag-node role-user ${n._isNew ? 'new' : ''}`);
+    } else if (n.role === 'assistant') {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      shape.setAttribute('points', '0,-8 7,5 -7,5');
+      shape.setAttribute('class', `dag-node role-assistant ${n._isNew ? 'new' : ''}`);
+    } else {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      shape.setAttribute('x', '-7'); shape.setAttribute('y', '-7');
+      shape.setAttribute('width', '14'); shape.setAttribute('height', '14');
+      shape.setAttribute('class', `dag-node role-tool ${n._isNew ? 'new' : ''}`);
+    }
+    g.appendChild(shape);
+
+    if (n.role !== 'tool') {
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('class', 'dag-label');
+      label.setAttribute('x', '-14');
+      label.setAttribute('y', '4');
+      label.setAttribute('text-anchor', 'end');
+      label.textContent = n.id;
+      g.appendChild(label);
+    }
+    svg.appendChild(g);
+  }
+}
+
+function renderSnap() {
+  const itemsBox = document.getElementById('snapItems');
+  const meta = document.getElementById('snapMeta');
+  const budgetBar = document.getElementById('budgetBar');
+
+  if (currentSnapIdx < 0) {
+    meta.innerHTML = '<div class="snap-meta-item">snap: <strong>—</strong></div>' +
+                     '<div class="snap-meta-item">items: <strong>0</strong></div>' +
+                     '<div class="snap-meta-item">tokens: <strong>0 / ' + BUDGET_TOTAL + '</strong></div>';
+    budgetBar.style.width = '0%';
+    itemsBox.innerHTML = '<div class="empty-hint">等待第一轮 ...</div>';
+    return;
+  }
+
+  const snap = snapshots[currentSnapIdx];
+  const pct = Math.min(100, (snap.totalTokens / BUDGET_TOTAL) * 100);
+  budgetBar.style.width = pct + '%';
+  budgetBar.className = 'budget-bar-fill';
+  if (pct > 90) budgetBar.classList.add('over');
+  else if (pct > 70) budgetBar.classList.add('warn');
+
+  const renderedCount = snap.items.filter(i => i.state !== 'summarized').length;
+  meta.innerHTML =
+    `<div class="snap-meta-item">snap: <strong>${snap.id}</strong></div>` +
+    `<div class="snap-meta-item">parent: <strong>${snap.parent || '—'}</strong></div>` +
+    `<div class="snap-meta-item">items: <strong>${snap.items.length}</strong> (rendered ${renderedCount})</div>` +
+    `<div class="snap-meta-item">tokens: <strong>${snap.totalTokens} / ${BUDGET_TOTAL}</strong></div>`;
+
+  let html = '';
+  for (const item of snap.items) {
+    const stateClass = `state-${item.state}`;
+    const changedClass = item.changedThisSnap ? 'changed' : '';
+    const roleChip = `<div class="role-chip ${item.role}">${item.role}</div>`;
+    const stateBadge = `<div class="state-badge">${item.state}</div>`;
+    const tokens = item.tokens ? `${item.tokens}t` : '';
+    const reason = item.reason ? `· ${item.reason}` : '';
+    html += `
+      <div class="context-item ${stateClass} ${changedClass}">
+        ${roleChip}
+        ${stateBadge}
+        <div class="item-body">
+          ${escapeHtml(item.rendered)}
+          <div class="item-meta">${item.sourceId} ${reason} ${tokens}</div>
+        </div>
+      </div>
+    `;
+  }
+  itemsBox.innerHTML = html;
+}
+
+function renderControls() {
+  const turnIdx = currentSnapIdx + 1;
+  const total = SCRIPTED_TURNS.length;
+  document.getElementById('turnInfo').textContent =
+    `Turn ${turnIdx} / ${total}` +
+    (currentSnapIdx >= 0 ? ` · ${snapshots[currentSnapIdx].id}` : ' · snap: none');
+  document.getElementById('nextBtn').disabled = turnIdx >= total;
+  document.getElementById('prevBtn').disabled = currentSnapIdx <= 0;
+  document.getElementById('scriptHint').textContent =
+    currentSnapIdx >= 0 ? SCRIPTED_TURNS[currentSnapIdx].hint :
+    turnIdx < total ? '点 "下一轮" 开始' : '已到结尾';
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+}
+
+document.getElementById('nextBtn').addEventListener('click', stepForward);
+document.getElementById('prevBtn').addEventListener('click', stepBack);
+document.getElementById('resetBtn').addEventListener('click', reset);
+
+render();
+</script>
+
+</body>
+</html>

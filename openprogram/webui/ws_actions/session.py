@@ -164,7 +164,7 @@ async def handle_load_session(ws, cmd: dict):
             full_msgs = default_db().get_messages(conv["id"])
         except Exception:
             full_msgs = all_msgs
-        from openprogram.webui._graph_layout import annotate_graph
+        from openprogram.webui.graph_layout import annotate_graph
         graph = []
         for m in full_msgs:
             content = m.get("content") or ""
@@ -174,6 +174,7 @@ async def handle_load_session(ws, cmd: dict):
             graph.append({
                 "id": m.get("id"),
                 "parent_id": m.get("parent_id"),
+                "caller": m.get("caller") or "",
                 "role": m.get("role"),
                 "function": m.get("function"),
                 "display": m.get("display"),
@@ -182,7 +183,10 @@ async def handle_load_session(ws, cmd: dict):
             })
         # Compute (depth, lane) server-side so the frontend renders
         # parallel branches correctly without re-deriving topology.
-        annotate_graph(graph, head)
+        # ``annotate_graph`` filters microcompact synthetic nodes
+        # (summary_*/k_*) — reassign so the WS payload ships only
+        # the DAG-visible subset.
+        graph = annotate_graph(graph, head)
         from openprogram.agent.session_config import load_session_run_config
         run_cfg = load_session_run_config(conv["id"])
         await ws.send_text(json.dumps({
@@ -386,7 +390,7 @@ async def handle_list_sessions(ws, cmd: dict):
         return t in ("", "New conversation", "Untitled")
 
     conv_list = [r for r in conv_list if not _is_empty_placeholder(r)]
-    conv_list.sort(key=lambda c: c.get("created_at") or 0)
+    conv_list.sort(key=lambda c: c.get("created_at") or 0, reverse=True)
     await ws.send_text(json.dumps({
         "type": "sessions_list", "data": conv_list,
     }, default=str))

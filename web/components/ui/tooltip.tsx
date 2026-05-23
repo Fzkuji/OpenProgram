@@ -27,4 +27,23 @@ const TooltipContent = React.forwardRef<
 ))
 TooltipContent.displayName = TooltipPrimitive.Content.displayName
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+/** Convenience wrapper: <HoverTip label="..."> {children}. 包成 Provider/
+ *  Root/Trigger/Content 链, 消费方只用关心 label 字符串。message-actions
+ *  这种用 label 跟 children 一锅出的位置批量用. */
+interface HoverTipProps {
+  label: React.ReactNode
+  children: React.ReactElement
+  side?: "top" | "right" | "bottom" | "left"
+}
+function HoverTip({ label, children, side = "top" }: HoverTipProps) {
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side={side}>{label}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, HoverTip }

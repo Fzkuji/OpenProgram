@@ -47,8 +47,8 @@ interface HGWindow {
 
 const HGW = window as unknown as HGWindow;
 
-const ROW_H = 28;
-const COL_W = 22;
+const ROW_H = 32;
+const COL_W = 48;
 const NODE_R = 5;
 const PAD_X = 18;
 const PAD_Y = 16;
@@ -287,24 +287,48 @@ function _applyCollapse(graph: GNode[]): {
     _collapseSession = sid;
   }
   const childrenOf: Record<string, string[]> = Object.create(null);
+  const callerKidsOf: Record<string, string[]> = Object.create(null);
   const internalFlag: Record<string, boolean> = Object.create(null);
   graph.forEach((m) => {
     if (m._internal) internalFlag[m.id] = true;
     if (m.parent_id) {
       (childrenOf[m.parent_id] = childrenOf[m.parent_id] || []).push(m.id);
     }
+    // Sub-call edge: any node with this one as `caller` is a child
+    // of this one's call-stack frame. Collapsible if any such kid
+    // exists — that lets us hide the tool sub-tree under its owning
+    // assistant.
+    const ca = m.caller;
+    if (ca) {
+      (callerKidsOf[ca] = callerKidsOf[ca] || []).push(m.id);
+    }
   });
   function _internalKids(id: string): string[] {
     return (childrenOf[id] || []).filter((c) => internalFlag[c]);
   }
   function collapsible(m: GNode): boolean {
+    // Any node that owns sub-calls (a `caller` kid exists) can be
+    // collapsed to hide its tool / sub-LLM subtree. This subsumes
+    // the legacy role=="tool" / _runNode checks for new graphs.
+    if ((callerKidsOf[m.id] || []).length > 0) return true;
     if (m.role === "tool") return (childrenOf[m.id] || []).length > 0;
     if (m._runNode) return _internalKids(m.id).length > 0;
     return false;
   }
+  // Default-collapse nodes whose sub-call cluster is large enough to
+  // dominate the column. A short cluster (≤ AUTO_COLLAPSE_THRESHOLD)
+  // stays expanded so 2-3 tools per turn read fine inline; long
+  // clusters fold to one node + "+N" badge so 30 read() calls don't
+  // turn the panel into a wall of squares. Single-click on the
+  // caller toggles between the two states; the user's manual
+  // collapse/expand persists across renders within the session.
+  const AUTO_COLLAPSE_THRESHOLD = 4;
   graph.forEach((m) => {
-    if (collapsible(m) && !_seenCollapsible[m.id]) {
-      _seenCollapsible[m.id] = true;
+    if (!collapsible(m)) return;
+    if (_seenCollapsible[m.id]) return;  // already decided once
+    _seenCollapsible[m.id] = true;
+    const kidCount = (callerKidsOf[m.id] || []).length;
+    if (kidCount > AUTO_COLLAPSE_THRESHOLD) {
       _collapsed[m.id] = true;
     }
   });
@@ -312,18 +336,30 @@ function _applyCollapse(graph: GNode[]): {
   const hiddenCount: Record<string, number> = Object.create(null);
   graph.forEach((m) => {
     if (!_collapsed[m.id]) return;
-    const stack = m._runNode
-      ? _internalKids(m.id)
-      : (childrenOf[m.id] || []).slice();
+    // Walk only the sub-call subtree (caller-edge descendants), not
+    // the conversation children. Tools / FunctionCall sub-calls hide
+    // when their owning assistant collapses; the next user turn (a
+    // conv child) stays visible.
+    const hasCallerKids = (callerKidsOf[m.id] || []).length > 0;
+    const stack = hasCallerKids
+      ? (callerKidsOf[m.id] || []).slice()
+      : m._runNode
+        ? _internalKids(m.id)
+        : (childrenOf[m.id] || []).slice();
     let cnt = 0;
     while (stack.length) {
       const id = stack.pop()!;
       if (hidden[id]) continue;
       hidden[id] = true;
       cnt++;
-      const kids = childrenOf[id] || [];
+      // Recurse into the same kind of children (caller-edge or
+      // legacy internal/parent edge depending on which expansion
+      // started this collapse).
+      const kids = hasCallerKids
+        ? (callerKidsOf[id] || [])
+        : (childrenOf[id] || []);
       for (let i = 0; i < kids.length; i++) {
-        if (m._runNode && !internalFlag[kids[i]]) continue;
+        if (!hasCallerKids && m._runNode && !internalFlag[kids[i]]) continue;
         stack.push(kids[i]);
       }
     }
@@ -680,7 +716,7 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     if (typeof t === "number" && t > maxTier) maxTier = t;
   });
   const subForkMargin = maxTier >= 1
-    ? COL_W * 0.55 + Math.max(0, maxTier - 1) * COL_W * 0.4 + NODE_R * 2
+    ? COL_W * 0.7 + Math.max(0, maxTier - 1) * COL_W * 0.5 + NODE_R * 2
     : 0;
   const panelW = (body && body.clientWidth) || 240;
   const width = Math.max(panelW - 4, laneArea + subForkMargin + PAD_X);
@@ -711,7 +747,7 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     //    │
     //   user (t=0)               ← back on main column
     const tier = typeof n._tier === "number" ? n._tier : 0;
-    const tierOff = tier <= 0 ? 0 : COL_W * 0.55 + (tier - 1) * COL_W * 0.4;
+    const tierOff = tier <= 0 ? 0 : COL_W * 0.7 + (tier - 1) * COL_W * 0.5;
     return {
       x: PAD_X + (n._lane || 0) * COL_W + tierOff,
       y: PAD_Y + (n._depth || 0) * ROW_H,
@@ -777,9 +813,12 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     // sub-LLM calls smaller still. Independent of ``_depth`` (which
     // is purely the visual y row, including tool stacking).
     const tier = typeof node._tier === "number" ? node._tier : 0;
-    const tierShrink = Math.min(0.5, tier * 0.08);
-    const headBoost = onHead ? 1.0 : 0.7;
-    const r = NODE_R * headBoost * (1 - tierShrink);
+    const tierShrink = Math.min(0.55, tier * 0.18);
+    // HEAD outline is drawn separately (see ``_buildShapeEl`` /
+    // current-marker logic); don't inflate the inner shape just
+    // because it's on HEAD, or tier-1 tool calls visually merge
+    // back into the tier-0 main thread.
+    const r = NODE_R * (onHead ? 0.85 : 0.7) * (1 - tierShrink);
     const el = _buildShapeEl(_shapeFor(node), color, r);
     if (el) {
       el.setAttribute("pointer-events", "none");

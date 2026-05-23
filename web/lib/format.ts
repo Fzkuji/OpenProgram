@@ -148,13 +148,10 @@ export function buildUsageText(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _provider: string | null | undefined,
 ): UsageText | null {
-  if (
-    !usage ||
-    (!usage.input_tokens &&
-      !usage.output_tokens &&
-      !usage.cache_read &&
-      !usage.cache_create)
-  ) {
+  // 只在 usage 完全没有时不渲染. 全零也照样显示 ("0 in · 0 out") —
+  // 一个会话有 zustand store entry 就说明它接过 broadcast (哪怕值是 0,
+  // 比如失败 turn 之后), 用户至少能看到统计区是活的, 不会怀疑功能挂了.
+  if (!usage) {
     return null;
   }
   const base = usage.input_tokens || 0;
@@ -163,11 +160,25 @@ export function buildUsageText(
   const total = base + cached + cacheWrite;
   const outTok = usage.output_tokens || 0;
 
-  const short = fmtTokenNum(total) + " in · " + fmtTokenNum(outTok) + " out";
+  // pill 表面: 有 cache 数据时显示更丰富一档. 没 cache 就退回到
+  // "X in · Y out" 短版本. tooltip 永远是完整 breakdown.
+  const parts: string[] = [];
+  if (cached > 0 || cacheWrite > 0) {
+    parts.push(fmtTokenNum(base) + " in");
+    if (cached > 0) parts.push(fmtTokenNum(cached) + "↻"); // ↻ = cache hit
+    if (cacheWrite > 0) parts.push(fmtTokenNum(cacheWrite) + "✎"); // ✎ = cache write
+    parts.push(fmtTokenNum(outTok) + " out");
+  } else {
+    parts.push(fmtTokenNum(total) + " in");
+    parts.push(fmtTokenNum(outTok) + " out");
+  }
+  const short = parts.join(" · ");
+
+  // tooltip: 完整 breakdown + 模型名 (如果有)
   const detail: string[] = [];
-  if (base > 0) detail.push(fmtTokenNum(base) + " base");
-  if (cacheWrite > 0) detail.push(fmtTokenNum(cacheWrite) + " write");
-  if (cached > 0) detail.push(fmtTokenNum(cached) + " hit");
+  if (base > 0) detail.push(fmtTokenNum(base) + " base in");
+  if (cached > 0) detail.push(fmtTokenNum(cached) + " cache hit");
+  if (cacheWrite > 0) detail.push(fmtTokenNum(cacheWrite) + " cache write");
   detail.push(fmtTokenNum(outTok) + " out");
   return { text: short, tooltip: detail.join(" · ") };
 }
