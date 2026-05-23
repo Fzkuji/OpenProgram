@@ -634,18 +634,64 @@ def process_user_turn(
             load_latest_snapshot,
             save_snapshot,
         )
+        from openprogram.context.snapshot.types import ContextItem
         _final_text = assistant_msg.get("content") or ""
-        if _final_text:
-            _snap = load_latest_snapshot(db, req.session_id)
-            if _snap is not None:
-                _patched = False
-                for _item in _snap.items:
-                    if _item.source_node_id == assistant_msg_id:
+        _snap = load_latest_snapshot(db, req.session_id)
+        if _snap is not None:
+            _patched = False
+            _assistant_idx = -1
+            for _i, _item in enumerate(_snap.items):
+                if _item.source_node_id == assistant_msg_id:
+                    if _final_text and _item.rendered != _final_text:
                         _item.rendered = _final_text
-                        _patched = True
-                        break
-                if _patched:
-                    save_snapshot(db, _snap)
+                    _assistant_idx = _i
+                    _patched = True
+                    break
+            # Also splice in tool sub-calls written during the LLM loop
+            # (called_by=assistant_msg_id). ensure_latest_snapshot ran at
+            # turn-start before any tool node existed, so the snapshot
+            # has no tool items — the Context panel was showing a fake
+            # "user → assistant" pair instead of the real "user →
+            # assistant_with_tool_calls → tool_result(s)" sequence.
+            if _assistant_idx >= 0:
+                _all = db.get_messages(req.session_id) or []
+                _subs = [m for m in _all if (m.get("caller") or "") == assistant_msg_id]
+                _subs.sort(key=lambda x: x.get("seq") or 0)
+                _existing_ids = {it.source_node_id for it in _snap.items}
+                _to_insert: list[ContextItem] = []
+                for _sub in _subs:
+                    _sid = _sub.get("id")
+                    if not _sid or _sid in _existing_ids:
+                        continue
+                    _content = _sub.get("content") or ""
+                    if not isinstance(_content, str):
+                        import json as _json
+                        try:
+                            _content = _json.dumps(_content, ensure_ascii=False, default=str)
+                        except Exception:
+                            _content = str(_content)
+                    _to_insert.append(ContextItem(
+                        source_node_id=_sid,
+                        role="tool",
+                        state="full",
+                        locked=False,
+                        rendered=_content,
+                        tokens=max(4, len(_content) // 4),
+                        state_set_at=_snap.id,
+                        reason="new",
+                    ))
+                if _to_insert:
+                    _snap.items = (
+                        _snap.items[: _assistant_idx + 1]
+                        + _to_insert
+                        + _snap.items[_assistant_idx + 1 :]
+                    )
+                    _snap.total_tokens = sum(
+                        i.tokens for i in _snap.items if i.state != "summarized"
+                    )
+                    _patched = True
+            if _patched:
+                save_snapshot(db, _snap)
     except Exception:
         # Snapshot backfill is best-effort: the conversation persists
         # regardless, and the next turn will rebuild the chain.

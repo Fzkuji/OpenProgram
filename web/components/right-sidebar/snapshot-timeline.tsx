@@ -183,13 +183,23 @@ export function SnapshotTimeline() {
     }
   }
 
-  // Short transient "just clicked" highlight so the Refresh hint
-  // visibly responds even if the round-trip completes in <50ms.
-  const [justClicked, setJustClicked] = useState(false);
+  // Three-phase Refresh feedback: idle → loading ("…") → done ("Done!"
+  // briefly in green) → idle. Without this the click is invisible on
+  // fast round-trips. Reset to idle 900ms after the response lands.
+  const [phase, setPhase] = useState<"idle" | "loading" | "done">("idle");
+  const prevLoadingRef = useRef(loading);
+  useEffect(() => {
+    if (prevLoadingRef.current && !loading && phase === "loading") {
+      setPhase("done");
+      const t = window.setTimeout(() => setPhase("idle"), 900);
+      prevLoadingRef.current = loading;
+      return () => window.clearTimeout(t);
+    }
+    prevLoadingRef.current = loading;
+  }, [loading, phase]);
   function onRefreshClick() {
     if (!sessionId) return;
-    setJustClicked(true);
-    window.setTimeout(() => setJustClicked(false), 600);
+    setPhase("loading");
     refresh();
   }
 
@@ -204,7 +214,10 @@ export function SnapshotTimeline() {
         color: "var(--text-bright)",
       }}
     >
-      <div className="sidebar-section-header" style={{ cursor: "default" }}>
+      <div
+        className="sidebar-section-header"
+        style={{ cursor: "default", paddingTop: 16 }}
+      >
         <span className="sidebar-section-title">
           Context{snapshots.length ? ` (${snapshots.length})` : ""}
         </span>
@@ -212,12 +225,13 @@ export function SnapshotTimeline() {
           className="sidebar-section-hint"
           style={{
             cursor: sessionId ? "pointer" : "not-allowed",
-            opacity: justClicked || loading ? 0.75 : undefined,
+            opacity: phase !== "idle" ? 0.85 : undefined,
+            color: phase === "done" ? "#56d364" : undefined,
           }}
           onClick={onRefreshClick}
           role="button"
         >
-          {loading || justClicked ? "…" : "Refresh"}
+          {phase === "loading" ? "…" : phase === "done" ? "Done!" : "Refresh"}
         </span>
       </div>
       {error && (

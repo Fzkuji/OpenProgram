@@ -550,7 +550,28 @@ class DefaultContextEngine(ContextEngine):
         # 直接从 DB 拉最新 conv 链 — 不信任 caller 传进来的 history,
         # 因为 dispatcher 在写 user/placeholder 之后才调 prepare, 但
         # 它传的 history 是写之前的快照.
-        fresh_history = db.get_branch(session_id) or history or []
+        fresh_history_conv = db.get_branch(session_id) or history or []
+
+        # 把每个 assistant 的 tool sub-calls (called_by=assistant_id 的
+        # ROLE_CODE 节点) 按顺序插到 assistant 后面 — snapshot 反映的
+        # 应该是 LLM 真实看到的消息序列, 包含 tool_use + tool_result.
+        # 否则 Context tab 只有 user/assistant 纯文本, 看不到调了什么工具.
+        all_msgs = db.get_messages(session_id) or []
+        by_caller: dict[str, list[dict]] = {}
+        for _m in all_msgs:
+            _cb = _m.get("caller") or ""
+            if _cb:
+                by_caller.setdefault(_cb, []).append(_m)
+        for _lst in by_caller.values():
+            _lst.sort(key=lambda x: x.get("seq") or 0)
+        fresh_history: list[dict] = []
+        for _node in fresh_history_conv:
+            fresh_history.append(_node)
+            _nid = _node.get("id")
+            if not _nid:
+                continue
+            for _sub in by_caller.get(_nid, []):
+                fresh_history.append(_sub)
 
         _msg_cache: dict[str, dict] | None = None
 
