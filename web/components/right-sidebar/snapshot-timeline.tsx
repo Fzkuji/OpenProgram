@@ -277,49 +277,44 @@ function SnapshotRow(props: {
 }) {
   const { meta, open, detail, onToggle } = props;
   const counts = meta.state_counts || {};
-  // Closed: simple row with bottom-border separator. Open: rounded card
-  // wrapper so meta + popout body merge into one continuous panel —
-  // no seam, no floating popout below.
-  if (!open) {
-    return (
-      <div style={{ borderBottom: "1px solid var(--border)" }}>
-        <div
-          onClick={onToggle}
-          role="button"
-          style={{
-            padding: "8px 10px",
-            cursor: "pointer",
-            display: "flex",
-            flexDirection: "column",
-            gap: 3,
-          }}
-        >
-          <SnapMetaContent meta={meta} counts={counts} />
-        </div>
-      </div>
-    );
-  }
+  // Snap row keeps the same simple bordered shape always (open or
+  // closed) — only difference when open is the popout that rolls
+  // down out of it below.
   return (
-    <div className={styles.snapCard}>
-      <div className={styles.snapHead} onClick={onToggle} role="button">
+    <div style={{ borderBottom: "1px solid var(--border)" }}>
+      <div
+        onClick={onToggle}
+        role="button"
+        style={{
+          padding: "8px 10px",
+          cursor: "pointer",
+          display: "flex",
+          flexDirection: "column",
+          gap: 3,
+        }}
+      >
         <SnapMetaContent meta={meta} counts={counts} />
       </div>
-      <div className={styles.popout}>
-        {!detail && (
-          <div className={styles.empty}>Loading…</div>
-        )}
-        {detail?.error && (
-          <div className={styles.empty} style={{ color: "var(--red, #f85149)" }}>
-            {detail.error}
+      {open && (
+        <div className={styles.popoutClip}>
+          <div className={styles.popout}>
+            {!detail && (
+              <div className={styles.empty}>Loading…</div>
+            )}
+            {detail?.error && (
+              <div className={styles.empty} style={{ color: "var(--red, #f85149)" }}>
+                {detail.error}
+              </div>
+            )}
+            {detail?.items?.map((it, idx) => (
+              <ItemRow key={`${it.source_node_id}-${idx}`} item={it} />
+            ))}
+            {detail && detail.items && detail.items.length === 0 && !detail.error && (
+              <div className={styles.empty}>(empty)</div>
+            )}
           </div>
-        )}
-        {detail?.items?.map((it, idx) => (
-          <ItemRow key={`${it.source_node_id}-${idx}`} item={it} />
-        ))}
-        {detail && detail.items && detail.items.length === 0 && !detail.error && (
-          <div className={styles.empty}>(empty)</div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
