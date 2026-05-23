@@ -19,9 +19,9 @@ async def handle_list_snapshots(ws, cmd: dict):
             list_snapshots,
             snapshot_state_counts,
         )
-        db_path = default_db().db_path
+        store = default_db()
         if session_id:
-            snaps = list_snapshots(db_path, session_id, limit=50)
+            snaps = list_snapshots(store, session_id, limit=50)
             for s in snaps:
                 snapshots.append({
                     "id": s.id,
@@ -52,11 +52,11 @@ async def handle_get_snapshot_detail(ws, cmd: dict):
     try:
         from openprogram.agent.session_db import default_db
         from openprogram.context.snapshot import load_snapshot
-        db_path = default_db().db_path
+        store = default_db()
         if not snap_id:
             payload["error"] = "snap_id required"
         else:
-            snap = load_snapshot(db_path, snap_id)
+            snap = load_snapshot(store, snap_id)
             if snap is None:
                 payload["error"] = f"snapshot {snap_id!r} not found"
             else:

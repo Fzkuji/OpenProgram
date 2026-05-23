@@ -44,7 +44,7 @@ import {
 // "detail" picks `<div data-view="detail">`.
 const VIEW_HISTORY = "history";
 const VIEW_DETAIL = "detail";
-const VIEW_SNAPSHOTS = "snapshots";
+const VIEW_CONTEXT = "snapshots";
 
 // Right sidebar width is independent of the left one — the left
 // uses --sidebar-width (288px default), the right persists its own
@@ -314,19 +314,19 @@ export function RightSidebar() {
         <div
           className={
             sidebarNavItemClass + " right-nav-item" +
-            (view === VIEW_SNAPSHOTS ? " " + sidebarNavItemActiveClass : "")
+            (view === VIEW_CONTEXT ? " " + sidebarNavItemActiveClass : "")
           }
-          data-view={VIEW_SNAPSHOTS}
-          onClick={() => onNavClick(VIEW_SNAPSHOTS)}
+          data-view={VIEW_CONTEXT}
+          onClick={() => onNavClick(VIEW_CONTEXT)}
           role="button"
-          title="Context snapshots"
+          title="Compacted context the next LLM turn will see"
         >
           <span className={sidebarNavIconClass}>
             <svg className={sidebarNavIconSvgClass} viewBox="0 0 256 256" fill="currentColor">
-              <path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM72,48v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24V80H48V48ZM208,208H48V96H208V208Zm-68-76a12,12,0,1,1-12-12A12,12,0,0,1,140,132Zm44,0a12,12,0,1,1-12-12A12,12,0,0,1,184,132ZM96,172a12,12,0,1,1-12-12A12,12,0,0,1,96,172Zm44,0a12,12,0,1,1-12-12A12,12,0,0,1,140,172Zm44,0a12,12,0,1,1-12-12A12,12,0,0,1,184,172Z" />
+              <path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>Snapshots</span>
+          <span className={sidebarNavLabelClass}>Context</span>
         </div>
       </div>
 
@@ -345,7 +345,7 @@ export function RightSidebar() {
         <div id="detailPanel" className="right-view" data-view={VIEW_DETAIL}>
           <DetailPanel />
         </div>
-        <div id="snapshotsPanel" className="right-view" data-view={VIEW_SNAPSHOTS}>
+        <div id="snapshotsPanel" className="right-view" data-view={VIEW_CONTEXT}>
           <SnapshotTimeline />
         </div>
       </div>
