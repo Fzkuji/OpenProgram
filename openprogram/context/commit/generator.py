@@ -25,7 +25,7 @@ def _estimate_tokens(text: str | None) -> int:
 
 
 def _gen_commit_id() -> str:
-    return "commit_" + uuid.uuid4().hex[:10]
+    return uuid.uuid4().hex[:12]
 
 
 def generate_commit(
