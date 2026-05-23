@@ -188,12 +188,16 @@ export function SnapshotTimeline() {
   // fast round-trips. Reset to idle 900ms after the response lands.
   const [phase, setPhase] = useState<"idle" | "loading" | "done">("idle");
   const prevLoadingRef = useRef(loading);
+  // Timer ref instead of useEffect cleanup: useEffect's cleanup fires on
+  // every dependency change, including the loading→done transition we
+  // just set, which would clear the 2s revert timer before it ever
+  // fires and leave the hint stuck on "Done!" forever.
+  const doneTimerRef = useRef<number>(0);
   useEffect(() => {
     if (prevLoadingRef.current && !loading && phase === "loading") {
       setPhase("done");
-      const t = window.setTimeout(() => setPhase("idle"), 900);
-      prevLoadingRef.current = loading;
-      return () => window.clearTimeout(t);
+      if (doneTimerRef.current) window.clearTimeout(doneTimerRef.current);
+      doneTimerRef.current = window.setTimeout(() => setPhase("idle"), 2000);
     }
     prevLoadingRef.current = loading;
   }, [loading, phase]);
@@ -226,11 +230,12 @@ export function SnapshotTimeline() {
           style={{
             cursor: sessionId ? "pointer" : "not-allowed",
             opacity: phase !== "idle" ? 0.85 : undefined,
+            color: phase === "done" ? "#56d364" : undefined,
           }}
           onClick={onRefreshClick}
           role="button"
         >
-          {phase === "loading" ? "…" : phase === "done" ? "Done" : "Refresh"}
+          {phase === "loading" ? "…" : phase === "done" ? "Done!" : "Refresh"}
         </span>
       </div>
       {error && (
