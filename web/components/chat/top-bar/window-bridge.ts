@@ -4,7 +4,7 @@
  * Wrap legacy DOM-mutating updaters (`updateAgentBadges`,
  * `refreshBranchBadge`, `updateStatus`, `setStatusDotHealth`,
  * `updateSendBtn`, `refreshStatusSource`) so that — in addition to
- * the legacy body running — a typed snapshot is pushed into the
+ * the legacy body running — a typed capture is pushed into the
  * zustand store and the React top bar re-renders.
  *
  * The wrappers are install-once: each captures the original under a
@@ -21,10 +21,10 @@ import {
 
 import {
   deriveStatusBadgeFromGlobals,
-  snapshotAgentSettings,
-  snapshotBranchInfo,
+  captureAgentSettings,
+  captureBranchInfo,
   type LegacyTopbarGlobals,
-} from "./snapshots";
+} from "./state-capture";
 
 /* ---- store getters (lazy-bound to window.__sessionStore) ---------- */
 
@@ -35,7 +35,7 @@ function getStore() {
 
 export function pushAgentSettings(): void {
   try {
-    getStore()?.getState().setAgentSettings(snapshotAgentSettings());
+    getStore()?.getState().setAgentSettings(captureAgentSettings());
   } catch {
     /* ignore */
   }
@@ -43,7 +43,7 @@ export function pushAgentSettings(): void {
 
 export function pushBranchInfo(): void {
   try {
-    getStore()?.getState().setBranchInfo(snapshotBranchInfo());
+    getStore()?.getState().setBranchInfo(captureBranchInfo());
   } catch {
     /* ignore */
   }

@@ -278,7 +278,7 @@ export function PageShell({ page }: { page: Page }) {
     }
 
     // Optimistic render from cache — snaps the UI instantly; the WS
-    // reply below still overwrites with the authoritative snapshot.
+    // reply below still overwrites with the authoritative capture.
     const cached = w.conversations?.[target];
     if (cached && w.renderSessionMessages) {
       try { w.renderSessionMessages(cached); } catch {}

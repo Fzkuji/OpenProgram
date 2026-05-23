@@ -202,7 +202,7 @@ class DefaultContextEngine(ContextEngine):
         session_id = (session or {}).get("id") or ""
 
         # 1. Reference scan — surfaces cited tool_use ids in TurnPrep.
-        #    Snapshot rules don't yet consume this (they use locked= flag
+        #    ContextCommit rules don't yet consume this (they use locked= flag
         #    on items instead), but the TurnPrep caller still expects
         #    n_redacted / ref counts in its log line — keep computing it.
         ref_map = self.references.build(history)
@@ -211,30 +211,30 @@ class DefaultContextEngine(ContextEngine):
                 f"references:protected={len(ref_map.cited_tool_use_ids)}"
             )
 
-        # 2-3. Build LLM input from snapshot chain (replaces the old
+        # 2-3. Build LLM input from commit chain (replaces the old
         #    microcompact + tool_aging.prepare_history + _assemble_messages
         #    pipeline). All compression decisions are now lived in
-        #    immutable per-turn snapshots — see
-        #    docs/design/context-snapshot-chain.md.
+        #    immutable per-turn context commits — see
+        #    docs/design/context-context commit-chain.md.
         #    On failure we fall back to the legacy assembly path so a
-        #    broken snapshot doesn't take down the whole turn.
+        #    broken context commit doesn't take down the whole turn.
         compacted_history = history
         n_redacted = 0
         tokens_freed = 0
         agent_messages: list = []
         snap_used = False
         try:
-            agent_messages = self._build_messages_from_snapshot(
+            agent_messages = self._build_messages_from_commit(
                 session_id=session_id,
                 history=history,
                 model=model,
             )
             snap_used = True
-            decision.append("input:snapshot")
+            decision.append("input:context commit")
         except Exception as e:
             # 这条路径出错就退回老 mutate path. 失败时记日志便于排查,
             # 但不阻断 turn.
-            decision.append(f"input:snapshot_failed:{type(e).__name__}")
+            decision.append(f"input:commit_failed:{type(e).__name__}")
             compacted_history, n_redacted, tokens_freed = self.microcompactor.microcompact(history)
             if n_redacted:
                 decision.append(f"microcompact:n={n_redacted},freed≈{tokens_freed}tok")
@@ -414,23 +414,23 @@ class DefaultContextEngine(ContextEngine):
                    on_event: Optional[EventCallback] = None,
                    ) -> None:
         # Feed real numbers back into the tracker.
-        snap = self.usage.record_turn(session_id, usage=usage)
+        commit = self.usage.record_turn(session_id, usage=usage)
         # Emit recommend if this turn pushed us over.
         if prep is None or not on_event:
             return
         # Re-derive a fresh budget_pct from the post-turn numbers.
         if prep.context_window > 0:
-            pct = snap.last_prompt_tokens / prep.context_window
+            pct = commit.last_prompt_tokens / prep.context_window
         else:
             pct = 0.0
         if pct >= self.RECOMMEND_PCT:
             on_event({"type": "chat_response", "data": {
                 "type": "compaction_recommended",
                 "session_id": session_id,
-                "input_tokens": snap.last_prompt_tokens,
+                "input_tokens": commit.last_prompt_tokens,
                 "context_window": prep.context_window,
                 "budget_pct": pct,
-                "source": snap.source,
+                "source": commit.source,
             }})
 
     # ---- Internals -----------------------------------------------------
@@ -519,29 +519,29 @@ class DefaultContextEngine(ContextEngine):
         from openprogram.context.system_prompt import build_system_prompt
         return build_system_prompt(agent)
 
-    def _build_messages_from_snapshot(
+    def _build_messages_from_commit(
         self,
         *,
         session_id: str,
         history: list[dict],
         model: Any,
     ) -> list:
-        """Build provider Message[] via the snapshot chain pipeline.
+        """Build provider Message[] via the commit chain pipeline.
 
         每个 turn 走这条路径:
           1. 从 DB 拉最新 history — caller 传进来的 history 是 LLM
              调用前的 (dispatcher 步骤里还没包含 user_msg 和 placeholder),
-             snapshot 需要看最新状态. 重新拉一遍.
-          2. ensure_latest_snapshot — 拿到 (或增量生成) 最新 snapshot.
-          3. render_snapshot — 翻成 provider Message[].
+             context commit 需要看最新状态. 重新拉一遍.
+          2. ensure_latest_commit — 拿到 (或增量生成) 最新 context commit.
+          3. render_commit — 翻成 provider Message[].
 
         失败抛异常, 上层 prepare() catch 后退回老 path.
         """
         if not session_id:
-            raise RuntimeError("snapshot path requires session_id")
-        from openprogram.context.snapshot import (
-            ensure_latest_snapshot,
-            render_snapshot,
+            raise RuntimeError("context commit path requires session_id")
+        from openprogram.context.commit import (
+            ensure_latest_commit,
+            render_commit,
         )
         from openprogram.context.tokens import real_context_window
         from openprogram.agent.session_db import default_db
@@ -553,7 +553,7 @@ class DefaultContextEngine(ContextEngine):
         fresh_history_conv = db.get_branch(session_id) or history or []
 
         # 把每个 assistant 的 tool sub-calls (called_by=assistant_id 的
-        # ROLE_CODE 节点) 按顺序插到 assistant 后面 — snapshot 反映的
+        # ROLE_CODE 节点) 按顺序插到 assistant 后面 — context commit 反映的
         # 应该是 LLM 真实看到的消息序列, 包含 tool_use + tool_result.
         # 否则 Context tab 只有 user/assistant 纯文本, 看不到调了什么工具.
         all_msgs = db.get_messages(session_id) or []
@@ -592,7 +592,7 @@ class DefaultContextEngine(ContextEngine):
             else (db.get_session(session_id) or {}).get("head_id") or ""
         )
         budget_total = real_context_window(model) or 200_000
-        snap = ensure_latest_snapshot(
+        commit = ensure_latest_commit(
             store=db,
             session_id=session_id,
             history=fresh_history,
@@ -602,7 +602,7 @@ class DefaultContextEngine(ContextEngine):
             fetch_node=fetch_node,
             llm_summarize=None,  # 暂不接 LLM summarize, phase 5 再加
         )
-        return render_snapshot(snap)
+        return render_commit(commit)
 
     def _estimate(self, history: list[dict]) -> int:
         from openprogram.context.tokens import estimate_history_tokens

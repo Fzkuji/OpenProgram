@@ -12,17 +12,17 @@ import { WelcomeScreen } from "./chat/welcome-screen";
 import { MessageList } from "./chat/messages/message-list";
 import { useSessionStore } from "@/lib/session-store";
 import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/chat-stream";
-import { legacyConvToChatMsgs } from "@/lib/legacy-conv-map";
+import { convToChatMsgs } from "@/lib/conv-mapper";
 import { useColResize } from "@/lib/use-col-resize";
 // Migrated legacy modules — imported for side effects (they install
 // their `window.*` bridges for the still-legacy scripts).
-import "@/lib/legacy/state";
-import "@/lib/legacy/helpers";
-import "@/lib/legacy/ui";
-import "@/lib/legacy/providers";
-import "@/lib/legacy/programs-panel";
-import "@/lib/legacy/history-graph";
-import { initOverlayScrollbars } from "@/lib/legacy/scrollbar";
+import "@/lib/runtime-bridge/state";
+import "@/lib/runtime-bridge/helpers";
+import "@/lib/runtime-bridge/ui";
+import "@/lib/runtime-bridge/providers";
+import "@/lib/runtime-bridge/programs-panel";
+import "@/lib/runtime-bridge/history-graph";
+import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -143,7 +143,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         .getState()
         .setMessages(
           conv.id,
-          legacyConvToChatMsgs((conv.messages as never[]) || []),
+          convToChatMsgs((conv.messages as never[]) || []),
         );
     };
     return () => {

@@ -1,10 +1,10 @@
-/* Snapshot timeline — Context tab.
+/* Context-commit timeline — Context tab.
 
-   Expanded snapshot panel adopts the slash-command-palette aesthetic
+   Expanded popout panel adopts the slash-command-palette aesthetic
    (mirrors composer.module.css .slashMenu): rounded popout card
    with the items as block rows that hover-highlight, mono label on
    top, muted description below. The slash menu rolls UP out of the
-   composer; this one rolls DOWN out of the snapshot meta row, so
+   composer; this one rolls DOWN out of the commit meta row, so
    the radius lives on the bottom corners and the open animation
    slides from above. */
 

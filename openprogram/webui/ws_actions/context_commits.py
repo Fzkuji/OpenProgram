@@ -1,7 +1,7 @@
-"""Snapshot timeline WS actions: list_snapshots / get_snapshot_detail.
+"""Context-commit timeline WS actions: list_commits / get_commit_detail.
 
-Exposes the per-session context-snapshot chain to the right-dock
-``Snapshots`` tab so users can inspect what the LLM actually saw on
+Exposes the per-session context-commit chain to the right-dock
+``Context`` tab so users can inspect what the LLM actually saw on
 each turn.
 """
 from __future__ import annotations
@@ -9,21 +9,21 @@ from __future__ import annotations
 import json
 
 
-async def handle_list_snapshots(ws, cmd: dict):
+async def handle_list_commits(ws, cmd: dict):
     session_id = cmd.get("session_id")
-    snapshots: list[dict] = []
+    commits: list[dict] = []
     err: str | None = None
     try:
         from openprogram.agent.session_db import default_db
-        from openprogram.context.snapshot import (
-            list_snapshots,
-            snapshot_state_counts,
+        from openprogram.context.commit import (
+            list_commits,
+            commit_state_counts,
         )
         store = default_db()
         if session_id:
-            snaps = list_snapshots(store, session_id, limit=50)
-            for s in snaps:
-                snapshots.append({
+            entries = list_commits(store, session_id, limit=50)
+            for s in entries:
+                commits.append({
                     "id": s.id,
                     "parent_id": s.parent_id,
                     "created_at": s.created_at,
@@ -32,43 +32,43 @@ async def handle_list_snapshots(ws, cmd: dict):
                     "rules_version": s.rules_version,
                     "summary": s.summary,
                     "item_count": len(s.items),
-                    "state_counts": snapshot_state_counts(s),
+                    "state_counts": commit_state_counts(s),
                 })
     except Exception as e:
         err = f"{type(e).__name__}: {e}"
     await ws.send_text(json.dumps({
-        "type": "snapshots_list",
+        "type": "context_commits_list",
         "data": {
             "session_id": session_id,
-            "snapshots": snapshots,
+            "commits": commits,
             "error": err,
         },
     }, default=str))
 
 
-async def handle_get_snapshot_detail(ws, cmd: dict):
-    snap_id = cmd.get("snap_id")
-    payload: dict = {"id": snap_id, "error": None, "items": []}
+async def handle_get_commit_detail(ws, cmd: dict):
+    commit_id = cmd.get("commit_id")
+    payload: dict = {"id": commit_id, "error": None, "items": []}
     try:
         from openprogram.agent.session_db import default_db
-        from openprogram.context.snapshot import load_snapshot
+        from openprogram.context.commit import load_commit
         store = default_db()
-        if not snap_id:
-            payload["error"] = "snap_id required"
+        if not commit_id:
+            payload["error"] = "commit_id required"
         else:
-            snap = load_snapshot(store, snap_id)
-            if snap is None:
-                payload["error"] = f"snapshot {snap_id!r} not found"
+            commit = load_commit(store, commit_id)
+            if commit is None:
+                payload["error"] = f"commit {commit_id!r} not found"
             else:
                 payload.update({
-                    "id": snap.id,
-                    "session_id": snap.session_id,
-                    "parent_id": snap.parent_id,
-                    "created_at": snap.created_at,
-                    "head_node_id": snap.head_node_id,
-                    "rules_version": snap.rules_version,
-                    "total_tokens": snap.total_tokens,
-                    "summary": snap.summary,
+                    "id": commit.id,
+                    "session_id": commit.session_id,
+                    "parent_id": commit.parent_id,
+                    "created_at": commit.created_at,
+                    "head_node_id": commit.head_node_id,
+                    "rules_version": commit.rules_version,
+                    "total_tokens": commit.total_tokens,
+                    "summary": commit.summary,
                     "items": [
                         {
                             "source_node_id": i.source_node_id,
@@ -81,18 +81,18 @@ async def handle_get_snapshot_detail(ws, cmd: dict):
                             "is_anchor": i.is_anchor,
                             "merged_into": i.merged_into,
                         }
-                        for i in snap.items
+                        for i in commit.items
                     ],
                 })
     except Exception as e:
         payload["error"] = f"{type(e).__name__}: {e}"
     await ws.send_text(json.dumps({
-        "type": "snapshot_detail",
+        "type": "context_commit_detail",
         "data": payload,
     }, default=str))
 
 
 ACTIONS = {
-    "list_snapshots": handle_list_snapshots,
-    "get_snapshot_detail": handle_get_snapshot_detail,
+    "list_context_commits": handle_list_commits,
+    "get_context_commit_detail": handle_get_commit_detail,
 }

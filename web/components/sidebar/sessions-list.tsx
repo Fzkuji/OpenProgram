@@ -3,7 +3,7 @@
 /**
  * Sessions list (the "Recents" panel in the sidebar).
  *
- * Reads conversations from `window.conversations` via `useLegacyGlobals`
+ * Reads conversations from `window.conversations` via `useWindowGlobals`
  * — the legacy `init.js` is what populates that global from the
  * sessions_list / history_list WS events, so we piggy-back on it
  * instead of duplicating the WS handling here. Once the WSProvider
@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { useLegacyGlobals, useCurrentSessionId } from "./use-legacy-globals";
+import { useWindowGlobals, useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
 import {
   Dialog,
@@ -144,7 +144,7 @@ function labelFor(c: LegacyConv): string {
 export function SessionsList() {
   const router = useRouter();
   const pathname = usePathname();
-  const { conversations } = useLegacyGlobals();
+  const { conversations } = useWindowGlobals();
   const currentId = useCurrentSessionId();
   // Per-session running map drives the breathing colored indicator
   // on each conversation row — the visual "this session is still

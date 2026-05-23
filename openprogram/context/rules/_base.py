@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from ..snapshot.types import ContextItem
+from ..commit.types import ContextItem
 
 
 @dataclass

@@ -58,7 +58,7 @@ function siblingFields(m: LegacyMsg) {
   };
 }
 
-export function legacyConvToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
+export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
   const out: ChatMsg[] = [];
   messages.forEach((m, i) => {
     if (m.type === "status") return;

@@ -22,7 +22,7 @@ import {
   onBranchCheckedOut,
   onBranchesListMessage,
   onChannelAccountsMessage,
-} from "./legacy/conversations";
+} from "./runtime-bridge/conversations";
 import {
   handleRunningTask,
   handleRunningTaskClear,
@@ -31,7 +31,7 @@ import {
   wsHandleChatAck,
   wsHandleChatResponse,
   wsHandleStatus,
-} from "./legacy/chat-handlers";
+} from "./runtime-bridge/chat-handlers";
 
 interface WsWindow {
   ws?: WebSocket | null;

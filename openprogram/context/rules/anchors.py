@@ -1,7 +1,7 @@
 """锚点选择 — summary 不光生成文字, 还挑关键 item 保留原文.
 
 为啥这是我们独有的: Claude Code / OpenCode / Hermes 都是线性 history,
-压缩时只能整段砍, 没法 "挑节点保留". 我们的 DAG + Snapshot 结构允许
+压缩时只能整段砍, 没法 "挑节点保留". 我们的 DAG + ContextCommit 结构允许
 按引用 / 错误 / 长度等信号给每个 item 打分, 挑出 3-5 个高价值节点
 保留原文, 让 LLM 既看到 summary 又看到几条关键原文 — 等于给 summary
 配上"证据 footnote", 降低摘要丢信息的风险。
@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from openprogram.context.snapshot.types import ContextItem
+from openprogram.context.commit.types import ContextItem
 
 
 # 默认每次 summary 最多挑 5 个锚点 — 多了等于没压缩, 少了起不到

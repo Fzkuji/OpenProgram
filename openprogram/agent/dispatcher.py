@@ -591,24 +591,24 @@ def process_user_turn(
         model=req.model_override or session.get("model"),
     )
 
-    # 6.1. Backfill the latest snapshot's placeholder item with the
-    # final assistant output. The turn-start snapshot saw the assistant
+    # 6.1. Backfill the latest context commit's placeholder item with the
+    # final assistant output. The turn-start context commit saw the assistant
     # row as a placeholder (output=""), so the Context panel would
     # otherwise show "(empty)" for every assistant turn. We patch the
-    # already-saved snapshot in place — keeps the per-turn snap_id
+    # already-saved context commit in place — keeps the per-turn commit_id
     # stable and avoids ballooning the timeline with a duplicate.
     try:
-        from openprogram.context.snapshot.store import (
-            load_latest_snapshot,
-            save_snapshot,
+        from openprogram.context.commit.store import (
+            load_latest_commit,
+            save_commit,
         )
-        from openprogram.context.snapshot.types import ContextItem
+        from openprogram.context.commit.types import ContextItem
         _final_text = assistant_msg.get("content") or ""
-        _snap = load_latest_snapshot(db, req.session_id)
-        if _snap is not None:
+        _commit = load_latest_commit(db, req.session_id)
+        if _commit is not None:
             _patched = False
             _assistant_idx = -1
-            for _i, _item in enumerate(_snap.items):
+            for _i, _item in enumerate(_commit.items):
                 if _item.source_node_id == assistant_msg_id:
                     if _final_text and _item.rendered != _final_text:
                         _item.rendered = _final_text
@@ -619,8 +619,8 @@ def process_user_turn(
                     _patched = True
                     break
             # Also splice in tool sub-calls written during the LLM loop
-            # (called_by=assistant_msg_id). ensure_latest_snapshot ran at
-            # turn-start before any tool node existed, so the snapshot
+            # (called_by=assistant_msg_id). ensure_latest_commit ran at
+            # turn-start before any tool node existed, so the context commit
             # has no tool items — the Context panel was showing a fake
             # "user → assistant" pair instead of the real "user →
             # assistant_with_tool_calls → tool_result(s)" sequence.
@@ -628,7 +628,7 @@ def process_user_turn(
                 _all = db.get_messages(req.session_id) or []
                 _subs = [m for m in _all if (m.get("caller") or "") == assistant_msg_id]
                 _subs.sort(key=lambda x: x.get("seq") or 0)
-                _existing_ids = {it.source_node_id for it in _snap.items}
+                _existing_ids = {it.source_node_id for it in _commit.items}
                 _to_insert: list[ContextItem] = []
                 for _sub in _subs:
                     _sid = _sub.get("id")
@@ -648,23 +648,23 @@ def process_user_turn(
                         locked=False,
                         rendered=_content,
                         tokens=max(4, len(_content) // 4),
-                        state_set_at=_snap.id,
+                        state_set_at=_commit.id,
                         reason="new",
                     ))
                 if _to_insert:
-                    _snap.items = (
-                        _snap.items[: _assistant_idx + 1]
+                    _commit.items = (
+                        _commit.items[: _assistant_idx + 1]
                         + _to_insert
-                        + _snap.items[_assistant_idx + 1 :]
+                        + _commit.items[_assistant_idx + 1 :]
                     )
-                    _snap.total_tokens = sum(
-                        i.tokens for i in _snap.items if i.state != "summarized"
+                    _commit.total_tokens = sum(
+                        i.tokens for i in _commit.items if i.state != "summarized"
                     )
                     _patched = True
             if _patched:
-                save_snapshot(db, _snap)
+                save_commit(db, _commit)
     except Exception:
-        # Snapshot backfill is best-effort: the conversation persists
+        # ContextCommit backfill is best-effort: the conversation persists
         # regardless, and the next turn will rebuild the chain.
         pass
 

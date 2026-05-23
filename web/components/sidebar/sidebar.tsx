@@ -12,7 +12,7 @@
  * clearAll row hover).
  *
  * Data sources (this slice):
- *   - `useLegacyGlobals` polls `window.conversations`,
+ *   - `useWindowGlobals` polls `window.conversations`,
  *     `window.availableFunctions`, `window.programsMeta` written by
  *     legacy `init.js` / WS handlers. When WSProvider gets wired in,
  *     swap to a `useSessionStore` subscription.
@@ -50,7 +50,7 @@ import {
   sidebarNavLabelClass,
   sidebarToggleClass,
 } from "./nav-classes";
-import { useLegacyGlobals } from "./use-legacy-globals";
+import { useWindowGlobals } from "./use-window-globals";
 
 function readPersistedSidebarOpen(): boolean {
   if (typeof window === "undefined") return true;
@@ -74,7 +74,7 @@ export function Sidebar() {
   const [refreshDone, setRefreshDone] = useState(false);
   const refreshSvgRef = useRef<SVGSVGElement>(null);
 
-  const { availableFunctions, programsMeta } = useLegacyGlobals();
+  const { availableFunctions, programsMeta } = useWindowGlobals();
   const favSet = new Set(programsMeta.favorites || []);
   const hasFavorites =
     (availableFunctions || []).some((f) => favSet.has(f.name));

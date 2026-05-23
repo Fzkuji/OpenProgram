@@ -1,6 +1,6 @@
 """summarize 规则 — 超 budget 时把老 items 合并成一个 summary item.
 
-触发条件: 当前 snapshot 总 token > ctx.budget_summarize_threshold.
+触发条件: 当前 context commit 总 token > ctx.budget_summarize_threshold.
 
 做的事:
   1. 从最老一端开始, 跳过已 locked / state ∈ {summary, summarized, pinned}
@@ -27,7 +27,7 @@ from __future__ import annotations
 import secrets
 from typing import Optional
 
-from openprogram.context.snapshot.types import ContextItem
+from openprogram.context.commit.types import ContextItem
 from openprogram.context.rules._base import RuleContext, total_tokens
 from openprogram.context.rules import anchors as _anchors
 
@@ -174,7 +174,7 @@ def rule_summarize(items: list[ContextItem], ctx: RuleContext) -> None:
             it.is_anchor = True
             it.anchor_for_summary = sid
             it.locked = True
-            it.state_set_at = ctx.snap_id
+            it.state_set_at = ctx.commit_id
             it.reason = f"anchor_for:{sid}"
             # state 不动 — 锚点保留原本的 full / aged / cleared.
         else:
@@ -183,7 +183,7 @@ def rule_summarize(items: list[ContextItem], ctx: RuleContext) -> None:
             it.merged_into = sid
             it.rendered = ""
             it.tokens = 0
-            it.state_set_at = ctx.snap_id
+            it.state_set_at = ctx.commit_id
             it.reason = f"merged_into:{sid}"
 
     # 6. 造 summary item, 插到合并范围开头位置。
@@ -195,10 +195,10 @@ def rule_summarize(items: list[ContextItem], ctx: RuleContext) -> None:
         locked=True,
         rendered=summary_text,
         tokens=max(1, len(summary_text) // _CHARS_PER_TOKEN),
-        state_set_at=ctx.snap_id,
+        state_set_at=ctx.commit_id,
         reason=f"summarize_merged:{end - start}",
     )
     # 插入: 把被合并段开头的 item 替换前置入 summary. 注意被合并的
     # summarized item 我们保留在 items 里 (state=summarized 不渲染),
-    # 这样 DAG ↔ snapshot 对应关系不丢, 只是 render 时跳过。
+    # 这样 DAG ↔ context commit 对应关系不丢, 只是 render 时跳过。
     items.insert(start, summary_item)

@@ -9,7 +9,7 @@
   4. summarize    — 超 token 预算时 LLM 摘要 + 锚点保留 (最贵, 最后)
 
 每个规则只动 locked=False 的 item, 已 locked 的跳过 (这套保证决策一次性,
-新 snapshot 不会"重新审判"已经决定状态的 item).
+新 context commit 不会"重新审判"已经决定状态的 item).
 """
 from __future__ import annotations
 

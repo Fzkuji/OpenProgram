@@ -1,17 +1,17 @@
 "use client";
 
 /**
- * Snapshot timeline — right-dock "Snapshots" view.
+ * Context-commit timeline — right-dock "Context" view.
  *
- * Lists this session's context_snapshots (newest first). Clicking a row
+ * Lists this session's context commits (newest first). Clicking a row
  * expands its items so the user can see exactly what the LLM was given
  * on that turn (rendered text + per-item state).
  *
  * Talks to the backend via the existing `window.ws` socket:
- *   send  → {action:"list_snapshots", session_id}
- *           {action:"get_snapshot_detail", snap_id}
- *   recv  → {type:"snapshots_list",  data:{session_id, snapshots}}
- *           {type:"snapshot_detail", data:{id, items, ...}}
+ *   send  → {action:"list_context_commits", session_id}
+ *           {action:"get_context_commit_detail", commit_id}
+ *   recv  → {type:"context_commits_list",  data:{session_id, commits}}
+ *           {type:"context_commit_detail", data:{id, items, ...}}
  *
  * Local state only — no zustand slice. We piggyback on the raw
  * MessageEvent stream alongside the legacy dispatcher.
@@ -19,11 +19,11 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useSessionStore } from "@/lib/session-store";
-import styles from "./snapshot-timeline.module.css";
+import styles from "./context-commit-timeline.module.css";
 
 type StateName = "full" | "aged" | "cleared" | "summarized" | "summary";
 
-interface SnapshotMeta {
+interface CommitMeta {
   id: string;
   parent_id: string | null;
   created_at: number;
@@ -35,7 +35,7 @@ interface SnapshotMeta {
   state_counts: Partial<Record<StateName, number>>;
 }
 
-interface SnapshotItem {
+interface CommitItem {
   source_node_id: string;
   role: string;
   state: StateName;
@@ -47,7 +47,7 @@ interface SnapshotItem {
   merged_into: string | null;
 }
 
-interface SnapshotDetail {
+interface CommitDetail {
   id: string;
   session_id?: string;
   parent_id?: string | null;
@@ -55,7 +55,7 @@ interface SnapshotDetail {
   head_node_id?: string;
   total_tokens?: number;
   summary?: string;
-  items: SnapshotItem[];
+  items: CommitItem[];
   error?: string | null;
 }
 
@@ -86,11 +86,11 @@ function send(obj: unknown): void {
   }
 }
 
-export function SnapshotTimeline() {
+export function ContextCommitTimeline() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
-  const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
+  const [commits, setCommits] = useState<CommitMeta[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [details, setDetails] = useState<Record<string, SnapshotDetail>>({});
+  const [details, setDetails] = useState<Record<string, CommitDetail>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -101,11 +101,11 @@ export function SnapshotTimeline() {
 
   const refresh = useCallback(() => {
     if (!sessionId) {
-      setSnapshots([]);
+      setCommits([]);
       return;
     }
     setLoading(true);
-    send({ action: "list_snapshots", session_id: sessionId });
+    send({ action: "list_context_commits", session_id: sessionId });
   }, [sessionId]);
 
   // Listen to ws messages of types we care about. Registered once and
@@ -121,17 +121,17 @@ export function SnapshotTimeline() {
         return;
       }
       if (!msg) return;
-      if (msg.type === "snapshots_list") {
-        const d = msg.data as { session_id?: string; snapshots?: SnapshotMeta[]; error?: string | null };
+      if (msg.type === "context_commits_list") {
+        const d = msg.data as { session_id?: string; commits?: CommitMeta[]; error?: string | null };
         // Drop late responses from a previous session, but accept anything
         // matching the current one — including the case where this listener
         // outlived a stale closure capture of sessionId.
         if (d.session_id && d.session_id !== sessionIdRef.current) return;
         setLoading(false);
         setError(d.error || null);
-        setSnapshots(Array.isArray(d.snapshots) ? d.snapshots : []);
-      } else if (msg.type === "snapshot_detail") {
-        const d = msg.data as unknown as SnapshotDetail;
+        setCommits(Array.isArray(d.commits) ? d.commits : []);
+      } else if (msg.type === "context_commit_detail") {
+        const d = msg.data as unknown as CommitDetail;
         if (!d || !d.id) return;
         setDetails((prev) => ({ ...prev, [d.id]: d }));
       }
@@ -180,7 +180,7 @@ export function SnapshotTimeline() {
     }
     setExpanded(id);
     if (!details[id]) {
-      send({ action: "get_snapshot_detail", snap_id: id });
+      send({ action: "get_context_commit_detail", commit_id: id });
     }
   }
 
@@ -224,7 +224,7 @@ export function SnapshotTimeline() {
         style={{ cursor: "default", marginTop: 16 }}
       >
         <span className="sidebar-section-title">
-          Context{snapshots.length ? ` (${snapshots.length})` : ""}
+          Context{commits.length ? ` (${commits.length})` : ""}
         </span>
         <span
           className="sidebar-section-hint"
@@ -250,13 +250,13 @@ export function SnapshotTimeline() {
             No active session.
           </div>
         )}
-        {sessionId && snapshots.length === 0 && !loading && !error && (
+        {sessionId && commits.length === 0 && !loading && !error && (
           <div style={{ padding: 14, color: "var(--text-muted)" }}>
-            No snapshots yet.
+            No commits yet.
           </div>
         )}
-        {snapshots.map((s) => (
-          <SnapshotRow
+        {commits.map((s) => (
+          <CommitRow
             key={s.id}
             meta={s}
             open={expanded === s.id}
@@ -269,10 +269,10 @@ export function SnapshotTimeline() {
   );
 }
 
-function SnapshotRow(props: {
-  meta: SnapshotMeta;
+function CommitRow(props: {
+  meta: CommitMeta;
   open: boolean;
-  detail?: SnapshotDetail;
+  detail?: CommitDetail;
   onToggle: () => void;
 }) {
   const { meta, open, detail, onToggle } = props;
@@ -296,7 +296,7 @@ function SnapshotRow(props: {
           transition: "background 0.15s",
         }}
       >
-        <SnapMetaContent meta={meta} counts={counts} />
+        <CommitMetaContent meta={meta} counts={counts} />
       </div>
       {/* Wrapper is always mounted so the open/close transition runs
           both directions; grid-template-rows 0fr↔1fr animates the
@@ -325,7 +325,7 @@ function SnapshotRow(props: {
   );
 }
 
-function SnapMetaContent(props: { meta: SnapshotMeta; counts: Partial<Record<StateName, number>> }) {
+function CommitMetaContent(props: { meta: CommitMeta; counts: Partial<Record<StateName, number>> }) {
   const { meta, counts } = props;
   return (
     <>
@@ -372,7 +372,7 @@ function StateBadge(props: { state: StateName; count?: number }) {
   );
 }
 
-function ItemRow(props: { item: SnapshotItem }) {
+function ItemRow(props: { item: CommitItem }) {
   const it = props.item;
   const [open, setOpen] = useState(false);
   const oneLine = (it.rendered || "").replace(/\s+/g, " ").trim();

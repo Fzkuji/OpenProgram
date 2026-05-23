@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from ..snapshot.types import ContextItem
+from ..commit.types import ContextItem
 from ..tool_aging.policy import (
     MAX_TOOL_RESULT_CHARS,
     PRUNE_PROTECTED_TOOLS,
@@ -33,7 +33,7 @@ from ._base import RuleContext
 
 
 def _estimate_tokens(text: str) -> int:
-    # 同 snapshot 其它地方的粗估口径: 4 char ≈ 1 token. 没必要更精确,
+    # 同 context commit 其它地方的粗估口径: 4 char ≈ 1 token. 没必要更精确,
     # 真正的 budget check 用模型自带 tokenizer.
     return max(1, len(text) // 4)
 

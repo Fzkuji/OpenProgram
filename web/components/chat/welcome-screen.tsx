@@ -12,7 +12,7 @@
 "use client";
 
 import { useSessionStore } from "@/lib/session-store";
-import { useLegacyGlobals } from "@/components/sidebar/use-legacy-globals";
+import { useWindowGlobals } from "@/components/sidebar/use-window-globals";
 
 import styles from "./welcome-screen.module.css";
 
@@ -52,7 +52,7 @@ export function WelcomeScreen() {
   const fnFormClosing = useSessionStore((s) => s.fnFormClosing);
   const setComposerInput = useSessionStore((s) => s.setComposerInput);
   const focusComposer = useSessionStore((s) => s.focusComposer);
-  const { availableFunctions } = useLegacyGlobals();
+  const { availableFunctions } = useWindowGlobals();
 
   if (!visible) return null;
 

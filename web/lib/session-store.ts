@@ -122,7 +122,7 @@ export interface TreeNode {
  * from the order map AND removes the referenced messages from
  * ``messagesById`` (no dangling entries).
  */
-/** Per-agent settings snapshot, mirrors legacy ``window._agentSettings``
+/** Per-agent settings state, mirrors ``window._agentSettings``
  *  shape. The TopBar reads this to render the Chat / Exec badges; legacy
  *  ``loadAgentSettings`` in providers.js pushes through to ``setAgentSettings``
  *  in the same place it used to call ``updateAgentBadges``. Only the fields
@@ -133,7 +133,7 @@ export interface AgentBadgeInfo {
   session_id?: string;
   locked?: boolean;
 }
-export interface AgentSettingsSnapshot {
+export interface AgentSettingsState {
   chat?: AgentBadgeInfo;
   exec?: AgentBadgeInfo;
 }
@@ -165,10 +165,10 @@ export interface StatusBadgeInfo {
 interface ConvState {
   /** WS status for UI. */
   wsStatus: "connecting" | "open" | "closed";
-  /** Agent settings snapshot for the topbar Chat / Exec badges. Mirror
+  /** Agent settings state for the topbar Chat / Exec badges. Mirror
    *  of ``window._agentSettings``; populated by legacy providers.js. */
-  agentSettings: AgentSettingsSnapshot;
-  setAgentSettings: (s: AgentSettingsSnapshot) => void;
+  agentSettings: AgentSettingsState;
+  setAgentSettings: (s: AgentSettingsState) => void;
   /** Branch chip display state for the current conversation. */
   branchInfo: BranchBadgeInfo;
   setBranchInfo: (b: BranchBadgeInfo) => void;
@@ -292,7 +292,7 @@ interface ConvState {
 
 const RIGHT_LS_OPEN = "rightSidebarOpen";
 const RIGHT_LS_VIEW = "rightSidebarView";
-const VALID_VIEWS = new Set(["history", "snapshots"]);
+const VALID_VIEWS = new Set(["history", "context"]);
 
 function readRightDock(): { open: boolean; view: string } {
   if (typeof window === "undefined") return { open: false, view: "history" };
@@ -304,7 +304,7 @@ function readRightDock(): { open: boolean; view: string } {
   } catch {
     /* ignore */
   }
-  // Persist history / snapshots (Context tab) across reload — both have
+  // Persist history / commits (Context tab) across reload — both have
   // content that is meaningful as soon as the panel mounts. "detail" is
   // intentionally excluded: it needs a node selection that doesn't
   // survive a page reload, so restoring it would land on a blank

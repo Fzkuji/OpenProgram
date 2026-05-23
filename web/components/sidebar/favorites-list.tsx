@@ -14,12 +14,12 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 
-import { useLegacyGlobals } from "./use-legacy-globals";
+import { useWindowGlobals } from "./use-window-globals";
 
 const DEFAULT_ICON = "📦";
 
 export function FavoritesList(): React.ReactElement | null {
-  const { availableFunctions, programsMeta } = useLegacyGlobals();
+  const { availableFunctions, programsMeta } = useWindowGlobals();
   const openFnForm = useSessionStore((s) => s.openFnForm);
   const pathname = usePathname();
   const router = useRouter();

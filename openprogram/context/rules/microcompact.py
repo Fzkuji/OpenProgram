@@ -1,7 +1,7 @@
-"""rule_microcompact — idle-gap tool-result clearing for snapshot chain.
+"""rule_microcompact — idle-gap tool-result clearing for commit chain.
 
 Ported from openprogram/context/microcompact.py (Claude Code's microcompact
-design) to the Snapshot Chain rule pipeline.
+design) to the ContextCommit Chain rule pipeline.
 
 WHY the 60-minute gap:
   Provider prompt caches have a 1-hour TTL. Once we cross that gap, the
@@ -21,7 +21,7 @@ WHY large_result_floor=200:
 """
 from __future__ import annotations
 
-from openprogram.context.snapshot.types import ContextItem, CLEARED_PLACEHOLDER
+from openprogram.context.commit.types import ContextItem, CLEARED_PLACEHOLDER
 from openprogram.context.rules._base import RuleContext
 
 
@@ -96,5 +96,5 @@ def rule_microcompact(items: list[ContextItem], ctx: RuleContext) -> None:
         it.locked = True
         it.rendered = CLEARED_PLACEHOLDER
         it.tokens = _PLACEHOLDER_TOKENS
-        it.state_set_at = ctx.snap_id
+        it.state_set_at = ctx.commit_id
         it.reason = "idle_60min"

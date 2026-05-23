@@ -1,15 +1,15 @@
-"""Snapshot 数据类型 — ContextItem 和 Snapshot dataclass.
+"""ContextCommit 数据类型 — ContextItem 和 ContextCommit dataclass.
 
-Snapshot 是某个时刻 LLM 看到的完整 context 的不可变快照。一个
-Snapshot 由一组 ContextItem 组成, 按渲染顺序排列。
+ContextCommit 是某个时刻 LLM 看到的完整 context 的不可变快照。一个
+ContextCommit 由一组 ContextItem 组成, 按渲染顺序排列。
 
 设计原则:
-  * Snapshot 一旦生成不可变 (规则升级 → 下个 snap 用新规则, 老的不动)
+  * ContextCommit 一旦生成不可变 (规则升级 → 下个 commit 用新规则, 老的不动)
   * ContextItem.state 只能朝更严的方向走 (full → aged → cleared / summarized)
   * locked=True 的 item 任何规则都不再动
   * summary item 不写 DAG, 它的 source_node_id 是虚拟 id "sm_<hex>"
 
-完整设计见 docs/design/context-snapshot-chain.md。
+完整设计见 docs/design/context-context commit-chain.md。
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class ContextItem:
     tokens: int = 0              # rendered 的 token 估算
 
     # ── 决策追溯 (debug + UI 展示用) ──────────────
-    state_set_at: str = ""       # 哪个 snapshot 第一次定的这个状态
+    state_set_at: str = ""       # 哪个 context commit 第一次定的这个状态
     reason: str = ""             # "new" / "tail_window" / "idle_60min" / ...
     merged_into: Optional[str] = None  # state=summarized 时, 指向 summary item id
 
@@ -92,14 +92,14 @@ class ContextItem:
 
 
 @dataclass
-class Snapshot:
-    """Context snapshot — 某个时刻 LLM 看到的完整 context.
+class ContextCommit:
+    """Context context commit — 某个时刻 LLM 看到的完整 context.
 
-    一旦保存就不可变。改规则只影响下一个 snapshot, 不回溯改老 snap。
+    一旦保存就不可变。改规则只影响下一个 context commit, 不回溯改老 commit。
     """
     id: str                          # snap_<hex>
     session_id: str
-    parent_id: Optional[str]         # 上一个 snapshot, None = 第一个
+    parent_id: Optional[str]         # 上一个 context commit, None = 第一个
     created_at: float
     head_node_id: str                # 对应 DAG 哪个 head
     rules_version: str               # 哪一版规则生成的
@@ -121,6 +121,6 @@ class Snapshot:
         }
 
 
-# 当前规则集版本号 — 改任何规则就 bump 这里, 老 snapshot 通过
+# 当前规则集版本号 — 改任何规则就 bump 这里, 老 context commit 通过
 # rules_version 区分。
 CURRENT_RULES_VERSION = "v1"

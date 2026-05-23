@@ -1,27 +1,27 @@
-"""ensure_latest_snapshot — engine 接入 snapshot 系统的统一入口.
+"""ensure_latest_commit — engine 接入 context commit 系统的统一入口.
 
 每个 turn 的 prepare 阶段调一次. 接受 SessionStore (而非 db_path)
-作为后端 — git-as-truth 之后, 所有 snapshot IO 走 SessionStore 的
+作为后端 — git-as-truth 之后, 所有 context commit IO 走 SessionStore 的
 GitSession.
 
 逻辑:
-  1. 加载本 session 最新 snapshot.
+  1. 加载本 session 最新 context commit.
   2. 如果它的 head_node_id 跟当前 head 一致 → 直接返回.
-  3. 否则计算 delta: history 里跟 snap 不重合的新节点, 调
-     generate_snapshot 产新 snap.
-  4. 老 session 第一次跑没 snapshot — 把全部 history 当 new_nodes 喂
+  3. 否则计算 delta: history 里跟 commit 不重合的新节点, 调
+     generate_commit 产新 commit.
+  4. 老 session 第一次跑没 context commit — 把全部 history 当 new_nodes 喂
      给 generator 一次性 cold-start.
 """
 from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from .types import Snapshot
-from .store import load_latest_snapshot
-from .generator import generate_snapshot
+from .types import ContextCommit
+from .store import load_latest_commit
+from .generator import generate_commit
 
 
-def ensure_latest_snapshot(
+def ensure_latest_commit(
     *,
     store,                              # SessionStore
     session_id: str,
@@ -31,14 +31,14 @@ def ensure_latest_snapshot(
     budget_summarize_threshold: int,
     fetch_node: Optional[Callable[[str], Optional[dict[str, Any]]]] = None,
     llm_summarize: Optional[Callable] = None,
-) -> Snapshot:
-    latest = load_latest_snapshot(store, session_id)
+) -> ContextCommit:
+    latest = load_latest_commit(store, session_id)
 
     if latest is None:
-        return generate_snapshot(
+        return generate_commit(
             store=store,
             session_id=session_id,
-            parent_snapshot=None,
+            parent_commit=None,
             new_nodes=history,
             head_node_id=head_node_id,
             budget_total=budget_total,
@@ -62,10 +62,10 @@ def ensure_latest_snapshot(
     if not new_nodes:
         return latest
 
-    return generate_snapshot(
+    return generate_commit(
         store=store,
         session_id=session_id,
-        parent_snapshot=latest,
+        parent_commit=latest,
         new_nodes=new_nodes,
         head_node_id=head_node_id,
         budget_total=budget_total,

@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * Snapshots from legacy window globals → typed badge info objects
+ * Capture from window globals → typed badge info objects
  * that the React top bar renders off of. Each helper is a pure read
  * — they never mutate window state. The corresponding writes live in
- * `legacy-bridge.ts`.
+ * `window-bridge.ts`.
  */
 
 import type {
-  AgentSettingsSnapshot,
+  AgentSettingsState,
   BranchBadgeInfo,
   StatusBadgeInfo,
 } from "@/lib/session-store";
@@ -46,7 +46,7 @@ function legacyWindow(): LegacyTopbarGlobals {
   return window as unknown as LegacyTopbarGlobals;
 }
 
-export function snapshotAgentSettings(): AgentSettingsSnapshot {
+export function captureAgentSettings(): AgentSettingsState {
   const src = legacyWindow()._agentSettings || {};
   return {
     chat: src.chat ? { ...src.chat } : undefined,
@@ -54,7 +54,7 @@ export function snapshotAgentSettings(): AgentSettingsSnapshot {
   };
 }
 
-export function snapshotBranchInfo(): BranchBadgeInfo {
+export function captureBranchInfo(): BranchBadgeInfo {
   const w = legacyWindow();
   const sid = w.currentSessionId || null;
   if (!sid) return { visible: false, name: "main", count: 0 };

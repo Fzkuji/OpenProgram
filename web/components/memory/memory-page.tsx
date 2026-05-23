@@ -431,7 +431,7 @@ export function MemoryPage() {
             <>
               <div className={styles.tree}>
               {journalLoading ? <LoadingSkeleton /> : journalEntries.length === 0 ? (
-                <EmptyState icon="clock" text="No journal memory" sub="Context snapshots appear here after sessions" />
+                <EmptyState icon="clock" text="No journal memory" sub="Context commits appear here after sessions" />
               ) : (
                 <div className={styles.treeContent}>
                   {journalEntries.map((entry) => (

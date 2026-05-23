@@ -34,7 +34,7 @@ interface ProgramsMeta {
   icons: Record<string, string>;
 }
 
-interface LegacySnapshot {
+interface WindowGlobalsState {
   conversations: Record<string, LegacyConv>;
   availableFunctions: AgenticFunction[];
   programsMeta: ProgramsMeta;
@@ -45,7 +45,7 @@ const EMPTY_META: ProgramsMeta = { favorites: [], folders: {}, icons: {} };
 const EMPTY_FNS: AgenticFunction[] = [];
 const EMPTY_CONVS: Record<string, LegacyConv> = {};
 
-function snapshot(): LegacySnapshot {
+function capture(): WindowGlobalsState {
   const w = window as unknown as {
     conversations?: Record<string, LegacyConv>;
     availableFunctions?: AgenticFunction[];
@@ -60,8 +60,8 @@ function snapshot(): LegacySnapshot {
   };
 }
 
-export function useLegacyGlobals(): LegacySnapshot {
-  const [snap, setSnap] = useState<LegacySnapshot>(() =>
+export function useWindowGlobals(): WindowGlobalsState {
+  const [snap, setSnap] = useState<WindowGlobalsState>(() =>
     typeof window === "undefined"
       ? {
           conversations: EMPTY_CONVS,
@@ -69,13 +69,13 @@ export function useLegacyGlobals(): LegacySnapshot {
           programsMeta: EMPTY_META,
           sidebarOpen: true,
         }
-      : snapshot()
+      : capture()
   );
 
   useEffect(() => {
     let prev = snap;
     const id = setInterval(() => {
-      const next = snapshot();
+      const next = capture();
       // Reference equality is enough — legacy code replaces these
       // globals wholesale (`conversations[id] = ...` keeps the same
       // ref but `availableFunctions = await fetch(...)` swaps it).
@@ -101,7 +101,7 @@ export function useLegacyGlobals(): LegacySnapshot {
         convKeys !== prevConvKeys ||
         cidNow !== cidPrev
       ) {
-        const stamped = next as LegacySnapshot & { _cid?: string | null };
+        const stamped = next as WindowGlobalsState & { _cid?: string | null };
         stamped._cid = cidNow;
         prev = stamped;
         setSnap(stamped);

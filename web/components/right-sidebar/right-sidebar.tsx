@@ -29,7 +29,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { BranchesPanel } from "./branches-panel";
-import { SnapshotTimeline } from "./snapshot-timeline";
+import { ContextCommitTimeline } from "./context-commit-timeline";
 import {
   sidebarNavIconClass,
   sidebarNavIconSvgClass,
@@ -44,25 +44,15 @@ import {
 // "detail" picks `<div data-view="detail">`.
 const VIEW_HISTORY = "history";
 const VIEW_DETAIL = "detail";
-const VIEW_CONTEXT = "snapshots";
+const VIEW_CONTEXT = "context";
 
-// Right sidebar width is independent of the left one — the left
-// uses --sidebar-width (288px default), the right persists its own
-// value in localStorage so users can widen the History DAG panel
-// without dragging the left sidebar along.
-const RIGHT_W_KEY = "rightSidebar.width";
+// Right sidebar mirrors the left's default width (288px) so the page
+// loads symmetric. Users can drag-widen the right side for the History
+// DAG, but the width is not persisted — every reload resets to the
+// default, by request.
 const RIGHT_W_MIN = 240;
 const RIGHT_W_MAX = 720;
 const RIGHT_W_DEFAULT = 288;
-
-function _readStoredWidth(): number {
-  if (typeof window === "undefined") return RIGHT_W_DEFAULT;
-  try {
-    const v = parseInt(localStorage.getItem(RIGHT_W_KEY) || "", 10);
-    if (Number.isFinite(v) && v >= RIGHT_W_MIN && v <= RIGHT_W_MAX) return v;
-  } catch { /* ignore */ }
-  return RIGHT_W_DEFAULT;
-}
 
 export function RightSidebar() {
   const open = useSessionStore((s) => s.rightDock.open);
@@ -72,18 +62,11 @@ export function RightSidebar() {
   const [width, setWidth] = useState<number>(RIGHT_W_DEFAULT);
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
 
-  // Hydrate from localStorage on mount (avoids SSR mismatch).
-  useEffect(() => {
-    setWidth(_readStoredWidth());
-  }, []);
-
   const onResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     dragRef.current = { startX: e.clientX, startW: width };
     const onMove = (ev: MouseEvent) => {
       if (!dragRef.current) return;
-      // Right sidebar grows when dragging LEFT (toward the chat), so
-      // delta is startX - clientX.
       const delta = dragRef.current.startX - ev.clientX;
       const next = Math.max(
         RIGHT_W_MIN,
@@ -95,15 +78,6 @@ export function RightSidebar() {
       dragRef.current = null;
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
-      try { localStorage.setItem(RIGHT_W_KEY, String(width)); } catch { /* */ }
-      // Re-read so the persisted value reflects the final width
-      // (state above is captured at handler binding time).
-      try {
-        const cur = document.getElementById("rightSidebar")?.clientWidth;
-        if (cur && cur >= RIGHT_W_MIN && cur <= RIGHT_W_MAX) {
-          localStorage.setItem(RIGHT_W_KEY, String(cur));
-        }
-      } catch { /* */ }
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -345,8 +319,8 @@ export function RightSidebar() {
         <div id="detailPanel" className="right-view" data-view={VIEW_DETAIL}>
           <DetailPanel />
         </div>
-        <div id="snapshotsPanel" className="right-view" data-view={VIEW_CONTEXT}>
-          <SnapshotTimeline />
+        <div id="commitsPanel" className="right-view" data-view={VIEW_CONTEXT}>
+          <ContextCommitTimeline />
         </div>
       </div>
     </aside>

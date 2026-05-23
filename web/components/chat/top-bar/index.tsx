@@ -4,7 +4,7 @@
  * Renders the hamburger button + four badges (status, branch, chat
  * agent, exec agent) that used to live in the legacy `<div class="topbar"
  * id="mainTopbar">` template. Each piece reads its state from the
- * zustand session store; the store is populated by `legacy-bridge.ts`
+ * zustand session store; the store is populated by `window-bridge.ts`
  * wrapping the legacy DOM-mutating updaters and pushing through.
  *
  * Dropdowns (channel / branch / chat-agent / exec-agent pickers) are
@@ -27,7 +27,7 @@ import {
 import { AgentSelector } from "./agent-selector";
 import { BranchMenu } from "./branch-menu";
 import { ChannelMenu } from "./channel-menu";
-import { installLegacyWrappers, legacyTopbarReady } from "./legacy-bridge";
+import { installLegacyWrappers, legacyTopbarReady } from "./window-bridge";
 import { formatAgentDetails } from "./format";
 import styles from "./top-bar.module.css";
 
