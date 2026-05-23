@@ -1007,6 +1007,7 @@ def _build_ws_action_registry() -> dict:
         chat as _ws_chat,
         runtime as _ws_runtime,
         session as _ws_session,
+        snapshots as _ws_snapshots,
     )
     table: dict = {}
     table.update(_ws_branch.ACTIONS)
@@ -1015,6 +1016,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_channel.ACTIONS)
     table.update(_ws_runtime.ACTIONS)
     table.update(_ws_chat.ACTIONS)
+    table.update(_ws_snapshots.ACTIONS)
     return table
 
 

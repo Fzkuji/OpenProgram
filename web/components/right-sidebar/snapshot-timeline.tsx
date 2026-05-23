@@ -17,7 +17,7 @@
  * MessageEvent stream alongside the legacy dispatcher.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSessionStore } from "@/lib/session-store";
 
 type StateName = "full" | "aged" | "cleared" | "summarized" | "summary";
@@ -91,6 +91,11 @@ export function SnapshotTimeline() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Ref mirror of sessionId so the long-lived onMsg listener always sees
+  // the latest value, not the one captured when the effect first ran.
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+
   const refresh = useCallback(() => {
     if (!sessionId) {
       setSnapshots([]);
@@ -100,11 +105,11 @@ export function SnapshotTimeline() {
     send({ action: "list_snapshots", session_id: sessionId });
   }, [sessionId]);
 
-  // Listen to ws messages of types we care about.
+  // Listen to ws messages of types we care about. Registered once and
+  // kept alive — listener reads sessionIdRef so it survives sessionId
+  // churn and the ws object swap on reconnect (both go through window.ws,
+  // so re-checking each call works).
   useEffect(() => {
-    const w = window as unknown as { ws?: WebSocket | null };
-    const sock = w.ws;
-    if (!sock) return;
     function onMsg(ev: MessageEvent) {
       let msg: { type?: string; data?: Record<string, unknown> } | null = null;
       try {
@@ -115,7 +120,10 @@ export function SnapshotTimeline() {
       if (!msg) return;
       if (msg.type === "snapshots_list") {
         const d = msg.data as { session_id?: string; snapshots?: SnapshotMeta[]; error?: string | null };
-        if (d.session_id !== sessionId) return;
+        // Drop late responses from a previous session, but accept anything
+        // matching the current one — including the case where this listener
+        // outlived a stale closure capture of sessionId.
+        if (d.session_id && d.session_id !== sessionIdRef.current) return;
         setLoading(false);
         setError(d.error || null);
         setSnapshots(Array.isArray(d.snapshots) ? d.snapshots : []);
@@ -125,24 +133,42 @@ export function SnapshotTimeline() {
         setDetails((prev) => ({ ...prev, [d.id]: d }));
       }
     }
-    sock.addEventListener("message", onMsg);
-    return () => sock.removeEventListener("message", onMsg);
-  }, [sessionId]);
+    // Poll for window.ws to appear (it may not exist at mount time), then
+    // attach. Cleared when the ws object is replaced (reconnect path
+    // installs a new socket; we re-attach on the next tick).
+    let attached: WebSocket | null = null;
+    const interval = window.setInterval(() => {
+      const w = window as unknown as { ws?: WebSocket | null };
+      const sock = w.ws || null;
+      if (sock === attached) return;
+      if (attached) attached.removeEventListener("message", onMsg);
+      attached = sock;
+      if (sock) sock.addEventListener("message", onMsg);
+    }, 300);
+    return () => {
+      window.clearInterval(interval);
+      if (attached) attached.removeEventListener("message", onMsg);
+    };
+  }, []);
 
-  // Auto-refresh on session change.
+  // Auto-refresh on session change. Retry once if ws isn't ready yet
+  // (mount can race the socket open).
   useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  // Refresh once when the socket finishes (re)connecting if it wasn't ready before.
-  useEffect(() => {
+    if (!sessionId) return;
     const w = window as unknown as { ws?: WebSocket | null };
-    const sock = w.ws;
-    if (!sock) return;
-    function onOpen() { refresh(); }
-    sock.addEventListener("open", onOpen);
-    return () => sock.removeEventListener("open", onOpen);
-  }, [refresh]);
+    if (w.ws && w.ws.readyState === WebSocket.OPEN) {
+      refresh();
+      return;
+    }
+    const t = window.setInterval(() => {
+      const ww = window as unknown as { ws?: WebSocket | null };
+      if (ww.ws && ww.ws.readyState === WebSocket.OPEN) {
+        window.clearInterval(t);
+        refresh();
+      }
+    }, 400);
+    return () => window.clearInterval(t);
+  }, [refresh, sessionId]);
 
   function toggleRow(id: string) {
     if (expanded === id) {
