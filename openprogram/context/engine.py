@@ -222,14 +222,14 @@ class DefaultContextEngine(ContextEngine):
         n_redacted = 0
         tokens_freed = 0
         agent_messages: list = []
-        snap_used = False
+        commit_used = False
         try:
             agent_messages = self._build_messages_from_commit(
                 session_id=session_id,
                 history=history,
                 model=model,
             )
-            snap_used = True
+            commit_used = True
             decision.append("input:context commit")
         except Exception as e:
             # 这条路径出错就退回老 mutate path. 失败时记日志便于排查,

@@ -96,7 +96,7 @@ def rule_tool_aging(items: list[ContextItem], ctx: RuleContext) -> None:
             if protected and not in_tail:
                 # 保护类 tool 即使出 tail 也保持 full; lock 住免得下游再动.
                 item.locked = True
-                item.state_set_at = ctx.snap_id
+                item.state_set_at = ctx.commit_id
                 item.reason = "protected_tool"
             continue
 
@@ -109,5 +109,5 @@ def rule_tool_aging(items: list[ContextItem], ctx: RuleContext) -> None:
         item.tokens = _estimate_tokens(stub)
         item.state = "aged"
         item.locked = True
-        item.state_set_at = ctx.snap_id
+        item.state_set_at = ctx.commit_id
         item.reason = "tail_window"

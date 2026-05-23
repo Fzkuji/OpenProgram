@@ -97,7 +97,7 @@ class ContextCommit:
 
     一旦保存就不可变。改规则只影响下一个 context commit, 不回溯改老 commit。
     """
-    id: str                          # snap_<hex>
+    id: str                          # commit_<hex>
     session_id: str
     parent_id: Optional[str]         # 上一个 context commit, None = 第一个
     created_at: float

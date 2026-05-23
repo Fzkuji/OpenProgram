@@ -60,8 +60,8 @@ def save_commit(store: "SessionStore", commit: ContextCommit) -> None:
         return
     payload = commit.to_dict()
     # Per-commit file: durable, point of truth for that commit_id.
-    snap_path = _commit_dir(git) / f"{commit.id}.json"
-    snap_path.write_text(json.dumps(payload, ensure_ascii=False, default=str))
+    commit_path = _commit_dir(git) / f"{commit.id}.json"
+    commit_path.write_text(json.dumps(payload, ensure_ascii=False, default=str))
     # Mirror: latest context commit, single file. Frontend timeline reads
     # this for "current state"; per-commit history goes through list_commits.
     git.write_context_file("commit.json", payload)
@@ -111,7 +111,7 @@ def load_latest_commit(store: "SessionStore", session_id: str) -> Optional[Conte
 
 
 def list_commits(store: "SessionStore", session_id: str, *, limit: int = 50) -> list[ContextCommit]:
-    """Snapshots for a session, newest first.
+    """Commits for a session, newest first.
 
     Sort key: ``created_at`` from the context commit payload itself (more
     reliable than file mtime when repos get copied around).

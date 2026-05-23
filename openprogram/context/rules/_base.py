@@ -26,7 +26,7 @@ class RuleContext:
     生成器在调每个规则前把当前 snap id / 当前 turn 序号 / token 预算
     / 当前时间 / 调用 LLM 的 callable 都塞进来。
     """
-    snap_id: str                         # 这次生成的 snap id (state_set_at 用)
+    commit_id: str                         # 这次生成的 snap id (state_set_at 用)
     session_id: str
     now: float                            # 当前 wall-clock
     head_node_id: str

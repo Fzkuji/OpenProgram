@@ -24,7 +24,7 @@ def _estimate_tokens(text: str | None) -> int:
     return max(4, len(text) // 4)
 
 
-def _gen_snap_id() -> str:
+def _gen_commit_id() -> str:
     return "commit_" + uuid.uuid4().hex[:10]
 
 
@@ -56,7 +56,7 @@ def generate_commit(
     else:
         items = []
 
-    commit_id = _gen_snap_id()
+    commit_id = _gen_commit_id()
 
     # Step 2: 追加这轮新增的 DAG 节点为 state="full" 新 item
     for node in new_nodes:
