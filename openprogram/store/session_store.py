@@ -15,9 +15,8 @@ Internal model:
     persists raw nodes + meta.
 
 Message <-> Call dataclass mapping reuses the existing helpers in
-``openprogram.context.session_db._msg_to_node`` /  ``_node_to_msg`` so
-adapter semantics (extra fields, called_by routing, ...) stay
-identical to the SQLite era.
+``openprogram.store._msg_adapter`` so adapter semantics (extra fields,
+called_by routing, ...) stay identical to the SQLite era.
 """
 from __future__ import annotations
 
@@ -30,7 +29,7 @@ from typing import Any, Optional
 from openprogram.context.nodes import Call
 # Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
 # tests covering edge cases (sub-call routing, extra_json roundtrip) still hold.
-from openprogram.context.session_db import (
+from ._msg_adapter import (
     _msg_to_node,
     _node_to_msg,
     _decode_extra,
@@ -191,13 +190,19 @@ class SessionStore:
             if v is not None:
                 extra[k] = v
         now = time.time()
+        # Caller-supplied created_at/updated_at (e.g. channel replay)
+        # take precedence over the default ``now``; explicitly pop
+        # them from ``extra`` so the **extra spread doesn't collide
+        # with the named kwargs.
+        created_at = extra.pop("created_at", now)
+        updated_at = extra.pop("updated_at", now)
         idx.set_meta(
             id=session_id,
             agent_id=agent_id,
             title=title,
             source=source or "",
-            created_at=now,
-            updated_at=now,
+            created_at=created_at,
+            updated_at=updated_at,
             **extra,
         )
         self._persist_meta(git, idx)

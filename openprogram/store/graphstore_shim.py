@@ -35,18 +35,51 @@ class GraphStoreShim:
         self.session_id = session_id
 
     def append(self, node: Call) -> None:
-        """Persist a Call. Maps to ``SessionStore.append_message`` after
-        converting Call → legacy msg dict shape via the existing
-        ``_node_to_msg`` helper used elsewhere in the store.
+        """Persist a Call directly into the per-session index + history.
 
-        Note: ``append_message`` is idempotent for known ids, so a
-        re-append of the same node id is safe.
+        Mirrors the legacy ``GraphStore.append`` semantics: writes the
+        Call as-is (no lossy chat-msg round trip), assigns a seq, and
+        bumps head for conversation nodes. Idempotent on id.
         """
-        from openprogram.context.session_db import _node_to_msg
-        msg = _node_to_msg(node, self.session_id)
-        # SessionStore.append_message expects a chat-shaped dict; the
-        # _node_to_msg helper returns exactly that.
-        self.store.append_message(self.session_id, msg)
+        import time as _time
+        pair = self.store._open(self.session_id, create_if_missing=True)
+        if pair is None:
+            return
+        git, idx = pair
+        if node.id in idx.nodes_by_id:
+            return
+        meta = node.metadata or {}
+        predecessor = meta.get("parent_id") or ""
+        caller = node.called_by or meta.get("caller") or ""
+        seq = idx.append(node, predecessor=predecessor, caller=caller)
+        git.write_history(seq, node.role, node.id, node.to_dict())
+        if not caller:
+            idx.set_head(node.id)
+        idx.set_meta(updated_at=_time.time())
+
+    def load(self):
+        """Return a ``Graph`` populated with all nodes for this session.
+
+        Legacy ``GraphStore.load()`` semantics: ``Graph.nodes`` is a
+        dict ``id → Call`` and ``Graph._next_seq`` is one past the
+        highest seq present. Test code reads ``g.nodes`` to assert
+        node fields.
+        """
+        import copy
+        from openprogram.context.nodes import Graph
+        g = Graph()
+        pair = self.store._open(self.session_id)
+        if not pair:
+            return g
+        _git, idx = pair
+        # Deep-copy so callers see a point-in-time snapshot; the live
+        # index keeps mutating as @agentic_function fills placeholders.
+        for node in idx.nodes_by_seq:
+            snap = copy.deepcopy(node)
+            g.nodes[snap.id] = snap
+            if snap.seq >= g._next_seq:
+                g._next_seq = snap.seq + 1
+        return g
 
     def update(self, node_id: str, **fields: Any) -> None:
         """In-place update of an existing node.

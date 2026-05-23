@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic - Configuration</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary: #1a1d23;
+  --bg-secondary: #15171c;
+  --bg-tertiary: #1e2128;
+  --bg-hover: #2c313a;
+  --bg-input: #21252b;
+  --border: #2d3139;
+  --border-light: #3e4451;
+  --text-primary: #abb2bf;
+  --text-secondary: #636d83;
+  --text-bright: #d7dae0;
+  --text-muted: #4b5263;
+  --accent-blue: #61afef;
+  --accent-green: #98c379;
+  --accent-red: #e06c75;
+  --accent-yellow: #e5c07b;
+  --accent-purple: #c678dd;
+  --accent-cyan: #56b6c2;
+  --font-mono: 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  margin-bottom: 24px;
+  transition: color 0.2s;
+}
+.back-link:hover { color: var(--accent-blue); }
+
+h1 {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 32px;
+}
+.subtitle code {
+  font-family: var(--font-mono);
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+/* Provider cards */
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  padding-left: 2px;
+}
+
+.provider-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  transition: border-color 0.2s;
+}
+.provider-card:hover { border-color: var(--border-light); }
+.provider-card.configured { border-left: 3px solid var(--accent-blue); }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.card-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-bright);
+}
+
+.card-type {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+.card-type.api { background: rgba(97,175,239,0.12); color: var(--accent-blue); }
+.card-type.cli { background: rgba(152,195,121,0.12); color: var(--accent-green); }
+
+.card-status {
+  margin-left: auto;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.card-status .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot-green { background: var(--accent-green); }
+.dot-blue { background: var(--accent-blue); }
+.dot-gray { background: var(--text-muted); }
+
+.card-body { margin-top: 8px; }
+
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.key-row label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.key-row input {
+  flex: 1;
+  padding: 7px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  transition: border-color 0.2s;
+}
+.key-row input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+.key-row input::placeholder { color: var(--text-muted); }
+
+.key-row .btn-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: color 0.2s;
+}
+.key-row .btn-clear:hover { color: var(--accent-red); }
+.btn-verify { background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-secondary); padding: 6px 12px; border-radius: 5px; font-size: 12px; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
+.btn-verify:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+.btn-verify:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-verify.valid { border-color: var(--accent-green); color: var(--accent-green); }
+.btn-verify.invalid { border-color: var(--accent-red); color: var(--accent-red); }
+.key-status { font-size: 11px; margin-top: 4px; min-height: 16px; }
+.key-status.valid { color: var(--accent-green); }
+.key-status.invalid { color: var(--accent-red); }
+.key-status.validating { color: var(--accent-yellow); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cli-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.cli-note code {
+  font-family: var(--font-mono);
+  background: var(--bg-input);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+/* Save bar */
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  padding: 16px 0;
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn {
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn:hover { border-color: var(--border-light); background: var(--bg-hover); }
+.btn-primary {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #fff;
+}
+.btn-primary:hover { opacity: 0.9; }
+
+.save-msg {
+  font-size: 13px;
+  color: var(--accent-green);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.save-msg.show { opacity: 1; }
+
+.section-gap { margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <a href="/" class="back-link">&larr; Back to Agentic</a>
+  <h1>Provider Configuration</h1>
+  <p class="subtitle">API keys are saved locally to <code>~/.agentic/config.json</code></p>
+
+  <div id="apiSection">
+    <div class="section-title">API Providers</div>
+    <div id="apiCards"></div>
+  </div>
+
+  <div class="section-gap">
+    <div class="section-title">CLI Providers</div>
+    <div id="cliCards"></div>
+  </div>
+
+  <div class="save-bar">
+    <span class="save-msg" id="saveMsg">Saved successfully</span>
+    <button class="btn" onclick="location.href='/new'">Cancel</button>
+    <button class="btn btn-primary" onclick="saveAll()">Save Changes</button>
+  </div>
+</div>
+
+<script>
+const API_KEY_META = {
+  'anthropic': [
+    { env: 'ANTHROPIC_API_KEY', hint: 'sk-ant-api03-...' },
+  ],
+  'openai': [
+    { env: 'OPENAI_API_KEY', hint: 'sk-...' },
+  ],
+  'gemini': [
+    { env: 'GOOGLE_API_KEY', hint: 'AIzaSy...' },
+  ],
+};
+
+const CLI_INSTALL = {
+  'codex': 'npm install -g @openai/codex && codex auth',
+  'claude-code': 'npm install -g @anthropic-ai/claude-code && claude login',
+  'gemini-cli': 'npm install -g @google/gemini-cli',
+};
+
+let providers = [];
+let savedKeys = {};
+
+async function init() {
+  const [provResp, cfgResp] = await Promise.all([
+    fetch('/api/providers'),
+    fetch('/api/config'),
+  ]);
+  providers = await provResp.json();
+  const cfg = await cfgResp.json();
+  savedKeys = cfg.api_keys || {};
+  render();
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function render() {
+  const apiCards = document.getElementById('apiCards');
+  const cliCards = document.getElementById('cliCards');
+
+  // API providers
+  apiCards.innerHTML = providers
+    .filter(p => p.configurable)
+    .map(p => {
+      const keys = API_KEY_META[p.name] || [];
+      const configured = p.configured;
+      return '<div class="provider-card' + (configured ? ' configured' : '') + '" id="card_' + p.name + '">' +
+        '<div class="card-header">' +
+          '<span class="card-name">' + esc(p.label) + '</span>' +
+          '<span class="card-type api">API</span>' +
+          '<span class="card-status" id="card_status_' + p.name + '">' +
+            '<span class="dot ' + (configured ? 'dot-blue' : 'dot-gray') + '"></span>' +
+            '<span>' + (configured ? 'Configured' : 'Not configured') + '</span>' +
+          '</span>' +
+        '</div>' +
+        '<div class="card-body">' +
+          keys.map(k => {
+            const val = savedKeys[k.env] || '';
+            return '<div class="key-row">' +
+              '<label>' + esc(k.env) + '</label>' +
+              '<input type="password" id="key_' + k.env + '" placeholder="' + esc(k.hint) + '" value="' + esc(val) + '" oninput="onKeyInput(\'' + k.env + '\')">' +
+              '<button class="btn-verify" id="verify_' + k.env + '" onclick="verifyKey(\'' + k.env + '\')">Verify</button>' +
+              '<button class="btn-clear" onclick="clearKey(\'' + k.env + '\')" title="Clear">&times;</button>' +
+            '</div>' +
+            '<div class="key-status" id="status_' + k.env + '"></div>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+  // CLI providers
+  cliCards.innerHTML = providers
+    .filter(p => !p.configurable)
+    .map(p => {
+      const installed = p.available;
+      const cmd = CLI_INSTALL[p.name] || '';
+      return '<div class="provider-card' + (installed ? ' configured' : '') + '">' +
+        '<div class="card-header">' +
+          '<span class="card-name">' + esc(p.label) + '</span>' +
+          '<span class="card-type cli">CLI</span>' +
+          '<span class="card-status">' +
+            '<span class="dot ' + (installed ? 'dot-green' : 'dot-gray') + '"></span>' +
+            '<span style="color:' + (installed ? 'var(--accent-green)' : 'var(--text-muted)') + '">' +
+              (installed ? 'Installed' : 'Not found') +
+            '</span>' +
+          '</span>' +
+        '</div>' +
+        (cmd ? '<div class="card-body"><div class="cli-note">' +
+          (installed ? 'Available in PATH.' : 'Install: <code>' + esc(cmd) + '</code>') +
+        '</div></div>' : '') +
+      '</div>';
+    }).join('');
+}
+
+let verifiedKeys = {};  // env -> true/false
+
+// Map env var to provider name
+const ENV_TO_PROVIDER = {
+  'ANTHROPIC_API_KEY': 'anthropic',
+  'OPENAI_API_KEY': 'openai',
+  'GOOGLE_API_KEY': 'gemini',
+  'GOOGLE_GENERATIVE_AI_API_KEY': 'gemini',
+};
+
+function updateCardStatus(env, state) {
+  // state: 'configured', 'unverified', 'valid', 'invalid'
+  const provName = ENV_TO_PROVIDER[env];
+  if (!provName) return;
+  const cardStatus = document.getElementById('card_status_' + provName);
+  const card = document.getElementById('card_' + provName);
+  if (!cardStatus) return;
+
+  if (state === 'configured' || state === 'valid') {
+    cardStatus.innerHTML = '<span class="dot dot-blue"></span><span>Configured</span>';
+    if (card) card.classList.add('configured');
+  } else if (state === 'unverified') {
+    cardStatus.innerHTML = '<span class="dot dot-gray"></span><span>Not verified</span>';
+    if (card) card.classList.remove('configured');
+  } else if (state === 'invalid') {
+    cardStatus.innerHTML = '<span class="dot" style="background:var(--accent-red)"></span><span style="color:var(--accent-red)">Invalid</span>';
+    if (card) card.classList.remove('configured');
+  }
+}
+
+function onKeyInput(env) {
+  verifiedKeys[env] = undefined;
+  const btn = document.getElementById('verify_' + env);
+  const status = document.getElementById('status_' + env);
+  if (btn) { btn.className = 'btn-verify'; btn.textContent = 'Verify'; }
+  if (status) { status.className = 'key-status'; status.textContent = ''; }
+  updateCardStatus(env, 'unverified');
+}
+
+async function verifyKey(env) {
+  const input = document.getElementById('key_' + env);
+  const btn = document.getElementById('verify_' + env);
+  const status = document.getElementById('status_' + env);
+  if (!input || !input.value.trim()) return;
+
+  let val = input.value.trim();
+
+  // If masked (already saved), ask backend to verify with stored key
+  const isMasked = val.endsWith('...');
+
+  btn.textContent = 'Verifying...';
+  btn.disabled = true;
+  status.className = 'key-status validating';
+  status.textContent = 'Connecting...';
+
+  try {
+    const resp = await fetch('/api/config/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ env, value: val }),
+    });
+    const data = await resp.json();
+    if (data.valid) {
+      btn.className = 'btn-verify valid';
+      btn.textContent = 'Valid';
+      status.className = 'key-status valid';
+      status.textContent = 'Key verified successfully';
+      verifiedKeys[env] = true;
+      updateCardStatus(env, 'valid');
+    } else {
+      btn.className = 'btn-verify invalid';
+      btn.textContent = 'Invalid';
+      status.className = 'key-status invalid';
+      status.textContent = data.error || 'Verification failed';
+      verifiedKeys[env] = false;
+      updateCardStatus(env, 'invalid');
+    }
+  } catch(e) {
+    btn.className = 'btn-verify invalid';
+    btn.textContent = 'Error';
+    status.className = 'key-status invalid';
+    status.textContent = e.message;
+    verifiedKeys[env] = false;
+    updateCardStatus(env, 'invalid');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function clearKey(env) {
+  const input = document.getElementById('key_' + env);
+  if (input) input.value = '';
+  onKeyInput(env);
+}
+
+async function saveAll() {
+  const keys = {};
+  let hasUnverified = false;
+
+  Object.keys(API_KEY_META).forEach(provider => {
+    API_KEY_META[provider].forEach(k => {
+      const input = document.getElementById('key_' + k.env);
+      if (!input) return;
+      const val = input.value.trim();
+      if (val && !val.endsWith('...')) {
+        // New key — must be verified first
+        if (verifiedKeys[k.env] !== true) {
+          hasUnverified = true;
+          const status = document.getElementById('status_' + k.env);
+          if (status) {
+            status.className = 'key-status invalid';
+            status.textContent = 'Please verify this key before saving';
+          }
+          return;
+        }
+        keys[k.env] = val;
+      } else if (!val) {
+        keys[k.env] = '';
+      }
+    });
+  });
+
+  if (hasUnverified) return;
+
+  try {
+    const resp = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_keys: keys }),
+    });
+    const data = await resp.json();
+    if (data.saved) {
+      const msg = document.getElementById('saveMsg');
+      msg.textContent = 'Saved successfully';
+      msg.classList.add('show');
+      setTimeout(() => msg.classList.remove('show'), 3000);
+
+      const [provResp, cfgResp] = await Promise.all([
+        fetch('/api/providers'),
+        fetch('/api/config'),
+      ]);
+      providers = await provResp.json();
+      const cfg = await cfgResp.json();
+      savedKeys = cfg.api_keys || {};
+      verifiedKeys = {};
+      render();
+    }
+  } catch(e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
+init();
+</script>
+</body>
+</html>

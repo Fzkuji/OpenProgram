@@ -20,7 +20,7 @@ from contextlib import contextmanager
 import pytest
 
 from openprogram.agentic_programming.function import _call_id
-from openprogram.context.storage import GraphStore, init_db, _store as _store_var
+from openprogram.store import GraphStoreShim, SessionStore, _store as _store_var
 from openprogram.functions.agentics.ask_user import (
     ask_user, set_ask_user,
 )
@@ -29,10 +29,9 @@ from openprogram.functions.agentics.ask_user import (
 @pytest.fixture
 def store(tmp_path: Path):
     """GraphStore installed into ``_store`` for the test's duration."""
-    db = tmp_path / "x.sqlite"
-    init_db(db)
-    s = GraphStore(db, "s1")
-    s.create_session_row()
+    store = SessionStore(tmp_path / "sessions-git")
+    store.create_session("s1", agent_id="main")
+    s = GraphStoreShim(store, "s1")
     token = _store_var.set(s)
     try:
         yield s

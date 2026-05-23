@@ -17,14 +17,17 @@ from openprogram.agent import dispatcher as D
 from openprogram.agent.session_db import SessionDB
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.context.storage import GraphStore
+from openprogram.store import GraphStoreShim as GraphStore
 
 
 @pytest.fixture
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
-    db = SessionDB(tmp_path / "sessions.sqlite")
+    db = SessionDB(tmp_path / "sessions-git")
     monkeypatch.setattr("openprogram.agent.session_db.default_db",
                         lambda: db)
+    monkeypatch.setattr("openprogram.store.session_store.default_store",
+                        lambda: db)
+    monkeypatch.setattr("openprogram.store.default_store", lambda: db)
     return db
 
 
@@ -73,7 +76,7 @@ def test_dispatcher_attaches_store_so_agentic_function_lands_in_dag(tmp_db):
             on_event=lambda _e: None,
         )
 
-    store = GraphStore(tmp_db.db_path, "s1")
+    store = GraphStore(tmp_db, "s1")
     g = store.load()
 
     # user message + agent code Call (planner) + agent's internal LLM

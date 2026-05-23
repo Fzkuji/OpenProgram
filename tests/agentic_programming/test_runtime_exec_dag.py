@@ -14,7 +14,7 @@ import pytest
 
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.context.storage import GraphStore, init_db, _store as _store_var
+from openprogram.store import GraphStoreShim, SessionStore, _store as _store_var
 
 
 class _FakeRuntime(Runtime):
@@ -40,10 +40,9 @@ def store(tmp_path: Path):
     """Yield a GraphStore installed into the ``_store`` ContextVar for
     the duration of the test, mirroring what the dispatcher does at
     turn entry. Resets on teardown."""
-    db = tmp_path / "x.sqlite"
-    init_db(db)
-    s = GraphStore(db, "s1")
-    s.create_session_row()
+    store = SessionStore(tmp_path / "sessions-git")
+    store.create_session("s1", agent_id="main")
+    s = GraphStoreShim(store, "s1")
     token = _store_var.set(s)
     try:
         yield s

@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.context.session_db import DagSessionDB
+from openprogram.store import SessionStore as DagSessionDB
 
 
 @pytest.fixture
 def db(tmp_path: Path) -> DagSessionDB:
-    return DagSessionDB(tmp_path / "x.sqlite")
+    return DagSessionDB(tmp_path / "sessions-git")
 
 
 def _append(db, sess, mid, *, role="user", parent=None, content="x",

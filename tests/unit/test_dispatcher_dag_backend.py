@@ -14,13 +14,15 @@ from pathlib import Path
 import pytest
 
 from openprogram.agent import dispatcher as D
-from openprogram.context.session_db import DagSessionDB
+from openprogram.store import SessionStore as DagSessionDB
 
 
 @pytest.fixture
 def dag_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> DagSessionDB:
-    db = DagSessionDB(tmp_path / "dag.sqlite")
+    db = DagSessionDB(tmp_path / "sessions-git")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.store.session_store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.store.default_store", lambda: db)
     return db
 
 

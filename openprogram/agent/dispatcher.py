@@ -601,7 +601,7 @@ def process_user_turn(
         # Update the placeholder row (step 3b) in place — same id,
         # now with final content + tool_calls/blocks.
         try:
-            from openprogram.context.session_db import _msg_to_node as _to_node
+            from openprogram.store._msg_adapter import _msg_to_node as _to_node
             from openprogram.store import GraphStoreShim
             _shim = GraphStoreShim(db, req.session_id)
             _node = _to_node(assistant_msg)
