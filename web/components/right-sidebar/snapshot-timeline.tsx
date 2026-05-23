@@ -177,7 +177,7 @@ export function SnapshotTimeline() {
           color: "var(--text-muted)",
         }}
       >
-        <span>Snapshots {snapshots.length ? `(${snapshots.length})` : ""}</span>
+        <span>Context {snapshots.length ? `(${snapshots.length})` : ""}</span>
         <button
           type="button"
           onClick={refresh}
