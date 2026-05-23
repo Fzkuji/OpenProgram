@@ -18,7 +18,7 @@
    .popoutClip clips the rolling animation so the popout slides
    out from above; the visible card is .popout. */
 .popoutClip {
-  margin: 6px 8px 12px;
+  margin: 0 8px 12px;
   overflow: hidden;
   border-radius: 14px;
 }
