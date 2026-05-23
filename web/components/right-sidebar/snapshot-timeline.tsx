@@ -216,7 +216,7 @@ export function SnapshotTimeline() {
     >
       <div
         className="sidebar-section-header"
-        style={{ cursor: "default", paddingTop: 16 }}
+        style={{ cursor: "default", marginTop: 16 }}
       >
         <span className="sidebar-section-title">
           Context{snapshots.length ? ` (${snapshots.length})` : ""}
@@ -226,12 +226,11 @@ export function SnapshotTimeline() {
           style={{
             cursor: sessionId ? "pointer" : "not-allowed",
             opacity: phase !== "idle" ? 0.85 : undefined,
-            color: phase === "done" ? "#56d364" : undefined,
           }}
           onClick={onRefreshClick}
           role="button"
         >
-          {phase === "loading" ? "…" : phase === "done" ? "Done!" : "Refresh"}
+          {phase === "loading" ? "…" : phase === "done" ? "Done" : "Refresh"}
         </span>
       </div>
       {error && (
