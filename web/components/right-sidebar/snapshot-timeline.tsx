@@ -183,6 +183,16 @@ export function SnapshotTimeline() {
     }
   }
 
+  // Short transient "just clicked" highlight so the Refresh hint
+  // visibly responds even if the round-trip completes in <50ms.
+  const [justClicked, setJustClicked] = useState(false);
+  function onRefreshClick() {
+    if (!sessionId) return;
+    setJustClicked(true);
+    window.setTimeout(() => setJustClicked(false), 600);
+    refresh();
+  }
+
   return (
     <div
       style={{
@@ -194,35 +204,21 @@ export function SnapshotTimeline() {
         color: "var(--text-bright)",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "10px 12px",
-          color: "var(--text-muted)",
-          fontSize: 12,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-        }}
-      >
-        <span>Context {snapshots.length ? `(${snapshots.length})` : ""}</span>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={!sessionId || loading}
+      <div className="sidebar-section-header" style={{ cursor: "default" }}>
+        <span className="sidebar-section-title">
+          Context{snapshots.length ? ` (${snapshots.length})` : ""}
+        </span>
+        <span
+          className="sidebar-section-hint"
           style={{
-            background: "transparent",
-            border: "1px solid var(--border)",
-            borderRadius: 4,
-            color: "var(--text-muted)",
-            padding: "2px 8px",
             cursor: sessionId ? "pointer" : "not-allowed",
-            fontSize: 11,
+            opacity: justClicked || loading ? 0.75 : undefined,
           }}
+          onClick={onRefreshClick}
+          role="button"
         >
-          {loading ? "…" : "Refresh"}
-        </button>
+          {loading || justClicked ? "…" : "Refresh"}
+        </span>
       </div>
       {error && (
         <div style={{ padding: 10, color: "var(--red, #f85149)" }}>
