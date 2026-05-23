@@ -277,9 +277,10 @@ function SnapshotRow(props: {
 }) {
   const { meta, open, detail, onToggle } = props;
   const counts = meta.state_counts || {};
-  // Snap row keeps the same simple bordered shape always (open or
-  // closed) — only difference when open is the popout that rolls
-  // down out of it below.
+  // Commit row keeps its rectangular full-width shape (closed *and*
+  // open). When opened the row tints to bg-hover so the user sees
+  // which commit's detail is currently below. The popout is a
+  // separate, narrower floating card — never merges with the row.
   return (
     <div style={{ borderBottom: "1px solid var(--border)" }}>
       <div
@@ -291,6 +292,8 @@ function SnapshotRow(props: {
           display: "flex",
           flexDirection: "column",
           gap: 3,
+          background: open ? "var(--bg-hover, rgba(255,255,255,0.04))" : "transparent",
+          transition: "background 0.15s",
         }}
       >
         <SnapMetaContent meta={meta} counts={counts} />

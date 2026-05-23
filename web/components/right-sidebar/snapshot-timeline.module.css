@@ -8,15 +8,17 @@
    the radius lives on the bottom corners and the open animation
    slides from above. */
 
-/* Popout sits below the snap row as a floating rounded card that
-   rolls down out of the row, like a scroll unrolling. Mirrors the
-   composer's slash-command menu, only direction-flipped (slash menu
-   rolls UP out of the input; this rolls DOWN out of the snap row).
+/* Popout is a floating rounded card sitting below the active
+   context-commit row. Narrower than the row (horizontal margin) and
+   separated by a small vertical gap, so the commit row stays the
+   structural element and the popout reads as a detail flyout —
+   same vocabulary as the composer's slash-command menu (image
+   reference from the user).
 
-   .popoutClip clips the animating child so the slide-in looks like
-   it's unfurling out of the row above. .popout is the visible card. */
+   .popoutClip clips the rolling animation so the popout slides
+   out from above; the visible card is .popout. */
 .popoutClip {
-  margin: 4px 8px 12px;
+  margin: 6px 8px 12px;
   overflow: hidden;
   border-radius: 14px;
 }
