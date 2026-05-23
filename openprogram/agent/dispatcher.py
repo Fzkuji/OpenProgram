@@ -623,6 +623,34 @@ def process_user_turn(
         model=req.model_override or session.get("model"),
     )
 
+    # 6.1. Backfill the latest snapshot's placeholder item with the
+    # final assistant output. The turn-start snapshot saw the assistant
+    # row as a placeholder (output=""), so the Context panel would
+    # otherwise show "(empty)" for every assistant turn. We patch the
+    # already-saved snapshot in place — keeps the per-turn snap_id
+    # stable and avoids ballooning the timeline with a duplicate.
+    try:
+        from openprogram.context.snapshot.store import (
+            load_latest_snapshot,
+            save_snapshot,
+        )
+        _final_text = assistant_msg.get("content") or ""
+        if _final_text:
+            _snap = load_latest_snapshot(db, req.session_id)
+            if _snap is not None:
+                _patched = False
+                for _item in _snap.items:
+                    if _item.source_node_id == assistant_msg_id:
+                        _item.rendered = _final_text
+                        _patched = True
+                        break
+                if _patched:
+                    save_snapshot(db, _snap)
+    except Exception:
+        # Snapshot backfill is best-effort: the conversation persists
+        # regardless, and the next turn will rebuild the chain.
+        pass
+
     # 6.4. Feed real provider usage back into the context engine so
     # subsequent prepare() calls budget against true numbers instead of
     # our estimate. We re-resolve the engine here (cheap registry

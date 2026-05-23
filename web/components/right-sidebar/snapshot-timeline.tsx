@@ -188,8 +188,7 @@ export function SnapshotTimeline() {
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        fontSize: 12,
-        fontFamily: "var(--font-mono, ui-monospace, SFMono-Regular, monospace)",
+        fontSize: 13,
         color: "var(--text-bright)",
       }}
     >
@@ -198,9 +197,11 @@ export function SnapshotTimeline() {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "8px 10px",
-          borderBottom: "1px solid var(--border)",
+          padding: "10px 12px",
           color: "var(--text-muted)",
+          fontSize: 12,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
         }}
       >
         <span>Context {snapshots.length ? `(${snapshots.length})` : ""}</span>
