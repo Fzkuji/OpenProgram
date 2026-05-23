@@ -58,12 +58,14 @@ interface SnapshotDetail {
   error?: string | null;
 }
 
+// "full" is the unchanged / default state — render it muted so the
+// non-trivial states (aged, cleared, summarized) actually stand out.
 const STATE_COLOR: Record<StateName, { bg: string; fg: string }> = {
-  full:       { bg: "rgba(88, 166, 255, 0.18)", fg: "var(--accent, #58a6ff)" },
-  aged:       { bg: "rgba(227, 179, 65, 0.18)", fg: "var(--orange, #e3b341)" },
-  cleared:    { bg: "rgba(248, 81, 73, 0.16)",  fg: "var(--red, #f85149)" },
-  summarized: { bg: "rgba(110, 118, 129, 0.18)", fg: "var(--gray, #6e7681)" },
-  summary:    { bg: "rgba(86, 211, 100, 0.18)",  fg: "var(--green, #56d364)" },
+  full:       { bg: "rgba(255, 255, 255, 0.06)", fg: "var(--text-muted)" },
+  aged:       { bg: "rgba(227, 179, 65, 0.14)",  fg: "#e3b341" },
+  cleared:    { bg: "rgba(248, 81, 73, 0.14)",   fg: "#f85149" },
+  summarized: { bg: "rgba(110, 118, 129, 0.20)", fg: "var(--text-muted)" },
+  summary:    { bg: "rgba(86, 211, 100, 0.14)",  fg: "#56d364" },
 };
 
 function fmtRelTime(ts: number): string {

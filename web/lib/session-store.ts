@@ -291,6 +291,8 @@ interface ConvState {
 }
 
 const RIGHT_LS_OPEN = "rightSidebarOpen";
+const RIGHT_LS_VIEW = "rightSidebarView";
+const VALID_VIEWS = new Set(["history", "snapshots"]);
 
 function readRightDock(): { open: boolean; view: string } {
   if (typeof window === "undefined") return { open: false, view: "history" };
@@ -302,19 +304,29 @@ function readRightDock(): { open: boolean; view: string } {
   } catch {
     /* ignore */
   }
-  // `view` is intentionally NOT restored. The "detail" view only has
-  // content once an execution node is selected within the session, so
-  // it is transient — restoring a persisted "detail" on load would
-  // surface a blank "No execution selected" panel and hide the History
-  // graph. Always start on "history".
-  return { open, view: "history" };
+  // Persist history / snapshots (Context tab) across reload — both have
+  // content that is meaningful as soon as the panel mounts. "detail" is
+  // intentionally excluded: it needs a node selection that doesn't
+  // survive a page reload, so restoring it would land on a blank
+  // "No execution selected" panel. Anything we don't recognise (legacy
+  // value, future tab) collapses back to history.
+  let view = "history";
+  try {
+    const v = localStorage.getItem(RIGHT_LS_VIEW);
+    if (v && VALID_VIEWS.has(v)) view = v;
+  } catch {
+    /* ignore */
+  }
+  return { open, view };
 }
 
-function persistRightDock(state: { open: boolean }) {
+function persistRightDock(state: { open: boolean; view: string }) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(RIGHT_LS_OPEN, state.open ? "1" : "0");
-    // `view` is deliberately not persisted — see readRightDock.
+    if (VALID_VIEWS.has(state.view)) {
+      localStorage.setItem(RIGHT_LS_VIEW, state.view);
+    }
   } catch {
     /* ignore */
   }
