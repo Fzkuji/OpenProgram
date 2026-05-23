@@ -352,18 +352,23 @@ function StateBadge(props: { state: StateName; count?: number }) {
 
 function ItemRow(props: { item: SnapshotItem }) {
   const it = props.item;
-  const preview = (it.rendered || "").slice(0, 120).replace(/\s+/g, " ");
+  const [open, setOpen] = useState(false);
+  // Strip newlines + leading whitespace so the one-line preview stays a
+  // single line. CSS noWrap + ellipsis truncates the visible width.
+  const oneLine = (it.rendered || "").replace(/\s+/g, " ").trim();
   return (
-    <div
-      style={{
-        padding: "6px 0",
-        borderTop: "1px solid var(--border)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 3,
-      }}
-    >
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+    <div style={{ borderTop: "1px solid var(--border)" }}>
+      <div
+        onClick={() => setOpen((v) => !v)}
+        role="button"
+        style={{
+          padding: "4px 0",
+          display: "flex",
+          gap: 6,
+          alignItems: "center",
+          cursor: "pointer",
+        }}
+      >
         <span
           style={{
             color: "var(--text-muted)",
@@ -371,29 +376,62 @@ function ItemRow(props: { item: SnapshotItem }) {
             borderRadius: 3,
             padding: "0 4px",
             fontSize: 10,
+            flexShrink: 0,
           }}
         >
           {it.role}
         </span>
-        <StateBadge state={it.state} />
-        {it.is_anchor && (
-          <span style={{ color: "var(--orange, #e3b341)", fontSize: 10 }}>anchor</span>
-        )}
-        {it.locked && (
-          <span style={{ color: "var(--text-muted)", fontSize: 10 }}>locked</span>
-        )}
-        <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 10 }}>
-          {it.tokens} tok
+        <span
+          style={{
+            color: "var(--text-bright)",
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: 12,
+          }}
+        >
+          {oneLine || <span style={{ color: "var(--text-muted)" }}>(empty)</span>}
+        </span>
+        <span
+          style={{
+            color: "var(--text-muted)",
+            fontSize: 10,
+            flexShrink: 0,
+          }}
+        >
+          {it.tokens}t
         </span>
       </div>
-      <div style={{ color: "var(--text-bright)", lineHeight: 1.4, wordBreak: "break-word" }}>
-        {preview || <span style={{ color: "var(--text-muted)" }}>(empty)</span>}
-        {it.rendered && it.rendered.length > 120 && (
-          <span style={{ color: "var(--text-muted)" }}>…</span>
-        )}
-      </div>
-      {it.reason && (
-        <div style={{ color: "var(--text-muted)", fontSize: 10 }}>reason: {it.reason}</div>
+      {open && (
+        <div style={{ padding: "4px 0 8px 0", display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <StateBadge state={it.state} />
+            {it.is_anchor && (
+              <span style={{ color: "var(--orange, #e3b341)", fontSize: 10 }}>anchor</span>
+            )}
+            {it.locked && (
+              <span style={{ color: "var(--text-muted)", fontSize: 10 }}>locked</span>
+            )}
+            {it.reason && (
+              <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
+                reason: {it.reason}
+              </span>
+            )}
+          </div>
+          <div
+            style={{
+              color: "var(--text-bright)",
+              lineHeight: 1.4,
+              wordBreak: "break-word",
+              whiteSpace: "pre-wrap",
+              fontSize: 12,
+            }}
+          >
+            {it.rendered || <span style={{ color: "var(--text-muted)" }}>(empty)</span>}
+          </div>
+        </div>
       )}
     </div>
   );
