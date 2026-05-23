@@ -22,7 +22,6 @@ than re-introducing an event system.
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 import time
 from contextlib import contextmanager
@@ -47,12 +46,11 @@ def build_exec_dag(session_id: str, func_name: str,
     None if the run left no nodes at all.
     """
     try:
-        from openprogram.context.storage import GraphStore
         from openprogram.agent.session_db import default_db
-        graph = GraphStore(default_db().db_path, session_id).load()
+        nodes_list = default_db().get_nodes(session_id)
     except Exception:
         return None
-    nodes = sorted(graph, key=lambda n: n.seq)
+    nodes = sorted(nodes_list, key=lambda n: n.seq)
     by_id = {n.id: n for n in nodes}
     kids: dict[str, list] = {}
     for n in nodes:
@@ -220,40 +218,33 @@ def reconcile_interrupted_runs() -> int:
     Returns the count fixed.
     """
     from openprogram.agent.session_db import default_db
+    from openprogram.store import GraphStoreShim
 
-    db_path = default_db().db_path
+    store = default_db()
     fixed = 0
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT session_id, id, data_json FROM nodes"
-        ).fetchall()
-        for r in rows:
-            try:
-                data = json.loads(r["data_json"])
-            except (TypeError, ValueError):
-                continue
-            meta = data.get("metadata") or {}
+    # Walk every session's nodes; the in-memory index already knows
+    # them. For any node whose metadata.status == "running", flip to
+    # "interrupted" via GraphStoreShim.update which rewrites the
+    # on-disk JSON.
+    for sess in store.list_sessions(limit=10**9):
+        sid = sess["id"]
+        shim = GraphStoreShim(store, sid)
+        for node in store.get_nodes(sid):
+            meta = node.metadata or {}
             if meta.get("status") != "running":
                 continue
-            meta["status"] = "interrupted"
-            meta.setdefault(
-                "error",
-                "Worker restarted before this turn finished",
+            new_meta = dict(meta)
+            new_meta["status"] = "interrupted"
+            new_meta.setdefault(
+                "error", "Worker restarted before this turn finished",
             )
-            meta["interrupted_at"] = time.time()
-            data["metadata"] = meta
-            # Don't clobber a partial streamed output — the model may
-            # have emitted some text before the worker died. Only
-            # write the marker if output is empty.
-            if not data.get("output"):
-                data["output"] = "[interrupted] worker restarted mid-turn"
-            conn.execute(
-                "UPDATE nodes SET data_json = ? "
-                "WHERE session_id = ? AND id = ?",
-                (json.dumps(data, default=str), r["session_id"], r["id"]),
-            )
-            fixed += 1
-        if fixed:
-            conn.commit()
+            new_meta["interrupted_at"] = time.time()
+            output = node.output
+            if not output:
+                output = "[interrupted] worker restarted mid-turn"
+            try:
+                shim.update(node.id, output=output, metadata=new_meta)
+                fixed += 1
+            except Exception:
+                continue
     return fixed

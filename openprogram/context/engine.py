@@ -572,7 +572,7 @@ class DefaultContextEngine(ContextEngine):
         )
         budget_total = real_context_window(model) or 200_000
         snap = ensure_latest_snapshot(
-            db_path=str(db.db_path),
+            store=db,
             session_id=session_id,
             history=fresh_history,
             head_node_id=head_id,

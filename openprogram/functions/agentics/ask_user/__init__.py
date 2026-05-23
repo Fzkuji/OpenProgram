@@ -113,7 +113,7 @@ def _begin_ask_user_node(question: str) -> Optional[str]:
     dispatcher); the finish-side then becomes a no-op too.
     """
     try:
-        from openprogram.context.storage import _store
+        from openprogram.store import _store
         from openprogram.context.nodes import Call, ROLE_USER
         from openprogram.agentic_programming.function import _call_id
     except Exception:
@@ -142,7 +142,7 @@ def _finish_ask_user_node(pending_id: Optional[str], answer) -> None:
     if pending_id is None:
         return
     try:
-        from openprogram.context.storage import _store
+        from openprogram.store import _store
         store = _store.get()
         if store is None:
             return

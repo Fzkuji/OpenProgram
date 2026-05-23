@@ -262,7 +262,7 @@ class Runtime:
           3. Compute reads → render pi-ai messages.
           4. Append a fresh UserMessage built from ``content``.
         """
-        from openprogram.context.storage import _store
+        from openprogram.store import _store
 
         store = _store.get()
         if store is None:
@@ -337,7 +337,7 @@ class Runtime:
         exact read-id set the prompt consumed is a future refinement.
         """
         try:
-            from openprogram.context.storage import _store
+            from openprogram.store import _store
             from openprogram.context.nodes import Call, ROLE_LLM
             from openprogram.agentic_programming.function import _call_id
 

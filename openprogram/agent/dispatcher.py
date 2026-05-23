@@ -329,8 +329,8 @@ def process_user_turn(
     #    fall back to NOT setting _current_runtime so @agentic_function
     #    can create its own runtime as before — DAG persistence
     #    gracefully degrades to off for this turn.
-    from openprogram.context.storage import (
-        GraphStore as _GraphStore,
+    from openprogram.store import (
+        GraphStoreShim as _GraphStore,
         _store as _store_var,
     )
     from openprogram.agentic_programming.function import (
@@ -352,7 +352,7 @@ def process_user_turn(
         # (Runtime.exec, ask_user, @agentic_function decorator)
         # writes land in the same SQLite DAG without threading the
         # store through every layer.
-        _store_token = _store_var.set(_GraphStore(db.db_path, req.session_id))
+        _store_token = _store_var.set(_GraphStore(db, req.session_id))
     except Exception:
         # No provider configured / runtime construction blew up.
         # Skip the install; @agentic_function will still work, just
@@ -602,17 +602,15 @@ def process_user_turn(
         # now with final content + tool_calls/blocks.
         try:
             from openprogram.context.session_db import _msg_to_node as _to_node
-            from openprogram.context.storage import GraphStore as _GS
-            _store = _GS(db.db_path, req.session_id)
+            from openprogram.store import GraphStoreShim
+            _shim = GraphStoreShim(db, req.session_id)
             _node = _to_node(assistant_msg)
-            _store.update(
+            _shim.update(
                 assistant_msg["id"],
                 output=_node.output,
                 metadata=_node.metadata,
             )
         except Exception:
-            # If the update path failed for any reason, fall back to
-            # append (idempotent — duplicate id raises, swallowed).
             db.append_message(req.session_id, assistant_msg)
     else:
         db.append_message(req.session_id, assistant_msg)

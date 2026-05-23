@@ -1,0 +1,655 @@
+"""SessionStore — git-backed replacement for the old ``DagSessionDB``.
+
+Public surface matches the 22 methods callers expect (dispatcher /
+webui / channels / memory subsystems all import via
+``openprogram.agent.session_db.default_db()`` which now returns a
+``SessionStore`` instance).
+
+Storage layout per session: see ``store/__init__.py`` module docstring.
+
+Internal model:
+  * one ``GitSession`` per session on disk
+  * one ``SessionMemoryIndex`` per session in memory (lazy-loaded)
+  * branch names live in ``meta.json`` under ``branches: {head_id: name}``
+  * snapshots are owned by the snapshot subsystem; this class only
+    persists raw nodes + meta.
+
+Message <-> Call dataclass mapping reuses the existing helpers in
+``openprogram.context.session_db._msg_to_node`` /  ``_node_to_msg`` so
+adapter semantics (extra fields, called_by routing, ...) stay
+identical to the SQLite era.
+"""
+from __future__ import annotations
+
+import json
+import threading
+import time
+from pathlib import Path
+from typing import Any, Optional
+
+from openprogram.context.nodes import Call
+# Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
+# tests covering edge cases (sub-call routing, extra_json roundtrip) still hold.
+from openprogram.context.session_db import (
+    _msg_to_node,
+    _node_to_msg,
+    _decode_extra,
+    _row_to_session,
+)
+
+from .git_session import GitSession
+from .memory_index import SessionMemoryIndex
+
+
+# ── Paths ─────────────────────────────────────────────────────────
+
+
+def _default_root() -> Path:
+    from openprogram.paths import get_state_dir
+    return Path(get_state_dir()) / "sessions-git"
+
+
+# ── Edge resolvers ────────────────────────────────────────────────
+# A node's two edges live in different fields depending on what it is:
+#   * tool / sub-call rows  ─ Call.called_by  (the assistant that ran them)
+#   * conversation rows     ─ metadata.parent_id  (the legacy chat-tree edge)
+# Keep these as standalone functions so the index doesn't know about
+# message-dict field layout.
+
+
+def _node_conv_predecessor(payload_or_call) -> Optional[str]:
+    """Return the conv-chain parent of a node (or None)."""
+    if isinstance(payload_or_call, Call):
+        return (payload_or_call.metadata or {}).get("parent_id") or None
+    meta = (payload_or_call.get("metadata") or {})
+    return meta.get("parent_id") or None
+
+
+def _node_caller(payload_or_call) -> Optional[str]:
+    if isinstance(payload_or_call, Call):
+        return payload_or_call.called_by or None
+    return payload_or_call.get("called_by") or None
+
+
+# ── SessionStore ──────────────────────────────────────────────────
+
+
+class SessionStore:
+    """Git-backed session store.
+
+    One instance per process (use ``default_store()``). Methods are
+    thread-safe — per-session locks live on the GitSession / index.
+
+    ``db_path`` attr is kept for compatibility (e.g. webui code that
+    inspects ``default_db().db_path`` to derive other paths). It maps
+    to the root directory holding per-session repos, not a single
+    SQLite file.
+    """
+
+    def __init__(self, root_path: Optional[Path] = None) -> None:
+        self.root_path = Path(root_path).expanduser() if root_path else _default_root()
+        self.root_path.mkdir(parents=True, exist_ok=True)
+        # Cache: session_id → (GitSession, SessionMemoryIndex). Lazy.
+        self._sessions: dict[str, tuple[GitSession, SessionMemoryIndex]] = {}
+        self._lock = threading.Lock()
+
+    # Compatibility shim. Old code does ``db.db_path / "subdir"`` for
+    # ancillary files — point that at the root so existing usage doesn't
+    # break before we audit each call site.
+    @property
+    def db_path(self) -> Path:
+        return self.root_path
+
+    # ── Internals ─────────────────────────────────────────────
+
+    def _session_dir(self, session_id: str) -> Path:
+        return self.root_path / session_id
+
+    def _open(self, session_id: str, *, create_if_missing: bool = False) -> Optional[tuple[GitSession, SessionMemoryIndex]]:
+        """Return (git, idx). Loads from disk on first access. None if
+        session doesn't exist and ``create_if_missing`` is False."""
+        with self._lock:
+            cached = self._sessions.get(session_id)
+            if cached:
+                return cached
+            sdir = self._session_dir(session_id)
+            if not sdir.exists() and not create_if_missing:
+                return None
+            git = GitSession(sdir)
+            idx = SessionMemoryIndex()
+            if git.exists():
+                idx.rebuild_from_paths(
+                    git.list_history(),
+                    git.read_meta(),
+                    _node_conv_predecessor,
+                    _node_caller,
+                )
+            self._sessions[session_id] = (git, idx)
+            return git, idx
+
+    def _persist_meta(self, git: GitSession, idx: SessionMemoryIndex) -> None:
+        """Sync the in-memory meta back to ``meta.json``. Called whenever
+        title / head_id / extra / branches change."""
+        snapshot = dict(idx.meta)
+        snapshot["head_id"] = idx.head_id
+        snapshot["updated_at"] = time.time()
+        git.write_meta(snapshot)
+
+    def _persist_messages_view(self, git: GitSession, idx: SessionMemoryIndex) -> None:
+        """Write the current message list to ``context/messages.json`` so
+        the git working tree reflects the chronological view. Used as a
+        cheap "latest LLM view" — the snapshot subsystem owns the more
+        precise rendered messages.json (see snapshot_io).
+        """
+        msgs = [_node_to_msg(n, str(git.path.name)) for n in idx.all_nodes()]
+        git.write_context_file("messages.json", msgs)
+
+    def commit_turn(self, session_id: str, message: str) -> Optional[str]:
+        """Commit the current working tree as one turn. Public so the
+        dispatcher can call it at turn end; also called internally by
+        write paths that don't need an explicit commit boundary.
+
+        Returns commit sha or None if nothing to commit.
+        """
+        pair = self._open(session_id)
+        if not pair:
+            return None
+        git, idx = pair
+        # Always refresh the working tree to current state before commit.
+        self._persist_meta(git, idx)
+        self._persist_messages_view(git, idx)
+        return git.commit_all(message)
+
+    # ── Session CRUD ──────────────────────────────────────────
+
+    def create_session(
+        self,
+        session_id: str,
+        agent_id: str,
+        *,
+        title: str = "",
+        source: Optional[str] = None,
+        channel: Optional[str] = None,
+        peer_display: Optional[str] = None,
+        peer_id: Optional[str] = None,
+        **other_fields: Any,
+    ) -> None:
+        pair = self._open(session_id, create_if_missing=True)
+        if pair is None:
+            return
+        git, idx = pair
+        if idx.meta.get("id") == session_id:
+            return  # Already created
+        extra: dict[str, Any] = {}
+        if channel:
+            extra["channel"] = channel
+        if peer_display:
+            extra["peer_display"] = peer_display
+        if peer_id:
+            extra["peer_id"] = peer_id
+        for k, v in other_fields.items():
+            if v is not None:
+                extra[k] = v
+        now = time.time()
+        idx.set_meta(
+            id=session_id,
+            agent_id=agent_id,
+            title=title,
+            source=source or "",
+            created_at=now,
+            updated_at=now,
+            **extra,
+        )
+        self._persist_meta(git, idx)
+
+    def update_session(self, session_id: str, **fields: Any) -> None:
+        pair = self._open(session_id, create_if_missing=True)
+        if pair is None:
+            return
+        git, idx = pair
+        # head_id needs special routing because it's also the index's
+        # ``head_id`` field.
+        if "head_id" in fields and fields["head_id"] is not None:
+            idx.set_head(fields.pop("head_id"))
+        # Drop Nones so we don't clobber existing fields with NULL.
+        clean = {k: v for k, v in fields.items() if v is not None}
+        if clean:
+            idx.set_meta(**clean)
+        self._persist_meta(git, idx)
+
+    def get_session(self, session_id: str) -> Optional[dict[str, Any]]:
+        pair = self._open(session_id)
+        if pair is None:
+            return None
+        git, idx = pair
+        # Synthesize a row-shaped dict so _row_to_session can format it
+        # like the old SQLite path.
+        meta = dict(idx.meta)
+        extra = {k: v for k, v in meta.items() if k not in {
+            "id", "title", "agent_id", "source", "model",
+            "created_at", "updated_at", "head_id", "last_node_id",
+        }}
+        row = {
+            "id": meta.get("id") or session_id,
+            "title": meta.get("title", ""),
+            "agent_id": meta.get("agent_id", ""),
+            "source": meta.get("source"),
+            "model": meta.get("model"),
+            "created_at": meta.get("created_at", 0),
+            "updated_at": meta.get("updated_at", 0),
+            "last_node_id": idx.head_id,
+            "extra_json": json.dumps(extra, default=str),
+        }
+        return _row_to_session(row)
+
+    def delete_session(self, session_id: str) -> None:
+        with self._lock:
+            pair = self._sessions.pop(session_id, None)
+            if pair:
+                pair[0].destroy()
+            else:
+                # Not in cache — destroy by path anyway.
+                GitSession(self._session_dir(session_id)).destroy()
+
+    def list_sessions(
+        self,
+        *,
+        agent_id: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+        source: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        if not self.root_path.exists():
+            return []
+        out: list[dict[str, Any]] = []
+        for sdir in sorted(self.root_path.iterdir()):
+            if not sdir.is_dir():
+                continue
+            sid = sdir.name
+            sess = self.get_session(sid)
+            if not sess:
+                continue
+            if agent_id is not None and sess.get("agent_id") != agent_id:
+                continue
+            if source is not None and sess.get("source") != source:
+                continue
+            out.append(sess)
+        # Sort by updated_at desc to match SQLite path's natural order
+        out.sort(key=lambda s: s.get("updated_at") or 0, reverse=True)
+        return out[offset:offset + limit]
+
+    def count_sessions(
+        self,
+        *,
+        agent_id: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> int:
+        return len(self.list_sessions(agent_id=agent_id, source=source, limit=10**9))
+
+    # ── Message append / read ─────────────────────────────────
+
+    def append_message(self, session_id: str, msg: dict[str, Any]) -> None:
+        pair = self._open(session_id, create_if_missing=True)
+        if pair is None:
+            return
+        git, idx = pair
+        node = _msg_to_node(msg)
+        # Idempotent — skip if id already known.
+        if node.id in idx.nodes_by_id:
+            return
+        predecessor = _node_conv_predecessor(node)
+        caller = _node_caller(node)
+        seq = idx.append(node, predecessor=predecessor, caller=caller)
+        # Write the raw node file. Commit deferred to turn end.
+        git.write_history(seq, node.role, node.id, node.to_dict())
+        # Advance head for conversation nodes (no caller). Matches old
+        # GraphStore.append behavior where caller-tagged nodes don't
+        # bump last_node_id.
+        if not caller:
+            idx.set_head(node.id)
+        idx.set_meta(updated_at=time.time())
+
+    def append_messages(self, session_id: str, msgs: list[dict[str, Any]]) -> None:
+        for m in msgs:
+            self.append_message(session_id, m)
+
+    def get_messages(self, session_id: str, *, limit: Optional[int] = None) -> list[dict[str, Any]]:
+        pair = self._open(session_id)
+        if pair is None:
+            return []
+        _git, idx = pair
+        msgs = [_node_to_msg(n, session_id) for n in idx.all_nodes()]
+        if limit is not None:
+            msgs = msgs[-limit:]
+        return msgs
+
+    def get_branch(
+        self,
+        session_id: str,
+        head_msg_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        pair = self._open(session_id)
+        if pair is None:
+            return []
+        _git, idx = pair
+        head = head_msg_id or idx.head_id
+        if not head or head not in idx.nodes_by_id:
+            return []
+
+        # Edge resolver: prefer conv parent, fall back to caller (matches
+        # legacy DagSessionDB.get_branch semantics).
+        def _edge(node):
+            return _node_conv_predecessor(node) or _node_caller(node) or None
+
+        chain = idx.get_branch(head, _edge)
+        return [_node_to_msg(n, session_id) for n in chain]
+
+    # ── Head ──────────────────────────────────────────────────
+
+    def set_head(self, session_id: str, head_id: Optional[str]) -> None:
+        pair = self._open(session_id, create_if_missing=True)
+        if pair is None:
+            return
+        git, idx = pair
+        idx.set_head(head_id)
+        idx.set_meta(updated_at=time.time())
+        self._persist_meta(git, idx)
+
+    def message_exists(self, session_id: str, msg_id: str) -> bool:
+        pair = self._open(session_id)
+        if pair is None:
+            return False
+        _git, idx = pair
+        return msg_id in idx.nodes_by_id
+
+    # ── Branches ──────────────────────────────────────────────
+
+    def list_branches(self, session_id: str) -> list[dict[str, Any]]:
+        pair = self._open(session_id)
+        if pair is None:
+            return []
+        _git, idx = pair
+        # A branch tip is a conv node (no caller) with no conv-child.
+        tips: list[dict[str, Any]] = []
+        named = (idx.meta.get("branches") or {})
+        for node in idx.all_nodes():
+            if node.called_by:
+                continue
+            kids = idx.children_by_predecessor.get(node.id, [])
+            if kids:
+                continue
+            label = named.get(node.id)
+            tips.append({
+                "head_msg_id": node.id,
+                "name": label.get("name") if isinstance(label, dict) else label,
+                "created_at": (label or {}).get("created_at") if isinstance(label, dict) else node.created_at,
+                "updated_at": (label or {}).get("updated_at") if isinstance(label, dict) else node.created_at,
+            })
+        tips.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
+        return tips
+
+    def set_branch_name(self, session_id: str, head_msg_id: str, name: str) -> None:
+        pair = self._open(session_id, create_if_missing=True)
+        if pair is None:
+            return
+        git, idx = pair
+        branches = dict(idx.meta.get("branches") or {})
+        now = time.time()
+        existing = branches.get(head_msg_id) or {}
+        branches[head_msg_id] = {
+            "name": name,
+            "created_at": existing.get("created_at", now),
+            "updated_at": now,
+        }
+        idx.set_meta(branches=branches)
+        self._persist_meta(git, idx)
+
+    def delete_branch_name(self, session_id: str, head_msg_id: str) -> None:
+        pair = self._open(session_id)
+        if pair is None:
+            return
+        git, idx = pair
+        branches = dict(idx.meta.get("branches") or {})
+        if branches.pop(head_msg_id, None) is None:
+            return
+        idx.set_meta(branches=branches)
+        self._persist_meta(git, idx)
+
+    def delete_branch_tail(self, session_id: str, head_msg_id: str) -> int:
+        pair = self._open(session_id)
+        if pair is None:
+            return 0
+        git, idx = pair
+        if head_msg_id not in idx.nodes_by_id:
+            return 0
+        # Collect head + descendants (both conv-children and sub-calls).
+        to_delete: list[str] = [head_msg_id]
+        seen: set[str] = {head_msg_id}
+        stack: list[str] = [head_msg_id]
+        while stack:
+            cur = stack.pop()
+            for cid in idx.children_by_predecessor.get(cur, []):
+                if cid not in seen:
+                    seen.add(cid)
+                    to_delete.append(cid)
+                    stack.append(cid)
+            for cid in idx.children_by_caller.get(cur, []):
+                if cid not in seen:
+                    seen.add(cid)
+                    to_delete.append(cid)
+                    stack.append(cid)
+
+        # Drop from index + remove history files. ID set kept so the
+        # rest of the index stays consistent.
+        with idx._lock:
+            for nid in to_delete:
+                node = idx.nodes_by_id.pop(nid, None)
+                if node is None:
+                    continue
+                # Remove from sorted list (linear scan; tiny lists in practice)
+                idx.nodes_by_seq = [n for n in idx.nodes_by_seq if n.id != nid]
+                # Detach from children indices
+                for parent, kids in list(idx.children_by_predecessor.items()):
+                    if nid in kids:
+                        kids.remove(nid)
+                        if not kids:
+                            del idx.children_by_predecessor[parent]
+                for parent, kids in list(idx.children_by_caller.items()):
+                    if nid in kids:
+                        kids.remove(nid)
+                        if not kids:
+                            del idx.children_by_caller[parent]
+                # File removal
+                for fpath in (git.path / "history").glob(f"*-{nid}.json"):
+                    try:
+                        fpath.unlink()
+                    except OSError:
+                        pass
+        # Drop named branches for the deleted heads
+        branches = dict(idx.meta.get("branches") or {})
+        for nid in to_delete:
+            branches.pop(nid, None)
+        idx.set_meta(branches=branches)
+        self._persist_meta(git, idx)
+        return len(to_delete)
+
+    # ── Token stats / search / misc — these are derived, keep
+    # implementations consistent with old DagSessionDB by delegating
+    # to the existing helpers where they're pure functions.
+
+    def get_branch_token_stats(
+        self,
+        session_id: str,
+        head_msg_id: Optional[str] = None,
+        *,
+        head_id: Optional[str] = None,
+        model: Any = None,
+    ) -> dict[str, Any]:
+        head = head_id or head_msg_id
+        chain = self.get_branch(session_id, head) if head else self.get_messages(session_id)
+        model_id = getattr(model, "id", None) or (model if isinstance(model, str) else None)
+
+        input_total = output_total = cache_read_total = cache_write_total = 0
+        messages_counted = 0
+        last_input_tokens = 0
+        last_model = None
+        for m in chain:
+            if m.get("role") != "assistant":
+                continue
+            if model_id is not None and m.get("token_model") != model_id:
+                continue
+            i = int(m.get("input_tokens") or 0)
+            o = int(m.get("output_tokens") or 0)
+            input_total += i
+            output_total += o
+            cache_read_total += int(m.get("cache_read_tokens") or 0)
+            cache_write_total += int(m.get("cache_write_tokens") or 0)
+            messages_counted += 1
+            if i:
+                last_input_tokens = i
+            if m.get("token_model"):
+                last_model = m["token_model"]
+        current_tokens = last_input_tokens + output_total // max(messages_counted, 1)
+        denom = cache_read_total + input_total
+        cache_hit_rate = (cache_read_total / denom) if denom else 0.0
+        return {
+            "input_tokens": input_total, "output_tokens": output_total,
+            "cache_read_tokens": cache_read_total, "cache_write_tokens": cache_write_total,
+            "cache_read_total": cache_read_total, "cache_hit_rate": cache_hit_rate,
+            "messages_counted": messages_counted, "current_tokens": current_tokens,
+            "context_window": 0, "pct_used": 0.0,
+            "model": last_model or model_id,
+        }
+
+    def get_nodes(self, session_id: str) -> list[Call]:
+        """Raw Call objects for a session, sorted by seq.
+
+        Lower-level than ``get_messages`` (which returns msg-dict shape)
+        — used by code that builds a Graph view (e.g. exec-DAG tree).
+        """
+        pair = self._open(session_id)
+        if pair is None:
+            return []
+        _git, idx = pair
+        return idx.all_nodes()
+
+    def latest_user_text(self, session_id: str) -> Optional[str]:
+        pair = self._open(session_id)
+        if pair is None:
+            return None
+        _git, idx = pair
+        for n in reversed(idx.all_nodes()):
+            if n.is_user():
+                return n.output
+        return None
+
+    def sessions_with_binding(self, channel: str, account_id: Optional[str]) -> list[str]:
+        out: list[str] = []
+        for sess in self.list_sessions(limit=10**9):
+            extra = sess.get("extra_meta") or {}
+            if extra.get("channel") != channel:
+                continue
+            if account_id is not None and extra.get("account_id") != account_id:
+                continue
+            out.append(sess["id"])
+        return out
+
+    def search_messages(
+        self,
+        query: str,
+        *,
+        session_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        from .search import search_messages as _do_search
+        return _do_search(
+            self, query,
+            session_id=session_id, agent_id=agent_id, limit=limit,
+        )
+
+    def get_descendants(self, session_id: str, msg_id: str) -> list[dict[str, Any]]:
+        pair = self._open(session_id)
+        if pair is None:
+            return []
+        _git, idx = pair
+        if msg_id not in idx.nodes_by_id:
+            return []
+        # Old semantics: descendants follow called_by only (sub-calls of
+        # this node, not retry siblings).
+        out = idx.descendants(msg_id, follow_caller=True)
+        # The descendants helper crawls predecessor by default; here we
+        # want caller-only. Implement inline to mirror old behavior.
+        result: list[Call] = []
+        stack = list(idx.children_by_caller.get(msg_id, []))
+        seen: set[str] = set()
+        while stack:
+            cur = stack.pop()
+            if cur in seen:
+                continue
+            seen.add(cur)
+            node = idx.nodes_by_id.get(cur)
+            if node:
+                result.append(node)
+                stack.extend(idx.children_by_caller.get(cur, []))
+        return [_node_to_msg(n, session_id) for n in result]
+
+    def get_deepest_leaf(self, session_id: str, msg_id: Optional[str] = None) -> Optional[str]:
+        pair = self._open(session_id)
+        if pair is None:
+            return None
+        _git, idx = pair
+        # Old semantics: longest message-tree chain via metadata.parent_id.
+        children = idx.children_by_predecessor
+        roots = [msg_id] if msg_id else [
+            n.id for n in idx.all_nodes()
+            if not _node_conv_predecessor(n)
+        ]
+        deepest_id: Optional[str] = None
+        deepest_depth = -1
+        for root in roots:
+            if root not in idx.nodes_by_id:
+                continue
+            stack: list[tuple[str, int]] = [(root, 0)]
+            while stack:
+                cur, depth = stack.pop()
+                kids = children.get(cur, [])
+                if not kids:
+                    if depth > deepest_depth:
+                        deepest_depth = depth
+                        deepest_id = cur
+                else:
+                    for c in kids:
+                        stack.append((c, depth + 1))
+        return deepest_id
+
+    def count_recent_nodes(self, since: float) -> int:
+        total = 0
+        for sess in self.list_sessions(limit=10**9):
+            pair = self._open(sess["id"])
+            if not pair:
+                continue
+            _git, idx = pair
+            for n in idx.all_nodes():
+                if (n.created_at or 0) >= since:
+                    total += 1
+        return total
+
+    def close(self) -> None:
+        return None
+
+
+# ── Singleton ─────────────────────────────────────────────────
+
+
+_default_lock = threading.Lock()
+_default_store: Optional[SessionStore] = None
+
+
+def default_store() -> SessionStore:
+    global _default_store
+    if _default_store is None:
+        with _default_lock:
+            if _default_store is None:
+                _default_store = SessionStore()
+    return _default_store

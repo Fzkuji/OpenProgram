@@ -150,8 +150,8 @@ def run_function(
     # `_store` is None and every DAG write inside the program
     # silently no-ops, so a multi-step agent run collapsed to
     # nothing in the graph.
-    from openprogram.context.storage import (
-        GraphStore as _GraphStore,
+    from openprogram.store import (
+        GraphStoreShim as _GraphStore,
         _store as _store_var,
     )
     from openprogram.agentic_programming.function import (
@@ -162,7 +162,7 @@ def run_function(
     _call_id_token = None
     try:
         _store_token = _store_var.set(
-            _GraphStore(_default_db().db_path, session_id)
+            _GraphStore(_default_db(), session_id)
         )
         # Anchor the program's top-level @agentic_function node
         # under the "run ..." command message: the decorator

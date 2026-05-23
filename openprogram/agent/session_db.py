@@ -1,40 +1,26 @@
-"""session_db — SessionDB facade over the flat-DAG store.
+"""session_db — git-backed SessionStore facade.
 
-``SessionDB`` is now an alias for :class:`DagSessionDB`. The legacy
-hand-rolled SQLite schema (messages / branches / parent_id chains)
-was retired; persistence is now a flat DAG (UserMessage / ModelCall
-/ FunctionCall nodes linked by ``predecessor``). The public method
-surface used by ``dispatcher``, channels, and the WebUI is preserved
-by the adapter — see ``context.session_db``.
+``SessionDB`` is now an alias for :class:`SessionStore` (see
+``openprogram.store.session_store``). The old SQLite-backed
+``DagSessionDB`` is retired; all session memory lives in
+``~/.agentic/sessions-git/<session_id>/`` git repos.
+
+The public method surface used by ``dispatcher``, channels, and the
+WebUI is preserved by ``SessionStore`` — same 22 methods, same
+semantics. See ``docs/design/git-as-entity-memory.md``.
 """
-
 from __future__ import annotations
 
-import threading
-from typing import Optional
-
-from openprogram.context.session_db import DagSessionDB
+from openprogram.store import SessionStore, default_store
 
 
-# Public alias: existing callers do ``from openprogram.agent.session_db
-# import SessionDB`` and instantiate ``SessionDB(path)``. DagSessionDB
-# accepts the same positional ``db_path`` argument.
-SessionDB = DagSessionDB
+SessionDB = SessionStore
 
 
-_default: Optional[DagSessionDB] = None
-_default_lock = threading.Lock()
-
-
-def default_db() -> DagSessionDB:
+def default_db() -> SessionStore:
     """Process-wide singleton. Channels worker + webui server share
     this instance."""
-    global _default
-    if _default is None:
-        with _default_lock:
-            if _default is None:
-                _default = DagSessionDB()
-    return _default
+    return default_store()
 
 
 __all__ = ["SessionDB", "default_db"]

@@ -1,177 +1,151 @@
-"""SQLite 持久化 — context_snapshots 表的 CRUD.
+"""Snapshot 持久化 — git-backed, 走 SessionStore.
 
-只管"存这个 snapshot" / "读这个 snapshot" / "找最新 snapshot"。生成
-snapshot 的算法不在这里, 在 generator.py。
+每个 snapshot 一份 JSON, 落在 session repo 的 ``context/snapshots/<snap_id>.json``;
+同时把"最新"那一份镜像到 ``context/snapshot.json`` (单文件入口, 跟
+``context/messages.json`` 同款约定 — 工作树反映当前 LLM 视角).
 
-存储格式:
-  items_json 列里放 list[ContextItem.to_dict()] 的 JSON 串, 但每个
-  item 的 ``rendered`` 字段被替成 ``rendered_hash`` (16 字符 SHA1).
-  实际内容在 ``context_blobs`` 表按 hash 共享 — 详见
-  ``blob_store.py``.
+跟旧 SQLite 版的差别:
+  * 不再有 blob dedup 表 (``blob_store.py`` 已删).
+  * git 本身就是 content-addressed (loose object 自动 dedup), 重复的
+    rendered 字符串在 .git/objects/ 里只占一份, 不需要应用层做 hash 表.
+  * snapshot 历史靠 git log 看 (每个 turn 一个 commit, 包含 context/snapshot.json
+    的更新), 不需要单独表存 parent chain.
 
-  好处: 老 snapshot 的 item 大多 locked, rendered 跨 snapshot 不变,
-  实际只占一份 blob 行. 100 snapshot × 100 item 总 blob 数 ≈ 几百行.
-
-refcount:
-  save_snapshot 时, 每个 item.rendered_hash 调 retain(+1). 后续
-  删 snapshot 时回 retain(-1), gc_zero_refcount 清掉 refcount=0
-  的 blob 行.
+API 形状保持不变 (init_schema 现在 no-op, save_snapshot / load_snapshot /
+load_latest_snapshot / list_snapshots 接受 SessionStore 替代 db_path).
 """
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from .types import ContextItem, Snapshot
-from . import blob_store as _blob
+
+if TYPE_CHECKING:
+    from openprogram.store import SessionStore
 
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS context_snapshots (
-    id              TEXT PRIMARY KEY,
-    session_id      TEXT NOT NULL,
-    parent_id       TEXT,
-    created_at      REAL NOT NULL,
-    head_node_id    TEXT NOT NULL,
-    rules_version   TEXT NOT NULL,
-    total_tokens    INTEGER NOT NULL,
-    items_json      TEXT NOT NULL,
-    summary         TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS idx_snapshots_session
-    ON context_snapshots(session_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_snapshots_parent
-    ON context_snapshots(parent_id);
-"""
+def init_schema(store_or_path: Any) -> None:
+    """No-op in the git era. Kept for back-compat callers that used to
+    bootstrap SQLite tables. SessionStore lazily inits repos as needed."""
+    return None
 
 
-def init_schema(db_path: str | Path) -> None:
-    """跑一次确保表存在。重复跑无副作用 (IF NOT EXISTS)."""
-    db_path = Path(db_path).expanduser()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.executescript(_SCHEMA)
-        conn.commit()
-    # blob 表跟 snapshot 表平级共存, 一并初始化
-    _blob.init_schema(db_path)
+def _get_git(store: "SessionStore", session_id: str):
+    """Return the GitSession for ``session_id`` or None if the session
+    doesn't exist yet. Creates the repo on demand (this is called from
+    write paths)."""
+    pair = store._open(session_id, create_if_missing=True)
+    return pair[0] if pair else None
 
 
-def save_snapshot(db_path: str | Path, snap: Snapshot) -> None:
-    """写一行 snapshot, rendered 内容 intern 进 blob 表.
+def _snap_dir(git) -> Path:
+    d = git.path / "context" / "snapshots"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
-    Snapshot 不可变 — 写后任何字段都不再 update.
+
+def save_snapshot(store: "SessionStore", snap: Snapshot) -> None:
+    """Persist a Snapshot. Writes two files:
+
+      * ``context/snapshots/<id>.json``  — immutable per-snap record
+      * ``context/snapshot.json``         — mirror of the latest snap
+
+    Both live inside the session's git repo so a turn-end commit picks
+    them up together (along with ``messages.json`` / ``meta.json``).
     """
-    # Step 1: intern 每个 item 的 rendered 进 blob 表, 替成 hash
-    items_payload: list[dict] = []
-    hashes_to_retain: list[str] = []
-    for item in snap.items:
-        d = item.to_dict()
-        rendered = d.pop("rendered", "") or ""
-        if rendered:
-            h = _blob.intern(db_path, rendered)
-            d["rendered_hash"] = h
-            hashes_to_retain.append(h)
-        else:
-            d["rendered_hash"] = ""
-        items_payload.append(d)
-
-    items_json = json.dumps(items_payload, ensure_ascii=False, default=str)
-
-    # Step 2: 写 snapshot 行
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            """INSERT INTO context_snapshots
-               (id, session_id, parent_id, created_at, head_node_id,
-                rules_version, total_tokens, items_json, summary)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                snap.id, snap.session_id, snap.parent_id, snap.created_at,
-                snap.head_node_id, snap.rules_version, snap.total_tokens,
-                items_json, snap.summary,
-            ),
-        )
-        # Step 3: refcount +1 for each blob this snapshot references.
-        # 在同一 transaction 里做, 失败时 snapshot 也回滚.
-        for h in hashes_to_retain:
-            conn.execute(
-                "UPDATE context_blobs SET refcount = refcount + 1 WHERE hash = ?",
-                (h,),
-            )
-        conn.commit()
+    git = _get_git(store, snap.session_id)
+    if git is None:
+        return
+    payload = snap.to_dict()
+    # Per-snap file: durable, point of truth for that snap_id.
+    snap_path = _snap_dir(git) / f"{snap.id}.json"
+    snap_path.write_text(json.dumps(payload, ensure_ascii=False, default=str))
+    # Mirror: latest snapshot, single file. Frontend timeline reads
+    # this for "current state"; per-snap history goes through list_snapshots.
+    git.write_context_file("snapshot.json", payload)
 
 
-def load_snapshot(db_path: str | Path, snap_id: str) -> Optional[Snapshot]:
-    """按 id 读一个 snapshot。None = 不存在."""
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM context_snapshots WHERE id = ?", (snap_id,),
-        ).fetchone()
-    return _row_to_snapshot_with_db(row, db_path) if row else None
+def load_snapshot(store: "SessionStore", snap_id: str, *, session_id: Optional[str] = None) -> Optional[Snapshot]:
+    """Read a snapshot by id.
 
-
-def load_latest_snapshot(
-    db_path: str | Path, session_id: str,
-) -> Optional[Snapshot]:
-    """这个 session 最新的 snapshot。None = 还没生成过."""
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM context_snapshots WHERE session_id = ? "
-            "ORDER BY created_at DESC LIMIT 1",
-            (session_id,),
-        ).fetchone()
-    return _row_to_snapshot_with_db(row, db_path) if row else None
-
-
-def list_snapshots(
-    db_path: str | Path, session_id: str, *, limit: int = 50,
-) -> list[Snapshot]:
-    """session 的 snapshot 列表, 最新在前. UI timeline 用."""
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM context_snapshots WHERE session_id = ? "
-            "ORDER BY created_at DESC LIMIT ?",
-            (session_id, limit),
-        ).fetchall()
-    return [_row_to_snapshot_with_db(r, db_path) for r in rows]
-
-
-def _row_to_snapshot_with_db(row: sqlite3.Row, db_path: str | Path) -> Snapshot:
-    """读 snapshot 行, 同时把 rendered_hash 回填成实际内容.
-
-    blob 查询合并到一个 IN(...) 一次拉. 缺失的 hash (blob 被 GC 误删时)
-    rendered 留空字符串, 不抛.
+    ``session_id`` makes the lookup O(1). Without it we scan all sessions —
+    used to keep the legacy WS action working for callers that only had
+    a snap id. Avoid the scan if you can.
     """
-    items_raw = json.loads(row["items_json"])
-    needed = [d["rendered_hash"] for d in items_raw if d.get("rendered_hash")]
-    blob_map: dict[str, str] = {}
-    if needed:
-        placeholders = ",".join("?" for _ in needed)
-        with sqlite3.connect(str(db_path)) as conn:
-            for h, content in conn.execute(
-                f"SELECT hash, content FROM context_blobs WHERE hash IN ({placeholders})",
-                needed,
-            ):
-                blob_map[h] = content
-    items: list[ContextItem] = []
-    for d in items_raw:
-        h = d.pop("rendered_hash", "") or ""
-        # 回填 rendered. blob 缺失时给空字符串 (不抛, GC race condition
-        # 时可能短暂出现).
-        d["rendered"] = blob_map.get(h, "")
-        items.append(ContextItem.from_dict(d))
+    if session_id:
+        return _load_snapshot_in_session(store, session_id, snap_id)
+    for sess in store.list_sessions(limit=10**9):
+        snap = _load_snapshot_in_session(store, sess["id"], snap_id)
+        if snap is not None:
+            return snap
+    return None
+
+
+def _load_snapshot_in_session(store: "SessionStore", session_id: str, snap_id: str) -> Optional[Snapshot]:
+    pair = store._open(session_id)
+    if not pair:
+        return None
+    git, _idx = pair
+    p = _snap_dir(git) / f"{snap_id}.json"
+    if not p.exists():
+        return None
+    try:
+        payload = json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    return _payload_to_snapshot(payload)
+
+
+def load_latest_snapshot(store: "SessionStore", session_id: str) -> Optional[Snapshot]:
+    """Read ``context/snapshot.json`` (the latest-mirror file)."""
+    pair = store._open(session_id)
+    if not pair:
+        return None
+    git, _idx = pair
+    payload = git.read_context_file("snapshot.json")
+    if not payload:
+        return None
+    return _payload_to_snapshot(payload)
+
+
+def list_snapshots(store: "SessionStore", session_id: str, *, limit: int = 50) -> list[Snapshot]:
+    """Snapshots for a session, newest first.
+
+    Sort key: ``created_at`` from the snapshot payload itself (more
+    reliable than file mtime when repos get copied around).
+    """
+    pair = store._open(session_id)
+    if not pair:
+        return []
+    git, _idx = pair
+    sdir = git.path / "context" / "snapshots"
+    if not sdir.exists():
+        return []
+    snaps: list[Snapshot] = []
+    for fpath in sdir.glob("*.json"):
+        try:
+            payload = json.loads(fpath.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        snap = _payload_to_snapshot(payload)
+        if snap:
+            snaps.append(snap)
+    snaps.sort(key=lambda s: s.created_at or 0, reverse=True)
+    return snaps[:limit]
+
+
+def _payload_to_snapshot(payload: dict) -> Snapshot:
+    items = [ContextItem.from_dict(d) for d in (payload.get("items") or [])]
     return Snapshot(
-        id=row["id"],
-        session_id=row["session_id"],
-        parent_id=row["parent_id"],
-        created_at=row["created_at"],
-        head_node_id=row["head_node_id"],
-        rules_version=row["rules_version"],
-        total_tokens=row["total_tokens"],
+        id=payload["id"],
+        session_id=payload["session_id"],
+        parent_id=payload.get("parent_id"),
+        created_at=float(payload.get("created_at") or 0),
+        head_node_id=payload.get("head_node_id") or "",
+        rules_version=payload.get("rules_version") or "",
+        total_tokens=int(payload.get("total_tokens") or 0),
         items=items,
-        summary=row["summary"] or "",
+        summary=payload.get("summary") or "",
     )

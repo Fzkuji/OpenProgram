@@ -29,7 +29,8 @@ def _gen_snap_id() -> str:
 
 
 def generate_snapshot(
-    db_path: str,
+    *,
+    store,                              # SessionStore
     session_id: str,
     parent_snapshot,                  # Optional[Snapshot]
     new_nodes: list[dict[str, Any]],  # 这轮新增的 DAG 节点 (legacy msg dict 格式)
@@ -90,7 +91,7 @@ def generate_snapshot(
         items=items,
         summary=_describe_changes(items, parent_snapshot, snap_id),
     )
-    save_snapshot(db_path, snap)
+    save_snapshot(store, snap)
     return snap
 
 

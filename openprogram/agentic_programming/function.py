@@ -109,7 +109,7 @@ def _append_function_call_entry(
     if expose == "hidden":
         return
 
-    from openprogram.context.storage import _store
+    from openprogram.store import _store
     store = _store.get()
     if store is None:
         return
@@ -167,7 +167,7 @@ def _update_function_call_exit(
     if expose == "hidden":
         return
 
-    from openprogram.context.storage import _store
+    from openprogram.store import _store
     store = _store.get()
     if store is None:
         return
