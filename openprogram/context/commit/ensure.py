@@ -1,23 +1,24 @@
 """ensure_latest_commit — engine 接入 context commit 系统的统一入口.
 
-每个 turn 的 prepare 阶段调一次. 接受 SessionStore (而非 db_path)
-作为后端 — git-as-truth 之后, 所有 context commit IO 走 SessionStore 的
-GitSession.
+每 turn 的 prepare 阶段调一次。多 agent 并发安全: 通过
+``load_commit_for_head`` 按当前 branch head 拿"我这条分支"的 parent
+commit, 而不是全局 latest。两个 agent 在不同分支上同时跑互不干扰 —
+新 commit 各自挂在各自 parent 下, 文件 (uuid hex 命名) 不撞, 无需锁。
 
 逻辑:
-  1. 加载本 session 最新 context commit.
-  2. 如果它的 head_node_id 跟当前 head 一致 → 直接返回.
+  1. 按 ``head_node_id`` 找到本分支祖先链上最近的 commit。
+  2. 如果它的 head_node_id 跟当前 head 一致 → 直接返回。
   3. 否则计算 delta: history 里跟 commit 不重合的新节点, 调
-     generate_commit 产新 commit.
-  4. 老 session 第一次跑没 context commit — 把全部 history 当 new_nodes 喂
-     给 generator 一次性 cold-start.
+     ``generate_commit`` 产新 commit。
+  4. 该分支没 commit (cold start) → 把全部 history 当 new_nodes 喂
+     给 generator 一次性建链头。
 """
 from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
 from .types import ContextCommit
-from .store import load_latest_commit
+from .store import load_commit_for_head
 from .generator import generate_commit
 
 
@@ -32,7 +33,12 @@ def ensure_latest_commit(
     fetch_node: Optional[Callable[[str], Optional[dict[str, Any]]]] = None,
     llm_summarize: Optional[Callable] = None,
 ) -> ContextCommit:
-    latest = load_latest_commit(store, session_id)
+    # Per-branch parent lookup. ``load_commit_for_head`` walks the DAG
+    # ancestor chain from head_node_id and returns the most-recent
+    # commit whose head sits on this branch. Concurrency-safe: two
+    # agents on different branches resolve to different parents and
+    # never share write targets.
+    latest = load_commit_for_head(store, session_id, head_node_id)
 
     if latest is None:
         return generate_commit(

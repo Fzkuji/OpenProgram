@@ -8,6 +8,7 @@ from .store import (
     save_commit,
     load_commit,
     load_latest_commit,
+    load_commit_for_head,
     list_commits,
 )
 from .generator import generate_commit
@@ -26,6 +27,7 @@ __all__ = [
     "save_commit",
     "load_commit",
     "load_latest_commit",
+    "load_commit_for_head",
     "list_commits",
     "generate_commit",
     "ensure_latest_commit",

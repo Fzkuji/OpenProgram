@@ -134,19 +134,17 @@ class SessionStore:
         snapshot["updated_at"] = time.time()
         git.write_meta(snapshot)
 
-    def _persist_messages_view(self, git: GitSession, idx: SessionMemoryIndex) -> None:
-        """Write the current message list to ``context/messages.json`` so
-        the git working tree reflects the chronological view. Used as a
-        cheap "latest LLM view" — the snapshot subsystem owns the more
-        precise rendered messages.json (see snapshot_io).
-        """
-        msgs = [_node_to_msg(n, str(git.path.name)) for n in idx.all_nodes()]
-        git.write_context_file("messages.json", msgs)
-
     def commit_turn(self, session_id: str, message: str) -> Optional[str]:
         """Commit the current working tree as one turn. Public so the
         dispatcher can call it at turn end; also called internally by
         write paths that don't need an explicit commit boundary.
+
+        Repo layout is append-only by design — no mutable "current
+        state" mirror file: history/ holds per-node files, context/
+        commits/ holds per-commit files, meta.json carries session-
+        level scalars (head_id is a UI pointer, single-valued by
+        construction). Two agents writing concurrently never target
+        the same file. Refresh meta only here.
 
         Returns commit sha or None if nothing to commit.
         """
@@ -154,9 +152,7 @@ class SessionStore:
         if not pair:
             return None
         git, idx = pair
-        # Always refresh the working tree to current state before commit.
         self._persist_meta(git, idx)
-        self._persist_messages_view(git, idx)
         return git.commit_all(message)
 
     # ── Session CRUD ──────────────────────────────────────────

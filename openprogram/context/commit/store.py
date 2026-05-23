@@ -47,24 +47,21 @@ def _commit_dir(git) -> Path:
 
 
 def save_commit(store: "SessionStore", commit: ContextCommit) -> None:
-    """Persist a ContextCommit. Writes two files:
+    """Persist a ContextCommit as one immutable per-id file.
 
-      * ``context/context commits/<id>.json``  — immutable per-commit record
-      * ``context/commit.json``         — mirror of the latest commit
-
-    Both live inside the session's git repo so a turn-end commit picks
-    them up together (along with ``messages.json`` / ``meta.json``).
+    Writes ``context/commits/<id>.json``. No "latest mirror" file —
+    every read goes through ``load_commit_for_head`` / ``load_commit``
+    which look up by id or by DAG ancestry, never by "current state"
+    of a shared mutable path. This is what makes multi-agent
+    concurrent writes safe: append-only, content-addressed, no
+    single mutable target to race on.
     """
     git = _get_git(store, commit.session_id)
     if git is None:
         return
     payload = commit.to_dict()
-    # Per-commit file: durable, point of truth for that commit_id.
     commit_path = _commit_dir(git) / f"{commit.id}.json"
     commit_path.write_text(json.dumps(payload, ensure_ascii=False, default=str))
-    # Mirror: latest context commit, single file. Frontend timeline reads
-    # this for "current state"; per-commit history goes through list_commits.
-    git.write_context_file("commit.json", payload)
 
 
 def load_commit(store: "SessionStore", commit_id: str, *, session_id: Optional[str] = None) -> Optional[ContextCommit]:
@@ -99,7 +96,15 @@ def _load_commit_in_session(store: "SessionStore", session_id: str, commit_id: s
 
 
 def load_latest_commit(store: "SessionStore", session_id: str) -> Optional[ContextCommit]:
-    """Read ``context/commit.json`` (the latest-mirror file)."""
+    """Read ``context/commit.json`` (the global latest-mirror).
+
+    WARNING: this returns whichever commit was written last across the
+    whole session, regardless of branch. When two agents run
+    concurrently on different DAG branches their commit chains diverge
+    — the "latest" mirror reflects only whoever finished last. Use
+    ``load_commit_for_head`` to get the right parent commit for a
+    specific branch head.
+    """
     pair = store._open(session_id)
     if not pair:
         return None
@@ -108,6 +113,66 @@ def load_latest_commit(store: "SessionStore", session_id: str) -> Optional[Conte
     if not payload:
         return None
     return _payload_to_commit(payload)
+
+
+def load_commit_for_head(
+    store: "SessionStore",
+    session_id: str,
+    head_node_id: str,
+) -> Optional[ContextCommit]:
+    """Return the most-recent commit whose ``head_node_id`` is an
+    ancestor of (or equal to) the given branch head.
+
+    Why this exists: multi-agent sessions have N concurrent branches
+    sharing one repo. Each branch has its own "latest commit" — the
+    one rooted at that branch's most recently committed head node.
+    A global pointer can't represent N latests, so we look it up by
+    DAG ancestry on demand. Two agents writing in parallel each call
+    this with their own head, get back their own branch's parent
+    commit, generate divergent children — no lock needed because the
+    only shared write target (commits/<id>.json) uses unique ids.
+
+    Returns ``None`` if no commit on this branch has been recorded
+    yet (cold-start).
+    """
+    pair = store._open(session_id)
+    if not pair:
+        return None
+    git, idx = pair
+    # Build the ancestor id set by walking the conv-predecessor chain
+    # from head_node_id up through the DAG.
+    ancestors: set[str] = set()
+    cur = head_node_id
+    visited: set[str] = set()
+    while cur and cur not in visited:
+        visited.add(cur)
+        ancestors.add(cur)
+        node = idx.nodes_by_id.get(cur)
+        if node is None:
+            break
+        parent = (node.metadata or {}).get("parent_id")
+        if not parent:
+            break
+        cur = parent
+    # Scan commits/ and keep the newest commit whose head_node_id lies
+    # in the ancestor set.
+    sdir = git.path / "context" / "commits"
+    if not sdir.exists():
+        return None
+    best: Optional[ContextCommit] = None
+    for fpath in sdir.glob("*.json"):
+        try:
+            payload = json.loads(fpath.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        if (payload.get("head_node_id") or "") not in ancestors:
+            continue
+        c = _payload_to_commit(payload)
+        if c is None:
+            continue
+        if best is None or (c.created_at or 0) > (best.created_at or 0):
+            best = c
+    return best
 
 
 def list_commits(store: "SessionStore", session_id: str, *, limit: int = 50) -> list[ContextCommit]:

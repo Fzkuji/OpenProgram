@@ -599,12 +599,17 @@ def process_user_turn(
     # stable and avoids ballooning the timeline with a duplicate.
     try:
         from openprogram.context.commit.store import (
-            load_latest_commit,
+            load_commit_for_head,
             save_commit,
         )
         from openprogram.context.commit.types import ContextItem
         _final_text = assistant_msg.get("content") or ""
-        _commit = load_latest_commit(db, req.session_id)
+        # Look up the commit on THIS branch (load_commit_for_head walks
+        # the DAG ancestry from assistant_msg_id); the legacy
+        # load_latest_commit returns whichever commit was saved last
+        # session-wide, which is wrong when N agents are running
+        # concurrently on different branches.
+        _commit = load_commit_for_head(db, req.session_id, assistant_msg_id)
         if _commit is not None:
             _patched = False
             _assistant_idx = -1
