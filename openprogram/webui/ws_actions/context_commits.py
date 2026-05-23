@@ -18,13 +18,14 @@ def _find_fork_group(idx, head_id: str) -> str:
     """Group key for a commit, based on its head's DAG ancestry.
 
     Walk up the conv-predecessor chain from ``head_id``. The first
-    ancestor that has >1 conv child is the fork point — its id is
-    the group key, so every commit whose head descends through that
-    fork shares the same row in the Context panel (with an attempt
-    switcher).
+    ancestor that has >1 conv child is the fork point; commits
+    descending through it share group ``"fork:<fork_id>"``.
 
-    If no fork is found (linear chain), the commit gets its own
-    single-attempt group keyed by its head id.
+    If no fork is found (linear chain), the commit gets a singleton
+    group ``"single:<head_id>"``. The ``fork:`` / ``single:``
+    prefixes prevent a singleton commit (whose head happens to be
+    the fork ancestor of OTHER commits) from colliding with the
+    fork's grouped descendants.
     """
     visited: set[str] = set()
     cur: str | None = head_id
@@ -38,9 +39,9 @@ def _find_fork_group(idx, head_id: str) -> str:
             break
         siblings = idx.children_by_predecessor.get(parent, [])
         if len(siblings) > 1:
-            return parent
+            return f"fork:{parent}"
         cur = parent
-    return head_id  # no fork → single-attempt group keyed by self
+    return f"single:{head_id}"
 
 
 async def handle_list_commits(ws, cmd: dict):
