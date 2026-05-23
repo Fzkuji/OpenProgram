@@ -277,60 +277,78 @@ function SnapshotRow(props: {
 }) {
   const { meta, open, detail, onToggle } = props;
   const counts = meta.state_counts || {};
-  return (
-    <div style={{ borderBottom: "1px solid var(--border)" }}>
-      <div
-        onClick={onToggle}
-        role="button"
-        style={{
-          padding: "8px 10px",
-          cursor: "pointer",
-          display: "flex",
-          flexDirection: "column",
-          gap: 3,
-          background: open ? "var(--bg-hover, rgba(255,255,255,0.04))" : "transparent",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-          <span style={{ color: "var(--text-bright)" }}>{meta.id.slice(0, 12)}</span>
-          <span style={{ color: "var(--text-muted)" }}>{fmtRelTime(meta.created_at)}</span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
-          <span>{meta.total_tokens.toLocaleString()} tok · {meta.item_count} items</span>
-          <span>{meta.rules_version || ""}</span>
-        </div>
-        {meta.summary && (
-          <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {meta.summary}
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
-          {(Object.keys(counts) as StateName[])
-            .filter((k) => (counts[k] || 0) > 0)
-            .map((k) => (
-              <StateBadge key={k} state={k} count={counts[k] || 0} />
-            ))}
+  // Closed: simple row with bottom-border separator. Open: rounded card
+  // wrapper so meta + popout body merge into one continuous panel —
+  // no seam, no floating popout below.
+  if (!open) {
+    return (
+      <div style={{ borderBottom: "1px solid var(--border)" }}>
+        <div
+          onClick={onToggle}
+          role="button"
+          style={{
+            padding: "8px 10px",
+            cursor: "pointer",
+            display: "flex",
+            flexDirection: "column",
+            gap: 3,
+          }}
+        >
+          <SnapMetaContent meta={meta} counts={counts} />
         </div>
       </div>
-      {open && (
-        <div className={styles.popout}>
-          {!detail && (
-            <div className={styles.empty}>Loading…</div>
-          )}
-          {detail?.error && (
-            <div className={styles.empty} style={{ color: "var(--red, #f85149)" }}>
-              {detail.error}
-            </div>
-          )}
-          {detail?.items?.map((it, idx) => (
-            <ItemRow key={`${it.source_node_id}-${idx}`} item={it} />
-          ))}
-          {detail && detail.items && detail.items.length === 0 && !detail.error && (
-            <div className={styles.empty}>(empty)</div>
-          )}
+    );
+  }
+  return (
+    <div className={styles.snapCard}>
+      <div className={styles.snapHead} onClick={onToggle} role="button">
+        <SnapMetaContent meta={meta} counts={counts} />
+      </div>
+      <div className={styles.popout}>
+        {!detail && (
+          <div className={styles.empty}>Loading…</div>
+        )}
+        {detail?.error && (
+          <div className={styles.empty} style={{ color: "var(--red, #f85149)" }}>
+            {detail.error}
+          </div>
+        )}
+        {detail?.items?.map((it, idx) => (
+          <ItemRow key={`${it.source_node_id}-${idx}`} item={it} />
+        ))}
+        {detail && detail.items && detail.items.length === 0 && !detail.error && (
+          <div className={styles.empty}>(empty)</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SnapMetaContent(props: { meta: SnapshotMeta; counts: Partial<Record<StateName, number>> }) {
+  const { meta, counts } = props;
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+        <span style={{ color: "var(--text-bright)" }}>{meta.id.slice(0, 12)}</span>
+        <span style={{ color: "var(--text-muted)" }}>{fmtRelTime(meta.created_at)}</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+        <span>{meta.total_tokens.toLocaleString()} tok · {meta.item_count} items</span>
+        <span>{meta.rules_version || ""}</span>
+      </div>
+      {meta.summary && (
+        <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {meta.summary}
         </div>
       )}
-    </div>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
+        {(Object.keys(counts) as StateName[])
+          .filter((k) => (counts[k] || 0) > 0)
+          .map((k) => (
+            <StateBadge key={k} state={k} count={counts[k] || 0} />
+          ))}
+      </div>
+    </>
   );
 }
 
