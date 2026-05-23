@@ -28,6 +28,10 @@ interface CommitMeta {
   parent_id: string | null;
   created_at: number;
   head_node_id: string;
+  /** Commits sharing the same turn_group_id are parallel attempts
+   *  (same DAG fork point: multi-agent / modify-retry siblings) and
+   *  collapse into one row with an attempt switcher. */
+  turn_group_id: string;
   total_tokens: number;
   rules_version?: string;
   summary: string;
@@ -255,13 +259,13 @@ export function ContextCommitTimeline() {
             No commits yet.
           </div>
         )}
-        {commits.map((s) => (
-          <CommitRow
-            key={s.id}
-            meta={s}
-            open={expanded === s.id}
-            detail={details[s.id]}
-            onToggle={() => toggleRow(s.id)}
+        {groupCommits(commits).map((g) => (
+          <CommitGroupRow
+            key={g.id}
+            attempts={g.attempts}
+            expandedId={expanded}
+            details={details}
+            onToggle={toggleRow}
           />
         ))}
       </div>
@@ -269,13 +273,101 @@ export function ContextCommitTimeline() {
   );
 }
 
+/** Bucket commits sharing a turn_group_id into one row. Preserves the
+ *  order commits arrive in (newest-first per backend), with attempts
+ *  inside a group sorted oldest→newest so the switcher numbers ascend
+ *  chronologically. */
+function groupCommits(commits: CommitMeta[]): Array<{ id: string; attempts: CommitMeta[] }> {
+  const out: Array<{ id: string; attempts: CommitMeta[] }> = [];
+  const idx = new Map<string, number>();
+  for (const c of commits) {
+    let i = idx.get(c.turn_group_id);
+    if (i === undefined) {
+      i = out.length;
+      idx.set(c.turn_group_id, i);
+      out.push({ id: c.turn_group_id, attempts: [] });
+    }
+    out[i].attempts.push(c);
+  }
+  for (const g of out) g.attempts.sort((a, b) => a.created_at - b.created_at);
+  return out;
+}
+
+/** Multi-attempt group row. When the group has one commit it just
+ *  renders CommitRow. When it has multiple (parallel branches at the
+ *  same fork point) the row header gets a `< n/N >` switcher and the
+ *  selected attempt drives the expanded popout below. */
+function CommitGroupRow(props: {
+  attempts: CommitMeta[];
+  expandedId: string | null;
+  details: Record<string, CommitDetail>;
+  onToggle: (id: string) => void;
+}) {
+  const { attempts, expandedId, details, onToggle } = props;
+  const [pick, setPick] = useState(attempts.length - 1); // default to newest
+  // Clamp if attempts list shrinks between refreshes.
+  const idx = Math.min(pick, attempts.length - 1);
+  const meta = attempts[idx];
+  const switcher = attempts.length > 1 ? (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        marginLeft: 8,
+        fontSize: 10,
+        color: "var(--text-muted)",
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={() => setPick((p) => Math.max(0, p - 1))}
+        disabled={idx === 0}
+        style={{
+          background: "transparent",
+          border: "none",
+          color: "inherit",
+          cursor: idx === 0 ? "default" : "pointer",
+          padding: "0 4px",
+          opacity: idx === 0 ? 0.4 : 1,
+        }}
+      >‹</button>
+      <span>{idx + 1}/{attempts.length}</span>
+      <button
+        type="button"
+        onClick={() => setPick((p) => Math.min(attempts.length - 1, p + 1))}
+        disabled={idx === attempts.length - 1}
+        style={{
+          background: "transparent",
+          border: "none",
+          color: "inherit",
+          cursor: idx === attempts.length - 1 ? "default" : "pointer",
+          padding: "0 4px",
+          opacity: idx === attempts.length - 1 ? 0.4 : 1,
+        }}
+      >›</button>
+    </span>
+  ) : null;
+  return (
+    <CommitRow
+      meta={meta}
+      switcher={switcher}
+      open={expandedId === meta.id}
+      detail={details[meta.id]}
+      onToggle={() => onToggle(meta.id)}
+    />
+  );
+}
+
 function CommitRow(props: {
   meta: CommitMeta;
+  switcher?: React.ReactNode;
   open: boolean;
   detail?: CommitDetail;
   onToggle: () => void;
 }) {
-  const { meta, open, detail, onToggle } = props;
+  const { meta, switcher, open, detail, onToggle } = props;
   const counts = meta.state_counts || {};
   // Commit row keeps its rectangular full-width shape (closed *and*
   // open). When opened the row tints to bg-hover so the user sees
@@ -296,7 +388,7 @@ function CommitRow(props: {
           transition: "background 0.15s",
         }}
       >
-        <CommitMetaContent meta={meta} counts={counts} />
+        <CommitMetaContent meta={meta} counts={counts} switcher={switcher} />
       </div>
       {/* Wrapper is always mounted so the open/close transition runs
           both directions; grid-template-rows 0fr↔1fr animates the
@@ -325,12 +417,19 @@ function CommitRow(props: {
   );
 }
 
-function CommitMetaContent(props: { meta: CommitMeta; counts: Partial<Record<StateName, number>> }) {
-  const { meta, counts } = props;
+function CommitMetaContent(props: {
+  meta: CommitMeta;
+  counts: Partial<Record<StateName, number>>;
+  switcher?: React.ReactNode;
+}) {
+  const { meta, counts, switcher } = props;
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-        <span style={{ color: "var(--text-bright)" }}>{meta.id.slice(0, 12)}</span>
+        <span style={{ color: "var(--text-bright)" }}>
+          {meta.id.slice(0, 12)}
+          {switcher}
+        </span>
         <span style={{ color: "var(--text-muted)" }}>{fmtRelTime(meta.created_at)}</span>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
