@@ -19,6 +19,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useSessionStore } from "@/lib/session-store";
+import styles from "./right-sidebar.module.css";
 
 type StateName = "full" | "aged" | "cleared" | "summarized" | "summary";
 
@@ -357,16 +358,18 @@ function ItemRow(props: { item: SnapshotItem }) {
   // single line. CSS noWrap + ellipsis truncates the visible width.
   const oneLine = (it.rendered || "").replace(/\s+/g, " ").trim();
   return (
-    <div style={{ borderTop: "1px solid var(--border)" }}>
+    <div>
       <div
         onClick={() => setOpen((v) => !v)}
         role="button"
+        className={open ? styles.itemRowOpen : undefined}
         style={{
-          padding: "4px 0",
+          padding: "4px 6px",
           display: "flex",
           gap: 6,
           alignItems: "center",
           cursor: "pointer",
+          borderTop: "1px solid var(--border)",
         }}
       >
         <span
@@ -405,8 +408,8 @@ function ItemRow(props: { item: SnapshotItem }) {
         </span>
       </div>
       {open && (
-        <div style={{ padding: "4px 0 8px 0", display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div className={styles.itemPopup}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <StateBadge state={it.state} />
             {it.is_anchor && (
               <span style={{ color: "var(--orange, #e3b341)", fontSize: 10 }}>anchor</span>
