@@ -136,16 +136,19 @@ export function MessageActions({
   }
 
   function branch() {
+    // Fork = move HEAD back to this message in the CURRENT session. The
+    // next user turn from there creates a sibling, naturally forking the
+    // DAG. Same backend op as checkout (the sibling navigator), just
+    // surfaced as a separate UI action with the "diverge from this
+    // point" intent. No new session.
     if (!sessionId || !msg.id || busy) return;
     setBusy(true);
-    postJson("/api/chat/branch", { session_id: sessionId, msg_id: msg.id })
-      .then((res) => {
-        const newId = (res as { session_id?: string }).session_id;
-        if (!newId) return;
-        const nav = (window as unknown as { __navigate?: (p: string) => void })
-          .__navigate;
-        if (nav) nav("/s/" + newId);
-        else window.location.href = "/s/" + newId;
+    postJson("/api/chat/checkout", { session_id: sessionId, msg_id: msg.id })
+      .then(() => {
+        (
+          window as unknown as { _postCheckoutScrollTo?: string }
+        )._postCheckoutScrollTo = msg.id;
+        wsSend({ action: "load_session", session_id: sessionId });
       })
       .catch((err) => {
         console.error("[message-actions] branch failed:", err);

@@ -83,7 +83,14 @@ def register(app):
 
     @app.post("/api/chat/branch")
     async def post_chat_branch(body: dict = None):
-        """Fork a conversation at a specific message into a new conv."""
+        """Fork a conversation at a specific message — in place.
+
+        New model: fork = move HEAD to the pivot in the same session.
+        The next user turn from there writes a sibling, forking the
+        DAG naturally. No new session, no history copy. Same backend
+        op as ``/api/chat/checkout`` (the sibling navigator); kept as a
+        separate endpoint for back-compat with older clients.
+        """
         from openprogram.webui import server as _s
         if body is None:
             return JSONResponse(content={"error": "no body"}, status_code=400)
@@ -94,36 +101,24 @@ def register(app):
                 content={"error": "session_id and msg_id required"}, status_code=400,
             )
 
+        from openprogram.agent.session_db import default_db
+        db = default_db()
+        if not db.message_exists(session_id, pivot_id):
+            return JSONResponse(content={"error": "unknown msg"}, status_code=404)
+        db.set_head(session_id, pivot_id)
         with _s._sessions_lock:
-            src = _s._sessions.get(session_id)
-            if src is None:
-                return JSONResponse(content={"error": "unknown conv"}, status_code=404)
-            msgs = src["messages"]
-            pivot_idx = next(
-                (i for i, m in enumerate(msgs) if m.get("id") == pivot_id), -1,
-            )
-            if pivot_idx < 0:
-                return JSONResponse(content={"error": "unknown msg"}, status_code=404)
-
-            new_id = str(uuid.uuid4())[:8]
-            new_title = f"{src.get('title', 'branch')} (branch)"
-            _s._sessions[new_id] = {
-                "id": new_id,
-                "title": new_title,
-                "root_context": None,  # tree Context retired
-                "runtime": None,
-                "provider_name": src.get("provider_name"),
-                "messages": _copy.deepcopy(msgs[: pivot_idx + 1]),
-                "created_at": time.time(),
-                "branched_from": session_id,
-                "branched_at_msg": pivot_id,
-            }
-
-        _s._save_session(new_id)
+            conv = _s._sessions.get(session_id)
+            if conv is not None:
+                conv["head_id"] = pivot_id
+                try:
+                    conv["messages"] = db.get_branch(session_id) or []
+                except Exception:
+                    pass
+        _s._invalidate_messages(session_id)
+        _s._save_session(session_id)
         return JSONResponse(content={
-            "session_id": new_id,
-            "title": new_title,
-            "branched_from": session_id,
+            "session_id": session_id,
+            "head_id": pivot_id,
         })
 
     @app.post("/api/run/{function_name}")
