@@ -111,6 +111,39 @@ def _build_item_from_node(node: dict, commit_id: str) -> Optional[ContextItem]:
             content = _json.dumps(content, ensure_ascii=False, default=str)
         except Exception:
             content = str(content)
+    # Attach pointer = another branch's product imported into this
+    # chain. Render as a user-role item with an explicit "[Attached
+    # from ...]" prefix so the LLM knows the content is brought in
+    # (not something it said) and the next turn can act on it.
+    if node.get("function") == "attach":
+        attach: dict = {}
+        raw = node.get("attach") or node.get("extra")
+        if isinstance(raw, dict):
+            attach = raw.get("attach") if "attach" in raw else raw
+        elif isinstance(raw, str) and raw:
+            try:
+                import json as _json
+                parsed = _json.loads(raw)
+                attach = (
+                    parsed.get("attach")
+                    if isinstance(parsed, dict) and "attach" in parsed
+                    else parsed
+                )
+            except Exception:
+                attach = {}
+        label = (
+            (attach.get("label") if isinstance(attach, dict) else "")
+            or ""
+        ).strip()
+        intro = (
+            f"[Attached from branch \"{label}\"]"
+            if label
+            else "[Attached from branch]"
+        )
+        # Include a hint about what this content represents so the
+        # LLM treats it as third-party context, not its own output.
+        content = f"{intro}:\n{content}"
+        role = "user"
     return ContextItem(
         source_node_id=node.get("id") or "",
         role=role,
