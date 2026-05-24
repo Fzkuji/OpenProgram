@@ -484,11 +484,16 @@
   pointer-events: auto;
   max-width: 720px;
   width: min(90%, 720px);
-  /* Extra bottom padding so the last item doesn't sit flush against
-     the square bottom edge — without it the row reads as "clipped".
-     Top has less padding because the rounded corners visually
-     compensate for the gap there. */
-  padding: 6px 8px 14px;
+  /* Padding sized so the visual gap above/below the item ROW (i.e.
+     menu padding + item padding) lands at horizontal-gap or more.
+     Item padding is 8px top, 8px bottom, 12px sides. So:
+       top    = 14 + 8 = 22  (≥ side  ✓)
+       side   = 8  + 12 = 20
+       bottom = 18 + 8 = 26  (slight extra so the square bottom
+                              edge doesn't visually clip the row)
+     The previous 6/8/14 made the top read as cramped against the
+     rounded corners. */
+  padding: 14px 8px 18px;
   background: var(--bg-tertiary);
   border: 1px solid rgba(0, 0, 0, 0.18);
   border-radius: 14px 14px 0 0;
