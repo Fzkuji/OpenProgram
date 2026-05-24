@@ -61,11 +61,19 @@ function BranchItem({
   color,
   sessionId,
   collapsed,
+  selected,
+  isBase,
+  onToggleSelect,
+  onSetBase,
 }: {
   branch: BranchRow;
   color: string;
   sessionId: string;
   collapsed: boolean;
+  selected: boolean;
+  isBase: boolean;
+  onToggleSelect: (headId: string, e: React.MouseEvent) => void;
+  onSetBase: (headId: string, e: React.MouseEvent) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(branch.name || "");
@@ -121,12 +129,27 @@ function BranchItem({
 
   if (collapsed && !branch.active) return null;
 
+  const cls = "branch-item"
+    + (branch.active ? " active" : "")
+    + (selected ? " selected" : "")
+    + (isBase ? " base" : "");
+
   return (
     <div
-      className={"branch-item" + (branch.active ? " active" : "")}
+      className={cls}
       data-head={branch.head_msg_id}
       onClick={checkout}
     >
+      <span
+        className="branch-item-check"
+        title={selected ? "Click again to deselect; ⌘-click to mark as base" : "Select for merge (⌘-click to mark as base)"}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey) onSetBase(branch.head_msg_id, e);
+          else onToggleSelect(branch.head_msg_id, e);
+        }}
+      >
+        {isBase ? "★" : selected ? "✓" : ""}
+      </span>
       <span className="branch-item-dot" style={{ background: color }} />
       {editing ? (
         <input
@@ -190,6 +213,15 @@ export function BranchesPanel() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [collapsed, setCollapsed] = useState(true);
   const [, setTick] = useState(0);
+  // Multi-select state for merging. ``selected`` is a list of
+  // head_msg_ids the user has clicked the checkbox on; ``baseHead``
+  // is the optional ⌘-clicked one that becomes ``base_peer`` (merge
+  // reply continues that branch). Reset whenever the conversation
+  // changes.
+  const [selected, setSelected] = useState<string[]>([]);
+  const [baseHead, setBaseHead] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
+  const [mergeInstruction, setMergeInstruction] = useState("");
 
   // Re-read the legacy branch cache whenever the WS branch handlers
   // signal an update (the legacy `renderBranchesPanel` shim dispatches
@@ -203,7 +235,53 @@ export function BranchesPanel() {
   // Start collapsed again on every conversation change.
   useEffect(() => {
     setCollapsed(true);
+    setSelected([]);
+    setBaseHead(null);
+    setMerging(false);
+    setMergeInstruction("");
   }, [sessionId]);
+
+  function toggleSelect(headId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setSelected((s) => {
+      if (s.includes(headId)) {
+        // Deselect; also clear base if it was this row.
+        if (baseHead === headId) setBaseHead(null);
+        return s.filter((h) => h !== headId);
+      }
+      return [...s, headId];
+    });
+  }
+
+  function setBase(headId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setBaseHead((b) => (b === headId ? null : headId));
+    setSelected((s) => (s.includes(headId) ? s : [...s, headId]));
+  }
+
+  function runMerge() {
+    if (!sessionId || selected.length < 2) return;
+    const peers = selected.map((head_id) => ({
+      session_id: sessionId, head_id,
+    }));
+    const base_peer = baseHead ? selected.indexOf(baseHead) : null;
+    wsSend({
+      action: "merge_branches",
+      session_id: sessionId,
+      peers,
+      message: mergeInstruction.trim(),
+      base_peer,
+    });
+    setMerging(false);
+    setMergeInstruction("");
+    setSelected([]);
+    setBaseHead(null);
+    // After the merge writes its assistant turn, the chat needs to
+    // re-pull the conversation to render it.
+    setTimeout(() => {
+      wsSend({ action: "load_session", session_id: sessionId });
+    }, 100);
+  }
 
   const w = window as unknown as BranchWindow;
   const rows = (sessionId && w._branchesByConv?.[sessionId]) || [];
@@ -233,9 +311,88 @@ export function BranchesPanel() {
             }
             sessionId={sessionId}
             collapsed={collapsed}
+            selected={selected.includes(b.head_msg_id)}
+            isBase={baseHead === b.head_msg_id}
+            onToggleSelect={toggleSelect}
+            onSetBase={setBase}
           />
         ))}
       </div>
+      {!collapsed && selected.length >= 2 ? (
+        <div className="branches-merge-bar">
+          <span className="branches-merge-summary">
+            {selected.length} selected
+            {baseHead ? " · ★ base" : ""}
+          </span>
+          <button
+            type="button"
+            className="branches-merge-btn"
+            onClick={() => setMerging(true)}
+          >
+            Merge…
+          </button>
+          <button
+            type="button"
+            className="branches-merge-clear"
+            onClick={() => {
+              setSelected([]);
+              setBaseHead(null);
+            }}
+            title="Clear selection"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+      {merging ? (
+        <div
+          className="branches-merge-modal-backdrop"
+          onClick={() => setMerging(false)}
+        >
+          <div
+            className="branches-merge-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="branches-merge-modal-title">
+              Merge {selected.length} branch{selected.length === 1 ? "" : "es"}
+              {baseHead ? " (★ as base)" : ""}
+            </div>
+            <textarea
+              className="branches-merge-modal-input"
+              placeholder="Optional instruction for the merge agent (how to reconcile)"
+              value={mergeInstruction}
+              onChange={(e) => setMergeInstruction(e.target.value)}
+              autoFocus
+              rows={4}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  runMerge();
+                }
+              }}
+            />
+            <div className="branches-merge-modal-hint">
+              ⌘/Ctrl + Enter to merge
+            </div>
+            <div className="branches-merge-modal-actions">
+              <button
+                type="button"
+                className="branches-merge-cancel"
+                onClick={() => setMerging(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="branches-merge-go"
+                onClick={runMerge}
+              >
+                Merge
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
