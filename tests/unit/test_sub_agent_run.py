@@ -1,20 +1,20 @@
-"""run_sub_agent_turn — E part 3 orchestration.
+"""run_sub_agent_turn — peer-session model.
 
-Uses a fake process_user_turn so we don't need a provider; the goal is
-to verify the wiring: worktree allocation, ContextVar store override
-during the call, commit on the sub-branch, and a tool_result row
-written into the parent's DAG.
+The sub-agent is just another session in the same SessionStore; the
+parent gets an attach pointer node. Tests verify (a) a fresh peer
+session lands at the expected id, (b) the attach node carries the
+right metadata, and (c) the parent's HEAD doesn't get pushed onto the
+synthetic side child.
 """
 from __future__ import annotations
 
-from pathlib import Path
+import json
 
 import pytest
 
 
 @pytest.fixture
 def parent_store(tmp_path, monkeypatch):
-    """A fresh parent SessionStore bound as default_db() for this test."""
     from openprogram.store.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
 
@@ -39,51 +39,55 @@ def parent_store(tmp_path, monkeypatch):
 
 @pytest.fixture
 def fake_dispatcher(monkeypatch):
-    """Replace process_user_turn so the test runs without a real LLM."""
-    from openprogram.agent.session_db import default_db
     from openprogram.agent import dispatcher as disp
 
     class _R:
-        def __init__(self, text, failed=False, error=None):
+        def __init__(self, text, asst_id="sub_a", failed=False, error=None):
             self.final_text = text
-            self.user_msg_id = "u"
-            self.assistant_msg_id = "a"
+            self.user_msg_id = "sub_u"
+            self.assistant_msg_id = asst_id
             self.tool_calls = []
             self.usage = {}
             self.duration_ms = 1
             self.failed = failed
             self.error = error
 
-    captured = {}
+    captured: dict = {"calls": []}
 
     def fake_run(req, *, on_event=None, cancel_event=None):
-        # Capture the store this dispatcher invocation saw so the test
-        # can assert the override is active.
-        captured["seen_store"] = default_db()
-        captured["session_id"] = req.session_id
-        # Write something into the sub-store so commit_turn has
-        # content (a regular dispatcher would write history files).
+        captured["calls"].append({
+            "session_id": req.session_id,
+            "prompt": req.user_text,
+            "history_override": req.history_override,
+            "agent_id": req.agent_id,
+            "source": req.source,
+        })
+        from openprogram.agent.session_db import default_db
         store = default_db()
+        # Pretend the dispatcher persisted a user + assistant pair on
+        # the sub-session so the sub-agent's session has real content.
         store.append_message(req.session_id, {
-            "id": "sub_u_" + req.session_id[-4:],
+            "id": f"u_{req.session_id[-4:]}",
             "role": "user", "content": req.user_text,
             "timestamp": 0, "parent_id": None,
         })
+        asst_id = f"a_{req.session_id[-4:]}"
         store.append_message(req.session_id, {
-            "id": "sub_a_" + req.session_id[-4:],
-            "role": "assistant", "content": "(sub-agent reply)",
-            "timestamp": 0, "parent_id": "sub_u_" + req.session_id[-4:],
+            "id": asst_id, "role": "assistant",
+            "content": "(sub reply)",
+            "timestamp": 0,
+            "parent_id": f"u_{req.session_id[-4:]}",
         })
-        return _R("(sub-agent reply)")
+        return _R("(sub reply)", asst_id=asst_id)
 
     monkeypatch.setattr(disp, "process_user_turn", fake_run)
     return captured
 
 
-def test_run_sub_agent_turn_happy_path(parent_store, fake_dispatcher):
+def test_creates_peer_session_in_same_store(parent_store, fake_dispatcher):
     from openprogram.agent.sub_agent_run import run_sub_agent_turn
 
-    result = run_sub_agent_turn(
+    out = run_sub_agent_turn(
         parent_session_id="p1",
         parent_assistant_id="a1",
         prompt="find a thing",
@@ -91,43 +95,86 @@ def test_run_sub_agent_turn_happy_path(parent_store, fake_dispatcher):
         label="finder",
     )
 
-    assert result.error is None, result.error
-    assert not result.failed
-    assert result.branch.startswith("sub_")
-    assert "finder" in result.branch
-    assert result.final_text == "(sub-agent reply)"
+    assert out.error is None, out.error
+    assert not out.failed
+    assert out.final_text == "(sub reply)"
 
-    # Sub-agent dispatcher saw the worktree-rooted store, not the parent's.
-    assert fake_dispatcher["seen_store"] is not parent_store
+    # Sub-session id has the expected shape and ended up as a real
+    # session in the parent's SessionStore.
+    assert out.sub_session_id.startswith("sub_")
+    assert "finder" in out.sub_session_id
+    sess = parent_store.get_session(out.sub_session_id)
+    assert sess is not None
+    assert sess.get("agent_id") == "main"
+    # Provenance carried on the sub-session itself.
+    assert sess.get("parent_session_id") == "p1"
+    assert sess.get("parent_assistant_id") == "a1"
 
-    # Parent's DAG got a summary row tagged sub_agent pointing at the
-    # sub-branch.
+    # Dispatcher was driven on the SUB session (not the parent).
+    assert fake_dispatcher["calls"]
+    last = fake_dispatcher["calls"][-1]
+    assert last["session_id"] == out.sub_session_id
+    assert last["history_override"] == []   # peer starts empty
+
+
+def test_parent_dag_gets_one_attach_pointer(parent_store, fake_dispatcher):
+    from openprogram.agent.sub_agent_run import run_sub_agent_turn
+
+    out = run_sub_agent_turn(
+        parent_session_id="p1",
+        parent_assistant_id="a1",
+        prompt="x",
+        agent_id="main",
+        label="probe",
+    )
     msgs = parent_store.get_messages("p1")
-    sub_rows = [m for m in msgs if m.get("function") == "sub_agent"]
-    assert len(sub_rows) == 1
-    row = sub_rows[0]
-    assert row["parent_id"] == "a1"
-    assert row["content"] == "(sub-agent reply)"
-    # role must NOT be "tool" — that would trip the provider's
-    # tool_call_id pairing on the next turn.
+    attach_rows = [m for m in msgs if m.get("function") == "attach"]
+    assert len(attach_rows) == 1
+    row = attach_rows[0]
+    assert row["id"] == out.attach_node_id
     assert row["role"] == "assistant"
+    assert row["parent_id"] == "a1"
+    # Attach metadata points at the sub-session.
+    attach = row.get("attach")
+    if not isinstance(attach, dict):
+        extra = row.get("extra")
+        if isinstance(extra, str):
+            extra = json.loads(extra)
+        if isinstance(extra, dict):
+            attach = extra.get("attach")
+    assert isinstance(attach, dict)
+    assert attach["session_id"] == out.sub_session_id
 
-    # Worktree dir was released (allocate -> use -> release).
-    assert result.worktree_path is not None
-    assert not result.worktree_path.exists()
+
+def test_parent_head_does_not_advance_onto_attach(parent_store, fake_dispatcher):
+    """Without HEAD preservation, the synthetic attach row would push
+    parent's chat tip onto a non-conversation node and the next
+    real assistant turn would walk from there."""
+    from openprogram.agent.sub_agent_run import run_sub_agent_turn
+
+    head_before = parent_store.get_session("p1").get("head_id")
+    run_sub_agent_turn(
+        parent_session_id="p1",
+        parent_assistant_id="a1",
+        prompt="y",
+        agent_id="main",
+    )
+    head_after = parent_store.get_session("p1").get("head_id")
+    assert head_after == head_before, (head_before, head_after)
 
 
-def test_run_sub_agent_turn_unknown_parent(parent_store, fake_dispatcher):
+def test_unknown_parent_session_errors(parent_store, fake_dispatcher):
     from openprogram.agent.sub_agent_run import run_sub_agent_turn
     out = run_sub_agent_turn(
         parent_session_id="nope",
         parent_assistant_id="x",
         prompt="hi", agent_id="main",
     )
+    assert out.failed
     assert out.error and "not found" in out.error
 
 
-def test_run_sub_agent_turn_dispatcher_failure_surfaces(parent_store, monkeypatch):
+def test_dispatcher_failure_surfaces(parent_store, monkeypatch):
     from openprogram.agent import dispatcher as disp
     from openprogram.agent.sub_agent_run import run_sub_agent_turn
 
@@ -143,8 +190,9 @@ def test_run_sub_agent_turn_dispatcher_failure_surfaces(parent_store, monkeypatc
     )
     assert out.failed
     assert out.error and "provider exploded" in out.error
-    # Parent DAG still got an error-marked summary row so user sees something.
+    # The attach pointer still landed on the parent so the user sees
+    # something happened.
     msgs = parent_store.get_messages("p1")
-    sub_rows = [m for m in msgs if m.get("function") == "sub_agent"]
-    assert len(sub_rows) == 1
-    assert sub_rows[0].get("is_error")
+    attach_rows = [m for m in msgs if m.get("function") == "attach"]
+    assert len(attach_rows) == 1
+    assert attach_rows[0].get("is_error")

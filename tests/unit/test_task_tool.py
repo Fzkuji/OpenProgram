@@ -97,8 +97,8 @@ def test_task_returns_subagent_text(store, fake_dispatcher):
         session_id="p1", turn_id="a1",
     )
     assert "(sub reply)" in out
-    assert "[sub-agent branch=" in out
-    assert "finder" in out  # label encoded in branch name
+    assert "[sub-agent session=" in out
+    assert "finder" in out  # label encoded in sub-session id
     # The fake dispatcher saw the prompt verbatim.
     assert fake_dispatcher["prompt"] == "find the answer"
 
@@ -130,16 +130,15 @@ def test_task_without_turn_returns_error(store, fake_dispatcher):
     assert "no active parent turn" in out
 
 
-def test_task_sanitizes_description_for_branch_name(store, fake_dispatcher):
+def test_task_sanitizes_description_for_session_id(store, fake_dispatcher):
     out = _call_task(
         prompt="x", description="my/dangerous label!@#",
         session_id="p1", turn_id="a1",
     )
-    # Non [A-Za-z0-9_-] chars get replaced with _ in the branch label.
-    # The resulting branch name should appear in the output and contain
-    # only safe chars (we don't pin the exact form).
+    # Non [A-Za-z0-9_-] chars get replaced with _ in the label segment
+    # of the sub-session id; we don't pin the exact form.
     import re
-    m = re.search(r"branch=(\S+)", out)
+    m = re.search(r"session=(\S+)", out)
     assert m is not None
-    branch = m.group(1).rstrip(']')
-    assert all(c.isalnum() or c in "_-" for c in branch), branch
+    sid = m.group(1).rstrip(']')
+    assert all(c.isalnum() or c in "_-" for c in sid), sid

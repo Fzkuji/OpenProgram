@@ -31,26 +31,27 @@ from openprogram.functions._runtime import function
 
 
 _DESCRIPTION = (
-    "Spawn a sub-agent that runs an independent turn on a separate git "
-    "branch off the current conversation. The sub-agent gets its own "
-    "worktree (isolated file edits), runs to completion with the given "
-    "prompt, and returns its final reply as this tool's result. The "
-    "sub-branch and its commits survive after this call so a follow-up "
-    "merge turn can reconcile multiple parallel sub-agents.\n"
+    "Spawn a peer-level agent in its own independent session, run a "
+    "single turn against it with the given prompt, and return its "
+    "final reply. The new session lives alongside the current one "
+    "(same SessionStore root); a pointer node is attached to the "
+    "current turn so the UI can show the spawn point and let the "
+    "user open the sub-session's transcript.\n"
     "\n"
     "Use this when a sub-task is well-scoped (one focused goal, "
-    "self-contained context) and the main agent doesn't need to see "
-    "the sub-agent's intermediate steps — only its final answer. "
+    "self-contained context) and the calling agent doesn't need to "
+    "see the sub-agent's intermediate steps — only its final answer. "
     "Common patterns: parallel research probes, independent code "
-    "explorations, scoped refactors.\n"
+    "explorations, scoped refactors. Follow with a `merge_branches` "
+    "WS action when reconciling several spawns.\n"
     "\n"
     "Args:\n"
     "  prompt: full instruction for the sub-agent (it sees ONLY this; "
     "include any context it needs).\n"
-    "  description: short label (1-3 words) shown in the UI / git "
-    "branch name; helps you distinguish multiple sub-agents.\n"
+    "  description: short label (1-3 words) used as the sub-session's "
+    "title and UI handle.\n"
     "  agent_id: which agent profile the sub-agent should run as. "
-    "Defaults to the parent's agent."
+    "Defaults to the calling session's agent."
 )
 
 
@@ -118,18 +119,18 @@ def _task_impl(
         return f"[task error] {type(e).__name__}: {e}"
 
     if result.error and not result.final_text:
-        return f"[task error: branch={result.branch}] {result.error}"
+        return (
+            f"[task error: session={result.sub_session_id}] {result.error}"
+        )
     out = result.final_text or "(sub-agent returned no text)"
     if result.error:
         out = f"{out}\n\n[task warning] {result.error}"
-    # Tag the result with branch + commit_sha so a follow-up
+    # Tag the result with the sub-session id so a follow-up
     # `merge_branches` call can be issued without re-spawning.
-    out = (
-        f"{out}\n\n"
-        f"[sub-agent branch={result.branch}"
-        + (f" commit={result.sub_commit_sha}" if result.sub_commit_sha else "")
-        + "]"
-    )
+    tail = f"session={result.sub_session_id}"
+    if result.sub_commit_id:
+        tail += f" commit={result.sub_commit_id}"
+    out = f"{out}\n\n[sub-agent {tail}]"
     return out
 
 

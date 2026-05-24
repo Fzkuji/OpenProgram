@@ -1,41 +1,35 @@
-"""Merge turn (task F).
+"""Merge N peer sessions into one target reply.
 
-Consolidates N sub-agent branches into one parent reply.
+In the peer-session model, ``merge`` is the symmetric counterpart of
+``attach``:
+
+  * ``attach`` makes one session's turn visible inside another's DAG
+    via a pointer node (``run_sub_agent_turn``).
+  * ``merge`` aggregates N peer sessions' results into one new turn
+    on a designated target session, recording the ancestry as a
+    multi-parent ContextCommit.
+
+There's no parent / child between the sessions themselves — those
+labels are just node-level relationships ("this attach node lives
+on session X", "this merge node had these N parents"). The sessions
+are equal peers.
 
 Pipeline:
-  1. Resolve each sub-branch's final text (stored on the parent's DAG
-     as a ``function="sub_agent"`` tool_result row by
-     ``run_sub_agent_turn``).
-  2. Build a merge prompt with each summary as a ``<branch name="..">
-     ...</branch>`` block, plus the user-supplied ``message``.
-  3. Run the parent's dispatcher (``process_user_turn``) on that
-     prompt — uses the parent session's runtime, so any tools / model
-     overrides the user set on the parent thread are honored.
-  4. After completion, save a multi-parent ContextCommit pointing at
-     the previous parent commit + every sub-branch's git tip SHA. The
-     ``parent_ids`` field already supports lists (see eb2b06a).
 
-MVP scope — what's NOT done here, by design:
-  * No git workdir merge. Sub-agents wrote into their own worktrees;
-    those files survive on the branch refs but aren't copy-merged
-    into the parent's ``workdir/``. The merge turn synthesizes a
-    textual answer from each branch's tool_result; if the user wants
-    to pull the actual file deltas they can ``git checkout`` the
-    sub-branch by hand.
-  * No conflict resolution. Without a workdir merge, conflicts can't
-    arise on the parent's branch.
-  * Sub-branch context commits aren't re-read. The on-disk files
-    inside ``_worktrees/<branch>/context/commits/`` go away when
-    ``release_sub_agent`` removes the worktree, and the git objects
-    aren't trivially reachable as ContextCommits via the
-    SessionStore API. We use the tool_result summary instead — it
-    carries the agent's final text and the branch name. A future
-    enhancement could `git show <branch>:context/commits/<id>.json`
-    to recover the per-branch commit.
+  1. For each input session: load its latest ContextCommit (so the
+     ``parent_ids`` we write can point at a real commit, not a stub),
+     and pull its final assistant text from the session's HEAD chain
+     (one short string we can drop into the merge prompt).
+  2. Build a prompt with ``<session label="...">…</session>`` blocks
+     plus the user's merge instruction.
+  3. Run ``process_user_turn`` on the target session
+     (``history_override=[]`` — the prompt is self-contained).
+  4. Save a fresh ContextCommit on the target with
+     ``parent_ids = [target's prior commit id, *peer commit ids]``.
 
-The merge turn is one of the rare places where parent_ids has more
-than one entry, which is exactly what task D (eb2b06a) was preparing
-for.
+The merge result lands on the target session as a regular assistant
+turn; the multi-parent ContextCommit records the lineage so the UI
+timeline can show where the merge drew from.
 """
 from __future__ import annotations
 
@@ -48,78 +42,82 @@ from typing import Optional
 
 @dataclass
 class MergeTurnResult:
-    parent_node_id: Optional[str] = None         # assistant id of the merge reply
-    commit_id: Optional[str] = None              # new multi-parent ContextCommit id
+    target_session_id: str = ""
+    target_assistant_id: Optional[str] = None
+    commit_id: Optional[str] = None
     parent_ids: list[str] = field(default_factory=list)
     final_text: str = ""
     failed: bool = False
     error: Optional[str] = None
 
 
-def _find_sub_agent_row(parent_store, parent_session_id: str, branch: str) -> Optional[dict]:
-    """Walk parent's history and find the most recent row that ran
-    the named sub-branch.
+def _peer_final_text(store, sid: str) -> tuple[str, Optional[str]]:
+    """Pull the most recent assistant content + head id from a peer
+    session. Returns (text, head_id). Empty text + None head means the
+    session has no assistant turns yet."""
+    pair = store._open(sid)
+    if not pair:
+        return "", None
+    _git, idx = pair
+    head = idx.head_id
+    if not head:
+        return "", None
+    # Walk back from head for the latest assistant.
+    visited: set[str] = set()
+    cur = head
+    while cur and cur not in visited:
+        visited.add(cur)
+        node = idx.nodes_by_id.get(cur)
+        if node is None:
+            break
+        if (node.role or "") in ("assistant", "llm") and (node.output or "").strip():
+            return str(node.output), head
+        meta = node.metadata or {}
+        cur = meta.get("parent_id") or node.called_by or None
+    return "", head
 
-    The sub_agent metadata can live either at the top level of the
-    message dict (assistant rows, where ``_msg_adapter`` hoists
-    decoded ``extra`` keys into the dict) or under ``extra.sub_agent``
-    (tool rows). Check both shapes so the resolver doesn't depend on
-    which role sub_agent_run currently writes.
-    """
-    msgs = parent_store.get_messages(parent_session_id) or []
-    matches: list[dict] = []
-    for m in msgs:
-        if m.get("function") != "sub_agent":
-            continue
-        sub = m.get("sub_agent")
-        if not isinstance(sub, dict):
-            extra = m.get("extra")
-            if isinstance(extra, str):
-                try:
-                    extra = json.loads(extra)
-                except (json.JSONDecodeError, TypeError):
-                    extra = {}
-            if isinstance(extra, dict):
-                sub = extra.get("sub_agent")
-        if not isinstance(sub, dict):
-            continue
-        if sub.get("branch") == branch:
-            matches.append(m)
-    if not matches:
+
+def _peer_latest_commit_id(store, sid: str, head_id: Optional[str]) -> Optional[str]:
+    """Best-available ContextCommit id for a peer session — load the
+    branch-specific commit if we have a head, otherwise the
+    session-global latest. Returns None when the session has no
+    committed context yet."""
+    if not head_id:
         return None
-    matches.sort(key=lambda r: r.get("timestamp") or 0.0)
-    return matches[-1]
-
-
-def _branch_tip_sha(parent_git, branch: str) -> Optional[str]:
-    """`git rev-parse refs/heads/<branch>`. None if the ref is missing
-    (caller probably passed a stale name)."""
     try:
-        out = parent_git._run(
-            "rev-parse", f"refs/heads/{branch}", check=False,
-        ).strip()
-        return out or None
+        from openprogram.context.commit.store import load_commit_for_head
+        c = load_commit_for_head(store, sid, head_id)
+        if c is not None:
+            return c.id
     except Exception:
-        return None
+        pass
+    try:
+        from openprogram.context.commit.store import load_latest_commit
+        c = load_latest_commit(store, sid)
+        if c is not None:
+            return c.id
+    except Exception:
+        pass
+    return None
 
 
-def _build_prompt(branches: list[dict], user_message: str) -> str:
+def _build_prompt(peers: list[dict], message: str) -> str:
     parts = [
-        "Several sub-agents ran on parallel branches off this conversation.",
-        "Their individual final replies are below — please consolidate them",
-        "into a single coherent answer for the user.",
+        "Multiple peer agents produced results in parallel.",
+        "Their individual final replies are below — consolidate them",
+        "into a single coherent answer.",
         "",
     ]
-    for b in branches:
-        name = b.get("name") or b.get("branch") or "unknown"
-        text = (b.get("text") or "").strip() or "(no output)"
-        parts.append(f'<branch name="{name}">')
+    for p in peers:
+        label = p.get("label") or p.get("session_id") or "peer"
+        text = (p.get("text") or "").strip() or "(no output)"
+        parts.append(f'<session label="{label}">')
         parts.append(text)
-        parts.append("</branch>")
+        parts.append("</session>")
         parts.append("")
-    if user_message and user_message.strip():
-        parts.append("User's merge request:")
-        parts.append(user_message.strip())
+    if message and message.strip():
+        parts.append("Merge instruction:")
+        parts.append(message.strip())
     return "\n".join(parts)
 
 
@@ -128,21 +126,17 @@ def _commit_id() -> str:
 
 
 def process_merge_turn(
-    parent_session_id: str,
-    sub_branches: list[str],
+    target_session_id: str,
+    sub_sessions: list[str],
     message: str,
     agent_id: str,
 ) -> MergeTurnResult:
-    """Run a merge turn that consolidates several sub-agent branches.
+    """Aggregate ``sub_sessions``' final replies onto ``target_session_id``.
 
-    ``sub_branches`` is the list of branch names (each one minted by
-    ``run_sub_agent_turn`` and recorded in the parent's DAG as a
-    ``function="sub_agent"`` tool_result row). Order is preserved in
-    the prompt.
-
-    Returns ``MergeTurnResult`` with the new parent assistant id, the
-    multi-parent ContextCommit id, and the ``parent_ids`` actually
-    written (sub-branch SHAs that resolved).
+    The target is just another peer session — typically the one the
+    user is chatting in, but anything goes. The peers stay independent;
+    we read their final text + latest commit id to build the prompt
+    and the multi-parent commit.
     """
     from openprogram.agent.session_db import default_db
     from openprogram.context.commit.store import save_commit, load_commit_for_head
@@ -150,129 +144,128 @@ def process_merge_turn(
         ContextCommit, CURRENT_RULES_VERSION,
     )
 
-    parent_store = default_db()
-    parent_pair = parent_store._open(parent_session_id)
-    if parent_pair is None:
+    store = default_db()
+    if store._open(target_session_id) is None:
         return MergeTurnResult(
+            target_session_id=target_session_id,
             failed=True,
-            error=f"parent session {parent_session_id!r} not found",
+            error=f"target session {target_session_id!r} not found",
         )
-    parent_git, parent_idx = parent_pair
-    parent_git._ensure_init()
 
-    # 1. Resolve each branch -> {name, text, sha}.
-    bundled: list[dict] = []
+    peers: list[dict] = []
     missing: list[str] = []
-    for br in sub_branches:
-        row = _find_sub_agent_row(parent_store, parent_session_id, br)
-        if row is None:
-            missing.append(br)
+    for sid in sub_sessions:
+        text, head_id = _peer_final_text(store, sid)
+        if not text and head_id is None:
+            missing.append(sid)
             continue
-        bundled.append({
-            "name": br,
-            "text": row.get("content") or "",
-            "sha": _branch_tip_sha(parent_git, br),
-            "source_node_id": row.get("id"),
+        peers.append({
+            "session_id": sid,
+            "text": text,
+            "head_id": head_id,
+            "label": _label_for(store, sid),
+            "commit_id": _peer_latest_commit_id(store, sid, head_id),
         })
 
-    if not bundled:
+    if not peers:
         return MergeTurnResult(
+            target_session_id=target_session_id,
             failed=True,
             error=(
-                "no sub-agent rows resolved for any of "
-                f"{sub_branches!r}; missing={missing!r}"
+                "no peer sessions yielded content for any of "
+                f"{sub_sessions!r}; missing={missing!r}"
             ),
         )
 
-    # 2. Build prompt + run a normal parent turn.
-    merge_prompt = _build_prompt(bundled, message)
+    merge_prompt = _build_prompt(peers, message)
     from openprogram.agent.dispatcher import TurnRequest, process_user_turn
 
-    # Parent's history contains the synthetic sub_agent tool_result
-    # rows whose tool_use stubs OpenAI / Codex can't reconcile when
-    # building a fresh conversation. Run merge with an empty history;
-    # everything the LLM needs is in the prompt we just built.
     req = TurnRequest(
-        session_id=parent_session_id,
+        session_id=target_session_id,
         user_text=merge_prompt,
         agent_id=agent_id,
         source="merge_turn",
         history_override=[],
     )
     try:
-        turn_result = process_user_turn(req)
+        turn = process_user_turn(req)
     except Exception as e:  # noqa: BLE001
         return MergeTurnResult(
+            target_session_id=target_session_id,
             failed=True,
             error=f"{type(e).__name__}: {e}",
         )
 
-    final_text = turn_result.final_text or ""
-    parent_node_id = turn_result.assistant_msg_id
-    if turn_result.failed:
+    if turn.failed:
         return MergeTurnResult(
-            parent_node_id=parent_node_id,
-            final_text=final_text,
+            target_session_id=target_session_id,
+            target_assistant_id=turn.assistant_msg_id,
+            final_text=turn.final_text or "",
             failed=True,
-            error=turn_result.error,
+            error=turn.error,
         )
 
-    # 3. Write a multi-parent ContextCommit. parent_ids carries the
-    #    sub-branch tip SHAs (one entry per resolved branch) plus the
-    #    previous parent-branch ContextCommit id when available.
     parents: list[str] = []
-    prev = load_commit_for_head(
-        parent_store, parent_session_id, parent_node_id,
-    )
+    prev = load_commit_for_head(store, target_session_id, turn.assistant_msg_id)
     if prev is not None and prev.id:
         parents.append(prev.id)
-    for b in bundled:
-        if b.get("sha"):
-            parents.append(b["sha"])
+    for p in peers:
+        if p.get("commit_id"):
+            parents.append(p["commit_id"])
 
     commit = ContextCommit(
         id=_commit_id(),
-        session_id=parent_session_id,
+        session_id=target_session_id,
         parent_id=parents[0] if parents else None,
         parent_ids=parents,
         created_at=time.time(),
-        head_node_id=parent_node_id,
+        head_node_id=turn.assistant_msg_id,
         rules_version=CURRENT_RULES_VERSION,
-        total_tokens=len(final_text) // 4,
+        total_tokens=len(turn.final_text or "") // 4,
         items=[],
-        summary=(
-            "merge_turn: "
-            + ", ".join(b["name"] for b in bundled)
-        ),
+        summary="merge: " + ", ".join(p["label"] for p in peers),
     )
     try:
-        save_commit(parent_store, commit)
+        save_commit(store, commit)
     except Exception as e:  # noqa: BLE001
         return MergeTurnResult(
-            parent_node_id=parent_node_id,
+            target_session_id=target_session_id,
+            target_assistant_id=turn.assistant_msg_id,
             commit_id=None,
             parent_ids=parents,
-            final_text=final_text,
+            final_text=turn.final_text or "",
             failed=True,
             error=f"save_commit failed: {type(e).__name__}: {e}",
         )
 
-    # Bump the parent session's HEAD-marker commit so a future
-    # load_commit_for_head off this branch tip finds the merge commit.
-    # (commit_turn commits whatever is staged in the parent's workdir,
-    # which after process_user_turn includes the new context/commits/<id>.json.)
     try:
-        parent_store.commit_turn(
-            parent_session_id,
-            f"merge_turn: {' + '.join(b['name'] for b in bundled)}",
+        store.commit_turn(
+            target_session_id,
+            f"merge: {' + '.join(p['label'] for p in peers)}",
         )
     except Exception:
         pass
 
     return MergeTurnResult(
-        parent_node_id=parent_node_id,
+        target_session_id=target_session_id,
+        target_assistant_id=turn.assistant_msg_id,
         commit_id=commit.id,
         parent_ids=parents,
-        final_text=final_text,
+        final_text=turn.final_text or "",
         failed=False,
     )
+
+
+def _label_for(store, sid: str) -> str:
+    """Human-readable handle for a peer session in the merge prompt.
+    Prefer the session's ``label`` (set by ``run_sub_agent_turn``)
+    then ``title``, then the id."""
+    try:
+        sess = store.get_session(sid) or {}
+        for k in ("label", "title"):
+            v = sess.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()[:32]
+    except Exception:
+        pass
+    return sid

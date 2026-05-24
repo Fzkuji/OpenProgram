@@ -134,31 +134,6 @@ class SessionStore:
         snapshot["updated_at"] = time.time()
         git.write_meta(snapshot)
 
-    def allocate_sub_agent_worktree(
-        self, session_id: str, branch_name: str, *,
-        base_ref: str = "HEAD",
-    ) -> Optional[Path]:
-        """Materialize a per-sub-agent worktree on a fresh branch off
-        ``base_ref``. The sub-agent's file edits land in this worktree
-        without trampling the parent session's ``workdir/``. Returns
-        the worktree path, or None if the session doesn't exist."""
-        pair = self._open(session_id)
-        if not pair:
-            return None
-        git, _ = pair
-        return git.add_worktree(branch_name, base_ref=base_ref)
-
-    def release_sub_agent_worktree(
-        self, session_id: str, worktree_path: Path | str,
-    ) -> None:
-        """Tear down a sub-agent worktree. Branch ref stays — caller
-        decides via merge / delete what to do with the commits on it."""
-        pair = self._open(session_id)
-        if not pair:
-            return
-        git, _ = pair
-        git.remove_worktree(worktree_path)
-
     def session_workdir(self, session_id: str) -> Optional[Path]:
         """Path of the per-session scratch workdir, materialized on first
         write. None if the session doesn't exist yet."""

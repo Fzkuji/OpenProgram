@@ -1,21 +1,23 @@
-"""Spawn-sub-agent WS action (task E part 3).
+"""Spawn-sub-agent WS action — peer-session model.
 
 Wire format::
 
     in:  {"action": "spawn_sub_agent",
-          "session_id": "...",
-          "parent_msg_id": "...",
-          "prompt": "...",
-          "agent_id": "...",
-          "label": "..." (optional)}
+          "session_id": "...",                 // parent attaching to
+          "parent_msg_id": "...",              // assistant turn it hangs off
+          "prompt": "...",                      // sub-agent's instruction
+          "agent_id": "main",
+          "label": "..."  (optional)}
     out: {"type": "spawn_sub_agent_result",
-          "data": {"session_id", "parent_msg_id", "branch", "final_text",
-                   "failed", "error"?, "parent_node_id", "sub_commit_sha"}}
+          "data": {"session_id", "parent_msg_id",
+                   "sub_session_id", "sub_head_id", "sub_commit_id",
+                   "attach_node_id",
+                   "final_text", "failed", "error"?}}
 
-The handler offloads ``run_sub_agent_turn`` to a thread so the WS event
-loop isn't blocked while the sub-agent runs its full LLM turn
-(potentially many seconds). Cancellation isn't wired in for v1 —
-the sub-agent runs to completion regardless of WS disconnect.
+The sub-agent runs as an independent peer session. The parent session
+receives a single attach pointer node in its DAG; clients open the
+sub-session by its id (same way they'd open any other session) when
+the user expands the attach card.
 """
 from __future__ import annotations
 
@@ -39,12 +41,13 @@ def _run(
         label=label,
     )
     return {
-        "branch": result.branch,
+        "sub_session_id": result.sub_session_id,
+        "sub_head_id": result.sub_head_id,
+        "sub_commit_id": result.sub_commit_id,
+        "attach_node_id": result.attach_node_id,
         "final_text": result.final_text,
         "failed": result.failed,
         "error": result.error,
-        "parent_node_id": result.parent_node_id,
-        "sub_commit_sha": result.sub_commit_sha,
     }
 
 
@@ -61,7 +64,7 @@ async def handle_spawn_sub_agent(ws, cmd: dict) -> None:
         payload = {
             "session_id": session_id,
             "parent_msg_id": parent_msg_id,
-            "branch": "",
+            "sub_session_id": "",
             "final_text": "",
             "failed": True,
             "error": "session_id, parent_msg_id and prompt are required",
@@ -69,7 +72,8 @@ async def handle_spawn_sub_agent(ws, cmd: dict) -> None:
     else:
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            None, lambda: _run(session_id, parent_msg_id, prompt, agent_id, label),
+            None,
+            lambda: _run(session_id, parent_msg_id, prompt, agent_id, label),
         )
         payload = {
             "session_id": session_id,
