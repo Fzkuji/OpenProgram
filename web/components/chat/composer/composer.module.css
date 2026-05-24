@@ -490,14 +490,6 @@
   border-radius: 14px 14px 0 0;
   border-bottom: none;
   box-shadow: none;
-  /* Each .slashMenuItem is fixed at 52px (box-sizing border-box,
-     description single-line). Menu pad-top + pad-bottom = 16px.
-     Heights:
-       1 item  →  68px
-       2 items → 120px
-       3 items → 172px
-       4 items → 224px
-       cap     → 250px  (≈ 4.5 items; 5th peeks, signalling scroll) */
   max-height: 250px;
   overflow-y: auto;
   scrollbar-width: none;
@@ -531,20 +523,8 @@
 }
 
 .slashMenuItem {
-  /* Fixed 52px row so menu height is predictable per N items.
-     Math (matches the comment on .slashMenu's max-height):
-       padding 8px × 2 = 16px vertical
-       name line  (13px × 1.4 line-height) ≈ 18px
-       desc margin-top 3px
-       desc line  (11px × 1.4 line-height)  ≈ 15px
-       16 + 18 + 3 + 15                       = 52px
-     Long descriptions are kept to one line via the ellipsis rule
-     on .slashMenuDesc so no item can grow taller than 52px. */
   display: block;
-  height: 52px;
   padding: 8px;
-  box-sizing: border-box;
-  overflow: hidden;
   border-radius: 10px;
   cursor: pointer;
   user-select: none;
@@ -571,12 +551,6 @@
   color: var(--text-muted);
   margin-top: 3px;
   line-height: 1.4;
-  /* Single-line ellipsis so a long description can't bump the row
-     past its fixed 52px height — keeps the menu's overall height
-     predictable as N × 52 + 16. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 @media (prefers-color-scheme: dark) {
