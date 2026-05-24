@@ -484,16 +484,7 @@
   pointer-events: auto;
   max-width: 720px;
   width: min(90%, 720px);
-  /* Padding sized so the visual gap above/below the item ROW (i.e.
-     menu padding + item padding) lands at horizontal-gap or more.
-     Item padding is 8px top, 8px bottom, 12px sides. So:
-       top    = 14 + 8 = 22  (≥ side  ✓)
-       side   = 8  + 12 = 20
-       bottom = 18 + 8 = 26  (slight extra so the square bottom
-                              edge doesn't visually clip the row)
-     The previous 6/8/14 made the top read as cramped against the
-     rounded corners. */
-  padding: 14px 8px 18px;
+  padding: 8px;
   background: var(--bg-tertiary);
   border: 1px solid rgba(0, 0, 0, 0.18);
   border-radius: 14px 14px 0 0;
@@ -535,14 +526,8 @@
 }
 
 .slashMenuItem {
-  /* Block layout: name + args are inline spans on one line, the
-     description div takes the next line. flex-direction:column
-     here was a misstep — it made each <span> a column flex item
-     and stacked them, pushing the description out of the row's
-     fixed height and giving the menu's bottom edge a "clipped"
-     look. */
   display: block;
-  padding: 8px 12px;
+  padding: 8px;
   border-radius: 10px;
   cursor: pointer;
   user-select: none;
