@@ -35,7 +35,10 @@ import json
 import os
 import random
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from openprogram.providers.utils.errors import LLMError
 
 # Backoff base (seconds) between exec() retry attempts. Retries sleep
 # _RETRY_BACKOFF * 2**attempt before the next try, with ±25% jitter
@@ -45,12 +48,31 @@ from typing import Any, Optional
 _RETRY_BACKOFF = 1.5
 
 
-def _retry_sleep_seconds(attempt: int) -> float:
-    """Exponential backoff + jitter. Attempt 0 sleeps ~1.5s, attempt 1
-    ~3s, attempt 2 ~6s, ... up to ~48s at attempt 5. Each delay is
-    randomly scaled by [0.75, 1.25] so a burst of retries spreads out
-    instead of slamming the upstream simultaneously."""
+def _retry_sleep_seconds(attempt: int, retry_after_s: Optional[float] = None) -> float:
+    """Exponential backoff + jitter, honoring a server-supplied
+    ``Retry-After`` hint as a lower bound.
+
+    Without a hint (default): ``base * 2^attempt`` scaled by
+    ``[0.75, 1.25]`` (symmetric jitter) so a burst of retries spreads
+    out instead of slamming the upstream simultaneously. Attempt 0
+    sleeps ~1.5s, attempt 1 ~3s, ..., attempt 5 ~48s.
+
+    With a hint (server returned ``Retry-After``): the delay is the
+    larger of the exponential base and ``retry_after_s``, then scaled
+    by ``[1.0, 1.25]`` — positive-only jitter so we never wake up
+    before the server-specified deadline. Honoring the lower bound
+    matters during rate-limit storms: ±25% symmetric jitter would
+    let a quarter of retries fire too early, defeating the server's
+    backpressure and triggering 429 again.
+
+    Mirrors OpenClaw's ``computeBackoffDelay`` (references/openclaw/
+    src/infra/retry.ts) which uses the same "positive-only when
+    Retry-After present" rule.
+    """
     base = _RETRY_BACKOFF * (2 ** attempt)
+    if retry_after_s and retry_after_s > 0:
+        floor = max(base, retry_after_s)
+        return floor * random.uniform(1.0, 1.25)
     return base * random.uniform(0.75, 1.25)
 
 # Substrings marking a *permanent* provider error. Retrying these only
@@ -73,6 +95,79 @@ def _is_permanent_error(exc: Exception) -> bool:
     """True if retrying ``exc`` is pointless (malformed request / bad auth)."""
     msg = f"{type(exc).__name__}: {exc}".lower()
     return any(marker in msg for marker in _PERMANENT_ERROR_MARKERS)
+
+
+def _build_llm_error(
+    *,
+    cause: BaseException,
+    attempts: int,
+    elapsed_s: float,
+    content: Any,
+    model: Optional[str],
+    provider: Optional[str],
+    history: list[str],
+    permanent: bool,
+) -> "LLMError":  # type: ignore[name-defined]
+    """Construct the structured exception ``exec()`` raises when it
+    gives up.
+
+    Collects everything the dispatcher / GUI agent needs to decide
+    "retry the whole turn", "reauthenticate", "trim prompt", or
+    "circuit-break this provider":
+
+      * ``reason`` — classified by :func:`classify_error`
+      * ``retryable`` — honest about whether the underlying kind was
+        transient; ``False`` for permanent failures (auth / invalid
+        request / context overflow). Note: even retryable=True means
+        "the kind was transient but we exhausted our budget", not
+        "you should retry this immediately"
+      * ``attempts`` / ``elapsed_s`` / ``had_image`` — observability
+      * ``cause`` — original exception, preserved for traceback
+        via ``raise ... from cause``
+
+    The ``history`` list (per-attempt error strings) is folded into
+    the message so the LLMError's text is greppable like the old
+    RuntimeError. Localised to this helper so the two retry loops
+    stay tidy.
+    """
+    from openprogram.providers.utils.errors import (
+        LLMError, classify_error, had_image as _had_image,
+    )
+
+    # Try to pull HTTP status from the cause if the provider attached
+    # it (openai-codex / anthropic providers can stash it on the exc).
+    http_status = getattr(cause, "http_status", None) or getattr(cause, "status_code", None)
+    retry_after_s = getattr(cause, "retry_after_s", None)
+    error_text = getattr(cause, "error_text", "") or ""
+
+    reason, kind_retryable = classify_error(
+        cause, http_status=http_status, error_text=error_text,
+    )
+    # Even if the underlying kind was retryable, when we gave up
+    # because the budget was exhausted, retryable stays True (caller
+    # may decide to retry the whole turn with a fresh budget). When
+    # the failure was permanent, force retryable=False regardless of
+    # what classify_error said.
+    retryable = kind_retryable and not permanent
+
+    label = "permanently" if permanent else f"after {attempts} attempt(s)"
+    detail = "\n".join(history) if history else f"{type(cause).__name__}: {cause}"
+    message = f"exec() failed {label}:\n{detail}"
+
+    return LLMError(
+        message=message,
+        reason=reason,
+        retryable=retryable,
+        http_status=http_status,
+        retry_after_s=retry_after_s,
+        attempts=attempts,
+        elapsed_s=elapsed_s,
+        had_image=_had_image(content),
+        provider=provider,
+        model=model,
+        last_error_type=type(cause).__name__,
+        cause=cause,
+    )
 
 # Context var for the tools passed into the current exec() call.
 # _call_via_providers reads it to feed AgentSession without changing
@@ -536,6 +631,7 @@ class Runtime:
             if _policy_kwargs else None
         )
         reply = None
+        _exec_start = time.monotonic()
         try:
             errors: list[str] = []
             for attempt in range(self.max_retries):
@@ -553,11 +649,18 @@ class Runtime:
                     errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
                     permanent = _is_permanent_error(e)
                     if permanent or attempt == self.max_retries - 1:
-                        reason = "permanently" if permanent else f"after {attempt + 1} attempts"
-                        raise RuntimeError(
-                            f"exec() failed {reason}:\n" + "\n".join(errors)
+                        raise _build_llm_error(
+                            cause=e, attempts=attempt + 1,
+                            elapsed_s=time.monotonic() - _exec_start,
+                            content=content, model=use_model,
+                            provider=getattr(self, "provider", None),
+                            history=errors,
+                            permanent=permanent,
                         ) from e
-                    time.sleep(_retry_sleep_seconds(attempt))
+                    # Honor server-supplied Retry-After when the
+                    # underlying provider attached it to the exception.
+                    retry_after_s = getattr(e, "retry_after_s", None)
+                    time.sleep(_retry_sleep_seconds(attempt, retry_after_s))
         finally:
             if tools_token is not None:
                 _current_tools.reset(tools_token)
@@ -611,6 +714,7 @@ class Runtime:
 
         # --- Call the LLM (with retry) ---
         errors: list[str] = []
+        _exec_start = time.monotonic()
         for attempt in range(self.max_retries):
             try:
                 reply = await self._async_call(call_input, model=use_model, response_format=response_format)
@@ -626,11 +730,16 @@ class Runtime:
                 errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
                 permanent = _is_permanent_error(e)
                 if permanent or attempt == self.max_retries - 1:
-                    reason = "permanently" if permanent else f"after {attempt + 1} attempts"
-                    raise RuntimeError(
-                        f"async_exec() failed {reason}:\n" + "\n".join(errors)
+                    raise _build_llm_error(
+                        cause=e, attempts=attempt + 1,
+                        elapsed_s=time.monotonic() - _exec_start,
+                        content=content, model=use_model,
+                        provider=getattr(self, "provider", None),
+                        history=errors,
+                        permanent=permanent,
                     ) from e
-                await asyncio.sleep(_retry_sleep_seconds(attempt))
+                retry_after_s = getattr(e, "retry_after_s", None)
+                await asyncio.sleep(_retry_sleep_seconds(attempt, retry_after_s))
 
     def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """
