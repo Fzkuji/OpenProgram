@@ -60,3 +60,4 @@ openprogram/webui/programs_meta.json
 .agent_cron_test/
 .cron-test.log
 .cron-test/
+.claude/worktrees/
