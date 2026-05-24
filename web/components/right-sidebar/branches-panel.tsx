@@ -283,6 +283,18 @@ export function BranchesPanel() {
     }, 100);
   }
 
+  function runAttach() {
+    if (!sessionId || selected.length !== 1) return;
+    wsSend({
+      action: "attach_branch",
+      session_id: sessionId,
+      target_head_msg_id: selected[0],
+    });
+    setSelected([]);
+    setBaseHead(null);
+    // session_reload broadcast picks up the new attach card.
+  }
+
   const w = window as unknown as BranchWindow;
   const rows = (sessionId && w._branchesByConv?.[sessionId]) || [];
   if (!sessionId || rows.length === 0) return null;
@@ -318,6 +330,32 @@ export function BranchesPanel() {
           />
         ))}
       </div>
+      {!collapsed && selected.length === 1 ? (
+        <div className="branches-merge-bar">
+          <span className="branches-merge-summary">
+            1 selected
+          </span>
+          <button
+            type="button"
+            className="branches-merge-btn"
+            onClick={runAttach}
+            title="Write an attach card on the current branch's head pointing at this branch"
+          >
+            Attach to
+          </button>
+          <button
+            type="button"
+            className="branches-merge-clear"
+            onClick={() => {
+              setSelected([]);
+              setBaseHead(null);
+            }}
+            title="Clear selection"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
       {!collapsed && selected.length >= 2 ? (
         <div className="branches-merge-bar">
           <span className="branches-merge-summary">
@@ -354,8 +392,42 @@ export function BranchesPanel() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="branches-merge-modal-title">
-              Merge {selected.length} branch{selected.length === 1 ? "" : "es"}
-              {baseHead ? " (★ as base)" : ""}
+              Merge {selected.length} branches
+            </div>
+            <div className="branches-merge-mode">
+              <label className="branches-merge-mode-row">
+                <input
+                  type="radio"
+                  name="merge-mode"
+                  checked={!baseHead}
+                  onChange={() => setBaseHead(null)}
+                />
+                <span>
+                  <strong>Equal merge</strong> — write a new turn whose
+                  parents are all selected branches. Reply lands as a
+                  fresh branch tip.
+                </span>
+              </label>
+              <label className="branches-merge-mode-row">
+                <input
+                  type="radio"
+                  name="merge-mode"
+                  checked={!!baseHead}
+                  onChange={() => {
+                    // Default base to first selected if nothing is
+                    // ⌘-clicked yet — the radio is only useful when
+                    // a base exists.
+                    if (!baseHead && selected.length > 0) {
+                      setBaseHead(selected[0]);
+                    }
+                  }}
+                />
+                <span>
+                  <strong>Attach into ★ base</strong> — reply continues
+                  the ★ branch, the other selections feed in as
+                  context. ⌘-click a row to pick the base.
+                </span>
+              </label>
             </div>
             <textarea
               className="branches-merge-modal-input"

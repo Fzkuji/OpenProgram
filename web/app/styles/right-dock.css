@@ -423,6 +423,31 @@
   resize: vertical;
 }
 .branches-merge-modal-input:focus { outline: 1px solid var(--accent-blue, #4f8ef7); }
+.branches-merge-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+}
+.branches-merge-mode-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  line-height: 1.4;
+}
+.branches-merge-mode-row input[type="radio"] {
+  margin-top: 2px;
+}
+.branches-merge-mode-row strong {
+  color: var(--text-bright);
+  font-weight: 500;
+}
 .branches-merge-modal-hint {
   font-size: 11px;
   color: var(--text-muted);

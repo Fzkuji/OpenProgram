@@ -296,6 +296,138 @@ async def handle_delete_branch(ws, cmd: dict):
     }, default=str))
 
 
+async def handle_attach_branch(ws, cmd: dict) -> None:
+    """Write an attach-pointer row on the current session HEAD pointing
+    at ``target_head_msg_id``. Same shape as the attach card a /task
+    spawn produces, but explicit — the user is referencing an
+    already-existing branch instead of spawning a new one.
+
+    Wire format::
+
+        in:  {"action": "attach_branch", "session_id": "...",
+              "target_head_msg_id": "...",
+              "label": "..."                  (optional override)}
+        out: broadcast: ``session_reload`` so all tailing clients
+                       refresh and see the new attach card.
+    """
+    import json as _json
+    import time
+    import uuid
+
+    from openprogram.webui import server as _s
+
+    session_id = (cmd.get("session_id") or "").strip()
+    target_head = (cmd.get("target_head_msg_id") or "").strip()
+    label_override = (cmd.get("label") or "").strip() or None
+
+    if not session_id or not target_head:
+        await ws.send_text(json.dumps({
+            "type": "attach_branch_result",
+            "data": {
+                "ok": False,
+                "error": "session_id and target_head_msg_id are required",
+            },
+        }))
+        return
+
+    ok = False
+    error: str | None = None
+    attach_node_id: str | None = None
+    anchor: str | None = None
+    try:
+        from openprogram.agent.session_db import default_db
+        db = default_db()
+        sess = db.get_session(session_id) or {}
+        anchor = sess.get("head_id")
+        if not anchor:
+            raise RuntimeError("session has no active head to attach to")
+        # Resolve the target branch's name + a short content preview
+        # so the AttachCard can render label + preview without a
+        # follow-up round trip.
+        target_label = label_override or ""
+        target_preview = ""
+        try:
+            branches = db.list_branches(session_id) or []
+            for b in branches:
+                if b.get("head_msg_id") == target_head:
+                    target_label = target_label or (b.get("name") or "")
+                    break
+            chain = db.get_branch(session_id, target_head) or []
+            for r in reversed(chain):
+                if (
+                    r.get("role") == "assistant"
+                    and isinstance(r.get("content"), str)
+                    and r.get("function") != "attach"
+                ):
+                    target_preview = r["content"]
+                    break
+        except Exception:
+            pass
+
+        attach_node_id = uuid.uuid4().hex[:12]
+        attach_msg = {
+            "id": attach_node_id,
+            "role": "assistant",
+            "display": "runtime",
+            "function": "attach",
+            "content": (target_preview or "(no preview)").strip(),
+            # Same convention as the /task-produced attach pointer:
+            # called_by anchors to the conv turn this attach hangs off.
+            # No parent_id, so linear_history skips it and the splicer
+            # grafts it back in.
+            "called_by": anchor,
+            "timestamp": time.time(),
+            "agent_id": (sess.get("agent_id") or "main"),
+            "extra": _json.dumps({
+                "attach": {
+                    "session_id": session_id,
+                    "head_id": target_head,
+                    "label": target_label,
+                    "manual": True,
+                },
+            }, default=str),
+        }
+        # Snapshot HEAD so the attach pointer doesn't push the active
+        # branch onto a synthetic side child.
+        head_before = anchor
+        db.append_message(session_id, attach_msg)
+        if head_before:
+            try:
+                db.set_head(session_id, head_before)
+            except Exception:
+                pass
+        try:
+            db.commit_turn(
+                session_id, f"attach branch: {target_label or target_head[:8]}",
+            )
+        except Exception:
+            pass
+        ok = True
+    except Exception as e:  # noqa: BLE001
+        error = f"{type(e).__name__}: {e}"
+
+    if ok:
+        try:
+            _s._broadcast(json.dumps({
+                "type": "session_reload",
+                "data": {"session_id": session_id, "reason": "attach"},
+            }, default=str))
+        except Exception:
+            pass
+
+    await ws.send_text(json.dumps({
+        "type": "attach_branch_result",
+        "data": {
+            "session_id": session_id,
+            "target_head_msg_id": target_head,
+            "anchor": anchor,
+            "attach_node_id": attach_node_id,
+            "ok": ok,
+            "error": error,
+        },
+    }, default=str))
+
+
 ACTIONS = {
     "list_branches": handle_list_branches,
     "checkout_branch": handle_checkout_branch,
@@ -303,4 +435,5 @@ ACTIONS = {
     "auto_name_branch": handle_auto_name_branch,
     "delete_branch_name": handle_delete_branch_name,
     "delete_branch": handle_delete_branch,
+    "attach_branch": handle_attach_branch,
 }
