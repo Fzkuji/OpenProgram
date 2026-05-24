@@ -134,6 +134,16 @@ class SessionStore:
         snapshot["updated_at"] = time.time()
         git.write_meta(snapshot)
 
+    def session_workdir(self, session_id: str) -> Optional[Path]:
+        """Path of the per-session scratch workdir, materialized on first
+        write. None if the session doesn't exist yet."""
+        pair = self._open(session_id)
+        if not pair:
+            return None
+        git, _ = pair
+        git._ensure_init()
+        return git.workdir_path
+
     def commit_turn(self, session_id: str, message: str) -> Optional[str]:
         """Commit the current working tree as one turn. Public so the
         dispatcher can call it at turn end; also called internally by

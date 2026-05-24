@@ -69,6 +69,18 @@ class GitSession:
 
     # ── Lifecycle ─────────────────────────────────────────────────
 
+    @property
+    def workdir_path(self) -> Path:
+        """Per-session scratch workspace tracked by the session repo.
+
+        Agents that don't target a user-supplied ``work_dir=...`` can
+        use this as their cwd so file edits land inside the session
+        and get committed alongside history / context on turn-end via
+        ``commit_all``'s ``git add -A``. Lives at
+        ``<repo>/workdir/``. Materialized on first ``_ensure_init``.
+        """
+        return self.path / "workdir"
+
     def exists(self) -> bool:
         """True iff the on-disk repo is already initialized."""
         if self._initialized is True:
@@ -91,6 +103,11 @@ class GitSession:
             self.path.mkdir(parents=True, exist_ok=True)
             (self.path / "history").mkdir(exist_ok=True)
             (self.path / "context").mkdir(exist_ok=True)
+            wd = self.path / "workdir"
+            wd.mkdir(exist_ok=True)
+            keep = wd / ".gitkeep"
+            if not keep.exists():
+                keep.write_text("")
             if not (self.path / ".git").exists():
                 self._run("init", "--quiet", "--initial-branch=main")
                 # Local identity — no fallback to ~/.gitconfig.
