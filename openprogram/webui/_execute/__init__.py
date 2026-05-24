@@ -66,6 +66,18 @@ def execute_in_context(
         # Apply thinking effort to chat runtime
         _s._apply_thinking_effort(runtime, effective_thinking)
 
+        # Default chat-runtime cwd = the session's git workdir/. The
+        # /api/run path supplies its own work_dir and overrides this via
+        # run.py::run_function's set_workdir call, so the user-supplied
+        # override still wins.
+        try:
+            from openprogram.agent._workdir import apply_default_workdir
+            _applied_wd = apply_default_workdir(runtime, session_id)
+            if _applied_wd is not None:
+                _s._log(f"[exec] chat workdir: {_applied_wd}")
+        except Exception:
+            pass
+
         try:
             if action == "query":
                 from . import chat as _chat
