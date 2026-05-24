@@ -466,12 +466,28 @@
    when clicked — no module CSS lives here for the effort UI. */
 
 /* Slash menu (popup above input that rolls up out of the input box) */
+/* Stack wrapper: makes the inputWrapper the positioning reference
+   for the slash menu. Its only job is ``position: relative`` — its
+   height is the inputWrapper's natural height (slashClip is
+   absolute, doesn't contribute), so anything inside positioned
+   ``bottom: 100%`` lands on the wrapper's top edge. */
+.composerStack {
+  position: relative;
+}
 .slashClip {
   position: absolute;
-  top: -2000px;
   left: 0;
   right: 0;
-  bottom: 120px;
+  /* Bottom edge of the clip = inputWrapper's top edge.
+     No magic-number offset; no breakage when the wrapper grows
+     (multi-line input, fn-form open, etc.). */
+  bottom: 100%;
+  /* Tall enough for the menu's max-height. The clip's overflow:hidden
+     is what makes the open / close translateY animation work — the
+     menu starts at translateY(100%) inside the clip, visually below
+     the clip's bottom, and slides up to translateY(0) anchored to the
+     clip's own bottom (= wrapper top). */
+  height: 500px;
   overflow: hidden;
   pointer-events: none;
 }

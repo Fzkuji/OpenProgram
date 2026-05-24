@@ -432,6 +432,13 @@ export function Composer() {
 
   return (
     <div className={styles.inputArea}>
+      {/* composerStack wraps {slashClip, inputWrapper} so the slash
+          menu's vertical anchor is the wrapper's top edge — not a
+          magic-number offset from the inputArea bottom. composerStack
+          is position:relative and naturally takes inputWrapper's
+          height (slashClip is absolute, doesn't contribute), so
+          slashClip's bottom:100% lands exactly at the wrapper top. */}
+      <div className={styles.composerStack}>
       <div className={styles.slashClip}>
         {slash.visible && (
           <div
@@ -669,6 +676,7 @@ export function Composer() {
           </button>
         )}
       </div>
+      </div>{/* /.composerStack */}
     </div>
   );
 }
