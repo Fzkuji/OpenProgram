@@ -1,14 +1,12 @@
 "use client";
 
 /**
- * AttachCard — assistant-bubble variant for rows whose ``function ===
- * "attach"`` (written by ``run_sub_agent_turn``).
+ * AttachCard — rendered for assistant rows whose ``function === "attach"``.
  *
- * Renders a compact card showing the sub-agent's label + preview of
- * its final reply, with an "Open" link that navigates to the
- * sub-session's own chat view. The sub-session is a peer of the
- * current session in the same SessionStore — opening it is the same
- * navigation a sidebar click would do.
+ * An attach row marks that this turn referenced another agent's branch
+ * (via a spawn / attach operation). The two agents are peers — neither
+ * is parent or child of the other — so the label is just "agent",
+ * not "sub-agent". The "Open" link navigates to that peer's own chat.
  */
 import type { ChatMsg } from "@/lib/session-store";
 
@@ -31,7 +29,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   }
 
   return (
-    <div className="attach-card" data-sub-session-id={subId}>
+    <div className="attach-card" data-peer-session-id={subId}>
       <div className="attach-card-header">
         <div className="attach-card-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -42,7 +40,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
         </div>
         <div className="attach-card-meta">
           <div className="attach-card-label">
-            sub-agent{label ? ` · ${label}` : ""}
+            spawn{label ? ` · ${label}` : ""}
           </div>
           <div className="attach-card-sub" title={subId}>
             {subId || "(no session id)"}
@@ -54,7 +52,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
             type="button"
             className="attach-card-open"
             onClick={open}
-            aria-label="Open sub-agent session"
+            aria-label="Open peer agent session"
           >
             Open
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"

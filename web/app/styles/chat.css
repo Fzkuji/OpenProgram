@@ -1275,12 +1275,12 @@
 }
 
 
-/* AttachCard — a pointer row written when this turn spawned a peer
-   session (detached spawn / task()). Rendered standalone (no avatar,
-   no "Agentic" header) because it's not a turn — it's a marker.
-   `.attach-row` mirrors `.runtime-block`'s 60px horizontal margin so
-   the card lines up with the chat text column instead of the avatar
-   column. */
+/* AttachCard — a pointer row written when this turn referenced a
+   peer agent (via spawn / attach operations). Rendered standalone
+   (no avatar, no "Agentic" header) because it's not a turn — it's
+   a marker. `.attach-row` mirrors `.runtime-block`'s 60px horizontal
+   margin so the card lines up with the chat text column instead of
+   the avatar column. */
 .attach-row {
   margin: 12px 60px;
 }

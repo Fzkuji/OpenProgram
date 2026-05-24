@@ -87,7 +87,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: "/spawn",
     args: "[label]: <prompt>",
     description:
-      "Spawn a sub-agent (inherits this conversation, replies as a sibling branch). "
+      "Spawn an agent (inherits this conversation, replies as a sibling branch). "
       + "Use '/spawn label: prompt' to label the branch.",
     run(rest, { sessionId, send }) {
       if (!sessionId) return true;
