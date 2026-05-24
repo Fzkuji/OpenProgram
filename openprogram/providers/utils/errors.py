@@ -42,6 +42,8 @@ class ErrorReason(str, enum.Enum):
       * ``INVALID_REQUEST`` — surface to user, don't retry
       * ``CONTEXT_LENGTH`` — trim prompt and retry at upper layer
       * ``CONTENT_POLICY`` — surface or rewrite, don't blindly retry
+      * ``TIMEOUT`` — caller-supplied ``timeout_s`` deadline hit;
+        retry budget irrelevant, decision is "give up this call"
       * ``UNKNOWN`` — conservative: surface message, don't retry
     """
     TRANSPORT = "transport"
@@ -52,6 +54,7 @@ class ErrorReason(str, enum.Enum):
     INVALID_REQUEST = "invalid"
     CONTEXT_LENGTH = "context"
     CONTENT_POLICY = "policy"
+    TIMEOUT = "timeout"
     UNKNOWN = "unknown"
 
 
@@ -159,6 +162,7 @@ _TRANSIENT_KEYWORDS = (
 # requests at module load — providers that never use them won't pay
 # the import cost.
 _TRANSPORT_EXC_NAMES = frozenset({
+    # httpx
     "ConnectError",
     "ConnectTimeout",
     "ReadTimeout",
@@ -167,8 +171,20 @@ _TRANSPORT_EXC_NAMES = frozenset({
     "RemoteProtocolError",
     "ProtocolError",
     "NetworkError",
+    "ReadError",
+    "WriteError",
+    # SSE-layer (openai-codex)
     "StreamIdleTimeout",
     "StreamTotalTimeout",
+    # Python builtins
+    "ConnectionError",
+    "ConnectionResetError",
+    "ConnectionAbortedError",
+    "ConnectionRefusedError",
+    "TimeoutError",
+    "BrokenPipeError",
+    # asyncio low-level
+    "IncompleteReadError",
 })
 
 
@@ -280,9 +296,49 @@ def had_image(content: Any) -> bool:
     return False
 
 
+@dataclass
+class RetryInfo:
+    """Per-attempt context passed to ``on_retry`` callbacks.
+
+    Fired by ``runtime.exec()`` / ``async_exec()`` immediately before
+    each backoff sleep — i.e. when an attempt has failed transiently
+    and the next attempt is scheduled. Not fired for permanent
+    failures (those raise immediately) or for the terminal failure
+    that exhausts the budget (those raise via :class:`LLMError`).
+
+    Mirrors OpenClaw's ``RetryInfo`` (references/openclaw/src/infra/
+    retry.ts) — same fields, same purpose: let consumers record
+    metrics, drive circuit breakers, or emit structured logs without
+    coupling to provider internals.
+
+    Fields:
+      * ``attempt`` — 1-based index of the attempt that **just
+        failed** (so the very first failure reports ``attempt=1``).
+      * ``max_attempts`` — total budget, including the upcoming retry.
+      * ``reason`` — classified ``ErrorReason`` of this failure.
+      * ``sleep_s`` — backoff delay about to be slept (after
+        Retry-After clamp, jitter, etc.). May be 0 if the deadline
+        is about to fire.
+      * ``elapsed_s`` — wall-clock elapsed since exec() started.
+      * ``retry_after_s`` — server hint that influenced the sleep,
+        when present.
+      * ``last_error_type`` — Python exception class name.
+      * ``last_error_msg`` — ``str(exc)`` for log readability.
+    """
+    attempt: int
+    max_attempts: int
+    reason: ErrorReason
+    sleep_s: float
+    elapsed_s: float
+    retry_after_s: Optional[float] = None
+    last_error_type: Optional[str] = None
+    last_error_msg: Optional[str] = None
+
+
 __all__ = [
     "ErrorReason",
     "LLMError",
+    "RetryInfo",
     "classify_error",
     "parse_retry_after",
     "had_image",

@@ -35,17 +35,40 @@ import json
 import os
 import random
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
-    from openprogram.providers.utils.errors import LLMError
+    from openprogram.providers.utils.errors import (
+        ErrorReason, LLMError, RetryInfo,
+    )
 
 # Backoff base (seconds) between exec() retry attempts. Retries sleep
 # _RETRY_BACKOFF * 2**attempt before the next try, with ±25% jitter
 # so multiple concurrent retries don't fire in lock-step against the
 # same upstream and re-trigger whatever connection-pool / rate-limit
 # threshold caused the original failure.
-_RETRY_BACKOFF = 1.5
+#
+# Default 1.5s; ``OPENPROGRAM_RETRY_BACKOFF_BASE`` env overrides so
+# deployments with non-default network characteristics (proxied,
+# offline-capable, very-low-latency local models) can re-tune without
+# touching code.
+_RETRY_BACKOFF = float(os.environ.get("OPENPROGRAM_RETRY_BACKOFF_BASE", "1.5"))
+
+
+def _default_max_retries() -> int:
+    """Process-wide default for ``Runtime(max_retries=...)``.
+
+    Reads ``OPENPROGRAM_MAX_RETRIES`` lazily on every Runtime
+    construction so tests / scripts can flip the env after this
+    module is imported and still see the new value. Falls back to
+    6 — the legacy hard-coded default (try once + retry five times,
+    total ≈46s of sleeping at the default backoff base).
+    """
+    try:
+        v = int(os.environ.get("OPENPROGRAM_MAX_RETRIES", "6"))
+    except ValueError:
+        v = 6
+    return max(1, v)
 
 
 def _retry_sleep_seconds(attempt: int, retry_after_s: Optional[float] = None) -> float:
@@ -107,20 +130,24 @@ def _build_llm_error(
     provider: Optional[str],
     history: list[str],
     permanent: bool,
+    override_reason: "Optional[ErrorReason]" = None,
 ) -> "LLMError":  # type: ignore[name-defined]
     """Construct the structured exception ``exec()`` raises when it
     gives up.
 
-    Collects everything the dispatcher / GUI agent needs to decide
-    "retry the whole turn", "reauthenticate", "trim prompt", or
-    "circuit-break this provider":
+    Collects everything a caller needs to decide "retry the whole
+    turn", "reauthenticate", "trim prompt", or "circuit-break this
+    provider":
 
-      * ``reason`` — classified by :func:`classify_error`
+      * ``reason`` — classified by :func:`classify_error`, or forced
+        via ``override_reason`` (e.g. TIMEOUT for deadline hits where
+        the underlying cause was incidental, not the real reason
+        we're giving up).
       * ``retryable`` — honest about whether the underlying kind was
         transient; ``False`` for permanent failures (auth / invalid
-        request / context overflow). Note: even retryable=True means
-        "the kind was transient but we exhausted our budget", not
-        "you should retry this immediately"
+        request / context overflow / timeout). Note: ``retryable=True``
+        means "the kind was transient but we exhausted our budget",
+        not "you should retry this immediately"
       * ``attempts`` / ``elapsed_s`` / ``had_image`` — observability
       * ``cause`` — original exception, preserved for traceback
         via ``raise ... from cause``
@@ -135,20 +162,28 @@ def _build_llm_error(
     )
 
     # Try to pull HTTP status from the cause if the provider attached
-    # it (openai-codex / anthropic providers can stash it on the exc).
+    # it (HTTP providers stash it on the exc via ProviderStreamError).
     http_status = getattr(cause, "http_status", None) or getattr(cause, "status_code", None)
     retry_after_s = getattr(cause, "retry_after_s", None)
     error_text = getattr(cause, "error_text", "") or ""
 
-    reason, kind_retryable = classify_error(
-        cause, http_status=http_status, error_text=error_text,
-    )
-    # Even if the underlying kind was retryable, when we gave up
-    # because the budget was exhausted, retryable stays True (caller
-    # may decide to retry the whole turn with a fresh budget). When
-    # the failure was permanent, force retryable=False regardless of
-    # what classify_error said.
-    retryable = kind_retryable and not permanent
+    if override_reason is not None:
+        reason = override_reason
+        # An overridden reason (currently only TIMEOUT) is always
+        # non-retryable in this attempt budget: even if the underlying
+        # transport error was transient, *we* gave up because of a
+        # deadline, not because the kind was permanent.
+        retryable = False
+    else:
+        reason, kind_retryable = classify_error(
+            cause, http_status=http_status, error_text=error_text,
+        )
+        # Even if the underlying kind was retryable, when we gave up
+        # because the budget was exhausted, retryable stays True
+        # (caller may decide to retry the whole turn with a fresh
+        # budget). When the failure was permanent, force
+        # retryable=False regardless of what classify_error said.
+        retryable = kind_retryable and not permanent
 
     label = "permanently" if permanent else f"after {attempts} attempt(s)"
     detail = "\n".join(history) if history else f"{type(cause).__name__}: {cause}"
@@ -168,6 +203,53 @@ def _build_llm_error(
         last_error_type=type(cause).__name__,
         cause=cause,
     )
+
+
+def _fire_on_retry(
+    on_retry: "Optional[Callable[[RetryInfo], None]]",
+    *,
+    cause: BaseException,
+    attempt: int,
+    max_attempts: int,
+    sleep_s: float,
+    elapsed_s: float,
+    retry_after_s: Optional[float],
+) -> None:
+    """Invoke an ``on_retry`` callback safely.
+
+    Exceptions inside the callback are swallowed — a broken hook
+    must never prevent the retry loop from making progress. The
+    callback receives a fully-populated :class:`RetryInfo`,
+    classified the same way as the final :class:`LLMError` would
+    be, so consumers can route on ``info.reason`` without
+    re-classifying.
+    """
+    if on_retry is None:
+        return
+    from openprogram.providers.utils.errors import (
+        RetryInfo, classify_error, ErrorReason,
+    )
+    http_status = getattr(cause, "http_status", None) or getattr(cause, "status_code", None)
+    reason, _ = classify_error(cause, http_status=http_status,
+                               error_text=getattr(cause, "error_text", "") or "")
+    info = RetryInfo(
+        attempt=attempt,
+        max_attempts=max_attempts,
+        reason=reason,
+        sleep_s=sleep_s,
+        elapsed_s=elapsed_s,
+        retry_after_s=retry_after_s,
+        last_error_type=type(cause).__name__,
+        last_error_msg=str(cause),
+    )
+    try:
+        on_retry(info)
+    except Exception:
+        # Don't break the retry loop on a buggy hook. Print once for
+        # the operator; future identical hook failures stay silent.
+        import sys as _sys
+        print(f"[runtime] on_retry callback raised; ignoring: "
+              f"{type(_sys.exc_info()[1]).__name__}", file=_sys.stderr)
 
 # Context var for the tools passed into the current exec() call.
 # _call_via_providers reads it to feed AgentSession without changing
@@ -206,7 +288,7 @@ class Runtime:
         self,
         call: Optional[callable] = None,
         model: str = "default",
-        max_retries: int = 6,
+        max_retries: Optional[int] = None,
         api_key: Optional[str] = None,
         skills: "bool | list[str] | None" = None,
     ):
@@ -223,12 +305,13 @@ class Runtime:
                          - Any other string → legacy path (subclass overrides
                            _call, or pass a `call` function).
             max_retries: Maximum number of exec() attempts before raising.
-                         Default 6 (try once, retry five times on transient
-                         failure, with exponential backoff + ±25% jitter).
-                         Total wall-clock at worst ≈ 1.5 + 3 + 6 + 12 + 24
-                         = 46s of sleeping before giving up — enough for
-                         provider gateway connection-pool / rate-limit
-                         spikes during tool-heavy turns to recover.
+                         ``None`` (default) → read ``OPENPROGRAM_MAX_RETRIES``
+                         env, fall back to 6. Set explicitly to override
+                         env. 6 means try once + retry five times on
+                         transient failure, with exponential backoff +
+                         ±25% jitter — wall-clock at worst ≈ 1.5 + 3 +
+                         6 + 12 + 24 = 46s of sleeping before giving
+                         up (tunable via ``OPENPROGRAM_RETRY_BACKOFF_BASE``).
                          Permanent errors (bad image, expired auth) are
                          not retried regardless of this value.
             api_key:     Optional API key. If omitted, resolved from the
@@ -244,6 +327,8 @@ class Runtime:
         self._closed = False  # Set early so __del__ is safe even if __init__ raises.
         self._prompted_functions: set[str] = set()  # Functions whose docstrings have been sent
 
+        if max_retries is None:
+            max_retries = _default_max_retries()
         if max_retries < 1:
             raise ValueError("max_retries must be >= 1")
 
@@ -512,6 +597,8 @@ class Runtime:
         parallel_tool_calls: bool = True,
         max_iterations: int = 20,
         choices: Any = None,
+        timeout_s: Optional[float] = None,
+        on_retry: Optional["Callable[[RetryInfo], None]"] = None,
     ) -> Any:
         """
         Call the LLM. Appends a ModelCall node to the DAG.
@@ -559,6 +646,38 @@ class Runtime:
                               as-is. Same option forms as
                               ``decision.make`` — a dict ``{name: handler}``
                               or a list of callables / option tuples.
+
+            timeout_s:        Wall-clock deadline for the entire exec()
+                              call, **including all retry sleeps**.
+                              When the elapsed time reaches the deadline,
+                              raises ``LLMError(reason=TIMEOUT,
+                              retryable=False)`` instead of starting
+                              another attempt or sleeping further. The
+                              currently-running ``_call`` is also bounded
+                              when it's async (sync ``_call`` runs to
+                              completion before the check, so very-long
+                              synchronous calls can overshoot — set
+                              ``max_retries=1`` if that matters).
+                              ``None`` (default): no wall-clock cap,
+                              behaviour is the same as before this knob
+                              existed. Separate from ``max_retries`` —
+                              ``max_retries`` is a count cap, this is a
+                              time cap; they compose.
+
+            on_retry:         Optional ``Callable[[RetryInfo], None]``.
+                              Fired immediately before each backoff
+                              sleep — i.e. once per *failed* attempt
+                              that has a retry queued behind it. Not
+                              fired for the terminal failure that
+                              exhausts the budget (that raises
+                              ``LLMError`` instead). Use this to emit
+                              structured retry logs, drive a circuit
+                              breaker, or accumulate per-provider
+                              failure metrics without subclassing
+                              Runtime. Exceptions inside the callback
+                              are swallowed so a broken hook never
+                              prevents the retry loop from making
+                              progress.
 
         Returns:
             ``str`` — the LLM's reply text. When ``choices`` is set,
@@ -632,9 +751,29 @@ class Runtime:
         )
         reply = None
         _exec_start = time.monotonic()
+        _deadline = _exec_start + timeout_s if (timeout_s and timeout_s > 0) else None
         try:
             errors: list[str] = []
             for attempt in range(self.max_retries):
+                # Pre-attempt deadline check: previous sleep or _call
+                # may have already crossed the line, in which case we
+                # don't even start another attempt.
+                if _deadline is not None and time.monotonic() >= _deadline:
+                    from openprogram.providers.utils.errors import ErrorReason as _ER
+                    cause = TimeoutError(
+                        f"exec() timed out after {timeout_s}s "
+                        f"({attempt} attempt(s))"
+                    )
+                    raise _build_llm_error(
+                        cause=cause, attempts=max(1, attempt),
+                        elapsed_s=time.monotonic() - _exec_start,
+                        content=content, model=use_model,
+                        provider=getattr(self, "provider", None),
+                        history=errors,
+                        permanent=True,
+                        override_reason=_ER.TIMEOUT,
+                    ) from cause
+
                 try:
                     reply = self._call(call_input, model=use_model, response_format=response_format)
                     self._append_model_call_node(
@@ -648,10 +787,11 @@ class Runtime:
                 except Exception as e:
                     errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
                     permanent = _is_permanent_error(e)
+                    elapsed = time.monotonic() - _exec_start
                     if permanent or attempt == self.max_retries - 1:
                         raise _build_llm_error(
                             cause=e, attempts=attempt + 1,
-                            elapsed_s=time.monotonic() - _exec_start,
+                            elapsed_s=elapsed,
                             content=content, model=use_model,
                             provider=getattr(self, "provider", None),
                             history=errors,
@@ -660,7 +800,29 @@ class Runtime:
                     # Honor server-supplied Retry-After when the
                     # underlying provider attached it to the exception.
                     retry_after_s = getattr(e, "retry_after_s", None)
-                    time.sleep(_retry_sleep_seconds(attempt, retry_after_s))
+                    sleep_s = _retry_sleep_seconds(attempt, retry_after_s)
+
+                    # Would sleeping cross the deadline? If yes, give
+                    # up now as TIMEOUT — don't waste wall-clock on a
+                    # backoff we'll never get to consume.
+                    if _deadline is not None and (time.monotonic() + sleep_s) >= _deadline:
+                        from openprogram.providers.utils.errors import ErrorReason as _ER
+                        raise _build_llm_error(
+                            cause=e, attempts=attempt + 1,
+                            elapsed_s=elapsed,
+                            content=content, model=use_model,
+                            provider=getattr(self, "provider", None),
+                            history=errors,
+                            permanent=True,
+                            override_reason=_ER.TIMEOUT,
+                        ) from e
+
+                    _fire_on_retry(
+                        on_retry, cause=e, attempt=attempt + 1,
+                        max_attempts=self.max_retries, sleep_s=sleep_s,
+                        elapsed_s=elapsed, retry_after_s=retry_after_s,
+                    )
+                    time.sleep(sleep_s)
         finally:
             if tools_token is not None:
                 _current_tools.reset(tools_token)
@@ -683,8 +845,21 @@ class Runtime:
         context: Optional[str] = None,
         response_format: Optional[dict] = None,
         model: Optional[str] = None,
+        timeout_s: Optional[float] = None,
+        on_retry: Optional["Callable[[RetryInfo], None]"] = None,
     ) -> str:
-        """Async version of exec(). Creates exec node, calls _async_call()."""
+        """Async version of :meth:`exec`. Same ``timeout_s`` /
+        ``on_retry`` semantics; ``await``-friendly throughout.
+
+        Async retries use ``asyncio.sleep`` so the loop yields to the
+        event loop and an external cancellation (``asyncio.CancelledError``)
+        actually wakes the runtime up — sync ``exec()`` blocks in
+        ``time.sleep`` for the same path. ``timeout_s`` here is
+        independent of any ``asyncio.wait_for`` wrapper the caller
+        might add: this one converts to a structured
+        ``LLMError(reason=TIMEOUT)``, ``wait_for`` raises
+        ``TimeoutError``.
+        """
         if self._closed:
             raise RuntimeError("Runtime is closed. Create a new runtime instance.")
 
@@ -715,7 +890,25 @@ class Runtime:
         # --- Call the LLM (with retry) ---
         errors: list[str] = []
         _exec_start = time.monotonic()
+        _deadline = _exec_start + timeout_s if (timeout_s and timeout_s > 0) else None
         for attempt in range(self.max_retries):
+            # Pre-attempt deadline check (see exec() for the rationale).
+            if _deadline is not None and time.monotonic() >= _deadline:
+                from openprogram.providers.utils.errors import ErrorReason as _ER
+                cause = TimeoutError(
+                    f"async_exec() timed out after {timeout_s}s "
+                    f"({attempt} attempt(s))"
+                )
+                raise _build_llm_error(
+                    cause=cause, attempts=max(1, attempt),
+                    elapsed_s=time.monotonic() - _exec_start,
+                    content=content, model=use_model,
+                    provider=getattr(self, "provider", None),
+                    history=errors,
+                    permanent=True,
+                    override_reason=_ER.TIMEOUT,
+                ) from cause
+
             try:
                 reply = await self._async_call(call_input, model=use_model, response_format=response_format)
                 self._append_model_call_node(
@@ -729,17 +922,37 @@ class Runtime:
             except Exception as e:
                 errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
                 permanent = _is_permanent_error(e)
+                elapsed = time.monotonic() - _exec_start
                 if permanent or attempt == self.max_retries - 1:
                     raise _build_llm_error(
                         cause=e, attempts=attempt + 1,
-                        elapsed_s=time.monotonic() - _exec_start,
+                        elapsed_s=elapsed,
                         content=content, model=use_model,
                         provider=getattr(self, "provider", None),
                         history=errors,
                         permanent=permanent,
                     ) from e
                 retry_after_s = getattr(e, "retry_after_s", None)
-                await asyncio.sleep(_retry_sleep_seconds(attempt, retry_after_s))
+                sleep_s = _retry_sleep_seconds(attempt, retry_after_s)
+
+                if _deadline is not None and (time.monotonic() + sleep_s) >= _deadline:
+                    from openprogram.providers.utils.errors import ErrorReason as _ER
+                    raise _build_llm_error(
+                        cause=e, attempts=attempt + 1,
+                        elapsed_s=elapsed,
+                        content=content, model=use_model,
+                        provider=getattr(self, "provider", None),
+                        history=errors,
+                        permanent=True,
+                        override_reason=_ER.TIMEOUT,
+                    ) from e
+
+                _fire_on_retry(
+                    on_retry, cause=e, attempt=attempt + 1,
+                    max_attempts=self.max_retries, sleep_s=sleep_s,
+                    elapsed_s=elapsed, retry_after_s=retry_after_s,
+                )
+                await asyncio.sleep(sleep_s)
 
     def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """
