@@ -135,6 +135,27 @@ async def handle_load_session(ws, cmd: dict):
                 if cur and cur in agg_ids:
                     head = cur
         chain = linear_history(all_msgs, head) if head else list(all_msgs)
+        # Splice attach pointer rows (function="attach", written by
+        # run_sub_agent_turn) into the displayed chain. They hang off
+        # a parent message via called_by/parent_id — not on the conv
+        # chain itself — so linear_history skips them, but the chat
+        # needs them inline as standalone AttachCard rows.
+        chain_ids = {m.get("id") for m in chain}
+        attach_by_parent: dict[str, list[dict]] = {}
+        for m in all_msgs:
+            if m.get("function") != "attach":
+                continue
+            parent = m.get("parent_id") or m.get("called_by") or ""
+            if parent and parent in chain_ids:
+                attach_by_parent.setdefault(parent, []).append(m)
+        if attach_by_parent:
+            spliced: list[dict] = []
+            for m in chain:
+                spliced.append(m)
+                extras = attach_by_parent.get(m.get("id"), [])
+                extras.sort(key=lambda x: x.get("timestamp") or 0)
+                spliced.extend(extras)
+            chain = spliced
         conv["messages"] = chain
         conv["head_id"] = head
         shown = []

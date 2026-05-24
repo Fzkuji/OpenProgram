@@ -78,6 +78,16 @@ export interface ChatMsg {
   siblingTotal?: number;
   prevSiblingId?: string;
   nextSiblingId?: string;
+  /** Peer-session attach pointer — present on assistant rows whose
+   *  ``function === "attach"`` (written by ``run_sub_agent_turn``).
+   *  Drives the AttachCard rendering + drawer open behavior. */
+  attach?: {
+    session_id?: string;
+    head_id?: string;
+    commit_id?: string;
+    label?: string;
+    prompt?: string;
+  };
 }
 
 export interface ConvSummary {

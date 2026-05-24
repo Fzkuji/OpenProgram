@@ -6,6 +6,14 @@ Split into:
   - chat.py: action="query" body (run_query)
   - run.py:  action="run"  body (run_function)
 
+Two newer actions handled inline here (small enough not to warrant
+their own modules):
+  - spawn  : ``/spawn label: prompt`` — user-initiated peer-session
+             attach. Runs ``run_sub_agent_turn`` synchronously and
+             broadcasts a result envelope.
+  - merge  : ``/merge sid_a sid_b: message`` — user-initiated peer
+             session merge. Runs ``process_merge_turn`` synchronously.
+
 server.py keeps a thin `_execute_in_context` shim that forwards here, so
 existing callers (ws_actions/chat.py, _chat_routes.py) keep working.
 """
@@ -14,6 +22,117 @@ from __future__ import annotations
 import json
 import time
 import traceback
+
+
+def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> None:
+    """User-initiated ``/spawn`` — runs a peer sub-agent against the
+    given prompt and attaches the result into this session's DAG.
+
+    ``msg_id`` is the user message that typed the ``/spawn`` command;
+    the attach pointer node hangs off it (parent_assistant_id=msg_id),
+    so the spawn looks like a direct child of the user's instruction.
+    """
+    from openprogram.webui import server as _s
+    prompt = (kwargs.get("prompt") or "").strip()
+    label = (kwargs.get("label") or "").strip() or None
+
+    if not prompt:
+        _s._broadcast_chat_response(session_id, msg_id, {
+            "type": "error",
+            "content": "/spawn requires a prompt — usage: /spawn label: prompt text",
+            "display": "chat",
+        })
+        return
+
+    try:
+        from openprogram.agent.sub_agent_run import run_sub_agent_turn
+        result = run_sub_agent_turn(
+            parent_session_id=session_id,
+            parent_assistant_id=msg_id,
+            prompt=prompt,
+            agent_id=agent_id,
+            label=label,
+        )
+    except Exception as e:  # noqa: BLE001
+        _s._broadcast_chat_response(session_id, msg_id, {
+            "type": "error",
+            "content": f"spawn failed: {type(e).__name__}: {e}",
+            "display": "chat",
+        })
+        return
+
+    body = (
+        result.final_text
+        or result.error
+        or "(sub-agent returned no text)"
+    )
+    payload = f"{body}\n\n[sub-agent session={result.sub_session_id}"
+    if result.sub_commit_id:
+        payload += f" commit={result.sub_commit_id}"
+    payload += "]"
+
+    _s._broadcast_chat_response(session_id, msg_id, {
+        "type": "result",
+        "content": payload,
+        "function": "spawn",
+        "display": "runtime",
+    })
+
+
+def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> None:
+    """User-initiated ``/merge`` — runs ``process_merge_turn`` and
+    broadcasts the result text into this (target) session."""
+    from openprogram.webui import server as _s
+    sub_sessions = list(kwargs.get("sub_sessions") or [])
+    message = (kwargs.get("message") or "").strip()
+
+    if not sub_sessions:
+        _s._broadcast_chat_response(session_id, msg_id, {
+            "type": "error",
+            "content": (
+                "/merge requires at least one sub-session id — "
+                "usage: /merge sid_a sid_b: message text"
+            ),
+            "display": "chat",
+        })
+        return
+
+    try:
+        from openprogram.agent._merge import process_merge_turn
+        result = process_merge_turn(
+            target_session_id=session_id,
+            sub_sessions=sub_sessions,
+            message=message,
+            agent_id=agent_id,
+        )
+    except Exception as e:  # noqa: BLE001
+        _s._broadcast_chat_response(session_id, msg_id, {
+            "type": "error",
+            "content": f"merge failed: {type(e).__name__}: {e}",
+            "display": "chat",
+        })
+        return
+
+    if result.failed:
+        _s._broadcast_chat_response(session_id, msg_id, {
+            "type": "error",
+            "content": result.error or "merge failed (no error message)",
+            "display": "chat",
+        })
+        return
+
+    extra_lines = []
+    if result.commit_id:
+        extra_lines.append(f"[merge commit={result.commit_id}]")
+    if result.parent_ids:
+        extra_lines.append(f"[parents={', '.join(result.parent_ids)}]")
+    suffix = ("\n\n" + "\n".join(extra_lines)) if extra_lines else ""
+    _s._broadcast_chat_response(session_id, msg_id, {
+        "type": "result",
+        "content": (result.final_text or "(merge produced no text)") + suffix,
+        "function": "merge",
+        "display": "runtime",
+    })
 
 
 def execute_in_context(
@@ -103,6 +222,20 @@ def execute_in_context(
                     conv=conv,
                     runtime=runtime,
                     exec_thinking_effort=exec_thinking_effort,
+                )
+            elif action == "spawn":
+                _run_spawn(
+                    session_id=session_id,
+                    msg_id=msg_id,
+                    kwargs=kwargs or {},
+                    agent_id=_agent_id,
+                )
+            elif action == "merge":
+                _run_merge(
+                    session_id=session_id,
+                    msg_id=msg_id,
+                    kwargs=kwargs or {},
+                    agent_id=_agent_id,
                 )
         finally:
             pass

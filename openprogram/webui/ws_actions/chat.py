@@ -137,6 +137,26 @@ async def handle_chat(ws, cmd: dict):
                     "attachments": attachments},
             daemon=True,
         ).start()
+    elif parsed["action"] == "spawn":
+        threading.Thread(
+            target=_s._execute_in_context,
+            args=(session_id, msg_id, "spawn"),
+            kwargs={"kwargs": {
+                "prompt": parsed.get("prompt") or "",
+                "label": parsed.get("label") or "",
+            }},
+            daemon=True,
+        ).start()
+    elif parsed["action"] == "merge":
+        threading.Thread(
+            target=_s._execute_in_context,
+            args=(session_id, msg_id, "merge"),
+            kwargs={"kwargs": {
+                "sub_sessions": parsed.get("sub_sessions") or [],
+                "message": parsed.get("message") or "",
+            }},
+            daemon=True,
+        ).start()
 
 
 async def handle_retry_node(ws, cmd: dict):

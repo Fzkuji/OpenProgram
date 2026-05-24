@@ -35,14 +35,66 @@ def parse_chat_input(text: str) -> dict:
     """Parse user input to determine intent.
 
     Returns dict with keys:
-      - action: "run" or "query"
+      - action: "run" / "query" / "spawn" / "merge"
       - function: function name (if applicable)
       - kwargs: dict of arguments (if applicable)
       - raw: original text
+
+    Slash commands handled here:
+
+      /spawn <label>: <prompt text>
+          User-initiated sub-agent spawn. Materialises a peer session,
+          runs one turn against ``prompt``, attaches a pointer node
+          back into this session (caller-hung off the user's own
+          message — no intermediate assistant turn needed). The label
+          (1-3 words) becomes the sub-session title + sidebar handle.
+
+      /merge <sid_a> <sid_b> [...]: <message>
+          Consolidate N peer sub-sessions into a single reply on this
+          (target) session. Writes a multi-parent ContextCommit whose
+          parent_ids cover the target's prior commit + each peer's
+          latest commit id. ``message`` is the merge instruction the
+          merge agent receives alongside each peer's final text.
     """
     from openprogram.webui import server as _s
     text = text.strip()
     lower = text.lower()
+
+    # /spawn label: prompt
+    if lower.startswith("/spawn"):
+        rest = text[len("/spawn"):].strip()
+        # Split label from prompt on the first `:`. Empty label is
+        # allowed (the dispatcher picks an auto name).
+        label = ""
+        prompt = rest
+        if ":" in rest:
+            label, prompt = rest.split(":", 1)
+            label = label.strip()
+            prompt = prompt.strip()
+        return {
+            "action": "spawn",
+            "label": label,
+            "prompt": prompt,
+            "raw": text,
+        }
+
+    # /merge sid_a sid_b [...]: message
+    if lower.startswith("/merge"):
+        rest = text[len("/merge"):].strip()
+        # Split ids from message on first `:`. Ids are whitespace-
+        # separated tokens; empty message is allowed.
+        message = ""
+        ids_blob = rest
+        if ":" in rest:
+            ids_blob, message = rest.split(":", 1)
+            message = message.strip()
+        sub_sessions = [s for s in ids_blob.split() if s]
+        return {
+            "action": "merge",
+            "sub_sessions": sub_sessions,
+            "message": message,
+            "raw": text,
+        }
 
     # "create ..." -> meta create
     if lower.startswith("create "):

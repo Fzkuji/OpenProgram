@@ -46,6 +46,39 @@ interface LegacyMsg {
   sibling_total?: number;
   prev_sibling_id?: string;
   next_sibling_id?: string;
+  /** Top-level field hoisted by ``_msg_adapter`` for assistant rows
+   *  whose ``extra`` carried an ``attach`` blob (peer-session pointer
+   *  written by ``run_sub_agent_turn``). */
+  attach?: AttachMeta;
+  extra?: string | { attach?: AttachMeta; [k: string]: unknown };
+}
+
+export interface AttachMeta {
+  session_id?: string;
+  head_id?: string;
+  commit_id?: string;
+  label?: string;
+  prompt?: string;
+}
+
+function _readAttach(m: LegacyMsg): AttachMeta | undefined {
+  if (m.attach && typeof m.attach === "object") return m.attach;
+  const e = m.extra;
+  if (e && typeof e === "object" && !Array.isArray(e)) {
+    const a = (e as { attach?: AttachMeta }).attach;
+    if (a && typeof a === "object") return a;
+  }
+  if (typeof e === "string" && e) {
+    try {
+      const parsed = JSON.parse(e);
+      if (parsed && typeof parsed === "object" && parsed.attach) {
+        return parsed.attach as AttachMeta;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return undefined;
 }
 
 /** Sibling-version fields shared by user + assistant turns. */
@@ -118,6 +151,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         usage: m.usage,
         attempts: m.attempts as never[] | undefined,
         current_attempt: m.current_attempt,
+        attach: _readAttach(m),
         ...siblingFields(m),
       });
       return;

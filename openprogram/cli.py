@@ -210,6 +210,47 @@ def main():
     sessions_sub.add_parser("aliases",
         help="List every session↔channel-peer alias")
 
+    # ---- subagent ---------------------------------------------------------
+    # Peer-session attach / merge ops. See ``openprogram/agent/sub_agent_run.py``
+    # and ``openprogram/agent/_merge.py`` for the model. These commands run
+    # against the in-process SessionStore singleton — no WS, no webui.
+    p_subagent = sub.add_parser("subagent",
+        help="Spawn / merge peer sub-agent sessions.")
+    subagent_sub = p_subagent.add_subparsers(
+        dest="subagent_verb", metavar="verb",
+    )
+
+    p_sa_spawn = subagent_sub.add_parser("spawn",
+        help="Spawn a peer sub-agent and attach the result to a parent.")
+    p_sa_spawn.add_argument("--session", required=True,
+        help="Parent session id (the spawn attaches into this DAG)")
+    p_sa_spawn.add_argument("--prompt", required=True,
+        help="Prompt the sub-agent receives as its only user turn")
+    p_sa_spawn.add_argument("--parent-msg", default=None,
+        help="Specific message id to hang the attach pointer off "
+             "(defaults to the parent's current HEAD)")
+    p_sa_spawn.add_argument("--label", default=None,
+        help="1-3 word label used as the sub-session title + sidebar handle")
+    p_sa_spawn.add_argument("--agent", default="main",
+        help="Agent profile id to run the sub-agent under (default: main)")
+    p_sa_spawn.add_argument("--no-json", action="store_true",
+        help="Print human-readable summary instead of JSON")
+
+    p_sa_merge = subagent_sub.add_parser("merge",
+        help="Merge N peer sessions into the target with a new turn.")
+    p_sa_merge.add_argument("--target", required=True,
+        help="Target session id (gets the merge reply + multi-parent commit)")
+    p_sa_merge.add_argument("--sub", action="append", default=[],
+        metavar="SID", required=True,
+        help="Peer session id to include in the merge (repeat for multiple)")
+    p_sa_merge.add_argument("--message", default="",
+        help="Merge instruction (the merge agent reads this alongside "
+             "each peer's final text)")
+    p_sa_merge.add_argument("--agent", default="main",
+        help="Agent profile to run the merge under (default: main)")
+    p_sa_merge.add_argument("--no-json", action="store_true",
+        help="Print human-readable summary instead of JSON")
+
     # ---- web --------------------------------------------------------------
     p_web = sub.add_parser("web", help="Start the Web UI")
     p_web.add_argument("--port", type=int, default=None,
@@ -805,6 +846,29 @@ def main():
         _dispatch_agents_verb(args, p_agents)
         return
 
+    if args.command == "subagent":
+        verb = getattr(args, "subagent_verb", None)
+        as_json = not getattr(args, "no_json", False)
+        if verb == "spawn":
+            sys.exit(_cmd_subagent_spawn(
+                session=args.session,
+                prompt=args.prompt,
+                parent_msg=getattr(args, "parent_msg", None),
+                label=getattr(args, "label", None),
+                agent_id=getattr(args, "agent", "main"),
+                as_json=as_json,
+            ))
+        if verb == "merge":
+            sys.exit(_cmd_subagent_merge(
+                target=args.target,
+                subs=list(getattr(args, "sub", []) or []),
+                message=getattr(args, "message", ""),
+                agent_id=getattr(args, "agent", "main"),
+                as_json=as_json,
+            ))
+        p_subagent.print_help()
+        sys.exit(2)
+
     if args.command == "cron-worker":
         _cmd_cron_worker(args.once, args.list)
         return
@@ -885,6 +949,11 @@ from openprogram._cli_cmds.browser import (  # noqa: E402,F401
     _cmd_browser_list,
     _cmd_browser_rm,
 )
+from openprogram._cli_cmds.subagent import (  # noqa: E402,F401
+    _cmd_subagent_spawn,
+    _cmd_subagent_merge,
+)
+
 from openprogram._cli_cmds.sessions import (  # noqa: E402,F401
     _cmd_resume,
     _cmd_sessions,

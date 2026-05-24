@@ -30,6 +30,12 @@ function dispatch(msg: ChatMsg) {
   if (msg.role === "system") {
     return <div className="message system">{msg.content}</div>;
   }
+  // Attach pointer rows have display="runtime" + function="attach"
+  // but want the AttachCard, not the generic RuntimeBlock. Route
+  // before the runtime branch so the card wins.
+  if (msg.role === "assistant" && msg.function === "attach") {
+    return <AssistantBubble msg={msg} />;
+  }
   if (msg.display === "runtime") {
     // A `/run` turn renders as ONE runtime block, owned by the
     // assistant reply (it carries the result + the `function`
