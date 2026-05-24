@@ -246,7 +246,7 @@ openprogram/
 ├── providers/                       # Anthropic、OpenAI、Gemini、Claude Code、Codex、Gemini CLI
 ├── functions/
 │   ├── _registry.py                 #   tools + agentic functions 的统一注册表
-│   ├── tools/                       #   @function 叶子工具 — bash / read / edit / web_search 等
+│   ├── tools/                       #   @function 叶子工具 — bash / read / edit / grep / semble_search / web_search 等
 │   └── agentics/                    #   @agentic_function 模块（每个一个目录，代码写在 __init__.py）
 │       ├── ask_user/                #     向用户提澄清问题
 │       ├── deep_work/               #     自主计划-执行-评估循环

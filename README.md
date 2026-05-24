@@ -276,7 +276,7 @@ openprogram/
 ├── providers/                       # Anthropic, OpenAI, Gemini, Claude Code, Codex, Gemini CLI
 ├── functions/
 │   ├── _registry.py                 #   unified registry for tools + agentic functions
-│   ├── tools/                       #   @function leaves — bash, read, edit, web_search, …
+│   ├── tools/                       #   @function leaves — bash, read, edit, grep, semble_search, web_search, …
 │   └── agentics/                    #   @agentic_function modules (each its own dir, code in __init__.py)
 │       ├── ask_user/                #     ask the user a clarifying question
 │       ├── deep_work/               #     autonomous plan-execute-evaluate loop

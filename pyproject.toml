@@ -45,6 +45,10 @@ dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
     "websockets>=12.0",
+    # Semantic + lexical code search (tree-sitter chunks +
+    # Model2Vec static embeddings + BM25). Powers the `semble_search`
+    # and `semble_find_related` tools. CPU-only, no API keys.
+    "semble>=0.2.0",
 ]
 
 [project.optional-dependencies]
