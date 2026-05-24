@@ -30,7 +30,9 @@ from . import mixture_of_agents as _mixture_of_agents_self_register  # noqa: F40
 from . import pdf as _pdf_self_register  # noqa: F401
 from . import process as _process_self_register  # noqa: F401
 from . import read as _read_self_register  # noqa: F401
+from . import semble as _semble_self_register  # noqa: F401
 from . import spawn_program as _spawn_program_self_register  # noqa: F401
+from . import task as _task_self_register  # noqa: F401
 from . import todo as _todo_self_register  # noqa: F401
 from . import web_fetch as _web_fetch_self_register  # noqa: F401
 from . import web_search as _web_search_self_register  # noqa: F401

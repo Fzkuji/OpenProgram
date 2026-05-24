@@ -75,6 +75,7 @@ DEFAULT_TOOLS: list[str] = [
     "glob",
     "grep",
     "list",
+    "task",
     "todo_read",
     "todo_write",
 ]
@@ -109,6 +110,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "bash", "read", "write", "edit",
             "glob", "grep", "list",
             "apply_patch", "process", "execute_code",
+            "task",
             "todo_read", "todo_write",
             "clarify", "cron", "canvas",
             "spawn_program", "mixture_of_agents",
