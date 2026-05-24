@@ -10,6 +10,7 @@ Working branch: `git-as-truth`. Pick up from HEAD = `3674f3e`.
 | `3674f3e` | Dispatcher sets `_current_turn_id` ContextVar = `assistant_msg_id`. `write` / `edit` / `apply_patch` tools call `backup_for_current_turn(path)` pre-fs-mutate. `_runtime.py` wraps sync-tool executor in `copy_context().run(...)` so ContextVars propagate to thread-pool. `revert_turn(session_id, assistant_msg_id)` dispatcher fn + WS action `revert_turn` exposed. Tests: 681 pass / 0 fail. |
 | `eb2b06a` | D + G: `ContextCommit.parent_ids: list[str]` with single-parent back-compat via `__post_init__`; frontend assistant bubble gets a Revert button that calls the existing `revert_turn` WS action. |
 | _pending_ | C (part 1): `<repo>/workdir/` materialized on session init (with `.gitkeep`); `GitSession.workdir_path` + `SessionStore.session_workdir(sid)` accessors land. Dispatcher cwd threading still deferred — done when a chat-agent flow actually needs it. |
+| _pending_ | E (part 1): `GitSession.add_worktree(branch, base_ref) / remove_worktree(path) / list_worktrees()` primitives. Per-agent isolation directory lives at `<repo>/_worktrees/<branch>/`. The `spawn_sub_agent` orchestrator (dispatcher integration) is the next chunk. |
 
 So the **core machinery** (snapshot pre-edit, restore on demand, expose via WS) is in. What's left is integration with the rest of the system + the actual multi-agent execution path.
 
