@@ -98,6 +98,34 @@ def run_sub_agent_turn(
             error=f"failed to allocate worktree for {parent_session_id!r}",
         )
 
+    # The worktree was checked out off parent's HEAD, so its working
+    # tree starts with every history/*.json + context/commits/*.json
+    # the parent had at that point. Left alone, a fresh SessionStore
+    # rebuilds its memory index from those files and the sub-agent
+    # inherits the full parent conversation — including any synthetic
+    # tool_result rows whose tool_use stubs would trip the provider
+    # serializer.
+    #
+    # Wipe the inherited files BEFORE creating the SessionStore so the
+    # index loads empty. The deletions show up as a normal git diff on
+    # the sub-branch, but that's exactly what we want — the sub-branch
+    # represents "I worked from a clean slate, here's what I did".
+    import shutil
+    wt_history = ws.path / "history"
+    wt_commits = ws.path / "context" / "commits"
+    wt_meta = ws.path / "meta.json"
+    if wt_history.exists():
+        shutil.rmtree(wt_history, ignore_errors=True)
+    wt_history.mkdir(parents=True, exist_ok=True)
+    if wt_commits.exists():
+        shutil.rmtree(wt_commits, ignore_errors=True)
+    wt_commits.mkdir(parents=True, exist_ok=True)
+    if wt_meta.exists():
+        try:
+            wt_meta.unlink()
+        except OSError:
+            pass
+
     sub_store = SessionStore(parent_git.path / "_worktrees")
     sub_sid = ws.branch
 
@@ -120,11 +148,18 @@ def run_sub_agent_turn(
         from openprogram.agent.dispatcher import (
             TurnRequest, process_user_turn,
         )
+        # The worktree was branched off the parent's HEAD, so its on-
+        # disk history/ already contains every parent turn — including
+        # synthetic tool_result rows from earlier sub-agent runs whose
+        # tool_use stubs the provider can't match. Force the LLM to
+        # start with an empty conversation; the prompt itself carries
+        # the context the caller wants the sub-agent to see.
         req = TurnRequest(
             session_id=sub_sid,
             user_text=prompt,
             agent_id=agent_id,
             source="sub_agent",
+            history_override=[],
         )
         try:
             turn_result = process_user_turn(req)
@@ -161,35 +196,60 @@ def run_sub_agent_turn(
         except Exception:
             pass
 
-    # Post the summary node into the parent's DAG so the UI sees one
-    # row "ran sub_agent" pointing at the sub-branch.
+    # Snapshot the parent's HEAD so we can restore it after appending
+    # the sub_agent summary. ``append_message`` advances head for any
+    # row without a ``called_by`` edge — but ``_msg_to_node`` only
+    # reads ``called_by`` from tool rows, so an assistant row would
+    # bump HEAD onto a synthetic side node and the next user turn
+    # would walk from there. Saving + restoring keeps HEAD on the
+    # real parent assistant message.
+    parent_head_before = None
+    try:
+        sess_row = parent_store.get_session(parent_session_id) or {}
+        parent_head_before = sess_row.get("head_id")
+    except Exception:
+        parent_head_before = None
+
+    # Post the summary node into the parent's DAG so the UI / a future
+    # merge turn can find the work.
+    #
+    # Why role="assistant" and not role="tool": a tool_result row gets
+    # paired with a prior tool_use call_id by the provider serializer
+    # (render_commit -> ToolResultMessage). The parent's chat thread
+    # never issued a tool_use for the sub_agent (the dispatcher did),
+    # so a standalone tool row triggers "No tool call found for
+    # function call output with call_id X" on the next LLM call.
+    # An assistant message with display="runtime" + the sub_agent
+    # metadata in extra keeps the row inspectable + reachable from
+    # the merge resolver, without breaking the tool-call invariant.
     parent_node_id = uuid.uuid4().hex[:12]
     try:
         parent_store.append_message(parent_session_id, {
             "id": parent_node_id,
-            "role": "tool",
+            "role": "assistant",
+            "display": "runtime",
             "function": "sub_agent",
             "content": result_text or (result_error or "(no output)"),
             "parent_id": parent_assistant_id,
+            "called_by": parent_assistant_id,
             "timestamp": time.time(),
             "is_error": bool(result_failed or result_error),
             "extra": json.dumps({
-                "tool_use": {
-                    "name": "sub_agent",
-                    "arguments": json.dumps({
-                        "label": label or "",
-                        "branch": ws.branch,
-                        "prompt": (prompt or "")[:500],
-                    }, default=str),
-                    "called_by": parent_assistant_id,
-                },
                 "sub_agent": {
                     "branch": ws.branch,
                     "commit_sha": sub_commit_sha,
                     "label": label or "",
+                    "prompt": (prompt or "")[:500],
                 },
             }, default=str),
         })
+        # Restore HEAD before commit so the parent's main chain
+        # doesn't think the synthetic summary is the new tip.
+        if parent_head_before:
+            try:
+                parent_store.set_head(parent_session_id, parent_head_before)
+            except Exception:
+                pass
         parent_store.commit_turn(
             parent_session_id,
             f"sub_agent summary ({label or ws.branch})",

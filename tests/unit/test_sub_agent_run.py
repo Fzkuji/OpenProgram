@@ -100,13 +100,17 @@ def test_run_sub_agent_turn_happy_path(parent_store, fake_dispatcher):
     # Sub-agent dispatcher saw the worktree-rooted store, not the parent's.
     assert fake_dispatcher["seen_store"] is not parent_store
 
-    # Parent's DAG got a tool_result row pointing at the sub-branch.
+    # Parent's DAG got a summary row tagged sub_agent pointing at the
+    # sub-branch.
     msgs = parent_store.get_messages("p1")
     sub_rows = [m for m in msgs if m.get("function") == "sub_agent"]
     assert len(sub_rows) == 1
     row = sub_rows[0]
     assert row["parent_id"] == "a1"
     assert row["content"] == "(sub-agent reply)"
+    # role must NOT be "tool" — that would trip the provider's
+    # tool_call_id pairing on the next turn.
+    assert row["role"] == "assistant"
 
     # Worktree dir was released (allocate -> use -> release).
     assert result.worktree_path is not None
