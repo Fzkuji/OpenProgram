@@ -60,11 +60,22 @@ def parse_chat_input(text: str) -> dict:
     text = text.strip()
     lower = text.lower()
 
-    # /spawn label: prompt
+    # /spawn [--clean | --inherit] [label]: prompt
+    #   --clean    → new root in this session (no parent context)
+    #   --inherit  → fork off this turn (default)
     if lower.startswith("/spawn"):
         rest = text[len("/spawn"):].strip()
-        # Split label from prompt on the first `:`. Empty label is
-        # allowed (the dispatcher picks an auto name).
+        # Strip optional --clean / --inherit flag before the label.
+        context = "inherit"
+        for flag, ctx in (
+            ("--clean", "clean"),
+            ("--inherit", "inherit"),
+        ):
+            if rest.lower().startswith(flag):
+                rest = rest[len(flag):].strip()
+                context = ctx
+                break
+        # Split label from prompt on the first `:`. Empty label is allowed.
         label = ""
         prompt = rest
         if ":" in rest:
@@ -75,6 +86,7 @@ def parse_chat_input(text: str) -> dict:
             "action": "spawn",
             "label": label,
             "prompt": prompt,
+            "context": context,
             "raw": text,
         }
 

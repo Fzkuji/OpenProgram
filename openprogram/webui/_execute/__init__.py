@@ -106,7 +106,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
         attach_node_id = uuid.uuid4().hex[:12]
-        store.append_message(session_id, {
+        attach_msg = {
             "id": attach_node_id,
             "role": "assistant",
             "display": "runtime",
@@ -127,14 +127,36 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
                     "prompt": prompt[:500],
                 },
             }, default=str),
-        })
+        }
+        store.append_message(session_id, attach_msg)
         if head_before:
             try:
                 store.set_head(session_id, head_before)
             except Exception:
                 pass
         store.commit_turn(session_id, f"spawn agent: {label or chosen_agent}")
+        # Mirror into the in-memory conv dict so the chat view picks up
+        # the attach row in the next ``load_session`` round-trip without
+        # waiting for a manual reload. ``conv.messages`` is what the
+        # ws_actions/session.py splicer reads.
+        try:
+            conv = _s._get_or_create_session(session_id)
+            conv.setdefault("messages", []).append(attach_msg)
+        except Exception:
+            pass
     except Exception:  # noqa: BLE001
+        pass
+
+    # Signal clients tailing this session that the transcript changed —
+    # the frontend already listens for ``session_reload`` and re-pulls
+    # (``load_session``) when the active session id matches. Used for
+    # the new attach pointer row to show up without a manual refresh.
+    try:
+        _s._broadcast(json.dumps({
+            "type": "session_reload",
+            "data": {"session_id": session_id, "reason": "spawn"},
+        }, default=str))
+    except Exception:
         pass
 
     _s._broadcast_chat_response(session_id, msg_id, {

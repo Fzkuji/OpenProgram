@@ -144,6 +144,11 @@ async def handle_chat(ws, cmd: dict):
             kwargs={"kwargs": {
                 "prompt": parsed.get("prompt") or "",
                 "label": parsed.get("label") or "",
+                # New same-session multi-agent: "inherit" (default,
+                # fork off this turn) or "clean" (new root in the
+                # same session). Slash parser strips --clean /
+                # --inherit and surfaces them here.
+                "context": parsed.get("context") or "inherit",
             }},
             daemon=True,
         ).start()
