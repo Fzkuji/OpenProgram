@@ -34,7 +34,17 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     In ``inherit`` mode the spawn forks off that message; in
     ``clean`` mode it starts a new root inside the same session
     (no parent_id).
+
+    After the spawn finishes we write an ``attach`` pointer row that
+    hangs off ``msg_id`` so the chat shows a card recording "this
+    turn spawned branch X". The card's ``session_id`` is the SAME
+    session — opening it just checks out that branch in this same
+    chat view; there is no separate sub_xxx session to navigate to.
     """
+    import json
+    import time
+    import uuid
+
     from openprogram.webui import server as _s
     prompt = (kwargs.get("prompt") or "").strip()
     label = (kwargs.get("label") or "").strip() or None
@@ -80,6 +90,52 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     )
     tail = f"branch={session_id}:{result.head_id or '?'}"
     payload = f"{body}\n\n[spawned agent {tail}]"
+
+    # Persist an attach pointer so the chat view records that this turn
+    # spawned another agent. ``session_id`` deliberately matches the
+    # CURRENT session — the spawn lives as a branch in the same git
+    # repo, not as a separate sub_xxx session. The pointer hangs off
+    # ``msg_id`` via ``called_by`` so ``linear_history`` skips it and
+    # the chat splices it in as a standalone AttachCard row (see
+    # ``ws_actions/session.py`` chain splicing).
+    try:
+        from openprogram.agent.session_db import default_db
+        store = default_db()
+        # Snapshot parent HEAD so the attach pointer doesn't push the
+        # active branch onto a synthetic side child.
+        sess_row = store.get_session(session_id) or {}
+        head_before = sess_row.get("head_id")
+        attach_node_id = uuid.uuid4().hex[:12]
+        store.append_message(session_id, {
+            "id": attach_node_id,
+            "role": "assistant",
+            "display": "runtime",
+            "function": "attach",
+            "content": (result.final_text or result.error or "(no output)").strip(),
+            "parent_id": msg_id,
+            "called_by": msg_id,
+            "timestamp": time.time(),
+            "is_error": bool(result.failed or result.error),
+            "agent_id": chosen_agent,
+            "extra": json.dumps({
+                "attach": {
+                    # Same session — opening the card checks out the
+                    # branch in this view, no cross-session navigation.
+                    "session_id": session_id,
+                    "head_id": result.head_id,
+                    "label": label or "",
+                    "prompt": prompt[:500],
+                },
+            }, default=str),
+        })
+        if head_before:
+            try:
+                store.set_head(session_id, head_before)
+            except Exception:
+                pass
+        store.commit_turn(session_id, f"spawn agent: {label or chosen_agent}")
+    except Exception:  # noqa: BLE001
+        pass
 
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "result",

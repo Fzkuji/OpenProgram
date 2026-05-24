@@ -47,10 +47,13 @@ interface LegacyMsg {
   prev_sibling_id?: string;
   next_sibling_id?: string;
   /** Top-level field hoisted by ``_msg_adapter`` for assistant rows
-   *  whose ``extra`` carried an ``attach`` blob (peer-session pointer
-   *  written by ``run_sub_agent_turn``). */
+   *  whose ``extra`` carried an ``attach`` blob. */
   attach?: AttachMeta;
   extra?: string | { attach?: AttachMeta; [k: string]: unknown };
+  /** Which agent produced this turn — stamped by the dispatcher on
+   *  both user and assistant rows. Same-session multi-agent uses
+   *  this to colour / label each row by author. */
+  agent_id?: string;
 }
 
 export interface AttachMeta {
@@ -106,6 +109,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         display: m.display === "runtime" ? "runtime" : undefined,
         status: "done",
         timestamp: ts,
+        agentId: m.agent_id || undefined,
         ...siblingFields(m),
       });
       return;
@@ -152,6 +156,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         attempts: m.attempts as never[] | undefined,
         current_attempt: m.current_attempt,
         attach: _readAttach(m),
+        agentId: m.agent_id || undefined,
         ...siblingFields(m),
       });
       return;

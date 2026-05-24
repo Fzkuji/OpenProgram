@@ -9,6 +9,7 @@
  * nothing rendered yet, a typing indicator stands in.
  */
 import type { ChatMsg } from "@/lib/session-store";
+import { agentColor, agentDisplayName, agentInitial } from "@/lib/agent-style";
 
 import { MessageActions } from "./message-actions";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
@@ -35,11 +36,24 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   const hasContent = !!msg.content;
   const empty = !hasContent && !msg.thinking && tools.length === 0;
 
+  const color = agentColor(msg.agentId);
+  const initial = agentInitial(msg.agentId);
+  const sender = agentDisplayName(msg.agentId);
   return (
-    <div className="message assistant" data-msg-id={msg.id}>
+    <div
+      className="message assistant"
+      data-msg-id={msg.id}
+      data-agent-id={msg.agentId || undefined}
+    >
       <div className="message-header">
-        <div className="message-avatar bot-avatar">A</div>
-        <div className="message-sender">Agentic</div>
+        <div
+          className="message-avatar bot-avatar"
+          style={color ? { background: color, color: "#fff" } : undefined}
+          title={msg.agentId || ""}
+        >
+          {initial}
+        </div>
+        <div className="message-sender">{sender}</div>
         {!streaming ? <MessageActions msg={msg} /> : null}
       </div>
 

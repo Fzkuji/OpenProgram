@@ -79,8 +79,8 @@ export interface ChatMsg {
   prevSiblingId?: string;
   nextSiblingId?: string;
   /** Peer-session attach pointer — present on assistant rows whose
-   *  ``function === "attach"`` (written by ``run_sub_agent_turn``).
-   *  Drives the AttachCard rendering + drawer open behavior. */
+   *  ``function === "attach"``. Drives the AttachCard rendering +
+   *  drawer open behavior. */
   attach?: {
     session_id?: string;
     head_id?: string;
@@ -88,6 +88,11 @@ export interface ChatMsg {
     label?: string;
     prompt?: string;
   };
+  /** Which agent produced this turn. Same-session multi-agent: a
+   *  conversation can have N agents writing branches in the same
+   *  session repo; the UI uses this to colour / label / avatar
+   *  each turn by author. */
+  agentId?: string;
 }
 
 export interface ConvSummary {
