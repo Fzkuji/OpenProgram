@@ -437,12 +437,17 @@ export function Composer() {
               <div
                 key={c.name}
                 ref={
+                  // Scroll the keyboard-highlighted item into view when
+                  // arrow nav drives it off-screen. Mouse hover no
+                  // longer touches activeIndex (the CSS :hover state
+                  // alone provides hover feedback), so this fires
+                  // only on keyboard moves — no more jiggle when the
+                  // cursor drifts onto a bottom item.
                   i === slash.activeIndex
                     ? (el) => el?.scrollIntoView({ block: "nearest" })
                     : undefined
                 }
                 className={`${styles.slashMenuItem} ${i === slash.activeIndex ? styles.slashMenuItemActive : ""}`}
-                onMouseEnter={() => slash.move(i - slash.activeIndex)}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   onMenuItemClick(c);
