@@ -141,33 +141,6 @@ function labelFor(c: LegacyConv): string {
   return c.title || "Untitled";
 }
 
-function _isSubSession(c: LegacyConv): boolean {
-  // Detached spawns mint ids prefixed ``sub_``. Inline spawns don't
-  // create new sessions at all, so the only thing the sidebar sees
-  // as a sub-agent is the detached kind.
-  return /^sub_/.test(c.id || "");
-}
-
-const SHOW_SUB_KEY = "openprogram.sidebar.showSubAgents";
-
-function _readShowSub(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage?.getItem(SHOW_SUB_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function _writeShowSub(v: boolean): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage?.setItem(SHOW_SUB_KEY, v ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
-}
-
 export function SessionsList() {
   const router = useRouter();
   const pathname = usePathname();
@@ -179,28 +152,11 @@ export function SessionsList() {
   // and see at a glance which ones are working.
   const runningTasks = useSessionStore((s) => s.runningTasks);
 
-  // Detached-spawn peer sessions are noisy and most users don't want
-  // them taking sidebar real estate. Default hide; a small chip at
-  // the top of the list reveals them. Persist the choice locally so
-  // power users who flip it on don't have to redo it every reload.
-  const [showSub, setShowSub] = useState<boolean>(_readShowSub);
-
   // 没有 created_at 的会话视为"刚刚创建" (now), 让新建会话立刻
   // 出现在顶部, 而不是因为 fallback=0 沉到最底.
   const nowTs = Date.now() / 1000;
-  const allConvs = Object.values(conversations);
-  const subCount = allConvs.filter(_isSubSession).length;
-  const list = allConvs
-    .filter((c) => showSub || !_isSubSession(c))
+  const list = Object.values(conversations)
     .sort((a, b) => (b.created_at || nowTs) - (a.created_at || nowTs));
-
-  function toggleSub() {
-    setShowSub((v) => {
-      const next = !v;
-      _writeShowSub(next);
-      return next;
-    });
-  }
 
   function switchTo(id: string) {
     if (id === currentId && pathname === "/s/" + id) return;
@@ -245,44 +201,18 @@ export function SessionsList() {
     });
   }
 
-  const subToggle = subCount > 0 ? (
-    <div
-      className={styles.subToggle}
-      onClick={toggleSub}
-      title={
-        showSub
-          ? "Hide detached sub-agent sessions from the list"
-          : "Show detached sub-agent sessions (started via task() / spawn)"
-      }
-    >
-      {showSub ? "Hide" : "Show"} sub-agents ({subCount})
-    </div>
-  ) : null;
-
   if (list.length === 0) {
-    return (
-      <>
-        <div className={styles.empty}>
-          {subCount > 0 && !showSub
-            ? `No conversations yet (${subCount} sub-agent${subCount === 1 ? "" : "s"} hidden)`
-            : "No conversations yet"}
-        </div>
-        {subToggle}
-      </>
-    );
+    return <div className={styles.empty}>No conversations yet</div>;
   }
 
   return (
     <>
-      {subToggle}
       {list.map((c) => {
         const active = c.id === currentId;
-        const label = labelFor(c);
-        const isSub = _isSubSession(c);
         return (
           <ConvItem
             key={c.id}
-            label={isSub ? "↪ " + label : label}
+            label={labelFor(c)}
             active={active}
             running={!!runningTasks[c.id]}
             onClick={() => switchTo(c.id)}
