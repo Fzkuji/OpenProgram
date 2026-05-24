@@ -524,7 +524,7 @@
 
 .slashMenuItem {
   display: block;
-  padding: 8px;
+  padding: 8px 12px;
   border-radius: 10px;
   cursor: pointer;
   user-select: none;
