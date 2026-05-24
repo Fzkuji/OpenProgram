@@ -34,7 +34,19 @@ from typing import Optional
 
 @dataclass
 class SubAgentTurnResult:
-    """Outcome of one attach-style sub-agent run."""
+    """Outcome of one attach-style sub-agent run.
+
+    Two shapes covered by the same dataclass — the caller can tell
+    them apart by which of ``sub_session_id`` / ``head_id`` is set:
+
+      * detached spawn → ``sub_session_id`` populated (a brand-new
+        peer session). ``attach_node_id`` points at the indicator
+        row written into the parent's DAG.
+      * inline spawn → ``sub_session_id`` empty, ``head_id`` is the
+        assistant message id of the new in-session sibling. No
+        attach node — the new sibling shows up via the existing
+        Branches UI / sibling navigator.
+    """
     sub_session_id: str = ""
     sub_head_id: Optional[str] = None
     sub_commit_id: Optional[str] = None
@@ -42,6 +54,8 @@ class SubAgentTurnResult:
     failed: bool = False
     error: Optional[str] = None
     attach_node_id: Optional[str] = None
+    mode: str = "detached"   # "detached" | "inline"
+    head_id: Optional[str] = None        # inline mode: parent's new head
 
 
 def _mint_sub_session_id(parent_session_id: str, label: Optional[str]) -> str:
@@ -209,3 +223,72 @@ def run_sub_agent_turn(
             failed=True,
             error=result_error or f"{type(e).__name__}: {e}",
         )
+
+
+def run_inline_agent_turn(
+    parent_session_id: str,
+    parent_assistant_id: str,
+    prompt: str,
+    agent_id: str,
+    *,
+    label: Optional[str] = None,
+) -> SubAgentTurnResult:
+    """In-session spawn — the agent runs ON the parent session.
+
+    The agent inherits the full parent conversation as context. Its
+    reply is a NEW sibling branch off ``parent_assistant_id`` (sharing
+    the parent's predecessor chain up to that point). Mechanically
+    identical to a user pressing "fork from here" then sending the
+    prompt — except an agent, not the user, picked the prompt.
+
+    Distinct from ``run_sub_agent_turn`` in two ways:
+      1. No new session is created — the new ``user → assistant``
+         pair lands inside ``parent_session_id``.
+      2. No attach indicator node is written: the new sibling already
+         shows up via the existing Branches panel + ``< N/M >``
+         sibling navigator, like any other fork.
+
+    Returns ``SubAgentTurnResult`` with ``mode="inline"`` and
+    ``head_id`` pointing at the new assistant message id (the parent
+    session's new branch tip).
+    """
+    from openprogram.agent.session_db import default_db
+    from openprogram.agent.dispatcher import TurnRequest, process_user_turn
+
+    store = default_db()
+    if store._open(parent_session_id) is None:
+        return SubAgentTurnResult(
+            mode="inline",
+            failed=True,
+            error=f"parent session {parent_session_id!r} not found",
+        )
+
+    try:
+        req = TurnRequest(
+            session_id=parent_session_id,
+            user_text=prompt,
+            agent_id=agent_id,
+            source="sub_agent_inline",
+            # parent_id pins the new user message as a sibling off
+            # parent_assistant_id — the dispatcher writes it under
+            # the same predecessor, forking the DAG. The fork is
+            # implicit: previously-existing children of
+            # parent_assistant_id stay where they are; this one
+            # joins them as another branch.
+            parent_id=parent_assistant_id,
+        )
+        turn = process_user_turn(req)
+    except Exception as e:  # noqa: BLE001
+        return SubAgentTurnResult(
+            mode="inline",
+            failed=True,
+            error=f"{type(e).__name__}: {e}",
+        )
+
+    return SubAgentTurnResult(
+        mode="inline",
+        head_id=turn.assistant_msg_id,
+        final_text=turn.final_text or "",
+        failed=bool(turn.failed),
+        error=turn.error,
+    )

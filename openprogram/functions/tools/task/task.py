@@ -31,27 +31,30 @@ from openprogram.functions._runtime import function
 
 
 _DESCRIPTION = (
-    "Spawn a peer-level agent in its own independent session, run a "
-    "single turn against it with the given prompt, and return its "
-    "final reply. The new session lives alongside the current one "
-    "(same SessionStore root); a pointer node is attached to the "
-    "current turn so the UI can show the spawn point and let the "
-    "user open the sub-session's transcript.\n"
+    "Spawn a sub-agent, run a single turn against it with the given "
+    "prompt, and return its final reply. Two modes:\n"
     "\n"
-    "Use this when a sub-task is well-scoped (one focused goal, "
-    "self-contained context) and the calling agent doesn't need to "
-    "see the sub-agent's intermediate steps — only its final answer. "
-    "Common patterns: parallel research probes, independent code "
-    "explorations, scoped refactors. Follow with a `merge_branches` "
-    "WS action when reconciling several spawns.\n"
+    "  inline (default): the sub-agent inherits THIS conversation as "
+    "context. Its reply lands as a sibling branch in the current "
+    "session — a normal DAG fork. Use this when the sub-task needs "
+    "the conversation so far. The reply is visible in the chat as "
+    "a new branch the user can switch to.\n"
+    "\n"
+    "  detached: the sub-agent gets a brand-new peer session and "
+    "sees ONLY the prompt (no parent context). Use this when the "
+    "sub-task is fully self-contained and you don't want the parent "
+    "history bleeding in. The reply shows up as an attach card in "
+    "the parent chat; the peer session has its own sidebar entry.\n"
     "\n"
     "Args:\n"
-    "  prompt: full instruction for the sub-agent (it sees ONLY this; "
-    "include any context it needs).\n"
-    "  description: short label (1-3 words) used as the sub-session's "
-    "title and UI handle.\n"
-    "  agent_id: which agent profile the sub-agent should run as. "
-    "Defaults to the calling session's agent."
+    "  prompt: full instruction for the sub-agent. In detached mode "
+    "this is ALL it sees — include any context it needs.\n"
+    "  description: short label (1-3 words) used as the branch name "
+    "/ sub-session title.\n"
+    "  agent_id: which agent profile to run as. Defaults to this "
+    "session's agent.\n"
+    "  mode: 'inline' (default) or 'detached'. Pick inline unless "
+    "you specifically want a fresh-context fan-out."
 )
 
 
@@ -85,10 +88,22 @@ def _task_impl(
     prompt: str,
     description: str = "",
     agent_id: str = "",
+    mode: str = "inline",
 ) -> str:
     """Implementation body. Pulled out of the @function-wrapped binding
     so unit tests can drive it directly with their own ContextVars
-    instead of going through the AgentTool execute path."""
+    instead of going through the AgentTool execute path.
+
+    ``mode="inline"`` (default): the spawned agent sees the parent
+    conversation and writes its reply as a sibling branch in the same
+    session — same DAG fork the user would get from clicking
+    "fork from here". This is the normal Claude-Code Task feel.
+
+    ``mode="detached"``: the spawned agent gets a brand-new peer
+    session with no parent context (only the prompt). The reply
+    materializes as an attach pointer card in the parent's DAG and
+    the sub-session appears in the sidebar.
+    """
     sid, aid, parent_agent = _resolve_parent()
     if not sid or not aid:
         return (
@@ -106,32 +121,54 @@ def _task_impl(
             for c in label
         )[:24]
 
-    try:
-        from openprogram.agent.sub_agent_run import run_sub_agent_turn
-        result = run_sub_agent_turn(
-            parent_session_id=sid,
-            parent_assistant_id=aid,
-            prompt=prompt,
-            agent_id=chosen_agent,
-            label=label or None,
+    mode_clean = (mode or "").strip().lower() or "inline"
+    if mode_clean not in ("inline", "detached"):
+        return (
+            f"[task error] unknown mode {mode!r} — use 'inline' (default, "
+            "agent inherits this conversation) or 'detached' (agent gets "
+            "a fresh peer session)."
         )
+
+    try:
+        if mode_clean == "inline":
+            from openprogram.agent.sub_agent_run import run_inline_agent_turn
+            result = run_inline_agent_turn(
+                parent_session_id=sid,
+                parent_assistant_id=aid,
+                prompt=prompt,
+                agent_id=chosen_agent,
+                label=label or None,
+            )
+        else:
+            from openprogram.agent.sub_agent_run import run_sub_agent_turn
+            result = run_sub_agent_turn(
+                parent_session_id=sid,
+                parent_assistant_id=aid,
+                prompt=prompt,
+                agent_id=chosen_agent,
+                label=label or None,
+            )
     except Exception as e:  # noqa: BLE001
         return f"[task error] {type(e).__name__}: {e}"
 
     if result.error and not result.final_text:
-        return (
-            f"[task error: session={result.sub_session_id}] {result.error}"
-        )
+        if mode_clean == "inline":
+            return f"[task error: head={result.head_id}] {result.error}"
+        return f"[task error: session={result.sub_session_id}] {result.error}"
+
     out = result.final_text or "(sub-agent returned no text)"
     if result.error:
         out = f"{out}\n\n[task warning] {result.error}"
-    # Tag the result with the sub-session id so a follow-up
-    # `merge_branches` call can be issued without re-spawning.
-    tail = f"session={result.sub_session_id}"
-    if result.sub_commit_id:
-        tail += f" commit={result.sub_commit_id}"
-    out = f"{out}\n\n[sub-agent {tail}]"
-    return out
+
+    if mode_clean == "inline":
+        # Inline result lives at parent_session_id:head_id; merge_branches
+        # accepts that pair literally.
+        tail = f"branch={sid}:{result.head_id or '?'}"
+    else:
+        tail = f"session={result.sub_session_id}"
+        if result.sub_commit_id:
+            tail += f" commit={result.sub_commit_id}"
+    return f"{out}\n\n[sub-agent {tail}]"
 
 
 @function(
@@ -143,18 +180,24 @@ def task(
     prompt: str,
     description: str = "",
     agent_id: str = "",
+    mode: str = "inline",
 ) -> str:
-    """Spawn a sub-agent. Blocks until the sub-agent's turn finishes,
-    then returns its final reply text.
+    """Spawn a sub-agent. Blocks until the sub-agent finishes; returns
+    its final reply.
 
     Args:
-        prompt: instruction for the sub-agent. It starts with an empty
-            conversation; everything it needs to know goes here.
-        description: short label (1-3 words) used as the sub-branch
-            name and shown in the UI. Optional but recommended when
-            spawning several sub-agents in the same turn so they
-            stay distinguishable.
+        prompt: instruction for the sub-agent. In ``mode="detached"``
+            this is ALL it sees, so include any context it needs.
+        description: short label (1-3 words) used as the branch name
+            / sub-session title.
         agent_id: agent profile to run the sub-agent under. Defaults
-            to the parent session's agent.
+            to this session's agent.
+        mode: ``"inline"`` (default) ⇒ sub-agent inherits THIS
+            conversation, reply lands as a sibling branch in the
+            current session. ``"detached"`` ⇒ fresh peer session
+            with empty context; reply shows as an attach card.
     """
-    return _task_impl(prompt=prompt, description=description, agent_id=agent_id)
+    return _task_impl(
+        prompt=prompt, description=description,
+        agent_id=agent_id, mode=mode,
+    )

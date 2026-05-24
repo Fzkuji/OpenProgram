@@ -35,6 +35,9 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     from openprogram.webui import server as _s
     prompt = (kwargs.get("prompt") or "").strip()
     label = (kwargs.get("label") or "").strip() or None
+    mode = (kwargs.get("mode") or "inline").strip().lower() or "inline"
+    if mode not in ("inline", "detached"):
+        mode = "inline"
 
     if not prompt:
         _s._broadcast_chat_response(session_id, msg_id, {
@@ -45,14 +48,24 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         return
 
     try:
-        from openprogram.agent.sub_agent_run import run_sub_agent_turn
-        result = run_sub_agent_turn(
-            parent_session_id=session_id,
-            parent_assistant_id=msg_id,
-            prompt=prompt,
-            agent_id=agent_id,
-            label=label,
-        )
+        if mode == "inline":
+            from openprogram.agent.sub_agent_run import run_inline_agent_turn
+            result = run_inline_agent_turn(
+                parent_session_id=session_id,
+                parent_assistant_id=msg_id,
+                prompt=prompt,
+                agent_id=agent_id,
+                label=label,
+            )
+        else:
+            from openprogram.agent.sub_agent_run import run_sub_agent_turn
+            result = run_sub_agent_turn(
+                parent_session_id=session_id,
+                parent_assistant_id=msg_id,
+                prompt=prompt,
+                agent_id=agent_id,
+                label=label,
+            )
     except Exception as e:  # noqa: BLE001
         _s._broadcast_chat_response(session_id, msg_id, {
             "type": "error",
@@ -66,10 +79,13 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         or result.error
         or "(sub-agent returned no text)"
     )
-    payload = f"{body}\n\n[sub-agent session={result.sub_session_id}"
-    if result.sub_commit_id:
-        payload += f" commit={result.sub_commit_id}"
-    payload += "]"
+    if mode == "inline":
+        tail = f"branch={session_id}:{result.head_id or '?'}"
+    else:
+        tail = f"session={result.sub_session_id}"
+        if result.sub_commit_id:
+            tail += f" commit={result.sub_commit_id}"
+    payload = f"{body}\n\n[sub-agent {tail}]"
 
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "result",

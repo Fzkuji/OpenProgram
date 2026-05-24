@@ -196,3 +196,53 @@ def test_dispatcher_failure_surfaces(parent_store, monkeypatch):
     attach_rows = [m for m in msgs if m.get("function") == "attach"]
     assert len(attach_rows) == 1
     assert attach_rows[0].get("is_error")
+
+
+def test_inline_spawn_writes_sibling_in_same_session(parent_store, fake_dispatcher):
+    """run_inline_agent_turn writes a (user, assistant) pair into the
+    PARENT session as a sibling fork off the given assistant id.
+    No new session is created; no attach pointer is written."""
+    from openprogram.agent.sub_agent_run import run_inline_agent_turn
+
+    pre_sessions = {s.get("id") for s in parent_store.list_sessions(limit=999) or []}
+
+    out = run_inline_agent_turn(
+        parent_session_id="p1",
+        parent_assistant_id="a1",
+        prompt="extend this",
+        agent_id="main",
+        label="probe",
+    )
+
+    assert out.error is None, out.error
+    assert not out.failed
+    assert out.mode == "inline"
+    assert out.head_id  # populated with the new assistant msg id
+    assert out.sub_session_id == ""   # no new session
+    assert out.attach_node_id is None  # no attach pointer
+
+    # No NEW session id was created.
+    post_sessions = {s.get("id") for s in parent_store.list_sessions(limit=999) or []}
+    assert post_sessions == pre_sessions
+
+    # The fake dispatcher saw a TurnRequest with parent_id pointing at
+    # a1 — i.e. it forked off the supplied assistant message.
+    last = fake_dispatcher["calls"][-1]
+    assert last["session_id"] == "p1"
+
+    # No attach pointer landed in parent's DAG.
+    attach_rows = [m for m in parent_store.get_messages("p1")
+                   if m.get("function") == "attach"]
+    assert attach_rows == []
+
+
+def test_inline_spawn_unknown_parent(parent_store, fake_dispatcher):
+    from openprogram.agent.sub_agent_run import run_inline_agent_turn
+    out = run_inline_agent_turn(
+        parent_session_id="nope",
+        parent_assistant_id="x",
+        prompt="hi", agent_id="main",
+    )
+    assert out.failed
+    assert out.error and "not found" in out.error
+    assert out.mode == "inline"

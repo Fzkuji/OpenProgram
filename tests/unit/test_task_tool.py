@@ -69,6 +69,7 @@ def fake_dispatcher(monkeypatch):
 
 
 def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
+               mode: str = "inline",
                session_id: str | None = None, turn_id: str | None = None):
     """Invoke the task tool's underlying Python (skipping the @function
     wrapper which is for LLM-facing dispatch). ContextVars must be set
@@ -83,6 +84,7 @@ def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
         try:
             return _task_impl(
                 prompt=prompt, description=description, agent_id=agent_id,
+                mode=mode,
             )
         finally:
             _current_session_id.reset(tok1)
@@ -91,16 +93,29 @@ def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
     return copy_context().run(_go)
 
 
-def test_task_returns_subagent_text(store, fake_dispatcher):
+def test_task_inline_default(store, fake_dispatcher):
+    """Default mode is inline: result string carries
+    ``branch=<sid>:<head_id>`` (the new branch tip in the parent
+    session), not ``session=...``."""
     out = _call_task(
         prompt="find the answer", description="finder",
         session_id="p1", turn_id="a1",
     )
     assert "(sub reply)" in out
+    assert "[sub-agent branch=p1:" in out
+    assert fake_dispatcher["prompt"] == "find the answer"
+
+
+def test_task_detached_mode(store, fake_dispatcher):
+    """Explicit detached mode spins up a peer session; the result
+    string mentions ``session=`` so a follow-up merge can target it."""
+    out = _call_task(
+        prompt="find the answer", description="finder", mode="detached",
+        session_id="p1", turn_id="a1",
+    )
+    assert "(sub reply)" in out
     assert "[sub-agent session=" in out
     assert "finder" in out  # label encoded in sub-session id
-    # The fake dispatcher saw the prompt verbatim.
-    assert fake_dispatcher["prompt"] == "find the answer"
 
 
 def test_task_resolves_parent_agent_when_not_supplied(store, fake_dispatcher):
@@ -131,12 +146,13 @@ def test_task_without_turn_returns_error(store, fake_dispatcher):
 
 
 def test_task_sanitizes_description_for_session_id(store, fake_dispatcher):
+    """Detached spawn embeds the description as a label segment in the
+    sub-session id. Non-id-safe chars (``/``, ``!``, etc.) get
+    replaced with ``_``."""
     out = _call_task(
-        prompt="x", description="my/dangerous label!@#",
+        prompt="x", description="my/dangerous label!@#", mode="detached",
         session_id="p1", turn_id="a1",
     )
-    # Non [A-Za-z0-9_-] chars get replaced with _ in the label segment
-    # of the sub-session id; we don't pin the exact form.
     import re
     m = re.search(r"session=(\S+)", out)
     assert m is not None

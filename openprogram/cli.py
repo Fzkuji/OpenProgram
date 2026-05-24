@@ -233,6 +233,13 @@ def main():
         help="1-3 word label used as the sub-session title + sidebar handle")
     p_sa_spawn.add_argument("--agent", default="main",
         help="Agent profile id to run the sub-agent under (default: main)")
+    p_sa_spawn.add_argument("--mode", default="inline",
+        choices=["inline", "detached"],
+        help="inline (default): sub-agent inherits parent conversation, "
+             "reply is a sibling branch in the same session. "
+             "detached: fresh peer session, only prompt visible.")
+    p_sa_spawn.add_argument("--detached", action="store_true",
+        help="Shortcut for --mode detached")
     p_sa_spawn.add_argument("--no-json", action="store_true",
         help="Print human-readable summary instead of JSON")
 
@@ -850,12 +857,16 @@ def main():
         verb = getattr(args, "subagent_verb", None)
         as_json = not getattr(args, "no_json", False)
         if verb == "spawn":
+            mode = getattr(args, "mode", "inline") or "inline"
+            if getattr(args, "detached", False):
+                mode = "detached"
             sys.exit(_cmd_subagent_spawn(
                 session=args.session,
                 prompt=args.prompt,
                 parent_msg=getattr(args, "parent_msg", None),
                 label=getattr(args, "label", None),
                 agent_id=getattr(args, "agent", "main"),
+                mode=mode,
                 as_json=as_json,
             ))
         if verb == "merge":

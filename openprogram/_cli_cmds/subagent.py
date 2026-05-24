@@ -39,15 +39,22 @@ def _cmd_subagent_spawn(
     parent_msg: str | None = None,
     label: str | None = None,
     agent_id: str = "main",
+    mode: str = "inline",
     as_json: bool = True,
 ) -> int:
-    """Spawn a peer sub-agent off the given parent session.
+    """Spawn a sub-agent.
 
-    If ``parent_msg`` is omitted we hang the attach pointer off the
-    parent's current HEAD (so the spawn looks like a child of whichever
-    turn was last active)."""
+    ``mode="inline"`` (default): the sub-agent inherits the parent
+    session's conversation; its reply is a sibling branch in the SAME
+    session. ``mode="detached"``: brand-new peer session, only the
+    prompt is visible to the sub-agent.
+
+    If ``parent_msg`` is omitted we hang the spawn off the parent
+    session's current HEAD."""
     from openprogram.agent.session_db import default_db
-    from openprogram.agent.sub_agent_run import run_sub_agent_turn
+    from openprogram.agent.sub_agent_run import (
+        run_inline_agent_turn, run_sub_agent_turn,
+    )
 
     db = default_db()
     sess = db.get_session(session) if session else None
@@ -60,20 +67,36 @@ def _cmd_subagent_spawn(
         _print(
             {"error": (
                 f"session {session} has no head_id and no --parent-msg "
-                "was given; nothing to attach to"
+                "was given; nothing to spawn from"
             )},
             as_json=as_json,
         )
         return 2
 
-    result = run_sub_agent_turn(
-        parent_session_id=session,
-        parent_assistant_id=parent_id,
-        prompt=prompt,
-        agent_id=agent_id,
-        label=label,
-    )
+    mode_clean = (mode or "inline").strip().lower() or "inline"
+    if mode_clean not in ("inline", "detached"):
+        _print({"error": f"unknown mode {mode!r}"}, as_json=as_json)
+        return 2
+
+    if mode_clean == "inline":
+        result = run_inline_agent_turn(
+            parent_session_id=session,
+            parent_assistant_id=parent_id,
+            prompt=prompt,
+            agent_id=agent_id,
+            label=label,
+        )
+    else:
+        result = run_sub_agent_turn(
+            parent_session_id=session,
+            parent_assistant_id=parent_id,
+            prompt=prompt,
+            agent_id=agent_id,
+            label=label,
+        )
     out = {
+        "mode": result.mode,
+        "head_id": result.head_id,
         "sub_session_id": result.sub_session_id,
         "sub_head_id": result.sub_head_id,
         "sub_commit_id": result.sub_commit_id,
