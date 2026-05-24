@@ -297,16 +297,18 @@ async def handle_delete_branch(ws, cmd: dict):
 
 
 async def handle_attach_branch(ws, cmd: dict) -> None:
-    """Write an attach-pointer row on the current session HEAD pointing
-    at ``target_head_msg_id``. Same shape as the attach card a /task
-    spawn produces, but explicit — the user is referencing an
-    already-existing branch instead of spawning a new one.
+    """Write an attach-pointer row anchored on ``anchor_head_msg_id``
+    that references the branch ending at ``target_head_msg_id``. Same
+    shape as the attach card a /task spawn produces, but explicit and
+    decoupled from the active head — the user picks both the source
+    branch (what to embed) and the anchor (where the card lives).
 
     Wire format::
 
         in:  {"action": "attach_branch", "session_id": "...",
-              "target_head_msg_id": "...",
-              "label": "..."                  (optional override)}
+              "target_head_msg_id": "...",       # source (embedded)
+              "anchor_head_msg_id": "..."        # where to anchor; default = active head
+              "label": "..."                     (optional override)}
         out: broadcast: ``session_reload`` so all tailing clients
                        refresh and see the new attach card.
     """
@@ -318,6 +320,7 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
 
     session_id = (cmd.get("session_id") or "").strip()
     target_head = (cmd.get("target_head_msg_id") or "").strip()
+    anchor_arg = (cmd.get("anchor_head_msg_id") or "").strip() or None
     label_override = (cmd.get("label") or "").strip() or None
 
     if not session_id or not target_head:
@@ -338,9 +341,17 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
         from openprogram.agent.session_db import default_db
         db = default_db()
         sess = db.get_session(session_id) or {}
-        anchor = sess.get("head_id")
+        # Anchor: caller-supplied or fall back to the session's active
+        # head. Caller specifies it so the user can "attach branch X
+        # onto branch Y" without first having to switch to Y.
+        anchor = anchor_arg or sess.get("head_id")
         if not anchor:
             raise RuntimeError("session has no active head to attach to")
+        if anchor == target_head:
+            raise RuntimeError(
+                "cannot attach a branch to itself "
+                "(anchor and target are the same head)"
+            )
         # Resolve the target branch's name + a short content preview
         # so the AttachCard can render label + preview without a
         # follow-up round trip.

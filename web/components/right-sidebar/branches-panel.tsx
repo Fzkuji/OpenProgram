@@ -222,6 +222,10 @@ export function BranchesPanel() {
   const [baseHead, setBaseHead] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
   const [mergeInstruction, setMergeInstruction] = useState("");
+  // Attach-target picker. Open when the user clicks "Attach to" —
+  // shows the list of branches that aren't currently selected, so
+  // they can pick where the attach pointer lands.
+  const [attachOpen, setAttachOpen] = useState(false);
 
   // Re-read the legacy branch cache whenever the WS branch handlers
   // signal an update (the legacy `renderBranchesPanel` shim dispatches
@@ -239,6 +243,7 @@ export function BranchesPanel() {
     setBaseHead(null);
     setMerging(false);
     setMergeInstruction("");
+    setAttachOpen(false);
   }, [sessionId]);
 
   function toggleSelect(headId: string, e: React.MouseEvent) {
@@ -283,16 +288,24 @@ export function BranchesPanel() {
     }, 100);
   }
 
-  function runAttach() {
-    if (!sessionId || selected.length !== 1) return;
-    wsSend({
-      action: "attach_branch",
-      session_id: sessionId,
-      target_head_msg_id: selected[0],
-    });
+  function runAttachTo(anchorHeadId: string) {
+    if (!sessionId || selected.length === 0 || !anchorHeadId) return;
+    // For each selected source branch, write an attach pointer
+    // anchored at the user-picked branch. N selected = N pointers
+    // landing on the same anchor.
+    for (const src of selected) {
+      if (src === anchorHeadId) continue;   // self-attach is meaningless
+      wsSend({
+        action: "attach_branch",
+        session_id: sessionId,
+        target_head_msg_id: src,
+        anchor_head_msg_id: anchorHeadId,
+      });
+    }
     setSelected([]);
     setBaseHead(null);
-    // session_reload broadcast picks up the new attach card.
+    setAttachOpen(false);
+    // session_reload broadcast picks up the new attach cards.
   }
 
   const w = window as unknown as BranchWindow;
@@ -300,6 +313,11 @@ export function BranchesPanel() {
   if (!sessionId || rows.length === 0) return null;
 
   const graphColors = w._branchLaneColorMap || {};
+  // Targets the "Attach to" picker offers — everything that isn't a
+  // selected source (attaching a branch to itself is meaningless).
+  const attachCandidates = rows.filter(
+    (r) => !selected.includes(r.head_msg_id),
+  );
 
   return (
     <div className={"branches-section" + (collapsed ? " is-collapsed" : "")}>
@@ -330,51 +348,65 @@ export function BranchesPanel() {
           />
         ))}
       </div>
-      {!collapsed && selected.length === 1 ? (
-        <div className="branches-merge-bar">
-          <span className="branches-merge-summary">
-            1 selected
-          </span>
-          <button
-            type="button"
-            className="branches-merge-btn"
-            onClick={runAttach}
-            title="Write an attach card on the current branch's head pointing at this branch"
-          >
-            Attach to
-          </button>
-          <button
-            type="button"
-            className="branches-merge-clear"
-            onClick={() => {
-              setSelected([]);
-              setBaseHead(null);
-            }}
-            title="Clear selection"
-          >
-            ×
-          </button>
-        </div>
-      ) : null}
-      {!collapsed && selected.length >= 2 ? (
+      {!collapsed && selected.length >= 1 ? (
         <div className="branches-merge-bar">
           <span className="branches-merge-summary">
             {selected.length} selected
-            {baseHead ? " · ★ base" : ""}
+            {selected.length >= 2 && baseHead ? " · ★ base" : ""}
           </span>
-          <button
-            type="button"
-            className="branches-merge-btn"
-            onClick={() => setMerging(true)}
-          >
-            Merge…
-          </button>
+          <div className="branches-attach-wrap">
+            <button
+              type="button"
+              className="branches-merge-btn"
+              onClick={() => setAttachOpen((v) => !v)}
+              title="Attach selected branch(es) to another branch"
+            >
+              Attach to ▾
+            </button>
+            {attachOpen ? (
+              <div
+                className="branches-attach-picker"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {attachCandidates.length === 0 ? (
+                  <div className="branches-attach-picker-empty">
+                    No other branches to attach to.
+                  </div>
+                ) : (
+                  attachCandidates.map((b) => (
+                    <button
+                      key={b.head_msg_id}
+                      type="button"
+                      className="branches-attach-picker-item"
+                      onClick={() => runAttachTo(b.head_msg_id)}
+                      title={b.head_msg_id}
+                    >
+                      {b.name || b.head_msg_id.slice(0, 8)}
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
+          {selected.length >= 2 ? (
+            <button
+              type="button"
+              className="branches-merge-btn"
+              onClick={() => {
+                setAttachOpen(false);
+                setMerging(true);
+              }}
+            >
+              Merge…
+            </button>
+          ) : null}
           <button
             type="button"
             className="branches-merge-clear"
             onClick={() => {
               setSelected([]);
               setBaseHead(null);
+              setAttachOpen(false);
             }}
             title="Clear selection"
           >
