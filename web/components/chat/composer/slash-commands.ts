@@ -84,6 +84,38 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     },
   },
   {
+    name: "/spawn",
+    args: "[label]: <prompt>",
+    description:
+      "Spawn a sub-agent (inherits this conversation, replies as a sibling branch). "
+      + "Use '/spawn label: prompt' to label the branch.",
+    run(rest, { sessionId, send }) {
+      if (!sessionId) return true;
+      send({
+        action: "chat",
+        session_id: sessionId,
+        text: "/spawn " + rest,
+      });
+      return true;
+    },
+  },
+  {
+    name: "/merge",
+    args: "<sid|sid:head> [...]: <message>",
+    description:
+      "Merge N peer branches into a reply on this session. "
+      + "Same-session: 'sid:head_id'. Mark base with '*' prefix.",
+    run(rest, { sessionId, send }) {
+      if (!sessionId) return true;
+      send({
+        action: "chat",
+        session_id: sessionId,
+        text: "/merge " + rest,
+      });
+      return true;
+    },
+  },
+  {
     name: "/help",
     description:
       "Show this command list — type / to browse all available commands",
