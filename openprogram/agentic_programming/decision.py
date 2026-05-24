@@ -513,12 +513,22 @@ def parse_args(
     *,
     context: dict | None = None,
     max_retries: int = 1,
+    timeout_s: float | None = None,
+    on_retry=None,
 ) -> tuple[Callable | str, dict]:
     """Parse an LLM reply, locate the chosen option, bind its args.
 
     On a parse/validate failure the LLM is asked to re-pick (up to
     ``max_retries`` times) via a plain ``runtime.exec`` call — the retry
     is itself a model call and lands in the DAG.
+
+    ``timeout_s`` and ``on_retry`` are forwarded to every inner
+    ``runtime.exec()`` re-pick call so a top-level ``exec(timeout_s=N,
+    on_retry=fn)`` budget covers the choice-resolution phase too —
+    otherwise a stubborn LLM that keeps mis-picking would silently
+    consume wall-clock past the caller's deadline. ``timeout_s`` is
+    the **remaining** budget the caller has already debited for the
+    initial choice-bearing exec, not a fresh wall-clock window.
 
     Returns ``(chosen, kwargs)``: ``chosen`` is the function for a
     callable option, or the name string for a text option.
@@ -544,15 +554,19 @@ def parse_args(
             if attempt >= max_retries:
                 break
             menu = render_options(registry)
-            last_reply = str(runtime.exec(content=[{"type": "text", "text": (
-                f"Previous reply:\n{last_reply[:500]}\n\n"
-                f"Problem: {e.message}\n\n"
-                f"Options:\n{menu}\n\n"
-                "Your previous reply failed to parse or validate. Re-pick an "
-                "option from the list above, fixing the problem described. "
-                "Reply with valid JSON in the format shown in that option's "
-                "Call: example line — JSON only, no prose."
-            )}]))
+            last_reply = str(runtime.exec(
+                content=[{"type": "text", "text": (
+                    f"Previous reply:\n{last_reply[:500]}\n\n"
+                    f"Problem: {e.message}\n\n"
+                    f"Options:\n{menu}\n\n"
+                    "Your previous reply failed to parse or validate. Re-pick an "
+                    "option from the list above, fixing the problem described. "
+                    "Reply with valid JSON in the format shown in that option's "
+                    "Call: example line — JSON only, no prose."
+                )}],
+                timeout_s=timeout_s,
+                on_retry=on_retry,
+            ))
 
     raise DecisionError(
         f"decision failed after {max_retries + 1} attempt(s). "
@@ -656,6 +670,8 @@ def resolve_decision(
     *,
     context: dict | None = None,
     max_retries: int = 1,
+    timeout_s: float | None = None,
+    on_retry=None,
 ) -> Any:
     """Parse an LLM ``reply`` against a prepared menu and resolve the pick.
 
@@ -663,9 +679,14 @@ def resolve_decision(
     A function option is run and its return value handed back; a value
     option's value is returned as-is. A value option that declared a
     schema returns ``{"decision": name, **llm_supplied_fields}``.
+
+    ``timeout_s`` / ``on_retry`` forward to inner re-pick ``exec()``
+    calls inside :func:`parse_args` so the caller's wall-clock budget
+    and retry-observability hook cover the resolution phase too.
     """
     chosen, args = parse_args(
         reply, menu, runtime, context=context, max_retries=max_retries,
+        timeout_s=timeout_s, on_retry=on_retry,
     )
     if isinstance(chosen, str):
         if args:

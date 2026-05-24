@@ -836,8 +836,39 @@ class Runtime:
         # Choice-constrained finish — resolve the reply against the menu.
         # parse_args' own re-pick path issues fresh choice-free exec()
         # calls, so the tool/policy tokens above are already reset.
+        #
+        # Forward the caller's timeout_s / on_retry into resolve_decision
+        # so re-pick exec() calls inside parse_args stay inside the
+        # caller's wall-clock budget and fire the observability hook.
+        # ``timeout_s`` here is the *remaining* budget — the initial
+        # choice-bearing exec already debited some of it (potentially
+        # all of it, if retries ran long). Negative remainder = deadline
+        # already hit; surface as TIMEOUT instead of starting parse_args
+        # with a useless near-zero budget.
+        remaining_timeout: Optional[float] = None
+        if timeout_s is not None:
+            remaining_timeout = timeout_s - (time.monotonic() - _exec_start)
+            if remaining_timeout <= 0:
+                from openprogram.providers.utils.errors import ErrorReason as _ER
+                cause = TimeoutError(
+                    f"exec() exhausted timeout_s={timeout_s}s before choice "
+                    "resolution could start"
+                )
+                raise _build_llm_error(
+                    cause=cause, attempts=self.max_retries,
+                    elapsed_s=time.monotonic() - _exec_start,
+                    content=content, model=use_model,
+                    provider=getattr(self, "provider", None),
+                    history=[],
+                    permanent=True,
+                    override_reason=_ER.TIMEOUT,
+                ) from cause
+
         from openprogram.agentic_programming.decision import resolve_decision
-        return resolve_decision(reply, _decision_menu, _decision_values, self)
+        return resolve_decision(
+            reply, _decision_menu, _decision_values, self,
+            timeout_s=remaining_timeout, on_retry=on_retry,
+        )
 
     async def async_exec(
         self,
