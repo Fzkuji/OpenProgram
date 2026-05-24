@@ -15,7 +15,6 @@ import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { ThinkingBlock } from "./thinking-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
-import { AttachCard } from "./attach-card";
 
 function TypingIndicator() {
   return (
@@ -48,10 +47,6 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
         <div className="error-content">{msg.content || "Request failed."}</div>
       ) : empty && streaming ? (
         <TypingIndicator />
-      ) : msg.function === "attach" ? (
-        <div className="chat-stream-body">
-          <AttachCard msg={msg} />
-        </div>
       ) : (
         <div className="chat-stream-body">
           {msg.thinking ? (

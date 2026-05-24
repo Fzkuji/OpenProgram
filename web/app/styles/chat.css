@@ -1275,12 +1275,17 @@
 }
 
 
-/* AttachCard — rendered in place of normal assistant text when the
-   row's function="attach". Compact pill-ish card showing the
-   sub-agent's label + reply preview with a one-click "Open" jump to
-   the sub-session view. */
+/* AttachCard — a pointer row written when this turn spawned a peer
+   session (detached spawn / task()). Rendered standalone (no avatar,
+   no "Agentic" header) because it's not a turn — it's a marker.
+   `.attach-row` mirrors `.runtime-block`'s 60px horizontal margin so
+   the card lines up with the chat text column instead of the avatar
+   column. */
+.attach-row {
+  margin: 12px 60px;
+}
 .attach-card {
-  margin-top: 4px;
+  margin-top: 0;
   padding: 10px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);

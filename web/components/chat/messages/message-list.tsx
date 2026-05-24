@@ -23,6 +23,7 @@ import {
 } from "@/lib/session-store";
 
 import { AssistantBubble } from "./assistant-bubble";
+import { AttachCard } from "./attach-card";
 import { RuntimeBlock } from "./runtime-block";
 import { UserBubble } from "./user-bubble";
 
@@ -30,11 +31,16 @@ function dispatch(msg: ChatMsg) {
   if (msg.role === "system") {
     return <div className="message system">{msg.content}</div>;
   }
-  // Attach pointer rows have display="runtime" + function="attach"
-  // but want the AttachCard, not the generic RuntimeBlock. Route
-  // before the runtime branch so the card wins.
+  // Attach pointer rows are not a turn — they mark "this turn spawned a
+  // peer session". Render the AttachCard standalone (no avatar / no
+  // "Agentic" header) so the chat doesn't read as N extra assistant
+  // replies. The card itself has enough chrome to stand on its own.
   if (msg.role === "assistant" && msg.function === "attach") {
-    return <AssistantBubble msg={msg} />;
+    return (
+      <div className="attach-row" data-msg-id={msg.id}>
+        <AttachCard msg={msg} />
+      </div>
+    );
   }
   if (msg.display === "runtime") {
     // A `/run` turn renders as ONE runtime block, owned by the
