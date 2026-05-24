@@ -28,6 +28,16 @@ import { groupCommits, wsSend } from "./utils";
 
 export function ContextCommitTimeline() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  // Subscribe so this component re-runs the auto-refresh effect both
+  // when the active turn completes (runningTask falls from set → null)
+  // and when the user reveals the Context tab. List should never go
+  // stale relative to the chat; refresh is now event-driven, not the
+  // "click Refresh manually" behavior the user complained about.
+  const runningTask = useSessionStore((s) =>
+    sessionId ? s.runningTasks[sessionId] : null,
+  );
+  const rightDockView = useSessionStore((s) => s.rightDock.view);
+  const rightDockOpen = useSessionStore((s) => s.rightDock.open);
   const [commits, setCommits] = useState<CommitMeta[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, CommitDetail>>({});
@@ -90,10 +100,24 @@ export function ContextCommitTimeline() {
     };
   }, []);
 
-  // Auto-refresh on session change. Retry once if ws isn't ready yet
-  // (mount can race the socket-open).
+  // Auto-refresh. Fires on any of:
+  //   - session change (currentSessionId)
+  //   - turn finishes  (runningTask falls from set → null)
+  //   - user reveals Context tab (rightDockOpen + view === "context")
+  // Retry once if ws isn't ready yet (mount can race socket-open).
+  // Only the dock-visibility branch is short-circuited when the tab is
+  // hidden — there's no point hitting the server if the user can't see
+  // the result. The other branches still arm so opening the tab later
+  // shows up-to-date data.
+  const isContextVisible = rightDockOpen && rightDockView === "context";
+  // runningTask is the dependency, but we read its presence as a bool —
+  // null means "no turn running" which is what we care about; the
+  // ref-equality on the same object would skip the refresh otherwise.
+  const turnIdle = runningTask == null;
   useEffect(() => {
     if (!sessionId) return;
+    if (!isContextVisible) return;
+    if (!turnIdle) return;
     const w = window as unknown as { ws?: WebSocket | null };
     if (w.ws && w.ws.readyState === WebSocket.OPEN) {
       refresh();
@@ -107,7 +131,7 @@ export function ContextCommitTimeline() {
       }
     }, 400);
     return () => window.clearInterval(t);
-  }, [refresh, sessionId]);
+  }, [refresh, sessionId, isContextVisible, turnIdle]);
 
   function toggleRow(id: string) {
     if (expanded === id) {
