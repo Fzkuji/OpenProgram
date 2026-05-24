@@ -3,8 +3,8 @@
 In the peer-session model, ``merge`` is the symmetric counterpart of
 ``attach``:
 
-  * ``attach`` makes one session's turn visible inside another's DAG
-    via a pointer node (``run_sub_agent_turn``).
+  * ``attach`` makes a branch's reply visible inside another point
+    in the DAG via a pointer node (written by ``run_agent_turn``).
   * ``merge`` aggregates N peer sessions' results into one new turn
     on a designated target session, recording the ancestry as a
     multi-parent ContextCommit.

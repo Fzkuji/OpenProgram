@@ -1,9 +1,14 @@
-"""``openprogram subagent`` — spawn / merge peer sessions from the shell.
+"""``openprogram agent`` — spawn / merge agent branches from the shell.
 
-These commands invoke ``run_sub_agent_turn`` / ``process_merge_turn``
+These commands invoke ``run_agent_turn`` / ``process_merge_turn``
 directly against the in-process ``SessionStore`` singleton — no WS, no
-webui. Useful for scripting batch sub-agent fan-out from CI / shell
+webui. Useful for scripting batch agent fan-out from CI / shell
 pipelines.
+
+Same-session multi-agent model: every spawn lands as a branch (or
+new root) inside the target session's git repo. The command name
+``subagent`` is kept for backwards-compatibility with existing
+scripts but the model is now peer-agent, not parent/sub.
 
 Output is JSON for easy piping; ``--json=false`` prints a human-readable
 summary instead.
@@ -39,22 +44,21 @@ def _cmd_subagent_spawn(
     parent_msg: str | None = None,
     label: str | None = None,
     agent_id: str = "main",
-    mode: str = "inline",
+    context: str = "inherit",
     as_json: bool = True,
 ) -> int:
-    """Spawn a sub-agent.
+    """Spawn an agent in ``session``.
 
-    ``mode="inline"`` (default): the sub-agent inherits the parent
-    session's conversation; its reply is a sibling branch in the SAME
-    session. ``mode="detached"``: brand-new peer session, only the
-    prompt is visible to the sub-agent.
+    ``context="inherit"`` (default): the new agent forks off
+    ``parent_msg`` (or the session HEAD if omitted) and inherits the
+    conversation chain. Reply is a sibling branch in the same session.
 
-    If ``parent_msg`` is omitted we hang the spawn off the parent
-    session's current HEAD."""
+    ``context="clean"``: the new agent starts at a NEW root inside
+    the same session. It sees only the prompt; the reply becomes an
+    independent DAG tree alongside the original conversation.
+    """
     from openprogram.agent.session_db import default_db
-    from openprogram.agent.sub_agent_run import (
-        run_inline_agent_turn, run_sub_agent_turn,
-    )
+    from openprogram.agent.sub_agent_run import run_agent_turn
 
     db = default_db()
     sess = db.get_session(session) if session else None
@@ -62,45 +66,40 @@ def _cmd_subagent_spawn(
         _print({"error": f"unknown session: {session}"}, as_json=as_json)
         return 2
 
-    parent_id = parent_msg or sess.get("head_id")
-    if not parent_id:
-        _print(
-            {"error": (
-                f"session {session} has no head_id and no --parent-msg "
-                "was given; nothing to spawn from"
-            )},
-            as_json=as_json,
-        )
-        return 2
-
-    mode_clean = (mode or "inline").strip().lower() or "inline"
-    if mode_clean not in ("inline", "detached"):
-        _print({"error": f"unknown mode {mode!r}"}, as_json=as_json)
-        return 2
-
-    if mode_clean == "inline":
-        result = run_inline_agent_turn(
-            parent_session_id=session,
-            parent_assistant_id=parent_id,
-            prompt=prompt,
-            agent_id=agent_id,
-            label=label,
-        )
+    raw = (context or "inherit").strip().lower() or "inherit"
+    # Accept legacy mode names: inline → inherit, detached → clean.
+    if raw in ("detached", "clean"):
+        ctx = "clean"
+    elif raw in ("inline", "inherit"):
+        ctx = "inherit"
     else:
-        result = run_sub_agent_turn(
-            parent_session_id=session,
-            parent_assistant_id=parent_id,
-            prompt=prompt,
-            agent_id=agent_id,
-            label=label,
-        )
+        _print({"error": f"unknown context {context!r}"}, as_json=as_json)
+        return 2
+
+    if ctx == "inherit":
+        parent_id = parent_msg or sess.get("head_id")
+        if not parent_id:
+            _print(
+                {"error": (
+                    f"session {session} has no head_id and no --parent-msg "
+                    "was given; nothing to spawn from in inherit mode"
+                )},
+                as_json=as_json,
+            )
+            return 2
+    else:
+        parent_id = None  # clean root
+
+    result = run_agent_turn(
+        session_id=session,
+        prompt=prompt,
+        agent_id=agent_id,
+        parent_id=parent_id,
+        label=label,
+    )
     out = {
-        "mode": result.mode,
+        "context": ctx,
         "head_id": result.head_id,
-        "sub_session_id": result.sub_session_id,
-        "sub_head_id": result.sub_head_id,
-        "sub_commit_id": result.sub_commit_id,
-        "attach_node_id": result.attach_node_id,
         "final_text": result.final_text,
         "failed": result.failed,
         "error": result.error,

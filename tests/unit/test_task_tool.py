@@ -1,8 +1,7 @@
-"""task tool — Claude-Code-style sub-agent spawn from inside a turn."""
+"""task tool — same-session spawn from inside a turn."""
 from __future__ import annotations
 
 from contextvars import copy_context
-from pathlib import Path
 
 import pytest
 
@@ -49,27 +48,30 @@ def fake_dispatcher(monkeypatch):
     def fake_run(req, *, on_event=None, cancel_event=None):
         captured["prompt"] = req.user_text
         captured["agent_id"] = req.agent_id
-        store = __import__(
-            "openprogram.agent.session_db", fromlist=["default_db"],
-        ).default_db()
-        store.append_message(req.session_id, {
-            "id": "u_" + req.session_id[-4:],
-            "role": "user", "content": req.user_text,
-            "timestamp": 0, "parent_id": None,
+        captured["parent_id"] = req.parent_id
+        captured["history_override"] = req.history_override
+        from openprogram.agent.session_db import default_db
+        s = default_db()
+        u_id = "u_" + str(len(captured))
+        a_id = "a_" + str(len(captured))
+        s.append_message(req.session_id, {
+            "id": u_id, "role": "user", "content": req.user_text,
+            "timestamp": 0, "parent_id": req.parent_id,
+            "agent_id": req.agent_id,
         })
-        store.append_message(req.session_id, {
-            "id": "a_" + req.session_id[-4:],
-            "role": "assistant", "content": "(sub reply)",
-            "timestamp": 0, "parent_id": "u_" + req.session_id[-4:],
+        s.append_message(req.session_id, {
+            "id": a_id, "role": "assistant", "content": "(spawned reply)",
+            "timestamp": 0, "parent_id": u_id,
+            "agent_id": req.agent_id,
         })
-        return _R("(sub reply)")
+        return _R("(spawned reply)")
 
     monkeypatch.setattr(disp, "process_user_turn", fake_run)
     return captured
 
 
 def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
-               mode: str = "inline",
+               context: str = "inherit",
                session_id: str | None = None, turn_id: str | None = None):
     """Invoke the task tool's underlying Python (skipping the @function
     wrapper which is for LLM-facing dispatch). ContextVars must be set
@@ -84,7 +86,7 @@ def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
         try:
             return _task_impl(
                 prompt=prompt, description=description, agent_id=agent_id,
-                mode=mode,
+                context=context,
             )
         finally:
             _current_session_id.reset(tok1)
@@ -93,35 +95,38 @@ def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
     return copy_context().run(_go)
 
 
-def test_task_inline_default(store, fake_dispatcher):
-    """Default mode is inline: result string carries
-    ``branch=<sid>:<head_id>`` (the new branch tip in the parent
-    session), not ``session=...``."""
+def test_task_inherit_default(store, fake_dispatcher):
+    """Default context=inherit: forks off the caller turn, history
+    inherited. Result string carries ``branch=<sid>:<head_id>``."""
     out = _call_task(
         prompt="find the answer", description="finder",
         session_id="p1", turn_id="a1",
     )
-    assert "(sub reply)" in out
-    assert "[sub-agent branch=p1:" in out
+    assert "(spawned reply)" in out
+    assert "[spawned agent branch=p1:" in out
     assert fake_dispatcher["prompt"] == "find the answer"
+    # inherit → parent_id pinned to the caller turn.
+    assert fake_dispatcher["parent_id"] == "a1"
+    # inherit → history_override left at default (None) so dispatcher
+    # walks the conv chain ending at a1.
+    assert fake_dispatcher["history_override"] is None
 
 
-def test_task_detached_mode(store, fake_dispatcher):
-    """Explicit detached mode spins up a peer session; the result
-    string mentions ``session=`` so a follow-up merge can target it."""
+def test_task_clean_mode_starts_new_root(store, fake_dispatcher):
+    """context=clean: new root (parent_id=None) in the same session.
+    Result string still carries branch=<sid>:<head_id> — same session."""
     out = _call_task(
-        prompt="find the answer", description="finder", mode="detached",
+        prompt="find the answer", description="finder", context="clean",
         session_id="p1", turn_id="a1",
     )
-    assert "(sub reply)" in out
-    assert "[sub-agent session=" in out
-    assert "finder" in out  # label encoded in sub-session id
+    assert "(spawned reply)" in out
+    assert "[spawned agent branch=p1:" in out
+    assert fake_dispatcher["parent_id"] is None
+    assert fake_dispatcher["history_override"] == []   # empty start
 
 
 def test_task_resolves_parent_agent_when_not_supplied(store, fake_dispatcher):
-    _call_task(
-        prompt="x", session_id="p1", turn_id="a1",
-    )
+    _call_task(prompt="x", session_id="p1", turn_id="a1")
     assert fake_dispatcher["agent_id"] == "main"
 
 
@@ -145,16 +150,10 @@ def test_task_without_turn_returns_error(store, fake_dispatcher):
     assert "no active parent turn" in out
 
 
-def test_task_sanitizes_description_for_session_id(store, fake_dispatcher):
-    """Detached spawn embeds the description as a label segment in the
-    sub-session id. Non-id-safe chars (``/``, ``!``, etc.) get
-    replaced with ``_``."""
+def test_task_unknown_context_returns_error(store, fake_dispatcher):
     out = _call_task(
-        prompt="x", description="my/dangerous label!@#", mode="detached",
+        prompt="x", context="weird",
         session_id="p1", turn_id="a1",
     )
-    import re
-    m = re.search(r"session=(\S+)", out)
-    assert m is not None
-    sid = m.group(1).rstrip(']')
-    assert all(c.isalnum() or c in "_-" for c in sid), sid
+    assert "[task error]" in out
+    assert "unknown context" in out

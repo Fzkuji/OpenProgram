@@ -1,14 +1,20 @@
-"""run_sub_agent_turn — peer-session model.
+"""run_agent_turn — same-session multi-agent.
 
-The sub-agent is just another session in the same SessionStore; the
-parent gets an attach pointer node. Tests verify (a) a fresh peer
-session lands at the expected id, (b) the attach node carries the
-right metadata, and (c) the parent's HEAD doesn't get pushed onto the
-synthetic side child.
+Spawn is just another branch (or a new root) in the parent session's
+DAG. There is no separate sub_session id and no attach pointer
+written by ``run_agent_turn`` itself — those are decisions for the
+caller (e.g. ``_run_spawn`` in the webui broadcasts a result; merge
+writes explicit multi-parent commits).
+
+Tests:
+  * inherit mode forks off a given node (same session) and stamps
+    ``agent_id`` on the new turn's metadata.
+  * clean mode writes a new root (``parent_id=null``) in the same
+    session.
+  * unknown session is reported as a structured failure.
+  * dispatcher failure is surfaced (not swallowed).
 """
 from __future__ import annotations
-
-import json
 
 import pytest
 
@@ -26,7 +32,7 @@ def parent_store(tmp_path, monkeypatch):
 
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
-        "id": "u1", "role": "user", "content": "spawn one please",
+        "id": "u1", "role": "user", "content": "first turn",
         "timestamp": 0, "parent_id": None,
     })
     s.append_message("p1", {
@@ -61,114 +67,117 @@ def fake_dispatcher(monkeypatch):
             "history_override": req.history_override,
             "agent_id": req.agent_id,
             "source": req.source,
+            "parent_id": req.parent_id,
         })
         from openprogram.agent.session_db import default_db
         store = default_db()
-        # Pretend the dispatcher persisted a user + assistant pair on
-        # the sub-session so the sub-agent's session has real content.
+        # Pretend the dispatcher persisted a user + assistant pair.
+        u_id = f"u_{len(captured['calls'])}"
+        a_id = f"a_{len(captured['calls'])}"
         store.append_message(req.session_id, {
-            "id": f"u_{req.session_id[-4:]}",
-            "role": "user", "content": req.user_text,
-            "timestamp": 0, "parent_id": None,
-        })
-        asst_id = f"a_{req.session_id[-4:]}"
-        store.append_message(req.session_id, {
-            "id": asst_id, "role": "assistant",
-            "content": "(sub reply)",
+            "id": u_id, "role": "user",
+            "content": req.user_text,
             "timestamp": 0,
-            "parent_id": f"u_{req.session_id[-4:]}",
+            "parent_id": req.parent_id,
+            "agent_id": req.agent_id,
         })
-        return _R("(sub reply)", asst_id=asst_id)
+        store.append_message(req.session_id, {
+            "id": a_id, "role": "assistant",
+            "content": "(spawned reply)",
+            "timestamp": 0,
+            "parent_id": u_id,
+            "agent_id": req.agent_id,
+        })
+        return _R("(spawned reply)", asst_id=a_id)
 
     monkeypatch.setattr(disp, "process_user_turn", fake_run)
     return captured
 
 
-def test_creates_peer_session_in_same_store(parent_store, fake_dispatcher):
-    from openprogram.agent.sub_agent_run import run_sub_agent_turn
+def test_inherit_forks_off_parent_node(parent_store, fake_dispatcher):
+    """inherit mode: forks off ``parent_id`` in the SAME session.
+    No new session id is minted; no attach pointer is written by
+    ``run_agent_turn`` itself."""
+    from openprogram.agent.sub_agent_run import run_agent_turn
 
-    out = run_sub_agent_turn(
-        parent_session_id="p1",
-        parent_assistant_id="a1",
-        prompt="find a thing",
-        agent_id="main",
-        label="finder",
+    pre_sessions = {s.get("id") for s in parent_store.list_sessions(limit=999) or []}
+
+    out = run_agent_turn(
+        session_id="p1",
+        prompt="extend this",
+        agent_id="probe",
+        parent_id="a1",
+        label="probe",
     )
 
     assert out.error is None, out.error
     assert not out.failed
-    assert out.final_text == "(sub reply)"
+    assert out.head_id  # populated with the new assistant msg id
 
-    # Sub-session id has the expected shape and ended up as a real
-    # session in the parent's SessionStore.
-    assert out.sub_session_id.startswith("sub_")
-    assert "finder" in out.sub_session_id
-    sess = parent_store.get_session(out.sub_session_id)
-    assert sess is not None
-    assert sess.get("agent_id") == "main"
-    # Provenance carried on the sub-session itself.
-    assert sess.get("parent_session_id") == "p1"
-    assert sess.get("parent_assistant_id") == "a1"
+    # No new session id created.
+    post_sessions = {s.get("id") for s in parent_store.list_sessions(limit=999) or []}
+    assert post_sessions == pre_sessions
 
-    # Dispatcher was driven on the SUB session (not the parent).
-    assert fake_dispatcher["calls"]
+    # The fake dispatcher saw a TurnRequest with parent_id pointing at a1.
     last = fake_dispatcher["calls"][-1]
-    assert last["session_id"] == out.sub_session_id
-    assert last["history_override"] == []   # peer starts empty
+    assert last["session_id"] == "p1"
+    assert last["parent_id"] == "a1"
+    assert last["agent_id"] == "probe"
+
+    # No attach pointer landed automatically — that's the caller's job.
+    attach_rows = [m for m in parent_store.get_messages("p1")
+                   if m.get("function") == "attach"]
+    assert attach_rows == []
 
 
-def test_parent_dag_gets_one_attach_pointer(parent_store, fake_dispatcher):
-    from openprogram.agent.sub_agent_run import run_sub_agent_turn
+def test_clean_starts_new_root(parent_store, fake_dispatcher):
+    """clean mode: parent_id=None → dispatcher gets history_override=[]
+    and the new turn becomes a new root in the same session."""
+    from openprogram.agent.sub_agent_run import run_agent_turn
 
-    out = run_sub_agent_turn(
-        parent_session_id="p1",
-        parent_assistant_id="a1",
+    out = run_agent_turn(
+        session_id="p1",
+        prompt="independent task",
+        agent_id="probe",
+        parent_id=None,
+        label="indie",
+    )
+    assert not out.failed
+    assert out.head_id
+
+    last = fake_dispatcher["calls"][-1]
+    assert last["session_id"] == "p1"
+    assert last["parent_id"] is None
+    assert last["history_override"] == []   # clean start
+
+
+def test_label_persists_as_branch_name(parent_store, fake_dispatcher):
+    """A spawn with label='X' registers X as the branch name for the
+    resulting head — so the right-rail Branches panel shows the label
+    instead of the raw commit hash."""
+    from openprogram.agent.sub_agent_run import run_agent_turn
+
+    out = run_agent_turn(
+        session_id="p1",
         prompt="x",
-        agent_id="main",
+        agent_id="probe",
+        parent_id="a1",
         label="probe",
     )
-    msgs = parent_store.get_messages("p1")
-    attach_rows = [m for m in msgs if m.get("function") == "attach"]
-    assert len(attach_rows) == 1
-    row = attach_rows[0]
-    assert row["id"] == out.attach_node_id
-    assert row["role"] == "assistant"
-    assert row["parent_id"] == "a1"
-    # Attach metadata points at the sub-session.
-    attach = row.get("attach")
-    if not isinstance(attach, dict):
-        extra = row.get("extra")
-        if isinstance(extra, str):
-            extra = json.loads(extra)
-        if isinstance(extra, dict):
-            attach = extra.get("attach")
-    assert isinstance(attach, dict)
-    assert attach["session_id"] == out.sub_session_id
+    branches = parent_store.list_branches("p1")
+    by_head = {b["head_msg_id"]: b for b in branches}
+    row = by_head.get(out.head_id)
+    assert row is not None, "spawn head not listed as a branch tip"
+    assert row.get("name") == "probe"
 
 
-def test_parent_head_does_not_advance_onto_attach(parent_store, fake_dispatcher):
-    """Without HEAD preservation, the synthetic attach row would push
-    parent's chat tip onto a non-conversation node and the next
-    real assistant turn would walk from there."""
-    from openprogram.agent.sub_agent_run import run_sub_agent_turn
-
-    head_before = parent_store.get_session("p1").get("head_id")
-    run_sub_agent_turn(
-        parent_session_id="p1",
-        parent_assistant_id="a1",
-        prompt="y",
+def test_unknown_session_errors(parent_store, fake_dispatcher):
+    from openprogram.agent.sub_agent_run import run_agent_turn
+    out = run_agent_turn(
+        session_id="nope",
+        prompt="hi",
         agent_id="main",
-    )
-    head_after = parent_store.get_session("p1").get("head_id")
-    assert head_after == head_before, (head_before, head_after)
-
-
-def test_unknown_parent_session_errors(parent_store, fake_dispatcher):
-    from openprogram.agent.sub_agent_run import run_sub_agent_turn
-    out = run_sub_agent_turn(
-        parent_session_id="nope",
-        parent_assistant_id="x",
-        prompt="hi", agent_id="main",
+        parent_id="x",
     )
     assert out.failed
     assert out.error and "not found" in out.error
@@ -176,73 +185,18 @@ def test_unknown_parent_session_errors(parent_store, fake_dispatcher):
 
 def test_dispatcher_failure_surfaces(parent_store, monkeypatch):
     from openprogram.agent import dispatcher as disp
-    from openprogram.agent.sub_agent_run import run_sub_agent_turn
+    from openprogram.agent.sub_agent_run import run_agent_turn
 
     def boom(req, *, on_event=None, cancel_event=None):
         raise RuntimeError("provider exploded")
 
     monkeypatch.setattr(disp, "process_user_turn", boom)
 
-    out = run_sub_agent_turn(
-        parent_session_id="p1",
-        parent_assistant_id="a1",
-        prompt="go", agent_id="main",
+    out = run_agent_turn(
+        session_id="p1",
+        prompt="go",
+        agent_id="main",
+        parent_id="a1",
     )
     assert out.failed
     assert out.error and "provider exploded" in out.error
-    # The attach pointer still landed on the parent so the user sees
-    # something happened.
-    msgs = parent_store.get_messages("p1")
-    attach_rows = [m for m in msgs if m.get("function") == "attach"]
-    assert len(attach_rows) == 1
-    assert attach_rows[0].get("is_error")
-
-
-def test_inline_spawn_writes_sibling_in_same_session(parent_store, fake_dispatcher):
-    """run_inline_agent_turn writes a (user, assistant) pair into the
-    PARENT session as a sibling fork off the given assistant id.
-    No new session is created; no attach pointer is written."""
-    from openprogram.agent.sub_agent_run import run_inline_agent_turn
-
-    pre_sessions = {s.get("id") for s in parent_store.list_sessions(limit=999) or []}
-
-    out = run_inline_agent_turn(
-        parent_session_id="p1",
-        parent_assistant_id="a1",
-        prompt="extend this",
-        agent_id="main",
-        label="probe",
-    )
-
-    assert out.error is None, out.error
-    assert not out.failed
-    assert out.mode == "inline"
-    assert out.head_id  # populated with the new assistant msg id
-    assert out.sub_session_id == ""   # no new session
-    assert out.attach_node_id is None  # no attach pointer
-
-    # No NEW session id was created.
-    post_sessions = {s.get("id") for s in parent_store.list_sessions(limit=999) or []}
-    assert post_sessions == pre_sessions
-
-    # The fake dispatcher saw a TurnRequest with parent_id pointing at
-    # a1 — i.e. it forked off the supplied assistant message.
-    last = fake_dispatcher["calls"][-1]
-    assert last["session_id"] == "p1"
-
-    # No attach pointer landed in parent's DAG.
-    attach_rows = [m for m in parent_store.get_messages("p1")
-                   if m.get("function") == "attach"]
-    assert attach_rows == []
-
-
-def test_inline_spawn_unknown_parent(parent_store, fake_dispatcher):
-    from openprogram.agent.sub_agent_run import run_inline_agent_turn
-    out = run_inline_agent_turn(
-        parent_session_id="nope",
-        parent_assistant_id="x",
-        prompt="hi", agent_id="main",
-    )
-    assert out.failed
-    assert out.error and "not found" in out.error
-    assert out.mode == "inline"

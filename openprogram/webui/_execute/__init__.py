@@ -8,9 +8,10 @@ Split into:
 
 Two newer actions handled inline here (small enough not to warrant
 their own modules):
-  - spawn  : ``/spawn label: prompt`` — user-initiated peer-session
-             attach. Runs ``run_sub_agent_turn`` synchronously and
-             broadcasts a result envelope.
+  - spawn  : ``/spawn label: prompt`` — user-initiated peer agent
+             spawn (same session, new branch / new root). Runs
+             ``run_agent_turn`` synchronously and broadcasts a
+             result envelope.
   - merge  : ``/merge sid_a sid_b: message`` — user-initiated peer
              session merge. Runs ``process_merge_turn`` synchronously.
 
@@ -25,19 +26,27 @@ import traceback
 
 
 def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> None:
-    """User-initiated ``/spawn`` — runs a peer sub-agent against the
-    given prompt and attaches the result into this session's DAG.
+    """User-initiated ``/spawn`` — runs another agent in the same
+    session and lands the reply as a branch (or a new root) in the
+    same DAG.
 
-    ``msg_id`` is the user message that typed the ``/spawn`` command;
-    the attach pointer node hangs off it (parent_assistant_id=msg_id),
-    so the spawn looks like a direct child of the user's instruction.
+    ``msg_id`` is the user message that typed the ``/spawn`` command.
+    In ``inherit`` mode the spawn forks off that message; in
+    ``clean`` mode it starts a new root inside the same session
+    (no parent_id).
     """
     from openprogram.webui import server as _s
     prompt = (kwargs.get("prompt") or "").strip()
     label = (kwargs.get("label") or "").strip() or None
-    mode = (kwargs.get("mode") or "inline").strip().lower() or "inline"
-    if mode not in ("inline", "detached"):
-        mode = "inline"
+    # Accept ``context`` (new) and ``mode`` (legacy). "detached"/"clean"
+    # both mean new-root; "inline"/"inherit" both mean fork-from-here.
+    raw = (kwargs.get("context") or kwargs.get("mode")
+           or "inherit").strip().lower()
+    if raw in ("detached", "clean"):
+        context = "clean"
+    else:
+        context = "inherit"
+    chosen_agent = (kwargs.get("agent_id") or "").strip() or agent_id
 
     if not prompt:
         _s._broadcast_chat_response(session_id, msg_id, {
@@ -48,24 +57,14 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         return
 
     try:
-        if mode == "inline":
-            from openprogram.agent.sub_agent_run import run_inline_agent_turn
-            result = run_inline_agent_turn(
-                parent_session_id=session_id,
-                parent_assistant_id=msg_id,
-                prompt=prompt,
-                agent_id=agent_id,
-                label=label,
-            )
-        else:
-            from openprogram.agent.sub_agent_run import run_sub_agent_turn
-            result = run_sub_agent_turn(
-                parent_session_id=session_id,
-                parent_assistant_id=msg_id,
-                prompt=prompt,
-                agent_id=agent_id,
-                label=label,
-            )
+        from openprogram.agent.sub_agent_run import run_agent_turn
+        result = run_agent_turn(
+            session_id=session_id,
+            prompt=prompt,
+            agent_id=chosen_agent,
+            parent_id=msg_id if context == "inherit" else None,
+            label=label,
+        )
     except Exception as e:  # noqa: BLE001
         _s._broadcast_chat_response(session_id, msg_id, {
             "type": "error",
@@ -77,15 +76,10 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     body = (
         result.final_text
         or result.error
-        or "(sub-agent returned no text)"
+        or "(spawned agent returned no text)"
     )
-    if mode == "inline":
-        tail = f"branch={session_id}:{result.head_id or '?'}"
-    else:
-        tail = f"session={result.sub_session_id}"
-        if result.sub_commit_id:
-            tail += f" commit={result.sub_commit_id}"
-    payload = f"{body}\n\n[sub-agent {tail}]"
+    tail = f"branch={session_id}:{result.head_id or '?'}"
+    payload = f"{body}\n\n[spawned agent {tail}]"
 
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "result",

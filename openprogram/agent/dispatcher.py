@@ -227,6 +227,10 @@ def process_user_turn(
         "source": req.source,
         "peer_display": req.peer_display,
         "peer_id": req.peer_id,
+        # Stamp which agent this turn was sent to so the UI can render
+        # per-agent avatar / label / colour. Same field on assistant
+        # below — the pair lets the UI tag both halves of a turn.
+        "agent_id": req.agent_id,
     }
     # Persist a lightweight attachment manifest (count + media types)
     # so /resume + the search picker can show "[2 images]" badges
@@ -530,6 +534,11 @@ def process_user_turn(
         "source": req.source,
         "model": model_id,
         "provider": provider_id,
+        # Which agent produced this reply — same field as the matching
+        # user_msg above. Lets the UI colour / label both halves of
+        # the turn consistently when multiple peer agents live in the
+        # same session.
+        "agent_id": req.agent_id,
     }
     # Stamp terminal lifecycle status — see _turn_lifecycle for the
     # state machine. ``cancel_event.is_set()`` here means the user

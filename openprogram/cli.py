@@ -221,25 +221,25 @@ def main():
     )
 
     p_sa_spawn = subagent_sub.add_parser("spawn",
-        help="Spawn a peer sub-agent and attach the result to a parent.")
+        help="Spawn an agent in the given session as a new branch.")
     p_sa_spawn.add_argument("--session", required=True,
-        help="Parent session id (the spawn attaches into this DAG)")
+        help="Session id to spawn into (the new branch / root lives here)")
     p_sa_spawn.add_argument("--prompt", required=True,
-        help="Prompt the sub-agent receives as its only user turn")
+        help="Prompt the spawned agent receives as its only user turn")
     p_sa_spawn.add_argument("--parent-msg", default=None,
-        help="Specific message id to hang the attach pointer off "
-             "(defaults to the parent's current HEAD)")
+        help="Specific node id to fork off in inherit mode "
+             "(defaults to the session's current HEAD)")
     p_sa_spawn.add_argument("--label", default=None,
-        help="1-3 word label used as the sub-session title + sidebar handle")
+        help="1-3 word label used as the branch name")
     p_sa_spawn.add_argument("--agent", default="main",
-        help="Agent profile id to run the sub-agent under (default: main)")
-    p_sa_spawn.add_argument("--mode", default="inline",
-        choices=["inline", "detached"],
-        help="inline (default): sub-agent inherits parent conversation, "
-             "reply is a sibling branch in the same session. "
-             "detached: fresh peer session, only prompt visible.")
-    p_sa_spawn.add_argument("--detached", action="store_true",
-        help="Shortcut for --mode detached")
+        help="Agent profile id to run the spawn under (default: main)")
+    p_sa_spawn.add_argument("--context", default="inherit",
+        choices=["inherit", "clean"],
+        help="inherit (default): forks off the parent turn, inheriting "
+             "the conversation chain. clean: new root in the same "
+             "session, the agent sees only the prompt.")
+    p_sa_spawn.add_argument("--clean", action="store_true",
+        help="Shortcut for --context clean")
     p_sa_spawn.add_argument("--no-json", action="store_true",
         help="Print human-readable summary instead of JSON")
 
@@ -863,16 +863,16 @@ def main():
         verb = getattr(args, "subagent_verb", None)
         as_json = not getattr(args, "no_json", False)
         if verb == "spawn":
-            mode = getattr(args, "mode", "inline") or "inline"
-            if getattr(args, "detached", False):
-                mode = "detached"
+            context = getattr(args, "context", "inherit") or "inherit"
+            if getattr(args, "clean", False):
+                context = "clean"
             sys.exit(_cmd_subagent_spawn(
                 session=args.session,
                 prompt=args.prompt,
                 parent_msg=getattr(args, "parent_msg", None),
                 label=getattr(args, "label", None),
                 agent_id=getattr(args, "agent", "main"),
-                mode=mode,
+                context=context,
                 as_json=as_json,
             ))
         if verb == "merge":
