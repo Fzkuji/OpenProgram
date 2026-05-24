@@ -152,15 +152,27 @@ html, body {
    wide viewports the injection timing was occasionally putting the
    right sidebar to the left of the main column. order is the cheapest
    deterministic fix — left = 0, resize = 1, main = 2, right = 99. */
-.app > #sidebar,
-.app > .sidebar:not(.right-sidebar) { order: 0; }
-.app > .col-resize,
-.app > #sidebarResize { order: 1; }
-.app > .main { order: 2; flex: 1; min-width: 0; }
-.app > #rightSidebar,
-.app > .right-sidebar,
-.app > #detailResize { order: 99; }
-.app > #rightSidebar { margin-left: auto; }
+/* No direct-child combinator here: the chat shell and right sidebar
+   are now rendered through ``display: contents`` wrappers in
+   AppShell, so .main and .right-sidebar are GRANDCHILDREN of .app
+   in the DOM tree. From flexbox's POV they're still flex items of
+   .app, but ``.app > .main`` doesn't match them — and without that
+   match, .main falls back to ``order: 0`` and ends up before
+   sidebarResize, which pushed the drag handle all the way to the
+   right viewport edge.
+
+   Descendant selectors below work regardless of how deeply the
+   wrappers nest, as long as the actual layout-participating element
+   carries the matching class / id. */
+.app #sidebar,
+.app .sidebar:not(.right-sidebar) { order: 0; }
+.app .col-resize,
+.app #sidebarResize { order: 1; }
+.app .main { order: 2; flex: 1; min-width: 0; }
+.app #rightSidebar,
+.app .right-sidebar,
+.app #detailResize { order: 99; }
+.app #rightSidebar { margin-left: auto; }
 
 /* Column resize handle */
 /* Zero layout width — main content sits flush against the sidebar's own
