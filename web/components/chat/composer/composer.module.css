@@ -484,19 +484,20 @@
   pointer-events: auto;
   max-width: 720px;
   width: min(90%, 720px);
-  /* Equal padding top/bottom so short lists don't show a lopsided
-     "extra row" of empty space below the last item — and the menu
-     visually fits exactly N items at any item count. */
-  padding: 8px;
+  /* Extra bottom padding so the last item doesn't sit flush against
+     the square bottom edge — without it the row reads as "clipped".
+     Top has less padding because the rounded corners visually
+     compensate for the gap there. */
+  padding: 6px 8px 14px;
   background: var(--bg-tertiary);
   border: 1px solid rgba(0, 0, 0, 0.18);
   border-radius: 14px 14px 0 0;
   border-bottom: none;
   box-shadow: none;
-  /* Fixed item height (52px) × 5 visible rows + 16px padding.
-     Multiple of item height so scrolling never reveals half a row
-     at the cut-off edge. */
-  max-height: 276px;
+  /* Roughly 5 rows tall at typical row size. Not a strict integer
+     multiple — rows are natural-height so each command's full
+     description shows on one block line below the name. */
+  max-height: 280px;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -529,22 +530,19 @@
 }
 
 .slashMenuItem {
-  /* Fixed-height rows so the menu's visible height equals exactly
-     N × item-height + padding — no half-row at the bottom when
-     scrolling, no lonely empty band when the list is short.
-     Description truncates with ellipsis when it doesn't fit. */
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  height: 52px;
-  padding: 6px 12px;
+  /* Block layout: name + args are inline spans on one line, the
+     description div takes the next line. flex-direction:column
+     here was a misstep — it made each <span> a column flex item
+     and stacked them, pushing the description out of the row's
+     fixed height and giving the menu's bottom edge a "clipped"
+     look. */
+  display: block;
+  padding: 8px 12px;
   border-radius: 10px;
   cursor: pointer;
   user-select: none;
   transition: background 0.12s;
   text-align: left;
-  box-sizing: border-box;
-  overflow: hidden;
 }
 .slashMenuItem:hover,
 .slashMenuItemActive {
@@ -566,11 +564,6 @@
   color: var(--text-muted);
   margin-top: 3px;
   line-height: 1.4;
-  /* Single-line ellipsis so a long description can't push the row
-     taller than the fixed 52px slashMenuItem height. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 @media (prefers-color-scheme: dark) {
