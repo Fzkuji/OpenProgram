@@ -91,7 +91,10 @@ def test_merges_two_peer_sessions(store, fake_dispatcher):
 
     out = process_merge_turn(
         target_session_id="p1",
-        sub_sessions=["peer_a", "peer_b"],
+        peers=[
+            {"session_id": "peer_a"},
+            {"session_id": "peer_b"},
+        ],
         message="reconcile",
         agent_id="main",
     )
@@ -121,20 +124,68 @@ def test_unknown_peers_drop_to_error(store, fake_dispatcher):
     from openprogram.agent._merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
-        sub_sessions=["never_existed"],
+        peers=[{"session_id": "never_existed"}],
         message="x",
         agent_id="main",
     )
     assert out.failed
-    assert out.error and "no peer sessions yielded content" in out.error
+    assert out.error and "no peer branches yielded content" in out.error
 
 
 def test_unknown_target_errors(store, fake_dispatcher):
     from openprogram.agent._merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="nope",
-        sub_sessions=["peer_a"],
+        peers=[{"session_id": "peer_a"}],
         message="x", agent_id="main",
     )
     assert out.failed
     assert out.error and "not found" in out.error
+
+
+def test_same_session_two_branches_merge(store, fake_dispatcher):
+    """Pass two peers with the same session_id but different head_ids
+    — should merge them as if they were independent branches."""
+    from openprogram.agent._merge import process_merge_turn
+
+    # peer_a has assistant id 'a_peer_a' (fixture). Add a sibling
+    # head on peer_a to play "the other branch".
+    store.append_message("peer_a", {
+        "id": "u_peer_a_alt", "role": "user", "content": "alternate path",
+        "timestamp": 0, "parent_id": None,
+    })
+    store.append_message("peer_a", {
+        "id": "a_peer_a_alt", "role": "assistant",
+        "content": "alternate reply",
+        "timestamp": 0, "parent_id": "u_peer_a_alt",
+    })
+    store.commit_turn("peer_a", "sibling branch")
+
+    out = process_merge_turn(
+        target_session_id="p1",
+        peers=[
+            {"session_id": "peer_a", "head_id": "a_peer_a"},
+            {"session_id": "peer_a", "head_id": "a_peer_a_alt"},
+        ],
+        message="reconcile both branches",
+        agent_id="main",
+    )
+    assert out.error is None, out.error
+    assert "result from agent A" in fake_dispatcher["prompt"]
+    assert "alternate reply" in fake_dispatcher["prompt"]
+    # Same-session peers get disambiguated labels.
+    assert "@" in fake_dispatcher["prompt"]
+
+
+def test_legacy_sub_sessions_field_still_works(store, fake_dispatcher):
+    """Backward-compat: callers passing ``sub_sessions=[sid, ...]``
+    should still get the merge done."""
+    from openprogram.agent._merge import process_merge_turn
+    out = process_merge_turn(
+        target_session_id="p1",
+        sub_sessions=["peer_a", "peer_b"],
+        message="legacy call",
+        agent_id="main",
+    )
+    assert out.error is None, out.error
+    assert not out.failed

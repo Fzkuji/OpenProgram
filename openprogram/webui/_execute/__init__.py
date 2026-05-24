@@ -81,27 +81,47 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
 
 def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> None:
     """User-initiated ``/merge`` — runs ``process_merge_turn`` and
-    broadcasts the result text into this (target) session."""
+    broadcasts the result text into this (target) session.
+
+    Each token in the slash command may be ``sid`` (HEAD implied) or
+    ``sid:head_id`` (specific branch tip). The parser passes strings
+    through unmodified; we normalize here so same-session and
+    cross-session merges share one entry point.
+    """
     from openprogram.webui import server as _s
-    sub_sessions = list(kwargs.get("sub_sessions") or [])
+    raw_tokens = list(kwargs.get("sub_sessions") or [])
     message = (kwargs.get("message") or "").strip()
 
-    if not sub_sessions:
+    if not raw_tokens:
         _s._broadcast_chat_response(session_id, msg_id, {
             "type": "error",
             "content": (
-                "/merge requires at least one sub-session id — "
-                "usage: /merge sid_a sid_b: message text"
+                "/merge requires at least one peer — usage: "
+                "/merge sid_a sid_b:head_b: message text"
             ),
             "display": "chat",
         })
         return
 
+    peers: list[dict] = []
+    for token in raw_tokens:
+        s = str(token).strip()
+        if not s:
+            continue
+        if ":" in s:
+            sid, head_id = s.split(":", 1)
+            peers.append({
+                "session_id": sid.strip(),
+                "head_id": head_id.strip() or None,
+            })
+        else:
+            peers.append({"session_id": s, "head_id": None})
+
     try:
         from openprogram.agent._merge import process_merge_turn
         result = process_merge_turn(
             target_session_id=session_id,
-            sub_sessions=sub_sessions,
+            peers=peers,
             message=message,
             agent_id=agent_id,
         )

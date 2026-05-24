@@ -94,8 +94,10 @@ def _cmd_subagent_merge(
     agent_id: str = "main",
     as_json: bool = True,
 ) -> int:
-    """Merge ``subs`` (peer session ids) onto ``target`` with the given
-    instruction text. Writes a multi-parent ContextCommit on target."""
+    """Merge ``subs`` (peer branches) onto ``target`` with the given
+    instruction. Each item in ``subs`` is ``sid`` (= that session's
+    HEAD) or ``sid:head_id`` (a specific branch tip — same-session or
+    cross-session). Writes a multi-parent ContextCommit on target."""
     from openprogram.agent.session_db import default_db
     from openprogram.agent._merge import process_merge_turn
 
@@ -105,12 +107,26 @@ def _cmd_subagent_merge(
         return 2
 
     if not subs:
-        _print({"error": "no peer sessions given"}, as_json=as_json)
+        _print({"error": "no peer branches given"}, as_json=as_json)
         return 2
+
+    peers: list[dict] = []
+    for s in subs:
+        s = (str(s) or "").strip()
+        if not s:
+            continue
+        if ":" in s:
+            sid, head_id = s.split(":", 1)
+            peers.append({
+                "session_id": sid.strip(),
+                "head_id": head_id.strip() or None,
+            })
+        else:
+            peers.append({"session_id": s, "head_id": None})
 
     result = process_merge_turn(
         target_session_id=target,
-        sub_sessions=list(subs),
+        peers=peers,
         message=message,
         agent_id=agent_id,
     )

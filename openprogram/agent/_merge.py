@@ -51,18 +51,24 @@ class MergeTurnResult:
     error: Optional[str] = None
 
 
-def _peer_final_text(store, sid: str) -> tuple[str, Optional[str]]:
-    """Pull the most recent assistant content + head id from a peer
-    session. Returns (text, head_id). Empty text + None head means the
-    session has no assistant turns yet."""
+def _peer_final_text(
+    store, sid: str, head_id: Optional[str] = None,
+) -> tuple[str, Optional[str]]:
+    """Pull the most recent assistant content + resolved head id from a
+    peer branch. ``head_id=None`` falls back to the session's current
+    head — i.e. "whatever the user is looking at". A specific head_id
+    lets the caller pick a branch tip (sibling head, historical fork
+    point, etc.) within the same session.
+
+    Returns (text, head_id). Empty text + None head means the branch
+    has no assistant turns or the session is unknown."""
     pair = store._open(sid)
     if not pair:
         return "", None
     _git, idx = pair
-    head = idx.head_id
-    if not head:
-        return "", None
-    # Walk back from head for the latest assistant.
+    head = head_id or idx.head_id
+    if not head or head not in idx.nodes_by_id:
+        return "", head
     visited: set[str] = set()
     cur = head
     while cur and cur not in visited:
@@ -127,16 +133,24 @@ def _commit_id() -> str:
 
 def process_merge_turn(
     target_session_id: str,
-    sub_sessions: list[str],
-    message: str,
-    agent_id: str,
+    sub_sessions: Optional[list] = None,
+    message: str = "",
+    agent_id: str = "main",
+    *,
+    peers: Optional[list[dict]] = None,
 ) -> MergeTurnResult:
-    """Aggregate ``sub_sessions``' final replies onto ``target_session_id``.
+    """Aggregate N branches onto ``target_session_id``.
 
-    The target is just another peer session — typically the one the
-    user is chatting in, but anything goes. The peers stay independent;
-    we read their final text + latest commit id to build the prompt
-    and the multi-parent commit.
+    A "branch" here is a ``(session_id, head_id)`` pair. The two input
+    forms (``peers`` taking dicts, ``sub_sessions`` taking session ids)
+    coexist for back-compat — internally we normalize to one list of
+    ``{session_id, head_id}`` records. ``head_id=None`` falls back to
+    that session's current head.
+
+    Same-session and cross-session merges go through the same code:
+    pass two entries with the same ``session_id`` and different
+    ``head_id``s to merge two siblings in one DAG; pass entries from
+    different sessions to merge peer agents.
     """
     from openprogram.agent.session_db import default_db
     from openprogram.context.commit.store import save_commit, load_commit_for_head
@@ -152,30 +166,59 @@ def process_merge_turn(
             error=f"target session {target_session_id!r} not found",
         )
 
-    peers: list[dict] = []
+    raw_peers: list[dict] = []
+    if peers:
+        for p in peers:
+            if not isinstance(p, dict):
+                continue
+            sid = (p.get("session_id") or "").strip()
+            if not sid:
+                continue
+            raw_peers.append({
+                "session_id": sid,
+                "head_id": (p.get("head_id") or None),
+            })
+    if sub_sessions:
+        for sid in sub_sessions:
+            sid_s = (str(sid) if sid is not None else "").strip()
+            if not sid_s:
+                continue
+            raw_peers.append({"session_id": sid_s, "head_id": None})
+
+    if not raw_peers:
+        return MergeTurnResult(
+            target_session_id=target_session_id,
+            failed=True,
+            error="no peer branches provided",
+        )
+
+    resolved: list[dict] = []
     missing: list[str] = []
-    for sid in sub_sessions:
-        text, head_id = _peer_final_text(store, sid)
+    for p in raw_peers:
+        sid = p["session_id"]
+        head_id_in = p["head_id"]
+        text, head_id = _peer_final_text(store, sid, head_id_in)
         if not text and head_id is None:
-            missing.append(sid)
+            missing.append(f"{sid}:{head_id_in or 'HEAD'}")
             continue
-        peers.append({
+        resolved.append({
             "session_id": sid,
             "text": text,
             "head_id": head_id,
-            "label": _label_for(store, sid),
+            "label": _label_for(store, sid, head_id),
             "commit_id": _peer_latest_commit_id(store, sid, head_id),
         })
 
-    if not peers:
+    if not resolved:
         return MergeTurnResult(
             target_session_id=target_session_id,
             failed=True,
             error=(
-                "no peer sessions yielded content for any of "
-                f"{sub_sessions!r}; missing={missing!r}"
+                "no peer branches yielded content; "
+                f"missing={missing!r}"
             ),
         )
+    peers = resolved
 
     merge_prompt = _build_prompt(peers, message)
     from openprogram.agent.dispatcher import TurnRequest, process_user_turn
@@ -256,16 +299,24 @@ def process_merge_turn(
     )
 
 
-def _label_for(store, sid: str) -> str:
-    """Human-readable handle for a peer session in the merge prompt.
-    Prefer the session's ``label`` (set by ``run_sub_agent_turn``)
-    then ``title``, then the id."""
+def _label_for(store, sid: str, head_id: Optional[str] = None) -> str:
+    """Human-readable handle for a peer branch in the merge prompt.
+
+    Same-session branches are disambiguated by suffixing a short head
+    id (e.g. ``Main@d80a74``) so a merge prompt that bundles two
+    sibling forks doesn't list them with the same label."""
     try:
         sess = store.get_session(sid) or {}
+        base = ""
         for k in ("label", "title"):
             v = sess.get(k)
             if isinstance(v, str) and v.strip():
-                return v.strip()[:32]
+                base = v.strip()[:32]
+                break
+        if not base:
+            base = sid
+        if head_id and sess.get("head_id") != head_id:
+            return f"{base}@{head_id[:6]}"
+        return base
     except Exception:
-        pass
-    return sid
+        return sid
