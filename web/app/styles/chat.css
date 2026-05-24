@@ -1342,6 +1342,22 @@
 }
 .attach-card-open:hover { background: var(--bg-primary); }
 .attach-card-open svg { width: 12px; height: 12px; }
+/* Drop-in replacement when the chat is already on the branch this
+   card points at — same slot as the Switch button, neutral colour
+   so it reads as a passive tag, not an action. */
+.attach-card-here {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  user-select: none;
+}
 .attach-card-preview {
   font-size: 13px;
   color: var(--text-secondary);

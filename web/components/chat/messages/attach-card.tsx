@@ -10,6 +10,8 @@
  * session refactor) carry a foreign ``session_id`` and fall back to
  * navigating to that session.
  */
+import { useEffect, useState } from "react";
+
 import type { ChatMsg } from "@/lib/session-store";
 
 import { useSessionStore } from "@/lib/session-store";
@@ -20,6 +22,25 @@ function wsSend(payload: unknown): void {
   if (w.ws && w.ws.readyState === WebSocket.OPEN) {
     w.ws.send(JSON.stringify(payload));
   }
+}
+
+interface BranchRow {
+  head_msg_id: string;
+  active?: boolean;
+}
+
+function _activeHeadId(sessionId: string | null | undefined): string {
+  if (!sessionId) return "";
+  const w = window as unknown as {
+    _branchesByConv?: Record<string, BranchRow[]>;
+    conversations?: Record<string, { head_id?: string }>;
+  };
+  // Prefer the branch list's active flag — that's what the rest of
+  // the UI uses to label the topbar chip / Branches panel HEAD pill.
+  const list = w._branchesByConv?.[sessionId] || [];
+  const active = list.find((b) => b.active);
+  if (active?.head_msg_id) return active.head_msg_id;
+  return w.conversations?.[sessionId]?.head_id || "";
 }
 
 export function AttachCard({ msg }: { msg: ChatMsg }) {
@@ -33,6 +54,26 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const headTag = targetHead ? targetHead.slice(0, 8) : "";
   const sameSession =
     !!targetSessionId && targetSessionId === currentSessionId;
+  // If the chat is already on the branch the card points at, drop
+  // the Switch button — there's nowhere to switch to. Drive this off
+  // the same active-head signal the topbar chip uses so the two stay
+  // in sync. Re-evaluate on the ``branches-updated`` window event
+  // (dispatched by the BranchesPanel shim when the WS layer pushes a
+  // fresh branch list) so checkout outside this card still updates
+  // the indicator. Cross-session legacy attaches always show "Open".
+  const [activeHead, setActiveHead] = useState(() =>
+    _activeHeadId(currentSessionId),
+  );
+  useEffect(() => {
+    function refresh() {
+      setActiveHead(_activeHeadId(currentSessionId));
+    }
+    refresh();
+    window.addEventListener("branches-updated", refresh);
+    return () => window.removeEventListener("branches-updated", refresh);
+  }, [currentSessionId]);
+  const alreadyHere =
+    sameSession && !!targetHead && activeHead === targetHead;
 
   function open() {
     if (sameSession && targetHead) {
@@ -86,7 +127,16 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
             ) : null}
           </div>
         </div>
-        {(sameSession ? !!targetHead : !!targetSessionId) ? (
+        {alreadyHere ? (
+          // Already on this branch — a "current branch" tag instead
+          // of a Switch button. Keeps the row layout consistent.
+          <span
+            className="attach-card-here"
+            title="You're already on this branch"
+          >
+            current
+          </span>
+        ) : (sameSession ? !!targetHead : !!targetSessionId) ? (
           <button
             type="button"
             className="attach-card-open"
