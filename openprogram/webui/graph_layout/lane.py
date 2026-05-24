@@ -1,14 +1,21 @@
 """x-column assignment — ``_lane`` per node.
 
-Strategy:
-  * Trunk leaf (head_id's conv-root) → lane 0.
-  * Other conv-roots / retry-siblings → fresh lanes (1, 2, …).
-  * Sub-call kids inherit caller's lane.
+Lane assignment is **stable** — the same DAG always produces the
+same lane layout regardless of which branch is currently active.
+Switching ``head_id`` between branches doesn't shuffle the figure
+around (which would make visual comparison impossible).
 
-Walking the conv tree from each root: the conv-child that contains
-head stays on the same lane; siblings each claim a new lane via
-``_alloc()``. Sub-calls run a final pass — they piggy-back on their
-caller's lane.
+Strategy:
+  * Conv-roots sorted by ``created_at`` (earliest first → lane 0).
+  * Within a node's children: first child by ``created_at`` keeps
+    the parent's lane (the "trunk-following" lane), siblings each
+    claim a fresh lane via ``alloc()``.
+  * Sub-call kids inherit their caller's lane in a final pass.
+
+The ``head_id`` argument is accepted but ignored for layout — kept
+in the signature so callers don't need to change. (Visual
+highlighting of the active branch lives on the renderer, not in
+the layout coordinates.)
 
 Reflow (``reflow.py``) may reassign sub-call lanes afterwards to
 resolve overlaps, so this stage only computes the initial mapping.
@@ -42,40 +49,23 @@ class LaneAllocator:
 def compute_lane(
     by_id: dict[str, dict],
     conv_children: dict[str, list[str]],
-    head_id: Optional[str],
+    head_id: Optional[str] = None,   # accepted but ignored — see module docstring
 ) -> tuple[dict[str, int], LaneAllocator]:
     lane: dict[str, int] = {}
     alloc = LaneAllocator()
+    del head_id  # explicit: layout never branches on the active head
 
     # Conv-roots = nodes with no conv parent AND no caller (i.e.
-    # genuine roots, not sub-calls whose caller was pruned).
-    conv_roots = [
-        nid for nid, m in by_id.items()
-        if not conv_parent_of(by_id, m) and not caller_of(by_id, m)
-    ]
-
-    trunk_root = _conv_root_of(by_id, head_id) if head_id and head_id in by_id else None
-    if trunk_root and trunk_root in conv_roots:
-        # Move trunk to the front so it claims lane 0.
-        conv_roots.remove(trunk_root)
-        conv_roots.insert(0, trunk_root)
-    # Other roots sorted by created_at for deterministic ordering.
-    conv_roots[1:] = sorted(conv_roots[1:], key=lambda x: ts(by_id, x))
-
-    def _subtree_contains(root: str, target: str) -> bool:
-        if root == target:
-            return True
-        stack = list(conv_children.get(root, []))
-        seen: set[str] = set()
-        while stack:
-            x = stack.pop()
-            if x in seen:
-                continue
-            seen.add(x)
-            if x == target:
-                return True
-            stack.extend(conv_children.get(x, []))
-        return False
+    # genuine roots, not sub-calls whose caller was pruned). Sorted
+    # by created_at so the figure is stable across reloads + branch
+    # switches.
+    conv_roots = sorted(
+        (
+            nid for nid, m in by_id.items()
+            if not conv_parent_of(by_id, m) and not caller_of(by_id, m)
+        ),
+        key=lambda x: ts(by_id, x),
+    )
 
     def _walk(nid: str, my_lane: int) -> None:
         if nid in lane:
@@ -84,14 +74,10 @@ def compute_lane(
         kids = conv_children.get(nid, [])
         if not kids:
             return
-        # Pick the kid leading to head as "primary" — it keeps the
-        # current lane. Siblings each get a fresh lane allocated.
+        # Children are already sorted by ts in build_children. The
+        # first one keeps the parent's lane (trunk-following), every
+        # later sibling claims a fresh lane. Order is stable.
         primary = kids[0]
-        if head_id:
-            for k in kids:
-                if _subtree_contains(k, head_id):
-                    primary = k
-                    break
         for k in kids:
             _walk(k, my_lane if k == primary else alloc.alloc())
 
@@ -117,23 +103,3 @@ def compute_lane(
         lane.setdefault(nid, 0)
 
     return lane, alloc
-
-
-def _conv_root_of(by_id: dict[str, dict], nid: str) -> Optional[str]:
-    """Walk up both edges to reach the conv-root that owns ``nid``."""
-    cur: Optional[str] = nid
-    hops = 0
-    seen: set[str] = set()
-    while cur and cur in by_id and cur not in seen and hops < 200:
-        seen.add(cur)
-        hops += 1
-        m = by_id[cur]
-        ca = caller_of(by_id, m)
-        if ca:
-            cur = ca
-            continue
-        cp = conv_parent_of(by_id, m)
-        if not cp:
-            return cur
-        cur = cp
-    return cur
