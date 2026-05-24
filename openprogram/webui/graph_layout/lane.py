@@ -74,9 +74,24 @@ def compute_lane(
         kids = conv_children.get(nid, [])
         if not kids:
             return
-        # Children are already sorted by ts in build_children. The
-        # first one keeps the parent's lane (trunk-following), every
-        # later sibling claims a fresh lane. Order is stable.
+        # If ANY child is a /task spawn (function="task"), every child
+        # forks to a fresh lane — the parent trunk stops here. Same as
+        # git: `git checkout -b X` puts the new commit on a new ref,
+        # leaving main pointing at the old commit. Without this rule
+        # the trunk visually swallows the spawned sub-agent's turn
+        # and the lane-0 "main line" extends into territory written
+        # by some other agent.
+        spawn_fork = any(
+            (by_id.get(k, {}).get("function")) == "task"
+            for k in kids
+        )
+        if spawn_fork:
+            for k in kids:
+                _walk(k, alloc.alloc())
+            return
+        # Regular conv-tree fork: first child keeps the parent's lane
+        # (trunk-following), every later sibling claims a fresh lane.
+        # Order is stable (children sorted by ts in build_children).
         primary = kids[0]
         for k in kids:
             _walk(k, my_lane if k == primary else alloc.alloc())

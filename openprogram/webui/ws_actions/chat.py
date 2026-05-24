@@ -102,6 +102,13 @@ async def handle_chat(ws, cmd: dict):
     }
     if parsed["action"] == "run":
         user_msg["display"] = "runtime"
+    elif parsed["action"] == "spawn":
+        # Tag the /task user msg so the DAG layout treats it as a
+        # branch fork (the main trunk stops here; the spawned
+        # turn + its sub-agent reply live on a new lane). Same idea
+        # as git: /task probe → `git checkout -b probe`, main ref
+        # stays where it was.
+        user_msg["function"] = "task"
     if attachments:
         manifest = [
             {"type": a.get("type"), "media_type": a.get("media_type"),

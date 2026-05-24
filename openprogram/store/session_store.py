@@ -402,6 +402,14 @@ class SessionStore:
                 if not kids:
                     main_tip_id = cur
                     break
+                # Main trunk stops at /task spawn forks — the spawned
+                # turn (and the sub-agent's reply) belong to a new
+                # branch, same as git `checkout -b`. lane.py applies
+                # the same rule visually so the two stay in sync.
+                nxt = idx.nodes_by_id.get(kids[0])
+                if nxt and (nxt.metadata or {}).get("function") == "task":
+                    main_tip_id = cur
+                    break
                 # children_by_predecessor preserves insertion (= seq)
                 # order, which aligns with the lane.py kids[0] rule.
                 cur = kids[0]
@@ -430,6 +438,24 @@ class SessionStore:
                 "created_at": (label or {}).get("created_at") if isinstance(label, dict) else node.created_at,
                 "updated_at": (label or {}).get("updated_at") if isinstance(label, dict) else node.created_at,
             })
+        # Main_tip may have children (the /task spawn it stopped at),
+        # so the leaf-only loop above won't include it. Push it in by
+        # hand with the "main" label so the right-rail Branches panel
+        # still lists the trunk you can checkout to "go back" to.
+        if main_tip_id and not any(t["head_msg_id"] == main_tip_id for t in tips):
+            main_node = idx.nodes_by_id.get(main_tip_id)
+            if main_node:
+                label = named.get(main_tip_id)
+                name = (
+                    label.get("name") if isinstance(label, dict)
+                    else label
+                ) or "main"
+                tips.append({
+                    "head_msg_id": main_tip_id,
+                    "name": name,
+                    "created_at": main_node.created_at,
+                    "updated_at": main_node.created_at,
+                })
         tips.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
         return tips
 
