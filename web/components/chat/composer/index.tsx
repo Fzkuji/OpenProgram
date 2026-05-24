@@ -303,7 +303,11 @@ export function Composer() {
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        const cmd = slash.matches[slash.activeIndex];
+        // activeIndex starts at -1 (no kbd nav yet); fall back to the
+        // first match so ``/sp<Enter>`` runs ``/spawn`` without the
+        // user having to press ArrowDown first.
+        const idx = slash.activeIndex >= 0 ? slash.activeIndex : 0;
+        const cmd = slash.matches[idx];
         if (cmd) selectSlashCommand(cmd);
         return;
       }

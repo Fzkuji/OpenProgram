@@ -484,15 +484,20 @@
   pointer-events: auto;
   max-width: 720px;
   width: min(90%, 720px);
-  padding: 8px 8px 11px;
+  /* Equal padding top/bottom so short lists don't show a lopsided
+     "extra row" of empty space below the last item — and the menu
+     visually fits exactly N items at any item count. */
+  padding: 8px;
   background: var(--bg-tertiary);
   border: 1px solid rgba(0, 0, 0, 0.18);
   border-radius: 14px 14px 0 0;
   border-bottom: none;
   box-shadow: none;
-  max-height: 270px;
+  /* Fixed item height (52px) × 5 visible rows + 16px padding.
+     Multiple of item height so scrolling never reveals half a row
+     at the cut-off edge. */
+  max-height: 276px;
   overflow-y: auto;
-  /* Scrolls when the list overflows, but with no visible scrollbar. */
   scrollbar-width: none;
 }
 .slashMenu::-webkit-scrollbar {
@@ -524,13 +529,22 @@
 }
 
 .slashMenuItem {
-  display: block;
-  padding: 8px 12px;
+  /* Fixed-height rows so the menu's visible height equals exactly
+     N × item-height + padding — no half-row at the bottom when
+     scrolling, no lonely empty band when the list is short.
+     Description truncates with ellipsis when it doesn't fit. */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 52px;
+  padding: 6px 12px;
   border-radius: 10px;
   cursor: pointer;
   user-select: none;
   transition: background 0.12s;
   text-align: left;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .slashMenuItem:hover,
 .slashMenuItemActive {
@@ -552,6 +566,11 @@
   color: var(--text-muted);
   margin-top: 3px;
   line-height: 1.4;
+  /* Single-line ellipsis so a long description can't push the row
+     taller than the fixed 52px slashMenuItem height. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -102,18 +102,26 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
     return SLASH_COMMANDS.filter((c) => c.name.toLowerCase().startsWith(query));
   }, [query]);
 
-  // Keyboard highlight — reset to the top whenever the filter changes
-  // so the user always starts from the first match.
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Keyboard highlight — starts at -1 ("no highlight yet"). The first
+  // ArrowDown / ArrowUp lights up an item; before that, nothing in
+  // the menu is highlighted, so the user's eye isn't drawn to a
+  // command they didn't pick. Filter changes also reset to -1 — the
+  // previously-highlighted index would point at a different command
+  // after the filter, which is confusing.
+  const [activeIndex, setActiveIndex] = useState<number>(-1);
   useEffect(() => {
-    setActiveIndex(0);
+    setActiveIndex(-1);
   }, [query]);
 
   const move = useCallback(
     (delta: number) => {
       setActiveIndex((i) => {
         const n = matches.length;
-        if (n === 0) return 0;
+        if (n === 0) return -1;
+        // First move from "no highlight" lands on either the top or
+        // bottom item depending on direction, instead of wrapping
+        // from -1 (which would be confusing).
+        if (i < 0) return delta > 0 ? 0 : n - 1;
         return (i + delta + n) % n;
       });
     },
