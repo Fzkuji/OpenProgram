@@ -120,18 +120,26 @@ def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         return
 
     peers: list[dict] = []
+    base_peer: int | None = None
     for token in raw_tokens:
         s = str(token).strip()
         if not s:
             continue
+        # ``*`` prefix marks this peer as the merge base (attach-style).
+        is_base = False
+        if s.startswith("*"):
+            is_base = True
+            s = s[1:].strip()
+            if not s:
+                continue
         if ":" in s:
             sid, head_id = s.split(":", 1)
-            peers.append({
-                "session_id": sid.strip(),
-                "head_id": head_id.strip() or None,
-            })
+            peer = {"session_id": sid.strip(), "head_id": head_id.strip() or None}
         else:
-            peers.append({"session_id": s, "head_id": None})
+            peer = {"session_id": s, "head_id": None}
+        if is_base and base_peer is None:
+            base_peer = len(peers)
+        peers.append(peer)
 
     try:
         from openprogram.agent._merge import process_merge_turn
@@ -140,6 +148,7 @@ def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             peers=peers,
             message=message,
             agent_id=agent_id,
+            base_peer=base_peer,
         )
     except Exception as e:  # noqa: BLE001
         _s._broadcast_chat_response(session_id, msg_id, {

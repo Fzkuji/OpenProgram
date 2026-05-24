@@ -49,6 +49,10 @@ class MergeTurnResult:
     final_text: str = ""
     failed: bool = False
     error: Optional[str] = None
+    base_peer: Optional[int] = None
+    """Index into ``peers`` that the caller marked as the "base"
+    (attach-style merge — one peer carries forward, the rest are
+    supplemental context). None = symmetric merge, all peers equal."""
 
 
 def _peer_final_text(
@@ -107,17 +111,30 @@ def _peer_latest_commit_id(store, sid: str, head_id: Optional[str]) -> Optional[
     return None
 
 
-def _build_prompt(peers: list[dict], message: str) -> str:
-    parts = [
-        "Multiple peer agents produced results in parallel.",
-        "Their individual final replies are below — consolidate them",
-        "into a single coherent answer.",
-        "",
-    ]
-    for p in peers:
+def _build_prompt(
+    peers: list[dict], message: str, base_peer: Optional[int] = None,
+) -> str:
+    if base_peer is not None and 0 <= base_peer < len(peers):
+        parts = [
+            "One branch is the BASE — your reply should continue from it.",
+            "The other branches are supplemental context to fold in.",
+            "Output should read as a coherent continuation of the BASE.",
+            "",
+        ]
+    else:
+        parts = [
+            "Multiple peer agents produced results in parallel.",
+            "Their individual final replies are below — consolidate them",
+            "into a single coherent answer.",
+            "",
+        ]
+    for i, p in enumerate(peers):
         label = p.get("label") or p.get("session_id") or "peer"
         text = (p.get("text") or "").strip() or "(no output)"
-        parts.append(f'<session label="{label}">')
+        role_attr = ""
+        if base_peer is not None and i == base_peer:
+            role_attr = ' role="base"'
+        parts.append(f'<session label="{label}"{role_attr}>')
         parts.append(text)
         parts.append("</session>")
         parts.append("")
@@ -138,6 +155,7 @@ def process_merge_turn(
     agent_id: str = "main",
     *,
     peers: Optional[list[dict]] = None,
+    base_peer: Optional[int] = None,
 ) -> MergeTurnResult:
     """Aggregate N branches onto ``target_session_id``.
 
@@ -151,6 +169,12 @@ def process_merge_turn(
     pass two entries with the same ``session_id`` and different
     ``head_id``s to merge two siblings in one DAG; pass entries from
     different sessions to merge peer agents.
+
+    ``base_peer`` (int, optional): index into the resolved peers list
+    marking which branch is the "base" — the merge agent is told to
+    write its reply as a continuation of that branch, with the others
+    as supplemental context. None ⇒ symmetric merge, all peers equal.
+    Attach-style ("graft B onto A") = ``base_peer = <A's index>``.
     """
     from openprogram.agent.session_db import default_db
     from openprogram.context.commit.store import save_commit, load_commit_for_head
@@ -220,7 +244,14 @@ def process_merge_turn(
         )
     peers = resolved
 
-    merge_prompt = _build_prompt(peers, message)
+    # Validate base_peer against the resolved list (callers may pass
+    # an out-of-range index when peers got dropped for missing
+    # content). Treat invalid as "no base" rather than erroring.
+    base_idx: Optional[int] = None
+    if base_peer is not None and 0 <= base_peer < len(peers):
+        base_idx = base_peer
+
+    merge_prompt = _build_prompt(peers, message, base_peer=base_idx)
     from openprogram.agent.dispatcher import TurnRequest, process_user_turn
 
     req = TurnRequest(
@@ -296,6 +327,7 @@ def process_merge_turn(
         parent_ids=parents,
         final_text=turn.final_text or "",
         failed=False,
+        base_peer=base_idx,
     )
 
 

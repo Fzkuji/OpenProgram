@@ -189,3 +189,46 @@ def test_legacy_sub_sessions_field_still_works(store, fake_dispatcher):
     )
     assert out.error is None, out.error
     assert not out.failed
+
+
+def test_base_peer_marks_one_branch_as_base(store, fake_dispatcher):
+    """base_peer=N tells the merge agent to write its reply as a
+    continuation of peers[N]. The prompt gets a ``role="base"``
+    attribute on that branch's tag + a different lead-in line."""
+    from openprogram.agent._merge import process_merge_turn
+    out = process_merge_turn(
+        target_session_id="p1",
+        peers=[
+            {"session_id": "peer_a"},
+            {"session_id": "peer_b"},
+        ],
+        message="x",
+        agent_id="main",
+        base_peer=1,
+    )
+    assert out.error is None, out.error
+    assert out.base_peer == 1
+    prompt = fake_dispatcher["prompt"]
+    # Only peer_b's tag carries role="base".
+    assert 'label="B" role="base"' in prompt
+    assert 'label="A" role="base"' not in prompt
+    # Lead-in mentions "BASE" so the LLM knows the asymmetry.
+    assert "BASE" in prompt
+
+
+def test_base_peer_out_of_range_treated_as_none(store, fake_dispatcher):
+    """An out-of-range index (e.g. caller passed 5 but only 2 peers
+    resolved) silently degrades to symmetric merge."""
+    from openprogram.agent._merge import process_merge_turn
+    out = process_merge_turn(
+        target_session_id="p1",
+        peers=[
+            {"session_id": "peer_a"},
+            {"session_id": "peer_b"},
+        ],
+        message="x",
+        agent_id="main",
+        base_peer=5,
+    )
+    assert out.base_peer is None  # silently dropped
+    assert 'role="base"' not in fake_dispatcher["prompt"]

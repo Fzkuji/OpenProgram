@@ -33,6 +33,7 @@ def _run(
     sub_sessions: list[str],
     message: str,
     agent_id: str,
+    base_peer: int | None,
 ) -> dict:
     from openprogram.agent._merge import process_merge_turn
     out = process_merge_turn(
@@ -41,6 +42,7 @@ def _run(
         peers=peers,
         message=message,
         agent_id=agent_id,
+        base_peer=base_peer,
     )
     return {
         "target_assistant_id": out.target_assistant_id,
@@ -49,6 +51,7 @@ def _run(
         "final_text": out.final_text,
         "failed": out.failed,
         "error": out.error,
+        "base_peer": out.base_peer,
     }
 
 
@@ -95,6 +98,15 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
     sub_sessions = [s for s in (str(b).strip() for b in sub_sessions) if s]
     message = cmd.get("message") or ""
     agent_id = (cmd.get("agent_id") or "main").strip() or "main"
+    base_peer = cmd.get("base_peer")
+    if isinstance(base_peer, bool):
+        base_peer = None
+    elif isinstance(base_peer, (int, float)):
+        base_peer = int(base_peer)
+    elif isinstance(base_peer, str) and base_peer.strip().lstrip("-").isdigit():
+        base_peer = int(base_peer.strip())
+    else:
+        base_peer = None
 
     if not target_session_id or not (peers or sub_sessions):
         payload = {
@@ -112,6 +124,7 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
             None,
             lambda: _run(
                 target_session_id, peers, sub_sessions, message, agent_id,
+                base_peer,
             ),
         )
         payload = {"session_id": target_session_id, **result}

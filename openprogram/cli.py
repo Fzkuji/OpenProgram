@@ -255,6 +255,12 @@ def main():
              "each peer's final text)")
     p_sa_merge.add_argument("--agent", default="main",
         help="Agent profile to run the merge under (default: main)")
+    p_sa_merge.add_argument("--base", type=int, default=None,
+        metavar="N",
+        help="0-based index into --sub list. Marks that peer as the "
+             "merge BASE — the reply is written as a continuation of "
+             "it, with the others as supplemental context "
+             "(attach-style merge).")
     p_sa_merge.add_argument("--no-json", action="store_true",
         help="Print human-readable summary instead of JSON")
 
@@ -875,6 +881,7 @@ def main():
                 subs=list(getattr(args, "sub", []) or []),
                 message=getattr(args, "message", ""),
                 agent_id=getattr(args, "agent", "main"),
+                base_peer=getattr(args, "base", None),
                 as_json=as_json,
             ))
         p_subagent.print_help()

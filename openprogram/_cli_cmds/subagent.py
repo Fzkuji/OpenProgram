@@ -115,12 +115,18 @@ def _cmd_subagent_merge(
     message: str,
     *,
     agent_id: str = "main",
+    base_peer: int | None = None,
     as_json: bool = True,
 ) -> int:
     """Merge ``subs`` (peer branches) onto ``target`` with the given
     instruction. Each item in ``subs`` is ``sid`` (= that session's
     HEAD) or ``sid:head_id`` (a specific branch tip — same-session or
-    cross-session). Writes a multi-parent ContextCommit on target."""
+    cross-session). Writes a multi-parent ContextCommit on target.
+
+    ``base_peer`` (0-based index into ``subs``) optionally marks one
+    peer as the merge base — the merge agent writes its reply as a
+    continuation of that branch, with the others as supplemental
+    context. Equivalent to attach-style merging."""
     from openprogram.agent.session_db import default_db
     from openprogram.agent._merge import process_merge_turn
 
@@ -152,6 +158,7 @@ def _cmd_subagent_merge(
         peers=peers,
         message=message,
         agent_id=agent_id,
+        base_peer=base_peer,
     )
     out = {
         "target_assistant_id": result.target_assistant_id,
@@ -160,6 +167,7 @@ def _cmd_subagent_merge(
         "final_text": result.final_text,
         "failed": result.failed,
         "error": result.error,
+        "base_peer": result.base_peer,
     }
     _print(out, as_json=as_json)
     return 1 if result.failed else 0
