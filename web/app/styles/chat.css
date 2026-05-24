@@ -1242,3 +1242,28 @@
   display: inline-flex;
   align-items: center;
 }
+
+
+/* Per-turn modified-files chips at the bottom of an assistant bubble.
+   Populated lazily via the `list_turn_files` WS action; absent when
+   the turn touched no files (chat-only replies). */
+.turn-files-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.turn-files-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

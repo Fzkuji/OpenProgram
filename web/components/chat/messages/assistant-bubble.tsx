@@ -14,6 +14,7 @@ import { MessageActions } from "./message-actions";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { ThinkingBlock } from "./thinking-block";
 import { ToolsBlock } from "./tool-card";
+import { TurnFilesChips } from "./turn-files-chips";
 
 function TypingIndicator() {
   return (
@@ -74,6 +75,9 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
             <div className="bubble-badge bubble-badge-cancelled">
               Cancelled
             </div>
+          ) : null}
+          {!streaming && msg.id ? (
+            <TurnFilesChips assistantMsgId={msg.id} />
           ) : null}
         </div>
       )}
