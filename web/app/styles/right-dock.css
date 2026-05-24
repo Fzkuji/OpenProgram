@@ -476,6 +476,39 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+.branches-attach-scope {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+.branches-attach-scope-btn {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+.branches-attach-scope-btn.is-active {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.branches-attach-scope-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-family: inherit;
+}
 .branches-merge-mode-row {
   display: flex;
   align-items: flex-start;

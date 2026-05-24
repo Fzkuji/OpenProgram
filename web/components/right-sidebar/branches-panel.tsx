@@ -23,10 +23,18 @@ interface BranchRow {
   active?: boolean;
 }
 
+interface ConvSummary {
+  id: string;
+  title?: string;
+  channel?: string | null;
+  account_id?: string | null;
+}
+
 interface BranchWindow {
   ws?: WebSocket;
   _branchesByConv?: Record<string, BranchRow[]>;
   _branchLaneColorMap?: Record<string, string>;
+  conversations?: Record<string, ConvSummary>;
 }
 
 // Fallback palette — kept in sync with history-graph.ts LANE_COLORS.
@@ -224,8 +232,11 @@ export function BranchesPanel() {
   const [mergeInstruction, setMergeInstruction] = useState("");
   // Attach-target picker. Open when the user clicks "Attach to" —
   // shows the list of branches that aren't currently selected, so
-  // they can pick where the attach pointer lands.
+  // they can pick where the attach pointer lands. Picker scope can
+  // be the current session (default) or any other session whose
+  // branches the user wants to attach onto.
   const [attachOpen, setAttachOpen] = useState(false);
+  const [pickerScope, setPickerScope] = useState<string | null>(null); // null = current session
 
   // Re-read the legacy branch cache whenever the WS branch handlers
   // signal an update (the legacy `renderBranchesPanel` shim dispatches
@@ -244,7 +255,17 @@ export function BranchesPanel() {
     setMerging(false);
     setMergeInstruction("");
     setAttachOpen(false);
+    setPickerScope(null);
   }, [sessionId]);
+
+  // When the user opens the picker on a non-current session, request
+  // that session's branches so they show up in the dropdown.
+  useEffect(() => {
+    if (!attachOpen || !pickerScope) return;
+    const ww = window as unknown as BranchWindow;
+    if (ww._branchesByConv?.[pickerScope]) return;
+    wsSend({ action: "list_branches", session_id: pickerScope });
+  }, [attachOpen, pickerScope]);
 
   function toggleSelect(headId: string, e: React.MouseEvent) {
     e.stopPropagation();
@@ -288,23 +309,28 @@ export function BranchesPanel() {
     }, 100);
   }
 
-  function runAttachTo(anchorHeadId: string) {
+  function runAttachTo(anchorHeadId: string, anchorSessionId?: string) {
     if (!sessionId || selected.length === 0 || !anchorHeadId) return;
+    const anchorSid = anchorSessionId || sessionId;
     // For each selected source branch, write an attach pointer
     // anchored at the user-picked branch. N selected = N pointers
-    // landing on the same anchor.
+    // landing on the same anchor. Source is always currentSessionId;
+    // anchor may be the same session (in-session attach) or another
+    // session (cross-session attach).
     for (const src of selected) {
-      if (src === anchorHeadId) continue;   // self-attach is meaningless
+      if (anchorSid === sessionId && src === anchorHeadId) continue;   // self-attach
       wsSend({
         action: "attach_branch",
         session_id: sessionId,
         target_head_msg_id: src,
+        anchor_session_id: anchorSid,
         anchor_head_msg_id: anchorHeadId,
       });
     }
     setSelected([]);
     setBaseHead(null);
     setAttachOpen(false);
+    setPickerScope(null);
     // session_reload broadcast picks up the new attach cards.
   }
 
@@ -313,11 +339,22 @@ export function BranchesPanel() {
   if (!sessionId || rows.length === 0) return null;
 
   const graphColors = w._branchLaneColorMap || {};
-  // Targets the "Attach to" picker offers — everything that isn't a
-  // selected source (attaching a branch to itself is meaningless).
-  const attachCandidates = rows.filter(
-    (r) => !selected.includes(r.head_msg_id),
-  );
+  // Picker scope: null = current session, otherwise that session id.
+  const pickerSid = pickerScope || sessionId;
+  const pickerRows = w._branchesByConv?.[pickerSid] || [];
+  // Targets the "Attach to" picker offers. Filter out selected source
+  // branches only when we're showing the current session — selected
+  // branches always live in the current session, so cross-session
+  // candidates aren't subject to that filter.
+  const attachCandidates = pickerSid === sessionId
+    ? pickerRows.filter((r) => !selected.includes(r.head_msg_id))
+    : pickerRows;
+  // Other sessions, for the picker's scope switcher. Sort by title
+  // so the order is predictable.
+  const allConvs = w.conversations || {};
+  const otherSessions = Object.values(allConvs)
+    .filter((c) => c.id && c.id !== sessionId)
+    .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
 
   return (
     <div className={"branches-section" + (collapsed ? " is-collapsed" : "")}>
@@ -368,9 +405,41 @@ export function BranchesPanel() {
                 className="branches-attach-picker"
                 onClick={(e) => e.stopPropagation()}
               >
+                {/* Scope switcher — pick which session's branches the
+                    picker is listing. Default = current session;
+                    selecting another session triggers a list_branches
+                    fetch (see effect above). */}
+                <div className="branches-attach-scope">
+                  <button
+                    type="button"
+                    className={
+                      "branches-attach-scope-btn"
+                      + (pickerScope === null ? " is-active" : "")
+                    }
+                    onClick={() => setPickerScope(null)}
+                  >
+                    This session
+                  </button>
+                  {otherSessions.length > 0 ? (
+                    <select
+                      className="branches-attach-scope-select"
+                      value={pickerScope || ""}
+                      onChange={(e) => setPickerScope(e.target.value || null)}
+                    >
+                      <option value="">Other session…</option>
+                      {otherSessions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.title || c.id.slice(0, 12)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                </div>
                 {attachCandidates.length === 0 ? (
                   <div className="branches-attach-picker-empty">
-                    No other branches to attach to.
+                    {pickerScope === null
+                      ? "No other branches in this session."
+                      : "Loading…"}
                   </div>
                 ) : (
                   attachCandidates.map((b) => (
@@ -378,7 +447,7 @@ export function BranchesPanel() {
                       key={b.head_msg_id}
                       type="button"
                       className="branches-attach-picker-item"
-                      onClick={() => runAttachTo(b.head_msg_id)}
+                      onClick={() => runAttachTo(b.head_msg_id, pickerSid)}
                       title={b.head_msg_id}
                     >
                       {b.name || b.head_msg_id.slice(0, 8)}

@@ -321,6 +321,10 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
     session_id = (cmd.get("session_id") or "").strip()
     target_head = (cmd.get("target_head_msg_id") or "").strip()
     anchor_arg = (cmd.get("anchor_head_msg_id") or "").strip() or None
+    # Cross-session: when ``anchor_session_id`` is supplied, the attach
+    # pointer lands on that session instead of ``session_id``. Default
+    # = same-session attach (legacy behaviour).
+    anchor_session_id = (cmd.get("anchor_session_id") or "").strip() or session_id
     label_override = (cmd.get("label") or "").strip() or None
 
     if not session_id or not target_head:
@@ -340,21 +344,31 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
     try:
         from openprogram.agent.session_db import default_db
         db = default_db()
-        sess = db.get_session(session_id) or {}
-        # Anchor: caller-supplied or fall back to the session's active
-        # head. Caller specifies it so the user can "attach branch X
-        # onto branch Y" without first having to switch to Y.
-        anchor = anchor_arg or sess.get("head_id")
+        # Source session (where the embedded content lives) + anchor
+        # session (where the attach pointer lands). Same id = legacy
+        # same-session attach; different = cross-session attach.
+        src_sess = db.get_session(session_id) or {}
+        anchor_sess = (
+            db.get_session(anchor_session_id) if anchor_session_id != session_id
+            else src_sess
+        ) or {}
+        # Anchor: caller-supplied head_msg_id or fall back to the
+        # anchor session's active head. Caller specifies it so the
+        # user can "attach branch X onto branch Y" without first
+        # having to switch to Y.
+        anchor = anchor_arg or anchor_sess.get("head_id")
         if not anchor:
-            raise RuntimeError("session has no active head to attach to")
-        if anchor == target_head:
+            raise RuntimeError(
+                f"anchor session {anchor_session_id!r} has no active head"
+            )
+        if anchor_session_id == session_id and anchor == target_head:
             raise RuntimeError(
                 "cannot attach a branch to itself "
                 "(anchor and target are the same head)"
             )
         # Resolve the target branch's name + a short content preview
-        # so the AttachCard can render label + preview without a
-        # follow-up round trip.
+        # from the SOURCE session so the AttachCard can render label +
+        # preview without a follow-up round trip.
         target_label = label_override or ""
         target_preview = ""
         try:
@@ -388,9 +402,10 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
             # grafts it back in.
             "called_by": anchor,
             "timestamp": time.time(),
-            "agent_id": (sess.get("agent_id") or "main"),
+            "agent_id": (anchor_sess.get("agent_id") or "main"),
             "extra": _json.dumps({
                 "attach": {
+                    # Source session/head the card embeds.
                     "session_id": session_id,
                     "head_id": target_head,
                     "label": target_label,
@@ -398,18 +413,19 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
                 },
             }, default=str),
         }
-        # Snapshot HEAD so the attach pointer doesn't push the active
-        # branch onto a synthetic side child.
-        head_before = anchor
-        db.append_message(session_id, attach_msg)
+        # Write the pointer onto the ANCHOR session (where the card is
+        # supposed to appear), not necessarily the source session.
+        head_before = anchor_sess.get("head_id")
+        db.append_message(anchor_session_id, attach_msg)
         if head_before:
             try:
-                db.set_head(session_id, head_before)
+                db.set_head(anchor_session_id, head_before)
             except Exception:
                 pass
         try:
             db.commit_turn(
-                session_id, f"attach branch: {target_label or target_head[:8]}",
+                anchor_session_id,
+                f"attach branch: {target_label or target_head[:8]}",
             )
         except Exception:
             pass
@@ -419,9 +435,14 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
 
     if ok:
         try:
+            # Reload the anchor session (where the card lands). If
+            # source != anchor, the source session is unchanged.
             _s._broadcast(json.dumps({
                 "type": "session_reload",
-                "data": {"session_id": session_id, "reason": "attach"},
+                "data": {
+                    "session_id": anchor_session_id,
+                    "reason": "attach",
+                },
             }, default=str))
         except Exception:
             pass
@@ -430,6 +451,7 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
         "type": "attach_branch_result",
         "data": {
             "session_id": session_id,
+            "anchor_session_id": anchor_session_id,
             "target_head_msg_id": target_head,
             "anchor": anchor,
             "attach_node_id": attach_node_id,
