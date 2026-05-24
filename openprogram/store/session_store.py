@@ -383,16 +383,50 @@ class SessionStore:
         # A branch tip is a conv node (no caller) with no conv-child.
         tips: list[dict[str, Any]] = []
         named = (idx.meta.get("branches") or {})
+        # Identify the session's "main" tip — the leaf reached by
+        # walking the earliest conv-root down its kids[0] primary
+        # path. This matches the DAG lane-0 trunk exactly, so the
+        # branch the user visually identifies as "the straight line
+        # down the middle" gets the "main" label.
+        roots = [
+            n for n in idx.all_nodes()
+            if not n.called_by and not _node_conv_predecessor(n)
+        ]
+        main_tip_id: Optional[str] = None
+        if roots:
+            cur = min(roots, key=lambda n: n.created_at).id
+            hops = 0
+            while hops < 1000:
+                hops += 1
+                kids = idx.children_by_predecessor.get(cur, [])
+                if not kids:
+                    main_tip_id = cur
+                    break
+                # children_by_predecessor preserves insertion (= seq)
+                # order, which aligns with the lane.py kids[0] rule.
+                cur = kids[0]
+
         for node in idx.all_nodes():
             if node.called_by:
+                continue
+            # Attach-pointer rows ride the assistant role but are
+            # side-calls, not real branch tips. Old writes didn't
+            # populate Call.called_by so the ``node.called_by`` check
+            # above misses them — fall back to metadata.function.
+            if (node.metadata or {}).get("function") == "attach":
                 continue
             kids = idx.children_by_predecessor.get(node.id, [])
             if kids:
                 continue
             label = named.get(node.id)
+            name = label.get("name") if isinstance(label, dict) else label
+            # Fall back to "main" for the single tip that the lane-0
+            # primary walk ends at. Every other tip stays unnamed.
+            if not name and main_tip_id and node.id == main_tip_id:
+                name = "main"
             tips.append({
                 "head_msg_id": node.id,
-                "name": label.get("name") if isinstance(label, dict) else label,
+                "name": name,
                 "created_at": (label or {}).get("created_at") if isinstance(label, dict) else node.created_at,
                 "updated_at": (label or {}).get("updated_at") if isinstance(label, dict) else node.created_at,
             })

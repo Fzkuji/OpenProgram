@@ -112,7 +112,13 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             "display": "runtime",
             "function": "attach",
             "content": (result.final_text or result.error or "(no output)").strip(),
-            "parent_id": msg_id,
+            # Only ``called_by`` — NOT ``parent_id``. With both set,
+            # the attach pointer would be both a conv child (picked
+            # up by linear_history) AND a side-call (picked up by the
+            # splicer), so the row showed up twice in the chat. With
+            # called_by alone it's a pure side-call: linear_history
+            # ignores it (no parent_id), the splicer in
+            # ws_actions/session.py grafts it back in once.
             "called_by": msg_id,
             "timestamp": time.time(),
             "is_error": bool(result.failed or result.error),
@@ -135,15 +141,11 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             except Exception:
                 pass
         store.commit_turn(session_id, f"spawn agent: {label or chosen_agent}")
-        # Mirror into the in-memory conv dict so the chat view picks up
-        # the attach row in the next ``load_session`` round-trip without
-        # waiting for a manual reload. ``conv.messages`` is what the
-        # ws_actions/session.py splicer reads.
-        try:
-            conv = _s._get_or_create_session(session_id)
-            conv.setdefault("messages", []).append(attach_msg)
-        except Exception:
-            pass
+        # Note: do NOT also push attach_msg into the in-memory
+        # conv["messages"]. The session_reload broadcast below makes
+        # the client call load_session, which pulls a fresh chain
+        # from SessionDB — that round-trip is the single source of
+        # truth. Appending here too produced the attach card twice.
     except Exception:  # noqa: BLE001
         pass
 
@@ -162,7 +164,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "result",
         "content": payload,
-        "function": "spawn",
+        "function": "task",
         "display": "runtime",
     })
 

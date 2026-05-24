@@ -88,12 +88,19 @@ def _msg_to_node(msg: dict) -> Call:
             meta.setdefault(k, v)
     if role == "system":
         meta["role"] = "system"
+    # Attach-pointer rows ride the assistant role but carry a
+    # ``called_by`` pointing at the user turn that triggered the
+    # spawn — they hang off that turn as a side-child, not as the
+    # next conv step. Surfacing called_by onto the Call so
+    # list_branches' "tips have no caller" filter skips them.
+    called_by = meta.pop("called_by", None) or ""
     return Call(
         id=base_id,
         created_at=created_at,
         role=ROLE_LLM,
         name=msg.get("token_model") or "",
         output=msg.get("content") or "",
+        called_by=called_by,
         metadata=meta,
     )
 
@@ -149,12 +156,20 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "session_id": session_id,
             "role": legacy_role,
             "content": node.output or "",
+            # parent_id falls back to called_by here, but meta.parent_id
+            # (set by _msg_to_node from the original msg) is the real
+            # answer and overrides via the base.update(meta) below.
             "parent_id": node.called_by,
             "caller": node.called_by or "",
             "timestamp": node.created_at,
             "token_model": node.name,
         }
         base.update(meta)
+        # Restore called_by AFTER meta merge so attach-pointer rows
+        # (which set called_by but no parent_id) keep their pointer
+        # tag for the ws_actions/session.py splicer.
+        if node.called_by:
+            base["called_by"] = node.called_by
         return base
 
     return {

@@ -84,17 +84,20 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     },
   },
   {
-    name: "/spawn",
-    args: "[label]: <prompt>",
+    name: "/task",
+    args: "[--clean] [label]: <prompt>",
     description:
-      "Spawn an agent (inherits this conversation, replies as a sibling branch). "
-      + "Use '/spawn label: prompt' to label the branch.",
+      "Run another agent in this session as a new branch. Default "
+      + "inherits this conversation; --clean starts at a new root "
+      + "(agent sees only the prompt). Same code path as the task() "
+      + "tool the LLM uses — manual vs LLM-driven invocation is the "
+      + "only difference.",
     run(rest, { sessionId, send }) {
       if (!sessionId) return true;
       send({
         action: "chat",
         session_id: sessionId,
-        text: "/spawn " + rest,
+        text: "/task " + rest,
       });
       return true;
     },

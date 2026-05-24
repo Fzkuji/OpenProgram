@@ -137,7 +137,7 @@ async def handle_load_session(ws, cmd: dict):
         chain = linear_history(all_msgs, head) if head else list(all_msgs)
         # Splice attach pointer rows (function="attach") into the
         # displayed chain. They hang off a parent message via
-        # called_by/parent_id — not on the conv chain itself — so
+        # called_by — not on the conv chain itself — so
         # linear_history skips them, but the chat needs them inline
         # as standalone AttachCard rows.
         chain_ids = {m.get("id") for m in chain}
@@ -145,7 +145,13 @@ async def handle_load_session(ws, cmd: dict):
         for m in all_msgs:
             if m.get("function") != "attach":
                 continue
-            parent = m.get("parent_id") or m.get("called_by") or ""
+            # Skip pointers already in the chain — older writes set
+            # both parent_id and called_by, which made attach pointers
+            # appear as conv children too. New writes only set
+            # called_by; this guard keeps old data from doubling up.
+            if m.get("id") in chain_ids:
+                continue
+            parent = m.get("called_by") or m.get("parent_id") or ""
             if parent and parent in chain_ids:
                 attach_by_parent.setdefault(parent, []).append(m)
         if attach_by_parent:

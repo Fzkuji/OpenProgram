@@ -60,11 +60,17 @@ def parse_chat_input(text: str) -> dict:
     text = text.strip()
     lower = text.lower()
 
-    # /spawn [--clean | --inherit] [label]: prompt
+    # /task [--clean | --inherit] [label]: prompt
     #   --clean    → new root in this session (no parent context)
     #   --inherit  → fork off this turn (default)
-    if lower.startswith("/spawn"):
-        rest = text[len("/spawn"):].strip()
+    # Legacy /spawn kept as alias.
+    matched_prefix = None
+    for p in ("/task", "/spawn"):
+        if lower.startswith(p):
+            matched_prefix = p
+            break
+    if matched_prefix is not None:
+        rest = text[len(matched_prefix):].strip()
         # Strip optional --clean / --inherit flag before the label.
         context = "inherit"
         for flag, ctx in (

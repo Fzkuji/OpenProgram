@@ -52,10 +52,11 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
     else window.location.href = "/s/" + targetSessionId;
   }
 
-  // Label intro: "spawn" for typical /spawn or task() rows. Legacy
-  // cross-session attaches read "agent" so the foreign session_id
-  // line reads naturally.
-  const labelKind = sameSession ? "spawn" : "agent";
+  // Label intro: "task" for the standard /task or task() invocation
+  // (same code path, just different invoker). Legacy cross-session
+  // attaches still read "agent" so the foreign session_id line reads
+  // naturally as "agent · <session_id>".
+  const labelKind = sameSession ? "task" : "agent";
   const subtitle = sameSession
     ? (targetHead || "(no head id)")
     : targetSessionId;

@@ -70,7 +70,10 @@ def test_delete_branch_name(db):
     _append(db, "s1", "n1")
     db.set_branch_name("s1", "n1", "label")
     db.delete_branch_name("s1", "n1")
-    assert db.list_branches("s1")[0]["name"] is None
+    # After deletion the user-supplied name is gone. The branch
+    # descending from the session's earliest conv-root falls back to
+    # the default "main" label (see SessionStore.list_branches).
+    assert db.list_branches("s1")[0]["name"] == "main"
 
 
 # ── delete_branch_tail ───────────────────────────────────────────
