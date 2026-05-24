@@ -532,7 +532,13 @@
 
 /* ===== Runtime Block (function execution card) ===== */
 .runtime-block {
-  margin: 20px 24px;
+  /* Left/right margin matches where .message-content starts —
+     .message has 24px horizontal padding plus .message-content adds
+     another 36px (the 28px avatar + 8px header gap), so chat text
+     begins 60px from the chat-area edge. Mirror that here so the
+     runtime block aligns with the conversation text column, not
+     with the message's avatar column. */
+  margin: 20px 60px;
   border: 1px solid var(--border);
   border-left: 3px solid #a08a6c;
   border-radius: var(--radius);
