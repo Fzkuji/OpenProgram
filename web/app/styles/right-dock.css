@@ -442,9 +442,14 @@
 .branches-attach-picker {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
-  min-width: 160px;
-  max-height: 240px;
+  /* Anchor to the right edge of the button so the picker grows
+     leftward inside the panel rather than overflowing into the chat
+     pane on narrow right docks. */
+  right: 0;
+  width: max-content;
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 280px;
   overflow-y: auto;
   z-index: 20;
   background: var(--bg-secondary);
@@ -478,6 +483,7 @@
 }
 .branches-attach-scope {
   display: flex;
+  flex-direction: column;
   gap: 4px;
   padding: 4px;
   border-bottom: 1px solid var(--border);
