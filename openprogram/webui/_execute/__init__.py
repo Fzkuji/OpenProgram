@@ -105,6 +105,29 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         # active branch onto a synthetic side child.
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
+        # The attach pointer hangs off the FORK POINT (the main-branch
+        # turn the spawn forked from), not the spawn user msg itself.
+        # The spawn user msg lives on the new (probe / ocean / ...)
+        # branch — if the attach pointer hung off it, the card would
+        # only be visible from inside that new branch. By hanging it
+        # off the fork point, both branches' chat views can splice
+        # the card in: main's chain still contains the fork point, and
+        # so does the spawned branch's chain (it descends from there).
+        # Fallback to the spawn user msg if its parent can't be
+        # resolved — better an attach card visible only on the new
+        # branch than no card at all.
+        fork_anchor = msg_id
+        try:
+            pair = store._open(session_id)
+            if pair is not None:
+                _, _idx = pair
+                spawn_node = _idx.nodes_by_id.get(msg_id)
+                if spawn_node:
+                    parent_id = (spawn_node.metadata or {}).get("parent_id")
+                    if parent_id:
+                        fork_anchor = parent_id
+        except Exception:
+            pass
         attach_node_id = uuid.uuid4().hex[:12]
         attach_msg = {
             "id": attach_node_id,
@@ -117,9 +140,9 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             # up by linear_history) AND a side-call (picked up by the
             # splicer), so the row showed up twice in the chat. With
             # called_by alone it's a pure side-call: linear_history
-            # ignores it (no parent_id), the splicer in
-            # ws_actions/session.py grafts it back in once.
-            "called_by": msg_id,
+            # ignores it, the splicer in ws_actions/session.py grafts
+            # it back in once.
+            "called_by": fork_anchor,
             "timestamp": time.time(),
             "is_error": bool(result.failed or result.error),
             "agent_id": chosen_agent,
