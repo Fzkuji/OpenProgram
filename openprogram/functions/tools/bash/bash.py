@@ -34,6 +34,12 @@ def bash(command: str,
         timeout: Optional timeout in milliseconds (default 30000, max 600000).
         description: Short active-voice description shown in UI (display only).
     """
+    # TODO(file_backup): bash can mutate files via redirection / sed / rm
+    # etc., but precisely tracking which paths it touches would require
+    # either parsing the command (brittle) or snapshotting via fanotify /
+    # an LD_PRELOAD shim. Skipping turn-scoped backup integration for
+    # now — users wanting revertability should use write / edit /
+    # apply_patch instead, which are hooked into file_backup.helpers.
     timeout_ms = min(timeout or DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TIMEOUT_MS)
     timeout_sec = timeout_ms / 1000.0
 

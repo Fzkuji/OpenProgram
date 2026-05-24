@@ -300,6 +300,7 @@ def process_user_turn(
     from openprogram.store import (
         GraphStoreShim as _GraphStore,
         _store as _store_var,
+        _current_turn_id as _turn_id_var,
     )
     from openprogram.agentic_programming.function import (
         _current_runtime as _current_runtime_var,
@@ -307,6 +308,9 @@ def process_user_turn(
     _dag_runtime = None
     _runtime_token = None
     _store_token = None
+    # Tag this turn so file-mutating tools can attribute backups to
+    # the right assistant message via file_backup.helpers.
+    _turn_id_token = _turn_id_var.set(assistant_msg_id)
     # Layer 6 (Claude Code's shouldDefer / ToolSearch): install a
     # session-scoped "loaded deferred tools" set so tool_search can
     # mutate it and subsequent turns see the updated set.
@@ -470,6 +474,8 @@ def process_user_turn(
                 _current_runtime_var.reset(_runtime_token)
             if _store_token is not None:
                 _store_var.reset(_store_token)
+            if _turn_id_token is not None:
+                _turn_id_var.reset(_turn_id_token)
         except Exception:
             pass
 

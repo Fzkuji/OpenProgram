@@ -796,8 +796,14 @@ def function(
             if is_async_fn:
                 return await fn(**passable_kwargs)
             loop = asyncio.get_running_loop()
+            # Propagate the current Context into the executor thread so
+            # tool bodies see ContextVars set on the calling task (e.g.
+            # ``_store`` / ``_current_turn_id`` for file_backup,
+            # ``_call_id`` for nested @agentic_function attribution).
+            # ``run_in_executor`` does not copy context by default.
+            ctx = contextvars.copy_context()
             return await loop.run_in_executor(
-                None, lambda: fn(**passable_kwargs))
+                None, lambda: ctx.run(fn, **passable_kwargs))
 
         try:
             if effective_timeout is not None:

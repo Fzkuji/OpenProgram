@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from openprogram.functions._runtime import function
+from openprogram.store.file_backup.helpers import backup_for_current_turn
 
 
 _DESCRIPTION = (
@@ -60,6 +61,8 @@ def edit(file_path: str,
 
     new_text = (text.replace(old_string, new_string) if replace_all
                 else text.replace(old_string, new_string, 1))
+    # Snapshot pre-edit state for turn-scoped revert.
+    backup_for_current_turn(file_path)
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_text)

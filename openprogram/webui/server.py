@@ -1008,6 +1008,7 @@ def _build_ws_action_registry() -> dict:
         runtime as _ws_runtime,
         session as _ws_session,
         context_commits as _ws_commits,
+        revert as _ws_revert,
     )
     table: dict = {}
     table.update(_ws_branch.ACTIONS)
@@ -1017,6 +1018,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_runtime.ACTIONS)
     table.update(_ws_chat.ACTIONS)
     table.update(_ws_commits.ACTIONS)
+    table.update(_ws_revert.ACTIONS)
     return table
 
 

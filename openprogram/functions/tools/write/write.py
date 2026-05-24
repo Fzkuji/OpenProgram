@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from openprogram.functions._runtime import function
+from openprogram.store.file_backup.helpers import backup_for_current_turn
 
 
 _DESCRIPTION = (
@@ -38,6 +39,10 @@ def write(file_path: str, content: str) -> str:
             os.makedirs(parent, exist_ok=True)
         except OSError as e:
             return f"Error creating directory {parent}: {e}"
+    # Snapshot pre-edit state for turn-scoped revert. Safe to call
+    # even when the file doesn't exist yet (records pre_existing=False
+    # so restore_turn knows to delete-on-restore).
+    backup_for_current_turn(file_path)
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)

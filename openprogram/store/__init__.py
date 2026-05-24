@@ -51,6 +51,14 @@ _store: ContextVar[Optional[GraphStoreShim]] = ContextVar(
     "_store", default=None,
 )
 
+# Dispatcher installs the current turn's assistant_msg_id here so
+# file-mutating tools can resolve which turn to attribute backups
+# to (see openprogram/store/file_backup/helpers.py). Default None =
+# no active turn; backup helper becomes a no-op.
+_current_turn_id: ContextVar[Optional[str]] = ContextVar(
+    "_current_turn_id", default=None,
+)
+
 # session_store is imported lazily by default_store() to keep import
 # cost low for code paths that only need the lower-level classes.
 
@@ -62,6 +70,7 @@ __all__ = [
     "SessionStore",
     "default_store",
     "_store",
+    "_current_turn_id",
 ]
 
 
