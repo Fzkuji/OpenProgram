@@ -72,8 +72,9 @@ def stream_openai_responses(
             if opts.get("on_payload"):
                 opts["on_payload"](params)
 
-            openai_stream = await client.responses.create(**params)
             ev_stream.push({"type": "start", "partial": output})
+
+            openai_stream = await client.responses.create(**params)
 
             await process_responses_stream(
                 openai_stream,
@@ -85,7 +86,7 @@ def stream_openai_responses(
             )
 
             if output["stop_reason"] in ("aborted", "error"):
-                raise RuntimeError("An unknown error occurred")
+                raise RuntimeError("stream ended with error stop_reason")
 
             ev_stream.push({"type": "done", "reason": output["stop_reason"], "message": output})
             ev_stream.end(output)
@@ -96,8 +97,13 @@ def stream_openai_responses(
                     b.pop("index", None)
             output["stop_reason"] = "error"
             output["error_message"] = str(exc)
-            ev_stream.push({"type": "error", "reason": "error", "error": output})
-            ev_stream.end(output)
+            # Use ev_stream.fail() so the consumer's `async for`
+            # raises this exception instead of seeing a normal
+            # stream end. Previously this provider pushed an "error"
+            # event then ended cleanly, which made agent_loop see
+            # the stream as successful and auto-retry forever (same
+            # bug openai-codex had — see its provider for context).
+            ev_stream.fail(exc)
 
     asyncio.ensure_future(_run())
     return ev_stream
@@ -147,9 +153,17 @@ def _create_client(
     if "copilot" in base_url.lower() or "githubcopilot" in base_url.lower():
         headers.update(copilot_headers)
 
+    # OpenAI SDK has its own exponential-backoff retry for 429 /
+    # 5xx / connection errors. Default is 2; we raise to 3 to match
+    # our other HTTP providers' stream-level retry budget. Override
+    # via ``OPENPROGRAM_OPENAI_MAX_RETRIES`` (also picked up by the
+    # Azure and copilot endpoints that share this client factory).
+    sdk_max_retries = int(os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
+
     kwargs: dict[str, Any] = {
         "api_key": api_key or "dummy",
         "default_headers": headers if headers else None,
+        "max_retries": sdk_max_retries,
     }
     if base_url:
         kwargs["base_url"] = base_url

@@ -76,13 +76,14 @@ def stream_azure_openai_responses(
             if opts.get("on_payload"):
                 opts["on_payload"](params)
 
-            openai_stream = client.responses.create(**params, stream=True)
             ev_stream.push({"type": "start", "partial": output})
+
+            openai_stream = client.responses.create(**params, stream=True)
 
             await process_responses_stream(openai_stream, output, ev_stream, model)
 
             if output["stop_reason"] in ("aborted", "error"):
-                raise RuntimeError("An unknown error occurred")
+                raise RuntimeError("stream ended with error stop_reason")
 
             ev_stream.push({"type": "done", "reason": output["stop_reason"], "message": output})
             ev_stream.end(output)
@@ -93,8 +94,10 @@ def stream_azure_openai_responses(
                     b.pop("index", None)
             output["stop_reason"] = "error"
             output["error_message"] = str(exc)
-            ev_stream.push({"type": "error", "reason": "error", "error": output})
-            ev_stream.end(output)
+            # ev_stream.fail() so agent_loop raises instead of seeing
+            # a clean stream end (same bug pattern fixed in openai-codex
+            # and openai_responses).
+            ev_stream.fail(exc)
 
     asyncio.ensure_future(_run())
     return ev_stream
@@ -164,11 +167,15 @@ def _create_client(model: "Model", api_key: str, opts: dict[str, Any]) -> Any:
     from openai import AzureOpenAI
     base_url, api_version = _resolve_azure_config(model, opts)
     headers = {**(getattr(model, "headers", None) or {}), **(opts.get("headers") or {})}
+    # Share retry budget knob with the regular openai provider —
+    # both use the same OpenAI Python SDK, same retry semantics.
+    sdk_max_retries = int(os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
     return AzureOpenAI(
         api_key=api_key,
         api_version=api_version,
         base_url=base_url,
         default_headers=headers if headers else None,
+        max_retries=sdk_max_retries,
     )
 
 

@@ -23,21 +23,24 @@ from openprogram.providers._shared.openai_responses import (
 from openprogram.providers._shared.validate_modalities import validate_input_modalities
 from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers.utils.event_stream import EventStream
+from openprogram.providers.utils.stream_retry import (
+    PROVIDER_STREAM_MAX_ATTEMPTS,
+    ProviderStreamError,
+    is_retryable_status,
+    read_retry_after,
+    retry_stream,
+)
 
 if TYPE_CHECKING:
     from openprogram.providers.types import Context, Model, SimpleStreamOptions
 
 _DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api"
-_MAX_RETRIES = 3
-_BASE_DELAY_MS = 1000
 _CODEX_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-codex", "opencode"})
 
-
-def _is_retryable_error(status: int, error_text: str) -> bool:
-    if status in (429, 500, 502, 503, 504):
-        return True
-    import re
-    return bool(re.search(r"rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused", error_text, re.IGNORECASE))
+# Back-compat alias kept so external code that imports the old
+# CodexStreamError name still works. New code should use
+# ProviderStreamError from utils.stream_retry directly.
+CodexStreamError = ProviderStreamError
 
 
 def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
@@ -115,6 +118,7 @@ def stream_openai_codex_responses(
             timestamp=int(time.time() * 1000),
         )
 
+        # --- Prep that's identical across retry attempts ----------
         try:
             api_key = _resolve_codex_bearer_token(opts.get("api_key"))
             if not api_key:
@@ -158,25 +162,58 @@ def stream_openai_codex_responses(
 
             ev_stream.push({"type": "start", "partial": output})
 
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream(
-                    "POST",
-                    f"{base_url.rstrip('/')}/codex/responses",
-                    headers=headers,
-                    content=json.dumps(request_body),
-                ) as response:
-                    if response.status_code not in (200, 201):
-                        error_text = await response.aread()
-                        raise RuntimeError(f"HTTP {response.status_code}: {error_text.decode()}")
+            # --- Stream-level retry via shared helper -------------
+            # Retry as long as the consumer hasn't seen any real
+            # content yet. Once ``output.content`` is non-empty,
+            # ``process_responses_stream`` has already pushed events
+            # into ``ev_stream`` and the consumer is reading them —
+            # we can't rewind that, so ``is_committed_fn`` flips to
+            # True and ``retry_stream`` stops retrying.
+            async def _attempt() -> None:
+                async with httpx.AsyncClient(timeout=HTTPX_TRANSPORT_TIMEOUT_S) as client:
+                    async with client.stream(
+                        "POST",
+                        f"{base_url.rstrip('/')}/codex/responses",
+                        headers=headers,
+                        content=json.dumps(request_body),
+                    ) as response:
+                        if response.status_code not in (200, 201):
+                            error_text_bytes = await response.aread()
+                            try:
+                                err_text = error_text_bytes.decode()
+                            except Exception:
+                                err_text = repr(error_text_bytes)
+                            raise ProviderStreamError(
+                                f"HTTP {response.status_code}: {err_text}",
+                                http_status=response.status_code,
+                                retry_after_s=read_retry_after(response.headers),
+                                error_text=err_text,
+                                retryable=is_retryable_status(response.status_code, err_text)
+                                          and not output.content,
+                                provider=model.provider,
+                            )
 
-                    sse_events = _parse_sse_stream(response)
-                    await process_responses_stream(sse_events, output, ev_stream, model)
+                        sse_events = _parse_sse_stream(response)
+                        await process_responses_stream(sse_events, output, ev_stream, model)
 
-            if output.stop_reason in ("aborted", "error"):
-                raise RuntimeError("An unknown error occurred")
+                if output.stop_reason in ("aborted", "error"):
+                    raise ProviderStreamError(
+                        "stream ended with error stop_reason",
+                        retryable=False,
+                        provider=model.provider,
+                    )
 
+            await retry_stream(
+                _attempt,
+                is_committed_fn=lambda: bool(output.content),
+                label=model.api,
+                provider=model.provider,
+            )
+
+            # Success — finalize.
             ev_stream.push({"type": "done", "reason": output.stop_reason, "message": output})
             ev_stream.end(output)
+            return
 
         except Exception as exc:
             for b in output.content:
@@ -261,8 +298,16 @@ def _build_request_body(
     return body
 
 
-SSE_IDLE_TIMEOUT_S = 300.0   # 5 min — match codex CLI default
-SSE_TOTAL_TIMEOUT_S = 1800.0 # 30 min absolute ceiling
+# SSE idle / total timeouts — overridable via env so deployments with
+# long reasoning models (xhigh thinking can spend 2-3 min in pure
+# reasoning with no data event) can extend the idle budget without
+# editing source. Defaults match codex CLI behaviour.
+SSE_IDLE_TIMEOUT_S = float(os.environ.get("OPENPROGRAM_SSE_IDLE_TIMEOUT_S", "300"))
+SSE_TOTAL_TIMEOUT_S = float(os.environ.get("OPENPROGRAM_SSE_TOTAL_TIMEOUT_S", "1800"))
+# httpx request-level transport timeout. Distinct from the SSE-layer
+# idle / total budgets above: this one bounds the initial connect +
+# headers, not the body stream.
+HTTPX_TRANSPORT_TIMEOUT_S = float(os.environ.get("OPENPROGRAM_HTTPX_TIMEOUT_S", "120"))
 
 
 class StreamIdleTimeout(Exception):

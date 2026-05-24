@@ -196,6 +196,14 @@ def _build_client(
     if needs_interleaved_beta:
         beta_features.append(_BETA_INTERLEAVED)
 
+    # SDK-level retry budget: Anthropic SDK retries 429/5xx/transport
+    # errors with its own exponential backoff. Default is 2; we raise
+    # to 3 by default to match the stream-level retry budget of our
+    # other HTTP providers (see openai-codex + utils/stream_retry).
+    # ``OPENPROGRAM_ANTHROPIC_MAX_RETRIES`` env overrides.
+    import os as _os
+    sdk_max_retries = int(_os.environ.get("OPENPROGRAM_ANTHROPIC_MAX_RETRIES", "3"))
+
     if is_oauth:
         # OAuth: Bearer auth + Claude Code identity headers
         default_headers = {
@@ -211,6 +219,7 @@ def _build_client(
             auth_token=api_key,
             base_url=base_url,
             default_headers=default_headers,
+            max_retries=sdk_max_retries,
         )
     else:
         # Regular API key auth
@@ -224,6 +233,7 @@ def _build_client(
             api_key=api_key,
             base_url=base_url,
             default_headers=default_headers,
+            max_retries=sdk_max_retries,
         )
 
     return client, is_oauth

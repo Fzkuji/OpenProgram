@@ -176,10 +176,18 @@ async def stream_simple(
     base_url = model.base_url if model.base_url != "https://api.openai.com/v1" else None
     extra_headers = opts.headers or {}
 
+    # Match other HTTP providers' stream retry budget (default 3) so
+    # transient 429/5xx/connect failures are absorbed without
+    # bubbling to runtime.exec(). Override via the shared env
+    # ``OPENPROGRAM_OPENAI_MAX_RETRIES``.
+    import os as _os
+    sdk_max_retries = int(_os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
+
     client = _openai.AsyncOpenAI(
         api_key=opts.api_key or None,
         base_url=base_url,
         default_headers=extra_headers or None,
+        max_retries=sdk_max_retries,
     )
 
     # Transform messages for cross-provider compatibility

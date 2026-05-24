@@ -184,7 +184,26 @@ async def stream_simple(
 
     opts = options or SimpleStreamOptions()
     api_key = opts.api_key
-    client = genai.Client(api_key=api_key)
+
+    # Configure SDK-level retry. google-genai exposes full
+    # HttpRetryOptions; we match the other providers' shape:
+    # 3 attempts, exponential backoff base 2, ±25% jitter, retry on
+    # standard transient statuses. Env override via
+    # ``OPENPROGRAM_GOOGLE_MAX_RETRIES``.
+    from google.genai.types import HttpOptions, HttpRetryOptions
+    import os as _os
+    sdk_attempts = int(_os.environ.get("OPENPROGRAM_GOOGLE_MAX_RETRIES", "3"))
+    http_options = HttpOptions(
+        retry_options=HttpRetryOptions(
+            attempts=sdk_attempts,
+            initial_delay=1.0,
+            max_delay=30.0,
+            exp_base=2.0,
+            jitter=0.25,
+            http_status_codes=[429, 500, 502, 503, 504],
+        ),
+    )
+    client = genai.Client(api_key=api_key, http_options=http_options)
 
     contents = _build_contents(context)
     config = _build_config(context, opts)

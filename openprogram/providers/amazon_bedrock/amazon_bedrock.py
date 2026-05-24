@@ -128,11 +128,21 @@ def stream_bedrock(
             or "us-east-1"
         )
 
-        client_kwargs: dict[str, Any] = {"region_name": region}
+        # boto3 retry config: "standard" mode retries throttling /
+        # 5xx with exponential backoff; default max_attempts=3. Match
+        # other providers' stream retry budget; override via
+        # ``OPENPROGRAM_BEDROCK_MAX_RETRIES``.
+        from botocore.config import Config as _BotoConfig
+        boto_max_attempts = int(os.environ.get("OPENPROGRAM_BEDROCK_MAX_RETRIES", "3"))
+        boto_config = _BotoConfig(
+            retries={"max_attempts": boto_max_attempts, "mode": "standard"},
+        )
+
+        client_kwargs: dict[str, Any] = {"region_name": region, "config": boto_config}
         if opts.get("profile"):
             import boto3.session
             session = boto3.session.Session(profile_name=opts["profile"])
-            client = session.client("bedrock-runtime", region_name=region)
+            client = session.client("bedrock-runtime", region_name=region, config=boto_config)
         else:
             if os.environ.get("AWS_BEDROCK_SKIP_AUTH") == "1":
                 client_kwargs["aws_access_key_id"] = "dummy-access-key"
@@ -198,7 +208,7 @@ def stream_bedrock(
 
             output["stop_reason"] = output.get("stop_reason", "stop")
             if output["stop_reason"] in ("error", "aborted"):
-                raise RuntimeError("An unknown error occurred")
+                raise RuntimeError("stream ended with error stop_reason")
 
             ev_stream.push({"type": "done", "reason": output["stop_reason"], "message": output})
             ev_stream.end(output)
@@ -209,8 +219,10 @@ def stream_bedrock(
                 block.pop("partial_json", None)
             output["stop_reason"] = "error"
             output["error_message"] = str(exc)
-            ev_stream.push({"type": "error", "reason": "error", "error": output})
-            ev_stream.end(output)
+            # ev_stream.fail() — see openai-codex / openai_responses for
+            # the rationale (push-error + end pattern lets agent_loop
+            # think the stream succeeded and busy-loop on retry).
+            ev_stream.fail(exc)
 
     asyncio.ensure_future(_run())
     return ev_stream
