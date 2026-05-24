@@ -471,19 +471,9 @@
   top: -2000px;
   left: 0;
   right: 0;
-  /* Bottom edge of the menu sits right above the inputWrapper's top.
-     inputWrapper is the rounded text-input box; its top edge lives at
-     ``--composer-bottom-row-h (64) + textarea-min-height (~24) +
-     inputArea padding-bottom (24)`` = ~112px above inputArea bottom.
-     Set slightly less so the menu's square bottom slightly overlaps
-     the wrapper's rounded top (z-index makes the menu paint over),
-     killing the visible band the old 120px left between the two. */
-  bottom: 104px;
+  bottom: 120px;
   overflow: hidden;
   pointer-events: none;
-  /* Above the inputWrapper (no explicit z-index) so the menu's
-     bottom never gets covered by the wrapper paint order. */
-  z-index: 1;
 }
 .slashMenu {
   position: absolute;
