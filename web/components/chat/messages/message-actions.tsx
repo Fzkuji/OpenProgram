@@ -57,6 +57,12 @@ const SVG = {
       <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
     </svg>
   ),
+  undo: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="9 14 4 9 9 4" />
+      <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+    </svg>
+  ),
   chevL: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="15 18 9 12 15 6" />
@@ -147,6 +153,48 @@ export function MessageActions({
       });
   }
 
+  function revertTurn() {
+    if (!sessionId || !msg.id || busy) return;
+    setBusy(true);
+    const ok = wsSend({
+      action: "revert_turn",
+      session_id: sessionId,
+      assistant_msg_id: msg.id,
+    });
+    if (!ok) {
+      setBusy(false);
+      return;
+    }
+    const w = window as Window & {
+      ws?: WebSocket;
+      __toast?: (m: string) => void;
+    };
+    const ws = w.ws;
+    if (!ws) {
+      setBusy(false);
+      return;
+    }
+    const onMsg = (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data?.type !== "revert_turn_result") return;
+        if (data?.data?.assistant_msg_id !== msg.id) return;
+        ws.removeEventListener("message", onMsg);
+        const restored = data?.data?.restored_paths ?? [];
+        const err = data?.data?.error;
+        const text = err
+          ? `Revert failed: ${err}`
+          : `Reverted ${restored.length} file${restored.length === 1 ? "" : "s"}`;
+        if (w.__toast) w.__toast(text);
+        else console.log("[revert]", text);
+        setBusy(false);
+      } catch {
+        /* ignore */
+      }
+    };
+    ws.addEventListener("message", onMsg);
+  }
+
   function checkout(targetId: string | undefined) {
     if (!sessionId || !targetId || busy) return;
     setBusy(true);
@@ -216,6 +264,18 @@ export function MessageActions({
           onClick={branch}
         >
           {SVG.branch}
+        </button>
+      ) : null}
+      {msg.role === "assistant" ? (
+        <button
+          type="button"
+          className="message-action-btn"
+          title="Revert file edits from this turn"
+          aria-label="Revert file edits"
+          disabled={busy}
+          onClick={revertTurn}
+        >
+          {SVG.undo}
         </button>
       ) : null}
       {total > 1 ? (

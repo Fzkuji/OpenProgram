@@ -203,10 +203,13 @@ def list_commits(store: "SessionStore", session_id: str, *, limit: int = 50) -> 
 
 def _payload_to_commit(payload: dict) -> ContextCommit:
     items = [ContextItem.from_dict(d) for d in (payload.get("items") or [])]
+    raw_parents = payload.get("parent_ids")
+    parent_ids = list(raw_parents) if raw_parents else []
     return ContextCommit(
         id=payload["id"],
         session_id=payload["session_id"],
         parent_id=payload.get("parent_id"),
+        parent_ids=parent_ids,
         created_at=float(payload.get("created_at") or 0),
         head_node_id=payload.get("head_node_id") or "",
         rules_version=payload.get("rules_version") or "",
