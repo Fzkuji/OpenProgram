@@ -640,6 +640,9 @@
   pointer-events: auto;
   max-width: 720px;
   width: min(90%, 720px);
+  /* Symmetric padding on all four sides — the gap between the
+     outer menu border and each item is identical top / right /
+     bottom / left. */
   padding: 8px;
   background: var(--bg-tertiary);
   border: 1px solid rgba(0, 0, 0, 0.18);
@@ -680,7 +683,11 @@
 
 .slashMenuItem {
   display: block;
-  padding: 8px 12px;
+  /* Equal padding on every side so the hover-state background
+     extends the same distance away from the text in every
+     direction — no horizontal stretch that makes vertical
+     spacing look pinched. */
+  padding: 10px;
   border-radius: 10px;
   cursor: pointer;
   user-select: none;
