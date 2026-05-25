@@ -155,13 +155,14 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
           // Roomier pill-ish card to match claude.ai. Wider so CJK
           // filenames fit on two lines; taller so the badge has
           // breathing room.
-          width: 220,
-          // 84px gives room for 2 lines of filename (16 × 2 = 32) +
-          // 8px gap + 18px badge + 20px top/bottom padding without
-          // clipping the second line. 68 was sized for the old 4px
-          // gap; bumped to 8px the badge started eating into the
-          // filename's descenders.
-          height: 84,
+          // Sized for 4 tiles per row at the wrapper's 800px max-
+          // width: inner row = 800 − 32 (16/16 padding) = 768; with
+          // 8px gaps × 3 = 24px between four tiles, each tile gets
+          // (768 − 24) / 4 = 186px. Trimmed to 184 so the layout
+          // doesn't accidentally squeeze on devices with rounded
+          // sub-pixel widths.
+          width: 184,
+          height: 72,
           padding: "10px 14px",
           paddingRight: 16,
           // Radius 16 — same as the send / stop / plus buttons and
