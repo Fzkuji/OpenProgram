@@ -402,17 +402,34 @@ class SessionStore:
                 if not kids:
                     main_tip_id = cur
                     break
+                # Pick the primary child for main-lane walk: skip kids
+                # spawned by /task (``source=agent_spawn``) — those
+                # belong to a sub-agent's own lane, not main. Without
+                # this filter the walk dives into the sub-agent
+                # branch (sub-agent's user msg lands at seq < the
+                # followup turn, so it claims kids[0] by accident)
+                # and main_tip ends up on the merged sub-branch.
+                primary: Optional[str] = None
+                for kid_id in kids:
+                    kid = idx.nodes_by_id.get(kid_id)
+                    if not kid:
+                        continue
+                    if (kid.metadata or {}).get("source") == "agent_spawn":
+                        continue
+                    primary = kid_id
+                    break
+                if primary is None:
+                    main_tip_id = cur
+                    break
                 # Main trunk stops at /task spawn forks — the spawned
                 # turn (and the sub-agent's reply) belong to a new
                 # branch, same as git `checkout -b`. lane.py applies
                 # the same rule visually so the two stay in sync.
-                nxt = idx.nodes_by_id.get(kids[0])
+                nxt = idx.nodes_by_id.get(primary)
                 if nxt and (nxt.metadata or {}).get("function") == "task":
                     main_tip_id = cur
                     break
-                # children_by_predecessor preserves insertion (= seq)
-                # order, which aligns with the lane.py kids[0] rule.
-                cur = kids[0]
+                cur = primary
 
         merged = set((idx.meta.get("merged_heads") or []))
         # Fallback: auto-detect merged peers by scanning recent
