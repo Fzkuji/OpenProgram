@@ -1,39 +1,44 @@
 """Inbound-message → agent-session dispatcher.
 
 Each channel backend calls :func:`dispatch_inbound` for every incoming
-external message. This module does all the bookkeeping:
+external message. 该函数协调:
 
-  1. Route ``(channel, account_id, peer)`` to an agent via bindings.
-  2. Resolve / create the agent's session for that peer.
-  3. Load the session's history and render it as a text prefix.
-  4. Run the turn through the agent's runtime.
-  5. Append user + assistant messages to the session file.
-  6. Push a live update to any connected Web UI tabs.
+  1. 路由 ``(channel, account_id, peer)`` 到具体 agent (binding / alias)
+  2. 算出 session_key (按 agent.session_scope + reset policy)
+  3. 加载 / 创建 session (SessionDB)
+  4. 跑 agent turn (process_user_turn)
+  5. 可选 progress streaming: 实时编辑占位消息显示工具进度
+  6. 把消息持久化 + 给 webui WS 推一份
 
-Sessions live under ``<state>/agents/<agent_id>/sessions/<session_key>/``.
-``session_key`` is ``{account_id}_{peer_kind}_{peer_id}`` sanitized for
-disk — uniquely identifies a thread within one agent.
+子模块拆分:
 
-The persistence file format matches what the Web UI reads for its own
-conversations (meta.json + messages.json), so bound sessions appear in
-the sidebar alongside anything the user started locally.
+  _session_store.py    session 路径、创建、加载、保存、默认标题
+  _session_routing.py  session_key 计算 + reset policy
+  _broadcast.py        webui WS push
+
+本文件只承担 dispatch_inbound 主流程 + progress streaming state (跟
+dispatch 流程紧绑, 不适合拆出去因为需要在 closure 里共享 state).
 """
 from __future__ import annotations
 
 import json
-import os
-import re
+import sys
 import time
-import uuid
-from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from openprogram.agents import manager as _agents
-from openprogram.agents import runtime_registry as _runtimes
 from openprogram.channels import bindings as _bindings
-
-
-MAX_HISTORY_CHARS = 60_000
+from openprogram.channels._broadcast import (
+    broadcast_channel_turn as _broadcast_channel_turn,
+    poke_live_webui as _poke_live_webui,
+)
+from openprogram.channels._session_routing import (
+    apply_reset_policy as _apply_reset_policy,
+    session_key_for_agent as _session_key_for_agent,
+)
+from openprogram.channels._session_store import (
+    load_or_init_session as _load_or_init_session,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -72,9 +77,7 @@ def dispatch_inbound(
     """
     peer = {"kind": peer_kind or "direct", "id": str(peer_id)}
 
-    # Session alias: user said "route this peer into session X".
-    # Highest priority — bypasses both binding-based agent selection
-    # and scope-based session key computation.
+    # ---- 路由: alias > binding -----------------------------------------
     from openprogram.agents import session_aliases as _aliases
     alias = _aliases.lookup(channel, account_id, peer)
     if alias is not None:
@@ -101,9 +104,8 @@ def dispatch_inbound(
             agent, channel, account_id, peer,
         )
         session_key = _apply_reset_policy(agent, base_key)
-    # Make sure SessionDB has a row for this session_key with the
-    # full peer/account metadata before dispatcher takes over (its
-    # default create only sets a subset of fields).
+
+    # ---- session 创建 / 加载 -------------------------------------------
     meta, _ = _load_or_init_session(
         agent_id=agent_id,
         session_key=session_key,
@@ -112,6 +114,8 @@ def dispatch_inbound(
         peer=peer,
         user_display=user_display or str(peer_id),
     )
+
+    # ---- run config 加载 (permission/tools/effort) ---------------------
     from openprogram.agent.session_config import (
         load_session_run_config,
         permission_from_config,
@@ -119,21 +123,9 @@ def dispatch_inbound(
     )
     run_cfg = load_session_run_config(session_key)
 
-    # Hand the rest of the turn — agent run, message append, FTS
-    # indexing — to the unified dispatcher. Channel turns reuse the
-    # bound session's run settings; source filtering still hides tools
-    # marked unsafe for this transport.
-    from openprogram.agent.dispatcher import (
-        TurnRequest,
-        process_user_turn,
-    )
-
-    captured_user_id: list[str] = []
-    captured_assistant_id: list[str] = []
-
-    # Progress-streaming state — 仅在 progress_stream=True 且占位发送成功
-    # 后激活. progress_handle 为 None 时所有 streaming-edit 逻辑跳过, 保持
-    # 旧行为.
+    # ---- progress streaming state ---------------------------------------
+    # 仅在 progress_stream=True 且占位发送成功后激活. progress_handle 为
+    # None 时所有 streaming-edit 逻辑跳过, 保持旧行为.
     progress_handle = None
     progress_lines: list[str] = []
     last_edit_ts: list[float] = [0.0]
@@ -149,10 +141,10 @@ def dispatch_inbound(
                 _h = _MH(channel, account_id, str(peer_id), _placeholder_mid)
                 if _h.editable:
                     progress_handle = _h
-                # 不 editable (WeChat sentinel 空字符串) 或 _placeholder_mid
+                # 不 editable (WeChat 空字符串 sentinel) 或 _placeholder_mid
                 # 是 None → 降级回非 streaming, 占位仍然发出去了但不参与
-                # 后续 edit. WeChat 在这种降级下用户看到的是 "⏳ working..."
-                # + 之后另一条完整 reply, 不完美但不出错.
+                # 后续 edit. WeChat 在这种降级下用户看到的是 "⏳..." 加上
+                # 一条完整 reply, 不完美但不出错.
         except Exception:
             progress_handle = None
 
@@ -173,11 +165,18 @@ def dispatch_inbound(
         except Exception:
             pass
 
+    # ---- dispatcher 调用 + stream event 监听 ----------------------------
+    from openprogram.agent.dispatcher import (
+        TurnRequest,
+        process_user_turn,
+    )
+
+    captured_user_id: list[str] = []
+    captured_assistant_id: list[str] = []
+
     def _on_event(env: dict) -> None:
-        # Forward streaming events to any connected webui clients so
-        # an attached TUI sees the channel reply in real time.
+        # 转发给 webui WS (existing behavior: 让 TUI 看见 streaming)
         try:
-            import sys
             srv = sys.modules.get("openprogram.webui.server")
             if srv is not None:
                 srv._broadcast(json.dumps(env, default=str))
@@ -225,8 +224,8 @@ def dispatch_inbound(
     except Exception as e:  # noqa: BLE001
         err_text = f"[error] {type(e).__name__}: {e}"
         if progress_handle is not None:
-            # 把占位改成错误消息, adapter 不必再发. 用户看到的是单条带
-            # 错误的消息, 不会有 placeholder 残留.
+            # 把占位改成错误消息, adapter 不必再发. 用户看到的是单条
+            # 带错误的消息, 没 placeholder 残留.
             _maybe_edit(err_text, force=True)
             return None
         return err_text
@@ -235,9 +234,7 @@ def dispatch_inbound(
     user_msg_id = result.user_msg_id
     assistant_msg_id = result.assistant_msg_id
 
-    # Build user/reply message dicts for the channel_turn broadcast —
-    # the TUI consumer (cli_ink) renders both on receipt without
-    # needing a /resume refresh.
+    # ---- 持久化 + webui WS push ----------------------------------------
     user_msg = {
         "role": "user",
         "id": user_msg_id,
@@ -256,9 +253,6 @@ def dispatch_inbound(
     }
     _broadcast_channel_turn(agent_id, session_key, user_msg, reply_msg)
 
-    # Refresh the meta dict from the just-updated DB row and broadcast
-    # the per-session "updated" envelope so any open webui sidebars
-    # bump this conversation to the top.
     from openprogram.agent.session_db import default_db
     refreshed = default_db().get_session(session_key)
     if refreshed is not None:
@@ -266,16 +260,14 @@ def dispatch_inbound(
         _poke_live_webui(agent_id, session_key, refreshed,
                          default_db().get_messages(session_key))
 
-    # Progress streaming: 把占位消息 edit 成完整 reply, 然后返回 None
-    # 让 adapter 知道 reply 已经送达. reply 超长时占位放第一段, 余下用
-    # 新消息追加.
+    # ---- Progress streaming: 把占位 edit 成完整 reply, 返回 None -------
+    # reply 超长时占位放第一段, 余下用新消息追加.
     if progress_handle is not None:
         from openprogram.channels._transport import MAX_CHARS as _MAX_CHARS
         limit = _MAX_CHARS.get(channel, 1800)
         if len(reply_text) <= limit:
             _maybe_edit(reply_text, force=True)
         else:
-            # 占位放前 (limit - 30) 字符 + 提示, 后段单独发新消息.
             head = reply_text[: limit - 30]
             tail = reply_text[limit - 30 :]
             _maybe_edit(head + "\n... (continued ↓)", force=True)
@@ -289,300 +281,3 @@ def dispatch_inbound(
         return None
 
     return reply_text
-
-
-# ---------------------------------------------------------------------------
-# Session storage — file layout compatible with webui.persistence
-# ---------------------------------------------------------------------------
-
-def _session_path(agent_id: str, session_key: str) -> Path:
-    return _agents.sessions_dir(agent_id) / session_key
-
-
-def _meta_path(agent_id: str, session_key: str) -> Path:
-    return _session_path(agent_id, session_key) / "meta.json"
-
-
-def _messages_path(agent_id: str, session_key: str) -> Path:
-    return _session_path(agent_id, session_key) / "messages.json"
-
-
-def _load_or_init_session(
-    *,
-    agent_id: str,
-    session_key: str,
-    channel: str,
-    account_id: str,
-    peer: dict[str, Any],
-    user_display: str,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Load (or create) the SQLite-backed session row + replay its
-    message log. Channels used to write meta.json + messages.json
-    files; SessionDB now owns both. We still mkdir the legacy folder
-    so any sub-paths (e.g. `trees/` for webui context-tree dumps)
-    keep working without churn."""
-    from openprogram.agent.session_db import default_db
-    db = default_db()
-
-    _session_path(agent_id, session_key).mkdir(parents=True, exist_ok=True)
-
-    sess = db.get_session(session_key)
-    if sess is None:
-        meta: dict[str, Any] = {
-            "id": session_key,
-            "agent_id": agent_id,
-            "title": _default_title(channel, user_display),
-            "created_at": time.time(),
-            "channel": channel,
-            "source": channel,
-            "account_id": account_id,
-            "peer": dict(peer),
-            "peer_kind": peer.get("kind"),
-            "peer_id": peer.get("id"),
-            "peer_display": user_display,
-            "_titled": True,
-        }
-        db.create_session(
-            session_key, agent_id,
-            title=meta["title"],
-            created_at=meta["created_at"],
-            channel=channel,
-            source=channel,
-            account_id=account_id,
-            peer_kind=peer.get("kind"),
-            peer_id=peer.get("id"),
-            peer_display=user_display,
-            peer=dict(peer),  # full peer dict goes to extra_meta
-            _titled=True,
-        )
-        return meta, []
-
-    meta = dict(sess)
-    # Refresh peer display if the upstream handle changed.
-    if user_display and meta.get("peer_display") != user_display:
-        meta["peer_display"] = user_display
-        meta["title"] = _default_title(channel, user_display)
-        db.update_session(
-            session_key,
-            peer_display=user_display,
-            title=meta["title"],
-        )
-    # Backfill peer dict from columns when missing from extra_meta
-    # (older rows).
-    if "peer" not in meta and meta.get("peer_id"):
-        meta["peer"] = {"kind": meta.get("peer_kind") or "direct",
-                        "id": meta["peer_id"]}
-    messages = db.get_messages(session_key)
-    return meta, messages
-
-
-def _save_session(agent_id: str, session_key: str,
-                  meta: dict[str, Any],
-                  messages: list[dict[str, Any]],
-                  *, new_messages: list[dict[str, Any]] | None = None) -> None:
-    """Persist meta updates and append any new messages.
-
-    `new_messages` lets the caller skip re-writing the entire history
-    on every turn (the old JSON-file path had no choice). Pass the
-    just-ingested rows; if omitted we fall back to inferring "what's
-    new" by id-diff against the DB, which is slower but still correct."""
-    from openprogram.agent.session_db import default_db
-    db = default_db()
-
-    # Always touch the legacy dir so other code that drops sub-paths
-    # there (webui's `trees/`) stays happy.
-    _session_path(agent_id, session_key).mkdir(parents=True, exist_ok=True)
-
-    db.update_session(
-        session_key,
-        agent_id=agent_id,
-        title=meta.get("title"),
-        head_id=meta.get("head_id"),
-        peer_display=meta.get("peer_display"),
-        provider_name=meta.get("provider_name"),
-        model=meta.get("model"),
-    )
-    if new_messages is None:
-        existing_ids = {m["id"] for m in db.get_messages(session_key)}
-        new_messages = [m for m in messages if m.get("id") not in existing_ids]
-    if new_messages:
-        db.append_messages(session_key, new_messages)
-
-
-def _atomic_write_json(path: Path, payload: Any) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, default=str),
-                   encoding="utf-8")
-    os.replace(tmp, path)
-
-
-def _session_key_for_agent(agent, channel: str, account_id: str,
-                           peer: dict[str, Any]) -> str:
-    """Compute the session-routing key according to the agent's
-    ``session_scope``. OpenClaw's dmScope values:
-
-      main                      — one shared session for all DMs
-      per-peer                  — one per sender, across channels
-      per-channel-peer          — one per (channel, sender)
-      per-account-channel-peer  — one per (account, channel, sender)
-                                  — our previous default
-
-    Group / channel peers always isolate by peer id regardless of
-    scope, since a shared session across different groups is never
-    what anyone wants.
-    """
-    kind = str(peer.get("kind") or "direct")
-    pid = str(peer.get("id") or "")
-    scope = getattr(agent, "session_scope", None) or "per-account-channel-peer"
-
-    if kind in ("group", "channel"):
-        raw = f"{channel}_{account_id}_{kind}_{pid}"
-    elif scope == "main":
-        raw = "main"
-    elif scope == "per-peer":
-        raw = f"peer_{pid}"
-    elif scope == "per-channel-peer":
-        raw = f"{channel}_{kind}_{pid}"
-    else:  # per-account-channel-peer (default)
-        raw = f"{account_id}_{kind}_{pid}"
-
-    safe = re.sub(r"[^A-Za-z0-9_-]", "-", raw).strip("-")
-    return safe or "unknown"
-
-
-def _apply_reset_policy(agent, base_key: str) -> str:
-    """Honor the agent's daily / idle session reset settings.
-
-    Daily reset: if ``agent.session_daily_reset`` is ``HH:MM``, we
-    suffix the key with the current reset-window's date — rolling
-    over at that hour starts a brand-new session automatically.
-
-    Idle reset: if ``agent.session_idle_minutes > 0``, check the
-    existing session's ``_last_touched`` against wall clock; if we're
-    past the threshold, suffix the key with an epoch minute so the
-    next turn creates a fresh file on disk.
-
-    Reset suffixes are transparent to the UI — previous sessions
-    stay on disk (readable via the sidebar) and the new one picks up
-    from scratch.
-    """
-    import datetime as _dt
-
-    key = base_key
-    daily = (getattr(agent, "session_daily_reset", "") or "").strip()
-    if daily:
-        try:
-            h, m = daily.split(":", 1)
-            reset_h, reset_m = int(h), int(m)
-            now = _dt.datetime.now()
-            window_start = now.replace(
-                hour=reset_h, minute=reset_m, second=0, microsecond=0,
-            )
-            if now < window_start:
-                window_start -= _dt.timedelta(days=1)
-            key += f"_{window_start.strftime('%Y%m%d')}"
-        except (ValueError, AttributeError):
-            pass
-
-    idle_min = int(getattr(agent, "session_idle_minutes", 0) or 0)
-    if idle_min > 0:
-        # Check the previous session (base + any daily suffix). If
-        # it's stale, add an idle suffix so we rotate.
-        prev_meta_path = _meta_path(agent.id, key)
-        if prev_meta_path.exists():
-            try:
-                import json as _json
-                prev = _json.loads(prev_meta_path.read_text(encoding="utf-8"))
-                last = float(prev.get("_last_touched") or 0)
-                if last and (time.time() - last) > idle_min * 60:
-                    key += f"_cut{int(time.time() // 60)}"
-            except Exception:
-                pass
-
-    return key
-
-
-def _default_title(channel: str, user_display: str) -> str:
-    pretty = {
-        "wechat": "WeChat",
-        "telegram": "Telegram",
-        "discord": "Discord",
-        "slack": "Slack",
-    }.get(channel, channel)
-    return f"{pretty}: {user_display}"
-
-
-# ---------------------------------------------------------------------------
-# Live Web UI push (best-effort)
-# ---------------------------------------------------------------------------
-
-def _broadcast_channel_turn(agent_id: str, session_key: str,
-                            user_msg: dict[str, Any],
-                            reply_msg: dict[str, Any]) -> None:
-    """Push the just-completed channel turn (user message + assistant
-    reply) to every connected WS client. The TUI watches for this event
-    and appends both messages to its transcript when the session_id matches
-    the currently-viewed session — so a wechat user typing "hello"
-    shows up live in an attached `openprogram` TUI without a /resume
-    refresh. session_key is also the session_id the TUI uses (same
-    `default_direct_<peer>` layout), no translation needed.
-    """
-    try:
-        import sys
-        srv = sys.modules.get("openprogram.webui.server")
-        if srv is None:
-            return
-        payload = {
-            "type": "channel_turn",
-            "data": {
-                "session_id": session_key,
-                "agent_id": agent_id,
-                "user": {
-                    "id": user_msg.get("id"),
-                    "text": user_msg.get("content"),
-                    "peer_display": user_msg.get("peer_display"),
-                    "source": user_msg.get("source"),
-                },
-                "assistant": {
-                    "id": reply_msg.get("id"),
-                    "text": reply_msg.get("content"),
-                    "source": reply_msg.get("source"),
-                },
-            },
-        }
-        srv._broadcast(json.dumps(payload, default=str))
-    except Exception:
-        pass
-
-
-def _poke_live_webui(agent_id: str, session_key: str,
-                     meta: dict[str, Any],
-                     messages: list[dict[str, Any]]) -> None:
-    """Tell any connected WebSocket clients a channel session changed.
-
-    Only does anything if ``openprogram.webui.server`` is loaded in
-    this process (true for the Web UI server path, possibly true for
-    the worker). Failures silently swallow — persistence already
-    happened; live push is a nicety.
-    """
-    try:
-        import sys
-        srv = sys.modules.get("openprogram.webui.server")
-        if srv is None:
-            return
-        # Broadcast a minimal "channel session updated" envelope that
-        # clients currently viewing that agent can use to refresh.
-        payload = {
-            "type": "agent_session_updated",
-            "data": {
-                "agent_id": agent_id,
-                "session_id": session_key,
-                "title": meta.get("title"),
-                "head_id": meta.get("head_id"),
-                "updated_at": meta.get("_last_touched"),
-                "source": meta.get("channel"),
-            },
-        }
-        srv._broadcast(json.dumps(payload, default=str))
-    except Exception:
-        pass
