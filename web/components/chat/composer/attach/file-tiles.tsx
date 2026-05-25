@@ -156,7 +156,12 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
           // filenames fit on two lines; taller so the badge has
           // breathing room.
           width: 220,
-          height: 68,
+          // 84px gives room for 2 lines of filename (16 × 2 = 32) +
+          // 8px gap + 18px badge + 20px top/bottom padding without
+          // clipping the second line. 68 was sized for the old 4px
+          // gap; bumped to 8px the badge started eating into the
+          // filename's descenders.
+          height: 84,
           padding: "10px 14px",
           paddingRight: 16,
           // Radius 16 — same as the send / stop / plus buttons and
