@@ -85,13 +85,15 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   },
   {
     name: "/task",
-    args: "[--clean] [label]: <prompt>",
+    args: "[--clean] [--async] [label]: <prompt>",
     description:
       "Run another agent in this session as a new branch. Default "
       + "inherits this conversation; --clean starts at a new root "
-      + "(agent sees only the prompt). Same code path as the task() "
-      + "tool the LLM uses — manual vs LLM-driven invocation is the "
-      + "only difference.",
+      + "(agent sees only the prompt). Add --async to spawn the "
+      + "task to the background runner — the Branches panel "
+      + "animates the row while it runs and you can keep chatting. "
+      + "Without --async this blocks until the spawned agent "
+      + "finishes (legacy behaviour).",
     run(rest, { sessionId, send }) {
       if (!sessionId) return true;
       send({

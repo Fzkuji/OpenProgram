@@ -65,6 +65,8 @@ def register(app):
                 kwargs={"kwargs": {
                     "prompt": parsed.get("prompt") or "",
                     "label": parsed.get("label") or "",
+                    "context": parsed.get("context") or "inherit",
+                    "wait": parsed.get("wait", True),
                 }},
                 daemon=True,
             ).start()

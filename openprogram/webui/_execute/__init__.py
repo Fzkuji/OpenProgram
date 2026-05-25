@@ -35,11 +35,17 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     ``clean`` mode it starts a new root inside the same session
     (no parent_id).
 
-    After the spawn finishes we write an ``attach`` pointer row that
-    hangs off ``msg_id`` so the chat shows a card recording "this
-    turn spawned branch X". The card's ``session_id`` is the SAME
-    session — opening it just checks out that branch in this same
-    chat view; there is no separate sub_xxx session to navigate to.
+    With ``wait=True`` (default) the call blocks until the spawn
+    finishes and writes a fully-populated ``attach`` pointer row.
+    With ``wait=False`` (``/task --async ...``) we write a
+    ``status=running`` placeholder attach pointer, submit the task
+    to ``TaskRunner``, and return immediately — the runner finishes
+    the attach card when the task hits a terminal state and
+    broadcasts ``session_reload``.
+
+    The attach pointer's ``session_id`` is the SAME session — opening
+    it just checks out that branch in this same chat view; there is
+    no separate sub_xxx session to navigate to.
     """
     import json
     import time
@@ -56,6 +62,13 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         context = "clean"
     else:
         context = "inherit"
+    # wait flag: True = synchronous (existing behavior), False = submit
+    # to TaskRunner and return immediately. Default True for backward
+    # compat — /task --async opts into the new path.
+    wait = kwargs.get("wait")
+    if wait is None:
+        wait = True
+    wait = bool(wait)
     chosen_agent = (kwargs.get("agent_id") or "").strip() or agent_id
 
     if not prompt:
@@ -64,6 +77,19 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             "content": "/spawn requires a prompt — usage: /spawn label: prompt text",
             "display": "chat",
         })
+        return
+
+    if not wait:
+        # Async path: write a placeholder attach card with
+        # status=running, submit to the runner, return immediately.
+        _run_spawn_async(
+            session_id=session_id,
+            msg_id=msg_id,
+            prompt=prompt,
+            label=label,
+            context=context,
+            chosen_agent=chosen_agent,
+        )
         return
 
     try:
@@ -202,6 +228,163 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "result",
         "content": payload,
+        "function": "task",
+        "display": "runtime",
+    })
+
+
+def _run_spawn_async(
+    *,
+    session_id: str,
+    msg_id: str,
+    prompt: str,
+    label: str | None,
+    context: str,
+    chosen_agent: str,
+) -> None:
+    """``/task --async`` path — write a placeholder attach card with
+    ``status=running``, submit the task, broadcast session_reload, return.
+
+    The TaskRunner takes over from here: on terminal it updates the
+    attach card via :meth:`TaskRunner._update_attach_card` (fills
+    head_id, source_commit_id, status) and broadcasts another
+    session_reload so the UI re-renders the card with the result.
+    """
+    import json
+    import time
+    import uuid
+
+    from openprogram.webui import server as _s
+
+    # Resolve fork anchor + parent head (same logic as the sync path).
+    attach_node_id = uuid.uuid4().hex[:12]
+    try:
+        from openprogram.agent.session_db import default_db
+        store = default_db()
+        sess_row = store.get_session(session_id) or {}
+        head_before = sess_row.get("head_id")
+        fork_anchor = msg_id
+        try:
+            pair = store._open(session_id)  # noqa: SLF001
+            if pair is not None:
+                _, _idx = pair
+                spawn_node = _idx.nodes_by_id.get(msg_id)
+                if spawn_node:
+                    parent_id = (spawn_node.metadata or {}).get("parent_id")
+                    if parent_id:
+                        fork_anchor = parent_id
+        except Exception:
+            pass
+
+        # Pre-mint the task id so the placeholder attach card carries
+        # task_id from the start (UI can correlate). We can't go
+        # through runner.spawn_task first because the placeholder
+        # needs to exist *before* the runner's attach card update
+        # path fires.
+        attach_msg = {
+            "id": attach_node_id,
+            "role": "assistant",
+            "display": "runtime",
+            "function": "attach",
+            "content": "(running)",
+            "called_by": fork_anchor,
+            "timestamp": time.time(),
+            "is_error": False,
+            "agent_id": chosen_agent,
+            "extra": json.dumps({
+                "attach": {
+                    "session_id": session_id,
+                    "head_id": None,
+                    "label": label or "",
+                    "prompt": prompt[:500],
+                    "source_commit_id": None,
+                    "status": "running",
+                    # task_id stitched in below once runner mints one
+                },
+            }, default=str),
+        }
+        store.append_message(session_id, attach_msg)
+        if head_before:
+            try:
+                store.set_head(session_id, head_before)
+            except Exception:
+                pass
+        store.commit_turn(session_id, f"spawn agent async: {label or chosen_agent}")
+    except Exception as e:  # noqa: BLE001
+        _s._broadcast_chat_response(session_id, msg_id, {
+            "type": "error",
+            "content": f"async spawn failed to stage: {type(e).__name__}: {e}",
+            "display": "chat",
+        })
+        return
+
+    # Submit to runner. The runner takes over: status transitions,
+    # attach card finalization, session_reload broadcasts.
+    try:
+        from openprogram.agent.sub_agent_run import run_agent_turn_async
+        task_id = run_agent_turn_async(
+            session_id=session_id,
+            prompt=prompt,
+            agent_id=chosen_agent,
+            parent_id=msg_id if context == "inherit" else None,
+            label=label,
+            subject=label or prompt[:60],
+            description=prompt,
+            context_mode=context,
+            attach_pointer_id=attach_node_id,
+        )
+    except Exception as e:  # noqa: BLE001
+        # Roll back the placeholder by stamping it errored.
+        _s._broadcast_chat_response(session_id, msg_id, {
+            "type": "error",
+            "content": f"async spawn submit failed: {type(e).__name__}: {e}",
+            "display": "chat",
+        })
+        return
+
+    # Stitch task_id into the attach card's extra blob (re-write).
+    try:
+        from openprogram.agent.session_db import default_db
+        from openprogram.store import GraphStoreShim
+        db = default_db()
+        pair = db._open(session_id)  # noqa: SLF001
+        if pair is not None:
+            _, idx = pair
+            node = idx.nodes_by_id.get(attach_node_id)
+            if node:
+                md = dict(node.metadata or {})
+                extra_raw = md.get("extra")
+                try:
+                    extra_json = json.loads(extra_raw) if isinstance(extra_raw, str) else (extra_raw or {})
+                except Exception:
+                    extra_json = {}
+                attach = dict(extra_json.get("attach") or {})
+                attach["task_id"] = task_id
+                extra_json["attach"] = attach
+                md["extra"] = json.dumps(extra_json, default=str)
+                shim = GraphStoreShim(db, session_id)
+                shim.update(attach_node_id, output="(running)", metadata=md)
+                db.commit_turn(session_id, f"task: stitch {task_id}")
+    except Exception:
+        pass
+
+    # Broadcast so the chat UI picks up the new placeholder card +
+    # branches panel shows the upcoming branch.
+    try:
+        _s._broadcast(json.dumps({
+            "type": "session_reload",
+            "data": {"session_id": session_id, "reason": "spawn_async"},
+        }, default=str))
+    except Exception:
+        pass
+
+    _s._broadcast_chat_response(session_id, msg_id, {
+        "type": "result",
+        "content": (
+            f"[task spawned async] task_id={task_id} label={label or '(none)'}\n"
+            f"The task is running in the background. The Branches panel will "
+            f"animate while it runs; the attach card will update when it finishes."
+        ),
         "function": "task",
         "display": "runtime",
     })

@@ -60,9 +60,11 @@ def parse_chat_input(text: str) -> dict:
     text = text.strip()
     lower = text.lower()
 
-    # /task [--clean | --inherit] [label]: prompt
+    # /task [--clean | --inherit] [--async | --sync] [label]: prompt
     #   --clean    → new root in this session (no parent context)
     #   --inherit  → fork off this turn (default)
+    #   --async    → submit to TaskRunner, return immediately with task_id
+    #   --sync     → block until done (default, kept for explicit selection)
     # Legacy /spawn kept as alias.
     matched_prefix = None
     for p in ("/task", "/spawn"):
@@ -71,15 +73,34 @@ def parse_chat_input(text: str) -> dict:
             break
     if matched_prefix is not None:
         rest = text[len(matched_prefix):].strip()
-        # Strip optional --clean / --inherit flag before the label.
+        # Strip optional --clean / --inherit / --async / --sync flags
+        # in any order before the label.
         context = "inherit"
-        for flag, ctx in (
-            ("--clean", "clean"),
-            ("--inherit", "inherit"),
-        ):
-            if rest.lower().startswith(flag):
-                rest = rest[len(flag):].strip()
-                context = ctx
+        wait = True
+        for _ in range(4):  # at most 4 flags
+            lower_rest = rest.lower()
+            consumed = False
+            for flag, val in (
+                ("--clean", ("context", "clean")),
+                ("--inherit", ("context", "inherit")),
+                ("--async", ("wait", False)),
+                ("--sync", ("wait", True)),
+            ):
+                # Match if the flag is followed by whitespace, end of
+                # string, or a ':' (so ``/task --async: prompt`` and
+                # ``/task --clean alpha: prompt`` both parse).
+                tail = lower_rest[len(flag):len(flag) + 1]
+                if lower_rest.startswith(flag) and (
+                    not tail or tail.isspace() or tail == ":"
+                ):
+                    rest = rest[len(flag):].lstrip()
+                    if val[0] == "context":
+                        context = val[1]
+                    else:
+                        wait = val[1]
+                    consumed = True
+                    break
+            if not consumed:
                 break
         # Split label from prompt on the first `:`. Empty label is allowed.
         label = ""
@@ -93,6 +114,7 @@ def parse_chat_input(text: str) -> dict:
             "label": label,
             "prompt": prompt,
             "context": context,
+            "wait": wait,
             "raw": text,
         }
 
