@@ -161,6 +161,28 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
         <div className="attach-card-meta">
           <div className="attach-card-label">
             {labelKind}: <span className="attach-card-source">{sourceName}</span>
+            {attach.status && attach.status !== "completed" ? (
+              <span
+                className={`attach-card-status-pill attach-card-status-${attach.status}`}
+                title={
+                  attach.status === "running"
+                    ? "Sub-agent is still running"
+                    : attach.status === "errored"
+                      ? "Sub-task errored"
+                      : attach.status === "cancelled"
+                        ? "Sub-task cancelled"
+                        : attach.status === "pending" || attach.status === "queued"
+                          ? "Sub-task is waiting to start"
+                          : ""
+                }
+              >
+                {attach.status === "running" || attach.status === "pending"
+                  || attach.status === "queued" ? (
+                  <span className="attach-card-status-dot" />
+                ) : null}
+                {attach.status}
+              </span>
+            ) : null}
           </div>
           <div className="attach-card-sub" title={targetHead || targetSessionId}>
             {subtitle}

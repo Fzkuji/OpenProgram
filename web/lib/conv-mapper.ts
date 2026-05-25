@@ -75,6 +75,16 @@ export interface AttachMeta {
   embed_count?: number;
   /** Token sum across the source commit's items. */
   embed_tokens?: number;
+  /** Async-task lifecycle status, written by the runner as the
+   *  spawned sub-agent moves through pending → running →
+   *  completed / errored / cancelled. The card uses it to show a
+   *  live status pill so the user can tell whether the embedded
+   *  content is still being filled in. */
+  status?: "pending" | "queued" | "running" | "completed"
+    | "errored" | "cancelled";
+  /** Cross-reference to the Task entity that produced this attach
+   *  (when one exists — manual attaches don't have a task). */
+  task_id?: string;
 }
 
 function _readAttach(m: LegacyMsg): AttachMeta | undefined {

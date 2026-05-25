@@ -1322,6 +1322,48 @@
   font-weight: 500;
   font-size: 13px;
   color: var(--text-bright);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* Live status pill — shows running / errored / cancelled etc.
+   Hidden when status is "completed" or absent. */
+.attach-card-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+}
+.attach-card-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: attachPulse 1.2s ease-in-out infinite;
+}
+.attach-card-status-pending,
+.attach-card-status-queued {
+  background: rgba(160, 160, 160, 0.2);
+  color: var(--text-secondary);
+}
+.attach-card-status-running {
+  background: rgba(108, 180, 255, 0.18);
+  color: var(--accent-blue, #6cb4ff);
+}
+.attach-card-status-errored {
+  background: rgba(229, 83, 75, 0.18);
+  color: var(--accent-red, #e5534b);
+}
+.attach-card-status-cancelled {
+  background: rgba(160, 160, 160, 0.18);
+  color: var(--text-muted);
 }
 .attach-card-sub {
   font-family: var(--font-mono);

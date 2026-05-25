@@ -103,6 +103,15 @@ export interface ChatMsg {
     /** Sum of source commit's item tokens — companion to embed_count
      *  for the same preview line. */
     embed_tokens?: number;
+    /** Async-task lifecycle status. Set when the attach was written
+     *  by a /task --async / TaskRunner spawn — moves through pending
+     *  → running → completed / errored / cancelled. Drives the
+     *  status pill in the attach card so the user can see whether
+     *  the embedded content is finalised. */
+    status?: "pending" | "queued" | "running" | "completed"
+      | "errored" | "cancelled";
+    /** Cross-reference to the Task entity that owns this attach. */
+    task_id?: string;
   };
   /** Which agent produced this turn. Same-session multi-agent: a
    *  conversation can have N agents writing branches in the same
