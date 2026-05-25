@@ -42,7 +42,7 @@ export function DiscoverySources() {
     discoverySources, discoverySuggested,
     fetchDiscoverySources, fetchDiscoverySuggested,
     addDiscoverySource, removeDiscoverySource,
-    browseDiscovery, installFromDiscovery, pullDiscovery,
+    browseDiscovery, installFromDiscovery,
   } = useSkills();
 
   const [newUrl, setNewUrl] = useState("");
@@ -169,14 +169,44 @@ export function DiscoverySources() {
     }
   }
 
-  async function handlePullAll(source: Source) {
+  async function handleUpdateOutdated(source: Source) {
+    const cat = catalogs[source.url];
+    if (!cat?.outdated || cat.outdated.size === 0) return;
     setBulkUrl(source.url);
     setStatus(null);
+    let ok = 0;
+    let fail = 0;
     try {
-      const pulled = await pullDiscovery(source.url, source.slug);
-      setStatus(`Installed ${pulled.length} skill${pulled.length === 1 ? "" : "s"} into ${source.slug}/`);
-    } catch (e) {
-      setStatus(`Failed: ${String(e)}`);
+      for (const fullName of Array.from(cat.outdated)) {
+        const short = fullName.includes("/")
+          ? fullName.slice(fullName.indexOf("/") + 1)
+          : fullName;
+        try {
+          await installFromDiscovery(source.url, short, source.slug);
+          ok += 1;
+        } catch {
+          fail += 1;
+        }
+      }
+      setStatus(
+        `Updated ${ok}/${cat.outdated.size} outdated skill${ok === 1 ? "" : "s"}` +
+          (fail ? ` (${fail} failed)` : ""),
+      );
+      // Refresh diff so the badge counts catch up.
+      try {
+        const r = await fetch(
+          `/api/skills/discovery/diff?url=${encodeURIComponent(source.url)}`,
+        );
+        if (r.ok) {
+          const d: { outdated?: string[] } = await r.json();
+          setCatalogs((c) => ({
+            ...c,
+            [source.url]: { ...c[source.url], outdated: new Set(d.outdated || []) },
+          }));
+        }
+      } catch {
+        /* ignore */
+      }
     } finally {
       setBulkUrl(null);
     }
@@ -195,8 +225,6 @@ export function DiscoverySources() {
             const cat = catalogs[s.url];
             const installed = installedCounts[s.url] || 0;
             const catalogTotal = cat?.entries?.length;
-            const allInstalled =
-              catalogTotal !== undefined && installed >= catalogTotal && catalogTotal > 0;
             const outdatedCount = cat?.outdated?.size ?? 0;
             return (
               <li key={s.url} className="rounded-md border border-[var(--border)] overflow-hidden">
@@ -245,18 +273,23 @@ export function DiscoverySources() {
                     className="flex flex-col gap-1 items-end shrink-0"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Button size="sm" variant={installed > 0 ? "outline" : "default"}
-                      onClick={() => handlePullAll(s)} disabled={bulkUrl === s.url}>
-                      {bulkUrl === s.url
-                        ? "Installing…"
-                        : allInstalled
-                          ? "Reinstall all"
-                          : catalogTotal !== undefined && installed < catalogTotal
-                            ? `Install ${catalogTotal - installed} missing`
-                            : installed > 0
-                              ? "Reinstall"
-                              : "Install all"}
-                    </Button>
+                    {outdatedCount > 0 && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleUpdateOutdated(s)}
+                        disabled={bulkUrl === s.url}
+                        title={`Re-pull ${outdatedCount} skill${outdatedCount === 1 ? "" : "s"} whose upstream SKILL.md changed`}
+                      >
+                        {bulkUrl === s.url
+                          ? "Updating…"
+                          : `Update ${outdatedCount} outdated`}
+                      </Button>
+                    )}
+                    {installed > 0 && outdatedCount === 0 && (
+                      <span className="text-[11px] text-[var(--text-tertiary)]" title="All installed skills match upstream">
+                        up to date
+                      </span>
+                    )}
                     {s.origin === "custom" && (
                       <Button size="sm" variant="destructive"
                         onClick={() => removeDiscoverySource(s.url)}>Remove source</Button>
