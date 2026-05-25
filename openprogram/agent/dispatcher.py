@@ -241,6 +241,15 @@ def process_user_turn(
         # below — the pair lets the UI tag both halves of a turn.
         "agent_id": req.agent_id,
     }
+    # System-internal triggers — task_followup auto-notification,
+    # merge prompt assembly — write a user-role node so the LLM
+    # treats it as a turn, but they're NOT chats the human typed.
+    # Mark display="runtime" so the chat panel renders them as a
+    # quiet system marker (transparent surface, robot avatar) rather
+    # than as a regular blue You-bubble that makes it look like the
+    # user sent two messages in a row.
+    if req.source in {"task_followup", "merge_turn"}:
+        user_msg["display"] = "runtime"
     # Persist a lightweight attachment manifest (count + media types)
     # so /resume + the search picker can show "[2 images]" badges
     # without re-loading the base64 blobs. Full data still goes to
