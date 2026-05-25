@@ -52,7 +52,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     stdio plain.
     """
     bypass_words = {
-        "agents", "sessions", "channels", "config", "programs", "skills",
+        "agents", "sessions", "channels", "config", "programs", "skills", "plugins",
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp",
     }
@@ -171,10 +171,55 @@ def main():
     p_sk_doc = skills_sub.add_parser("doctor", help="Scan skill dirs for problems")
     p_sk_doc.add_argument("--dir", "-d", action="append", default=None)
     p_sk_inst = skills_sub.add_parser("install",
-        help="Install skills into Claude Code / Gemini CLI")
+        help="Install a skill from ClawHub or a discovery source")
+    p_sk_inst.add_argument("spec", nargs="?", default=None,
+        help="Skill slug (default source: ClawHub). Or 'clawhub:<slug>' / 'github:owner/repo' prefix form.")
+    p_sk_inst.add_argument("--source", "-s", default=None,
+        help="Discovery source URL (clawhub://, https://github.com/..., or JSON index)")
     p_sk_inst.add_argument("--target", "-t", default=None,
         choices=["claude", "gemini"],
-        help="Target CLI (default: auto-detect)")
+        help="(Legacy) install local skills/ dir into Claude Code / Gemini CLI")
+
+    p_sk_search = skills_sub.add_parser("search",
+        help="Search for skills in a discovery source (default: ClawHub)")
+    p_sk_search.add_argument("query", help="Query string")
+    p_sk_search.add_argument("--source", "-s", default=None)
+    p_sk_search.add_argument("--limit", "-n", type=int, default=20)
+
+    p_sk_update = skills_sub.add_parser("update",
+        help="Re-pull outdated skills (compare local SKILL.md hash against upstream)")
+    p_sk_update.add_argument("name", nargs="?",
+        help="Skill name to update (omit when --all is set)")
+    p_sk_update.add_argument("--all", action="store_true",
+        help="Update every outdated skill across all registered sources")
+
+    p_sk_remove = skills_sub.add_parser("remove",
+        help="Delete an installed skill (project/user/remote-cache only)")
+    p_sk_remove.add_argument("name", help="Skill name")
+
+    # ---- plugins ----------------------------------------------------------
+    p_plugins = sub.add_parser("plugins", help="Manage installed plugins")
+    plugins_sub = p_plugins.add_subparsers(dest="plugins_verb", metavar="verb")
+    p_pl_list = plugins_sub.add_parser("list", help="List installed plugins")
+    p_pl_list.add_argument("--json", action="store_true", help="Emit JSON")
+    p_pl_srch = plugins_sub.add_parser("search",
+        help="Search configured marketplaces for plugins matching <query>")
+    p_pl_srch.add_argument("query")
+    p_pl_inst = plugins_sub.add_parser("install",
+        help="Install a plugin from pip / npm / git / path")
+    p_pl_inst.add_argument("source", choices=["pip", "npm", "git", "path"])
+    p_pl_inst.add_argument("spec", help="Package name / URL / absolute path")
+    p_pl_inst.add_argument("--ref", help="Git ref (branch/tag/sha) for source=git")
+    p_pl_un = plugins_sub.add_parser("uninstall", help="Remove an installed plugin")
+    p_pl_un.add_argument("name")
+    p_pl_up = plugins_sub.add_parser("update",
+        help="Re-install (upgrade) plugins from pip/npm")
+    p_pl_up.add_argument("name", nargs="?", help="Plugin name (omit when --all)")
+    p_pl_up.add_argument("--all", action="store_true")
+    p_pl_en = plugins_sub.add_parser("enable", help="Enable an installed plugin")
+    p_pl_en.add_argument("name")
+    p_pl_dis = plugins_sub.add_parser("disable", help="Disable a loaded plugin")
+    p_pl_dis.add_argument("name")
 
     # ---- sessions ---------------------------------------------------------
     p_sessions = sub.add_parser("sessions",
@@ -580,9 +625,43 @@ def main():
         elif verb == "doctor":
             sys.exit(_cmd_skills_doctor(args.dir))
         elif verb == "install":
-            _cmd_install_skills(args.target)
+            if args.spec:
+                sys.exit(_cmd_skills_install(args.spec, source=args.source))
+            else:
+                _cmd_install_skills(args.target)
+        elif verb == "search":
+            sys.exit(_cmd_skills_search(args.query, source=args.source, limit=args.limit))
+        elif verb == "update":
+            sys.exit(_cmd_skills_update(args.all, args.name))
+        elif verb == "remove":
+            sys.exit(_cmd_skills_remove(args.name))
         else:
             p_skills.print_help()
+        return
+
+    if args.command == "plugins":
+        from openprogram._cli_cmds.plugins import (
+            _cmd_plugins_list, _cmd_plugins_search, _cmd_plugins_install,
+            _cmd_plugins_uninstall, _cmd_plugins_update,
+            _cmd_plugins_enable, _cmd_plugins_disable,
+        )
+        verb = getattr(args, "plugins_verb", None)
+        if verb == "list":
+            sys.exit(_cmd_plugins_list(args.json))
+        elif verb == "search":
+            sys.exit(_cmd_plugins_search(args.query))
+        elif verb == "install":
+            sys.exit(_cmd_plugins_install(args.source, args.spec, ref=args.ref))
+        elif verb == "uninstall":
+            sys.exit(_cmd_plugins_uninstall(args.name))
+        elif verb == "update":
+            sys.exit(_cmd_plugins_update(args.all, args.name))
+        elif verb == "enable":
+            sys.exit(_cmd_plugins_enable(args.name))
+        elif verb == "disable":
+            sys.exit(_cmd_plugins_disable(args.name))
+        else:
+            p_plugins.print_help()
         return
 
     if args.command == "sessions":
@@ -957,6 +1036,10 @@ from openprogram._cli_cmds.skills import (  # noqa: E402,F401
     _cmd_skills_list,
     _cmd_skills_doctor,
     _cmd_install_skills,
+    _cmd_skills_search,
+    _cmd_skills_install,
+    _cmd_skills_update,
+    _cmd_skills_remove,
 )
 from openprogram._cli_cmds.browser import (  # noqa: E402,F401
     _python_pkg_present,

@@ -5,36 +5,226 @@ import os
 import sys
 
 
-def _cmd_skills_list(override_dirs, as_json: bool) -> int:
-    """Print skills the runtime would discover, in override-precedence order."""
-    from openprogram.agentic_programming.skills import default_skill_dirs, load_skills
+# ---------------------------------------------------------------------------
+# Registry-driven verbs: search / install / update / remove
+# ---------------------------------------------------------------------------
+# These talk to ``openprogram.skills`` (the new hierarchical loader and
+# ClawHub-aware discovery) directly, no web server needed.
 
-    dirs = override_dirs or default_skill_dirs()
-    skills = load_skills(dirs)
+
+def _cmd_skills_search(query: str, source: str | None = None, limit: int = 20) -> int:
+    """Search for skills. Default source = ClawHub registry; ``--source`` can
+    point at any URL the discovery module recognises (github://, https://github.com/...,
+    JSON index URL, clawhub://, https://clawhub.ai/skills/<slug>)."""
+    from openprogram.skills.discovery import browse
+
+    url = source or "clawhub://"
+    if url == "clawhub://" and query.strip():
+        # ClawHub has a real /api/v1/search endpoint — use the
+        # ``clawhub://?q=...`` form via _browse_clawhub by passing a
+        # synthetic URL. Simpler: call browse with clawhub:// then
+        # filter locally on description, because browse() returns
+        # the trending list. To use real registry search we'd need to
+        # extend the URL grammar — keep it simple, use substring filter.
+        entries = browse(url)
+        q = query.lower()
+        entries = [
+            e for e in entries
+            if q in e["name"].lower() or q in (e.get("description") or "").lower()
+        ][:limit]
+    else:
+        entries = browse(url)[:limit]
+
+    if not entries:
+        print("(no matches)")
+        return 0
+    for e in entries:
+        name = e["name"]
+        desc = (e.get("description") or "").strip().replace("\n", " ")
+        if len(desc) > 80:
+            desc = desc[:77] + "…"
+        print(f"  {name:30s} {desc}")
+    return 0
+
+
+def _cmd_skills_install(spec: str, source: str | None = None) -> int:
+    """Install a single skill. ``spec`` is the skill slug — interpreted
+    relative to ``source`` (default ClawHub).
+
+    Examples::
+
+        openprogram skills install weather
+        openprogram skills install pdf --source https://github.com/anthropics/skills/tree/main/skills
+        openprogram skills install clawhub:weather   # explicit prefix form
+    """
+    from openprogram.skills.discovery import install_one
+
+    src = source
+    name = spec
+    if ":" in spec and src is None:
+        prefix, _, slug = spec.partition(":")
+        if prefix == "clawhub":
+            src, name = "clawhub://", slug
+        elif prefix == "github" and slug:
+            src, name = "github://" + slug, slug
+    if src is None:
+        src = "clawhub://"
+    result = install_one(src, name)
+    if result is None:
+        print(f"Error: {name} not found in {src}", file=sys.stderr)
+        return 1
+    print(f"Installed: {result}")
+    return 0
+
+
+def _cmd_skills_update(all_flag: bool, name: str | None) -> int:
+    """Re-pull outdated remote-cache skills.
+
+    Without ``--all`` a name argument is required. With ``--all`` we
+    walk every previously-registered discovery source and re-pull any
+    skills whose local SKILL.md hash drifted from upstream.
+    """
+    from openprogram.skills.discovery import diff, install_one
+    from openprogram.skills.loader import list_skills
+    from openprogram.webui.routes.skills import (
+        _load_discovery_sources, DEFAULT_DISCOVERY_SUGGESTIONS,
+    )
+
+    if not all_flag and not name:
+        print("Error: pass --all or a skill name", file=sys.stderr)
+        return 2
+
+    if name and not all_flag:
+        # Single-skill update: find which source it came from by slug
+        # prefix (the namespace) then install_one re-pulls.
+        installed = next((s for s in list_skills() if s.name == name), None)
+        if installed is None:
+            print(f"Error: skill not installed: {name}", file=sys.stderr)
+            return 1
+        namespace = installed.path_segments[0] if "/" in installed.name else None
+        # Find the source whose slug matches this namespace.
+        sources = [s["url"] for s in DEFAULT_DISCOVERY_SUGGESTIONS
+                   if s.get("slug") == namespace]
+        sources += _load_discovery_sources()
+        for src in sources:
+            short = name.split("/", 1)[-1] if "/" in name else name
+            try:
+                r = install_one(src, short)
+                if r:
+                    print(f"Updated: {r}")
+                    return 0
+            except Exception:
+                continue
+        print(f"Error: could not resolve upstream for {name}", file=sys.stderr)
+        return 1
+
+    # --all: walk every source, find outdated, re-install each.
+    sources: list[tuple[str, str | None]] = [
+        (s["url"], s.get("slug")) for s in DEFAULT_DISCOVERY_SUGGESTIONS
+    ]
+    for url in _load_discovery_sources():
+        if not any(u == url for u, _ in sources):
+            sources.append((url, None))
+
+    total = 0
+    for url, slug in sources:
+        try:
+            d = diff(url, namespace=slug)
+        except Exception as e:
+            print(f"  [{url}] diff failed: {e}", file=sys.stderr)
+            continue
+        outdated = d.get("outdated", [])
+        if not outdated:
+            continue
+        print(f"  [{url}] {len(outdated)} outdated")
+        for full_name in outdated:
+            short = full_name.split("/", 1)[-1] if "/" in full_name else full_name
+            try:
+                r = install_one(url, short, namespace=slug)
+                if r:
+                    print(f"    updated: {r}")
+                    total += 1
+            except Exception as e:
+                print(f"    fail {full_name}: {e}", file=sys.stderr)
+    print(f"\nUpdated {total} skill(s)")
+    return 0
+
+
+def _cmd_skills_remove(name: str) -> int:
+    """Delete an installed skill — only allowed for project/user/remote-cache
+    sources (bundled and plugin-provided skills are read-only)."""
+    import shutil
+    from openprogram.skills.loader import get_skill
+
+    s = get_skill(name)
+    if s is None:
+        print(f"Error: skill not found: {name}", file=sys.stderr)
+        return 1
+    if s.source not in ("project", "user", "remote-cache"):
+        print(f"Error: cannot remove skill from source {s.source!r}", file=sys.stderr)
+        return 1
+    skill_dir = os.path.dirname(s.path)
+    shutil.rmtree(skill_dir, ignore_errors=True)
+    print(f"Removed: {name}  ({skill_dir})")
+    return 0
+
+
+def _cmd_skills_list(override_dirs, as_json: bool) -> int:
+    """Print skills the runtime would discover from all five sources
+    (bundled / user / project / plugin / remote-cache). When
+    ``override_dirs`` is set we fall back to the legacy flat loader
+    so callers passing ``--dir`` still work."""
+    if override_dirs:
+        # legacy path — flat dirs only
+        from openprogram.agentic_programming.skills import load_skills
+        skills = load_skills(override_dirs)
+        if as_json:
+            import json as _json
+            print(_json.dumps([{
+                "name": s.name,
+                "description": s.description,
+                "slug": s.slug,
+                "file_path": s.file_path,
+            } for s in skills], indent=2))
+            return 0
+        print(f"Discovered {len(skills)} skill(s):\n")
+        for s in skills:
+            print(f"  {s.name}  ({s.slug})")
+            print(f"    {s.description[:100]}")
+        return 0
+
+    from openprogram.skills.loader import list_skills
+    skills = list_skills()
 
     if as_json:
         import json as _json
         print(_json.dumps([{
             "name": s.name,
             "description": s.description,
-            "slug": s.slug,
-            "file_path": s.file_path,
-            "base_dir": s.base_dir,
+            "category": s.category,
+            "source": s.source,
+            "path": s.path,
+            "version": s.version,
         } for s in skills], indent=2))
         return 0
 
-    print(f"Search dirs (override order):")
-    for d in dirs:
-        exists = "✓" if os.path.isdir(d) else "✗"
-        print(f"  {exists}  {d}")
     if not skills:
-        print("\n(no skills discovered)")
+        print("(no skills discovered)")
         return 0
-    print(f"\nDiscovered {len(skills)} skill(s):\n")
+    # Group by source.
+    by_source: dict[str, list] = {}
     for s in skills:
-        print(f"  {s.name}  ({s.slug})")
-        print(f"    {s.description[:100]}")
-        print(f"    {s.file_path}")
+        by_source.setdefault(s.source, []).append(s)
+    print(f"Discovered {len(skills)} skill(s) across {len(by_source)} source(s):\n")
+    for source in sorted(by_source):
+        rows = by_source[source]
+        print(f"  [{source}] {len(rows)} skill(s)")
+        for s in rows:
+            desc = (s.description or "").strip().replace("\n", " ")
+            if len(desc) > 70:
+                desc = desc[:67] + "…"
+            print(f"    {s.name:40s} {desc}")
+        print()
     return 0
 
 
