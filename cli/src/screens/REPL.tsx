@@ -438,6 +438,10 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           history={history}
           initialDraft={promptDraft}
           onDraftApplied={() => setPromptDraft(undefined)}
+          // Per-session draft persistence keyed by the active
+          // conversation id (or the "__new__" slot before one
+          // exists). See cli/src/utils/draftStore.ts.
+          draftKey={conversationId ?? null}
           onContextSearch={(draft) => {
             setSearchBaseDraft(draft);
             setContextSearchQuery('');

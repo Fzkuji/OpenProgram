@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Box, Text, useDeclaredCursor, useInput } from '../../runtime/index';
 import { PromptInputHelpMenu } from './PromptInputHelpMenu.js';
 import { FileMenu } from './FileMenu.js';
@@ -7,6 +7,7 @@ import { fileCompletions, findAtToken, FileMatch } from '../../utils/fileComplet
 import { usePanelWidth } from '../../utils/useTerminalWidth.js';
 import { useColors } from '../../theme/ThemeProvider.js';
 import { stringWidth } from '../../runtime/ink/stringWidth.js';
+import { clearDraft, getDraft, setDraft } from '../../utils/draftStore.js';
 
 export interface PromptInputProps {
   onSubmit: (text: string) => void;
@@ -20,6 +21,11 @@ export interface PromptInputProps {
   onDraftApplied?: () => void;
   /** Open cross-session context search. Receives the current draft. */
   onContextSearch?: (draft: string) => void;
+  /** Session id used as the persistence key for per-session drafts.
+   *  ``null`` / ``undefined`` falls back to a "__new__" slot so the
+   *  draft typed before a session exists still persists. Match what
+   *  the web composer does in ``session-store.ts``. */
+  draftKey?: string | null;
 }
 
 const filterCommands = (filter: string): SlashCommand[] => {
@@ -115,6 +121,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   initialDraft,
   onDraftApplied,
   onContextSearch,
+  draftKey,
 }) => {
   const colors = useColors();
   const [value, setValue] = useState('');
@@ -170,12 +177,41 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     onDraftApplied?.();
   }, [initialDraft, onDraftApplied]);
 
+  // Per-session draft persistence. On draftKey change (session
+  // switch) we hydrate the textarea with whatever the user left
+  // there last time. On every value change we write back through a
+  // debounce so we don't hammer the disk on every keystroke. The
+  // initial-load effect skips writes via the ``hydratedRef`` guard
+  // so a stale ref doesn't immediately re-persist the hydrated
+  // value as if the user had just typed it.
+  const hydratedRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const loaded = getDraft(draftKey);
+    hydratedRef.current = draftKey;
+    setValue(loaded);
+    setCursor(loaded.length);
+    setHistoryIndex(-1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+  useEffect(() => {
+    // Don't write until hydration for the current key has settled —
+    // the first render after a draftKey switch still has the old
+    // value; the hydrate-effect above will replace it next tick.
+    if (hydratedRef.current !== draftKey) return;
+    const t = setTimeout(() => setDraft(draftKey, value), 250);
+    return () => clearTimeout(t);
+  }, [value, draftKey]);
+
   const submitText = (text: string) => {
     if (busy || !text.trim()) return;
     setValue('');
     setCursor(0);
     setMenuIndex(0);
     setHistoryIndex(-1);
+    // Submitted text leaves the draft slot empty so reopening the
+    // session lands on a clean prompt instead of replaying the last
+    // message.
+    clearDraft(draftKey);
     onSubmit(text);
   };
 
