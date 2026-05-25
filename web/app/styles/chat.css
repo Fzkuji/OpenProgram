@@ -439,16 +439,25 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Three message roles render with three distinct surfaces so the
+   eye can sort them at a glance:
+   - user      → ``--user-msg-bg``       (slightly warmer/darker tint)
+   - assistant → ``--assistant-msg-bg``  (slightly cooler tint)
+   - system    → transparent (chat background bleed-through;
+                  these are typically attach pointers / runtime
+                  blocks / tool-call cards rendered as standalone
+                  cards with their own border, NOT as message
+                  bubbles, so they read as overlays). */
 .message.user {
   background: var(--user-msg-bg);
 }
 
 .message.assistant {
-  background: var(--bg-primary);
+  background: var(--assistant-msg-bg);
 }
 
 .message.system {
-  background: var(--bg-primary);
+  background: transparent;
 }
 
 .message-header {

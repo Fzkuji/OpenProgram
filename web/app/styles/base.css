@@ -88,8 +88,12 @@
   --nav-color: #c3c2b7;       /* nav default — same as text-primary in dark */
   --nav-color-hover: #f8f8f6; /* nav hover — same as text-bright */
   --bg-selected: #4a4a47;     /* selection bg with clear contrast from bg-primary */
-  --user-msg-bg: #2a2a28;
-  --assistant-msg-bg: #232322;
+  /* Two distinguishable tints over `--bg-primary` (#1f1f1e):
+     user goes warm (greenish-grey, matches the chat agent avatar),
+     assistant goes cool (slate). Both stay subtle so the chat reads
+     calm but the two surfaces are immediately tellable apart. */
+  --user-msg-bg: #2e2f29;
+  --assistant-msg-bg: #25282e;
   --shadow: 0 2px 8px rgba(0,0,0,0.3);
   /* Collapsed `off` effort-pill chip. Lighter than --bg-hover so it
      reads as a distinct chip on the dark composer rather than blending
@@ -115,8 +119,9 @@
   --nav-color: #73726c;       /* lighter than text-primary so light-mode icons aren't black */
   --nav-color-hover: #141413; /* same as text-bright */
   --bg-selected: #d0cec0;     /* selection bg with clear contrast from bg-primary */
-  --user-msg-bg: #e8e6dc;
-  --assistant-msg-bg: #f0eee6;
+  /* Light theme: same warm/cool split as dark, but lighter. */
+  --user-msg-bg: #ece9d8;
+  --assistant-msg-bg: #e2e7f0;
   --shadow: 0 2px 8px rgba(0,0,0,0.08);
   /* Collapsed `off` effort-pill chip — light-theme counterpart. */
   --effort-off-bg: #e8e6dc;
