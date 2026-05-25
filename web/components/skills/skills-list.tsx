@@ -62,14 +62,23 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
       className={
         "group flex items-center gap-2 rounded-md border py-1.5 pr-3 cursor-pointer transition-colors " +
         (active
-          ? "border-primary bg-[var(--bg-selected)]"
+          ? "border-primary bg-[var(--bg-selected)] text-nav-color-hover"
           : "border-transparent hover:bg-bg-hover hover:text-nav-color-hover")
       }
       title={`${skill.description || skill.name}\n— ${skill.source}`}
     >
       <span className="text-[var(--text-tertiary)] shrink-0" aria-hidden>◦</span>
       <div className="flex-1 min-w-0">
-        <span className="text-nav-color group-hover:text-nav-color-hover truncate block">{skill.leaf || skill.name}</span>
+        <span
+          className={
+            "truncate block " +
+            (active
+              ? "text-nav-color-hover font-medium"
+              : "text-nav-color group-hover:text-nav-color-hover")
+          }
+        >
+          {skill.leaf || skill.name}
+        </span>
         {skill.description && (
           <p className="text-xs text-[var(--text-secondary)] truncate">{skill.description}</p>
         )}
