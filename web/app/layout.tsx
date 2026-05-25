@@ -18,6 +18,12 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "OpenProgram",
   description: "Agentic programming runtime",
+  // Explicit icon path keeps browsers from requesting /favicon.ico
+  // (which would 404). app/icon.svg + this metadata combine to set
+  // <link rel="icon" href="/icon.svg"> in the rendered <head>.
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
