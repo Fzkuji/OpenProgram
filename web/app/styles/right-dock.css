@@ -595,3 +595,171 @@
   color: white;
 }
 .branches-merge-go:hover { filter: brightness(1.1); }
+
+
+/* ============ Worktrees panel ============
+   Mirrors `.branches-section` geometry — same outer padding, same
+   list cap, same row affordances — so the two sections feel like
+   one cohesive right-rail surface. Status pills are coloured per
+   WorktreeStatus enum (see openprogram/worktree/types.py):
+     active     → green
+     committing → amber (in-flight merge)
+     errored    → red
+     merged     → muted grey
+     discarded  → very low contrast (almost transparent)
+     kept       → blue-ish (detached but alive)                    */
+
+.worktrees-section {
+  flex-shrink: 0;
+  padding: 8px 0 8px;
+  border-top: 1px solid var(--border);
+}
+.worktrees-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 8px;
+  max-height: calc(96px * 3);   /* roughly 3 rows then scroll */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.worktree-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  font-size: 12px;
+  color: var(--text-primary);
+  transition: opacity 150ms ease-out;
+}
+.worktree-item.is-busy { opacity: 0.6; pointer-events: none; }
+
+.worktree-status-merged,
+.worktree-status-kept { opacity: 0.7; }
+.worktree-status-discarded { opacity: 0.45; }
+
+.worktree-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.worktree-item-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Status pill — small rounded label, colour by enum. */
+.worktree-status-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.worktree-status-pill-active {
+  background: rgba(62, 207, 142, 0.18);
+  color: #6cd9aa;
+}
+.worktree-status-pill-committing {
+  background: rgba(224, 176, 32, 0.18);
+  color: #e0c570;
+}
+.worktree-status-pill-errored {
+  background: rgba(224, 68, 90, 0.20);
+  color: #ff8094;
+}
+.worktree-status-pill-merged {
+  background: rgba(160, 160, 160, 0.18);
+  color: var(--text-secondary);
+}
+.worktree-status-pill-kept {
+  background: rgba(79, 140, 255, 0.18);
+  color: #8ab5ff;
+}
+.worktree-status-pill-discarded {
+  background: rgba(160, 160, 160, 0.10);
+  color: var(--text-muted);
+}
+
+.worktree-item-branch {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-bright);
+}
+.worktree-item-repo {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+.worktree-item-time {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.worktree-item-files {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.worktree-item-error {
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(224, 68, 90, 0.10);
+  border: 1px solid rgba(224, 68, 90, 0.30);
+  color: #ff8094;
+  font-size: 11px;
+  max-height: 60px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.worktree-item-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.worktree-item-actions-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+.worktree-btn {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 75ms, color 75ms, border-color 75ms;
+}
+.worktree-btn:hover { background: var(--bg-hover); color: var(--text-bright); }
+.worktree-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.worktree-btn-merge {
+  border-color: var(--accent-blue, #4f8ef7);
+  background: var(--accent-blue, #4f8ef7);
+  color: white;
+}
+.worktree-btn-merge:hover { filter: brightness(1.1); }
+.worktree-btn-discard:hover {
+  background: var(--accent-red);
+  border-color: var(--accent-red);
+  color: white;
+}

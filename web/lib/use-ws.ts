@@ -186,6 +186,39 @@ export function useWS(): void {
           }
           return true;
         }
+        case "worktree_status": {
+          // Worktree state-machine broadcast — emitted by
+          // WorktreeManager._transition. The right-rail
+          // WorktreesPanel listens for it and patches its local
+          // row list without an extra round-trip.
+          try {
+            window.dispatchEvent(
+              new CustomEvent("op:worktree-status", { detail: d }),
+            );
+          } catch {
+            /* defensive */
+          }
+          return true;
+        }
+        case "worktrees_list":
+        case "worktree":
+        case "merge_worktree_result":
+        case "discard_worktree_result":
+        case "keep_worktree_result": {
+          // Replies to the five worktree WS actions. Same pattern
+          // as the task replies — surface as a window event so the
+          // requesting panel can pick it up.
+          try {
+            window.dispatchEvent(
+              new CustomEvent("op:worktree-message", {
+                detail: { type: msg.type, data: d },
+              }),
+            );
+          } catch {
+            /* defensive */
+          }
+          return true;
+        }
         case "provider_info":
         case "provider_changed":
           w.updateProviderBadge?.(d);
