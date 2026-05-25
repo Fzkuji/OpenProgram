@@ -48,9 +48,22 @@ def dispatch_inbound(
     peer_id: str,
     user_text: str,
     user_display: str = "",
-) -> str:
-    """End-to-end inbound handling. Returns the assistant reply string
-    so the channel backend can forward it to the external user.
+    progress_stream: bool = False,
+) -> Optional[str]:
+    """End-to-end inbound handling.
+
+    ``progress_stream=False`` (default): 旧行为, 返回完整 assistant reply
+    字符串供 adapter 自己发. 调用方拿到字符串后用 platform SDK / outbound
+    发回去.
+
+    ``progress_stream=True``: 进入 streaming 模式. dispatch 内部会:
+       1. 先在目标 chat 发一条占位消息 "⏳ working...", 拿到 message_id
+       2. 接 dispatcher emit 的 stream envelope, 按 tool 事件实时 edit 占位
+          ("⚙ bash" → "✓ bash" → "⚙ read" → ...), 节流 1s 一次
+       3. 最终用完整 reply edit 占位 (超长则占位放第一段 + 尾段发新消息)
+       4. 返回 None 表示 adapter 不需要再发 reply
+    任何 streaming 步骤失败 (占位发不出 / 平台不支持 edit / WeChat) 都会
+    无声降级回非 streaming 行为, 返回 reply 字符串.
 
     Never raises into the channel's poll loop — any failure (no
     provider configured, runtime crash, etc.) is flattened into an
@@ -118,6 +131,48 @@ def dispatch_inbound(
     captured_user_id: list[str] = []
     captured_assistant_id: list[str] = []
 
+    # Progress-streaming state — 仅在 progress_stream=True 且占位发送成功
+    # 后激活. progress_handle 为 None 时所有 streaming-edit 逻辑跳过, 保持
+    # 旧行为.
+    progress_handle = None
+    progress_lines: list[str] = []
+    last_edit_ts: list[float] = [0.0]
+
+    if progress_stream:
+        try:
+            from openprogram.channels import _transport
+            from openprogram.channels.base import MessageHandle as _MH
+            _placeholder_mid = _transport.post_message(
+                channel, account_id, str(peer_id), "⏳ working...",
+            )
+            if _placeholder_mid:
+                _h = _MH(channel, account_id, str(peer_id), _placeholder_mid)
+                if _h.editable:
+                    progress_handle = _h
+                # 不 editable (WeChat sentinel 空字符串) 或 _placeholder_mid
+                # 是 None → 降级回非 streaming, 占位仍然发出去了但不参与
+                # 后续 edit. WeChat 在这种降级下用户看到的是 "⏳ working..."
+                # + 之后另一条完整 reply, 不完美但不出错.
+        except Exception:
+            progress_handle = None
+
+    def _maybe_edit(text: str, *, force: bool = False) -> None:
+        """节流的 progress edit. 至少 1 秒间隔, force=True 跳过节流."""
+        if progress_handle is None:
+            return
+        now = time.time()
+        if not force and now - last_edit_ts[0] < 1.0:
+            return
+        last_edit_ts[0] = now
+        try:
+            from openprogram.channels import _transport
+            _transport.patch_message(
+                progress_handle.platform, progress_handle.account_id,
+                progress_handle.target, progress_handle.message_id, text,
+            )
+        except Exception:
+            pass
+
     def _on_event(env: dict) -> None:
         # Forward streaming events to any connected webui clients so
         # an attached TUI sees the channel reply in real time.
@@ -133,6 +188,27 @@ def dispatch_inbound(
             if data.get("msg_id"):
                 captured_user_id.append(str(data["msg_id"]))
 
+        # Progress streaming: 按 tool 边界 edit 占位消息.
+        if progress_handle is None:
+            return
+        data = env.get("data") or {}
+        ev = data.get("event") or {}
+        ev_type = ev.get("type")
+        if ev_type == "tool_use":
+            tool_name = ev.get("tool") or "?"
+            progress_lines.append(f"⚙ {tool_name}")
+            _maybe_edit("\n".join(progress_lines))
+        elif ev_type == "tool_result":
+            tool_name = ev.get("tool") or "?"
+            is_err = bool(ev.get("is_error"))
+            marker = "✗" if is_err else "✓"
+            # 把最近一个 "⚙ {tool_name}" 改成 "✓/✗ {tool_name}"
+            for i in range(len(progress_lines) - 1, -1, -1):
+                if progress_lines[i] == f"⚙ {tool_name}":
+                    progress_lines[i] = f"{marker} {tool_name}"
+                    break
+            _maybe_edit("\n".join(progress_lines))
+
     req = TurnRequest(
         session_id=session_key,
         user_text=user_text,
@@ -147,7 +223,13 @@ def dispatch_inbound(
     try:
         result = process_user_turn(req, on_event=_on_event)
     except Exception as e:  # noqa: BLE001
-        return f"[error] {type(e).__name__}: {e}"
+        err_text = f"[error] {type(e).__name__}: {e}"
+        if progress_handle is not None:
+            # 把占位改成错误消息, adapter 不必再发. 用户看到的是单条带
+            # 错误的消息, 不会有 placeholder 残留.
+            _maybe_edit(err_text, force=True)
+            return None
+        return err_text
 
     reply_text = (result.final_text or "").strip() or "(empty reply)"
     user_msg_id = result.user_msg_id
@@ -183,6 +265,29 @@ def dispatch_inbound(
         refreshed.setdefault("_last_touched", time.time())
         _poke_live_webui(agent_id, session_key, refreshed,
                          default_db().get_messages(session_key))
+
+    # Progress streaming: 把占位消息 edit 成完整 reply, 然后返回 None
+    # 让 adapter 知道 reply 已经送达. reply 超长时占位放第一段, 余下用
+    # 新消息追加.
+    if progress_handle is not None:
+        from openprogram.channels._transport import MAX_CHARS as _MAX_CHARS
+        limit = _MAX_CHARS.get(channel, 1800)
+        if len(reply_text) <= limit:
+            _maybe_edit(reply_text, force=True)
+        else:
+            # 占位放前 (limit - 30) 字符 + 提示, 后段单独发新消息.
+            head = reply_text[: limit - 30]
+            tail = reply_text[limit - 30 :]
+            _maybe_edit(head + "\n... (continued ↓)", force=True)
+            try:
+                from openprogram.channels import _transport
+                _transport.post_message(
+                    channel, account_id, str(peer_id), tail,
+                )
+            except Exception:
+                pass
+        return None
+
     return reply_text
 
 

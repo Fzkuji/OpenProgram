@@ -107,5 +107,10 @@ class TelegramChannel(Channel):
             peer_id=str(chat_id),
             user_text=text,
             user_display=who,
+            progress_stream=True,
         )
-        _send("telegram", self.account_id, str(chat_id), reply_text)
+        # progress_stream=True 时 dispatch_inbound 内部已经把 reply edit
+        # 进占位消息, 返回 None 表示无需再发. 占位发送失败 / 任何降级路径
+        # 会返回 reply_text 字符串, 走旧 _send 路径.
+        if reply_text is not None:
+            _send("telegram", self.account_id, str(chat_id), reply_text)
