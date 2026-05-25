@@ -113,6 +113,13 @@ class Task:
     # auto-discard the worktree when the task is cancelled.
     worktree_id: Optional[str] = None
 
+    # True ⇒ the caller is blocking on this task (sync /task) — the
+    # runner doesn't need to nudge anyone when it finishes, the
+    # caller is already waiting. False ⇒ async — runner auto-dispatches
+    # a follow-up LLM turn on the parent session so the agent that
+    # spawned the task actually finds out it completed.
+    wait: bool = True
+
     status: TaskStatus = TaskStatus.PENDING
     # Timestamps (float epoch seconds, None if not yet reached)
     created_at: float = field(default_factory=time.time)

@@ -173,6 +173,7 @@ class TaskRunner:
         attach_pointer_id: Optional[str] = None,
         target_branch_head_id: Optional[str] = None,
         worktree_id: Optional[str] = None,
+        wait: bool = True,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
 
@@ -194,6 +195,7 @@ class TaskRunner:
             attach_pointer_id=attach_pointer_id,
             target_branch_head_id=target_branch_head_id,
             worktree_id=worktree_id,
+            wait=wait,
             status=TaskStatus.PENDING,
             created_at=time.time(),
         )
@@ -520,6 +522,18 @@ class TaskRunner:
             if updated is not None:
                 _broadcast_task_status(updated)
                 self._update_attach_card(updated)
+                # Auto-followup: when an async task completes (or
+                # errors / is cancelled), nobody is listening unless
+                # we explicitly nudge the caller's session. Fire a
+                # follow-up LLM turn that says "task X is done" — the
+                # next turn's context will include the attach pointer
+                # the runner just wrote, so the agent naturally sees
+                # the sub-agent's output and can react.
+                #
+                # Skip when wait=True (sync path doesn't need it —
+                # the caller is already blocked on the result).
+                if new_status == TaskStatus.COMPLETED and not updated.wait:
+                    self._dispatch_followup(updated)
             # Tell tail clients the session changed so attach card
             # picks up the new head / text.
             _broadcast_session_reload(session_id, reason=f"task_{new_status.value}")
@@ -673,6 +687,45 @@ class TaskRunner:
                 pass
         except Exception:
             pass
+
+    def _dispatch_followup(self, task: Task) -> None:
+        """Auto-followup: async task finished, nobody's listening on
+        the caller session — fire a synthetic user-role turn that
+        prompts the parent agent to react to the result.
+
+        The attach pointer the runner just wrote lives in the chain
+        already, so the next turn's context-commit generator will
+        expand it as ``[Attached from branch "X"]:`` items and the
+        LLM sees the sub-agent's output naturally.
+
+        Runs on a daemon thread so the runner worker doesn't block.
+        """
+        if not task.parent_session_id:
+            return
+        label = task.label or task.subject or task.id[:8]
+
+        def _go():
+            try:
+                from openprogram.agent.dispatcher import (
+                    TurnRequest, process_user_turn,
+                )
+                req = TurnRequest(
+                    session_id=task.parent_session_id,
+                    user_text=(
+                        f"[System] Sub-task **{label}** completed. "
+                        f"The output is attached above. "
+                        f"Review it and continue."
+                    ),
+                    agent_id=task.agent_id or "main",
+                    source="task_followup",
+                )
+                process_user_turn(req)
+            except Exception:
+                # Best-effort — don't blow up the runner if the
+                # caller session is gone / dispatcher errors.
+                pass
+
+        threading.Thread(target=_go, daemon=True).start()
 
     def _schedule_force_cancel(self, session_id: str, task_id: str) -> None:
         """Watchdog: if the worker doesn't honour cancel within

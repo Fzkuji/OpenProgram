@@ -142,4 +142,5 @@ def run_agent_turn_async(
         label=label,
         attach_pointer_id=attach_pointer_id,
         target_branch_head_id=target_branch_head_id,
+        wait=False,
     )
