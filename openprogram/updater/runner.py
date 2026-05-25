@@ -134,10 +134,9 @@ def check_for_update(*, force: bool = False) -> Optional[UpdateInfo]:
         )
 
     if method == InstallMethod.PIP_WHEEL:
-        # OpenProgram is not on PyPI yet. When it is, this branch will
-        # query https://pypi.org/pypi/openprogram/json and compare
-        # versions, then run `pip install --upgrade openprogram`.
-        return None
+        info = _check_pip()
+        _write_last_check(now)
+        return info
 
     return None
 
@@ -153,6 +152,13 @@ def apply_update(info: UpdateInfo) -> tuple[bool, str]:
     if info.method == InstallMethod.BINARY:
         from . import binary as _bin
         ok, msg = _bin.apply_update({"target": info.target})
+        if ok:
+            _write_staged_notice(info.target, info.summary)
+        return ok, msg
+
+    if info.method == InstallMethod.PIP_WHEEL:
+        from . import pip as _pip
+        ok, msg = _pip.apply()
         if ok:
             _write_staged_notice(info.target, info.summary)
         return ok, msg
@@ -252,3 +258,37 @@ def _apply_git() -> tuple[bool, str]:
     if not _git.working_tree_clean(repo):
         return False, "working tree dirty — skipping pull"
     return _git.pull(repo)
+
+
+# ── pip path ─────────────────────────────────────────────────────────────────
+
+
+def _check_pip() -> Optional[UpdateInfo]:
+    """Compare installed wheel version against PyPI ``info.version``.
+
+    Returns ``None`` when we can't read either side (no network, no
+    package metadata, etc.) — caller treats None as "no update info"
+    and proceeds normally.
+    """
+    from . import pip as _pip
+    current = _pip.installed_version()
+    if current is None:
+        return None
+    target = _pip.latest_pypi_version()
+    if target is None:
+        return None
+    if not _pip.is_newer(current, target):
+        return UpdateInfo(
+            method=InstallMethod.PIP_WHEEL,
+            available=False,
+            current=current,
+            target=current,
+            summary="up to date",
+        )
+    return UpdateInfo(
+        method=InstallMethod.PIP_WHEEL,
+        available=True,
+        current=current,
+        target=target,
+        summary=f"openprogram {target} available on PyPI",
+    )
