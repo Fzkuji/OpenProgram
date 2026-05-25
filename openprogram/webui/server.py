@@ -1232,6 +1232,10 @@ def create_app():
     from openprogram.webui.routes import misc as _routes_misc
     _routes_misc.register(app)
 
+    # /api/agents — agent list (used by settings/channels binding picker)
+    from openprogram.webui.routes import agents as _routes_agents
+    _routes_agents.register(app)
+
     # /api/channels/{platform}/{account_id}/status — adapter heartbeat
     from openprogram.webui.routes import channels as _routes_channels
     _routes_channels.register(app)
