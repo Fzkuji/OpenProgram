@@ -77,7 +77,50 @@ async def handle_chat(ws, cmd: dict):
                 from openprogram.skills.loader import (
                     AmbiguousSkillError, get_skill, resolve as _skill_resolve,
                 )
+                # Resolve the skill first so we have a stable object to
+                # gate on. The actual invoke (which writes a trace
+                # entry) only happens after the gate passes.
+                resolved = get_skill(skill_name)
+                if resolved is None:
+                    try:
+                        resolved = _skill_resolve(skill_name)
+                    except AmbiguousSkillError as e:
+                        raise e
+
+                # Agent-profile gating (mirrors how toolset / tools.disabled
+                # constrain the LLM's tool list — same shape, different
+                # field name on AgentSpec.skills).
+                gate_error: str | None = None
+                if resolved is not None:
+                    try:
+                        from openprogram.agents import manager as _A
+                        ag = _A.get(agent_id) if hasattr(_A, "get") else None
+                        prof = ag.to_dict().get("skills", {}) if ag else {}
+                        disabled = set(prof.get("disabled") or [])
+                        allowed = set(prof.get("allowed") or [])
+                        cats = set(prof.get("categories") or [])
+                        if resolved.name in disabled:
+                            gate_error = (
+                                f"Skill {resolved.name!r} is disabled for this "
+                                f"agent profile."
+                            )
+                        elif allowed and resolved.name not in allowed:
+                            gate_error = (
+                                f"Skill {resolved.name!r} is not in this "
+                                f"agent's allowed list."
+                            )
+                        elif cats and (resolved.category not in cats):
+                            gate_error = (
+                                f"Skill category {resolved.category!r} is not "
+                                f"permitted for this agent (allowed: "
+                                f"{', '.join(sorted(cats)) or 'none'})."
+                            )
+                    except Exception:
+                        pass
+
                 try:
+                    if gate_error:
+                        raise PermissionError(gate_error)
                     skill_md = _skill_invoke(skill_name)
                     activation = (
                         f"Activating skill: **{skill_name}**\n\n"
@@ -106,6 +149,11 @@ async def handle_chat(ws, cmd: dict):
                             # tools off; respect that and don't re-enable.
                     except Exception:
                         pass
+                except PermissionError as e:
+                    # Profile-level gate rejection — show the reason
+                    # back in chat so the user knows to adjust the
+                    # agent profile or pick a different skill.
+                    text = f"[skill blocked] {e}"
                 except AmbiguousSkillError as e:
                     text = (
                         f"Skill name {skill_name!r} is ambiguous. "
