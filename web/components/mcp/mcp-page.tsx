@@ -31,17 +31,26 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import styles from "./mcp-page.module.css";
 
+interface ServerAuthInfo {
+  kind: "none" | "bearer" | "oauth";
+  authenticated: boolean;
+}
 interface ServerStatus {
   name: string;
-  type: string;
-  command: string[];
-  env: Record<string, string>;
+  type: string;               // "local" | "http" | "sse"
   enabled: boolean;
   timeout_seconds: number;
   ready: boolean;
   error: string | null;
   tool_count: number;
   tools: string[];
+  // local
+  command?: string[];
+  env?: Record<string, string>;
+  // remote
+  url?: string;
+  headers?: Record<string, string>;
+  auth?: ServerAuthInfo;
 }
 interface ToolSchema {
   name: string;
@@ -196,8 +205,18 @@ export function McpPage() {
   function openEdit(s: ServerStatus) {
     setEditing({
       mode: "edit", name: s.name,
-      command: s.command.join(" "),
-      env: Object.entries(s.env).map(([k, v]) => `${k}=${v}`).join("\n"),
+      transport: (s.type as EditTarget["transport"]) || "local",
+      command: (s.command || []).join(" "),
+      env: Object.entries(s.env || {}).map(([k, v]) => `${k}=${v}`).join("\n"),
+      url: s.url || "",
+      headers: Object.entries(s.headers || {}).map(([k, v]) => `${k}: ${v}`).join("\n"),
+      authKind: s.auth?.kind || "none",
+      bearerToken: "",
+      oauthClientName: "OpenProgram",
+      oauthScope: "",
+      oauthClientId: "",
+      oauthClientSecret: "",
+      oauthRedirectPort: 0,
       enabled: s.enabled,
       timeout_seconds: s.timeout_seconds,
     });
@@ -205,8 +224,18 @@ export function McpPage() {
   function openAdd() {
     setEditing({
       mode: "add", name: "",
+      transport: "local",
       command: "npx -y @modelcontextprotocol/server-...",
       env: "",
+      url: "",
+      headers: "",
+      authKind: "none",
+      bearerToken: "",
+      oauthClientName: "OpenProgram",
+      oauthScope: "",
+      oauthClientId: "",
+      oauthClientSecret: "",
+      oauthRedirectPort: 0,
       enabled: true,
       timeout_seconds: 30,
     });
@@ -392,21 +421,52 @@ function DetailView({
            style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
         <ConfigChip k="Transport" v={server.type} />
         <Sep />
-        <ConfigChip k="Command" v={<code>{server.command.join(" ")}</code>} />
+        {server.type === "local" ? (
+          <ConfigChip k="Command" v={<code>{(server.command || []).join(" ")}</code>} />
+        ) : (
+          <>
+            <ConfigChip k="URL" v={<code>{server.url}</code>} />
+            <Sep />
+            <ConfigChip
+              k="Auth"
+              v={
+                server.auth ? (
+                  <span>
+                    {server.auth.kind}
+                    {server.auth.kind !== "none" && (
+                      <span
+                        style={{
+                          color: server.auth.authenticated
+                            ? "var(--accent-green)"
+                            : "var(--accent-red)",
+                          marginLeft: 6,
+                        }}
+                      >
+                        {server.auth.authenticated ? "✓" : "× not authed"}
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  "none"
+                )
+              }
+            />
+          </>
+        )}
         <Sep />
         <ConfigChip k="Timeout" v={`${server.timeout_seconds}s`} />
         <Sep />
         <ConfigChip k="Prefix" v={<code>{server.name}__</code>} />
       </div>
 
-      {Object.keys(server.env).length > 0 && (
+      {Object.keys(server.env || {}).length > 0 && (
         <div className="rounded-md border p-3 font-mono text-xs"
              style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider"
                style={{ color: "var(--text-muted)" }}>
             Environment
           </div>
-          {Object.entries(server.env).map(([k, v]) => (
+          {Object.entries(server.env || {}).map(([k, v]) => (
             <div key={k}>{k}=<span style={{ color: "var(--text-primary)" }}>{v}</span></div>
           ))}
         </div>
@@ -494,8 +554,21 @@ function ToolRow({ server, tool }: { server: string; tool: ToolSchema }) {
 interface EditTarget {
   mode: "add" | "edit";
   name: string;
+  transport: "local" | "http" | "sse";
+  // local
   command: string;
   env: string;
+  // remote
+  url: string;
+  headers: string;            // "Key: Value" per line
+  authKind: "none" | "bearer" | "oauth";
+  bearerToken: string;
+  oauthClientName: string;
+  oauthScope: string;
+  oauthClientId: string;
+  oauthClientSecret: string;
+  oauthRedirectPort: number;
+  // shared
   enabled: boolean;
   timeout_seconds: number;
 }
@@ -517,31 +590,71 @@ function EditDialog({
   const saving = busy !== null;
   const isAdd = target.mode === "add";
 
-  function parseEnv(text: string): Record<string, string> {
+  function parseKV(text: string, sep: string): Record<string, string> {
     const out: Record<string, string> = {};
     for (const line of text.split(/\n+/)) {
       const t = line.trim();
       if (!t || t.startsWith("#")) continue;
-      const eq = t.indexOf("=");
+      const eq = t.indexOf(sep);
       if (eq < 0) continue;
-      out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+      out[t.slice(0, eq).trim()] = t.slice(eq + sep.length).trim();
     }
     return out;
   }
+  const parseEnv = (s: string) => parseKV(s, "=");
+  const parseHeaders = (s: string) => parseKV(s, ":");
   function splitCommand(text: string): string[] {
     return text.trim().split(/\s+/).filter(Boolean);
   }
 
+  function buildBody(): { ok: true; body: Record<string, unknown> } | { ok: false; err: string } {
+    if (!state.name.trim()) return { ok: false, err: "name is required" };
+    const base = {
+      name: state.name.trim(),
+      type: state.transport,
+      enabled: state.enabled,
+      timeout_seconds: state.timeout_seconds,
+    };
+    if (state.transport === "local") {
+      const cmd = splitCommand(state.command);
+      if (cmd.length === 0) return { ok: false, err: "command is required" };
+      return { ok: true, body: { ...base, command: cmd, env: parseEnv(state.env) } };
+    }
+    if (!state.url.trim()) return { ok: false, err: "url is required" };
+    let auth: Record<string, unknown>;
+    if (state.authKind === "bearer") {
+      if (!state.bearerToken.trim())
+        return { ok: false, err: "bearer token is required" };
+      auth = { kind: "bearer", token: state.bearerToken.trim() };
+    } else if (state.authKind === "oauth") {
+      auth = {
+        kind: "oauth",
+        client_name: state.oauthClientName.trim() || "OpenProgram",
+        redirect_port: state.oauthRedirectPort || 0,
+      };
+      if (state.oauthScope.trim()) auth.scope = state.oauthScope.trim();
+      if (state.oauthClientId.trim()) auth.client_id = state.oauthClientId.trim();
+      if (state.oauthClientSecret.trim())
+        auth.client_secret = state.oauthClientSecret.trim();
+    } else {
+      auth = { kind: "none" };
+    }
+    return {
+      ok: true,
+      body: {
+        ...base,
+        url: state.url.trim(),
+        headers: parseHeaders(state.headers),
+        auth,
+      },
+    };
+  }
+
   async function save() {
     setErr(null); setNote(null);
-    if (!state.name.trim()) { setErr("name is required"); return; }
-    const cmd = splitCommand(state.command);
-    if (cmd.length === 0) { setErr("command is required"); return; }
-    const body = {
-      name: state.name.trim(), type: "local", command: cmd,
-      env: parseEnv(state.env),
-      enabled: state.enabled, timeout_seconds: state.timeout_seconds,
-    };
+    const built = buildBody();
+    if (!built.ok) { setErr(built.err); return; }
+    const body = built.body;
     setBusy("save");
     try {
       const r = isAdd
@@ -558,7 +671,7 @@ function EditDialog({
         setErr(d.detail || `HTTP ${r.status}`);
         return;
       }
-      onSaved(body.name);
+      onSaved(state.name.trim());
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -568,17 +681,14 @@ function EditDialog({
 
   async function testRun() {
     setErr(null); setNote(null);
-    const cmd = splitCommand(state.command);
-    if (cmd.length === 0) { setErr("command is required to test"); return; }
+    const built = buildBody();
+    if (!built.ok) { setErr(`${built.err} (to test)`); return; }
+    const body = { ...built.body, name: state.name || "test", enabled: true };
     setBusy("test");
     try {
       const r = await fetch("/api/mcp/test", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: state.name || "test", type: "local", command: cmd,
-          env: parseEnv(state.env), enabled: true,
-          timeout_seconds: state.timeout_seconds,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await r.json();
       if (!r.ok || !data.ok) {
@@ -616,28 +726,164 @@ function EditDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mcp-cmd">Command</Label>
-            <Input
-              id="mcp-cmd"
-              value={state.command}
-              onChange={(e) => setState({ ...state, command: e.target.value })}
-              placeholder="npx -y @drawio/mcp"
-              className="font-mono"
-            />
+            <Label htmlFor="mcp-transport">Transport</Label>
+            <select
+              id="mcp-transport"
+              value={state.transport}
+              onChange={(e) =>
+                setState({ ...state, transport: e.target.value as EditTarget["transport"] })}
+              className="flex h-10 rounded-md border bg-background px-3 font-mono text-sm
+                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="local">local (stdio subprocess)</option>
+              <option value="http">http (Streamable HTTP)</option>
+              <option value="sse">sse (legacy Server-Sent Events)</option>
+            </select>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mcp-env">Environment (KEY=VALUE per line)</Label>
-            <textarea
-              id="mcp-env"
-              value={state.env}
-              onChange={(e) => setState({ ...state, env: e.target.value })}
-              placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_..."
-              className="flex min-h-[100px] rounded-md border bg-background px-3 py-2 font-mono text-sm
-                          placeholder:text-muted-foreground
-                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
+          {state.transport === "local" ? (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="mcp-cmd">Command</Label>
+                <Input
+                  id="mcp-cmd"
+                  value={state.command}
+                  onChange={(e) => setState({ ...state, command: e.target.value })}
+                  placeholder="npx -y @drawio/mcp"
+                  className="font-mono"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="mcp-env">Environment (KEY=VALUE per line)</Label>
+                <textarea
+                  id="mcp-env"
+                  value={state.env}
+                  onChange={(e) => setState({ ...state, env: e.target.value })}
+                  placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_..."
+                  className="flex min-h-[100px] rounded-md border bg-background px-3 py-2 font-mono text-sm
+                              placeholder:text-muted-foreground
+                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="mcp-url">URL</Label>
+                <Input
+                  id="mcp-url"
+                  value={state.url}
+                  onChange={(e) => setState({ ...state, url: e.target.value })}
+                  placeholder="https://mcp.example.com/mcp"
+                  className="font-mono"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="mcp-headers">Headers (Key: Value per line)</Label>
+                <textarea
+                  id="mcp-headers"
+                  value={state.headers}
+                  onChange={(e) => setState({ ...state, headers: e.target.value })}
+                  placeholder="X-Tenant: acme"
+                  className="flex min-h-[60px] rounded-md border bg-background px-3 py-2 font-mono text-sm
+                              placeholder:text-muted-foreground
+                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="mcp-auth">Authentication</Label>
+                <select
+                  id="mcp-auth"
+                  value={state.authKind}
+                  onChange={(e) =>
+                    setState({ ...state, authKind: e.target.value as EditTarget["authKind"] })}
+                  className="flex h-10 rounded-md border bg-background px-3 font-mono text-sm
+                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="none">none</option>
+                  <option value="bearer">bearer token (static)</option>
+                  <option value="oauth">OAuth 2.1 (browser flow)</option>
+                </select>
+              </div>
+
+              {state.authKind === "bearer" && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="mcp-bearer">Bearer token</Label>
+                  <Input
+                    id="mcp-bearer"
+                    type="password"
+                    value={state.bearerToken}
+                    onChange={(e) => setState({ ...state, bearerToken: e.target.value })}
+                    placeholder="paste token"
+                    className="font-mono"
+                  />
+                </div>
+              )}
+
+              {state.authKind === "oauth" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="mcp-oa-name">Client name</Label>
+                    <Input
+                      id="mcp-oa-name"
+                      value={state.oauthClientName}
+                      onChange={(e) =>
+                        setState({ ...state, oauthClientName: e.target.value })}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="mcp-oa-scope">Scope (optional)</Label>
+                    <Input
+                      id="mcp-oa-scope"
+                      value={state.oauthScope}
+                      onChange={(e) => setState({ ...state, oauthScope: e.target.value })}
+                      placeholder="read write"
+                      className="font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="mcp-oa-cid">Client ID (optional)</Label>
+                    <Input
+                      id="mcp-oa-cid"
+                      value={state.oauthClientId}
+                      onChange={(e) =>
+                        setState({ ...state, oauthClientId: e.target.value })}
+                      placeholder="leave blank for dynamic registration"
+                      className="font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="mcp-oa-csec">Client secret (optional)</Label>
+                    <Input
+                      id="mcp-oa-csec"
+                      type="password"
+                      value={state.oauthClientSecret}
+                      onChange={(e) =>
+                        setState({ ...state, oauthClientSecret: e.target.value })}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="mcp-oa-port">Redirect port (0 = auto)</Label>
+                    <Input
+                      id="mcp-oa-port"
+                      type="number"
+                      min={0}
+                      max={65535}
+                      value={state.oauthRedirectPort}
+                      onChange={(e) =>
+                        setState({ ...state, oauthRedirectPort: Number(e.target.value) || 0 })}
+                      className="font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
           <div className="flex items-center gap-4">
             <div className="flex flex-1 flex-col gap-1.5">
