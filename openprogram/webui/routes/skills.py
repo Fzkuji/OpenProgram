@@ -144,6 +144,29 @@ def register(app):
         from openprogram.skills.loader import complete
         return JSONResponse(content=complete(q, limit=limit))
 
+    @app.get("/api/skills/_search")
+    async def skills_search(q: str = "", body: bool = False, limit: int = 50):
+        """Full-text search across all skills. By default only matches
+        ``name`` / ``description`` / ``leaf`` (cheap). Pass ``body=true``
+        to also grep the SKILL.md body (reads every file on disk)."""
+        from openprogram.skills.loader import list_skills
+        query = (q or "").strip().lower()
+        all_skills = list_skills()
+        if not query:
+            return JSONResponse(content=[s.to_dict() for s in all_skills[:limit]])
+        out = []
+        for s in all_skills:
+            if (
+                query in s.name.lower()
+                or query in s.leaf.lower()
+                or query in (s.description or "").lower()
+                or (body and query in (s.body or "").lower())
+            ):
+                out.append(s.to_dict())
+            if len(out) >= limit:
+                break
+        return JSONResponse(content=out)
+
     @app.get("/api/skills/_resolve")
     async def skills_resolve(q: str):
         from openprogram.skills.loader import resolve, AmbiguousSkillError
@@ -314,6 +337,60 @@ def register(app):
         (target_dir / "SKILL.md").write_text(text, encoding="utf-8")
         _emit("skills:changed", {"name": name})
         return JSONResponse(content={"ok": True, "path": str(target_dir / "SKILL.md")})
+
+    @app.put("/api/skills/{name:path}")
+    async def update_skill_endpoint(name: str, request: Request):
+        """Overwrite SKILL.md body in-place. Only project / user /
+        remote-cache sources are mutable — bundled and plugin-provided
+        skills are read-only."""
+        from openprogram.skills.loader import get_skill
+        s = get_skill(name)
+        if s is None:
+            return JSONResponse(content={"error": "not found"}, status_code=404)
+        if s.source not in ("project", "user", "remote-cache"):
+            return JSONResponse(
+                content={"error": f"source {s.source!r} is read-only"},
+                status_code=400,
+            )
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        new_text = body.get("content")
+        if not isinstance(new_text, str):
+            return JSONResponse(
+                content={"error": "'content' (string) required"}, status_code=400,
+            )
+        try:
+            Path(s.path).write_text(new_text, encoding="utf-8")
+        except OSError as e:
+            return JSONResponse(
+                content={"error": f"write failed: {e}"}, status_code=500,
+            )
+        _emit("skills:changed", {"name": name})
+        return JSONResponse(content={"ok": True, "path": s.path})
+
+    @app.get("/api/skills/{name:path}/file")
+    async def get_skill_file(name: str, path: str = ""):
+        """Read a single companion file under a skill's directory (e.g.
+        ``references/foo.md``). Path is sandboxed to the skill dir."""
+        from openprogram.skills.loader import get_skill
+        s = get_skill(name)
+        if s is None:
+            return JSONResponse(content={"error": "not found"}, status_code=404)
+        root = Path(s.path).parent.resolve()
+        target = (root / path).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            return JSONResponse(content={"error": "invalid path"}, status_code=400)
+        if not target.is_file():
+            return JSONResponse(content={"error": "file not found"}, status_code=404)
+        try:
+            text = target.read_text(encoding="utf-8")
+        except OSError as e:
+            return JSONResponse(content={"error": str(e)}, status_code=500)
+        return JSONResponse(content={"path": path, "content": text})
 
     @app.delete("/api/skills/{name:path}")
     async def delete_skill_endpoint(name: str):

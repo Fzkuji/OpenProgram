@@ -10,8 +10,32 @@ import styles from "./skills-page.module.css";
 
 type Tab = "skill" | "files" | "versions";
 
+interface InvokeTraceEntry {
+  ts: number;
+  skill: string;
+  query?: string;
+  source: string;
+  md_hash: string;
+}
+
 function encodePath(name: string): string {
   return name.split("/").map(encodeURIComponent).join("/");
+}
+
+function relTime(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 0) return "just now";
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  if (d < 7) return `${d}d ago`;
+  if (d < 30) return `${Math.floor(d / 7)}w ago`;
+  if (d < 365) return `${Math.floor(d / 30)}mo ago`;
+  return `${Math.floor(d / 365)}y ago`;
 }
 
 export function SkillDetailPage({ name }: { name: string }) {
@@ -20,6 +44,16 @@ export function SkillDetailPage({ name }: { name: string }) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("skill");
   const [copied, setCopied] = useState(false);
+  // Inline editor
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [saving, setSaving] = useState(false);
+  // Files viewer
+  const [openFile, setOpenFile] = useState<string | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  // Invoke stats
+  const [trace, setTrace] = useState<InvokeTraceEntry[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +71,54 @@ export function SkillDetailPage({ name }: { name: string }) {
     })();
     return () => { cancelled = true; };
   }, [name]);
+
+  // Fetch invoke trace for the sidebar stats
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/skills/${encodePath(name)}/invoke-trace`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit: 100 }),
+        });
+        if (!r.ok) return;
+        const data: InvokeTraceEntry[] = await r.json();
+        if (!cancelled) setTrace(data);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [name]);
+
+  // Lazy-fetch a companion file when one is clicked
+  useEffect(() => {
+    if (!openFile || !detail) {
+      setFileContent(null);
+      setFileError(null);
+      return;
+    }
+    let cancelled = false;
+    setFileContent(null);
+    setFileError(null);
+    (async () => {
+      try {
+        const r = await fetch(
+          `/api/skills/${encodePath(detail.name)}/file?path=${encodeURIComponent(openFile)}`,
+        );
+        if (!r.ok) {
+          const t = await r.text().catch(() => "");
+          throw new Error(`HTTP ${r.status}: ${t.slice(0, 200)}`);
+        }
+        const data: { content: string } = await r.json();
+        if (!cancelled) setFileContent(data.content);
+      } catch (e) {
+        if (!cancelled) setFileError(String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [openFile, detail]);
 
   if (error) {
     return (
@@ -83,6 +165,47 @@ export function SkillDetailPage({ name }: { name: string }) {
     router.push("/skills");
   };
 
+  const canEdit = ["project", "user", "remote-cache"].includes(detail.source);
+
+  const startEdit = () => {
+    // Reconstruct full file contents from frontmatter + body. The
+    // server returns ``body`` post-frontmatter and ``description`` etc.
+    // separately — to keep edits faithful we read the raw file via the
+    // file endpoint and let the user see the whole thing.
+    setEditText(detail.body); // pre-fill with body; user may extend frontmatter via raw text
+    setEditing(true);
+    // Lazy: also fetch the raw file so frontmatter survives a save.
+    fetch(`/api/skills/${encodePath(detail.name)}/file?path=SKILL.md`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.content) setEditText(data.content);
+      })
+      .catch(() => { /* ignore */ });
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/skills/${encodePath(detail.name)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: editText }),
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        throw new Error(`HTTP ${r.status}: ${t.slice(0, 200)}`);
+      }
+      // Re-fetch detail so the body/frontmatter on screen reflects the save.
+      const fresh = await fetch(`/api/skills/${encodePath(detail.name)}`);
+      if (fresh.ok) setDetail(await fresh.json());
+      setEditing(false);
+    } catch (e) {
+      alert(`Save failed: ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
       <div className={styles.view}>
@@ -98,7 +221,16 @@ export function SkillDetailPage({ name }: { name: string }) {
             {detail.source}
           </span>
           <div className={styles.toolbar}>
-            {canDelete && (
+            {canEdit && !editing && (
+              <Button variant="outline" size="sm" onClick={startEdit}>Edit</Button>
+            )}
+            {editing && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving}>Cancel</Button>
+                <Button size="sm" onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+              </>
+            )}
+            {canDelete && !editing && (
               <Button variant="destructive" size="sm" onClick={doDelete}>Delete</Button>
             )}
           </div>
@@ -149,20 +281,69 @@ export function SkillDetailPage({ name }: { name: string }) {
             </div>
 
             {tab === "skill" && (
-              <div className="prose prose-invert max-w-none text-sm">
-                <Markdown source={detail.body} />
-              </div>
+              editing ? (
+                <textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  spellCheck={false}
+                  className="w-full min-h-[60vh] rounded-md border border-[var(--border)] bg-[var(--bg-input)] p-3 text-xs font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20"
+                />
+              ) : (
+                <div className="prose prose-invert max-w-none text-sm">
+                  <Markdown source={detail.body} />
+                </div>
+              )
             )}
             {tab === "files" && (
-              <ul className="space-y-1 text-xs font-mono text-[var(--text-secondary)]">
-                <li className="text-[var(--text-bright)]">SKILL.md</li>
-                {detail.resources.map((r) => (
-                  <li key={r}>{r}</li>
-                ))}
-                {detail.resources.length === 0 && (
-                  <li className="text-[var(--text-tertiary)] not-italic">(no companion files)</li>
-                )}
-              </ul>
+              <div className="flex gap-4 min-h-[40vh]">
+                <ul className="w-[260px] shrink-0 space-y-1 text-xs font-mono">
+                  <li>
+                    <button
+                      onClick={() => setOpenFile("SKILL.md")}
+                      className={
+                        "block w-full text-left rounded px-2 py-1 truncate " +
+                        (openFile === "SKILL.md"
+                          ? "bg-[var(--bg-hover)] text-nav-color-hover"
+                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-nav-color-hover")
+                      }
+                    >
+                      SKILL.md
+                    </button>
+                  </li>
+                  {detail.resources.map((r) => (
+                    <li key={r}>
+                      <button
+                        onClick={() => setOpenFile(r)}
+                        className={
+                          "block w-full text-left rounded px-2 py-1 truncate " +
+                          (openFile === r
+                            ? "bg-[var(--bg-hover)] text-nav-color-hover"
+                            : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-nav-color-hover")
+                        }
+                      >
+                        {r}
+                      </button>
+                    </li>
+                  ))}
+                  {detail.resources.length === 0 && (
+                    <li className="text-[var(--text-tertiary)] px-2 py-1">(no companion files)</li>
+                  )}
+                </ul>
+                <div className="flex-1 min-w-0 rounded-md border border-[var(--border)] bg-[var(--bg-input)] p-3 overflow-auto">
+                  {!openFile && (
+                    <div className="text-xs text-[var(--text-tertiary)]">Select a file to preview.</div>
+                  )}
+                  {openFile && fileError && (
+                    <div className="text-xs text-[var(--accent-red,#ef4444)]">{fileError}</div>
+                  )}
+                  {openFile && fileContent === null && !fileError && (
+                    <div className="text-xs text-[var(--text-tertiary)]">Loading…</div>
+                  )}
+                  {openFile && fileContent !== null && (
+                    <pre className="whitespace-pre-wrap text-xs font-mono text-[var(--text-primary)]">{fileContent}</pre>
+                  )}
+                </div>
+              </div>
             )}
             {tab === "versions" && (
               <div className="text-xs text-[var(--text-tertiary)]">
@@ -217,6 +398,22 @@ export function SkillDetailPage({ name }: { name: string }) {
 
             <SideField label="Enabled">
               {detail.enabled ? "yes" : "no"}
+            </SideField>
+
+            <SideField label="Invocations">
+              {trace.length === 0 ? (
+                <span className="text-[var(--text-tertiary)]">never invoked</span>
+              ) : (
+                <>
+                  <div className="text-sm">
+                    {trace.length}
+                    {trace.length === 100 ? "+" : ""} call{trace.length === 1 ? "" : "s"}
+                  </div>
+                  <div className="mt-1 text-xs text-[var(--text-tertiary)]">
+                    last: {relTime(trace[0].ts * 1000)}
+                  </div>
+                </>
+              )}
             </SideField>
           </aside>
         </div>

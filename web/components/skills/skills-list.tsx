@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSkills, type Skill } from "@/lib/skills-store";
 import { Switch } from "@/components/ui/switch";
@@ -185,17 +185,54 @@ export function SkillsList() {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set<string>());
   const [filter, setFilter] = useState("");
 
+  // Server-driven full-text search when ?body=true so query hits the
+  // actual SKILL.md content. Local name/description filter handles the
+  // default empty-query / quick-typing case without a roundtrip.
+  const [searchBody, setSearchBody] = useState(false);
+  const [bodyHits, setBodyHits] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    if (!searchBody || !filter.trim()) { setBodyHits(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(
+          `/api/skills/_search?body=true&q=${encodeURIComponent(filter)}&limit=200`,
+        );
+        if (!r.ok) return;
+        const data: { name: string }[] = await r.json();
+        if (!cancelled) setBodyHits(new Set(data.map((s) => s.name)));
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [filter, searchBody]);
+
   const filtered = useMemo(() => {
     if (!filter.trim()) return skills;
     const q = filter.toLowerCase();
-    return skills.filter(
-      (s) =>
+    return skills.filter((s) => {
+      if (
         s.name.toLowerCase().includes(q) ||
         (s.description || "").toLowerCase().includes(q)
-    );
-  }, [skills, filter]);
+      ) return true;
+      if (searchBody && bodyHits) return bodyHits.has(s.name);
+      return false;
+    });
+  }, [skills, filter, searchBody, bodyHits]);
 
-  const tree = useMemo(() => buildTree(filtered), [filtered]);
+  // Split optional skills off so they live in a collapsible section
+  // at the bottom — mirrors hermes' optional-skills/ idea.
+  const requiredSkills = useMemo(
+    () => filtered.filter((s) => !s.optional),
+    [filtered],
+  );
+  const optionalSkills = useMemo(
+    () => filtered.filter((s) => s.optional),
+    [filtered],
+  );
+  const [showOptional, setShowOptional] = useState(false);
+
+  const tree = useMemo(() => buildTree(requiredSkills), [requiredSkills]);
+  const optionalTree = useMemo(() => buildTree(optionalSkills), [optionalSkills]);
 
   // Auto-expand all when filtering so matches are visible.
   const effectiveExpanded = useMemo(() => {
@@ -244,6 +281,16 @@ export function SkillsList() {
           placeholder="Search skills..."
           className="flex-1 min-w-0 rounded border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-sm"
         />
+        <button
+          onClick={() => setSearchBody((v) => !v)}
+          title={searchBody ? "Searching name + description + body" : "Click to also search SKILL.md body"}
+          className={
+            "shrink-0 rounded px-1.5 py-1 text-[11px] " +
+            (searchBody
+              ? "bg-bg-hover text-nav-color-hover"
+              : "text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover")
+          }
+        >body</button>
         <button onClick={expandAll}
           title="Expand all"
           className="shrink-0 rounded px-1.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊕</button>
@@ -267,6 +314,35 @@ export function SkillsList() {
           )
         )}
       </div>
+      {optionalSkills.length > 0 && (
+        <div className="mt-6 border-t border-[var(--border)] pt-3">
+          <button
+            onClick={() => setShowOptional((v) => !v)}
+            className="flex w-full items-center gap-2 text-xs text-[var(--text-secondary)] hover:text-nav-color-hover select-none"
+          >
+            <span className="w-3 text-center">{showOptional ? "▾" : "▸"}</span>
+            <span>Optional ({optionalSkills.length})</span>
+          </button>
+          {showOptional && (
+            <div className="mt-2 space-y-1">
+              {sortedChildren(optionalTree).map((c) =>
+                c.skill && c.children.size === 0 ? (
+                  <SkillLeaf key={c.path} skill={c.skill} depth={0} />
+                ) : (
+                  <TreeBranch
+                    key={c.path}
+                    node={c}
+                    depth={0}
+                    expanded={effectiveExpanded}
+                    toggleExpanded={toggleExpanded}
+                    toggleBranch={toggleBranch}
+                  />
+                )
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {skills.length === 0 && (
         <div className="text-sm text-[var(--text-tertiary)]">No skills found.</div>
       )}
