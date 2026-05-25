@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSkills, type Skill } from "@/lib/skills-store";
 import { Switch } from "@/components/ui/switch";
 
@@ -52,12 +53,13 @@ function sortedChildren(node: TreeNode): TreeNode[] {
 // --- rendering -----------------------------------------------------------
 
 function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
-  const { selected, setSelected, fetchDetail, toggleSkill } = useSkills();
-  const active = selected === skill.name;
+  const router = useRouter();
+  const { toggleSkill } = useSkills();
+  const active = false; // selection-vs-route highlighting now lives in the URL
   return (
     <div
       role="button"
-      onClick={() => { setSelected(skill.name); fetchDetail(skill.name); }}
+      onClick={() => router.push(`/skills/${skill.name.split("/").map(encodeURIComponent).join("/")}`)}
       style={{
         paddingLeft: 8 + depth * 16,
         // Tint the active row with the same accent the border uses so

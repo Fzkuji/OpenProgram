@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useSkills } from "@/lib/skills-store";
 import { SkillsList } from "./skills-list";
-import { SkillDetail } from "./skill-detail";
 import { NewSkillDialog } from "./new-skill-dialog";
 import { DiscoverySources } from "./discovery-sources";
 import { Button } from "@/components/ui/button";
@@ -45,13 +44,8 @@ export function SkillsPage() {
       {error && <div className={styles.errorBar}>{error}</div>}
 
       {tab === "browse" ? (
-        <div className={styles.body}>
-          <div className={styles.rail}>
-            <SkillsList />
-          </div>
-          <div className={styles.content}>
-            <SkillDetail />
-          </div>
+        <div className={styles.singleColumn}>
+          <SkillsList />
         </div>
       ) : (
         <div className={styles.singleColumn}>
