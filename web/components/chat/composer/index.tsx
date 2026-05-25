@@ -36,6 +36,13 @@ import {
 import { PlusMenuItem, ToolChip } from "./menu-pieces";
 import { type SlashCommand } from "./slash-commands";
 import { sendChatMessage } from "./legacy-send";
+import {
+  LONG_PASTE_THRESHOLD,
+  expandPasteTokens,
+  pasteStore,
+  placeholderToken,
+  referencedPasteIds,
+} from "./paste-store";
 import { Slider } from "@/components/ui/slider";
 import { Lightning } from "@phosphor-icons/react/dist/ssr";
 import { useFnFormState } from "./use-fn-form-state";
@@ -97,6 +104,53 @@ export function Composer() {
   useEffect(() => {
     setHistoryIndex(-1);
   }, [currentSessionId]);
+
+  // Long-paste auto-attach. Subscribing to the store rerenders the chip
+  // row whenever a paste is added or removed. The store itself is a
+  // module-level singleton (process-wide) so a paste survives session
+  // switches and is referenced by id from the live composer text.
+  const [pasteTick, setPasteTick] = useState(0);
+  useEffect(() => pasteStore.subscribe(() => setPasteTick((t) => t + 1)), []);
+  const pastedEntries = React.useMemo(() => {
+    const referenced = referencedPasteIds(input);
+    // Only show chips for tokens still present in the live draft.
+    return pasteStore.list().filter((e) => referenced.has(e.id));
+    // pasteTick is read implicitly by re-running this memo on tick bump.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, pasteTick]);
+
+  const onPaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const text = e.clipboardData?.getData("text") ?? "";
+      if (text.length < LONG_PASTE_THRESHOLD) return;
+      // Replace the textarea selection with our placeholder token and
+      // stash the real content in the paste store.
+      e.preventDefault();
+      const entry = pasteStore.add(text);
+      const token = placeholderToken(entry);
+      const ta = e.currentTarget;
+      const start = ta.selectionStart ?? input.length;
+      const end = ta.selectionEnd ?? start;
+      const next = input.slice(0, start) + token + input.slice(end);
+      setInput(next);
+      // Place caret after the inserted token on the next frame.
+      requestAnimationFrame(() => {
+        const pos = start + token.length;
+        ta.setSelectionRange(pos, pos);
+      });
+    },
+    [input, setInput],
+  );
+
+  // Remove a paste chip — also strips the token from the textarea.
+  const removePaste = useCallback(
+    (id: number) => {
+      const re = new RegExp(`\\[Pasted #${id} \\+\\d+ lines\\]`, "g");
+      setInput(input.replace(re, ""));
+      pasteStore.remove(id);
+    },
+    [input, setInput],
+  );
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
   const setFnFormClosing = useSessionStore((s) => s.setFnFormClosing);
@@ -243,11 +297,17 @@ export function Composer() {
       slash.close();
       return;
     }
+    // Expand long-paste tokens (``[Pasted #N +M lines]``) back into the
+    // outgoing text so the LLM receives the real content. After
+    // expansion the corresponding entries can be evicted from the
+    // store — keeping them past send is pointless and grows memory.
+    const expanded = expandPasteTokens(trimmed);
+    referencedPasteIds(trimmed).forEach((id) => pasteStore.remove(id));
     // Delegate to legacy `sendMessage` (chat.js) so the user bubble +
     // welcome-hide + assistant placeholder + isRunning flip all fire
     // before the WS payload goes out. Composer is just the trigger.
     const handled = sendChatMessage({
-      text: trimmed,
+      text: expanded,
       thinking,
       toolsEnabled,
       webSearchEnabled,
@@ -258,7 +318,7 @@ export function Composer() {
       // welcome-screen / user-bubble update is out of scope here.
       const ok = send({
         action: "chat",
-        text: trimmed,
+        text: expanded,
         session_id: currentSessionId ?? null,
         thinking_effort: thinking,
         tools: toolsEnabled,
@@ -578,6 +638,56 @@ export function Composer() {
           />
         ) : (
           <div key="top-half" className={styles.inputTopRow}>
+            {pastedEntries.length > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  padding: "4px 6px 0",
+                }}
+              >
+                {pastedEntries.map((p) => (
+                  <span
+                    key={p.id}
+                    title={p.content.slice(0, 500)
+                      + (p.content.length > 500 ? "…" : "")}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "1px 6px 1px 8px",
+                      borderRadius: 10,
+                      fontSize: 11,
+                      fontFamily:
+                        "ui-monospace, SFMono-Regular, Menlo, monospace",
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-muted)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    Pasted #{p.id} · +{p.numLines} lines
+                    <button
+                      type="button"
+                      onClick={() => removePaste(p.id)}
+                      aria-label={`Remove paste #${p.id}`}
+                      style={{
+                        marginLeft: 2,
+                        padding: 0,
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--text-muted)",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        lineHeight: 1,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               id="composer-chat-input"
@@ -589,6 +699,7 @@ export function Composer() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
+              onPaste={onPaste}
               onFocus={() => slash.setFocused(true)}
               onBlur={() => slash.setFocused(false)}
             />
