@@ -76,21 +76,28 @@ const TILE_KEYFRAMES = `
   background: rgba(255,255,255,0.18) !important;
 }
 .composer-file-tile-skeleton {
-  width: 48px;
-  height: 14px;
-  border-radius: 4px;
-  background: linear-gradient(
-    90deg,
-    var(--bg-tertiary) 0%,
-    var(--bg-secondary) 50%,
-    var(--bg-tertiary) 100%
-  );
-  background-size: 200% 100%;
-  animation: tileSkeletonShimmer 1.2s ease-in-out infinite;
+  /* Skeleton row that sits where the DOCX badge will land. The
+     shimmer alone read as too passive on a dark page, so a small
+     spinning ring sits to the left to advertise activity. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  color: rgba(255,255,255,0.45);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
-@keyframes tileSkeletonShimmer {
-  0%   { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
+.composer-file-tile-skeleton::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.18);
+  border-top-color: rgba(255,255,255,0.7);
+  animation: tileSpinnerSpin 0.8s linear infinite;
+}
+@keyframes tileSpinnerSpin {
+  to { transform: rotate(360deg); }
 }
 `;
 
@@ -185,10 +192,15 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
           {doc.filename}
         </div>
         {doc.loading ? (
-          // Skeleton shimmer in place of the badge while readDroppedTextFile
-          // runs — keeps the tile's vertical rhythm so it doesn't jump
-          // once the badge appears.
-          <div className="composer-file-tile-skeleton" aria-label="Loading…" />
+          // Spinner + "Loading" label sits where the DOCX badge will
+          // land once readDroppedTextFile resolves. Keeps the tile's
+          // vertical rhythm so it doesn't jump once the badge appears.
+          <div
+            className="composer-file-tile-skeleton"
+            aria-label="Loading…"
+          >
+            Loading
+          </div>
         ) : doc.ext && (
           <div
             style={{

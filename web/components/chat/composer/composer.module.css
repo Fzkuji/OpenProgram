@@ -258,9 +258,9 @@
   display: block;
 }
 /* Skeleton variant — same dimensions as the real <img>, with a
-   subtle horizontal shimmer to read as "loading". Used for chips
-   that were added optimistically on drop before the decode + resize
-   pipeline finishes filling in the bitmap. */
+   subtle horizontal shimmer to read as "loading" + a centered
+   spinner sitting on top so the chip visibly "spins" while the
+   decode pipeline runs. The shimmer alone read as too static. */
 .imageAttachImg[data-loading="true"] {
   background: linear-gradient(
     90deg,
@@ -270,10 +270,25 @@
   );
   background-size: 200% 100%;
   animation: imageSkeletonShimmer 1.2s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.imageAttachImg[data-loading="true"]::after {
+  content: "";
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-top-color: rgba(255, 255, 255, 0.65);
+  animation: composerAttachSpin 0.8s linear infinite;
 }
 @keyframes imageSkeletonShimmer {
   0%   { background-position: 100% 0; }
   100% { background-position: -100% 0; }
+}
+@keyframes composerAttachSpin {
+  to { transform: rotate(360deg); }
 }
 .imageAttachRemove {
   position: absolute;
