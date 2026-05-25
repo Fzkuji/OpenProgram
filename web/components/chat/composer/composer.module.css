@@ -57,10 +57,21 @@
   border: none;
   border-radius: var(--composer-corner);
   padding: 0 0 var(--composer-bottom-row-h);
-  box-shadow: none;
+  /* OUTSET ring (no inset) on the wrapper itself — the previous
+     attempt put it on ``::after`` which sits inside the wrapper's
+     own ``overflow: hidden`` clip, so the outward-pointing shadow
+     got eaten everywhere except faint slivers at the four corners.
+     Drawn directly on the wrapper, the shadow is outside the
+     clipping region and renders the full perimeter uniformly.
+     Updated on focus via the :focus-within rule below — no pseudo
+     needed. */
+  box-shadow: 0 0 0 1px var(--border);
   overflow: hidden;
   transition: box-shadow 180ms ease,
     height var(--composer-height-transition);
+}
+.inputWrapper:focus-within {
+  box-shadow: 0 0 0 1px rgba(226,225,218,0.32);
 }
 /* Focus indicator on the chat-input wrapper: a 1px border drawn via
    `::after` so it stacks ABOVE `.inputBottomRow` (z-index 1 +
@@ -70,26 +81,10 @@
    none` so it doesn't intercept clicks. `--text-secondary` keeps
    the edge readable without the harsh contrast `--text-bright`
    produces; the token auto-flips with light / dark theme. */
-.inputWrapper::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  z-index: 2;
-  /* Hairline drawn via an OUTSET box-shadow (no `inset` keyword) +
-     0/0/0/1 — a "ring" in Tailwind / shadcn parlance. The shadow
-     rasteriser samples sub-pixels with the same rule the rounded
-     fill uses, so the line stays uniform thickness all the way
-     around the curve instead of getting visibly thinner at the
-     corner. Previous ``border`` and ``inset box-shadow`` approaches
-     both suffered the curve-thinning AA artefact. */
-  box-shadow: 0 0 0 1px var(--border);
-  transition: box-shadow 180ms ease;
-}
-.inputWrapper:focus-within::after {
-  box-shadow: 0 0 0 1px rgba(226,225,218,0.32);
-}
+/* Ring moved to ``.inputWrapper`` itself (above). The previous
+   ``::after`` approach was an artifact of when the ring was an
+   ``inset`` shadow that needed to stack above ``.inputBottomRow``'s
+   opaque background — outset shadows don't have that problem. */
 
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
    switches. Sits on top of the new form (z-index 1, same as
