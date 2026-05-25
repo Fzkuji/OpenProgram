@@ -412,4 +412,19 @@ html, body {
 .history-edge.attach-edge {
   animation: attachEdgeFlow 0.9s linear infinite;
 }
+/* Pulse around DAG mini-map nodes whose async task is currently
+   running. is-running class is toggled by branches-panel via a
+   MutationObserver on .history-body so the indicator survives
+   history-graph re-renders. */
+@keyframes historyNodePulse {
+  0%, 100% { filter: drop-shadow(0 0 2px var(--accent-blue));  }
+  50%      { filter: drop-shadow(0 0 7px var(--accent-blue));  }
+}
+.history-node.is-running circle,
+.history-node.is-running ellipse,
+.history-node.is-running rect,
+.history-node.is-running path,
+.history-node.is-running polygon {
+  animation: historyNodePulse 1.2s ease-in-out infinite;
+}
 
