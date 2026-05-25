@@ -215,6 +215,32 @@ Writing, fixing and scaffolding `@agentic_function`s is itself agent work — do
 
 The skill is the complete spec — where the file goes, the decorator's metadata, the docstring vs `content` split, a rule-based validation checklist, and a smoke test. An agent reads it, writes the function, validates it, runs it; the `write → run → fail → fix` cycle still means programs improve through use.
 
+### Conversation as a git DAG
+
+Session history is stored like a git repository, not a flat list. Every exchange is a commit, branches are first-class, and the right sidebar exposes the usual git operations:
+
+- **Branch off** any past exchange to explore an alternative without losing the original thread
+- **Attach** context from another session (cross-session reuse) as a labelled user message
+- **Merge** two threads when their branches converge
+- **Cherry-pick** specific commits across branches
+
+Branches that touch files run in **isolated git worktrees** under the hood, so two concurrent agents on different branches can't fight over the same source tree. Other frameworks fork conversations by copying messages; we fork the underlying repo.
+
+### Layered memory
+
+Memory isn't a single bag. Six separate stores under `~/.agentic/memory/` cover different timescales and purposes:
+
+| Layer | What goes there |
+|---|---|
+| `journal` | Short-term — recent observations, raw notes |
+| `wiki` | Durable — facts the agent decided to keep around |
+| `sleep` | Periodic consolidation (offline daemon merges journal → wiki) |
+| `scheduler` | Cron-driven recalls that surface a memory at a specific time |
+| `recall_counts` | Hit counts that boost frequently-used memories |
+| `store` | Project-scoped key/value |
+
+Open `/memory` to inspect or hand-edit any layer; the agent decides which layer to write to based on what it learned. The split exists because "remember this until I tell you to forget" and "remember this for the next 10 turns" want different storage strategies.
+
 ## API Reference
 
 ### Core
