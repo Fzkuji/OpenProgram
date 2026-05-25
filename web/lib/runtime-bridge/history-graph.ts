@@ -778,6 +778,65 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     );
   });
 
+  // Attach-reference edges: dashed line from the source branch tip
+  // toward the attach pointer (the consumer). Direction matches the
+  // user mental model "branch A attaches to anchor B" — content
+  // flows from source into the target, so the arrow points at the
+  // attach pointer.
+  //
+  // ``attach_ref`` is set by the backend on attach rows
+  // (function="attach") and resolves to a node id in the same graph
+  // (the branch tip the card embeds). The anchor relationship is
+  // already drawn by the parent_id edge above; this one shows what
+  // the attach actually references.
+  const ARROW_MARKER_ID = "history-attach-arrow";
+  // Ensure the arrowhead marker exists exactly once per svg.
+  if (!svg.querySelector(`#${ARROW_MARKER_ID}`)) {
+    const defs = _svg("defs", {});
+    const marker = _svg("marker", {
+      id: ARROW_MARKER_ID,
+      viewBox: "0 0 10 10",
+      refX: "9",
+      refY: "5",
+      markerWidth: "5",
+      markerHeight: "5",
+      orient: "auto-start-reverse",
+    });
+    marker.appendChild(_svg("path", {
+      d: "M0,0 L10,5 L0,10 z",
+      fill: "currentColor",
+    }));
+    defs.appendChild(marker);
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  Object.keys(tree.byId).forEach((id) => {
+    const node = tree.byId[id];
+    const ref = node.attach_ref as string | undefined;
+    if (!ref) return;
+    const src = tree.byId[ref];
+    if (!src) return;
+    const srcPos = pos(src);
+    const dstPos = pos(node);
+    const color = _branchColor(src, lanes.leafOfNode);
+    // Draw the path from the attach pointer toward the source it
+    // references, so the arrowhead lands on the source tip and reads
+    // as "this attach pulls content FROM that branch".
+    edgeG.appendChild(
+      _svg("path", {
+        d: _edgePath(dstPos.x, dstPos.y, srcPos.x, srcPos.y),
+        stroke: color,
+        "stroke-width": 1.4,
+        fill: "none",
+        "stroke-linecap": "round",
+        "stroke-dasharray": "3 3",
+        opacity: 0.7,
+        "marker-end": `url(#${ARROW_MARKER_ID})`,
+        color,
+        class: "history-edge attach-edge",
+      }),
+    );
+  });
+
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     const p = pos(node);

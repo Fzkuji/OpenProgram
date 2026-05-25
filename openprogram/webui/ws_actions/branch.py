@@ -2,6 +2,34 @@
 from __future__ import annotations
 
 import json
+from typing import Optional
+
+
+def _attach_ref(m: dict) -> Optional[str]:
+    """Source-branch tip id an attach pointer embeds, or None.
+
+    An attach row records both ``called_by`` (where the card lands —
+    drawn by the normal parent_id / caller edge) and ``attach.head_id``
+    (the branch tip it imports). Surface the latter as a dedicated
+    edge field so the SVG can draw a cross-lane reference line.
+    """
+    if m.get("function") != "attach":
+        return None
+    raw = m.get("attach") or m.get("extra")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    if isinstance(raw, dict) and "attach" in raw and isinstance(raw["attach"], dict):
+        raw = raw["attach"]
+    if not isinstance(raw, dict):
+        return None
+    h = raw.get("head_id")
+    if isinstance(h, str):
+        h = h.strip()
+        return h or None
+    return None
 
 
 def build_branches_payload(session_id: str | None) -> dict:
@@ -40,6 +68,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                     "display": m.get("display"),
                     "preview": preview,
                     "created_at": m.get("created_at"),
+                    "attach_ref": _attach_ref(m),
                 })
             # Server-side layout — keeps the parallel-branch geometry
             # consistent across load_session, list_branches, and any
@@ -366,6 +395,35 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
                 "cannot attach a branch to itself "
                 "(anchor and target are the same head)"
             )
+        # Dedupe: if the anchor session already has an attach pointer
+        # hanging off this anchor that references the same source head,
+        # don't write another one — it would draw a duplicate edge in
+        # the DAG and double up the attach card in chat.
+        try:
+            anchor_msgs = db.get_messages(anchor_session_id) or []
+            for m in anchor_msgs:
+                if m.get("function") != "attach":
+                    continue
+                if m.get("called_by") != anchor:
+                    continue
+                ad = m.get("attach")
+                if isinstance(ad, dict) and (ad.get("head_id") or "").strip() == target_head:
+                    await ws.send_text(json.dumps({
+                        "type": "attach_branch_result",
+                        "data": {
+                            "session_id": session_id,
+                            "anchor_session_id": anchor_session_id,
+                            "target_head_msg_id": target_head,
+                            "anchor": anchor,
+                            "attach_node_id": m.get("id"),
+                            "ok": True,
+                            "duplicate": True,
+                            "error": None,
+                        },
+                    }, default=str))
+                    return
+        except Exception:
+            pass
         # Resolve the target branch's name + a short content preview
         # from the SOURCE session so the AttachCard can render label +
         # preview without a follow-up round trip.

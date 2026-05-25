@@ -414,6 +414,7 @@ class SessionStore:
                 # order, which aligns with the lane.py kids[0] rule.
                 cur = kids[0]
 
+        merged = set((idx.meta.get("merged_heads") or []))
         for node in idx.all_nodes():
             if node.called_by:
                 continue
@@ -425,6 +426,10 @@ class SessionStore:
                 continue
             kids = idx.children_by_predecessor.get(node.id, [])
             if kids:
+                continue
+            # Heads that a merge consumed don't surface as standalone
+            # branches anymore — their content lives on the merge tip.
+            if node.id in merged:
                 continue
             label = named.get(node.id)
             name = label.get("name") if isinstance(label, dict) else label
@@ -543,6 +548,70 @@ class SessionStore:
         idx.set_meta(branches=branches)
         self._persist_meta(git, idx)
         return len(to_delete)
+
+    def mark_merged(self, session_id: str, head_ids: list[str]) -> None:
+        """Record that these head ids have been merged into another
+        branch — the Branches panel hides them after this.
+
+        The DAG nodes stay intact (a checkout still works) but the
+        head no longer surfaces as a standalone branch tip.
+        """
+        pair = self._open(session_id)
+        if pair is None:
+            return
+        git, idx = pair
+        cur = list(idx.meta.get("merged_heads") or [])
+        changed = False
+        for h in head_ids:
+            if not h:
+                continue
+            h = h.strip()
+            if h and h not in cur:
+                cur.append(h)
+                changed = True
+        if changed:
+            idx.set_meta(merged_heads=cur)
+            self._persist_meta(git, idx)
+
+    def drop_message(self, session_id: str, node_id: str) -> bool:
+        """Remove a single node by id — no descendant walk.
+
+        Used to retire attach-pointer rows that have been consumed by
+        a merge: the pointer is a side-channel reference, not part of
+        the conv chain, so dropping it doesn't orphan anything. Caller
+        is responsible for ``commit_turn`` if a git commit should
+        record the deletion.
+        """
+        pair = self._open(session_id)
+        if pair is None:
+            return False
+        git, idx = pair
+        if node_id not in idx.nodes_by_id:
+            return False
+        with idx._lock:
+            idx.nodes_by_id.pop(node_id, None)
+            idx.nodes_by_seq = [n for n in idx.nodes_by_seq if n.id != node_id]
+            for parent, kids in list(idx.children_by_predecessor.items()):
+                if node_id in kids:
+                    kids.remove(node_id)
+                    if not kids:
+                        del idx.children_by_predecessor[parent]
+            for parent, kids in list(idx.children_by_caller.items()):
+                if node_id in kids:
+                    kids.remove(node_id)
+                    if not kids:
+                        del idx.children_by_caller[parent]
+            for fpath in (git.path / "history").glob(f"*-{node_id}.json"):
+                try:
+                    fpath.unlink()
+                except OSError:
+                    pass
+        branches = dict(idx.meta.get("branches") or {})
+        if node_id in branches:
+            branches.pop(node_id, None)
+            idx.set_meta(branches=branches)
+        self._persist_meta(git, idx)
+        return True
 
     # ── Token stats / search / misc — these are derived, keep
     # implementations consistent with old DagSessionDB by delegating

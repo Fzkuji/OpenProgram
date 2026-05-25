@@ -312,6 +312,47 @@ def process_merge_turn(
             error=f"save_commit failed: {type(e).__name__}: {e}",
         )
 
+    # Retire attach pointers that referenced the merged peers — the
+    # merge turn just folded those peers' content into the target,
+    # so leaving the pointers around makes the DAG read as "this
+    # branch was merged to two places" and clutters the chat.
+    peer_heads = {p["head_id"] for p in peers if p.get("head_id")}
+    if peer_heads:
+        try:
+            existing = store.get_messages(target_session_id) or []
+        except Exception:
+            existing = []
+        for m in existing:
+            if m.get("function") != "attach":
+                continue
+            attach_data = m.get("attach")
+            if not isinstance(attach_data, dict):
+                continue
+            ref = attach_data.get("head_id")
+            if isinstance(ref, str) and ref.strip() in peer_heads:
+                try:
+                    store.drop_message(target_session_id, m["id"])
+                except Exception:
+                    pass
+
+    # Hide consumed peer branches from the Branches panel. Their DAG
+    # nodes remain so a checkout still works, but they no longer
+    # surface as separate branch tips — the merge tip carries them
+    # forward. Per-session: peers from other sessions get marked on
+    # their own session's merged_heads so each panel reflects its
+    # own state.
+    by_session: dict[str, list[str]] = {}
+    for p in peers:
+        sid = p.get("session_id") or target_session_id
+        hid = p.get("head_id")
+        if hid:
+            by_session.setdefault(sid, []).append(hid)
+    for sid, heads in by_session.items():
+        try:
+            store.mark_merged(sid, heads)
+        except Exception:
+            pass
+
     try:
         store.commit_turn(
             target_session_id,
