@@ -58,9 +58,36 @@ def _is_mergeable(item: ContextItem) -> bool:
     return item.state in ("full", "aged", "cleared")
 
 
+def _attach_block_end(items: list[ContextItem], start: int) -> int:
+    """Return the exclusive end index of the attach block that ``start``
+    belongs to (or ``start+1`` if it doesn't belong to one).
+
+    An attach block is a maximal run of consecutive items sharing the
+    same non-None ``attached_from``. ``_build_items_from_node`` writes
+    the open marker, the expanded items, and the close marker all with
+    the same ``attached_from`` value, so they're always contiguous.
+    """
+    if start >= len(items):
+        return start
+    af = items[start].attached_from
+    if af is None:
+        return start + 1
+    end = start + 1
+    while end < len(items) and items[end].attached_from == af:
+        end += 1
+    return end
+
+
 def _pick_merge_range(items: list[ContextItem]) -> tuple[int, int]:
     """从最老端走, 累积 mergeable items 的 token, 直到达到总 unlocked
     token 的 _MERGE_RATIO 或撞到不可合并的 item 停下。
+
+    Attach 块整段进 / 整段出: ``_attach_block_end`` 把同一
+    ``attached_from`` 的连续 item 当成不可分割单元, 避免 summary 跨
+    [Attached from ...] / [End of attached content] 边界 (会让 LLM
+    看到无主的"嵌入开头"或孤立的"嵌入结尾"). 如果整个 attach 块里有
+    任何一条 item 不可合并 (locked / summary / summarized), 整块都跳
+    过, 不挑里面的某条。
 
     返回 (start, end) 半开区间; end-start < _MIN_ITEMS_TO_SUMMARIZE
     就视为不值得 summary, caller 自己判.
@@ -71,19 +98,46 @@ def _pick_merge_range(items: list[ContextItem]) -> tuple[int, int]:
         return (0, 0)
     target = total_mergeable * _MERGE_RATIO
 
-    # 找连续 mergeable 段: 从 i=0 开始 skip 到第一个 mergeable
     n = len(items)
+
+    # Find the first index where a mergeable run can start. If the
+    # item belongs to an attach block, the block must be entirely
+    # mergeable to count; otherwise we skip the whole block.
     start = 0
-    while start < n and not _is_mergeable(items[start]):
+    while start < n:
+        if _is_mergeable(items[start]):
+            blk_end = _attach_block_end(items, start)
+            if blk_end == start + 1 or all(
+                _is_mergeable(items[k]) for k in range(start, blk_end)
+            ):
+                break
+            # Attach block contains non-mergeable items — skip the
+            # whole block.
+            start = blk_end
+            continue
         start += 1
     if start >= n:
         return (0, 0)
 
     accumulated = 0
     end = start
-    while end < n and _is_mergeable(items[end]):
-        accumulated += items[end].tokens
-        end += 1
+    while end < n:
+        # Per-item path (no attach) — single item.
+        if items[end].attached_from is None:
+            if not _is_mergeable(items[end]):
+                break
+            accumulated += items[end].tokens
+            end += 1
+            if accumulated >= target:
+                break
+            continue
+        # Attach block path — either swallow the whole block or stop.
+        blk_end = _attach_block_end(items, end)
+        if not all(_is_mergeable(items[k]) for k in range(end, blk_end)):
+            break
+        block_tokens = sum(items[k].tokens for k in range(end, blk_end))
+        accumulated += block_tokens
+        end = blk_end
         if accumulated >= target:
             break
     return (start, end)
