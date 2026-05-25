@@ -82,6 +82,7 @@ export function McpPage() {
   const [detail, setDetail] = useState<ServerDetail | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
   // ``reload`` only refreshes the server list; it never touches
   // ``selected``. Selection bookkeeping lives in a separate effect
@@ -89,17 +90,19 @@ export function McpPage() {
   // empties ``_clients`` between stop and respawn) can't reset the
   // user's selection — the right pane just shows "Loading…" for a
   // beat and then snaps back when the server reappears.
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (signal?: AbortSignal) => {
     try {
-      const r = await fetch("/api/mcp/servers");
+      const r = await fetch("/api/mcp/servers", { signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
+      if (signal?.aborted) return;
       setServers((data.servers as ServerStatus[]) || []);
       setLoadErr(null);
     } catch (e) {
+      if ((e as Error).name === "AbortError") return;
       setLoadErr(String(e));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
@@ -112,11 +115,19 @@ export function McpPage() {
   busyRef.current = busy;
 
   useEffect(() => {
-    void reload();
+    // One AbortController for the lifetime of this effect; aborting
+    // it on cleanup cancels both the initial reload and any pending
+    // interval-driven reload, so we don't ``setServers`` on an
+    // unmounted component.
+    const ac = new AbortController();
+    void reload(ac.signal);
     const t = setInterval(() => {
-      if (busyRef.current === null) void reload();
+      if (busyRef.current === null) void reload(ac.signal);
     }, 4000);
-    return () => clearInterval(t);
+    return () => {
+      ac.abort();
+      clearInterval(t);
+    };
   }, [reload]);
 
   // Selection bookkeeping — only auto-select on initial load
@@ -128,18 +139,31 @@ export function McpPage() {
     }
   }, [servers, selected]);
 
-  const fetchDetail = useCallback(async (name: string) => {
-    try {
-      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`);
-      if (!r.ok) { setDetail(null); return; }
-      setDetail((await r.json()) as ServerDetail);
-    } catch {
-      setDetail(null);
-    }
-  }, []);
+  const fetchDetail = useCallback(
+    async (name: string, signal?: AbortSignal) => {
+      try {
+        const r = await fetch(
+          `/api/mcp/servers/${encodeURIComponent(name)}`,
+          { signal },
+        );
+        if (!r.ok) { setDetail(null); return; }
+        const json = (await r.json()) as ServerDetail;
+        if (signal?.aborted) return;
+        setDetail(json);
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        setDetail(null);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (selected) { setDetail(null); void fetchDetail(selected); }
+    if (!selected) return;
+    const ac = new AbortController();
+    setDetail(null);
+    void fetchDetail(selected, ac.signal);
+    return () => ac.abort();
   }, [selected, fetchDetail]);
 
   async function runAction(action: Exclude<BusyAction, null>, fn: () => Promise<void>) {
@@ -261,6 +285,12 @@ export function McpPage() {
               Refresh
             </button>
             <button
+              className={styles.actionBtn}
+              onClick={() => setCatalogOpen(true)}
+            >
+              Browse catalog
+            </button>
+            <button
               className={cn(styles.actionBtn, styles.actionBtnPrimary)}
               onClick={openAdd}
             >
@@ -346,6 +376,18 @@ export function McpPage() {
             setEditing(null);
             await reload();
             if (newName) setSelected(newName);
+          }}
+        />
+      )}
+
+      {catalogOpen && (
+        <CatalogDialog
+          existingNames={new Set(servers.map((s) => s.name))}
+          onClose={() => setCatalogOpen(false)}
+          onInstalled={async (name) => {
+            setCatalogOpen(false);
+            await reload();
+            setSelected(name);
           }}
         />
       )}
@@ -568,6 +610,185 @@ function ReauthButton({ name, onDone }: { name: string; onDone: () => void }) {
     >
       {busy ? "Opening browser…" : "Re-authenticate"}
     </button>
+  );
+}
+
+interface CatalogServer {
+  name: string;
+  type: string;
+  description?: string;
+  homepage?: string;
+  tags?: string[];
+  command?: string[];
+  url?: string;
+  auth?: { kind: string };
+  [k: string]: unknown;
+}
+
+function CatalogDialog({
+  existingNames, onClose, onInstalled,
+}: {
+  existingNames: Set<string>;
+  onClose: () => void;
+  onInstalled: (name: string) => void;
+}) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState<null | "fetch" | string>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<{
+    name: string;
+    description?: string;
+    servers: CatalogServer[];
+    skipped: number;
+  } | null>(null);
+
+  async function fetchCatalog() {
+    setErr(null); setCatalog(null);
+    if (!url.trim()) { setErr("paste a catalog URL first"); return; }
+    setBusy("fetch");
+    try {
+      const r = await fetch(
+        `/api/mcp/catalog?url=${encodeURIComponent(url.trim())}`,
+      );
+      const data = await r.json();
+      if (!r.ok) {
+        setErr(data.detail || `HTTP ${r.status}`);
+        return;
+      }
+      setCatalog(data);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function install(entry: CatalogServer) {
+    setErr(null);
+    if (existingNames.has(entry.name)) {
+      setErr(`already installed: ${entry.name}`);
+      return;
+    }
+    setBusy(entry.name);
+    try {
+      const r = await fetch("/api/mcp/servers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        setErr(data.detail || `HTTP ${r.status}`);
+        return;
+      }
+      onInstalled(entry.name);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-[640px]">
+        <DialogHeader>
+          <DialogTitle>Browse MCP catalog</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="cat-url">Catalog URL</Label>
+            <div className="flex gap-2">
+              <Input
+                id="cat-url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://example.com/mcp-catalog.json"
+                className="font-mono"
+              />
+              <button
+                className={cn(styles.actionBtn, styles.actionBtnPrimary)}
+                onClick={() => void fetchCatalog()}
+                disabled={busy === "fetch"}
+              >
+                {busy === "fetch" ? "Fetching…" : "Load"}
+              </button>
+            </div>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+              Catalog is a JSON object with a <code>servers</code> array;
+              each entry matches the local mcp_servers.json schema.
+            </div>
+          </div>
+
+          {err && (
+            <div className="rounded-md border p-2 font-mono text-xs"
+                 style={{ borderColor: "var(--accent-red)", color: "var(--accent-red)" }}>
+              {err}
+            </div>
+          )}
+
+          {catalog && (
+            <div className="flex flex-col gap-2">
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {catalog.name} — {catalog.servers.length} installable
+                {catalog.skipped > 0 && `, ${catalog.skipped} skipped (invalid)`}
+              </div>
+              <div className="flex max-h-[360px] flex-col gap-1.5 overflow-y-auto">
+                {catalog.servers.map((s) => {
+                  const installed = existingNames.has(s.name);
+                  return (
+                    <div key={s.name}
+                         className="flex items-start gap-3 rounded-md border px-3 py-2"
+                         style={{ borderColor: "var(--border)" }}>
+                      <div className="flex-1">
+                        <div className="font-mono text-sm font-semibold">
+                          {s.name}
+                          <span className="ml-2 text-xs font-normal"
+                                style={{ color: "var(--text-muted)" }}>
+                            {s.type}{s.auth?.kind && s.auth.kind !== "none"
+                              ? ` · ${s.auth.kind}` : ""}
+                          </span>
+                        </div>
+                        {s.description && (
+                          <div className="mt-0.5 text-xs"
+                               style={{ color: "var(--text-muted)" }}>
+                            {s.description}
+                          </div>
+                        )}
+                        <div className="mt-1 text-xs font-mono"
+                             style={{ color: "var(--text-muted)" }}>
+                          {s.type === "local"
+                            ? <code>{(s.command || []).join(" ")}</code>
+                            : <code>{s.url}</code>}
+                        </div>
+                      </div>
+                      <button
+                        className={cn(styles.actionBtn, styles.actionBtnPrimary)}
+                        onClick={() => void install(s)}
+                        disabled={installed || busy === s.name}
+                      >
+                        {installed
+                          ? "Installed"
+                          : busy === s.name
+                            ? "Installing…"
+                            : "Install"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <button className={styles.actionBtn} onClick={onClose}>
+            Close
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
