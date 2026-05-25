@@ -303,6 +303,48 @@ class MCPClient:
         result = await self._session.get_prompt(name, arguments or {})
         return result.model_dump(mode="json", exclude_none=True)
 
+    async def complete_argument(self, *,
+                                ref_kind: str, ref_name: str,
+                                arg_name: str, arg_value: str,
+                                context_arguments: Optional[dict] = None,
+                                ) -> dict:
+        """Ask the server for completion candidates for one argument
+        of a prompt or resource template.
+
+        ``ref_kind`` is ``"prompt"`` or ``"resource"``. The shape of
+        the return is the standard MCP CompleteResult envelope
+        (``completion.values``, ``completion.total``, ``completion.hasMore``).
+        Returns an empty completion result for servers that don't
+        support the capability rather than raising.
+        """
+        from mcp.types import PromptReference, ResourceTemplateReference
+
+        if self._session is None:
+            raise RuntimeError(
+                f"MCP server '{self.config.name}' not connected "
+                f"({self.error or 'no session'})"
+            )
+        if ref_kind == "prompt":
+            ref: Any = PromptReference(type="ref/prompt", name=ref_name)
+        elif ref_kind == "resource":
+            ref = ResourceTemplateReference(
+                type="ref/resource", uri=ref_name,
+            )
+        else:
+            raise ValueError(
+                f"ref_kind must be 'prompt' or 'resource', got {ref_kind!r}"
+            )
+
+        try:
+            result = await self._session.complete(
+                ref,
+                argument={"name": arg_name, "value": arg_value},
+                context_arguments=context_arguments,
+            )
+        except Exception:  # noqa: BLE001 — server may not support it
+            return {"completion": {"values": [], "total": 0, "hasMore": False}}
+        return result.model_dump(mode="json", exclude_none=True)
+
     async def call_tool(self, tool_name: str,
                         arguments: Optional[dict]) -> CallToolResult:
         """Dispatch a ``tools/call`` to the server.

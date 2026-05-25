@@ -159,6 +159,58 @@ def register(app: FastAPI) -> None:
                                 detail=f"server '{name}' not loaded")
         return JSONResponse(content=status)
 
+    @app.post("/api/mcp/servers/{name}/complete")
+    async def complete_argument(name: str, body: dict):
+        """Forward a completion request to an MCP server.
+
+        Body shape::
+
+            {
+              "ref_kind": "prompt" | "resource",
+              "ref_name": "<prompt name or resource URI template>",
+              "arg_name": "<argument name>",
+              "arg_value": "<partial value to complete>",
+              "context_arguments": {...optional...}
+            }
+
+        Returns the MCP CompleteResult envelope unchanged so the
+        caller can render ``completion.values`` (the list of
+        suggestions) directly.
+        """
+        from openprogram.mcp.registry import get_client
+        client = get_client(name)
+        if client is None:
+            raise HTTPException(status_code=404,
+                                detail=f"server '{name}' not loaded")
+        if not client.is_ready:
+            raise HTTPException(status_code=409,
+                                detail=f"server '{name}' not ready: "
+                                       f"{client.error or 'no session'}")
+        ref_kind = body.get("ref_kind")
+        ref_name = body.get("ref_name")
+        arg_name = body.get("arg_name")
+        arg_value = body.get("arg_value", "")
+        if not isinstance(ref_kind, str) or ref_kind not in ("prompt", "resource"):
+            raise HTTPException(status_code=400,
+                                detail="ref_kind must be 'prompt' or 'resource'")
+        if not isinstance(ref_name, str) or not ref_name:
+            raise HTTPException(status_code=400,
+                                detail="ref_name required")
+        if not isinstance(arg_name, str) or not arg_name:
+            raise HTTPException(status_code=400,
+                                detail="arg_name required")
+        try:
+            result = await client.complete_argument(
+                ref_kind=ref_kind,
+                ref_name=ref_name,
+                arg_name=arg_name,
+                arg_value=str(arg_value),
+                context_arguments=body.get("context_arguments") or None,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return JSONResponse(content=result)
+
     @app.get("/api/mcp/logs")
     async def get_logs(server: Optional[str] = None,
                        level: Optional[str] = None,
