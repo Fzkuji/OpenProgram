@@ -23,6 +23,8 @@ server set survives worker restarts.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -156,6 +158,32 @@ def register(app: FastAPI) -> None:
             raise HTTPException(status_code=404,
                                 detail=f"server '{name}' not loaded")
         return JSONResponse(content=status)
+
+    @app.get("/api/mcp/logs")
+    async def get_logs(server: Optional[str] = None,
+                       level: Optional[str] = None,
+                       limit: int = 100):
+        """Return recent MCP server log notifications.
+
+        Servers can push log lines via the standard
+        ``notifications/message`` once they observe the host has the
+        logging capability advertised. We tail the in-memory ring
+        buffer + optionally filter by server and minimum level.
+        """
+        from openprogram.mcp.client import get_log_history
+        history = get_log_history()
+        level_order = {"debug": 0, "info": 1, "notice": 2, "warning": 3,
+                       "error": 4, "critical": 5, "alert": 6, "emergency": 7}
+        if server:
+            history = [e for e in history if e["server"] == server]
+        if level and level in level_order:
+            cutoff = level_order[level]
+            history = [e for e in history
+                       if level_order.get(e["level"], 1) >= cutoff]
+        # Most recent last (consistent with log files); tail to limit.
+        if limit > 0:
+            history = history[-limit:]
+        return JSONResponse(content={"entries": history})
 
     @app.get("/api/mcp/roots")
     async def list_roots():

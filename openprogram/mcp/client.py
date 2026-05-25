@@ -20,6 +20,7 @@ import asyncio
 import datetime
 import os
 import sys
+import threading
 from typing import Any, Optional
 
 import httpx
@@ -63,6 +64,99 @@ def _is_session_expired(exc: BaseException) -> bool:
 # host doesn't support roots"; we return an empty list when no roots
 # are configured because the host CAN support the capability, it
 # just has no allowed paths to share yet.
+
+# -- logging notifications ------------------------------------------
+#
+# Server-side ``notifications/message`` lines flow into the worker
+# log + (when present) a process-wide subscriber list. The webui can
+# tail logs via the existing event stream; here we just normalise the
+# wire payload (level / logger / data) into one human-readable line
+# per notification.
+
+# Process-wide subscribers — webui SSE / WebSocket handlers register
+# a sync callback here; we invoke each on every new log line. Kept
+# untyped (a callable) to dodge a circular import on the webui types.
+_log_subscribers: list = []
+_log_subscribers_lock = threading.Lock()
+
+
+def add_log_subscriber(fn) -> None:  # noqa: ANN001 — fn(server, level, logger, text)
+    """Register a synchronous subscriber to MCP server log lines.
+
+    Called with ``(server: str, level: str, logger: Optional[str],
+    text: str, raw_data: Any)`` whenever any connected server emits a
+    ``notifications/message``. Subscribers should be cheap and
+    non-raising — exceptions are caught and dropped so a misbehaving
+    handler can't take down the MCP supervisor.
+    """
+    with _log_subscribers_lock:
+        _log_subscribers.append(fn)
+
+
+def remove_log_subscriber(fn) -> None:  # noqa: ANN001
+    with _log_subscribers_lock:
+        try:
+            _log_subscribers.remove(fn)
+        except ValueError:
+            pass
+
+
+# Recent-history ring buffer so a webui that connects late still sees
+# something useful. 200 lines × N servers ≈ a few KB; small.
+_log_history: list[dict] = []
+_log_history_max = 200
+
+
+def get_log_history() -> list[dict]:
+    """Snapshot of recent log entries across all servers."""
+    return list(_log_history)
+
+
+async def _handle_log_notification(server: str, params) -> None:  # noqa: ANN001
+    level = getattr(params, "level", "info") or "info"
+    logger_name = getattr(params, "logger", None)
+    data = getattr(params, "data", None)
+    if isinstance(data, (dict, list)):
+        try:
+            import json as _json
+            text = _json.dumps(data, ensure_ascii=False)
+        except Exception:  # noqa: BLE001
+            text = repr(data)
+    else:
+        text = str(data) if data is not None else ""
+
+    # Worker log — short header so grepping by server / level works.
+    prefix = f"[mcp][{server}][{level}]"
+    if logger_name:
+        prefix += f"[{logger_name}]"
+    print(f"{prefix} {text}", file=sys.stderr, flush=True)
+
+    entry = {
+        "server": server,
+        "level": level,
+        "logger": logger_name,
+        "text": text,
+        "data": data,
+        "ts": _now_ts(),
+    }
+    _log_history.append(entry)
+    if len(_log_history) > _log_history_max:
+        del _log_history[: len(_log_history) - _log_history_max]
+
+    # Fan out to live subscribers (webui streams).
+    with _log_subscribers_lock:
+        subs = list(_log_subscribers)
+    for fn in subs:
+        try:
+            fn(server, level, logger_name, text, data)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _now_ts() -> float:
+    import time as _t
+    return _t.time()
+
 
 async def _list_roots_callback(context):  # noqa: ANN001 — SDK type
     from mcp import types as _mcp_types
@@ -415,11 +509,20 @@ class MCPClient:
         from mcp.types import SamplingCapability
         from .sampling import sampling_callback
 
+        # Bind the server name into the logging callback so log lines
+        # show which server emitted them — a single shared callback
+        # would lose that.
+        server_name = self.config.name
+
+        async def _logging_callback(params) -> None:
+            await _handle_log_notification(server_name, params)
+
         async with ClientSession(
             read, write,
             list_roots_callback=_list_roots_callback,
             sampling_callback=sampling_callback,
             sampling_capabilities=SamplingCapability(),
+            logging_callback=_logging_callback,
         ) as session:
             await session.initialize()
             result = await session.list_tools()
