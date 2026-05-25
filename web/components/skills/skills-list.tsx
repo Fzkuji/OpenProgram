@@ -85,14 +85,11 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
           ? "border-primary bg-[var(--bg-selected)]"
           : "border-transparent hover:bg-bg-hover hover:text-nav-color-hover")
       }
-      title={skill.description || skill.name}
+      title={`${skill.description || skill.name}\n— ${skill.source}`}
     >
       <span className="text-[var(--text-tertiary)] shrink-0" aria-hidden>◦</span>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-medium text-[var(--text-bright)] truncate">{skill.leaf || skill.name}</span>
-          <SourceBadge source={skill.source} />
-        </div>
+        <span className="font-medium text-[var(--text-bright)] truncate block">{skill.leaf || skill.name}</span>
         {skill.description && (
           <p className="text-xs text-[var(--text-secondary)] truncate">{skill.description}</p>
         )}

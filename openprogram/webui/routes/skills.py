@@ -55,13 +55,31 @@ DEFAULT_DISCOVERY_SUGGESTIONS: list[dict] = [
         "url": "https://github.com/anthropics/skills/tree/main/skills",
         "label": "Anthropic Skills",
         "slug": "anthropic-skills",
-        "description": "Official Claude Code skill collection — 18 skills covering PDF/DOCX/PPTX, frontend design, MCP, Claude API, and more.",
+        "description": "Official Anthropic skill collection — 18 skills covering PDF/DOCX/PPTX, frontend design, MCP, Claude API, and more.",
     },
     {
         "url": "https://github.com/obra/superpowers",
         "label": "Superpowers (obra)",
         "slug": "superpowers",
         "description": "Community-curated agent skills by Jesse Vincent — brainstorming, parallel agents, code review, plans.",
+    },
+    {
+        "url": "https://github.com/daymade/claude-code-skills",
+        "label": "daymade Skills Marketplace",
+        "slug": "daymade-skills",
+        "description": "Production-ready skill marketplace by daymade — 50+ skills organised as a plugin marketplace.",
+    },
+    {
+        "url": "https://github.com/alirezarezvani/claude-skills",
+        "label": "Reza's Mega Pack",
+        "slug": "reza-claude-skills",
+        "description": "Massive cross-agent collection by Alireza Rezvani — 300+ skills + 30+ agents + custom commands spanning engineering, marketing, product, compliance, research, finance.",
+    },
+    {
+        "url": "https://github.com/Claude-Skills-Org/skills-main",
+        "label": "Claude-Skills-Org",
+        "slug": "claude-skills-org",
+        "description": "Community skill collection — 16 skills curated by the Claude-Skills-Org collective.",
     },
 ]
 
