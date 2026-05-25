@@ -19,11 +19,23 @@
  *   - `_execThinkingEffort` — exec-side effort, set by the agent settings.
  */
 
+/** One inline binary attachment delivered alongside the user message.
+ *  ``data`` is raw base64 (no ``data:image/...;base64,`` prefix) so the
+ *  WS payload matches what ``TurnRequest.attachments`` expects on the
+ *  Python side (see ``openprogram/agent/dispatcher.py``). */
+export interface ChatAttachment {
+  type: "image";
+  data: string;
+  media_type: string;
+  filename?: string;
+}
+
 interface SendMessageBridgeArgs {
   text: string;
   thinking: string;
   toolsEnabled: boolean;
   webSearchEnabled: boolean;
+  attachments?: ChatAttachment[];
 }
 
 interface SendWindow {
@@ -50,6 +62,7 @@ export function sendChatMessage({
   thinking,
   toolsEnabled,
   webSearchEnabled,
+  attachments,
 }: SendMessageBridgeArgs): boolean {
   const w = window as unknown as SendWindow;
   const ws = w.ws;
@@ -77,6 +90,18 @@ export function sendChatMessage({
     tools: toolsEnabled,
     web_search: webSearchEnabled,
   };
+  if (attachments && attachments.length > 0) {
+    // Backend (ws_actions/chat.py) reads ``attachments`` and dispatcher
+    // (TurnRequest.attachments) folds them into the user message as
+    // ImageContent blocks. Strip any data-URL prefix the caller might
+    // have left behind — backend expects pure base64.
+    payload.attachments = attachments.map((a) => ({
+      type: a.type,
+      data: a.data.replace(/^data:[^;]+;base64,/, ""),
+      media_type: a.media_type,
+      ...(a.filename ? { filename: a.filename } : {}),
+    }));
+  }
   // First message of a brand-new conversation: attach the channel
   // choice from the welcome-screen picker, if any. Ignored by the
   // backend for existing convs.

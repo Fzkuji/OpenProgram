@@ -26,7 +26,6 @@ import { useSessionStore } from "@/lib/session-store";
 import { ContextBadge } from "../context-badge";
 import { FunctionForm, visibleParams } from "./fn-form";
 import {
-  CaretIcon,
   PlusIcon,
   SendIcon,
   StopIcon,
@@ -39,18 +38,31 @@ import { sendChatMessage } from "./legacy-send";
 import {
   LONG_PASTE_THRESHOLD,
   expandPasteTokens,
+  missingPasteIds,
   pasteStore,
   placeholderToken,
   referencedPasteIds,
 } from "./paste-store";
-import { Slider } from "@/components/ui/slider";
-import { Lightning } from "@phosphor-icons/react/dist/ssr";
+import { PasteChips } from "./paste-chips";
+import {
+  type PendingImage,
+  collectImagesFromFiles,
+  collectImagesFromTransfer,
+} from "./image-attach";
+import { ThinkingEffortPill } from "./thinking-effort-pill";
 import { useFnFormState } from "./use-fn-form-state";
 import { useFnFormWrapper } from "./use-fn-form-wrapper";
 import { useSlashMenu } from "./use-slash-menu";
 import { useThinkingEffort } from "./use-thinking-effort";
 import { useToolsToggles } from "./use-tools-toggles";
 import styles from "./composer.module.css";
+
+/** Don't recall a user message longer than this through ↑/↓ history
+ *  cycling. Long messages (full pasted code, expanded tokens, etc.)
+ *  are not useful to step through and bloat the persisted draft on
+ *  every keystroke once recalled. The user can still scroll back to
+ *  the original message in the chat transcript to re-use it. */
+const HISTORY_RECALL_MAX = 5000;
 
 /* Single shared WebSocket. The legacy chat-ws.js script opens it as
    `window.ws`; this is the only point in the React layer that touches
@@ -93,7 +105,13 @@ export function Composer() {
     for (const id of messageOrder) {
       const m = messagesById[id];
       if (m && m.role === "user" && typeof m.content === "string"
-          && m.content.trim()) {
+          && m.content.trim()
+          // Skip giant messages — recalling them into the textarea
+          // would bloat the persisted draft (the per-keystroke write
+          // to ``composerDrafts``) and is rarely useful: long messages
+          // are typically expanded pastes, not commands the user wants
+          // to step back through with ↑/↓.
+          && m.content.length <= HISTORY_RECALL_MAX) {
         out.push(m.content);
       }
     }
@@ -114,13 +132,83 @@ export function Composer() {
   const pastedEntries = React.useMemo(() => {
     const referenced = referencedPasteIds(input);
     // Only show chips for tokens still present in the live draft.
-    return pasteStore.list().filter((e) => referenced.has(e.id));
+    // Include lost ones (chips in "missing" state) so the user sees
+    // them and can remove the dead tokens.
+    const live = pasteStore.list().filter((e) => referenced.has(e.id));
+    const liveIds = new Set(live.map((e) => e.id));
+    const out = [...live];
+    referenced.forEach((id) => {
+      if (!liveIds.has(id)) {
+        out.push({ id, content: "", numLines: 0 });
+      }
+    });
+    return out.sort((a, b) => a.id - b.id);
     // pasteTick is read implicitly by re-running this memo on tick bump.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, pasteTick]);
+  const pasteMissing = React.useMemo(
+    () => missingPasteIds(input),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [input, pasteTick],
+  );
+
+  // GC paste store entries that no draft references anymore. Watches
+  // composerDrafts AND the live ``input`` (the current session's
+  // draft). Without this, removing a session leaves its pastes stuck
+  // in the store forever.
+  const composerDrafts = useSessionStore((s) => s.composerDrafts);
+  useEffect(() => {
+    const all = new Set<number>();
+    referencedPasteIds(input).forEach((id) => all.add(id));
+    for (const k in composerDrafts) {
+      referencedPasteIds(composerDrafts[k]).forEach((id) => all.add(id));
+    }
+    pasteStore.retainOnly(all);
+  }, [composerDrafts, input]);
+
+  // Pending image attachments — kept in component state, not in a
+  // singleton, because they're naturally scoped to "the next turn the
+  // user submits". Adding via paste, drag-drop, or file picker. On
+  // submit the list is consumed and revoked; on session switch the
+  // user expects images to follow the draft, so we tie revocation
+  // strictly to send / explicit remove.
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRootRef = useRef<HTMLDivElement | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  const addImages = useCallback((imgs: PendingImage[]) => {
+    if (imgs.length === 0) return;
+    setPendingImages((prev) => [...prev, ...imgs]);
+    setImageError(null);
+  }, []);
 
   const onPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      // Image clipboard items take priority — if the user copied a
+      // screenshot we want to attach it, never paste raw binary into
+      // the textarea. Browsers populate ``items[].kind === "file"``
+      // for image pastes from screenshot tools and most file
+      // managers; ordinary text pastes leave items empty / "string".
+      const items = e.clipboardData?.items;
+      if (items) {
+        let hasImage = false;
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].kind === "file"
+              && items[i].type.startsWith("image/")) {
+            hasImage = true;
+            break;
+          }
+        }
+        if (hasImage) {
+          e.preventDefault();
+          void collectImagesFromTransfer(e.clipboardData!)
+            .then((imgs) => addImages(imgs))
+            .catch((err) => setImageError(String(err)));
+          return;
+        }
+      }
       const text = e.clipboardData?.getData("text") ?? "";
       if (text.length < LONG_PASTE_THRESHOLD) return;
       // Replace the textarea selection with our placeholder token and
@@ -139,7 +227,7 @@ export function Composer() {
         ta.setSelectionRange(pos, pos);
       });
     },
-    [input, setInput],
+    [input, setInput, addImages],
   );
 
   // Remove a paste chip — also strips the token from the textarea.
@@ -150,6 +238,68 @@ export function Composer() {
       pasteStore.remove(id);
     },
     [input, setInput],
+  );
+
+  const removeImage = useCallback((id: string) => {
+    setPendingImages((prev) => {
+      const next: PendingImage[] = [];
+      for (const p of prev) {
+        if (p.id === id) {
+          try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
+        } else {
+          next.push(p);
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const onPickImages = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const onFileInputChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
+      try {
+        const imgs = await collectImagesFromFiles(files);
+        addImages(imgs);
+      } catch (err) {
+        setImageError(String(err));
+      }
+      // Reset so picking the same file twice re-fires onChange.
+      e.target.value = "";
+    },
+    [addImages],
+  );
+
+  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+      setDragActive(true);
+    }
+  }, []);
+  const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    // Only fire when leaving the composer wrapper entirely, not just
+    // crossing between children — relatedTarget points outside.
+    if (!composerRootRef.current?.contains(e.relatedTarget as Node | null)) {
+      setDragActive(false);
+    }
+  }, []);
+  const onDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      if (!e.dataTransfer.types.includes("Files")) return;
+      e.preventDefault();
+      setDragActive(false);
+      try {
+        const imgs = await collectImagesFromTransfer(e.dataTransfer);
+        addImages(imgs);
+      } catch (err) {
+        setImageError(String(err));
+      }
+    },
+    [addImages],
   );
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
@@ -182,7 +332,7 @@ export function Composer() {
   const fnForm = useFnFormState(fnFormFunction);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
   // Refs:
   //  - `plusTriggerRef` / `plusMenuRef`: the plus menu is still portal'd
@@ -291,23 +441,33 @@ export function Composer() {
   const submit = useCallback(() => {
     if (isRunning) return;
     const trimmed = input.trim();
-    if (!trimmed) return;
+    // Allow image-only submits — the LLM can answer "describe this
+    // screenshot" without text. Otherwise require at least one of
+    // text or attached image.
+    if (!trimmed && pendingImages.length === 0) return;
     if (slash.query !== null && slash.runCommand(trimmed)) {
       setInput("");
       slash.close();
       return;
     }
-    // Expand long-paste tokens (``[Pasted #N +M lines]``) back into the
-    // outgoing text so the LLM receives the real content. After
-    // expansion the corresponding entries can be evicted from the
-    // store — keeping them past send is pointless and grows memory.
+    // Block submit if any paste token in the draft has lost its
+    // backing content. The chip row renders these in red and the
+    // ``sendDisabled`` guard below also disables the send button, but
+    // re-check here so an Enter-key submit can't slip through if the
+    // chip refresh hadn't fired yet.
+    if (missingPasteIds(trimmed).size > 0) return;
+    // Expand long-paste tokens (``[Pasted #N +M lines]``) back into
+    // the outgoing text so the LLM receives the real content. The
+    // entries stay in the store — they're now GC'd by the
+    // composerDrafts effect once no draft references them anymore.
     const expanded = expandPasteTokens(trimmed);
-    referencedPasteIds(trimmed).forEach((id) => pasteStore.remove(id));
+    const imagesPayload = pendingImages.map((p) => p.attachment);
     // Delegate to legacy `sendMessage` (chat.js) so the user bubble +
     // welcome-hide + assistant placeholder + isRunning flip all fire
     // before the WS payload goes out. Composer is just the trigger.
     const handled = sendChatMessage({
       text: expanded,
+      attachments: imagesPayload.length > 0 ? imagesPayload : undefined,
       thinking,
       toolsEnabled,
       webSearchEnabled,
@@ -328,11 +488,17 @@ export function Composer() {
     }
     setInput("");
     setHistoryIndex(-1);
+    // Revoke + clear pending images now that the WS payload is gone.
+    pendingImages.forEach((p) => {
+      try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
+    });
+    setPendingImages([]);
     slash.close();
   }, [
     currentSessionId,
     input,
     isRunning,
+    pendingImages,
     send,
     setInput,
     slash,
@@ -545,9 +711,12 @@ export function Composer() {
   ]);
 
   const onSendButtonClick = fnFormActive ? submitFnForm : submit;
-  // In chat mode: disabled when textarea is empty.
+  // In chat mode: disabled when textarea is empty OR when a paste
+  //   token references content that was lost (chip is red). Submitting
+  //   in the "lost" state would silently strip the token — see the
+  //   submit() guard mirror.
   // In fn-form mode: disabled when any required param has no value,
-  // OR when workdir is required and empty.
+  //   OR when workdir is required and empty.
   const sendDisabled = fnFormActive
     ? (() => {
         const fn = fnFormFunction!;
@@ -560,8 +729,12 @@ export function Composer() {
         }
         return false;
       })()
-    : !input.trim();
-  const sendTitle = fnFormActive ? "Run" : "Send message";
+    : !input.trim() || pasteMissing.size > 0;
+  const sendTitle = fnFormActive
+    ? "Run"
+    : pasteMissing.size > 0
+    ? "Paste content lost — remove the red chip and re-paste"
+    : "Send message";
 
   /* ---- Render -------------------------------------------------------- */
 
@@ -616,9 +789,116 @@ export function Composer() {
       </div>
 
       <div
-        ref={wrapperRef}
+        ref={(el) => {
+          // wrapperRef tracks the styled box; composerRootRef is the
+          // outer drop zone — same element here.
+          wrapperRef.current = el;
+          composerRootRef.current = el;
+        }}
         className={`${styles.inputWrapper} ${fnFormActive ? styles.fnFormMode : ""}`}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        style={dragActive ? {
+          outline: "2px dashed var(--accent-blue)",
+          outlineOffset: -4,
+        } : undefined}
       >
+        {/* Hidden file input — driven by the plus-menu "Attach image"
+            entry. Accepts multiple so a single picker invocation can
+            attach several screenshots. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={[
+            "image/png", "image/jpeg", "image/gif", "image/webp",
+          ].join(",")}
+          multiple
+          onChange={onFileInputChange}
+          style={{ display: "none" }}
+        />
+        {(pendingImages.length > 0 || imageError) && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              padding: "6px 8px 0",
+              alignItems: "center",
+            }}
+          >
+            {pendingImages.map((p) => (
+              <span
+                key={p.id}
+                title={p.attachment.filename || p.attachment.media_type}
+                style={{
+                  position: "relative",
+                  display: "inline-flex",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  overflow: "hidden",
+                  background: "var(--bg-tertiary)",
+                }}
+              >
+                <img
+                  src={p.previewUrl}
+                  alt={p.attachment.filename || "image"}
+                  style={{
+                    height: 48, width: 48, objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeImage(p.id)}
+                  aria-label={`Remove image ${p.attachment.filename || p.id}`}
+                  style={{
+                    position: "absolute",
+                    top: 1, right: 1,
+                    width: 16, height: 16,
+                    padding: 0,
+                    border: "none",
+                    borderRadius: 8,
+                    background: "rgba(0,0,0,0.55)",
+                    color: "white",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {imageError && (
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--accent-red)",
+                  marginLeft: 4,
+                }}
+              >
+                {imageError}
+                <button
+                  type="button"
+                  onClick={() => setImageError(null)}
+                  aria-label="Dismiss image error"
+                  style={{
+                    marginLeft: 4,
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--accent-red)",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </div>
+        )}
+
         {fnFormFunction ? (
           <FunctionForm
             // `key` ties to fn name so React re-mounts on every
@@ -637,73 +917,30 @@ export function Composer() {
             onSubmit={submitFnForm}
           />
         ) : (
-          <div key="top-half" className={styles.inputTopRow}>
-            {pastedEntries.length > 0 && (
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 6,
-                  padding: "4px 6px 0",
-                }}
-              >
-                {pastedEntries.map((p) => (
-                  <span
-                    key={p.id}
-                    title={p.content.slice(0, 500)
-                      + (p.content.length > 500 ? "…" : "")}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      padding: "1px 6px 1px 8px",
-                      borderRadius: 10,
-                      fontSize: 11,
-                      fontFamily:
-                        "ui-monospace, SFMono-Regular, Menlo, monospace",
-                      background: "var(--bg-tertiary)",
-                      color: "var(--text-muted)",
-                      border: "1px solid var(--border)",
-                    }}
-                  >
-                    Pasted #{p.id} · +{p.numLines} lines
-                    <button
-                      type="button"
-                      onClick={() => removePaste(p.id)}
-                      aria-label={`Remove paste #${p.id}`}
-                      style={{
-                        marginLeft: 2,
-                        padding: 0,
-                        border: "none",
-                        background: "transparent",
-                        color: "var(--text-muted)",
-                        cursor: "pointer",
-                        fontSize: 12,
-                        lineHeight: 1,
-                      }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <textarea
-              ref={textareaRef}
-              id="composer-chat-input"
-              name="chat_input"
-              autoComplete="off"
-              className={styles.chatInput}
-              placeholder=" create / run / edit or ask anything... (type / for commands)"
-              rows={1}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-              onFocus={() => slash.setFocused(true)}
-              onBlur={() => slash.setFocused(false)}
+          <>
+            <PasteChips
+              entries={pastedEntries}
+              missing={pasteMissing}
+              onRemove={removePaste}
             />
-          </div>
+            <div key="top-half" className={styles.inputTopRow}>
+              <textarea
+                ref={textareaRef}
+                id="composer-chat-input"
+                name="chat_input"
+                autoComplete="off"
+                className={styles.chatInput}
+                placeholder=" create / run / edit or ask anything... (type / for commands)"
+                rows={1}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                onPaste={onPaste}
+                onFocus={() => slash.setFocused(true)}
+                onBlur={() => slash.setFocused(false)}
+              />
+            </div>
+          </>
         )}
         {/* Outgoing fn-form overlay — only present during a fn → fn
             switch. Rendered AFTER the main form so that
@@ -798,6 +1035,16 @@ export function Composer() {
                       label="Web Search"
                       title="Give the agent web search this turn"
                     />
+                    <PlusMenuItem
+                      active={pendingImages.length > 0}
+                      onClick={() => {
+                        setPlusMenuOpen(false);
+                        onPickImages();
+                      }}
+                      icon={<span aria-hidden style={{ fontSize: 14 }}>🖼</span>}
+                      label="Attach image"
+                      title="Attach one or more images (or just paste / drag-drop)"
+                    />
                   </div>,
                   document.body,
                 )
@@ -868,324 +1115,3 @@ export function Composer() {
     </div>
   );
 }
-
-/**
- * Effort pill — the trigger IS the picker.
- *
- * Collapsed: a pill that reads `effort: medium ⌄`, sized to its content
- * (~131px). Click to expand.
- *
- * Expanded: the same pill animates its width out to ~340px and the
- * caret/text content swaps for `{value}` + an inline `<Slider />`.
- * Dragging the slider only updates the value — it doesn't collapse.
- * Closes when the user clicks anywhere outside the composer wrapper
- * (the document-level click-outside handler in the parent flips
- * `thinkingMenuOpen` back to `false`).
- *
- * Layout: the pill is wrapped in a `position: relative` host that
- * keeps the collapsed footprint reserved in the bottom-row flex flow.
- * The visible pill is `position: absolute` on top of that footprint,
- * so when it expands to 340px it floats over the rest of the row
- * without shoving the context badge / other controls aside.
- */
-const capEffort = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-
-const ThinkingEffortPill = React.forwardRef<
-  HTMLDivElement,
-  {
-    expanded: boolean;
-    onToggle: () => void;
-    options: { value: string; desc?: string }[];
-    value: string;
-    onChange: (v: string) => void;
-  }
->(function ThinkingEffortPill(
-  { expanded, onToggle, options, value, onChange },
-  ref,
-) {
-  // No options → provider/model exposes no thinking knob (e.g. gpt-4o,
-  // or a model whose picker is hidden): render nothing at all.
-  if (options.length === 0) return null;
-
-  // Exactly one option → the effort is fixed (e.g. claude-code, where
-  // the proxy ignores reasoning_effort and the value is always
-  // "auto"). Show it as a static label — no caret, no expand, no
-  // slider, not clickable. A dropdown with a single choice is dead UI.
-  if (options.length === 1) {
-    return (
-      <div
-        ref={ref}
-        className="inline-flex h-[32px] items-center rounded-full pl-[14px] pr-[14px] text-[14px] text-text-primary select-none whitespace-nowrap"
-        style={{ backgroundColor: "var(--effort-off-bg)" }}
-      >
-        <span>Effort: {capEffort(options[0].value)}</span>
-      </div>
-    );
-  }
-
-  // Two or more options → the interactive slider pill. Split into its
-  // own component so the hooks below never sit behind the conditional
-  // returns above (rules of hooks: the hook count must not change when
-  // `options.length` flips as the user switches agents).
-  return (
-    <ThinkingEffortSliderPill
-      ref={ref}
-      expanded={expanded}
-      onToggle={onToggle}
-      options={options}
-      value={value}
-      onChange={onChange}
-    />
-  );
-});
-
-const ThinkingEffortSliderPill = React.forwardRef<
-  HTMLDivElement,
-  {
-    expanded: boolean;
-    onToggle: () => void;
-    options: { value: string; desc?: string }[];
-    value: string;
-    onChange: (v: string) => void;
-  }
->(function ThinkingEffortSliderPill(
-  { expanded, onToggle, options, value, onChange },
-  ref,
-) {
-  const valueIndex = Math.max(
-    0,
-    options.findIndex((o) => o.value === value),
-  );
-  const maxIndex = Math.max(0, options.length - 1);
-  // Lightning size scales linearly with effort: from 10px at the
-  // `off` end to 18px at `xhigh`. A single bolt rides on the thumb
-  // — its position tells "where on the scale" and its size tells
-  // "how much effort" at a glance.
-  const lightningSize =
-    maxIndex > 0
-      ? Math.round(10 + (valueIndex / maxIndex) * 8)
-      : 10;
-  // Warm hue per effort level. NOT the project `--accent-*` tokens —
-  // those are deliberately muted/earthy (`--accent-orange` is a
-  // brownish #b8651f, `--accent-yellow` reads as dirt-yellow), which
-  // looked drab in the slider. Plain vivid hex hues, used as-is (no
-  // white mixing). `off` keeps neutral bright-white. Everything
-  // below derives from this single hue so the collapsed tint /
-  // range / bolt all agree.
-  const warmHue =
-    {
-      off: "var(--text-bright)",
-      minimal: "#fbbf24",
-      low: "#fbbf24",
-      medium: "#ff9d2e",
-      high: "#ff9d2e",
-      xhigh: "#ff5c5c",
-    }[value] ?? "var(--text-bright)";
-
-  // Effort-level tint for the COLLAPSED pill — `warmHue` at low
-  // opacity so it sits softly on the panel surface. `off` is special:
-  // a neutral grey chip with no hue. It uses the solid theme-aware
-  // `--effort-off-bg` token (dark #535350 / light #e8e6dc) — a flat
-  // colour, no transparency.
-  const collapsedTint =
-    value === "off"
-      ? "var(--effort-off-bg)"
-      : `color-mix(in srgb, ${warmHue} 16%, transparent)`;
-
-  // Active hue for the slider's filled elements (range bar, filled
-  // tick dots, focus ring) — `warmHue` at ~70% so it still reads as
-  // a soft fill against the grey track. Passed down via the
-  // `--slider-active` CSS custom property.
-  const activeColor = `color-mix(in srgb, ${warmHue} 72%, transparent)`;
-
-  // Fully-opaque variant for the Lightning bolt itself — it floats
-  // above the ring as a standalone glyph and would look faded if it
-  // inherited the half-alpha `--slider-active`.
-  const activeColorSolid = warmHue;
-
-  // Measure the spacer so the collapsed pill width exactly matches
-  // its content. Hard-coding 132px gave the same chip the same
-  // footprint regardless of label text — `effort: xhigh` left a
-  // ~30px trailing gap. Re-measures whenever the value changes.
-  const spacerRef = useRef<HTMLSpanElement>(null);
-  const [collapsedWidth, setCollapsedWidth] = useState<number>(120);
-  // `measured` gates the width transition. On first mount the pill
-  // renders at the 120px placeholder (also what SSR ships), then the
-  // layout effect below corrects it to the real measured width. If
-  // the transition were live, that 120 → real correction would
-  // visibly "bounce" on every page load.
-  //
-  // Critically, `measured` must flip to true in a LATER render than
-  // the width correction — if both happen in the same render the
-  // transition class lands at the same moment the width changes and
-  // the browser still animates from the SSR-painted 120px. So:
-  //   useLayoutEffect → correct width (transition still off)
-  //   rAF in useEffect → enable transition one frame later
-  const [measured, setMeasured] = useState(false);
-  useLayoutEffect(() => {
-    if (spacerRef.current) {
-      setCollapsedWidth(spacerRef.current.offsetWidth);
-    }
-  }, [value]);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setMeasured(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      className="relative inline-flex h-[32px] items-center"
-    >
-      {/* Invisible spacer keeps the collapsed pill's footprint in the
-          flex layout so expanding doesn't push the context badge or
-          other controls. Mirrors the collapsed pill content exactly. */}
-      <span
-        ref={spacerRef}
-        aria-hidden="true"
-        // `whitespace-nowrap` + `shrink-0` keep the spacer measuring
-        // its FULL single-line content width even when the parent
-        // flex row would otherwise compress it (which would wrap the
-        // text and make the spacer report a too-narrow offsetWidth,
-        // dragging the pill down with it).
-        className="invisible inline-flex shrink-0 items-center gap-[5px] pl-[14px] pr-[10px] text-[14px] whitespace-nowrap"
-      >
-        <span>Effort: {capEffort(value)}</span>
-        <CaretIcon />
-      </span>
-
-      {/* Visible pill. Only the WIDTH and the background colour
-          animate — the two content layers below switch via
-          `display: none` rather than opacity, so there's no
-          fade-in/fade-out crossfade (the user explicitly wanted
-          this gone). The slider lives in a fixed-260px-wide layer,
-          so as the pill expands the slider's internal layout never
-          recalculates — `overflow: hidden` on the pill just reveals
-          progressively more of the same stable layer.
-
-          Pill widths: 132px collapsed → 260px expanded (narrower
-          than the previous 340 since the slider track + icons
-          read fine in a tighter footprint). */}
-      <div
-        className={[
-          "absolute left-0 top-0 h-[32px] overflow-hidden",
-          "rounded-full cursor-pointer select-none",
-          "text-[14px]",
-          // Width transition is gated on `measured` so the first-mount
-          // 120px → real-width correction doesn't animate (no bounce
-          // on page refresh). Background colour can always transition.
-          measured
-            ? "transition-[width,background-color] duration-[220ms] ease-out"
-            : "transition-[background-color] duration-[220ms] ease-out",
-          expanded ? "bg-bg-hover text-text-bright" : "text-text-primary",
-        ].join(" ")}
-        style={{
-          width: expanded ? 260 : collapsedWidth,
-          // Tint the collapsed pill by current effort level (neutral
-          // white-grey at `off`, ramps to soft red at `xhigh`). When
-          // expanded we hand the bg back to the Tailwind class
-          // (`bg-bg-hover`) above and skip the inline override.
-          ...(expanded ? {} : { backgroundColor: collapsedTint }),
-          // CSS variables inherited by the slider inside:
-          //   --slider-active        →  range / ticks / focus ring
-          //                              (soft, ~70% alpha)
-          //   --slider-active-solid  →  Lightning bolt thumb
-          //                              (opaque, full-strength hue)
-          ["--slider-active" as string]: activeColor,
-          ["--slider-active-solid" as string]: activeColorSolid,
-        } as React.CSSProperties}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-      >
-        {/* Collapsed content. `hidden` (display: none) when expanded
-            so there's no overlap / fade — instant swap on toggle.
-            `whitespace-nowrap` keeps the label on a single line at
-            the same width the spacer measured. */}
-        <div
-          className={[
-            "h-full flex items-center gap-[5px] pl-[14px] pr-[10px] whitespace-nowrap",
-            expanded ? "hidden" : "",
-          ].join(" ")}
-        >
-          <span>Effort: {capEffort(value)}</span>
-          <CaretIcon />
-        </div>
-
-        {/* Expanded content. Fixed 260px wide so the slider track +
-            tick math don't recompute mid-transition. Hidden via
-            display:none when collapsed. */}
-        <div
-          className={[
-            "h-full flex items-center gap-[10px] px-[12px]",
-            !expanded ? "hidden" : "",
-          ].join(" ")}
-          style={{ width: 260 }}
-        >
-          <span className="shrink-0 min-w-[56px] text-center text-text-primary">
-            {capEffort(value)}
-          </span>
-          <Slider
-            min={0}
-            max={maxIndex}
-            step={1}
-            stops={options.length}
-            value={[valueIndex]}
-            onValueChange={(v) => {
-              const idx = v[0] ?? 0;
-              const next = options[idx];
-              if (next) onChange(next.value);
-            }}
-            // Stop click from bubbling to the pill's onClick.
-            onClick={(e) => e.stopPropagation()}
-            // The thumb itself is a Lightning bolt that travels with
-            // the value. Size scales from 10px (off) → 22px (xhigh)
-            // so position tells you "where" and size tells you
-            // "how much" simultaneously. Colour is the same effort
-            // hue used by the filled range (via `--slider-active`).
-            // `aria-hidden` on the icon since the slider Root
-            // already announces value/min/max.
-            thumb={
-              <>
-                {/* Hollow-looking ring around the bolt:
-                    - Interior is painted in `bg-bg-hover` (the
-                      expanded pill's own background), so it appears
-                      "transparent" against the surrounding pill and
-                      visually cuts the slider track + any tick at
-                      the thumb's position.
-                    - The 1px border in soft `text-bright` gives the
-                      shape a visible outline so it reads as a ring,
-                      not just an invisible mask.
-                    Sized 4px wider than the bolt so the cut feels
-                    generous and the ring frames the glyph cleanly. */}
-                <span
-                  aria-hidden="true"
-                  // Ring scales with the bolt — always `lightningSize
-                  // + 8`, so as effort climbs both the bolt and its
-                  // frame grow together (the bolt still sits proudly
-                  // inside the ring rather than bursting through it).
-                  // Size animates with the same 150ms easing as the
-                  // bolt's `transition-[width,height]`.
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover border-[3px] border-[color-mix(in_srgb,var(--text-bright)_40%,transparent)] transition-[width,height] duration-150 ease-out"
-                  style={{
-                    width: lightningSize + 8,
-                    height: lightningSize + 8,
-                  }}
-                />
-                <Lightning
-                  size={lightningSize}
-                  weight="fill"
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active-solid)] pointer-events-none transition-[width,height] duration-150 ease-out"
-                  aria-hidden="true"
-                />
-              </>
-            }
-            className="flex-1"
-          />
-        </div>
-      </div>
-    </div>
-  );
-});
-
