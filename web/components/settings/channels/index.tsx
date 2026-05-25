@@ -29,21 +29,10 @@ export function ChannelsSection() {
   const [statuses, setStatuses] = useState<StatusMap>({});
   const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(async () => {
-    try {
-      const [accountsResp, bindingsResp] = await Promise.all([
-        fetch("/api/channels/accounts"),
-        fetch("/api/channels/bindings"),
-      ]);
-      const accountsData = await accountsResp.json();
-      const bindingsData = await bindingsResp.json();
-      const accountsList: ChannelAccount[] = accountsData.accounts || [];
-      setAccounts(accountsList);
-      setBindings(bindingsData.bindings || []);
-
-      // Fetch live alive/stale status for each account in parallel.
-      // Single 404 / network glitch doesn't block the whole table —
-      // we just skip that row's dot.
+  // Status fetch 独立成自己的 helper, 这样 30s 定时刷新只更新 status
+  // 而不打扰 accounts/bindings 表 (静态信息只在用户操作后才需要刷新).
+  const refreshStatuses = useCallback(
+    async (accountsList: ChannelAccount[]) => {
       const statusEntries = await Promise.all(
         accountsList.map(async (a) => {
           try {
@@ -63,16 +52,42 @@ export function ChannelsSection() {
         if (e) map[e[0]] = e[1];
       }
       setStatuses(map);
+    },
+    [],
+  );
+
+  const reload = useCallback(async () => {
+    try {
+      const [accountsResp, bindingsResp] = await Promise.all([
+        fetch("/api/channels/accounts"),
+        fetch("/api/channels/bindings"),
+      ]);
+      const accountsData = await accountsResp.json();
+      const bindingsData = await bindingsResp.json();
+      const accountsList: ChannelAccount[] = accountsData.accounts || [];
+      setAccounts(accountsList);
+      setBindings(bindingsData.bindings || []);
+      await refreshStatuses(accountsList);
     } catch (e) {
       console.error("channels reload failed:", e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshStatuses]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // 30s 定时只刷新 status dot — 让用户不刷新页面就能看到 adapter 挂了
+  // 或重新连上. 用最新的 accounts 列表跑 refresh, 没 accounts 时跳过.
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    const handle = setInterval(() => {
+      void refreshStatuses(accounts);
+    }, 30_000);
+    return () => clearInterval(handle);
+  }, [accounts, refreshStatuses]);
 
   if (loading) {
     return (
