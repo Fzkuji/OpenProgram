@@ -95,6 +95,7 @@ def _status_dict(name: str, client: MCPClient) -> dict[str, Any]:
         "always_load": cfg.always_load,
         "ready": client.is_ready,
         "error": client.error,
+        "error_kind": client.error_kind,
         "tool_count": len(client.tools),
         "tools": [t.name for t in client.tools],
         "registered_tool_names": list(

@@ -43,6 +43,7 @@ interface ServerStatus {
   always_load: boolean;        // ship full schemas on turn 1 (vs defer via tool_search)
   ready: boolean;
   error: string | null;
+  error_kind?: null | "transient" | "needs_reauth" | "fatal";
   tool_count: number;
   tools: string[];
   // local
@@ -417,9 +418,21 @@ function DetailView({
       </div>
 
       {server.error && server.error !== "disabled" && (
-        <div className="rounded-md border p-3 font-mono text-xs"
-             style={{ borderColor: "var(--accent-red)", color: "var(--accent-red)" }}>
-          {server.error}
+        <div className="flex flex-col gap-2 rounded-md border p-3"
+             style={{ borderColor: "var(--accent-red)" }}>
+          <div className="flex items-center gap-2 text-xs font-semibold"
+               style={{ color: "var(--accent-red)" }}>
+            {server.error_kind === "needs_reauth" && "Re-authentication required"}
+            {server.error_kind === "transient" && "Reconnecting…"}
+            {server.error_kind === "fatal" && "Connection failed"}
+            {!server.error_kind && "Error"}
+          </div>
+          <div className="font-mono text-xs" style={{ color: "var(--accent-red)" }}>
+            {server.error}
+          </div>
+          {server.error_kind === "needs_reauth" && (
+            <ReauthButton name={server.name} onDone={onRestart} />
+          )}
         </div>
       )}
 
@@ -523,6 +536,38 @@ function DetailView({
         </div>
       )}
     </div>
+  );
+}
+
+function ReauthButton({ name, onDone }: { name: string; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    if (!confirm(
+      `Re-authenticate "${name}"? This wipes stored tokens and re-opens the browser to complete a fresh OAuth flow.`,
+    )) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/auth/reauth`,
+        { method: "POST" });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert(`Re-auth failed: ${d.detail || `HTTP ${r.status}`}`);
+        return;
+      }
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      className={cn(styles.actionBtn, styles.actionBtnPrimary)}
+      style={{ alignSelf: "flex-start" }}
+      onClick={() => void go()}
+      disabled={busy}
+    >
+      {busy ? "Opening browser…" : "Re-authenticate"}
+    </button>
   );
 }
 

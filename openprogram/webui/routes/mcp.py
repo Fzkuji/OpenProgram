@@ -139,6 +139,24 @@ def register(app: FastAPI) -> None:
     async def disable_one(name: str):
         return await patch_one(name, {"enabled": False})
 
+    @app.post("/api/mcp/servers/{name}/auth/reauth")
+    async def reauth_one(name: str):
+        """Tear down stored tokens + restart so a fresh OAuth flow runs.
+
+        Shortcut wired to the "Re-authenticate" button in the server
+        detail panel when ``error_kind == 'needs_reauth'``. Same effect
+        as POST /auth/clear (which is kept around for backwards
+        compatibility with anyone scripting the older endpoint).
+        """
+        from openprogram.mcp.token_storage import FileTokenStorage
+        FileTokenStorage(name).clear()
+        try:
+            status = await restart_server(name)
+        except KeyError:
+            raise HTTPException(status_code=404,
+                                detail=f"server '{name}' not loaded")
+        return JSONResponse(content=status)
+
     @app.get("/api/mcp/auth/pending")
     async def pending_auth():
         """List in-progress OAuth flows + their authorisation URLs.

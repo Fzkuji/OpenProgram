@@ -30,6 +30,31 @@ from mcp.types import CallToolResult, Tool
 from .config import AUTH_BEARER, AUTH_OAUTH, HTTP, LOCAL, SSE, MCPServerConfig
 
 
+# Recognise errors that indicate "the session/transport died but is
+# probably recoverable by reconnecting" — claude-code calls this
+# ``isMcpSessionExpiredError`` and uses the same signal to bounce.
+#
+# Conservative on purpose: false positives mean an extra reconnect
+# attempt (cheap); false negatives mean a stuck-broken session that
+# stays broken until the user notices.
+_SESSION_EXPIRED_HINTS = (
+    "session expired",
+    "session not found",
+    "Bad Request",          # streamable_http on a closed session_id
+    "ClosedResourceError",  # anyio: peer closed the channel
+    "EndOfStream",          # anyio: server hung up
+    "ConnectError",         # httpx: TCP / TLS dropped
+    "RemoteProtocolError",  # httpx: half-closed
+    "PoolTimeout",          # httpx: queue stalled
+    "401",                  # bearer / cookie auth expired
+)
+
+
+def _is_session_expired(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(h.lower() in text for h in _SESSION_EXPIRED_HINTS)
+
+
 class MCPClient:
     """Holds one MCP server connection for the worker's lifetime."""
 
@@ -37,9 +62,24 @@ class MCPClient:
         self.config = config
         self.tools: list[Tool] = []
         self.error: Optional[str] = None
+        # Coarse classifier for the UI / management API:
+        #   None             — healthy or never connected
+        #   "transient"      — connection / session dropped; supervisor
+        #                      is backing off + auto-reconnecting
+        #   "needs_reauth"   — OAuth refresh_token rejected; supervisor
+        #                      has stopped, user must clear tokens and
+        #                      restart the server (the management UI
+        #                      surfaces a Re-authenticate button)
+        #   "fatal"          — non-recoverable startup failure (bad
+        #                      command, unreachable URL, etc.)
+        self.error_kind: Optional[str] = None
         self._session: Optional[ClientSession] = None
         self._ready = asyncio.Event()
         self._shutdown = asyncio.Event()
+        # Fires when call_tool / etc. notice the session is stale —
+        # supervisor sees it, drops the current session block, and the
+        # outer retry loop reconnects on the next iteration.
+        self._reconnect_signal = asyncio.Event()
         self._supervisor_task: Optional[asyncio.Task] = None
         # Serialise tool calls per server. The MCP SDK's ClientSession
         # is single-flight by default; concurrent call_tool on the same
@@ -152,48 +192,171 @@ class MCPClient:
                         arguments: Optional[dict]) -> CallToolResult:
         """Dispatch a ``tools/call`` to the server.
 
-        Raises :class:`RuntimeError` if the session is not ready
-        (either start failed or stop has been called).
+        Auto-reconnects once if the call fails with a session-expired
+        error. Beyond that, propagates. Raises :class:`RuntimeError`
+        if the session can't be re-established within a short window.
         """
-        if self._session is None:
+        timeout_delta = datetime.timedelta(seconds=self.config.timeout_seconds)
+        for attempt in range(2):
+            await self._await_session_ready()
+            try:
+                async with self._call_lock:
+                    return await self._session.call_tool(
+                        tool_name,
+                        arguments=arguments or {},
+                        read_timeout_seconds=timeout_delta,
+                    )
+            except Exception as e:  # noqa: BLE001
+                if attempt == 0 and _is_session_expired(e):
+                    # Tell the supervisor to bounce — it'll re-init
+                    # the session, our next loop iteration uses the
+                    # fresh one.
+                    self._signal_reconnect()
+                    await self._await_session_ready(timeout=15)
+                    continue
+                raise
+        # Loop only exits via return; ``raise`` above handles failure.
+        raise RuntimeError("unreachable")
+
+    async def _await_session_ready(self, *, timeout: float = 0.0) -> None:
+        """Wait until ``self._session`` is populated by the supervisor.
+
+        ``timeout=0`` (default) returns immediately — caller already
+        checked. After a reconnect we pass a short timeout so callers
+        don't race the supervisor.
+        """
+        if self._session is not None and self.error_kind != "needs_reauth":
+            return
+        if self.error_kind in ("needs_reauth", "fatal"):
             raise RuntimeError(
                 f"MCP server '{self.config.name}' not connected "
                 f"({self.error or 'no session'})"
             )
-        timeout_delta = datetime.timedelta(seconds=self.config.timeout_seconds)
-        async with self._call_lock:
-            return await self._session.call_tool(
-                tool_name,
-                arguments=arguments or {},
-                read_timeout_seconds=timeout_delta,
+        if timeout <= 0:
+            raise RuntimeError(
+                f"MCP server '{self.config.name}' not connected "
+                f"({self.error or 'no session'})"
             )
+        # Wait for the supervisor to set _ready again after a reconnect.
+        self._ready.clear()
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"MCP server '{self.config.name}' reconnect timed out"
+            )
+        if self.error_kind in ("needs_reauth", "fatal"):
+            raise RuntimeError(
+                f"MCP server '{self.config.name}' reconnect failed: "
+                f"{self.error}"
+            )
+
+    def _signal_reconnect(self) -> None:
+        """Notify the supervisor to drop + rebuild the session."""
+        self._reconnect_signal.set()
 
     # -- supervisor ---------------------------------------------------
     async def _supervisor(self) -> None:
         """Long-lived task — holds the transport + ClientSession open.
 
-        On any exception (subprocess crash, protocol error, HTTP
-        failure), records the error and sets ``_ready`` so ``start()``
-        can return. Cleanup happens via the ``async with`` exits.
+        Retry policy: on transient transport failures (network drop,
+        session expiry that refresh fixed silently, remote restart)
+        the supervisor sleeps with exponential backoff and reconnects.
+        ``OAuthRegistrationError`` and ``OAuthTokenError`` mean the
+        user has to re-authorise — we stop trying and set
+        ``error_kind="needs_reauth"`` so the UI can surface a re-auth
+        button. ``CancelledError`` propagates.
         """
+        # Resolve exception classes once. The OAuth ones only exist
+        # for HTTP-transport remote servers; we import lazily so a
+        # stdio-only worker doesn't pull the auth submodule.
         try:
-            if self.config.type == LOCAL:
-                await self._run_local()
-            elif self.config.type == HTTP:
-                await self._run_http()
-            elif self.config.type == SSE:
-                await self._run_sse()
-            else:
-                raise RuntimeError(
-                    f"unsupported transport: {self.config.type}"
-                )
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:  # noqa: BLE001
-            self.error = f"{type(e).__name__}: {e}"
-            self._ready.set()
-        finally:
-            self._session = None
+            from mcp.client.auth import (
+                OAuthRegistrationError,
+                OAuthTokenError,
+            )
+            _REAUTH_ERRORS: tuple = (OAuthRegistrationError, OAuthTokenError)
+        except Exception:  # noqa: BLE001
+            _REAUTH_ERRORS = ()
+
+        backoff = 1.0
+        attempt = 0
+        max_transient_attempts = 6     # ~63s cumulative across the back-offs
+
+        while not self._shutdown.is_set():
+            try:
+                self._reconnect_signal.clear()
+                if self.config.type == LOCAL:
+                    await self._run_local()
+                elif self.config.type == HTTP:
+                    await self._run_http()
+                elif self.config.type == SSE:
+                    await self._run_sse()
+                else:
+                    raise RuntimeError(
+                        f"unsupported transport: {self.config.type}"
+                    )
+                # Clean exit from the session block — either
+                # ``_shutdown`` was set (stop()) or
+                # ``_reconnect_signal`` fired (call_tool flagged a
+                # stale session). Either way, the ``async with`` ran
+                # to completion without raising; no error to record.
+                if self._shutdown.is_set():
+                    return
+                # Otherwise it was a reconnect request — reset the
+                # backoff (this isn't a failure) and loop to reconnect.
+                attempt = 0
+                backoff = 1.0
+                self.error = None
+                self.error_kind = None
+                continue
+            except asyncio.CancelledError:
+                raise
+            except _REAUTH_ERRORS as e:
+                # refresh_token rejected, dynamic client registration
+                # rejected — the user must clear tokens and walk the
+                # OAuth flow again. Stop retrying.
+                self.error = f"{type(e).__name__}: {e}"
+                self.error_kind = "needs_reauth"
+                self._ready.set()
+                return
+            except Exception as e:  # noqa: BLE001
+                self.error = f"{type(e).__name__}: {e}"
+                # First-attempt failure on startup is fatal — the
+                # config is probably wrong (bad command, dead URL,
+                # missing API key). Don't auto-retry: noisy and
+                # misleading. Mid-life failures (we were healthy then
+                # dropped) are transient until ``max_transient_attempts``.
+                healthy_before = self._ready.is_set() and self._session is not None
+                self._session = None
+                if healthy_before and attempt < max_transient_attempts:
+                    self.error_kind = "transient"
+                    attempt += 1
+                    print(
+                        f"[mcp] '{self.config.name}' transient error "
+                        f"(attempt {attempt}/{max_transient_attempts}): "
+                        f"{self.error}; retrying in {backoff:.1f}s",
+                        file=sys.stderr,
+                    )
+                    try:
+                        await asyncio.wait_for(self._shutdown.wait(),
+                                                timeout=backoff)
+                        return  # stop() arrived mid-backoff
+                    except asyncio.TimeoutError:
+                        pass
+                    backoff = min(backoff * 2, 30.0)
+                    continue
+                # First-attempt failure or transient-retry budget
+                # exhausted — record + stop.
+                self.error_kind = "fatal"
+                self._ready.set()
+                return
+            finally:
+                # Session reference is cleared when the ``async with``
+                # exits; defensive nil-out so callers don't see a
+                # stale ClientSession reference.
+                if not self._reconnect_signal.is_set() or self._shutdown.is_set():
+                    self._session = None
 
     async def _run_local(self) -> None:
         cmd = self.config.command
@@ -233,9 +396,31 @@ class MCPClient:
             result = await session.list_tools()
             self._session = session
             self.tools = list(result.tools)
+            # Once we've reached this point at least once, clear any
+            # leftover transient-error message so a successful
+            # reconnection stops surfacing the prior failure to the UI.
+            self.error = None
+            self.error_kind = None
             self._ready.set()
-            # Hold the session open until shutdown.
-            await self._shutdown.wait()
+            # Hold the session open until either shutdown
+            # (stop / worker exit) or a reconnect signal (call_tool
+            # caught a session-expired error and wants the supervisor
+            # to drop + rebuild). Either way, returning here exits the
+            # ``async with`` and closes the underlying session.
+            shutdown_task = asyncio.create_task(self._shutdown.wait())
+            reconnect_task = asyncio.create_task(self._reconnect_signal.wait())
+            try:
+                done, _ = await asyncio.wait(
+                    {shutdown_task, reconnect_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            finally:
+                for t in (shutdown_task, reconnect_task):
+                    if not t.done():
+                        t.cancel()
+            # Either way, exit the with-block so the session closes
+            # cleanly. The supervisor's outer loop reads the events
+            # to decide whether to retry or stop.
 
     # -- remote auth --------------------------------------------------
     def _build_remote_auth(self) -> tuple[dict[str, str],
