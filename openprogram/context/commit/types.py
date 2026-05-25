@@ -59,6 +59,13 @@ class ContextItem:
     is_anchor: bool = False
     anchor_for_summary: Optional[str] = None  # 锚点服务的 summary id
 
+    # ── Attach 溯源 ────────────────────────────────
+    # 非 None 表示这条 item 是由 attach pointer 展开来的, 值是
+    # source 分支末端的 ContextCommit id。用于 (a) UI 按 attach 块
+    # 分组渲染, (b) 跨 turn dedup (parent commit 已经有同一个
+    # source_commit_id 的 item 就不重复展开).
+    attached_from: Optional[str] = None
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "source_node_id": self.source_node_id,
@@ -72,6 +79,7 @@ class ContextItem:
             "merged_into": self.merged_into,
             "is_anchor": self.is_anchor,
             "anchor_for_summary": self.anchor_for_summary,
+            "attached_from": self.attached_from,
         }
 
     @classmethod
@@ -88,6 +96,7 @@ class ContextItem:
             merged_into=d.get("merged_into"),
             is_anchor=bool(d.get("is_anchor", False)),
             anchor_for_summary=d.get("anchor_for_summary"),
+            attached_from=d.get("attached_from"),
         )
 
 
