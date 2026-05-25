@@ -51,7 +51,7 @@ export function ChannelsSection() {
     return (
       <div className={styles.detail}>
         <div className={styles.detailHeader}>
-          <span className={styles.detailTitle}>Loading channels…</span>
+          <span className={styles.detailTitle}>正在加载…</span>
         </div>
       </div>
     );
@@ -60,10 +60,11 @@ export function ChannelsSection() {
   return (
     <div className={styles.detail}>
       <div className={styles.detailHeader}>
-        <span className={styles.detailTitle}>Channels</span>
+        <span className={styles.detailTitle}>聊天平台接入</span>
         <span className={styles.detailMeta}>
-          Connect bots to Telegram / Discord / Slack / WeChat. Inbound
-          messages route to agents via bindings below.
+          让 OpenProgram 上的 agent 在 Telegram / Discord / Slack / 微信里
+          收发消息。两步: 1) 添加机器人账号 (粘贴 bot token 或微信扫码) →
+          2) 设规则决定哪个平台 / 哪个用户的消息派给哪个 agent 来回复。
         </span>
       </div>
 

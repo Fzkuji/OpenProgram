@@ -48,7 +48,7 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
   const submit = async () => {
     setError(null);
     if (!channel || !agentId.trim()) {
-      setError("channel 和 agent 都必填");
+      setError("平台和 agent 都要选");
       return;
     }
     setSubmitting(true);
@@ -84,7 +84,7 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
     <div className={styles.modalBackdrop} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.modalHeader}>
-          <span className={styles.modalTitle}>Add binding</span>
+          <span className={styles.modalTitle}>添加派发规则</span>
           <button
             className={styles.iconBtn}
             onClick={onClose}
@@ -96,8 +96,13 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
         </div>
 
         <div className={styles.modalBody}>
+          <div className={styles.formHelp}>
+            规则的意思: <b>"从 [平台] 上 [某个 bot 账号]、由 [某个用户/群]
+            发来的消息, 都派给 [某个 agent] 处理。"</b> 留空的部分就是"任何"。
+          </div>
+
           <label className={styles.formRow}>
-            <span className={styles.formLabel}>Channel</span>
+            <span className={styles.formLabel}>① 哪个平台</span>
             <select
               className={styles.formInput}
               value={channel}
@@ -107,7 +112,7 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
               }}
             >
               {channelOptions.length === 0 ? (
-                <option value="">(no channels configured)</option>
+                <option value="">(还没配机器人, 请先回到上面添加)</option>
               ) : null}
               {channelOptions.map((c) => (
                 <option key={c} value={c}>
@@ -118,48 +123,55 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
           </label>
 
           <label className={styles.formRow}>
-            <span className={styles.formLabel}>Account (optional)</span>
+            <span className={styles.formLabel}>② 哪个 bot 账号</span>
             <select
               className={styles.formInput}
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
             >
-              <option value="">— any account —</option>
+              <option value="">任何 bot 账号</option>
               {accountOptions.map((a) => (
                 <option key={a.account_id} value={a.account_id}>
                   {a.account_id}
                 </option>
               ))}
             </select>
+            <span className={styles.formHint}>
+              留 "任何" 就匹配这个平台下所有 bot。
+            </span>
           </label>
 
           <label className={styles.formRow}>
-            <span className={styles.formLabel}>Peer (optional)</span>
+            <span className={styles.formLabel}>③ 谁发来的</span>
             <input
               className={styles.formInput}
               value={peer}
               onChange={(e) => setPeer(e.target.value)}
-              placeholder="留空匹配任何 peer; 填写则只匹配该 peer"
+              placeholder="留空 = 任何人发来的都算"
             />
+            <span className={styles.formHint}>
+              想限定某个用户 / 群, 填它的 ID (比如 Telegram chat id、
+              Discord channel id)。留空就匹配任何对方。
+            </span>
           </label>
 
           {peer.trim() && (
             <label className={styles.formRow}>
-              <span className={styles.formLabel}>Peer kind</span>
+              <span className={styles.formLabel}>对方类型</span>
               <select
                 className={styles.formInput}
                 value={peerKind}
                 onChange={(e) => setPeerKind(e.target.value)}
               >
-                <option value="direct">direct (1-on-1 DM)</option>
-                <option value="group">group (multi-user)</option>
-                <option value="channel">channel (broadcast)</option>
+                <option value="direct">私聊 (1 对 1)</option>
+                <option value="group">群组 (多人)</option>
+                <option value="channel">频道 / 广播</option>
               </select>
             </label>
           )}
 
           <label className={styles.formRow}>
-            <span className={styles.formLabel}>→ Agent</span>
+            <span className={styles.formLabel}>④ 派给哪个 agent</span>
             {agents.length > 0 ? (
               <select
                 className={styles.formInput}
@@ -177,7 +189,7 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
                 className={styles.formInput}
                 value={agentId}
                 onChange={(e) => setAgentId(e.target.value)}
-                placeholder="agent id"
+                placeholder="agent id (如 main)"
               />
             )}
           </label>
@@ -191,7 +203,7 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
             onClick={onClose}
             type="button"
           >
-            Cancel
+            取消
           </button>
           <button
             className={styles.primaryBtn}
@@ -199,7 +211,7 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
             disabled={submitting}
             type="button"
           >
-            {submitting ? "Adding…" : "Add binding"}
+            {submitting ? "添加中…" : "添加规则"}
           </button>
         </div>
       </div>

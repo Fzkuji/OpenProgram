@@ -11,9 +11,9 @@ interface Props {
 }
 
 const TOKEN_HINT: Record<string, string> = {
-  telegram: "Get from @BotFather after /newbot.",
-  discord: "Discord Developer Portal → Application → Bot → Reset Token.",
-  slack: "OAuth & Permissions → Bot User OAuth Token (starts with xoxb-).",
+  telegram: "在 Telegram 里找 @BotFather 发 /newbot, 它会给你一个 token。",
+  discord: "Discord Developer Portal → 你的 Application → Bot → Reset Token。",
+  slack: "Slack app 设置 → OAuth & Permissions → Bot User OAuth Token (xoxb- 开头)。",
 };
 
 export function AddAccountDialog({ onClose, onAdded }: Props) {
@@ -29,13 +29,13 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
     setError(null);
     if (isWeChat) {
       setError(
-        "WeChat 走 QR 扫码登录, Web 端目前不支持. 请运行: openprogram channels accounts login wechat --id " +
+        "微信要扫码登录, 网页这边没做 QR 渲染。请到终端运行: openprogram channels accounts login wechat --id " +
           accountId,
       );
       return;
     }
     if (!accountId.trim() || !token.trim()) {
-      setError("account_id 和 token 都不能空");
+      setError("账号名和 bot token 都不能空");
       return;
     }
     setSubmitting(true);
@@ -66,7 +66,7 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
     <div className={styles.modalBackdrop} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.modalHeader}>
-          <span className={styles.modalTitle}>Add channel account</span>
+          <span className={styles.modalTitle}>添加机器人</span>
           <button
             className={styles.iconBtn}
             onClick={onClose}
@@ -79,7 +79,7 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
 
         <div className={styles.modalBody}>
           <label className={styles.formRow}>
-            <span className={styles.formLabel}>Platform</span>
+            <span className={styles.formLabel}>哪个平台</span>
             <select
               className={styles.formInput}
               value={channel}
@@ -94,22 +94,25 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
           </label>
 
           <label className={styles.formRow}>
-            <span className={styles.formLabel}>Account id</span>
+            <span className={styles.formLabel}>取个名字 (账号名)</span>
             <input
               className={styles.formInput}
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
-              placeholder="default / work / personal"
+              placeholder="比如 default / work / personal"
             />
+            <span className={styles.formHint}>
+              同一个平台可以接多个 bot, 这里随便起个名字区分 (中英文都行)。
+            </span>
           </label>
 
           {isWeChat ? (
             <div className={styles.emptyHint}>
-              WeChat 登录是扫码流程, Web 端目前不支持 QR 渲染. 请运行:
+              微信登录要扫二维码, 网页端目前不支持 QR 渲染。请到终端跑:
               <pre className={styles.codeBlock}>
                 openprogram channels accounts login wechat --id {accountId || "default"}
               </pre>
-              扫码后会自动出现在这个列表里.
+              扫码完成后会自动出现在上面的机器人列表里, 不用刷新这个页面。
             </div>
           ) : (
             <label className={styles.formRow}>
@@ -119,7 +122,7 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder="paste here"
+                placeholder="粘贴 token"
                 autoComplete="off"
               />
               <span className={styles.formHint}>
@@ -137,7 +140,7 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
             onClick={onClose}
             type="button"
           >
-            Cancel
+            取消
           </button>
           {!isWeChat && (
             <button
@@ -146,7 +149,7 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
               disabled={submitting}
               type="button"
             >
-              {submitting ? "Adding…" : "Add account"}
+              {submitting ? "添加中…" : "添加"}
             </button>
           )}
         </div>

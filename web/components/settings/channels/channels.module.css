@@ -54,6 +54,27 @@
   color: var(--text, #e8e8e8);
 }
 
+.sectionSub {
+  font-size: 12px;
+  color: var(--muted, #888);
+  line-height: 1.55;
+  margin-top: 4px;
+  max-width: 540px;
+}
+
+.formHelp {
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  background: rgba(74, 141, 255, 0.08);
+  border-left: 3px solid var(--accent, #4a8dff);
+  border-radius: 4px;
+  color: var(--text, #e8e8e8);
+}
+.formHelp b {
+  color: var(--accent, #4a8dff);
+}
+
 .emptyHint {
   padding: 16px;
   border: 1px dashed var(--border, #2a2a2a);
