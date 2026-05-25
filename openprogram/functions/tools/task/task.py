@@ -37,8 +37,9 @@ from openprogram.functions._runtime import function
 
 _DESCRIPTION = (
     "Spawn another agent in the same session, run one turn against "
-    "it with the given prompt, and return its final reply. Two "
-    "context modes:\n"
+    "it with the given prompt, and return either the final reply "
+    "(wait=True, default) or a task_id you can await later "
+    "(wait=False). Two context modes:\n"
     "\n"
     "  inherit (default): the spawned agent forks off this turn and "
     "inherits the conversation chain that led to it. Same shape as a "
@@ -60,7 +61,12 @@ _DESCRIPTION = (
     "  description: short label (1-3 words) used as the branch name.\n"
     "  agent_id: which agent profile to run as. Defaults to this "
     "session's agent.\n"
-    "  context: 'inherit' (default) or 'clean'."
+    "  context: 'inherit' (default) or 'clean'.\n"
+    "  wait: True (default) blocks until the spawned agent finishes "
+    "and returns its final text — same as today. False returns "
+    "immediately with a task_id string; call await_task(task_id) to "
+    "retrieve the result. Use wait=False to run multiple agents in "
+    "parallel."
 )
 
 
@@ -95,6 +101,7 @@ def _task_impl(
     description: str = "",
     agent_id: str = "",
     context: str = "inherit",
+    wait: bool = True,
 ) -> str:
     """Implementation body. Pulled out of the @function-wrapped binding
     so unit tests can drive it directly with their own ContextVars
@@ -123,6 +130,30 @@ def _task_impl(
             f"[task error] unknown context {context!r} — use 'inherit' "
             "(default, spawned agent forks off this turn) or 'clean' "
             "(new root, no parent history)."
+        )
+
+    if not wait:
+        # Async path: submit and return the task_id. Caller can
+        # invoke await_task / cancel_task / get_task. The runner is
+        # responsible for state transitions + attach card update.
+        try:
+            from openprogram.agent.sub_agent_run import run_agent_turn_async
+            task_id = run_agent_turn_async(
+                session_id=sid,
+                prompt=prompt,
+                agent_id=chosen_agent,
+                parent_id=aid if mode == "inherit" else None,
+                label=label or None,
+                subject=description or prompt[:60],
+                description=description or prompt,
+                context_mode=mode,
+            )
+        except Exception as e:  # noqa: BLE001
+            return f"[task error] {type(e).__name__}: {e}"
+        return (
+            f"[task spawned async] task_id={task_id}\n"
+            f"Call await_task(task_id={task_id!r}) to retrieve result, "
+            f"or cancel_task(task_id={task_id!r}) to stop it."
         )
 
     try:
@@ -158,9 +189,14 @@ def task(
     description: str = "",
     agent_id: str = "",
     context: str = "inherit",
+    wait: bool = True,
 ) -> str:
-    """Spawn another agent in the same session. Blocks until it
-    finishes; returns its final reply.
+    """Spawn another agent in the same session.
+
+    With ``wait=True`` (default) blocks until the spawned agent
+    finishes and returns its final reply. With ``wait=False`` returns
+    immediately with a task_id; call :func:`await_task` to retrieve
+    the result, or :func:`cancel_task` to stop it.
 
     Args:
         prompt: instruction for the spawned agent. In
@@ -173,8 +209,80 @@ def task(
             off this turn (sibling branch). ``"clean"`` ⇒ the agent
             starts at a new root in the same session (no parent
             history; only the prompt).
+        wait: True (default) blocks for the final reply. False
+            returns ``task_id`` immediately for parallel execution.
     """
     return _task_impl(
         prompt=prompt, description=description,
-        agent_id=agent_id, context=context,
+        agent_id=agent_id, context=context, wait=wait,
     )
+
+
+@function(
+    name="await_task",
+    description=(
+        "Block until an async task spawned with task(wait=False) "
+        "reaches a terminal state (completed/cancelled/errored). "
+        "Returns the task's final reply text plus its terminal "
+        "status. Pair with task(wait=False) for parallel agent "
+        "execution.\n"
+        "\n"
+        "Args:\n"
+        "  task_id: id returned by task(wait=False).\n"
+        "  timeout: max seconds to block. None = wait forever. "
+        "On timeout the call returns with the task still running."
+    ),
+    toolset=["core"],
+)
+def await_task(task_id: str, timeout: float = 0) -> str:
+    """Wait for an async task and return its final reply."""
+    if not task_id or not isinstance(task_id, str):
+        return "[await_task error] task_id required"
+    from openprogram.agent.task import get_runner
+    runner = get_runner()
+    eff_timeout = None if (timeout is None or timeout <= 0) else float(timeout)
+    t = runner.await_task(task_id.strip(), timeout=eff_timeout)
+    if t is None:
+        return f"[await_task error] unknown task_id={task_id!r}"
+    status = t.status.value
+    if status == "completed":
+        out = t.result_text or "(spawned agent returned no text)"
+        return f"{out}\n\n[task {task_id} status={status}]"
+    if status == "cancelled":
+        return f"[task {task_id} cancelled] {t.error or ''}".rstrip()
+    if status == "errored":
+        return f"[task {task_id} errored] {t.error or 'unknown error'}"
+    # still running / queued
+    return (
+        f"[task {task_id} still {status}] "
+        f"timed out after {timeout}s; call await_task again to keep waiting."
+    )
+
+
+@function(
+    name="cancel_task",
+    description=(
+        "Cancel an in-flight async task. Idempotent — calling on an "
+        "already-terminal task is a no-op. The runner sets the "
+        "session's cancel event, which propagates into the LLM "
+        "stream + tool pre-invocation hook so the spawned agent "
+        "stops at its next cooperative checkpoint. A 30s watchdog "
+        "force-flips the entity if the worker won't drop.\n"
+        "\n"
+        "Args:\n"
+        "  task_id: id of the task to cancel.\n"
+        "  reason: optional human-readable reason recorded on the "
+        "task entity."
+    ),
+    toolset=["core"],
+)
+def cancel_task(task_id: str, reason: str = "") -> str:
+    """Signal cancel for an async task."""
+    if not task_id or not isinstance(task_id, str):
+        return "[cancel_task error] task_id required"
+    from openprogram.agent.task import get_runner
+    runner = get_runner()
+    t = runner.cancel_task(task_id.strip(), reason=reason or None)
+    if t is None:
+        return f"[cancel_task error] unknown task_id={task_id!r}"
+    return f"[cancel_task] task_id={task_id} status={t.status.value}"
