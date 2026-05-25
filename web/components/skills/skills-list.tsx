@@ -133,9 +133,6 @@ function TreeBranch({
         style={{ paddingLeft: 8 + depth * 16 }}
         className="group flex items-center gap-2 py-2 pr-3 cursor-pointer rounded border border-transparent bg-[var(--bg-secondary)]/50 hover:bg-bg-hover hover:text-nav-color-hover select-none"
       >
-        <span className="text-[var(--text-tertiary)] w-3 text-center">
-          {isOpen ? "▾" : "▸"}
-        </span>
         <svg
           width="14" height="14" viewBox="0 0 20 20" fill="currentColor"
           className="text-[var(--text-tertiary)] shrink-0"
