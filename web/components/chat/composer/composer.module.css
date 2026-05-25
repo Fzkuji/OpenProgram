@@ -213,44 +213,67 @@
 }
 
 /* Image attachment strip — sits above the textarea (above the paste
-   chip row too) and lists 48×48 image thumbs with a corner × button.
-   Layout mirrors the paste chip row so the two strips stack cleanly
-   when both are present. */
+   chip row too) and lists image thumbs with a corner × button.
+   Layout matches the file-tile row (same outer padding, same hover
+   ring trick) so the two strips read as one consistent system. */
 .imageAttachStrip {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  padding: 6px 8px 0;
+  /* Match the docx-tile row padding so the strip sits inside the
+     wrapper's rounded border with proper breathing room — previous
+     6/8/0 had the thumbs almost touching the wrapper top. */
+  padding: 14px 12px 4px;
 }
 .imageAttachChip {
   position: relative;
   display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 12px;
   overflow: hidden;
   background: var(--bg-tertiary);
+  /* Same outset 1px ring as the file tile — no CSS border, no
+     curve-thinning. */
+  box-shadow: 0 0 0 1px var(--border);
+  transition: box-shadow 120ms ease;
+}
+.imageAttachChip:hover {
+  box-shadow: 0 0 0 1px rgba(226,225,218,0.40);
 }
 .imageAttachImg {
-  height: 48px;
-  width: 48px;
+  height: 64px;
+  width: 64px;
   object-fit: cover;
   display: block;
 }
 .imageAttachRemove {
   position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 16px;
-  height: 16px;
+  /* Inside the chip, top-right corner. Hidden by default; fades in
+     when the chip is hovered or focused (matches the docx-tile ×). */
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   background: rgba(0, 0, 0, 0.55);
   color: white;
   cursor: pointer;
   font-size: 11px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.imageAttachChip:hover .imageAttachRemove,
+.imageAttachChip:focus-within .imageAttachRemove {
+  opacity: 1;
+}
+.imageAttachRemove:hover {
+  background: rgba(0, 0, 0, 0.75);
 }
 .imageAttachError {
   font-size: 11px;
