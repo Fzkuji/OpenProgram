@@ -3,21 +3,20 @@
 /**
  * Favorite functions list — reads `window.availableFunctions` and
  * `window.programsMeta.{favorites,icons}` to produce a draggable list
- * of starred functions with their user-chosen emoji icon (or a default
- * box). Clicking a favourite opens the fn-form (chat route) or routes
- * to /chat first (other routes), via the zustand store + Next router —
- * no longer delegates to the legacy `clickFunction` window global.
+ * with smooth FLIP-animated reorder (framer-motion `Reorder.Group`).
  *
- * Drag-and-drop reorder: rows are HTML5 draggable. Drop persists the
- * new order back through POST /api/programs/meta and also updates
- * window.programsMeta with a fresh object reference so the legacy
- * polling layer + this component re-render immediately.
+ * Display order = `programsMeta.favorites` array order (NOT sorted).
+ * Drag a row, other rows physically slide out of the way to make room;
+ * release to commit the new order. Optimistic local update + persist
+ * via POST /api/programs/meta.
  *
- * Display order = `programsMeta.favorites` array order. NOT alphabetised.
+ * Clicking a favourite still opens the fn-form (chat route) or routes
+ * to /chat first via the zustand store + Next router.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { Reorder } from "framer-motion";
 
 import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 
@@ -32,9 +31,8 @@ interface FunctionsMeta {
 }
 
 async function persistMeta(meta: FunctionsMeta): Promise<void> {
-  // Publish the new ref BEFORE the network round-trip so the UI feels
-  // instant. The fetch is fire-and-forget; failure is logged but the
-  // local state is what the user sees.
+  // Publish the new ref BEFORE the network round-trip so the rest of
+  // the UI updates instantly. The fetch is fire-and-forget.
   (window as unknown as Record<string, unknown>).programsMeta = {
     favorites: [...meta.favorites],
     folders: Object.fromEntries(
@@ -59,18 +57,38 @@ export function FavoritesList(): React.ReactElement | null {
   const openFnForm = useSessionStore((s) => s.openFnForm);
   const pathname = usePathname();
   const router = useRouter();
-  const [draggingName, setDraggingName] = useState<string | null>(null);
-  const [overName, setOverName] = useState<string | null>(null);
 
-  // Preserve user order from the favorites array; only include names
-  // that still exist in availableFunctions.
+  // Local copy of the favorites order. Mirror it from programsMeta;
+  // updates during drag are local-only, persisted on drag end.
+  const [order, setOrder] = useState<string[]>(
+    () => programsMeta.favorites || [],
+  );
+  // While a drag is happening (or just finished), suppress the click
+  // handler — otherwise releasing a drag also fires onClick and opens
+  // the fn-form. Cleared shortly after drag end so subsequent real
+  // clicks still register.
+  const [dragGuard, setDragGuard] = useState(false);
+  useEffect(() => {
+    // External changes (toggle from /functions page, server reload)
+    // should re-sync our local order, unless we're mid-drag and the
+    // arrays already match in length + members.
+    const fav = programsMeta.favorites || [];
+    const same =
+      fav.length === order.length &&
+      fav.every((n) => order.includes(n)) &&
+      order.every((n) => fav.includes(n));
+    if (!same) setOrder(fav);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programsMeta.favorites]);
+
   const fnByName = new Map(
     (availableFunctions || []).map((f) => [f.name, f] as const),
   );
-  const ordered = (programsMeta.favorites || [])
+  // Use local `order` for rendering so drag updates feel instant.
+  const items = order
     .map((n) => fnByName.get(n))
     .filter((f): f is AgenticFunction => Boolean(f));
-  if (ordered.length === 0) return null;
+  if (items.length === 0) return null;
 
   function onClick(name: string, category: string) {
     const fn = availableFunctions.find(
@@ -90,93 +108,84 @@ export function FavoritesList(): React.ReactElement | null {
     openFnForm(fn);
   }
 
-  function reorder(from: string, to: string): string[] {
-    const arr = [...(programsMeta.favorites || [])];
-    const fromIdx = arr.indexOf(from);
-    const toIdx = arr.indexOf(to);
-    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return arr;
-    arr.splice(fromIdx, 1);
-    // Insert before `to`. If we removed something before `to`, the
-    // target index shifted down by 1.
-    const newToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
-    arr.splice(newToIdx, 0, from);
-    return arr;
+  function handleReorder(next: AgenticFunction[]) {
+    const nextNames = next.map((f) => f.name);
+    setOrder(nextNames);
   }
 
-  function handleDrop(target: string) {
-    if (!draggingName || draggingName === target) {
-      setDraggingName(null);
-      setOverName(null);
-      return;
-    }
-    const newFavorites = reorder(draggingName, target);
+  function commitOrder() {
+    // Skip the round-trip when nothing actually moved.
+    const cur = programsMeta.favorites || [];
+    const same =
+      cur.length === order.length && cur.every((n, i) => n === order[i]);
+    if (same) return;
     void persistMeta({
-      favorites: newFavorites,
+      favorites: order,
       folders: programsMeta.folders || {},
       icons: programsMeta.icons || {},
     });
-    setDraggingName(null);
-    setOverName(null);
   }
 
   return (
-    <>
-      {ordered.map((f) => {
+    <Reorder.Group
+      axis="y"
+      values={items}
+      onReorder={handleReorder}
+      // Tighten internal layout: framer wraps in a <ul>, we want it to
+      // behave like a vertical stack matching the legacy sidebar.
+      className="flex flex-col gap-0 m-0 p-0 list-none"
+    >
+      {items.map((f) => {
         const cat = f.category || "user";
         const icon = programsMeta.icons?.[f.name] || DEFAULT_ICON;
-        const isDragging = draggingName === f.name;
-        const isOver = overName === f.name && draggingName !== f.name;
         return (
-          <div
+          <Reorder.Item
             key={f.name}
-            draggable
-            onDragStart={(e) => {
-              setDraggingName(f.name);
-              e.dataTransfer.effectAllowed = "move";
-              // Some browsers need data set to start the drag.
-              try { e.dataTransfer.setData("text/plain", f.name); } catch {}
+            value={f}
+            onDragStart={() => setDragGuard(true)}
+            onDragEnd={() => {
+              commitOrder();
+              // Wait one frame for the click event that fires after
+              // mouseup-on-drag to flush, then re-enable clicks.
+              window.setTimeout(() => setDragGuard(false), 50);
             }}
-            onDragEnd={() => { setDraggingName(null); setOverName(null); }}
-            onDragOver={(e) => {
-              if (!draggingName || draggingName === f.name) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              setOverName(f.name);
+            // The component renders <li> by default. Tweak to remove
+            // bullet artefacts and apply our styling.
+            className="list-none"
+            // While dragging, raise the item visually.
+            whileDrag={{
+              scale: 1.02,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.18)",
+              zIndex: 5,
             }}
-            onDragLeave={() => {
-              setOverName((cur) => (cur === f.name ? null : cur));
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleDrop(f.name);
-            }}
-            className={[
-              // Same layout as before; opacity + outline give live
-              // feedback while dragging.
-              "flex h-[32px] shrink-0 cursor-grab items-center gap-[12px]",
-              "overflow-hidden truncate rounded-[6px] px-[8px] py-[6px]",
-              "text-fs-base text-text-primary",
-              "transition-[background-color,opacity,box-shadow] duration-150 ease-out",
-              "hover:bg-bg-hover active:cursor-grabbing",
-              isDragging ? "opacity-40" : "",
-              isOver
-                ? "outline outline-2 -outline-offset-2 outline-accent-primary"
-                : "",
-            ].filter(Boolean).join(" ")}
-            onClick={() => onClick(f.name, cat)}
-            title={f.description || ""}
+            // Springy easing for the surrounding items as they slide
+            // out of the way.
+            transition={{ type: "spring", stiffness: 600, damping: 40 }}
           >
-            <span
-              className="inline-flex size-[16px] flex-shrink-0 items-center
-                justify-center text-fs-base leading-none"
-              aria-hidden="true"
+            <div
+              className="flex h-[32px] shrink-0 cursor-grab items-center
+                gap-[12px] overflow-hidden truncate rounded-[6px]
+                px-[8px] py-[6px] text-fs-base text-text-primary
+                transition-colors duration-150 ease-out
+                hover:bg-bg-hover active:cursor-grabbing select-none"
+              onClick={(e) => {
+                if (dragGuard) { e.preventDefault(); e.stopPropagation(); return; }
+                onClick(f.name, cat);
+              }}
+              title={f.description || ""}
             >
-              {icon}
-            </span>
-            <span className="flex-1 truncate text-fs-base">{f.name}</span>
-          </div>
+              <span
+                className="inline-flex size-[16px] flex-shrink-0 items-center
+                  justify-center text-fs-base leading-none"
+                aria-hidden="true"
+              >
+                {icon}
+              </span>
+              <span className="flex-1 truncate text-fs-base">{f.name}</span>
+            </div>
+          </Reorder.Item>
         );
       })}
-    </>
+    </Reorder.Group>
   );
 }

@@ -269,6 +269,7 @@ ACTIONS = {
     "list_channel_accounts": handle_list_channel_accounts,
     "start_channel_login": handle_start_channel_login,
     "add_channel_account": handle_add_channel_account,
+    "remove_channel_account": handle_remove_channel_account,
     "list_channel_bindings": handle_list_channel_bindings,
     "add_binding": handle_add_binding,
     "remove_binding": handle_remove_binding,

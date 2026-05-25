@@ -364,7 +364,24 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     }
 
     case 'channel': {
-      // Multi-step: pick channel → pick account → guides /attach.
+      // /channel rm <chan> <account_id>  → 删除一个 channel account
+      //   (及其所有 binding). 之前要回 CLI 跑
+      //   `openprogram channels accounts rm`, 现在 TUI 直接做.
+      if (args[0] === 'rm' || args[0] === 'remove' || args[0] === 'delete') {
+        if (args.length < 3) {
+          ctx.pushSystem('Usage: /channel rm <channel> <account_id>');
+          return true;
+        }
+        const [, channel, account_id] = args as [string, string, string];
+        ctx.client.send({
+          action: 'remove_channel_account',
+          channel,
+          account_id,
+        } as never);
+        ctx.pushSystem(`Removing ${channel}:${account_id}...`);
+        return true;
+      }
+      // No-arg: multi-step picker → channel → account → bind action.
       ctx.client.send({ action: 'list_channel_accounts' });
       ctx.openPicker('channel');
       return true;
