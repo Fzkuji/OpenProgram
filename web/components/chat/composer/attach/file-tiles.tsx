@@ -49,11 +49,14 @@ const TILE_KEYFRAMES = `
   to   { opacity: 1; }
 }
 .composer-file-tile {
+  /* Border declared here so the :hover override actually wins —
+     inline ``style.border`` outranked the selector before. */
+  border: 1px solid var(--border);
   transition: border-color 120ms ease, background 120ms ease,
               box-shadow 120ms ease;
 }
 .composer-file-tile:hover {
-  border-color: rgba(255,255,255,0.45);
+  border-color: rgba(255,255,255,0.55);
   background: var(--bg-tertiary);
   box-shadow: 0 2px 6px rgba(0,0,0,0.28);
 }
@@ -125,9 +128,10 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
           padding: "10px 14px",
           paddingRight: 16,
           // Pill-ish corners — rounder than a normal card but still
-          // rectangular enough to fit two lines of text.
+          // rectangular enough to fit two lines of text. Border /
+          // hover-border live in the stylesheet so the :hover override
+          // can win against React inline styles.
           borderRadius: 16,
-          border: "1px solid var(--border)",
           background: "var(--bg-secondary)",
           display: "flex",
           flexDirection: "column",
