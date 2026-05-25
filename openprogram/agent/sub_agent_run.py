@@ -71,6 +71,13 @@ def run_agent_turn(
     # context assembly doesn't pull in any conversation history.
     # Inherit: history is whatever leads to ``parent_id``, which the
     # dispatcher already resolves from ``parent_id``.
+    # Spawned sub-agents run with ``permission_mode="bypass"``: there's
+    # no UI subscribed to approval_request events on the spawned lane
+    # (the chat view only listens to its own turn), so the default
+    # ``"ask"`` would hang on every bash/list/read until the 300s
+    # timeout and return ``[denied]`` for every tool call. Spawning a
+    # sub-agent is itself an explicit user act, so the user has
+    # already consented to tool use within that turn.
     req = TurnRequest(
         session_id=session_id,
         user_text=prompt,
@@ -78,6 +85,7 @@ def run_agent_turn(
         source="agent_spawn",
         parent_id=parent_id,
         history_override=[] if parent_id is None else None,
+        permission_mode="bypass",
     )
     try:
         turn = process_user_turn(req)
