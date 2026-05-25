@@ -117,6 +117,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                     "role": m.get("role"),
                     "function": m.get("function"),
                     "display": m.get("display"),
+                    "source": m.get("source"),
                     "preview": preview,
                     "created_at": m.get("created_at"),
                     "attach_ref": _aref,

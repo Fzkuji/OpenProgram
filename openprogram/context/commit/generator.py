@@ -219,17 +219,17 @@ def _build_items_from_node(
 
     if src_commit is None:
         intro = (
-            f"[Attached from branch \"{label}\"]"
+            f"[以下是从分支 \"{label}\" 附加进来的内容]"
             if label
-            else "[Attached from branch]"
+            else "[以下是从其它分支附加进来的内容]"
         )
         return [ContextItem(
             source_node_id=node.get("id") or "",
             role="user",
             state="full",
             locked=False,
-            rendered=f"{intro}:\n{content}",
-            tokens=_estimate_tokens(f"{intro}:\n{content}"),
+            rendered=f"{intro}：\n{content}",
+            tokens=_estimate_tokens(f"{intro}：\n{content}"),
             state_set_at=commit_id,
             reason="attached_legacy",
             attached_from=None,
@@ -247,14 +247,14 @@ def _build_items_from_node(
 
     short_hex = source_commit_id[:8] if source_commit_id else "?"
     open_text = (
-        f"[Attached from branch \"{label}\" — commit {short_hex}]:"
+        f"[以下是从分支 \"{label}\" — commit {short_hex} 附加进来的内容]："
         if label
-        else f"[Attached from branch — commit {short_hex}]:"
+        else f"[以下是从分支 — commit {short_hex} 附加进来的内容]："
     )
     close_text = (
-        f"[End of attached content from \"{label}\"]"
+        f"[分支 \"{label}\" 附加内容结束]"
         if label
-        else "[End of attached content]"
+        else "[附加内容结束]"
     )
 
     out: list[ContextItem] = []
@@ -287,17 +287,17 @@ def _build_items_from_node(
         orig_role = src_item.role
         rendered = src_item.rendered or ""
         if orig_role == "user":
-            prefix = f"[sub-agent \"{label}\" was asked]" if label else "[sub-agent was asked]"
+            prefix = f"[子 agent \"{label}\" 收到的指令]" if label else "[子 agent 收到的指令]"
         elif orig_role == "assistant":
-            prefix = f"[sub-agent \"{label}\" replied]" if label else "[sub-agent replied]"
+            prefix = f"[子 agent \"{label}\" 的回复]" if label else "[子 agent 的回复]"
         elif orig_role == "tool":
-            # views.py also wraps tool items in "[tool_result]"; keep the
-            # narration consistent so the parent sees a clear chain.
-            prefix = f"[sub-agent \"{label}\" tool result]" if label else "[sub-agent tool result]"
+            # views.py also wraps tool items in "[tool_result]"; keep
+            # the narration consistent so the parent sees a clear chain.
+            prefix = f"[子 agent \"{label}\" 工具调用结果]" if label else "[子 agent 工具调用结果]"
         elif orig_role == "summary":
-            prefix = f"[sub-agent \"{label}\" earlier summary]" if label else "[sub-agent earlier summary]"
+            prefix = f"[子 agent \"{label}\" 早期对话摘要]" if label else "[子 agent 早期对话摘要]"
         else:
-            prefix = f"[sub-agent {orig_role}]"
+            prefix = f"[子 agent {orig_role}]"
         new_rendered = f"{prefix}\n{rendered}" if rendered else prefix
         out.append(ContextItem(
             source_node_id=src_item.source_node_id,

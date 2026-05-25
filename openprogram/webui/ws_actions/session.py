@@ -225,6 +225,7 @@ async def handle_load_session(ws, cmd: dict):
                 "role": m.get("role"),
                 "function": m.get("function"),
                 "display": m.get("display"),
+                "source": m.get("source"),
                 "preview": preview,
                 "created_at": m.get("created_at"),
                 "attach_ref": _aref,

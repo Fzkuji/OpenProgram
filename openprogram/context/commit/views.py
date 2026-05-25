@@ -74,7 +74,7 @@ def render_commit(commit: ContextCommit) -> list[Any]:
             # 一条 user 文本消息: LLM 能看到工具结果, 但不进入
             # function_call 协议路径.
             out.append(UserMessage(
-                content=[TextContent(text=f"[tool_result]\n{item.rendered}")],
+                content=[TextContent(text=f"[工具调用结果]\n{item.rendered}")],
                 timestamp=ts,
             ))
     return out

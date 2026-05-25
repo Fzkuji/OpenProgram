@@ -868,25 +868,21 @@ class TaskRunner:
                 # so the parent agent treats it as instructions, not a
                 # second user message.
                 sub_request_line = (
-                    f"The user asked the sub-agent: {sub_prompt!r}\n"
+                    f"用户原本让子 agent 做的事是：{sub_prompt}\n"
                     if sub_prompt else ""
                 )
                 req = TurnRequest(
                     session_id=task.parent_session_id,
                     user_text=(
-                        f"[System] The sub-agent \"{label}\" you "
-                        f"spawned has finished. Its full output is "
-                        f"included as attached content above.\n"
+                        f"[系统消息] 你派发的子 agent \"{label}\" "
+                        f"已经跑完了，它完整的对话记录作为附加内容嵌在上面。\n"
                         f"{sub_request_line}"
-                        f"Now reply to the original user with a "
-                        f"complete answer that uses the sub-agent's "
-                        f"findings. Do NOT just paste or echo the "
-                        f"sub-agent's last line — explain what was "
-                        f"done, summarize the result, and propose any "
-                        f"natural next step. If the sub-agent's reply "
-                        f"is already a direct answer to the user's "
-                        f"original question, restate it in your own "
-                        f"words and add brief context."
+                        f"现在请你直接面向原始用户给出完整回答，"
+                        f"基于子 agent 跑出来的结果做总结、解读、给"
+                        f"出后续建议。不要原样复读子 agent 的最后"
+                        f"一句话。如果子 agent 的输出已经直接回答"
+                        f"了用户问题，用你自己的话重新组织一遍，"
+                        f"并补充必要的背景或上下文。"
                     ),
                     agent_id=task.agent_id or "main",
                     source="task_followup",

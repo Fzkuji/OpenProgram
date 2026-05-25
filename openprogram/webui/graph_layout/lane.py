@@ -89,10 +89,24 @@ def compute_lane(
             for k in kids:
                 _walk(k, alloc.alloc())
             return
-        # Regular conv-tree fork: first child keeps the parent's lane
-        # (trunk-following), every later sibling claims a fresh lane.
-        # Order is stable (children sorted by ts in build_children).
-        primary = kids[0]
+        # Regular conv-tree fork: pick primary = first child that is
+        # NOT a sub-agent spawn (``source=agent_spawn``). Sub-agent
+        # user msgs (created when /task --async fires) often land
+        # earliest by seq and would otherwise claim kids[0] and pull
+        # the trunk into the sub-agent's lane — leaving the caller's
+        # real continuation (followup turn, future user messages) on
+        # a side lane. With this skip the trunk stays on the caller's
+        # main thread, matching the list_branches walk's main-lane
+        # detection, and the attach pointer (which piggy-backs on the
+        # caller user msg's lane via called_by) lands on main too.
+        primary = None
+        for k in kids:
+            if (by_id.get(k, {}).get("source")) == "agent_spawn":
+                continue
+            primary = k
+            break
+        if primary is None:
+            primary = kids[0]
         for k in kids:
             _walk(k, my_lane if k == primary else alloc.alloc())
 
