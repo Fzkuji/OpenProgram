@@ -29,8 +29,6 @@ def render_commit(commit: ContextCommit) -> list[Any]:
     from openprogram.providers.types import (
         AssistantMessage,
         TextContent,
-        ToolCall,
-        ToolResultMessage,
         UserMessage,
     )
 
@@ -67,23 +65,18 @@ def render_commit(commit: ContextCommit) -> list[Any]:
                 timestamp=ts,
             ))
         elif item.role == "tool":
-            # tool item 单独成 ToolResultMessage. tool_call_id 用
-            # source_node_id (DAG 保证唯一).
-            try:
-                out.append(ToolResultMessage(
-                    tool_call_id=item.source_node_id,
-                    tool_name="",   # tool name 不在 ContextItem 里, 留空
-                    content=[TextContent(text=item.rendered)],
-                    is_error=False,
-                    timestamp=ts,
-                ))
-            except Exception:
-                # 某些 provider 拒绝空 tool_name; 退回 assistant 消息
-                # (兜底, 不阻断)
-                out.append(_make_assistant(
-                    content=f"[tool_result] {item.rendered}",
-                    timestamp=ts,
-                ))
+            # tool item 不能直接走 ToolResultMessage —— ContextItem
+            # 不携带 tool_call_id 跟 tool_calls 配对信息, 而 codex /
+            # OpenAI Responses 协议要求 function_call_output 必须有
+            # 对应的 function_call (否则 HTTP 400 "No tool call found
+            # for function call output"). _make_assistant() 不 emit
+            # ToolCall block, 所以配对永远凑不齐. 把 tool 节点降级成
+            # 一条 user 文本消息: LLM 能看到工具结果, 但不进入
+            # function_call 协议路径.
+            out.append(UserMessage(
+                content=[TextContent(text=f"[tool_result]\n{item.rendered}")],
+                timestamp=ts,
+            ))
     return out
 
 
