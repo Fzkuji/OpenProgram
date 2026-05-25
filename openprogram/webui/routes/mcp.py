@@ -159,6 +159,81 @@ def register(app: FastAPI) -> None:
                                 detail=f"server '{name}' not loaded")
         return JSONResponse(content=status)
 
+    @app.get("/api/mcp/catalog")
+    async def fetch_catalog(url: str):
+        """Pull a JSON catalog of installable MCP servers from ``url``.
+
+        Catalog format — a single JSON object with a ``servers`` array
+        of entries shaped like our local ``mcp_servers.json``
+        entries (type / command / env for local; type / url / auth
+        for remote). Anything beyond ``name`` + a transport-valid
+        shape is dropped. Optional top-level fields:
+
+        ``{"name": "...", "description": "...", "homepage": "...",
+        "servers": [{"name": "linear", "type": "http",
+                     "url": "https://mcp.linear.app/mcp", ...}]}``
+
+        Used by the /mcp page's "Browse catalog" picker. Lazy-fetched
+        per call (small response, no need to cache server-side; the
+        browser caches via HTTP semantics).
+        """
+        if not url or not url.startswith(("http://", "https://")):
+            raise HTTPException(
+                status_code=400,
+                detail="url must be an http(s) URL",
+            )
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as cx:
+                resp = await cx.get(url, follow_redirects=True)
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=502,
+                                detail=f"catalog fetch failed: {e}")
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502,
+                                detail=f"catalog parse failed: {type(e).__name__}: {e}")
+
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=502,
+                                detail="catalog root must be a JSON object")
+        raw_servers = data.get("servers") or []
+        if not isinstance(raw_servers, list):
+            raise HTTPException(status_code=502,
+                                detail="catalog.servers must be a list")
+
+        # Validate each entry against the existing parser so the UI
+        # never shows an entry it couldn't actually install. We feed
+        # a copy through ``parse_entry`` and drop any that don't
+        # round-trip — same code that POST /api/mcp/servers uses.
+        valid: list[dict] = []
+        for entry in raw_servers:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            cfg = parse_entry(name.strip(), entry)
+            if cfg is None:
+                continue
+            # Echo back the (canonicalised) installable config + carry
+            # any catalog-only annotations along for display.
+            out: dict = cfg.to_dict()
+            out["name"] = name.strip()
+            for k in ("description", "homepage", "logo", "tags"):
+                if k in entry:
+                    out[k] = entry[k]
+            valid.append(out)
+
+        return JSONResponse(content={
+            "catalog_name": data.get("name") or url,
+            "description": data.get("description"),
+            "homepage": data.get("homepage"),
+            "servers": valid,
+            "skipped": max(0, len(raw_servers) - len(valid)),
+        })
+
     @app.post("/api/mcp/servers/{name}/complete")
     async def complete_argument(name: str, body: dict):
         """Forward a completion request to an MCP server.
