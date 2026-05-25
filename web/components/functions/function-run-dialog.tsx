@@ -14,7 +14,7 @@ interface Props {
   onRun?: (name: string) => void;
 }
 
-export function ProgramRunDialog({ fn, onClose }: Props) {
+export function FunctionRunDialog({ fn, onClose }: Props) {
   const router = useRouter();
   const visible = fn.params_detail.filter((p) => !p.hidden);
   const [values, setValues] = useState<Record<string, string>>(() => {

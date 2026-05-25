@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "./program-card.module.css";
+import styles from "./function-card.module.css";
 
 export interface ProgramSummary {
   name: string;
@@ -9,7 +9,7 @@ export interface ProgramSummary {
   mtime?: number;
 }
 
-export function ProgramCard({
+export function FunctionCard({
   p,
   icon,
   fav,
@@ -35,7 +35,7 @@ export function ProgramCard({
   const desc = p.description ? p.description.split(".")[0] : "";
   return (
     <div
-      data-program-card
+      data-function-card
       className={styles.card}
       draggable
       onDragStart={onDragStart}

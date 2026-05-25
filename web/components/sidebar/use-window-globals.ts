@@ -28,7 +28,7 @@ interface LegacyConv {
   has_session?: boolean;
 }
 
-interface ProgramsMeta {
+interface FunctionsMeta {
   favorites: string[];
   folders: Record<string, string[]>;
   icons: Record<string, string>;
@@ -37,11 +37,11 @@ interface ProgramsMeta {
 interface WindowGlobalsState {
   conversations: Record<string, LegacyConv>;
   availableFunctions: AgenticFunction[];
-  programsMeta: ProgramsMeta;
+  programsMeta: FunctionsMeta;
   sidebarOpen: boolean;
 }
 
-const EMPTY_META: ProgramsMeta = { favorites: [], folders: {}, icons: {} };
+const EMPTY_META: FunctionsMeta = { favorites: [], folders: {}, icons: {} };
 const EMPTY_FNS: AgenticFunction[] = [];
 const EMPTY_CONVS: Record<string, LegacyConv> = {};
 
@@ -49,7 +49,7 @@ function capture(): WindowGlobalsState {
   const w = window as unknown as {
     conversations?: Record<string, LegacyConv>;
     availableFunctions?: AgenticFunction[];
-    programsMeta?: ProgramsMeta;
+    programsMeta?: FunctionsMeta;
     sidebarOpen?: boolean;
   };
   return {

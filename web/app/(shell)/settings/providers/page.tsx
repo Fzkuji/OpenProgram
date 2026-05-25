@@ -5,7 +5,7 @@ import { SettingsTabsLayout } from "@/components/settings/settings-tabs-layout";
 
 const ProvidersSection = dynamic(
   () =>
-    import("@/components/settings/providers-section").then(
+    import("@/components/settings/providers").then(
       (m) => m.ProvidersSection,
     ),
   { ssr: false },

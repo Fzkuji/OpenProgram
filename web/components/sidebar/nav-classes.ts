@@ -25,7 +25,7 @@ export const sidebarToggleClass = [
 ].join(" ");
 
 /**
- * Main nav row — `<NewChat />`, `<Programs />`, `<Memory />`, `<Chats />`
+ * Main nav row — `<NewChat />`, `<Functions />`, `<Memory />`, `<Chats />`
  * on the left; `<History />`, `<Execution Detail />` on the right.
  * The `group` class lets the inner icon's `group-hover:scale-[1.12]`
  * fire when the row is hovered.
@@ -66,7 +66,7 @@ export const sidebarNavLabelClass = [
 ].join(" ");
 
 /**
- * Trailing action icon (e.g. the refresh button on the Programs row).
+ * Trailing action icon (e.g. the refresh button on the Functions row).
  * Hidden at rest, fades in on parent hover.
  */
 export const sidebarNavActionClass = [

@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { formatUsageFooterLabel } from "@/lib/format";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 
-import { ExecutionDag } from "./execution-dag";
+import { ExecutionDag } from "./execution-dag/index";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 
 interface RuntimeLegacyGlobals {

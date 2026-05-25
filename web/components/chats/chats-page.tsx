@@ -3,7 +3,7 @@
 /**
  * /chats — list of past conversations.
  *
- * Shell mirrors /programs and /memory: sticky topbar with title +
+ * Shell mirrors /functions and /memory: sticky topbar with title +
  * toolbar (search, New chat), 287px nav rail on the left with quick
  * date / channel filters, content column on the right showing chats
  * grouped by recency. Sessions stream in via WebSocket
@@ -173,7 +173,7 @@ export function ChatsPage() {
   }, [searched, filter]);
 
   // Group items by recency bucket when showing "All" so the user gets
-  // visual date headers — same shape as Programs' category sections.
+  // visual date headers — same shape as Functions' category sections.
   const grouped = useMemo(() => {
     if (filter !== "all") return null;
     const out: Partial<Record<Exclude<FilterId, "all">, ConvSummary[]>> = {};
@@ -315,7 +315,7 @@ function ChatRow({
   );
 }
 
-/* Themed dropdown — same shape as the Programs page CustomSelect so
+/* Themed dropdown — same shape as the Functions page CustomSelect so
    chats / programs / settings selects look identical. */
 function CustomSelect<T extends string>({
   value,

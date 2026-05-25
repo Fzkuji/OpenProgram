@@ -81,39 +81,56 @@ class Channel(abc.ABC):
         """发一条消息. 成功返回 :class:`MessageHandle` (可用来后续 edit),
         失败返回 ``None``.
 
+        想拿结构化失败原因 (error_kind / retryable) 用
+        :meth:`send_text_full`.
+
         Default 实现走 :func:`._transport.post_message`, 跟 outbound.send
         是同一份底层. 子类想用 platform-native SDK 替代 (mention 解析、
         附件上传等) 可以 override.
         """
-        from openprogram.channels import _transport
-        mid = _transport.post_message(self.platform_id, self.account_id, target, text)
-        if mid is None:
+        result = self.send_text_full(target, text)
+        if not result.ok:
             return None
         return MessageHandle(
             platform=self.platform_id,
             account_id=self.account_id,
             target=target,
-            message_id=mid,
+            message_id=result.message_id,
+        )
+
+    def send_text_full(self, target: str, text: str):
+        """跟 :meth:`send_text` 一样但返回完整 :class:`SendResult`."""
+        from openprogram.channels import _transport
+        return _transport.post_message(
+            self.platform_id, self.account_id, target, text,
         )
 
     def edit_text(self, handle: MessageHandle, new_text: str) -> bool:
         """把 ``handle`` 指向的消息改成 ``new_text``. 返回 True/False.
 
         WeChat 永远返回 False (iLink 不支持 edit). 其他 platform 走
-        :func:`._transport.patch_message`.
+        :func:`._transport.patch_message`. 想拿结构化失败原因用
+        :meth:`edit_text_full`.
 
         Handle 的 ``platform`` 字段必须跟当前 adapter 一致 — 不允许跨
         platform edit (那是 multi-adapter 协调的范畴, 不归 base 管).
         """
+        return self.edit_text_full(handle, new_text).ok
+
+    def edit_text_full(self, handle: MessageHandle, new_text: str):
+        """跟 :meth:`edit_text` 一样但返回完整 :class:`SendResult`."""
+        from openprogram.channels._transport import SendResult
         if not handle.editable:
-            return False
-        if handle.platform != self.platform_id:
-            print(
-                f"[base.edit_text] cross-platform edit refused: "
-                f"handle.platform={handle.platform!r} vs "
-                f"adapter.platform_id={self.platform_id!r}"
+            return SendResult.fail(
+                "not_supported",
+                f"{handle.platform} message {handle.message_id!r} not editable",
             )
-            return False
+        if handle.platform != self.platform_id:
+            return SendResult.fail(
+                "bad_target",
+                f"cross-platform edit refused: handle.platform={handle.platform!r} "
+                f"vs adapter.platform_id={self.platform_id!r}",
+            )
         from openprogram.channels import _transport
         return _transport.patch_message(
             handle.platform, handle.account_id,

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /programs — Functions catalog page.
+ * /functions — Functions catalog page.
  *
  * No built-in categories: every entry is "a function". Organisation is
  * entirely user-driven — built-in folders (All / Favorites /
@@ -11,30 +11,19 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import styles from "./programs-page.module.css";
+import styles from "./functions-page.module.css";
 import { Button } from "@/components/ui/button";
 import { CustomSelect } from "./custom-select";
 import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
 import { IconPicker, DEFAULT_ICON } from "./icon-picker";
-import { ProgramCard, cardGridClass, cardListClass } from "./program-card";
+import { FunctionCard, cardGridClass, cardListClass } from "./function-card";
+import { useFolderMeta } from "./use-folder-meta";
+import type { FunctionInfo, FunctionsMeta } from "./types";
 
-type Program = {
-  name: string;
-  category?: string;
-  description?: string;
-  mtime?: number;
-};
-
-interface ProgramsMeta {
-  favorites: string[];
-  folders: Record<string, string[]>;
-  icons: Record<string, string>;
-}
-
-export function ProgramsPage() {
+export function FunctionsPage() {
   const router = useRouter();
-  const [programs, setPrograms] = useState<Program[]>([]);
-  const [meta, setMeta] = useState<ProgramsMeta>({
+  const [functions, setFunctions] = useState<FunctionInfo[]>([]);
+  const [meta, setMeta] = useState<FunctionsMeta>({
     favorites: [],
     folders: {},
     icons: {},
@@ -51,31 +40,39 @@ export function ProgramsPage() {
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
   const draggedRef = useRef<string | null>(null);
 
-  // Initial data load (functions list + saved meta).
-  const reload = useCallback(async () => {
+  // Initial data load (functions list + saved meta). ``signal`` is
+  // optional so the manual "refresh" callers (if any are added later)
+  // can still invoke without an abort. The effect below wires one
+  // through so an unmount mid-fetch doesn't ``setFunctions`` on a
+  // destroyed component.
+  const reload = useCallback(async (signal?: AbortSignal) => {
     try {
       const [a, b] = await Promise.all([
-        fetch("/api/functions").then((r) => r.json()),
-        fetch("/api/programs/meta").then((r) => r.json()),
+        fetch("/api/functions", { signal }).then((r) => r.json()),
+        fetch("/api/programs/meta", { signal }).then((r) => r.json()),
       ]);
-      setPrograms(a as Program[]);
-      const m = b as Partial<ProgramsMeta>;
+      if (signal?.aborted) return;
+      setFunctions(a as FunctionInfo[]);
+      const m = b as Partial<FunctionsMeta>;
       setMeta({
         favorites: m.favorites ?? [],
         folders: m.folders ?? {},
         icons: m.icons ?? {},
       });
-    } catch {
-      setPrograms([]);
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
+      setFunctions([]);
       setMeta({ favorites: [], folders: {}, icons: {} });
     }
   }, []);
 
   useEffect(() => {
-    reload();
+    const ac = new AbortController();
+    void reload(ac.signal);
+    return () => ac.abort();
   }, [reload]);
 
-  const saveMeta = useCallback(async (next: ProgramsMeta) => {
+  const saveMeta = useCallback(async (next: FunctionsMeta) => {
     setMeta(next);
     try {
       await fetch("/api/programs/meta", {
@@ -115,20 +112,20 @@ export function ProgramsPage() {
     return null;
   }
 
-  function getProgramsInFolder(id: string): Program[] {
-    if (id === "__all__") return programs;
+  function getFunctionsInFolder(id: string): FunctionInfo[] {
+    if (id === "__all__") return functions;
     if (id === "__uncategorized__") {
       const assigned = new Set<string>();
       for (const k of Object.keys(meta.folders))
         for (const n of meta.folders[k] || []) assigned.add(n);
-      return programs.filter((p) => !assigned.has(p.name));
+      return functions.filter((p) => !assigned.has(p.name));
     }
     if (id === "__favorites__") {
       const fav = new Set(meta.favorites);
-      return programs.filter((p) => fav.has(p.name));
+      return functions.filter((p) => fav.has(p.name));
     }
     const arr = new Set(meta.folders[id] || []);
-    return programs.filter((p) => arr.has(p.name));
+    return functions.filter((p) => arr.has(p.name));
   }
 
   function formatDate(ts?: number): string {
@@ -141,8 +138,8 @@ export function ProgramsPage() {
   }
 
   // ---- derived list ---------------------------------------------------
-  const visiblePrograms = useMemo(() => {
-    let arr = getProgramsInFolder(folder);
+  const visibleFunctions = useMemo(() => {
+    let arr = getFunctionsInFolder(folder);
     const q = search.toLowerCase();
     if (q) {
       arr = arr.filter(
@@ -160,7 +157,7 @@ export function ProgramsPage() {
     else arr = [...arr].sort((a, b) => a.name.localeCompare(b.name));
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [programs, meta, folder, search, filter, sort]);
+  }, [functions, meta, folder, search, filter, sort]);
 
   // ---- actions --------------------------------------------------------
   // Return to the conversation the user came from (not a blank /chat),
@@ -188,72 +185,18 @@ export function ProgramsPage() {
     router.push(chatTarget());
   }
 
-  function cloneMeta(): ProgramsMeta {
-    return {
-      favorites: [...meta.favorites],
-      folders: Object.fromEntries(
-        Object.entries(meta.folders).map(([k, v]) => [k, [...v]]),
-      ),
-      icons: { ...meta.icons },
-    };
-  }
-
-  async function toggleFav(name: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    const next = cloneMeta();
-    const idx = next.favorites.indexOf(name);
-    if (idx >= 0) next.favorites.splice(idx, 1);
-    else next.favorites.push(name);
-    await saveMeta(next);
-  }
-
-  async function moveToFolder(name: string, target: string | null) {
-    const next = cloneMeta();
-    for (const k of Object.keys(next.folders)) {
-      next.folders[k] = next.folders[k].filter((x) => x !== name);
-    }
-    if (target) next.folders[target] = [...(next.folders[target] || []), name];
-    await saveMeta(next);
-  }
-
-  async function deleteFolder(name: string) {
-    if (
-      !confirm(
-        `Delete folder "${name}"? Functions will be moved to Uncategorized.`,
-      )
-    )
-      return;
-    const next = cloneMeta();
-    delete next.folders[name];
-    if (folder === name) setFolder("__all__");
-    await saveMeta(next);
-  }
-
-  async function createFolder(name: string) {
-    name = name.trim();
-    if (!name || meta.folders[name]) return;
-    const next = cloneMeta();
-    next.folders[name] = [];
-    await saveMeta(next);
-    setFolder(name);
-  }
-
-  async function renameFolder(oldName: string, newName: string) {
-    newName = newName.trim();
-    if (!newName || newName === oldName || meta.folders[newName]) return;
-    const next = cloneMeta();
-    next.folders[newName] = next.folders[oldName] || [];
-    delete next.folders[oldName];
-    if (folder === oldName) setFolder(newName);
-    await saveMeta(next);
-  }
-
-  async function applyIcon(name: string, icon: string | null) {
-    const next = cloneMeta();
-    if (icon) next.icons[name] = icon;
-    else delete next.icons[name];
-    await saveMeta(next);
-  }
+  // Folder + favorites + icons mutations live in ./use-folder-meta.
+  // The hook needs the live meta + saveMeta and the current ``folder``
+  // selection (so delete/create/rename can move the user off a folder
+  // they just removed or renamed).
+  const {
+    toggleFav,
+    moveToFolder,
+    deleteFolder,
+    createFolder,
+    renameFolder,
+    applyIcon,
+  } = useFolderMeta(meta, saveMeta, folder, setFolder);
 
   // ---- DnD ------------------------------------------------------------
   function onProgramDragStart(e: React.DragEvent, name: string) {
@@ -352,7 +295,7 @@ export function ProgramsPage() {
   }
 
   function contentCtx(e: React.MouseEvent) {
-    if ((e.target as HTMLElement).closest("[data-program-card]")) return;
+    if ((e.target as HTMLElement).closest("[data-function-card]")) return;
     e.preventDefault();
     setCtx({
       x: e.clientX,
@@ -368,8 +311,8 @@ export function ProgramsPage() {
 
   // ---- Render ---------------------------------------------------------
   const existingNames = useMemo(
-    () => new Set(programs.map((p) => p.name)),
-    [programs],
+    () => new Set(functions.map((p) => p.name)),
+    [functions],
   );
   const liveCount = (names: string[] | undefined) =>
     (names || []).filter((n) => existingNames.has(n)).length;
@@ -378,7 +321,7 @@ export function ProgramsPage() {
       id: "__all__",
       name: "All Functions",
       icon: "📋",
-      count: programs.length,
+      count: functions.length,
     },
     {
       id: "__favorites__",
@@ -390,7 +333,7 @@ export function ProgramsPage() {
       id: "__uncategorized__",
       name: "Uncategorized",
       icon: "📂",
-      count: getProgramsInFolder("__uncategorized__").length,
+      count: getFunctionsInFolder("__uncategorized__").length,
     },
   ];
   const userFolders = Object.keys(meta.folders).sort();
@@ -529,7 +472,7 @@ export function ProgramsPage() {
             className={styles.content}
             onContextMenu={contentCtx}
           >
-            {visiblePrograms.length === 0 ? (
+            {visibleFunctions.length === 0 ? (
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}>📂</div>
                 <div className={styles.emptyText}>
@@ -541,8 +484,8 @@ export function ProgramsPage() {
               </div>
             ) : (
               <div className={view === "grid" ? cardGridClass : cardListClass}>
-                {visiblePrograms.map((p) => (
-                  <ProgramCard
+                {visibleFunctions.map((p) => (
+                  <FunctionCard
                     key={p.name}
                     p={p}
                     icon={meta.icons[p.name] || DEFAULT_ICON}

@@ -1,0 +1,102 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+
+import { Switch } from "@/components/ui/switch";
+
+import { ProviderIcon } from "../provider-icon";
+
+import { ApiKey } from "./api-key";
+import { BaseUrl } from "./base-url";
+import { Connectivity } from "./connectivity";
+import { ModelList } from "./model-list";
+import { CliInfo, SetupHint } from "./setup-hint";
+import styles from "../settings-page.module.css";
+import type { Model, Provider } from "./types";
+
+/** Right-pane detail view for one selected provider. Header + enable
+ *  toggle, then a stack of sections: setup hint (optional), API key
+ *  (api kind only), base URL, connectivity, and the model list (or
+ *  CLI info for CLI providers). */
+export function Detail({
+  provider,
+  onToggle,
+  onChanged,
+}: {
+  provider: Provider;
+  onToggle: (enabled: boolean) => void;
+  onChanged: () => void;
+}) {
+  const subtitle =
+    provider.kind === "cli"
+      ? `CLI runtime — binary: ${provider.cli_binary || "?"}`
+      : provider.api_key_env
+        ? `API key env: ${provider.api_key_env}`
+        : "Subscription required";
+
+  const [models, setModels] = useState<Model[]>([]);
+  const [modelSearch, setModelSearch] = useState("");
+
+  const reloadModels = useCallback(async () => {
+    if (provider.kind === "cli") {
+      setModels([]);
+      return;
+    }
+    try {
+      const r = await fetch(
+        `/api/providers/${encodeURIComponent(provider.id)}/models`,
+      );
+      const d = await r.json();
+      setModels(d.models || []);
+    } catch {
+      setModels([]);
+    }
+  }, [provider.id, provider.kind]);
+
+  useEffect(() => {
+    reloadModels();
+  }, [reloadModels]);
+
+  return (
+    <>
+      <div className={styles.detailHeader}>
+        <div className={styles.detailIcon}>
+          <ProviderIcon id={provider.id} size={40} />
+        </div>
+        <div className={styles.detailTitleWrap}>
+          <div className={styles.detailTitle}>{provider.label}</div>
+          <div className={styles.detailSubtitle}>{subtitle}</div>
+        </div>
+        <Switch
+          checked={provider.enabled}
+          onCheckedChange={onToggle}
+          title="Enable this provider"
+        />
+      </div>
+
+      {provider.setup_hint && (
+        <SetupHint hint={provider.setup_hint} configured={!!provider.configured} />
+      )}
+
+      {provider.api_key_env && (
+        <ApiKey envVar={provider.api_key_env} configured={!!provider.configured} onChanged={onChanged} />
+      )}
+      {provider.api_key_env && (
+        <BaseUrl provider={provider} onChanged={onChanged} />
+      )}
+      {provider.api_key_env && <Connectivity providerId={provider.id} />}
+
+      {provider.kind === "cli" ? (
+        <CliInfo provider={provider} />
+      ) : models.length > 0 ? (
+        <ModelList provider={provider} models={models} search={modelSearch} onSearch={setModelSearch} onReload={reloadModels} />
+      ) : (
+        <div className={styles.detailSection}>
+          <p className={styles.modelCountSummary}>
+            No models in the registry for this provider.
+          </p>
+        </div>
+      )}
+    </>
+  );
+}

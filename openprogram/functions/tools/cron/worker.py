@@ -175,29 +175,40 @@ def _spawn(entry: dict[str, Any], log_dir: str) -> subprocess.Popen[bytes] | Non
     ts = dt.datetime.now().strftime("%Y%m%dT%H%M%S")
     log_path = os.path.join(log_dir, f"{entry.get('id','noid')}-{ts}.log")
     log_fh = open(log_path, "w", buffering=1, encoding="utf-8")
-    log_fh.write(f"# cron fire — entry {entry.get('id')} @ {ts}\n")
-    log_fh.write(f"# expr: {entry.get('cron')}\n")
-    if command:
-        log_fh.write(f"# command: {command}\n\n")
-        log_fh.flush()
-        return subprocess.Popen(
-            command,
-            shell=True,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    log_fh.write(f"# prompt: {prompt}\n\n")
-    log_fh.flush()
-    cmd = [sys.executable, "-m", "openprogram.cli", "deep-work", prompt, "--no-interactive"]
-    return subprocess.Popen(
-        cmd,
-        stdout=log_fh,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    try:
+        log_fh.write(f"# cron fire — entry {entry.get('id')} @ {ts}\n")
+        log_fh.write(f"# expr: {entry.get('cron')}\n")
+        if command:
+            log_fh.write(f"# command: {command}\n\n")
+            log_fh.flush()
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        else:
+            log_fh.write(f"# prompt: {prompt}\n\n")
+            log_fh.flush()
+            cmd = [
+                sys.executable, "-m", "openprogram.cli",
+                "deep-work", prompt, "--no-interactive",
+            ]
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+    finally:
+        # Popen dup'd our fd into the child's stdout; we don't need the
+        # parent-side handle anymore. Leaving it open leaks an fd per
+        # fire and prevents log rotation on Linux until the parent exits.
+        log_fh.close()
+    return proc
 
 
 def _tick(state: dict[str, str], *, reboot: bool = False) -> int:

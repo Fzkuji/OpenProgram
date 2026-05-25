@@ -6,12 +6,12 @@ import { usePathname } from "next/navigation";
 import { usePendingRunFunction } from "@/lib/use-pending-run-function";
 import { useWS } from "@/lib/use-ws";
 
-type Page = "chat" | "settings" | "programs" | "chats";
+type Page = "chat" | "settings" | "chats";
 
 const PAGE_HTML: Record<Page, string> = {
   chat: "/html/index.html",
   settings: "/html/settings.html",
-  programs: "/html/programs.html",
+  programs: "(legacy /html/(legacy programs.html) — gone)",
   chats: "/html/chats.html",
 };
 
@@ -22,7 +22,6 @@ const JS_FILES_BY_PAGE: Record<Page, string[]> = {
   // (imported by useWS).
   chat: [],
   settings: [],
-  programs: ["programs/programs.js"],
   chats: [],
 };
 
@@ -241,7 +240,7 @@ export function PageShell({ page }: { page: Page }) {
   //     reply later overwrites with canonical state
   //   * new chat (/chat) — call newSession() which resets the
   //     chat area in place (welcome screen + cleared state)
-  // SPA hand-off from /programs → /chat lives in its own hook —
+  // SPA hand-off from /functions → /chat lives in its own hook —
   // see lib/use-pending-run-function.ts.
   usePendingRunFunction(pathname);
 
@@ -254,7 +253,7 @@ export function PageShell({ page }: { page: Page }) {
   useEffect(() => {
     if (page !== "chat") return;
     // Only react when the URL is on a chat route. SPA-routing away
-    // (e.g. user clicks Programs from /s/<id>) leaves this PageShell
+    // (e.g. user clicks Functions from /s/<id>) leaves this PageShell
     // mounted for one tick before the new route's PageShell takes
     // over; without this guard, that tick would call newSession()
     // and rewrite the URL back to /chat.

@@ -37,7 +37,7 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useSessionStore } from "@/lib/session-store";
-import { refreshFunctionsList } from "@/lib/programs-actions";
+import { refreshFunctionsList } from "@/lib/functions-actions";
 import { UserMenuFooter } from "../user-menu-footer";
 import { SessionsList } from "./sessions-list";
 import { FavoritesList } from "./favorites-list";
@@ -170,7 +170,7 @@ export function Sidebar() {
   // visual; the AppShell click-interceptor handles the actual routing.
   const navActive = {
     mcp: pathname.startsWith("/mcp"),
-    programs: pathname.startsWith("/functions"),
+    functions: pathname.startsWith("/functions"),
     memory: pathname.startsWith("/memory"),
     chats: pathname.startsWith("/chats"),
     skills: pathname.startsWith("/skills"),
@@ -253,7 +253,7 @@ export function Sidebar() {
           href="/functions"
           className={
             sidebarNavItemClass +
-            (navActive.programs ? " " + sidebarNavItemActiveClass : "")
+            (navActive.functions ? " " + sidebarNavItemActiveClass : "")
           }
           id="navPrograms"
         >
@@ -443,7 +443,7 @@ export function Sidebar() {
 }
 
 /**
- * Collapsible section in the sidebar (Favorite Programs / Recents).
+ * Collapsible section in the sidebar (Favorite Functions / Recents).
  * Header is a click-target showing the title + a "Show/Hide" hint that
  * fades in on hover; body is rendered only when the section is open.
  * `className` is the outer-container layout (flex / shrink / padding)

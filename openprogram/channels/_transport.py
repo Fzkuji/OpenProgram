@@ -8,19 +8,27 @@
   + progress streaming 用这条.
 
 这两条入口走的"如何用 HTTP 把字节送到 platform" 是同一份代码 —— 都
-调到 :func:`post_message` / :func:`patch_message`. 之前的设计这层
-代码在 outbound.py 和各 adapter 里复制了 5 遍 (chunking / credentials
-加载 / HTTP 调用 / 错误处理), 现在合并成一份.
+调到 :func:`post_message` / :func:`patch_message`.
 
-post_message 返回 platform-native ``message_id`` 字符串供入口 B 使用,
-入口 A 用 :func:`send` 时直接丢弃即可. ``patch_message`` 在 WeChat 上
-固定返回 ``False`` (iLink API 不支持编辑已发消息).
+post_message 返回 :class:`SendResult` (含 ok / message_id /
+error_kind / retryable), 入口 A 用 :func:`send` 只看 ``ok``, 入口 B
+拿 ``message_id`` 构造 MessageHandle. patch_message 同样.
+
+``error_kind`` 枚举:
+
+  ``auth``         — 凭据问题: token 错、过期、bot 被踢
+  ``rate_limit``   — 速率限制 (Telegram 429 / Discord 429 / Slack ratelimited)
+  ``bad_target``   — 收信人不对: chat_id 错、channel 不存在、bot 没权限
+  ``network``      — 连不上 / 超时 / SSL 错
+  ``not_supported``— 平台不支持该操作 (主要给 WeChat edit 用)
+  ``unknown``      — 其他, 看 error_detail
 """
 from __future__ import annotations
 
 import base64
 import random
 import uuid
+from dataclasses import dataclass, field
 from typing import Optional
 
 import requests
@@ -29,7 +37,6 @@ from openprogram.channels import accounts as _accounts
 
 
 # Platform-specific message size caps (字符数, 留 headroom).
-# Telegram 4096, Slack 40000, Discord 2000, WeChat 由 iLink 服务端控制.
 MAX_CHARS: dict[str, int] = {
     "telegram": 4000,
     "slack":    39000,
@@ -37,9 +44,35 @@ MAX_CHARS: dict[str, int] = {
     "wechat":   1800,
 }
 
-# Telegram message_id 是数字, Discord/Slack 是字符串. 统一返回 str.
-# Slack 的 "ts" 实际上是 "1234567890.123456" 形式的时间戳字符串, 但
-# chat.update 时也用同样的 ts 作 message identifier, 没问题.
+
+@dataclass(frozen=True)
+class SendResult:
+    """Send / edit 操作的结构化结果.
+
+    ``ok`` True 时 ``message_id`` 是 platform-native 字符串 (可能为空,
+    比如 WeChat 不返回可用 id 但发送成功). ``ok`` False 时 ``error_kind``
+    标识失败类别, ``error_detail`` 是 human-readable 详情 (一行).
+    ``retryable`` True 表示瞬态失败值得重试 (网络 / rate_limit), False
+    表示永久失败 (auth / bad_target / not_supported).
+    """
+    ok: bool
+    message_id: str = ""
+    error_kind: str = ""
+    error_detail: str = ""
+    retryable: bool = False
+
+    def __bool__(self) -> bool:
+        return self.ok
+
+    @classmethod
+    def success(cls, message_id: str = "") -> "SendResult":
+        return cls(ok=True, message_id=message_id)
+
+    @classmethod
+    def fail(
+        cls, kind: str, detail: str = "", *, retryable: bool = False,
+    ) -> "SendResult":
+        return cls(ok=False, error_kind=kind, error_detail=detail, retryable=retryable)
 
 
 # ---------------------------------------------------------------------------
@@ -51,35 +84,29 @@ def post_message(
     account_id: str,
     target: str,
     text: str,
-) -> Optional[str]:
-    """发一条消息. 返回 platform-native message_id 字符串, 或 None 表示
-    失败 / platform 不返回可用 id (WeChat 这种).
+) -> SendResult:
+    """发一条消息. 返回 :class:`SendResult`.
 
-    ``target`` 字符串语义按 platform 不同:
-      - telegram: chat_id (数字字符串或 username)
-      - discord:  "{channel_id}_{user_id}", 用前半部分
-      - slack:    "{channel_id}_{user_id}", 用前半部分
-      - wechat:   iLink user_id
+    ``target`` 字符串语义按 platform 不同 (见模块 docstring).
 
     长文本自动按平台 chunk 上限切分, 顺序发送; 返回 **最后一条** 的
-    message_id (大多数用例是用最后一条做 edit 起点).
+    SendResult — 中途失败立即返回当时的失败结果, 之前发出去的不撤回.
     """
     if not text:
-        return None
+        return SendResult.fail("bad_target", "empty text")
     sender = _POSTERS.get(platform)
     if sender is None:
-        print(f"[transport] unknown platform {platform!r}")
-        return None
+        return SendResult.fail(
+            "not_supported", f"unknown platform {platform!r}",
+        )
     limit = MAX_CHARS.get(platform, 1800)
     chunks = _chunk(text, limit)
-    last_id: Optional[str] = None
+    last: SendResult = SendResult.fail("unknown", "no chunks sent")
     for chunk in chunks:
-        mid = sender(account_id, target, chunk)
-        if mid is None:
-            # 中途失败也保留之前发出去的 message_id, 但报失败.
-            return None
-        last_id = mid
-    return last_id
+        last = sender(account_id, target, chunk)
+        if not last.ok:
+            return last
+    return last
 
 
 def patch_message(
@@ -88,17 +115,20 @@ def patch_message(
     target: str,
     message_id: str,
     text: str,
-) -> bool:
-    """改一条已发出去的消息. 返回 True/False.
+) -> SendResult:
+    """改一条已发出去的消息. 返回 :class:`SendResult`.
 
-    WeChat 不支持 edit (iLink API 没有这个接口), 固定返回 False —
-    调用方应该用 ``post_message`` 发新消息代替 (或保留旧消息不动).
+    WeChat 永远返回 ``not_supported`` error (iLink API 没有 editMessage).
+    调用方应该用 ``post_message`` 发新消息代替.
     """
     if not text:
-        return False
+        return SendResult.fail("bad_target", "empty text")
     patcher = _PATCHERS.get(platform)
     if patcher is None:
-        return False
+        return SendResult.fail(
+            "not_supported",
+            f"{platform!r} does not support editing messages",
+        )
     return patcher(account_id, target, message_id, text)
 
 
@@ -109,15 +139,41 @@ def _chunk(text: str, limit: int) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# 错误分类 helpers
+# ---------------------------------------------------------------------------
+
+def _classify_network_error(exc: Exception) -> SendResult:
+    """request 库异常 → SendResult."""
+    name = type(exc).__name__
+    detail = f"{name}: {exc}"
+    # 所有 requests 异常都当 network. 上层不知道更细节也没法 retry 得
+    # 更聪明, 重要的是给 retryable=True.
+    return SendResult.fail("network", detail, retryable=True)
+
+
+def _classify_http_status(status: int, body: str) -> SendResult:
+    """根据 HTTP status code + response body 给个 error_kind."""
+    snippet = body[:200] if body else ""
+    if status == 401 or status == 403:
+        return SendResult.fail("auth", f"HTTP {status}: {snippet}")
+    if status == 404:
+        return SendResult.fail("bad_target", f"HTTP {status}: {snippet}")
+    if status == 429:
+        return SendResult.fail("rate_limit", f"HTTP {status}: {snippet}", retryable=True)
+    if 500 <= status < 600:
+        return SendResult.fail("network", f"HTTP {status}: {snippet}", retryable=True)
+    return SendResult.fail("unknown", f"HTTP {status}: {snippet}")
+
+
+# ---------------------------------------------------------------------------
 # Telegram
 # ---------------------------------------------------------------------------
 
-def _post_telegram(account_id: str, chat_id: str, text: str) -> Optional[str]:
+def _post_telegram(account_id: str, chat_id: str, text: str) -> SendResult:
     creds = _accounts.load_credentials("telegram", account_id)
     token = creds.get("bot_token")
     if not token:
-        print(f"[transport.telegram] account {account_id} has no bot_token")
-        return None
+        return SendResult.fail("auth", f"account {account_id} has no bot_token")
     try:
         chat_id_val: object = int(chat_id) if chat_id.lstrip("-").isdigit() else chat_id
         r = requests.post(
@@ -126,27 +182,26 @@ def _post_telegram(account_id: str, chat_id: str, text: str) -> Optional[str]:
             timeout=10,
         )
         if not r.ok:
-            print(f"[transport.telegram] HTTP {r.status_code}: {r.text[:200]}")
-            return None
+            return _classify_http_status(r.status_code, r.text)
         data = r.json()
         if not data.get("ok"):
-            print(f"[transport.telegram] {data.get('description','?')[:200]}")
-            return None
+            desc = data.get("description", "") or ""
+            kind = _telegram_kind_from_description(desc)
+            return SendResult.fail(kind, desc, retryable=(kind == "rate_limit"))
         result = data.get("result") or {}
         mid = result.get("message_id")
-        return str(mid) if mid is not None else None
+        return SendResult.success(str(mid) if mid is not None else "")
     except Exception as e:  # noqa: BLE001
-        print(f"[transport.telegram] {type(e).__name__}: {e}")
-        return None
+        return _classify_network_error(e)
 
 
 def _patch_telegram(
     account_id: str, chat_id: str, message_id: str, text: str,
-) -> bool:
+) -> SendResult:
     creds = _accounts.load_credentials("telegram", account_id)
     token = creds.get("bot_token")
     if not token:
-        return False
+        return SendResult.fail("auth", f"account {account_id} has no bot_token")
     try:
         chat_id_val: object = int(chat_id) if chat_id.lstrip("-").isdigit() else chat_id
         msg_id_val: object = int(message_id) if message_id.isdigit() else message_id
@@ -156,20 +211,30 @@ def _patch_telegram(
             timeout=10,
         )
         if not r.ok:
-            print(f"[transport.telegram] edit HTTP {r.status_code}: {r.text[:200]}")
-            return False
+            return _classify_http_status(r.status_code, r.text)
         data = r.json()
         if not data.get("ok"):
-            # Telegram 在文本没变时会回 "message is not modified", 不算错.
-            desc = data.get("description", "")
+            desc = data.get("description", "") or ""
+            # Telegram 在文本没变时回 "message is not modified", 视为成功
             if "not modified" in desc.lower():
-                return True
-            print(f"[transport.telegram] edit failed: {desc[:200]}")
-            return False
-        return True
+                return SendResult.success(message_id)
+            kind = _telegram_kind_from_description(desc)
+            return SendResult.fail(kind, desc, retryable=(kind == "rate_limit"))
+        return SendResult.success(message_id)
     except Exception as e:  # noqa: BLE001
-        print(f"[transport.telegram] edit {type(e).__name__}: {e}")
-        return False
+        return _classify_network_error(e)
+
+
+def _telegram_kind_from_description(desc: str) -> str:
+    """从 Telegram 业务错误描述里推断 error_kind."""
+    low = desc.lower()
+    if "unauthorized" in low or "bot token" in low:
+        return "auth"
+    if "too many requests" in low or "flood" in low:
+        return "rate_limit"
+    if "chat not found" in low or "bot was kicked" in low or "user is deactivated" in low:
+        return "bad_target"
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -184,16 +249,14 @@ def _discord_headers(token: str) -> dict[str, str]:
     }
 
 
-def _post_discord(account_id: str, scoped_user_id: str, text: str) -> Optional[str]:
+def _post_discord(account_id: str, scoped_user_id: str, text: str) -> SendResult:
     creds = _accounts.load_credentials("discord", account_id)
     token = creds.get("bot_token")
     if not token:
-        print(f"[transport.discord] account {account_id} has no bot_token")
-        return None
+        return SendResult.fail("auth", f"account {account_id} has no bot_token")
     channel_id, _, _user = scoped_user_id.partition("_")
     if not channel_id:
-        print(f"[transport.discord] malformed user id {scoped_user_id!r}")
-        return None
+        return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
         r = requests.post(
             f"https://discord.com/api/v10/channels/{channel_id}/messages",
@@ -202,25 +265,24 @@ def _post_discord(account_id: str, scoped_user_id: str, text: str) -> Optional[s
             timeout=10,
         )
         if not r.ok:
-            print(f"[transport.discord] HTTP {r.status_code}: {r.text[:200]}")
-            return None
+            return _classify_http_status(r.status_code, r.text)
         data = r.json()
-        return str(data.get("id")) if data.get("id") else None
+        mid = data.get("id")
+        return SendResult.success(str(mid) if mid else "")
     except Exception as e:  # noqa: BLE001
-        print(f"[transport.discord] {type(e).__name__}: {e}")
-        return None
+        return _classify_network_error(e)
 
 
 def _patch_discord(
     account_id: str, scoped_user_id: str, message_id: str, text: str,
-) -> bool:
+) -> SendResult:
     creds = _accounts.load_credentials("discord", account_id)
     token = creds.get("bot_token")
     if not token:
-        return False
+        return SendResult.fail("auth", f"account {account_id} has no bot_token")
     channel_id, _, _user = scoped_user_id.partition("_")
     if not channel_id:
-        return False
+        return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
         r = requests.patch(
             f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}",
@@ -229,12 +291,10 @@ def _patch_discord(
             timeout=10,
         )
         if not r.ok:
-            print(f"[transport.discord] edit HTTP {r.status_code}: {r.text[:200]}")
-            return False
-        return True
+            return _classify_http_status(r.status_code, r.text)
+        return SendResult.success(message_id)
     except Exception as e:  # noqa: BLE001
-        print(f"[transport.discord] edit {type(e).__name__}: {e}")
-        return False
+        return _classify_network_error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -248,16 +308,14 @@ def _slack_headers(token: str) -> dict[str, str]:
     }
 
 
-def _post_slack(account_id: str, scoped_user_id: str, text: str) -> Optional[str]:
+def _post_slack(account_id: str, scoped_user_id: str, text: str) -> SendResult:
     creds = _accounts.load_credentials("slack", account_id)
     token = creds.get("bot_token")
     if not token:
-        print(f"[transport.slack] account {account_id} has no bot_token")
-        return None
+        return SendResult.fail("auth", f"account {account_id} has no bot_token")
     channel_id, _, _user = scoped_user_id.partition("_")
     if not channel_id:
-        print(f"[transport.slack] malformed user id {scoped_user_id!r}")
-        return None
+        return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
         r = requests.post(
             "https://slack.com/api/chat.postMessage",
@@ -268,25 +326,24 @@ def _post_slack(account_id: str, scoped_user_id: str, text: str) -> Optional[str
         data = r.json() if r.ok else {}
         if not data.get("ok"):
             err = data.get("error") or r.text[:200]
-            print(f"[transport.slack] {err}")
-            return None
+            kind = _slack_kind_from_error(err)
+            return SendResult.fail(kind, err, retryable=(kind in ("rate_limit", "network")))
         ts = data.get("ts")
-        return str(ts) if ts else None
+        return SendResult.success(str(ts) if ts else "")
     except Exception as e:  # noqa: BLE001
-        print(f"[transport.slack] {type(e).__name__}: {e}")
-        return None
+        return _classify_network_error(e)
 
 
 def _patch_slack(
     account_id: str, scoped_user_id: str, ts: str, text: str,
-) -> bool:
+) -> SendResult:
     creds = _accounts.load_credentials("slack", account_id)
     token = creds.get("bot_token")
     if not token:
-        return False
+        return SendResult.fail("auth", f"account {account_id} has no bot_token")
     channel_id, _, _user = scoped_user_id.partition("_")
     if not channel_id:
-        return False
+        return SendResult.fail("bad_target", f"malformed user id {scoped_user_id!r}")
     try:
         r = requests.post(
             "https://slack.com/api/chat.update",
@@ -297,12 +354,23 @@ def _patch_slack(
         data = r.json() if r.ok else {}
         if not data.get("ok"):
             err = data.get("error") or r.text[:200]
-            print(f"[transport.slack] edit failed: {err}")
-            return False
-        return True
+            kind = _slack_kind_from_error(err)
+            return SendResult.fail(kind, err, retryable=(kind in ("rate_limit", "network")))
+        return SendResult.success(ts)
     except Exception as e:  # noqa: BLE001
-        print(f"[transport.slack] edit {type(e).__name__}: {e}")
-        return False
+        return _classify_network_error(e)
+
+
+def _slack_kind_from_error(err: str) -> str:
+    """Slack API 错误代码 → error_kind. 见 Slack docs"errors" 部分."""
+    low = (err or "").lower()
+    if low in ("invalid_auth", "not_authed", "account_inactive", "token_revoked", "token_expired"):
+        return "auth"
+    if low in ("rate_limited", "ratelimited"):
+        return "rate_limit"
+    if low in ("channel_not_found", "not_in_channel", "is_archived", "user_not_found"):
+        return "bad_target"
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -310,25 +378,19 @@ def _patch_slack(
 # ---------------------------------------------------------------------------
 
 def _make_wechat_uin() -> str:
-    """Stable-per-process X-WECHAT-UIN the iLink server expects.
-
-    复制自 channels.wechat 私有函数 — 在这里维护一份, 避免 transport
-    反向依赖 wechat adapter 的私有 API. wechat adapter 自己用的那一份
-    保留, 两边逻辑一样.
-    """
+    """Stable-per-process X-WECHAT-UIN the iLink server expects."""
     uin = random.getrandbits(32)
     decimal = str(uin)
     return base64.b64encode(decimal.encode("ascii")).decode("ascii")
 
 
-def _post_wechat(account_id: str, user_id: str, text: str) -> Optional[str]:
+def _post_wechat(account_id: str, user_id: str, text: str) -> SendResult:
     creds = _accounts.load_credentials("wechat", account_id)
     bot_token = creds.get("bot_token") or ""
     bot_id = creds.get("ilink_bot_id") or ""
     base = creds.get("baseurl") or "https://ilinkai.weixin.qq.com"
     if not bot_token or not bot_id:
-        print(f"[transport.wechat] account {account_id} not logged in")
-        return None
+        return SendResult.fail("auth", f"account {account_id} not logged in")
     try:
         r = requests.post(
             f"{base}/ilink/bot/sendmessage",
@@ -352,23 +414,19 @@ def _post_wechat(account_id: str, user_id: str, text: str) -> Optional[str]:
             },
             timeout=15,
         )
+        if not r.ok:
+            return _classify_http_status(r.status_code, r.text)
         data = r.json() if r.ok else {}
-        if data.get("ret", 0) != 0:
-            print(f"[transport.wechat] {data.get('errmsg','?')[:200]}")
-            return None
-        # iLink 不返回稳定的 message_id, 入口 B 在 wechat 上 edit 也
-        # 不支持. 但 outbound.send 仍需要区分"发出去了" vs "失败" — 用
-        # 空字符串作 sentinel: ``is not None`` 为真表示发送成功, 但拿这
-        # 个值去 patch_message 会被识别成空 id 而失败 (跟 wechat 本来
-        # 就不支持 edit 一致).
-        return ""
+        ret = data.get("ret", 0)
+        if ret != 0:
+            errmsg = data.get("errmsg", "?") or "?"
+            kind = "auth" if ret in (401, 403, 1001) else "unknown"
+            return SendResult.fail(kind, f"iLink ret={ret}: {errmsg[:200]}")
+        # iLink 不返回稳定的 message_id, send_text 拿到的 handle 在 wechat
+        # 上 editable=False (空 message_id). 这跟 wechat 不支持 edit 一致.
+        return SendResult.success("")
     except Exception as e:  # noqa: BLE001
-        print(f"[transport.wechat] {type(e).__name__}: {e}")
-        return None
-
-
-# WeChat patch 不实现, _PATCHERS 里就不放 wechat 项, 自动走 None 分支
-# 返回 False.
+        return _classify_network_error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -386,5 +444,5 @@ _PATCHERS = {
     "telegram": _patch_telegram,
     "discord":  _patch_discord,
     "slack":    _patch_slack,
-    # wechat: 不支持 edit, 缺这一项 → patch_message 返回 False
+    # wechat: 不支持 edit, 缺这一项 → patch_message 返回 not_supported
 }

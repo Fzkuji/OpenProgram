@@ -134,17 +134,17 @@ def dispatch_inbound(
         try:
             from openprogram.channels import _transport
             from openprogram.channels.base import MessageHandle as _MH
-            _placeholder_mid = _transport.post_message(
+            _result = _transport.post_message(
                 channel, account_id, str(peer_id), "⏳ working...",
             )
-            if _placeholder_mid:
-                _h = _MH(channel, account_id, str(peer_id), _placeholder_mid)
+            if _result.ok and _result.message_id:
+                _h = _MH(channel, account_id, str(peer_id), _result.message_id)
                 if _h.editable:
                     progress_handle = _h
-                # 不 editable (WeChat 空字符串 sentinel) 或 _placeholder_mid
-                # 是 None → 降级回非 streaming, 占位仍然发出去了但不参与
-                # 后续 edit. WeChat 在这种降级下用户看到的是 "⏳..." 加上
-                # 一条完整 reply, 不完美但不出错.
+                # 不 editable (WeChat 空 message_id) → 降级回非 streaming,
+                # 占位仍然发出去了但不参与后续 edit. WeChat 在这种降级下
+                # 用户看到的是 "⏳..." 加上一条完整 reply, 不完美但不
+                # 出错.
         except Exception:
             progress_handle = None
 

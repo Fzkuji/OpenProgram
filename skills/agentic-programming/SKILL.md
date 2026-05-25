@@ -35,11 +35,38 @@ That's it. Every step is something you do with your normal tools.
 | Situation | Where the file goes |
 |---|---|
 | User said "save to X" | Exactly X. |
-| Brand new general-purpose function | `openprogram/functions/agentics/<name>/__init__.py` |
+| Brand new general-purpose function in core | `openprogram/functions/agentics/<name>/__init__.py` |
+| New function in an external harness package | `<harness>/<pkg>/agentics/<name>/__init__.py`, and `<pkg>/agentics/__init__.py` must export it via `AGENTIC_FUNCTIONS = [...]` (see §1.1 below) |
 | Editing an existing function | The file you found it in (don't move it). |
 | User's project / non-framework function | Wherever fits their layout (ask if unclear). |
 
 Directory + filename convention: lowercase snake_case folder matching the function name (e.g. `analyze_sentiment/__init__.py` contains `def analyze_sentiment`). The folder layout (one directory per agentic function, code in `__init__.py`) replaced the old flat `<name>.py` layout in the function-calling unification — see ``docs/design/function-calling-unification.md``. Single-file helpers inside the same logical agentic can sit next to ``__init__.py`` (e.g. ``analyze_sentiment/_prompt.py``) without polluting the top-level namespace.
+
+### 1.1. External harness convention — `AGENTIC_FUNCTIONS`
+
+For functions living **outside** the OpenProgram repo (e.g. `Wiki-Agent-Harness`, `Research-Agent-Harness`, `GUI-Agent-Harness`), use this layout in the harness's own Python package:
+
+```
+<harness-root>/
+├── pyproject.toml
+└── <pkg>/                       # ascii-identifier python package
+    ├── __init__.py
+    └── agentics/
+        ├── __init__.py          # exports AGENTIC_FUNCTIONS = [...]
+        └── <my_agent>/
+            └── __init__.py      # the @agentic_function lives here
+```
+
+`<pkg>/agentics/__init__.py` is the **discovery sentinel**:
+
+```python
+from .my_agent import my_agent
+AGENTIC_FUNCTIONS = [my_agent]
+```
+
+OpenProgram auto-discovers any harness symlinked into `openprogram/functions/agentics/`: it scans for `<pkg>/agentics/__init__.py` inside each symlinked directory, imports it, and the `@agentic_function` decorators inside fire and self-register. **No edit to `_registry.py::AGENTIC_MODULES` is needed for external harnesses** — that list is now only for internal `openprogram/functions/agentics/<name>/` modules.
+
+To wire a new external harness in: `ln -s /path/to/Your-Harness openprogram/functions/agentics/` and restart the server. That's it.
 
 ## 2. agentic_function vs plain Python vs @function
 
@@ -312,7 +339,7 @@ If it crashes, read the traceback and fix before declaring done. For functions w
 
 Once a function is saved, there are two ways to run it.
 
-**CLI** — for functions discoverable under `openprogram/functions/agentics/` (listed in `openprogram/functions/_registry.py::AGENTIC_MODULES`):
+**CLI** — for functions discoverable under `openprogram/functions/agentics/` (either listed in `openprogram/functions/_registry.py::AGENTIC_MODULES`, or auto-discovered as an external-harness symlink per §1.1):
 
 ```bash
 openprogram programs list                       # see what's available
@@ -361,7 +388,8 @@ After the frontmatter, write a short body covering when to use this skill, brief
 | Symptom | Likely cause |
 |---|---|
 | Generated function returns the wrong thing when run | Per-call prompt isn't in `content=[...]` — only in docstring. Codex / chatgpt subscription will reply conversationally. Move the instruction into `content`. |
-| WebUI doesn't show your function | Filename starts with `_`, or the file isn't under one of the discovery roots. |
+| WebUI doesn't show your function | Filename starts with `_`, or the file isn't under one of the discovery roots. For external harnesses: check that `<pkg>/agentics/__init__.py` exists AND exports `AGENTIC_FUNCTIONS = [...]`. Run with `OPENPROGRAM_DEBUG_REGISTRY=1` to see swallowed import errors. |
+| External harness symlink ignored | `<pkg>/agentics/__init__.py` is missing, or the harness has multiple top-level packages and the loader picked the wrong one. The loader looks specifically for an ascii-identifier child of `<harness>/` that has BOTH `__init__.py` AND `agentics/__init__.py` — make sure only the harness's "main" package matches that. |
 | Function crashes with `ImportError` | The imported package isn't installed in this environment. Install it, or rewrite using a stdlib / `openprogram.*` equivalent (see §6.1 rule 7). |
 | Same function works on one provider, fails on another | Provider treats the rendered context tree differently. Make sure `content=[...]` is self-sufficient — the test should be: would this work if the function had no docstring at all? If yes, you're good. |
 
@@ -375,5 +403,6 @@ If you remember nothing else from this skill, remember these:
 4. No `system=` kwarg on `runtime.exec`.
 5. Every LLM-visible parameter needs a `description` in `input={...}`.
 6. No `Args:` / `Returns:` sections in the docstring.
-7. Save to `openprogram/functions/agentics/<name>/__init__.py` unless the user said otherwise. Add `("<name>", None)` to `openprogram/functions/_registry.py::AGENTIC_MODULES` so the loader actually imports it (otherwise the @agentic_function decorator never fires and the function won't be discoverable).
+7. **Internal** function → save to `openprogram/functions/agentics/<name>/__init__.py` AND add `("<name>", None)` to `openprogram/functions/_registry.py::AGENTIC_MODULES`.
+   **External harness** function → save to `<harness>/<pkg>/agentics/<name>/__init__.py` AND make sure `<pkg>/agentics/__init__.py` exports it via `AGENTIC_FUNCTIONS = [...]`. No edit to `AGENTIC_MODULES` needed — auto-discovered (§1.1).
 8. If the LLM should also see it as a callable tool, add `"<name>"` to `openprogram/functions/__init__.py::TOOLSETS["full"]["tools"]` (the Layer 2 exposure whitelist). Without this the function exists but is invisible to LLMs.

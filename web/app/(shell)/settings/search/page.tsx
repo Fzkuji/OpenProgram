@@ -5,7 +5,7 @@ import { SettingsTabsLayout } from "@/components/settings/settings-tabs-layout";
 
 const SearchProvidersSection = dynamic(
   () =>
-    import("@/components/settings/search-providers-section").then(
+    import("@/components/settings/search-providers").then(
       (m) => m.SearchProvidersSection,
     ),
   { ssr: false },

@@ -96,16 +96,36 @@ class FileTokenStorage(TokenStorage):
 
     def _write(self, data: dict) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        # Write then chmod, in that order — the umask might mask out
-        # group/other bits already, but be explicit since the file
-        # holds a bearer token.
+        # ``open(O_CREAT, mode=0o600)`` creates the file with the
+        # restrictive perms in one syscall. The previous "write_text
+        # then chmod" sequence left a brief window where the file was
+        # world-readable, which matters since the payload is a bearer
+        # token. Existing-file mode bits are NOT changed by O_CREAT
+        # alone, so unlink first to be sure the perms come from our
+        # ``mode`` argument and not from a leftover 0644 inode.
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False),
-                       encoding="utf-8")
         try:
-            os.chmod(tmp, 0o600)
-        except OSError:
+            os.unlink(tmp)
+        except FileNotFoundError:
             pass
+        # ``os.O_NOFOLLOW`` blocks symlink attacks against the temp
+        # path. mode=0o600 sets owner-only read/write at creation time.
+        fd = os.open(
+            tmp,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+            0o600,
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            # Best-effort cleanup on write failure so a half-written tmp
+            # file doesn't linger with a token-shaped name.
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
         os.replace(tmp, self._path)
 
 

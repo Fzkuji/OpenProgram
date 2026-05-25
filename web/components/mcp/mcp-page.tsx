@@ -3,7 +3,7 @@
 /**
  * /mcp — MCP server management page.
  *
- * Outer shell is identical to /functions (programs-page.tsx):
+ * Outer shell is identical to /functions (functions-page.tsx):
  *   <div className="main">
  *     <div className={styles.view}>
  *       <div className={styles.topbar}>...</div>

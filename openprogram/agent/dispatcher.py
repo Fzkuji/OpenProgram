@@ -248,7 +248,7 @@ def process_user_turn(
     # quiet system marker (transparent surface, robot avatar) rather
     # than as a regular blue You-bubble that makes it look like the
     # user sent two messages in a row.
-    if req.source in {"task_followup", "merge_turn"}:
+    if req.source in {"task_followup", "merge_turn", "agent_spawn"}:
         user_msg["display"] = "runtime"
     # Persist a lightweight attachment manifest (count + media types)
     # so /resume + the search picker can show "[2 images]" badges

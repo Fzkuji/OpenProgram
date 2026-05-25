@@ -52,6 +52,11 @@ def _broadcast_worktree_status(wt: Worktree) -> None:
     """
     try:
         from openprogram.webui import server as _s
+    except ImportError:
+        # webui is optional (CLI / tests / library use). Skip silently
+        # — this is the documented expected path when no UI is running.
+        return
+    try:
         _s._broadcast(json.dumps({
             "type": "worktree_status",
             "data": {
@@ -66,10 +71,16 @@ def _broadcast_worktree_status(wt: Worktree) -> None:
                 "worktree": wt.to_dict(),
             },
         }, default=str))
-    except Exception:
-        # Never let a broadcast failure prevent the actual state
-        # transition from succeeding — webui is optional.
-        pass
+    except Exception as e:
+        # Broadcast itself failed despite webui being importable —
+        # connection corruption, serialization error, etc. The state
+        # transition has already been persisted, so we don't raise,
+        # but log to stderr so the issue isn't completely silent.
+        import sys
+        print(
+            f"[worktree-broadcast] {type(e).__name__}: {e}",
+            file=sys.stderr,
+        )
 
 
 # Subprocess timeout cap. Git operations on user repos should be fast;
@@ -193,9 +204,26 @@ class WorktreeManager:
                 "OpenProgram's session storage."
             )
 
+        # Reject ref names that could be misparsed as git CLI options.
+        # ``git worktree add -b <branch> [<commit-ish>]`` and the later
+        # ``merge`` / ``branch -D`` calls all pass these names directly
+        # to git as positional args; a leading ``-`` would let an
+        # attacker-controlled label inject options (``--upload-pack=...``
+        # etc.). The other rejections — empty / whitespace / NUL — are
+        # the same constraints git itself applies but with a clearer
+        # error message before we shell out.
+        def _validate_ref(name: str, kind: str) -> None:
+            if not name or "\x00" in name or name.startswith("-"):
+                raise WorktreeError(
+                    f"invalid_{kind}: {name!r} is not a valid git ref name "
+                    f"(must not be empty, start with '-', or contain NUL)."
+                )
+
         wt_id = mint_worktree_id()
         slug = _slugify(label or "wt", default=wt_id.replace("wt_", ""))
         branch = (branch_name or "").strip() or f"op/wt/{slug}-{wt_id[3:9]}"
+        _validate_ref(branch, "branch_name")
+        _validate_ref(base_ref, "base_ref")
         # Final worktree path lives outside both source_repo and
         # sessions-git so neither can accidentally pick up its files.
         path = _worktrees_root() / f"{wt_id}-{slug}"

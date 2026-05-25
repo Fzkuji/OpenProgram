@@ -20,7 +20,7 @@ import "@/lib/runtime-bridge/state";
 import "@/lib/runtime-bridge/helpers";
 import "@/lib/runtime-bridge/ui";
 import "@/lib/runtime-bridge/providers";
-import "@/lib/runtime-bridge/programs-panel";
+import "@/lib/runtime-bridge/functions-panel";
 import "@/lib/runtime-bridge/history-graph";
 import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
 
@@ -29,7 +29,7 @@ import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
 // web/public/js/shared/ so the static tree groups them together.
 // Legacy shared JS modules. We keep loading the ones that the
 // not-yet-migrated chat page + sidebar + right rail still depend on;
-// the settings/programs/chats trios are gone (migrated to React).
+// the settings/functions/chats trios are gone (migrated to React).
 // `shared/conversations.js` is migrated — see `web/lib/conversations.ts`
 // (imported for side effects by `useWS`).
 // All legacy public/js scripts are migrated to lib/ — see the
@@ -102,7 +102,7 @@ declare global {
 }
 
 // Routes where the right sidebar (History / Execution Detail) is
-// relevant. Programs / Chats / Settings don't need it, so it's hidden
+// relevant. Functions / Chats / Settings don't need it, so it's hidden
 // there even though the DOM persists.
 function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
@@ -192,7 +192,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   // Sync `.active` on sidebar nav items to the current route and close any
-  // open popover when navigating. The programs page inline script also sets
+  // open popover when navigating. The functions page inline script also sets
   // `.active` on mount, but nothing removes it on navigation — we own that.
   useEffect(() => {
     const items: Array<[string, string]> = [
@@ -207,7 +207,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const close = (window as unknown as { _closeAllPopovers?: () => void })._closeAllPopovers;
     if (close) close();
 
-    // Remember the last chat route so a `/programs → run` hand-off can
+    // Remember the last chat route so a `/functions → run` hand-off can
     // return to the conversation the user came from, not a blank
     // /chat. Kept on window because it must survive leaving the chat
     // route entirely (the store's currentSessionId is nulled then).
