@@ -692,6 +692,20 @@ class TaskRunner:
                     )
                 except Exception:
                     pass
+            # Hide the spawned sub-branch from the Branches panel
+            # once the task completes successfully. Same idea as
+            # merge: the sub-agent's content is now reachable from
+            # main via the attach pointer, so the standalone branch
+            # tip is redundant in the panel. DAG nodes stay
+            # intact — a user can still checkout to revisit the
+            # sub-agent's history. Only retire on COMPLETED;
+            # errored / cancelled tasks remain visible so the user
+            # can see what failed.
+            if task.head_id and task.status == TaskStatus.COMPLETED:
+                try:
+                    db.mark_merged(task.parent_session_id, [task.head_id])
+                except Exception:
+                    pass
             # Update the persisted node's metadata + output text.
             output = task.result_text or error_text or node.output or ""
             try:
