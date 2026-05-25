@@ -1001,20 +1001,53 @@ def split_tools_for_dispatch(
     return provider_tools, catalog
 
 
-def _tool_search_impl(select: str) -> str:
+_TOOL_SEARCH_MAX_RESULTS = 5
+
+
+def _tool_search_impl(select: str, *, max_results: int = _TOOL_SEARCH_MAX_RESULTS) -> str:
     """Argument format mirrors Claude Code's ``ToolSearch``:
 
       ``select:name1,name2,name3``  — explicit names, comma-separated
-      ``name1,name2``                — the ``select:`` prefix is optional
+                                     (``select:`` prefix optional when
+                                     the query is itself a comma list).
+      ``notebook jupyter``           — keyword search; up to
+                                     ``max_results`` best matches.
+      ``+slack send``                — require ``slack`` in the tool
+                                     name, rank remaining terms.
 
-    After this call the named tools' full schemas appear in the
+    After this call the matched tools' full schemas appear in the
     provider tools array on the next turn. Calling a deferred tool
     *before* it has been loaded triggers an InputValidationError on
     most providers because the schema isn't in the request.
     """
     payload = select.strip()
-    if payload.startswith("select:"):
-        payload = payload[len("select:"):].strip()
+    if not payload:
+        return "Error: pass tool names like `select:name1,name2` or a keyword query."
+
+    # Explicit-name path: select: prefix, or input looks like a pure
+    # comma-list of identifiers ("foo, bar, baz" with no whitespace
+    # tokens that would suggest a query).
+    explicit = payload.startswith("select:")
+    if explicit:
+        payload_for_names = payload[len("select:"):].strip()
+    else:
+        # Heuristic: if there are commas and no spaces around the commas,
+        # treat as explicit names. A keyword query is space-separated.
+        looks_like_names = (
+            "," in payload
+            and " " not in payload.replace(", ", "")
+        )
+        if looks_like_names:
+            explicit = True
+            payload_for_names = payload
+
+    if explicit:
+        return _tool_search_by_name(payload_for_names)
+
+    return _tool_search_by_keyword(payload, max_results=max_results)
+
+
+def _tool_search_by_name(payload: str) -> str:
     requested = [n.strip() for n in payload.split(",") if n.strip()]
     if not requested:
         return "Error: pass tool names like `select:name1,name2`."
@@ -1046,14 +1079,89 @@ def _tool_search_impl(select: str) -> str:
     return head + "\n" + "\n".join(lines)
 
 
+def _tool_search_by_keyword(query: str, *, max_results: int) -> str:
+    """Rank deferred-not-yet-loaded tools against ``query`` and load
+    the top hits.
+
+    Scoring (cheap word-overlap, no embeddings):
+      * ``+term`` (term prefixed with ``+``) is a HARD filter on the
+        tool name — candidates that don't contain it are eliminated.
+      * Each remaining word adds points based on where it lands:
+        +10 substring in name, +5 in searchHint (set by MCP servers
+        via ``_meta['anthropic/searchHint']``), +2 in description.
+      * Ties broken alphabetically by name for stable output.
+    """
+    raw_terms = [t for t in query.split() if t.strip()]
+    required = [t[1:].lower() for t in raw_terms if t.startswith("+") and len(t) > 1]
+    weighted = [t.lower() for t in raw_terms if not t.startswith("+")]
+    if not raw_terms:
+        return "Error: empty query."
+
+    # Candidate pool: deferred tools whose schema isn't already in this
+    # session's provider tools array.
+    loaded = _loaded_deferred.get() or set()
+    candidates = [
+        t for t in _registry.values()
+        if getattr(t, "_defer", False) and t.name not in loaded
+    ]
+
+    scored: list[tuple[int, str, AgentTool]] = []
+    for t in candidates:
+        name_lower = t.name.lower()
+        if not all(req in name_lower for req in required):
+            continue
+        hint = (getattr(t, "_search_hint", None) or "").lower()
+        desc = (t.description or "").lower()
+        score = 0
+        for term in weighted:
+            if term in name_lower:
+                score += 10
+            if term in hint:
+                score += 5
+            if term in desc:
+                score += 2
+        # Required-only query (e.g. "+linear") still ranks all matching.
+        if not weighted:
+            score = 1
+        if score > 0:
+            scored.append((score, t.name, t))
+
+    if not scored:
+        return f"No deferred tools matched query {query!r}."
+
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    top = scored[:max_results]
+    loaded_names = [name for _, name, _ in top]
+    mark_deferred_loaded(loaded_names)
+
+    head = (
+        f"Loaded {len(top)} deferred tool"
+        f"{'s' if len(top) != 1 else ''} matching {query!r} "
+        f"(scored, top {max_results} of {len(scored)} matches):"
+    )
+    lines = [
+        f"- {t.name} (score {score}): {t.description.splitlines()[0]}"
+        for score, _, t in top
+    ]
+    return head + "\n" + "\n".join(lines)
+
+
 # Build + register the ToolSearch entry point manually (rather than
 # @function) so we don't depend on it being decorated like a normal
 # tool — it's a load primitive, not a user feature, and it must never
 # defer itself.
 
 async def _tool_search_execute(call_id, args, cancel, on_update):
-    select = args.get("select", "") if isinstance(args, dict) else ""
-    text = _tool_search_impl(str(select))
+    if not isinstance(args, dict):
+        args = {}
+    select = str(args.get("select") or "")
+    raw_max = args.get("max_results")
+    try:
+        max_results = int(raw_max) if raw_max is not None else _TOOL_SEARCH_MAX_RESULTS
+    except (TypeError, ValueError):
+        max_results = _TOOL_SEARCH_MAX_RESULTS
+    max_results = max(1, min(max_results, 20))
+    text = _tool_search_impl(select, max_results=max_results)
     return AgentToolResult(content=[TextContent(text=text)])
 
 
@@ -1061,12 +1169,17 @@ tool_search = AgentTool(
     name="tool_search",
     description=(
         "Load deferred tools' parameter schemas into the next turn. "
-        "Argument: `select:<name1>,<name2>,...` (or just the names "
-        "comma-separated). After loading, you can call the named "
-        "tools normally; before loading, the provider rejects them "
-        "with InputValidationError because their schema wasn't sent. "
-        "See the deferred-tools catalog in the system prompt for "
-        "available names."
+        "Before loading, deferred tools appear by name only in the "
+        "system-prompt catalog — calling them raises "
+        "InputValidationError because their JSON Schema wasn't sent. "
+        "After loading, they're callable normally.\n"
+        "\n"
+        "Query forms:\n"
+        "  `select:name1,name2`  — load these exact tools by name.\n"
+        "  `notebook jupyter`    — keyword search; up to 5 best matches "
+        "scored against tool name / search hint / description.\n"
+        "  `+slack send`         — `+`-prefixed terms HARD-filter on "
+        "the name; remaining terms rank within survivors."
     ),
     parameters={
         "type": "object",
@@ -1074,8 +1187,16 @@ tool_search = AgentTool(
             "select": {
                 "type": "string",
                 "description": (
-                    "Comma-separated tool names to load. Optionally "
-                    "prefixed with `select:` (Claude Code style)."
+                    "Either `select:name1,name2` for exact tool names, "
+                    "or a free-text keyword query (space-separated, "
+                    "use `+keyword` to require a term in the tool name)."
+                ),
+            },
+            "max_results": {
+                "type": "integer",
+                "description": (
+                    "For keyword queries: how many top matches to load "
+                    "(default 5)."
                 ),
             },
         },
