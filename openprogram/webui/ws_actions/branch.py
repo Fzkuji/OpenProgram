@@ -5,31 +5,37 @@ import json
 from typing import Optional
 
 
-def _attach_ref(m: dict) -> Optional[str]:
-    """Source-branch tip id an attach pointer embeds, or None.
+def _attach_info(m: dict) -> tuple[Optional[str], bool]:
+    """Returns ``(source_head_id, manual)`` for an attach pointer row.
 
-    An attach row records both ``called_by`` (where the card lands —
-    drawn by the normal parent_id / caller edge) and ``attach.head_id``
-    (the branch tip it imports). Surface the latter as a dedicated
-    edge field so the SVG can draw a cross-lane reference line.
+    Source-head is the branch tip the pointer references.
+    ``manual=True`` means the user wrote the attach via the Branches
+    panel; ``manual=False`` means it was written by a /task spawn.
+    The graph renderer uses both to decide whether to draw the
+    cross-lane dashed edge.
     """
     if m.get("function") != "attach":
-        return None
+        return None, False
     raw = m.get("attach") or m.get("extra")
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            return None
+            return None, False
     if isinstance(raw, dict) and "attach" in raw and isinstance(raw["attach"], dict):
         raw = raw["attach"]
     if not isinstance(raw, dict):
-        return None
+        return None, False
     h = raw.get("head_id")
-    if isinstance(h, str):
-        h = h.strip()
-        return h or None
-    return None
+    src = h.strip() if isinstance(h, str) and h.strip() else None
+    manual = bool(raw.get("manual"))
+    return src, manual
+
+
+def _attach_ref(m: dict) -> Optional[str]:
+    """Backward-compat shim. Prefer ``_attach_info`` for new code."""
+    src, _manual = _attach_info(m)
+    return src
 
 
 def build_branches_payload(session_id: str | None) -> dict:
@@ -59,6 +65,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                 preview = content.strip().replace("\n", " ")
                 if len(preview) > 80:
                     preview = preview[:77] + "…"
+                _aref, _amanual = _attach_info(m)
                 graph.append({
                     "id": m.get("id"),
                     "parent_id": m.get("parent_id"),
@@ -68,7 +75,8 @@ def build_branches_payload(session_id: str | None) -> dict:
                     "display": m.get("display"),
                     "preview": preview,
                     "created_at": m.get("created_at"),
-                    "attach_ref": _attach_ref(m),
+                    "attach_ref": _aref,
+                    "attach_manual": _amanual,
                 })
             # Server-side layout — keeps the parallel-branch geometry
             # consistent across load_session, list_branches, and any

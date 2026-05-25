@@ -777,32 +777,14 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   // (the branch tip the card embeds). The anchor relationship is
   // already drawn by the parent_id edge above; this one shows what
   // the attach actually references.
-  const ARROW_MARKER_ID = "history-attach-arrow";
-  // Ensure the arrowhead marker exists exactly once per svg.
-  if (!svg.querySelector(`#${ARROW_MARKER_ID}`)) {
-    const defs = _svg("defs", {});
-    const marker = _svg("marker", {
-      id: ARROW_MARKER_ID,
-      viewBox: "0 0 10 10",
-      refX: "9",
-      refY: "5",
-      markerWidth: "5",
-      markerHeight: "5",
-      orient: "auto-start-reverse",
-    });
-    marker.appendChild(_svg("path", {
-      d: "M0,0 L10,5 L0,10 z",
-      fill: "currentColor",
-    }));
-    defs.appendChild(marker);
-    svg.insertBefore(defs, svg.firstChild);
-  }
-  // For each attach pointer, draw a single dashed edge from its
-  // anchor (the conv turn the card hangs off — parent_id / caller)
-  // toward the source branch tip it references. The attach pointer
-  // node itself is not rendered as a separate shape — it's a
-  // reference, not a call. Arrow lands on the source tip so the
-  // edge reads "this anchor turn pulls from that branch".
+  // For each attach pointer, draw a single dashed edge from the
+  // source branch tip (where content comes from) to the anchor
+  // (where it lands). Direction is conveyed by a marching-ants
+  // animation (CSS: stroke-dashoffset over time) — no arrowhead,
+  // because the arrow marker was visually noisy and easy to miss.
+  // Also paint a small filled dot on the anchor so attaches landing
+  // mid-trunk (e.g. beta B attached onto main) leave a visible
+  // marker even when no graph child exists at that point.
   function _isConvDescendant(srcId: string, anchorId: string): boolean {
     let cur: string | null | undefined = srcId;
     for (let i = 0; i < 200 && cur; i++) {
@@ -821,27 +803,43 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     const anchorId = node.parent_id || node.caller;
     const anchor = anchorId ? tree.byId[anchorId] : null;
     if (!anchor) return;
-    // /task-spawned branches descend from the anchor via conv-edges
-    // already — the solid edges trace the same anchor → source
-    // path the dashed edge would. Drawing both produces overlapping
-    // lines that read as visual noise. Skip the dashed edge when
-    // the source is reachable from the anchor through parent_ids.
-    if (_isConvDescendant(ref, anchorId)) return;
     const srcPos = pos(src);
     const anchorPos = pos(anchor);
     const color = _branchColor(src, lanes.leafOfNode);
+    // Dashed edge skipped when the source is already a conv-
+    // descendant of the anchor AND this isn't a user-issued manual
+    // attach — otherwise the dashed line just overlaps the solid
+    // conv-edge that already exists. Manual attaches always get the
+    // edge so the user sees what they just did.
+    const isManual = !!node.attach_manual;
+    const skipEdge = !isManual && _isConvDescendant(ref, anchorId);
+    if (!skipEdge) {
+      edgeG.appendChild(
+        _svg("path", {
+          d: _edgePath(srcPos.x, srcPos.y, anchorPos.x, anchorPos.y),
+          stroke: color,
+          "stroke-width": 1.6,
+          fill: "none",
+          "stroke-linecap": "round",
+          "stroke-dasharray": "4 4",
+          opacity: 0.9,
+          class: "history-edge attach-edge",
+        }),
+      );
+    }
+    // Anchor-side landing dot — ALWAYS draw, even when the dashed
+    // edge is skipped, so the trunk (e.g. main) shows a small mark
+    // wherever an attach grafts. Without this, an attach onto a
+    // mid-trunk turn leaves zero visible signal on the trunk itself.
     edgeG.appendChild(
-      _svg("path", {
-        d: _edgePath(anchorPos.x, anchorPos.y, srcPos.x, srcPos.y),
-        stroke: color,
-        "stroke-width": 1.4,
-        fill: "none",
-        "stroke-linecap": "round",
-        "stroke-dasharray": "3 3",
-        opacity: 0.7,
-        "marker-end": `url(#${ARROW_MARKER_ID})`,
-        color,
-        class: "history-edge attach-edge",
+      _svg("circle", {
+        cx: String(anchorPos.x),
+        cy: String(anchorPos.y),
+        r: "3.5",
+        fill: color,
+        stroke: "var(--bg-secondary, #1a1a1a)",
+        "stroke-width": "1",
+        class: "attach-landing-dot",
       }),
     );
   });

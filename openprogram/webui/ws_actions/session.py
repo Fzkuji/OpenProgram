@@ -193,12 +193,13 @@ async def handle_load_session(ws, cmd: dict):
             full_msgs = all_msgs
         from openprogram.webui.graph_layout import annotate_graph
         graph = []
-        from openprogram.webui.ws_actions.branch import _attach_ref
+        from openprogram.webui.ws_actions.branch import _attach_info
         for m in full_msgs:
             content = m.get("content") or ""
             preview = content.strip().replace("\n", " ")
             if len(preview) > 80:
                 preview = preview[:77] + "…"
+            _aref, _amanual = _attach_info(m)
             graph.append({
                 "id": m.get("id"),
                 "parent_id": m.get("parent_id"),
@@ -208,7 +209,8 @@ async def handle_load_session(ws, cmd: dict):
                 "display": m.get("display"),
                 "preview": preview,
                 "created_at": m.get("created_at"),
-                "attach_ref": _attach_ref(m),
+                "attach_ref": _aref,
+                "attach_manual": _amanual,
             })
         # Compute (depth, lane) server-side so the frontend renders
         # parallel branches correctly without re-deriving topology.
