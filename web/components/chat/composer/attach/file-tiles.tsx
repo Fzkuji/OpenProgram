@@ -49,16 +49,19 @@ const TILE_KEYFRAMES = `
   to   { opacity: 1; }
 }
 .composer-file-tile {
-  /* Border declared here so the :hover override actually wins —
-     inline style.border outranked the selector before. */
-  border: 1px solid var(--border);
-  transition: border-color 120ms ease, background 120ms ease,
-              box-shadow 120ms ease;
+  /* Use an inset box-shadow instead of a CSS border so the 1px hair-
+     line stays uniform around the 16px corners — solid borders on
+     large radii get visibly patchy anti-aliasing along the curve. */
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: background 120ms ease, box-shadow 120ms ease;
 }
 .composer-file-tile:hover {
-  border-color: rgba(255,255,255,0.55);
   background: var(--bg-tertiary);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.28);
+  /* Slightly above the static --border (rgba 226,225,218,0.12) so
+     the lift is visible without dominating the chat surface. Plus a
+     soft outer drop shadow for the "lifted" feel. */
+  box-shadow: inset 0 0 0 1px rgba(226,225,218,0.22),
+              0 2px 6px rgba(0,0,0,0.26);
 }
 .composer-file-tile-close {
   opacity: 0;
