@@ -164,6 +164,7 @@ async def handle_load_session(ws, cmd: dict):
             chain = spliced
         conv["messages"] = chain
         conv["head_id"] = head
+        from openprogram.agent.session_db import default_db as _ddb
         from openprogram.webui.ws_actions.branch import (
             _attach_info as _ainfo, _attach_embed_stats as _astats,
         )
@@ -193,9 +194,7 @@ async def handle_load_session(ws, cmd: dict):
             if m.get("function") == "attach":
                 _ref, _man, _src = _ainfo(m)
                 if _src:
-                    _n, _tok = _astats(
-                        default_db(), conv["id"], _src,
-                    )
+                    _n, _tok = _astats(_ddb(), conv["id"], _src)
                     attach_dict = dict(m.get("attach") or {})
                     attach_dict.setdefault("source_commit_id", _src)
                     if _n is not None:
@@ -207,23 +206,18 @@ async def handle_load_session(ws, cmd: dict):
 
         tree_data = {}  # tree Context retired — execution trace lives in SessionDB DAG nodes
         try:
-            from openprogram.agent.session_db import default_db
-            full_msgs = default_db().get_messages(conv["id"])
+            full_msgs = _ddb().get_messages(conv["id"])
         except Exception:
             full_msgs = all_msgs
         from openprogram.webui.graph_layout import annotate_graph
         graph = []
-        from openprogram.webui.ws_actions.branch import _attach_info
         for m in full_msgs:
             content = m.get("content") or ""
             preview = content.strip().replace("\n", " ")
             if len(preview) > 80:
                 preview = preview[:77] + "…"
-            _aref, _amanual, _asrc_commit = _attach_info(m)
-            from openprogram.webui.ws_actions.branch import _attach_embed_stats
-            _aembed_n, _aembed_tok = _attach_embed_stats(
-                default_db(), conv["id"], _asrc_commit,
-            )
+            _aref, _amanual, _asrc_commit = _ainfo(m)
+            _aembed_n, _aembed_tok = _astats(_ddb(), conv["id"], _asrc_commit)
             graph.append({
                 "id": m.get("id"),
                 "parent_id": m.get("parent_id"),

@@ -61,10 +61,12 @@ def _attach_embed_stats(
         return None, None
     try:
         from openprogram.context.commit.store import load_commit
+        # Same-session lookup is O(1) (direct file read). Don't fall
+        # back to a global scan — that walks every session repo on
+        # disk and freezes the UI when many sessions exist. The
+        # frontend just renders the legacy preview when stats can't
+        # be resolved cheaply.
         c = load_commit(store, source_commit_id, session_id=session_id)
-        if c is None:
-            # cross-session: do a global scan (load_commit handles it)
-            c = load_commit(store, source_commit_id)
     except Exception:
         return None, None
     if c is None:
