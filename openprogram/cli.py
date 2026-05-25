@@ -52,7 +52,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     stdio plain.
     """
     bypass_words = {
-        "agents", "sessions", "channels", "config", "programs", "skills", "plugins",
+        "agents", "sessions", "channels", "config", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp",
     }
@@ -220,6 +220,11 @@ def main():
     p_pl_en.add_argument("name")
     p_pl_dis = plugins_sub.add_parser("disable", help="Disable a loaded plugin")
     p_pl_dis.add_argument("name")
+
+    # ---- doctor -----------------------------------------------------------
+    p_doctor = sub.add_parser("doctor",
+        help="Run sanity checks: python, node, skills, plugins, providers, mcp, cache, worker")
+    p_doctor.add_argument("--json", action="store_true", help="Emit JSON")
 
     # ---- sessions ---------------------------------------------------------
     p_sessions = sub.add_parser("sessions",
@@ -638,6 +643,10 @@ def main():
         else:
             p_skills.print_help()
         return
+
+    if args.command == "doctor":
+        from openprogram._cli_cmds.doctor import _cmd_doctor
+        sys.exit(_cmd_doctor(getattr(args, "json", False)))
 
     if args.command == "plugins":
         from openprogram._cli_cmds.plugins import (

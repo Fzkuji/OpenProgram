@@ -726,6 +726,17 @@ def _get_or_create_session(session_id: str = None,
                 "thinking_effort": ((_sess or {}).get("thinking_effort") if isinstance(_sess, dict) else None),
                 "permission_mode": ((_sess or {}).get("permission_mode") if isinstance(_sess, dict) else None),
             }
+            # Fire session.start so plugins can hook session lifecycle.
+            # Defensive: never let a hook break session creation.
+            try:
+                from openprogram.plugins.hooks import dispatch_hook, HookEvent
+                dispatch_hook(HookEvent.SESSION_START, {
+                    "session_id": session_id,
+                    "agent_id": resolved_agent,
+                    "channel": channel,
+                })
+            except Exception:
+                pass
         return _sessions[session_id]
 
 

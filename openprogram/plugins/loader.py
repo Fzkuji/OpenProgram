@@ -254,8 +254,71 @@ def _import_entrypoints(plugin: Plugin) -> Plugin:
         except Exception:
             pass
 
+    # Materialise plugin-contributed slash commands so the host doesn't
+    # have to re-parse every chat tick. Commands can come from either
+    # form:
+    #   * a dict {name: {description, prompt}} declared inline in the
+    #     manifest
+    #   * a directory of ``.md`` files (claude-code style), each with
+    #     ``name`` / ``description`` frontmatter and the body as the
+    #     prompt template
+    cmds = ep.get("commands")
+    materialised: list[dict[str, str]] = []
+    if isinstance(cmds, dict):
+        for cname, cdef in cmds.items():
+            if isinstance(cdef, dict):
+                materialised.append({
+                    "name": str(cname),
+                    "description": str(cdef.get("description", "")),
+                    "prompt": str(cdef.get("prompt", "")),
+                })
+    elif isinstance(cmds, str):
+        # path → walk .md files
+        cmd_dir = Path(_abs(cmds))
+        if cmd_dir.is_dir():
+            for md in sorted(cmd_dir.rglob("*.md")):
+                try:
+                    text = md.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                fm, body = _split_frontmatter(text)
+                materialised.append({
+                    "name": fm.get("name", md.stem),
+                    "description": fm.get("description", ""),
+                    "prompt": body.strip(),
+                })
+    if materialised:
+        contrib["_commands"] = materialised
+
     plugin.contrib = contrib
     return plugin
+
+
+def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """Very small YAML-ish frontmatter parser — same shape as the
+    skills loader's parser. Returns ``(dict, body)``."""
+    if not text.startswith("---"):
+        return {}, text
+    lines = text.split("\n")
+    if len(lines) < 2:
+        return {}, text
+    end = -1
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    if end < 0:
+        return {}, text
+    fm: dict[str, str] = {}
+    for line in lines[1:end]:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        k, _, v = line.partition(":")
+        fm[k.strip()] = v.strip().strip("\"'")
+    return fm, "\n".join(lines[end + 1:])
 
 
 def load_plugin(name: str) -> Plugin:

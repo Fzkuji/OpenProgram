@@ -44,6 +44,7 @@ interface PluginsState {
   addMarketplace: (url: string, name?: string) => Promise<MarketplaceEntry>;
   removeMarketplace: (id: string) => Promise<void>;
   fetchMarketplaceIndex: (id: string) => Promise<Array<Record<string, unknown>>>;
+  fetchBuiltinPlugins: () => Promise<Array<Record<string, unknown>>>;
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -181,6 +182,13 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
   fetchMarketplaceIndex: async (id) => {
     const d = await jsonFetch<{ items: Array<Record<string, unknown>> }>(
       `/api/plugins/marketplace/${encodeURIComponent(id)}/index`,
+    );
+    return d.items || [];
+  },
+
+  fetchBuiltinPlugins: async () => {
+    const d = await jsonFetch<{ items: Array<Record<string, unknown>> }>(
+      "/api/plugins/builtin",
     );
     return d.items || [];
   },

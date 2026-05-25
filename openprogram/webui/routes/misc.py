@@ -7,6 +7,17 @@ from fastapi.responses import JSONResponse
 
 
 def register(app):
+    @app.get("/api/doctor")
+    async def doctor_api():
+        """Run the same checks as ``openprogram doctor`` and return the
+        results as JSON for the web UI / slash command."""
+        from openprogram._cli_cmds.doctor import run_checks
+        results = run_checks()
+        return JSONResponse(content={
+            "results": results,
+            "all_ok": all(r["ok"] for r in results),
+        })
+
     @app.get("/healthz")
     async def healthz():
         """Liveness + readiness probe. Reports DB connectivity, tool count, uptime."""

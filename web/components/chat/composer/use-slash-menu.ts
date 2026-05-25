@@ -28,6 +28,13 @@ import { useSkills } from "@/lib/skills-store";
 
 import { SLASH_COMMANDS, type SlashCommand, type SlashContext } from "./slash-commands";
 
+interface PluginCommand {
+  plugin: string;
+  name: string;
+  description: string;
+  prompt: string;
+}
+
 const ANIM_MS = 380;
 
 interface UseSlashMenuArgs {
@@ -60,11 +67,18 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
   const skills = useSkills((s) => s.skills);
   const fetchSkills = useSkills((s) => s.fetchSkills);
 
-  // Auto-load installed skills once so the slash menu can list them
-  // without anyone having to visit /skills first. Polls again whenever
-  // the user opens the menu in case discovery just installed more.
+  // Plugin-contributed slash commands — fetched once on first composer
+  // mount so they appear alongside built-in commands and skills.
+  const [pluginCommands, setPluginCommands] = useState<PluginCommand[]>([]);
+
   useEffect(() => {
     if (skills.length === 0) fetchSkills();
+    fetch("/api/plugins/commands")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && Array.isArray(d.commands)) setPluginCommands(d.commands);
+      })
+      .catch(() => { /* plugins might not be wired yet — ignore */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -127,9 +141,24 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
       }));
   }, [skills]);
 
+  // Each plugin-contributed command becomes a SlashCommand that, when
+  // selected, fills the composer with the plugin's prompt template +
+  // a trailing space so the user can extend it before sending.
+  const pluginSlashCommands = useMemo<SlashCommand[]>(() => {
+    return pluginCommands.map<SlashCommand>((c) => ({
+      name: c.name.startsWith("/") ? c.name : "/" + c.name,
+      description: c.description || `Plugin command from ${c.plugin}`,
+      run(rest, { setInput }) {
+        const trail = rest ? " " + rest : " ";
+        setInput((c.prompt || c.name) + trail, true);
+        return true;
+      },
+    }));
+  }, [pluginCommands]);
+
   const allCommands = useMemo<SlashCommand[]>(
-    () => [...SLASH_COMMANDS, ...skillCommands],
-    [skillCommands],
+    () => [...SLASH_COMMANDS, ...pluginSlashCommands, ...skillCommands],
+    [pluginSlashCommands, skillCommands],
   );
 
   const matches = useMemo<SlashCommand[]>(() => {

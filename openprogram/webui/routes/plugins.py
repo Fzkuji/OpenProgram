@@ -61,6 +61,35 @@ def register(app):
         from openprogram.plugins import marketplace
         return JSONResponse(content={"marketplaces": marketplace.list_marketplaces()})
 
+    @app.get("/api/plugins/commands")
+    async def plugin_commands_api():
+        """Return every slash command contributed by an enabled plugin.
+        The composer's slash menu fetches this and lists the commands
+        alongside built-in commands + skills."""
+        from openprogram.plugins.loader import list_plugins
+        out: list[dict] = []
+        for p in list_plugins():
+            if not p.enabled or not p.loaded:
+                continue
+            cmds = p.contrib.get("_commands") or []
+            for c in cmds:
+                out.append({
+                    "plugin": p.name,
+                    "name": c.get("name", ""),
+                    "description": c.get("description", ""),
+                    "prompt": c.get("prompt", ""),
+                })
+        return JSONResponse(content={"commands": out})
+
+    @app.get("/api/plugins/builtin")
+    async def builtin_plugins_api():
+        """Curated built-in plugin catalog — always available even when
+        no marketplace URL is registered. Mirrors skills discovery's
+        suggested-sources pattern but returns full plugin entries
+        directly (no separate fetch step)."""
+        from openprogram.plugins import marketplace
+        return JSONResponse(content={"items": marketplace.builtin_plugins()})
+
     @app.post("/api/plugins/marketplaces")
     async def add_marketplace_api(body: dict):
         from openprogram.plugins import marketplace

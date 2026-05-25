@@ -35,6 +35,61 @@ def _make_id(url: str) -> str:
     return hashlib.sha1(url.encode("utf-8")).hexdigest()[:12]
 
 
+# Built-in curated plugin catalog. Each entry is a plugin the user can
+# install with one click via the existing /api/plugins/install endpoint.
+# ``source`` values map to the four installer modes (pip / npm / git / path).
+# Stored inline rather than fetched so the marketplace works offline; we
+# will swap to a hosted index once one exists.
+BUILTIN_PLUGINS: list[dict[str, Any]] = [
+    {
+        "name": "openprogram-example-dashboard",
+        "displayName": "Example Dashboard",
+        "description": "Reference plugin that contributes a sidebar entry + standalone web panel. Useful template when authoring your own UI plugin.",
+        "source": "git",
+        "spec": "https://github.com/openprogram/example-dashboard-plugin",
+        "tags": ["template", "ui"],
+        "official": True,
+    },
+    {
+        "name": "openprogram-memory-honcho",
+        "displayName": "Honcho Memory Adapter",
+        "description": "Persist long-term memory across sessions via Honcho. Drop-in alternative to the local wiki memory.",
+        "source": "pip",
+        "spec": "openprogram-memory-honcho",
+        "tags": ["memory", "storage"],
+    },
+    {
+        "name": "openprogram-image-gen",
+        "displayName": "Image Generation",
+        "description": "Adds image-generation tools (Imagen / Flux / SDXL) callable from any chat session. Ships with API key prompts.",
+        "source": "pip",
+        "spec": "openprogram-image-gen",
+        "tags": ["images", "media"],
+    },
+    {
+        "name": "openprogram-disk-cleanup",
+        "displayName": "Disk Cleanup",
+        "description": "Sweep the OpenProgram cache + remote-cache + worker logs. Surfaces what's eating disk before deletion.",
+        "source": "pip",
+        "spec": "openprogram-disk-cleanup",
+        "tags": ["maintenance"],
+    },
+    {
+        "name": "openprogram-context-engine",
+        "displayName": "Context Engine",
+        "description": "Smarter context window: summarises older turns, deduplicates tool outputs, keeps prompts under the model limit.",
+        "source": "pip",
+        "spec": "openprogram-context-engine",
+        "tags": ["context", "compaction"],
+    },
+]
+
+
+def builtin_plugins() -> list[dict[str, Any]]:
+    """Curated built-in plugin catalog (copy)."""
+    return [dict(p) for p in BUILTIN_PLUGINS]
+
+
 def list_marketplaces() -> list[dict[str, Any]]:
     return _load()
 
