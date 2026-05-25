@@ -155,39 +155,43 @@ export async function readDroppedTextFile(
 export async function collectImagesFromTransfer(
   items: DataTransferItemList | DataTransfer,
 ): Promise<PendingImage[]> {
-  const out: PendingImage[] = [];
-  const list: DataTransferItem[] = [];
   // Both DataTransfer and DataTransferItemList expose ``items``; the
   // type union here lets callers pass either.
   const raw = ("items" in items ? items.items : items) as DataTransferItemList;
-  for (let i = 0; i < raw.length; i++) list.push(raw[i]);
-  for (const item of list) {
+  const candidates: File[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
     if (item.kind !== "file") continue;
     const f = item.getAsFile();
     if (!f) continue;
     if (!ACCEPTED_IMAGE_MIME.has(f.type)) continue;
-    try {
-      out.push(await readImageFile(f, f.name || undefined));
-    } catch {
-      /* skip individual failures; remaining items still flow */
-    }
+    candidates.push(f);
   }
-  return out;
+  return readImagesParallel(candidates);
 }
 
 /** Walk a FileList (file picker output) and read every image. */
 export async function collectImagesFromFiles(
   files: FileList | File[],
 ): Promise<PendingImage[]> {
+  const arr: File[] = Array.from(files).filter(
+    (f) => ACCEPTED_IMAGE_MIME.has(f.type),
+  );
+  return readImagesParallel(arr);
+}
+
+/** Read N image files concurrently. Serial ``await`` in a for-loop
+ *  multiplied per-file decode+thumbnail latency by N — for a drop of
+ *  ~6 mid-size screenshots that was the difference between ~2s and
+ *  ~12s wall time. */
+async function readImagesParallel(files: File[]): Promise<PendingImage[]> {
+  if (files.length === 0) return [];
+  const results = await Promise.allSettled(
+    files.map((f) => readImageFile(f, f.name || undefined)),
+  );
   const out: PendingImage[] = [];
-  const arr: File[] = Array.from(files);
-  for (const f of arr) {
-    if (!ACCEPTED_IMAGE_MIME.has(f.type)) continue;
-    try {
-      out.push(await readImageFile(f, f.name || undefined));
-    } catch {
-      /* skip */
-    }
+  for (const r of results) {
+    if (r.status === "fulfilled") out.push(r.value);
   }
   return out;
 }
@@ -199,16 +203,24 @@ export async function collectImagesFromFiles(
 export async function collectTextFilesFromTransfer(
   items: DataTransfer,
 ): Promise<{ filename: string; content: string }[]> {
-  const out: { filename: string; content: string }[] = [];
-  const list: DataTransferItem[] = [];
-  for (let i = 0; i < items.items.length; i++) list.push(items.items[i]);
-  for (const item of list) {
+  const candidates: File[] = [];
+  for (let i = 0; i < items.items.length; i++) {
+    const item = items.items[i];
     if (item.kind !== "file") continue;
     const f = item.getAsFile();
     if (!f) continue;
     if (ACCEPTED_IMAGE_MIME.has(f.type)) continue;
-    const read = await readDroppedTextFile(f);
-    if (read) out.push(read);
+    candidates.push(f);
+  }
+  if (candidates.length === 0) return [];
+  // Same parallel pattern as the image path — text-file reads were
+  // serialised behind every paste-store add.
+  const reads = await Promise.allSettled(
+    candidates.map((f) => readDroppedTextFile(f)),
+  );
+  const out: { filename: string; content: string }[] = [];
+  for (const r of reads) {
+    if (r.status === "fulfilled" && r.value) out.push(r.value);
   }
   return out;
 }
