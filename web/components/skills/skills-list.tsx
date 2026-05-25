@@ -75,7 +75,10 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
       }
       title={`${skill.description || skill.name}\n— ${skill.source}`}
     >
-      <span className="text-[var(--text-tertiary)] shrink-0" aria-hidden>◦</span>
+      <span
+        className="text-[var(--text-tertiary)] shrink-0 inline-flex w-[14px] items-center justify-center"
+        aria-hidden
+      >◦</span>
       <div className="flex-1 min-w-0">
         <span
           className={
