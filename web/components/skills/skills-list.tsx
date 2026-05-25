@@ -17,11 +17,10 @@ function SourceBadge({ source }: { source: string }) {
   const color = key === "plugin" ? "#ec4899" : SOURCE_COLORS[source] ?? "#6b7280";
   return (
     <span
-      className="rounded border px-2 py-[1px] text-[10px] font-medium uppercase tracking-wide"
-      style={{ background: color + "22", color, borderColor: color + "44" }}
-    >
-      {source}
-    </span>
+      className="inline-block size-[8px] shrink-0 rounded-full"
+      style={{ background: color }}
+      title={source}
+    />
   );
 }
 
@@ -81,31 +80,24 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
       onClick={() => { setSelected(skill.name); fetchDetail(skill.name); }}
       style={{ paddingLeft: 8 + depth * 16 }}
       className={
-        "group flex items-start gap-2 rounded-md border py-2 pr-3 cursor-pointer transition-colors " +
+        "group flex items-center gap-2 rounded-md border py-1.5 pr-3 cursor-pointer transition-colors " +
         (active
           ? "border-primary bg-[var(--bg-selected)]"
           : "border-transparent hover:bg-bg-hover hover:text-nav-color-hover")
       }
+      title={skill.description || skill.name}
     >
-      <span className="mt-[2px] text-[var(--text-tertiary)]" aria-hidden>
-        ◦
-      </span>
+      <span className="text-[var(--text-tertiary)] shrink-0" aria-hidden>◦</span>
       <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="font-medium text-[var(--text-bright)] truncate">{skill.leaf || skill.name}</span>
           <SourceBadge source={skill.source} />
-          {skill.optional && (
-            <Badge variant="outline" className="text-[10px]">optional</Badge>
-          )}
-          {skill.version && (
-            <span className="text-[10px] text-[var(--text-tertiary)]">v{skill.version}</span>
-          )}
         </div>
         {skill.description && (
-          <p className="mt-1 text-xs text-[var(--text-secondary)] line-clamp-2">{skill.description}</p>
+          <p className="text-xs text-[var(--text-secondary)] truncate">{skill.description}</p>
         )}
       </div>
-      <div onClick={(e) => e.stopPropagation()} className="pt-1">
+      <div onClick={(e) => e.stopPropagation()} className="shrink-0">
         <Switch
           checked={skill.enabled}
           onCheckedChange={(v) => toggleSkill(skill.name, v)}
@@ -238,15 +230,19 @@ export function SkillsList() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex items-center gap-1">
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Search skills..."
-          className="flex-1 rounded border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-sm"
+          className="flex-1 min-w-0 rounded border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-sm"
         />
-        <button onClick={expandAll} className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-bright)]">Expand</button>
-        <button onClick={collapseAll} className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-bright)]">Collapse</button>
+        <button onClick={expandAll}
+          title="Expand all"
+          className="shrink-0 rounded px-1.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊕</button>
+        <button onClick={collapseAll}
+          title="Collapse all"
+          className="shrink-0 rounded px-1.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊖</button>
       </div>
       <div className="space-y-1">
         {rootChildren.map((c) =>

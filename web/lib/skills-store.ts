@@ -40,6 +40,7 @@ export interface InvokeTraceEntry {
 export interface DiscoverySuggestion {
   url: string;
   label: string;
+  slug?: string;
   description: string;
   added: boolean;
 }
@@ -69,9 +70,9 @@ interface SkillsState {
   fetchDiscoverySuggested: () => Promise<void>;
   addDiscoverySource: (url: string) => Promise<void>;
   removeDiscoverySource: (url: string) => Promise<void>;
-  pullDiscovery: (url: string) => Promise<string[]>;
+  pullDiscovery: (url: string, namespace?: string) => Promise<string[]>;
   browseDiscovery: (url: string) => Promise<CatalogEntry[]>;
-  installFromDiscovery: (url: string, name: string) => Promise<string>;
+  installFromDiscovery: (url: string, name: string, namespace?: string) => Promise<string>;
   fetchInvokeTrace: (name: string, limit?: number) => Promise<InvokeTraceEntry[]>;
 }
 
@@ -171,10 +172,10 @@ export const useSkills = create<SkillsState>((set, get) => ({
     await get().fetchDiscoverySuggested();
   },
 
-  pullDiscovery: async (url) => {
+  pullDiscovery: async (url, namespace) => {
     const res = await jsonReq<{ pulled: string[] }>("/api/skills/discovery/pull", {
       method: "POST",
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, ...(namespace ? { namespace } : {}) }),
     });
     await get().fetchSkills();
     return res.pulled;
@@ -187,10 +188,10 @@ export const useSkills = create<SkillsState>((set, get) => ({
     return res.entries;
   },
 
-  installFromDiscovery: async (url, name) => {
+  installFromDiscovery: async (url, name, namespace) => {
     const res = await jsonReq<{ installed: string }>(
       "/api/skills/discovery/install",
-      { method: "POST", body: JSON.stringify({ url, name }) },
+      { method: "POST", body: JSON.stringify({ url, name, ...(namespace ? { namespace } : {}) }) },
     );
     await get().fetchSkills();
     return res.installed;

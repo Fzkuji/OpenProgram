@@ -14,10 +14,26 @@ type CatalogState = {
 type Source = {
   url: string;
   label: string;
+  slug: string;          // namespace folder used when installing from this source
   description: string;
   added: boolean;
   origin: "suggested" | "custom";
 };
+
+function slugFromUrl(url: string): string {
+  // Mirror backend _default_namespace logic so the "installed" badge in the
+  // catalog matches what the install endpoint will write.
+  const gh = url.match(
+    /^(?:https?:\/\/github\.com\/|github:\/\/)[^/]+\/([^/@]+?)(?:\.git)?(?:\/|@|$)/,
+  );
+  if (gh) return gh[1].toLowerCase();
+  try {
+    const h = new URL(url).hostname;
+    return h.replace(/\./g, "-").toLowerCase() || "remote";
+  } catch {
+    return "remote";
+  }
+}
 
 export function DiscoverySources() {
   const {
@@ -45,6 +61,7 @@ export function DiscoverySources() {
     const suggested = discoverySuggested.map<Source>((s) => ({
       url: s.url,
       label: s.label,
+      slug: s.slug || slugFromUrl(s.url),
       description: s.description,
       added: s.added,
       origin: "suggested",
@@ -55,6 +72,7 @@ export function DiscoverySources() {
       .map<Source>((u) => ({
         url: u,
         label: hostname(u) || u,
+        slug: slugFromUrl(u),
         description: u,
         added: true,
         origin: "custom",
@@ -62,7 +80,8 @@ export function DiscoverySources() {
     return [...suggested, ...custom];
   }, [discoverySuggested, discoverySources]);
 
-  // Skill names already installed (for "Installed" marker in catalog).
+  // Names already installed (full path including namespace) — used to mark
+  // "Installed" on catalog rows.
   const installedNames = useMemo(() => {
     const set = new Set<string>();
     for (const s of skills as Skill[]) set.add(s.name);
@@ -101,13 +120,13 @@ export function DiscoverySources() {
     loadCatalog(url);
   }
 
-  async function handleInstallOne(url: string, name: string) {
-    const key = `${url}::${name}`;
+  async function handleInstallOne(source: Source, name: string) {
+    const key = `${source.url}::${name}`;
     setInstallingKey(key);
     setStatus(null);
     try {
-      await installFromDiscovery(url, name);
-      setStatus(`Installed ${name}`);
+      const full = await installFromDiscovery(source.url, name, source.slug);
+      setStatus(`Installed ${full}`);
     } catch (e) {
       setStatus(`Failed: ${String(e)}`);
     } finally {
@@ -115,12 +134,12 @@ export function DiscoverySources() {
     }
   }
 
-  async function handlePullAll(url: string) {
-    setBulkUrl(url);
+  async function handlePullAll(source: Source) {
+    setBulkUrl(source.url);
     setStatus(null);
     try {
-      const pulled = await pullDiscovery(url);
-      setStatus(`Installed ${pulled.length} skill${pulled.length === 1 ? "" : "s"} from ${hostname(url) || url}`);
+      const pulled = await pullDiscovery(source.url, source.slug);
+      setStatus(`Installed ${pulled.length} skill${pulled.length === 1 ? "" : "s"} into ${source.slug}/`);
     } catch (e) {
       setStatus(`Failed: ${String(e)}`);
     } finally {

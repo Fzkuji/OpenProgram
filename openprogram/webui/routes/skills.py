@@ -54,16 +54,19 @@ DEFAULT_DISCOVERY_SUGGESTIONS: list[dict] = [
     {
         "url": "https://github.com/anthropics/skills/tree/main/skills",
         "label": "Anthropic Skills",
+        "slug": "anthropic-skills",
         "description": "Official Claude Code skill collection — 18 skills covering PDF/DOCX/PPTX, frontend design, MCP, Claude API, and more.",
     },
     {
         "url": "https://github.com/obra/superpowers",
         "label": "Superpowers (obra)",
+        "slug": "superpowers",
         "description": "Community-curated agent skills by Jesse Vincent — brainstorming, parallel agents, code review, plans.",
     },
     {
         "url": "https://github.com/anthropics/skills",
         "label": "Anthropic Skills (full repo)",
+        "slug": "anthropic-skills-full",
         "description": "Same as Anthropic Skills, but keeps the skills/ prefix in names. Use this if you also want the spec/ and template/ docs.",
     },
 ]
@@ -170,10 +173,13 @@ def register(app):
         from openprogram.skills.discovery import pull
         body = await request.json()
         url = (body.get("url") or "").strip()
+        namespace = body.get("namespace")
+        if namespace is not None:
+            namespace = str(namespace).strip()
         if not url:
             return JSONResponse(content={"error": "url required"}, status_code=400)
         try:
-            pulled = pull(url)
+            pulled = pull(url, namespace=namespace)
         except Exception as e:
             return JSONResponse(
                 content={"error": f"{type(e).__name__}: {e}"}, status_code=502,
@@ -201,12 +207,15 @@ def register(app):
         body = await request.json()
         url = (body.get("url") or "").strip()
         name = (body.get("name") or "").strip()
+        namespace = body.get("namespace")
+        if namespace is not None:
+            namespace = str(namespace).strip()
         if not url or not name:
             return JSONResponse(
                 content={"error": "url and name required"}, status_code=400,
             )
         try:
-            installed = install_one(url, name)
+            installed = install_one(url, name, namespace=namespace)
         except Exception as e:
             return JSONResponse(
                 content={"error": f"{type(e).__name__}: {e}"}, status_code=502,

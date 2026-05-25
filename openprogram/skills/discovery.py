@@ -134,9 +134,14 @@ async def _get_bytes(client: httpx.AsyncClient, url: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 async def _pull_one_indexed(
-    client: httpx.AsyncClient, base_url: str, skill: IndexSkill, sem: asyncio.Semaphore
+    client: httpx.AsyncClient,
+    base_url: str,
+    skill: IndexSkill,
+    sem: asyncio.Semaphore,
+    namespace: str | None = None,
 ) -> str | None:
-    target_dir = remote_cache_dir() / skill.name
+    full_name = _apply_namespace(skill.name, namespace)
+    target_dir = remote_cache_dir() / full_name
     target_dir.mkdir(parents=True, exist_ok=True)
     async with sem:
         try:
@@ -148,16 +153,18 @@ async def _pull_one_indexed(
                 out.write_bytes(data)
         except Exception:
             return None
-    return skill.name
+    return full_name
 
 
-async def _pull_from_index(client: httpx.AsyncClient, url: str) -> list[str]:
+async def _pull_from_index(
+    client: httpx.AsyncClient, url: str, namespace: str | None = None,
+) -> list[str]:
     raw = await _get_text(client, url)
     index = Index.model_validate_json(raw)
     base = url.rsplit("/", 1)[0] + "/"
     sem = asyncio.Semaphore(_MAX_CONCURRENCY)
     results = await asyncio.gather(
-        *(_pull_one_indexed(client, base, s, sem) for s in index.skills),
+        *(_pull_one_indexed(client, base, s, sem, namespace) for s in index.skills),
         return_exceptions=True,
     )
     return [r for r in results if isinstance(r, str)]
@@ -239,6 +246,14 @@ def _list_skill_dirs(zf: zipfile.ZipFile, top: str, scope: str) -> dict[str, lis
     return out
 
 
+def _apply_namespace(name: str, namespace: str | None) -> str:
+    """Prefix ``name`` with ``namespace`` so all skills from one source
+    live in their own tree. Returns ``namespace/name`` unless namespace
+    is empty/None."""
+    ns = (namespace or "").strip("/").strip()
+    return f"{ns}/{name}" if ns else name
+
+
 def _write_skill_from_zip(
     zf: zipfile.ZipFile, top: str, skill_dir: str, name: str, files: list[str]
 ) -> str:
@@ -264,7 +279,9 @@ def _write_skill_from_zip(
     return name
 
 
-async def _pull_from_github(client: httpx.AsyncClient, repo: GhRepo) -> list[str]:
+async def _pull_from_github(
+    client: httpx.AsyncClient, repo: GhRepo, namespace: str | None = None,
+) -> list[str]:
     data, top = await _fetch_repo_zip(client, repo)
     scope = repo.subdir.strip("/")
     pulled: list[str] = []
@@ -274,8 +291,9 @@ async def _pull_from_github(client: httpx.AsyncClient, repo: GhRepo) -> list[str
             rel_name = skill_dir
             if scope and rel_name.startswith(scope + "/"):
                 rel_name = rel_name[len(scope) + 1:]
+            full_name = _apply_namespace(rel_name, namespace)
             try:
-                pulled.append(_write_skill_from_zip(zf, top, skill_dir, rel_name, files))
+                pulled.append(_write_skill_from_zip(zf, top, skill_dir, full_name, files))
             except Exception:
                 continue
     return pulled
@@ -285,16 +303,34 @@ async def _pull_from_github(client: httpx.AsyncClient, repo: GhRepo) -> list[str
 # Public entry point
 # ---------------------------------------------------------------------------
 
-async def _pull_async(url: str) -> list[str]:
+def _default_namespace(url: str) -> str:
+    """Derive a slug from the URL so each source gets its own folder.
+
+    GitHub URLs map to the repo name (lowercased, kept stable across
+    refs/subdirs). Non-GitHub URLs map to the hostname with dots
+    replaced by hyphens.
+    """
+    gh = _parse_github(url)
+    if gh is not None:
+        return gh.repo.lower()
+    try:
+        host = urlparse(url).hostname or ""
+    except Exception:
+        host = ""
+    return host.replace(".", "-").lower() or "remote"
+
+
+async def _pull_async(url: str, namespace: str | None = None) -> list[str]:
+    ns = namespace if namespace is not None else _default_namespace(url)
     async with httpx.AsyncClient(follow_redirects=True) as client:
         # 1. Explicit github:// scheme or github.com URL → repo mode
         gh = _parse_github(url)
         if gh is not None:
-            return await _pull_from_github(client, gh)
+            return await _pull_from_github(client, gh, namespace=ns)
         # 2. JSON index URL
         if url.endswith(".json"):
             try:
-                return await _pull_from_index(client, url)
+                return await _pull_from_index(client, url, namespace=ns)
             except httpx.HTTPStatusError as e:
                 # Auto-fallback: ``.json`` 404 on raw.githubusercontent.com →
                 # try treating the host repo as a tree.
@@ -308,14 +344,15 @@ async def _pull_async(url: str) -> list[str]:
                     if len(parts) >= 3:
                         owner, repo, ref = parts[0], parts[1], parts[2]
                         return await _pull_from_github(
-                            client, GhRepo(owner=owner, repo=repo, ref=ref)
+                            client, GhRepo(owner=owner, repo=repo, ref=ref),
+                            namespace=ns,
                         )
                 raise
         # 3. Fall through: try as JSON index by default
-        return await _pull_from_index(client, url)
+        return await _pull_from_index(client, url, namespace=ns)
 
 
-def pull(url: str) -> list[str]:
+def pull(url: str, namespace: str | None = None) -> list[str]:
     """Synchronous wrapper. Returns successfully pulled skill names.
 
     Raises a regular Exception on top-level failure (route catches and
@@ -325,10 +362,10 @@ def pull(url: str) -> list[str]:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(_pull_async(url))
+        return asyncio.run(_pull_async(url, namespace))
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-        return ex.submit(lambda: asyncio.run(_pull_async(url))).result()
+        return ex.submit(lambda: asyncio.run(_pull_async(url, namespace))).result()
 
 
 # ---------------------------------------------------------------------------
@@ -445,7 +482,10 @@ def browse(url: str) -> list[dict]:
 # Install a single named skill (rather than pulling the whole source).
 # ---------------------------------------------------------------------------
 
-async def _install_one_async(url: str, name: str) -> str | None:
+async def _install_one_async(
+    url: str, name: str, namespace: str | None = None,
+) -> str | None:
+    ns = namespace if namespace is not None else _default_namespace(url)
     async with httpx.AsyncClient(follow_redirects=True) as client:
         gh = _parse_github(url)
         if gh is not None:
@@ -453,9 +493,12 @@ async def _install_one_async(url: str, name: str) -> str | None:
             match = next((e for e in entries if e.name == name), None)
             if match is None:
                 return None
+            full_name = _apply_namespace(match.name, ns)
             data, top = await _fetch_repo_zip(client, gh)
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                return _write_skill_from_zip(zf, top, match.path, match.name, match.files)
+                return _write_skill_from_zip(
+                    zf, top, match.path, full_name, match.files,
+                )
         # JSON index
         raw = await _get_text(client, url)
         index = Index.model_validate_json(raw)
@@ -464,14 +507,16 @@ async def _install_one_async(url: str, name: str) -> str | None:
             return None
         base = url.rsplit("/", 1)[0] + "/"
         sem = asyncio.Semaphore(_MAX_CONCURRENCY)
-        return await _pull_one_indexed(client, base, match, sem)
+        return await _pull_one_indexed(client, base, match, sem, namespace=ns)
 
 
-def install_one(url: str, name: str) -> str | None:
+def install_one(url: str, name: str, namespace: str | None = None) -> str | None:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(_install_one_async(url, name))
+        return asyncio.run(_install_one_async(url, name, namespace))
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-        return ex.submit(lambda: asyncio.run(_install_one_async(url, name))).result()
+        return ex.submit(
+            lambda: asyncio.run(_install_one_async(url, name, namespace))
+        ).result()
