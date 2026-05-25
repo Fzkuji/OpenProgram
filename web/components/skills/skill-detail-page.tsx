@@ -42,6 +42,7 @@ function relTime(ms: number): string {
 export function SkillDetailPage({ name }: { name: string }) {
   const router = useRouter();
   const setComposerInput = useSessionStore((s) => s.setComposerInput);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("skill");
@@ -225,12 +226,12 @@ export function SkillDetailPage({ name }: { name: string }) {
           <div className={styles.toolbar}>
             {!editing && (
               <Button size="sm" onClick={() => {
-                // Preload the chat composer with the slash command
-                // (backend expands it into the SKILL.md preamble).
-                // Lands on the current chat session if one is open,
-                // otherwise on /chat with a fresh composer.
+                // Preload the composer with the slash command — the
+                // backend expands `/skill X ...` into the SKILL.md
+                // preamble at send time. Land on the current chat
+                // session if one is open, otherwise on /chat.
                 setComposerInput(`/skill ${detail.name} `);
-                router.push("/chat");
+                router.push(currentSessionId ? `/s/${currentSessionId}` : "/chat");
               }}>Use in chat →</Button>
             )}
             {canEdit && !editing && (
