@@ -110,6 +110,39 @@ def _parse_github(url: str) -> GhRepo | None:
 
 
 # ---------------------------------------------------------------------------
+# ClawHub registry — openclaw's public skill / plugin marketplace.
+# Docs: https://docs.openclaw.ai/clawhub/api
+# ---------------------------------------------------------------------------
+
+_CLAWHUB_BASE = "https://clawhub.ai"
+
+
+@dataclass
+class ClawHubRef:
+    slug: str = ""  # empty means "the whole hub" — browse trending list
+
+    @property
+    def is_hub_root(self) -> bool:
+        return not self.slug
+
+
+_CLAWHUB_SCHEME_RE = re.compile(r"^clawhub://(?P<slug>[^/?#]*)?$")
+_CLAWHUB_HTTPS_RE = re.compile(
+    r"^https?://(?:www\.)?clawhub\.ai/(?:skills/)?(?P<slug>[^/?#]+)?/?$"
+)
+
+
+def _parse_clawhub(url: str) -> ClawHubRef | None:
+    m = _CLAWHUB_SCHEME_RE.match(url)
+    if m:
+        return ClawHubRef(slug=(m.group("slug") or "").strip())
+    m = _CLAWHUB_HTTPS_RE.match(url)
+    if m:
+        return ClawHubRef(slug=(m.group("slug") or "").strip())
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Common HTTP helpers
 # ---------------------------------------------------------------------------
 
@@ -300,6 +333,108 @@ async def _pull_from_github(
 
 
 # ---------------------------------------------------------------------------
+# ClawHub — fetch skill catalog, download single skill zip, etc.
+# ---------------------------------------------------------------------------
+
+async def _clawhub_list(
+    client: httpx.AsyncClient, query: str = "", limit: int = 50,
+) -> list[dict]:
+    """Hit ``/api/v1/search`` when a query is provided, else
+    ``/api/v1/skills?sort=trending``. Returns the raw items list."""
+    if query.strip():
+        url = f"{_CLAWHUB_BASE}/api/v1/search?q={query.strip()}"
+    else:
+        url = f"{_CLAWHUB_BASE}/api/v1/skills?sort=trending&limit={limit}"
+    raw = await _get_text(client, url)
+    import json as _json
+    payload = _json.loads(raw)
+    items = payload.get("items") or payload.get("results") or payload
+    if not isinstance(items, list):
+        return []
+    return items
+
+
+async def _browse_clawhub(
+    client: httpx.AsyncClient, query: str = "",
+) -> list[CatalogEntry]:
+    items = await _clawhub_list(client, query=query)
+    out: list[CatalogEntry] = []
+    for it in items:
+        slug = it.get("slug") or it.get("name") or ""
+        if not slug:
+            continue
+        summary = it.get("summary") or it.get("description") or ""
+        out.append(CatalogEntry(
+            name=slug,
+            description=summary,
+            path=slug,
+            files=[],
+            content_hash="",  # ClawHub has its own version field; skip per-entry hash
+        ))
+    return out
+
+
+async def _pull_one_clawhub(
+    client: httpx.AsyncClient, slug: str, namespace: str | None,
+) -> str | None:
+    """Download the slug's zip from /api/v1/download and extract SKILL.md
+    + companion dirs into the remote-cache."""
+    url = f"{_CLAWHUB_BASE}/api/v1/download?slug={slug}"
+    try:
+        data = await _get_bytes(client, url)
+    except Exception:
+        return None
+    full_name = _apply_namespace(slug, namespace)
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            members = [n for n in zf.namelist() if not n.endswith("/")]
+            # The zip's top-level dir is typically "<slug>-<version>" — strip
+            # the common prefix so files land flat under the cache dir.
+            top = members[0].split("/", 1)[0] if members and "/" in members[0] else ""
+            # Find the SKILL.md location
+            md_member = next((m for m in members if m.endswith("SKILL.md")), None)
+            if not md_member:
+                return None
+            target_dir = remote_cache_dir() / full_name
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_dir.joinpath("SKILL.md").write_bytes(zf.read(md_member))
+            # The directory that contains SKILL.md inside the zip — pull its
+            # companions ("references", "scripts", etc.) alongside.
+            md_dir = md_member.rsplit("/", 1)[0] if "/" in md_member else ""
+            for m in members:
+                if m == md_member or m.endswith("/"):
+                    continue
+                if md_dir and not m.startswith(md_dir + "/"):
+                    continue
+                rel = m[len(md_dir) + 1:] if md_dir else m
+                if rel == "SKILL.md" or not _is_companion(rel):
+                    continue
+                out = target_dir / rel
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(zf.read(m))
+    except Exception:
+        return None
+    return full_name
+
+
+async def _pull_from_clawhub(
+    client: httpx.AsyncClient, ref: ClawHubRef, namespace: str | None,
+) -> list[str]:
+    if ref.is_hub_root:
+        # "Install all" the hub root: pull the top trending list.
+        items = await _clawhub_list(client, limit=20)
+        slugs = [it.get("slug") for it in items if it.get("slug")]
+    else:
+        slugs = [ref.slug]
+    pulled: list[str] = []
+    for slug in slugs:
+        res = await _pull_one_clawhub(client, slug, namespace)
+        if res:
+            pulled.append(res)
+    return pulled
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -307,9 +442,11 @@ def _default_namespace(url: str) -> str:
     """Derive a slug from the URL so each source gets its own folder.
 
     GitHub URLs map to the repo name (lowercased, kept stable across
-    refs/subdirs). Non-GitHub URLs map to the hostname with dots
-    replaced by hyphens.
+    refs/subdirs). ClawHub URLs map to ``clawhub``. Non-GitHub URLs map
+    to the hostname with dots replaced by hyphens.
     """
+    if _parse_clawhub(url) is not None:
+        return "clawhub"
     gh = _parse_github(url)
     if gh is not None:
         return gh.repo.lower()
@@ -323,6 +460,10 @@ def _default_namespace(url: str) -> str:
 async def _pull_async(url: str, namespace: str | None = None) -> list[str]:
     ns = namespace if namespace is not None else _default_namespace(url)
     async with httpx.AsyncClient(follow_redirects=True) as client:
+        # 0. ClawHub registry (clawhub:// or clawhub.ai URL)
+        ch = _parse_clawhub(url)
+        if ch is not None:
+            return await _pull_from_clawhub(client, ch, namespace=ns)
         # 1. Explicit github:// scheme or github.com URL → repo mode
         gh = _parse_github(url)
         if gh is not None:
@@ -454,6 +595,29 @@ async def _browse_github(client: httpx.AsyncClient, repo: GhRepo) -> list[Catalo
 
 async def _browse_async(url: str) -> list[dict]:
     async with httpx.AsyncClient(follow_redirects=True) as client:
+        ch = _parse_clawhub(url)
+        if ch is not None:
+            # ``clawhub://``  → trending list.
+            # ``clawhub://<slug>`` → single skill detail (one-item catalog).
+            if ch.is_hub_root:
+                entries = await _browse_clawhub(client)
+            else:
+                items = await _clawhub_list(client, query=ch.slug)
+                pick = next((it for it in items if it.get("slug") == ch.slug), None)
+                entries = [
+                    CatalogEntry(
+                        name=ch.slug,
+                        description=(pick or {}).get("summary", "") if pick else "",
+                        path=ch.slug, files=[], content_hash="",
+                    )
+                ]
+            return [
+                {
+                    "name": e.name, "description": e.description, "path": e.path,
+                    "files": e.files, "content_hash": e.content_hash,
+                }
+                for e in entries
+            ]
         gh = _parse_github(url)
         if gh is not None:
             entries = await _browse_github(client, gh)
@@ -544,6 +708,10 @@ async def _install_one_async(
 ) -> str | None:
     ns = namespace if namespace is not None else _default_namespace(url)
     async with httpx.AsyncClient(follow_redirects=True) as client:
+        ch = _parse_clawhub(url)
+        if ch is not None:
+            # ``name`` here is the slug we want to install.
+            return await _pull_one_clawhub(client, name or ch.slug, ns)
         gh = _parse_github(url)
         if gh is not None:
             entries = await _browse_github(client, gh)

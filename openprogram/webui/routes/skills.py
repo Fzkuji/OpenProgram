@@ -52,6 +52,12 @@ def _save_disabled(disabled: set[str]) -> None:
 # /api/skills/discovery/suggested exposes the rich metadata for the UI.
 DEFAULT_DISCOVERY_SUGGESTIONS: list[dict] = [
     {
+        "url": "clawhub://",
+        "label": "ClawHub",
+        "slug": "clawhub",
+        "description": "Public registry by openclaw — thousands of skills with stars, downloads and security scans. Browse trending or install any slug by name.",
+    },
+    {
         "url": "https://github.com/anthropics/skills/tree/main/skills",
         "label": "Anthropic Skills",
         "slug": "anthropic-skills",
