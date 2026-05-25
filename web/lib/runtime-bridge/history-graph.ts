@@ -829,27 +829,26 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     const srcPos = pos(src);
     const anchorPos = pos(anchor);
     const color = _branchColor(src, lanes.leafOfNode);
-    // Dashed edge skipped when the source is already a conv-
-    // descendant of the anchor AND this isn't a user-issued manual
-    // attach — otherwise the dashed line just overlaps the solid
-    // conv-edge that already exists. Manual attaches always get the
-    // edge so the user sees what they just did.
-    const isManual = !!node.attach_manual;
-    const skipEdge = !isManual && _isConvDescendant(ref, anchorId);
-    if (!skipEdge) {
-      edgeG.appendChild(
-        _svg("path", {
-          d: _edgePath(srcPos.x, srcPos.y, anchorPos.x, anchorPos.y),
-          stroke: color,
-          "stroke-width": 1.6,
-          fill: "none",
-          "stroke-linecap": "round",
-          "stroke-dasharray": "4 4",
-          opacity: 0.9,
-          class: "history-edge attach-edge",
-        }),
-      );
-    }
+    // Always draw the dashed attach edge. The old "skip when ref is a
+    // conv-descendant of anchor" rule killed the only visual signal
+    // for spawned sub-agents: sub-agent's user msg hangs off the
+    // caller's msg, so ref-to-anchor IS a conv chain, and the dashed
+    // overlay was getting skipped — leaving two parallel lanes with
+    // no visible "merge back" line. The dashed stroke + marching-ants
+    // animation is exactly what conveys "this branch flows back into
+    // the anchor"; without it the figure reads as two unrelated lanes.
+    edgeG.appendChild(
+      _svg("path", {
+        d: _edgePath(srcPos.x, srcPos.y, anchorPos.x, anchorPos.y),
+        stroke: color,
+        "stroke-width": 1.6,
+        fill: "none",
+        "stroke-linecap": "round",
+        "stroke-dasharray": "4 4",
+        opacity: 0.9,
+        class: "history-edge attach-edge",
+      }),
+    );
     // Anchor-side landing dot — ALWAYS draw, even when the dashed
     // edge is skipped, so the trunk (e.g. main) shows a small mark
     // wherever an attach grafts. Without this, an attach onto a
