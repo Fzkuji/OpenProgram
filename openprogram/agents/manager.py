@@ -69,8 +69,20 @@ class AgentSpec:
     model: AgentModelRef = field(default_factory=AgentModelRef)
     thinking_effort: str = "medium"
     system_prompt: str = ""
-    skills: dict[str, Any] = field(default_factory=lambda: {"disabled": []})
-    tools: dict[str, Any] = field(default_factory=lambda: {"disabled": []})
+    # Unified extension gating. Each block has ``disabled`` / ``allowed``
+    # name-pattern lists (fnmatch syntax — exact names are the trivial
+    # case). Skills carry an extra ``categories`` filter; MCP carries
+    # ``required`` (must-have server patterns; agent unavailable if
+    # missing).
+    skills: dict[str, Any] = field(default_factory=lambda: {
+        "disabled": [], "allowed": [], "categories": [],
+    })
+    tools: dict[str, Any] = field(default_factory=lambda: {
+        "disabled": [], "allowed": [],
+    })
+    mcp: dict[str, Any] = field(default_factory=lambda: {
+        "disabled": [], "allowed": [], "required": [],
+    })
     identity: AgentIdentity = field(default_factory=AgentIdentity)
     # Session routing policy (see agents/context_engine.py and
     # channels/_conversation.py). Values mirror OpenClaw's dmScope:
@@ -109,8 +121,11 @@ class AgentSpec:
             ),
             thinking_effort=str(raw.get("thinking_effort") or "medium"),
             system_prompt=str(raw.get("system_prompt") or ""),
-            skills=dict(raw.get("skills") or {"disabled": []}),
-            tools=dict(raw.get("tools") or {"disabled": []}),
+            skills=dict(raw.get("skills") or {
+                "disabled": [], "allowed": [], "categories": [],
+            }),
+            tools=dict(raw.get("tools") or {"disabled": [], "allowed": []}),
+            mcp=dict(raw.get("mcp") or {"disabled": [], "allowed": [], "required": []}),
             identity=AgentIdentity(
                 name=str(identity.get("name") or ""),
                 mention_patterns=list(identity.get("mention_patterns") or []),

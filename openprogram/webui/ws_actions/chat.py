@@ -87,36 +87,29 @@ async def handle_chat(ws, cmd: dict):
                     except AmbiguousSkillError as e:
                         raise e
 
-                # Agent-profile gating (mirrors how toolset / tools.disabled
-                # constrain the LLM's tool list — same shape, different
-                # field name on AgentSpec.skills).
+                # Agent-profile gating — shared helper across all
+                # extension types (tools / skills / mcp). Patterns
+                # support fnmatch wildcards.
                 gate_error: str | None = None
                 if resolved is not None:
                     try:
                         from openprogram.agents import manager as _A
+                        from openprogram.agents.gating import gate as _gate
                         ag = _A.get(agent_id) if hasattr(_A, "get") else None
                         prof = ag.to_dict().get("skills", {}) if ag else {}
-                        disabled = set(prof.get("disabled") or [])
-                        allowed = set(prof.get("allowed") or [])
-                        cats = set(prof.get("categories") or [])
-                        if resolved.name in disabled:
-                            gate_error = (
-                                f"Skill {resolved.name!r} is disabled for this "
-                                f"agent profile."
-                            )
-                        elif allowed and resolved.name not in allowed:
-                            gate_error = (
-                                f"Skill {resolved.name!r} is not in this "
-                                f"agent's allowed list."
-                            )
-                        elif cats and (resolved.category not in cats):
-                            gate_error = (
-                                f"Skill category {resolved.category!r} is not "
-                                f"permitted for this agent (allowed: "
-                                f"{', '.join(sorted(cats)) or 'none'})."
-                            )
-                    except Exception:
-                        pass
+                        gate_error = _gate(
+                            name=resolved.name,
+                            category=resolved.category or "",
+                            disabled=prof.get("disabled") or [],
+                            allowed=prof.get("allowed") or [],
+                            categories=prof.get("categories") or [],
+                        )
+                    except Exception as e:
+                        gate_error = (
+                            f"Could not evaluate skill gating for "
+                            f"{(resolved.name if resolved else 'unknown')!r}: "
+                            f"{type(e).__name__}: {e}"
+                        )
 
                 try:
                     if gate_error:

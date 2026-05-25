@@ -184,40 +184,90 @@ def resolve_tools(
     Returns None when no tools are configured (caller gives agent_loop
     a tools-free context — it's a pure chat then).
     """
+    # MCP-level gating helper. MCP tools come out of agent_tools()
+    # with the ``<server>__<tool>`` naming convention, so we filter
+    # by the ``<server>`` prefix against the agent's ``mcp.disabled/
+    # allowed`` patterns. Required-server check returns None to abort
+    # the turn cleanly.
+    def _apply_mcp_gate(tool_list):
+        from openprogram.agents.gating import match_any, check_required
+        mcp_cfg = (profile or {}).get("mcp") or {}
+        disabled = list(mcp_cfg.get("disabled") or [])
+        allowed = list(mcp_cfg.get("allowed") or [])
+        required = list(mcp_cfg.get("required") or [])
+        if not (disabled or allowed or required):
+            return tool_list
+        def _server_of(name: str) -> str:
+            return name.split("__", 1)[0] if "__" in name else ""
+        seen_servers = {_server_of(t.name) for t in (tool_list or []) if _server_of(t.name)}
+        missing = check_required(seen_servers, required)
+        if missing:
+            # Hard fail — return None so caller treats this turn as
+            # tools-disabled with a clear log line.
+            from openprogram.webui import server as _srv
+            try:
+                _srv._log(f"[mcp-gate] required servers missing: {missing}")
+            except Exception:
+                pass
+            return None
+        out = []
+        for t in tool_list or []:
+            srv = _server_of(t.name)
+            if not srv:
+                out.append(t)
+                continue
+            if disabled and match_any(srv, disabled):
+                continue
+            if allowed and not match_any(srv, allowed):
+                continue
+            out.append(t)
+        return out
+
     wanted = override if override is not None else profile.get("tools")
     if wanted is None:
-        # Default-on: when the agent profile didn't pin a tool list,
-        # expose DEFAULT_TOOLS (filtered by ``source`` so channel
-        # transports still drop unsafe ones). Set ``tools: []`` in
-        # agent.json to opt out explicitly.
         try:
             from openprogram.functions import agent_tools as _agent_tools
-            return _agent_tools(source=source, only_available=True)
+            return _apply_mcp_gate(_agent_tools(source=source, only_available=True))
         except Exception:
             return None
     if wanted == []:
         return []
     try:
         from openprogram.functions import DEFAULT_TOOLS, agent_tools
+        from openprogram.agents.gating import match_any
         if isinstance(wanted, dict):
             enabled = wanted.get("enabled")
+            disabled_patterns = list(wanted.get("disabled") or [])
+            allowed_patterns = list(wanted.get("allowed") or [])
             if isinstance(enabled, list):
                 names = [str(n) for n in enabled]
             else:
-                disabled = {str(n) for n in (wanted.get("disabled") or [])}
-                names = [n for n in DEFAULT_TOOLS if n not in disabled]
+                # Wildcard-aware filter over DEFAULT_TOOLS — matches the
+                # same semantics the shared gating helper uses for skills.
+                names = [
+                    n for n in DEFAULT_TOOLS
+                    if not match_any(n, disabled_patterns)
+                    and (not allowed_patterns or match_any(n, allowed_patterns))
+                ]
             toolset = wanted.get("toolset")
             if isinstance(toolset, str) and not isinstance(enabled, list):
-                return agent_tools(toolset=toolset, source=source, only_available=True)
-            return agent_tools(names=names, source=source, only_available=True)
+                resolved = agent_tools(toolset=toolset, source=source, only_available=True) or []
+                if disabled_patterns or allowed_patterns:
+                    resolved = [
+                        t for t in resolved
+                        if not match_any(t.name, disabled_patterns)
+                        and (not allowed_patterns or match_any(t.name, allowed_patterns))
+                    ]
+                return _apply_mcp_gate(resolved)
+            return _apply_mcp_gate(agent_tools(names=names, source=source, only_available=True))
 
         if isinstance(wanted, list) and wanted and isinstance(wanted[0], str):
-            return agent_tools(
+            return _apply_mcp_gate(agent_tools(
                 names=[str(n) for n in wanted],
                 source=source,
                 only_available=True,
-            )
-        return [t for t in wanted if hasattr(t, "name")]
+            ))
+        return _apply_mcp_gate([t for t in wanted if hasattr(t, "name")])
     except Exception:
         return None
 
