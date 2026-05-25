@@ -49,7 +49,7 @@ const TILE_KEYFRAMES = `
   to   { opacity: 1; }
 }
 .composer-file-tile {
-  /* ``outline`` over a CSS ``border`` so the 1px hairline stays
+  /* outline over a CSS border so the 1px hairline stays
      uniform around the 16px corner — Chrome's outline rasteriser
      samples sub-pixels the same way the rounded fill does, so the
      hairline never thins / thickens along the curve. */
