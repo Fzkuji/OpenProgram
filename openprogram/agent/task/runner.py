@@ -652,6 +652,13 @@ class TaskRunner:
                     pass
             extra_json["attach"] = attach
             md["extra"] = json.dumps(extra_json, default=str)
+            # Mirror the same attach dict onto the top-level
+            # ``metadata.attach`` field. The frontend's _readAttach
+            # helper checks the top-level field first (set by the
+            # spawn path) and only falls back to extra-json; if we
+            # only patch extra, the panel keeps showing the stale
+            # "running" status long after the task completes.
+            md["attach"] = attach
             # Update the persisted node's metadata + output text.
             output = task.result_text or error_text or node.output or ""
             try:
