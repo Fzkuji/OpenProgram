@@ -160,6 +160,11 @@
   resize: none;
   min-height: var(--composer-button-size);
   max-height: 200px;
+  /* Inner padding so the caret / text sits noticeably inside the
+     wrapper's rounded edge. The row already pads 16px from the
+     wrapper; an extra 8px on each side puts the text at 24px from
+     the edge so it never reads as touching the rounded curve. */
+  padding: 0 8px;
   /* `line-height` equal to the row's button-size token so a single
      line of placeholder/value renders vertically centered inside the
      32px-tall textarea instead of sitting at the top. */
