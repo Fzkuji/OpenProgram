@@ -50,7 +50,7 @@ const TILE_KEYFRAMES = `
 }
 .composer-file-tile {
   /* Border declared here so the :hover override actually wins —
-     inline ``style.border`` outranked the selector before. */
+     inline style.border outranked the selector before. */
   border: 1px solid var(--border);
   transition: border-color 120ms ease, background 120ms ease,
               box-shadow 120ms ease;
