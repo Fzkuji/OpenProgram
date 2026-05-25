@@ -103,3 +103,43 @@ def run_agent_turn(
         failed=bool(turn.failed),
         error=turn.error,
     )
+
+
+def run_agent_turn_async(
+    session_id: str,
+    prompt: str,
+    agent_id: str,
+    *,
+    parent_id: Optional[str] = None,
+    label: Optional[str] = None,
+    subject: str = "",
+    description: str = "",
+    context_mode: str = "inherit",
+    parent_task_id: Optional[str] = None,
+    attach_pointer_id: Optional[str] = None,
+    target_branch_head_id: Optional[str] = None,
+) -> str:
+    """Submit an agent turn to the task runner, return ``task_id``.
+
+    Non-blocking counterpart of :func:`run_agent_turn`. The runner
+    walks the task through the state machine on a worker thread and
+    eventually invokes ``run_agent_turn`` under the hood. Callers
+    that need the result block on ``runner.await_task(task_id)``;
+    callers that want fire-and-forget (the ``--async`` slash flag,
+    plan-mode spawns) ignore the return value.
+    """
+    from openprogram.agent.task import get_runner
+    runner = get_runner()
+    return runner.spawn_task(
+        session_id=session_id,
+        prompt=prompt,
+        agent_id=agent_id,
+        subject=subject or (description or prompt[:60]),
+        description=description or prompt,
+        context_mode=context_mode if parent_id is not None or context_mode == "clean" else context_mode,
+        parent_msg_id=parent_id,
+        parent_task_id=parent_task_id,
+        label=label,
+        attach_pointer_id=attach_pointer_id,
+        target_branch_head_id=target_branch_head_id,
+    )

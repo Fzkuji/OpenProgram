@@ -1,0 +1,679 @@
+"""TaskRunner — ThreadPoolExecutor-backed worker pool.
+
+Process-wide singleton. Tasks are submitted via :meth:`spawn_task`,
+which returns immediately with a task id. The actual work runs in
+the pool's worker thread by calling :func:`run_agent_turn` internally
+(see ``sub_agent_run.py``).
+
+Why a pool of OS threads instead of asyncio: every existing
+``process_user_turn`` call already opens its own ``asyncio.new_event_loop``
+inside the calling thread. Stacking a top-level asyncio scheduler
+would double-loop. Threads also play nice with the synchronous
+BashTool / file IO that dominates wall-clock time of a sub-agent.
+
+Cancel signalling reuses the dispatcher contract:
+
+  * ``_pause_stop.register_cancel_event(session_id, ev)`` exposes the
+    cancel event so the existing pre-invocation hook fires.
+  * ``process_user_turn(cancel_event=ev)`` bridges the event into
+    asyncio for the LLM-stream side.
+  * ``kill_active_runtime(session_id)`` terminates any live BashTool
+    subprocess (best-effort, depends on the runtime registration).
+
+Cancel events on the *task* level are stored in this runner's
+``_cancel_events`` map (keyed by ``task_id``), in addition to the
+session-level events the dispatcher already maintains. We set both
+on cancel so:
+
+  * session-level (existing behavior) — the cancel hook +
+    asyncio bridge inside ``process_user_turn`` already keys off the
+    session id, so they fire.
+  * task-level (new) — if a runner is later upgraded to allow >1
+    task per session, task-level cancel still scopes correctly.
+
+Crash recovery: :func:`store.reconcile_orphans` runs at process start
+(lazily, on first runner construction). Existing tasks left in
+non-terminal state are flipped to ``errored``.
+
+Broadcast events: each state transition fires a WS broadcast via
+``openprogram.webui.server._broadcast`` (lazy import) so the UI
+updates without an explicit poll. We also fire a ``session_reload``
+on terminal so the existing attach card pickup path triggers.
+"""
+from __future__ import annotations
+
+import contextvars
+import json
+import os
+import threading
+import time
+import traceback
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import Any, Callable, Optional
+
+from openprogram.agent.task.store import (
+    list_tasks as _store_list,
+    load_task as _store_load,
+    reconcile_orphans as _store_reconcile,
+    save_task as _store_save,
+    update_task_status as _store_update_status,
+)
+from openprogram.agent.task.types import (
+    Task,
+    TaskStatus,
+    is_terminal,
+    mint_task_id,
+)
+
+
+_DEFAULT_MAX_WORKERS = 4
+# Hard ceiling on the wait we'll give a worker to honour cancel before
+# forcibly flipping the entity to cancelled.
+_CANCEL_TIMEOUT_SECS = 30.0
+
+
+def _broadcast(payload: dict) -> None:
+    """Send a WS broadcast — best-effort, swallow import errors so
+    the runner works in environments without the webui (tests, CLI).
+
+    Each call goes through ``server._broadcast`` which already
+    serialises to JSON and writes to every connected socket.
+    """
+    try:
+        from openprogram.webui import server as _s
+        _s._broadcast(json.dumps(payload, default=str))
+    except Exception:
+        pass
+
+
+def _broadcast_session_reload(session_id: str, *, reason: str = "task") -> None:
+    _broadcast({
+        "type": "session_reload",
+        "data": {"session_id": session_id, "reason": reason},
+    })
+
+
+def _broadcast_task_status(task: Task) -> None:
+    _broadcast({
+        "type": "task_status",
+        "data": {
+            "task_id": task.id,
+            "session_id": task.parent_session_id,
+            "status": task.status.value,
+            "parent_msg_id": task.parent_msg_id,
+            "target_branch_head_id": task.target_branch_head_id,
+            "head_id": task.head_id,
+            "label": task.label,
+            "subject": task.subject,
+            "error": task.error,
+            "created_at": task.created_at,
+            "started_at": task.started_at,
+            "completed_at": task.completed_at,
+        },
+    })
+
+
+class TaskRunner:
+    """Singleton task pool. Use :func:`get_runner`.
+
+    Public surface:
+
+      * :meth:`spawn_task` — submit, return task_id
+      * :meth:`cancel_task` — set cancel event, schedule timeout
+      * :meth:`get_task` / :meth:`list_tasks` — read
+      * :meth:`await_task` — block until terminal, return final Task
+
+    The runner is *thread-safe* — all maps are guarded by
+    ``self._lock``.
+    """
+
+    def __init__(self, max_workers: Optional[int] = None) -> None:
+        if max_workers is None:
+            try:
+                max_workers = int(
+                    os.environ.get("OPENPROGRAM_TASK_WORKERS")
+                    or _DEFAULT_MAX_WORKERS
+                )
+            except ValueError:
+                max_workers = _DEFAULT_MAX_WORKERS
+        if max_workers < 1:
+            max_workers = 1
+        self.max_workers = max_workers
+        # Reconcile orphans before opening the pool so any "running"
+        # task from a previous process is flipped to errored. The
+        # state-machine transition rules cover (running, errored).
+        try:
+            _store_reconcile()
+        except Exception:
+            pass
+        self._pool = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="op-task",
+        )
+        self._lock = threading.Lock()
+        # task_id → {"event": Event, "future": Future, "session_id": str}
+        self._tasks: dict[str, dict[str, Any]] = {}
+        # task_id → threading.Event used to wake await_task() callers.
+        self._done_events: dict[str, threading.Event] = {}
+
+    # ── Public API ──────────────────────────────────────────────
+
+    def spawn_task(
+        self,
+        session_id: str,
+        prompt: str,
+        agent_id: str,
+        *,
+        subject: str = "",
+        description: str = "",
+        context_mode: str = "inherit",
+        parent_msg_id: Optional[str] = None,
+        parent_task_id: Optional[str] = None,
+        label: Optional[str] = None,
+        attach_pointer_id: Optional[str] = None,
+        target_branch_head_id: Optional[str] = None,
+    ) -> str:
+        """Create a Task entity, persist it, queue it on the pool.
+
+        Returns ``task_id`` immediately. The task pickup happens on
+        a worker thread and walks through the state machine. The
+        caller can ``await_task(task_id)`` to block on completion.
+        """
+        task = Task(
+            id=mint_task_id(),
+            parent_session_id=session_id,
+            prompt=prompt,
+            agent_id=agent_id,
+            subject=subject or (prompt[:60] or "task"),
+            description=description or prompt,
+            context_mode=context_mode if context_mode in ("inherit", "clean") else "inherit",
+            parent_msg_id=parent_msg_id,
+            parent_task_id=parent_task_id,
+            label=label,
+            attach_pointer_id=attach_pointer_id,
+            target_branch_head_id=target_branch_head_id,
+            status=TaskStatus.PENDING,
+            created_at=time.time(),
+        )
+        _store_save(session_id, task)
+        _broadcast_task_status(task)
+
+        # Done-event for await_task / await_tasks callers.
+        done_ev = threading.Event()
+        cancel_ev = threading.Event()
+        # Copy the current ContextVars so things like
+        # ``_pause_stop._current_session_id`` set by the spawning
+        # thread don't leak into the worker. Each task gets its own
+        # context — the worker function rebinds session_id explicitly.
+        ctx = contextvars.copy_context()
+        # Capture future *before* registering so cancel_task can find it.
+        future: Future = self._pool.submit(
+            ctx.run, self._run_one, task.id, cancel_ev, done_ev,
+        )
+        with self._lock:
+            self._tasks[task.id] = {
+                "event": cancel_ev,
+                "future": future,
+                "session_id": session_id,
+            }
+            self._done_events[task.id] = done_ev
+
+        # Mark queued. The transition pending→queued is allowed; the
+        # worker may have already flipped it to running by the time
+        # this lands. update_task_status is idempotent on no-op.
+        try:
+            updated = _store_update_status(session_id, task.id, TaskStatus.QUEUED,
+                                            queued_at=time.time())
+            if updated is not None:
+                _broadcast_task_status(updated)
+        except ValueError:
+            # Worker beat us — already at running. Read back and broadcast.
+            cur = _store_load(session_id, task.id)
+            if cur is not None:
+                _broadcast_task_status(cur)
+        return task.id
+
+    def cancel_task(self, task_id: str, *, reason: Optional[str] = None) -> Optional[Task]:
+        """Trigger cancel for ``task_id``. Returns the (post-update)
+        Task entity, or None if not found.
+
+        Effect:
+
+          * sets the task's cancel event (worker drops out on next
+            cooperative checkpoint)
+          * sets the session-level cancel event via
+            ``_pause_stop.mark_cancelled`` so the existing dispatcher
+            cancel path fires
+          * kills any active BashTool subprocess via
+            ``kill_active_runtime``
+          * if the task is still in pending/queued, flips to cancelled
+            immediately (no worker pickup yet, nothing to wait for)
+          * if running, schedules a 30s watchdog that force-flips to
+            cancelled if the worker hasn't honoured the signal
+        """
+        with self._lock:
+            info = self._tasks.get(task_id)
+        if not info:
+            # Maybe loaded from disk-only state — try to find session.
+            cur = self._find_session_for_task(task_id)
+            if cur is None:
+                return None
+            session_id = cur
+            info = None
+        else:
+            session_id = info["session_id"]
+        # Bridge to existing session-level cancel infra so the LLM
+        # stream + bash subprocess + agent_loop pre-invocation hook
+        # all see the signal.
+        try:
+            from openprogram.webui._pause_stop import (
+                kill_active_runtime,
+                mark_cancelled,
+            )
+            mark_cancelled(session_id)
+            kill_active_runtime(session_id)
+        except Exception:
+            pass
+        if info is not None:
+            info["event"].set()
+
+        # Status-side: if still pending/queued, flip terminal now.
+        # If running, leave terminal flip to the worker (or the
+        # watchdog).
+        cur_task = _store_load(session_id, task_id)
+        if cur_task is None:
+            return None
+        try:
+            if cur_task.status in (TaskStatus.PENDING, TaskStatus.QUEUED):
+                updated = _store_update_status(
+                    session_id, task_id, TaskStatus.CANCELLED,
+                    cancel_requested_at=time.time(),
+                    error=reason or "cancelled before pickup",
+                )
+                if updated is not None:
+                    _broadcast_task_status(updated)
+                    self._wake_done(task_id)
+                    self._update_attach_card(updated)
+                    _broadcast_session_reload(session_id, reason="task_cancelled")
+                return updated
+            elif cur_task.status == TaskStatus.RUNNING:
+                # Stamp request time but stay in running. Worker will
+                # detect cancel and self-flip.
+                stamped = Task.from_dict({
+                    **cur_task.to_dict(),
+                    "cancel_requested_at": time.time(),
+                })
+                _store_save(
+                    session_id,
+                    stamped,
+                    commit_message=f"task: {task_id} cancel requested",
+                )
+                # Watchdog: force cancel if worker doesn't honour signal.
+                self._schedule_force_cancel(session_id, task_id)
+                return cur_task
+        except ValueError:
+            pass
+        return cur_task
+
+    def get_task(self, task_id: str) -> Optional[Task]:
+        sid = self._find_session_for_task(task_id)
+        if not sid:
+            return None
+        return _store_load(sid, task_id)
+
+    def list_tasks(
+        self,
+        session_id: Optional[str] = None,
+        *,
+        status_filter: Optional[set[TaskStatus]] = None,
+        limit: Optional[int] = None,
+    ) -> list[Task]:
+        if session_id:
+            return _store_list(session_id, status_filter=status_filter, limit=limit)
+        # Walk every session — used by the global task panel.
+        from openprogram.store import default_store
+        store = default_store()
+        if not store.root_path.exists():
+            return []
+        out: list[Task] = []
+        for sdir in sorted(store.root_path.iterdir()):
+            if not sdir.is_dir():
+                continue
+            out.extend(_store_list(sdir.name, status_filter=status_filter))
+        out.sort(key=lambda t: t.created_at or 0, reverse=True)
+        if limit is not None:
+            out = out[:limit]
+        return out
+
+    def await_task(self, task_id: str, timeout: Optional[float] = None) -> Optional[Task]:
+        """Block the calling thread until the task reaches terminal.
+
+        Returns the final Task. Returns None on unknown task. Returns
+        the current (possibly non-terminal) entity on timeout.
+        """
+        cur = self.get_task(task_id)
+        if cur is None:
+            return None
+        if is_terminal(cur.status):
+            return cur
+        with self._lock:
+            done = self._done_events.get(task_id)
+        if done is None:
+            # Lost track (process restart with persisted task) — poll.
+            deadline = time.time() + (timeout or 60.0)
+            while time.time() < deadline:
+                cur = self.get_task(task_id)
+                if cur is not None and is_terminal(cur.status):
+                    return cur
+                time.sleep(0.5)
+            return self.get_task(task_id)
+        done.wait(timeout=timeout)
+        return self.get_task(task_id)
+
+    def shutdown(self, wait: bool = True) -> None:
+        """Tear down the pool. Used in tests / process shutdown."""
+        try:
+            self._pool.shutdown(wait=wait, cancel_futures=True)
+        except TypeError:
+            # Python 3.8 fallback (no cancel_futures kwarg).
+            self._pool.shutdown(wait=wait)
+
+    # ── Worker body ─────────────────────────────────────────────
+
+    def _run_one(self, task_id: str, cancel_ev: threading.Event,
+                 done_ev: threading.Event) -> None:
+        """Worker thread entry point.
+
+        Wraps :func:`run_agent_turn` so the same code that handles the
+        synchronous ``/spawn`` path runs underneath us. Catches
+        everything so a buggy tool doesn't leave the task pinned at
+        ``running`` forever — exceptions flip to ``errored``.
+
+        Important: the dispatcher's cancel hook reads
+        ``_pause_stop._current_session_id`` from the worker thread
+        ContextVar. We bind it at entry so the hook can find the
+        right session.
+        """
+        # Look up the task entity at entry — fields like
+        # parent_session_id, prompt, agent_id are stable from this
+        # point forward.
+        task = self._lookup_or_load(task_id)
+        if task is None:
+            done_ev.set()
+            return
+        session_id = task.parent_session_id
+
+        # Bind the session id ContextVar for the cancel hook. Same
+        # contract _execute_in_context honours in the webui worker.
+        from openprogram.webui._pause_stop import (
+            register_cancel_event,
+            unregister_cancel_event,
+            set_current_session_id,
+            reset_current_session_id,
+            clear_cancel,
+        )
+        sid_token = set_current_session_id(session_id)
+        register_cancel_event(session_id, cancel_ev)
+        # Reset any stale cancel flag from a previous turn on this
+        # session — otherwise a /api/stop fired against a prior turn
+        # would short-circuit ours.
+        try:
+            clear_cancel(session_id)
+        except Exception:
+            pass
+
+        try:
+            # pending → running. If state went to cancelled (pre-pickup)
+            # the transition fails — bail out cleanly.
+            try:
+                updated = _store_update_status(
+                    session_id, task_id, TaskStatus.RUNNING,
+                    started_at=time.time(),
+                )
+                if updated is None:
+                    # task entity vanished
+                    return
+                _broadcast_task_status(updated)
+            except ValueError:
+                # Transition rejected — likely already terminal. Done.
+                return
+            if cancel_ev.is_set():
+                # Cancel arrived between queue + pickup.
+                updated = _store_update_status(
+                    session_id, task_id, TaskStatus.CANCELLED,
+                    error="cancelled before run",
+                )
+                if updated is not None:
+                    _broadcast_task_status(updated)
+                return
+
+            try:
+                from openprogram.agent.sub_agent_run import (
+                    run_agent_turn,
+                )
+                # Resolve parent for inherit-mode: walk through to the
+                # parent_msg_id supplied at spawn time.
+                parent_id: Optional[str]
+                if (task.context_mode or "inherit") == "clean":
+                    parent_id = None
+                else:
+                    parent_id = task.parent_msg_id
+                result = run_agent_turn(
+                    session_id=session_id,
+                    prompt=task.prompt,
+                    agent_id=task.agent_id,
+                    parent_id=parent_id,
+                    label=task.label,
+                )
+            except Exception as exc:  # noqa: BLE001
+                err = f"{type(exc).__name__}: {exc}"
+                try:
+                    updated = _store_update_status(
+                        session_id, task_id, TaskStatus.ERRORED,
+                        error=err,
+                    )
+                except ValueError:
+                    updated = _store_load(session_id, task_id)
+                if updated is not None:
+                    _broadcast_task_status(updated)
+                    self._update_attach_card(updated, error_text=err)
+                _broadcast_session_reload(session_id, reason="task_errored")
+                return
+
+            # Decide terminal status.
+            cancelled = cancel_ev.is_set() or (
+                result.error and "stopped" in (result.error or "").lower()
+            )
+            if cancelled:
+                new_status = TaskStatus.CANCELLED
+            elif result.failed:
+                new_status = TaskStatus.ERRORED
+            else:
+                new_status = TaskStatus.COMPLETED
+            try:
+                updated = _store_update_status(
+                    session_id, task_id, new_status,
+                    head_id=result.head_id,
+                    result_text=result.final_text or "",
+                    error=result.error,
+                )
+            except ValueError:
+                # State already moved (e.g. force-cancel watchdog).
+                updated = _store_load(session_id, task_id)
+            if updated is not None:
+                _broadcast_task_status(updated)
+                self._update_attach_card(updated)
+            # Tell tail clients the session changed so attach card
+            # picks up the new head / text.
+            _broadcast_session_reload(session_id, reason=f"task_{new_status.value}")
+        finally:
+            try:
+                unregister_cancel_event(session_id)
+            except Exception:
+                pass
+            try:
+                reset_current_session_id(sid_token)
+            except Exception:
+                pass
+            self._wake_done(task_id)
+            with self._lock:
+                self._tasks.pop(task_id, None)
+
+    # ── Internals ───────────────────────────────────────────────
+
+    def _wake_done(self, task_id: str) -> None:
+        with self._lock:
+            ev = self._done_events.get(task_id)
+        if ev is not None:
+            try:
+                ev.set()
+            except Exception:
+                pass
+
+    def _lookup_or_load(self, task_id: str) -> Optional[Task]:
+        """Find the session for this task (via in-memory map) and load
+        the entity from disk."""
+        sid = self._find_session_for_task(task_id)
+        if not sid:
+            return None
+        return _store_load(sid, task_id)
+
+    def _find_session_for_task(self, task_id: str) -> Optional[str]:
+        with self._lock:
+            info = self._tasks.get(task_id)
+        if info:
+            return info["session_id"]
+        # Not in memory — scan disk. Tasks always live under the
+        # session repo they were spawned for, so a walk is bounded.
+        from openprogram.store import default_store
+        store = default_store()
+        if not store.root_path.exists():
+            return None
+        for sdir in sorted(store.root_path.iterdir()):
+            if not sdir.is_dir():
+                continue
+            if (sdir / "tasks.json").exists():
+                t = _store_load(sdir.name, task_id)
+                if t is not None:
+                    return sdir.name
+        return None
+
+    def _update_attach_card(
+        self, task: Task, *, error_text: Optional[str] = None,
+    ) -> None:
+        """Patch the placeholder attach card the spawn path wrote so its
+        ``extra.attach`` reflects the final task outcome. Best-effort —
+        the attach card pickup path in the existing UI already shows
+        ``result.final_text``; this layer adds the task_id linkage
+        and status badge.
+        """
+        if not task.attach_pointer_id:
+            return
+        try:
+            from openprogram.agent.session_db import default_db
+            db = default_db()
+            pair = db._open(task.parent_session_id)  # noqa: SLF001
+            if pair is None:
+                return
+            _git, idx = pair
+            node = idx.nodes_by_id.get(task.attach_pointer_id)
+            if not node:
+                return
+            md = dict(node.metadata or {})
+            extra_raw = md.get("extra")
+            try:
+                extra_json = json.loads(extra_raw) if isinstance(extra_raw, str) else (extra_raw or {})
+            except Exception:
+                extra_json = {}
+            attach = dict(extra_json.get("attach") or {})
+            attach["task_id"] = task.id
+            attach["status"] = task.status.value
+            if task.head_id:
+                attach["head_id"] = task.head_id
+            # When the task completes, fill source_commit_id from the
+            # ContextCommit that ended up on its branch. The existing
+            # _run_spawn does this in synchronous mode — we mirror.
+            if task.head_id and not attach.get("source_commit_id"):
+                try:
+                    from openprogram.context.commit.store import (
+                        load_commit_for_head,
+                    )
+                    src = load_commit_for_head(
+                        db, task.parent_session_id, task.head_id,
+                    )
+                    if src is not None:
+                        attach["source_commit_id"] = src.id
+                except Exception:
+                    pass
+            extra_json["attach"] = attach
+            md["extra"] = json.dumps(extra_json, default=str)
+            # Update the persisted node's metadata + output text.
+            output = task.result_text or error_text or node.output or ""
+            try:
+                from openprogram.store import GraphStoreShim
+                shim = GraphStoreShim(db, task.parent_session_id)
+                shim.update(
+                    task.attach_pointer_id,
+                    output=output,
+                    metadata=md,
+                )
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _schedule_force_cancel(self, session_id: str, task_id: str) -> None:
+        """Watchdog: if the worker doesn't honour cancel within
+        ``_CANCEL_TIMEOUT_SECS``, force the entity to terminal."""
+        def _watch():
+            time.sleep(_CANCEL_TIMEOUT_SECS)
+            cur = _store_load(session_id, task_id)
+            if cur is None or is_terminal(cur.status):
+                return
+            try:
+                updated = _store_update_status(
+                    session_id, task_id, TaskStatus.CANCELLED,
+                    error="cancel timed out; worker may still be running",
+                )
+            except ValueError:
+                updated = None
+            if updated is not None:
+                _broadcast_task_status(updated)
+                self._wake_done(task_id)
+                self._update_attach_card(updated)
+                _broadcast_session_reload(session_id, reason="task_cancel_timeout")
+        threading.Thread(target=_watch, daemon=True).start()
+
+
+# ── Module-level singleton ─────────────────────────────────────
+
+_runner_lock = threading.Lock()
+_runner: Optional[TaskRunner] = None
+
+
+def get_runner() -> TaskRunner:
+    """Process-wide TaskRunner. Idempotent."""
+    global _runner
+    with _runner_lock:
+        if _runner is None:
+            _runner = TaskRunner()
+        return _runner
+
+
+def shutdown_runner() -> None:
+    """Tear down the singleton (mainly for tests)."""
+    global _runner
+    with _runner_lock:
+        if _runner is not None:
+            try:
+                _runner.shutdown(wait=False)
+            except Exception:
+                pass
+            _runner = None
+
+
+__all__ = [
+    "TaskRunner",
+    "get_runner",
+    "shutdown_runner",
+]
