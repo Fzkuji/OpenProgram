@@ -78,13 +78,18 @@ class DiscordChannel(Channel):
                 peer_id=scoped_id,
                 user_text=text,
                 user_display=str(msg.author),
+                progress_stream=True,
             )
-            for chunk in _chunk(reply_text, MAX_MSG_CHARS):
-                try:
-                    await msg.channel.send(chunk)
-                except Exception as e:  # noqa: BLE001
-                    print(f"[{tag}] send failed: {e}")
-                    return
+            # progress_stream=True 走通时 dispatch_inbound 内部已经把
+            # reply edit 进占位消息, 返回 None. 占位发失败 / 任何降级
+            # 路径会回退到返回字符串, 走旧 SDK send 路径.
+            if reply_text is not None:
+                for chunk in _chunk(reply_text, MAX_MSG_CHARS):
+                    try:
+                        await msg.channel.send(chunk)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"[{tag}] send failed: {e}")
+                        return
 
         async def _watch_stop() -> None:
             while not stop.is_set():

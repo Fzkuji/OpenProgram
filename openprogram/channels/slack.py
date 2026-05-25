@@ -92,13 +92,18 @@ class SlackChannel(Channel):
                 peer_id=scoped_id,
                 user_text=text,
                 user_display=user or scoped_id,
+                progress_stream=True,
             )
-            for chunk in _chunk(reply_text, MAX_MSG_CHARS):
-                try:
-                    web.chat_postMessage(channel=channel_id, text=chunk)
-                except Exception as e:  # noqa: BLE001
-                    print(f"[{tag}] send failed: {e}")
-                    return
+            # progress_stream=True 走通时 dispatch_inbound 内部已经把
+            # reply edit 进占位消息, 返回 None. 降级路径返回字符串, 走
+            # 旧 SDK chat_postMessage 路径.
+            if reply_text is not None:
+                for chunk in _chunk(reply_text, MAX_MSG_CHARS):
+                    try:
+                        web.chat_postMessage(channel=channel_id, text=chunk)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"[{tag}] send failed: {e}")
+                        return
 
         client.socket_mode_request_listeners.append(_handle)
         client.connect()
