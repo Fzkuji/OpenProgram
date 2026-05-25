@@ -59,6 +59,14 @@ export interface ChatMsg {
   status?: MessageStatus;
   function?: string;           // if this was /run
   display?: "runtime" | "normal";
+  /** Pass-through of metadata.source from the server so the client
+   *  can distinguish "real user typed" vs internal synthetic turns
+   *  (task_followup, merge_turn, agent_spawn). */
+  source?: string;
+  /** Pass-through of metadata.parent_id so we can correlate
+   *  internal-source msgs (e.g. task_followup) with the attach
+   *  pointer they belong to. */
+  parentId?: string;
   timestamp?: number;
   attempts?: { content: string; timestamp: number; tree?: TreeNode; usage?: unknown }[];
   current_attempt?: number;

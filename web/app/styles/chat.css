@@ -1472,3 +1472,28 @@
   font-style: italic;
   min-width: 0;
 }
+/* Auto-followup notice — synthetic ``[系统消息]…`` user msg the
+   runner writes after the sub-task finishes (display=runtime, hidden
+   from the chat panel). Surfacing it inline on the attach card so
+   the card represents the full sub-task lifecycle. */
+.attach-card-followup {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.attach-card-followup-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.attach-card-followup-body {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  max-height: 96px;
+  overflow: auto;
+}

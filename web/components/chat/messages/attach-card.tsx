@@ -57,10 +57,36 @@ function _activeHeadId(sessionId: string | null | undefined): string {
   return w.conversations?.[sessionId]?.head_id || "";
 }
 
+/** Look up the auto-followup user msg that the runner wrote after
+ *  this attach pointer's task completed. Matches by walking forward
+ *  in this session's message order from the attach pointer and
+ *  picking up the next user msg with ``source === "task_followup"``.
+ *  Returns its rendered content (the "[系统消息]..." prompt) so the
+ *  attach card can surface it inline. Returns null when the task
+ *  hasn't completed or the relationship isn't found. */
+function useFollowupNotice(attachMsgId: string): string | null {
+  const sessionId = useSessionStore((s) => s.currentSessionId);
+  return useSessionStore((s) => {
+    if (!sessionId) return null;
+    const order = s.messageOrder[sessionId] || [];
+    const myIdx = order.indexOf(attachMsgId);
+    if (myIdx < 0) return null;
+    for (let i = myIdx + 1; i < order.length; i++) {
+      const next = s.messagesById[order[i]];
+      if (!next) continue;
+      if (next.role === "user" && next.source === "task_followup") {
+        return next.content || null;
+      }
+    }
+    return null;
+  });
+}
+
 export function AttachCard({ msg }: { msg: ChatMsg }) {
   useMarkdownReady();
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const attach = msg.attach || {};
+  const followupNotice = useFollowupNotice(msg.id);
   const targetSessionId = attach.session_id || "";
   const targetHead = attach.head_id || "";
   const label = (attach.label || "").trim();
@@ -261,6 +287,21 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           >
             Cancel
           </button>
+        </div>
+      ) : null}
+      {/* Auto-followup notice — surfaced after the task completes.
+          The runner writes a synthetic ``[系统消息]…`` user msg to
+          trigger the parent agent to react to the sub-task's output.
+          That msg lives on the main lane (display=runtime, hidden
+          from the chat panel) but the user kept asking "what is
+          this DAG node I'm hovering?" because it wasn't surfaced
+          anywhere. Show it inline as a small italic footer on the
+          attach card so the card represents the full sub-task
+          lifecycle: spawn → status → preview → auto-followup. */}
+      {followupNotice ? (
+        <div className="attach-card-followup">
+          <div className="attach-card-followup-label">自动 followup</div>
+          <div className="attach-card-followup-body">{followupNotice}</div>
         </div>
       ) : null}
     </div>

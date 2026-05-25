@@ -133,6 +133,8 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         status: "done",
         timestamp: ts,
         agentId: m.agent_id || undefined,
+        source: typeof m.source === "string" ? m.source : undefined,
+        parentId: typeof m.parent_id === "string" ? m.parent_id : undefined,
         ...siblingFields(m),
       });
       return;
