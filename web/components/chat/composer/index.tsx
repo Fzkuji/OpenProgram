@@ -24,7 +24,7 @@ import { createPortal } from "react-dom";
 import { useSessionStore } from "@/lib/session-store";
 
 import { ContextBadge } from "../context-badge";
-import { FunctionForm, visibleParams } from "./fn-form";
+import { FunctionForm, visibleParams } from "./fn-form/fn-form";
 import {
   PlusIcon,
   SendIcon,
@@ -32,8 +32,8 @@ import {
   ToolsIcon,
   WebSearchIcon,
 } from "./icons";
-import { PlusMenuItem, ToolChip } from "./menu-pieces";
-import { type SlashCommand } from "./slash-commands";
+import { PlusMenuItem, ToolChip } from "./controls/menu-pieces";
+import { type SlashCommand } from "./slash/slash-commands";
 import { sendChatMessage } from "./legacy-send";
 import {
   LONG_PASTE_THRESHOLD,
@@ -42,21 +42,21 @@ import {
   pasteStore,
   placeholderToken,
   referencedPasteIds,
-} from "./paste-store";
-import { PasteChips } from "./paste-chips";
-import { collectImagesFromTransfer } from "./image-attach";
-import { expandAtMentions } from "./at-mention";
-import { FileMenu } from "./file-menu";
-import { FileTiles } from "./file-tiles";
-import { useComposerAttachments } from "./use-composer-attachments";
-import { useFileMention } from "./use-file-mention";
-import { ImageAttachStrip } from "./image-attach-strip";
-import { ThinkingEffortPill } from "./thinking-effort-pill";
-import { useFnFormState } from "./use-fn-form-state";
-import { useFnFormWrapper } from "./use-fn-form-wrapper";
-import { useSlashMenu } from "./use-slash-menu";
-import { useThinkingEffort } from "./use-thinking-effort";
-import { useToolsToggles } from "./use-tools-toggles";
+} from "./paste/paste-store";
+import { ChatInputRow } from "./chat-input-row";
+import { SlashMenu } from "./slash/slash-menu";
+import { collectImagesFromTransfer } from "./attach/image-attach";
+import { expandAtMentions } from "./attach/at-mention";
+import { FileTiles } from "./attach/file-tiles";
+import { useComposerAttachments } from "./attach/use-composer-attachments";
+import { useFileMention } from "./attach/use-file-mention";
+import { ImageAttachStrip } from "./attach/image-attach-strip";
+import { ThinkingEffortPill } from "./controls/thinking-effort-pill";
+import { useFnFormState } from "./fn-form/use-fn-form-state";
+import { useFnFormWrapper } from "./fn-form/use-fn-form-wrapper";
+import { useSlashMenu } from "./slash/use-slash-menu";
+import { useThinkingEffort } from "./controls/use-thinking-effort";
+import { useToolsToggles } from "./controls/use-tools-toggles";
 import styles from "./composer.module.css";
 
 /** Don't recall a user message longer than this through ↑/↓ history
@@ -412,6 +412,14 @@ export function Composer() {
     // screenshot" without text. Otherwise require at least one of
     // text or attached image.
     if (!trimmed && pendingImages.length === 0 && pendingDocs.length === 0) {
+      return;
+    }
+    // Block submit while any attachment is still being decoded — the
+    // placeholder chips have empty ``attachment.data`` / null
+    // ``content``, which would deliver broken payloads. The user
+    // sees the chips in a loading shimmer; they just need to wait.
+    if (pendingImages.some((p) => p.loading)
+        || pendingDocs.some((d) => d.loading)) {
       return;
     }
     if (slash.query !== null && slash.runCommand(trimmed)) {
@@ -788,42 +796,13 @@ export function Composer() {
           slashClip's bottom:100% lands exactly at the wrapper top. */}
       <div className={styles.composerStack}>
       <div className={styles.slashClip}>
-        {slash.visible && (
-          <div
-            className={`${styles.slashMenu} ${slash.closing ? styles.closing : styles.opening}`}
-          >
-            {slash.matches.map((c, i) => (
-              <div
-                key={c.name}
-                ref={
-                  // Scroll the keyboard-highlighted item into view when
-                  // arrow nav drives it off-screen. Mouse hover no
-                  // longer touches activeIndex (the CSS :hover state
-                  // alone provides hover feedback), so this fires
-                  // only on keyboard moves — no more jiggle when the
-                  // cursor drifts onto a bottom item.
-                  i === slash.activeIndex
-                    ? (el) => el?.scrollIntoView({ block: "nearest" })
-                    : undefined
-                }
-                className={`${styles.slashMenuItem} ${i === slash.activeIndex ? styles.slashMenuItemActive : ""}`}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onMenuItemClick(c);
-                }}
-              >
-                <span className={styles.slashMenuName}>{c.name}</span>
-                {c.args ? (
-                  <>
-                    {" "}
-                    <span className={styles.slashMenuArgs}>{c.args}</span>
-                  </>
-                ) : null}
-                <div className={styles.slashMenuDesc}>{c.description}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        <SlashMenu
+          visible={slash.visible}
+          closing={slash.closing}
+          matches={slash.matches}
+          activeIndex={slash.activeIndex}
+          onPick={onMenuItemClick}
+        />
       </div>
 
       <div
@@ -863,55 +842,26 @@ export function Composer() {
             onSubmit={submitFnForm}
           />
         ) : (
-          <>
-            <PasteChips
-              entries={pastedEntries}
-              missing={pasteMissing}
-              onRemove={removePaste}
-            />
-            <div key="top-half" className={styles.inputTopRow}>
-              <textarea
-                ref={textareaRef}
-                id="composer-chat-input"
-                name="chat_input"
-                autoComplete="off"
-                className={styles.chatInput}
-                placeholder=" create / run / edit or ask anything... (type / for commands)"
-                rows={1}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  setCaretPos(e.target.selectionStart ?? e.target.value.length);
-                }}
-                onSelect={(e) => setCaretPos(
-                  e.currentTarget.selectionStart ?? 0,
-                )}
-                onKeyUp={(e) => setCaretPos(
-                  e.currentTarget.selectionStart ?? 0,
-                )}
-                onClick={(e) => setCaretPos(
-                  e.currentTarget.selectionStart ?? 0,
-                )}
-                onKeyDown={onKeyDown}
-                onPaste={onPaste}
-                // File drops are caught at the window level (see
-                // useComposerAttachments) so the textarea doesn't
-                // need its own onDragOver/onDrop — the window
-                // handler beats the textarea's default text-insert.
-                onFocus={() => slash.setFocused(true)}
-                onBlur={() => slash.setFocused(false)}
-              />
-              <FileMenu
-                items={fileMatches}
-                selectedIndex={fileMenuIndex}
-                position={atToken ? fileMenuPos : null}
-                onHover={setFileMenuIndex}
-                onPick={pickFile}
-                loading={fileMenuLoading}
-                query={atToken?.partial ?? ""}
-              />
-            </div>
-          </>
+          <ChatInputRow
+            textareaRef={textareaRef}
+            input={input}
+            setInput={setInput}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            onFocus={() => slash.setFocused(true)}
+            onBlur={() => slash.setFocused(false)}
+            setCaretPos={setCaretPos}
+            pastedEntries={pastedEntries}
+            pasteMissing={pasteMissing}
+            removePaste={removePaste}
+            atToken={atToken}
+            fileMatches={fileMatches}
+            fileMenuIndex={fileMenuIndex}
+            setFileMenuIndex={setFileMenuIndex}
+            fileMenuLoading={fileMenuLoading}
+            fileMenuPos={fileMenuPos}
+            pickFile={pickFile}
+          />
         )}
         {/* Outgoing fn-form overlay — only present during a fn → fn
             switch. Rendered AFTER the main form so that

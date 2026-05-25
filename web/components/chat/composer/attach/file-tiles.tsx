@@ -29,6 +29,9 @@ export interface PendingDoc {
   content: string | null;
   /** Raw size in bytes — surfaced in the tile's hover title. */
   sizeBytes: number;
+  /** True while the file is still being read. Shows a subtle
+   *  shimmer in place of the badge until reading finishes. */
+  loading?: boolean;
 }
 
 interface FileTilesProps {
@@ -71,6 +74,23 @@ const TILE_KEYFRAMES = `
 }
 .composer-file-tile-close:hover {
   background: rgba(255,255,255,0.18) !important;
+}
+.composer-file-tile-skeleton {
+  width: 48px;
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 0%,
+    var(--bg-secondary) 50%,
+    var(--bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: tileSkeletonShimmer 1.2s ease-in-out infinite;
+}
+@keyframes tileSkeletonShimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }
 `;
 
@@ -164,7 +184,12 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
         >
           {doc.filename}
         </div>
-        {doc.ext && (
+        {doc.loading ? (
+          // Skeleton shimmer in place of the badge while readDroppedTextFile
+          // runs — keeps the tile's vertical rhythm so it doesn't jump
+          // once the badge appears.
+          <div className="composer-file-tile-skeleton" aria-label="Loading…" />
+        ) : doc.ext && (
           <div
             style={{
               alignSelf: "flex-start",

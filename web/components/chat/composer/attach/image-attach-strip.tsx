@@ -59,11 +59,22 @@ export function ImageAttachStrip({
               title={p.attachment.filename || p.attachment.media_type}
               className={styles.imageAttachChip}
             >
-              <img
-                src={p.previewUrl}
-                alt={p.attachment.filename || "image"}
-                className={styles.imageAttachImg}
-              />
+              {p.previewUrl ? (
+                <img
+                  src={p.previewUrl}
+                  alt={p.attachment.filename || "image"}
+                  className={styles.imageAttachImg}
+                />
+              ) : (
+                // Skeleton tile while the thumbnail is still being
+                // decoded — sized identically to the real <img> so
+                // the chip doesn't jump when the bitmap arrives.
+                <span
+                  className={styles.imageAttachImg}
+                  aria-label="Loading…"
+                  data-loading="true"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => onRemove(p.id)}

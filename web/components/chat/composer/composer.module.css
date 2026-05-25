@@ -257,6 +257,24 @@
   object-fit: cover;
   display: block;
 }
+/* Skeleton variant — same dimensions as the real <img>, with a
+   subtle horizontal shimmer to read as "loading". Used for chips
+   that were added optimistically on drop before the decode + resize
+   pipeline finishes filling in the bitmap. */
+.imageAttachImg[data-loading="true"] {
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 0%,
+    var(--bg-secondary) 50%,
+    var(--bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: imageSkeletonShimmer 1.2s ease-in-out infinite;
+}
+@keyframes imageSkeletonShimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
 .imageAttachRemove {
   position: absolute;
   /* Inside the chip, top-right corner. Hidden by default; fades in
@@ -640,10 +658,12 @@
   pointer-events: auto;
   max-width: 720px;
   width: min(90%, 720px);
-  /* Symmetric padding on all four sides — the gap between the
-     outer menu border and each item is identical top / right /
-     bottom / left. */
-  padding: 8px;
+  /* Symmetric *visual* gap on all four sides. Top / left / right
+     each get 8px padding + 1px border = 9px. The bottom border is
+     removed so the menu merges with the textarea below, so we
+     compensate with an extra 1px of bottom padding to keep the
+     gap identical. */
+  padding: 8px 8px 9px 8px;
   background: var(--bg-tertiary);
   border: 1px solid rgba(0, 0, 0, 0.18);
   border-radius: 14px 14px 0 0;

@@ -60,10 +60,18 @@ function looksLikeText(file: File | Blob, filename: string): boolean {
 export interface PendingImage {
   /** Stable id used by the chip row + remove callback. */
   id: string;
-  /** Object URL for the thumbnail (revoke on remove). */
-  previewUrl: string;
+  /** Object URL for the thumbnail (revoke on remove). ``null`` while
+   *  the file is still being decoded — the chip shows a skeleton
+   *  shimmer until this fills in. */
+  previewUrl: string | null;
+  /** Outgoing attachment payload. ``data`` is empty while reading;
+   *  callers must wait for ``loading: false`` before sending. */
   attachment: ChatAttachment;
   sizeBytes: number;
+  /** True while the decode + base64 + thumbnail pipeline is still
+   *  running. The UI uses this to render a placeholder tile that
+   *  fills in once processing completes. */
+  loading?: boolean;
 }
 
 /** Read a ``File`` / ``Blob`` into a PendingImage, base64-encoded.

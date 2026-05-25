@@ -20,6 +20,8 @@ import {
   type PendingImage,
   collectImagesFromFiles,
   readDroppedTextFile,
+  readImageFile,
+  ACCEPTED_IMAGE_MIME,
 } from "./image-attach";
 import type { PendingDoc } from "./file-tiles";
 
@@ -70,7 +72,9 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
       const next: PendingImage[] = [];
       for (const p of prev) {
         if (p.id === id) {
-          try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
+          if (p.previewUrl) {
+            try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
+          }
         } else {
           next.push(p);
         }
@@ -79,10 +83,31 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
     });
   }, []);
 
+  /** Replace a placeholder image entry (loading: true) with the
+   *  finalised PendingImage once decode + thumbnail finish. Keeps
+   *  the same id so the chip doesn't unmount / remount. */
+  const updateImage = useCallback(
+    (id: string, patch: Partial<PendingImage>) => {
+      setPendingImages((prev) => prev.map((p) =>
+        p.id === id ? { ...p, ...patch } : p,
+      ));
+    },
+    [],
+  );
+
   const addDocs = useCallback((docs: PendingDoc[]) => {
     if (docs.length === 0) return;
     setPendingDocs((prev) => [...prev, ...docs]);
   }, []);
+
+  const updateDoc = useCallback(
+    (id: string, patch: Partial<PendingDoc>) => {
+      setPendingDocs((prev) => prev.map((d) =>
+        d.id === id ? { ...d, ...patch } : d,
+      ));
+    },
+    [],
+  );
 
   const removeDoc = useCallback((id: string) => {
     setPendingDocs((prev) => prev.filter((d) => d.id !== id));
@@ -118,41 +143,73 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
     const imageFiles: File[] = [];
     const otherFiles: File[] = [];
     for (const f of files) {
-      if (f.type.startsWith("image/")) imageFiles.push(f);
+      if (ACCEPTED_IMAGE_MIME.has(f.type)) imageFiles.push(f);
       else otherFiles.push(f);
     }
-    // Kick off image + doc reads in parallel. ``collectImagesFromFiles``
-    // is itself internally parallel now (see image-attach.ts); doing
-    // images and docs together as well saves the doc-decode latency
-    // from hiding behind the image decode for mixed drops.
-    // Each branch updates state independently as soon as ITS results
-    // are ready, so the UI shows half the chips first if one branch
-    // finishes early — feels much snappier than waiting for both.
-    const imagesPromise = imageFiles.length > 0
-      ? collectImagesFromFiles(imageFiles).then((imgs) => addImages(imgs))
-          .catch((err) => setImageError(String(err)))
-      : Promise.resolve();
-    const docsPromise = otherFiles.length > 0
-      ? Promise.all(
-          otherFiles.map(async (f) => {
-            const ext = f.name.includes(".")
-              ? f.name.split(".").pop()!.toLowerCase()
-              : "";
-            let content: string | null = null;
-            const read = await readDroppedTextFile(f);
-            if (read) content = read.content;
-            return {
-              id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              filename: f.name,
-              ext,
-              content,
-              sizeBytes: f.size,
-            } as PendingDoc;
-          }),
-        ).then((docs) => addDocs(docs))
-      : Promise.resolve();
-    await Promise.all([imagesPromise, docsPromise]);
-  }, [addDocs, addImages, setImageError]);
+    // STAGE 1 — immediately push placeholder chips for every file so
+    // the user sees something the very next frame after dropping.
+    // ``loading: true`` makes the chip render a skeleton in place of
+    // the thumbnail / badge until stage 2 fills in the real data.
+    // This is the pattern claude.ai uses: drop → tiles appear
+    // instantly with a shimmer → content fills in.
+    const imagePlaceholders: PendingImage[] = imageFiles.map((f) => ({
+      id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      previewUrl: null,
+      sizeBytes: f.size,
+      attachment: {
+        type: "image" as const,
+        data: "",
+        media_type: f.type || "image/png",
+        ...(f.name ? { filename: f.name } : {}),
+      },
+      loading: true,
+    }));
+    const docPlaceholders: PendingDoc[] = otherFiles.map((f) => ({
+      id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      filename: f.name,
+      ext: f.name.includes(".")
+        ? f.name.split(".").pop()!.toLowerCase()
+        : "",
+      content: null,
+      sizeBytes: f.size,
+      loading: true,
+    }));
+    addImages(imagePlaceholders);
+    addDocs(docPlaceholders);
+
+    // STAGE 2 — kick off the actual reads in parallel; each one
+    // patches its placeholder in place when done so the chip never
+    // unmounts. Errors leave the chip in ``loading: false`` with no
+    // thumbnail; the user can × it manually.
+    imagePlaceholders.forEach((placeholder, i) => {
+      const f = imageFiles[i];
+      readImageFile(f, f.name || undefined)
+        .then((real) => {
+          updateImage(placeholder.id, {
+            previewUrl: real.previewUrl,
+            attachment: real.attachment,
+            loading: false,
+          });
+        })
+        .catch((err) => {
+          updateImage(placeholder.id, { loading: false });
+          setImageError(String(err));
+        });
+    });
+    docPlaceholders.forEach((placeholder, i) => {
+      const f = otherFiles[i];
+      readDroppedTextFile(f)
+        .then((read) => {
+          updateDoc(placeholder.id, {
+            content: read ? read.content : null,
+            loading: false,
+          });
+        })
+        .catch(() => {
+          updateDoc(placeholder.id, { loading: false });
+        });
+    });
+  }, [addDocs, addImages, setImageError, updateDoc, updateImage]);
 
   // Window-level guard — without this Chrome treats a file drop on
   // any unhandled element (page background, sidebar, status bar,
@@ -237,7 +294,9 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
   const clearAfterSubmit = useCallback(() => {
     setPendingImages((prev) => {
       for (const p of prev) {
-        try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
+        if (p.previewUrl) {
+          try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
+        }
       }
       return [];
     });

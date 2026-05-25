@@ -7,8 +7,8 @@
 
 import type { ReactNode } from "react";
 
-import styles from "./composer.module.css";
-import { CheckIcon, ChipCloseIcon } from "./icons";
+import styles from "../composer.module.css";
+import { CheckIcon, ChipCloseIcon } from "../icons";
 
 export function ToolChip({
   icon,
