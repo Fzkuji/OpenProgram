@@ -92,7 +92,7 @@ def register(app: FastAPI) -> None:
                                 detail=f"server '{name}' not in config")
         merged = match.to_dict()
         for k in ("type", "command", "env", "url", "headers", "auth",
-                  "enabled", "timeout_seconds"):
+                  "enabled", "timeout_seconds", "always_load"):
             if k in body:
                 merged[k] = body[k]
         new_cfg = parse_entry(name, merged)
@@ -199,6 +199,7 @@ def _parse_body(body: dict) -> MCPServerConfig:
         "type": body.get("type", "local"),
         "enabled": body.get("enabled", True),
         "timeout_seconds": body.get("timeout_seconds", 30.0),
+        "always_load": body.get("always_load", False),
     }
     if entry["type"] == "local":
         entry["command"] = body.get("command")

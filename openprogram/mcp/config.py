@@ -128,6 +128,17 @@ class MCPServerConfig:
     # shared ----------------------------------------------------------
     enabled: bool = True
     timeout_seconds: float = 30.0
+    # When False (default), tools from this server are registered with
+    # ``defer=True`` so their full JSON Schemas don't bloat every LLM
+    # request — the model discovers them via the deferred-tool catalog
+    # in the system prompt and uses ``tool_search`` to load on demand.
+    # Flip to True for a server whose tools the model uses every turn
+    # (e.g. a focused drawio server with a handful of tools); the full
+    # schema then appears in the initial tools array from turn 1.
+    #
+    # Per-tool ``_meta['anthropic/alwaysLoad'] == true`` overrides
+    # server policy for individual tools (matches claude-code semantics).
+    always_load: bool = False
 
     @property
     def is_remote(self) -> bool:
@@ -138,6 +149,7 @@ class MCPServerConfig:
             "type": self.type,
             "enabled": self.enabled,
             "timeout_seconds": self.timeout_seconds,
+            "always_load": self.always_load,
         }
         if self.type == LOCAL:
             out["command"] = list(self.command)
@@ -235,6 +247,7 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
 
     enabled = bool(entry.get("enabled", True))
     timeout = float(entry.get("timeout_seconds", 30.0))
+    always_load = bool(entry.get("always_load", False))
 
     if transport == LOCAL:
         command = entry.get("command")
@@ -252,6 +265,7 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
             env={str(k): str(v) for k, v in env_obj.items()},
             enabled=enabled,
             timeout_seconds=timeout,
+            always_load=always_load,
         )
 
     # remote (http / sse) --------------------------------------------
@@ -298,6 +312,7 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
         oauth=oauth,
         enabled=enabled,
         timeout_seconds=timeout,
+        always_load=always_load,
     )
 
 

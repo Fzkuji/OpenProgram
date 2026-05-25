@@ -73,6 +73,7 @@ def _status_dict(name: str, client: MCPClient) -> dict[str, Any]:
         "type": cfg.type,
         "enabled": cfg.enabled,
         "timeout_seconds": cfg.timeout_seconds,
+        "always_load": cfg.always_load,
         "ready": client.is_ready,
         "error": client.error,
         "tool_count": len(client.tools),

@@ -40,6 +40,7 @@ interface ServerStatus {
   type: string;               // "local" | "http" | "sse"
   enabled: boolean;
   timeout_seconds: number;
+  always_load: boolean;        // ship full schemas on turn 1 (vs defer via tool_search)
   ready: boolean;
   error: string | null;
   tool_count: number;
@@ -219,6 +220,7 @@ export function McpPage() {
       oauthRedirectPort: 0,
       enabled: s.enabled,
       timeout_seconds: s.timeout_seconds,
+      alwaysLoad: !!s.always_load,
     });
   }
   function openAdd() {
@@ -238,6 +240,11 @@ export function McpPage() {
       oauthRedirectPort: 0,
       enabled: true,
       timeout_seconds: 30,
+      // Default deferred — matches claude-code's policy that all MCP
+      // tools go through ToolSearch unless explicitly opted in. Users
+      // flip this on for a small focused server whose tools the model
+      // uses every turn (e.g. drawio) so its 3-5 schemas are immediate.
+      alwaysLoad: false,
     });
   }
 
@@ -456,6 +463,11 @@ function DetailView({
         <Sep />
         <ConfigChip k="Timeout" v={`${server.timeout_seconds}s`} />
         <Sep />
+        <ConfigChip
+          k="Schemas"
+          v={server.always_load ? "always loaded" : "deferred (tool_search)"}
+        />
+        <Sep />
         <ConfigChip k="Prefix" v={<code>{server.name}__</code>} />
       </div>
 
@@ -571,6 +583,7 @@ interface EditTarget {
   // shared
   enabled: boolean;
   timeout_seconds: number;
+  alwaysLoad: boolean;
 }
 
 function EditDialog({
@@ -614,6 +627,7 @@ function EditDialog({
       type: state.transport,
       enabled: state.enabled,
       timeout_seconds: state.timeout_seconds,
+      always_load: state.alwaysLoad,
     };
     if (state.transport === "local") {
       const cmd = splitCommand(state.command);
@@ -903,6 +917,29 @@ function EditDialog({
                 onCheckedChange={(c) => setState({ ...state, enabled: c })}
               />
               <Label htmlFor="mcp-enabled" className="cursor-pointer">Enabled</Label>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 rounded-md border p-3"
+               style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+            <Switch
+              id="mcp-always-load"
+              checked={state.alwaysLoad}
+              onCheckedChange={(c) => setState({ ...state, alwaysLoad: c })}
+            />
+            <div className="flex-1">
+              <Label htmlFor="mcp-always-load" className="cursor-pointer">
+                Always load tool schemas (skip deferred-loading)
+              </Label>
+              <div className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
+                Off (default): tools appear by name in a system-prompt
+                catalog; the model loads schemas on demand via
+                <code className="mx-1">tool_search</code>, saving tokens
+                when this server has many tools. On: every tool ships
+                its full JSON Schema with each LLM request — flip this
+                for small focused servers (3-5 tools) the model uses
+                every turn.
+              </div>
             </div>
           </div>
 

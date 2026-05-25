@@ -78,14 +78,44 @@ def register_remote_tool(client: MCPClient, tool: Tool) -> Optional[str]:
         return convert_call_result(result, server=client.config.name,
                                     tool_name=tool.name)
 
-    _build_and_register_tool(
+    # Deferred-loading policy (mirrors claude-code's isDeferredTool):
+    #
+    #   1. The whole MCP server can opt out via `always_load=true` in
+    #      its config — every tool ships its full schema from turn 1.
+    #   2. Per-tool, the remote may signal opt-out via
+    #      `_meta['anthropic/alwaysLoad'] == true` — same key claude-code
+    #      uses, so MCP servers written for it work here unchanged.
+    #   3. Otherwise defer: only the name lands in the system-prompt
+    #      catalog, the LLM fetches the schema via `tool_search` when
+    #      it actually wants to use the tool. This is what keeps a
+    #      35-tool Linear server from blowing 20k tokens per request.
+    meta = getattr(tool, "_meta", None) or {}
+    always_load_tool = (
+        client.config.always_load
+        or meta.get("anthropic/alwaysLoad") is True
+    )
+    # Optional per-tool search hint — a short capability phrase the
+    # ToolSearch keyword matcher can rank against. We store it on the
+    # AgentTool for future use (current ToolSearch is name-based only).
+    search_hint = meta.get("anthropic/searchHint")
+    if isinstance(search_hint, str):
+        search_hint = " ".join(search_hint.split()).strip() or None
+    else:
+        search_hint = None
+
+    agent_tool = _build_and_register_tool(
         name=namespaced,
         description=description,
         parameters=parameters,
         label=namespaced,
         execute=_execute,
         toolsets=["mcp", f"mcp:{client.config.name}"],
+        defer=not always_load_tool,
     )
+    # Sidecar attrs for the MCP origin + search hint — the dispatcher
+    # and any future ToolSearch keyword mode reach in through these.
+    setattr(agent_tool, "_mcp_server", client.config.name)
+    setattr(agent_tool, "_search_hint", search_hint)
     return namespaced
 
 
