@@ -164,12 +164,18 @@ async def handle_chat(ws, cmd: dict):
     if parsed["action"] == "run":
         user_msg["display"] = "runtime"
     elif parsed["action"] == "spawn":
-        # Tag the /task user msg so the DAG layout treats it as a
-        # branch fork (the main trunk stops here; the spawned
-        # turn + its sub-agent reply live on a new lane). Same idea
-        # as git: /task probe → `git checkout -b probe`, main ref
-        # stays where it was.
-        user_msg["function"] = "task"
+        # SYNC path only: tag the /task user msg so the DAG layout
+        # treats it as a branch fork (main trunk stops here; the
+        # spawned turn + sub-agent reply live on a new lane). Same
+        # idea as git: /task probe → `git checkout -b probe`.
+        # ASYNC path: don't tag — the spawned turn lives on its own
+        # session (or independent branch), not as a fork of THIS
+        # message. Marking it function="task" made the user msg
+        # surface in the Branches panel as a stray named branch
+        # (with the raw command as its label) because lane.py
+        # treated it as a fork tip with no follow-up.
+        if parsed.get("wait", True):
+            user_msg["function"] = "task"
     if attachments:
         manifest = [
             {"type": a.get("type"), "media_type": a.get("media_type"),
