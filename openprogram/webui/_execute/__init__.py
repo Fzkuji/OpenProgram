@@ -354,15 +354,32 @@ def _run_spawn_async(
             node = idx.nodes_by_id.get(attach_node_id)
             if node:
                 md = dict(node.metadata or {})
-                extra_raw = md.get("extra")
-                try:
-                    extra_json = json.loads(extra_raw) if isinstance(extra_raw, str) else (extra_raw or {})
-                except Exception:
-                    extra_json = {}
-                attach = dict(extra_json.get("attach") or {})
+                # Prefer the top-level metadata.attach dict — the
+                # _msg_adapter promotes the placeholder's extra.attach
+                # blob to metadata.attach on the way in (and pops the
+                # original `extra` field), so by the time we stitch
+                # here the only source of truth for label / status /
+                # session_id is metadata.attach. Falling back to
+                # extra_json.attach was bug city: it returned {} and
+                # blew away every field except task_id.
+                if isinstance(md.get("attach"), dict):
+                    attach = dict(md["attach"])
+                else:
+                    extra_raw = md.get("extra")
+                    try:
+                        extra_json = (
+                            json.loads(extra_raw)
+                            if isinstance(extra_raw, str)
+                            else (extra_raw or {})
+                        )
+                    except Exception:
+                        extra_json = {}
+                    attach = dict(extra_json.get("attach") or {})
                 attach["task_id"] = task_id
-                extra_json["attach"] = attach
-                md["extra"] = json.dumps(extra_json, default=str)
+                # Keep extra in sync for any consumer that reads from
+                # that path too (Backend round-trip drops the field,
+                # but downstream callers may still inspect it).
+                md["extra"] = json.dumps({"attach": attach}, default=str)
                 # Mirror onto the top-level metadata.attach the same
                 # way the runner does in _update_attach_card — the
                 # frontend's _readAttach reads the top-level first
