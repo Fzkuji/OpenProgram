@@ -62,6 +62,47 @@ async def handle_chat(ws, cmd: dict):
     if not text and attachments:
         text = "(see attachment)"
 
+    # /skill <name> [rest of prompt] — expand the message in place by
+    # loading the named SKILL.md and prepending its body, so the next
+    # LLM turn has the skill's instructions available without us having
+    # to touch tool dispatch or session config plumbing.
+    if text.lower().startswith("/skill "):
+        rest_after_cmd = text[len("/skill "):].strip()
+        if rest_after_cmd:
+            head, _, tail = rest_after_cmd.partition(" ")
+            skill_name = head.strip()
+            user_request = tail.strip()
+            try:
+                from openprogram.skills.tool import invoke as _skill_invoke
+                from openprogram.skills.loader import AmbiguousSkillError
+                try:
+                    skill_md = _skill_invoke(skill_name)
+                    activation = (
+                        f"Activating skill: **{skill_name}**\n\n"
+                        f"{skill_md}\n\n"
+                        f"---\n\n"
+                    )
+                    text = activation + (
+                        user_request if user_request
+                        else f"Please apply the {skill_name} skill."
+                    )
+                except AmbiguousSkillError as e:
+                    text = (
+                        f"Skill name {skill_name!r} is ambiguous. "
+                        f"Candidates: {', '.join(e.candidates)}.\n\n"
+                        f"Please retry with the full hierarchical name."
+                    )
+                except KeyError:
+                    text = (
+                        f"Skill {skill_name!r} not installed. "
+                        f"Browse /skills to install it first."
+                    )
+            except Exception as _skill_err:
+                # Defensive: if anything in skill loading blows up,
+                # leave the raw /skill text intact so the user can see
+                # what went wrong rather than getting a silent miss.
+                text = f"[/skill load failed: {_skill_err}]\n\n{text}"
+
     new_channel = (cmd.get("channel") or "").strip().lower() or None
     new_account_id = (cmd.get("account_id") or "").strip() or None
     new_peer = (cmd.get("peer") or "").strip() or None

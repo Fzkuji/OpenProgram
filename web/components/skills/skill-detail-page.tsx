@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Markdown } from "@/lib/markdown";
 import { Button } from "@/components/ui/button";
 import type { SkillDetail } from "@/lib/skills-store";
+import { useSessionStore } from "@/lib/session-store";
 import styles from "./skills-page.module.css";
 
 type Tab = "skill" | "files" | "versions";
@@ -40,6 +41,7 @@ function relTime(ms: number): string {
 
 export function SkillDetailPage({ name }: { name: string }) {
   const router = useRouter();
+  const setComposerInput = useSessionStore((s) => s.setComposerInput);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("skill");
@@ -221,6 +223,16 @@ export function SkillDetailPage({ name }: { name: string }) {
             {detail.source}
           </span>
           <div className={styles.toolbar}>
+            {!editing && (
+              <Button size="sm" onClick={() => {
+                // Preload the chat composer with the slash command
+                // (backend expands it into the SKILL.md preamble).
+                // Lands on the current chat session if one is open,
+                // otherwise on /chat with a fresh composer.
+                setComposerInput(`/skill ${detail.name} `);
+                router.push("/chat");
+              }}>Use in chat →</Button>
+            )}
             {canEdit && !editing && (
               <Button variant="outline" size="sm" onClick={startEdit}>Edit</Button>
             )}
