@@ -58,11 +58,8 @@ const TILE_KEYFRAMES = `
 }
 .composer-file-tile:hover {
   background: var(--bg-tertiary);
-  /* Brighter ring + soft white outer glow. Dark drop-shadow is
-     invisible on the dark chat surface, so we layer a faint warm-
-     white halo to read as 'lifted'. */
-  box-shadow: 0 0 0 1px rgba(226,225,218,0.40),
-              0 0 10px rgba(226,225,218,0.08);
+  /* Just a brighter 1px ring — no outer glow / halo. */
+  box-shadow: 0 0 0 1px rgba(226,225,218,0.40);
 }
 .composer-file-tile-close {
   opacity: 0;
