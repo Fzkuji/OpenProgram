@@ -50,6 +50,17 @@ export interface CatalogEntry {
   description: string;
   path: string;
   files: string[];
+  // Optional rich metadata — populated when the upstream source exposes
+  // it (today only ClawHub does). The UI uses these to render a card
+  // grid sorted by downloads/stars/etc.
+  display_name?: string;
+  version?: string;
+  stars?: number;
+  downloads?: number;
+  installs?: number;
+  updated_at?: number;  // unix ms
+  tags?: string[];
+  content_hash?: string;
 }
 
 interface SkillsState {

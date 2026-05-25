@@ -299,6 +299,32 @@ export function DiscoverySources() {
   );
 }
 
+type SortKey = "default" | "name" | "stars" | "downloads" | "updated";
+
+function hasStats(entries: CatalogEntry[]): boolean {
+  return entries.some(
+    (e) => (e.stars || 0) > 0 || (e.downloads || 0) > 0 || (e.updated_at || 0) > 0,
+  );
+}
+
+function fmtCount(n: number | undefined): string {
+  const v = n || 0;
+  if (v >= 1_000_000) return (v / 1_000_000).toFixed(1) + "M";
+  if (v >= 1_000) return (v / 1_000).toFixed(1) + "k";
+  return String(v);
+}
+
+function relTime(ms: number | undefined): string {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  const d = Math.floor(diff / 86_400_000);
+  if (d < 1) return "today";
+  if (d < 30) return d + "d ago";
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return mo + "mo ago";
+  return Math.floor(d / 365) + "y ago";
+}
+
 function CatalogList({
   entries, source, installedNames, outdatedNames, installingKey, onInstall,
 }: {
@@ -310,58 +336,137 @@ function CatalogList({
   onInstall: (source: Source, name: string) => void;
 }) {
   const [filter, setFilter] = useState("");
-  const shown = useMemo(() => {
+  const hasMeta = useMemo(() => hasStats(entries), [entries]);
+  const [sort, setSort] = useState<SortKey>(hasMeta ? "downloads" : "default");
+
+  const filtered = useMemo(() => {
     if (!filter.trim()) return entries;
     const q = filter.toLowerCase();
     return entries.filter(
       (e) =>
         e.name.toLowerCase().includes(q) ||
-        e.description.toLowerCase().includes(q),
+        (e.description || "").toLowerCase().includes(q) ||
+        (e.display_name || "").toLowerCase().includes(q),
     );
   }, [entries, filter]);
 
+  const shown = useMemo(() => {
+    const arr = [...filtered];
+    switch (sort) {
+      case "name":
+        arr.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case "stars":
+        arr.sort((a, b) => (b.stars || 0) - (a.stars || 0));
+        break;
+      case "downloads":
+        arr.sort((a, b) => (b.downloads || 0) - (a.downloads || 0));
+        break;
+      case "updated":
+        arr.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+        break;
+      case "default":
+      default:
+        break;
+    }
+    return arr;
+  }, [filtered, sort]);
+
   return (
     <div>
-      <div className="mb-2 flex items-center gap-2">
-        <Input value={filter} onChange={(e) => setFilter(e.target.value)}
-          placeholder={`Filter ${entries.length} skill${entries.length === 1 ? "" : "s"}…`} />
+      <div className="mb-3 flex items-center gap-2">
+        <Input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder={`Filter ${entries.length} skill${entries.length === 1 ? "" : "s"}…`}
+        />
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
+          className="shrink-0 rounded border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+        >
+          <option value="default">Sort: {hasMeta ? "Trending" : "Default"}</option>
+          <option value="name">Name</option>
+          {hasMeta && <option value="downloads">Most downloaded</option>}
+          {hasMeta && <option value="stars">Most starred</option>}
+          {hasMeta && <option value="updated">Recently updated</option>}
+        </select>
       </div>
-      <ul className="space-y-1">
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {shown.map((e) => {
           const key = `${source.url}::${e.name}`;
-          // Resolve the installed-path the same way the backend writes it.
           const fullName = source.slug ? `${source.slug}/${e.name}` : e.name;
           const installed = installedNames.has(fullName);
           const outdated = outdatedNames.has(fullName);
+          const showStats = (e.stars || 0) > 0 || (e.downloads || 0) > 0;
           return (
-            <li key={e.name}
-              className="flex items-start gap-3 rounded px-2 py-2 hover:bg-bg-hover hover:text-nav-color-hover">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[12px] text-[var(--text-bright)]">{e.name}</span>
-                  {installed && !outdated && (
-                    <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400">installed</span>
-                  )}
-                  {outdated && (
-                    <span className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-amber-400" title="Upstream SKILL.md differs from the local copy">outdated</span>
+            <div
+              key={e.name}
+              className="flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)]/40 p-3 hover:border-[var(--text-dim)] transition-colors"
+            >
+              <div className="flex items-start justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="font-mono text-[12px] text-nav-color-hover truncate">
+                      {e.display_name || e.name}
+                    </span>
+                    {e.version && (
+                      <span className="text-[10px] text-[var(--text-tertiary)]">v{e.version}</span>
+                    )}
+                  </div>
+                  {(e.display_name && e.display_name !== e.name) && (
+                    <div className="text-[10px] font-mono text-[var(--text-tertiary)] truncate">
+                      {e.name}
+                    </div>
                   )}
                 </div>
-                {e.description && (
-                  <p className="mt-0.5 text-xs text-[var(--text-secondary)] line-clamp-2">{e.description}</p>
-                )}
+                <div className="flex gap-1 shrink-0">
+                  {installed && !outdated && (
+                    <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400">in</span>
+                  )}
+                  {outdated && (
+                    <span className="rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-amber-400" title="Upstream changed">old</span>
+                  )}
+                </div>
               </div>
-              <Button size="sm" variant={outdated ? "default" : installed ? "outline" : "default"}
-                onClick={() => onInstall(source, e.name)}
-                disabled={installingKey === key}>
-                {installingKey === key ? "Installing…" : outdated ? "Update" : installed ? "Reinstall" : "Install"}
-              </Button>
-            </li>
+
+              {e.description && (
+                <p className="text-xs text-[var(--text-secondary)] line-clamp-2">{e.description}</p>
+              )}
+
+              <div className="mt-auto flex items-center justify-between gap-2">
+                {showStats ? (
+                  <div className="flex items-center gap-3 text-[11px] text-[var(--text-tertiary)]">
+                    {(e.stars || 0) > 0 && (
+                      <span title="stars">★ {fmtCount(e.stars)}</span>
+                    )}
+                    {(e.downloads || 0) > 0 && (
+                      <span title="downloads">↓ {fmtCount(e.downloads)}</span>
+                    )}
+                    {(e.updated_at || 0) > 0 && (
+                      <span title="last updated">{relTime(e.updated_at)}</span>
+                    )}
+                  </div>
+                ) : (
+                  <span />
+                )}
+                <Button
+                  size="sm"
+                  variant={outdated ? "default" : installed ? "outline" : "default"}
+                  onClick={() => onInstall(source, e.name)}
+                  disabled={installingKey === key}
+                >
+                  {installingKey === key ? "…" : outdated ? "Update" : installed ? "Reinstall" : "Install"}
+                </Button>
+              </div>
+            </div>
           );
         })}
         {shown.length === 0 && (
-          <li className="text-xs text-[var(--text-tertiary)] py-2">No matches.</li>
+          <div className="col-span-full text-xs text-[var(--text-tertiary)] py-2">No matches.</div>
         )}
-      </ul>
+      </div>
     </div>
   );
 }

@@ -364,12 +364,21 @@ async def _browse_clawhub(
         if not slug:
             continue
         summary = it.get("summary") or it.get("description") or ""
+        stats = it.get("stats") or {}
+        latest = it.get("latestVersion") or {}
         out.append(CatalogEntry(
             name=slug,
             description=summary,
             path=slug,
             files=[],
             content_hash="",  # ClawHub has its own version field; skip per-entry hash
+            display_name=it.get("displayName") or slug,
+            version=str(latest.get("version") or (it.get("tags") or {}).get("latest") or ""),
+            stars=int(stats.get("stars") or 0),
+            downloads=int(stats.get("downloads") or 0),
+            installs=int(stats.get("installsAllTime") or stats.get("installsCurrent") or 0),
+            updated_at=int(it.get("updatedAt") or 0),
+            tags=list((it.get("tags") or {}).keys()) if isinstance(it.get("tags"), dict) else None,
         ))
     return out
 
@@ -521,6 +530,16 @@ class CatalogEntry:
     path: str  # path inside the source (skill_dir for github mode)
     files: list[str]  # extra files we'd download alongside SKILL.md
     content_hash: str = ""  # sha256 of upstream SKILL.md body; used to detect drift
+    # Optional rich metadata — populated when the source exposes it
+    # (today only ClawHub does). Frontend uses these to render a card
+    # grid with sort + stat badges.
+    display_name: str = ""
+    version: str = ""
+    stars: int = 0
+    downloads: int = 0
+    installs: int = 0
+    updated_at: int = 0  # unix ms
+    tags: list[str] | None = None
 
 
 _FRONTMATTER_RE = re.compile(
@@ -615,6 +634,10 @@ async def _browse_async(url: str) -> list[dict]:
                 {
                     "name": e.name, "description": e.description, "path": e.path,
                     "files": e.files, "content_hash": e.content_hash,
+                    "display_name": e.display_name, "version": e.version,
+                    "stars": e.stars, "downloads": e.downloads,
+                    "installs": e.installs, "updated_at": e.updated_at,
+                    "tags": e.tags or [],
                 }
                 for e in entries
             ]
