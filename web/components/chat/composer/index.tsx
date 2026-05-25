@@ -957,14 +957,14 @@ export function Composer() {
                       title="Give the agent web search this turn"
                     />
                     <PlusMenuItem
-                      active={pendingImages.length > 0}
+                      active={pendingImages.length > 0 || pendingDocs.length > 0}
                       onClick={() => {
                         setPlusMenuOpen(false);
                         onPickImages();
                       }}
-                      icon={<span aria-hidden style={{ fontSize: 14 }}>🖼</span>}
-                      label="Attach image"
-                      title="Attach one or more images (or just paste / drag-drop)"
+                      icon={<span aria-hidden style={{ fontSize: 14 }}>📎</span>}
+                      label="Attach file"
+                      title="Attach images, documents, or any file (also paste / drag-drop)"
                     />
                   </div>,
                   document.body,

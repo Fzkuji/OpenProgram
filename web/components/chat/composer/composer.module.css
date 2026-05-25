@@ -510,23 +510,28 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Fixed pill width — fits icon + close X side-by-side. Used to
-     start as a circle and grow into a pill on hover ("expand to
-     reveal X"). The width animation made the whole row jiggle when
-     the cursor passed over a chip. Kill it; X is just always there. */
-  width: 50px;
+  /* Default: collapsed circle just big enough for the icon. On
+     hover the chip expands to a pill that reveals the × — the ×
+     itself is hidden until then. ``width`` is the property carrying
+     the expand animation; ``overflow: hidden`` keeps the × from
+     poking out during the transition. */
+  width: var(--composer-button-size);
   height: var(--composer-button-size);
-  padding: 0 6px 0 8px;
+  padding: 0;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 14%, transparent);
   color: var(--accent-blue, #6cb4ff);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              padding 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.15s;
   box-sizing: border-box;
   overflow: hidden;
 }
 .toolChip:hover {
   background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 22%, transparent);
+  width: 54px;
+  padding: 0 6px 0 8px;
 }
 .toolChipIcon {
   display: inline-flex;
@@ -540,13 +545,22 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  margin-left: 4px;
+  /* Collapsed: zero footprint so the chip can shrink to a perfect
+     circle. Hover expands max-width to the icon width + restores
+     the margin-left so the close sits next to the icon with a
+     consistent gap. ``opacity`` fades it in lock-step. */
+  max-width: 0;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-width 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              margin-left 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 180ms ease;
   flex-shrink: 0;
-  opacity: 0.7;
-  transition: opacity 0.15s;
 }
 .toolChip:hover .toolChipClose {
+  max-width: 14px;
+  margin-left: 4px;
   opacity: 1;
 }
 .toolChip[data-tooltip]::after {

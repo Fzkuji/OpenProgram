@@ -117,20 +117,27 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
     fileInputRef.current?.click();
   }, []);
 
+  // Ref hop so ``onFileInputChange`` (defined above
+  // ``processDroppedFiles``) can call the processor without React
+  // ordering complaints. Updated below once ``processDroppedFiles``
+  // exists.
+  const processDroppedFilesRef = useRef<
+    ((files: File[]) => Promise<void>) | null
+  >(null);
+
   const onFileInputChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files || files.length === 0) return;
-      try {
-        const imgs = await collectImagesFromFiles(files);
-        addImages(imgs);
-      } catch (err) {
-        setImageError(String(err));
-      }
+      // Route through the same processor as drag-drop so images,
+      // text files, and binaries all land in the right state slice
+      // and get the loading-placeholder treatment. The plus-menu
+      // "Attach file" entry no longer has to be image-specific.
+      await processDroppedFilesRef.current?.(Array.from(files));
       // Reset so picking the same file twice re-fires onChange.
       e.target.value = "";
     },
-    [addImages],
+    [],
   );
 
   // Shared file-drop processor — invoked from both the window-level
@@ -210,6 +217,11 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
         });
     });
   }, [addDocs, addImages, setImageError, updateDoc, updateImage]);
+
+  // Keep the ref pointing at the latest processor so the file-input
+  // change handler (declared earlier) routes through the same code
+  // path as drag-drop.
+  processDroppedFilesRef.current = processDroppedFiles;
 
   // Window-level guard — without this Chrome treats a file drop on
   // any unhandled element (page background, sidebar, status bar,

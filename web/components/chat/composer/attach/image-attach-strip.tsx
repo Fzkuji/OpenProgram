@@ -23,12 +23,11 @@ interface ImageAttachStripProps {
   onDismissError: () => void;
 }
 
-const ACCEPTED_IMAGE_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-].join(",");
+// Accept everything — the plus-menu entry is now a generic
+// "Attach file"; drag-drop and the picker both route through
+// processDroppedFiles which handles images, text, and binary
+// drops uniformly.
+const ACCEPTED_FILE_TYPES = "*/*";
 
 export function ImageAttachStrip({
   pendingImages,
@@ -46,7 +45,7 @@ export function ImageAttachStrip({
       <input
         ref={fileInputRef}
         type="file"
-        accept={ACCEPTED_IMAGE_TYPES}
+        accept={ACCEPTED_FILE_TYPES}
         multiple
         onChange={onFileInputChange}
         style={{ display: "none" }}
