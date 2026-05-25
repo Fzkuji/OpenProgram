@@ -90,12 +90,16 @@
      splits curve vs. straight-edge rendering paths in WebKit and
      gives the curve a visibly different intensity (looks like the
      corners get "flattened"). */
-  outline: 1px solid transparent;
+  /* Visible at rest (faint --border hairline) and lifts to a
+     brighter line on focus. Keeping it always-on means the corner
+     curve is rendered consistently whether the textarea is focused
+     or not — no "ring appeared / disappeared" flash. */
+  outline: 1px solid var(--border);
   outline-offset: -1px;
   transition: outline-color 180ms ease;
 }
 .inputWrapper:focus-within::after {
-  outline-color: var(--text-secondary);
+  outline-color: rgba(226,225,218,0.32);
 }
 
 /* Crossfade overlay shown briefly during fn-form A → fn-form B

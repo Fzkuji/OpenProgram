@@ -60,8 +60,13 @@ const TILE_KEYFRAMES = `
 }
 .composer-file-tile:hover {
   background: var(--bg-tertiary);
-  outline-color: rgba(226,225,218,0.22);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.26);
+  /* Light glow + brighter hairline. The page is dark, so a black
+     drop-shadow disappears — we add a faint white halo (0 0 0 1px
+     of itself + a soft 8px outer glow) so the tile reads as
+     'lifted'. */
+  outline-color: rgba(226,225,218,0.40);
+  box-shadow: 0 0 0 1px rgba(226,225,218,0.12),
+              0 0 8px rgba(226,225,218,0.08);
 }
 .composer-file-tile-close {
   opacity: 0;
