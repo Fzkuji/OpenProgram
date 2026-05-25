@@ -163,13 +163,21 @@ def _build_items_from_node(
 
     is_attach = node.get("function") == "attach"
     if not is_attach:
+        # Tool nodes get the tool name baked into the rendered text so
+        # views.py's text rendering of tool items carries enough context
+        # for the LLM ("[bash]\n<output>" instead of bare output).
+        if role == "tool":
+            tool_name = (node.get("name") or "").strip()
+            rendered = f"[{tool_name}]\n{content}" if tool_name else content
+        else:
+            rendered = content
         return [ContextItem(
             source_node_id=node.get("id") or "",
             role=role,
             state="full",
             locked=False,
-            rendered=content,
-            tokens=_estimate_tokens(content),
+            rendered=rendered,
+            tokens=_estimate_tokens(rendered),
             state_set_at=commit_id,
             reason="new",
         )]
