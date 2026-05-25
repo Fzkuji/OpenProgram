@@ -62,6 +62,10 @@ export interface AttachMeta {
   commit_id?: string;
   label?: string;
   prompt?: string;
+  /** True when the attach pointer was written by the user via the
+   *  Branches → Attach to flow (rather than a /task spawn). The card
+   *  uses this to surface the staged-reference UI. */
+  manual?: boolean;
 }
 
 function _readAttach(m: LegacyMsg): AttachMeta | undefined {

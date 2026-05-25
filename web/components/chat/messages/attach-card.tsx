@@ -93,14 +93,37 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
     else window.location.href = "/s/" + targetSessionId;
   }
 
-  // Label intro: "task" for the standard /task or task() invocation
-  // (same code path, just different invoker). Legacy cross-session
-  // attaches still read "agent" so the foreign session_id line reads
-  // naturally as "agent · <session_id>".
-  const labelKind = sameSession ? "task" : "agent";
+  // Label intro: "attached" for user-triggered attaches (Branches →
+  // Attach to), "task" for /task or task() invocations, "agent" for
+  // legacy cross-session attaches.
+  const isManual = !!attach.manual;
+  const labelKind = !sameSession
+    ? "agent"
+    : isManual
+      ? "attached"
+      : "task";
   const subtitle = sameSession
     ? (targetHead || "(no head id)")
     : targetSessionId;
+
+  function sendNow() {
+    // Trigger a no-prompt turn so the LLM consumes the attached
+    // content immediately. Backend reads function="attach" pointers
+    // from the chain and folds them in as ``[Attached from branch
+    // "X"]:`` user-role items — see context/commit/generator.py.
+    if (!currentSessionId) return;
+    const w = window as unknown as { ws?: WebSocket };
+    if (w.ws && w.ws.readyState === WebSocket.OPEN) {
+      w.ws.send(
+        JSON.stringify({
+          action: "chat",
+          session_id: currentSessionId,
+          text: "(use the attached branch content above)",
+          agent_id: "main",
+        }),
+      );
+    }
+  }
 
   return (
     <div
@@ -158,6 +181,21 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
         className="attach-card-preview chat-text"
         dangerouslySetInnerHTML={{ __html: renderMarkdown(preview) }}
       />
+      {isManual ? (
+        <div className="attach-card-footer">
+          <span className="attach-card-status">
+            Will be included in your next message
+          </span>
+          <button
+            type="button"
+            className="attach-card-use-now"
+            onClick={sendNow}
+            title="Send the attached content to the LLM now"
+          >
+            Use now →
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

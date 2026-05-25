@@ -87,6 +87,11 @@ export interface ChatMsg {
     commit_id?: string;
     label?: string;
     prompt?: string;
+    /** True for user-triggered attaches (right-rail Branches → Attach
+     *  to). False/undefined for auto-attaches written by /task spawns.
+     *  The card surfaces this to explain "I'm a staged reference, not
+     *  an executed call". */
+    manual?: boolean;
   };
   /** Which agent produced this turn. Same-session multi-agent: a
    *  conversation can have N agents writing branches in the same
