@@ -51,7 +51,7 @@ export function ChannelsSection() {
     return (
       <div className={styles.detail}>
         <div className={styles.detailHeader}>
-          <span className={styles.detailTitle}>正在加载…</span>
+          <span className={styles.detailTitle}>Loading…</span>
         </div>
       </div>
     );
@@ -60,11 +60,12 @@ export function ChannelsSection() {
   return (
     <div className={styles.detail}>
       <div className={styles.detailHeader}>
-        <span className={styles.detailTitle}>聊天平台接入</span>
+        <span className={styles.detailTitle}>Channels</span>
         <span className={styles.detailMeta}>
-          让 OpenProgram 上的 agent 在 Telegram / Discord / Slack / 微信里
-          收发消息。两步: 1) 添加机器人账号 (粘贴 bot token 或微信扫码) →
-          2) 设规则决定哪个平台 / 哪个用户的消息派给哪个 agent 来回复。
+          Let your agents send and receive messages on Telegram / Discord
+          / Slack / WeChat. Two steps: 1) add a bot account (paste a bot
+          token, or scan a QR for WeChat) → 2) add rules that decide
+          which platform / sender goes to which agent.
         </span>
       </div>
 

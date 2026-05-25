@@ -18,7 +18,7 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const handleDelete = async (binding_id: string) => {
-    if (!confirm(`删除这条派发规则?`)) return;
+    if (!confirm(`Delete this dispatch rule?`)) return;
     setBusyId(binding_id);
     try {
       const r = await fetch(
@@ -37,17 +37,17 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
   };
 
   const describeMatch = (m: ChannelBinding["match"]): string => {
-    const platform = PLATFORM_LABEL[m.channel || ""] || m.channel || "任何平台";
+    const platform = PLATFORM_LABEL[m.channel || ""] || m.channel || "any platform";
     const account = m.account_id
-      ? `账号 "${m.account_id}"`
-      : "任何账号";
+      ? `bot "${m.account_id}"`
+      : "any bot";
     let target: string;
     if (m.peer?.id) {
-      const kind = m.peer.kind === "group" ? "群" :
-                   m.peer.kind === "channel" ? "频道" : "用户";
+      const kind = m.peer.kind === "group" ? "group" :
+                   m.peer.kind === "channel" ? "channel" : "user";
       target = `${kind} ${m.peer.id}`;
     } else {
-      target = "任何对方";
+      target = "any sender";
     }
     return `${platform} · ${account} · ${target}`;
   };
@@ -56,11 +56,12 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
     <>
       <div className={styles.sectionHeader}>
         <div>
-          <div className={styles.sectionTitle}>第 2 步: 派发规则</div>
+          <div className={styles.sectionTitle}>Step 2 — Dispatch rules</div>
           <div className={styles.sectionSub}>
-            谁的消息派给哪个 agent? 没规则时所有消息都进默认 agent;
-            加一条规则就可以让某个平台 / 某个群 / 某个用户的消息进指定
-            的 agent。规则按"越具体越优先"匹配。
+            Decide which agent handles which incoming messages. Without
+            any rule, every message goes to the default agent. Add a
+            rule to route a specific platform / group / sender to a
+            chosen agent. Most-specific rule wins.
           </div>
         </div>
         <button
@@ -68,21 +69,22 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
           onClick={() => setAddOpen(true)}
           type="button"
         >
-          + 添加规则
+          + Add rule
         </button>
       </div>
 
       {bindings.length === 0 ? (
         <div className={styles.emptyHint}>
-          还没有规则。所有进来的消息都会派给默认 agent 处理。如果想让
-          某个群 / 某个用户的消息进特定的 agent, 点击"+ 添加规则"。
+          No rules yet. Every incoming message goes to the default agent.
+          To route specific groups / users to a different agent, click
+          "+ Add rule".
         </div>
       ) : (
         <table className={styles.rowTable}>
           <thead>
             <tr>
-              <th>什么样的消息</th>
-              <th>派给哪个 agent</th>
+              <th>When a message looks like</th>
+              <th>Send it to agent</th>
               <th></th>
             </tr>
           </thead>
@@ -98,7 +100,7 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
                     disabled={busyId === b.id}
                     type="button"
                   >
-                    {busyId === b.id ? "删除中…" : "删除"}
+                    {busyId === b.id ? "Removing…" : "Remove"}
                   </button>
                 </td>
               </tr>

@@ -17,7 +17,7 @@ export function AccountsList({ accounts, onChange }: Props) {
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const handleDelete = async (channel: string, account_id: string) => {
-    if (!confirm(`确定删除 ${channel}:${account_id} 这个机器人? 跟它相关的派发规则也会一起删除。`)) {
+    if (!confirm(`Delete ${channel}:${account_id}? Any rules using this bot will also be removed.`)) {
       return;
     }
     const key = `${channel}:${account_id}`;
@@ -42,10 +42,11 @@ export function AccountsList({ accounts, onChange }: Props) {
     <>
       <div className={styles.sectionHeader}>
         <div>
-          <div className={styles.sectionTitle}>第 1 步: 机器人账号</div>
+          <div className={styles.sectionTitle}>Step 1 — Bot accounts</div>
           <div className={styles.sectionSub}>
-            把你的 bot token (Telegram / Discord / Slack) 加进来。一个平台
-            可以接多个 bot, 用不同的"账号名"区分。
+            Add your bot tokens (Telegram / Discord / Slack). One platform
+            can hold multiple bots — give each one a short name to tell
+            them apart.
           </div>
         </div>
         <button
@@ -53,23 +54,23 @@ export function AccountsList({ accounts, onChange }: Props) {
           onClick={() => setAddOpen(true)}
           type="button"
         >
-          + 添加机器人
+          + Add bot
         </button>
       </div>
 
       {accounts.length === 0 ? (
         <div className={styles.emptyHint}>
-          还没有机器人。点击"+ 添加机器人"粘贴 bot token, 或者运行{" "}
+          No bots yet. Click "+ Add bot" to paste a token, or run{" "}
           <code>openprogram channels accounts login wechat</code>{" "}
-          扫码登录微信。
+          to scan a WeChat QR.
         </div>
       ) : (
         <table className={styles.rowTable}>
           <thead>
             <tr>
-              <th>平台</th>
-              <th>账号名</th>
-              <th>状态</th>
+              <th>Platform</th>
+              <th>Account name</th>
+              <th>Status</th>
               <th></th>
             </tr>
           </thead>
@@ -86,12 +87,12 @@ export function AccountsList({ accounts, onChange }: Props) {
                       <td><code>{a.account_id}</code></td>
                       <td>
                         {a.configured ? (
-                          <span className={styles.badgeOk}>已配置</span>
+                          <span className={styles.badgeOk}>configured</span>
                         ) : (
-                          <span className={styles.badgeWarn}>缺 token</span>
+                          <span className={styles.badgeWarn}>missing token</span>
                         )}
                         {!a.enabled && (
-                          <span className={styles.badgeMuted}> 已停用</span>
+                          <span className={styles.badgeMuted}> disabled</span>
                         )}
                       </td>
                       <td>
@@ -101,7 +102,7 @@ export function AccountsList({ accounts, onChange }: Props) {
                           disabled={busy}
                           type="button"
                         >
-                          {busy ? "删除中…" : "删除"}
+                          {busy ? "Deleting…" : "Delete"}
                         </button>
                       </td>
                     </tr>
