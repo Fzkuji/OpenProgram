@@ -302,11 +302,11 @@ export function BranchesPanel() {
     setMergeInstruction("");
     setSelected([]);
     setBaseHead(null);
-    // After the merge writes its assistant turn, the chat needs to
-    // re-pull the conversation to render it.
-    setTimeout(() => {
-      wsSend({ action: "load_session", session_id: sessionId });
-    }, 100);
+    // Merge runs the LLM server-side (seconds), so a 100ms
+    // load_session would pull the pre-merge snapshot. The backend
+    // broadcasts ``session_reload`` once the merge turn lands — the
+    // global ws message handler picks it up and re-fetches the
+    // conversation. Nothing to do here.
   }
 
   function runAttachTo(anchorHeadId: string, anchorSessionId?: string) {

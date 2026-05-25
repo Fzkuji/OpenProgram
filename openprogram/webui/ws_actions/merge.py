@@ -134,6 +134,19 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
         "data": payload,
     }, default=str))
 
+    if not payload.get("failed") and payload.get("target_assistant_id"):
+        from openprogram.webui import server as _s
+        try:
+            _s._broadcast(json.dumps({
+                "type": "session_reload",
+                "data": {
+                    "session_id": target_session_id,
+                    "reason": "merge",
+                },
+            }, default=str))
+        except Exception:
+            pass
+
 
 ACTIONS = {
     "merge_branches": handle_merge_branches,
