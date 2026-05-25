@@ -65,17 +65,37 @@ const ToolRow: React.FC<{ call: ToolCall }> = ({ call }) => {
           </>
         ) : null}
       </Box>
-      {call.result ? (
-        <Box paddingLeft={2}>
-          <Text color={colors.border}>└ </Text>
-          <Text color={colors.muted} wrap="truncate-end">
-            {call.result.split('\n')[0] ?? ''}
-            {call.result.includes('\n')
-              ? `  (+${call.result.split('\n').length - 1} lines)`
-              : ''}
-          </Text>
-        </Box>
-      ) : null}
+      {call.result ? (() => {
+        // Show up to MAX_LINES of the tool's stdout; collapse the rest
+        // into a "(+N more lines)" hint so long grep / file dumps don't
+        // walk off-screen. 1-line truncation hides too much; full output
+        // floods the transcript. 6 lines fit most file heads and grep
+        // results without overpowering the surrounding chat.
+        const MAX_LINES = 6;
+        const lines = call.result.split('\n');
+        const shown = lines.slice(0, MAX_LINES);
+        const extra = lines.length - shown.length;
+        return (
+          <Box flexDirection="column" paddingLeft={2}>
+            {shown.map((line, i) => (
+              <Box key={i}>
+                <Text color={colors.border}>{i === 0 ? '└ ' : '  '}</Text>
+                <Text color={colors.muted} wrap="truncate-end">
+                  {line || ' '}
+                </Text>
+              </Box>
+            ))}
+            {extra > 0 ? (
+              <Box>
+                <Text color={colors.border}>  </Text>
+                <Text color={colors.border}>
+                  (+{extra} more line{extra === 1 ? '' : 's'})
+                </Text>
+              </Box>
+            ) : null}
+          </Box>
+        );
+      })() : null}
     </Box>
   );
 };
