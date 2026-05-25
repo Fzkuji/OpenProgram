@@ -109,9 +109,10 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
   }, [input, focused]);
 
   // Synthesise one SlashCommand per enabled skill so they appear in
-  // the slash menu automatically. Selecting one fetches the SKILL.md
-  // body and drops it into the composer so the user can append their
-  // actual task and send.
+  // the slash menu automatically. Selecting one fills the composer
+  // with "/skill <name> " — the backend WS handler expands that into
+  // the SKILL.md preamble when the user sends. No frontend SKILL.md
+  // round-trip needed.
   const skillCommands = useMemo<SlashCommand[]>(() => {
     return skills
       .filter((s) => s.enabled)
@@ -119,32 +120,8 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
         name: "/" + s.name,
         description: s.description || `Activate the ${s.name} skill`,
         run(rest, { setInput }) {
-          // Pull the SKILL.md body asynchronously and prepend it to the
-          // composer with a clear delimiter, leaving the cursor on the
-          // line after so the user just types what they need done.
-          (async () => {
-            try {
-              const encoded = s.name.split("/").map(encodeURIComponent).join("/");
-              const r = await fetch("/api/skills/" + encoded);
-              if (!r.ok) {
-                setInput("/skill " + s.name + " " + rest, true);
-                return;
-              }
-              const data: { body?: string } = await r.json();
-              const body = (data.body || "").trim();
-              if (!body) {
-                setInput("/skill " + s.name + " " + rest, true);
-                return;
-              }
-              const preamble =
-                `Following skill "${s.name}":\n\n` +
-                body +
-                `\n\n---\n\nApply this skill to: ${rest}`;
-              setInput(preamble, true);
-            } catch {
-              setInput("/skill " + s.name + " " + rest, true);
-            }
-          })();
+          const trail = rest ? " " + rest : " ";
+          setInput("/skill " + s.name + trail, true);
           return true;
         },
       }));
