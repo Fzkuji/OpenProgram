@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import styles from "./plugins.module.css";
+import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/plugins-store";
-import { AddMarketplaceDialog } from "./add-marketplace-dialog";
+import { AddMarketplaceDialog } from "../dialogs/add-marketplace-dialog";
 
 interface IndexItem {
   name?: string;

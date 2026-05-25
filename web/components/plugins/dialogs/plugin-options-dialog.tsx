@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import styles from "./plugins.module.css";
+import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/plugins-store";
 
 interface Props {

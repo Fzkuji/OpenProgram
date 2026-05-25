@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "./plugins.module.css";
+import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/plugins-store";
 
 export function PluginErrors() {

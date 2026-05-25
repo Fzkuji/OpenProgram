@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import styles from "./plugins.module.css";
+import styles from "../plugins.module.css";
 import { usePluginsStore, type PluginRow } from "@/lib/plugins-store";
-import { PluginTrustWarning } from "./plugin-trust-warning";
-import { PluginOptionsDialog } from "./plugin-options-dialog";
-import { ValidatePluginDialog } from "./validate-plugin";
-import { PluginDetailDialog } from "./plugin-detail";
+import { PluginTrustWarning } from "../dialogs/plugin-trust-warning";
+import { PluginOptionsDialog } from "../dialogs/plugin-options-dialog";
+import { ValidatePluginDialog } from "../dialogs/validate-plugin";
+import { PluginDetailDialog } from "../dialogs/plugin-detail";
 
 function TrustBadge({ level }: { level: string }) {
   if (level === "verified") return <span className={styles.badgeVerified}>verified</span>;

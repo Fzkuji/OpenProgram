@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "./plugins.module.css";
+import styles from "../plugins.module.css";
 import type { PluginRow } from "@/lib/plugins-store";
 
 interface Props {

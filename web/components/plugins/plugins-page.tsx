@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import styles from "./plugins.module.css";
 import { usePluginsStore } from "@/lib/plugins-store";
-import { InstalledList } from "./installed-list";
-import { MarketplaceBrowser } from "./marketplace-browser";
-import { PluginErrors } from "./plugin-errors";
+import { InstalledList } from "./views/installed-list";
+import { MarketplaceBrowser } from "./views/marketplace-browser";
+import { PluginErrors } from "./views/plugin-errors";
 
 export function PluginsPage() {
   const { tab, setTab, refresh, plugins, errors } = usePluginsStore();
