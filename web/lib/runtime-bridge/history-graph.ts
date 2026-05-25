@@ -816,6 +816,10 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     }
     return false;
   }
+  // Vertical offset from the attach anchor where the merge-marker
+  // diamond sits. Edge target + diamond position must use the same
+  // value so the dashed line lands exactly on the diamond.
+  const ATTACH_MERGE_DY = 16;
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     if (node.function !== "attach") return;
@@ -828,50 +832,82 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     if (!anchor) return;
     const srcPos = pos(src);
     const anchorPos = pos(anchor);
+    // Edge lands on the merge-marker diamond (positioned just below
+    // the anchor on the main lane), not on the anchor node itself.
+    // Reads as "sub-branch flows into the merge point".
+    const mergeX = anchorPos.x;
+    const mergeY = anchorPos.y + ATTACH_MERGE_DY;
     const color = _branchColor(src, lanes.leafOfNode);
-    // Dashed edge skipped when the source is already a conv-
-    // descendant of the anchor AND this isn't a user-issued manual
-    // attach — otherwise the dashed line just overlaps the solid
-    // conv-edge that already exists. Manual attaches always get the
-    // edge so the user sees what they just did.
     const isManual = !!node.attach_manual;
     const skipEdge = !isManual && _isConvDescendant(ref, anchorId);
     if (!skipEdge) {
       edgeG.appendChild(
         _svg("path", {
-          d: _edgePath(srcPos.x, srcPos.y, anchorPos.x, anchorPos.y),
+          d: _edgePath(srcPos.x, srcPos.y, mergeX, mergeY),
           stroke: color,
-          "stroke-width": 1.6,
+          "stroke-width": 1.8,
           fill: "none",
           "stroke-linecap": "round",
-          "stroke-dasharray": "4 4",
-          opacity: 0.9,
+          "stroke-dasharray": "5 4",
+          opacity: 1,
           class: "history-edge attach-edge",
         }),
       );
     }
-    // Anchor-side landing dot — ALWAYS draw, even when the dashed
-    // edge is skipped, so the trunk (e.g. main) shows a small mark
-    // wherever an attach grafts. Without this, an attach onto a
-    // mid-trunk turn leaves zero visible signal on the trunk itself.
-    edgeG.appendChild(
-      _svg("circle", {
-        cx: String(anchorPos.x),
-        cy: String(anchorPos.y),
-        r: "3.5",
-        fill: color,
-        stroke: "var(--bg-secondary, #1a1a1a)",
-        "stroke-width": "1",
-        class: "attach-landing-dot",
-      }),
-    );
   });
 
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
-    // Attach pointers are pure references — represented as a dashed
-    // edge above, never as a square node.
-    if (node.function === "attach") return;
+    // Attach pointers used to render as nothing — the dashed edge above
+    // was supposed to carry all the visual signal. Users couldn't tell
+    // anything had "merged" because two lanes just sat there in
+    // parallel with a faint dashed line between them. Now we paint the
+    // attach pointer as an explicit diamond "merge marker" at its
+    // anchor position (on the main lane) so the visual reads as
+    // "this is where the sub-branch joins back". The anchor lookup
+    // uses the same parent_id|caller fallback the attach-edge code
+    // above uses.
+    if (node.function === "attach") {
+      const anchorId = node.parent_id || node.caller;
+      const anchor = anchorId ? tree.byId[anchorId] : null;
+      if (!anchor) return;
+      const anchorPos = pos(anchor);
+      const refId = node.attach_ref as string | undefined;
+      const src = refId ? tree.byId[refId] : null;
+      const mergeColor = src
+        ? _branchColor(src, lanes.leafOfNode)
+        : _branchColor(node, lanes.leafOfNode);
+      // Diamond sits on the same lane as the anchor, ATTACH_MERGE_DY
+      // pixels below. Same offset the attach-edge target uses, so the
+      // dashed line lands exactly on the diamond.
+      const mg = _svg("g", {
+        class: "history-node attach-merge-node",
+        transform:
+          "translate(" + anchorPos.x + ","
+          + (anchorPos.y + ATTACH_MERGE_DY) + ")",
+        "data-msg-id": id,
+      });
+      const hitDiamond = _svg("circle", {
+        r: "12",
+        fill: "transparent",
+        "pointer-events": "all",
+      });
+      mg.appendChild(hitDiamond);
+      (mg as SVGGraphicsElement).style.cursor = "pointer";
+      // Diamond polygon — points up, right, down, left around origin.
+      const dR = 6.5;
+      const diamond = _svg("polygon", {
+        points: `0,-${dR} ${dR},0 0,${dR} -${dR},0`,
+        fill: mergeColor,
+        stroke: "var(--bg-secondary, #1a1a1a)",
+        "stroke-width": "1.5",
+        "pointer-events": "none",
+      });
+      mg.appendChild(diamond);
+      (mg as any)._nodeData = node;
+      nodeG.appendChild(mg);
+      return;
+    }
     const p = pos(node);
     const isHead = id === headId;
     const onHead = !!headAncestors[id];

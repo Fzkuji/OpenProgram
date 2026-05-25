@@ -39,17 +39,27 @@ _DESCRIPTION = (
     "Spawn another agent in the same session, run one turn against "
     "it with the given prompt, and return either the final reply "
     "(wait=True, default) or a task_id you can await later "
-    "(wait=False). Two context modes:\n"
+    "(wait=False). Two context modes — YOU decide per call:\n"
     "\n"
-    "  inherit (default): the spawned agent forks off this turn and "
-    "inherits the conversation chain that led to it. Same shape as a "
-    "user clicking 'fork from here'. Use this when the spawned task "
-    "needs the conversation context.\n"
+    "  clean (DEFAULT): the spawned agent starts at a new root with "
+    "ONLY the prompt visible. No conversation history, no prior tool "
+    "results — a clean worker. Use this when the task is self-"
+    "contained: pack everything the sub-agent needs into the prompt "
+    "yourself. Lower token cost, sub-agent stays focused, your "
+    "history stays clean. THIS IS THE RIGHT DEFAULT for most "
+    "offloaded sub-tasks.\n"
     "\n"
-    "  clean: the spawned agent starts at a new root in this session "
-    "(parent_id=null). It sees only the prompt — no parent history. "
-    "Use this when the task is self-contained and you want to keep "
-    "the spawned agent's tool traffic out of the parent chain.\n"
+    "  inherit: the spawned agent forks off this turn and sees the "
+    "full conversation chain that led to it (subject to context-"
+    "engine compression rules). Same shape as a user clicking 'fork "
+    "from here'. Use this only when the sub-task genuinely needs the "
+    "running dialogue as context — e.g. a multi-step decision that "
+    "depends on earlier turns you can't easily condense into the "
+    "prompt. Costs more tokens; brings noise from prior tool calls.\n"
+    "\n"
+    "Rule of thumb: if you can write a self-contained instruction, "
+    "use clean. If you'd genuinely want the sub-agent to read all "
+    "the chat history above, use inherit.\n"
     "\n"
     "In both modes the reply lands as a branch in the current "
     "session's DAG. The user can switch to it from the branches "
@@ -61,7 +71,7 @@ _DESCRIPTION = (
     "  description: short label (1-3 words) used as the branch name.\n"
     "  agent_id: which agent profile to run as. Defaults to this "
     "session's agent.\n"
-    "  context: 'inherit' (default) or 'clean'.\n"
+    "  context: 'clean' (default) or 'inherit'.\n"
     "  wait: True (default) blocks until the spawned agent finishes "
     "and returns its final text — same as today. False returns "
     "immediately with a task_id string; call await_task(task_id) to "
@@ -100,7 +110,7 @@ def _task_impl(
     prompt: str,
     description: str = "",
     agent_id: str = "",
-    context: str = "inherit",
+    context: str = "clean",
     wait: bool = True,
 ) -> str:
     """Implementation body. Pulled out of the @function-wrapped binding
@@ -124,12 +134,12 @@ def _task_impl(
             for c in label
         )[:24]
 
-    mode = (context or "").strip().lower() or "inherit"
+    mode = (context or "").strip().lower() or "clean"
     if mode not in ("inherit", "clean"):
         return (
-            f"[task error] unknown context {context!r} — use 'inherit' "
-            "(default, spawned agent forks off this turn) or 'clean' "
-            "(new root, no parent history)."
+            f"[task error] unknown context {context!r} — use 'clean' "
+            "(default, new root, no parent history) or 'inherit' "
+            "(spawned agent forks off this turn and sees the full chain)."
         )
 
     if not wait:
@@ -188,7 +198,7 @@ def task(
     prompt: str,
     description: str = "",
     agent_id: str = "",
-    context: str = "inherit",
+    context: str = "clean",
     wait: bool = True,
 ) -> str:
     """Spawn another agent in the same session.
@@ -205,10 +215,9 @@ def task(
         description: short label (1-3 words) used as the branch name.
         agent_id: agent profile to run under. Defaults to this
             session's agent.
-        context: ``"inherit"`` (default) ⇒ the spawned agent forks
-            off this turn (sibling branch). ``"clean"`` ⇒ the agent
-            starts at a new root in the same session (no parent
-            history; only the prompt).
+        context: ``"clean"`` (default) ⇒ the spawned agent starts at
+            a new root with only the prompt visible. ``"inherit"`` ⇒
+            forks off this turn and sees the full chain that led here.
         wait: True (default) blocks for the final reply. False
             returns ``task_id`` immediately for parallel execution.
     """

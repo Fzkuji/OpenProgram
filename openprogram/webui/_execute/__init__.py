@@ -56,12 +56,14 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     label = (kwargs.get("label") or "").strip() or None
     # Accept ``context`` (new) and ``mode`` (legacy). "detached"/"clean"
     # both mean new-root; "inline"/"inherit" both mean fork-from-here.
+    # Default is "clean": sub-agent starts blank, caller packs whatever
+    # context it needs into prompt. Inherit must be opted into.
     raw = (kwargs.get("context") or kwargs.get("mode")
-           or "inherit").strip().lower()
-    if raw in ("detached", "clean"):
-        context = "clean"
-    else:
+           or "clean").strip().lower()
+    if raw in ("inline", "inherit"):
         context = "inherit"
+    else:
+        context = "clean"
     # wait flag: True = synchronous (existing behavior), False = submit
     # to TaskRunner and return immediately. Default True for backward
     # compat — /task --async opts into the new path.
