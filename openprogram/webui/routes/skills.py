@@ -63,12 +63,6 @@ DEFAULT_DISCOVERY_SUGGESTIONS: list[dict] = [
         "slug": "superpowers",
         "description": "Community-curated agent skills by Jesse Vincent — brainstorming, parallel agents, code review, plans.",
     },
-    {
-        "url": "https://github.com/anthropics/skills",
-        "label": "Anthropic Skills (full repo)",
-        "slug": "anthropic-skills-full",
-        "description": "Same as Anthropic Skills, but keeps the skills/ prefix in names. Use this if you also want the spec/ and template/ docs.",
-    },
 ]
 
 

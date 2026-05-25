@@ -57,6 +57,9 @@ export function DiscoverySources() {
   }, [fetchDiscoverySources, fetchDiscoverySuggested]);
 
   // Merge suggested + custom into one list, suggested first.
+  // Custom entries that share a slug with a suggested entry are dropped —
+  // they install into the same namespace folder so they'd be redundant
+  // cards (and were a recurring source of confusion).
   const sources: Source[] = useMemo(() => {
     const suggested = discoverySuggested.map<Source>((s) => ({
       url: s.url,
@@ -67,16 +70,18 @@ export function DiscoverySources() {
       origin: "suggested",
     }));
     const suggestedUrls = new Set(suggested.map((s) => s.url));
+    const suggestedSlugs = new Set(suggested.map((s) => s.slug));
     const custom = discoverySources
       .filter((u) => !suggestedUrls.has(u))
       .map<Source>((u) => ({
         url: u,
         label: hostname(u) || u,
         slug: slugFromUrl(u),
-        description: u,
+        description: "",
         added: true,
         origin: "custom",
-      }));
+      }))
+      .filter((c) => !suggestedSlugs.has(c.slug));
     return [...suggested, ...custom];
   }, [discoverySuggested, discoverySources]);
 
@@ -193,7 +198,9 @@ export function DiscoverySources() {
                         <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">custom</span>
                       )}
                     </div>
-                    <p className="mt-1 text-xs text-[var(--text-secondary)] line-clamp-2">{s.description}</p>
+                    {s.description && (
+                      <p className="mt-1 text-xs text-[var(--text-secondary)] line-clamp-2">{s.description}</p>
+                    )}
                     <p className="mt-1 text-[11px] font-mono text-[var(--text-tertiary)] truncate">{s.url}</p>
                   </div>
                   <div className="flex flex-col gap-1 items-end">
@@ -206,9 +213,11 @@ export function DiscoverySources() {
                         ? "Installing…"
                         : allInstalled
                           ? "Reinstall all"
-                          : installed > 0
-                            ? `Install remaining`
-                            : "Install all"}
+                          : catalogTotal !== undefined && installed < catalogTotal
+                            ? `Install ${catalogTotal - installed} missing`
+                            : installed > 0
+                              ? "Reinstall"
+                              : "Install all"}
                     </Button>
                     {s.origin === "custom" && (
                       <Button size="sm" variant="destructive"
