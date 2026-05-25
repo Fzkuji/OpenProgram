@@ -409,7 +409,7 @@ built-in 走硬编码 fast path，plugin platform 通过 registry 自注册。
 | `outbound.py` 无状态 cross-process sender | 没有独立 outbound，走 adapter 实例 |
 | `setup.py` 一键交互式 enrollment | descriptor-driven setup plugin seam |
 
-第二项—— `outbound.py`——值得单独说：我之前 audit 第 2 节把它标为"两套发送代码路径"的元凶。从 fork 视角看，它是我们**主动加的**。OpenClaw 的设计要求 cross-process send 也走 adapter（统一一条路径），我们当时选了 raw HTTP 旁路，理由可能是简化或避免多进程共享 adapter 状态——代价就是现在两套维护、5 处 chunking 重复。
+第二项—— `outbound.py`——值得单独说：从 fork 视角看是我们**主动加的**，OpenClaw 当初设计是 cross-process send 也走 adapter。但 OpenProgram 是双范式系统（详见 5.F），`outbound.send` 这个无状态、cron-friendly 入口正好对应 agentic-programming 范式（Python 主控同步调用），不该删。真正的问题是**实现层重复**（chunking 5 份、HTTP 调用各写一遍）而不是**入口存在性**——重构方向应是"两入口共享实现层"，不是"删一条入口"。
 
 ---
 
@@ -433,6 +433,8 @@ wechat.py   → 内部 _send                outbound.py → raw HTTP
 ```
 
 `MAX_MSG_CHARS` 5 份、`_chunk` 函数 5 份、credentials 加载 8+ 份。任何"如何把字节送到 platform"的修改都要在两条路上各做一遍。
+
+注意：**两条入口的存在是合理的**（详见 5.F——它们服务两种范式：adapter 路径给 dispatcher 用、outbound 路径给 agentic-programming 主控用），问题不在"有两条入口"而在"两份独立实现"。重构应该让两条入口共享一份实现层，不是合并入口。
 
 ### 缺陷 3：dispatch_inbound 同步签名堵死 streaming
 
@@ -507,15 +509,87 @@ Dispatcher 已经 emit `tool_use` / `stream_event` envelope。`dispatch_inbound.
 
 它们是 hermes 跑大量产 traffic 后摸出来的优化。OpenProgram 现阶段没那个 QPS，可以先做对的抽象，等问题出现了再加。
 
-**D. OpenClaw 的 Plugin SDK 那套对我们过度**
+**D. OpenClaw 为什么不能直接照搬——三层真实原因**
 
-50+ contract 文件 + 每 platform 70+ files 是企业级 TS 的玩法，跟我们 Python codebase 规模和团队规模不匹配。可以借鉴**接口形状**（ChannelMessageLiveAdapterShape 这种 send/edit/finalize lifecycle），但**实现层级**应该跟 hermes 学——一个 base + 一个 adapter 文件，不搞 plugin manifest 那一套。
+按重要性从低到高：
 
-**E. 我们应该参照的是 hermes 不是 OpenClaw**
+*第一层（最浅）：没有 Python 实现可以 copy-paste。* 整个 OpenClaw 是 TypeScript/Node.js（`pnpm-workspaces` + `tsdown` build），`src/bindings/` 只有 1 个 TS 文件，`packages/sdk/` 和 `packages/plugin-sdk/` 全是 TS。仅有的 5 个 `.py` 是 CI 脚本 / skill 工具，跟 channel 子系统无关。**OpenClaw 不提供 Python binding 也不提供 Python SDK。** 要复用 OpenClaw 必须把它的设计用 Python 重新实现一遍，不可能 import 进来。
 
-虽然代码 fork 来源是 OpenClaw，但 OpenClaw 现在做得太重。Hermes 是 Python 写的、规模和我们对得上、设计哲学也合（base ABC + Python dataclass + async + 中性 MessageEvent）。重构方向应当对齐 hermes，而不是把 OpenClaw 整套搬回来。
+但语言本身不构成借鉴障碍——TS interface → Python `Protocol` / `abc.ABC`，TS dataclass → `@dataclass`，TS async → asyncio，TS plugin manifest → `plugin.json`（我们 `openprogram/plugins/` 已经在做了）。设计模式跨语言通用。
 
-**F. WeChat 抽象适配最难**
+*第二层：静态类型 vs 动态类型，影响"50+ contract 文件"的价值。* OpenClaw 在 TS 里写 50+ 个 `channel-*.ts` interface 文件，编译期能强制 plugin 实现完整，IDE 提示也准。同样的拆分用 Python `Protocol` 写出来——运行期不强制、IDE 提示弱（mypy 不是默认开的）。所以"50 个 contract 文件那种粒度"的拆分在 Python 里收益打折。这不影响**接口形状是否值得学**（值得），只影响**是否把每个接口拆成独立文件**（不值得）。
+
+*第三层（最深）：async-first vs sync-with-threading 范式。* OpenClaw 全套 `async send/edit/typing/handoff`，dispatch 是 streaming pipeline（draft → live-preview → final）。Hermes 也是 async-first。我们 channel 当前是同步 + threading（每 adapter 一个 thread，`dispatch_inbound(...) -> str` 阻塞返回）。如果照搬 OpenClaw 的 async 设计，dispatch 流程要重写——不只是 base.py 改方法签名，而是 `dispatch_inbound` 改成 async generator，4 个 adapter 的事件循环要重新接入 asyncio。这是个真实的迁移成本，不是抽象层简单换名。
+
+**E. 学什么、不学什么的分割线**
+
+```
+                          学 OpenClaw   学 hermes
+─────────────────────────────────────────────────
+接口设计 (what)
+  send/edit/typing/approve  ✓ (更全)    ✓
+  SendResult 含 retry        ✓           ✓
+  Streaming lifecycle        ✓ (三态)    ✓ (单次 edit)
+  Approval lifecycle         ✓ (完整)    ✓ (/approve 命令)
+  Health check / probe       ✓           —
+
+代码组织 (how)
+  Plugin SDK 50+ contracts  ✗ 过度       —
+  每 platform 70+ files     ✗ 过度       —
+  单文件 base + adapter      —           ✓ 匹配
+  async-first dispatch       ✓           ✓
+```
+
+两个项目可以分别学不同层面。接口形状 OpenClaw 做得更完整、更系统，照搬 method 签名 / lifecycle / 返回值结构没问题。代码组织规模 hermes 跟我们匹配——base ABC 一个文件、每 platform 一个文件、不搞 plugin manifest。这两个不冲突：拿 OpenClaw 的 `ChannelApprovalAdapter` / `ChannelMessageLiveAdapterShape` 的方法签名，落到 hermes-style 的 "base + 4 adapter 文件" 组织里，是最合理的方案。
+
+**F. 兼容性——channel 重构 vs OpenProgram 既有范式**
+
+这是真正最大的设计风险。OpenProgram 内部已经有两条范式并存：
+
+```
+范式 A: agentic programming (主推, README 第一段就是这个)
+  Python 主控 → if/else/for/while 控制流
+  @agentic_function 创建 Context 节点
+  Runtime.exec 在被显式调用时才请求 LLM
+  入口: 程序员写的 Python 代码
+
+范式 B: agent loop (channel/webui chat 的实际路径)
+  LLM 决定调什么工具、何时调
+  process_user_turn → agent_loop → tool streaming
+  Channel adapter 收到 user message → dispatch_inbound → 这条路
+  入口: 外部 message
+```
+
+Channel 目前**只挂在范式 B 上**。这意味着：
+
+1. **`outbound.send` 不是"错位的加法"**——它正是范式 A 需要的路径。一个 cron-driven @agentic_function 想给用户发"早上好"，不需要起 adapter instance、不需要订阅 stream 事件、不需要绑定 session lifecycle——raw HTTP 直接发就对。OpenClaw 的"统一走 adapter" 是单一范式（LLM-as-scheduler）下的合理设计，对我们双范式来说会出问题。
+
+   我前面 audit 第 4 节缺陷 2 把 `outbound.send` 标为"两套发送代码"问题——这个判断对**实现层重复**是对的（chunking 复制 5 次、HTTP 调用各写一遍、credentials 加载多份），但**保留两个入口**本身是范式分工的合理结果，不该删。
+
+2. **正确的重构形状是：两个入口、一份实现**
+
+   ```
+   范式 A 入口: outbound.send_one_shot(channel, account, target, text)
+   范式 B 入口: adapter.send_text(target, text) -> msg_handle
+                adapter.edit_text(msg_handle, text)
+
+                       ↓ 都调
+
+   实现层: _post_message(channel, account, target, text, *, edit_of=None)
+           HTTP 调用 + chunking + credentials 加载, 只一份
+   ```
+
+   这样 chunking 不再有 5 份、credentials 不再加载 8+ 次，但两条入口路径各自保留，分别服务两种范式。
+
+3. **base.py 抽象重构不能"独占" channel**
+
+   如果按 OpenClaw / hermes 的方式把 channel 重构成 async-first streaming pipeline，要确保**范式 A 仍然能用同步的方式发消息**。具体：base.py 的抽象方法是 async 没问题，但要在模块顶层暴露同步包装（`outbound.send_one_shot`），让 agentic_function 不必懂 asyncio 也能调。
+
+4. **streaming edit 跟 agentic_function 兼容**
+
+   范式 A 里一个 @agentic_function 可能要给 user 发中间进展（"已观察到登录页"、"已点击登录按钮"）。当前没有 API 让它这么做。重构后应当让这个能力可用——不是绑死给 dispatcher 的 stream pipeline 用，而是 agentic_function 也能拿到 msg_handle 自己 edit。
+
+**G. WeChat 抽象适配最难**
 
 iLink API 看起来不支持 edit_message（消息发出去不能改）。这意味着 base.py 加 `edit_message` 抽象后，wechat adapter 要么实现假的 `edit_message`（删旧发新）要么 raise NotImplementedError——前者改变语义，后者破坏统一接口。Hermes 怎么处理这种限制需要再调研（IRC 也有类似问题）。
 
@@ -528,7 +602,7 @@ iLink API 看起来不支持 edit_message（消息发出去不能改）。这意
 1. 要不要做 base.py 抽象重构？工作量 3-4h，没新 feature，但是后续所有 feature 的地基
 2. 重构粒度：抽到 hermes 那样（async send/edit/typing/draft 5+ 方法）还是先做最小（send 返回 message_id + edit_message）？
 3. 中性 ChannelMessage 结构现在加还是等 reply/quote 需求出现再加？
-4. `outbound.send` 是删了改走 adapter，还是保留作为"快路径" fallback？OpenClaw 当初是统一走 adapter 的，我们 fork 后引入的 raw HTTP 路是错位
+4. `outbound.send` 不删（它服务范式 A），但实现层要不要跟 adapter 的 send 合并到一个 `_post_message` 函数，去掉 5 处重复？
 5. Approval 机制走 hermes 的 `/approve` 命令（简单稳）还是 OpenClaw 的 reaction lifecycle（UX 直观但状态复杂）？
 6. WeChat 不支持 edit 怎么处理——`edit_message` raise vs 假实现 vs base 接口本身做成 optional？
 7. session_scope 要不要扩成 hermes 的二维（chat × user × thread）？OpenClaw 的 thread-bindings-policy 提供另一种思路
