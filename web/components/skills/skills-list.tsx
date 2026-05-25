@@ -1,0 +1,272 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useSkills, type Skill } from "@/lib/skills-store";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+
+const SOURCE_COLORS: Record<string, string> = {
+  bundled: "#7c6fcd",
+  user: "#3b82f6",
+  project: "#10b981",
+  "remote-cache": "#f59e0b",
+};
+
+function SourceBadge({ source }: { source: string }) {
+  const key = source.startsWith("plugin:") ? "plugin" : source;
+  const color = key === "plugin" ? "#ec4899" : SOURCE_COLORS[source] ?? "#6b7280";
+  return (
+    <span
+      className="rounded border px-2 py-[1px] text-[10px] font-medium uppercase tracking-wide"
+      style={{ background: color + "22", color, borderColor: color + "44" }}
+    >
+      {source}
+    </span>
+  );
+}
+
+// --- tree node model -----------------------------------------------------
+
+type TreeNode = {
+  segment: string;          // single path segment for this node
+  path: string;             // full path from root
+  skill: Skill | null;      // non-null iff this node *is* a SKILL.md
+  children: Map<string, TreeNode>;
+};
+
+function buildTree(skills: Skill[]): TreeNode {
+  const root: TreeNode = { segment: "", path: "", skill: null, children: new Map() };
+  for (const s of skills) {
+    const segments = (s.path_segments && s.path_segments.length > 0)
+      ? s.path_segments
+      : s.name.split("/");
+    let cur = root;
+    let pathSoFar = "";
+    segments.forEach((seg, i) => {
+      pathSoFar = pathSoFar ? pathSoFar + "/" + seg : seg;
+      let child = cur.children.get(seg);
+      if (!child) {
+        child = { segment: seg, path: pathSoFar, skill: null, children: new Map() };
+        cur.children.set(seg, child);
+      }
+      if (i === segments.length - 1) {
+        child.skill = s;
+      }
+      cur = child;
+    });
+  }
+  return root;
+}
+
+function sortedChildren(node: TreeNode): TreeNode[] {
+  const arr = Array.from(node.children.values());
+  // Folders (no skill or with children) before leaf skills, then alpha.
+  arr.sort((a, b) => {
+    const aFolder = a.children.size > 0 ? 0 : 1;
+    const bFolder = b.children.size > 0 ? 0 : 1;
+    if (aFolder !== bFolder) return aFolder - bFolder;
+    return a.segment.localeCompare(b.segment);
+  });
+  return arr;
+}
+
+// --- rendering -----------------------------------------------------------
+
+function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
+  const { selected, setSelected, fetchDetail, toggleSkill } = useSkills();
+  const active = selected === skill.name;
+  return (
+    <div
+      role="button"
+      onClick={() => { setSelected(skill.name); fetchDetail(skill.name); }}
+      style={{ paddingLeft: 8 + depth * 16 }}
+      className={
+        "group flex items-start gap-2 rounded-md border py-2 pr-3 cursor-pointer transition-colors " +
+        (active
+          ? "border-primary bg-[var(--bg-selected)]"
+          : "border-transparent hover:bg-bg-hover hover:text-nav-color-hover")
+      }
+    >
+      <span className="mt-[2px] text-[var(--text-tertiary)]" aria-hidden>
+        ◦
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-[var(--text-bright)] truncate">{skill.leaf || skill.name}</span>
+          <SourceBadge source={skill.source} />
+          {skill.optional && (
+            <Badge variant="outline" className="text-[10px]">optional</Badge>
+          )}
+          {skill.version && (
+            <span className="text-[10px] text-[var(--text-tertiary)]">v{skill.version}</span>
+          )}
+        </div>
+        {skill.description && (
+          <p className="mt-1 text-xs text-[var(--text-secondary)] line-clamp-2">{skill.description}</p>
+        )}
+      </div>
+      <div onClick={(e) => e.stopPropagation()} className="pt-1">
+        <Switch
+          checked={skill.enabled}
+          onCheckedChange={(v) => toggleSkill(skill.name, v)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TreeBranch({
+  node,
+  depth,
+  expanded,
+  toggleExpanded,
+  toggleBranch,
+}: {
+  node: TreeNode;
+  depth: number;
+  expanded: Set<string>;
+  toggleExpanded: (path: string) => void;
+  toggleBranch: (paths: string[], enabled: boolean) => void;
+}) {
+  const isOpen = expanded.has(node.path);
+  const children = sortedChildren(node);
+  const subSkills: Skill[] = [];
+  const walk = (n: TreeNode) => {
+    if (n.skill) subSkills.push(n.skill);
+    n.children.forEach(walk);
+  };
+  walk(node);
+  const enabledCount = subSkills.filter((s) => s.enabled).length;
+  const allOn = enabledCount === subSkills.length && subSkills.length > 0;
+
+  return (
+    <div>
+      <div
+        role="button"
+        onClick={() => toggleExpanded(node.path)}
+        style={{ paddingLeft: 8 + depth * 16 }}
+        className="flex items-center gap-2 py-2 pr-3 cursor-pointer rounded border border-transparent hover:bg-bg-hover hover:text-nav-color-hover select-none"
+      >
+        <span className="text-[var(--text-tertiary)] w-3 text-center">
+          {isOpen ? "▾" : "▸"}
+        </span>
+        <span className="text-[var(--text-bright)] text-sm font-medium">{node.segment}</span>
+        <span className="text-[11px] text-[var(--text-tertiary)]">{enabledCount}/{subSkills.length}</span>
+        <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
+          <Switch
+            checked={allOn}
+            onCheckedChange={(v) => toggleBranch(subSkills.map((s) => s.name), v)}
+          />
+        </div>
+      </div>
+      {isOpen && (
+        <div className="mt-1 space-y-1">
+          {children.map((c) =>
+            c.skill && c.children.size === 0 ? (
+              <SkillLeaf key={c.path} skill={c.skill} depth={depth + 1} />
+            ) : (
+              <TreeBranch
+                key={c.path}
+                node={c}
+                depth={depth + 1}
+                expanded={expanded}
+                toggleExpanded={toggleExpanded}
+                toggleBranch={toggleBranch}
+              />
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SkillsList() {
+  const { skills, toggleSkill } = useSkills();
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set<string>());
+  const [filter, setFilter] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!filter.trim()) return skills;
+    const q = filter.toLowerCase();
+    return skills.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.description || "").toLowerCase().includes(q)
+    );
+  }, [skills, filter]);
+
+  const tree = useMemo(() => buildTree(filtered), [filtered]);
+
+  // Auto-expand all when filtering so matches are visible.
+  const effectiveExpanded = useMemo(() => {
+    if (!filter.trim()) return expanded;
+    const all = new Set<string>();
+    const walk = (n: TreeNode) => {
+      if (n.path) all.add(n.path);
+      n.children.forEach(walk);
+    };
+    walk(tree);
+    return all;
+  }, [expanded, filter, tree]);
+
+  const toggleExpanded = (path: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const toggleBranch = (names: string[], enabled: boolean) => {
+    for (const n of names) toggleSkill(n, enabled);
+  };
+
+  const expandAll = () => {
+    const all = new Set<string>();
+    const walk = (n: TreeNode) => {
+      if (n.path) all.add(n.path);
+      n.children.forEach(walk);
+    };
+    walk(tree);
+    setExpanded(all);
+  };
+  const collapseAll = () => setExpanded(new Set());
+
+  const rootChildren = sortedChildren(tree);
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center gap-2">
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Search skills..."
+          className="flex-1 rounded border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-sm"
+        />
+        <button onClick={expandAll} className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-bright)]">Expand</button>
+        <button onClick={collapseAll} className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-bright)]">Collapse</button>
+      </div>
+      <div className="space-y-1">
+        {rootChildren.map((c) =>
+          c.skill && c.children.size === 0 ? (
+            <SkillLeaf key={c.path} skill={c.skill} depth={0} />
+          ) : (
+            <TreeBranch
+              key={c.path}
+              node={c}
+              depth={0}
+              expanded={effectiveExpanded}
+              toggleExpanded={toggleExpanded}
+              toggleBranch={toggleBranch}
+            />
+          )
+        )}
+      </div>
+      {skills.length === 0 && (
+        <div className="text-sm text-[var(--text-tertiary)]">No skills found.</div>
+      )}
+    </div>
+  );
+}

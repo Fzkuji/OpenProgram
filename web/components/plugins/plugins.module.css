@@ -1,0 +1,302 @@
+.view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  height: 64px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-left: 24px;
+}
+
+.tab {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tabActive {
+  composes: tab;
+  color: var(--text-bright);
+  border-color: var(--border);
+  background: var(--bg-secondary);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--text-dim);
+}
+
+.btnPrimary {
+  composes: btn;
+  background: var(--accent, #7c6fcd);
+  color: white;
+  border-color: transparent;
+}
+
+.btnDanger {
+  composes: btn;
+  color: #ef4444;
+  border-color: #ef444444;
+}
+
+.body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 24px;
+}
+
+.empty {
+  padding: 48px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  margin-bottom: 8px;
+}
+
+.rowMain {
+  min-width: 0;
+}
+
+.rowName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.rowMeta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.rowDesc {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  margin-right: 6px;
+}
+
+.badgeVerified {
+  composes: badge;
+  color: #10b981;
+  border-color: #10b98144;
+  background: #10b98111;
+}
+
+.badgeCommunity {
+  composes: badge;
+  color: #f59e0b;
+  border-color: #f59e0b44;
+  background: #f59e0b11;
+}
+
+.badgeUntrusted {
+  composes: badge;
+  color: #ef4444;
+  border-color: #ef444444;
+  background: #ef444411;
+}
+
+.toggle {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--bg-tertiary, #2a2a2a);
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+}
+
+.toggleOn {
+  composes: toggle;
+  background: #10b981;
+  border-color: #10b981;
+}
+
+.toggleKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  transition: left 0.15s;
+}
+
+.toggleKnobOn {
+  composes: toggleKnob;
+  left: 18px;
+}
+
+.errorBox {
+  padding: 12px 16px;
+  border: 1px solid #ef444444;
+  border-radius: 8px;
+  background: #ef444411;
+  color: #ef4444;
+  font-size: 13px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+}
+
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.dialog {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  width: min(600px, 90vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dialogTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.dialogBody {
+  flex: 1;
+  overflow: auto;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.dialogActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.textarea {
+  min-height: 200px;
+  font-family: ui-monospace, monospace;
+  resize: vertical;
+}
+
+.card {
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cardMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.select {
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.checkRow {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.checkOk {
+  color: #10b981;
+}
+
+.checkFail {
+  color: #ef4444;
+}

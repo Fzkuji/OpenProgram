@@ -1187,6 +1187,14 @@ def create_app():
     from openprogram.webui.routes import mcp as _routes_mcp
     _routes_mcp.register(app)
 
+    # /api/skills/* — Skills management
+    from openprogram.webui.routes import skills as _routes_skills
+    _routes_skills.register(app)
+
+    # /api/plugins/* — Plugins management
+    from openprogram.webui.routes import plugins as _routes_plugins
+    _routes_plugins.register(app)
+
     return app
 
 

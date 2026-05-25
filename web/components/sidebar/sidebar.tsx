@@ -173,6 +173,8 @@ export function Sidebar() {
     programs: pathname.startsWith("/functions"),
     memory: pathname.startsWith("/memory"),
     chats: pathname.startsWith("/chats"),
+    skills: pathname.startsWith("/skills"),
+    plugins: pathname.startsWith("/plugins") || pathname.startsWith("/plugin/"),
   };
 
   return (
@@ -294,6 +296,38 @@ export function Sidebar() {
               </svg>
             )}
           </span>
+        </Link>
+
+        <Link
+          href="/skills"
+          className={
+            sidebarNavItemClass +
+            (navActive.skills ? " " + sidebarNavItemActiveClass : "")
+          }
+          id="navSkills"
+        >
+          <span className={sidebarNavIconClass}>
+            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
+              <path d="M10 1.5a1 1 0 0 1 .894.553l1.987 3.975 4.388.638a1 1 0 0 1 .554 1.706l-3.175 3.094.749 4.368a1 1 0 0 1-1.451 1.054L10 14.85l-3.946 2.038a1 1 0 0 1-1.451-1.054l.75-4.368L2.177 8.372a1 1 0 0 1 .554-1.706l4.388-.638L9.106 2.053A1 1 0 0 1 10 1.5Z" />
+            </svg>
+          </span>
+          <span className={sidebarNavLabelClass}>Skills</span>
+        </Link>
+
+        <Link
+          href="/plugins"
+          className={
+            sidebarNavItemClass +
+            (navActive.plugins ? " " + sidebarNavItemActiveClass : "")
+          }
+          id="navPlugins"
+        >
+          <span className={sidebarNavIconClass}>
+            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
+              <path d="M7 2a1 1 0 0 1 1 1v2h4V3a1 1 0 1 1 2 0v2h1.5A1.5 1.5 0 0 1 17 6.5V8h2a1 1 0 1 1 0 2h-2v4h2a1 1 0 1 1 0 2h-2v1.5a1.5 1.5 0 0 1-1.5 1.5H14v-2a1 1 0 1 0-2 0v2H8v-2a1 1 0 1 0-2 0v2H4.5A1.5 1.5 0 0 1 3 17.5V16H1a1 1 0 1 1 0-2h2v-4H1a1 1 0 1 1 0-2h2V6.5A1.5 1.5 0 0 1 4.5 5H6V3a1 1 0 0 1 1-1Z" />
+            </svg>
+          </span>
+          <span className={sidebarNavLabelClass}>Plugins</span>
         </Link>
 
         <Link
