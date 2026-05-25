@@ -25,6 +25,7 @@ from . import grep as _grep_self_register  # noqa: F401
 from . import image_analyze as _image_analyze_self_register  # noqa: F401
 from . import image_generate as _image_generate_self_register  # noqa: F401
 from . import list as _list_self_register  # noqa: F401
+from . import mcp_meta as _mcp_meta_self_register  # noqa: F401
 from . import memory as _memory_self_register  # noqa: F401
 from . import mixture_of_agents as _mixture_of_agents_self_register  # noqa: F401
 from . import pdf as _pdf_self_register  # noqa: F401

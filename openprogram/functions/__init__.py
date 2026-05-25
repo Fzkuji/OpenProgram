@@ -86,6 +86,13 @@ DEFAULT_TOOLS: list[str] = [
     # stay visible across modes.
     "enter_plan_mode",
     "exit_plan_mode",
+    # MCP meta — read resources / render prompts on any configured
+    # MCP server. Lightweight (one read per call), and the LLM needs
+    # them on turn 1 to discover what's there; not deferred.
+    "list_mcp_resources",
+    "read_mcp_resource",
+    "list_mcp_prompts",
+    "get_mcp_prompt",
 ]
 
 
@@ -132,6 +139,8 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "memory_review", "memory_status",
             "tool_search",  # Layer 7 bootstrap; always exposed
             "enter_plan_mode", "exit_plan_mode",
+            "list_mcp_resources", "read_mcp_resource",
+            "list_mcp_prompts", "get_mcp_prompt",
 
             # ─── agentic side ──────────────────────────────────────
             # The three harness entry points + the two PDF-extraction

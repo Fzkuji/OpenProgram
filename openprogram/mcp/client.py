@@ -87,6 +87,67 @@ class MCPClient:
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 self._supervisor_task.cancel()
 
+    # -- resources / prompts (MCP protocol primitives besides tools) --
+
+    async def list_resources(self) -> list[dict]:
+        """Server's resources/list response, flattened to dict list.
+
+        Returns ``[]`` (not error) for servers that don't expose any
+        resources, so the listing tool can join across N servers
+        without each having to support resources.
+        """
+        if self._session is None:
+            raise RuntimeError(
+                f"MCP server '{self.config.name}' not connected "
+                f"({self.error or 'no session'})"
+            )
+        try:
+            result = await self._session.list_resources()
+        except Exception:  # noqa: BLE001 — servers without capability raise
+            return []
+        return [r.model_dump(mode="json", exclude_none=True)
+                for r in result.resources]
+
+    async def read_resource(self, uri: str) -> list[dict]:
+        """Server's resources/read response — list of content blocks."""
+        if self._session is None:
+            raise RuntimeError(
+                f"MCP server '{self.config.name}' not connected "
+                f"({self.error or 'no session'})"
+            )
+        from pydantic import AnyUrl
+        result = await self._session.read_resource(AnyUrl(uri))
+        return [c.model_dump(mode="json", exclude_none=True)
+                for c in result.contents]
+
+    async def list_prompts(self) -> list[dict]:
+        """Server's prompts/list response, flattened to dict list.
+
+        Returns ``[]`` for servers without prompt support.
+        """
+        if self._session is None:
+            raise RuntimeError(
+                f"MCP server '{self.config.name}' not connected "
+                f"({self.error or 'no session'})"
+            )
+        try:
+            result = await self._session.list_prompts()
+        except Exception:  # noqa: BLE001
+            return []
+        return [p.model_dump(mode="json", exclude_none=True)
+                for p in result.prompts]
+
+    async def get_prompt(self, name: str,
+                         arguments: Optional[dict] = None) -> dict:
+        """Server's prompts/get response — rendered messages."""
+        if self._session is None:
+            raise RuntimeError(
+                f"MCP server '{self.config.name}' not connected "
+                f"({self.error or 'no session'})"
+            )
+        result = await self._session.get_prompt(name, arguments or {})
+        return result.model_dump(mode="json", exclude_none=True)
+
     async def call_tool(self, tool_name: str,
                         arguments: Optional[dict]) -> CallToolResult:
         """Dispatch a ``tools/call`` to the server.

@@ -38,6 +38,25 @@ _loaded = False
 _loaded_lock = threading.Lock()
 
 
+def get_client(name: str) -> Optional[MCPClient]:
+    """Live :class:`MCPClient` for ``name`` or ``None`` if unknown.
+
+    Used by the resource/prompt meta-tools (list_mcp_resources,
+    read_mcp_resource, list_mcp_prompts, get_mcp_prompt) to reach the
+    persistent session without going through HTTP.
+    """
+    return _clients.get(name)
+
+
+def list_clients() -> list[MCPClient]:
+    """Snapshot of every loaded MCPClient (ready, broken, or disabled).
+
+    Order matches insertion / config-file order so callers iterating
+    across all servers produce stable results.
+    """
+    return list(_clients.values())
+
+
 def server_status() -> list[dict[str, Any]]:
     """Diagnostic snapshot for the webui / CLI to render in settings."""
     out: list[dict[str, Any]] = []
