@@ -531,6 +531,14 @@ export const useSessionStore = create<ConvState>((set) => ({
         runningTask: id ? (s.runningTasks[id] ?? null) : null,
         composerInput: nextInput,
         composerDrafts: drafts,
+        // Reset the welcome screen visibility on session switch:
+        //   - null id  → New chat clicked, show the welcome panel.
+        //   - non-null → entering an existing session, hide it (the
+        //     message list takes over).
+        // Without this, ``sendChatMessage`` set welcomeVisible=false
+        // on the previous turn and nothing flipped it back when the
+        // user hit New chat — they saw an empty chat area.
+        welcomeVisible: id === null,
       };
     }),
 
@@ -598,7 +606,11 @@ export const useSessionStore = create<ConvState>((set) => ({
   setPaused: (p) => set({ paused: p }),
   setProviderInfo: (p) => set({ providerInfo: p }),
 
-  welcomeVisible: false,
+  // Default to visible — first page load lands on /chat with no
+  // session, the welcome panel should greet the user. sendChatMessage
+  // flips it false once a turn goes out; setCurrentConv(null) flips
+  // it back true on New chat.
+  welcomeVisible: true,
   setWelcomeVisible: (v) => set({ welcomeVisible: v }),
 
   // Hydrate the live draft for the "new session" placeholder at module
