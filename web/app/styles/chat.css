@@ -1365,6 +1365,29 @@
   background: rgba(160, 160, 160, 0.18);
   color: var(--text-muted);
 }
+/* Cancel button — only shown while the attach's task is still
+   running (or pending / queued). Subtle outlined pill that doesn't
+   compete with the running-status pill in the header. */
+.attach-card-cancel {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.attach-card-cancel:hover {
+  border-color: var(--accent-red, #e5534b);
+  color: var(--accent-red, #e5534b);
+}
 .attach-card-sub {
   font-family: var(--font-mono);
   font-size: 11px;

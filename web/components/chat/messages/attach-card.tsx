@@ -240,6 +240,29 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           </span>
         </div>
       ) : null}
+      {/* Live-task footer: cancel button for in-flight tasks. */}
+      {attach.task_id
+        && (attach.status === "running" || attach.status === "pending"
+            || attach.status === "queued") ? (
+        <div className="attach-card-footer">
+          <span className="attach-card-status">
+            Running — embedding placeholder until done
+          </span>
+          <button
+            type="button"
+            className="attach-card-cancel"
+            onClick={() => {
+              wsSend({
+                action: "cancel_task",
+                task_id: attach.task_id,
+              });
+            }}
+            title="Stop this sub-agent"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
