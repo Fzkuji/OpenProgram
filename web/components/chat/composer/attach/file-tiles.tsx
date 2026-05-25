@@ -49,23 +49,20 @@ const TILE_KEYFRAMES = `
   to   { opacity: 1; }
 }
 .composer-file-tile {
-  /* 0.5px on retina renders as a true half-pixel hairline (matches
-     claude.ai / Claude Code composer); on 1x screens it falls back
-     to 1px but the alpha keeps the visual weight light. */
-  outline: 0.5px solid var(--border);
-  outline-offset: -0.5px;
-  transition: background 120ms ease, outline-color 120ms ease,
-              box-shadow 120ms ease;
+  /* OUTSET box-shadow (no inset) as the 1px ring — same trick as the
+     composer wrapper. Shadow rasteriser keeps the hairline uniform
+     around the 16px corner; border / outline both showed visibly
+     thinner pixels on the curve. */
+  box-shadow: 0 0 0 1px var(--border);
+  transition: background 120ms ease, box-shadow 120ms ease;
 }
 .composer-file-tile:hover {
   background: var(--bg-tertiary);
-  /* Light glow + brighter hairline. The page is dark, so a black
-     drop-shadow disappears — we add a faint white halo (0 0 0 1px
-     of itself + a soft 8px outer glow) so the tile reads as
-     'lifted'. */
-  outline-color: rgba(226,225,218,0.40);
-  box-shadow: 0 0 0 1px rgba(226,225,218,0.12),
-              0 0 8px rgba(226,225,218,0.08);
+  /* Brighter ring + soft white outer glow. Dark drop-shadow is
+     invisible on the dark chat surface, so we layer a faint warm-
+     white halo to read as 'lifted'. */
+  box-shadow: 0 0 0 1px rgba(226,225,218,0.40),
+              0 0 10px rgba(226,225,218,0.08);
 }
 .composer-file-tile-close {
   opacity: 0;

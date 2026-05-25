@@ -73,33 +73,22 @@
 .inputWrapper::after {
   content: "";
   position: absolute;
-  /* Pull the pseudo inward by half a px so the 1px outline sits on
-     the pixel grid rather than straddling two pixels, then ride the
-     full radius. The composer wrapper is ``overflow: hidden`` so
-     ``outline-offset: -0.5px`` would equivalently work, but using
-     a positive inset is what makes ``outline`` honour the curve
-     uniformly in Chrome (regressed in older builds). */
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
   z-index: 2;
-  /* ``outline`` instead of ``border`` / inset box-shadow — modern
-     Chrome rasterises outline along border-radius with the same
-     sub-pixel sampling as the rest of the rounded box, so the
-     hairline thickness is uniform around the curve. CSS ``border``
-     splits curve vs. straight-edge rendering paths in WebKit and
-     gives the curve a visibly different intensity (looks like the
-     corners get "flattened"). */
-  /* Thin hairline at rest, lifts on focus. 0.5px on retina renders
-     as a true half-pixel; on 1x displays it falls back to 1px but
-     the alpha keeps the visual weight light. Matches the Claude
-     Code composer outline weight. */
-  outline: 0.5px solid var(--border);
-  outline-offset: -0.5px;
-  transition: outline-color 180ms ease;
+  /* Hairline drawn via an OUTSET box-shadow (no `inset` keyword) +
+     0/0/0/1 — a "ring" in Tailwind / shadcn parlance. The shadow
+     rasteriser samples sub-pixels with the same rule the rounded
+     fill uses, so the line stays uniform thickness all the way
+     around the curve instead of getting visibly thinner at the
+     corner. Previous ``border`` and ``inset box-shadow`` approaches
+     both suffered the curve-thinning AA artefact. */
+  box-shadow: 0 0 0 1px var(--border);
+  transition: box-shadow 180ms ease;
 }
 .inputWrapper:focus-within::after {
-  outline-color: rgba(226,225,218,0.28);
+  box-shadow: 0 0 0 1px rgba(226,225,218,0.32);
 }
 
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
