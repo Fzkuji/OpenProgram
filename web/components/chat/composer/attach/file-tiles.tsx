@@ -169,7 +169,10 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          gap: 4,
+          // Vertical gap between filename and DOCX / PDF badge — 4px
+          // looked cramped, bumping to 8px gives the badge clear
+          // separation from the name line.
+          gap: 8,
           overflow: "hidden",
           cursor: "pointer",
           animation: "tileIn 180ms cubic-bezier(0.16, 1, 0.3, 1)",
