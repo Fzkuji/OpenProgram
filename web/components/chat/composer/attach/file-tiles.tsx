@@ -53,7 +53,7 @@ const TILE_KEYFRAMES = `
               box-shadow 120ms ease;
 }
 .composer-file-tile:hover {
-  border-color: rgba(255,255,255,0.22);
+  border-color: rgba(255,255,255,0.45);
   background: var(--bg-tertiary);
   box-shadow: 0 2px 6px rgba(0,0,0,0.28);
 }
