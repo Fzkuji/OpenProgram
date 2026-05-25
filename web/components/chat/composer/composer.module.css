@@ -110,10 +110,8 @@
   animation: none;
   opacity: 1;
 }
-@keyframes outgoingLayerFade {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
+/* @keyframes outgoingLayerFade lives in app/styles/base.css — see the
+   note there explaining the turbopack keyframe-name workaround. */
 
 /* Dark-mode override removed — `var(--text-bright)` already swaps
    between near-black (light) and near-white (dark) via the theme
@@ -521,22 +519,7 @@
   animation: slashClose 380ms cubic-bezier(0.4, 0, 0.84, 0) forwards;
   pointer-events: none;
 }
-@keyframes slashOpen {
-  from {
-    transform: translateX(-50%) translateY(100%);
-  }
-  to {
-    transform: translateX(-50%) translateY(0);
-  }
-}
-@keyframes slashClose {
-  from {
-    transform: translateX(-50%) translateY(0);
-  }
-  to {
-    transform: translateX(-50%) translateY(100%);
-  }
-}
+/* @keyframes slashOpen / slashClose live in app/styles/base.css. */
 
 .slashMenuItem {
   display: block;

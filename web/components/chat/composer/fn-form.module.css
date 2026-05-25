@@ -55,12 +55,13 @@
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
   flex-shrink: 0;
-  opacity: 0;
-  animation: fnFormFadeIn var(--composer-fade-duration) ease
-    var(--composer-fade-delay-header) forwards;
-}
-@keyframes fnFormFadeIn {
-  to { opacity: 1; }
+  /* Default opacity 1 (don't rely on the fade-in animation to reach
+     the visible state). Background-tab Chrome pauses the animation
+     timeline at currentTime=0, so the previous opacity:0 + animation
+     keyframe combo left the fn-form blank whenever the tab wasn't
+     focused at mount. Closing transition (.header.closing below)
+     still drives a 1 → 0 fade. */
+  opacity: 1;
 }
 
 .header.closing,
@@ -134,9 +135,9 @@
      bottom row's geometry identical between chat mode and fn-form
      mode — only the body adds the line. */
   border-bottom: 1px solid var(--border);
-  opacity: 0;
-  animation: fnFormFadeIn var(--composer-fade-duration) ease
-    var(--composer-fade-delay-body) forwards;
+  /* See .header above — opacity defaults to 1 to survive
+     background-tab animation-timeline pauses. */
+  opacity: 1;
   /* Pin the body to the middle of the wrapper:
      - `flex: 1` fills the remaining flex column space between the
        fixed-size header (`flex-shrink: 0`) above and the absolutely-

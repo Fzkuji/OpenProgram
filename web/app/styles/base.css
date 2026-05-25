@@ -348,3 +348,26 @@ html, body {
   color: var(--text-secondary);
 }
 
+/* ===== Composer keyframes ==============================================
+   Defined globally (not in *.module.css) because turbopack's CSS-module
+   pass mangled the keyframes names while leaving the corresponding
+   ``animation: <name>`` reference unmangled — the animation never
+   matched, so the fn-form header/body stayed at opacity:0 and the
+   form rendered blank. Keeping the keyframes here keeps the names
+   stable. */
+@keyframes fnFormFadeIn {
+  to { opacity: 1; }
+}
+@keyframes outgoingLayerFade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes slashOpen {
+  from { transform: translateX(-50%) translateY(100%); }
+  to   { transform: translateX(-50%) translateY(0); }
+}
+@keyframes slashClose {
+  from { transform: translateX(-50%) translateY(0); }
+  to   { transform: translateX(-50%) translateY(100%); }
+}
+
