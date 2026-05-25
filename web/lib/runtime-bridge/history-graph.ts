@@ -306,32 +306,14 @@ function _applyCollapse(graph: GNode[]): {
   function _internalKids(id: string): string[] {
     return (childrenOf[id] || []).filter((c) => internalFlag[c]);
   }
-  function collapsible(m: GNode): boolean {
-    // Any node that owns sub-calls (a `caller` kid exists) can be
-    // collapsed to hide its tool / sub-LLM subtree. This subsumes
-    // the legacy role=="tool" / _runNode checks for new graphs.
-    if ((callerKidsOf[m.id] || []).length > 0) return true;
-    if (m.role === "tool") return (childrenOf[m.id] || []).length > 0;
-    if (m._runNode) return _internalKids(m.id).length > 0;
+  // Collapse disabled — the history view is the session's DAG, every
+  // node is meaningful, hiding any of them defeats the purpose of a
+  // git-style graph. Keep the function so downstream callers don't
+  // break, but always report "not collapsible".
+  function collapsible(_m: GNode): boolean {
     return false;
   }
-  // Default-collapse nodes whose sub-call cluster is large enough to
-  // dominate the column. A short cluster (≤ AUTO_COLLAPSE_THRESHOLD)
-  // stays expanded so 2-3 tools per turn read fine inline; long
-  // clusters fold to one node + "+N" badge so 30 read() calls don't
-  // turn the panel into a wall of squares. Single-click on the
-  // caller toggles between the two states; the user's manual
-  // collapse/expand persists across renders within the session.
-  const AUTO_COLLAPSE_THRESHOLD = 4;
-  graph.forEach((m) => {
-    if (!collapsible(m)) return;
-    if (_seenCollapsible[m.id]) return;  // already decided once
-    _seenCollapsible[m.id] = true;
-    const kidCount = (callerKidsOf[m.id] || []).length;
-    if (kidCount > AUTO_COLLAPSE_THRESHOLD) {
-      _collapsed[m.id] = true;
-    }
-  });
+  // No auto-collapse pass either.
   const hidden: Record<string, boolean> = Object.create(null);
   const hiddenCount: Record<string, number> = Object.create(null);
   graph.forEach((m) => {

@@ -219,7 +219,7 @@ function BranchItem({
 
 export function BranchesPanel() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [, setTick] = useState(0);
   // Multi-select state for merging. ``selected`` is a list of
   // head_msg_ids the user has clicked the checkbox on; ``baseHead``
@@ -247,9 +247,11 @@ export function BranchesPanel() {
     return () => window.removeEventListener("branches-updated", bump);
   }, []);
 
-  // Start collapsed again on every conversation change.
+  // Reset transient state on every conversation change. The panel
+  // stays expanded by default — the right-rail already reserved a
+  // slot for the branch list, no reason to make the user click
+  // "Show" before they can see what branches exist.
   useEffect(() => {
-    setCollapsed(true);
     setSelected([]);
     setBaseHead(null);
     setMerging(false);
