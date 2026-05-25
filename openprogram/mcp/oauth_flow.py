@@ -18,6 +18,7 @@ down as soon as the code arrives (or the context manager exits).
 from __future__ import annotations
 
 import asyncio
+import os
 import socket
 import sys
 import threading
@@ -25,6 +26,37 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Optional
+
+
+# Module-level so the API endpoint (``GET /api/mcp/servers/{name}
+# /auth/pending_url``) and tests can read the currently-pending OAuth
+# URL when running headless and the user can't see the worker's stderr.
+# Keyed by callback port (each LocalhostCallback has a unique one).
+# Cleared on success / close.
+_pending_auth_urls: dict[int, str] = {}
+_pending_auth_lock = threading.Lock()
+
+
+def get_pending_auth_url(port: int) -> Optional[str]:
+    """Last authorisation URL emitted for ``port`` (None if cleared)."""
+    with _pending_auth_lock:
+        return _pending_auth_urls.get(port)
+
+
+def get_all_pending_auth() -> dict[int, str]:
+    """Snapshot of every callback port → its pending URL."""
+    with _pending_auth_lock:
+        return dict(_pending_auth_urls)
+
+
+def _set_pending_auth_url(port: int, url: str) -> None:
+    with _pending_auth_lock:
+        _pending_auth_urls[port] = url
+
+
+def _clear_pending_auth_url(port: int) -> None:
+    with _pending_auth_lock:
+        _pending_auth_urls.pop(port, None)
 
 
 _SUCCESS_BODY = (
@@ -46,21 +78,75 @@ _ERROR_BODY_FMT = (
 )
 
 
-async def open_browser_redirect(url: str) -> None:
-    """Redirect handler passed to ``OAuthClientProvider``.
+def _make_redirect_handler(callback_port: int):
+    """Build a redirect handler tagged to a specific callback port so
+    the headless-friendly logs / SSH hint reference the right URL.
 
-    Tries the system browser first; if that fails (headless box,
-    missing $DISPLAY, etc.) prints the URL so a human can paste it
-    elsewhere. Either way returns immediately — the callback server
-    is what actually blocks waiting for the response.
+    Returned coroutine has the signature the MCP SDK's
+    ``OAuthClientProvider`` expects: ``async (url: str) -> None``.
     """
-    try:
-        opened = webbrowser.open(url, new=2)
-    except Exception:  # noqa: BLE001
-        opened = False
-    if not opened:
-        print(f"[mcp][oauth] open this URL in a browser to "
-              f"authorise:\n  {url}", file=sys.stderr)
+    async def _redirect(url: str) -> None:
+        # Always remember the URL so the management API can return it
+        # to a user who can't see the worker's stderr.
+        _set_pending_auth_url(callback_port, url)
+
+        # Always print, even when the browser opens — saves users
+        # whose default browser is the wrong one (work account vs
+        # personal, etc.) from hunting for the right URL.
+        print(f"\n[mcp][oauth] authorisation required.\n"
+              f"  Open this URL in your browser:\n"
+              f"    {url}\n", file=sys.stderr)
+
+        # SSH session detected? The redirect target
+        # http://127.0.0.1:{port}/callback resolves to the LOCAL
+        # machine in the user's browser, not the remote worker. Tell
+        # them the exact port-forward command to bridge it. Same
+        # pattern hermes-agent uses for the same problem.
+        is_ssh = bool(os.getenv("SSH_CLIENT") or os.getenv("SSH_TTY"))
+        if is_ssh:
+            print(
+                f"  Remote SSH session detected. The callback listens "
+                f"on this worker's 127.0.0.1:{callback_port}, but the "
+                f"browser you open will hit YOUR laptop's 127.0.0.1.\n"
+                f"  Forward the port first in a separate terminal:\n"
+                f"    ssh -N -L {callback_port}:127.0.0.1:{callback_port} "
+                f"<user>@<this-host>\n"
+                f"  Then open the URL above.\n",
+                file=sys.stderr,
+            )
+
+        # Best-effort browser open. Skip entirely when there's
+        # obviously no display — webbrowser.open on a headless box
+        # tends to either error or silently spawn a dead xdg-open.
+        if _can_open_browser():
+            try:
+                if webbrowser.open(url, new=2):
+                    print("  (browser opened automatically)\n",
+                          file=sys.stderr)
+            except Exception:  # noqa: BLE001
+                pass
+
+    return _redirect
+
+
+# Back-compat module-level export — uses port 0 so the SSH hint will
+# show ``ssh -L 0:127.0.0.1:0``. Always prefer ``_make_redirect_handler``
+# when the callback port is known (every new code path passes it).
+async def open_browser_redirect(url: str) -> None:
+    await _make_redirect_handler(0)(url)
+
+
+def _can_open_browser() -> bool:
+    """Cheap heuristic: are we somewhere a browser can actually open?
+
+    macOS / Windows: assume yes. Linux: only when DISPLAY or
+    WAYLAND_DISPLAY is set (xdg-open inside a bare ssh shell either
+    errors or pops on the remote host's screen, neither useful).
+    """
+    if sys.platform in ("darwin", "win32"):
+        return True
+    return bool(os.environ.get("DISPLAY") or
+                os.environ.get("WAYLAND_DISPLAY"))
 
 
 class LocalhostCallback:
@@ -174,6 +260,7 @@ class LocalhostCallback:
                     outer._code = qs.get("code", [None])[0]
                     outer._state = qs.get("state", [None])[0]
                     self._send_html(200, _SUCCESS_BODY)
+                _clear_pending_auth_url(outer._port)
                 outer._result_event.set()
 
             def _send_html(self, status: int, body: str) -> None:

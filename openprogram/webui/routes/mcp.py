@@ -139,6 +139,25 @@ def register(app: FastAPI) -> None:
     async def disable_one(name: str):
         return await patch_one(name, {"enabled": False})
 
+    @app.get("/api/mcp/auth/pending")
+    async def pending_auth():
+        """List in-progress OAuth flows + their authorisation URLs.
+
+        Used by headless deployments where the worker's stderr isn't
+        visible (managed services, Docker, systemd). Operators fetch
+        this to get the URL they need to open in a browser on a
+        machine that has one. The callback port shown also tells
+        them which port to ``ssh -L`` if the worker is remote.
+
+        Returns ``{"pending": [{"callback_port": <int>, "url": <str>}, ...]}``.
+        """
+        from openprogram.mcp.oauth_flow import get_all_pending_auth
+        items = [
+            {"callback_port": port, "url": url}
+            for port, url in get_all_pending_auth().items()
+        ]
+        return JSONResponse(content={"pending": items})
+
     @app.post("/api/mcp/servers/{name}/auth/clear")
     async def clear_auth(name: str):
         """Wipe stored OAuth tokens + (dynamic) client info for a

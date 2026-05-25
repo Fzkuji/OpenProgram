@@ -266,7 +266,7 @@ class MCPClient:
             from mcp.client.auth import OAuthClientProvider
             from mcp.shared.auth import OAuthClientMetadata
 
-            from .oauth_flow import LocalhostCallback, open_browser_redirect
+            from .oauth_flow import LocalhostCallback, _make_redirect_handler
             from .token_storage import FileTokenStorage
 
             oauth_cfg = self.config.oauth
@@ -345,7 +345,7 @@ class MCPClient:
                 server_url=self.config.url,
                 client_metadata=client_metadata,
                 storage=storage,
-                redirect_handler=open_browser_redirect,
+                redirect_handler=_make_redirect_handler(port),
                 callback_handler=_callback_handler,
                 timeout=self.config.timeout_seconds * 2 + 60,
             )
