@@ -447,11 +447,13 @@ wechat.py   → 内部 _send                outbound.py → raw HTTP
 
 讽刺的是 dispatcher 内部 `_on_event` 已经 emit `tool_use` / `stream_event` / `tool_result` envelope（见 `agent/_event_parsing.py`），只是没回流给 channel——只对 webui 广播。
 
-### 缺陷 4：没有 ChannelMessage 中性结构
+### 缺陷 4：没有 ChannelMessage 中性结构（✓ 已修，commit faaeb1ee）
 
 每个 adapter 自己处理 platform-native object → 直接传 `(chat_id, user, text)` 三个字符串给 dispatch_inbound。要支持 reply / quote / thread / attachment 没有共同 schema 可挂。
 
 如果将来 agent 想"引用之前那条消息"或"读图片附件"，每个 adapter 都要单独写一遍。
+
+**修复**：加 `_message.py:ChannelMessage` frozen dataclass，含 `text` / `chat_id` / `user_id` / `user_display` / `chat_type` / `ts` / `reply_to_id` / `thread_id` / `attachments` 字段。4 个 adapter 入口都 parse 出 ChannelMessage 再展开传给 dispatch_inbound。dispatch_inbound 签名不变（兼容现有 caller），ChannelMessage 当前是 adapter 内部工具——但 `reply_to_id` / `thread_id` / `attachments` 已经在每个 adapter 里抽出来，等 dispatch_inbound 将来消费这些字段时 parse step 已就位。
 
 ### 缺陷 5：_conversation.py 单文件 483 行 5 个职责
 
