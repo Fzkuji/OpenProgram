@@ -50,6 +50,7 @@ export function DiscoverySources() {
   const [catalogs, setCatalogs] = useState<Record<string, CatalogState>>({});
   const [installingKey, setInstallingKey] = useState<string | null>(null);
   const [bulkUrl, setBulkUrl] = useState<string | null>(null);
+  const [checkingUrl, setCheckingUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -169,6 +170,40 @@ export function DiscoverySources() {
     }
   }
 
+  async function handleRefreshDiff(source: Source) {
+    setCheckingUrl(source.url);
+    setStatus(null);
+    try {
+      const r = await fetch(
+        `/api/skills/discovery/diff?url=${encodeURIComponent(source.url)}`,
+      );
+      if (r.ok) {
+        const d: { outdated?: string[] } = await r.json();
+        const newOutdated = new Set(d.outdated || []);
+        setCatalogs((c) => {
+          const prev = c[source.url] ?? {
+            loading: false,
+            entries: null,
+            error: null,
+            outdated: new Set<string>(),
+          };
+          return { ...c, [source.url]: { ...prev, outdated: newOutdated } };
+        });
+        setStatus(
+          newOutdated.size > 0
+            ? `${source.label}: ${newOutdated.size} update${newOutdated.size === 1 ? "" : "s"} available`
+            : `${source.label}: already up to date`,
+        );
+      } else {
+        setStatus(`Check failed: HTTP ${r.status}`);
+      }
+    } catch (e) {
+      setStatus(`Check failed: ${String(e)}`);
+    } finally {
+      setCheckingUrl(null);
+    }
+  }
+
   async function handleUpdateOutdated(source: Source) {
     const cat = catalogs[source.url];
     if (!cat?.outdated || cat.outdated.size === 0) return;
@@ -278,19 +313,35 @@ export function DiscoverySources() {
                         <Button
                           size="sm"
                           variant={outdatedCount > 0 ? "default" : "outline"}
-                          onClick={() => handleUpdateOutdated(s)}
-                          disabled={bulkUrl === s.url || outdatedCount === 0}
+                          onClick={() => {
+                            // Outdated > 0  → install the drifted skills.
+                            // Outdated == 0 → re-check upstream (no destructive op).
+                            if (outdatedCount > 0) handleUpdateOutdated(s);
+                            else handleRefreshDiff(s);
+                          }}
+                          disabled={bulkUrl === s.url || checkingUrl === s.url}
                           title={
                             outdatedCount > 0
                               ? `Re-pull ${outdatedCount} skill${outdatedCount === 1 ? "" : "s"} whose upstream SKILL.md changed`
-                              : "All installed skills match upstream"
+                              : "Check upstream for new versions"
                           }
+                          className="group min-w-[110px]"
                         >
-                          {bulkUrl === s.url
-                            ? "Updating…"
-                            : outdatedCount > 0
-                              ? `Update ${outdatedCount}`
-                              : "Up to date"}
+                          {bulkUrl === s.url ? (
+                            "Updating…"
+                          ) : checkingUrl === s.url ? (
+                            "Checking…"
+                          ) : outdatedCount > 0 ? (
+                            <>
+                              <span className="group-hover:hidden">{`Update ${outdatedCount}`}</span>
+                              <span className="hidden group-hover:inline">↻ Check again</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="group-hover:hidden">Up to date</span>
+                              <span className="hidden group-hover:inline">↻ Check now</span>
+                            </>
+                          )}
                         </Button>
                       )}
                       {s.origin === "custom" && (
