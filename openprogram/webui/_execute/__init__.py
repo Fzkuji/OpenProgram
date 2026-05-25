@@ -363,6 +363,14 @@ def _run_spawn_async(
                 attach["task_id"] = task_id
                 extra_json["attach"] = attach
                 md["extra"] = json.dumps(extra_json, default=str)
+                # Mirror onto the top-level metadata.attach the same
+                # way the runner does in _update_attach_card — the
+                # frontend's _readAttach reads the top-level first
+                # and only falls back to extra-json, so without this
+                # the UI sees task_id missing on the placeholder
+                # card and can't render the Cancel button while the
+                # task is still running.
+                md["attach"] = attach
                 shim = GraphStoreShim(db, session_id)
                 shim.update(attach_node_id, output="(running)", metadata=md)
                 db.commit_turn(session_id, f"task: stitch {task_id}")
