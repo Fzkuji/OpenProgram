@@ -199,8 +199,18 @@ export function DiscoverySources() {
               catalogTotal !== undefined && installed >= catalogTotal && catalogTotal > 0;
             const outdatedCount = cat?.outdated?.size ?? 0;
             return (
-              <li key={s.url} className="rounded-md border border-[var(--border)]">
-                <div className="flex items-start gap-3 p-3 hover:bg-bg-hover hover:text-nav-color-hover">
+              <li key={s.url} className="rounded-md border border-[var(--border)] overflow-hidden">
+                <div
+                  role="button"
+                  onClick={() => toggleExpand(s.url)}
+                  className="flex items-start gap-3 p-3 cursor-pointer hover:bg-bg-hover hover:text-nav-color-hover select-none"
+                >
+                  <span
+                    className="mt-[2px] text-[var(--text-tertiary)] shrink-0 w-3 text-center"
+                    aria-hidden
+                  >
+                    {open ? "▾" : "▸"}
+                  </span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-[var(--text-bright)]">{s.label}</span>
@@ -231,10 +241,10 @@ export function DiscoverySources() {
                     )}
                     <p className="mt-1 text-[11px] font-mono text-[var(--text-tertiary)] truncate">{s.url}</p>
                   </div>
-                  <div className="flex flex-col gap-1 items-end">
-                    <Button size="sm" onClick={() => toggleExpand(s.url)}>
-                      {open ? "Hide catalog" : "Browse catalog"}
-                    </Button>
+                  <div
+                    className="flex flex-col gap-1 items-end shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Button size="sm" variant={installed > 0 ? "outline" : "default"}
                       onClick={() => handlePullAll(s)} disabled={bulkUrl === s.url}>
                       {bulkUrl === s.url
@@ -375,15 +385,25 @@ function CatalogList({
   return (
     <div>
       <div className="mb-3 flex items-center gap-2">
-        <Input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder={`Filter ${entries.length} skill${entries.length === 1 ? "" : "s"}…`}
-        />
+        <div className="relative flex-1">
+          <svg
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
+            width="14" height="14" viewBox="0 0 20 20" fill="currentColor"
+          >
+            <path fillRule="evenodd" clipRule="evenodd"
+              d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" />
+          </svg>
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder={`Search ${entries.length} skill${entries.length === 1 ? "" : "s"}…`}
+            className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20"
+          />
+        </div>
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}
-          className="shrink-0 rounded border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+          className="shrink-0 rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)]"
         >
           <option value="default">Sort: {hasMeta ? "Trending" : "Default"}</option>
           <option value="name">Name</option>
