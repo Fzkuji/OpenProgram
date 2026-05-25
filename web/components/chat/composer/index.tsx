@@ -295,37 +295,79 @@ export function Composer() {
       if (!e.dataTransfer.types.includes("Files")) return;
       e.preventDefault();
       setDragActive(false);
+
+      // Snapshot the dropped FileList up front — the DataTransfer
+      // becomes empty after the event finishes processing, so the
+      // two ``collect*`` helpers below can't reliably iterate it on
+      // the second pass.
+      const dropped: File[] = [];
+      for (let i = 0; i < e.dataTransfer.files.length; i++) {
+        dropped.push(e.dataTransfer.files[i]);
+      }
+
+      let attachedImages = 0;
       try {
         const imgs = await collectImagesFromTransfer(e.dataTransfer);
+        attachedImages = imgs.length;
         addImages(imgs);
       } catch (err) {
         setImageError(String(err));
       }
       // Non-image text files dropped get folded into paste tokens so
       // the existing chip row + submit-time expansion handle them
-      // without a separate UI. The store appends each file with a
-      // header line so the LLM can tell them apart.
+      // without a separate UI. Each entry is prefixed with a header
+      // line so the LLM can tell pastes apart from each other on
+      // expand.
+      let attachedText = 0;
       try {
         const textFiles = await collectTextFilesFromTransfer(e.dataTransfer);
-        if (textFiles.length === 0) return;
-        const ta = textareaRef.current;
-        const insertAt = ta?.selectionStart ?? input.length;
-        let cursor = insertAt;
-        let nextInput = input;
-        for (const tf of textFiles) {
-          const body = `[file: ${tf.filename}]\n${tf.content}`;
-          const entry = pasteStore.add(body);
-          const token = placeholderToken(entry);
-          nextInput =
-            nextInput.slice(0, cursor) + token + nextInput.slice(cursor);
-          cursor += token.length;
+        attachedText = textFiles.length;
+        if (textFiles.length > 0) {
+          const ta = textareaRef.current;
+          const insertAt = ta?.selectionStart ?? input.length;
+          let cursor = insertAt;
+          let nextInput = input;
+          for (const tf of textFiles) {
+            const body = `[file: ${tf.filename}]\n${tf.content}`;
+            const entry = pasteStore.add(body);
+            const token = placeholderToken(entry);
+            nextInput =
+              nextInput.slice(0, cursor) + token + nextInput.slice(cursor);
+            cursor += token.length;
+          }
+          setInput(nextInput);
+          requestAnimationFrame(() => {
+            ta?.setSelectionRange(cursor, cursor);
+          });
         }
-        setInput(nextInput);
-        requestAnimationFrame(() => {
-          ta?.setSelectionRange(cursor, cursor);
-        });
       } catch {
         /* swallow — partial drops shouldn't crash the composer */
+      }
+
+      // If the user dropped files but nothing was attached, surface
+      // a clear error instead of silently dropping. Common cause:
+      // .docx / .pdf / .zip / anything binary that isn't an image.
+      const attached = attachedImages + attachedText;
+      const skipped = dropped.length - attached;
+      if (skipped > 0) {
+        const names = dropped
+          .filter((f) => {
+            const isImage = f.type.startsWith("image/");
+            const ext = f.name.includes(".")
+              ? f.name.split(".").pop()!.toLowerCase()
+              : "";
+            const knownText = ["txt", "md", "log", "csv", "json", "yaml",
+              "yml", "py", "ts", "tsx", "js", "html", "css"].includes(ext);
+            return !(isImage || knownText);
+          })
+          .map((f) => f.name)
+          .slice(0, 3);
+        setImageError(
+          `Couldn't attach ${skipped} file${skipped === 1 ? "" : "s"}: `
+          + (names.join(", ") || "binary or unsupported type")
+          + ". Only images and text-y formats are supported "
+          + "(docx / pdf / zip etc. don't inline as text yet).",
+        );
       }
     },
     [addImages, input, setInput],
@@ -949,100 +991,14 @@ export function Composer() {
           outlineOffset: -4,
         } : undefined}
       >
-        {/* Hidden file input — driven by the plus-menu "Attach image"
-            entry. Accepts multiple so a single picker invocation can
-            attach several screenshots. */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={[
-            "image/png", "image/jpeg", "image/gif", "image/webp",
-          ].join(",")}
-          multiple
-          onChange={onFileInputChange}
-          style={{ display: "none" }}
+        <ImageAttachStrip
+          pendingImages={pendingImages}
+          imageError={imageError}
+          fileInputRef={fileInputRef}
+          onFileInputChange={onFileInputChange}
+          onRemove={removeImage}
+          onDismissError={() => setImageError(null)}
         />
-        {(pendingImages.length > 0 || imageError) && (
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 6,
-              padding: "6px 8px 0",
-              alignItems: "center",
-            }}
-          >
-            {pendingImages.map((p) => (
-              <span
-                key={p.id}
-                title={p.attachment.filename || p.attachment.media_type}
-                style={{
-                  position: "relative",
-                  display: "inline-flex",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  overflow: "hidden",
-                  background: "var(--bg-tertiary)",
-                }}
-              >
-                <img
-                  src={p.previewUrl}
-                  alt={p.attachment.filename || "image"}
-                  style={{
-                    height: 48, width: 48, objectFit: "cover",
-                    display: "block",
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeImage(p.id)}
-                  aria-label={`Remove image ${p.attachment.filename || p.id}`}
-                  style={{
-                    position: "absolute",
-                    top: 1, right: 1,
-                    width: 16, height: 16,
-                    padding: 0,
-                    border: "none",
-                    borderRadius: 8,
-                    background: "rgba(0,0,0,0.55)",
-                    color: "white",
-                    cursor: "pointer",
-                    fontSize: 11,
-                    lineHeight: 1,
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            {imageError && (
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "var(--accent-red)",
-                  marginLeft: 4,
-                }}
-              >
-                {imageError}
-                <button
-                  type="button"
-                  onClick={() => setImageError(null)}
-                  aria-label="Dismiss image error"
-                  style={{
-                    marginLeft: 4,
-                    border: "none",
-                    background: "transparent",
-                    color: "var(--accent-red)",
-                    cursor: "pointer",
-                    fontSize: 12,
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            )}
-          </div>
-        )}
 
         {fnFormFunction ? (
           <FunctionForm
@@ -1093,6 +1049,27 @@ export function Composer() {
                 )}
                 onKeyDown={onKeyDown}
                 onPaste={onPaste}
+                // Re-route file drops to the wrapper's onDrop instead
+                // of letting the textarea's default insert the path
+                // as plain text. The wrapper handlers don't fire when
+                // the textarea consumes the drop first.
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes("Files")) {
+                    e.preventDefault();
+                    setDragActive(true);
+                  }
+                }}
+                onDrop={(e) => {
+                  if (e.dataTransfer.types.includes("Files")) {
+                    e.preventDefault();
+                    // Bubble up to the wrapper's drop handler via a
+                    // synthesised re-dispatch — easier than copying
+                    // the body. The DataTransfer survives the
+                    // re-dispatch because the original event is still
+                    // alive in the bubble phase.
+                    void onDrop(e as unknown as React.DragEvent<HTMLDivElement>);
+                  }
+                }}
                 onFocus={() => slash.setFocused(true)}
                 onBlur={() => slash.setFocused(false)}
               />
