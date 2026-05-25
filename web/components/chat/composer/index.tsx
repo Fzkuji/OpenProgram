@@ -70,6 +70,33 @@ export function Composer() {
   const input = useSessionStore((s) => s.composerInput);
   const setInput = useSessionStore((s) => s.setComposerInput);
   const focusTick = useSessionStore((s) => s.composerFocusTick);
+
+  // History recall — user messages from the active session, ordered
+  // oldest-first to match TUI semantics: ↑ steps backwards starting at
+  // the newest, ↓ steps forward toward the live draft. Built from
+  // ``messageOrder[currentSessionId]`` filtered to user role. Resets
+  // automatically whenever the session changes via the useEffect below.
+  const messagesById = useSessionStore((s) => s.messagesById);
+  const messageOrder = useSessionStore((s) =>
+    s.currentSessionId ? s.messageOrder[s.currentSessionId] : undefined,
+  );
+  const history = React.useMemo<string[]>(() => {
+    if (!messageOrder) return [];
+    const out: string[] = [];
+    for (const id of messageOrder) {
+      const m = messagesById[id];
+      if (m && m.role === "user" && typeof m.content === "string"
+          && m.content.trim()) {
+        out.push(m.content);
+      }
+    }
+    return out;
+  }, [messageOrder, messagesById]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  // Reset history index when the session switches.
+  useEffect(() => {
+    setHistoryIndex(-1);
+  }, [currentSessionId]);
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
   const setFnFormClosing = useSessionStore((s) => s.setFnFormClosing);
@@ -240,6 +267,7 @@ export function Composer() {
       if (!ok) return;
     }
     setInput("");
+    setHistoryIndex(-1);
     slash.close();
   }, [
     currentSessionId,
@@ -282,6 +310,55 @@ export function Composer() {
     const native = e.nativeEvent as KeyboardEvent;
     if (native.isComposing || native.keyCode === 229) {
       return;
+    }
+    // Fish-shell-style history recall. Mirrors the TUI's PromptInput
+    // logic (cli/src/components/PromptInput/PromptInput.tsx). Only fires
+    // when the slash menu isn't holding the arrows and the caret is on
+    // the first / last visual line of the textarea, so multi-line
+    // editing still works naturally.
+    if (e.key === "ArrowUp" && !slash.visible && !e.shiftKey
+        && !e.metaKey && !e.altKey) {
+      const ta = e.currentTarget;
+      // Enter recall mode when caret is on the first visual line and
+      // nothing is selected. Once recall mode is active (historyIndex
+      // >= 0) ↑ keeps stepping back regardless of caret position.
+      const firstNewline = input.indexOf("\n");
+      const onFirstLine = ta.selectionStart === ta.selectionEnd
+        && ta.selectionStart <= (firstNewline < 0 ? input.length : firstNewline);
+      if (history.length > 0 && (historyIndex >= 0 || onFirstLine)) {
+        e.preventDefault();
+        const next = historyIndex < 0
+          ? history.length - 1
+          : Math.max(0, historyIndex - 1);
+        setHistoryIndex(next);
+        setInput(history[next] ?? "");
+        // Move caret to end so the next ↑ keeps recalling instead of
+        // moving inside the freshly-loaded text.
+        requestAnimationFrame(() => {
+          const v = history[next] ?? "";
+          ta.setSelectionRange(v.length, v.length);
+        });
+        return;
+      }
+    }
+    if (e.key === "ArrowDown" && !slash.visible && historyIndex >= 0
+        && !e.shiftKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      const next = historyIndex + 1;
+      if (next >= history.length) {
+        setHistoryIndex(-1);
+        setInput("");
+      } else {
+        setHistoryIndex(next);
+        setInput(history[next] ?? "");
+      }
+      return;
+    }
+    // Any typing (non-arrow key) drops out of history-recall mode so
+    // editing a recalled entry doesn't re-snap when the user hits ↑
+    // again.
+    if (historyIndex >= 0 && e.key.length === 1) {
+      setHistoryIndex(-1);
     }
     // While the slash menu is open it captures the arrow keys (move the
     // highlight), Enter (pick the highlighted command) and Escape.
