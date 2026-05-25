@@ -128,6 +128,20 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
                         fork_anchor = parent_id
         except Exception:
             pass
+        # Pin the source branch's ContextCommit so the generator can
+        # expand its items into the next turn's commit (see
+        # docs/design/context-attach-merge.md scenario B). Absent =
+        # generator falls back to the single-item legacy path.
+        source_commit_id = None
+        if result.head_id:
+            try:
+                from openprogram.context.commit.store import load_commit_for_head
+                _src = load_commit_for_head(store, session_id, result.head_id)
+                if _src is not None:
+                    source_commit_id = _src.id
+            except Exception:
+                pass
+
         attach_node_id = uuid.uuid4().hex[:12]
         attach_msg = {
             "id": attach_node_id,
@@ -154,6 +168,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
                     "head_id": result.head_id,
                     "label": label or "",
                     "prompt": prompt[:500],
+                    "source_commit_id": source_commit_id,
                 },
             }, default=str),
         }

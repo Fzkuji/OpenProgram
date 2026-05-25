@@ -5,36 +5,44 @@ import json
 from typing import Optional
 
 
-def _attach_info(m: dict) -> tuple[Optional[str], bool]:
-    """Returns ``(source_head_id, manual)`` for an attach pointer row.
+def _attach_info(m: dict) -> tuple[Optional[str], bool, Optional[str]]:
+    """Returns ``(source_head_id, manual, source_commit_id)`` for an
+    attach pointer row.
 
     Source-head is the branch tip the pointer references.
     ``manual=True`` means the user wrote the attach via the Branches
     panel; ``manual=False`` means it was written by a /task spawn.
-    The graph renderer uses both to decide whether to draw the
-    cross-lane dashed edge.
+    ``source_commit_id`` (added with the attach-commit-expansion
+    refactor) is the ContextCommit id of the source branch at the
+    moment the attach was created — used by generator.py to expand
+    the attach into items. Missing on legacy attach rows; callers
+    must handle None (fallback to legacy single-item attach).
     """
     if m.get("function") != "attach":
-        return None, False
+        return None, False, None
     raw = m.get("attach") or m.get("extra")
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            return None, False
+            return None, False, None
     if isinstance(raw, dict) and "attach" in raw and isinstance(raw["attach"], dict):
         raw = raw["attach"]
     if not isinstance(raw, dict):
-        return None, False
+        return None, False, None
     h = raw.get("head_id")
     src = h.strip() if isinstance(h, str) and h.strip() else None
     manual = bool(raw.get("manual"))
-    return src, manual
+    cid = raw.get("source_commit_id")
+    source_commit_id = (
+        cid.strip() if isinstance(cid, str) and cid.strip() else None
+    )
+    return src, manual, source_commit_id
 
 
 def _attach_ref(m: dict) -> Optional[str]:
     """Backward-compat shim. Prefer ``_attach_info`` for new code."""
-    src, _manual = _attach_info(m)
+    src, _manual, _src_commit = _attach_info(m)
     return src
 
 
@@ -65,7 +73,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                 preview = content.strip().replace("\n", " ")
                 if len(preview) > 80:
                     preview = preview[:77] + "…"
-                _aref, _amanual = _attach_info(m)
+                _aref, _amanual, _asrc_commit = _attach_info(m)
                 graph.append({
                     "id": m.get("id"),
                     "parent_id": m.get("parent_id"),
@@ -77,6 +85,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                     "created_at": m.get("created_at"),
                     "attach_ref": _aref,
                     "attach_manual": _amanual,
+                    "attach_source_commit_id": _asrc_commit,
                 })
             # Server-side layout — keeps the parallel-branch geometry
             # consistent across load_session, list_branches, and any
@@ -455,6 +464,20 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
         except Exception:
             pass
 
+        # Look up the source branch's current ContextCommit id so the
+        # generator can expand the attach pointer into a copy of that
+        # commit's items on the next turn (see
+        # docs/design/context-attach-merge.md, scenario B). Missing /
+        # absent → legacy single-item fallback path in the generator.
+        source_commit_id = None
+        try:
+            from openprogram.context.commit.store import load_commit_for_head
+            src_commit = load_commit_for_head(db, session_id, target_head)
+            if src_commit is not None:
+                source_commit_id = src_commit.id
+        except Exception:
+            pass
+
         attach_node_id = uuid.uuid4().hex[:12]
         attach_msg = {
             "id": attach_node_id,
@@ -476,6 +499,14 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
                     "head_id": target_head,
                     "label": target_label,
                     "manual": True,
+                    # Pinned ContextCommit id at the source branch tip
+                    # the moment this attach pointer was written. Used
+                    # by generator.py to expand the source commit's
+                    # items into the next turn's commit; never updated
+                    # afterwards (the attach is frozen to this
+                    # moment). None when the source branch had no
+                    # commit yet (legacy fallback path).
+                    "source_commit_id": source_commit_id,
                 },
             }, default=str),
         }

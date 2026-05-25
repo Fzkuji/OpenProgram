@@ -199,7 +199,7 @@ async def handle_load_session(ws, cmd: dict):
             preview = content.strip().replace("\n", " ")
             if len(preview) > 80:
                 preview = preview[:77] + "…"
-            _aref, _amanual = _attach_info(m)
+            _aref, _amanual, _asrc_commit = _attach_info(m)
             graph.append({
                 "id": m.get("id"),
                 "parent_id": m.get("parent_id"),
@@ -211,6 +211,7 @@ async def handle_load_session(ws, cmd: dict):
                 "created_at": m.get("created_at"),
                 "attach_ref": _aref,
                 "attach_manual": _amanual,
+                "attach_source_commit_id": _asrc_commit,
             })
         # Compute (depth, lane) server-side so the frontend renders
         # parallel branches correctly without re-deriving topology.
