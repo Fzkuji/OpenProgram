@@ -49,12 +49,11 @@ const TILE_KEYFRAMES = `
   to   { opacity: 1; }
 }
 .composer-file-tile {
-  /* outline over a CSS border so the 1px hairline stays
-     uniform around the 16px corner — Chrome's outline rasteriser
-     samples sub-pixels the same way the rounded fill does, so the
-     hairline never thins / thickens along the curve. */
-  outline: 1px solid var(--border);
-  outline-offset: -1px;
+  /* 0.5px on retina renders as a true half-pixel hairline (matches
+     claude.ai / Claude Code composer); on 1x screens it falls back
+     to 1px but the alpha keeps the visual weight light. */
+  outline: 0.5px solid var(--border);
+  outline-offset: -0.5px;
   transition: background 120ms ease, outline-color 120ms ease,
               box-shadow 120ms ease;
 }
