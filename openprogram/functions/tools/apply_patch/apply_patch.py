@@ -229,5 +229,5 @@ function(
     description=DESCRIPTION,
     parameters=SPEC["parameters"],
     toolset=['core'],
-    unsafe_in=['wechat', 'telegram'],
+    unsafe_in=['wechat', 'telegram', 'plan'],
 )(execute)

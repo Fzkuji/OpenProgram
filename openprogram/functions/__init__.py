@@ -78,6 +78,14 @@ DEFAULT_TOOLS: list[str] = [
     "task",
     "todo_read",
     "todo_write",
+    # Plan-mode gate — the LLM is allowed to enter plan mode on its
+    # own when it judges the task warrants it (mirrors claude-code's
+    # EnterPlanMode tool). The "plan" pseudo-channel filter in
+    # ``apply_tool_policy`` hides the write tools while in plan mode,
+    # but enter/exit themselves are never on any unsafe_in list — they
+    # stay visible across modes.
+    "enter_plan_mode",
+    "exit_plan_mode",
 ]
 
 
@@ -123,6 +131,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "memory_rename", "memory_relink", "memory_delete",
             "memory_review", "memory_status",
             "tool_search",  # Layer 7 bootstrap; always exposed
+            "enter_plan_mode", "exit_plan_mode",
 
             # ─── agentic side ──────────────────────────────────────
             # The three harness entry points + the two PDF-extraction

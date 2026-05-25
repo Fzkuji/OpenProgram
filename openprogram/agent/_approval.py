@@ -97,12 +97,19 @@ def wrap_with_approval(
 
     orig_execute = agent_tool.execute
 
+    # Tools that MUST always ask for user input, even when the session's
+    # permission_mode is "bypass". exit_plan_mode is the canonical case:
+    # the whole point of submitting a plan is to get explicit user sign-
+    # off; silently approving it under bypass would defeat the feature.
+    _force_approval_tools = {"exit_plan_mode"}
+
     async def _gated_execute(call_id, args, cancel, on_update):
-        if req.permission_mode == "bypass":
+        force_ask = agent_tool.name in _force_approval_tools
+        if req.permission_mode == "bypass" and not force_ask:
             return await orig_execute(call_id, args, cancel, on_update)
 
         per_tool_required, _per_tool_reason = tool_requires_approval(agent_tool, args)
-        if req.permission_mode == "auto":
+        if req.permission_mode == "auto" and not force_ask:
             risky_default = agent_tool.name in {"bash", "exec", "shell",
                                                   "execute_code", "process"}
             if not per_tool_required and not risky_default:

@@ -203,7 +203,7 @@ function(
     description=DESCRIPTION,
     parameters=SPEC["parameters"],
     toolset=['core'],
-    unsafe_in=['wechat', 'telegram'],
+    unsafe_in=['wechat', 'telegram', 'plan'],
 )(execute)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION"]

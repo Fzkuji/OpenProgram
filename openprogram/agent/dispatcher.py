@@ -125,6 +125,7 @@ class TurnResult:
 # Approval gate lives in _approval.py — re-exported here so callers
 # (tests, server.py WS handler) can keep using
 # ``dispatcher.approval_registry()`` / ``dispatcher.ApprovalRegistry``.
+from openprogram.agent import plan_mode as _plan_mode
 from openprogram.agent._approval import (
     ApprovalRegistry,
     approval_registry,
@@ -165,6 +166,14 @@ def process_user_turn(
     started_at = time.time()
     on_event = on_event or _noop
     user_msg_id = req.user_msg_id or uuid.uuid4().hex[:12]
+
+    # Plan-mode session context: expose ``req.session_id`` so the
+    # enter_plan_mode / exit_plan_mode tool bodies can flip the
+    # per-session flag without args plumbing. ContextVars propagate
+    # through asyncio tasks, so any coroutine the agent loop spawns
+    # from this turn (including tool executes) sees the same value.
+    _plan_mode.current_session_id.set(req.session_id)
+
     # Suffix matches the `/run` path (server.py) and the webui React
     # client's `replyId()` — all three mint the assistant reply id as
     # ``<user_msg_id>_reply`` so the live streaming bubble's
@@ -900,6 +909,16 @@ def _run_loop_blocking(
     # Resolve agent profile → tools, system_prompt, model.
     agent_profile = _load_agent_profile(req.agent_id)
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
+    # Plan mode: hide write/mutate tools when the session is currently
+    # in plan mode. ``apply_tool_policy(source="plan", ...)`` filters
+    # out every tool that lists "plan" in its ``unsafe_in`` set — see
+    # the write tools (bash, write, edit, apply_patch, execute_code,
+    # process). Applied AFTER channel filtering so both restrictions
+    # compose: a wechat turn in plan mode hides the union of both
+    # blacklists.
+    if tools and _plan_mode.is_plan_mode(req.session_id):
+        from openprogram.functions import apply_tool_policy as _apply_policy
+        tools = _apply_policy(tools, source="plan")
     _log_resolved_tools(req, tools)
     if tools:
         tools = [_wrap_with_approval(t, req, on_event) for t in tools]
@@ -929,6 +948,33 @@ def _run_loop_blocking(
             system_prompt = (
                 f"{system_prompt.rstrip()}\n\n{block}".strip()
             )
+    # Plan-mode reminder. Text adapted from Anthropic's Claude Code
+    # plan-mode attachment (``references/claude-code-leaked/src/utils/
+    # messages.ts``) — the opening "Plan mode is active... supercedes
+    # any other instructions" sentence is theirs, kept because it
+    # phrases the override priority unambiguously.
+    if _plan_mode.is_plan_mode(req.session_id):
+        system_prompt = (
+            f"{system_prompt.rstrip()}\n\n"
+            "<plan-mode>\n"
+            "Plan mode is active. The user indicated that they do not "
+            "want you to execute yet — you MUST NOT make any edits, "
+            "run any non-readonly tools (including changing configs, "
+            "running shell commands, or making commits), or otherwise "
+            "make any changes to the system. This supercedes any other "
+            "instructions you have received.\n\n"
+            "Workflow:\n"
+            "1. Explore the codebase with read, glob, grep until you "
+            "understand the existing structure.\n"
+            "2. Draft a concrete implementation plan.\n"
+            "3. Submit the plan via `exit_plan_mode(plan=...)` for "
+            "user approval. Do NOT ask the user about the plan in "
+            "free-form text — exit_plan_mode IS how you ask.\n\n"
+            "If the user rejects the plan, revise it based on the "
+            "rejection message and call exit_plan_mode again. Stay in "
+            "plan mode until exit_plan_mode succeeds.\n"
+            "</plan-mode>"
+        ).strip()
     model = _resolve_model(agent_profile, req.model_override)
 
     # Route history through the context engine: applies tool-result
