@@ -1,14 +1,14 @@
 /**
- * Programs / favorites data + click glue.
+ * Functions / favorites data + click glue.
  *
  * TS port of the legacy `public/js/shared/programs-panel.js`. Bridged
- * onto `window.*` for the React sidebar / welcome screen / programs
+ * onto `window.*` for the React sidebar / welcome screen / functions
  * page and the WS `functions_list` handler.
  *
  * Imported for side effects by AppShell.
  */
 
-interface ProgramsMeta {
+interface FunctionsMeta {
   favorites: string[];
   folders: Record<string, unknown>;
 }
@@ -19,7 +19,7 @@ interface FnDef {
 }
 
 interface PanelWindow {
-  programsMeta?: ProgramsMeta;
+  programsMeta?: FunctionsMeta;
   availableFunctions?: FnDef[];
   __navigate?: (path: string) => void;
   __pendingRunFunction?: { name: string; cat: string };

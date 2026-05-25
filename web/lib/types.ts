@@ -65,7 +65,7 @@ export interface AgenticFunction {
   mtime?: number;
 }
 
-export interface ProgramsMeta {
+export interface FunctionsMeta {
   favorites: string[];
   folders: Record<string, string[]>;
 }

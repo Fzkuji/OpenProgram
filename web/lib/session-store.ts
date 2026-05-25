@@ -476,20 +476,41 @@ export const useSessionStore = create<ConvState>((set) => ({
       delete order[id];
       const byId = { ...s.messagesById };
       for (const mid of doomed) delete byId[mid];
+      // Prune the deleted session's composer draft so the draft blob
+      // doesn't grow unboundedly over the lifetime of the tab. Paste
+      // entries referenced only by this draft are GC'd by the composer
+      // (it watches ``composerDrafts`` and retains only still-referenced
+      // ids in pasteStore).
+      const nextDrafts = { ...s.composerDrafts };
+      delete nextDrafts[id];
+      persistComposerDrafts(nextDrafts);
       return {
         conversations: rest,
         messageOrder: order,
         messagesById: byId,
         currentSessionId: s.currentSessionId === id ? null : s.currentSessionId,
+        composerDrafts: nextDrafts,
       };
     }),
 
   clearConversations: () =>
-    set({
-      conversations: {},
-      messagesById: {},
-      messageOrder: {},
-      currentSessionId: null,
+    set((s) => {
+      // Wipe every per-session draft too, but keep the "__new__" draft
+      // (the textarea content for the not-yet-created next session) —
+      // the user is still looking at the composer and would lose what
+      // they're typing otherwise.
+      const newDraft = s.composerDrafts[COMPOSER_NEW_KEY];
+      const nextDrafts: Record<string, string> = newDraft
+        ? { [COMPOSER_NEW_KEY]: newDraft }
+        : {};
+      persistComposerDrafts(nextDrafts);
+      return {
+        conversations: {},
+        messagesById: {},
+        messageOrder: {},
+        currentSessionId: null,
+        composerDrafts: nextDrafts,
+      };
     }),
 
   setCurrentConv: (id) =>

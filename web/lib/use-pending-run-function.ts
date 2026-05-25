@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * `/programs → /chat` hand-off drain.
+ * `/functions → /chat` hand-off drain.
  *
  * Two entry points (both kept for parity with the legacy
  * `__triggerPendingRunFunction` in init.js that this replaces):
  *
  *   * `window.__pendingRunFunction = { name, cat }` — set by
- *     `<FavoritesList />` / `<ProgramsPage />` just before
+ *     `<FavoritesList />` / `<FunctionsPage />` just before
  *     `router.push("/chat")`. Survives the SPA hop because
  *     `router.push` doesn't re-run any `<script>` top-level.
  *
@@ -68,7 +68,7 @@ function isChatRoute(p: string): boolean {
  * route, not on a constant flag: `<PageShell page="chat">` is mounted
  * once at the layout level and kept alive (hidden) across routes, so a
  * `page === "chat"` boolean never changes and a `[active]` effect would
- * fire only once — missing every `/programs → /chat` hand-off after the
+ * fire only once — missing every `/functions → /chat` hand-off after the
  * first. Keying on `pathname` makes the effect re-fire when the user
  * navigates back onto a chat route, which is exactly when a stashed
  * `__pendingRunFunction` needs draining.

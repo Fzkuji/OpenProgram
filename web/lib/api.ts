@@ -6,7 +6,7 @@ import type {
   TestResult,
   KeyPreview,
   AgenticFunction,
-  ProgramsMeta,
+  FunctionsMeta,
   AddCredentialBody,
   AuthProfile,
   CredentialView,
@@ -114,9 +114,9 @@ export const api = {
 
   listFunctions: () => jsonFetch<AgenticFunction[]>("/api/functions"),
 
-  getProgramsMeta: () => jsonFetch<ProgramsMeta>("/api/programs/meta"),
+  getProgramsMeta: () => jsonFetch<FunctionsMeta>("/api/programs/meta"),
 
-  setProgramsMeta: (meta: ProgramsMeta) =>
+  setProgramsMeta: (meta: FunctionsMeta) =>
     jsonFetch<{ ok: true }>("/api/programs/meta", {
       method: "POST",
       body: JSON.stringify(meta),

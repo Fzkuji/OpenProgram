@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ProgramsMeta } from "./types";
+import type { FunctionsMeta } from "./types";
 import type { AgenticFunction } from "./session-store";
 
 type ViewMode = "grid" | "list";
@@ -7,7 +7,7 @@ type FilterMode = "all" | "favorites" | "app" | "generated" | "user" | "meta" | 
 type SortMode = "category" | "recent" | "alpha";
 
 interface ProgramsState {
-  meta: ProgramsMeta;
+  meta: FunctionsMeta;
   functions: AgenticFunction[];
   currentFolder: string; // "__all__" | "__favorites__" | "__uncategorized__" | folderName
   viewMode: ViewMode;
@@ -15,7 +15,7 @@ interface ProgramsState {
   sort: SortMode;
   search: string;
   draggedProgram: string | null;
-  setMeta: (m: ProgramsMeta) => void;
+  setMeta: (m: FunctionsMeta) => void;
   setFunctions: (fns: AgenticFunction[]) => void;
   setCurrentFolder: (f: string) => void;
   setViewMode: (v: ViewMode) => void;
@@ -25,7 +25,7 @@ interface ProgramsState {
   setDragged: (n: string | null) => void;
 }
 
-export const usePrograms = create<ProgramsState>((set) => ({
+export const useFunctions = create<ProgramsState>((set) => ({
   meta: { favorites: [], folders: {} },
   functions: [],
   currentFolder: "__all__",
