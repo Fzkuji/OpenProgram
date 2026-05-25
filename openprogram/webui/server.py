@@ -1248,6 +1248,10 @@ def create_app():
     from openprogram.webui.routes import plugins as _routes_plugins
     _routes_plugins.register(app)
 
+    # /api/commands/* — Unified slash-command registry (Phase 1)
+    from openprogram.webui.routes import commands as _routes_commands
+    _routes_commands.register(app)
+
     return app
 
 

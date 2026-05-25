@@ -35,6 +35,20 @@ interface PluginCommand {
   prompt: string;
 }
 
+// Unified-registry view (see openprogram/commands). Phase-1 wires the
+// file-backed user/project layers + plugin adapter through this list;
+// skills and MCP still come in through their own slash injection
+// paths until Phase 3-4 lands.
+interface UnifiedCommand {
+  name: string;
+  source: string;          // "builtin" | "plugin" | "user" | "project" | ...
+  source_label: string;
+  description: string;
+  argument_hint: string;
+  user_invocable: boolean;
+  hidden: boolean;
+}
+
 const ANIM_MS = 380;
 
 interface UseSlashMenuArgs {
@@ -67,18 +81,35 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
   const skills = useSkills((s) => s.skills);
   const fetchSkills = useSkills((s) => s.fetchSkills);
 
-  // Plugin-contributed slash commands — fetched once on first composer
-  // mount so they appear alongside built-in commands and skills.
+  // Unified slash-command list — plugin + user + project layers
+  // arrive through ``/api/commands``. The legacy
+  // ``/api/plugins/commands`` is also fetched as a fallback for any
+  // host that hasn't restarted onto the new registry yet.
+  const [unifiedCommands, setUnifiedCommands] = useState<UnifiedCommand[]>([]);
   const [pluginCommands, setPluginCommands] = useState<PluginCommand[]>([]);
 
   useEffect(() => {
     if (skills.length === 0) fetchSkills();
-    fetch("/api/plugins/commands")
+    fetch("/api/commands")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d && Array.isArray(d.commands)) setPluginCommands(d.commands);
+        if (d && Array.isArray(d.commands)) {
+          setUnifiedCommands(d.commands);
+          return true;
+        }
+        return false;
       })
-      .catch(() => { /* plugins might not be wired yet — ignore */ });
+      .then((hit) => {
+        if (hit) return;
+        // Fallback: pre-Phase-1 backend.
+        fetch("/api/plugins/commands")
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d && Array.isArray(d.commands)) setPluginCommands(d.commands);
+          })
+          .catch(() => { /* offline / not wired — ignore */ });
+      })
+      .catch(() => { /* offline / not wired — ignore */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -141,9 +172,43 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
       }));
   }, [skills]);
 
-  // Each plugin-contributed command becomes a SlashCommand that, when
-  // selected, fills the composer with the plugin's prompt template +
-  // a trailing space so the user can extend it before sending.
+  // Unified registry — every entry is invoked by POSTing to
+  // ``/api/commands/invoke`` which resolves + renders + returns the
+  // rendered prompt. The composer drops the rendered text into the
+  // textarea so the user can review before sending (consistent with
+  // how the legacy plugin slash commands behaved).
+  const unifiedSlashCommands = useMemo<SlashCommand[]>(() => {
+    return unifiedCommands
+      .filter((c) => c.user_invocable !== false && !c.hidden)
+      .map<SlashCommand>((c) => ({
+        name: c.name.startsWith("/") ? c.name : "/" + c.name,
+        description:
+          c.description || `${c.source_label || c.source} command`,
+        args: c.argument_hint || undefined,
+        run(rest, { setInput, sessionId }) {
+          const text = "/" + c.name + (rest ? " " + rest : "");
+          void fetch("/api/commands/invoke", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, session_id: sessionId }),
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((res) => {
+              if (res && res.ok && res.kind === "prompt") {
+                setInput(res.rendered || "", true);
+              } else {
+                // Render-time failure — drop the raw text so the user
+                // can see what they typed and edit instead of losing it.
+                setInput(text + " ", true);
+              }
+            })
+            .catch(() => setInput(text + " ", true));
+          return true;
+        },
+      }));
+  }, [unifiedCommands]);
+
+  // Legacy fallback (only populated if /api/commands didn't respond).
   const pluginSlashCommands = useMemo<SlashCommand[]>(() => {
     return pluginCommands.map<SlashCommand>((c) => ({
       name: c.name.startsWith("/") ? c.name : "/" + c.name,
@@ -157,8 +222,13 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
   }, [pluginCommands]);
 
   const allCommands = useMemo<SlashCommand[]>(
-    () => [...SLASH_COMMANDS, ...pluginSlashCommands, ...skillCommands],
-    [pluginSlashCommands, skillCommands],
+    () => [
+      ...SLASH_COMMANDS,
+      ...unifiedSlashCommands,
+      ...pluginSlashCommands,
+      ...skillCommands,
+    ],
+    [unifiedSlashCommands, pluginSlashCommands, skillCommands],
   );
 
   const matches = useMemo<SlashCommand[]>(() => {
