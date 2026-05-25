@@ -94,23 +94,41 @@ class TelegramChannel(Channel):
         if chat_id is None:
             return
 
-        who = chat.get("username") or chat.get("title") or str(chat_id)
-        snippet = text[:60] + ("..." if len(text) > 60 else "")
-        print(f"[telegram:{self.account_id}] <{who}> {snippet}")
+        # Parse platform-native msg → ChannelMessage (audit 缺陷 4).
+        from openprogram.channels._message import ChannelMessage
+        from_user = msg.get("from", {}) or {}
+        reply_to = msg.get("reply_to_message", {}) or {}
+        ch_msg = ChannelMessage(
+            text=text,
+            chat_id=str(chat_id),
+            user_id=str(from_user.get("id") or ""),
+            user_display=(
+                chat.get("username") or chat.get("title") or str(chat_id)
+            ),
+            chat_type=(
+                "group" if chat.get("type") in ("group", "supergroup")
+                else "direct"
+            ),
+            ts=float(msg.get("date") or 0),
+            reply_to_id=str(reply_to.get("message_id") or ""),
+        )
+
+        snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
+        print(f"[telegram:{self.account_id}] <{ch_msg.user_display}> {snippet}")
 
         from openprogram.channels._conversation import dispatch_inbound
         from openprogram.channels.outbound import send as _send
         reply_text = dispatch_inbound(
             channel="telegram",
             account_id=self.account_id,
-            peer_kind="group" if chat.get("type") in ("group", "supergroup") else "direct",
-            peer_id=str(chat_id),
-            user_text=text,
-            user_display=who,
+            peer_kind=ch_msg.chat_type,
+            peer_id=ch_msg.chat_id,
+            user_text=ch_msg.text,
+            user_display=ch_msg.user_display,
             progress_stream=True,
         )
         # progress_stream=True 时 dispatch_inbound 内部已经把 reply edit
         # 进占位消息, 返回 None 表示无需再发. 占位发送失败 / 任何降级路径
         # 会返回 reply_text 字符串, 走旧 _send 路径.
         if reply_text is not None:
-            _send("telegram", self.account_id, str(chat_id), reply_text)
+            _send("telegram", self.account_id, ch_msg.chat_id, reply_text)

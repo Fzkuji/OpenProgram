@@ -78,20 +78,35 @@ class SlackChannel(Channel):
             if not text:
                 return
             channel_id = event.get("channel")
-            snippet = text[:60] + ("..." if len(text) > 60 else "")
             user = event.get("user")
-            print(f"[{tag}] <{user}> {snippet}")
+
+            # Parse slack event dict → ChannelMessage (audit 缺陷 4).
+            from openprogram.channels._message import ChannelMessage
+            ch_msg = ChannelMessage(
+                text=text,
+                chat_id=str(channel_id or ""),
+                user_id=str(user or ""),
+                user_display=str(user or channel_id or ""),
+                chat_type=(
+                    "direct" if (channel_id or "").startswith("D")
+                    else "channel"
+                ),
+                ts=float(event.get("ts") or 0),
+                thread_id=str(event.get("thread_ts") or ""),
+            )
+
+            snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
+            print(f"[{tag}] <{ch_msg.user_display}> {snippet}")
 
             from openprogram.channels._conversation import dispatch_inbound
-            scoped_id = f"{channel_id}_{user}"
-            peer_kind = "direct" if (channel_id or "").startswith("D") else "channel"
+            scoped_id = f"{ch_msg.chat_id}_{ch_msg.user_id}"
             reply_text = dispatch_inbound(
                 channel="slack",
                 account_id=self.account_id,
-                peer_kind=peer_kind,
+                peer_kind=ch_msg.chat_type,
                 peer_id=scoped_id,
-                user_text=text,
-                user_display=user or scoped_id,
+                user_text=ch_msg.text,
+                user_display=ch_msg.user_display or scoped_id,
                 progress_stream=True,
             )
             # progress_stream=True 走通时 dispatch_inbound 内部已经把

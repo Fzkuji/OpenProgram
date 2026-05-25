@@ -63,21 +63,40 @@ class DiscordChannel(Channel):
             text = (msg.content or "").strip()
             if not text:
                 return
-            snippet = text[:60] + ("..." if len(text) > 60 else "")
-            print(f"[{tag}] <{msg.author}> {snippet}")
+
+            # Parse discord.Message → ChannelMessage (audit 缺陷 4).
+            from openprogram.channels._message import ChannelMessage
+            ref = getattr(msg, "reference", None)
+            ch_msg = ChannelMessage(
+                text=text,
+                chat_id=str(msg.channel.id),
+                user_id=str(msg.author.id),
+                user_display=str(msg.author),
+                chat_type="direct" if msg.guild is None else "channel",
+                ts=float(msg.created_at.timestamp()) if msg.created_at else 0.0,
+                reply_to_id=(
+                    str(ref.message_id) if ref and ref.message_id else ""
+                ),
+                thread_id=(
+                    str(msg.channel.id) if getattr(msg.channel, "type", None)
+                    and "thread" in str(msg.channel.type).lower() else ""
+                ),
+            )
+
+            snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
+            print(f"[{tag}] <{ch_msg.user_display}> {snippet}")
             from openprogram.channels._conversation import dispatch_inbound
-            peer_kind = "direct" if msg.guild is None else "channel"
             # Scoped peer id: channel_id + user_id so a shared channel
             # and a DM keep distinct sessions.
-            scoped_id = f"{msg.channel.id}_{msg.author.id}"
+            scoped_id = f"{ch_msg.chat_id}_{ch_msg.user_id}"
             reply_text = await asyncio.to_thread(
                 dispatch_inbound,
                 channel="discord",
                 account_id=self.account_id,
-                peer_kind=peer_kind,
+                peer_kind=ch_msg.chat_type,
                 peer_id=scoped_id,
-                user_text=text,
-                user_display=str(msg.author),
+                user_text=ch_msg.text,
+                user_display=ch_msg.user_display,
                 progress_stream=True,
             )
             # progress_stream=True 走通时 dispatch_inbound 内部已经把

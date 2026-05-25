@@ -492,9 +492,11 @@ adapter `send` 返回 `bool`。失败原因（网络瞬时 vs auth 永久 vs rat
 
 **修复**：加 `SendResult` dataclass (`_transport.py:SendResult`)，含 `ok` / `message_id` / `error_kind` / `error_detail` / `retryable` 字段。`error_kind` 枚举 `auth` / `rate_limit` / `bad_target` / `network` / `not_supported` / `unknown`。`_transport.post_message` / `patch_message` 现在返回 `SendResult`；`outbound.send` 保留 bool 签名，新增 `outbound.send_full()` 暴露完整结果；`Channel.send_text` / `edit_text` 同理，加 `send_text_full` / `edit_text_full` 变体。Telegram / Discord / Slack 的业务错误描述分别有 `_telegram_kind_from_description` / `_slack_kind_from_error` 推断 `error_kind`，HTTP 状态码走 `_classify_http_status`。
 
-### 缺陷 10：Platform 注册硬编码
+### 缺陷 10：Platform 注册硬编码（✓ 已修，commit 0cac6004）
 
 `channels/__init__.py:CHANNEL_CLASSES` 是硬编码 dict。要加新 platform 必须改 4 处（channels/、accounts/、bindings/、setup/）。无法做 plugin-provided platform。
+
+**修复**：拆 `CHANNEL_CLASSES` 成 `_BUILTIN_CHANNEL_CLASSES`（4 个内置永远存在）+ `_PLUGIN_CHANNEL_CLASSES`（外部注册）。Plugin 两种方式注册：(1) `pyproject.toml` 写 `[project.entry-points."openprogram.channels"]` 声明（启动时 `importlib.metadata.entry_points` 扫描）；(2) imperative `register_channel(name, cls)` 调用（在 plugin hooks 里用）。内置优先——同名 plugin 被无声忽略，不允许 override 内置。`CHANNEL_CLASSES` 保留成 dict-like proxy（保留所有现有 caller 兼容）。
 
 ---
 

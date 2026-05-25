@@ -147,19 +147,31 @@ class WechatChannel(Channel):
         if not from_id:
             return
 
-        snippet = text[:60] + ("..." if len(text) > 60 else "")
-        print(f"[wechat:{self.account_id}] <{from_id}> {snippet}")
+        # Parse wechat iLink msg dict → ChannelMessage (audit 缺陷 4).
+        from openprogram.channels._message import ChannelMessage
+        ch_msg = ChannelMessage(
+            text=text,
+            chat_id=str(from_id),
+            user_id=str(from_id),
+            user_display=str(from_id),
+            chat_type="direct",
+            ts=float(msg.get("ts") or 0),
+        )
+
+        snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
+        print(f"[wechat:{self.account_id}] <{ch_msg.user_id}> {snippet}")
 
         from openprogram.channels._conversation import dispatch_inbound
         from openprogram.channels.outbound import send as _send
         reply_text = dispatch_inbound(
             channel="wechat",
             account_id=self.account_id,
-            peer_kind="direct",
-            peer_id=str(from_id),
-            user_text=text,
+            peer_kind=ch_msg.chat_type,
+            peer_id=ch_msg.chat_id,
+            user_text=ch_msg.text,
+            user_display=ch_msg.user_display,
         )
-        _send("wechat", self.account_id, str(from_id), reply_text)
+        _send("wechat", self.account_id, ch_msg.chat_id, reply_text)
 
     def _auth_headers(self, bot_token: str) -> dict[str, str]:
         return {
