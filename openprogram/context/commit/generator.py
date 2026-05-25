@@ -269,22 +269,47 @@ def _build_items_from_node(
         reason="attached_open",
         attached_from=source_commit_id,
     ))
+    # IMPORTANT: every item from the source commit gets re-emitted as
+    # role="user" with a narrative prefix that says *who* produced it
+    # in the sub-branch. Without this the source's assistant items
+    # land in the receiving lane's context as the parent agent's OWN
+    # assistant lines — the parent LLM then thinks it already said
+    # those things and just echoes the last one. Reframing the whole
+    # block as user-role narration makes the parent agent treat the
+    # attached content as a *report* about what a sub-agent did, not
+    # as its own dialogue history. (See docs/design/context-attach-
+    # merge.md scenario B and the "毫无逻辑的 echo" issue.)
     for src_item in src_commit.items:
         # Skip already-summarized items in the source — they contribute
         # no rendering and would just confuse the LLM with "" content.
         if src_item.state == "summarized":
             continue
+        orig_role = src_item.role
+        rendered = src_item.rendered or ""
+        if orig_role == "user":
+            prefix = f"[sub-agent \"{label}\" was asked]" if label else "[sub-agent was asked]"
+        elif orig_role == "assistant":
+            prefix = f"[sub-agent \"{label}\" replied]" if label else "[sub-agent replied]"
+        elif orig_role == "tool":
+            # views.py also wraps tool items in "[tool_result]"; keep the
+            # narration consistent so the parent sees a clear chain.
+            prefix = f"[sub-agent \"{label}\" tool result]" if label else "[sub-agent tool result]"
+        elif orig_role == "summary":
+            prefix = f"[sub-agent \"{label}\" earlier summary]" if label else "[sub-agent earlier summary]"
+        else:
+            prefix = f"[sub-agent {orig_role}]"
+        new_rendered = f"{prefix}\n{rendered}" if rendered else prefix
         out.append(ContextItem(
             source_node_id=src_item.source_node_id,
-            role=src_item.role,
+            role="user",
             # Reset state/locked: the rule pipeline re-evaluates the
             # attached content from scratch on the receiving branch.
             # Exception: ``is_base`` (merge base peer) locks everything
             # so summarize/aging never folds the base out.
             state="full",
             locked=is_base,
-            rendered=src_item.rendered,
-            tokens=src_item.tokens,
+            rendered=new_rendered,
+            tokens=_estimate_tokens(new_rendered),
             state_set_at=commit_id,
             reason="attached_base" if is_base else "attached",
             attached_from=source_commit_id,

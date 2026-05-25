@@ -834,6 +834,7 @@ class TaskRunner:
         if not task.parent_session_id:
             return
         label = task.label or task.subject or task.id[:8]
+        sub_prompt = (task.prompt or task.description or "").strip()
 
         def _go():
             try:
@@ -858,12 +859,34 @@ class TaskRunner:
                         )
                     except Exception:
                         pass
+                # Followup prompt — push the parent agent to actually
+                # synthesize a reply for the user, not just echo the
+                # sub-agent's last line. The sub-agent's full transcript
+                # is already in context via the attach expansion above;
+                # this prompt lives in the same turn as a user-role
+                # message (display=runtime, hidden from chat panel),
+                # so the parent agent treats it as instructions, not a
+                # second user message.
+                sub_request_line = (
+                    f"The user asked the sub-agent: {sub_prompt!r}\n"
+                    if sub_prompt else ""
+                )
                 req = TurnRequest(
                     session_id=task.parent_session_id,
                     user_text=(
-                        f"[System] Sub-task **{label}** completed. "
-                        f"The output is attached above. "
-                        f"Review it and continue."
+                        f"[System] The sub-agent \"{label}\" you "
+                        f"spawned has finished. Its full output is "
+                        f"included as attached content above.\n"
+                        f"{sub_request_line}"
+                        f"Now reply to the original user with a "
+                        f"complete answer that uses the sub-agent's "
+                        f"findings. Do NOT just paste or echo the "
+                        f"sub-agent's last line — explain what was "
+                        f"done, summarize the result, and propose any "
+                        f"natural next step. If the sub-agent's reply "
+                        f"is already a direct answer to the user's "
+                        f"original question, restate it in your own "
+                        f"words and add brief context."
                     ),
                     agent_id=task.agent_id or "main",
                     source="task_followup",
