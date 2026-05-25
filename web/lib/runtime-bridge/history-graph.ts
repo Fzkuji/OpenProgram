@@ -312,15 +312,31 @@ function _applyCollapse(graph: GNode[]): {
   function _internalKids(id: string): string[] {
     return (childrenOf[id] || []).filter((c) => internalFlag[c]);
   }
-  // Collapse disabled — the history view is the session's DAG, every
-  // node is meaningful, hiding any of them defeats the purpose of a
-  // git-style graph. Keep the function so downstream callers don't
-  // break, but always report "not collapsible".
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function collapsible(_m: GNode): boolean {
+  // Collapse only sub-call subtrees (tool calls + tool-spawned LLM
+  // calls hanging off an assistant via the `caller` edge). Main
+  // conv-chain nodes (user / assistant on parent_id-edges) never
+  // collapse — they ARE the DAG. So a node is collapsible iff it
+  // owns at least one caller-edge child; that's the tool cluster
+  // hanging off it.
+  function collapsible(m: GNode): boolean {
+    if ((callerKidsOf[m.id] || []).length > 0) return true;
+    if (m.role === "tool") return (childrenOf[m.id] || []).length > 0;
+    if (m._runNode) return _internalKids(m.id).length > 0;
     return false;
   }
-  // No auto-collapse pass either.
+  // Auto-collapse big tool clusters so 30 read() calls don't fill the
+  // panel. AUTO_COLLAPSE_THRESHOLD is the kid count above which the
+  // cluster folds by default; user can click to expand.
+  const AUTO_COLLAPSE_THRESHOLD = 4;
+  graph.forEach((m) => {
+    if (!collapsible(m)) return;
+    if (_seenCollapsible[m.id]) return;
+    _seenCollapsible[m.id] = true;
+    const kidCount = (callerKidsOf[m.id] || []).length;
+    if (kidCount > AUTO_COLLAPSE_THRESHOLD) {
+      _collapsed[m.id] = true;
+    }
+  });
   const hidden: Record<string, boolean> = Object.create(null);
   const hiddenCount: Record<string, number> = Object.create(null);
   graph.forEach((m) => {
