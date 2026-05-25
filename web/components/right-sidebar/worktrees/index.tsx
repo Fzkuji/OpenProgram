@@ -75,10 +75,30 @@ export function WorktreesPanel() {
   // server return everything for the session, and let the client
   // drop old terminals on the timer below. That way a merge that
   // just completed still flashes on screen for a few minutes.
+  //
+  // Race: the panel can mount before useWS has opened the socket.
+  // wsSend is a no-op when ws.readyState !== OPEN, so the initial
+  // fetch can silently drop. Poll for OPEN with a short backoff
+  // before sending. Once the response arrives the panel runs off
+  // the worktree_status broadcasts so this only matters at boot.
   useEffect(() => {
     if (sessionId === undefined) return;
     setWorktrees([]);
-    requestList(sessionId);
+    let cancelled = false;
+    function trySend(attempt: number) {
+      if (cancelled) return;
+      const w = window as unknown as { ws?: WebSocket };
+      if (w.ws && w.ws.readyState === WebSocket.OPEN) {
+        requestList(sessionId);
+        return;
+      }
+      if (attempt > 20) return;   // 20 * 200ms = 4s cap
+      setTimeout(() => trySend(attempt + 1), 200);
+    }
+    trySend(0);
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId, requestList]);
 
   // Listen for the worktrees_list response and refresh the local
