@@ -106,6 +106,12 @@ class Task:
     # attach card. Lets the UI cross-reference task entity ↔ attach
     # card without an extra round-trip.
     attach_pointer_id: Optional[str] = None
+    # Optional agent worktree this task is bound to. When set, the
+    # task runner pre-binds ``_current_worktree_path`` ContextVar in
+    # the worker thread so bash / edit / write / read use the worktree
+    # as default cwd. Cancel hook (D15 in agent-worktree.md) may
+    # auto-discard the worktree when the task is cancelled.
+    worktree_id: Optional[str] = None
 
     status: TaskStatus = TaskStatus.PENDING
     # Timestamps (float epoch seconds, None if not yet reached)

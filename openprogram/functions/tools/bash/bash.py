@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from openprogram.backend import get_active_backend
 from openprogram.functions._runtime import function
+from openprogram.worktree.context import current_worktree_path
 
 from .prompt import DEFAULT_MAX_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, DESCRIPTION
 
@@ -44,7 +45,14 @@ def bash(command: str,
     timeout_sec = timeout_ms / 1000.0
 
     backend = get_active_backend()
-    result = backend.run(command, timeout=timeout_sec)
+    # When an active agent worktree is bound to the current context
+    # (set by the dispatcher / task runner), tools default their cwd
+    # to it. The LLM-supplied command can still ``cd ..`` out; this
+    # just sets the starting directory. A new subprocess is spawned
+    # per invocation, so any ``cd`` inside the command is local to
+    # that one call.
+    wt_cwd = current_worktree_path()
+    result = backend.run(command, timeout=timeout_sec, cwd=wt_cwd)
 
     if result.timed_out:
         return (

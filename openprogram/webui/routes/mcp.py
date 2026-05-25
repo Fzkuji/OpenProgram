@@ -369,6 +369,64 @@ def register(app: FastAPI) -> None:
                                        f"{type(e).__name__}: {e}")
         return JSONResponse(content=status)
 
+    @app.get("/api/mcp/catalog/suggested")
+    async def mcp_catalog_suggested():
+        """Return a curated list of well-known MCP catalog URLs so the
+        Browse-catalog dialog has one-click options without needing
+        the user to type a URL.
+
+        The catalog files themselves are still fetched on click by the
+        existing ``GET /api/mcp/catalog?url=...`` handler — this list
+        just provides starting points."""
+        return JSONResponse(content={
+            "suggested": [
+                {
+                    "label": "Anthropic reference servers",
+                    "url": "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/catalog.json",
+                    "description": "Filesystem, git, sqlite, slack, github, postgres — the canonical MCP server suite maintained by the protocol team.",
+                },
+                {
+                    "label": "OpenProgram bundled catalog",
+                    "url": "https://raw.githubusercontent.com/openprogram/mcp-catalog/main/catalog.json",
+                    "description": "Project-recommended MCP servers wired to common dev workflows (drawio, linear, web fetch, etc.).",
+                },
+                {
+                    "label": "PulseMCP community",
+                    "url": "https://pulsemcp.com/api/catalog.json",
+                    "description": "Community-submitted MCP servers indexed by pulsemcp.com — broadest selection.",
+                },
+            ],
+            # A handful of one-click entries that don't require a separate
+            # catalog fetch — useful when the user is offline or just wants
+            # to install the most common server fast.
+            "quick_install": [
+                {
+                    "name": "filesystem",
+                    "description": "Read/write files in a sandboxed root directory.",
+                    "type": "local",
+                    "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                },
+                {
+                    "name": "git",
+                    "description": "Inspect commits, branches, diffs from any git repo.",
+                    "type": "local",
+                    "command": ["npx", "-y", "@modelcontextprotocol/server-git"],
+                },
+                {
+                    "name": "fetch",
+                    "description": "HTTP fetch with safe parsing — read URLs the model would otherwise hallucinate.",
+                    "type": "local",
+                    "command": ["npx", "-y", "@modelcontextprotocol/server-fetch"],
+                },
+                {
+                    "name": "sequential-thinking",
+                    "description": "Chain-of-thought scratchpad tool — the model writes reasoning to a private buffer.",
+                    "type": "local",
+                    "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"],
+                },
+            ],
+        })
+
     @app.get("/api/mcp/catalog")
     async def fetch_catalog(url: str):
         """Pull a JSON catalog of installable MCP servers from ``url``.

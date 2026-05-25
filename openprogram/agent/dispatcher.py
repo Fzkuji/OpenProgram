@@ -324,6 +324,23 @@ def process_user_turn(
     # Tag this turn so file-mutating tools can attribute backups to
     # the right assistant message via file_backup.helpers.
     _turn_id_token = _turn_id_var.set(assistant_msg_id)
+    # Bind the session's active agent worktree (if any) to the
+    # _current_worktree_path ContextVar for the duration of this turn.
+    # bash / edit / write / read consult that var to default their cwd
+    # to the worktree root. The binding is per-turn so a worktree
+    # created mid-turn is picked up by the next turn entry — within
+    # the same turn the tool that ran worktree_create also calls
+    # set_worktree explicitly so the rest of that turn sees it.
+    _worktree_token = None
+    try:
+        from openprogram.worktree.context import set_worktree as _set_wt
+        from openprogram.worktree.manager import get_manager as _get_wt_mgr
+        _wt_mgr = _get_wt_mgr()
+        _active_wt = _wt_mgr.find_active_for_session(req.session_id)
+        if _active_wt is not None:
+            _worktree_token = _set_wt(_active_wt.worktree_path)
+    except Exception:
+        _worktree_token = None
     # Layer 6 (Claude Code's shouldDefer / ToolSearch): install a
     # session-scoped "loaded deferred tools" set so tool_search can
     # mutate it and subsequent turns see the updated set.
@@ -489,6 +506,12 @@ def process_user_turn(
                 _store_var.reset(_store_token)
             if _turn_id_token is not None:
                 _turn_id_var.reset(_turn_id_token)
+            if _worktree_token is not None:
+                try:
+                    from openprogram.worktree.context import reset_worktree
+                    reset_worktree(_worktree_token)
+                except Exception:
+                    pass
         except Exception:
             pass
 

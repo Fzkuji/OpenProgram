@@ -1024,6 +1024,7 @@ def _build_ws_action_registry() -> dict:
         sub_agent as _ws_sub_agent,
         merge as _ws_merge,
         task as _ws_task,
+        worktree as _ws_worktree,
     )
     table: dict = {}
     table.update(_ws_branch.ACTIONS)
@@ -1038,6 +1039,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_sub_agent.ACTIONS)
     table.update(_ws_merge.ACTIONS)
     table.update(_ws_task.ACTIONS)
+    table.update(_ws_worktree.ACTIONS)
     return table
 
 

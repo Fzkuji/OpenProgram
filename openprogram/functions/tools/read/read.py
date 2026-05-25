@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from openprogram.functions._runtime import function
+from openprogram.worktree.path_resolve import resolve_path
 
 
 MAX_LINES_DEFAULT = 2000
@@ -41,6 +42,11 @@ def read(file_path: str,
         offset: Line number to start reading from (1-based). Default 1.
         limit: Maximum number of lines to return. Default 2000.
     """
+    # Worktree-aware resolution: relative paths bind to the active
+    # worktree root when one is set; absolute paths outside the
+    # worktree get a soft warning but still proceed (D6).
+    resolved_path, outside_warning = resolve_path(file_path)
+    file_path = resolved_path
     if not os.path.isabs(file_path):
         return f"Error: file_path must be absolute, got {file_path!r}"
     if not os.path.exists(file_path):
@@ -67,6 +73,8 @@ def read(file_path: str,
         out_lines.append(f"{i:>6}\t{text}")
 
     header = f"# {file_path} (lines {start + 1}-{end} of {total})"
+    if outside_warning:
+        header = f"{outside_warning}\n{header}"
     if not out_lines:
         return header + "\n(empty range)"
     return header + "\n" + "\n".join(out_lines)

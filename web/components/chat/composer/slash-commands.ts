@@ -123,9 +123,40 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/help",
     description:
-      "Show this command list — type / to browse all available commands",
+      "Open the command list (built-ins, plugin commands, skills)",
     run(_rest, { setInput }) {
+      // Just opens the slash menu — the filtered list IS the help.
       setInput("/", true);
+      return true;
+    },
+  },
+  {
+    name: "/doctor",
+    description:
+      "Run health checks: python, node, skills, plugins, providers, mcp, cache",
+    run(_rest, { sessionId, send }) {
+      (async () => {
+        try {
+          const r = await fetch("/api/doctor");
+          const data: {
+            results: Array<{ ok: boolean; label: string; detail: string }>;
+            all_ok: boolean;
+          } = await r.json();
+          const lines = data.results.map(
+            (x) => `${x.ok ? "✓" : "✗"} ${x.label} — ${x.detail}`,
+          );
+          const text =
+            "Doctor report\n\n" + lines.join("\n") +
+            (data.all_ok ? "\n\nAll checks passed." : "\n\nSome checks failed.");
+          if (sessionId) {
+            send({ action: "chat", session_id: sessionId, text });
+          } else {
+            alert(text);
+          }
+        } catch (e) {
+          alert("Doctor check failed: " + String(e));
+        }
+      })();
       return true;
     },
   },

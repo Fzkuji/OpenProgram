@@ -38,4 +38,5 @@ from . import task as _task_self_register  # noqa: F401
 from . import todo as _todo_self_register  # noqa: F401
 from . import web_fetch as _web_fetch_self_register  # noqa: F401
 from . import web_search as _web_search_self_register  # noqa: F401
+from . import worktree as _worktree_self_register  # noqa: F401
 from . import write as _write_self_register  # noqa: F401

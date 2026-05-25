@@ -6,6 +6,7 @@ import os
 
 from openprogram.functions._runtime import function
 from openprogram.store.file_backup.helpers import backup_for_current_turn
+from openprogram.worktree.path_resolve import resolve_path
 
 
 _DESCRIPTION = (
@@ -37,6 +38,13 @@ def edit(file_path: str,
         new_string: Replacement text (must differ from old_string).
         replace_all: Replace every occurrence of old_string. Default false.
     """
+    # Worktree-aware resolution: if an agent worktree is bound to the
+    # current context, treat a relative path as relative to the
+    # worktree root; if the LLM passed an absolute path outside the
+    # worktree, surface a soft warning but still proceed (D6 — warn,
+    # don't block).
+    resolved_path, outside_warning = resolve_path(file_path)
+    file_path = resolved_path
     if not os.path.isabs(file_path):
         return f"Error: file_path must be absolute, got {file_path!r}"
     if not os.path.exists(file_path):
@@ -70,4 +78,7 @@ def edit(file_path: str,
         return f"Error writing {file_path}: {type(e).__name__}: {e}"
 
     replaced = count if replace_all else 1
-    return f"Edited {file_path} ({replaced} replacement{'s' if replaced != 1 else ''})"
+    msg = f"Edited {file_path} ({replaced} replacement{'s' if replaced != 1 else ''})"
+    if outside_warning:
+        msg = f"{outside_warning}\n{msg}"
+    return msg

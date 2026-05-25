@@ -172,6 +172,7 @@ class TaskRunner:
         label: Optional[str] = None,
         attach_pointer_id: Optional[str] = None,
         target_branch_head_id: Optional[str] = None,
+        worktree_id: Optional[str] = None,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
 
@@ -192,6 +193,7 @@ class TaskRunner:
             label=label,
             attach_pointer_id=attach_pointer_id,
             target_branch_head_id=target_branch_head_id,
+            worktree_id=worktree_id,
             status=TaskStatus.PENDING,
             created_at=time.time(),
         )
@@ -422,6 +424,21 @@ class TaskRunner:
         except Exception:
             pass
 
+        # If this task is bound to an agent worktree, bind the
+        # _current_worktree_path ContextVar so bash / edit / write /
+        # read use it as default cwd. Reset is handled in the finally
+        # below via a token, mirroring the session-id pattern.
+        _wt_token = None
+        if task.worktree_id:
+            try:
+                from openprogram.worktree.context import set_worktree as _set_wt
+                from openprogram.worktree.manager import get_manager as _get_wt_mgr
+                wt = _get_wt_mgr().get_worktree(task.worktree_id)
+                if wt is not None:
+                    _wt_token = _set_wt(wt.worktree_path)
+            except Exception:
+                _wt_token = None
+
         try:
             # pending → running. If state went to cancelled (pre-pickup)
             # the transition fails — bail out cleanly.
@@ -513,6 +530,34 @@ class TaskRunner:
                 pass
             try:
                 reset_current_session_id(sid_token)
+            except Exception:
+                pass
+            if _wt_token is not None:
+                try:
+                    from openprogram.worktree.context import reset_worktree
+                    reset_worktree(_wt_token)
+                except Exception:
+                    pass
+            # If the task was cancelled (D15) and it owned a worktree,
+            # auto-discard the worktree. Completion / error → leave the
+            # worktree alone so the parent agent or user can decide
+            # what to do with it.
+            try:
+                cur = _store_load(session_id, task_id)
+                if (cur is not None
+                        and cur.status == TaskStatus.CANCELLED
+                        and cur.worktree_id):
+                    try:
+                        from openprogram.worktree.manager import (
+                            get_manager as _get_wt_mgr,
+                        )
+                        _get_wt_mgr().discard_worktree(
+                            cur.worktree_id,
+                            force=True,
+                            delete_branch=True,
+                        )
+                    except Exception:
+                        pass
             except Exception:
                 pass
             self._wake_done(task_id)

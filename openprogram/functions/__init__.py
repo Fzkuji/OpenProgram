@@ -141,6 +141,8 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "enter_plan_mode", "exit_plan_mode",
             "list_mcp_resources", "read_mcp_resource",
             "list_mcp_prompts", "get_mcp_prompt",
+            "worktree_create", "worktree_merge", "worktree_discard",
+            "worktree_list", "worktree_keep",
 
             # ─── agentic side ──────────────────────────────────────
             # The three harness entry points + the two PDF-extraction

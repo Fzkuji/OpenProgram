@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { escHtml } from "./format";
+import { marked as npmMarked } from "marked";
 
 // Markdown + KaTeX rendering. Mirrors `renderMd()` and
 // `renderMathInChat()` from web/public/js/shared/helpers.js.
@@ -21,10 +21,11 @@ import { escHtml } from "./format";
  * them, then restore the originals after parsing. */
 function markdownToHtml(src: string): string {
   let s = typeof src === "string" ? src : String(src ?? "");
-  const marked = typeof window !== "undefined" ? window.marked : undefined;
-  if (!marked) {
-    return "<pre>" + escHtml(s) + "</pre>";
-  }
+  // Prefer window.marked (legacy chat CSS targets its exact output); fall
+  // back to the npm-bundled marked so detail pages render even before the
+  // CDN <script> has loaded. Both produce compatible HTML.
+  const marked =
+    (typeof window !== "undefined" ? window.marked : undefined) ?? npmMarked;
 
   const mathBlocks: string[] = [];
   const stash = (m: string) => {
