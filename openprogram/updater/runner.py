@@ -264,19 +264,28 @@ def _apply_git() -> tuple[bool, str]:
 
 
 def _check_pip() -> Optional[UpdateInfo]:
-    """Compare installed wheel version against PyPI ``info.version``.
+    """Compare installed wheel version against the latest tagged release.
 
-    Returns ``None`` when we can't read either side (no network, no
-    package metadata, etc.) — caller treats None as "no update info"
-    and proceeds normally.
+    Queries GitHub Releases first (works regardless of PyPI publication
+    state), falls back to PyPI's JSON API. Returns ``None`` when we
+    can't read the local metadata or both remote sources fail — caller
+    treats None as "no update info" and proceeds normally.
     """
     from . import pip as _pip
+    from . import github as _gh
+
     current = _pip.installed_version()
     if current is None:
         return None
-    target = _pip.latest_pypi_version()
+
+    source = "GitHub release"
+    target = _gh.latest_release_tag()
+    if target is None:
+        target = _pip.latest_pypi_version()
+        source = "PyPI"
     if target is None:
         return None
+
     if not _pip.is_newer(current, target):
         return UpdateInfo(
             method=InstallMethod.PIP_WHEEL,
@@ -290,5 +299,5 @@ def _check_pip() -> Optional[UpdateInfo]:
         available=True,
         current=current,
         target=target,
-        summary=f"openprogram {target} available on PyPI",
+        summary=f"openprogram {target} available ({source})",
     )
