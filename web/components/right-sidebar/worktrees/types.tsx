@@ -60,8 +60,12 @@ export const NON_TERMINAL: ReadonlySet<WorktreeStatus> = new Set<WorktreeStatus>
 ]);
 
 /** How long to keep terminal rows (merged / discarded / kept) on
- *  screen after their completed_at, in ms. Past this they fall out. */
-export const TERMINAL_DISPLAY_MS = 5 * 60 * 1000;
+ *  screen after their completed_at, in ms. Short (5s) so the user
+ *  sees the result animate to a final state then the row falls off
+ *  — panel is supposed to reflect what's CURRENTLY going on, not
+ *  serve as a transaction log. History is available via /worktrees
+ *  page (future) or git log. */
+export const TERMINAL_DISPLAY_MS = 5 * 1000;
 
 /** Shorten a long absolute path for display. Keeps the last two
  *  path segments so the user still recognises which repo it is. */

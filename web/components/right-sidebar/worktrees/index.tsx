@@ -63,10 +63,16 @@ export function WorktreesPanel() {
 
   const requestList = useCallback((sid: string | null) => {
     requestSession.current = sid;
+    if (!sid) {
+      // No active session — show nothing. Worktrees from other
+      // sessions don't belong on this panel; they were leaking in
+      // when scope fell back to "all" with a null session id.
+      return;
+    }
     wsSend({
       action: "list_worktrees",
       session_id: sid,
-      scope: sid ? "session" : "all",
+      scope: "session",
     });
   }, []);
 
