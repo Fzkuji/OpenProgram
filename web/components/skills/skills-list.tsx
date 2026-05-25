@@ -3,26 +3,6 @@
 import { useMemo, useState } from "react";
 import { useSkills, type Skill } from "@/lib/skills-store";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-
-const SOURCE_COLORS: Record<string, string> = {
-  bundled: "#7c6fcd",
-  user: "#3b82f6",
-  project: "#10b981",
-  "remote-cache": "#f59e0b",
-};
-
-function SourceBadge({ source }: { source: string }) {
-  const key = source.startsWith("plugin:") ? "plugin" : source;
-  const color = key === "plugin" ? "#ec4899" : SOURCE_COLORS[source] ?? "#6b7280";
-  return (
-    <span
-      className="inline-block size-[8px] shrink-0 rounded-full"
-      style={{ background: color }}
-      title={source}
-    />
-  );
-}
 
 // --- tree node model -----------------------------------------------------
 

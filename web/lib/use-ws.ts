@@ -128,6 +128,20 @@ export function useWS(): void {
           }
           return true;
         }
+        case "skills:changed": {
+          // File-system watcher fired — refresh the skills list so the
+          // /skills page, Discovery counts, and slash menu reflect the
+          // change without any user action.
+          import("@/lib/skills-store").then(({ useSkills }) => {
+            useSkills.getState().fetchSkills();
+          });
+          return true;
+        }
+        case "plugins:changed":
+          import("@/lib/plugins-store").then(({ usePluginsStore }) => {
+            usePluginsStore.getState().refresh();
+          });
+          return true;
         case "running_task":
           handleRunningTask(d);
           return true;

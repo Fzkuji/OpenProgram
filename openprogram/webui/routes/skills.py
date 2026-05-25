@@ -102,13 +102,18 @@ def _save_discovery_sources(sources: list[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# WebSocket broadcast stub — real WS wiring lives in server.py; routes here
-# just call this no-op so future hookup is one edit.
+# WebSocket broadcast — server.py exposes a global ``_broadcast(json_str)``;
+# we serialise our event payload and call it. Falls back to a no-op if the
+# server module hasn't initialised yet (e.g. during pytest import).
 # ---------------------------------------------------------------------------
 
 def _emit(event: str, data: dict) -> None:
-    # TODO: wire to the global WS broadcaster once server.py exposes it.
-    return None
+    try:
+        from openprogram.webui import server as _server
+        import json as _json
+        _server._broadcast(_json.dumps({"type": event, **data}, default=str))
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +217,20 @@ def register(app):
                 content={"error": f"{type(e).__name__}: {e}"}, status_code=502,
             )
         return JSONResponse(content={"url": url, "entries": entries})
+
+    @app.get("/api/skills/discovery/diff")
+    async def diff_discovery(url: str = "", namespace: str | None = None):
+        from openprogram.skills.discovery import diff
+        url = (url or "").strip()
+        if not url:
+            return JSONResponse(content={"error": "url required"}, status_code=400)
+        try:
+            result = diff(url, namespace=namespace)
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"{type(e).__name__}: {e}"}, status_code=502,
+            )
+        return JSONResponse(content={"url": url, **result})
 
     @app.post("/api/skills/discovery/install")
     async def install_discovery(request: Request):

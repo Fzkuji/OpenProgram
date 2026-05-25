@@ -239,6 +239,21 @@ def _import_entrypoints(plugin: Plugin) -> Plugin:
     if mf.sidebar:
         contrib["sidebar"] = list(mf.sidebar)
 
+    # If the plugin declares ``hooks`` as a ``module:name`` reference, resolve
+    # it to the actual callable mapping so registry / dispatch can use it.
+    hooks_ep = ep.get("hooks")
+    if isinstance(hooks_ep, str) and ":" in hooks_ep:
+        try:
+            mod_name, obj_name = hooks_ep.split(":", 1)
+            mod = importlib.import_module(mod_name)
+            obj = getattr(mod, obj_name)
+            if callable(obj):
+                obj = obj()  # factory style
+            if isinstance(obj, dict):
+                contrib["_hook_map"] = obj
+        except Exception:
+            pass
+
     plugin.contrib = contrib
     return plugin
 
@@ -279,10 +294,23 @@ def load_plugin(name: str) -> Plugin:
             # skills 对接
             if p.contrib.get("skills"):
                 registry.try_register_skills(name, p.contrib["skills"])
+            # 注册 lifecycle hooks
+            hook_map = p.contrib.get("_hook_map") or {}
+            if hook_map:
+                from . import hooks as _hooks
+                _hooks.register_plugin_hooks(name, hook_map)
             # 持久化 enabled
             s = _load_enabled()
             s.add(name)
             _save_enabled(s)
+            # 通知所有 plugin: 这个 plugin 上线了
+            try:
+                from . import hooks as _hooks
+                _hooks.dispatch_hook(
+                    _hooks.HookEvent.PLUGIN_ENABLE, {"plugin": name},
+                )
+            except Exception:
+                pass
         except Exception as e:
             p.loaded = False
             p.enabled = False
@@ -298,6 +326,16 @@ def unload_plugin(name: str) -> Plugin:
         p = _plugins.get(name)
         if not p:
             raise KeyError(f"unknown plugin: {name}")
+        # Fire plugin.disable BEFORE we drop registrations so handlers
+        # can still see neighbour state.
+        try:
+            from . import hooks as _hooks
+            _hooks.dispatch_hook(
+                _hooks.HookEvent.PLUGIN_DISABLE, {"plugin": name},
+            )
+            _hooks.unregister_plugin_hooks(name)
+        except Exception:
+            pass
         registry.try_unregister_skills(name)
         registry.clear_plugin_contrib(name)
         # 不主动 del sys.modules：用户可能仍有引用。Reload 时再处理。

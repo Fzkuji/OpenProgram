@@ -9,6 +9,7 @@ type CatalogState = {
   loading: boolean;
   entries: CatalogEntry[] | null;
   error: string | null;
+  outdated: Set<string>;  // namespaced names whose local SKILL.md hash drifted
 };
 
 type Source = {
@@ -118,12 +119,30 @@ export function DiscoverySources() {
   }
 
   async function loadCatalog(url: string) {
-    setCatalogs((c) => ({ ...c, [url]: { loading: true, entries: null, error: null } }));
+    setCatalogs((c) => ({
+      ...c,
+      [url]: { loading: true, entries: null, error: null, outdated: new Set() },
+    }));
     try {
       const entries = await browseDiscovery(url);
-      setCatalogs((c) => ({ ...c, [url]: { loading: false, entries, error: null } }));
+      // Best-effort outdated diff — runs server-side, ignore failure.
+      let outdated = new Set<string>();
+      try {
+        const r = await fetch(`/api/skills/discovery/diff?url=${encodeURIComponent(url)}`);
+        if (r.ok) {
+          const d: { outdated?: string[] } = await r.json();
+          outdated = new Set(d.outdated || []);
+        }
+      } catch { /* ignore */ }
+      setCatalogs((c) => ({
+        ...c,
+        [url]: { loading: false, entries, error: null, outdated },
+      }));
     } catch (e) {
-      setCatalogs((c) => ({ ...c, [url]: { loading: false, entries: null, error: String(e) } }));
+      setCatalogs((c) => ({
+        ...c,
+        [url]: { loading: false, entries: null, error: String(e), outdated: new Set() },
+      }));
     }
   }
 
@@ -178,6 +197,7 @@ export function DiscoverySources() {
             const catalogTotal = cat?.entries?.length;
             const allInstalled =
               catalogTotal !== undefined && installed >= catalogTotal && catalogTotal > 0;
+            const outdatedCount = cat?.outdated?.size ?? 0;
             return (
               <li key={s.url} className="rounded-md border border-[var(--border)]">
                 <div className="flex items-start gap-3 p-3 hover:bg-bg-hover hover:text-nav-color-hover">
@@ -192,6 +212,14 @@ export function DiscoverySources() {
                           {catalogTotal !== undefined
                             ? `${installed}/${catalogTotal} installed`
                             : `${installed} installed`}
+                        </span>
+                      )}
+                      {outdatedCount > 0 && (
+                        <span
+                          className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-amber-400"
+                          title="Local SKILL.md content differs from upstream — click Reinstall all to sync."
+                        >
+                          {outdatedCount} outdated
                         </span>
                       )}
                       {s.origin === "custom" && (
@@ -238,6 +266,7 @@ export function DiscoverySources() {
                         entries={cat.entries}
                         source={s}
                         installedNames={installedNames}
+                        outdatedNames={cat.outdated}
                         installingKey={installingKey}
                         onInstall={handleInstallOne}
                       />
@@ -271,11 +300,12 @@ export function DiscoverySources() {
 }
 
 function CatalogList({
-  entries, source, installedNames, installingKey, onInstall,
+  entries, source, installedNames, outdatedNames, installingKey, onInstall,
 }: {
   entries: CatalogEntry[];
   source: Source;
   installedNames: Set<string>;
+  outdatedNames: Set<string>;
   installingKey: string | null;
   onInstall: (source: Source, name: string) => void;
 }) {
@@ -302,24 +332,28 @@ function CatalogList({
           // Resolve the installed-path the same way the backend writes it.
           const fullName = source.slug ? `${source.slug}/${e.name}` : e.name;
           const installed = installedNames.has(fullName);
+          const outdated = outdatedNames.has(fullName);
           return (
             <li key={e.name}
               className="flex items-start gap-3 rounded px-2 py-2 hover:bg-bg-hover hover:text-nav-color-hover">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[12px] text-[var(--text-bright)]">{e.name}</span>
-                  {installed && (
+                  {installed && !outdated && (
                     <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400">installed</span>
+                  )}
+                  {outdated && (
+                    <span className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-amber-400" title="Upstream SKILL.md differs from the local copy">outdated</span>
                   )}
                 </div>
                 {e.description && (
                   <p className="mt-0.5 text-xs text-[var(--text-secondary)] line-clamp-2">{e.description}</p>
                 )}
               </div>
-              <Button size="sm" variant={installed ? "outline" : "default"}
+              <Button size="sm" variant={outdated ? "default" : installed ? "outline" : "default"}
                 onClick={() => onInstall(source, e.name)}
                 disabled={installingKey === key}>
-                {installingKey === key ? "Installing…" : installed ? "Reinstall" : "Install"}
+                {installingKey === key ? "Installing…" : outdated ? "Update" : installed ? "Reinstall" : "Install"}
               </Button>
             </li>
           );

@@ -379,6 +379,7 @@ class CatalogEntry:
     description: str
     path: str  # path inside the source (skill_dir for github mode)
     files: list[str]  # extra files we'd download alongside SKILL.md
+    content_hash: str = ""  # sha256 of upstream SKILL.md body; used to detect drift
 
 
 _FRONTMATTER_RE = re.compile(
@@ -398,6 +399,11 @@ def _parse_description(skill_md: str) -> str:
     return ""
 
 
+def _sha256(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 async def _browse_index(client: httpx.AsyncClient, url: str) -> list[CatalogEntry]:
     raw = await _get_text(client, url)
     index = Index.model_validate_json(raw)
@@ -409,9 +415,14 @@ async def _browse_index(client: httpx.AsyncClient, url: str) -> list[CatalogEntr
         try:
             md = await _get_text(client, skill_md_url)
             desc = _parse_description(md)
+            digest = _sha256(md)
         except Exception:
             desc = ""
-        out.append(CatalogEntry(name=s.name, description=desc, path=s.name, files=list(s.files)))
+            digest = ""
+        out.append(CatalogEntry(
+            name=s.name, description=desc, path=s.name,
+            files=list(s.files), content_hash=digest,
+        ))
     return out
 
 
@@ -425,13 +436,18 @@ async def _browse_github(client: httpx.AsyncClient, repo: GhRepo) -> list[Catalo
             try:
                 md = zf.read(f"{top}/{skill_dir}/SKILL.md").decode("utf-8", errors="replace")
                 desc = _parse_description(md)
+                digest = _sha256(md)
             except Exception:
                 desc = ""
+                digest = ""
             rel_name = skill_dir
             if scope and rel_name.startswith(scope + "/"):
                 rel_name = rel_name[len(scope) + 1:]
             out.append(
-                CatalogEntry(name=rel_name, description=desc, path=skill_dir, files=files)
+                CatalogEntry(
+                    name=rel_name, description=desc, path=skill_dir,
+                    files=files, content_hash=digest,
+                )
             )
     return sorted(out, key=lambda e: e.name)
 
@@ -463,9 +479,50 @@ async def _browse_async(url: str) -> list[dict]:
         else:
             entries = await _browse_index(client, url)
     return [
-        {"name": e.name, "description": e.description, "path": e.path, "files": e.files}
+        {
+            "name": e.name, "description": e.description, "path": e.path,
+            "files": e.files, "content_hash": e.content_hash,
+        }
         for e in entries
     ]
+
+
+def diff(url: str, namespace: str | None = None) -> dict:
+    """Compare each catalog entry's upstream SKILL.md hash against the
+    locally-cached copy. Returns ``{installed, outdated, missing,
+    up_to_date}`` lists of names (each name is the *namespaced* full
+    name as the loader sees it)."""
+    entries = browse(url)
+    ns = namespace if namespace is not None else _default_namespace(url)
+    cache = remote_cache_dir()
+
+    installed: list[str] = []
+    outdated: list[str] = []
+    missing: list[str] = []
+    up_to_date: list[str] = []
+
+    for e in entries:
+        full = _apply_namespace(e["name"], ns)
+        local = cache / full / "SKILL.md"
+        if not local.exists():
+            missing.append(full)
+            continue
+        installed.append(full)
+        try:
+            local_hash = _sha256(local.read_text(encoding="utf-8"))
+        except OSError:
+            outdated.append(full)
+            continue
+        if e["content_hash"] and local_hash != e["content_hash"]:
+            outdated.append(full)
+        else:
+            up_to_date.append(full)
+    return {
+        "installed": installed,
+        "outdated": outdated,
+        "missing": missing,
+        "up_to_date": up_to_date,
+    }
 
 
 def browse(url: str) -> list[dict]:

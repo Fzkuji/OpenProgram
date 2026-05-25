@@ -1113,6 +1113,20 @@ def create_app():
         except Exception as e:  # noqa: BLE001
             _log(f"[mcp] startup failed: {type(e).__name__}: {e}")
 
+    @app.on_event("startup")
+    async def _start_skills_watcher():
+        """Watch the five skill source directories and push ``skills:changed``
+        to all connected WS clients whenever a SKILL.md file is added, edited
+        or removed. Falls back to 5-second polling if ``watchdog`` isn't
+        installed."""
+        try:
+            from openprogram.skills.watcher import start_watcher
+            def _broadcast_changed():
+                _broadcast(json.dumps({"type": "skills:changed"}))
+            start_watcher(on_change=_broadcast_changed)
+        except Exception as e:  # noqa: BLE001
+            _log(f"[skills-watcher] startup failed: {type(e).__name__}: {e}")
+
     @app.on_event("shutdown")
     async def _stop_mcp_servers():
         try:

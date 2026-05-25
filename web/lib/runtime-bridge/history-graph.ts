@@ -98,6 +98,12 @@ let _tooltip: HTMLDivElement | null = null;
 let _lastSignature: string | null = null;
 let _leafOfNode: Record<string, string> = Object.create(null);
 let _collapsed: Record<string, boolean> = Object.create(null);
+// `_seenCollapsible` is assigned across renders to remember whether a node was
+// ever rendered as a collapsible cluster within the current session. Even
+// though no read site references it today, it is intentionally retained so
+// future debug tooling (or a session-scoped diff) can pick it up without
+// reinstating the bookkeeping. ESLint sees it as unused — squelch it locally.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 let _seenCollapsible: Record<string, boolean> = Object.create(null);
 let _collapseSession: string | null = null;
 
@@ -310,6 +316,7 @@ function _applyCollapse(graph: GNode[]): {
   // node is meaningful, hiding any of them defeats the purpose of a
   // git-style graph. Keep the function so downstream callers don't
   // break, but always report "not collapsible".
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function collapsible(_m: GNode): boolean {
     return false;
   }
