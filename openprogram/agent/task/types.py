@@ -95,6 +95,14 @@ class Task:
     context_mode: str = "inherit"
     parent_msg_id: Optional[str] = None
     parent_task_id: Optional[str] = None
+    # The user msg in the caller's main chain that triggered this
+    # spawn. Stays ON THE CALLER LANE regardless of context_mode
+    # (parent_msg_id is None in clean mode, which loses the lane
+    # info). The runner's auto-followup uses this to reset session
+    # head back to the caller's lane before writing the follow-up
+    # turn, so the follow-up commit sees the attach pointer in its
+    # parent items rather than the sub-agent's own commit.
+    caller_msg_id: Optional[str] = None
     label: Optional[str] = None
     # Branch tip we *expect* this task to produce when it commits.
     # Filled in by the runner immediately so the UI can stitch

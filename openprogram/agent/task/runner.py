@@ -174,6 +174,7 @@ class TaskRunner:
         target_branch_head_id: Optional[str] = None,
         worktree_id: Optional[str] = None,
         wait: bool = True,
+        caller_msg_id: Optional[str] = None,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
 
@@ -196,6 +197,7 @@ class TaskRunner:
             target_branch_head_id=target_branch_head_id,
             worktree_id=worktree_id,
             wait=wait,
+            caller_msg_id=caller_msg_id,
             status=TaskStatus.PENDING,
             created_at=time.time(),
         )
@@ -735,11 +737,12 @@ class TaskRunner:
                 # inherits the sub-agent's commit as parent, never
                 # seeing the attach pointer on main where the
                 # spawned-from user msg lives.
-                if task.parent_msg_id:
+                head_to_reset = task.caller_msg_id or task.parent_msg_id
+                if head_to_reset:
                     try:
                         from openprogram.agent.session_db import default_db
                         default_db().set_head(
-                            task.parent_session_id, task.parent_msg_id,
+                            task.parent_session_id, head_to_reset,
                         )
                     except Exception:
                         pass

@@ -332,6 +332,7 @@ def _run_spawn_async(
             description=prompt,
             context_mode=context,
             attach_pointer_id=attach_node_id,
+            caller_msg_id=msg_id,
         )
     except Exception as e:  # noqa: BLE001
         # Roll back the placeholder by stamping it errored.
