@@ -369,7 +369,8 @@ built-in 走硬编码 fast path，plugin platform 通过 registry 自注册。
 | Receipt tracking | 无 | 有 (DurableMessageSendResult 含 delivery confirmation) | 不详 |
 | Structured replies | text only | embed/button/menu (ChannelMessageActionAdapter) | 部分 |
 | Attachment 缓存 | 无 | 有 | UUID-前缀 + 24h 清理 |
-| 出站 API | `outbound.send` 走 raw HTTP | 走 adapter 实例 (ChannelOutboundAdapter) | `DeliveryRouter` 走 adapter |
+| 出站 API | `outbound.send` 走 raw HTTP | 走 adapter 实例 (ChannelOutboundAdapter) | `DeliveryRouter(adapters: dict)` 走 adapter |
+| 进程模型假设 | 多部署形态 (lib + worker + script) | 单 daemon 进程 | 单 gateway 进程 |
 | Chunking 实现 | 5 份重复 | 平台 plugin 内统一 | 平台内统一 (`truncate_message`) |
 | Platform 注册 | 硬编码 dict | Plugin SDK (manifest + dynamic loader) | hybrid (built-in + registry) |
 | 语言 | Python | TypeScript | Python |
@@ -562,9 +563,23 @@ Dispatcher 已经 emit `tool_use` / `stream_event` envelope。`dispatch_inbound.
 
 Channel 目前**只挂在范式 B 上**。这意味着：
 
-1. **`outbound.send` 不是"错位的加法"**——它正是范式 A 需要的路径。一个 cron-driven @agentic_function 想给用户发"早上好"，不需要起 adapter instance、不需要订阅 stream 事件、不需要绑定 session lifecycle——raw HTTP 直接发就对。OpenClaw 的"统一走 adapter" 是单一范式（LLM-as-scheduler）下的合理设计，对我们双范式来说会出问题。
+1. **`outbound.send` 不是"错位的加法"**——它正是范式 A 需要的路径。一个 cron-driven @agentic_function 想给用户发"早上好"，不需要起 adapter instance、不需要订阅 stream 事件、不需要绑定 session lifecycle——raw HTTP 直接发就对。OpenClaw 的"统一走 adapter"、hermes 的 `DeliveryRouter(adapters: dict)` 都是**单 daemon 进程模型**下的合理设计——它们假设 cron scheduler + platform adapter + agent runtime 全在同一进程里跑，cron job 能从 dependency injection 拿到 adapter dict。
 
    我前面 audit 第 4 节缺陷 2 把 `outbound.send` 标为"两套发送代码"问题——这个判断对**实现层重复**是对的（chunking 复制 5 次、HTTP 调用各写一遍、credentials 加载多份），但**保留两个入口**本身是范式分工的合理结果，不该删。
+
+   OpenProgram 多部署形态把这个进程模型假设给打破了：
+
+   ```
+   部署场景                              adapter instance 在哪
+   ──────────────────────────────────────────────────────────
+   openprogram worker 跑                   有 (worker 进程持有)
+   用户写 Python 脚本 import @agentic     无
+   cron 跑在 worker 外的另一个进程         无
+   Jupyter notebook 实验                  无
+   pytest 测试                            无
+   ```
+
+   范式 A 设计上就是"library 模式"——用户在自己的脚本里 import 用，**不假设 worker 进程存在**。所以 hermes / OpenClaw 那种"所有发送都走 adapter 实例"的组织方式在我们的多部署形态下行不通。outbound.send 这条路必须保留。
 
 2. **正确的重构形状是：两个入口、一份实现**
 
