@@ -69,7 +69,7 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
     >
       <span className="text-[var(--text-tertiary)] shrink-0" aria-hidden>◦</span>
       <div className="flex-1 min-w-0">
-        <span className="font-medium text-[var(--text-bright)] truncate block">{skill.leaf || skill.name}</span>
+        <span className="font-medium text-nav-color group-hover:text-nav-color-hover truncate block">{skill.leaf || skill.name}</span>
         {skill.description && (
           <p className="text-xs text-[var(--text-secondary)] truncate">{skill.description}</p>
         )}
@@ -114,12 +114,12 @@ function TreeBranch({
         role="button"
         onClick={() => toggleExpanded(node.path)}
         style={{ paddingLeft: 8 + depth * 16 }}
-        className="flex items-center gap-2 py-2 pr-3 cursor-pointer rounded border border-transparent hover:bg-bg-hover hover:text-nav-color-hover select-none"
+        className="group flex items-center gap-2 py-2 pr-3 cursor-pointer rounded border border-transparent hover:bg-bg-hover hover:text-nav-color-hover select-none"
       >
         <span className="text-[var(--text-tertiary)] w-3 text-center">
           {isOpen ? "▾" : "▸"}
         </span>
-        <span className="text-[var(--text-bright)] text-sm font-medium">{node.segment}</span>
+        <span className="text-nav-color group-hover:text-nav-color-hover text-sm font-medium">{node.segment}</span>
         <span className="text-[11px] text-[var(--text-tertiary)]">{enabledCount}/{subSkills.length}</span>
         <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
           <Switch
