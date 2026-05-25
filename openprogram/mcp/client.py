@@ -412,9 +412,14 @@ class MCPClient:
             await self._run_session(read, write)
 
     async def _run_session(self, read, write) -> None:
+        from mcp.types import SamplingCapability
+        from .sampling import sampling_callback
+
         async with ClientSession(
             read, write,
             list_roots_callback=_list_roots_callback,
+            sampling_callback=sampling_callback,
+            sampling_capabilities=SamplingCapability(),
         ) as session:
             await session.initialize()
             result = await session.list_tools()
