@@ -66,6 +66,15 @@ export interface AttachMeta {
    *  Branches → Attach to flow (rather than a /task spawn). The card
    *  uses this to surface the staged-reference UI. */
   manual?: boolean;
+  /** Pinned source ContextCommit id — the snapshot the generator
+   *  will expand into the next turn. Absent on legacy attach rows
+   *  written before the expansion refactor. */
+  source_commit_id?: string;
+  /** Count of items in the pinned source commit (frontend renders
+   *  this in the embed preview). Computed server-side. */
+  embed_count?: number;
+  /** Token sum across the source commit's items. */
+  embed_tokens?: number;
 }
 
 function _readAttach(m: LegacyMsg): AttachMeta | undefined {

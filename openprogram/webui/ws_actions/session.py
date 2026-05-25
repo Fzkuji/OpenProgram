@@ -164,6 +164,9 @@ async def handle_load_session(ws, cmd: dict):
             chain = spliced
         conv["messages"] = chain
         conv["head_id"] = head
+        from openprogram.webui.ws_actions.branch import (
+            _attach_info as _ainfo, _attach_embed_stats as _astats,
+        )
         shown = []
         for m in chain:
             mid = m.get("id")
@@ -177,13 +180,30 @@ async def handle_load_session(ws, cmd: dict):
                     prev_id = deepest_leaf(all_msgs, ids[i - 1])
                 if 0 <= i < len(ids) - 1:
                     next_id = deepest_leaf(all_msgs, ids[i + 1])
-            shown.append({
-                **m,
+            # Enrich attach pointer rows with embed stats so the
+            # AttachCard can render "EMBEDS N messages · M tokens"
+            # without a follow-up round trip. Cost = one O(1)
+            # commit-file read per attach pointer.
+            enriched = {**m,
                 "sibling_index": idx,
                 "sibling_total": total,
                 "prev_sibling_id": prev_id,
                 "next_sibling_id": next_id,
-            })
+            }
+            if m.get("function") == "attach":
+                _ref, _man, _src = _ainfo(m)
+                if _src:
+                    _n, _tok = _astats(
+                        default_db(), conv["id"], _src,
+                    )
+                    attach_dict = dict(m.get("attach") or {})
+                    attach_dict.setdefault("source_commit_id", _src)
+                    if _n is not None:
+                        attach_dict["embed_count"] = _n
+                    if _tok is not None:
+                        attach_dict["embed_tokens"] = _tok
+                    enriched["attach"] = attach_dict
+            shown.append(enriched)
 
         tree_data = {}  # tree Context retired — execution trace lives in SessionDB DAG nodes
         try:
@@ -200,6 +220,10 @@ async def handle_load_session(ws, cmd: dict):
             if len(preview) > 80:
                 preview = preview[:77] + "…"
             _aref, _amanual, _asrc_commit = _attach_info(m)
+            from openprogram.webui.ws_actions.branch import _attach_embed_stats
+            _aembed_n, _aembed_tok = _attach_embed_stats(
+                default_db(), conv["id"], _asrc_commit,
+            )
             graph.append({
                 "id": m.get("id"),
                 "parent_id": m.get("parent_id"),
@@ -212,6 +236,8 @@ async def handle_load_session(ws, cmd: dict):
                 "attach_ref": _aref,
                 "attach_manual": _amanual,
                 "attach_source_commit_id": _asrc_commit,
+                "attach_embed_count": _aembed_n,
+                "attach_embed_tokens": _aembed_tok,
             })
         # Compute (depth, lane) server-side so the frontend renders
         # parallel branches correctly without re-deriving topology.

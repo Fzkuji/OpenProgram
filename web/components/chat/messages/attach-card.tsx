@@ -66,6 +66,14 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const label = (attach.label || "").trim();
   const preview = msg.content || "(no output)";
   const headTag = targetHead ? targetHead.slice(0, 8) : "";
+  // The expanded-block stats — populated server-side when the
+  // attach pointer pinned a source_commit_id (post attach-commit
+  // expansion refactor). Absent on legacy attach rows; fall back to
+  // the single-message preview in that case.
+  const sourceCommitId = attach.source_commit_id || "";
+  const embedCount = attach.embed_count;
+  const embedTokens = attach.embed_tokens;
+  const hasEmbedStats = typeof embedCount === "number" && embedCount > 0;
   const sameSession =
     !!targetSessionId && targetSessionId === currentSessionId;
   // If the chat is already on the branch the card points at, drop
@@ -189,7 +197,13 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
         ) : null}
       </div>
       <div className="attach-card-preview-label">
-        Preview (tip of this branch)
+        {hasEmbedStats
+          ? `EMBEDS ${embedCount} message${embedCount === 1 ? "" : "s"}${
+              typeof embedTokens === "number"
+                ? ` · ${embedTokens} tokens`
+                : ""
+            }${sourceCommitId ? ` · commit ${sourceCommitId.slice(0, 8)}` : ""}`
+          : "Preview (tip of this branch)"}
       </div>
       <div
         className="attach-card-preview chat-text"
@@ -198,7 +212,9 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
       {isManual ? (
         <div className="attach-card-footer">
           <span className="attach-card-status">
-            Will be included in your next message
+            {hasEmbedStats
+              ? "Will be expanded into your next message"
+              : "Will be included in your next message"}
           </span>
         </div>
       ) : null}

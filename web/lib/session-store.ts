@@ -92,6 +92,17 @@ export interface ChatMsg {
      *  The card surfaces this to explain "I'm a staged reference, not
      *  an executed call". */
     manual?: boolean;
+    /** Pinned source ContextCommit id (written when the attach was
+     *  created). Frontend uses it to label the embed ("commit XX").
+     *  Absent on legacy attach rows from before the expansion refactor. */
+    source_commit_id?: string;
+    /** How many ContextItems the source commit holds (the count the
+     *  attach would expand into). Computed server-side so the card
+     *  can render "EMBEDS N messages" without a follow-up round trip. */
+    embed_count?: number;
+    /** Sum of source commit's item tokens — companion to embed_count
+     *  for the same preview line. */
+    embed_tokens?: number;
   };
   /** Which agent produced this turn. Same-session multi-agent: a
    *  conversation can have N agents writing branches in the same

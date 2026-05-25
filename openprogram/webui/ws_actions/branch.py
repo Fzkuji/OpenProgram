@@ -46,6 +46,37 @@ def _attach_ref(m: dict) -> Optional[str]:
     return src
 
 
+def _attach_embed_stats(
+    store, session_id: Optional[str], source_commit_id: Optional[str],
+) -> tuple[Optional[int], Optional[int]]:
+    """Return ``(item_count, total_tokens)`` for the source ContextCommit
+    a manual / spawn attach pointer would expand into.
+
+    The frontend uses these to render the embed preview ("EMBEDS N
+    messages · M tokens") without a follow-up round trip. Returns
+    ``(None, None)`` when the source commit isn't available — frontend
+    falls back to the legacy single-message preview.
+    """
+    if not source_commit_id:
+        return None, None
+    try:
+        from openprogram.context.commit.store import load_commit
+        c = load_commit(store, source_commit_id, session_id=session_id)
+        if c is None:
+            # cross-session: do a global scan (load_commit handles it)
+            c = load_commit(store, source_commit_id)
+    except Exception:
+        return None, None
+    if c is None:
+        return None, None
+    # Skip summarized items — they don't render and so wouldn't make
+    # it into an expanded attach block either.
+    visible = [it for it in c.items if it.state != "summarized"]
+    count = len(visible)
+    tokens = sum(int(it.tokens or 0) for it in visible)
+    return count, tokens
+
+
 def build_branches_payload(session_id: str | None) -> dict:
     """Build the ``branches_list`` data dict for a session.
 
@@ -74,6 +105,9 @@ def build_branches_payload(session_id: str | None) -> dict:
                 if len(preview) > 80:
                     preview = preview[:77] + "…"
                 _aref, _amanual, _asrc_commit = _attach_info(m)
+                _aembed_n, _aembed_tok = _attach_embed_stats(
+                    db, session_id, _asrc_commit,
+                )
                 graph.append({
                     "id": m.get("id"),
                     "parent_id": m.get("parent_id"),
@@ -86,6 +120,8 @@ def build_branches_payload(session_id: str | None) -> dict:
                     "attach_ref": _aref,
                     "attach_manual": _amanual,
                     "attach_source_commit_id": _asrc_commit,
+                    "attach_embed_count": _aembed_n,
+                    "attach_embed_tokens": _aembed_tok,
                 })
             # Server-side layout — keeps the parallel-branch geometry
             # consistent across load_session, list_branches, and any
