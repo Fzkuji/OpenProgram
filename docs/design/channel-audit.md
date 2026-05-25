@@ -486,9 +486,11 @@ peer_id = "{chat_id}"                # telegram
 
 把 chat 和 user 拼成一个字符串 peer_id，丢失了二维信息。`agent.session_scope` 只有 4 个枚举值（main / per-peer / per-channel-peer / per-account-channel-peer），不支持 "线程内共享" 这种 hermes 默认开启的模式。
 
-### 缺陷 9：错误信号没分类
+### 缺陷 9：错误信号没分类（✓ 已修，commit f4b7ca9f）
 
 adapter `send` 返回 `bool`。失败原因（网络瞬时 vs auth 永久 vs rate limit）无法上传到 dispatcher。dispatcher 无法智能重试，也无法在 UI 上正确显示原因。
+
+**修复**：加 `SendResult` dataclass (`_transport.py:SendResult`)，含 `ok` / `message_id` / `error_kind` / `error_detail` / `retryable` 字段。`error_kind` 枚举 `auth` / `rate_limit` / `bad_target` / `network` / `not_supported` / `unknown`。`_transport.post_message` / `patch_message` 现在返回 `SendResult`；`outbound.send` 保留 bool 签名，新增 `outbound.send_full()` 暴露完整结果；`Channel.send_text` / `edit_text` 同理，加 `send_text_full` / `edit_text_full` 变体。Telegram / Discord / Slack 的业务错误描述分别有 `_telegram_kind_from_description` / `_slack_kind_from_error` 推断 `error_kind`，HTTP 状态码走 `_classify_http_status`。
 
 ### 缺陷 10：Platform 注册硬编码
 
