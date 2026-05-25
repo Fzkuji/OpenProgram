@@ -74,14 +74,20 @@
   content: "";
   position: absolute;
   inset: 0;
-  border: 1px solid transparent;
   border-radius: inherit;
   pointer-events: none;
   z-index: 2;
-  transition: border-color 180ms ease;
+  /* Inset box-shadow instead of CSS border — the 1px hairline stays
+     uniform around the composer-corner radius. With a CSS ``border``
+     the curve segment shows visibly patchier anti-aliasing than the
+     straight edges, which reads as the corners being "abruptly"
+     flattened. ``box-shadow`` uses the shadow rasterizer which
+     interpolates the hairline smoothly. */
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: box-shadow 180ms ease;
 }
 .inputWrapper:focus-within::after {
-  border-color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--text-secondary);
 }
 
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
@@ -110,8 +116,16 @@
   animation: none;
   opacity: 1;
 }
-/* @keyframes outgoingLayerFade lives in app/styles/base.css — see the
-   note there explaining the turbopack keyframe-name workaround. */
+/* Keyframes kept HERE (not base.css) so turbopack mangles the
+   ``@keyframes`` name and the ``animation: <name>`` reference above
+   with the same hash. Same fix as the slashOpen/slashClose pair
+   further down — turbopack's CSS-module pass mangles ``animation:``
+   identifiers, so a globally-defined keyframe of the original name
+   wouldn't match. */
+@keyframes outgoingLayerFade {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
 
 /* Dark-mode override removed — `var(--text-bright)` already swaps
    between near-black (light) and near-white (dark) via the theme
@@ -158,6 +172,104 @@
 }
 .chatInput::placeholder {
   color: var(--text-muted);
+}
+
+/* Pasted-content chip row — sits ABOVE the textarea (not inside the
+   flex row with it) so chips stack on their own line and don't shove
+   the textarea narrower. Padding mirrors the input row's so chips
+   line up with the textarea text. */
+.pasteChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: var(--composer-bottom-row-pad) var(--composer-bottom-row-pad) 0;
+}
+.pasteChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.pasteChip.missing {
+  /* Visually distinct when the backing content is gone (reload past
+     the persistence cap, manual store clear). Submit will refuse. */
+  border-color: var(--accent-red, #b34242);
+  color: var(--accent-red, #b34242);
+}
+.pasteChipRemove {
+  margin-left: 2px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.pasteChipRemove:hover {
+  color: var(--text-bright);
+}
+
+/* Image attachment strip — sits above the textarea (above the paste
+   chip row too) and lists 48×48 image thumbs with a corner × button.
+   Layout mirrors the paste chip row so the two strips stack cleanly
+   when both are present. */
+.imageAttachStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px 0;
+}
+.imageAttachChip {
+  position: relative;
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+.imageAttachImg {
+  height: 48px;
+  width: 48px;
+  object-fit: cover;
+  display: block;
+}
+.imageAttachRemove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+.imageAttachError {
+  font-size: 11px;
+  color: var(--accent-red);
+  margin-left: 4px;
+}
+.imageAttachErrorDismiss {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--accent-red);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
 }
 
 /* Bottom row — anchored to the wrapper's bottom edge via absolute
@@ -519,7 +631,22 @@
   animation: slashClose 380ms cubic-bezier(0.4, 0, 0.84, 0) forwards;
   pointer-events: none;
 }
-/* @keyframes slashOpen / slashClose live in app/styles/base.css. */
+/* Keyframes live HERE inside the module so turbopack mangles the
+   ``@keyframes`` name and the ``animation: <name>`` reference with the
+   same hash. Before this they sat in app/styles/base.css unmangled
+   while the reference above was mangled to
+   ``composer-module__xxx__slashOpen``, which never matched anything —
+   the slash menu jumped in/out with no transition.
+
+   ``base.css`` keeps duplicates for any non-module consumers; harmless. */
+@keyframes slashOpen {
+  from { transform: translateX(-50%) translateY(100%); }
+  to   { transform: translateX(-50%) translateY(0); }
+}
+@keyframes slashClose {
+  from { transform: translateX(-50%) translateY(0); }
+  to   { transform: translateX(-50%) translateY(100%); }
+}
 
 .slashMenuItem {
   display: block;
