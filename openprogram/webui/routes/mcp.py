@@ -157,6 +157,59 @@ def register(app: FastAPI) -> None:
                                 detail=f"server '{name}' not loaded")
         return JSONResponse(content=status)
 
+    @app.get("/api/mcp/roots")
+    async def list_roots():
+        """Return the host-advertised roots — workspace URIs every
+        MCP server can request via the standard ``roots/list``.
+        """
+        from openprogram.mcp.config import load_roots
+        return JSONResponse(content={"roots": load_roots()})
+
+    @app.put("/api/mcp/roots")
+    async def set_roots(body: dict):
+        """Replace the global roots list.
+
+        Body: ``{"roots": [{"uri": "file:///abs/path", "name": "Label"}, ...]}``.
+        ``name`` is optional and defaults to the path basename / hostname.
+        After save, every connected MCP server is sent the standard
+        ``notifications/roots/list_changed`` so it can re-query.
+        """
+        from openprogram.mcp.config import save_roots
+        roots = body.get("roots") if isinstance(body, dict) else None
+        if not isinstance(roots, list):
+            raise HTTPException(status_code=400,
+                                detail="body.roots must be a list")
+        # Tolerate string entries by upgrading them to {uri: str} —
+        # cli quick-set is the common shape ("/api/mcp/roots" with
+        # body {"roots": ["file:///x"]}).
+        normalised: list[dict] = []
+        for entry in roots:
+            if isinstance(entry, str):
+                normalised.append({"uri": entry})
+            elif isinstance(entry, dict):
+                normalised.append(entry)
+        save_roots(normalised)
+        # Tell every live MCP server the list changed so it can
+        # re-call roots/list. Spec-defined notification.
+        try:
+            from openprogram.mcp.registry import list_clients
+            from mcp.types import (
+                ClientNotification,
+                RootsListChangedNotification,
+            )
+            for client in list_clients():
+                if client.is_ready and client._session is not None:
+                    try:
+                        await client._session.send_notification(  # noqa: SLF001
+                            ClientNotification(RootsListChangedNotification()),
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception:  # noqa: BLE001
+            pass
+        from openprogram.mcp.config import load_roots
+        return JSONResponse(content={"roots": load_roots()})
+
     @app.get("/api/mcp/auth/pending")
     async def pending_auth():
         """List in-progress OAuth flows + their authorisation URLs.

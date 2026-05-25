@@ -55,6 +55,27 @@ def _is_session_expired(exc: BaseException) -> bool:
     return any(h.lower() in text for h in _SESSION_EXPIRED_HINTS)
 
 
+# -- list_roots_callback shared across every session ----------------
+#
+# Called by the SDK whenever a server sends ``roots/list``. Reads
+# host configuration fresh each time (load_roots is cheap — a small
+# JSON file). Returning ``ErrorData`` would tell the server "this
+# host doesn't support roots"; we return an empty list when no roots
+# are configured because the host CAN support the capability, it
+# just has no allowed paths to share yet.
+
+async def _list_roots_callback(context):  # noqa: ANN001 — SDK type
+    from mcp import types as _mcp_types
+    from .config import load_roots
+    entries = load_roots()
+    return _mcp_types.ListRootsResult(
+        roots=[
+            _mcp_types.Root(uri=e["uri"], name=e.get("name"))
+            for e in entries
+        ],
+    )
+
+
 class MCPClient:
     """Holds one MCP server connection for the worker's lifetime."""
 
@@ -391,7 +412,10 @@ class MCPClient:
             await self._run_session(read, write)
 
     async def _run_session(self, read, write) -> None:
-        async with ClientSession(read, write) as session:
+        async with ClientSession(
+            read, write,
+            list_roots_callback=_list_roots_callback,
+        ) as session:
             await session.initialize()
             result = await session.list_tools()
             self._session = session

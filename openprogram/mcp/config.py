@@ -170,6 +170,88 @@ def get_config_path() -> Path:
     return _paths.get_state_dir() / CONFIG_FILENAME
 
 
+# --- Roots (workspace URIs advertised to every MCP server) ----------
+#
+# MCP's "roots" capability lets the host tell servers "these are the
+# directories / URIs you're allowed to operate on". Filesystem-flavoured
+# servers (the official @modelcontextprotocol/server-filesystem, plus
+# anything else that wants to scope itself to a user's workspace) read
+# this list via the standard ``roots/list`` request. Stored alongside
+# the ``servers`` dict so one file holds all MCP host state.
+
+
+def load_roots() -> list[dict[str, str]]:
+    """Return the global roots list from ``mcp_servers.json``.
+
+    Shape: ``[{"uri": "file:///abs/path", "name": "label"}, ...]``.
+    Missing file / missing key → empty list (server gets an empty
+    list, never an error, so a fresh install doesn't break filesystem
+    MCP servers — they simply see no allowed paths and can decide
+    whether to refuse or fall back).
+    """
+    path = get_config_path()
+    if not path.is_file():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return []
+    items = raw.get("roots") if isinstance(raw, dict) else None
+    if not isinstance(items, list):
+        return []
+    out: list[dict[str, str]] = []
+    for entry in items:
+        if not isinstance(entry, dict):
+            continue
+        uri = entry.get("uri")
+        if not isinstance(uri, str) or not uri.strip():
+            continue
+        name = entry.get("name") or _name_from_uri(uri)
+        out.append({"uri": uri.strip(), "name": str(name)})
+    return out
+
+
+def save_roots(roots: list[dict[str, str]]) -> Path:
+    """Persist the roots list, preserving the ``servers`` block."""
+    path = get_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except Exception:  # noqa: BLE001
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    cleaned: list[dict[str, str]] = []
+    for entry in roots:
+        if isinstance(entry, str):
+            entry = {"uri": entry}
+        if not isinstance(entry, dict):
+            continue
+        uri = (entry.get("uri") or "").strip()
+        if not uri:
+            continue
+        name = entry.get("name") or _name_from_uri(uri)
+        cleaned.append({"uri": uri, "name": str(name)})
+    raw["roots"] = cleaned
+    path.write_text(json.dumps(raw, indent=2, ensure_ascii=False),
+                    encoding="utf-8")
+    return path
+
+
+def _name_from_uri(uri: str) -> str:
+    """Default label when the user doesn't provide one — the path's
+    last component for file:// URIs, the host for http(s)://, the
+    full URI otherwise.
+    """
+    if uri.startswith("file://"):
+        from pathlib import PurePosixPath
+        return PurePosixPath(uri[len("file://"):]).name or uri
+    if uri.startswith(("http://", "https://")):
+        from urllib.parse import urlparse
+        return urlparse(uri).netloc or uri
+    return uri
+
+
 def get_tokens_dir() -> Path:
     """Directory holding OAuth token files for remote MCP servers."""
     p = _paths.get_state_dir() / "mcp_tokens"
