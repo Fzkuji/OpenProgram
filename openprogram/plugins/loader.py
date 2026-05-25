@@ -345,6 +345,28 @@ def load_plugin(name: str) -> Plugin:
             p.error = f"incompatible: {reason}"
             raise RuntimeError(p.error)
 
+        # Dependency resolution — every plugin in ``requires`` must be
+        # installed AND enabled. We don't auto-enable upstream deps;
+        # that would be too magical. We just report the gap.
+        missing: list[str] = []
+        not_enabled: list[str] = []
+        for dep in p.manifest.requires:
+            dep_p = _plugins.get(dep)
+            if dep_p is None:
+                missing.append(dep)
+            elif not dep_p.enabled:
+                not_enabled.append(dep)
+        if missing or not_enabled:
+            parts: list[str] = []
+            if missing:
+                parts.append(f"missing dependencies: {', '.join(missing)}")
+            if not_enabled:
+                parts.append(f"deps not enabled: {', '.join(not_enabled)}")
+            p.enabled = False
+            p.loaded = False
+            p.error = "; ".join(parts)
+            raise RuntimeError(p.error)
+
         if p.manifest.deprecated:
             # 不阻止加载，但记一行日志/错误位
             p.error = "deprecated"

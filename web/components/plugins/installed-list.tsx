@@ -105,7 +105,19 @@ export function InstalledList() {
         <PluginTrustWarning
           name={trustDialog.name}
           currentLevel={trustDialog.trust}
-          onDone={() => setTrustDialog(null)}
+          onDone={async () => {
+            // After the user elevates trust, finish the original
+            // enable flow they started — toggling the plugin on.
+            const target = trustDialog;
+            setTrustDialog(null);
+            setBusy(target.name);
+            try {
+              const r = (await toggle(target.name, true)) as { error?: string; code?: string };
+              if (r && "error" in r && r.error) alert(r.error);
+            } finally {
+              setBusy("");
+            }
+          }}
           onCancel={() => setTrustDialog(null)}
         />
       )}

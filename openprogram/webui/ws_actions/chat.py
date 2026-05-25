@@ -74,7 +74,9 @@ async def handle_chat(ws, cmd: dict):
             user_request = tail.strip()
             try:
                 from openprogram.skills.tool import invoke as _skill_invoke
-                from openprogram.skills.loader import AmbiguousSkillError
+                from openprogram.skills.loader import (
+                    AmbiguousSkillError, get_skill, resolve as _skill_resolve,
+                )
                 try:
                     skill_md = _skill_invoke(skill_name)
                     activation = (
@@ -86,6 +88,24 @@ async def handle_chat(ws, cmd: dict):
                         user_request if user_request
                         else f"Please apply the {skill_name} skill."
                     )
+                    # allowed-tools enforcement — if the skill declares
+                    # an explicit allowlist, restrict the LLM's tool
+                    # set for this turn to that intersection. Empty
+                    # list = unrestricted; matches claude-code semantics.
+                    try:
+                        sk = (
+                            get_skill(skill_name) or _skill_resolve(skill_name)
+                        )
+                        if sk and sk.allowed_tools:
+                            allow = set(sk.allowed_tools)
+                            if isinstance(tools_flag, list):
+                                tools_flag = [t for t in tools_flag if t in allow]
+                            elif tools_flag is True or tools_flag is None:
+                                tools_flag = list(allow)
+                            # tools_flag is False → user explicitly turned
+                            # tools off; respect that and don't re-enable.
+                    except Exception:
+                        pass
                 except AmbiguousSkillError as e:
                     text = (
                         f"Skill name {skill_name!r} is ambiguous. "

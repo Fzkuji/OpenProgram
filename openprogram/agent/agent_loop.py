@@ -455,6 +455,19 @@ async def _execute_tool_calls(
             args=tool_call.arguments,
         ))
 
+        # Plugin hook: fire tool.before_use so plugins can observe
+        # (and, future-work, veto / mutate) tool calls. Failures
+        # absorbed by dispatch_hook.
+        try:
+            from openprogram.plugins.hooks import dispatch_hook, HookEvent
+            dispatch_hook(HookEvent.TOOL_BEFORE_USE, {
+                "tool_call_id": tool_call.id,
+                "tool_name": tool_call.name,
+                "args": tool_call.arguments,
+            })
+        except Exception:
+            pass
+
         result: AgentToolResult
         is_error = False
 
@@ -493,6 +506,23 @@ async def _execute_tool_calls(
             result=result,
             is_error=is_error,
         ))
+
+        try:
+            from openprogram.plugins.hooks import dispatch_hook, HookEvent
+            dispatch_hook(HookEvent.TOOL_AFTER_USE, {
+                "tool_call_id": tool_call.id,
+                "tool_name": tool_call.name,
+                "is_error": is_error,
+                # We expose only the text channel of the result —
+                # binary attachments can be huge and rarely useful
+                # for hooks.
+                "result_text": "".join(
+                    c.text for c in (result.content or [])
+                    if hasattr(c, "text") and isinstance(c.text, str)
+                ),
+            })
+        except Exception:
+            pass
 
         tool_result_msg = ToolResultMessage(
             role="toolResult",

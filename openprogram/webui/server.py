@@ -1142,6 +1142,26 @@ def create_app():
         except Exception as e:  # noqa: BLE001
             _log(f"[skills-watcher] startup failed: {type(e).__name__}: {e}")
 
+    @app.on_event("startup")
+    async def _start_plugin_autoupdate():
+        """Periodically poll PyPI / npm for newer versions of installed
+        plugins. Result is broadcast over WS as ``plugins:update_available``
+        so the Plugins UI can badge upgradable rows."""
+        try:
+            from openprogram.plugins import autoupdate as _au
+            def _broadcast_updates(payload: dict):
+                try:
+                    _broadcast(json.dumps({
+                        "type": "plugins:update_available",
+                        "data": payload,
+                    }))
+                except Exception:
+                    pass
+            _au.register_callback(_broadcast_updates)
+            _au.start()
+        except Exception as e:  # noqa: BLE001
+            _log(f"[plugin-autoupdate] startup failed: {type(e).__name__}: {e}")
+
     @app.on_event("shutdown")
     async def _stop_mcp_servers():
         try:

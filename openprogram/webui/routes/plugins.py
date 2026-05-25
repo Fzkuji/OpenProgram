@@ -61,6 +61,18 @@ def register(app):
         from openprogram.plugins import marketplace
         return JSONResponse(content={"marketplaces": marketplace.list_marketplaces()})
 
+    @app.get("/api/plugins/updates")
+    async def plugin_updates_api(force: bool = False):
+        """Return plugins with a newer upstream version detected by the
+        autoupdate scanner. ``?force=1`` triggers a fresh scan instead
+        of returning the cached result."""
+        from openprogram.plugins import autoupdate as _au
+        if force:
+            updates = _au.force_check_now()
+        else:
+            updates = _au.get_available_updates()
+        return JSONResponse(content={"updates": updates})
+
     @app.get("/api/plugins/commands")
     async def plugin_commands_api():
         """Return every slash command contributed by an enabled plugin.

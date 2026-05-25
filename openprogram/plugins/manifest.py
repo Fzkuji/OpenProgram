@@ -31,6 +31,11 @@ class PluginManifest:
     entrypoints: dict[str, Any] = field(default_factory=dict)
     sidebar: list[dict[str, Any]] = field(default_factory=list)
     options: dict[str, Any] = field(default_factory=dict)
+    # Plugin → plugin dependency list. Each item is a plugin ``name``;
+    # the loader topologically orders enable order and surfaces a
+    # ``missing dependencies: ...`` error when a required plugin
+    # isn't installed yet. Matches claude-code's dependencyResolver.
+    requires: list[str] = field(default_factory=list)
     # 元信息
     source_kind: str = ""    # pip | npm | path | project
     root: str = ""           # 解析时的目录绝对路径
@@ -111,6 +116,10 @@ def _from_dict(data: dict[str, Any], root: str = "", source_kind: str = "") -> P
     name = (data.get("name") or "").strip()
     if not name:
         return None
+    raw_req = data.get("requires") or data.get("dependencies") or []
+    if isinstance(raw_req, str):
+        raw_req = [raw_req]
+    requires = [str(x).strip() for x in raw_req if isinstance(x, str) and str(x).strip()]
     return PluginManifest(
         name=name,
         version=str(data.get("version", "0.0.0")),
@@ -121,6 +130,7 @@ def _from_dict(data: dict[str, Any], root: str = "", source_kind: str = "") -> P
         entrypoints=dict(data.get("entrypoints", {}) or {}),
         sidebar=list(data.get("sidebar", []) or []),
         options=dict(data.get("options", {}) or {}),
+        requires=requires,
         source_kind=source_kind,
         root=root,
         manifest_form=str(data.pop("__form__", "")),
