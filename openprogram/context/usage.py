@@ -25,11 +25,11 @@ import time
 from threading import Lock
 from typing import Any, Optional
 
-from openprogram.context.types import UsageSnapshot
+from openprogram.context.types import UsageState
 
 
 class UsageTracker:
-    """Thread-safe in-memory snapshot store, backed by SessionDB.
+    """Thread-safe in-memory state store, backed by SessionDB.
 
     One instance per process. Get/set methods are cheap; the persist
     sidecar writes to ``session.extra_meta._usage`` opportunistically.
@@ -41,29 +41,29 @@ class UsageTracker:
     """
 
     def __init__(self, *, storage_key: str = "_usage") -> None:
-        self._cache: dict[str, UsageSnapshot] = {}
+        self._cache: dict[str, UsageState] = {}
         self._lock = Lock()
         self.storage_key = storage_key
 
     # ---- Read ----------------------------------------------------------
 
-    def get(self, session_id: str) -> UsageSnapshot:
-        """Return the latest snapshot for ``session_id`` — load from DB
+    def get(self, session_id: str) -> UsageState:
+        """Return the latest state for ``session_id`` — load from DB
         on a cache miss."""
         with self._lock:
             cached = self._cache.get(session_id)
             if cached is not None:
                 return cached
-        snap = self._load_from_db(session_id)
+        state = self._load_from_db(session_id)
         with self._lock:
-            self._cache[session_id] = snap
-        return snap
+            self._cache[session_id] = state
+        return state
 
     # ---- Write ---------------------------------------------------------
 
     def record_turn(self, session_id: str, *,
                     usage: dict[str, Any] | None,
-                    persist: bool = True) -> UsageSnapshot:
+                    persist: bool = True) -> UsageState:
         """Record one turn's provider-reported usage.
 
         ``usage`` shape mirrors what the dispatcher gets from
@@ -71,12 +71,12 @@ class UsageTracker:
         ``output_tokens``, ``cache_read_tokens``, ``cache_write_tokens``.
         Missing keys default to 0.
 
-        Returns the updated snapshot for callers that want to immediately
+        Returns the updated state for callers that want to immediately
         check thresholds.
         """
         prev = self.get(session_id)
         u = usage or {}
-        new = UsageSnapshot(
+        new = UsageState(
             last_prompt_tokens=int(u.get("input_tokens", 0) or 0),
             last_completion_tokens=int(u.get("output_tokens", 0) or 0),
             last_cache_read_tokens=int(u.get("cache_read_tokens", 0) or 0),
@@ -99,14 +99,14 @@ class UsageTracker:
             self._persist(session_id, new)
         return new
 
-    def record_compaction(self, session_id: str) -> UsageSnapshot:
-        snap = self.get(session_id)
-        snap.compaction_count += 1
-        snap.last_compacted_at = time.time()
+    def record_compaction(self, session_id: str) -> UsageState:
+        state = self.get(session_id)
+        state.compaction_count += 1
+        state.last_compacted_at = time.time()
         with self._lock:
-            self._cache[session_id] = snap
-        self._persist(session_id, snap)
-        return snap
+            self._cache[session_id] = state
+        self._persist(session_id, state)
+        return state
 
     # ---- Estimate fallback --------------------------------------------
 
@@ -119,20 +119,20 @@ class UsageTracker:
         ``provider`` / ``estimate`` so the engine can mark it on
         TurnPrep for the UI.
 
-        Logic: if the cached snapshot has a recent
+        Logic: if the cached state has a recent
         ``last_prompt_tokens`` (set within the last turn) and the
         fresh estimate isn't drastically larger, trust the provider's
         figure — it's authoritative. If the estimate is much bigger,
         new content was added since the last turn (the typical case
         between turns); blend.
         """
-        snap = self.get(session_id)
-        if snap.source != "provider" or snap.last_prompt_tokens <= 0:
+        state = self.get(session_id)
+        if state.source != "provider" or state.last_prompt_tokens <= 0:
             return fresh_estimate, "estimate"
         # Heuristic blend: take the provider's number from last turn
         # PLUS the estimated growth between then and now.
-        growth = max(0, fresh_estimate - snap.last_prompt_tokens)
-        return snap.last_prompt_tokens + growth, "provider+delta"
+        growth = max(0, fresh_estimate - state.last_prompt_tokens)
+        return state.last_prompt_tokens + growth, "provider+delta"
 
     # ---- Lifecycle hooks ----------------------------------------------
 
@@ -144,11 +144,11 @@ class UsageTracker:
     def reset(self, session_id: str) -> None:
         """Wipe everything for this session (used by /reset, clear_sessions)."""
         self._cache.pop(session_id, None)
-        self._persist(session_id, UsageSnapshot())
+        self._persist(session_id, UsageState())
 
     # ---- Persistence ---------------------------------------------------
 
-    def _load_from_db(self, session_id: str) -> UsageSnapshot:
+    def _load_from_db(self, session_id: str) -> UsageState:
         try:
             from openprogram.agent.session_db import default_db
             db = default_db()
@@ -157,12 +157,12 @@ class UsageTracker:
         except Exception:
             raw = None
         if not raw:
-            return UsageSnapshot()
+            return UsageState()
         try:
             data = json.loads(raw) if isinstance(raw, str) else dict(raw)
         except Exception:
-            return UsageSnapshot()
-        return UsageSnapshot(
+            return UsageState()
+        return UsageState(
             last_prompt_tokens=int(data.get("last_prompt_tokens", 0) or 0),
             last_completion_tokens=int(data.get("last_completion_tokens", 0) or 0),
             last_cache_read_tokens=int(data.get("last_cache_read_tokens", 0) or 0),
@@ -177,21 +177,21 @@ class UsageTracker:
             source="cached",
         )
 
-    def _persist(self, session_id: str, snap: UsageSnapshot) -> None:
+    def _persist(self, session_id: str, state: UsageState) -> None:
         try:
             from openprogram.agent.session_db import default_db
             data = {
-                "last_prompt_tokens": snap.last_prompt_tokens,
-                "last_completion_tokens": snap.last_completion_tokens,
-                "last_cache_read_tokens": snap.last_cache_read_tokens,
-                "last_cache_write_tokens": snap.last_cache_write_tokens,
-                "cumulative_prompt_tokens": snap.cumulative_prompt_tokens,
-                "cumulative_completion_tokens": snap.cumulative_completion_tokens,
-                "cumulative_cache_read_tokens": snap.cumulative_cache_read_tokens,
-                "turn_count": snap.turn_count,
-                "compaction_count": snap.compaction_count,
-                "last_updated_at": snap.last_updated_at,
-                "last_compacted_at": snap.last_compacted_at,
+                "last_prompt_tokens": state.last_prompt_tokens,
+                "last_completion_tokens": state.last_completion_tokens,
+                "last_cache_read_tokens": state.last_cache_read_tokens,
+                "last_cache_write_tokens": state.last_cache_write_tokens,
+                "cumulative_prompt_tokens": state.cumulative_prompt_tokens,
+                "cumulative_completion_tokens": state.cumulative_completion_tokens,
+                "cumulative_cache_read_tokens": state.cumulative_cache_read_tokens,
+                "turn_count": state.turn_count,
+                "compaction_count": state.compaction_count,
+                "last_updated_at": state.last_updated_at,
+                "last_compacted_at": state.last_compacted_at,
             }
             default_db().update_session(
                 session_id,

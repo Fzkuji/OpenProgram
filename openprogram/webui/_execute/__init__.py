@@ -101,7 +101,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     try:
         from openprogram.agent.session_db import default_db
         store = default_db()
-        # Snapshot parent HEAD so the attach pointer doesn't push the
+        # Record parent HEAD so the attach pointer doesn't push the
         # active branch onto a synthetic side child.
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")

@@ -14,7 +14,7 @@ export function createClock(tickIntervalMs: number): Clock {
   let interval: ReturnType<typeof setInterval> | null = null
   let currentTickIntervalMs = tickIntervalMs
   let startTime = 0
-  // Snapshot of the current tick's time, ensuring all subscribers in the same
+  // Frozen value of the current tick's time, ensuring all subscribers in the same
   // tick see the same value (keeps animations synchronized)
   let tickTime = 0
 

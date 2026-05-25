@@ -1,8 +1,8 @@
 """ContextCommit 持久化 — git-backed, 走 SessionStore.
 
-每个 context commit 一份 JSON, 落在 session repo 的 ``context/context commits/<commit_id>.json``;
-同时把"最新"那一份镜像到 ``context/commit.json`` (单文件入口, 跟
-``context/messages.json`` 同款约定 — 工作树反映当前 LLM 视角).
+每个 context commit 一份 JSON, 落在 session repo 的 ``context/commits/<commit_id>.json``。
+没有单独的 "latest mirror" 文件; 读路径走 ``load_commit_for_head`` / ``load_commit`` 按
+id 或 DAG 祖先查找, 不依赖 "当前指针" 类的可变共享文件。
 
 跟旧 SQLite 版的差别:
   * 不再有 blob dedup 表 (``blob_store.py`` 已删).

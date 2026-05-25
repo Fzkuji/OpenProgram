@@ -50,7 +50,7 @@ Beyond the references this module adds four knobs none of them ship:
   - **Streaming tail accumulator**: ``on_update(text)`` writes pipe
     through a bounded ring buffer. Multi-megabyte streaming output
     (long shell commands, browser console dumps) keeps a tail
-    snapshot rather than growing without bound.
+    window rather than growing without bound.
   - **``can_use()`` pre-flight gate**: a no-arg callable checked
     once per dispatcher session before the function is offered to
     the LLM. Distinct from ``check_fn`` (env presence) and
@@ -531,7 +531,7 @@ class _TailAccumulator:
     """Bounded ring buffer for streamed progress text.
 
     ``push(text)`` is O(1) amortised; head bytes are evicted lazily
-    when total exceeds capacity. ``snapshot()`` returns the current
+    when total exceeds capacity. ``dump()`` returns the current
     tail, prefixed with a ``[…N chars dropped…]`` marker when content
     has been evicted.
     """
@@ -570,7 +570,7 @@ class _TailAccumulator:
         if i:
             del self._buf[:i]
 
-    def snapshot(self) -> str:
+    def dump(self) -> str:
         body = "".join(self._buf)
         if self._dropped <= 0:
             return body

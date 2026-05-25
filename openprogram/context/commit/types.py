@@ -1,6 +1,6 @@
 """ContextCommit 数据类型 — ContextItem 和 ContextCommit dataclass.
 
-ContextCommit 是某个时刻 LLM 看到的完整 context 的不可变快照。一个
+ContextCommit 是某个时刻 LLM 看到的完整 context 的不可变记录。一个
 ContextCommit 由一组 ContextItem 组成, 按渲染顺序排列。
 
 设计原则:
@@ -9,7 +9,7 @@ ContextCommit 由一组 ContextItem 组成, 按渲染顺序排列。
   * locked=True 的 item 任何规则都不再动
   * summary item 不写 DAG, 它的 source_node_id 是虚拟 id "sm_<hex>"
 
-完整设计见 docs/design/context-context commit-chain.md。
+完整设计见 docs/design/context-commit-chain.md。
 """
 from __future__ import annotations
 

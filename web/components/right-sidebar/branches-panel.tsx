@@ -305,7 +305,7 @@ export function BranchesPanel() {
     setSelected([]);
     setBaseHead(null);
     // Merge runs the LLM server-side (seconds), so a 100ms
-    // load_session would pull the pre-merge snapshot. The backend
+    // load_session would pull the pre-merge state. The backend
     // broadcasts ``session_reload`` once the merge turn lands — the
     // global ws message handler picks it up and re-fetches the
     // conversation. Nothing to do here.

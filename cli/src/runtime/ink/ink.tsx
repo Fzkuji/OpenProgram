@@ -1649,7 +1649,7 @@ export default class Ink {
     // the mouse-up notification (anchor+focus still set, isDragging just
     // went false), which is exactly the moment copy-on-select needs.
     // useHasSelection / useSyncExternalStore consumers de-dupe via
-    // snapshot equality, so extra fires don't cause extra renders.
+    // value equality, so extra fires don't cause extra renders.
     for (const cb of this.selectionListeners) {
       cb()
     }

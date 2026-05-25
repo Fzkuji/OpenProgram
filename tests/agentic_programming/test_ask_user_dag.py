@@ -124,14 +124,14 @@ def test_ask_user_called_by_empty_when_top_level(store):
 def test_ask_user_status_awaiting_then_answered(store):
     """During the handler call, the node has status='awaiting'; after
     the handler returns, status flips to 'answered'."""
-    snapshot_during: list = []
+    captured_during: list = []
 
     def _slow_handler(q):
-        # Inside handler: snapshot the node mid-flight.
+        # Inside handler: capture the node mid-flight.
         g = store.load()
         for n in g:
             if n.is_user():
-                snapshot_during.append(
+                captured_during.append(
                     (n.input, n.output, n.metadata.get("status"))
                 )
         return "final answer"
@@ -140,8 +140,8 @@ def test_ask_user_status_awaiting_then_answered(store):
         ask_user("anything?")
 
     # Mid-handler: input had the question, output None, status awaiting
-    assert len(snapshot_during) == 1
-    mid_input, mid_output, mid_status = snapshot_during[0]
+    assert len(captured_during) == 1
+    mid_input, mid_output, mid_status = captured_during[0]
     assert mid_input == {"question": "anything?"}
     assert mid_output is None
     assert mid_status == "awaiting"

@@ -58,7 +58,7 @@ def test_revert_restores_file_and_stamps_metadata(store_with_session, tmp_path):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("original")
 
-    # Simulate a turn: snapshot, then mutate.
+    # Simulate a turn: back up, then mutate.
     session_dir = store._session_dir(session_id)
     backup = BackupStore(session_dir)
     backup.backup_before_edit(assistant_msg_id, str(target))

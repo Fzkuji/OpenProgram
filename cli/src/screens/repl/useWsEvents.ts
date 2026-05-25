@@ -148,7 +148,7 @@ export function useWsEvents(ctx: WsEventsCtx): void {
           c.pushSystem(`Failed to add account: ${data?.error ?? 'unknown error'}`);
         }
       } else if (ev.type === 'history_list') {
-        // Initial snapshot at WS connect — only in-memory webui
+        // Initial list at WS connect — only in-memory webui
         // sessions. /resume sends list_conversations to refresh
         // with disk-based (channel-bound) sessions too.
         c.setPastConversations(ev.data ?? []);

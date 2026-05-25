@@ -12,7 +12,7 @@ async def handle_delete_session(ws, cmd: dict):
     session_id = cmd.get("session_id")
     if not session_id:
         return
-    # Snapshot agent_id BEFORE popping. `_delete_session_files`
+    # Capture agent_id BEFORE popping. `_delete_session_files`
     # otherwise looks up the conv in `_sessions` to find the
     # agent_id and falls back to a filesystem scan — which silently
     # misses sessions whose conv_dir is gone or never existed,
@@ -38,7 +38,7 @@ async def handle_clear_sessions(ws, cmd: dict):
     from openprogram.webui import server as _s
     from openprogram.webui import persistence as _persist
 
-    # Snapshot the full (session_id, agent_id) pairs BEFORE wiping
+    # Capture the full (session_id, agent_id) pairs BEFORE wiping
     # `_sessions`. `_s._delete_session_files` resolves `agent_id` from
     # `_sessions.get(...)` first; if we cleared the dict first that
     # lookup returns None and the function falls through to a
@@ -67,7 +67,7 @@ async def handle_clear_sessions(ws, cmd: dict):
         _s._follow_up_queues.pop(cid, None)
         with _s._running_tasks_lock:
             _s._running_tasks.pop(cid, None)
-        # Prefer the snapshotted agent_id so the DB row + on-disk
+        # Prefer the captured agent_id so the DB row + on-disk
         # conv_dir both get nuked atomically. If we don't have one,
         # fall back to the legacy resolve-by-scan path.
         if agent_id:
@@ -80,7 +80,7 @@ async def handle_clear_sessions(ws, cmd: dict):
 
 
 async def handle_load_session(ws, cmd: dict):
-    """Hydrate a session: linear chain under HEAD + full DAG snapshot + running-task probe."""
+    """Hydrate a session: linear chain under HEAD + full DAG dump + running-task probe."""
     from openprogram.webui import server as _s
     session_id = cmd.get("session_id")
     with _s._sessions_lock:
@@ -262,7 +262,7 @@ async def handle_load_session(ws, cmd: dict):
                     _s._running_tasks.pop(session_id, None)
                 task_info = None
         if task_info:
-            # Live partial-tree snapshot retired with the tree-Context
+            # Live partial-tree dump retired with the tree-Context
             # event system. The DAG nodes the function has produced so
             # far are already queryable via the GraphStore.
             await ws.send_text(json.dumps({
@@ -344,7 +344,7 @@ async def handle_search_messages(ws, cmd: dict):
 
 
 async def handle_list_sessions(ws, cmd: dict):
-    """Snapshot webui's in-memory sessions + per-agent sessions on disk."""
+    """List webui's in-memory sessions + per-agent sessions on disk."""
     from openprogram.webui import server as _s
     conv_list: list[dict] = []
     with _s._sessions_lock:

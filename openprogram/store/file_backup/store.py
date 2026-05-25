@@ -12,7 +12,7 @@ Two operations cover the lifecycle:
     agent CREATED during the turn (no pre-existing version) are
     deleted on restore.
 
-Every snapshot is a full ``shutil.copy2`` of the original. We
+Every backup is a full ``shutil.copy2`` of the original. We
 deliberately avoid hardlinking: most editor / tool write paths use
 ``open(w)``, which truncates the inode in place; a hardlink would
 share that inode and lose the original contents. Disk cost is
@@ -37,7 +37,7 @@ class BackupStore:
     # ── Write side ────────────────────────────────────────────────
 
     def backup_before_edit(self, turn_id: str, abs_path: str) -> None:
-        """Idempotent snapshot. Captures the file's state pre-edit;
+        """Idempotent backup. Captures the file's state pre-edit;
         records ``pre_existing=False`` if the path doesn't exist yet
         so ``restore_turn`` knows to delete-instead-of-restore."""
         if not turn_id or not abs_path:
@@ -56,12 +56,12 @@ class BackupStore:
             return
 
         dst = backup_dir / backup_name
-        if not self._snapshot_file(src, dst):
+        if not self._copy_file(src, dst):
             return
         manifest.record(man_path, backup_name, abs_path, pre_existing=True)
 
     @staticmethod
-    def _snapshot_file(src: Path, dst: Path) -> bool:
+    def _copy_file(src: Path, dst: Path) -> bool:
         """Full copy via shutil.copy2. We intentionally do NOT
         hardlink: the agent's edit path is typically ``open(w)`` →
         ``O_TRUNC`` which truncates the inode in place; any hardlink

@@ -22,7 +22,7 @@ _DESCRIPTION = (
     name="write",
     description=_DESCRIPTION,
     toolset=["core"],
-    unsafe_in=["wechat", "telegram"],
+    unsafe_in=["wechat", "telegram", "plan"],
 )
 def write(file_path: str, content: str) -> str:
     """Write `content` to `file_path`, creating parents if needed.
@@ -39,7 +39,7 @@ def write(file_path: str, content: str) -> str:
             os.makedirs(parent, exist_ok=True)
         except OSError as e:
             return f"Error creating directory {parent}: {e}"
-    # Snapshot pre-edit state for turn-scoped revert. Safe to call
+    # Back up pre-edit state for turn-scoped revert. Safe to call
     # even when the file doesn't exist yet (records pre_existing=False
     # so restore_turn knows to delete-on-restore).
     backup_for_current_turn(file_path)

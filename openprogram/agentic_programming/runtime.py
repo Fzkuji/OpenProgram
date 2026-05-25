@@ -435,7 +435,7 @@ class Runtime:
         tree-Context render path.
 
         Algorithm:
-          1. Load the DAG snapshot from the store.
+          1. Load the DAG state from the store.
           2. Read the enclosing ``@agentic_function`` call id from
              ``_call_id`` ContextVar; pull its node from the graph to
              get seq + render_range.

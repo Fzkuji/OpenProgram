@@ -327,9 +327,9 @@ def test_parent_id_forks_sibling_branch(
 
 
 @pytest.mark.skip(
-    reason="context-engine snapshot path now pulls fresh history from "
+    reason="context-engine commit path now pulls fresh history from "
            "default_store() and ignores the caller's history_override — "
-           "pre-existing production behavior from the snapshot-chain "
+           "pre-existing production behavior from the commit-chain "
            "refactor, not a test-migration issue"
 )
 def test_history_override_skips_session_db_walk(
@@ -390,9 +390,9 @@ def test_history_override_skips_session_db_walk(
 
 
 @pytest.mark.skip(
-    reason="context-engine snapshot path duplicates the user turn when "
+    reason="context-engine commit path duplicates the user turn when "
            "user_already_persisted=True — pre-existing production behavior "
-           "from the snapshot-chain refactor, not a test-migration issue"
+           "from the commit-chain refactor, not a test-migration issue"
 )
 def test_user_already_persisted_skips_duplicate_user_msg(
     tmp_db: SessionDB, captured, collector,

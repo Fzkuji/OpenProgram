@@ -272,7 +272,7 @@ def remove_credential(
     credential_id: str,
 ) -> dict[str, Any]:
     store = get_store()
-    # Snapshot pre-state so we can tell 404 from no-op.
+    # Capture pre-state so we can tell 404 from no-op.
     pool = store.find_pool(provider_id, profile_id)
     if pool is None or not any(c.credential_id == credential_id for c in pool.credentials):
         raise HTTPException(status_code=404, detail="credential not found")

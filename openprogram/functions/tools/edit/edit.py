@@ -23,7 +23,7 @@ _DESCRIPTION = (
     name="edit",
     description=_DESCRIPTION,
     toolset=["core"],
-    unsafe_in=["wechat", "telegram"],
+    unsafe_in=["wechat", "telegram", "plan"],
 )
 def edit(file_path: str,
          old_string: str,
@@ -61,7 +61,7 @@ def edit(file_path: str,
 
     new_text = (text.replace(old_string, new_string) if replace_all
                 else text.replace(old_string, new_string, 1))
-    # Snapshot pre-edit state for turn-scoped revert.
+    # Back up pre-edit state for turn-scoped revert.
     backup_for_current_turn(file_path)
     try:
         with open(file_path, "w", encoding="utf-8") as f:

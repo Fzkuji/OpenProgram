@@ -709,7 +709,7 @@ def review_resolve(item_id: int, *, action: str = "ack", note: str = "") -> dict
 
 
 def stats() -> dict[str, Any]:
-    """Return a snapshot of the vault state.
+    """Return a summary of the vault state.
 
     Counts are cheap (file listing + index queries), so this is safe
     to call from a tool / lint pass / web UI.

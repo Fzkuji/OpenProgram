@@ -167,12 +167,12 @@ def execute(
 
     if action == "list":
         with _LOCK:
-            snapshot = list(_SESSIONS.values())
-        if not snapshot:
+            sessions = list(_SESSIONS.values())
+        if not sessions:
             return "(no sessions)"
         rows = [
             f"{s.id}  {s.status():<12}  pid={s.proc.pid}  age={int(time.time() - s.started_at)}s  {s.command}"
-            for s in snapshot
+            for s in sessions
         ]
         return "\n".join(rows)
 
@@ -214,5 +214,5 @@ function(
     description=DESCRIPTION,
     parameters=SPEC["parameters"],
     toolset=['core'],
-    unsafe_in=['wechat', 'telegram'],
+    unsafe_in=['wechat', 'telegram', 'plan'],
 )(execute)

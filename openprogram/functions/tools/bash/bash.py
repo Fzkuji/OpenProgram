@@ -22,7 +22,7 @@ from .prompt import DEFAULT_MAX_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, DESCRIPTION
     max_result_chars=30_000,
     persist_full=True,
     toolset=["core"],
-    unsafe_in=["wechat", "telegram"],   # destructive in public channels
+    unsafe_in=["wechat", "telegram", "plan"],  # destructive in public channels; hidden in plan mode
 )
 def bash(command: str,
         timeout: float | None = None,
@@ -36,7 +36,7 @@ def bash(command: str,
     """
     # TODO(file_backup): bash can mutate files via redirection / sed / rm
     # etc., but precisely tracking which paths it touches would require
-    # either parsing the command (brittle) or snapshotting via fanotify /
+    # either parsing the command (brittle) or capturing fs changes via fanotify /
     # an LD_PRELOAD shim. Skipping turn-scoped backup integration for
     # now — users wanting revertability should use write / edit /
     # apply_patch instead, which are hooked into file_backup.helpers.

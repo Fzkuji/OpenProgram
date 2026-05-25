@@ -20,7 +20,7 @@ _stop = threading.Event()
 _callbacks: list[Callable[[], None]] = []
 
 
-def _snapshot() -> dict[str, float]:
+def _mtime_map() -> dict[str, float]:
     out: dict[str, float] = {}
     for _src, root in _source_dirs():
         if not root.exists():
@@ -53,9 +53,9 @@ def _try_watchdog() -> bool:
 
 
 def _run_polling() -> None:
-    prev = _snapshot()
+    prev = _mtime_map()
     while not _stop.wait(5.0):
-        cur = _snapshot()
+        cur = _mtime_map()
         if cur != prev:
             prev = cur
             _emit()

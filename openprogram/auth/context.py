@@ -7,8 +7,8 @@ But globals are wrong — one Python process can run many parallel agents,
 each under a different profile, and a global would leak credentials
 across them.
 
-:mod:`contextvars` is the right primitive. Each async task inherits the
-parent task's context snapshot automatically, so setting the context at
+:mod:`contextvars` is the right primitive. Each async task inherits a
+copy of the parent task's context automatically, so setting the context at
 the top of a request (``async with auth_scope(profile="work"): …``)
 propagates to every tool call inside without plumbing.
 
@@ -136,7 +136,7 @@ def auth_scope(
     """Enter an auth scope for the duration of a ``with`` block.
 
     Works correctly for both sync and async code — ``contextvars``
-    propagates into :func:`asyncio.create_task` children by snapshot, so
+    propagates into :func:`asyncio.create_task` children by copy, so
     spawning sub-tasks inside the block retains the scope. This sync
     context-manager form is the canonical entrypoint; :func:`auth_scope_async`
     exists only for symmetry with the rest of the async codebase.
@@ -179,13 +179,13 @@ async def auth_scope_async(**kwargs: Any):
 # Low-level — for integration with asyncio.Task / threading
 # ---------------------------------------------------------------------------
 
-def snapshot() -> contextvars.Context:
+def capture() -> contextvars.Context:
     """Capture the current context for later replay.
 
     Use when spawning a worker thread or queue-driven task that must see
-    the caller's auth scope: pass this snapshot to
+    the caller's auth scope: pass this captured context to
     :meth:`contextvars.Context.run`. ``asyncio.create_task`` already does
-    this automatically — you only need manual snapshot for non-asyncio
+    this automatically — you only need to call ``capture`` for non-asyncio
     paths."""
     return contextvars.copy_context()
 
@@ -198,5 +198,5 @@ __all__ = [
     "get_active_provider_hint",
     "get_credential_override",
     "get_subprocess_env",
-    "snapshot",
+    "capture",
 ]

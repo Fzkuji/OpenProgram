@@ -281,7 +281,7 @@ def clear_cooldown(cred: Credential) -> None:
 # ---------------------------------------------------------------------------
 
 @dataclass
-class PoolHealthSnapshot:
+class PoolHealth:
     """Read-only view of a pool's current operational state."""
 
     total: int
@@ -293,7 +293,7 @@ class PoolHealthSnapshot:
     next_cooldown_expires_at_ms: int   # 0 if nothing is cooling down
 
 
-def snapshot(pool: CredentialPool, *, now_ms: Optional[int] = None) -> PoolHealthSnapshot:
+def health(pool: CredentialPool, *, now_ms: Optional[int] = None) -> PoolHealth:
     now = now_ms if now_ms is not None else int(time.time() * 1000)
     cooling_down = 0
     needs_reauth = 0
@@ -308,7 +308,7 @@ def snapshot(pool: CredentialPool, *, now_ms: Optional[int] = None) -> PoolHealt
             cooling_down += 1
             next_exp = c.cooldown_until_ms if next_exp == 0 else min(next_exp, c.cooldown_until_ms)
     healthy = len(_healthy_indices(pool, now))
-    return PoolHealthSnapshot(
+    return PoolHealth(
         total=len(pool.credentials),
         healthy=healthy,
         cooling_down=cooling_down,
@@ -326,6 +326,6 @@ __all__ = [
     "mark_failure",
     "mark_success",
     "clear_cooldown",
-    "PoolHealthSnapshot",
-    "snapshot",
+    "PoolHealth",
+    "health",
 ]

@@ -5,7 +5,7 @@ repo at ``<root>/<session_id>/``. This class owns:
 
   * lazy-init (no repo on disk yet → create on first commit)
   * append a file under ``history/`` (sequential, no overwrite)
-  * write/overwrite files under ``context/`` (turn-end snapshot of LLM view)
+  * write/overwrite files under ``context/`` (turn-end ContextCommit of LLM view)
   * commit (one per turn — same threading.Lock per session)
   * log / checkout / branch (used by UI rewind + retry)
 
@@ -133,7 +133,7 @@ class GitSession:
         fname = f"{seq:04d}-{role_letter}-{node_id}.json"
         fpath = self.path / "history" / fname
         # Atomic-ish: write to tmp then rename. Avoids partial reads if
-        # another thread snapshots mid-write.
+        # another thread reads the file mid-write.
         tmp = fpath.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str))
         tmp.replace(fpath)
@@ -141,7 +141,7 @@ class GitSession:
 
     def write_context_file(self, name: str, payload: Any) -> Path:
         """Overwrite a file under ``context/`` (e.g. ``messages.json``,
-        ``snapshot.json``). Each turn rewrites these so the working
+        ``commit.json``). Each turn rewrites these so the working
         tree reflects the current LLM view.
         """
         self._ensure_init()

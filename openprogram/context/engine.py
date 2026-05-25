@@ -57,7 +57,7 @@ from openprogram.context.types import (
     BudgetAllocation,
     CompactResult,
     TurnPrep,
-    UsageSnapshot,
+    UsageState,
 )
 from openprogram.context.usage import UsageTracker, default_tracker as _usage_tracker
 
@@ -253,7 +253,7 @@ class DefaultContextEngine(ContextEngine):
         )
 
         # 5. Hybridise with provider-reported usage if we have it.
-        usage = self.usage.get(session_id) if session_id else UsageSnapshot()
+        usage = self.usage.get(session_id) if session_id else UsageState()
         if usage.source == "provider" and usage.last_prompt_tokens > 0:
             # Trust the provider on the prefix; add our estimated delta
             # for anything added since.

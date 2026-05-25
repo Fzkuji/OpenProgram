@@ -26,7 +26,7 @@ Public surface:
 
   * :func:`load_mcp_servers` — call from worker startup
   * :func:`shutdown_mcp_servers` — call from worker shutdown
-  * :func:`server_status` — diagnostic snapshot (for the webui)
+  * :func:`server_status` — diagnostic status dump (for the webui)
 """
 from __future__ import annotations
 

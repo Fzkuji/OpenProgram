@@ -9,11 +9,11 @@ import pytest
 from openprogram.auth.context import (
     auth_scope,
     auth_scope_async,
+    capture,
     get_active_profile_id,
     get_active_provider_hint,
     get_credential_override,
     get_subprocess_env,
-    snapshot,
 )
 from openprogram.auth.types import ApiKeyPayload, Credential
 
@@ -124,7 +124,7 @@ def test_async_scope_does_not_leak_across_tasks():
     assert b == "B"
 
 
-def test_snapshot_replays_context_in_thread():
+def test_capture_replays_context_in_thread():
     seen: list[str] = []
     done = threading.Event()
 
@@ -133,7 +133,7 @@ def test_snapshot_replays_context_in_thread():
         done.set()
 
     with auth_scope(profile_id="threadscope"):
-        ctx = snapshot()
+        ctx = capture()
 
     t = threading.Thread(target=worker, args=(ctx,))
     t.start()

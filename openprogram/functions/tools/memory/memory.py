@@ -425,7 +425,7 @@ def memory_review(
 
 STATUS_NAME = "memory_status"
 STATUS_DESC = (
-    "Snapshot of the memory vault — page count by type, FTS rows, "
+    "Summary of the memory vault — page count by type, FTS rows, "
     "pending reviews, last reindex, vault root."
 )
 

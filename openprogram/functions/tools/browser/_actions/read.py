@@ -48,7 +48,7 @@ def _html(session_id: str, selector: str | None) -> str:
 
 
 def _accessibility(session_id: str, selector: str | None) -> str:
-    """Return a YAML-style aria snapshot of the page or a subtree.
+    """Return a YAML-style aria accessibility tree of the page or a subtree.
 
     Useful as an alternative to raw HTML when an LLM needs to find
     interactive elements without parsing CSS selectors out of class soup.
@@ -62,12 +62,12 @@ def _accessibility(session_id: str, selector: str | None) -> str:
         target = page.locator(selector) if selector else page.locator("body")
         if target.count() == 0:
             return f"(no elements matched `{selector}`)"
-        snap = target.first.aria_snapshot()
-        if not snap:
+        tree = target.first.aria_snapshot()
+        if not tree:
             return "(empty accessibility tree)"
-        if len(snap) > 8000:
-            snap = snap[:8000] + f"\n\n[truncated, {len(snap) - 8000} more chars]"
-        return snap
+        if len(tree) > 8000:
+            tree = tree[:8000] + f"\n\n[truncated, {len(tree) - 8000} more chars]"
+        return tree
     except Exception as e:
         return f"Error fetching accessibility tree: {type(e).__name__}: {e}"
 

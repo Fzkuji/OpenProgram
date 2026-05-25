@@ -1,4 +1,4 @@
-"""``core.md`` — always-on memory snapshot.
+"""``core.md`` — always-on memory block.
 
 Tiny (<2 KB) document injected into every agent's system prompt at
 session start. Frozen during a session so the prefix cache survives.

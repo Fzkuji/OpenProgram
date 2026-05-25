@@ -22,7 +22,7 @@ def register(app):
     @app.get("/api/node/{path:path}")
     async def get_node(path: str):
         """Legacy tree-Context node lookup. Returns 410 — the tree
-        snapshot list it walked is gone; DAG-based node fetching will
+        listing it walked is gone; DAG-based node fetching will
         replace this endpoint once the new viewer ships."""
         return JSONResponse(
             content={"error": "tree-Context node lookup retired"},

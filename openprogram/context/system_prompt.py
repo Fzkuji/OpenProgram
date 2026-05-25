@@ -7,7 +7,7 @@ prefix cache):
     2. Workspace files   (AGENTS.md → SOUL.md → USER.md)
     3. Inline prompt     (agent.system_prompt)
     4. Skill index       (one-line per enabled skill)
-    5. Memory snapshot   (persistent BuiltinMemoryProvider block)
+    5. Memory block      (persistent BuiltinMemoryProvider block)
 
 Wrapped in a ``── Agent prompt ──`` fence so the model sees the
 boundary against the human turn that follows.

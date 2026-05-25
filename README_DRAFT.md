@@ -51,7 +51,7 @@ You can drive it from a Python script, a terminal UI, a browser, a Slack/Discord
 </tr>
 <tr>
   <td><b>Memory across sessions</b></td>
-  <td>Three-layer memory under <code>~/.agentic/memory/</code>: short-term notes, a curated wiki, and a small core snapshot injected into every conversation. Built on plain markdown + SQLite FTS5 — no embeddings, no opaque vector store, fully grep-able.</td>
+  <td>Three-layer memory under <code>~/.agentic/memory/</code>: short-term notes, a curated wiki, and a small always-on core file injected into every conversation. Built on plain markdown + SQLite FTS5 — no embeddings, no opaque vector store, fully grep-able.</td>
 </tr>
 <tr>
   <td><b>Real applications, not just demos</b></td>

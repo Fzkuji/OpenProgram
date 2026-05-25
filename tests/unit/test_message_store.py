@@ -22,12 +22,12 @@ def _capture(store: MessageStore, conv_id: str) -> list[dict]:
     return frames
 
 
-def test_create_emits_snapshot():
+def test_create_emits_full_frame():
     s = MessageStore()
     frames = _capture(s, "c")
     msg = s.create("c", "assistant", status="streaming")
     assert len(frames) == 1
-    assert frames[0]["type"] == "message.snapshot"
+    assert frames[0]["type"] == "message.full"
     assert frames[0]["message"]["id"] == msg.id
     assert frames[0]["message"]["status"] == "streaming"
 
@@ -79,7 +79,7 @@ def test_sync_replays_delta_window_on_small_gap():
     assert [f["seq"] for f in frames] == [3, 4, 5]
 
 
-def test_sync_falls_back_to_snapshot_when_ring_evicted():
+def test_sync_falls_back_to_full_frame_when_ring_evicted():
     s = MessageStore()
     msg = s.create("c", "assistant")
     s.add_block(msg.id, Block(type="text"))
@@ -89,15 +89,15 @@ def test_sync_falls_back_to_snapshot_when_ring_evicted():
         s.append_text(msg.id, bid, "x")
     frames = s.sync("c", {msg.id: 1})
     assert len(frames) == 1
-    assert frames[0]["type"] == "message.snapshot"
+    assert frames[0]["type"] == "message.full"
 
 
-def test_sync_sends_snapshot_for_unknown_message():
+def test_sync_sends_full_frame_for_unknown_message():
     s = MessageStore()
     msg = s.create("c", "assistant")
     frames = s.sync("c", {})
     assert len(frames) == 1
-    assert frames[0]["type"] == "message.snapshot"
+    assert frames[0]["type"] == "message.full"
     assert frames[0]["message"]["id"] == msg.id
 
 

@@ -4,11 +4,11 @@ v2 message model + authoritative in-memory store.
 Replaces the old "broadcast raw stream_event dicts + buffer last 200" pattern
 with a single source of truth: for every assistant message we maintain one
 ``Message`` object in memory, every LLM delta mutates it, every subscriber
-sees ``message.snapshot`` / ``message.delta`` / ``message.commit`` frames
+sees ``message.full`` / ``message.delta`` / ``message.commit`` frames
 off that single state.
 
 Clients recovering from a disconnect send ``{"type": "sync", "known_seqs":
-{msg_id: seq}}``. The server replies with a snapshot or a catch-up batch of
+{msg_id: seq}}``. The server replies with a full frame or a catch-up batch of
 deltas so both sides converge on the same state. No raw-event replay.
 
 This module is deliberately framework-agnostic — it does not import
@@ -31,7 +31,7 @@ from typing import Any, Callable, Literal, Optional
 SCHEMA_VERSION = 2
 
 # How many delta frames the store will replay on reconnect before falling
-# back to a full snapshot. Tunable; the tradeoff is "many small frames over
+# back to a full frame. Tunable; the tradeoff is "many small frames over
 # the wire" vs "one possibly-large JSON blob". 64 covers typical token
 # streaming hiccups without blowing up reconnect payload size.
 MAX_DELTA_CATCHUP = 64
@@ -140,7 +140,7 @@ class Message:
     """One message in a conversation.
 
     This is the *authoritative state*. Deltas mutate it; the wire frames
-    (`message.snapshot`, `message.delta`, `message.commit`) describe those
+    (`message.full`, `message.delta`, `message.commit`) describe those
     mutations to subscribers. JSON on disk is a straight serialization.
     """
 
@@ -212,7 +212,7 @@ class Message:
 #
 # Delta ops are intentionally few. Every mutation the store supports maps
 # to exactly one op. Clients apply them in seq order; any unknown op is a
-# bug on the producer side — log + snapshot-recover rather than silent skip.
+# bug on the producer side — log + full-frame recover rather than silent skip.
 
 DeltaOp = Literal[
     "add_block",      # {"op": "add_block", "block": {...}}
@@ -244,7 +244,7 @@ class MessageStore:
 
     Deltas are buffered per-message in a short ring (``MAX_DELTA_CATCHUP``).
     On ``sync``, the store either replays from the ring (small gap) or
-    sends a snapshot (large gap / ring evicted).
+    sends a full frame (large gap / ring evicted).
     """
 
     def __init__(self, persist_dir: Optional[Path] = None) -> None:
@@ -325,9 +325,9 @@ class MessageStore:
         with self._lock:
             self._messages[mid] = msg
             self._delta_ring[mid] = []
-            # New messages go out as snapshots — there's no prior state for
+            # New messages go out as full frames — there's no prior state for
             # delta apply to stitch onto.
-            self._emit(session_id, {"type": "message.snapshot", "message": msg.to_dict()})
+            self._emit(session_id, {"type": "message.full", "message": msg.to_dict()})
         return msg
 
     def add_block(self, message_id: str, block: Block) -> None:
@@ -458,10 +458,10 @@ class MessageStore:
         Client sends ``{msg_id: seq}``; server returns a list of frames.
         Rules:
 
-          * message absent from known_seqs → full snapshot
+          * message absent from known_seqs → full frame
           * known_seq == current seq → nothing
           * gap small enough to replay from ring → delta frames
-          * gap too big / ring evicted → snapshot
+          * gap too big / ring evicted → full frame
           * unknown message ids (client knows about a message we don't) →
             ignored; client eventually prunes via its own GC
         """
@@ -484,7 +484,7 @@ class MessageStore:
                             "patch": d,
                         })
                 else:
-                    frames.append({"type": "message.snapshot", "message": msg.to_dict()})
+                    frames.append({"type": "message.full", "message": msg.to_dict()})
             return frames
 
     # -- persistence ---------------------------------------------------------
@@ -570,8 +570,8 @@ class MessageStore:
         ring = self._delta_ring.setdefault(msg.id, [])
         ring.append((msg.seq, patch))
         if len(ring) > MAX_DELTA_CATCHUP:
-            # Drop oldest; reconnects past this window fall back to snapshot.
-            # That's fine — the snapshot always exists, it's just a bigger
+            # Drop oldest; reconnects past this window fall back to a full frame.
+            # That's fine — the full frame always exists, it's just a bigger
             # payload. This is the tradeoff the outer constant controls.
             del ring[: len(ring) - MAX_DELTA_CATCHUP]
         self._emit(msg.session_id, {

@@ -12,8 +12,8 @@
 
 The ``gh`` token is a plain bearer — we produce an ``api_key`` credential
 rather than ``cli_delegated`` because the file's YAML parsing is
-non-trivial and ``gh`` rotates the token infrequently. We snapshot-copy
-into our store at import time; later rotations by ``gh`` won't
+non-trivial and ``gh`` rotates the token infrequently. We copy the
+token into our store at import time; later rotations by ``gh`` won't
 automatically propagate, but the user's ``gh auth status`` will warn
 them and a re-import takes one click.
 
@@ -88,7 +88,7 @@ class GhCliSource:
                     payload=ApiKeyPayload(api_key=token),
                     source=self.source_id,
                     metadata=metadata,
-                    # Snapshot copy — rotations by `gh` don't propagate,
+                    # One-shot copy — rotations by `gh` don't propagate,
                     # but we also don't block local rotation (user could
                     # paste a new key in our UI). So not read_only.
                     read_only=False,

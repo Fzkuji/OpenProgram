@@ -37,7 +37,7 @@ from openprogram.context.types import (
     CompactResult,
     ReferenceMap,
     TurnPrep,
-    UsageSnapshot,
+    UsageState,
 )
 from openprogram.context.usage import default_tracker as usage_tracker
 
@@ -50,7 +50,7 @@ __all__ = [
     "DefaultContextEngine",
     "ReferenceMap",
     "TurnPrep",
-    "UsageSnapshot",
+    "UsageState",
     "default_engine",
     "estimate_history_tokens",
     "estimate_message_tokens",

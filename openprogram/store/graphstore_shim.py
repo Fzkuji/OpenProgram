@@ -72,13 +72,13 @@ class GraphStoreShim:
         if not pair:
             return g
         _git, idx = pair
-        # Deep-copy so callers see a point-in-time snapshot; the live
+        # Deep-copy so callers see a point-in-time copy; the live
         # index keeps mutating as @agentic_function fills placeholders.
         for node in idx.nodes_by_seq:
-            snap = copy.deepcopy(node)
-            g.nodes[snap.id] = snap
-            if snap.seq >= g._next_seq:
-                g._next_seq = snap.seq + 1
+            frozen = copy.deepcopy(node)
+            g.nodes[frozen.id] = frozen
+            if frozen.seq >= g._next_seq:
+                g._next_seq = frozen.seq + 1
         return g
 
     def update(self, node_id: str, **fields: Any) -> None:

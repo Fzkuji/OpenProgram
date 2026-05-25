@@ -19,7 +19,7 @@ from .store import BackupStore
 
 
 def backup_for_current_turn(abs_path: str) -> None:
-    """Snapshot ``abs_path`` into the current turn's backup dir.
+    """Back up ``abs_path`` into the current turn's backup dir.
 
     Silent no-op when:
       * there is no active session (``_store`` ContextVar unset);

@@ -26,11 +26,11 @@ Core (自我认知)                       ← 已有 memory/core.md
 
 **不替换, 是叠加.** DAG (SQLite) 保留, git 增量同步.
 
-- DAG 优势: SQL 查询快, 索引 caller / parent_id / seq, snapshot chain 已经在跑
+- DAG 优势: SQL 查询快, 索引 caller / parent_id / seq, commit chain 已经在跑
 - Git 优势: 工具成熟 (log / diff / checkout / revert), 持久化 atomic, 用户能直接 cd 进去看
 - 双写: 每个 turn 写 DAG 节点之后, 同步 git commit 一份 JSON 序列化
 
-读路径还是走 DAG (snapshot 等). git 是**回溯 + 备份 + 用户可视**入口.
+读路径还是走 DAG (commit 等). git 是**回溯 + 备份 + 用户可视**入口.
 
 ## 2. Session-Git
 
@@ -48,8 +48,8 @@ Core (自我认知)                       ← 已有 memory/core.md
 │   ├── 000003-t-fc_xxx.json    # tool result (caller=def456)
 │   ├── 000004-a-ghi789.json
 │   └── ...
-└── snapshots/
-    └── snap_xxx.json      # 每个 context snapshot 一份 (可选, 先不做)
+└── commits/
+    └── commit_xxx.json      # 每个 context commit 一份 (可选, 先不做)
 ```
 
 文件名按 `<seq>-<role[0]>-<node_id>.json` 排序 — 数字前缀让 ls 顺序就是时序, 不依赖文件系统排序.
@@ -273,14 +273,14 @@ Phase B (这次设计的): Project + Session 都接 git
 - 实现没公开, 但大概率是把 session messages 当文档 + 用某种 commit-like 机制
 - 我们这个设计**显式用 git**, 用户能直接 `cd ~/.agentic/sessions-git/<sid>` 看历史, 透明性更高
 
-## 9. 跟现有 snapshot chain 的关系
+## 9. 跟现有 commit chain 的关系
 
-不冲突. snapshot chain 是"LLM 看到的 context view", 跟 git 是"实际发生过的 history" 是两个层:
+不冲突. commit chain 是"LLM 看到的 context view", 跟 git 是"实际发生过的 history" 是两个层:
 
 - DAG 节点 (raw 真源) → git commit (持久化镜像)
-- Snapshot chain (LLM 视角) → 不入 git (派生, 可重算)
+- ContextCommit chain (LLM 视角) → 不入 git (派生, 可重算)
 
-snapshot 可以选择性 export 到 git (e.g. 用户想看"那时 LLM 看到啥"), 但不是强制.
+commit 可以选择性 export 到 git (e.g. 用户想看"那时 LLM 看到啥"), 但不是强制.
 
 ---
 

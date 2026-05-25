@@ -11,7 +11,7 @@ Internal model:
   * one ``GitSession`` per session on disk
   * one ``SessionMemoryIndex`` per session in memory (lazy-loaded)
   * branch names live in ``meta.json`` under ``branches: {head_id: name}``
-  * snapshots are owned by the snapshot subsystem; this class only
+  * context commits are owned by the commit subsystem; this class only
     persists raw nodes + meta.
 
 Message <-> Call dataclass mapping reuses the existing helpers in
@@ -129,10 +129,10 @@ class SessionStore:
     def _persist_meta(self, git: GitSession, idx: SessionMemoryIndex) -> None:
         """Sync the in-memory meta back to ``meta.json``. Called whenever
         title / head_id / extra / branches change."""
-        snapshot = dict(idx.meta)
-        snapshot["head_id"] = idx.head_id
-        snapshot["updated_at"] = time.time()
-        git.write_meta(snapshot)
+        meta = dict(idx.meta)
+        meta["head_id"] = idx.head_id
+        meta["updated_at"] = time.time()
+        git.write_meta(meta)
 
     def session_workdir(self, session_id: str) -> Optional[Path]:
         """Path of the per-session scratch workdir, materialized on first

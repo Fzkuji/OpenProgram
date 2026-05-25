@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>Context Snapshot Demo — DAG + Snapshot 联动演示</title>
+<title>Context Commit Demo — DAG + ContextCommit 联动演示</title>
 <style>
 :root {
   --bg: #0d1117;
@@ -136,8 +136,8 @@ main {
 .role-tool      { fill: var(--orange); }
 .role-summary   { fill: var(--green); }
 
-/* ── Snapshot (right) ───────────────────────────────── */
-.snap-meta {
+/* ── ContextCommit (right) ───────────────────────────────── */
+.commit-meta {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -149,8 +149,8 @@ main {
   gap: 24px;
   flex-wrap: wrap;
 }
-.snap-meta-item { color: var(--text-dim); }
-.snap-meta-item strong { color: var(--text-bright); font-weight: 600; }
+.commit-meta-item { color: var(--text-dim); }
+.commit-meta-item strong { color: var(--text-bright); font-weight: 600; }
 
 .context-item {
   display: flex;
@@ -267,8 +267,8 @@ main {
 <body>
 
 <header>
-  <h1>Context Snapshot Demo</h1>
-  <span class="turn-info" id="turnInfo">Turn 0 / snap: none</span>
+  <h1>Context Commit Demo</h1>
+  <span class="turn-info" id="turnInfo">Turn 0 / commit: none</span>
   <span class="script-hint" id="scriptHint">点 "下一轮" 开始</span>
   <div class="controls">
     <button id="prevBtn" disabled>← 上一轮</button>
@@ -289,12 +289,12 @@ main {
   </section>
 
   <section class="pane">
-    <div class="pane-header">Layer 2 · Context Snapshot (LLM 看到的内容)</div>
-    <div class="snap-meta" id="snapMeta">
-      <div class="snap-meta-item">snap: <strong>—</strong></div>
-      <div class="snap-meta-item">parent: <strong>—</strong></div>
-      <div class="snap-meta-item">items: <strong>0</strong></div>
-      <div class="snap-meta-item">tokens: <strong>0 / 1500</strong></div>
+    <div class="pane-header">Layer 2 · Context Commit (LLM 看到的内容)</div>
+    <div class="commit-meta" id="snapMeta">
+      <div class="commit-meta-item">commit: <strong>—</strong></div>
+      <div class="commit-meta-item">parent: <strong>—</strong></div>
+      <div class="commit-meta-item">items: <strong>0</strong></div>
+      <div class="commit-meta-item">tokens: <strong>0 / 1500</strong></div>
     </div>
     <div class="budget-bar"><div class="budget-bar-fill" id="budgetBar" style="width:0%"></div></div>
     <div id="snapItems" style="margin-top:16px;">
@@ -386,8 +386,8 @@ const SUMMARIZE_THRESHOLD = 1200;
 // State
 // ─────────────────────────────────────────────────────────
 let dagNodes = [];      // {id, role, label, parent, caller, turn}
-let snapshots = [];     // array of {id, items, totalTokens, parent}
-let currentSnapIdx = -1;
+let commits = [];     // array of {id, items, totalTokens, parent}
+let currentCommitIdx = -1;
 
 function estTokens(text) {
   // crude: 1 token ≈ 4 chars
@@ -399,10 +399,10 @@ function uid(prefix) {
 }
 
 // ─────────────────────────────────────────────────────────
-// Generate snapshot from previous + new nodes
+// Generate commit from previous + new nodes
 // ─────────────────────────────────────────────────────────
-function generateSnapshot(parentIdx, newNodes, turnIdx, forceSummarize) {
-  const prev = parentIdx >= 0 ? snapshots[parentIdx] : null;
+function generateCommit(parentIdx, newNodes, turnIdx, forceSummarize) {
+  const prev = parentIdx >= 0 ? commits[parentIdx] : null;
   const items = prev ? prev.items.map(i => ({ ...i })) : [];
 
   // Step 1: append new items (state=full, locked=false)
@@ -416,14 +416,14 @@ function generateSnapshot(parentIdx, newNodes, turnIdx, forceSummarize) {
       rendered: n.rendered,
       tokens: estTokens(n.rendered),
       reason: 'new',
-      bornAtSnap: snapshots.length,
-      changedThisSnap: true,
+      bornAtCommit: commits.length,
+      changedThisCommit: true,
     });
   }
 
-  // mark all prev items as not-changed-this-snap
+  // mark all prev items as not-changed-this-commit
   for (const item of items) {
-    if (item.bornAtSnap !== snapshots.length) item.changedThisSnap = false;
+    if (item.bornAtCommit !== commits.length) item.changedThisCommit = false;
   }
 
   // Step 2: apply rules
@@ -447,7 +447,7 @@ function generateSnapshot(parentIdx, newNodes, turnIdx, forceSummarize) {
         item.tokens = estTokens(item.rendered);
         item.locked = true;
         item.reason = `tail>${TAIL_TURNS}`;
-        item.changedThisSnap = true;
+        item.changedThisCommit = true;
       }
     }
   }
@@ -475,8 +475,8 @@ function generateSnapshot(parentIdx, newNodes, turnIdx, forceSummarize) {
         rendered: `Earlier: ${labels} ...`,
         tokens: 80,
         reason: 'summarized',
-        bornAtSnap: snapshots.length,
-        changedThisSnap: true,
+        bornAtCommit: commits.length,
+        changedThisCommit: true,
       };
       // mark targets as summarized
       for (const i of toSummarize) {
@@ -484,7 +484,7 @@ function generateSnapshot(parentIdx, newNodes, turnIdx, forceSummarize) {
         items[i].locked = true;
         items[i].reason = `merged into ${summaryId}`;
         items[i].mergedInto = summaryId;
-        items[i].changedThisSnap = true;
+        items[i].changedThisCommit = true;
         items[i].tokens = 0;
       }
       // insert summary item at the position of the first summarized
@@ -506,7 +506,7 @@ function generateSnapshot(parentIdx, newNodes, turnIdx, forceSummarize) {
 // Step forward one turn
 // ─────────────────────────────────────────────────────────
 function stepForward() {
-  const turnIdx = snapshots.length;
+  const turnIdx = commits.length;
   if (turnIdx >= SCRIPTED_TURNS.length) return;
   const turn = SCRIPTED_TURNS[turnIdx];
 
@@ -546,19 +546,19 @@ function stepForward() {
   newDagNodes.forEach(n => n._isNew = true);
   dagNodes = dagNodes.concat(newDagNodes);
 
-  // Generate snapshot
-  const snap = generateSnapshot(currentSnapIdx, newDagNodes, turnIdx, turn.forceSummarize);
-  snapshots.push(snap);
-  currentSnapIdx = snapshots.length - 1;
+  // Generate commit
+  const commit = generateCommit(currentCommitIdx, newDagNodes, turnIdx, turn.forceSummarize);
+  commits.push(commit);
+  currentCommitIdx = commits.length - 1;
 
   render();
 }
 
 function stepBack() {
-  if (currentSnapIdx <= 0) return;
-  currentSnapIdx--;
-  // also rewind dagNodes to that snap
-  const targetTurn = snapshots[currentSnapIdx].turn;
+  if (currentCommitIdx <= 0) return;
+  currentCommitIdx--;
+  // also rewind dagNodes to that commit
+  const targetTurn = commits[currentCommitIdx].turn;
   dagNodes = dagNodes.filter(n => n.turn <= targetTurn);
   dagNodes.forEach(n => n._isNew = false);
   render();
@@ -566,8 +566,8 @@ function stepBack() {
 
 function reset() {
   dagNodes = [];
-  snapshots = [];
-  currentSnapIdx = -1;
+  commits = [];
+  currentCommitIdx = -1;
   render();
 }
 
@@ -696,33 +696,33 @@ function renderSnap() {
   const meta = document.getElementById('snapMeta');
   const budgetBar = document.getElementById('budgetBar');
 
-  if (currentSnapIdx < 0) {
-    meta.innerHTML = '<div class="snap-meta-item">snap: <strong>—</strong></div>' +
-                     '<div class="snap-meta-item">items: <strong>0</strong></div>' +
-                     '<div class="snap-meta-item">tokens: <strong>0 / ' + BUDGET_TOTAL + '</strong></div>';
+  if (currentCommitIdx < 0) {
+    meta.innerHTML = '<div class="commit-meta-item">commit: <strong>—</strong></div>' +
+                     '<div class="commit-meta-item">items: <strong>0</strong></div>' +
+                     '<div class="commit-meta-item">tokens: <strong>0 / ' + BUDGET_TOTAL + '</strong></div>';
     budgetBar.style.width = '0%';
     itemsBox.innerHTML = '<div class="empty-hint">等待第一轮 ...</div>';
     return;
   }
 
-  const snap = snapshots[currentSnapIdx];
-  const pct = Math.min(100, (snap.totalTokens / BUDGET_TOTAL) * 100);
+  const commit = commits[currentCommitIdx];
+  const pct = Math.min(100, (commit.totalTokens / BUDGET_TOTAL) * 100);
   budgetBar.style.width = pct + '%';
   budgetBar.className = 'budget-bar-fill';
   if (pct > 90) budgetBar.classList.add('over');
   else if (pct > 70) budgetBar.classList.add('warn');
 
-  const renderedCount = snap.items.filter(i => i.state !== 'summarized').length;
+  const renderedCount = commit.items.filter(i => i.state !== 'summarized').length;
   meta.innerHTML =
-    `<div class="snap-meta-item">snap: <strong>${snap.id}</strong></div>` +
-    `<div class="snap-meta-item">parent: <strong>${snap.parent || '—'}</strong></div>` +
-    `<div class="snap-meta-item">items: <strong>${snap.items.length}</strong> (rendered ${renderedCount})</div>` +
-    `<div class="snap-meta-item">tokens: <strong>${snap.totalTokens} / ${BUDGET_TOTAL}</strong></div>`;
+    `<div class="commit-meta-item">commit: <strong>${commit.id}</strong></div>` +
+    `<div class="commit-meta-item">parent: <strong>${commit.parent || '—'}</strong></div>` +
+    `<div class="commit-meta-item">items: <strong>${commit.items.length}</strong> (rendered ${renderedCount})</div>` +
+    `<div class="commit-meta-item">tokens: <strong>${commit.totalTokens} / ${BUDGET_TOTAL}</strong></div>`;
 
   let html = '';
-  for (const item of snap.items) {
+  for (const item of commit.items) {
     const stateClass = `state-${item.state}`;
-    const changedClass = item.changedThisSnap ? 'changed' : '';
+    const changedClass = item.changedThisCommit ? 'changed' : '';
     const roleChip = `<div class="role-chip ${item.role}">${item.role}</div>`;
     const stateBadge = `<div class="state-badge">${item.state}</div>`;
     const tokens = item.tokens ? `${item.tokens}t` : '';
@@ -742,15 +742,15 @@ function renderSnap() {
 }
 
 function renderControls() {
-  const turnIdx = currentSnapIdx + 1;
+  const turnIdx = currentCommitIdx + 1;
   const total = SCRIPTED_TURNS.length;
   document.getElementById('turnInfo').textContent =
     `Turn ${turnIdx} / ${total}` +
-    (currentSnapIdx >= 0 ? ` · ${snapshots[currentSnapIdx].id}` : ' · snap: none');
+    (currentCommitIdx >= 0 ? ` · ${commits[currentCommitIdx].id}` : ' · commit: none');
   document.getElementById('nextBtn').disabled = turnIdx >= total;
-  document.getElementById('prevBtn').disabled = currentSnapIdx <= 0;
+  document.getElementById('prevBtn').disabled = currentCommitIdx <= 0;
   document.getElementById('scriptHint').textContent =
-    currentSnapIdx >= 0 ? SCRIPTED_TURNS[currentSnapIdx].hint :
+    currentCommitIdx >= 0 ? SCRIPTED_TURNS[currentCommitIdx].hint :
     turnIdx < total ? '点 "下一轮" 开始' : '已到结尾';
 }
 

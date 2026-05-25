@@ -293,7 +293,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       // server's list_conversations action returns BOTH in-memory webui
       // sessions AND on-disk per-agent sessions (where channel-bound
       // chats live). Without this refresh the picker only shows the
-      // history_list snapshot from connect time, which omits any
+      // history_list captured at connect time, which omits any
       // wechat / telegram sessions started by the channels worker.
       ctx.client.send({ action: 'list_conversations' });
       ctx.openPicker('resume');
@@ -448,7 +448,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     }
 
     case 'cost': {
-      // Token + cost stats live in the BottomBar; surface a snapshot here.
+      // Token + cost stats live in the BottomBar; surface the latest here.
       ctx.client.send({ action: 'sync', conv_id: ctx.currentConversation } as never);
       ctx.pushSystem(
         'Current token usage is shown on the bottom bar. ↓ input, ↑ output.',

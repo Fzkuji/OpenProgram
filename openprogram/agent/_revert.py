@@ -7,7 +7,7 @@ files this turn touched are reverted).
 
 The ``assistant_msg_id`` IS the natural turn key: dispatcher mints it
 as ``user_msg_id + "_reply"`` (see dispatcher.process_user_turn) and
-the file backup store keys snapshots by that same id.
+the file backup store keys captures by that same id.
 
 Mutation on the DAG side is minimal — we stamp
 ``metadata['reverted'] = True`` on the assistant node (plus a

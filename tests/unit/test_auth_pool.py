@@ -16,10 +16,10 @@ from openprogram.auth import (
 from openprogram.auth.pool import (
     PoolFailurePolicy,
     clear_cooldown,
+    health,
     mark_failure,
     mark_success,
     pick,
-    snapshot,
 )
 
 
@@ -176,21 +176,21 @@ def test_clear_cooldown_bypasses_timer():
     assert pick(p).payload.api_key == "a"
 
 
-# ---- snapshot -------------------------------------------------------------
+# ---- health ---------------------------------------------------------------
 
-def test_snapshot_reports_mixed_state():
+def test_health_reports_mixed_state():
     p = _pool("a", "b", "c", "d", strategy="round_robin")
     mark_failure(p.credentials[0], "rate_limit", now_ms=0,
                  policy=PoolFailurePolicy(rate_limit_cooldown_ms=1000))
     mark_failure(p.credentials[1], "revoked")
     mark_failure(p.credentials[2], "needs_reauth")
-    snap = snapshot(p, now_ms=500)
-    assert snap.total == 4
-    assert snap.healthy == 1
-    assert snap.cooling_down == 1
-    assert snap.revoked == 1
-    assert snap.needs_reauth == 1
-    assert snap.next_cooldown_expires_at_ms == 1000
+    state = health(p, now_ms=500)
+    assert state.total == 4
+    assert state.healthy == 1
+    assert state.cooling_down == 1
+    assert state.revoked == 1
+    assert state.needs_reauth == 1
+    assert state.next_cooldown_expires_at_ms == 1000
 
 
 # ---- round-robin robustness ----------------------------------------------

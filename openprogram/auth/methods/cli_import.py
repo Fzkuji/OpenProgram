@@ -11,7 +11,7 @@ Two behaviours the method supports, configurable per source:
 
   * ``copy`` — read once, store our own independent copy. Subsequent
     CLI rotations don't propagate to us. Useful when we want to pin
-    a specific snapshot or when the external CLI is about to be
+    a specific frozen state or when the external CLI is about to be
     uninstalled.
   * ``link`` — create a :class:`CliDelegatedPayload` pointing at the
     external file. Every API call re-reads the file. Any rotation the

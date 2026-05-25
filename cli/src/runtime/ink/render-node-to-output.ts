@@ -734,7 +734,7 @@ function renderNodeToOutput(
         // render; the element ref defers the read to now. One-shot snap.
         // A prior eased-seek version (proportional drain over ~5 frames)
         // moved scrollTop without firing React's notify → parent's quantized
-        // store snapshot never updated → StickyTracker got stale range props
+        // store value never updated → StickyTracker got stale range props
         // → firstVisible wrong. Also: SCROLL_MIN_PER_FRAME=4 with snap-at-1
         // ping-ponged forever at delta=2. Smooth needs drain-end notify
         // plumbing; shipping instant first. stickyScroll overrides.
@@ -951,9 +951,9 @@ function renderNodeToOutput(
               y2: edgeBottom + 1
             })
 
-            // Snapshot dirty children before the first pass — the first
+            // Capture dirty children before the first pass — the first
             // pass clears dirty flags, and edge-spanning children would be
-            // missed by the second pass without this snapshot.
+            // missed by the second pass without this captured set.
             const dirtyChildren = content.dirty
               ? new Set(content.childNodes.filter(c => (c as DOMElement).dirty))
               : null

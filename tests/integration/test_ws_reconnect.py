@@ -10,7 +10,7 @@ Two scenarios covered here, matching what the real browser client does:
    ``{"action": "sync", "conv_id", "known_seqs"}`` replays the frames
    the client missed. The client advertises what it already has via
    ``known_seqs``; the server returns deltas when the ring still holds
-   them and a snapshot when it doesn't.
+   them and a full frame when it doesn't.
 
 These use FastAPI's ``TestClient.websocket_connect``, which drives the
 route in the same process without binding a real port.
@@ -103,9 +103,9 @@ def test_ping_pong(client):
     assert reply == {"type": "pong"}
 
 
-def test_sync_returns_snapshot_when_client_knows_nothing(client):
+def test_sync_returns_full_frame_when_client_knows_nothing(client):
     """Seed a committed message; sync with empty known_seqs returns a
-    message.snapshot frame."""
+    message.full frame."""
     c, store = client
     _seed_message(store, "m1", "conv-abc", "hello")
 
@@ -120,7 +120,7 @@ def test_sync_returns_snapshot_when_client_knows_nothing(client):
 
     assert frame["type"] == "chat_response"
     inner = frame["data"]
-    assert inner["type"] == "message.snapshot"
+    assert inner["type"] == "message.full"
     assert inner["message"]["id"] == "m1"
 
 

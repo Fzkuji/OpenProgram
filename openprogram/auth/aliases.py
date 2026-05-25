@@ -58,7 +58,7 @@ def resolve(provider: str) -> str:
 
 
 def known_aliases() -> dict[str, str]:
-    """Snapshot of alias → canonical mapping, for help text and `list`."""
+    """Copy of alias → canonical mapping, for help text and `list`."""
     return dict(_ALIASES)
 
 

@@ -647,7 +647,7 @@ chat.py            chat_turn：LLM↔tool 循环 + parse_tool_call
 
 ─── 上下文编排 ─────────────────────────────────────────────
 __init__.py        公开 API：default_engine / resolve_engine_for / TurnPrep / CompactResult / ...
-types.py           编排 dataclass：UsageSnapshot / BudgetAllocation / TurnPrep / CompactResult / ReferenceMap
+types.py           编排 dataclass：UsageState / BudgetAllocation / TurnPrep / CompactResult / ReferenceMap
 tokens.py          token 估算 + real_context_window + CJK 比例
 usage.py           UsageTracker：provider usage 缓存 + hybrid 估算
 budget.py          BudgetAllocator：context_window → 四段切分
@@ -663,7 +663,7 @@ engine.py          ContextEngine ABC + DefaultContextEngine + 注册表
 ## 7. 数据类型
 
 ```
-UsageSnapshot          last_prompt_tokens / last_cache_read_tokens
+UsageState          last_prompt_tokens / last_cache_read_tokens
                        cumulative_prompt_tokens / cumulative_completion_tokens
                        turn_count / compaction_count
                        source: "estimate" | "provider" | "cached"
@@ -675,7 +675,7 @@ TurnPrep               system_prompt: str
                        agent_messages: list[Message]      给 agent_loop 用
                        history_dicts: list[dict]          aging 后的 dict 视图
                        budget: BudgetAllocation
-                       usage: UsageSnapshot
+                       usage: UsageState
                        tool_results_redacted: int
                        tokens_freed_by_aging: int
                        references_protected: int

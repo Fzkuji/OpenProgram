@@ -164,7 +164,7 @@ def test_entry_appends_running_node_visible_mid_execution(runtime, store):
 
     @agentic_function
     def slow(runtime=None):
-        # Inside the body: snapshot DAG. Wrapper already appended a
+        # Inside the body: capture DAG. Wrapper already appended a
         # placeholder for `slow`, so we should see it here.
         g = store.load()
         slow_nodes = [n for n in g if n.is_code() and n.name == "slow"]

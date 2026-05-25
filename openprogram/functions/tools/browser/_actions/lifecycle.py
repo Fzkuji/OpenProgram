@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def _save_login(session_id: str, name: str | None = None) -> str:
-    """Snapshot the session's storage_state for later headless reuse."""
+    """Capture the session's storage_state for later headless reuse."""
     from openprogram.functions.tools.browser import browser as _b
     sess = _b._require_session(session_id)
     if isinstance(sess, str):

@@ -180,7 +180,7 @@ async def handle_stop(ws, cmd: dict):
 
 
 async def handle_stats(ws, cmd: dict):
-    """Welcome-banner snapshot: agent, programs, skills, tools, providers, channels."""
+    """Welcome-banner data: agent, programs, skills, tools, providers, channels."""
     from openprogram.webui import server as _s
     try:
         from openprogram.agents import manager as _A

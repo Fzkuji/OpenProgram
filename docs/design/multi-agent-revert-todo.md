@@ -6,7 +6,7 @@ Working branch: `git-as-truth`. HEAD = `6b5c5ea`.
 
 | Commit | Scope |
 |---|---|
-| `a0a6700` | `openprogram/store/file_backup/` subpackage (paths / manifest / store / gc) + 7 unit tests. Git-agnostic per-turn file snapshots. Hook API: `BackupStore.backup_before_edit(turn_id, abs_path)` / `.restore_turn(turn_id)`. |
+| `a0a6700` | `openprogram/store/file_backup/` subpackage (paths / manifest / store / gc) + 7 unit tests. Git-agnostic per-turn file commits. Hook API: `BackupStore.backup_before_edit(turn_id, abs_path)` / `.restore_turn(turn_id)`. |
 | `3674f3e` | Dispatcher sets `_current_turn_id` ContextVar = `assistant_msg_id`. `write` / `edit` / `apply_patch` tools call `backup_for_current_turn(path)` pre-fs-mutate. `_runtime.py` wraps sync-tool executor in `copy_context().run(...)` so ContextVars propagate to thread-pool. `revert_turn(session_id, assistant_msg_id)` dispatcher fn + WS action `revert_turn` exposed. |
 | `eb2b06a` | D + G: `ContextCommit.parent_ids: list[str]` with single-parent back-compat via `__post_init__`; frontend assistant bubble gets a Revert button calling the `revert_turn` WS action with toast feedback. |
 | `6fde168` | C part 1: `<repo>/workdir/` materialized on session init (with `.gitkeep`). `GitSession.workdir_path` + `SessionStore.session_workdir(sid)` accessors. `commit_all` already picks up workdir edits via `git add -A`. |

@@ -15,7 +15,7 @@ from typing import Any, Optional
 # ---------------------------------------------------------------------------
 
 @dataclass
-class UsageSnapshot:
+class UsageState:
     """Latest known token usage for one session.
 
     Source priority for any field:
@@ -28,7 +28,7 @@ class UsageSnapshot:
 
     ``source`` records which of these populated the most recent fields
     so the engine can decide how much to trust them when planning a
-    compaction (a stale ``cached`` snapshot is worse than a fresh
+    compaction (a stale ``cached`` reading is worse than a fresh
     ``estimate`` after 5 idle minutes).
     """
     last_prompt_tokens: int = 0
@@ -106,7 +106,7 @@ class TurnPrep:
     history_dicts: list[dict] = field(default_factory=list)
 
     budget: BudgetAllocation = field(default_factory=BudgetAllocation)
-    usage: UsageSnapshot = field(default_factory=UsageSnapshot)
+    usage: UsageState = field(default_factory=UsageState)
 
     # Aging telemetry
     tool_results_redacted: int = 0

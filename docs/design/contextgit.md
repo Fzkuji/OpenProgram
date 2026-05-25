@@ -77,7 +77,7 @@ class Commit:
     kind: Literal["user_msg", "assistant_msg", "function_run"]
     author: str                  # "user" | "agent" | program_id
     content_ref: str             # points to a Blob (text / structured payload)
-    tree_ref: Optional[str]      # points to a TreeSnapshot (function_run only)
+    tree_ref: Optional[str]      # points to a TreeView (function_run only)
     timestamp: int               # ms since epoch
     metadata: dict               # provider, model, thinking level, tool ids, …
 ```
@@ -98,11 +98,11 @@ class Blob:
 Every content payload is a blob. Blobs are interned by hash — identical
 prompts / tool outputs share storage.
 
-### TreeSnapshot
+### TreeView
 
 ```python
 @dataclass
-class TreeSnapshot:
+class TreeView:
     id: str
     root_node: dict              # serialized ContextTree root
     # Nodes can also be interned as blobs later; v1 can serialize whole tree
@@ -145,7 +145,7 @@ class ContextGit:
 
     def get(self, commit_id: str) -> Commit: ...
     def get_blob(self, blob_id: str) -> Blob: ...
-    def get_tree(self, tree_id: str) -> TreeSnapshot: ...
+    def get_tree(self, tree_id: str) -> TreeView: ...
 
     def children(self, commit_id: str) -> list[Commit]: ...
     def siblings(self, commit_id: str) -> list[Commit]: ...
@@ -217,7 +217,7 @@ Given a `Session`, the UI renders:
 ### v1 — SQLite + JSON blobs on disk
 
 - SQLite DB per repo: `commits`, `branches`, `sessions` tables.
-- `objects/` directory: one file per blob/tree snapshot, filename = id.
+- `objects/` directory: one file per blob/tree commit, filename = id.
 - JSONL changelog (`oplog.jsonl`) mirrors every write for forensic replay.
 
 Append-only semantics give us durable history, easy backup (rsync), and
@@ -237,7 +237,7 @@ doesn't change because `id` is already opaque.
 **Phase 1 — ContextGit + Session core**
 
 - `openprogram/convgit/` module with `ContextGit`, `Session`, `Commit`,
-  `Blob`, `TreeSnapshot`, `Branch`.
+  `Blob`, `TreeView`, `Branch`.
 - SQLite persistence.
 - Unit tests for commit / checkout / retry / edit / log / siblings.
 - CLI debug helper: `openprogram convgit log <session>`.

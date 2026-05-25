@@ -25,7 +25,7 @@ Pipeline:
      existing pages, writes new ones, edits index/log/overview,
      returns a short markdown report.
   4. Python runs the enrich pass over the modified pages, then
-     ``git_commit`` to snapshot.
+     ``git_commit`` to persist.
   5. Any REVIEW items the agent flagged get persisted to
      ``.state/review-queue.json``.
 """

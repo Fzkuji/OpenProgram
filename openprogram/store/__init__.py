@@ -22,8 +22,8 @@ Storage layout: every session is its own git repo at
 
     context/   mutable LLM view. ``messages.json`` carries the current
                assembled message list (compact / aging rewrites it);
-               ``snapshot.json`` carries the most recent ContextItem
-               snapshot. Both files get rewritten each turn.
+               ``commits/<id>.json`` carries per-commit ContextItem
+               lists, written one file per turn (immutable).
 
 Plus ``meta.json`` at the repo root for session-level fields (title,
 agent_id, head_id, ...).

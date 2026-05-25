@@ -1,6 +1,6 @@
 """Unit tests for openprogram.store.file_backup.
 
-Covers the lifecycle: snapshot a file pre-edit, mutate the file,
+Covers the lifecycle: back up a file pre-edit, mutate the file,
 restore the turn, file is back to pre-edit content. Also exercises
 the create-and-restore-removes path (agent creates a new file →
 revert deletes it) and the idempotency guarantee (calling
@@ -31,8 +31,8 @@ def workdir(tmp_path: Path) -> Path:
     return d
 
 
-def test_snapshot_then_restore_existing_file(session_dir, workdir):
-    """Pre-existing file: snapshot captures the original; restoring
+def test_backup_then_restore_existing_file(session_dir, workdir):
+    """Pre-existing file: backup captures the original; restoring
     brings it back even after the agent overwrote it."""
     target = workdir / "foo.py"
     target.write_text("original content")
@@ -49,7 +49,7 @@ def test_snapshot_then_restore_existing_file(session_dir, workdir):
 
 
 def test_create_then_restore_removes_file(session_dir, workdir):
-    """File that didn't exist pre-turn: snapshot records that, and
+    """File that didn't exist pre-turn: backup records that, and
     restoring deletes the freshly-created file."""
     target = workdir / "new.py"
     assert not target.exists()
@@ -66,7 +66,7 @@ def test_create_then_restore_removes_file(session_dir, workdir):
 
 def test_idempotent_within_turn(session_dir, workdir):
     """Calling backup_before_edit twice in the same turn for the
-    same file: only the first snapshot wins (we want pre-turn state,
+    same file: only the first backup wins (we want pre-turn state,
     not pre-second-edit state)."""
     target = workdir / "foo.py"
     target.write_text("V0")
