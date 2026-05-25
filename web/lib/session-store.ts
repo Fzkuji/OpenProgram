@@ -288,6 +288,10 @@ interface ConvState {
    *  store so outside callers (welcome example buttons, retry
    *  helpers, etc.) can fill the input. */
   composerInput: string;
+  /** Per-session draft cache. Persisted to localStorage so unsent text
+   *  survives refresh and session switching. ``composerInput`` is the
+   *  live draft for the *current* session and stays mirrored here. */
+  composerDrafts: Record<string, string>;
   setComposerInput: (s: string) => void;
   /** Bump to ask the Composer to call .focus() on its textarea. The
    *  Composer reacts to changes in this counter via useEffect. */
@@ -358,6 +362,47 @@ function persistRightDock(state: { open: boolean; view: string }) {
     if (VALID_VIEWS.has(state.view)) {
       localStorage.setItem(RIGHT_LS_VIEW, state.view);
     }
+  } catch {
+    /* ignore */
+  }
+}
+
+// Composer drafts — persist per-session unsent input across refresh and
+// session switch. Keyed by sessionId; the "new" pseudo-key holds the draft
+// for the not-yet-created next session (before the user has any chats).
+// One JSON blob in localStorage so we don't litter keys per session.
+const COMPOSER_DRAFTS_KEY = "composerDrafts";
+const COMPOSER_DRAFTS_VERSION = 1;
+const COMPOSER_NEW_KEY = "__new__";
+
+function readComposerDrafts(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(COMPOSER_DRAFTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.v === COMPOSER_DRAFTS_VERSION
+        && parsed.drafts && typeof parsed.drafts === "object") {
+      return parsed.drafts as Record<string, string>;
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function persistComposerDrafts(drafts: Record<string, string>) {
+  if (typeof window === "undefined") return;
+  try {
+    // Drop empty entries so the blob doesn't grow unboundedly.
+    const compact: Record<string, string> = {};
+    for (const k in drafts) {
+      if (drafts[k]) compact[k] = drafts[k];
+    }
+    localStorage.setItem(
+      COMPOSER_DRAFTS_KEY,
+      JSON.stringify({ v: COMPOSER_DRAFTS_VERSION, drafts: compact }),
+    );
   } catch {
     /* ignore */
   }
@@ -448,13 +493,25 @@ export const useSessionStore = create<ConvState>((set) => ({
     }),
 
   setCurrentConv: (id) =>
-    set((s) => ({
-      currentSessionId: id,
-      // Keep the legacy single-task mirror pointed at whatever the
-      // newly-active session's task is. This is what makes the
-      // composer flip between send/stop instantly on session switch.
-      runningTask: id ? (s.runningTasks[id] ?? null) : null,
-    })),
+    set((s) => {
+      // Stash the currently-visible draft under its owning session
+      // (or under the "new" placeholder if no session was active),
+      // then load the incoming session's draft.
+      const oldSid = s.currentSessionId ?? COMPOSER_NEW_KEY;
+      const drafts = { ...s.composerDrafts, [oldSid]: s.composerInput };
+      const nextSid = id ?? COMPOSER_NEW_KEY;
+      const nextInput = drafts[nextSid] ?? "";
+      persistComposerDrafts(drafts);
+      return {
+        currentSessionId: id,
+        // Keep the legacy single-task mirror pointed at whatever the
+        // newly-active session's task is. This is what makes the
+        // composer flip between send/stop instantly on session switch.
+        runningTask: id ? (s.runningTasks[id] ?? null) : null,
+        composerInput: nextInput,
+        composerDrafts: drafts,
+      };
+    }),
 
   setMessages: (sessionId, msgs) =>
     set((s) => {
@@ -523,8 +580,21 @@ export const useSessionStore = create<ConvState>((set) => ({
   welcomeVisible: false,
   setWelcomeVisible: (v) => set({ welcomeVisible: v }),
 
-  composerInput: "",
-  setComposerInput: (s) => set({ composerInput: s }),
+  // Hydrate the live draft for the "new session" placeholder at module
+  // load — same pattern as ``rightDock`` above. SSR sees an empty
+  // string (readComposerDrafts returns {} on the server); the client
+  // shadows it with whatever survived in localStorage.
+  composerInput: readComposerDrafts()[COMPOSER_NEW_KEY] ?? "",
+  composerDrafts: readComposerDrafts(),
+  setComposerInput: (s) =>
+    set((state) => {
+      const sid = state.currentSessionId ?? COMPOSER_NEW_KEY;
+      const drafts = { ...state.composerDrafts, [sid]: s };
+      // Persist on every keystroke. Cheap (one JSON.stringify per
+      // session-count) and matches the "right dock" pattern above.
+      persistComposerDrafts(drafts);
+      return { composerInput: s, composerDrafts: drafts };
+    }),
   composerFocusTick: 0,
   focusComposer: () =>
     set((state) => ({ composerFocusTick: state.composerFocusTick + 1 })),
