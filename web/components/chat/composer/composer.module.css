@@ -73,21 +73,29 @@
 .inputWrapper::after {
   content: "";
   position: absolute;
+  /* Pull the pseudo inward by half a px so the 1px outline sits on
+     the pixel grid rather than straddling two pixels, then ride the
+     full radius. The composer wrapper is ``overflow: hidden`` so
+     ``outline-offset: -0.5px`` would equivalently work, but using
+     a positive inset is what makes ``outline`` honour the curve
+     uniformly in Chrome (regressed in older builds). */
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
   z-index: 2;
-  /* Inset box-shadow instead of CSS border — the 1px hairline stays
-     uniform around the composer-corner radius. With a CSS ``border``
-     the curve segment shows visibly patchier anti-aliasing than the
-     straight edges, which reads as the corners being "abruptly"
-     flattened. ``box-shadow`` uses the shadow rasterizer which
-     interpolates the hairline smoothly. */
-  box-shadow: inset 0 0 0 1px transparent;
-  transition: box-shadow 180ms ease;
+  /* ``outline`` instead of ``border`` / inset box-shadow — modern
+     Chrome rasterises outline along border-radius with the same
+     sub-pixel sampling as the rest of the rounded box, so the
+     hairline thickness is uniform around the curve. CSS ``border``
+     splits curve vs. straight-edge rendering paths in WebKit and
+     gives the curve a visibly different intensity (looks like the
+     corners get "flattened"). */
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  transition: outline-color 180ms ease;
 }
 .inputWrapper:focus-within::after {
-  box-shadow: inset 0 0 0 1px var(--text-secondary);
+  outline-color: var(--text-secondary);
 }
 
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
