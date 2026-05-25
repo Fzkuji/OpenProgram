@@ -159,6 +159,216 @@ def register(app: FastAPI) -> None:
                                 detail=f"server '{name}' not loaded")
         return JSONResponse(content=status)
 
+    @app.get("/api/mcp/catalog/diff")
+    async def diff_catalog(url: str = ""):
+        """Compare a catalog's current entries against the local
+        servers that were installed from it.
+
+        Returns ``{outdated, up_to_date, missing, orphaned, removed}``:
+
+          * outdated   — local name → ``{old_hash, new_hash, entry}``
+                         where ``entry`` is the fresh catalog config.
+                         "I have a server from this catalog whose
+                         upstream config drifted; offer to update."
+          * up_to_date — names whose stored hash still matches.
+          * missing    — catalog entries the user never installed.
+          * orphaned   — local servers tagged with a different catalog
+                         URL (info only — they update from their own
+                         catalog, not this one).
+          * removed    — local servers whose catalog URL matches but
+                         the catalog no longer lists that name (entry
+                         was deleted upstream; user can keep or drop).
+
+        When ``url`` is omitted, scans every catalog URL referenced by
+        any locally-installed server — handy for a global "any
+        updates?" check at startup.
+        """
+        import httpx
+        from openprogram.mcp.config import (
+            catalog_entry_hash,
+            config_to_catalog_dict,
+            load_configs,
+        )
+
+        local_configs = load_configs(include_disabled=True)
+        targets: list[str]
+        if url:
+            if not url.startswith(("http://", "https://")):
+                raise HTTPException(status_code=400,
+                                    detail="url must be an http(s) URL")
+            targets = [url]
+        else:
+            targets = sorted({
+                c.source_catalog_url for c in local_configs
+                if c.source_catalog_url
+            })
+
+        result: dict = {
+            "outdated": {},
+            "up_to_date": [],
+            "missing": [],
+            "orphaned": [],
+            "removed": [],
+            "catalog_errors": {},
+        }
+
+        # Servers with no catalog provenance can't drift — they're
+        # orphaned w.r.t. any catalog. Surface for transparency.
+        if url:
+            result["orphaned"] = [
+                c.name for c in local_configs
+                if c.source_catalog_url and c.source_catalog_url != url
+            ]
+        else:
+            result["orphaned"] = [
+                c.name for c in local_configs
+                if not c.source_catalog_url
+            ]
+
+        for cat_url in targets:
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as cx:
+                    resp = await cx.get(cat_url, follow_redirects=True)
+                    resp.raise_for_status()
+                    data = resp.json()
+            except Exception as e:  # noqa: BLE001
+                result["catalog_errors"][cat_url] = (
+                    f"{type(e).__name__}: {e}"
+                )
+                continue
+            if not isinstance(data, dict):
+                result["catalog_errors"][cat_url] = "root is not an object"
+                continue
+            raw_servers = data.get("servers") or []
+            if not isinstance(raw_servers, list):
+                result["catalog_errors"][cat_url] = "servers is not a list"
+                continue
+
+            # Index catalog entries by name + compute their hashes.
+            catalog_by_name: dict[str, tuple[str, dict]] = {}
+            for entry in raw_servers:
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                cfg = parse_entry(name.strip(), entry)
+                if cfg is None:
+                    continue
+                fresh = config_to_catalog_dict(cfg)
+                catalog_by_name[name.strip()] = (
+                    catalog_entry_hash(fresh),
+                    {**cfg.to_dict(), "name": name.strip()},
+                )
+
+            local_from_this_catalog = [
+                c for c in local_configs if c.source_catalog_url == cat_url
+            ]
+            for cfg in local_from_this_catalog:
+                pair = catalog_by_name.get(cfg.name)
+                if pair is None:
+                    result["removed"].append(cfg.name)
+                    continue
+                new_hash, fresh_entry = pair
+                if cfg.source_entry_hash and cfg.source_entry_hash == new_hash:
+                    result["up_to_date"].append(cfg.name)
+                else:
+                    result["outdated"][cfg.name] = {
+                        "old_hash": cfg.source_entry_hash,
+                        "new_hash": new_hash,
+                        "entry": fresh_entry,
+                    }
+
+            local_names = {c.name for c in local_from_this_catalog}
+            for cat_name in catalog_by_name.keys():
+                if cat_name not in local_names:
+                    result["missing"].append(cat_name)
+
+        # Dedup missing across multiple catalogs (rare but possible).
+        result["missing"] = sorted(set(result["missing"]))
+        return JSONResponse(content=result)
+
+    @app.post("/api/mcp/servers/{name}/update_from_catalog")
+    async def update_from_catalog(name: str):
+        """Re-pull this server's catalog and apply the upstream entry.
+
+        Preserves user-local toggles (``enabled``, ``always_load``)
+        while overwriting the connection / auth fields with what the
+        catalog now says. Equivalent to PATCH-ing the server with the
+        fresh catalog entry's body and restarting.
+
+        404 if the local server isn't catalog-installed; 502 if the
+        catalog can't be fetched or no longer lists this server.
+        """
+        from openprogram.mcp.config import (
+            catalog_entry_hash,
+            config_to_catalog_dict,
+            load_configs,
+            save_configs,
+        )
+        import httpx
+
+        all_cfgs = load_configs(include_disabled=True)
+        match = next((c for c in all_cfgs if c.name == name), None)
+        if match is None:
+            raise HTTPException(status_code=404,
+                                detail=f"server '{name}' not in config")
+        if not match.source_catalog_url:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"server '{name}' was not installed from a catalog "
+                        f"— update_from_catalog only works for catalog-"
+                        f"installed servers."))
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as cx:
+                resp = await cx.get(match.source_catalog_url,
+                                     follow_redirects=True)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502,
+                                detail=f"catalog fetch failed: {e}")
+
+        servers = data.get("servers") if isinstance(data, dict) else None
+        if not isinstance(servers, list):
+            raise HTTPException(status_code=502,
+                                detail="catalog has no servers list")
+        catalog_entry = next(
+            (e for e in servers
+             if isinstance(e, dict) and e.get("name") == name),
+            None,
+        )
+        if catalog_entry is None:
+            raise HTTPException(
+                status_code=502,
+                detail=(f"server '{name}' no longer in catalog "
+                        f"{match.source_catalog_url!r}"),
+            )
+
+        # Build the merged config: take catalog's connection/auth
+        # fields, keep the user's local toggles.
+        new_cfg = parse_entry(name, catalog_entry)
+        if new_cfg is None:
+            raise HTTPException(status_code=502,
+                                detail="catalog entry no longer valid")
+        new_cfg.enabled = match.enabled
+        new_cfg.always_load = match.always_load
+        new_cfg.source_catalog_url = match.source_catalog_url
+        new_cfg.source_entry_hash = catalog_entry_hash(
+            config_to_catalog_dict(new_cfg)
+        )
+
+        new_list = [c if c.name != name else new_cfg for c in all_cfgs]
+        save_configs(new_list)
+        try:
+            status = await restart_server(name, new_cfg=new_cfg)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500,
+                                detail=f"restart failed: "
+                                       f"{type(e).__name__}: {e}")
+        return JSONResponse(content=status)
+
     @app.get("/api/mcp/catalog")
     async def fetch_catalog(url: str):
         """Pull a JSON catalog of installable MCP servers from ``url``.
@@ -207,6 +417,10 @@ def register(app: FastAPI) -> None:
         # never shows an entry it couldn't actually install. We feed
         # a copy through ``parse_entry`` and drop any that don't
         # round-trip — same code that POST /api/mcp/servers uses.
+        from openprogram.mcp.config import (
+            catalog_entry_hash,
+            config_to_catalog_dict,
+        )
         valid: list[dict] = []
         for entry in raw_servers:
             if not isinstance(entry, dict):
@@ -221,6 +435,11 @@ def register(app: FastAPI) -> None:
             # any catalog-only annotations along for display.
             out: dict = cfg.to_dict()
             out["name"] = name.strip()
+            # Hash uses the canonical config shape so install and
+            # later-diff see the same digest.
+            out["source_entry_hash"] = catalog_entry_hash(
+                config_to_catalog_dict(cfg)
+            )
             for k in ("description", "homepage", "logo", "tags"):
                 if k in entry:
                     out[k] = entry[k]
@@ -446,6 +665,13 @@ def _parse_body(body: dict) -> MCPServerConfig:
         "timeout_seconds": body.get("timeout_seconds", 30.0),
         "always_load": body.get("always_load", False),
     }
+    # Catalog provenance — preserved so /api/mcp/catalog/diff can
+    # detect upstream changes later. Both fields optional; only set
+    # when the install came from the marketplace path.
+    if isinstance(body.get("source_catalog_url"), str):
+        entry["source_catalog_url"] = body["source_catalog_url"]
+    if isinstance(body.get("source_entry_hash"), str):
+        entry["source_entry_hash"] = body["source_entry_hash"]
     if entry["type"] == "local":
         entry["command"] = body.get("command")
         entry["env"] = body.get("env", {})

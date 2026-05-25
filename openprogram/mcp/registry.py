@@ -96,6 +96,8 @@ def _status_dict(name: str, client: MCPClient) -> dict[str, Any]:
         "ready": client.is_ready,
         "error": client.error,
         "error_kind": client.error_kind,
+        "source_catalog_url": cfg.source_catalog_url,
+        "source_entry_hash": cfg.source_entry_hash,
         "tool_count": len(client.tools),
         "tools": [t.name for t in client.tools],
         "registered_tool_names": list(

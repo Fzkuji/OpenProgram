@@ -128,6 +128,15 @@ class MCPServerConfig:
     # shared ----------------------------------------------------------
     enabled: bool = True
     timeout_seconds: float = 30.0
+    # Catalog provenance — set when the server was installed via
+    # ``POST /api/mcp/servers`` carrying ``source_catalog_url``. Used by
+    # the update-check path (``/api/mcp/catalog/diff``) to detect when
+    # the upstream catalog entry has drifted and surface an "Update
+    # available" badge in the UI. Both stay None for servers added
+    # by-hand (curl / mcp_servers.json edit) — those never trigger
+    # update prompts.
+    source_catalog_url: Optional[str] = None
+    source_entry_hash: Optional[str] = None
     # When False (default), tools from this server are registered with
     # ``defer=True`` so their full JSON Schemas don't bloat every LLM
     # request — the model discovers them via the deferred-tool catalog
@@ -151,6 +160,10 @@ class MCPServerConfig:
             "timeout_seconds": self.timeout_seconds,
             "always_load": self.always_load,
         }
+        if self.source_catalog_url:
+            out["source_catalog_url"] = self.source_catalog_url
+        if self.source_entry_hash:
+            out["source_entry_hash"] = self.source_entry_hash
         if self.type == LOCAL:
             out["command"] = list(self.command)
             out["env"] = dict(self.env)
@@ -330,6 +343,12 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
     enabled = bool(entry.get("enabled", True))
     timeout = float(entry.get("timeout_seconds", 30.0))
     always_load = bool(entry.get("always_load", False))
+    source_catalog_url = entry.get("source_catalog_url")
+    source_entry_hash = entry.get("source_entry_hash")
+    if not isinstance(source_catalog_url, str):
+        source_catalog_url = None
+    if not isinstance(source_entry_hash, str):
+        source_entry_hash = None
 
     if transport == LOCAL:
         command = entry.get("command")
@@ -348,6 +367,8 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
             enabled=enabled,
             timeout_seconds=timeout,
             always_load=always_load,
+            source_catalog_url=source_catalog_url,
+            source_entry_hash=source_entry_hash,
         )
 
     # remote (http / sse) --------------------------------------------
@@ -395,6 +416,8 @@ def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
         enabled=enabled,
         timeout_seconds=timeout,
         always_load=always_load,
+        source_catalog_url=source_catalog_url,
+        source_entry_hash=source_entry_hash,
     )
 
 
@@ -403,3 +426,53 @@ def _opt_str(v: Any) -> Optional[str]:
         return None
     s = str(v).strip()
     return s or None
+
+
+# --- Catalog-entry hashing -----------------------------------------
+#
+# To detect "the upstream catalog changed this server's config", we
+# hash only the *config-relevant* keys — everything else (UI hints
+# like description / tags / homepage, plus the user-local toggles
+# ``enabled`` / ``always_load`` / ``source_*``) is excluded so a
+# user enabling/disabling a local copy never makes it look outdated.
+
+_CATALOG_HASHED_KEYS: tuple[str, ...] = (
+    "type",
+    "command",
+    "env",
+    "url",
+    "headers",
+    "auth",
+    "timeout_seconds",
+)
+
+
+def catalog_entry_hash(entry: dict) -> str:
+    """Stable SHA-256 over the parts of a catalog entry that define
+    how the server connects + authenticates. Field order doesn't
+    matter (we sort), missing fields collapse to empty. Same hash on
+    both the catalog (upstream) side and the local server side ⇒
+    server is up-to-date.
+    """
+    import hashlib
+    import json as _json
+    canonical = {
+        k: entry.get(k) for k in _CATALOG_HASHED_KEYS if k in entry
+    }
+    blob = _json.dumps(canonical, sort_keys=True, separators=(",", ":"),
+                       ensure_ascii=False)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def config_to_catalog_dict(cfg: "MCPServerConfig") -> dict:
+    """Render a local config in the same shape catalogs use, so
+    :func:`catalog_entry_hash` produces the same digest on both
+    sides. Drops local-only state (enabled / always_load /
+    source_*) — they aren't part of the catalog identity.
+    """
+    out = cfg.to_dict()
+    out.pop("enabled", None)
+    out.pop("always_load", None)
+    out.pop("source_catalog_url", None)
+    out.pop("source_entry_hash", None)
+    return out
