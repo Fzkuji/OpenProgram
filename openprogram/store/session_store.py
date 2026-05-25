@@ -415,7 +415,7 @@ class SessionStore:
                 cur = kids[0]
 
         merged = set((idx.meta.get("merged_heads") or []))
-        # Fallback A: auto-detect merged peers by scanning recent
+        # Fallback: auto-detect merged peers by scanning recent
         # ContextCommits for multi-parent commits (= merge commits).
         # Their non-primary parents resolve to head_node_ids that
         # got consumed by the merge. This catches the case where
@@ -435,24 +435,6 @@ class SessionStore:
                             _peer = None
                         if _peer is not None and _peer.head_node_id:
                             merged.add(_peer.head_node_id)
-        except Exception:
-            pass
-        # Fallback B: spawned sub-agent branches whose async task
-        # completed are conceptually "attached into main" — their
-        # content is reachable from main via the attach pointer, so
-        # they shouldn't surface as standalone panel entries.
-        # mark_merged is supposed to record these on the runner side
-        # (commit 79cea623), but sessions written BEFORE that fix
-        # have task.head_id sitting outside merged_heads. Scan
-        # tasks.json and treat every COMPLETED task's head as
-        # merged. errored / cancelled tasks stay visible so the
-        # user can see what went wrong.
-        try:
-            from openprogram.agent.task.store import list_tasks
-            from openprogram.agent.task.types import TaskStatus
-            for _t in (list_tasks(session_id) or []):
-                if _t.status == TaskStatus.COMPLETED and _t.head_id:
-                    merged.add(_t.head_id)
         except Exception:
             pass
         for node in idx.all_nodes():
