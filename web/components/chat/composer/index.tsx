@@ -44,16 +44,11 @@ import {
   referencedPasteIds,
 } from "./paste-store";
 import { PasteChips } from "./paste-chips";
-import {
-  type PendingImage,
-  collectImagesFromFiles,
-  collectImagesFromTransfer,
-  collectTextFilesFromTransfer,
-  readDroppedTextFile,
-} from "./image-attach";
+import { collectImagesFromTransfer } from "./image-attach";
 import { expandAtMentions } from "./at-mention";
 import { FileMenu } from "./file-menu";
-import { FileTiles, type PendingDoc } from "./file-tiles";
+import { FileTiles } from "./file-tiles";
+import { useComposerAttachments } from "./use-composer-attachments";
 import { useFileMention } from "./use-file-mention";
 import { ImageAttachStrip } from "./image-attach-strip";
 import { ThinkingEffortPill } from "./thinking-effort-pill";
@@ -173,40 +168,32 @@ export function Composer() {
     pasteStore.retainOnly(all);
   }, [composerDrafts, input]);
 
-  // Pending image attachments — kept in component state, not in a
-  // singleton, because they're naturally scoped to "the next turn the
-  // user submits". Adding via paste, drag-drop, or file picker. On
-  // submit the list is consumed and revoked; on session switch the
-  // user expects images to follow the draft, so we tie revocation
-  // strictly to send / explicit remove.
-  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
-  const [imageError, setImageError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const composerRootRef = useRef<HTMLDivElement | null>(null);
-  const [dragActive, setDragActive] = useState(false);
+  // Attachments — pending images, pending docs, drag-drop, file
+  // picker. All state + the window-level drop-routing live in the
+  // hook now (see ./use-composer-attachments).
+  const {
+    pendingImages,
+    imageError,
+    pendingDocs,
+    dragActive,
+    fileInputRef,
+    composerRootRef,
+    addImages,
+    removeImage,
+    setImageError,
+    removeDoc,
+    onPickImages,
+    onFileInputChange,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    clearAfterSubmit: clearAttachmentsAfterSubmit,
+  } = useComposerAttachments();
 
-  // Refs declared up-front so processDroppedFiles + the @file mention
-  // hook can both reference them. The other refs (wrapper, sendBtn,
-  // plus menu, thinking pill) get declared in their original spot.
+  // Refs declared up-front so the @file mention hook below can
+  // reference them. The other refs (wrapper, sendBtn, plus menu,
+  // thinking pill) get declared in their original spot.
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Non-image attached files — text-y ones get inlined via `<file>`
-  // blocks at submit, binary ones become a placeholder mention. Both
-  // render as Claude.ai-style tile chips in the composer.
-  const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
-  const addDocs = useCallback((docs: PendingDoc[]) => {
-    if (docs.length === 0) return;
-    setPendingDocs((prev) => [...prev, ...docs]);
-  }, []);
-  const removeDoc = useCallback((id: string) => {
-    setPendingDocs((prev) => prev.filter((d) => d.id !== id));
-  }, []);
-
-  const addImages = useCallback((imgs: PendingImage[]) => {
-    if (imgs.length === 0) return;
-    setPendingImages((prev) => [...prev, ...imgs]);
-    setImageError(null);
-  }, []);
 
   const onPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -264,167 +251,6 @@ export function Composer() {
     [input, setInput],
   );
 
-  const removeImage = useCallback((id: string) => {
-    setPendingImages((prev) => {
-      const next: PendingImage[] = [];
-      for (const p of prev) {
-        if (p.id === id) {
-          try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
-        } else {
-          next.push(p);
-        }
-      }
-      return next;
-    });
-  }, []);
-
-  const onPickImages = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  const onFileInputChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files || files.length === 0) return;
-      try {
-        const imgs = await collectImagesFromFiles(files);
-        addImages(imgs);
-      } catch (err) {
-        setImageError(String(err));
-      }
-      // Reset so picking the same file twice re-fires onChange.
-      e.target.value = "";
-    },
-    [addImages],
-  );
-
-  // Window-level guard — without this Chrome treats a file drop on any
-  // unhandled element (page background, sidebar, status bar, etc.) as
-  // a navigation request and opens the file in a new tab. Even when
-  // the user lands on the composer the cancel happens too late
-  // sometimes. Adding ``preventDefault`` on both dragover + drop at
-  // the window level makes the drop zone effectively the whole page;
-  // when the user releases anywhere we synthesise a drop into the
-  // composer's handler.
-  // ``dragCounter`` tracks dragenter / dragleave net depth so the
-  // overlay only fades out when the cursor truly leaves the window
-  // (lots of dragenter/leave events fire as the cursor crosses child
-  // elements — a counter is the documented workaround).
-  const dragCounter = useRef(0);
-
-  // Shared file-drop processor — invoked from both the window-level
-  // routeDrop (full-page drop zone) and the wrapper-level onDrop.
-  // Images go to the image strip, text files to inline tiles, binary
-  // to placeholder tiles. Nothing is rejected — everything dropped
-  // shows up so the user always sees feedback.
-  const processDroppedFiles = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
-    const imageFiles: File[] = [];
-    const otherFiles: File[] = [];
-    for (const f of files) {
-      if (f.type.startsWith("image/")) imageFiles.push(f);
-      else otherFiles.push(f);
-    }
-    if (imageFiles.length > 0) {
-      try {
-        const imgs = await collectImagesFromFiles(imageFiles);
-        addImages(imgs);
-      } catch (err) {
-        setImageError(String(err));
-      }
-    }
-    if (otherFiles.length === 0) return;
-    // Try to read each as text; if it works, inline content; else
-    // keep just metadata for the tile. Either way the tile appears.
-    const docs: PendingDoc[] = await Promise.all(
-      otherFiles.map(async (f) => {
-        const ext = f.name.includes(".")
-          ? f.name.split(".").pop()!.toLowerCase()
-          : "";
-        let content: string | null = null;
-        const read = await readDroppedTextFile(f);
-        if (read) content = read.content;
-        return {
-          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          filename: f.name,
-          ext,
-          content,
-          sizeBytes: f.size,
-        };
-      }),
-    );
-    addDocs(docs);
-  }, [addDocs, addImages]);
-
-  useEffect(() => {
-    function hasFiles(e: DragEvent): boolean {
-      return !!e.dataTransfer && e.dataTransfer.types.includes("Files");
-    }
-    function blockNav(e: DragEvent) {
-      if (hasFiles(e)) e.preventDefault();
-    }
-    function onEnter(e: DragEvent) {
-      if (!hasFiles(e)) return;
-      e.preventDefault();
-      dragCounter.current++;
-      setDragActive(true);
-    }
-    function onLeave(e: DragEvent) {
-      if (!hasFiles(e)) return;
-      dragCounter.current = Math.max(0, dragCounter.current - 1);
-      if (dragCounter.current === 0) setDragActive(false);
-    }
-    async function routeDrop(e: DragEvent) {
-      if (!hasFiles(e)) return;
-      e.preventDefault();
-      dragCounter.current = 0;
-      setDragActive(false);
-      const dt = e.dataTransfer;
-      if (!dt) return;
-      const dropped: File[] = [];
-      for (let i = 0; i < dt.files.length; i++) {
-        dropped.push(dt.files[i]);
-      }
-      await processDroppedFiles(dropped);
-    }
-    window.addEventListener("dragenter", onEnter);
-    window.addEventListener("dragleave", onLeave);
-    window.addEventListener("dragover", blockNav);
-    window.addEventListener("drop", routeDrop);
-    return () => {
-      window.removeEventListener("dragenter", onEnter);
-      window.removeEventListener("dragleave", onLeave);
-      window.removeEventListener("dragover", blockNav);
-      window.removeEventListener("drop", routeDrop);
-    };
-  }, [processDroppedFiles]);
-
-  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer.types.includes("Files")) {
-      e.preventDefault();
-      setDragActive(true);
-    }
-  }, []);
-  const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    // Only fire when leaving the composer wrapper entirely, not just
-    // crossing between children — relatedTarget points outside.
-    if (!composerRootRef.current?.contains(e.relatedTarget as Node | null)) {
-      setDragActive(false);
-    }
-  }, []);
-  const onDrop = useCallback(
-    async (e: React.DragEvent<HTMLDivElement>) => {
-      if (!e.dataTransfer.types.includes("Files")) return;
-      e.preventDefault();
-      setDragActive(false);
-      const dropped: File[] = [];
-      for (let i = 0; i < e.dataTransfer.files.length; i++) {
-        dropped.push(e.dataTransfer.files[i]);
-      }
-      await processDroppedFiles(dropped);
-    },
-    [processDroppedFiles],
-  );
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
   const setFnFormClosing = useSessionStore((s) => s.setFnFormClosing);
@@ -660,14 +486,13 @@ export function Composer() {
     }
     setInput("");
     setHistoryIndex(-1);
-    // Revoke + clear pending images now that the WS payload is gone.
-    pendingImages.forEach((p) => {
-      try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
-    });
-    setPendingImages([]);
-    setPendingDocs([]);
+    // Revoke + clear pending images / docs now that the WS payload
+    // is out the door. Hook handles URL.revokeObjectURL for each
+    // image's preview blob.
+    clearAttachmentsAfterSubmit();
     slash.close();
   }, [
+    clearAttachmentsAfterSubmit,
     currentSessionId,
     input,
     isRunning,
@@ -942,50 +767,16 @@ export function Composer() {
 
   return (
     <div className={styles.inputArea}>
-      {/* Full-page drop overlay — appears while any file is being
-          dragged into the window. Visual copies claude.ai's: dimmed
-          backdrop + centered card with a dashed border + label. Drop
-          is captured at the window level so this is purely visual;
-          the actual file handling lives in routeDrop above. */}
+      {/* Drop overlay scoped to the chat main column (#chatArea) —
+          covers the conversation surface but lets the sidebars stay
+          interactive. ``dragActive`` is set by the window-level
+          drag listeners in useComposerAttachments; the actual file
+          handling lives there too. ``mainRect`` is recomputed on
+          drag enter so the overlay tracks layout / window-resize
+          changes between drags. */}
       {dragActive && typeof document !== "undefined"
         ? createPortal(
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 10_000,
-                background: "rgba(10,10,12,0.55)",
-                backdropFilter: "blur(2px)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                pointerEvents: "none",
-              }}
-            >
-              <div
-                style={{
-                  padding: "32px 48px",
-                  borderRadius: 14,
-                  border: "2px dashed rgba(255,255,255,0.4)",
-                  background: "rgba(20,20,24,0.85)",
-                  color: "var(--text-primary, #f5f5f5)",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 10,
-                  fontFamily: "ui-sans-serif, system-ui, sans-serif",
-                }}
-              >
-                <span style={{ fontSize: 36 }} aria-hidden>📎</span>
-                <span style={{ fontSize: 16, fontWeight: 600 }}>
-                  Drop to attach
-                </span>
-                <span style={{ fontSize: 12, opacity: 0.7 }}>
-                  Images preview inline · text files inline as content ·
-                  others attach by name
-                </span>
-              </div>
-            </div>,
+            <ScopedDropOverlay />,
             document.body,
           )
         : null}
@@ -1043,9 +834,6 @@ export function Composer() {
           composerRootRef.current = el;
         }}
         className={`${styles.inputWrapper} ${fnFormActive ? styles.fnFormMode : ""}`}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
       >
         <ImageAttachStrip
           pendingImages={pendingImages}
@@ -1106,27 +894,10 @@ export function Composer() {
                 )}
                 onKeyDown={onKeyDown}
                 onPaste={onPaste}
-                // Re-route file drops to the wrapper's onDrop instead
-                // of letting the textarea's default insert the path
-                // as plain text. The wrapper handlers don't fire when
-                // the textarea consumes the drop first.
-                onDragOver={(e) => {
-                  if (e.dataTransfer.types.includes("Files")) {
-                    e.preventDefault();
-                    setDragActive(true);
-                  }
-                }}
-                onDrop={(e) => {
-                  if (e.dataTransfer.types.includes("Files")) {
-                    e.preventDefault();
-                    // Bubble up to the wrapper's drop handler via a
-                    // synthesised re-dispatch — easier than copying
-                    // the body. The DataTransfer survives the
-                    // re-dispatch because the original event is still
-                    // alive in the bubble phase.
-                    void onDrop(e as unknown as React.DragEvent<HTMLDivElement>);
-                  }
-                }}
+                // File drops are caught at the window level (see
+                // useComposerAttachments) so the textarea doesn't
+                // need its own onDragOver/onDrop — the window
+                // handler beats the textarea's default text-insert.
                 onFocus={() => slash.setFocused(true)}
                 onBlur={() => slash.setFocused(false)}
               />
@@ -1312,6 +1083,80 @@ export function Composer() {
         )}
       </div>
       </div>{/* /.composerStack */}
+    </div>
+  );
+}
+
+
+/** Drop-overlay positioned over the central chat column rather than
+ *  the whole window. Anchored to ``#chatArea`` by bounding rect so
+ *  the sidebars stay clear. Falls back to centred-of-viewport when
+ *  the element isn't found (settings / functions / etc routes). */
+function ScopedDropOverlay() {
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    function measure() {
+      const el = document.getElementById("chatArea")
+        // ``main`` is the shared shell wrapper used by other pages
+        // (functions / skills / mcp / memory). Fallback so drag-into-
+        // settings still shows a sensible overlay.
+        || document.querySelector(".main");
+      if (el) setRect(el.getBoundingClientRect());
+      else setRect(null);
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  const style: React.CSSProperties = rect ? {
+    position: "fixed",
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  } : {
+    position: "fixed",
+    inset: 0,
+  };
+  return (
+    <div
+      style={{
+        ...style,
+        zIndex: 10_000,
+        background: "rgba(10,10,12,0.55)",
+        backdropFilter: "blur(2px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        pointerEvents: "none",
+        borderRadius: 8,
+        animation: "overlayIn 140ms ease-out",
+      }}
+    >
+      <div
+        style={{
+          padding: "32px 48px",
+          borderRadius: 14,
+          border: "2px dashed rgba(255,255,255,0.4)",
+          background: "rgba(20,20,24,0.85)",
+          color: "var(--text-primary, #f5f5f5)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 10,
+          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        }}
+      >
+        <span style={{ fontSize: 36 }} aria-hidden>📎</span>
+        <span style={{ fontSize: 16, fontWeight: 600 }}>
+          Drop to attach
+        </span>
+        <span style={{ fontSize: 12, opacity: 0.7 }}>
+          Images preview inline · text files inline as content ·
+          others attach by name
+        </span>
+      </div>
     </div>
   );
 }
