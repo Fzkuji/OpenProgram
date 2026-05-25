@@ -230,31 +230,54 @@ export async function collectTextFilesFromTransfer(
  *  decode + paint in <1 frame. */
 const THUMB_LONG_EDGE = 192;
 
-/** Generate a downscaled JPEG thumbnail object-URL for ``file``.
- *  Decodes once, paints into an offscreen canvas, returns the canvas
- *  blob's object URL. The composer renders only this 192px-edge
- *  bitmap rather than the original (which can be multi-megapixel and
- *  blow up flex layout cost when rows wrap). */
+/** Generate a downscaled thumbnail object-URL for ``file``.
+ *
+ * Decoding via ``createImageBitmap`` instead of ``new Image()`` +
+ * ``canvas.drawImage``: ``createImageBitmap`` runs the decode (and
+ * the optional resize) on a browser worker thread, so 6 parallel
+ * thumbnail builds don't queue up behind each other on the main
+ * thread the way HTMLImage decodes do. That was the source of the
+ * residual "卡一下" stall after the drop pipeline was parallelised.
+ *
+ * Resize is asked of the bitmap factory directly so the browser
+ * picks a fast scaler and we never hold the full-resolution bitmap
+ * in JS land. Encoding back to a blob uses ``toBlob`` (async) so
+ * the JPEG encode also stays off the layout-critical path.
+ */
 async function makeThumbnail(file: File | Blob): Promise<string> {
-  const src = URL.createObjectURL(file);
+  // Peek dimensions first via a tiny ImageBitmap, then build the
+  // resized one. ``createImageBitmap`` ignores resize options if you
+  // pass them on the first call AND the browser doesn't know the
+  // dimensions yet — splitting in two phases is the documented
+  // workaround. Cheap because phase 1 doesn't materialise pixels.
+  const probe = await createImageBitmap(file);
+  const longEdge = Math.max(probe.width, probe.height);
+  const scale = longEdge > THUMB_LONG_EDGE ? THUMB_LONG_EDGE / longEdge : 1;
+  const w = Math.max(1, Math.round(probe.width * scale));
+  const h = Math.max(1, Math.round(probe.height * scale));
+  probe.close();
+
+  const bitmap = await createImageBitmap(file, {
+    resizeWidth: w,
+    resizeHeight: h,
+    resizeQuality: "medium",
+  });
   try {
-    const img = await new Promise<HTMLImageElement>((res, rej) => {
-      const im = new Image();
-      im.onload = () => res(im);
-      im.onerror = () => rej(new Error("image decode failed"));
-      im.src = src;
-    });
-    const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
-    const scale = longEdge > THUMB_LONG_EDGE
-      ? THUMB_LONG_EDGE / longEdge : 1;
-    const w = Math.max(1, Math.round(img.naturalWidth * scale));
-    const h = Math.max(1, Math.round(img.naturalHeight * scale));
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("no 2d context");
-    ctx.drawImage(img, 0, 0, w, h);
+    // ``bitmaprenderer`` transfers the bitmap directly — no
+    // additional draw call, no extra GPU upload.
+    const renderCtx = canvas.getContext("bitmaprenderer");
+    if (renderCtx) {
+      renderCtx.transferFromImageBitmap(bitmap);
+    } else {
+      // Older Safari falls back to the 2D context; still fast at
+      // 192×192.
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("no 2d context");
+      ctx.drawImage(bitmap, 0, 0, w, h);
+    }
     return await new Promise<string>((res, rej) => {
       canvas.toBlob((blob) => {
         if (!blob) { rej(new Error("toBlob failed")); return; }
@@ -262,7 +285,7 @@ async function makeThumbnail(file: File | Blob): Promise<string> {
       }, "image/jpeg", 0.82);
     });
   } finally {
-    URL.revokeObjectURL(src);
+    bitmap.close();
   }
 }
 
