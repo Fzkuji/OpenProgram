@@ -2,14 +2,21 @@
 
 /**
  * Favorite functions list — reads `window.availableFunctions` and
- * `window.programsMeta.{favorites,icons}` to produce an alphabetised
- * list of starred functions with their user-chosen emoji icon (or a
- * default box). Clicking a favourite opens the fn-form (chat route)
- * or routes to /chat first (other routes), via the zustand store +
- * Next router — no longer delegates to the legacy `clickFunction`
- * window global.
+ * `window.programsMeta.{favorites,icons}` to produce a draggable list
+ * of starred functions with their user-chosen emoji icon (or a default
+ * box). Clicking a favourite opens the fn-form (chat route) or routes
+ * to /chat first (other routes), via the zustand store + Next router —
+ * no longer delegates to the legacy `clickFunction` window global.
+ *
+ * Drag-and-drop reorder: rows are HTML5 draggable. Drop persists the
+ * new order back through POST /api/programs/meta and also updates
+ * window.programsMeta with a fresh object reference so the legacy
+ * polling layer + this component re-render immediately.
+ *
+ * Display order = `programsMeta.favorites` array order. NOT alphabetised.
  */
 
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
@@ -18,15 +25,51 @@ import { useWindowGlobals } from "./use-window-globals";
 
 const DEFAULT_ICON = "📦";
 
+interface FunctionsMeta {
+  favorites: string[];
+  folders: Record<string, string[]>;
+  icons: Record<string, string>;
+}
+
+async function persistMeta(meta: FunctionsMeta): Promise<void> {
+  // Publish the new ref BEFORE the network round-trip so the UI feels
+  // instant. The fetch is fire-and-forget; failure is logged but the
+  // local state is what the user sees.
+  (window as unknown as Record<string, unknown>).programsMeta = {
+    favorites: [...meta.favorites],
+    folders: Object.fromEntries(
+      Object.entries(meta.folders).map(([k, v]) => [k, [...v]]),
+    ),
+    icons: { ...meta.icons },
+  };
+  window.dispatchEvent(new CustomEvent("wah:meta-changed"));
+  try {
+    await fetch("/api/programs/meta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(meta),
+    });
+  } catch (err) {
+    console.error("Save programs/meta failed:", err);
+  }
+}
+
 export function FavoritesList(): React.ReactElement | null {
   const { availableFunctions, programsMeta } = useWindowGlobals();
   const openFnForm = useSessionStore((s) => s.openFnForm);
   const pathname = usePathname();
   const router = useRouter();
-  const favSet = new Set(programsMeta.favorites || []);
-  const ordered = (availableFunctions || [])
-    .filter((f) => favSet.has(f.name))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const [draggingName, setDraggingName] = useState<string | null>(null);
+  const [overName, setOverName] = useState<string | null>(null);
+
+  // Preserve user order from the favorites array; only include names
+  // that still exist in availableFunctions.
+  const fnByName = new Map(
+    (availableFunctions || []).map((f) => [f.name, f] as const),
+  );
+  const ordered = (programsMeta.favorites || [])
+    .map((n) => fnByName.get(n))
+    .filter((f): f is AgenticFunction => Boolean(f));
   if (ordered.length === 0) return null;
 
   function onClick(name: string, category: string) {
@@ -36,20 +79,44 @@ export function FavoritesList(): React.ReactElement | null {
     if (!fn) return;
     const onChat = pathname === "/chat" || pathname.startsWith("/s/");
     if (!onChat) {
-      // Stash on window for init.js / page-shell hand-off effect to
-      // pick up after the chat route mounts. (When init.js migrates
-      // this becomes a `searchParams.get("run")` style hand-off.)
       const w = window as unknown as {
         __pendingRunFunction?: { name: string; cat: string };
         __lastChatPath?: string;
       };
       w.__pendingRunFunction = { name, cat: category || "" };
-      // Return to the conversation the user came from, not a blank
-      // /chat — the run then opens inside that existing session.
       router.push(w.__lastChatPath || "/chat");
       return;
     }
     openFnForm(fn);
+  }
+
+  function reorder(from: string, to: string): string[] {
+    const arr = [...(programsMeta.favorites || [])];
+    const fromIdx = arr.indexOf(from);
+    const toIdx = arr.indexOf(to);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return arr;
+    arr.splice(fromIdx, 1);
+    // Insert before `to`. If we removed something before `to`, the
+    // target index shifted down by 1.
+    const newToIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
+    arr.splice(newToIdx, 0, from);
+    return arr;
+  }
+
+  function handleDrop(target: string) {
+    if (!draggingName || draggingName === target) {
+      setDraggingName(null);
+      setOverName(null);
+      return;
+    }
+    const newFavorites = reorder(draggingName, target);
+    void persistMeta({
+      favorites: newFavorites,
+      folders: programsMeta.folders || {},
+      icons: programsMeta.icons || {},
+    });
+    setDraggingName(null);
+    setOverName(null);
   }
 
   return (
@@ -57,26 +124,45 @@ export function FavoritesList(): React.ReactElement | null {
       {ordered.map((f) => {
         const cat = f.category || "user";
         const icon = programsMeta.icons?.[f.name] || DEFAULT_ICON;
+        const isDragging = draggingName === f.name;
+        const isOver = overName === f.name && draggingName !== f.name;
         return (
           <div
             key={f.name}
-            // Migrated from the legacy `.fav-item` global class in
-            // 02-sidebar.css. Same visual: 32px-tall row, 6/8 padding,
-            // 12px gap between icon + name, rounded 6, hover lifts the
-            // background to `--bg-hover`.
-            // - `shrink-0` is critical because the parent
-            //   `.sidebar-fav-list` is `flex-direction: column` with a
-            //   `max-height`; without it the rows get squished when
-            //   the section overflows.
-            // - `h-[32px]` / `px-[8px]` / `py-[6px]` use explicit pixel
-            //   values rather than the `h-8 px-2 py-1.5` scale because
-            //   this project sets `html { font-size: 14px }`, so
-            //   Tailwind's rem-based spacing is 0.875× the default —
-            //   `h-8` would resolve to 28px, not 32px.
-            className="flex h-[32px] shrink-0 cursor-pointer items-center gap-[12px]
-              overflow-hidden truncate rounded-[6px] px-[8px] py-[6px]
-              text-fs-base text-text-primary
-              transition-colors duration-150 ease-out hover:bg-bg-hover"
+            draggable
+            onDragStart={(e) => {
+              setDraggingName(f.name);
+              e.dataTransfer.effectAllowed = "move";
+              // Some browsers need data set to start the drag.
+              try { e.dataTransfer.setData("text/plain", f.name); } catch {}
+            }}
+            onDragEnd={() => { setDraggingName(null); setOverName(null); }}
+            onDragOver={(e) => {
+              if (!draggingName || draggingName === f.name) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setOverName(f.name);
+            }}
+            onDragLeave={() => {
+              setOverName((cur) => (cur === f.name ? null : cur));
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              handleDrop(f.name);
+            }}
+            className={[
+              // Same layout as before; opacity + outline give live
+              // feedback while dragging.
+              "flex h-[32px] shrink-0 cursor-grab items-center gap-[12px]",
+              "overflow-hidden truncate rounded-[6px] px-[8px] py-[6px]",
+              "text-fs-base text-text-primary",
+              "transition-[background-color,opacity,box-shadow] duration-150 ease-out",
+              "hover:bg-bg-hover active:cursor-grabbing",
+              isDragging ? "opacity-40" : "",
+              isOver
+                ? "outline outline-2 -outline-offset-2 outline-accent-primary"
+                : "",
+            ].filter(Boolean).join(" ")}
             onClick={() => onClick(f.name, cat)}
             title={f.description || ""}
           >

@@ -83,13 +83,20 @@ export function FunctionsPage() {
     } catch {
       /* ignore */
     }
-    // Sync the legacy sidebar's in-memory programsMeta and re-render.
+    // Replace window.programsMeta with a fresh object so React
+    // subscribers (useWindowGlobals does a ref-identity compare) see
+    // the change immediately. In-place mutation keeps the same ref
+    // and the sidebar would stay stale until a manual page reload.
     const w = window as unknown as Record<string, unknown>;
-    if (typeof w.programsMeta === "object") {
-      (w.programsMeta as Record<string, unknown>).favorites = [...next.favorites];
-      (w.programsMeta as Record<string, unknown>).folders = { ...next.folders };
-      (w.programsMeta as Record<string, unknown>).icons = { ...next.icons };
-    }
+    w.programsMeta = {
+      favorites: [...next.favorites],
+      folders: Object.fromEntries(
+        Object.entries(next.folders).map(([k, v]) => [k, [...v]]),
+      ),
+      icons: { ...next.icons },
+    };
+    // Notify any non-polling listeners instantly.
+    window.dispatchEvent(new CustomEvent("wah:meta-changed"));
     if (typeof w.renderFunctions === "function") (w.renderFunctions as () => void)();
   }, []);
 

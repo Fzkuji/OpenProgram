@@ -107,6 +107,36 @@ async def handle_add_channel_account(ws, cmd: dict):
         }))
 
 
+async def handle_remove_channel_account(ws, cmd: dict):
+    """删一个 channel account + 其所有 binding.
+
+    复用 CLI ``openprogram channels accounts rm`` 的逻辑: 先删此 account
+    的所有 bindings (避免悬垂路由规则), 再删 account 凭据本身.
+    """
+    from openprogram.channels import accounts as _acc
+    from openprogram.channels import bindings as _bindings_mod
+    ch = (cmd.get("channel") or "").strip().lower()
+    acct_id = (cmd.get("account_id") or "").strip()
+    if not ch or not acct_id:
+        await ws.send_text(json.dumps({
+            "type": "channel_account_removed",
+            "data": {"ok": False, "error": "channel/account_id required"},
+        }))
+        return
+    try:
+        _bindings_mod.remove_for_account(ch, acct_id)
+        _acc.delete(ch, acct_id)
+        await ws.send_text(json.dumps({
+            "type": "channel_account_removed",
+            "data": {"ok": True, "channel": ch, "account_id": acct_id},
+        }))
+    except Exception as e:
+        await ws.send_text(json.dumps({
+            "type": "channel_account_removed",
+            "data": {"ok": False, "error": f"{type(e).__name__}: {e}"},
+        }))
+
+
 async def handle_list_channel_bindings(ws, cmd: dict):
     try:
         from openprogram.channels import bindings as _bindings_mod

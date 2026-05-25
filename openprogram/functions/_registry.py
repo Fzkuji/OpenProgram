@@ -244,14 +244,39 @@ def iter_agentic_files(agentics_dir: str) -> Iterator[tuple[str, str, bool]]:
             if os.path.isfile(abs_path):
                 yield mod_name, abs_path, True
 
-    # Auto-discovered external harnesses
+    # Auto-discovered external harnesses — yield the actual source file
+    # of every function listed in AGENTIC_FUNCTIONS, so the WebUI scanner
+    # (which parses `@agentic_function` decorators) can introspect them.
+    import inspect as _inspect
     for _name, harness_root in _iter_external_harness_dirs(agentics_dir):
         pkg_dir = _find_python_package(harness_root)
         if pkg_dir is None:
             continue
         agentics_init = os.path.join(pkg_dir, "agentics", "__init__.py")
-        if os.path.isfile(agentics_init):
-            yield os.path.basename(pkg_dir), agentics_init, True
+        if not os.path.isfile(agentics_init):
+            continue
+        # Make sure the harness package is importable, then read its
+        # AGENTIC_FUNCTIONS export.
+        sys_path_root = os.path.dirname(pkg_dir)
+        if sys_path_root not in sys.path:
+            sys.path.insert(0, sys_path_root)
+        pkg_name = os.path.basename(pkg_dir)
+        try:
+            mod = importlib.import_module(f"{pkg_name}.agentics")
+        except Exception as e:
+            _debug_registry_error(f"iter:{pkg_name}", e)
+            continue
+        for fn in getattr(mod, "AGENTIC_FUNCTIONS", []) or []:
+            # ``fn`` is the agentic_function wrapper object; the original
+            # callable is stored under ``_fn``.
+            inner = getattr(fn, "_fn", None) or fn
+            try:
+                src_file = _inspect.getsourcefile(inner)
+            except (TypeError, OSError):
+                src_file = None
+            name = getattr(fn, "__name__", None) or getattr(inner, "__name__", "")
+            if src_file and os.path.isfile(src_file) and name:
+                yield name, src_file, True
 
 
 # ---------------------------------------------------------------------------

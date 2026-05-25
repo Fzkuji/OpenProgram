@@ -100,6 +100,29 @@ export function Sidebar() {
     });
   }
 
+  // Auto-refresh the function catalogue: poll every 30s + refetch
+  // whenever the tab regains focus. Drops new external harnesses
+  // (symlinks added under openprogram/functions/agentics/) into the
+  // sidebar without the user having to hit the refresh button.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      if (!cancelled && document.visibilityState === "visible") {
+        void refreshFunctionsList();
+      }
+    };
+    const id = window.setInterval(tick, 30_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void refreshFunctionsList();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
   // Expose the toggle as a window global so the legacy TopBar
   // hamburger button (and any other legacy caller) keeps working
   // after the migration. `window.restoreSidebarState` is a no-op
