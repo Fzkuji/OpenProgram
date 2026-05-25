@@ -371,14 +371,7 @@
   background: transparent;
   cursor: pointer;
   flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 150ms ease-out, background 150ms ease-out,
-              border-color 150ms ease-out;
-}
-.branch-item:hover .branch-item-check,
-.branch-item.selected .branch-item-check,
-.branch-item.base .branch-item-check {
-  opacity: 1;
+  transition: background 150ms ease-out, border-color 150ms ease-out;
 }
 .branch-item.selected .branch-item-check {
   background: var(--accent-blue, #4f8ef7);
