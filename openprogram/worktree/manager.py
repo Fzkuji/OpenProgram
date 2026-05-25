@@ -15,6 +15,7 @@ the worktree alive (Part 5 #3); the entity transitions ``committing``
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -38,6 +39,37 @@ from openprogram.worktree.types import (
     is_terminal,
     mint_worktree_id,
 )
+
+
+def _broadcast_worktree_status(wt: Worktree) -> None:
+    """Push a ``worktree_status`` envelope through the WS server.
+
+    Mirrors :func:`openprogram.agent.task.runner._broadcast_task_status`
+    — best-effort, silently swallows the case where webui isn't
+    imported (CLI / tests / library use). The full row is included
+    inline so the right-rail panel can patch its local cache without
+    a second round-trip.
+    """
+    try:
+        from openprogram.webui import server as _s
+        _s._broadcast(json.dumps({
+            "type": "worktree_status",
+            "data": {
+                "worktree_id": wt.id,
+                "status": wt.status.value,
+                "parent_session": wt.parent_session,
+                "parent_task": wt.parent_task,
+                "branch_name": wt.branch_name,
+                "source_repo": wt.source_repo,
+                "merge_sha": wt.merge_sha,
+                "error": wt.error,
+                "worktree": wt.to_dict(),
+            },
+        }, default=str))
+    except Exception:
+        # Never let a broadcast failure prevent the actual state
+        # transition from succeeding — webui is optional.
+        pass
 
 
 # Subprocess timeout cap. Git operations on user repos should be fast;
@@ -211,6 +243,11 @@ class WorktreeManager:
             parent_task=parent_task,
         )
         save_worktree(wt)
+        # First-time appearance — `_transition` is only called on
+        # subsequent state changes, so we have to push the initial
+        # row explicitly. Right-rail panel relies on this to surface
+        # newly-created worktrees without polling.
+        _broadcast_worktree_status(wt)
         return wt
 
     def get_worktree(self, worktree_id: str) -> Optional[Worktree]:
@@ -429,18 +466,23 @@ class WorktreeManager:
     ) -> Worktree:
         """Validate + apply a state change, then persist."""
         with self._lock:
-            if wt.status == new_status:
-                save_worktree(wt)
-                return wt
-            if not can_transition(wt.status, new_status):
-                raise WorktreeError(
-                    f"illegal worktree transition {wt.status.value} → "
-                    f"{new_status.value} (worktree {wt.id})"
-                )
-            wt.status = new_status
-            if is_terminal(new_status) and wt.completed_at is None:
-                wt.completed_at = time.time()
+            changed = wt.status != new_status
+            if changed:
+                if not can_transition(wt.status, new_status):
+                    raise WorktreeError(
+                        f"illegal worktree transition {wt.status.value} → "
+                        f"{new_status.value} (worktree {wt.id})"
+                    )
+                wt.status = new_status
+                if is_terminal(new_status) and wt.completed_at is None:
+                    wt.completed_at = time.time()
             save_worktree(wt)
+        # Broadcast outside the lock — the WS server has its own
+        # synchronisation, and we don't want a slow socket fan-out
+        # holding the manager-wide lock. Also broadcast on no-op
+        # saves (e.g. error-stamp without status flip) so any panel
+        # reading the row gets the updated `error` field.
+        _broadcast_worktree_status(wt)
         return wt
 
 
