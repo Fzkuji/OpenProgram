@@ -22,6 +22,41 @@ export const ACCEPTED_IMAGE_MIME = new Set([
   "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp",
 ]);
 
+/** Max single-text-file size that gets inlined via a paste token on
+ *  drag-drop. Larger files would push past the long-paste token's
+ *  practical readability limit anyway. */
+export const MAX_TEXT_FILE_BYTES = 256 * 1024;
+
+/** Mime / extension heuristics for "this drop is text content" — used
+ *  by ``readDroppedNonImage`` to decide between text inlining and
+ *  silent skip. Extensions are lower-cased without the leading dot. */
+const TEXT_MIME_PREFIXES = ["text/", "application/json", "application/xml"];
+const TEXT_EXTENSIONS = new Set([
+  "txt", "md", "markdown", "rst", "log", "csv", "tsv",
+  "json", "yaml", "yml", "toml", "ini", "conf", "cfg",
+  "xml", "html", "htm", "css",
+  "py", "ts", "tsx", "js", "jsx", "mjs", "cjs",
+  "go", "rs", "java", "kt", "swift", "rb", "php", "cs",
+  "c", "h", "cc", "cpp", "hpp", "hh", "m", "mm",
+  "sh", "bash", "zsh", "fish", "ps1",
+  "sql", "graphql", "proto",
+  "Dockerfile", "Makefile",
+]);
+
+function looksLikeText(file: File | Blob, filename: string): boolean {
+  if (file.type) {
+    for (const p of TEXT_MIME_PREFIXES) {
+      if (file.type.startsWith(p)) return true;
+    }
+  }
+  const ext = filename.includes(".")
+    ? filename.split(".").pop()!.toLowerCase()
+    : filename;
+  if (TEXT_EXTENSIONS.has(ext)) return true;
+  if (TEXT_EXTENSIONS.has(filename)) return true;  // Dockerfile, Makefile
+  return false;
+}
+
 export interface PendingImage {
   /** Stable id used by the chip row + remove callback. */
   id: string;
@@ -77,6 +112,23 @@ export function readImageFile(file: File | Blob,
   });
 }
 
+/** Read a single dropped file as UTF-8 text if it looks like a
+ *  text-y file under :data:`MAX_TEXT_FILE_BYTES`. Returns the content
+ *  + filename, or ``null`` for non-text / oversize / read errors. */
+export async function readDroppedTextFile(
+  file: File,
+): Promise<{ filename: string; content: string } | null> {
+  const filename = file.name || "dropped";
+  if (!looksLikeText(file, filename)) return null;
+  if (file.size > MAX_TEXT_FILE_BYTES) return null;
+  try {
+    const content = await file.text();
+    return { filename, content };
+  } catch {
+    return null;
+  }
+}
+
 /** Walk a DataTransferItemList from a paste / drop event and read
  *  every image item it contains. */
 export async function collectImagesFromTransfer(
@@ -115,6 +167,27 @@ export async function collectImagesFromFiles(
     } catch {
       /* skip */
     }
+  }
+  return out;
+}
+
+/** Collect non-image text files from a transfer. Returns the
+ *  filename + decoded content for each — caller folds them into
+ *  paste tokens. Non-text / oversize files are silently skipped (we
+ *  don't pretend to handle binary blobs in v1). */
+export async function collectTextFilesFromTransfer(
+  items: DataTransfer,
+): Promise<{ filename: string; content: string }[]> {
+  const out: { filename: string; content: string }[] = [];
+  const list: DataTransferItem[] = [];
+  for (let i = 0; i < items.items.length; i++) list.push(items.items[i]);
+  for (const item of list) {
+    if (item.kind !== "file") continue;
+    const f = item.getAsFile();
+    if (!f) continue;
+    if (ACCEPTED_IMAGE_MIME.has(f.type)) continue;
+    const read = await readDroppedTextFile(f);
+    if (read) out.push(read);
   }
   return out;
 }

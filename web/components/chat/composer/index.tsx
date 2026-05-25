@@ -48,6 +48,7 @@ import {
   type PendingImage,
   collectImagesFromFiles,
   collectImagesFromTransfer,
+  collectTextFilesFromTransfer,
 } from "./image-attach";
 import { expandAtMentions, findAtToken } from "./at-mention";
 import { FileMenu, type FileMatch } from "./file-menu";
@@ -300,8 +301,34 @@ export function Composer() {
       } catch (err) {
         setImageError(String(err));
       }
+      // Non-image text files dropped get folded into paste tokens so
+      // the existing chip row + submit-time expansion handle them
+      // without a separate UI. The store appends each file with a
+      // header line so the LLM can tell them apart.
+      try {
+        const textFiles = await collectTextFilesFromTransfer(e.dataTransfer);
+        if (textFiles.length === 0) return;
+        const ta = textareaRef.current;
+        const insertAt = ta?.selectionStart ?? input.length;
+        let cursor = insertAt;
+        let nextInput = input;
+        for (const tf of textFiles) {
+          const body = `[file: ${tf.filename}]\n${tf.content}`;
+          const entry = pasteStore.add(body);
+          const token = placeholderToken(entry);
+          nextInput =
+            nextInput.slice(0, cursor) + token + nextInput.slice(cursor);
+          cursor += token.length;
+        }
+        setInput(nextInput);
+        requestAnimationFrame(() => {
+          ta?.setSelectionRange(cursor, cursor);
+        });
+      } catch {
+        /* swallow — partial drops shouldn't crash the composer */
+      }
     },
-    [addImages],
+    [addImages, input, setInput],
   );
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
