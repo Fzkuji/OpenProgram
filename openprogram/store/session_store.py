@@ -415,6 +415,28 @@ class SessionStore:
                 cur = kids[0]
 
         merged = set((idx.meta.get("merged_heads") or []))
+        # Fallback: auto-detect merged peers by scanning recent
+        # ContextCommits for multi-parent commits (= merge commits).
+        # Their non-primary parents resolve to head_node_ids that
+        # got consumed by the merge. This catches the case where
+        # ``mark_merged`` was bypassed by an early-return in
+        # ``process_merge_turn`` so the panel still cleans up.
+        try:
+            from openprogram.context.commit.store import (
+                list_commits, load_commit,
+            )
+            for _c in list_commits(self, session_id, limit=50) or []:
+                pids = list(_c.parent_ids or [])
+                if len(pids) > 1:
+                    for _pid in pids[1:]:
+                        try:
+                            _peer = load_commit(self, _pid, session_id=session_id)
+                        except Exception:
+                            _peer = None
+                        if _peer is not None and _peer.head_node_id:
+                            merged.add(_peer.head_node_id)
+        except Exception:
+            pass
         for node in idx.all_nodes():
             if node.called_by:
                 continue
