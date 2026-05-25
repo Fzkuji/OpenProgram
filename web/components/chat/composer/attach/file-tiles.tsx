@@ -89,10 +89,11 @@ export function FileTiles({ docs, onRemove }: FileTilesProps) {
           display: "flex",
           flexWrap: "wrap",
           gap: 8,
-          // Same row padding as the image attach strip — keeps both
-          // attachment kinds at exactly the same inset from the
-          // composer's rounded border.
-          padding: "14px 14px 6px",
+          // 16px inset on all sides matches the bottom-row buttons'
+          // ``--composer-button-offset`` so the docx-tile row and
+          // the image-attach row both sit at the same distance from
+          // the wrapper edge as the send / plus / thinking pill.
+          padding: "16px 16px 8px",
         }}
       >
         {docs.map((d) => (
@@ -131,12 +132,12 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
           height: 68,
           padding: "10px 14px",
           paddingRight: 16,
-          // Concentric with the composer wrapper: outer corner is
-          // --composer-corner (32px), strip is inset 14px on each
-          // side, so inner radius = 32 - 14 = 18px keeps tile and
-          // wrapper as nested radii of the same arc family. Same
-          // value the image chip uses for visual consistency.
-          borderRadius: 18,
+          // Radius 16 — same as the send / stop / plus buttons and
+          // the image chip. With the 16px inset above, all inner
+          // arcs share the wrapper's corner center (32, 32) so the
+          // tile, chip, and corner buttons all read as one
+          // consistent arc family.
+          borderRadius: 16,
           background: "var(--bg-secondary)",
           display: "flex",
           flexDirection: "column",

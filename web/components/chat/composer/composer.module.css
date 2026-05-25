@@ -221,18 +221,21 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  /* Same padding as the docx-tile row so the strip sits inside the
-     wrapper's rounded border with consistent breathing room. */
-  padding: 14px 14px 6px;
+  /* 16px inset on all sides so chips line up with the send / plus /
+     thinking-pill row's geometry. Bottom row buttons are placed at
+     ``--composer-button-offset: 16px`` from the wrapper edge and
+     have radius 16 (50% of 32px diameter); using the same 16px inset
+     here means chip + button share concentric arcs around the same
+     wrapper-corner center (32, 32). */
+  padding: 16px 16px 8px;
 }
 .imageAttachChip {
   position: relative;
   display: inline-flex;
-  /* Concentric with the composer wrapper: outer is
-     ``var(--composer-corner)`` (32px), strip is inset 14px on each
-     side, so inner radius = 32 - 14 = 18px keeps the chip and the
-     wrapper as nested radii of the same arc family. */
-  border-radius: 18px;
+  /* Radius 16 matches the send / stop / plus buttons exactly — all
+     inner pieces of the composer now trace the same arc family,
+     just at different positions. */
+  border-radius: 16px;
   overflow: hidden;
   background: var(--bg-tertiary);
   /* Same outset 1px ring as the file tile — no CSS border, no
