@@ -24,6 +24,7 @@ import {
 } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useSkills } from "@/lib/skills-store";
 
 import { SLASH_COMMANDS, type SlashCommand, type SlashContext } from "./slash-commands";
 
@@ -56,6 +57,16 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
   const setComposerInput = useSessionStore((s) => s.setComposerInput);
+  const skills = useSkills((s) => s.skills);
+  const fetchSkills = useSkills((s) => s.fetchSkills);
+
+  // Auto-load installed skills once so the slash menu can list them
+  // without anyone having to visit /skills first. Polls again whenever
+  // the user opens the menu in case discovery just installed more.
+  useEffect(() => {
+    if (skills.length === 0) fetchSkills();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [query, setQuery] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
@@ -97,10 +108,68 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, focused]);
 
+  // Synthesise one SlashCommand per enabled skill so they appear in
+  // the slash menu automatically. Selecting one fetches the SKILL.md
+  // body and drops it into the composer so the user can append their
+  // actual task and send.
+  const skillCommands = useMemo<SlashCommand[]>(() => {
+    return skills
+      .filter((s) => s.enabled)
+      .map<SlashCommand>((s) => ({
+        name: "/" + s.name,
+        description: s.description || `Activate the ${s.name} skill`,
+        run(rest, { setInput }) {
+          // Pull the SKILL.md body asynchronously and prepend it to the
+          // composer with a clear delimiter, leaving the cursor on the
+          // line after so the user just types what they need done.
+          (async () => {
+            try {
+              const encoded = s.name.split("/").map(encodeURIComponent).join("/");
+              const r = await fetch("/api/skills/" + encoded);
+              if (!r.ok) {
+                setInput("/skill " + s.name + " " + rest, true);
+                return;
+              }
+              const data: { body?: string } = await r.json();
+              const body = (data.body || "").trim();
+              if (!body) {
+                setInput("/skill " + s.name + " " + rest, true);
+                return;
+              }
+              const preamble =
+                `Following skill "${s.name}":\n\n` +
+                body +
+                `\n\n---\n\nApply this skill to: ${rest}`;
+              setInput(preamble, true);
+            } catch {
+              setInput("/skill " + s.name + " " + rest, true);
+            }
+          })();
+          return true;
+        },
+      }));
+  }, [skills]);
+
+  const allCommands = useMemo<SlashCommand[]>(
+    () => [...SLASH_COMMANDS, ...skillCommands],
+    [skillCommands],
+  );
+
   const matches = useMemo<SlashCommand[]>(() => {
     if (query === null) return [];
-    return SLASH_COMMANDS.filter((c) => c.name.toLowerCase().startsWith(query));
-  }, [query]);
+    // Substring match on either name or description so that a query
+    // like "/pdf" finds anthropic-skills/pdf even when the user can't
+    // remember the full namespace.
+    return allCommands.filter((c) => {
+      const n = c.name.toLowerCase();
+      if (n.startsWith(query)) return true;
+      // Skip pure "/" → return everything (no extra filtering needed).
+      if (query === "/") return true;
+      const term = query.slice(1); // drop leading "/"
+      if (!term) return true;
+      return n.includes(term) || (c.description || "").toLowerCase().includes(term);
+    });
+  }, [query, allCommands]);
 
   // Keyboard highlight — starts at -1 ("no highlight yet"). The first
   // ArrowDown / ArrowUp lights up an item; before that, nothing in
@@ -152,12 +221,12 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
       const space = text.indexOf(" ");
       const cmdName = space === -1 ? text : text.slice(0, space);
       const rest = space === -1 ? "" : text.slice(space + 1);
-      const cmd = SLASH_COMMANDS.find((c) => c.name === cmdName);
+      const cmd = allCommands.find((c) => c.name === cmdName);
       if (!cmd) return false;
       cmd.run(rest, slashContext);
       return true;
     },
-    [slashContext],
+    [slashContext, allCommands],
   );
 
   return {
