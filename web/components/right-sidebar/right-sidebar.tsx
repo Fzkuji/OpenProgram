@@ -28,8 +28,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
-import { BranchesPanel } from "./branches-panel";
+import { BranchesPanel } from "./branches";
 import { ContextCommitTimeline } from "./context-commit-timeline";
+import { WorktreesPanel } from "./worktrees";
 import {
   sidebarNavIconClass,
   sidebarNavIconSvgClass,
@@ -337,6 +338,7 @@ function HistoryGraphPanel() {
   return (
     <>
       <BranchesPanel />
+      <WorktreesPanel />
       <HighlightModeToggle />
       <div className="history-body"></div>
     </>
