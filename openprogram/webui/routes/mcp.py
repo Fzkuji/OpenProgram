@@ -91,7 +91,8 @@ def register(app: FastAPI) -> None:
             raise HTTPException(status_code=404,
                                 detail=f"server '{name}' not in config")
         merged = match.to_dict()
-        for k in ("type", "command", "env", "enabled", "timeout_seconds"):
+        for k in ("type", "command", "env", "url", "headers", "auth",
+                  "enabled", "timeout_seconds"):
             if k in body:
                 merged[k] = body[k]
         new_cfg = parse_entry(name, merged)
@@ -138,6 +139,24 @@ def register(app: FastAPI) -> None:
     async def disable_one(name: str):
         return await patch_one(name, {"enabled": False})
 
+    @app.post("/api/mcp/servers/{name}/auth/clear")
+    async def clear_auth(name: str):
+        """Wipe stored OAuth tokens + (dynamic) client info for a
+        remote MCP server, then restart it. Used when the upstream
+        revokes our refresh token or when switching accounts.
+        """
+        from openprogram.mcp.token_storage import FileTokenStorage
+        removed = FileTokenStorage(name).clear()
+        try:
+            status = await restart_server(name)
+        except KeyError:
+            status = None
+        return JSONResponse(content={
+            "name": name,
+            "tokens_cleared": removed,
+            "server": status,
+        })
+
     @app.post("/api/mcp/test")
     async def test_config(body: dict):
         """Spawn a config in a one-shot sandbox to verify the command
@@ -176,13 +195,19 @@ def _parse_body(body: dict) -> MCPServerConfig:
     if not isinstance(name, str) or not name.strip():
         raise HTTPException(status_code=400,
                             detail="missing/empty 'name'")
-    cfg = parse_entry(name.strip(), {
+    entry: dict = {
         "type": body.get("type", "local"),
-        "command": body.get("command"),
-        "env": body.get("env", {}),
         "enabled": body.get("enabled", True),
         "timeout_seconds": body.get("timeout_seconds", 30.0),
-    })
+    }
+    if entry["type"] == "local":
+        entry["command"] = body.get("command")
+        entry["env"] = body.get("env", {})
+    else:
+        entry["url"] = body.get("url")
+        entry["headers"] = body.get("headers", {})
+        entry["auth"] = body.get("auth") or {"kind": "none"}
+    cfg = parse_entry(name.strip(), entry)
     if cfg is None:
         raise HTTPException(status_code=400, detail="invalid config")
     return cfg

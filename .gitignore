@@ -41,6 +41,8 @@ references/openclaw 3/
 references/hermes-agent/
 references/weclaw/
 references/claude-code-leaked/
+references/pi-mono/
+references/opencode/
 
 # Local OpenProgram runtime state
 .openprogram/

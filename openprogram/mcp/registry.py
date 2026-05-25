@@ -67,13 +67,12 @@ def get_server(name: str) -> Optional[dict[str, Any]]:
 
 
 def _status_dict(name: str, client: MCPClient) -> dict[str, Any]:
-    return {
+    cfg = client.config
+    out: dict[str, Any] = {
         "name": name,
-        "type": client.config.type,
-        "command": client.config.command,
-        "env": dict(client.config.env),
-        "enabled": client.config.enabled,
-        "timeout_seconds": client.config.timeout_seconds,
+        "type": cfg.type,
+        "enabled": cfg.enabled,
+        "timeout_seconds": cfg.timeout_seconds,
         "ready": client.is_ready,
         "error": client.error,
         "tool_count": len(client.tools),
@@ -82,6 +81,14 @@ def _status_dict(name: str, client: MCPClient) -> dict[str, Any]:
             _registered_tool_names.get(name, [])
         ),
     }
+    if cfg.type == "local":
+        out["command"] = list(cfg.command)
+        out["env"] = dict(cfg.env)
+    else:
+        out["url"] = cfg.url
+        out["headers"] = dict(cfg.headers)
+        out["auth"] = client.auth_status()
+    return out
 
 
 async def load_mcp_servers() -> None:
