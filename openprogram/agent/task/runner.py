@@ -468,6 +468,20 @@ class TaskRunner:
                     _broadcast_task_status(updated)
                 return
 
+            # Progress poller — while the sub-agent is grinding, patch
+            # the placeholder attach card's preview text with the
+            # latest sub-agent message so the chat row stops reading
+            # "(running)" forever. Runs on a daemon thread; stop_ev
+            # is set in the finally block once run_agent_turn returns.
+            stop_progress = threading.Event()
+            progress_thread: Optional[threading.Thread] = None
+            if task.attach_pointer_id:
+                progress_thread = threading.Thread(
+                    target=self._poll_progress,
+                    args=(task, stop_progress),
+                    daemon=True,
+                )
+                progress_thread.start()
             try:
                 from openprogram.agent.sub_agent_run import (
                     run_agent_turn,
@@ -500,6 +514,13 @@ class TaskRunner:
                     self._update_attach_card(updated, error_text=err)
                 _broadcast_session_reload(session_id, reason="task_errored")
                 return
+            finally:
+                stop_progress.set()
+                if progress_thread is not None:
+                    try:
+                        progress_thread.join(timeout=1.0)
+                    except Exception:
+                        pass
 
             # Decide terminal status.
             cancelled = cancel_ev.is_set() or (
@@ -618,6 +639,83 @@ class TaskRunner:
                 if t is not None:
                     return sdir.name
         return None
+
+    def _poll_progress(
+        self, task: Task, stop_ev: threading.Event,
+    ) -> None:
+        """Watch the session for sub-agent messages while the task is
+        running and stream the latest message preview into the
+        placeholder attach card so the chat row reflects progress
+        instead of a static "(running)".
+
+        Best-effort and idle-safe: snapshots the current high-water
+        seq as the baseline, then every ~1.5s scans for new nodes
+        past that mark. The latest text-bearing node's output (first
+        ~300 chars) becomes the attach pointer's preview. Skips itself
+        (the placeholder) and runtime-display rows. Broadcasts a
+        session reload so the chat view refreshes without polling.
+        """
+        if not task.attach_pointer_id or not task.parent_session_id:
+            return
+        try:
+            from openprogram.agent.session_db import default_db
+            from openprogram.store import GraphStoreShim
+            db = default_db()
+            pair = db._open(task.parent_session_id)  # noqa: SLF001
+            if pair is None:
+                return
+            _git, idx = pair
+            try:
+                baseline_seq = max(
+                    (n.seq for n in idx.all_nodes() if n.seq is not None),
+                    default=-1,
+                )
+            except Exception:
+                baseline_seq = -1
+            last_patched_id: Optional[str] = None
+            shim = GraphStoreShim(db, task.parent_session_id)
+        except Exception:
+            return
+        while not stop_ev.is_set():
+            if stop_ev.wait(1.5):
+                break
+            try:
+                pair2 = db._open(task.parent_session_id)  # noqa: SLF001
+                if pair2 is None:
+                    continue
+                _, idx2 = pair2
+                latest = None
+                for n in idx2.all_nodes():
+                    if (n.seq or 0) <= baseline_seq:
+                        continue
+                    if n.id == task.attach_pointer_id:
+                        continue
+                    md = n.metadata or {}
+                    if md.get("display") == "runtime":
+                        continue
+                    if not (n.output or "").strip():
+                        continue
+                    latest = n
+                if latest is None or latest.id == last_patched_id:
+                    continue
+                preview = str(latest.output or "").strip()
+                if not preview:
+                    continue
+                if len(preview) > 600:
+                    preview = preview[:600].rstrip() + "…"
+                node = idx2.nodes_by_id.get(task.attach_pointer_id)
+                if not node:
+                    continue
+                shim.update(task.attach_pointer_id, output=preview)
+                last_patched_id = latest.id
+                try:
+                    _broadcast_session_reload(
+                        task.parent_session_id, reason="task_progress",
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
     def _update_attach_card(
         self, task: Task, *, error_text: Optional[str] = None,

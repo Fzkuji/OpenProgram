@@ -1459,12 +1459,16 @@
 .attach-card-footer {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding-top: 8px;
   margin-top: 4px;
   border-top: 1px dashed var(--border);
 }
 .attach-card-status {
+  flex: 1 1 auto;
   font-size: 12px;
   color: var(--text-muted);
   font-style: italic;
+  min-width: 0;
 }
