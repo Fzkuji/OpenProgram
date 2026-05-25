@@ -71,6 +71,8 @@ function BranchItem({
   collapsed,
   selected,
   isBase,
+  running,
+  finishing,
   onToggleSelect,
   onSetBase,
 }: {
@@ -80,6 +82,8 @@ function BranchItem({
   collapsed: boolean;
   selected: boolean;
   isBase: boolean;
+  running: boolean;
+  finishing: boolean;
   onToggleSelect: (headId: string, e: React.MouseEvent) => void;
   onSetBase: (headId: string, e: React.MouseEvent) => void;
 }) {
@@ -94,8 +98,14 @@ function BranchItem({
     }
   }, [editing]);
 
+  const isPending = branch.head_msg_id.startsWith("__pending_task__:");
+
   function commitRename() {
     setEditing(false);
+    if (isPending) {
+      setValue(branch.name || "");
+      return;
+    }
     const trimmed = value.trim();
     if (trimmed && trimmed !== (branch.name || "")) {
       wsSend({
@@ -110,7 +120,7 @@ function BranchItem({
   }
 
   function checkout() {
-    if (editing || branch.active) return;
+    if (editing || branch.active || isPending) return;
     wsSend({
       action: "checkout_branch",
       session_id: sessionId,
@@ -121,6 +131,7 @@ function BranchItem({
 
   function del(e: React.MouseEvent) {
     e.stopPropagation();
+    if (isPending) return;
     if (
       !window.confirm(
         "Delete this branch and its messages? This cannot be undone.",
@@ -140,7 +151,9 @@ function BranchItem({
   const cls = "branch-item"
     + (branch.active ? " active" : "")
     + (selected ? " selected" : "")
-    + (isBase ? " base" : "");
+    + (isBase ? " base" : "")
+    + (running ? " is-running" : "")
+    + (finishing ? " is-finishing" : "");
 
   return (
     <div
@@ -150,8 +163,18 @@ function BranchItem({
     >
       <span
         className="branch-item-check"
-        title={selected ? "Click again to deselect; ⌘-click to mark as base" : "Select for merge (⌘-click to mark as base)"}
+        title={
+          isPending
+            ? "Task is running — wait for it to finish before merging"
+            : (selected
+                ? "Click again to deselect; ⌘-click to mark as base"
+                : "Select for merge (⌘-click to mark as base)")
+        }
         onClick={(e) => {
+          if (isPending) {
+            e.stopPropagation();
+            return;
+          }
           if (e.metaKey || e.ctrlKey) onSetBase(branch.head_msg_id, e);
           else onToggleSelect(branch.head_msg_id, e);
         }}
@@ -193,6 +216,14 @@ function BranchItem({
         <span className="branch-item-name">{branch.name}</span>
       )}
       {branch.active ? <span className="branch-item-badge">HEAD</span> : null}
+      {isPending ? (
+        <span
+          className="branch-item-badge"
+          style={{ background: "rgba(160, 107, 255, 0.18)" }}
+        >
+          running
+        </span>
+      ) : null}
       <span className="branch-item-actions">
         <span
           className="branch-item-action branch-item-rename"
@@ -217,10 +248,48 @@ function BranchItem({
   );
 }
 
+// Per-session map of task_id → {target_head, status} mirrored from
+// the ``op:task-status`` window event. We keep tasks in non-terminal
+// state ('queued' / 'running') in the map so the panel renders a
+// branch as 'running'; when a terminal status arrives we flip the
+// branch to 'finishing' for ~1.2s (matches the convFinishingWipe
+// keyframe) before dropping it. Implementation lives inside the
+// component so the state survives across panel mounts.
+interface TaskStatusDetail {
+  task_id?: string;
+  session_id?: string;
+  target_branch_head_id?: string | null;
+  head_id?: string | null;
+  status?: string;
+  label?: string | null;
+  subject?: string | null;
+}
+
+// Synthetic prefix for "pending branch" rows the panel renders while
+// the task is in flight but no real assistant_msg_id exists yet.
+// Distinct from real DAG ids (12 hex chars) so the click handlers
+// can short-circuit safely.
+const PENDING_HEAD_PREFIX = "__pending_task__:";
+
 export function BranchesPanel() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [collapsed, setCollapsed] = useState(false);
   const [, setTick] = useState(0);
+  // task_id → {targetHead, finalHead, status, label}. We resolve the
+  // BranchItem.head_msg_id we want to animate from either
+  // target_branch_head_id (set at spawn time, when no real branch
+  // tip exists yet) OR head_id (set at completion time). If neither
+  // is known the panel renders a synthetic placeholder row labeled
+  // after the task so the user still sees a running animation
+  // somewhere — see PENDING_HEAD_PREFIX.
+  const [taskMap, setTaskMap] = useState<Record<string,
+    { targetHead?: string | null; finalHead?: string | null;
+      status: string; sessionId?: string; label?: string | null }>>({});
+  // Branch head_msg_ids currently in "finishing" wipe — added on
+  // terminal status, removed 1200ms later.
+  const [finishingHeads, setFinishingHeads] = useState<Set<string>>(
+    () => new Set(),
+  );
   // Multi-select state for merging. ``selected`` is a list of
   // head_msg_ids the user has clicked the checkbox on; ``baseHead``
   // is the optional ⌘-clicked one that becomes ``base_peer`` (merge
@@ -246,6 +315,110 @@ export function BranchesPanel() {
     window.addEventListener("branches-updated", bump);
     return () => window.removeEventListener("branches-updated", bump);
   }, []);
+
+  // Subscribe to async task status broadcasts. Each ``task_status``
+  // event tells us which branch head_msg_id should animate as
+  // running. Terminal statuses (completed / cancelled / errored)
+  // flip the branch to ``finishing`` for the wipe keyframe and then
+  // drop it from the map.
+  useEffect(() => {
+    const onTaskStatus = (e: Event) => {
+      const ce = e as CustomEvent<TaskStatusDetail>;
+      const d = ce.detail || {};
+      const tid = d.task_id;
+      if (!tid) return;
+      const status = (d.status || "").toLowerCase();
+      const terminal = (
+        status === "completed"
+        || status === "cancelled"
+        || status === "errored"
+      );
+      const targetHead = d.target_branch_head_id || null;
+      const finalHead = d.head_id || null;
+      setTaskMap((cur) => {
+        const next = { ...cur };
+        if (terminal) {
+          // Drop from running map; if we have a head we know which
+          // branch row to wipe.
+          const headForWipe = finalHead || cur[tid]?.finalHead
+                              || targetHead || cur[tid]?.targetHead;
+          delete next[tid];
+          if (headForWipe) {
+            setFinishingHeads((fs) => {
+              const ns = new Set(fs);
+              ns.add(headForWipe);
+              return ns;
+            });
+            setTimeout(() => {
+              setFinishingHeads((fs) => {
+                if (!fs.has(headForWipe)) return fs;
+                const ns = new Set(fs);
+                ns.delete(headForWipe);
+                return ns;
+              });
+            }, 1200);
+          }
+          return next;
+        }
+        // Non-terminal — record / update.
+        next[tid] = {
+          targetHead, finalHead, status,
+          sessionId: d.session_id,
+          label: d.label || d.subject || null,
+        };
+        return next;
+      });
+    };
+    window.addEventListener("op:task-status", onTaskStatus as EventListener);
+    return () => {
+      window.removeEventListener("op:task-status", onTaskStatus as EventListener);
+    };
+  }, []);
+
+  // Hydrate from server on session change so a refresh mid-task
+  // restores the running animation. We send ``list_tasks`` and let
+  // the response come back via ``op:task-message``.
+  useEffect(() => {
+    if (!sessionId) return;
+    wsSend({
+      action: "list_tasks",
+      session_id: sessionId,
+      status_filter: ["pending", "queued", "running"],
+    });
+    const onMsg = (e: Event) => {
+      const ce = e as CustomEvent<{ type: string; data: Record<string, unknown> }>;
+      const det = ce.detail;
+      if (!det) return;
+      if (det.type !== "tasks_list") return;
+      const tasks = (det.data?.tasks as Array<Record<string, unknown>>) || [];
+      setTaskMap(() => {
+        const m: Record<string, {
+          targetHead?: string | null; finalHead?: string | null;
+          status: string; sessionId?: string; label?: string | null;
+        }> = {};
+        for (const t of tasks) {
+          const tid = t.id as string | undefined;
+          const status = (t.status as string | undefined) || "";
+          if (!tid) continue;
+          if (status === "completed" || status === "cancelled"
+              || status === "errored") continue;
+          m[tid] = {
+            targetHead: (t.target_branch_head_id as string | null) || null,
+            finalHead: (t.head_id as string | null) || null,
+            status,
+            sessionId: (t.parent_session_id as string | undefined),
+            label: (t.label as string | null)
+                   || (t.subject as string | null) || null,
+          };
+        }
+        return m;
+      });
+    };
+    window.addEventListener("op:task-message", onMsg as EventListener);
+    return () => {
+      window.removeEventListener("op:task-message", onMsg as EventListener);
+    };
+  }, [sessionId]);
 
   // Reset transient state on every conversation change. The panel
   // stays expanded by default — the right-rail already reserved a
@@ -337,7 +510,42 @@ export function BranchesPanel() {
   }
 
   const w = window as unknown as BranchWindow;
-  const rows = (sessionId && w._branchesByConv?.[sessionId]) || [];
+  const realRows = (sessionId && w._branchesByConv?.[sessionId]) || [];
+
+  // Resolve which branch head_msg_ids should animate as "running".
+  // A task in non-terminal state maps to a branch via either
+  // target_branch_head_id (set at spawn) or head_id (set when the
+  // task lands its assistant reply). Only consider tasks for the
+  // current session. Tasks without any head yet get a synthetic
+  // pending row so the user sees the animation immediately.
+  const runningHeads = new Set<string>();
+  const pendingRows: BranchRow[] = [];
+  for (const tid in taskMap) {
+    const entry = taskMap[tid];
+    if (entry.sessionId && entry.sessionId !== sessionId) continue;
+    let head: string | null = null;
+    if (entry.finalHead) {
+      head = entry.finalHead;
+    } else if (entry.targetHead) {
+      head = entry.targetHead;
+    }
+    if (head) {
+      runningHeads.add(head);
+    } else {
+      // No real head id yet — synthesize one keyed off task_id so
+      // the row stays stable across status events.
+      const synth = `${PENDING_HEAD_PREFIX}${tid}`;
+      runningHeads.add(synth);
+      pendingRows.push({
+        head_msg_id: synth,
+        name: entry.label || `task ${tid.slice(0, 6)}`,
+        active: false,
+      });
+    }
+  }
+  const rows: BranchRow[] = pendingRows.length
+    ? [...realRows, ...pendingRows] : realRows;
+
   if (!sessionId || rows.length === 0) return null;
 
   const graphColors = w._branchLaneColorMap || {};
@@ -382,6 +590,8 @@ export function BranchesPanel() {
             collapsed={collapsed}
             selected={selected.includes(b.head_msg_id)}
             isBase={baseHead === b.head_msg_id}
+            running={runningHeads.has(b.head_msg_id)}
+            finishing={finishingHeads.has(b.head_msg_id)}
             onToggleSelect={toggleSelect}
             onSetBase={setBase}
           />

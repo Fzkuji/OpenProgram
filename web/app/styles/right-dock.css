@@ -202,6 +202,51 @@
    .active styling. */
 .branch-item:hover .branch-item-badge { display: none; }
 
+/* Running indicator — same visual language as the sidebar's
+   .convRunning class (see web/components/sidebar/sidebar.module.css):
+   a colored gradient sweep on a ::before pseudo-element so the row
+   text stays unaffected. Keyframes (convRunningFlow /
+   convRunningBreathe / convFinishingWipe) live in
+   web/app/styles/base.css to dodge turbopack's CSS-module
+   keyframe-name mangling.
+   Applied by branches-panel.tsx when its task_status subscription
+   reports a task targeting this branch's head_msg_id. */
+.branch-item.is-running,
+.branch-item.is-finishing {
+  position: relative;
+  isolation: isolate;
+}
+.branch-item.is-running::before,
+.branch-item.is-finishing::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: linear-gradient(
+    100deg,
+    rgba(79,  140, 255, 0.28) 0%,
+    rgba(160, 107, 255, 0.32) 25%,
+    rgba(62,  207, 142, 0.28) 50%,
+    rgba(160, 107, 255, 0.32) 75%,
+    rgba(79,  140, 255, 0.28) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: repeat-x;
+  box-shadow:
+    inset 0 0 14px rgba(79,  140, 255, 0.22),
+    0 0 6px rgba(160, 107, 255, 0.20);
+}
+.branch-item.is-running::before {
+  animation:
+    convRunningFlow 2.6s linear infinite,
+    convRunningBreathe 1.8s ease-in-out infinite;
+}
+.branch-item.is-finishing::before {
+  animation: convFinishingWipe 1.1s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
 /* ============ History DAG view ============ */
 
 .history-body {

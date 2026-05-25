@@ -46,15 +46,12 @@
        后摘 class — 因为最终态已经是 "完全裁掉", 摘 class 跳变
        为 "无伪元素", 视觉零差异, 不突兀. */
 
-@keyframes convRunningFlow {
-  0%   { background-position:   0%   50%; }
-  100% { background-position: -200%  50%; }
-}
-
-@keyframes convRunningBreathe {
-  0%, 100% { opacity: 0.65; }
-  50%      { opacity: 1.00; }
-}
+/* @keyframes convRunningFlow / convRunningBreathe / convFinishingWipe
+   live in web/app/styles/base.css. Turbopack's CSS-module pass mangles
+   keyframe names declared inside *.module.css while leaving the
+   ``animation: <name>`` reference unmangled — same bug pattern as the
+   fn-form keyframes (commit b6fff9a). Keep the names global so this
+   module's animation references resolve. */
 
 /* 共享: 把彩色渐变放在 ::before 上, 而不是 .convRunning 本身.
    这样 clip-path 收尾时只裁伪元素, 不影响文字 / icon. */
@@ -95,11 +92,8 @@
 
 /* 收尾 wipe — clip-path inset 右侧从 0% 涨到 100%, 等于"从右往左
    裁切". 裁掉的部分露出底色 = "白色从右往左出现"的视觉. 跑完时
-   伪元素完全隐藏, 跟 class 摘掉后无差异, 所以不突兀. */
-@keyframes convFinishingWipe {
-  0%   { clip-path: inset(0   0% 0 0); }
-  100% { clip-path: inset(0 100% 0 0); }
-}
+   伪元素完全隐藏, 跟 class 摘掉后无差异, 所以不突兀.
+   @keyframes convFinishingWipe lives in app/styles/base.css. */
 
 .convFinishing::before {
   animation: convFinishingWipe 1.1s cubic-bezier(0.4, 0, 0.6, 1) forwards;

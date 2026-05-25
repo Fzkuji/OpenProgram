@@ -370,6 +370,28 @@ html, body {
   from { transform: translateX(-50%) translateY(0); }
   to   { transform: translateX(-50%) translateY(100%); }
 }
+
+/* ===== Running indicator keyframes (sidebar + branches) ================
+   Same turbopack workaround as above: keep keyframe names global so the
+   ``animation: <name>`` reference in CSS modules + plain CSS resolves
+   correctly. Used by:
+     - web/components/sidebar/sidebar.module.css → .convRunning ::before
+     - web/app/styles/right-dock.css            → .branch-item.is-running
+   Both animations apply to a pseudo-element so the row's text stays
+   readable through the colored gradient sweep. */
+@keyframes convRunningFlow {
+  0%   { background-position:   0%   50%; }
+  100% { background-position: -200%  50%; }
+}
+@keyframes convRunningBreathe {
+  0%, 100% { opacity: 0.65; }
+  50%      { opacity: 1.00; }
+}
+@keyframes convFinishingWipe {
+  0%   { clip-path: inset(0   0% 0 0); }
+  100% { clip-path: inset(0 100% 0 0); }
+}
+
 /* Marching-ants flow for attach-reference edges. The negative
    stroke-dashoffset makes the dashes travel along the path in the
    draw direction (source → anchor), so the eye sees content moving
