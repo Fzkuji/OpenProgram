@@ -756,6 +756,10 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
 
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
+    // Attach pointers are reference-only — not events on the conv
+    // chain. We render them as a single dashed edge below; skip the
+    // solid parent edge here so they don't look like a square call.
+    if (node.function === "attach") return;
     if (!node.parent_id || !tree.byId[node.parent_id]) return;
     const parent = tree.byId[node.parent_id];
     const p = pos(parent);
@@ -809,21 +813,28 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     defs.appendChild(marker);
     svg.insertBefore(defs, svg.firstChild);
   }
+  // For each attach pointer, draw a single dashed edge from its
+  // anchor (the conv turn the card hangs off — parent_id / caller)
+  // toward the source branch tip it references. The attach pointer
+  // node itself is not rendered as a separate shape — it's a
+  // reference, not a call. Arrow lands on the source tip so the
+  // edge reads "this anchor turn pulls from that branch".
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
+    if (node.function !== "attach") return;
     const ref = node.attach_ref as string | undefined;
     if (!ref) return;
     const src = tree.byId[ref];
     if (!src) return;
+    const anchorId = node.parent_id || node.caller;
+    const anchor = anchorId ? tree.byId[anchorId] : null;
+    if (!anchor) return;
     const srcPos = pos(src);
-    const dstPos = pos(node);
+    const anchorPos = pos(anchor);
     const color = _branchColor(src, lanes.leafOfNode);
-    // Draw the path from the attach pointer toward the source it
-    // references, so the arrowhead lands on the source tip and reads
-    // as "this attach pulls content FROM that branch".
     edgeG.appendChild(
       _svg("path", {
-        d: _edgePath(dstPos.x, dstPos.y, srcPos.x, srcPos.y),
+        d: _edgePath(anchorPos.x, anchorPos.y, srcPos.x, srcPos.y),
         stroke: color,
         "stroke-width": 1.4,
         fill: "none",
@@ -919,7 +930,10 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
       const pad = 6;
       const w = textW + pad * 2;
       const h = 16;
-      const dy = -22;
+      // Below the tip node: the label hangs off the branch's last
+      // node, not on the branch line itself. Keeps the trunk path
+      // clear and groups the name with the leaf shape visually.
+      const dy = 22;
       const tg = _svg("g", {
         class: "history-branch-tag",
         transform: "translate(" + p.x + "," + p.y + ")",
