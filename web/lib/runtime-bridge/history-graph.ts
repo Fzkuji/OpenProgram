@@ -720,7 +720,9 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     : 0;
   const panelW = (body && body.clientWidth) || 240;
   const width = Math.max(panelW - 4, laneArea + subForkMargin + PAD_X);
-  const height = PAD_Y * 2 + ROW_H * maxDepth;
+  // Extra bottom space so per-branch labels (dy=+22 below their tip
+  // node) don't get clipped by the SVG viewport.
+  const height = PAD_Y * 2 + ROW_H * maxDepth + 24;
 
   const svg = _svg("svg", {
     class: "history-svg",
@@ -819,6 +821,14 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   // node itself is not rendered as a separate shape — it's a
   // reference, not a call. Arrow lands on the source tip so the
   // edge reads "this anchor turn pulls from that branch".
+  function _isConvDescendant(srcId: string, anchorId: string): boolean {
+    let cur: string | null | undefined = srcId;
+    for (let i = 0; i < 200 && cur; i++) {
+      if (cur === anchorId) return true;
+      cur = tree.byId[cur]?.parent_id;
+    }
+    return false;
+  }
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     if (node.function !== "attach") return;
@@ -829,6 +839,12 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     const anchorId = node.parent_id || node.caller;
     const anchor = anchorId ? tree.byId[anchorId] : null;
     if (!anchor) return;
+    // /task-spawned branches descend from the anchor via conv-edges
+    // already — the solid edges trace the same anchor → source
+    // path the dashed edge would. Drawing both produces overlapping
+    // lines that read as visual noise. Skip the dashed edge when
+    // the source is reachable from the anchor through parent_ids.
+    if (_isConvDescendant(ref, anchorId)) return;
     const srcPos = pos(src);
     const anchorPos = pos(anchor);
     const color = _branchColor(src, lanes.leafOfNode);
@@ -850,6 +866,9 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
 
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
+    // Attach pointers are pure references — represented as a dashed
+    // edge above, never as a square node.
+    if (node.function === "attach") return;
     const p = pos(node);
     const isHead = id === headId;
     const onHead = !!headAncestors[id];
@@ -918,7 +937,10 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   (function _drawBranchTags() {
     const sid = HGW.currentSessionId;
     const rows = (sid && HGW._branchesByConv && HGW._branchesByConv[sid]) || [];
-    const named = rows.filter((r) => r.is_named && r.name);
+    // Draw a tag for every branch tip with a name (whether user-set or
+    // auto-derived from the chain tail). Backend already caps at 40
+    // chars so labels stay readable.
+    const named = rows.filter((r) => !!(r.name && (r.name as string).trim()));
     if (!named.length) return;
     const tagG = _svg("g", { class: "history-branch-tags" });
     named.forEach((b) => {
@@ -926,36 +948,26 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
       if (!node) return;
       const p = pos(node);
       const label = b.name as string;
-      const textW = Math.ceil(label.length * 7.2);
-      const pad = 6;
-      const w = textW + pad * 2;
-      const h = 16;
-      // Below the tip node: the label hangs off the branch's last
-      // node, not on the branch line itself. Keeps the trunk path
-      // clear and groups the name with the leaf shape visually.
+      // Below the tip, plain text (no background rect) so sibling
+      // branches in adjacent lanes (48px apart) don't visually
+      // overlap. The text color tracks the branch's lane colour so
+      // each label still reads as "belongs to that line".
       const dy = 22;
+      const color = _branchColor(node, lanes.leafOfNode);
       const tg = _svg("g", {
         class: "history-branch-tag",
         transform: "translate(" + p.x + "," + p.y + ")",
       });
-      const rect = _svg("rect", {
-        x: String(-w / 2),
-        y: String(dy - h / 2),
-        width: String(w),
-        height: String(h),
-        rx: "3",
-        fill: "#3aafa9",
-      });
       const text = _svg("text", {
         x: "0",
-        y: String(dy + 4),
+        y: String(dy),
         "text-anchor": "middle",
-        "font-size": "11",
+        "font-size": "10",
         "font-family": "var(--font-sans, sans-serif)",
-        fill: "#fff",
+        "font-weight": "600",
+        fill: color,
       });
       text.textContent = label;
-      tg.appendChild(rect);
       tg.appendChild(text);
       tagG.appendChild(tg);
     });
