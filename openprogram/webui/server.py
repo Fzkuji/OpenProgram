@@ -1168,6 +1168,10 @@ def create_app():
     from openprogram.webui.routes import workdir as _routes_workdir
     _routes_workdir.register(app)
 
+    # @file mention support — composer search + single-file read.
+    from openprogram.webui.routes import file_search as _routes_file_search
+    _routes_file_search.register(app)
+
     # Pause / Resume / Stop — routes.lifecycle
     from openprogram.webui.routes import lifecycle as _routes_lifecycle
     _routes_lifecycle.register(app)

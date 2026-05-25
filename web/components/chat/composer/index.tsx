@@ -49,6 +49,8 @@ import {
   collectImagesFromFiles,
   collectImagesFromTransfer,
 } from "./image-attach";
+import { expandAtMentions, findAtToken } from "./at-mention";
+import { FileMenu, type FileMatch } from "./file-menu";
 import { ThinkingEffortPill } from "./thinking-effort-pill";
 import { useFnFormState } from "./use-fn-form-state";
 import { useFnFormWrapper } from "./use-fn-form-wrapper";
@@ -309,6 +311,86 @@ export function Composer() {
   const isRunning = runningTask !== null;
   const fnFormActive = fnFormFunction !== null;
 
+  // @file mention — the live partial parsed off the textarea caret +
+  // a debounced fetch against /api/file-search. The menu pops above
+  // the textarea while ``atToken`` is non-null; arrow keys steer the
+  // selection, enter / tab picks, esc closes.
+  const [caretPos, setCaretPos] = useState(0);
+  const atToken = React.useMemo(
+    () => findAtToken(input, caretPos),
+    [input, caretPos],
+  );
+  const [fileMatches, setFileMatches] = useState<FileMatch[]>([]);
+  const [fileMenuIndex, setFileMenuIndex] = useState(0);
+  const [fileMenuLoading, setFileMenuLoading] = useState(false);
+  const [fileMenuPos, setFileMenuPos] =
+    useState<{ left: number; top: number } | null>(null);
+  useEffect(() => {
+    if (!atToken) {
+      setFileMatches([]);
+      setFileMenuPos(null);
+      return;
+    }
+    setFileMenuLoading(true);
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams({
+          q: atToken.partial,
+          limit: "12",
+        });
+        const r = await fetch(`/api/file-search?${q.toString()}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = (await r.json()) as { matches: FileMatch[] };
+        if (!cancelled) {
+          setFileMatches(data.matches || []);
+          setFileMenuIndex(0);
+        }
+      } catch {
+        if (!cancelled) setFileMatches([]);
+      } finally {
+        if (!cancelled) setFileMenuLoading(false);
+      }
+    }, 100);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [atToken?.partial, atToken?.start]);
+  // Position the menu just above the textarea each render the token
+  // is open. Caret-precise positioning would be nicer but textarea
+  // doesn't expose a caret rect natively; anchoring to the textarea's
+  // left edge is good enough for v1.
+  useLayoutEffect(() => {
+    if (!atToken) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const rect = ta.getBoundingClientRect();
+    setFileMenuPos({
+      left: rect.left + 8,
+      top: Math.max(8, rect.top - 8),
+    });
+  }, [atToken, fileMatches.length]);
+
+  const pickFile = useCallback((item: FileMatch) => {
+    if (!atToken) return;
+    const insert = item.is_dir ? item.path + "/" : item.path + " ";
+    const next =
+      input.slice(0, atToken.start)
+      + "@" + insert
+      + input.slice(caretPos);
+    setInput(next);
+    const newCaret = atToken.start + 1 + insert.length;
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.setSelectionRange(newCaret, newCaret);
+      setCaretPos(newCaret);
+    });
+    setFileMatches([]);
+    setFileMenuPos(null);
+  }, [atToken, caretPos, input, setInput]);
+
   // Thinking-effort + plus-menu + tools toggles each live in their own
   // dedicated hooks now — see ./use-thinking-effort, ./use-tools-toggles.
   const {
@@ -438,7 +520,7 @@ export function Composer() {
 
   /* ---- Submit -------------------------------------------------------- */
 
-  const submit = useCallback(() => {
+  const submit = useCallback(async () => {
     if (isRunning) return;
     const trimmed = input.trim();
     // Allow image-only submits — the LLM can answer "describe this
@@ -460,7 +542,16 @@ export function Composer() {
     // the outgoing text so the LLM receives the real content. The
     // entries stay in the store — they're now GC'd by the
     // composerDrafts effect once no draft references them anymore.
-    const expanded = expandPasteTokens(trimmed);
+    let expanded = expandPasteTokens(trimmed);
+    // Then expand any ``@path`` mentions by reading the files via the
+    // worker's HTTP API. Mentions that fail to read stay as the
+    // original ``@path`` token (no silent data loss).
+    try {
+      const mentionResult = await expandAtMentions(expanded, null);
+      expanded = mentionResult.text;
+    } catch {
+      /* network blip — fall through with raw text */
+    }
     const imagesPayload = pendingImages.map((p) => p.attachment);
     // Delegate to legacy `sendMessage` (chat.js) so the user bubble +
     // welcome-hide + assistant placeholder + isRunning flip all fire
@@ -536,6 +627,33 @@ export function Composer() {
     const native = e.nativeEvent as KeyboardEvent;
     if (native.isComposing || native.keyCode === 229) {
       return;
+    }
+    // @file mention menu takes precedence — its arrows / enter / esc /
+    // tab steer the menu, never fall through to history-recall or
+    // the slash menu.
+    if (atToken && fileMatches.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFileMenuIndex((i) => Math.min(fileMatches.length - 1, i + 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFileMenuIndex((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const picked = fileMatches[fileMenuIndex] ?? fileMatches[0];
+        if (picked) pickFile(picked);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setFileMatches([]);
+        setFileMenuPos(null);
+        return;
+      }
     }
     // Fish-shell-style history recall. Mirrors the TUI's PromptInput
     // logic (cli/src/components/PromptInput/PromptInput.tsx). Only fires
@@ -617,7 +735,7 @@ export function Composer() {
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      submit();
+      void submit();
     }
   }
 
@@ -933,11 +1051,32 @@ export function Composer() {
                 placeholder=" create / run / edit or ask anything... (type / for commands)"
                 rows={1}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setCaretPos(e.target.selectionStart ?? e.target.value.length);
+                }}
+                onSelect={(e) => setCaretPos(
+                  e.currentTarget.selectionStart ?? 0,
+                )}
+                onKeyUp={(e) => setCaretPos(
+                  e.currentTarget.selectionStart ?? 0,
+                )}
+                onClick={(e) => setCaretPos(
+                  e.currentTarget.selectionStart ?? 0,
+                )}
                 onKeyDown={onKeyDown}
                 onPaste={onPaste}
                 onFocus={() => slash.setFocused(true)}
                 onBlur={() => slash.setFocused(false)}
+              />
+              <FileMenu
+                items={fileMatches}
+                selectedIndex={fileMenuIndex}
+                position={atToken ? fileMenuPos : null}
+                onHover={setFileMenuIndex}
+                onPick={pickFile}
+                loading={fileMenuLoading}
+                query={atToken?.partial ?? ""}
               />
             </div>
           </>
