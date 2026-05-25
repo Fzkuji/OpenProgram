@@ -88,6 +88,17 @@ export function DiscoverySources() {
     return set;
   }, [skills]);
 
+  // How many skills from each source are already installed in its namespace,
+  // counted by matching the slug prefix against the global skills list.
+  const installedCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const src of sources) {
+      const prefix = src.slug + "/";
+      counts[src.url] = (skills as Skill[]).filter((sk) => sk.name.startsWith(prefix)).length;
+    }
+    return counts;
+  }, [sources, skills]);
+
   function toggleExpand(url: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -158,12 +169,26 @@ export function DiscoverySources() {
           {sources.map((s) => {
             const open = expanded.has(s.url);
             const cat = catalogs[s.url];
+            const installed = installedCounts[s.url] || 0;
+            const catalogTotal = cat?.entries?.length;
+            const allInstalled =
+              catalogTotal !== undefined && installed >= catalogTotal && catalogTotal > 0;
             return (
               <li key={s.url} className="rounded-md border border-[var(--border)]">
                 <div className="flex items-start gap-3 p-3 hover:bg-bg-hover hover:text-nav-color-hover">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-[var(--text-bright)]">{s.label}</span>
+                      {installed > 0 && (
+                        <span
+                          className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400"
+                          title={`Installed under ${s.slug}/`}
+                        >
+                          {catalogTotal !== undefined
+                            ? `${installed}/${catalogTotal} installed`
+                            : `${installed} installed`}
+                        </span>
+                      )}
                       {s.origin === "custom" && (
                         <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">custom</span>
                       )}
@@ -175,9 +200,15 @@ export function DiscoverySources() {
                     <Button size="sm" onClick={() => toggleExpand(s.url)}>
                       {open ? "Hide catalog" : "Browse catalog"}
                     </Button>
-                    <Button size="sm" variant="outline"
-                      onClick={() => handlePullAll(s.url)} disabled={bulkUrl === s.url}>
-                      {bulkUrl === s.url ? "Installing…" : "Install all"}
+                    <Button size="sm" variant={installed > 0 ? "outline" : "default"}
+                      onClick={() => handlePullAll(s)} disabled={bulkUrl === s.url}>
+                      {bulkUrl === s.url
+                        ? "Installing…"
+                        : allInstalled
+                          ? "Reinstall all"
+                          : installed > 0
+                            ? `Install remaining`
+                            : "Install all"}
                     </Button>
                     {s.origin === "custom" && (
                       <Button size="sm" variant="destructive"
@@ -196,7 +227,7 @@ export function DiscoverySources() {
                     {cat?.entries && (
                       <CatalogList
                         entries={cat.entries}
-                        url={s.url}
+                        source={s}
                         installedNames={installedNames}
                         installingKey={installingKey}
                         onInstall={handleInstallOne}
@@ -231,13 +262,13 @@ export function DiscoverySources() {
 }
 
 function CatalogList({
-  entries, url, installedNames, installingKey, onInstall,
+  entries, source, installedNames, installingKey, onInstall,
 }: {
   entries: CatalogEntry[];
-  url: string;
+  source: Source;
   installedNames: Set<string>;
   installingKey: string | null;
-  onInstall: (url: string, name: string) => void;
+  onInstall: (source: Source, name: string) => void;
 }) {
   const [filter, setFilter] = useState("");
   const shown = useMemo(() => {
@@ -258,8 +289,10 @@ function CatalogList({
       </div>
       <ul className="space-y-1">
         {shown.map((e) => {
-          const key = `${url}::${e.name}`;
-          const installed = installedNames.has(e.name);
+          const key = `${source.url}::${e.name}`;
+          // Resolve the installed-path the same way the backend writes it.
+          const fullName = source.slug ? `${source.slug}/${e.name}` : e.name;
+          const installed = installedNames.has(fullName);
           return (
             <li key={e.name}
               className="flex items-start gap-3 rounded px-2 py-2 hover:bg-bg-hover hover:text-nav-color-hover">
@@ -275,7 +308,7 @@ function CatalogList({
                 )}
               </div>
               <Button size="sm" variant={installed ? "outline" : "default"}
-                onClick={() => onInstall(url, e.name)}
+                onClick={() => onInstall(source, e.name)}
                 disabled={installingKey === key}>
                 {installingKey === key ? "Installing…" : installed ? "Reinstall" : "Install"}
               </Button>
