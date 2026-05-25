@@ -26,7 +26,21 @@ function wsSend(payload: unknown): void {
 
 interface BranchRow {
   head_msg_id: string;
+  name?: string;
   active?: boolean;
+}
+
+function _branchNameFor(
+  sessionId: string | null | undefined,
+  headId: string,
+): string {
+  if (!sessionId || !headId) return "";
+  const w = window as unknown as {
+    _branchesByConv?: Record<string, BranchRow[]>;
+  };
+  const list = w._branchesByConv?.[sessionId] || [];
+  const match = list.find((b) => b.head_msg_id === headId);
+  return (match?.name || "").trim();
 }
 
 function _activeHeadId(sessionId: string | null | undefined): string {
@@ -64,9 +78,15 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const [activeHead, setActiveHead] = useState(() =>
     _activeHeadId(currentSessionId),
   );
+  // Independent tick so even when activeHead doesn't change, the
+  // card still re-renders on branches-updated — that's how
+  // _branchNameFor() picks up the freshly-loaded branch list and
+  // swaps the hex tip id for the real branch name.
+  const [, setBumpsTick] = useState(0);
   useEffect(() => {
     function refresh() {
       setActiveHead(_activeHeadId(currentSessionId));
+      setBumpsTick((t) => t + 1);
     }
     refresh();
     window.addEventListener("branches-updated", refresh);
@@ -93,18 +113,27 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
     else window.location.href = "/s/" + targetSessionId;
   }
 
-  // Label intro: "attached" for user-triggered attaches (Branches →
-  // Attach to), "task" for /task or task() invocations, "agent" for
-  // legacy cross-session attaches.
+  // Label intro: "Attached" for user-triggered attaches (Branches →
+  // Attach to), "Spawned" for /task or task() invocations, "Imported"
+  // for legacy cross-session attaches. Title-cased and human-readable
+  // so the chat row reads "Attached: alpha A" not "attached · alpha A".
   const isManual = !!attach.manual;
   const labelKind = !sameSession
-    ? "agent"
+    ? "Imported from"
     : isManual
-      ? "attached"
-      : "task";
+      ? "Attached"
+      : "Spawned";
+  // Prefer the source branch's named label; fall back to the manual
+  // ``attach.label`` field; then to the looked-up branch name; then
+  // to a short hex tip. ``9cc78e93_reply`` was leaking through as
+  // the visible title because none of those layers fired.
+  const lookedUpName = _branchNameFor(currentSessionId, targetHead);
+  const sourceName = (label || lookedUpName || (targetHead ? targetHead.slice(0, 8) : "")) || "(branch)";
+  // Sub-label: short, human-readable context so the user knows what
+  // they're looking at without parsing a hex id.
   const subtitle = sameSession
-    ? (targetHead || "(no head id)")
-    : targetSessionId;
+    ? "source branch — its content is embedded below"
+    : `from session ${targetSessionId}`;
 
 
   return (
@@ -123,10 +152,10 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
         </div>
         <div className="attach-card-meta">
           <div className="attach-card-label">
-            {labelKind}{label ? ` · ${label}` : ""}
+            {labelKind}: <span className="attach-card-source">{sourceName}</span>
           </div>
-          <div className="attach-card-sub" title={subtitle}>
-            {subtitle || "(no session id)"}
+          <div className="attach-card-sub" title={targetHead || targetSessionId}>
+            {subtitle}
             {!sameSession && headTag ? (
               <span className="attach-card-head">@{headTag}</span>
             ) : null}
@@ -158,6 +187,9 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
             </svg>
           </button>
         ) : null}
+      </div>
+      <div className="attach-card-preview-label">
+        Preview (tip of this branch)
       </div>
       <div
         className="attach-card-preview chat-text"
