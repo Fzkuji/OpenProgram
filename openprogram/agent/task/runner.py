@@ -726,6 +726,23 @@ class TaskRunner:
                 from openprogram.agent.dispatcher import (
                     TurnRequest, process_user_turn,
                 )
+                # CRITICAL: reset session head back to the spawn
+                # user msg (on the caller / main lane) before the
+                # follow-up runs. The sub-agent finished by setting
+                # session head to its OWN reply (on the fox lane),
+                # so without this reset the follow-up turn writes
+                # on the fox branch — and its ContextCommit
+                # inherits the sub-agent's commit as parent, never
+                # seeing the attach pointer on main where the
+                # spawned-from user msg lives.
+                if task.parent_msg_id:
+                    try:
+                        from openprogram.agent.session_db import default_db
+                        default_db().set_head(
+                            task.parent_session_id, task.parent_msg_id,
+                        )
+                    except Exception:
+                        pass
                 req = TurnRequest(
                     session_id=task.parent_session_id,
                     user_text=(
