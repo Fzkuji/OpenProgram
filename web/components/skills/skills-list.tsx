@@ -58,11 +58,17 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
     <div
       role="button"
       onClick={() => { setSelected(skill.name); fetchDetail(skill.name); }}
-      style={{ paddingLeft: 8 + depth * 16 }}
+      style={{
+        paddingLeft: 8 + depth * 16,
+        // Tint the active row with the same accent the border uses so
+        // light mode shows a clear blue wash instead of the muddy grey
+        // var(--bg-selected) gives us.
+        background: active ? "rgba(56, 134, 229, 0.12)" : undefined,
+      }}
       className={
         "group flex items-center gap-2 rounded-md border py-1.5 pr-3 cursor-pointer transition-colors " +
         (active
-          ? "border-primary bg-[var(--bg-selected)] text-nav-color-hover"
+          ? "border-primary text-nav-color-hover"
           : "border-transparent hover:bg-bg-hover hover:text-nav-color-hover")
       }
       title={`${skill.description || skill.name}\n— ${skill.source}`}
