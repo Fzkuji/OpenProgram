@@ -166,24 +166,86 @@ def reload(*, cwd: Path | None = None) -> None:
     elsewhere; this function does not touch their buckets."""
     global _loaded
     with _lock:
-        # Wipe file-backed + plugin layers only.
-        for s in ("user", "project", "plugin"):
+        # Wipe file-backed + sync adapter layers. The MCP bucket has
+        # its own async lifecycle (servers connect/disconnect) so it
+        # is refreshed via ``sync_mcp_prompts()`` instead.
+        for s in ("user", "project", "plugin", "skill"):
             _buckets[s] = {}
             _aliases[s] = {}
 
     _ingest_loaded(load_user())
     _ingest_loaded(load_project(cwd))
 
-    # Plugin adapter — pull whatever the existing plugin loader exposes.
-    try:
-        from . import _plugin_adapter as _adapter
-        _adapter.sync_into_registry()
-    except Exception:
-        # Adapter is best-effort; a broken plugin shouldn't poison
-        # the rest of the registry.
-        pass
+    # Adapters are best-effort: a broken upstream shouldn't poison
+    # the rest of the registry.
+    for mod_name in ("_plugin_adapter", "_skill_adapter"):
+        try:
+            mod = __import__(
+                f"openprogram.commands.{mod_name}", fromlist=["sync_into_registry"]
+            )
+            mod.sync_into_registry()
+        except Exception:
+            pass
 
     _loaded = True
+
+
+async def sync_mcp_prompts() -> None:
+    """Re-snapshot MCP prompts. Runs in an event loop so it can await
+    ``client.list_prompts()`` against live sessions. Called from the
+    MCP registry after a server reaches ready state, and from
+    ``/api/commands?refresh=mcp`` for explicit re-sync."""
+    try:
+        from openprogram.mcp.registry import list_clients
+    except Exception:
+        return
+    from .frontmatter import ParsedCommand
+
+    with _lock:
+        _buckets["mcp"] = {}
+        _aliases["mcp"] = {}
+
+    for client in list_clients():
+        if not getattr(client, "is_ready", False):
+            continue
+        server_name = client.config.name
+        try:
+            prompts = await client.list_prompts()
+        except Exception:
+            prompts = []
+        for p in prompts or []:
+            if not isinstance(p, dict):
+                continue
+            remote_name = str(p.get("name") or "").strip()
+            if not remote_name:
+                continue
+            cmd_name = f"{server_name}:{remote_name}"
+            args_decl: list[dict[str, Any]] = []
+            for arg in (p.get("arguments") or []):
+                if not isinstance(arg, dict):
+                    continue
+                n = str(arg.get("name") or "").strip()
+                if not n or n.isdigit():
+                    continue
+                args_decl.append({
+                    "name": n,
+                    "description": str(arg.get("description") or ""),
+                    "required": bool(arg.get("required", False)),
+                })
+            raw = ParsedCommand(
+                name=cmd_name,
+                description=str(p.get("description") or ""),
+                arguments=args_decl,
+                extras={
+                    "_mcp_server": server_name,
+                    "_mcp_prompt": remote_name,
+                },
+            )
+            register_external(
+                cmd_name, source="mcp",
+                source_label=f"(mcp:{server_name})",
+                raw=raw,
+            )
 
 
 def _ensure_loaded() -> None:

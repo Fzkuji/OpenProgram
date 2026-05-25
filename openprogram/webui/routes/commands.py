@@ -55,16 +55,31 @@ def register(app):
         """Render a command body for a given args string. Caller (web
         ws_actions) is responsible for actually posting the rendered
         text to the agent — this endpoint only resolves + renders.
+
+        For MCP-sourced commands the rendering happens on the remote
+        server: dispatch returns ``kind="mcp_prompt"`` plus the
+        server / prompt name and we round-trip through the MCP client
+        to fetch the message blocks, flattening them into plain text
+        before returning.
         """
         from openprogram.commands.dispatch import invoke
         text = str(body.get("text") or "").strip()
         session_id = str(body.get("session_id") or "")
         cwd = body.get("cwd")
         res = invoke(text, session_id=session_id, cwd=cwd if isinstance(cwd, str) else None)
+
+        rendered = res.rendered
+        if res.ok and res.kind == "mcp_prompt":
+            info = res.local_handler or {}
+            rendered = await _render_mcp_prompt(info)
+            kind = "prompt"   # caller treats it like any other prompt
+        else:
+            kind = res.kind
+
         return JSONResponse(content={
-            "ok": res.ok,
-            "kind": res.kind,
-            "rendered": res.rendered,
+            "ok": res.ok and bool(rendered or res.kind != "mcp_prompt"),
+            "kind": kind,
+            "rendered": rendered,
             "context": res.context,
             "agent": res.agent,
             "model": res.model,
@@ -74,3 +89,62 @@ def register(app):
             "command": res.command_name,
             "source": res.source,
         })
+
+
+async def _render_mcp_prompt(info: dict[str, Any]) -> str:
+    """Call the live MCP client's get_prompt and flatten the result
+    into one plain-text body suitable for dropping into the textarea.
+    """
+    server = (info or {}).get("server")
+    prompt = (info or {}).get("prompt")
+    raw_args = (info or {}).get("raw_args") or ""
+    declared = (info or {}).get("declared") or []
+    if not server or not prompt:
+        return ""
+
+    from openprogram.mcp.registry import get_client
+    from openprogram.commands.template import parse_args
+
+    client = get_client(server)
+    if client is None or not getattr(client, "is_ready", False):
+        return ""
+
+    positional = parse_args(raw_args)
+    args: dict[str, Any] = {}
+    for i, spec in enumerate(declared):
+        name = spec.get("name") if isinstance(spec, dict) else None
+        if not name:
+            continue
+        if i < len(positional):
+            args[name] = positional[i]
+
+    try:
+        result = await client.get_prompt(prompt, args)
+    except Exception as e:  # noqa: BLE001
+        return f"[mcp-prompt error: {type(e).__name__}: {e}]"
+
+    return _flatten_prompt_messages(result)
+
+
+def _flatten_prompt_messages(result: dict[str, Any]) -> str:
+    """Best-effort: walk the ``messages`` array and pull out text
+    blocks. MCP message content can be a string, a dict with a
+    ``text`` field, or a list of such blocks."""
+    messages = (result or {}).get("messages") or []
+    out: list[str] = []
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        content = m.get("content")
+        if isinstance(content, str):
+            out.append(content)
+            continue
+        if isinstance(content, dict):
+            content = [content]
+        if isinstance(content, list):
+            for blk in content:
+                if isinstance(blk, dict) and isinstance(blk.get("text"), str):
+                    out.append(blk["text"])
+                elif isinstance(blk, str):
+                    out.append(blk)
+    return "\n\n".join(s for s in out if s)

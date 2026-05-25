@@ -135,6 +135,15 @@ async def load_mcp_servers() -> None:
     for cfg in load_configs(include_disabled=True):
         await _spawn_and_register(cfg)
 
+    # Fold every connected server's prompts into the unified
+    # slash-command registry so users see them in the composer
+    # alongside user / project / plugin commands.
+    try:
+        from openprogram.commands.registry import sync_mcp_prompts
+        await sync_mcp_prompts()
+    except Exception:
+        pass
+
 
 async def shutdown_mcp_servers() -> None:
     """Tear down every server. Safe to call multiple times."""
@@ -157,6 +166,11 @@ async def add_server(cfg: MCPServerConfig) -> dict[str, Any]:
     if cfg.name in _clients:
         await _stop_and_unregister(cfg.name)
     await _spawn_and_register(cfg)
+    try:
+        from openprogram.commands.registry import sync_mcp_prompts
+        await sync_mcp_prompts()
+    except Exception:
+        pass
     return _status_dict(cfg.name, _clients[cfg.name])
 
 
@@ -184,6 +198,11 @@ async def restart_server(name: str,
     if name in _clients:
         await _stop_and_unregister(name)
     await _spawn_and_register(cfg)
+    try:
+        from openprogram.commands.registry import sync_mcp_prompts
+        await sync_mcp_prompts()
+    except Exception:
+        pass
     return _status_dict(cfg.name, _clients[cfg.name])
 
 

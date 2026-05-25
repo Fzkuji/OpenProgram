@@ -72,6 +72,21 @@ def invoke(
         base.local_handler = spec.builtin_handler
         return base
 
+    if spec.source == "mcp":
+        # Body lives on the server. Return enough metadata for the
+        # caller (HTTP route) to await ``client.get_prompt(...)``.
+        base.kind = "mcp_prompt"
+        base.rendered = ""
+        base.allowed_tools = []
+        extras = (spec.raw.extras if spec.raw else {}) or {}
+        base.local_handler = {
+            "server": extras.get("_mcp_server"),
+            "prompt": extras.get("_mcp_prompt"),
+            "raw_args": rest,
+            "declared": list(spec.raw.arguments if spec.raw else []),
+        }
+        return base
+
     if not spec.raw or not spec.raw.body:
         return InvokeResult(
             ok=False, kind="error",
