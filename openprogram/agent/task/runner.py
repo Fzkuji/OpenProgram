@@ -673,6 +673,23 @@ class TaskRunner:
             # only patch extra, the panel keeps showing the stale
             # "running" status long after the task completes.
             md["attach"] = attach
+
+            # Stamp the spawned branch's tip with the human label so
+            # the Branches panel and DAG figure show "fox-research"
+            # instead of the chain-tail fallback name (which picked
+            # up the prompt text or assistant reply as a stand-in).
+            # run_agent_turn does this too, but the call has slipped
+            # through under specific paths — set it here as well so
+            # every task → attach finalization guarantees the name.
+            if task.label and task.head_id:
+                try:
+                    db.set_branch_name(
+                        task.parent_session_id,
+                        task.head_id,
+                        task.label,
+                    )
+                except Exception:
+                    pass
             # Update the persisted node's metadata + output text.
             output = task.result_text or error_text or node.output or ""
             try:
