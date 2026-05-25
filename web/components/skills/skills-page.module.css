@@ -100,7 +100,10 @@
 }
 
 .singleColumnInner {
-  max-width: 880px;
+  /* No max-width — the catalog grid needs the full viewport so we get
+     3+ columns on desktop. Older single-column views (forms, etc.)
+     can apply their own narrower max-width inline. */
+  width: 100%;
 }
 
 .errorBar {
