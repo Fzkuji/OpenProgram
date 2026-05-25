@@ -534,7 +534,9 @@
 }
 .toolChip:hover {
   background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 22%, transparent);
-  width: 54px;
+  /* Tight fit: 8 (padding-left) + 16 (icon) + 4 (gap) + 12 (× hit
+     box at the narrower 10px stroke) + 6 (padding-right) = 46. */
+  width: 46px;
   padding-right: 6px;
 }
 .toolChipIcon {
@@ -563,7 +565,7 @@
   flex-shrink: 0;
 }
 .toolChip:hover .toolChipClose {
-  max-width: 14px;
+  max-width: 12px;
   margin-left: 4px;
   opacity: 1;
 }
