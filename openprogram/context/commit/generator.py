@@ -58,11 +58,21 @@ def generate_commit(
 
     commit_id = _gen_commit_id()
 
+    # Build the dedup set: any source_commit_id already represented by
+    # at least one attached_from item in the parent commit has been
+    # expanded before, so a second attach pointer pointing at the same
+    # source commit becomes a no-op (no duplicate items).
+    already_attached: set[str] = set()
+    for it in items:
+        if it.attached_from:
+            already_attached.add(it.attached_from)
+
     # Step 2: 追加这轮新增的 DAG 节点为 state="full" 新 item
     for node in new_nodes:
-        item = _build_item_from_node(node, commit_id)
-        if item is not None:
-            items.append(item)
+        new_items = _build_items_from_node(
+            node, commit_id, already_attached, store, session_id,
+        )
+        items.extend(new_items)
 
     # Step 3: 跑规则 pipeline (只动 unlocked, 已 locked 跳过)
     ctx = RuleContext(
@@ -95,14 +105,53 @@ def generate_commit(
     return commit
 
 
-def _build_item_from_node(node: dict, commit_id: str) -> Optional[ContextItem]:
-    """legacy msg dict → ContextItem(state=full).
+def _parse_attach_blob(node: dict) -> dict:
+    """Pull the ``attach`` dict out of a node's metadata.
 
-    返回 None = 这个节点不该进 context (system 节点等)。
+    Tolerates both wire formats: ``node["attach"]`` (already-parsed
+    dict shipped by the WS layer) and ``node["extra"]`` (JSON string
+    with a nested ``{"attach": {...}}``). Returns ``{}`` when neither
+    form yields a dict — caller treats that as a malformed attach
+    pointer and falls back to the legacy single-item path.
+    """
+    raw = node.get("attach") or node.get("extra")
+    if isinstance(raw, dict):
+        if "attach" in raw and isinstance(raw["attach"], dict):
+            return raw["attach"]
+        return raw
+    if isinstance(raw, str) and raw:
+        try:
+            import json as _json
+            parsed = _json.loads(raw)
+            if isinstance(parsed, dict):
+                if "attach" in parsed and isinstance(parsed["attach"], dict):
+                    return parsed["attach"]
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
+def _build_items_from_node(
+    node: dict,
+    commit_id: str,
+    already_attached: set[str],
+    store,
+    session_id: str,
+) -> list[ContextItem]:
+    """legacy msg dict → list[ContextItem].
+
+    Returns:
+      * ``[]`` — node should not enter context (system nodes etc, or
+        attach pointer already expanded in an ancestor commit).
+      * ``[ContextItem, ...]`` — one item for a regular node; for an
+        attach pointer with a resolvable ``source_commit_id``, returns
+        ``[open_marker, *expanded_items, close_marker]`` so the
+        attached block is delimited.
     """
     role = node.get("role")
     if role not in ("user", "assistant", "tool"):
-        return None
+        return []
     content = node.get("content") or ""
     # tool 节点的 content 可能是 dict, 转成字符串
     if not isinstance(content, str):
@@ -111,49 +160,166 @@ def _build_item_from_node(node: dict, commit_id: str) -> Optional[ContextItem]:
             content = _json.dumps(content, ensure_ascii=False, default=str)
         except Exception:
             content = str(content)
-    # Attach pointer = another branch's product imported into this
-    # chain. Render as a user-role item with an explicit "[Attached
-    # from ...]" prefix so the LLM knows the content is brought in
-    # (not something it said) and the next turn can act on it.
-    if node.get("function") == "attach":
-        attach: dict = {}
-        raw = node.get("attach") or node.get("extra")
-        if isinstance(raw, dict):
-            attach = raw.get("attach") if "attach" in raw else raw
-        elif isinstance(raw, str) and raw:
+
+    is_attach = node.get("function") == "attach"
+    if not is_attach:
+        return [ContextItem(
+            source_node_id=node.get("id") or "",
+            role=role,
+            state="full",
+            locked=False,
+            rendered=content,
+            tokens=_estimate_tokens(content),
+            state_set_at=commit_id,
+            reason="new",
+        )]
+
+    # ── Attach pointer ─────────────────────────────────────────
+    attach = _parse_attach_blob(node)
+    label = (attach.get("label") if isinstance(attach, dict) else "") or ""
+    label = label.strip()
+    source_commit_id = (attach.get("source_commit_id") or "").strip() or None
+    # ``is_base`` (set by merge prompt prep) tells the generator to
+    # lock the attached items so summarize/aging can't drop the base
+    # branch's content out of the merge prompt — see scenario D in
+    # docs/design/context-attach-merge.md.
+    is_base = bool(attach.get("is_base"))
+
+    # Fallback path: no source commit recorded OR can't load it OR the
+    # source commit had no items. Renders as a single user-role item
+    # carrying ``content`` — legacy attach behaviour, preserves
+    # backward compat with attach rows written before this refactor.
+    src_commit = None
+    if source_commit_id:
+        try:
+            from .store import load_commit
+            src_commit = load_commit(
+                store, source_commit_id, session_id=session_id,
+            )
+        except Exception:
+            src_commit = None
+        # Cross-session: source lives in a different session_id than
+        # the one we're committing into. Caller didn't pass that
+        # session id; ``load_commit`` falls back to a global scan
+        # which already works, so no extra plumbing needed.
+        if src_commit is None:
             try:
-                import json as _json
-                parsed = _json.loads(raw)
-                attach = (
-                    parsed.get("attach")
-                    if isinstance(parsed, dict) and "attach" in parsed
-                    else parsed
-                )
+                from .store import load_commit
+                src_commit = load_commit(store, source_commit_id)
             except Exception:
-                attach = {}
-        label = (
-            (attach.get("label") if isinstance(attach, dict) else "")
-            or ""
-        ).strip()
+                src_commit = None
+
+    if src_commit is None:
         intro = (
             f"[Attached from branch \"{label}\"]"
             if label
             else "[Attached from branch]"
         )
-        # Include a hint about what this content represents so the
-        # LLM treats it as third-party context, not its own output.
-        content = f"{intro}:\n{content}"
-        role = "user"
-    return ContextItem(
-        source_node_id=node.get("id") or "",
-        role=role,
-        state="full",
-        locked=False,
-        rendered=content,
-        tokens=_estimate_tokens(content),
-        state_set_at=commit_id,
-        reason="new",
+        return [ContextItem(
+            source_node_id=node.get("id") or "",
+            role="user",
+            state="full",
+            locked=False,
+            rendered=f"{intro}:\n{content}",
+            tokens=_estimate_tokens(f"{intro}:\n{content}"),
+            state_set_at=commit_id,
+            reason="attached_legacy",
+            attached_from=None,
+        )]
+
+    # Dedup: parent commit already has at least one item with
+    # ``attached_from == source_commit_id``. Second attach pointer
+    # pointing at the same source commit is a no-op (the items are
+    # already there).
+    if source_commit_id in already_attached:
+        return []
+    # Mark this source as expanded so a *second* attach pointer
+    # appearing in the same new_nodes list also gets deduped.
+    already_attached.add(source_commit_id)
+
+    short_hex = source_commit_id[:8] if source_commit_id else "?"
+    open_text = (
+        f"[Attached from branch \"{label}\" — commit {short_hex}]:"
+        if label
+        else f"[Attached from branch — commit {short_hex}]:"
     )
+    close_text = (
+        f"[End of attached content from \"{label}\"]"
+        if label
+        else "[End of attached content]"
+    )
+
+    out: list[ContextItem] = []
+    out.append(ContextItem(
+        source_node_id=node.get("id") or "",
+        role="user",
+        state="full",
+        locked=is_base,
+        rendered=open_text,
+        tokens=_estimate_tokens(open_text),
+        state_set_at=commit_id,
+        reason="attached_open",
+        attached_from=source_commit_id,
+    ))
+    for src_item in src_commit.items:
+        # Skip already-summarized items in the source — they contribute
+        # no rendering and would just confuse the LLM with "" content.
+        if src_item.state == "summarized":
+            continue
+        out.append(ContextItem(
+            source_node_id=src_item.source_node_id,
+            role=src_item.role,
+            # Reset state/locked: the rule pipeline re-evaluates the
+            # attached content from scratch on the receiving branch.
+            # Exception: ``is_base`` (merge base peer) locks everything
+            # so summarize/aging never folds the base out.
+            state="full",
+            locked=is_base,
+            rendered=src_item.rendered,
+            tokens=src_item.tokens,
+            state_set_at=commit_id,
+            reason="attached_base" if is_base else "attached",
+            attached_from=source_commit_id,
+        ))
+    out.append(ContextItem(
+        source_node_id=node.get("id") or "",
+        role="user",
+        state="full",
+        locked=is_base,
+        rendered=close_text,
+        tokens=_estimate_tokens(close_text),
+        state_set_at=commit_id,
+        reason="attached_close",
+        attached_from=source_commit_id,
+    ))
+    return out
+
+
+def _build_item_from_node(node: dict, commit_id: str) -> Optional[ContextItem]:
+    """Back-compat shim — single-item version of _build_items_from_node.
+
+    Kept for callers that don't have a store / session_id context
+    (e.g. unit tests for a single node). Returns the first non-marker
+    item, or None for nodes that produce nothing. Doesn't load source
+    commits — attach nodes always fall through to the legacy
+    single-item path here.
+    """
+    items = _build_items_from_node(
+        node,
+        commit_id,
+        already_attached=set(),
+        store=None,
+        session_id="",
+    )
+    if not items:
+        return None
+    # If it's an attach with markers, the legacy single-item callers
+    # want one item back — pick the first non-marker (or just the
+    # first if no markers).
+    for it in items:
+        if it.reason not in ("attached_open", "attached_close"):
+            return it
+    return items[0]
 
 
 def _copy_item(item: ContextItem) -> ContextItem:
@@ -170,6 +336,7 @@ def _copy_item(item: ContextItem) -> ContextItem:
         merged_into=item.merged_into,
         is_anchor=item.is_anchor,
         anchor_for_summary=item.anchor_for_summary,
+        attached_from=item.attached_from,
     )
 
 
