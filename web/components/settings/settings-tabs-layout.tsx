@@ -4,17 +4,17 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import styles from "./settings-page.module.css";
 
-export type SettingsTab = "providers" | "search" | "general";
+export type SettingsTab = "providers" | "search" | "channels" | "general";
 
 /**
- * Shell for the three Settings tabs — topbar, sticky nav column,
- * content slot. Splits the previous SettingsPage's state-driven tab
- * switching into URL-routed subpages so refresh/back-button persist
- * the active tab.
+ * Shell for the Settings tabs — topbar, sticky nav column, content
+ * slot. Splits the previous SettingsPage's state-driven tab switching
+ * into URL-routed subpages so refresh/back-button persist the active
+ * tab.
  *
- * Each subpage at /settings/{providers,search,general} renders one
- * of these with the matching `active` prop and the section component
- * as `children`.
+ * Each subpage at /settings/{providers,search,channels,general}
+ * renders one of these with the matching `active` prop and the
+ * section component as `children`.
  */
 export function SettingsTabsLayout({
   active,
@@ -23,7 +23,8 @@ export function SettingsTabsLayout({
   active: SettingsTab;
   children: ReactNode;
 }) {
-  const isWide = active === "providers" || active === "search";
+  const isWide =
+    active === "providers" || active === "search" || active === "channels";
   return (
     <div className="main">
       <div className={styles.view}>
@@ -51,6 +52,15 @@ export function SettingsTabsLayout({
               }
             >
               Web Search
+            </Link>
+            <Link
+              href="/settings/channels"
+              className={
+                styles.navItem +
+                (active === "channels" ? " " + styles.active : "")
+              }
+            >
+              Channels
             </Link>
             <Link
               href="/settings/general"

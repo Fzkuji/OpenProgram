@@ -1,0 +1,257 @@
+/* Channels settings section — tables, dialogs, badges.
+ *
+ * 不复用 settings-page.module.css 里 provider-specific 的 left/right
+ * 分栏类, 因为 channels 是垂直堆叠的两块 (accounts + bindings), 跟
+ * provider 那种 "left list, right detail" 排版不一样.
+ */
+
+/* ----- Section frame -------------------------------------------------- */
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px 24px 32px;
+  max-width: 900px;
+  width: 100%;
+}
+
+.detailHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+}
+
+.detailTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text, #e8e8e8);
+}
+
+.detailMeta {
+  font-size: 12px;
+  color: var(--muted, #888);
+  line-height: 1.5;
+}
+
+.detailSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #e8e8e8);
+}
+
+.emptyHint {
+  padding: 16px;
+  border: 1px dashed var(--border, #2a2a2a);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--muted, #888);
+  line-height: 1.6;
+}
+.emptyHint code {
+  background: var(--card-bg, #1c1c1c);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* ----- Row table ------------------------------------------------------ */
+.rowTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.rowTable th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted, #888);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+}
+.rowTable td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle, #1a1a1a);
+  vertical-align: middle;
+  color: var(--text, #e8e8e8);
+}
+.rowTable code {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--card-bg, #1c1c1c);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ----- Badges --------------------------------------------------------- */
+.badgeOk,
+.badgeWarn,
+.badgeMuted {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.badgeOk    { background: rgba(0, 180, 100, 0.15); color: #43c785; }
+.badgeWarn  { background: rgba(255, 165, 0, 0.15);  color: #f0a040; }
+.badgeMuted { background: rgba(150, 150, 150, 0.15); color: #888; margin-left: 4px; }
+
+/* ----- Buttons -------------------------------------------------------- */
+.primaryBtn,
+.secondaryBtn,
+.dangerBtn {
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.primaryBtn {
+  background: var(--accent, #4a8dff);
+  color: white;
+}
+.primaryBtn:hover { filter: brightness(1.1); }
+.primaryBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.secondaryBtn {
+  border-color: var(--border, #2a2a2a);
+  color: var(--text, #e8e8e8);
+}
+.secondaryBtn:hover { background: var(--card-bg, #1c1c1c); }
+
+.dangerBtn {
+  border-color: rgba(220, 80, 80, 0.5);
+  color: #e07070;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.dangerBtn:hover { background: rgba(220, 80, 80, 0.1); }
+.dangerBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.iconBtn {
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  color: var(--muted, #888);
+  font-size: 18px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.iconBtn:hover { background: var(--card-bg, #1c1c1c); color: var(--text, #e8e8e8); }
+
+/* ----- Modal ---------------------------------------------------------- */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: var(--surface, #161616);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 10px;
+  min-width: 420px;
+  max-width: 520px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modalHeader {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modalTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #e8e8e8);
+}
+.modalBody {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.modalFooter {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border, #2a2a2a);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ----- Form ----------------------------------------------------------- */
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.formLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted, #888);
+}
+.formInput {
+  background: var(--card-bg, #1c1c1c);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text, #e8e8e8);
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+.formInput:focus {
+  outline: none;
+  border-color: var(--accent, #4a8dff);
+}
+.formHint {
+  font-size: 11px;
+  color: var(--muted, #888);
+}
+.formError {
+  font-size: 12px;
+  color: #e07070;
+  padding: 8px 12px;
+  background: rgba(220, 80, 80, 0.1);
+  border-radius: 6px;
+  line-height: 1.5;
+}
+.codeBlock {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--card-bg, #1c1c1c);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin: 8px 0 0;
+  overflow-x: auto;
+  color: var(--text, #e8e8e8);
+}
