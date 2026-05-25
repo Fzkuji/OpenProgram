@@ -231,70 +231,83 @@ export function DiscoverySources() {
                 <div
                   role="button"
                   onClick={() => toggleExpand(s.url)}
-                  className="flex items-start gap-3 p-3 cursor-pointer hover:bg-bg-hover hover:text-nav-color-hover select-none"
+                  className="flex flex-col gap-2 p-3 cursor-pointer hover:bg-bg-hover hover:text-nav-color-hover select-none"
                 >
-                  <span
-                    className="mt-[2px] text-[var(--text-tertiary)] shrink-0 w-3 text-center"
-                    aria-hidden
-                  >
-                    {open ? "▾" : "▸"}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-[var(--text-bright)]">{s.label}</span>
-                      {installed > 0 && (
-                        <span
-                          className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400"
-                          title={`Installed under ${s.slug}/`}
-                        >
-                          {catalogTotal !== undefined
-                            ? `${installed}/${catalogTotal} installed`
-                            : `${installed} installed`}
-                        </span>
-                      )}
-                      {outdatedCount > 0 && (
-                        <span
-                          className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-amber-400"
-                          title="Local SKILL.md content differs from upstream — click Reinstall all to sync."
-                        >
-                          {outdatedCount} outdated
-                        </span>
-                      )}
-                      {s.origin === "custom" && (
-                        <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">custom</span>
-                      )}
-                    </div>
-                    {s.description && (
-                      <p className="mt-1 text-xs text-[var(--text-secondary)] line-clamp-2">{s.description}</p>
-                    )}
-                    <p className="mt-1 text-[11px] font-mono text-[var(--text-tertiary)] truncate">{s.url}</p>
-                  </div>
-                  <div
-                    className="flex flex-col gap-1 items-end shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {outdatedCount > 0 && (
-                      <Button
-                        size="sm"
-                        onClick={() => handleUpdateOutdated(s)}
-                        disabled={bulkUrl === s.url}
-                        title={`Re-pull ${outdatedCount} skill${outdatedCount === 1 ? "" : "s"} whose upstream SKILL.md changed`}
+                  {/* top row: chevron + label + stats badge */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[var(--text-tertiary)] shrink-0 w-3 text-center" aria-hidden>
+                      {open ? "▾" : "▸"}
+                    </span>
+                    <span className="text-sm font-medium text-[var(--text-bright)]">{s.label}</span>
+                    {installed > 0 && (
+                      <span
+                        className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400"
+                        title={`Installed under ${s.slug}/`}
                       >
-                        {bulkUrl === s.url
-                          ? "Updating…"
-                          : `Update ${outdatedCount} outdated`}
-                      </Button>
+                        {catalogTotal !== undefined
+                          ? `${installed}/${catalogTotal} installed`
+                          : `${installed} installed`}
+                      </span>
                     )}
-                    {installed > 0 && outdatedCount === 0 && (
-                      <span className="text-[11px] text-[var(--text-tertiary)]" title="All installed skills match upstream">
-                        up to date
+                    {outdatedCount > 0 && (
+                      <span
+                        className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-amber-400"
+                        title="Local SKILL.md content differs from upstream"
+                      >
+                        {outdatedCount} outdated
                       </span>
                     )}
                     {s.origin === "custom" && (
-                      <Button size="sm" variant="destructive"
-                        onClick={() => removeDiscoverySource(s.url)}>Remove source</Button>
+                      <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">custom</span>
                     )}
                   </div>
+
+                  {/* description + url */}
+                  <div className="pl-5">
+                    {s.description && (
+                      <p className="text-xs text-[var(--text-secondary)] line-clamp-2">{s.description}</p>
+                    )}
+                    <p className="mt-1 text-[11px] font-mono text-[var(--text-tertiary)] truncate">{s.url}</p>
+                  </div>
+
+                  {/* bottom row: action buttons (only when installed) */}
+                  {installed > 0 && (
+                    <div
+                      className="pl-5 flex items-center justify-end gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {s.origin === "custom" && (
+                        <Button size="sm" variant="destructive"
+                          onClick={() => removeDiscoverySource(s.url)}>Remove source</Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant={outdatedCount > 0 ? "default" : "outline"}
+                        onClick={() => handleUpdateOutdated(s)}
+                        disabled={bulkUrl === s.url || outdatedCount === 0}
+                        title={
+                          outdatedCount > 0
+                            ? `Re-pull ${outdatedCount} skill${outdatedCount === 1 ? "" : "s"} whose upstream SKILL.md changed`
+                            : "All installed skills match upstream"
+                        }
+                      >
+                        {bulkUrl === s.url
+                          ? "Updating…"
+                          : outdatedCount > 0
+                            ? `Update ${outdatedCount}`
+                            : "Up to date"}
+                      </Button>
+                    </div>
+                  )}
+                  {installed === 0 && s.origin === "custom" && (
+                    <div
+                      className="pl-5 flex items-center justify-end gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Button size="sm" variant="destructive"
+                        onClick={() => removeDiscoverySource(s.url)}>Remove source</Button>
+                    </div>
+                  )}
                 </div>
                 {open && (
                   <div className="border-t border-[var(--border)] p-3 bg-[var(--bg-secondary)]/40">
