@@ -132,6 +132,18 @@
   line-height: 1.5;
 }
 .badgeOk    { background: rgba(0, 180, 100, 0.15); color: #43c785; }
+
+.statusDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+.dotGreen { background: #43c785; box-shadow: 0 0 6px rgba(67, 199, 133, 0.5); }
+.dotRed   { background: #e07070; box-shadow: 0 0 6px rgba(224, 112, 112, 0.4); }
+.dotGray  { background: #555; }
 .badgeWarn  { background: rgba(255, 165, 0, 0.15);  color: #f0a040; }
 .badgeMuted { background: rgba(150, 150, 150, 0.15); color: #888; margin-left: 4px; }
 

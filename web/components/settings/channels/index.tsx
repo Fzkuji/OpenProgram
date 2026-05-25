@@ -19,11 +19,14 @@ import { useCallback, useEffect, useState } from "react";
 import styles from "./channels.module.css";
 import { AccountsList } from "./accounts-list";
 import { BindingsList } from "./bindings-list";
-import type { ChannelAccount, ChannelBinding } from "./types";
+import type {
+  ChannelAccount, ChannelBinding, ChannelHealthStatus, StatusMap,
+} from "./types";
 
 export function ChannelsSection() {
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [bindings, setBindings] = useState<ChannelBinding[]>([]);
+  const [statuses, setStatuses] = useState<StatusMap>({});
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
@@ -34,8 +37,32 @@ export function ChannelsSection() {
       ]);
       const accountsData = await accountsResp.json();
       const bindingsData = await bindingsResp.json();
-      setAccounts(accountsData.accounts || []);
+      const accountsList: ChannelAccount[] = accountsData.accounts || [];
+      setAccounts(accountsList);
       setBindings(bindingsData.bindings || []);
+
+      // Fetch live alive/stale status for each account in parallel.
+      // Single 404 / network glitch doesn't block the whole table —
+      // we just skip that row's dot.
+      const statusEntries = await Promise.all(
+        accountsList.map(async (a) => {
+          try {
+            const r = await fetch(
+              `/api/channels/${encodeURIComponent(a.channel)}/${encodeURIComponent(a.account_id)}/status`,
+            );
+            if (!r.ok) return null;
+            const s = (await r.json()) as ChannelHealthStatus;
+            return [`${a.channel}:${a.account_id}`, s] as const;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const map: StatusMap = {};
+      for (const e of statusEntries) {
+        if (e) map[e[0]] = e[1];
+      }
+      setStatuses(map);
     } catch (e) {
       console.error("channels reload failed:", e);
     } finally {
@@ -70,7 +97,11 @@ export function ChannelsSection() {
       </div>
 
       <div className={styles.detailSection}>
-        <AccountsList accounts={accounts} onChange={reload} />
+        <AccountsList
+          accounts={accounts}
+          statuses={statuses}
+          onChange={reload}
+        />
       </div>
 
       <div className={styles.detailSection}>

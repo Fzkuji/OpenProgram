@@ -5,14 +5,15 @@ import { useState } from "react";
 import styles from "./channels.module.css";
 import { AddAccountDialog } from "./add-account-dialog";
 import { PLATFORMS, PLATFORM_LABEL } from "./types";
-import type { ChannelAccount } from "./types";
+import type { ChannelAccount, StatusMap } from "./types";
 
 interface Props {
   accounts: ChannelAccount[];
+  statuses: StatusMap;
   onChange: () => void | Promise<void>;
 }
 
-export function AccountsList({ accounts, onChange }: Props) {
+export function AccountsList({ accounts, statuses, onChange }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
@@ -81,11 +82,29 @@ export function AccountsList({ accounts, onChange }: Props) {
                 .map((a) => {
                   const key = `${a.channel}:${a.account_id}`;
                   const busy = busyKey === key;
+                  const status = statuses[key];
+                  // Health dot:
+                  //   green  — adapter thread alive + heartbeat fresh
+                  //   red    — heartbeat stale / adapter crashed
+                  //   gray   — unknown (worker hasn't started this
+                  //            adapter, or account is disabled)
+                  const dotClass =
+                    status?.state === "alive" ? styles.dotGreen
+                    : status?.state === "stale" ? styles.dotRed
+                    : styles.dotGray;
+                  const dotTitle =
+                    status?.state === "alive" ? "Adapter running"
+                    : status?.state === "stale" ? "Adapter heartbeat stale — likely crashed"
+                    : "Adapter not started";
                   return (
                     <tr key={key}>
                       <td>{PLATFORM_LABEL[a.channel] || a.channel}</td>
                       <td><code>{a.account_id}</code></td>
                       <td>
+                        <span
+                          className={`${styles.statusDot} ${dotClass}`}
+                          title={dotTitle}
+                        />
                         {a.configured ? (
                           <span className={styles.badgeOk}>configured</span>
                         ) : (

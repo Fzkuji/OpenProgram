@@ -36,3 +36,12 @@ export const PLATFORM_LABEL: Record<string, string> = {
   slack: "Slack",
   wechat: "WeChat",
 };
+
+export interface ChannelHealthStatus {
+  alive: boolean;
+  state: "alive" | "stale" | "unknown";
+  last_seen_at: number | null;
+  age_seconds: number | null;
+}
+
+export type StatusMap = Record<string, ChannelHealthStatus>;
