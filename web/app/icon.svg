@@ -1,0 +1,34 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="32"
+  height="32"
+  viewBox="0 0 32 32"
+  fill="none"
+>
+  <!--
+    OpenProgram favicon — the same {|} mark the welcome screen
+    renders. ``{`` left, ``}`` right, vertical bar in the middle
+    standing in for the LLM-token caret. SVG so the icon stays
+    crisp at any DPR; Next.js (App Router) auto-registers
+    ``app/icon.svg`` as the page's favicon.
+  -->
+  <text
+    x="50%"
+    y="58%"
+    text-anchor="middle"
+    dominant-baseline="middle"
+    font-family="ui-monospace, 'SF Mono', Menlo, monospace"
+    font-weight="700"
+    font-size="22"
+    fill="#3886e5"
+    letter-spacing="-1"
+  >{ }</text>
+  <rect
+    x="14.6"
+    y="9"
+    width="2.8"
+    height="14"
+    rx="0.8"
+    fill="#3886e5"
+  />
+</svg>
