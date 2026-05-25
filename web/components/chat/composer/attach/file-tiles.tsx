@@ -89,7 +89,10 @@ export function FileTiles({ docs, onRemove }: FileTilesProps) {
           display: "flex",
           flexWrap: "wrap",
           gap: 8,
-          padding: "14px 12px 10px",
+          // Same row padding as the image attach strip — keeps both
+          // attachment kinds at exactly the same inset from the
+          // composer's rounded border.
+          padding: "14px 14px 6px",
         }}
       >
         {docs.map((d) => (
@@ -128,11 +131,12 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
           height: 68,
           padding: "10px 14px",
           paddingRight: 16,
-          // Pill-ish corners — rounder than a normal card but still
-          // rectangular enough to fit two lines of text. Border /
-          // hover-border live in the stylesheet so the :hover override
-          // can win against React inline styles.
-          borderRadius: 16,
+          // Concentric with the composer wrapper: outer corner is
+          // --composer-corner (32px), strip is inset 14px on each
+          // side, so inner radius = 32 - 14 = 18px keeps tile and
+          // wrapper as nested radii of the same arc family. Same
+          // value the image chip uses for visual consistency.
+          borderRadius: 18,
           background: "var(--bg-secondary)",
           display: "flex",
           flexDirection: "column",
