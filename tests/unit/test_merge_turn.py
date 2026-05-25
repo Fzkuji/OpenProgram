@@ -75,6 +75,13 @@ def fake_dispatcher(monkeypatch):
         captured["session_id"] = req.session_id
         captured["history_override"] = req.history_override
         from openprogram.agent.session_db import default_db
+        # Snapshot attach pointers on the target as the dispatcher
+        # sees them — useful because process_merge_turn drops them
+        # again after the turn completes for DAG hygiene.
+        captured["attaches_at_dispatch"] = [
+            dict(m) for m in (default_db().get_messages(req.session_id) or [])
+            if m.get("function") == "attach"
+        ]
         default_db().append_message(req.session_id, {
             "id": "merge_a", "role": "assistant",
             "content": "(merged)", "parent_id": "a1",
@@ -103,14 +110,30 @@ def test_merges_two_peer_sessions(store, fake_dispatcher):
     assert not out.failed
     assert out.final_text == "(merged)"
     assert out.commit_id and out.commit_id.startswith("commit_")
-    # Prompt bundles both peers' final replies labeled by session.
-    assert "result from agent A" in fake_dispatcher["prompt"]
-    assert "result from agent B" in fake_dispatcher["prompt"]
+    # New routing: peers' content goes into context via attach pointers
+    # (expanded by the generator), not bundled inline. Prompt still
+    # carries the label list so a transcript scan can recover which
+    # branches contributed.
     assert "session label=\"A\"" in fake_dispatcher["prompt"]
     assert "session label=\"B\"" in fake_dispatcher["prompt"]
-    # Merge runs on the TARGET session with empty history.
+    assert "reconcile" in fake_dispatcher["prompt"]
+    # Merge runs on the TARGET session with normal history (not the
+    # legacy override-to-empty path) so the attach pointers we wrote
+    # before the turn reach ensure_latest_commit.
     assert fake_dispatcher["session_id"] == "p1"
-    assert fake_dispatcher["history_override"] == []
+    assert fake_dispatcher["history_override"] is None
+
+    # An attach pointer for each peer landed on the target session
+    # ahead of the merge turn, anchored to the previous head via
+    # called_by (so the splicer picks them up and the generator
+    # expands them). Snapshot was taken at the dispatcher entry —
+    # the cleanup at the end of process_merge_turn drops them again.
+    attaches = fake_dispatcher.get("attaches_at_dispatch") or []
+    referenced_heads = {
+        (m.get("attach") or {}).get("head_id") for m in attaches
+    }
+    assert "a_peer_a" in referenced_heads
+    assert "a_peer_b" in referenced_heads
 
     # ContextCommit is written with parent_ids covering each peer's
     # latest commit id (plus any prior target commit).
@@ -171,10 +194,18 @@ def test_same_session_two_branches_merge(store, fake_dispatcher):
         agent_id="main",
     )
     assert out.error is None, out.error
-    assert "result from agent A" in fake_dispatcher["prompt"]
-    assert "alternate reply" in fake_dispatcher["prompt"]
-    # Same-session peers get disambiguated labels.
+    # Peer text is no longer in the prompt — it's attached via the
+    # generator expansion. Same-session peers get disambiguated
+    # labels (@<hex>) which still surfaces in the prompt's label list.
     assert "@" in fake_dispatcher["prompt"]
+    # Both peers' attach pointers landed on the target ahead of the
+    # turn (head_id distinguishes them).
+    referenced_heads = {
+        (m.get("attach") or {}).get("head_id")
+        for m in fake_dispatcher.get("attaches_at_dispatch") or []
+    }
+    assert "a_peer_a" in referenced_heads
+    assert "a_peer_a_alt" in referenced_heads
 
 
 def test_legacy_sub_sessions_field_still_works(store, fake_dispatcher):

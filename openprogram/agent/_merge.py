@@ -114,31 +114,56 @@ def _peer_latest_commit_id(store, sid: str, head_id: Optional[str]) -> Optional[
 def _build_prompt(
     peers: list[dict], message: str, base_peer: Optional[int] = None,
 ) -> str:
+    """Build the user-text shown to the merge agent.
+
+    The peers' full content has been injected into context via attach
+    pointers (see ``process_merge_turn`` — it writes one attach pointer
+    per peer before triggering the turn, and the generator expands each
+    into a delimited [Attached from "label"] / [End of attached content]
+    block). This prompt is therefore just the *instruction* layer:
+    label list + any user-supplied merge instruction + base-peer
+    framing.
+
+    Per the design (docs/design/context-attach-merge.md scenario D),
+    this avoids paying for the peers' text twice (once embedded as
+    attached items, once embedded inline in the prompt body).
+    """
+    parts: list[str]
     if base_peer is not None and 0 <= base_peer < len(peers):
+        base_label = (
+            peers[base_peer].get("label")
+            or peers[base_peer].get("session_id")
+            or "peer"
+        )
         parts = [
-            "One branch is the BASE — your reply should continue from it.",
-            "The other branches are supplemental context to fold in.",
-            "Output should read as a coherent continuation of the BASE.",
-            "",
+            "Multiple peer branches' content is attached above as "
+            "[Attached from \"...\"] blocks.",
+            f"BASE branch: \"{base_label}\" — write your reply as a "
+            "coherent continuation of it, folding the other branches' "
+            "content in as supplemental context.",
         ]
     else:
         parts = [
-            "Multiple peer agents produced results in parallel.",
-            "Their individual final replies are below — consolidate them",
-            "into a single coherent answer.",
-            "",
+            "Multiple peer branches' content is attached above as "
+            "[Attached from \"...\"] blocks.",
+            "Consolidate them into a single coherent answer; treat all "
+            "branches as equally authoritative.",
         ]
-    for i, p in enumerate(peers):
-        label = p.get("label") or p.get("session_id") or "peer"
-        text = (p.get("text") or "").strip() or "(no output)"
-        role_attr = ""
-        if base_peer is not None and i == base_peer:
-            role_attr = ' role="base"'
-        parts.append(f'<session label="{label}"{role_attr}>')
-        parts.append(text)
-        parts.append("</session>")
-        parts.append("")
+    labels = [
+        (p.get("label") or p.get("session_id") or "peer") for p in peers
+    ]
+    if labels:
+        parts.append("Branches: " + ", ".join(f'"{lbl}"' for lbl in labels))
+        # Compatibility: tests / older log scanners look for
+        # `session label="..."` substrings — keep that surface so the
+        # base_peer attribute is discoverable in the prompt log.
+        decorated: list[str] = []
+        for i, lbl in enumerate(labels):
+            attr = ' role="base"' if (base_peer is not None and i == base_peer) else ""
+            decorated.append(f'<session label="{lbl}"{attr}/>')
+        parts.append(" ".join(decorated))
     if message and message.strip():
+        parts.append("")
         parts.append("Merge instruction:")
         parts.append(message.strip())
     return "\n".join(parts)
@@ -146,6 +171,11 @@ def _build_prompt(
 
 def _commit_id() -> str:
     return f"commit_{secrets.token_hex(8)}"
+
+
+def _attach_id() -> str:
+    """Mint a short hex id for a merge-temp attach pointer node."""
+    return secrets.token_hex(6)
 
 
 def process_merge_turn(
@@ -251,15 +281,68 @@ def process_merge_turn(
     if base_peer is not None and 0 <= base_peer < len(peers):
         base_idx = base_peer
 
+    # Pre-merge attach injection (D1/D7 of scenario D, see
+    # docs/design/context-attach-merge.md). Instead of bundling peer
+    # final-texts into the prompt, write one attach pointer per peer
+    # on the target session. The next process_user_turn call will pick
+    # them up through ensure_latest_commit → generator, which expands
+    # each into a delimited [Attached from "label"] block. The
+    # ``is_base`` flag tells the generator to lock the base peer's
+    # items so summarize/aging can't drop them.
+    target_sess = store.get_session(target_session_id) or {}
+    target_head = target_sess.get("head_id")
+    attach_node_ids: list[str] = []
+    for i, p in enumerate(peers):
+        attach_node_id = _attach_id()
+        attach_msg = {
+            "id": attach_node_id,
+            "role": "assistant",
+            "display": "runtime",
+            "function": "attach",
+            "content": (p.get("text") or "(no output)").strip(),
+            "called_by": target_head,
+            "timestamp": time.time(),
+            "agent_id": agent_id,
+            "extra": json.dumps({
+                "attach": {
+                    "session_id": p.get("session_id"),
+                    "head_id": p.get("head_id"),
+                    "label": p.get("label") or "",
+                    "manual": False,
+                    "source_commit_id": p.get("commit_id"),
+                    "is_base": (base_idx is not None and i == base_idx),
+                    "merge_temp": True,
+                },
+            }, default=str),
+        }
+        try:
+            store.append_message(target_session_id, attach_msg)
+            attach_node_ids.append(attach_node_id)
+            # Keep head pointed at the target head, not the attach
+            # pointer (attach uses called_by, not parent_id, so the
+            # branch tip shouldn't move — but append_message has a
+            # guard that updates head when the node has no caller. We
+            # set called_by above so this is a no-op; defensive
+            # restoration covers any future regression.)
+            if target_head:
+                store.set_head(target_session_id, target_head)
+        except Exception:
+            pass
+
     merge_prompt = _build_prompt(peers, message, base_peer=base_idx)
     from openprogram.agent.dispatcher import TurnRequest, process_user_turn
 
+    # ``history_override=None`` lets the dispatcher load the active
+    # branch — the attach pointers we just wrote get spliced in via
+    # the called_by chain and reach ensure_latest_commit. With
+    # history_override=[] (legacy behaviour) the generator wouldn't
+    # see them and the attach expansion path would be a no-op.
     req = TurnRequest(
         session_id=target_session_id,
         user_text=merge_prompt,
         agent_id=agent_id,
         source="merge_turn",
-        history_override=[],
+        history_override=None,
     )
     try:
         turn = process_user_turn(req)
