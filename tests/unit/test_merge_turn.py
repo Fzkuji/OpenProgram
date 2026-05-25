@@ -225,7 +225,9 @@ def test_legacy_sub_sessions_field_still_works(store, fake_dispatcher):
 def test_base_peer_marks_one_branch_as_base(store, fake_dispatcher):
     """base_peer=N tells the merge agent to write its reply as a
     continuation of peers[N]. The prompt gets a ``role="base"``
-    attribute on that branch's tag + a different lead-in line."""
+    attribute on that branch's tag + a different lead-in line, and
+    the peer_b attach pointer carries is_base=True so the generator
+    locks its expanded items."""
     from openprogram.agent._merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
@@ -245,6 +247,15 @@ def test_base_peer_marks_one_branch_as_base(store, fake_dispatcher):
     assert 'label="A" role="base"' not in prompt
     # Lead-in mentions "BASE" so the LLM knows the asymmetry.
     assert "BASE" in prompt
+    # is_base flag lands on the right attach pointer (the one
+    # referencing peer_b's head).
+    attaches = fake_dispatcher.get("attaches_at_dispatch") or []
+    base_attaches = [
+        m for m in attaches
+        if (m.get("attach") or {}).get("is_base")
+    ]
+    assert len(base_attaches) == 1
+    assert (base_attaches[0].get("attach") or {}).get("head_id") == "a_peer_b"
 
 
 def test_base_peer_out_of_range_treated_as_none(store, fake_dispatcher):
