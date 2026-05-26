@@ -10,6 +10,15 @@
  */
 import type { ChatMsg, ChatToolCall } from "./session-store";
 
+/** Same allowlist as the one in ``chat-stream.ts``. Hides any persisted
+ *  agentic tool block on history reload so we don't show both the
+ *  folded chat-tool card AND the standalone RuntimeBlock for one call. */
+const AGENTIC_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "gui_agent",
+  "research_agent",
+  "wiki_agent",
+]);
+
 interface LegacyBlock {
   type?: string;
   text?: string;
@@ -54,6 +63,18 @@ interface LegacyMsg {
    *  both user and assistant rows. Same-session multi-agent uses
    *  this to colour / label each row by author. */
   agent_id?: string;
+  /** streaming-resume: lifecycle status persisted on the node.
+   *  ``running`` means a producer is still writing this msg — render
+   *  the runtime block in its in-progress state and (if the worker
+   *  is reachable) subscribe for live updates. Missing == ``done``
+   *  for backward compat with pre-streaming-resume sessions. */
+  status?: "pending" | "running" | "streaming" | "done"
+    | "completed" | "error" | "cancelled" | "interrupted";
+  /** streaming-resume: when the placeholder reply was first written.
+   *  Used by sweep to detect orphaned ``running`` rows. */
+  started_at?: number;
+  last_update_at?: number;
+  parent_id?: string;
 }
 
 export interface AttachMeta {
@@ -120,11 +141,22 @@ function siblingFields(m: LegacyMsg) {
 export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
   const out: ChatMsg[] = [];
   messages.forEach((m, i) => {
-    if (m.type === "status") return;
+    // streaming-resume: a ``type: "status"`` row with display=runtime
+    // is the runner's persisted reply (placeholder when running,
+    // finalized when done). Either way it must render — the status
+    // field drives the visual state (running spinner vs static
+    // tree). Legacy non-runtime ``status`` rows (transient "Running
+    // foo..." pings) are still hidden.
+    const _isRuntimePlaceholder =
+      m.type === "status" && m.display === "runtime";
+    const _isRunningPlaceholder =
+      _isRuntimePlaceholder && m.status === "running";
+    if (m.type === "status" && !_isRuntimePlaceholder) return;
     const id = m.id || `hist_${i}`;
     const ts = m.timestamp || m.created_at;
 
     if (m.role === "user") {
+      const sf = (m as { spawned_from?: { caller_id?: string; label?: string | null } }).spawned_from;
       out.push({
         id,
         role: "user",
@@ -135,6 +167,9 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         agentId: m.agent_id || undefined,
         source: typeof m.source === "string" ? m.source : undefined,
         parentId: typeof m.parent_id === "string" ? m.parent_id : undefined,
+        spawnedFrom: sf && sf.caller_id
+          ? { callerId: sf.caller_id, label: sf.label || undefined }
+          : undefined,
         ...siblingFields(m),
       });
       return;
@@ -152,6 +187,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         if (b.type === "thinking" && b.text) {
           thinking = (thinking ?? "") + b.text;
         } else if (b.type === "tool") {
+          if (b.tool && AGENTIC_TOOL_NAMES.has(b.tool)) return;
           tools.push({
             id: b.tool_call_id || `${id}_t${bi}`,
             tool: b.tool || "?",
@@ -173,7 +209,19 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         tools: tools.length ? tools : undefined,
         function: m.function || undefined,
         display: m.display === "runtime" ? "runtime" : undefined,
-        status: m.type === "error" ? "error" : "done",
+        status: (() => {
+          // streaming-resume: respect the persisted status when it's
+          // a recognised lifecycle value. Fall back to the legacy
+          // type-derived rule so older rows (without a status meta
+          // field) still render correctly.
+          const _s = m.status;
+          if (_s === "running" || _isRunningPlaceholder) return "running";
+          if (_s === "cancelled") return "cancelled";
+          if (_s === "interrupted") return "interrupted";
+          if (_s === "error") return "error";
+          if (_s === "streaming") return "streaming";
+          return m.type === "error" ? "error" : "done";
+        })(),
         rawType: m.type,
         timestamp: ts,
         contextTree: (m.context_tree as never) || undefined,

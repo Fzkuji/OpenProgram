@@ -162,6 +162,31 @@ async def handle_load_session(ws, cmd: dict):
                 extras.sort(key=lambda x: x.get("timestamp") or 0)
                 spliced.extend(extras)
             chain = spliced
+        # Splice runtime-block placeholder rows written by the
+        # dispatcher's @agentic_function wrapper. They hang off the
+        # assistant reply that called the tool via parent_id but are
+        # not on the conv chain itself (the chain's head is the
+        # assistant reply, not its runtime child). The chat needs
+        # each placeholder as a standalone RuntimeBlock row right
+        # after its owning assistant reply.
+        chain_ids = {m.get("id") for m in chain}
+        runtime_by_parent: dict[str, list[dict]] = {}
+        for m in all_msgs:
+            if m.get("type") != "status" or m.get("display") != "runtime":
+                continue
+            if m.get("id") in chain_ids:
+                continue
+            parent = m.get("parent_id") or ""
+            if parent and parent in chain_ids:
+                runtime_by_parent.setdefault(parent, []).append(m)
+        if runtime_by_parent:
+            spliced2: list[dict] = []
+            for m in chain:
+                spliced2.append(m)
+                extras = runtime_by_parent.get(m.get("id"), [])
+                extras.sort(key=lambda x: x.get("timestamp") or 0)
+                spliced2.extend(extras)
+            chain = spliced2
         conv["messages"] = chain
         conv["head_id"] = head
         from openprogram.agent.session_db import default_db as _ddb

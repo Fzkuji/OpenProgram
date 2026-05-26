@@ -57,7 +57,24 @@ interface ChatResponseData {
   usage?: unknown;
   attempts?: { content: string; timestamp: number; tree?: unknown; usage?: unknown }[];
   current_attempt?: number;
+  /** parent_id for runtime-block placeholder rows written by the
+   *  dispatcher's @agentic_function wrapper — anchors the row to the
+   *  assistant reply that called the tool. */
+  parent_id?: string;
+  status?: string;
 }
+
+/** Names of LLM-callable @agentic_function tools. When the LLM invokes
+ *  one of these we DON'T want it to show up under the assistant bubble
+ *  as a folded chat-tool card — the dispatcher writes a separate
+ *  ``display=runtime`` placeholder row for it which renders as a
+ *  full RuntimeBlock + ExecutionDAG. Keeping a parallel folded row
+ *  would just duplicate the call. */
+const AGENTIC_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "gui_agent",
+  "research_agent",
+  "wiki_agent",
+]);
 
 interface WsEnvelope {
   type: string;
@@ -154,6 +171,18 @@ function handleResponse(d: ChatResponseData | undefined): void {
     return;
   }
 
+  // Runtime-block placeholder rows are written by the dispatcher
+  // (``_wrap_agentic_runtime_block``) as separate ChatMsgs with their
+  // own server-assigned id (NOT the ``_reply`` suffix). They carry the
+  // execution DAG for an LLM-issued @agentic_function call and render
+  // as a standalone RuntimeBlock. Detect by ``display=runtime`` and
+  // route by the raw msg_id, so we mutate the right row (not the
+  // owning assistant reply).
+  if (d.display === "runtime" && (d.type === "status" || d.type === "result")) {
+    handleRuntimeRow(sid, d);
+    return;
+  }
+
   const rid = replyId(d.msg_id);
 
   // Live execution tree for a streaming `/run` — store it on the reply
@@ -188,6 +217,55 @@ function handleResponse(d: ChatResponseData | undefined): void {
   }
   if (d.type === "result" || d.type === "error" || d.type === "cancelled") {
     finalize(sid, rid, d);
+  }
+}
+
+/** Materialize / update a runtime-block row for an LLM-issued
+ *  @agentic_function call. The row is its own ChatMsg keyed by the
+ *  dispatcher-assigned ``msg_id`` (e.g. ``<assistant_id>_rt_<call_id>``),
+ *  sitting alongside the assistant reply that triggered it. Rendered by
+ *  <MessageList /> as a <RuntimeBlock />. */
+function handleRuntimeRow(sid: string, d: ChatResponseData): void {
+  if (!d.msg_id) return;
+  const store = useSessionStore.getState();
+  const existing = store.messagesById[d.msg_id];
+  if (d.type === "status") {
+    // First sighting — create the row. Idempotent on duplicate
+    // broadcasts (e.g. cross-tab re-emit).
+    if (existing) return;
+    store.appendMessage(sid, {
+      id: d.msg_id,
+      role: "assistant",
+      content: "",
+      display: "runtime",
+      function: d.function,
+      status: d.status === "running" ? "running" : "streaming",
+      parentId: d.parent_id,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+  // type === "result": finalize the row with the rebuilt DAG + return
+  // text. Falls back to appendMessage if we somehow missed the status
+  // envelope (shouldn't happen on a healthy stream, but be defensive).
+  const patch = {
+    content: d.content ?? "",
+    display: "runtime" as const,
+    function: d.function ?? existing?.function,
+    status: "done" as const,
+    rawType: d.type,
+    contextTree: (d.context_tree as never) || undefined,
+    timestamp: Date.now(),
+  };
+  if (existing) {
+    store.updateMessage(sid, d.msg_id, patch);
+  } else {
+    store.appendMessage(sid, {
+      id: d.msg_id,
+      role: "assistant",
+      parentId: d.parent_id,
+      ...patch,
+    });
   }
 }
 
@@ -245,6 +323,13 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
       });
       break;
     case "tool_use": {
+      // Agentic tools (gui_agent / research_agent / wiki_agent) render
+      // as their own RuntimeBlock row (via handleRuntimeRow) — skip
+      // the folded chat-tool card so they don't appear twice.
+      if (evt.tool && AGENTIC_TOOL_NAMES.has(evt.tool)) {
+        store.updateMessage(sid, rid, { status: "streaming" });
+        break;
+      }
       const tools: ChatToolCall[] = [...(cur.tools ?? [])];
       tools.push({
         id: evt.tool_call_id || `t_${Date.now()}_${tools.length}`,
@@ -256,6 +341,10 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
       break;
     }
     case "tool_result": {
+      // Agentic tool results were never pushed in tool_use above —
+      // nothing to update here. The runtime row takes care of the
+      // result display.
+      if (evt.tool && AGENTIC_TOOL_NAMES.has(evt.tool)) break;
       const tools = (cur.tools ?? []).map((t): ChatToolCall =>
         t.id === evt.tool_call_id
           ? {
