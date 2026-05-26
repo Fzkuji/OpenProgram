@@ -1,7 +1,8 @@
 """Wrapper around Anthropic's POST /v1/messages/count_tokens.
 
-Used as a fallback when an upstream proxy (claude-max-api-proxy)
-doesn't forward usage chunks to the OpenAI-compat stream we consume.
+Used as a fallback when an upstream proxy (meridian /
+claude-max-api-proxy) doesn't forward usage chunks to the OpenAI-compat
+stream we consume.
 The count is authoritative — same tokenizer Anthropic uses for billing —
 so it's safe to write to the messages.input_tokens column under the
 ``anthropic_count_api`` source label.

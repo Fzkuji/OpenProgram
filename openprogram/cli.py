@@ -105,7 +105,7 @@ def _add_provider_args(parser):
     parser.add_argument(
         "--provider", "-p",
         default=None,
-        help="LLM provider: claude-max-proxy, codex, gemini-cli, anthropic, openai, gemini. "
+        help="LLM provider: claude-code, openai-codex, gemini-cli, anthropic, openai, gemini. "
              "Auto-detected if not specified.",
     )
     parser.add_argument(
@@ -518,7 +518,7 @@ def main():
     p_ag_add.add_argument("--name", default="",
         help="Human-readable name")
     p_ag_add.add_argument("--provider", default="",
-        help="LLM provider (claude-max-proxy, openai-codex, anthropic, ...)")
+        help="LLM provider (claude-code, openai-codex, anthropic, ...)")
     p_ag_add.add_argument("--model", default="",
         help="Model id within that provider")
     p_ag_add.add_argument("--effort", default="medium",

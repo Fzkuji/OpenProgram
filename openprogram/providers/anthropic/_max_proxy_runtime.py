@@ -2,32 +2,36 @@
 
 Anthropic's official ``claude`` CLI is the only sanctioned way to use
 the "Claude Max" plan in agent contexts; the underlying account does
-**not** expose a normal ``api.anthropic.com`` key. The community
-workaround is the ``claude-max-api-proxy`` npm package — it runs a
-local HTTP server that exposes an OpenAI-compatible
-``/v1/chat/completions`` endpoint and shuttles traffic through a
-logged-in Claude Code subprocess underneath.
+**not** expose a normal ``api.anthropic.com`` key. The recommended
+local-proxy bridge is the ``meridian`` npm package — it runs a local
+HTTP server that exposes an OpenAI-compatible ``/v1/chat/completions``
+endpoint and routes traffic through the official Claude Code SDK's
+``query()`` underneath (no OAuth interception, no binary patching).
 
 Practical setup:
 
   # one-time install + login
   npm install -g @anthropic-ai/claude-code
-  claude auth login
+  claude login
 
   # one-time proxy install + run
-  npm install -g claude-max-api-proxy
-  claude-max-api                      # binary name is `claude-max-api`,
-                                      # NOT `claude-max-api-proxy`.
+  npm install -g @rynfar/meridian
+  meridian
 
-The daemon listens on ``http://localhost:3456`` by default. Override
+The daemon listens on ``http://127.0.0.1:3456`` by default. Override
 with the ``CLAUDE_MAX_PROXY_URL`` env var if you ran it on a
 different port.
+
+Older alternative: the third-party ``claude-max-api-proxy`` npm package
+listens on the same port and works for text-only traffic, but stringifies
+OpenAI multi-part content arrays into ``[object Object]`` (broken for
+gui_agent and anything sending image blocks). Prefer Meridian.
 
 Wire format gotcha: the proxy is OpenAI-compatible, NOT Anthropic
 Messages. Our model registry attaches ``api='openai-completions'`` so
 the standard stream layer routes through ``openai_completions``;
 this Runtime class therefore just configures the modern
-``Runtime(model="claude-max:<id>")`` path — no Anthropic SDK
+``Runtime(model="claude-code:<id>")`` path — no Anthropic SDK
 involvement.
 """
 
@@ -85,12 +89,14 @@ def _resolve_api_key() -> str:
 
 
 class ClaudeCodeRuntime(Runtime):
-    """Runtime that talks to ``claude-max-api-proxy`` (OpenAI-compatible).
+    """Runtime that talks to a local Claude Max HTTP proxy (OpenAI-compatible).
 
-    Drives the modern AgentSession path via ``model="claude-max:<id>"``.
-    The model registry entry carries ``api='openai-completions'`` and
-    ``base_url=http://localhost:3456/v1`` so the standard
-    ``openai_completions.stream_simple`` picks the right wire format.
+    Default daemon is ``meridian``; the older ``claude-max-api-proxy`` works
+    on the same port for text-only traffic. Drives the modern AgentSession
+    path via ``model="claude-code:<id>"``. The model registry entry carries
+    ``api='openai-completions'`` and ``base_url=http://localhost:3456/v1`` so
+    the standard ``openai_completions.stream_simple`` picks the right wire
+    format.
 
     Side effect: this constructor exports ``OPENAI_API_KEY`` if not
     already set, since the openai SDK reads it from the environment

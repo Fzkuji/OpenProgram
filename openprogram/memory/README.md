@@ -87,10 +87,11 @@ rm -rf ~/.agentic/memory/journal ~/.agentic/memory/wiki ~/.agentic/memory/core.m
 
 ## Provider quirks
 
-Some chat providers silently ignore the OpenAI `system` role
-(`claude-max-api-proxy` is the current known offender — it forwards
-through the Claude Code CLI subprocess, which only honours the user
-turn). `llm_bridge.build_default_llm` detects those providers and folds
-the system prompt into the user message before calling them, so the
+Some chat providers silently ignore the OpenAI `system` role. The
+`claude-code` provider is the current known offender — both supported
+daemons (`meridian` and the older `claude-max-api-proxy`) forward
+through the Claude Code SDK, which only honours the user turn.
+`llm_bridge.build_default_llm` detects those providers and folds the
+system prompt into the user message before calling them, so the
 summarizer's instructions actually reach the model. New offending
 provider IDs go in the `_proxy_providers` set in `llm_bridge.py`.

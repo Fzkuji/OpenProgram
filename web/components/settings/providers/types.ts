@@ -18,8 +18,9 @@ export interface Provider {
   /**
    * Provider-specific setup instructions surfaced in the detail
    * panel. Backticked spans render as inline <code>; lines starting
-   * with `$ ` render as a command row. Used by claude-max-proxy /
-   * any other "local daemon" provider whose setup isn't an API key.
+   * with `$ ` render as a command row. Used by claude-code (meridian /
+   * claude-max-api-proxy) and any other "local daemon" provider whose
+   * setup isn't an API key.
    */
   setup_hint?: string;
 }

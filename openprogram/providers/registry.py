@@ -8,8 +8,11 @@ Available providers:
     AnthropicRuntime       — Anthropic Claude API (text + image, prompt caching)
     OpenAIRuntime          — OpenAI GPT API (text + image, response_format)
     GeminiRuntime          — Google Gemini API (text + image)
-    ClaudeCodeRuntime       — Claude via local ``claude-max-api-proxy`` daemon (HTTP),
+    ClaudeCodeRuntime       — Claude via local ``meridian`` daemon (HTTP),
                              for Max-plan users who don't have a paid API key.
+                             (Drop-in replacement for the older
+                             ``claude-max-api-proxy`` — same port 3456, but
+                             properly handles multimodal content arrays.)
     OpenAICodexRuntime — OpenAI Codex HTTP API (ChatGPT subscription OAuth, reads ~/.codex/auth.json)
     GeminiCLIRuntime  — Google Gemini HTTP API (Google account OAuth, reads ~/.gemini/oauth_creds.json)
 
@@ -42,9 +45,12 @@ import shutil
 
 # Maps provider name -> (class_name, module_path, default_model)
 PROVIDERS = {
-    # Claude via a local `claude-max-api-proxy` daemon (HTTP). Replaces
-    # the previous CLI-spawning `claude-code` provider; tools come from
-    # OpenProgram's own registry instead of the CLI's built-ins.
+    # Claude via a local `meridian` daemon (HTTP, OpenAI-compatible).
+    # Replaces the previous CLI-spawning `claude-code` provider; tools
+    # come from OpenProgram's own registry instead of the CLI's built-ins.
+    # The older `claude-max-api-proxy` works as a fallback on the same
+    # port, but mangles multimodal content arrays to ``[object Object]``
+    # (so gui_agent and other screenshot-using tasks need Meridian).
     "claude-code":        ("ClaudeCodeRuntime",             "openprogram.providers.anthropic._max_proxy_runtime",  "claude-sonnet-4"),
     "openai-codex": ("OpenAICodexRuntime", "openprogram.providers.openai_codex.runtime",           "gpt-5.5"),
     "gemini-cli":        ("GeminiCLIRuntime",    "openprogram.providers.google_gemini_cli.runtime",     "gemini-2.5-flash"),
@@ -152,8 +158,8 @@ def detect_provider() -> tuple[str, str]:
         "                    (or GOOGLE_GENERATIVE_AI_API_KEY=...)\n"
         "\n"
         "  Claude via Max plan (HTTP proxy):\n"
-        "    6. Install + launch the proxy, then use provider=claude-max:\n"
-        "       npm install -g claude-max-api-proxy && claude-max-api-proxy\n"
+        "    6. Install + launch Meridian, then use provider=claude-code:\n"
+        "       npm install -g @rynfar/meridian && meridian\n"
         "\n"
         "  Or set explicitly:\n"
         "    export AGENTIC_PROVIDER=openai\n"

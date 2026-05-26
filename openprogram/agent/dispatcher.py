@@ -248,7 +248,14 @@ def process_user_turn(
     # quiet system marker (transparent surface, robot avatar) rather
     # than as a regular blue You-bubble that makes it look like the
     # user sent two messages in a row.
-    if req.source in {"task_followup", "merge_turn", "agent_spawn"}:
+    #
+    # Note: ``agent_spawn`` (the sub-agent's own first user msg) is
+    # intentionally NOT in this set. When the user checks out the
+    # sub branch, they want to see the prompt that started it — it's
+    # the natural "You" message on that branch's HEAD path. On main,
+    # the linear_history walk doesn't reach it (it's only on the sub
+    # branch chain), so leaving it visible doesn't pollute main.
+    if req.source in {"task_followup", "merge_turn"}:
         user_msg["display"] = "runtime"
     # Persist a lightweight attachment manifest (count + media types)
     # so /resume + the search picker can show "[2 images]" badges
@@ -540,8 +547,9 @@ def process_user_turn(
         model_id = model_str or None
         provider_id = None
     has_usage = bool(usage.get("input_tokens") or usage.get("output_tokens"))
-    # Fallback for Anthropic-family models when the upstream proxy (e.g.
-    # claude-max-api-proxy) doesn't forward usage chunks. Hit Anthropic's
+    # Fallback for Anthropic-family models when the upstream proxy
+    # (meridian / claude-max-api-proxy) doesn't forward usage chunks. Hit
+    # Anthropic's
     # /v1/messages/count_tokens — it's a real, authoritative count for the
     # full message list we just sent, and it's free.
     token_source = "provider_usage"

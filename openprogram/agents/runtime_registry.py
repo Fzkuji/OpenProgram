@@ -68,7 +68,7 @@ def invalidate_all() -> None:
 
 def _build_runtime(provider: str, model_id: str) -> Any:
     """Build a fresh runtime for (provider, model_id). Falls through
-    to auto-detection (claude-max-proxy, openai-codex, etc. in the
+    to auto-detection (claude-code, openai-codex, etc. in the
     order used by the Web UI) when the agent hasn't picked a provider
     yet.
 

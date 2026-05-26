@@ -140,13 +140,13 @@ def _is_configured(provider_id: str) -> bool:
     if provider_id == "openai-codex":
         from pathlib import Path
         return (Path.home() / ".codex" / "auth.json").exists()
-    # claude-max: there's no env-key path; the daemon is "ready"
+    # claude-code: there's no env-key path; the daemon is "ready"
     # when its HTTP endpoint answers. Quick 0.5s probe — failure means
-    # the user hasn't started ``claude-max-api`` yet.
+    # the user hasn't started ``meridian`` (or claude-max-api) yet.
     if provider_id == "claude-code":
         import os, urllib.request, urllib.error
-        # `claude-max-api-proxy` binary defaults to port 3456. Strip
-        # a trailing /v1 because the proxy exposes /health at root.
+        # Both meridian and claude-max-api-proxy default to port 3456.
+        # Strip a trailing /v1 because /health lives at root.
         url = (os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:3456").rstrip("/")
         if url.endswith("/v1"):
             url = url[:-3]
@@ -173,19 +173,21 @@ _SETUP_HINTS: dict[str, str] = {
         "key to paste here. Install the local proxy daemon once and keep it running:\n"
         "\n"
         "$ npm install -g @anthropic-ai/claude-code\n"
-        "$ claude auth login\n"
-        "$ npm install -g claude-max-api-proxy\n"
-        "$ claude-max-api\n"
+        "$ claude login\n"
+        "$ npm install -g @rynfar/meridian\n"
+        "$ meridian\n"
         "\n"
-        "Note the binary is `claude-max-api` (no `-proxy` suffix). It listens on\n"
-        "`http://localhost:3456` by default; pass a positional port to change it\n"
-        "(e.g. `claude-max-api 8765`) and tell us where with\n"
+        "Meridian listens on `http://127.0.0.1:3456` by default. Override with\n"
         "`CLAUDE_MAX_PROXY_URL=http://host:port`.\n"
         "\n"
         "Once the daemon is up, this section flips to \"Detected\" and you can\n"
         "enable the provider above. The proxy exposes an OpenAI-compatible\n"
         "`/v1/chat/completions` endpoint and routes traffic through your existing\n"
-        "Claude Code OAuth session, so no extra API key is needed."
+        "Claude Code OAuth session, so no extra API key is needed.\n"
+        "\n"
+        "Legacy: the older `claude-max-api-proxy` package also works on the same\n"
+        "port for text-only traffic, but mangles multipart image content — prefer\n"
+        "Meridian for any agent that sends screenshots (e.g. `gui_agent`)."
     ),
 }
 
@@ -250,7 +252,7 @@ def list_providers() -> list[dict[str, Any]]:
         hint = _setup_hint(pid)
         if hint:
             entry["setup_hint"] = hint
-            # claude-max doesn't use an API key env — the proxy
+            # claude-code doesn't use an API key env — the proxy
             # forwards via Claude Code's OAuth — so skip the API-key
             # input UI for it.
             entry["api_key_env"] = None

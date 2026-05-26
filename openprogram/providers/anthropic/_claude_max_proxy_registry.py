@@ -1,23 +1,23 @@
-"""Register the Claude models under the ``claude-max`` provider.
+"""Register the Claude models under the ``claude-code`` provider.
 
 Mirrors :mod:`_claude_code_registry`: the curated model list from
 ``claude_models.json`` is the source of truth, but here every entry is
 attached to ``provider="claude-code"`` and to a ``base_url`` that
-points at the local ``claude-max-api-proxy`` daemon. The runtime
-:class:`ClaudeCodeRuntime` consumes those models via the standard
-anthropic API client, so OpenProgram's tool registry actually wires
-through to Claude — unlike the CLI provider where tools come baked
-into the subprocess.
+points at the local Claude Max HTTP proxy daemon (``meridian`` by
+default; the older ``claude-max-api-proxy`` works on the same port for
+text-only flows). The runtime :class:`ClaudeCodeRuntime` consumes those
+models via the standard anthropic API client, so OpenProgram's tool
+registry actually wires through to Claude — unlike the CLI provider
+where tools come baked into the subprocess.
 """
 from __future__ import annotations
 
 import os
 
 
-# Default daemon port for ``claude-max-api-proxy`` v1.0.0. The package
-# name has a ``-proxy`` suffix but the installed binary is just
-# ``claude-max-api`` and listens on 3456 unless given a positional
-# port argument. Override via env if the user moved it.
+# Default daemon port for both meridian and the older claude-max-api-proxy.
+# Both packages listen on 3456 unless reconfigured. Override via env if
+# the user moved it.
 _DEFAULT_PROXY_URL = "http://localhost:3456"
 
 
@@ -88,11 +88,12 @@ def _augment_registry_with_max_proxy_models() -> None:
             continue
         family = m["family"]
         reasoning = family in ("opus", "sonnet")
-        # No thinking picker for any claude-max-api-proxy model. The
-        # proxy's `openaiToCli()` adapter only forwards prompt + model +
-        # sessionId to `claude --print`; `reasoning_effort` (and
-        # max_tokens, temperature, tools) are silently dropped. An
-        # effort control here would be dead UI — the budget is fixed at
+        # No thinking picker for any claude-code (meridian /
+        # claude-max-api-proxy) model. Both proxies forward through the
+        # Claude Code SDK / CLI, which only takes prompt + model +
+        # sessionId; `reasoning_effort` (and max_tokens, temperature,
+        # tools) are silently dropped. An effort control here would be
+        # dead UI — the budget is fixed at
         # Claude Code CLI's default.
         thinking_levels: list[str] = []
         MODELS[key] = Model(

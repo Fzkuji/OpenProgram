@@ -516,9 +516,9 @@ def _list_providers() -> list[dict]:
     result = []
     import urllib.request, urllib.error
     def _proxy_alive() -> bool:
-        # Default is :3456 (where claude-max-api-proxy listens) — NOT :8109
-        # which is openprogram's own backend port and would always answer
-        # 200, masking proxy failure as "available".
+        # Default is :3456 (where meridian / claude-max-api-proxy listen)
+        # — NOT :8109 which is openprogram's own backend port and would
+        # always answer 200, masking proxy failure as "available".
         url = os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:3456"
         try:
             with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=0.5):
@@ -791,7 +791,25 @@ def _append_msg(conv: dict, msg: dict) -> None:
     mirror is still consistent and the next ``_save_session``
     will sync the row through ``save_messages`` (idempotent).
     """
-    _raw_advance_head(conv, msg)
+    # Streaming-resume: if a placeholder with this id already lives
+    # in ``conv["messages"]`` (e.g. ``run.py`` wrote a status=running
+    # row before kicking off the function, and now we're back with
+    # the final reply), update the existing entry in place instead of
+    # appending a duplicate. The on-disk side handles its own
+    # dedup — ``SessionStore.append_message`` is idempotent on id
+    # and the final reply uses ``GraphStoreShim.update()`` to patch
+    # the persisted node.
+    _existing_idx = -1
+    if msg.get("id"):
+        for _i, _existing in enumerate(conv.get("messages") or []):
+            if _existing.get("id") == msg["id"]:
+                _existing_idx = _i
+                break
+    if _existing_idx >= 0:
+        conv["messages"][_existing_idx] = {**conv["messages"][_existing_idx], **msg}
+        conv["head_id"] = msg["id"]
+    else:
+        _raw_advance_head(conv, msg)
     cid = conv.get("id")
     msg_id = msg.get("id")
     if not cid or not msg_id:

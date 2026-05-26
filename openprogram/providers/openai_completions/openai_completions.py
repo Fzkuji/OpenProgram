@@ -58,15 +58,16 @@ def _build_messages(context: Context, model: Model) -> list[dict[str, Any]]:
         role = "developer" if _uses_developer_role(model) else "system"
         result.append({"role": role, "content": context.system_prompt})
 
-    # claude-max-api-proxy (third-party npm package fronting the
-    # Claude Code OAuth session) does NOT understand the OpenAI
-    # multi-part content array — it stringifies the list with the
-    # JS default toString(), which means every user message arrives at
-    # Claude as ``[object Object]``. Detect this provider and flatten
-    # all-text content back to a plain string. Mixed content (images)
-    # is unsupported by this backend anyway, so we still emit the
-    # array form for it — proxy will fail loudly, which is the right
-    # behaviour.
+    # Historical workaround for the older ``claude-max-api-proxy`` npm
+    # package: it did NOT understand the OpenAI multi-part content array
+    # and stringified the list with JS's default toString(), so every
+    # user message arrived at Claude as ``[object Object]``. Meridian
+    # (the recommended replacement) handles multi-part content correctly,
+    # but we keep this flatten-text-only path so the older proxy still
+    # works for text-only flows. Mixed content (images) is unsupported by
+    # claude-max-api-proxy regardless — we still emit the array form for
+    # it so Meridian gets a proper request and the legacy proxy fails
+    # loudly, which is the right behaviour.
     _flatten_text_only = model.provider == "claude-code"
 
     for msg in context.messages:

@@ -81,9 +81,9 @@ def build_default_llm() -> Callable[[str, str], str] | None:
         logger.debug("API provider %r not registered", model.api)
         return None
 
-    # claude-max-api-proxy forwards traffic through the Claude Code
-    # CLI subprocess, which ignores the OpenAI ``system`` role and
-    # answers the user message in-character instead of following
+    # The claude-code provider (meridian / claude-max-api-proxy) routes
+    # through the Claude Code SDK, which ignores the OpenAI ``system``
+    # role and answers the user message in-character instead of following
     # instructions. Workaround: fold the system prompt into the user
     # turn for any provider known not to honour system messages.
     _proxy_providers = {"claude-code"}

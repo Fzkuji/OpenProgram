@@ -4,9 +4,10 @@ the resulting DAG.
 
 Setup expected before running:
 
-  1. ``claude-max-api-proxy`` daemon running on http://localhost:3456
-     (override with ``CLAUDE_MAX_PROXY_URL``)
-  2. ``claude auth login`` already done in another terminal
+  1. ``meridian`` daemon running on http://localhost:3456
+     (override with ``CLAUDE_MAX_PROXY_URL``). The older
+     ``claude-max-api-proxy`` also works on the same port.
+  2. ``claude login`` already done in another terminal
 
 Mirrors ``verify_dag_e2e.py`` but pins the dispatcher's runtime to
 ``ClaudeCodeRuntime`` via ``AGENTIC_PROVIDER`` env var so the run uses
@@ -39,8 +40,8 @@ def main() -> int:
             f"{proxy_url}/v1/models", timeout=3,
         ).read()
     except Exception as exc:
-        print(f"== claude-max-api-proxy unreachable at {proxy_url}: {exc}")
-        print("   Start it with:  claude-max-api")
+        print(f"== Claude Max proxy unreachable at {proxy_url}: {exc}")
+        print("   Start it with:  meridian   (or, legacy: claude-max-api)")
         return 2
 
     # Force dispatcher to pick the Claude Max provider regardless of

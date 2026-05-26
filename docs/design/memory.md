@@ -266,7 +266,7 @@ three-layer model.
 | No `short-term/<today>.md`       | Session-end summarizer found nothing durable, or LLM call returned empty / unparseable | Inspect `.state/session-end.json` — if today's session_ids are there with timestamps, summarizer was called; the conversation just lacked durable facts |
 | `core.md` only has framework facts | Deep-phase has no high-confidence personal observations yet | Have a few real conversations about your project / preferences |
 | `last-sleep.json` shows `promoted=0` | Same — short-term entries below score threshold | Raise count of long conversations or hand-edit a wiki page |
-| Summarizer returns []            | LLM ignored the system prompt (e.g. claude-max-proxy drops the system role) | `build_default_llm` folds system into user when provider needs it; verify with `grep '_inline_system' openprogram/memory/llm_bridge.py` |
+| Summarizer returns []            | LLM ignored the system prompt (e.g. `claude-code` provider — both meridian and the older claude-max-api-proxy drop the system role) | `build_default_llm` folds system into user when provider needs it; verify with `grep '_inline_system' openprogram/memory/llm_bridge.py` |
 | Stale session-end state          | A previous worker crashed mid-process          | Delete `.state/session-end.json` — sessions get re-scanned next poll |
 | Sleep didn't run last night      | Worker wasn't running at 03:00 OR LLM unavailable | `scheduler.start_in_worker` is called at worker boot; check `worker.log` for `[worker] memory: sleep + session-end watcher running` |
 
