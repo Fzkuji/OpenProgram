@@ -164,6 +164,46 @@
   border-bottom: none;
   padding-bottom: 0;
 }
+
+/* Skeleton placeholders shown by `app/(shell)/settings/loading.tsx`
+   while the next route's page chunk is being fetched/compiled. The
+   shapes mirror `.pageHeader` + `.pageBody` so when the real page
+   lands there's no width/height shift. */
+.skelTitle {
+  width: 180px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  animation: settingsSkelPulse 1.2s ease-in-out infinite;
+}
+.skelMeta {
+  width: 420px;
+  max-width: 100%;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  animation: settingsSkelPulse 1.2s ease-in-out infinite;
+}
+.skelBlock {
+  width: 100%;
+  max-width: 720px;
+  height: 92px;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  animation: settingsSkelPulse 1.2s ease-in-out infinite;
+}
+.skelBlockShort {
+  width: 60%;
+  max-width: 480px;
+  height: 92px;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  animation: settingsSkelPulse 1.2s ease-in-out infinite;
+}
+@keyframes settingsSkelPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
 .sectionTitle {
   font-size: 16px;
   font-weight: 600;
