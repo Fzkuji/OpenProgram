@@ -142,6 +142,19 @@ def agent_loop(
             # Ensure the stream is always terminated even if the loop crashes
             if not ev_stream._result_event.is_set():
                 ev_stream.fail(e)
+        except BaseException as e:
+            # User-triggered CancelledError (BaseException subclass) — end the
+            # stream cleanly so the chat dispatcher unblocks and the running_task
+            # gets cleared. Without this branch the Task dies with an unretrieved
+            # exception and the UI is stuck on the stop button.
+            from openprogram.agentic_programming.function import (
+                CancelledError as _AgenticCancelled,
+            )
+            if isinstance(e, _AgenticCancelled):
+                if not ev_stream._result_event.is_set():
+                    ev_stream.end(new_messages)
+            else:
+                raise
 
     asyncio.ensure_future(_run())
     return ev_stream
@@ -499,6 +512,26 @@ async def _execute_tool_calls(
                 details={},
             )
             is_error = True
+        except BaseException as e:
+            # User-triggered cancel (openprogram.agentic_programming.function.CancelledError
+            # is a BaseException so user-written `except Exception` inside tool bodies
+            # cannot swallow it). Push a tool_end event so the UI sees the call
+            # closed, then re-raise to abort the agent loop. The outer _run handler
+            # ends the event stream gracefully so the chat dispatcher unblocks and
+            # `running_task` is cleared — without this the stop button keeps showing
+            # because the asyncio Task is killed by an "unretrieved" BaseException
+            # and the stream never terminates.
+            result = AgentToolResult(
+                content=[TextContent(type="text", text=f"Cancelled: {e}")],
+                details={},
+            )
+            ev_stream.push(AgentEventToolEnd(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                result=result,
+                is_error=True,
+            ))
+            raise
 
         ev_stream.push(AgentEventToolEnd(
             tool_call_id=tool_call.id,
