@@ -359,6 +359,20 @@ def dispatch_forced_tool_call(
     _runtime_token = None
     _store_token = None
     _turn_token = _turn_id_var.set(anchor_msg_id)
+    # Bind session_id so the @agentic_function _cancel_hook can see
+    # this call's session and raise CancelledError when /api/stop
+    # flips the flag. Without this the hook reads None from the
+    # ContextVar and silently no-ops — stop button has zero effect on
+    # the forced (UI-triggered) path. The chat path sets this in
+    # _execute_in_context; the forced path was missing the same call.
+    from openprogram.webui._pause_stop import (
+        set_current_session_id as _set_cid,
+        reset_current_session_id as _reset_cid,
+        register_active_runtime as _reg_rt,
+        unregister_active_runtime as _unreg_rt,
+        clear_cancel as _clear_cancel,
+    )
+    _cid_token = _set_cid(session_id)
     try:
         try:
             from openprogram.providers.registry import create_runtime as _create_rt
@@ -374,6 +388,13 @@ def dispatch_forced_tool_call(
                     pass
             _runtime_token = _current_runtime_var.set(_dag_runtime)
             _store_token = _store_var.set(_GraphStore(db, session_id))
+            # Register so /api/stop's _kill_active_runtime can reach
+            # the inner runtime (terminate subprocess if any provider
+            # uses one).
+            try:
+                _reg_rt(session_id, _dag_runtime)
+            except Exception:
+                pass
         except Exception:
             _runtime_token = None
             _store_token = None
@@ -405,6 +426,20 @@ def dispatch_forced_tool_call(
                 _store_var.reset(_store_token)
             if _turn_token is not None:
                 _turn_id_var.reset(_turn_token)
+        except Exception:
+            pass
+        try:
+            _unreg_rt(session_id)
+        except Exception:
+            pass
+        try:
+            _reset_cid(_cid_token)
+        except Exception:
+            pass
+        # Clear the cancel flag after the forced call winds down so a
+        # subsequent call on the same session starts fresh.
+        try:
+            _clear_cancel(session_id)
         except Exception:
             pass
 
