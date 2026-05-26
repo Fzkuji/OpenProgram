@@ -103,7 +103,7 @@ export function WelcomeScreen() {
         className={styles.examples}
         data-collapsed={collapsed ? "true" : "false"}
         aria-hidden={collapsed ? true : undefined}
-        inert={collapsed || undefined}
+        inert={collapsed ? "" : undefined}
       >
         {EXAMPLES.map((ex) => (
           <button

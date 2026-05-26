@@ -556,6 +556,13 @@
   overflow: hidden;
 }
 .runtime-block + .message, .message + .runtime-block { margin-top: 20px; }
+/* When a RuntimeBlock is nested INSIDE an assistant bubble
+ * (LLM-initiated agentic call), drop the outer margins so it sits
+ * tight against the surrounding text and reads as part of the same
+ * card, not a separate floating element. */
+.assistant-runtime-children .runtime-block {
+  margin: 12px 0 0 0;
+}
 .runtime-block-header {
   display: flex;
   align-items: baseline;
