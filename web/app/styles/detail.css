@@ -15,7 +15,13 @@
    class names those scripts emit, so they have to stay as global
    stylesheet rules until the renderers themselves move to React. */
 
-.detail-body { padding: 16px; }
+.detail-body {
+  padding: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
 
 .detail-section { margin-bottom: 16px; }
 
