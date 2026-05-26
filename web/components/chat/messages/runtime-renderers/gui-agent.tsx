@@ -70,18 +70,27 @@ export function GuiAgentRenderer({ rawOutput }: RuntimeRendererProps) {
   if (t) meta.push(t);
 
   return (
-    <div className="runtime-output runtime-gui-agent">
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+    <div className="runtime-output runtime-gui-agent" style={{ lineHeight: 1.45 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          marginBottom: obj.summary ? 4 : 0,
+        }}
+      >
         {badgeOk ? (
           <span
             style={{
-              fontSize: 11,
-              padding: "2px 8px",
-              borderRadius: 10,
+              fontSize: 10,
+              padding: "1px 6px",
+              borderRadius: 8,
               background: "rgba(34,197,94,0.15)",
               color: "#16a34a",
               fontWeight: 600,
               border: "1px solid rgba(34,197,94,0.35)",
+              lineHeight: 1.4,
             }}
           >
             success
@@ -90,39 +99,42 @@ export function GuiAgentRenderer({ rawOutput }: RuntimeRendererProps) {
         {badgeBad ? (
           <span
             style={{
-              fontSize: 11,
-              padding: "2px 8px",
-              borderRadius: 10,
+              fontSize: 10,
+              padding: "1px 6px",
+              borderRadius: 8,
               background: "rgba(239,68,68,0.15)",
               color: "#dc2626",
               fontWeight: 600,
               border: "1px solid rgba(239,68,68,0.35)",
+              lineHeight: 1.4,
             }}
           >
             failed
           </span>
         ) : null}
         {meta.length ? (
-          <span style={{ fontSize: 12, color: "var(--muted, #888)" }}>
+          <span style={{ fontSize: 11, color: "var(--muted, #888)" }}>
             {meta.join(" · ")}
           </span>
         ) : null}
       </div>
       {obj.summary ? (
         <div
+          style={{ fontSize: 13 }}
           dangerouslySetInnerHTML={{ __html: renderMarkdown(obj.summary) }}
         />
       ) : null}
       {obj.issues ? (
         <div
           style={{
-            marginTop: 6,
-            padding: "6px 10px",
+            marginTop: 4,
+            padding: "4px 8px",
             background: "rgba(239,68,68,0.08)",
             border: "1px solid rgba(239,68,68,0.25)",
-            borderRadius: 6,
+            borderRadius: 5,
             color: "#b91c1c",
-            fontSize: 13,
+            fontSize: 12,
+            lineHeight: 1.4,
           }}
         >
           <strong>issues: </strong>

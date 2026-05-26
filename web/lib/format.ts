@@ -165,8 +165,8 @@ export function buildUsageText(
   const parts: string[] = [];
   if (cached > 0 || cacheWrite > 0) {
     parts.push(fmtTokenNum(base) + " in");
-    if (cached > 0) parts.push(fmtTokenNum(cached) + "↻"); // ↻ = cache hit
-    if (cacheWrite > 0) parts.push(fmtTokenNum(cacheWrite) + "✎"); // ✎ = cache write
+    if (cached > 0) parts.push(fmtTokenNum(cached) + " cache");
+    if (cacheWrite > 0) parts.push(fmtTokenNum(cacheWrite) + " write");
     parts.push(fmtTokenNum(outTok) + " out");
   } else {
     parts.push(fmtTokenNum(total) + " in");
