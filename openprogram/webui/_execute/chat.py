@@ -199,10 +199,34 @@ def run_query(
                 "function": "_chat",
             })
         elif payload.get("type") in ("result", "error"):
-            # Final-result / error envelopes arrive last;
-            # we surface them after our own context_stats
-            # broadcast below, so swallow here.
-            pass
+            # Final-result / error envelopes for the OWNING chat turn
+            # arrive last; we surface them after our own context_stats
+            # broadcast below, so swallow here. BUT envelopes that
+            # belong to an inline @agentic_function runtime-block
+            # (display=runtime, written by _wrap_agentic_runtime_block)
+            # must be forwarded immediately so the chat panel can
+            # finalize the RuntimeBlock card without a refresh.
+            if payload.get("display") == "runtime":
+                _s._broadcast_chat_response(
+                    session_id, payload.get("msg_id") or msg_id, payload,
+                )
+        elif payload.get("display") == "runtime":
+            # Runtime-block placeholder / tree_update envelopes emitted
+            # by the @agentic_function wrapper. Without this branch the
+            # chat path swallows them and the user only sees the
+            # RuntimeBlock after a page refresh (which re-hydrates from
+            # SessionStore). Forward verbatim so chat-stream.ts'
+            # handleRuntimeRow can materialize the row live.
+            _s._broadcast_chat_response(
+                session_id, payload.get("msg_id") or msg_id, payload,
+            )
+        elif payload.get("type") == "tree_update":
+            # Live Execution DAG ticks (from _exec_dag.live_progress);
+            # forward so RuntimeBlock's tree fills in as the run
+            # progresses.
+            _s._broadcast_chat_response(
+                session_id, payload.get("msg_id") or msg_id, payload,
+            )
 
     # Carry the conversation's picker choice (if any) into
     # the dispatcher so it doesn't fall back to the agent

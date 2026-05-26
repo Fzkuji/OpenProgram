@@ -188,6 +188,44 @@ function handleResponse(d: ChatResponseData | undefined): void {
   // Live execution tree for a streaming `/run` — store it on the reply
   // so <RuntimeBlock />'s <ExecutionTree /> renders it as it grows.
   if (d.type === "tree_update" && d.tree) {
+    // LLM-issued @agentic_function path: the dispatcher anchors
+    // live_progress on the runtime-block id (not a `_reply` row), so a
+    // tree_update arrives with msg_id == runtime_id. If that row exists
+    // — either as a top-level ChatMsg or nested inside a parent
+    // assistant's runtimeChildren — update IT in place instead of
+    // creating a phantom `<runtime_id>_reply` placeholder.
+    const store0 = useSessionStore.getState();
+    const existingRuntime = d.msg_id ? store0.messagesById[d.msg_id] : undefined;
+    if (existingRuntime && existingRuntime.display === "runtime") {
+      store0.updateMessage(sid, d.msg_id!, {
+        function: d.function ?? existingRuntime.function,
+        contextTree: d.tree as never,
+      });
+      return;
+    }
+    // Search inside runtimeChildren of any assistant message.
+    if (d.msg_id) {
+      let foundParent: string | null = null;
+      for (const [pid, m] of Object.entries(store0.messagesById)) {
+        const kids = m.runtimeChildren;
+        if (!kids) continue;
+        if (kids.some((c) => c.id === d.msg_id)) {
+          foundParent = pid;
+          break;
+        }
+      }
+      if (foundParent) {
+        const parent = store0.messagesById[foundParent];
+        const list = parent?.runtimeChildren ?? [];
+        const next = list.map((c) =>
+          c.id === d.msg_id
+            ? { ...c, function: d.function ?? c.function, contextTree: d.tree as never }
+            : c,
+        );
+        store0.updateMessage(sid, foundParent, { runtimeChildren: next });
+        return;
+      }
+    }
     ensureReply(sid, rid);
     useSessionStore.getState().updateMessage(sid, rid, {
       display: "runtime",

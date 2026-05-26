@@ -223,6 +223,20 @@ def _wrap_agentic_runtime_block(
         # our runtime-block id so build_exec_dag(..., runtime_id) finds
         # it. Reset in finally so we don't leak into sibling calls.
         _call_token = _call_id_var.set(runtime_id)
+        # Live Execution DAG streaming: poll build_exec_dag(...,
+        # runtime_id) every ~1.2s while the tool runs and broadcast
+        # tree_update envelopes (anchored on runtime_id) so the
+        # RuntimeBlock's <ExecutionTree /> fills in live. Without this
+        # the card sits empty until the result envelope lands.
+        try:
+            from openprogram.webui._exec_dag import (
+                live_progress as _live_progress,
+            )
+            _live_ctx = _live_progress(req.session_id, runtime_id, tool_name)
+        except Exception:
+            _live_ctx = None
+        if _live_ctx is not None:
+            _live_ctx.__enter__()
         try:
             _in_subproc = os.environ.get(
                 "OPENPROGRAM_IN_AGENTIC_SUBPROCESS"
@@ -299,6 +313,11 @@ def _wrap_agentic_runtime_block(
                 _call_id_var.reset(_call_token)
             except Exception:
                 pass
+            if _live_ctx is not None:
+                try:
+                    _live_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
 
         # Finalize the placeholder.
         try:
