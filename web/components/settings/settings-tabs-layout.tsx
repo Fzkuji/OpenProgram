@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import styles from "./settings-page.module.css";
 import { prefetchSettings } from "@/lib/settings-cache";
-
-const TABS: SettingsTab[] = ["providers", "search", "channels", "general"];
 
 export type SettingsTab = "providers" | "search" | "channels" | "general";
 
@@ -21,23 +19,26 @@ export type SettingsTab = "providers" | "search" | "channels" | "general";
  * section component as `children`.
  */
 export function SettingsTabsLayout({
-  active,
   children,
 }: {
-  active: SettingsTab;
   children: ReactNode;
 }) {
-  const router = useRouter();
-  // Warm the per-tab API cache + ask Next.js to compile/prefetch the
-  // sibling route chunks as soon as the user lands on /settings/*. In
-  // dev mode each route is compiled lazily on first navigation, which
-  // is the main reason the first cross-tab click feels janky — kicking
-  // off the compile in the background here means by the time the user
-  // actually clicks the link the chunk is usually ready.
-  useEffect(() => {
-    prefetchSettings();
-    TABS.forEach((t) => router.prefetch(`/settings/${t}`));
-  }, [router]);
+  // Mounted once when the user enters /settings/* (now an app-router
+  // layout). useEffect fires once for the whole settings visit — no
+  // remount per tab click — so the topbar + nav don't tear down + set
+  // up between pages.
+  useEffect(() => { prefetchSettings(); }, []);
+
+  // Derive the active tab from the current URL instead of taking it
+  // as a prop. Each page now only renders the section body; the
+  // layout's nav highlights itself.
+  const pathname = usePathname() || "";
+  const active: SettingsTab = (() => {
+    if (pathname.startsWith("/settings/search")) return "search";
+    if (pathname.startsWith("/settings/channels")) return "channels";
+    if (pathname.startsWith("/settings/general")) return "general";
+    return "providers";
+  })();
 
   const isWide =
     active === "providers" || active === "search" || active === "channels";
