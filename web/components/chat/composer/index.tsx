@@ -524,7 +524,32 @@ export function Composer() {
     // still runs (subprocess SIGKILL is instant; cancel hook reaches
     // a hook point within ~1s for the chat path), it just no longer
     // gates the UI.
-    useSessionStore.getState().setRunningTaskFor(currentSessionId, null);
+    const store = useSessionStore.getState();
+    store.setRunningTaskFor(currentSessionId, null);
+    // Also patch the running assistant placeholder (the row that
+    // would otherwise be filled in 5-6s later with the late-arriving
+    // LLM response) to a cancelled state right now. Backend's
+    // dispatcher will overwrite the persisted node with the same
+    // ``[cancelled by user]`` content + status=cancelled when its
+    // cancel-aware finalize runs, so the React store and the on-disk
+    // node converge. Without this the chat would show a Thinking
+    // spinner until the model's stream completed naturally.
+    const ids = store.messageOrder[currentSessionId] || [];
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const m = store.messagesById[ids[i]];
+      if (!m) continue;
+      if (m.role !== "assistant") continue;
+      if (m.status === "done" || m.status === "completed"
+          || m.status === "cancelled" || m.status === "error") break;
+      store.updateMessage(currentSessionId, m.id, {
+        status: "cancelled",
+        content: m.content && m.content.trim()
+          ? `${m.content}\n\n*[cancelled by user]*`
+          : "*[cancelled by user]*",
+        thinking: undefined,
+      });
+      break;
+    }
     send({ action: "stop", session_id: currentSessionId });
   }
 
