@@ -1,27 +1,42 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import styles from "@/components/settings/settings-page.module.css";
 
 /**
- * Suspense fallback shown while a /settings/<tab>'s page chunk is
- * loading. In dev mode that includes the on-demand Next.js compile —
- * which can take 0.5–2s for a route that hasn't been visited yet —
- * so without this file React keeps the OLD page on screen for the
- * whole compile, making the click feel unresponsive.
+ * Suspense fallback for /settings/<tab>. Renders immediately when the
+ * router transitions, before the next page.tsx's chunk is fetched +
+ * compiled. The OLD page is unmounted right away — no more "click,
+ * nothing happens for a second, snap to new page" jank.
  *
- * With this file: click → old section unmounts immediately → skeleton
- * appears in the body slot → real page replaces it when ready. The
- * settings tabs layout (topbar + nav column) keeps rendering above
- * because it's the parent layout, not part of the fallback tree.
+ * Two cheap UX wins layered on top of the generic skeleton:
  *
- * The skeleton intentionally mirrors the real page's `.pageHeader`
- * shape so there's no layout-shift when the actual content lands.
+ * 1. The real page TITLE is rendered synchronously (no JS work — it's
+ *    just a string keyed off pathname). The user sees "Channels"
+ *    appear the instant they click the Channels tab, instead of a
+ *    grey rectangle. The body is still a skeleton until the page
+ *    chunk lands.
+ *
+ * 2. The skeleton shapes mirror the real `.pageHeader` + `.pageBody`
+ *    layout, so when the actual page replaces the fallback there's
+ *    no width/height shift.
  */
+const TAB_META: Record<string, { title: string }> = {
+  providers: { title: "LLM Providers" },
+  search: { title: "Web Search" },
+  channels: { title: "Channels" },
+  general: { title: "General" },
+};
+
 export default function SettingsLoading() {
+  const pathname = usePathname() || "";
+  const tab = pathname.split("/")[2] || "providers";
+  const meta = TAB_META[tab] || { title: "Settings" };
+
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
-        <div className={styles.skelTitle} />
+        <h2 className={styles.pageTitle}>{meta.title}</h2>
         <div className={styles.skelMeta} />
       </div>
       <div className={styles.pageBody}>
