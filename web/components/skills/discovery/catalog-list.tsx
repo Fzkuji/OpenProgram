@@ -2,11 +2,33 @@
 
 import { useMemo, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import type { CatalogEntry } from "@/lib/skills-store";
+import { useSkills } from "@/lib/skills-store";
 
 import { fmtCount, hasStats, relTime } from "./helpers";
 import type { Source, SortKey } from "./types";
+
+// Pill-shaped action buttons, sized + tinted to match the rest of the
+// app (composer pills, /functions card buttons). Three intents:
+//   - primary:    install — accent-tinted fill so it reads as the
+//                 main action on the card
+//   - neutral:    reinstall / minor refresh — bg-tertiary fill that
+//                 sits one shade darker than the card so it doesn't
+//                 vanish into the surface (the old `outline` Button
+//                 variant rendered as just a thin border on the same
+//                 bg, which is what the user flagged as ugly)
+//   - danger:     uninstall — red-tinted fill, low-saturation so it's
+//                 visibly destructive without screaming
+const pillBase =
+  "inline-flex items-center justify-center h-7 rounded-full px-3 text-[12px] font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none";
+const pillPrimary =
+  "bg-[color-mix(in_srgb,var(--accent-blue)_22%,transparent)] text-[var(--accent-blue)] hover:bg-[color-mix(in_srgb,var(--accent-blue)_32%,transparent)]";
+const pillNeutral =
+  "bg-[var(--bg-tertiary)] text-[var(--text-bright)] hover:bg-[color-mix(in_srgb,var(--text-bright)_10%,var(--bg-tertiary))]";
+const pillWarn =
+  "bg-[color-mix(in_srgb,#f59e0b_22%,transparent)] text-[#f59e0b] hover:bg-[color-mix(in_srgb,#f59e0b_32%,transparent)]";
+const pillDanger =
+  "bg-[color-mix(in_srgb,#ef4444_18%,transparent)] text-[#ef4444] hover:bg-[color-mix(in_srgb,#ef4444_28%,transparent)]";
 
 export function CatalogList({
   entries, source, installedNames, outdatedNames, installingKey, onInstall,
@@ -18,6 +40,7 @@ export function CatalogList({
   installingKey: string | null;
   onInstall: (source: Source, name: string) => void;
 }) {
+  const { deleteSkill } = useSkills();
   const [filter, setFilter] = useState("");
   const hasMeta = useMemo(() => hasStats(entries), [entries]);
   const [sort, setSort] = useState<SortKey>(hasMeta ? "downloads" : "default");
@@ -96,7 +119,7 @@ export function CatalogList({
           return (
             <div
               key={e.name}
-              className="flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)]/40 p-3 hover:border-[var(--text-dim)] transition-colors"
+              className="flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3 hover:border-[var(--accent-blue)] transition-colors"
             >
               <div className="flex items-start justify-between gap-2 min-w-0">
                 <div className="min-w-0 flex-1">
@@ -144,14 +167,43 @@ export function CatalogList({
                 ) : (
                   <span />
                 )}
-                <Button
-                  size="sm"
-                  variant={outdated ? "default" : installed ? "outline" : "default"}
-                  onClick={() => onInstall(source, e.name)}
-                  disabled={installingKey === key}
-                >
-                  {installingKey === key ? "…" : outdated ? "Update" : installed ? "Reinstall" : "Install"}
-                </Button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onInstall(source, e.name)}
+                    disabled={installingKey === key}
+                    className={
+                      pillBase + " " +
+                      (outdated ? pillWarn : installed ? pillNeutral : pillPrimary)
+                    }
+                  >
+                    {installingKey === key
+                      ? "…"
+                      : outdated
+                        ? "Update"
+                        : installed
+                          ? "Reinstall"
+                          : "Install"}
+                  </button>
+                  {installed && (
+                    <button
+                      type="button"
+                      title={`Uninstall ${fullName}`}
+                      aria-label={`Uninstall ${fullName}`}
+                      onClick={() => {
+                        if (confirm(`Delete skill "${fullName}"?`)) {
+                          void deleteSkill(fullName);
+                        }
+                      }}
+                      className={pillBase + " w-7 px-0 " + pillDanger}
+                    >
+                      {/* trash icon */}
+                      <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+                        <path d="M8 3h4a1 1 0 0 1 1 1v1h3.5a.75.75 0 0 1 0 1.5H16l-.83 9.13A2 2 0 0 1 13.18 17H6.82a2 2 0 0 1-1.99-1.87L4 6.5h-.5a.75.75 0 0 1 0-1.5H7V4a1 1 0 0 1 1-1Zm.5 2h3V4h-3v1ZM8 8.25a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5A.75.75 0 0 1 8 8.25Zm4 0a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5A.75.75 0 0 1 12 8.25Z"/>
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
