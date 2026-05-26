@@ -116,6 +116,11 @@ class TurnResult:
     duration_ms: int = 0
     failed: bool = False
     error: Optional[str] = None
+    # Per-turn ordered LLM blocks (thinking/text/tool, in emission
+    # order). Mirrors what's persisted to ``extra.blocks`` so the
+    # webui result-envelope path and the after-refresh DB-rebuilt
+    # path render identically.
+    blocks: list[dict] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -937,6 +942,7 @@ def process_user_turn(
         # tool_calls/blocks (they render as their own runtime-block row
         # instead of as collapsed tool cards under the assistant bubble).
         _agentic_tool_names: set[str] = set()
+        _ordered_blocks: list[dict] = []
         final_text, usage, tool_calls = _run_loop_blocking(
             req=req,
             history=loop_history,
@@ -944,6 +950,7 @@ def process_user_turn(
             cancel_event=cancel_event,
             assistant_msg_id=assistant_msg_id,
             agentic_tool_names_out=_agentic_tool_names,
+            ordered_blocks_out=_ordered_blocks,
         )
     except Exception as e:
         # Two paths, both delegated to _turn_lifecycle:
@@ -1079,33 +1086,62 @@ def process_user_turn(
             "token_source": token_source,
             "token_model":  model_id,
         })
-    # Strip @agentic_function calls — they render as their own
-    # runtime-block message (see _wrap_agentic_runtime_block) rather
-    # than as collapsed cards under the assistant bubble.
+    # Keep the unfiltered tool_calls (for tool_call_id → result
+    # lookup, including @agentic_function calls) before stripping
+    # the agentic ones from the legacy slim list. The ordered blocks
+    # need to keep the agentic tool entries so the frontend can
+    # position the RuntimeBlock at the exact spot in the LLM output
+    # where the call happened.
+    _tool_calls_all = list(tool_calls)
+    blocks: list[dict] = []
+    # Strip @agentic_function calls from the slim tool_calls list —
+    # they render as their own runtime-block message (see
+    # _wrap_agentic_runtime_block) rather than as collapsed cards
+    # under the assistant bubble.
     if tool_calls and _agentic_tool_names:
         tool_calls = [
             t for t in tool_calls
             if (t.get("tool") or "") not in _agentic_tool_names
         ]
-    if tool_calls:
+    if tool_calls or _ordered_blocks:
         # Persist BOTH shapes:
         #   * tool_calls — legacy slim list (id/tool/result/is_error)
         #     still consumed by older code paths.
-        #   * blocks — the structured form _renderAssistantBlocks /
-        #     _buildAssistantMessage expect, so the webui can rebuild
-        #     the same collapsible scaffold after refresh instead of
-        #     showing a plain text reply with no tool history.
-        blocks = [
-            {
-                "type": "tool",
-                "tool": t.get("tool"),
-                "tool_call_id": t.get("tool_call_id") or t.get("id"),
-                "input": t.get("input"),
-                "result": t.get("result"),
-                "is_error": t.get("is_error"),
-            }
-            for t in tool_calls
-        ]
+        #   * blocks — the structured, ORDERED form the webui expects so
+        #     it can render thinking / LLM text / tool cards interleaved
+        #     in original emission order. If ordered blocks weren't
+        #     captured (older path / streaming abort before turn_end),
+        #     fall back to the legacy tool-only blocks layout.
+        _tc_by_id = {
+            (t.get("tool_call_id") or t.get("id")): t for t in _tool_calls_all
+        }
+        if _ordered_blocks:
+            for blk in _ordered_blocks:
+                if blk.get("type") == "tool":
+                    _tid = blk.get("tool_call_id")
+                    _tc = _tc_by_id.get(_tid, {})
+                    blocks.append({
+                        "type": "tool",
+                        "tool": blk.get("tool") or _tc.get("tool"),
+                        "tool_call_id": _tid,
+                        "input": blk.get("input") or _tc.get("input"),
+                        "result": _tc.get("result"),
+                        "is_error": _tc.get("is_error"),
+                    })
+                else:
+                    blocks.append(dict(blk))
+        else:
+            blocks = [
+                {
+                    "type": "tool",
+                    "tool": t.get("tool"),
+                    "tool_call_id": t.get("tool_call_id") or t.get("id"),
+                    "input": t.get("input"),
+                    "result": t.get("result"),
+                    "is_error": t.get("is_error"),
+                }
+                for t in tool_calls
+            ]
         assistant_msg["extra"] = json.dumps(
             {"tool_calls": tool_calls, "blocks": blocks},
             default=str,
@@ -1297,6 +1333,7 @@ def process_user_turn(
         tool_calls=tool_calls,
         usage=usage,
         duration_ms=int((time.time() - started_at) * 1000),
+        blocks=blocks,
     )
 
 
@@ -1413,10 +1450,18 @@ def _run_loop_blocking(
     stream_fn=None,
     assistant_msg_id: Optional[str] = None,
     agentic_tool_names_out: Optional[set[str]] = None,
+    ordered_blocks_out: Optional[list[dict]] = None,
 ) -> tuple[str, dict, list[dict]]:
     """Build AgentContext, kick off agent_loop, drain its EventStream.
 
     Returns (final_text, usage, tool_calls).
+
+    `ordered_blocks_out`, if provided, is mutated in place to hold the
+    per-turn ordered block list (``[{"type":"thinking"|"text"|"tool",
+    ...}, ...]``) reconstructed from the final AssistantMessage's
+    content. Used by the webui to render LLM text / thinking / tool
+    cards in the order they appeared, instead of stacking all tools
+    at the bottom of the bubble.
 
     Runs synchronously inside a fresh asyncio loop so callers don't
     need to be async. Cancel via cancel_event flips an asyncio.Event
@@ -1704,6 +1749,48 @@ def _run_loop_blocking(
                     for k in ("input_tokens", "output_tokens",
                               "cache_read_tokens", "cache_write_tokens"):
                         usage_total[k] += usage.get(k, 0)
+                    # Build ordered blocks from msg.content so the
+                    # webui can render thinking / text / tool cards
+                    # interleaved in their original LLM emission
+                    # order. Without this the bubble shows all LLM
+                    # text first and then every tool card stacked at
+                    # the bottom — wrong when the LLM said something,
+                    # called a tool, then kept narrating.
+                    if ordered_blocks_out is not None and msg is not None:
+                        try:
+                            for blk in getattr(msg, "content", None) or []:
+                                btype = getattr(blk, "type", None)
+                                if btype == "text":
+                                    _t = getattr(blk, "text", "") or ""
+                                    if _t:
+                                        ordered_blocks_out.append(
+                                            {"type": "text", "text": _t}
+                                        )
+                                elif btype == "thinking":
+                                    _t = getattr(blk, "thinking", "") or ""
+                                    if _t:
+                                        ordered_blocks_out.append(
+                                            {"type": "thinking", "text": _t}
+                                        )
+                                elif btype == "toolCall":
+                                    _tid = getattr(blk, "id", None)
+                                    _name = getattr(blk, "name", None)
+                                    _args = getattr(blk, "arguments", None)
+                                    try:
+                                        _input = (
+                                            json.dumps(_args, default=str)
+                                            if _args is not None else None
+                                        )
+                                    except Exception:
+                                        _input = None
+                                    ordered_blocks_out.append({
+                                        "type": "tool",
+                                        "tool": _name,
+                                        "tool_call_id": _tid,
+                                        "input": _input,
+                                    })
+                        except Exception:
+                            pass
 
         return "".join(final_text_parts).strip(), usage_total, tool_calls
 

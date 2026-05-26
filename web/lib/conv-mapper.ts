@@ -8,7 +8,7 @@
  * loaded conversation. The legacy DOM renderer still runs in parallel
  * until the cutover flip — feeding the store is additive.
  */
-import type { ChatMsg, ChatToolCall } from "./session-store";
+import type { AssistantBlock, ChatMsg, ChatToolCall } from "./session-store";
 
 /** Same allowlist as the one in ``chat-stream.ts``. Hides any persisted
  *  agentic tool block on history reload so we don't show both the
@@ -226,13 +226,33 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         m.blocks && m.blocks.length
           ? m.blocks
           : (m.tool_calls || []).map((tc) => ({ type: "tool", ...tc }));
+      // Ordered passthrough — the bubble renders block-by-block to
+      // keep tool cards / agentic RuntimeBlocks at the spot in the
+      // LLM output where they were called, instead of stacking all
+      // tool cards at the bottom of the bubble.
+      const orderedBlocks: AssistantBlock[] = [];
       rawBlocks.forEach((b, bi) => {
         if (b.type === "thinking" && b.text) {
           thinking = (thinking ?? "") + b.text;
+          orderedBlocks.push({ type: "thinking", text: b.text });
+        } else if (b.type === "text" && b.text) {
+          orderedBlocks.push({ type: "text", text: b.text });
         } else if (b.type === "tool") {
+          const tid = b.tool_call_id || `${id}_t${bi}`;
+          orderedBlocks.push({
+            type: "tool",
+            tool: b.tool || "?",
+            tool_call_id: tid,
+            input: b.input || "",
+            result:
+              b.result === undefined || b.result === null
+                ? undefined
+                : String(b.result),
+            is_error: !!b.is_error,
+          });
           if (b.tool && AGENTIC_TOOL_NAMES.has(b.tool)) return;
           tools.push({
-            id: b.tool_call_id || `${id}_t${bi}`,
+            id: tid,
             tool: b.tool || "?",
             input: b.input || "",
             result:
@@ -250,6 +270,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         content: m.content || "",
         thinking,
         tools: tools.length ? tools : undefined,
+        blocks: orderedBlocks.length ? orderedBlocks : undefined,
         function: m.function || undefined,
         display: m.display === "runtime" ? "runtime" : undefined,
         status: (() => {

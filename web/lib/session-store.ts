@@ -139,6 +139,26 @@ export interface ChatMsg {
    *  standalone top-level rows. Top-level MessageList skips any row
    *  that lives here. Only assistant rows ever populate this. */
   runtimeChildren?: ChatMsg[];
+  /** Ordered LLM blocks (thinking / text / tool) in the order the
+   *  model emitted them. When present, the assistant bubble renders
+   *  block-by-block so tool cards / RuntimeBlocks land at the exact
+   *  position in the LLM output where the tool was called, instead
+   *  of all stacked at the bottom. Tool blocks with an agentic name
+   *  (gui_agent / research_agent / wiki_agent) link to an entry in
+   *  ``runtimeChildren`` via ``tool_call_id``. */
+  blocks?: AssistantBlock[];
+}
+
+export interface AssistantBlock {
+  type: "thinking" | "text" | "tool";
+  /** thinking / text payload */
+  text?: string;
+  /** tool block fields */
+  tool?: string;
+  tool_call_id?: string;
+  input?: string;
+  result?: string;
+  is_error?: boolean;
 }
 
 export interface ConvSummary {

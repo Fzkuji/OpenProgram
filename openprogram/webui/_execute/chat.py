@@ -288,11 +288,17 @@ def run_query(
     # plain text once we stamp the message, then the
     # rebuilt scaffold after refresh — three different
     # renders for the same turn).
+    # Prefer the dispatcher-built ordered blocks (thinking / text /
+    # tool, in original LLM emission order). Fall back to the
+    # tool-only stream-event accumulator for paths that don't
+    # populate TurnResult.blocks (e.g. cancellation mid-stream).
+    _ordered_blocks = list(getattr(turn_result, "blocks", None) or [])
+    _blocks_out = _ordered_blocks if _ordered_blocks else tool_blocks_collected
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "result",
         "content": str(result),
         "tool_calls": tool_calls_collected,
-        "blocks": tool_blocks_collected,
+        "blocks": _blocks_out,
     })
     # dispatcher 走 stream_simple 不走 runtime.exec, last_usage 永远是 0;
     # 把 TurnResult.usage 同步过去, 不然 token pill 永远显示 0.
