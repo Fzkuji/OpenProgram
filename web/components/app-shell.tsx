@@ -111,6 +111,65 @@ function isChatRoute(pathname: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+
+  // Background route warm-up. After AppShell paints and the main
+  // thread goes idle, prefetch each commonly-used route in priority
+  // order — most-visited first, one at a time, spaced 800ms apart so
+  // we don't dogpile the dev server's webpack workers. In dev mode
+  // each prefetch kicks off the on-demand compile; in prod it just
+  // primes the chunk cache. Either way, by the time the user clicks
+  // a sidebar item the route is usually already ready and the click
+  // feels instant.
+  useEffect(() => {
+    // Ordered by observed click frequency. The current pathname is
+    // skipped (already loaded) and /chat / /s/<id> don't need
+    // prefetching (their UI is mounted inside AppShell directly).
+    const WARM_ROUTES = [
+      "/settings/providers",
+      "/functions",
+      "/skills",
+      "/settings/general",
+      "/memory",
+      "/settings/channels",
+      "/settings/search",
+      "/mcp",
+      "/plugins",
+      "/chats",
+    ];
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    function warmNext(i: number) {
+      if (cancelled) return;
+      if (i >= WARM_ROUTES.length) return;
+      const route = WARM_ROUTES[i];
+      if (route !== pathname) {
+        try { router.prefetch(route); } catch { /* ignore */ }
+      }
+      timer = setTimeout(() => warmNext(i + 1), 800);
+    }
+    // Wait until the browser is idle so prefetches don't compete with
+    // the initial render's JS work. Falls back to a 1.5s delay where
+    // requestIdleCallback isn't available (Safari).
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    let idleId: number | null = null;
+    if (typeof win.requestIdleCallback === "function") {
+      idleId = win.requestIdleCallback(() => warmNext(0), { timeout: 3000 });
+    } else {
+      timer = setTimeout(() => warmNext(0), 1500);
+    }
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (idleId != null && typeof win.cancelIdleCallback === "function") {
+        win.cancelIdleCallback(idleId);
+      }
+    };
+  // Re-run when pathname changes so we don't waste a slot prefetching
+  // the route we're already on. router is stable from useRouter().
+  }, [pathname, router]);
   // Expose the React store to the legacy JS scripts so they can write
   // through to it. Each legacy caller that touches React-owned state
   // (setWelcomeVisible, welcome example clicks once migrated, etc.)
