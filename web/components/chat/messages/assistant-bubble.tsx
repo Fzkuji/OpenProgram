@@ -13,6 +13,7 @@ import { agentColor, agentDisplayName, agentInitial } from "@/lib/agent-style";
 
 import { MessageActions } from "./message-actions";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
+import { RuntimeBlock } from "./runtime-block";
 import { ThinkingBlock } from "./thinking-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
@@ -34,7 +35,11 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   const streaming = msg.status === "streaming" || msg.status === "pending";
   const tools = msg.tools ?? [];
   const hasContent = !!msg.content;
-  const empty = !hasContent && !msg.thinking && tools.length === 0;
+  const empty =
+    !hasContent &&
+    !msg.thinking &&
+    tools.length === 0 &&
+    !(msg.runtimeChildren && msg.runtimeChildren.length > 0);
 
   const color = agentColor(msg.agentId);
   const initial = agentInitial(msg.agentId);
@@ -72,6 +77,13 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               className="chat-text message-content"
               dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
             />
+          ) : null}
+          {msg.runtimeChildren && msg.runtimeChildren.length > 0 ? (
+            <div className="assistant-runtime-children">
+              {msg.runtimeChildren.map((c) => (
+                <RuntimeBlock key={c.id} msg={c} />
+              ))}
+            </div>
           ) : null}
           {!streaming && msg.id ? (
             <TurnFilesChips assistantMsgId={msg.id} />

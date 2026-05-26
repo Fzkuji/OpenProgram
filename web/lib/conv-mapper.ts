@@ -140,6 +140,13 @@ function siblingFields(m: LegacyMsg) {
 
 export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
   const out: ChatMsg[] = [];
+  // Index assistant rows already emitted so we can attach LLM-issued
+  // runtime-block children INSIDE the owning assistant bubble instead
+  // of pushing them as standalone top-level rows. Built incrementally
+  // as we walk `messages` in order — the backend splices the runtime
+  // child immediately after its parent assistant in the chain, so by
+  // the time we see the child, the parent is already in `out`.
+  const assistantById = new Map<string, ChatMsg>();
   messages.forEach((m, i) => {
     // streaming-resume: a ``type: "status"`` row with display=runtime
     // is the runner's persisted reply (placeholder when running,
@@ -175,6 +182,42 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
       return;
     }
 
+    // LLM-issued @agentic_function runtime-block placeholder: if its
+    // parent_id points at an assistant row we've already emitted, merge
+    // it into that assistant's `runtimeChildren` and DO NOT push it
+    // onto the top-level `out` list. fn-form / direct-run runtime
+    // blocks (parent_id is a user msg) fall through and stay top-level.
+    if (_isRuntimePlaceholder && m.role === "assistant") {
+      const parentId = typeof m.parent_id === "string" ? m.parent_id : undefined;
+      const parent = parentId ? assistantById.get(parentId) : undefined;
+      if (parent) {
+        const child: ChatMsg = {
+          id,
+          role: "assistant",
+          content: m.content || "",
+          function: m.function || undefined,
+          display: "runtime",
+          status: (() => {
+            const _s = m.status;
+            if (_s === "running" || _isRunningPlaceholder) return "running";
+            if (_s === "cancelled") return "cancelled";
+            if (_s === "interrupted") return "interrupted";
+            if (_s === "error") return "error";
+            if (_s === "streaming") return "streaming";
+            return m.type === "error" ? "error" : "done";
+          })(),
+          rawType: m.type,
+          timestamp: ts,
+          contextTree: (m.context_tree as never) || undefined,
+          usage: m.usage,
+          parentId,
+          agentId: m.agent_id || undefined,
+        };
+        parent.runtimeChildren = [...(parent.runtimeChildren ?? []), child];
+        return;
+      }
+    }
+
     if (m.role === "assistant") {
       let thinking: string | undefined;
       const tools: ChatToolCall[] = [];
@@ -201,7 +244,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
           });
         }
       });
-      out.push({
+      const asstMsg: ChatMsg = {
         id,
         role: "assistant",
         content: m.content || "",
@@ -231,7 +274,9 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         attach: _readAttach(m),
         agentId: m.agent_id || undefined,
         ...siblingFields(m),
-      });
+      };
+      out.push(asstMsg);
+      assistantById.set(id, asstMsg);
       return;
     }
 

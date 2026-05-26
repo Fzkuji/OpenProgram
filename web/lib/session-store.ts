@@ -67,6 +67,11 @@ export interface ChatMsg {
    *  internal-source msgs (e.g. task_followup) with the attach
    *  pointer they belong to. */
   parentId?: string;
+  /** When this user msg is the root of a spawned sub-branch, points
+   *  back at the main-lane turn (LLM reply) that called task() to
+   *  create it. Frontend renders a "Spawned from" card at the top
+   *  of the sub branch so the user can switch back. */
+  spawnedFrom?: { callerId: string; label?: string };
   timestamp?: number;
   attempts?: { content: string; timestamp: number; tree?: TreeNode; usage?: unknown }[];
   current_attempt?: number;
@@ -126,6 +131,14 @@ export interface ChatMsg {
    *  session repo; the UI uses this to colour / label / avatar
    *  each turn by author. */
   agentId?: string;
+  /** Runtime-block child rows belonging to this assistant turn (LLM-
+   *  issued @agentic_function calls — gui_agent / research_agent /
+   *  wiki_agent). Populated at the data-loading layer (conv-mapper for
+   *  history, chat-stream for live runs) so the parent assistant
+   *  bubble can render them INSIDE its own card instead of as
+   *  standalone top-level rows. Top-level MessageList skips any row
+   *  that lives here. Only assistant rows ever populate this. */
+  runtimeChildren?: ChatMsg[];
 }
 
 export interface ConvSummary {

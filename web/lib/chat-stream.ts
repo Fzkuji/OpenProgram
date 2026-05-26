@@ -220,51 +220,148 @@ function handleResponse(d: ChatResponseData | undefined): void {
   }
 }
 
+/** True iff the parent_id refers to an assistant ChatMsg already in the
+ *  store. LLM-issued @agentic_function runtime blocks have parent_id =
+ *  assistant reply id; fn-form / direct-run runtime blocks have
+ *  parent_id = user msg id. Only the former gets merged INSIDE the
+ *  assistant bubble; the latter stays as a top-level row. */
+function _isAssistantParent(parentId: string | undefined): boolean {
+  if (!parentId) return false;
+  const p = useSessionStore.getState().messagesById[parentId];
+  return !!p && p.role === "assistant";
+}
+
+/** Push or replace a runtime child inside its parent assistant's
+ *  ``runtimeChildren`` array. Mutation goes through
+ *  ``updateMessage`` so subscribers (the AssistantBubble) re-render. */
+function _mergeRuntimeIntoParent(
+  sid: string,
+  parentId: string,
+  child: ChatMsg,
+): void {
+  const store = useSessionStore.getState();
+  const parent = store.messagesById[parentId];
+  if (!parent) return;
+  const existing = parent.runtimeChildren ?? [];
+  const idx = existing.findIndex((c) => c.id === child.id);
+  const nextChildren =
+    idx >= 0
+      ? existing.map((c, i) => (i === idx ? { ...c, ...child } : c))
+      : [...existing, child];
+  store.updateMessage(sid, parentId, { runtimeChildren: nextChildren });
+}
+
 /** Materialize / update a runtime-block row for an LLM-issued
- *  @agentic_function call. The row is its own ChatMsg keyed by the
- *  dispatcher-assigned ``msg_id`` (e.g. ``<assistant_id>_rt_<call_id>``),
- *  sitting alongside the assistant reply that triggered it. Rendered by
- *  <MessageList /> as a <RuntimeBlock />. */
+ *  @agentic_function call. Two routing paths:
+ *    - parent is an assistant ChatMsg → merge into the assistant's
+ *      ``runtimeChildren`` so the bubble renders the runtime card
+ *      inside its own body (no separate top-level row).
+ *    - parent is a user / unknown row (fn-form, direct /api/function/)
+ *      → fall back to the legacy behaviour: own ChatMsg, rendered as a
+ *      standalone <RuntimeBlock /> by <MessageList />. */
 function handleRuntimeRow(sid: string, d: ChatResponseData): void {
   if (!d.msg_id) return;
   const store = useSessionStore.getState();
   const existing = store.messagesById[d.msg_id];
+  const parentId = d.parent_id;
+  const mergeIntoAssistant = _isAssistantParent(parentId);
+
   if (d.type === "status") {
     // First sighting — create the row. Idempotent on duplicate
     // broadcasts (e.g. cross-tab re-emit).
     if (existing) return;
-    store.appendMessage(sid, {
+    const child: ChatMsg = {
       id: d.msg_id,
       role: "assistant",
       content: "",
       display: "runtime",
       function: d.function,
       status: d.status === "running" ? "running" : "streaming",
-      parentId: d.parent_id,
+      parentId,
       timestamp: Date.now(),
-    });
+    };
+    if (mergeIntoAssistant && parentId) {
+      _mergeRuntimeIntoParent(sid, parentId, child);
+    } else {
+      // Parent is user / unknown / not-yet-present — keep the legacy
+      // top-level row. If the assistant parent shows up between
+      // status and result, the result branch will migrate the row
+      // into the parent's runtimeChildren and remove it from order.
+      store.appendMessage(sid, child);
+    }
     return;
   }
   // type === "result": finalize the row with the rebuilt DAG + return
-  // text. Falls back to appendMessage if we somehow missed the status
-  // envelope (shouldn't happen on a healthy stream, but be defensive).
-  const patch = {
+  // text.
+  const patch: Partial<ChatMsg> = {
     content: d.content ?? "",
-    display: "runtime" as const,
+    display: "runtime",
     function: d.function ?? existing?.function,
-    status: "done" as const,
+    status: "done",
     rawType: d.type,
     contextTree: (d.context_tree as never) || undefined,
     timestamp: Date.now(),
   };
+  if (mergeIntoAssistant && parentId) {
+    // Update inside the parent's runtimeChildren.
+    const parent = store.messagesById[parentId];
+    const list = parent?.runtimeChildren ?? [];
+    const idx = list.findIndex((c) => c.id === d.msg_id);
+    if (idx >= 0) {
+      const next = list.map((c, i) =>
+        i === idx ? { ...c, ...patch } : c,
+      );
+      store.updateMessage(sid, parentId, { runtimeChildren: next });
+    } else {
+      const child: ChatMsg = {
+        id: d.msg_id,
+        role: "assistant",
+        content: patch.content ?? "",
+        display: "runtime",
+        function: patch.function,
+        status: "done",
+        rawType: patch.rawType,
+        contextTree: patch.contextTree,
+        timestamp: patch.timestamp,
+        parentId,
+      };
+      _mergeRuntimeIntoParent(sid, parentId, child);
+    }
+    // Also clean up any top-level copy from the status branch (when
+    // the assistant parent didn't yet exist at status time).
+    if (store.messagesById[d.msg_id]) {
+      // Remove the standalone row from message order.
+      useSessionStore.setState((s) => {
+        const order = s.messageOrder[sid];
+        if (!order) return {};
+        const i = order.indexOf(d.msg_id!);
+        if (i < 0) return {};
+        const nextOrder = [...order];
+        nextOrder.splice(i, 1);
+        const byId = { ...s.messagesById };
+        delete byId[d.msg_id!];
+        return {
+          messagesById: byId,
+          messageOrder: { ...s.messageOrder, [sid]: nextOrder },
+        };
+      });
+    }
+    return;
+  }
   if (existing) {
     store.updateMessage(sid, d.msg_id, patch);
   } else {
     store.appendMessage(sid, {
       id: d.msg_id,
       role: "assistant",
-      parentId: d.parent_id,
-      ...patch,
+      parentId,
+      content: patch.content ?? "",
+      display: "runtime",
+      function: patch.function,
+      status: "done",
+      rawType: patch.rawType,
+      contextTree: patch.contextTree,
+      timestamp: patch.timestamp,
     });
   }
 }
