@@ -114,6 +114,20 @@ def _cancel_hook() -> None:
         raise CancelledError(f"Execution stopped by user (conv={cid})")
 
 
+def check_cancelled() -> None:
+    """Public cancel checkpoint usable from inside long-running tool code.
+
+    Same semantics as ``_cancel_hook`` but exported so non-@agentic_function
+    code paths (e.g. GUI-Agent observe / OCR / detector pipelines) can yield
+    to the stop flag between heavy synchronous stages without waiting for
+    the next @agentic_function boundary. Safe no-op when no session is bound
+    (e.g. CLI / unit test contexts).
+    """
+    cid = _current_session_id.get(None)
+    if cid and is_cancelled(cid):
+        raise CancelledError(f"Execution stopped by user (conv={cid})")
+
+
 # Register the cancel hook once at import time.
 add_pre_invocation_hook(_cancel_hook)
 
