@@ -279,6 +279,21 @@
    so every branch reads as its own continuous ribbon. No CSS overrides
    here beyond fill:none (belt-and-braces in case the inline drops). */
 .history-edge { fill: none; }
+/* Edges are double-clickable. The hit-area is a wide invisible
+   sibling path under the visible stroke (see ``history-edge-hit``).
+   Hovering the hit path fattens the visible stroke for feedback. */
+.history-edge-hit {
+  cursor: pointer;
+}
+.history-edge-group:hover .history-edge {
+  stroke-width: 3.5;
+  opacity: 1;
+}
+.history-edge-hit.attach-edge-hit:hover ~ .attach-edge,
+.history-edge-hit.spawn-edge-hit:hover ~ .spawn-edge {
+  stroke-width: 2.4;
+  opacity: 1;
+}
 
 .history-node { cursor: pointer; }
 .history-node circle,
@@ -296,7 +311,10 @@
 /* Next-message context range: nodes/edges outside the active branch
    the next chat message will carry are faded. Transition so the range
    updating after a turn reads as a soft change, not a flash. */
-.history-node.out-of-context { opacity: 0.6; transition: opacity 0.2s ease; }
+/* Nodes keep a solid fill regardless of context / head membership —
+   sub-call nodes from nested @agentic_function calls should look the
+   same as top-level nodes. Edges still dim to convey context range. */
+.history-node.out-of-context { opacity: 1; }
 .history-edge.out-of-context { opacity: 0.4; transition: opacity 0.2s ease; }
 
 /* Inline row labels — message preview / function name beside each node. */
@@ -323,30 +341,130 @@
   fill: var(--text-primary);
 }
 
+/* DAG node tooltip — structured card with header / input / output
+   blocks. Implemented in web/lib/runtime-bridge/history/tooltip.ts.
+   Two visual states: default (collapsed, ~3 short lines, sits next
+   to the node) and ``.expanded`` (after a 5s dwell, full schema). */
 .history-tooltip {
   position: absolute;
   pointer-events: none;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  padding: 6px 9px;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 11.5px;
   line-height: 1.4;
+  width: 240px;
   max-width: 240px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   opacity: 0;
-  transform: translateY(-2px);
-  transition: opacity 0.1s;
+  transition: opacity 0.1s,
+              width 0.18s ease,
+              max-height 0.18s ease;
   z-index: 5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.history-tooltip.expanded {
+  width: 360px;
+  max-width: 360px;
+  max-height: 420px;
+  overflow-y: auto;
+  z-index: 50;
 }
 .history-tooltip.visible { opacity: 1; }
-.history-tooltip-role {
-  color: var(--text-muted);
-  font-size: 12px;
+.history-tooltip-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.history-tooltip-kind {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  margin-bottom: 2px;
+}
+.history-tooltip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.history-tooltip-chip {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+.history-tooltip-block {
+  margin-top: 6px;
+}
+.history-tooltip-block:first-of-type {
+  margin-top: 0;
+}
+.history-tooltip-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+}
+.history-tooltip-body {
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
+               Monaco, Consolas, monospace);
+  font-size: 11px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  padding: 4px 6px;
+  max-height: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.history-tooltip.expanded .history-tooltip-body {
+  max-height: 240px;
+  overflow-y: auto;
+  display: block;
+  -webkit-line-clamp: unset;
+  font-size: 11.5px;
+}
+.history-tooltip-kv {
+  display: flex;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 1px 0;
+}
+.history-tooltip-kv-key {
+  color: var(--text-muted);
+  min-width: 54px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  padding-top: 1px;
+}
+.history-tooltip-kv-val {
+  color: var(--text-primary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
+               Monaco, Consolas, monospace);
+  word-break: break-all;
+  flex: 1;
 }
 
 
