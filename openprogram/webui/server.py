@@ -932,7 +932,28 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
 
 
 def _broadcast_chat_response(session_id: str, msg_id: str, response: dict):
-    """Broadcast a chat response to all WebSocket clients."""
+    """Broadcast a chat response to all WebSocket clients.
+
+    Post-stop suppression: when this session has been cancelled
+    (``mark_cancelled`` flag is up), drop any further chat_response
+    envelopes for it. The in-flight worker thread can keep producing
+    output for up to ~1.2s after stop while cooperative cancel
+    reaches a hook point; without this gate, the UI would keep
+    receiving streaming text / tree updates / partial tool results
+    after the user explicitly asked for silence. The DB writes
+    continue underneath (so the partial state is preserved if the
+    user comes back), only the WS broadcast is gagged. The cancel
+    flag is cleared by the cleanup path so subsequent turns can
+    broadcast normally.
+    """
+    if _is_cancelled(session_id):
+        # Always let the explicit ``stopped`` status frame through —
+        # that's how the UI flips its own state to stopped. Anything
+        # else (stream_event / tree_update / result / status≠stopped)
+        # is post-stop noise and gets dropped.
+        if not (response.get("type") == "status"
+                and response.get("stopped")):
+            return
     response["session_id"] = session_id
     response["msg_id"] = msg_id
     response["timestamp"] = time.time()

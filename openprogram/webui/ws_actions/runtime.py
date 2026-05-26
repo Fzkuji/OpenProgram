@@ -156,7 +156,17 @@ async def handle_browser(ws, cmd: dict):
 
 
 async def handle_stop(ws, cmd: dict):
-    """Mirror /api/stop — cancel in-flight turn for a conv."""
+    """Mirror /api/stop — cancel in-flight turn for a conv.
+
+    User-facing contract: clicking stop is *instant*. All subsequent
+    chat-response broadcasts for this session are gagged by
+    ``_broadcast_chat_response`` (it checks ``is_cancelled``).
+    The in-flight worker thread keeps running for up to ~1.2s while
+    cooperative cancel reaches a hook point — but its output never
+    reaches the UI. Any ``status=running`` placeholder rows are
+    also patched to ``cancelled`` here so a refresh after stop
+    doesn't show a stuck spinner.
+    """
     from openprogram.webui import server as _s
     session_id = cmd.get("session_id")
     if not session_id:
@@ -171,6 +181,31 @@ async def handle_stop(ws, cmd: dict):
             q.put_nowait({"_cancelled": True})
         except Exception:
             pass
+    # Patch any ``status=running`` rows for this session to
+    # ``cancelled`` so the chat doesn't show a stuck spinner after
+    # refresh. Runs synchronously inside the stop handler — cheap,
+    # ~10ms for a small session.
+    try:
+        from openprogram.agent.session_db import default_db
+        from openprogram.store import GraphStoreShim
+        _db = default_db()
+        _msgs = _db.get_messages(session_id) or []
+        _shim: GraphStoreShim | None = None
+        for _m in _msgs:
+            if (_m.get("status") or "done") != "running":
+                continue
+            if _shim is None:
+                _shim = GraphStoreShim(_db, session_id)
+            _shim.update(
+                _m["id"],
+                metadata={
+                    "status": "cancelled",
+                    "last_update_at": time.time(),
+                    "_cancelled_reason": "user_stop",
+                },
+            )
+    except Exception:
+        pass
     _s._broadcast(json.dumps({
         "type": "status",
         "paused": False,
