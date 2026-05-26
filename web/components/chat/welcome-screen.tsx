@@ -75,8 +75,10 @@ export function WelcomeScreen() {
       return;
     }
     // Functions list hasn't streamed in yet — fall back to filling the
-    // composer with "run <name> " so the click still does something.
-    setComposerInput(`run ${name} `);
+    // composer with the function name so the click still does something.
+    // (The legacy `run <name>` text-command path is gone; if the user
+    // edits + submits, this just sends as plain chat text now.)
+    setComposerInput(`${name} `);
     focusComposer();
   }
 

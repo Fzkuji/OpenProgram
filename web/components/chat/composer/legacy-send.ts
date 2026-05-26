@@ -70,23 +70,20 @@ export function sendChatMessage({
 
   const sessionId = w.currentSessionId ?? null;
 
-  const isRun = /^run\s/i.test(text);
-  if (isRun) w._lastRunCommand = text;
-
   // Hide the welcome panel right away — before the ack round-trip.
   w.setWelcomeVisible?.(false);
 
+  // The legacy `run ...` typed-command path is gone (Track A removed
+  // the backend parser; fn-form submits now POST /api/function/{name}
+  // directly). So a `run gui_agent ...` typed in the textarea is just
+  // ordinary chat text to the LLM now — no special `exec_thinking_effort`
+  // override here.
   const payload: Record<string, unknown> = {
     action: "chat",
     text,
     session_id: sessionId,
     thinking_effort: thinking,
-    // For a `/run`, the LLM work happens in the function's exec
-    // runtime — so the effort the user picked in the composer drives
-    // exec, not the chat side. (A plain chat keeps the agent-settings
-    // exec effort.) Without this the run ignored the picker and fell
-    // back to the provider default — xhigh for codex.
-    exec_thinking_effort: isRun ? thinking : w._execThinkingEffort,
+    exec_thinking_effort: w._execThinkingEffort,
     tools: toolsEnabled,
     web_search: webSearchEnabled,
   };

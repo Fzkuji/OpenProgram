@@ -14,7 +14,7 @@ interface Props {
   onRun?: (name: string) => void;
 }
 
-export function FunctionRunDialog({ fn, onClose }: Props) {
+export function ProgramRunDialog({ fn, onClose }: Props) {
   const router = useRouter();
   const visible = fn.params_detail.filter((p) => !p.hidden);
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -29,7 +29,6 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
   const [running, setRunning] = useState(false);
 
   async function runInChat() {
-    // Build typed kwargs and POST the new function-call endpoint.
     const kwargs: Record<string, unknown> = {};
     for (const p of visible) {
       const v = values[p.name];

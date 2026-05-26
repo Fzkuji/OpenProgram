@@ -685,9 +685,15 @@ export function Composer() {
       return;
     }
 
-    const parts: string[] = ["run", fn.name];
+    // Build typed kwargs for the new POST /api/function/{name} endpoint.
+    // Track A removed the /run text-command path entirely — fn-form
+    // submits now talk to the dispatcher's forced tool-call entry instead
+    // of round-tripping through the chat WS as `run name k=v ...` text.
+    const kwargs: Record<string, unknown> = {};
     for (const p of visibleParams(fn)) {
       const isBool = p.type === "bool" || p.type === "boolean";
+      const isInt = p.type === "int";
+      const isFloat = p.type === "float" || p.type === "number";
       let v = (fnForm.values[p.name] ?? "").trim();
       if (!v && isBool) v = "False";
       if (!v && !p.required) continue;
@@ -695,41 +701,39 @@ export function Composer() {
         fnForm.setError(p.name);
         return;
       }
-      if (v.indexOf(" ") !== -1 || v.indexOf('"') !== -1) {
-        parts.push(`${p.name}=${JSON.stringify(v)}`);
+      if (isBool) {
+        kwargs[p.name] = v === "True" || v === "true" || v === "1";
+      } else if (isInt) {
+        const n = parseInt(v, 10);
+        kwargs[p.name] = Number.isFinite(n) ? n : v;
+      } else if (isFloat) {
+        const n = parseFloat(v);
+        kwargs[p.name] = Number.isFinite(n) ? n : v;
       } else {
-        parts.push(`${p.name}=${v}`);
-      }
-    }
-    if (workdirMode !== "hidden") {
-      if (wd.indexOf(" ") !== -1 || wd.indexOf('"') !== -1) {
-        parts.push(`work_dir=${JSON.stringify(wd)}`);
-      } else {
-        parts.push(`work_dir=${wd}`);
+        kwargs[p.name] = v;
       }
     }
 
-    const command = parts.join(" ");
-    // Same legacy hand-off as plain chat — sendMessage detects the
-    // `run ...` prefix and renders the runtime block instead of a
-    // user message bubble, then writes the WS payload.
-    const handled = sendChatMessage({
-      text: command,
-      thinking,
-      toolsEnabled,
-      webSearchEnabled,
+    const body: Record<string, unknown> = { kwargs };
+    if (workdirMode !== "hidden" && wd) body.work_dir = wd;
+    if (currentSessionId) body.session_id = currentSessionId;
+
+    // Hide welcome panel right away (matches old sendChatMessage UX).
+    const w = window as unknown as {
+      setWelcomeVisible?: (show: boolean) => void;
+      setRunning?: (running: boolean) => void;
+    };
+    w.setWelcomeVisible?.(false);
+    w.setRunning?.(true);
+
+    void fetch(`/api/function/${encodeURIComponent(fn.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch((err) => {
+      console.error("function call failed:", err);
+      w.setRunning?.(false);
     });
-    if (!handled) {
-      const ok = send({
-        action: "chat",
-        text: command,
-        session_id: currentSessionId ?? null,
-        thinking_effort: thinking,
-        tools: toolsEnabled,
-        web_search: webSearchEnabled,
-      });
-      if (!ok) return;
-    }
     handleFnFormClose();
   }, [
     currentSessionId,
@@ -737,10 +741,6 @@ export function Composer() {
     fnForm,
     handleFnFormClose,
     isRunning,
-    send,
-    thinking,
-    toolsEnabled,
-    webSearchEnabled,
   ]);
 
   const onSendButtonClick = fnFormActive ? submitFnForm : submit;

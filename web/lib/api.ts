@@ -129,7 +129,7 @@ export const api = {
 
   runFunction: (name: string, params: Record<string, unknown>) =>
     jsonFetch<{ result: unknown; error?: string }>(
-      `/api/run/${encodeURIComponent(name)}`,
+      `/api/function/${encodeURIComponent(name)}`,
       { method: "POST", body: JSON.stringify(params) }
     ),
 
