@@ -164,6 +164,7 @@ def _wrap_agentic_runtime_block(
 
     orig_execute = agent_tool.execute
     tool_name = agent_tool.name
+    _is_agentic_tool = bool(getattr(agent_tool, "_is_agentic", False))
 
     async def _runtime_block_execute(call_id, args, cancel, on_update):
         from openprogram.agent.session_db import default_db
@@ -218,7 +219,70 @@ def _wrap_agentic_runtime_block(
         # it. Reset in finally so we don't leak into sibling calls.
         _call_token = _call_id_var.set(runtime_id)
         try:
-            result = await orig_execute(call_id, args, cancel, on_update)
+            _in_subproc = os.environ.get(
+                "OPENPROGRAM_IN_AGENTIC_SUBPROCESS"
+            ) == "1"
+            if _is_agentic_tool and not _in_subproc:
+                # Route through a fork()'d subprocess so handle_stop's
+                # SIGKILL kills the tool in milliseconds. The child
+                # re-installs the wrapper itself and bridges events
+                # back, but to keep the runtime-block we already
+                # persisted above as the single source of truth, we
+                # call orig_execute directly inside the child (no
+                # nested wrap). NOTE: we cannot re-use this wrapper
+                # in the child because it would re-persist the
+                # placeholder. So we go via a dedicated child entry
+                # that targets the tool's raw execute via the
+                # subprocess runner, which itself re-applies the
+                # wrapper inside the child. The duplicate placeholder
+                # write is idempotent (db.append_message on same id
+                # upserts) — acceptable.
+                from openprogram.agent.process_runner import (
+                    run_agentic_in_subprocess,
+                )
+                import asyncio as _asyncio
+                # Bridge events back. The child's wrapper will emit
+                # its own placeholder + result envelopes; the ones
+                # we already emitted above are anchored to the same
+                # runtime_id so the second write is a no-op upsert.
+                loop = _asyncio.get_event_loop()
+                out = await loop.run_in_executor(
+                    None,
+                    lambda: run_agentic_in_subprocess(
+                        tool_name=tool_name,
+                        kwargs=dict(args or {}),
+                        session_id=req.session_id,
+                        anchor_msg_id=assistant_msg_id,
+                        work_dir=None,
+                        on_event=on_event,
+                    ),
+                )
+                if out.get("killed"):
+                    from openprogram.agent.types import (
+                        AgentToolResult as _TR,
+                    )
+                    from openprogram.providers.types import (
+                        TextContent as _CB,
+                    )
+                    result = _TR(content=[_CB(text="[cancelled by user]")])
+                elif out.get("error"):
+                    from openprogram.agent.types import (
+                        AgentToolResult as _TR,
+                    )
+                    from openprogram.providers.types import (
+                        TextContent as _CB,
+                    )
+                    result = _TR(content=[_CB(text=str(out["error"]))])
+                else:
+                    from openprogram.agent.types import (
+                        AgentToolResult as _TR,
+                    )
+                    from openprogram.providers.types import (
+                        TextContent as _CB,
+                    )
+                    result = _TR(content=[_CB(text=out.get("text") or "")])
+            else:
+                result = await orig_execute(call_id, args, cancel, on_update)
         finally:
             try:
                 _call_id_var.reset(_call_token)
@@ -313,8 +377,6 @@ def dispatch_forced_tool_call(
     command message under ``anchor_msg_id`` — this function only adds
     the runtime-block row + the DAG subtree.
     """
-    import asyncio
-
     on_event = on_event or _noop
 
     # Look up the tool by name from the global catalog.
@@ -331,6 +393,86 @@ def dispatch_forced_tool_call(
             f"tool {tool_name!r} is not an @agentic_function — only "
             "agentic tools can be forced via this path"
         )
+
+    # New path: forked subprocess so handle_stop can SIGKILL the
+    # entire process group in milliseconds. The child re-installs the
+    # session ContextVars and re-wraps the tool with
+    # _wrap_agentic_runtime_block; events are bridged back via an
+    # mp.Queue so WS clients see the same envelopes as before.
+    from openprogram.agent.process_runner import run_agentic_in_subprocess
+    from openprogram.webui._pause_stop import (
+        set_current_session_id as _set_cid,
+        reset_current_session_id as _reset_cid,
+        clear_cancel as _clear_cancel,
+    )
+    _cid_token = _set_cid(session_id)
+    try:
+        out = run_agentic_in_subprocess(
+            tool_name=tool_name,
+            kwargs=dict(tool_input or {}),
+            session_id=session_id,
+            anchor_msg_id=anchor_msg_id,
+            work_dir=work_dir,
+            on_event=on_event,
+        )
+    finally:
+        try:
+            _reset_cid(_cid_token)
+        except Exception:
+            pass
+        try:
+            _clear_cancel(session_id)
+        except Exception:
+            pass
+
+    if out.get("killed"):
+        # If the subprocess was SIGKILLed before it could finalize the
+        # runtime-block, patch the placeholder so the UI doesn't show
+        # a stuck spinner. handle_stop also patches running rows, so
+        # this is a belt-and-suspenders cleanup.
+        try:
+            from openprogram.agent.session_db import default_db as _ddb
+            from openprogram.store import GraphStoreShim as _GS
+            _db = _ddb()
+            _shim = _GS(_db, session_id)
+            for _m in (_db.get_messages(session_id) or []):
+                if (_m.get("status") or "done") == "running":
+                    _shim.update(
+                        _m["id"],
+                        metadata={
+                            "status": "cancelled",
+                            "last_update_at": time.time(),
+                            "_cancelled_reason": "user_stop",
+                        },
+                    )
+        except Exception:
+            pass
+        return {
+            "runtime_msg_id": None,
+            "ok": False,
+            "killed": True,
+        }
+    if out.get("error"):
+        return {"runtime_msg_id": None, "ok": False, "error": out["error"]}
+    return {
+        "runtime_msg_id": out.get("runtime_msg_id"),
+        "ok": True,
+    }
+
+
+def _legacy_dispatch_forced_tool_call_unused(  # noqa: D401
+    session_id: str,
+    anchor_msg_id: str,
+    tool: object,
+    tool_input: dict | None,
+    work_dir: Optional[str],
+    *,
+    req,
+    on_event,
+):
+    """Pre-subprocess implementation; retained only as a reference for
+    rollback. Not wired."""
+    import asyncio
 
     # Build a minimal TurnRequest carrying just the fields the wrapper
     # reads (session_id, source, agent_id). No user_text — this is not

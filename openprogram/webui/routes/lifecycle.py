@@ -43,6 +43,11 @@ def register(app):
             )
         _s._mark_cancelled(session_id)
         _s.resume_execution()
+        try:
+            from openprogram.agent.process_runner import kill_active_subprocess
+            kill_active_subprocess(session_id)
+        except Exception:
+            pass
         _s._kill_active_runtime(session_id)
         with _s._follow_up_lock:
             q = _s._follow_up_queues.get(session_id)

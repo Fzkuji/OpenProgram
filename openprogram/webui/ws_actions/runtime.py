@@ -173,6 +173,15 @@ async def handle_stop(ws, cmd: dict):
         return
     _s._mark_cancelled(session_id)
     _s.resume_execution()
+    # SIGKILL the @agentic_function subprocess (if any) for this session
+    # *before* signaling cooperative cancel paths. This is what makes
+    # stop instantaneous for gui_agent / research_agent / wiki_agent —
+    # the process group dies in milliseconds.
+    try:
+        from openprogram.agent.process_runner import kill_active_subprocess
+        kill_active_subprocess(session_id)
+    except Exception:
+        pass
     _s._kill_active_runtime(session_id)
     with _s._follow_up_lock:
         q = _s._follow_up_queues.get(session_id)
