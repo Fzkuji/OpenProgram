@@ -1,19 +1,17 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
-  display: "swap",
-});
+// Google Fonts (next/font/google) was hitting fonts.googleapis.com at
+// build/request time. When that domain is unreachable (locally proxied,
+// offline, GFW), Next.js falls back to a default serif and the chat
+// header / mono columns render in an ugly system serif instead of the
+// monospace we wanted. Drop the network-dependent fetch entirely and
+// rely on the CSS fallback chain in styles/base.css
+// (Menlo / Monaco / Consolas for mono, system-ui for sans). The
+// --font-inter / --font-jetbrains-mono vars stay undefined; CSS's
+// font-family list resolves to the next named fallback, which is what
+// users have on macOS / Windows anyway.
 
 export const metadata: Metadata = {
   title: "OpenProgram",
@@ -30,7 +28,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/*
           Apply persisted theme before React hydrates so the page
