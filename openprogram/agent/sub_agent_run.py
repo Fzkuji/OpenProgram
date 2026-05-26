@@ -113,6 +113,111 @@ def run_agent_turn(
     )
 
 
+def write_attach_pointer_for_spawn(
+    *,
+    session_id: str,
+    caller_msg_id: str,
+    result: AgentTurnResult,
+    label: Optional[str],
+    prompt: str,
+    chosen_agent: str,
+) -> Optional[str]:
+    """Write an `attach`-function pointer node for a synchronous
+    task() spawn (LLM tool call, wait=True). Mirrors the body of
+    ``_run_spawn`` in webui/_execute/__init__.py — kept in sync so the
+    DAG sees the same node shape whether the user typed ``/spawn`` or
+    the LLM called the ``task`` tool.
+    """
+    import json as _json
+    import time as _time
+    import uuid as _uuid
+
+    if not result or not result.head_id:
+        return None
+    try:
+        from openprogram.agent.session_db import default_db
+        store = default_db()
+        sess_row = store.get_session(session_id) or {}
+        head_before = sess_row.get("head_id")
+        # Anchor the attach pointer to the fork point — the parent of
+        # the caller user/assistant msg — so it shows up on both the
+        # caller's lane AND any descendants. If the caller has no
+        # parent, fall back to caller_msg_id.
+        fork_anchor = caller_msg_id
+        try:
+            pair = store._open(session_id)  # noqa: SLF001
+            if pair is not None:
+                _, _idx = pair
+                spawn_node = _idx.nodes_by_id.get(caller_msg_id)
+                if spawn_node:
+                    parent_id = (spawn_node.metadata or {}).get("parent_id")
+                    if parent_id:
+                        fork_anchor = parent_id
+        except Exception:
+            pass
+
+        source_commit_id = None
+        try:
+            from openprogram.context.commit.store import load_commit_for_head
+            _src = load_commit_for_head(store, session_id, result.head_id)
+            if _src is not None:
+                source_commit_id = _src.id
+        except Exception:
+            pass
+
+        attach_node_id = _uuid.uuid4().hex[:12]
+        attach_msg = {
+            "id": attach_node_id,
+            "role": "assistant",
+            "display": "runtime",
+            "function": "attach",
+            "content": (result.final_text or result.error or "(no output)").strip(),
+            "called_by": fork_anchor,
+            "timestamp": _time.time(),
+            "is_error": bool(result.failed or result.error),
+            "agent_id": chosen_agent,
+            "extra": _json.dumps({
+                "attach": {
+                    "session_id": session_id,
+                    "head_id": result.head_id,
+                    "label": label or "",
+                    "prompt": prompt[:500],
+                    "source_commit_id": source_commit_id,
+                    "status": "completed",
+                },
+            }, default=str),
+        }
+        store.append_message(session_id, attach_msg)
+        if head_before:
+            try:
+                store.set_head(session_id, head_before)
+            except Exception:
+                pass
+        store.commit_turn(session_id, f"task tool spawn: {label or chosen_agent}")
+        # Hide the spawned sub-branch from the Branches panel — its
+        # content is now reachable from main via the attach pointer.
+        # Same retirement the async runner does on completion (see
+        # task/runner.py::_update_attach_card).
+        try:
+            store.mark_merged(session_id, [result.head_id])
+        except Exception:
+            pass
+        # Broadcast session_reload so the UI re-renders the DAG with
+        # the new attach pointer + reference edge.
+        try:
+            import json as __json
+            from openprogram.webui import server as _s
+            _s._broadcast(__json.dumps({
+                "type": "session_reload",
+                "data": {"session_id": session_id, "reason": "task_tool_spawn"},
+            }, default=str))
+        except Exception:
+            pass
+        return attach_node_id
+    except Exception:
+        return None
+
+
 def run_agent_turn_async(
     session_id: str,
     prompt: str,

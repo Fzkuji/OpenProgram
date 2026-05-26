@@ -167,7 +167,10 @@ def _task_impl(
         )
 
     try:
-        from openprogram.agent.sub_agent_run import run_agent_turn
+        from openprogram.agent.sub_agent_run import (
+            run_agent_turn,
+            write_attach_pointer_for_spawn,
+        )
         result = run_agent_turn(
             session_id=sid,
             prompt=prompt,
@@ -177,6 +180,23 @@ def _task_impl(
         )
     except Exception as e:  # noqa: BLE001
         return f"[task error] {type(e).__name__}: {e}"
+
+    # Write an attach pointer node so the DAG paints a `function=attach`
+    # square_outline on the caller's lane referencing the sub-branch tip.
+    # Without this the sub-branch is orphaned in the graph view (no
+    # reference edge connects it back to main). Matches what /spawn and
+    # the async task path do.
+    try:
+        write_attach_pointer_for_spawn(
+            session_id=sid,
+            caller_msg_id=aid,
+            result=result,
+            label=label or None,
+            prompt=prompt,
+            chosen_agent=chosen_agent,
+        )
+    except Exception:
+        pass
 
     if result.error and not result.final_text:
         return f"[task error: head={result.head_id}] {result.error}"
