@@ -516,6 +516,15 @@ export function Composer() {
 
   function stop() {
     if (!currentSessionId) return;
+    // Optimistic UI flip: clear runningTask immediately so the Stop
+    // button turns back into Send right when the user clicks. Don't
+    // wait for the backend's stopped envelope — the dispatcher main
+    // thread can be blocked for several seconds on an in-flight LLM
+    // stream while cancel propagates. The actual backend cleanup
+    // still runs (subprocess SIGKILL is instant; cancel hook reaches
+    // a hook point within ~1s for the chat path), it just no longer
+    // gates the UI.
+    useSessionStore.getState().setRunningTaskFor(currentSessionId, null);
     send({ action: "stop", session_id: currentSessionId });
   }
 
