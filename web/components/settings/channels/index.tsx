@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
+import shellStyles from "../settings-page.module.css";
 import styles from "./channels.module.css";
 import { AccountsList } from "./accounts-list";
 import { BindingsList } from "./bindings-list";
@@ -89,42 +90,38 @@ export function ChannelsSection() {
     return () => clearInterval(handle);
   }, [accounts, refreshStatuses]);
 
-  if (loading) {
-    return (
-      <div className={styles.detail}>
-        <div className={styles.detailHeader}>
-          <span className={styles.detailTitle}>Loading…</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className={styles.detail}>
-      <div className={styles.detailHeader}>
-        <span className={styles.detailTitle}>Channels</span>
-        <span className={styles.detailMeta}>
+    <div className={shellStyles.page}>
+      <div className={shellStyles.pageHeader}>
+        <h2 className={shellStyles.pageTitle}>Channels</h2>
+        <p className={shellStyles.pageMeta}>
           Let your agents send and receive messages on Telegram / Discord
           / Slack / WeChat. Two steps: 1) add a bot account (paste a bot
           token, or scan a QR for WeChat) → 2) add rules that decide
           which platform / sender goes to which agent.
-        </span>
+        </p>
       </div>
-
-      <div className={styles.detailSection}>
-        <AccountsList
-          accounts={accounts}
-          statuses={statuses}
-          onChange={reload}
-        />
-      </div>
-
-      <div className={styles.detailSection}>
-        <BindingsList
-          bindings={bindings}
-          accounts={accounts}
-          onChange={reload}
-        />
+      <div className={shellStyles.pageBody}>
+        {loading ? (
+          <div className={styles.emptyHint}>Loading…</div>
+        ) : (
+          <>
+            <div className={styles.detailSection}>
+              <AccountsList
+                accounts={accounts}
+                statuses={statuses}
+                onChange={reload}
+              />
+            </div>
+            <div className={styles.detailSection}>
+              <BindingsList
+                bindings={bindings}
+                accounts={accounts}
+                onChange={reload}
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

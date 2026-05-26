@@ -37,44 +37,52 @@ export function GeneralSection() {
   }
 
   return (
-    <>
-      <div className={styles.section}>
-        <h2 className={styles.sectionTitle}>Appearance</h2>
-        <div className={styles.card}>
-          <div className={styles.row}>
-            <div className={styles.label}>Color mode</div>
-            <div className={styles.value}>
-              <div className={styles.themeSwitcher}>
-                {(["light", "auto", "dark"] as const).map((t) => (
-                  <button
-                    key={t}
-                    className={
-                      styles.themeBtn + (theme === t ? " " + styles.active : "")
-                    }
-                    onClick={() => set(t)}
-                  >
-                    {t[0].toUpperCase() + t.slice(1)}
-                  </button>
-                ))}
+    <div className={styles.page}>
+      <div className={styles.pageHeader}>
+        <h2 className={styles.pageTitle}>General</h2>
+        <p className={styles.pageMeta}>
+          App-wide preferences. Theme is per-browser; version info is read-only.
+        </p>
+      </div>
+      <div className={styles.pageBody}>
+        <section>
+          <h3 className={styles.sectionTitle}>Appearance</h3>
+          <div className={styles.card}>
+            <div className={styles.row}>
+              <div className={styles.label}>Color mode</div>
+              <div className={styles.value}>
+                <div className={styles.themeSwitcher}>
+                  {(["light", "auto", "dark"] as const).map((t) => (
+                    <button
+                      key={t}
+                      className={
+                        styles.themeBtn + (theme === t ? " " + styles.active : "")
+                      }
+                      onClick={() => set(t)}
+                    >
+                      {t[0].toUpperCase() + t.slice(1)}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      <div className={styles.section}>
-        <h2 className={styles.sectionTitle}>Application</h2>
-        <div className={styles.card}>
-          <div className={styles.row}>
-            <div className={styles.label}>Version</div>
-            <div className={styles.value}>0.1.0</div>
+        <section>
+          <h3 className={styles.sectionTitle}>Application</h3>
+          <div className={styles.card}>
+            <div className={styles.row}>
+              <div className={styles.label}>Version</div>
+              <div className={styles.value}>0.1.0</div>
+            </div>
+            <div className={styles.row}>
+              <div className={styles.label}>Framework</div>
+              <div className={styles.value}>Agentic Programming</div>
+            </div>
           </div>
-          <div className={styles.row}>
-            <div className={styles.label}>Framework</div>
-            <div className={styles.value}>Agentic Programming</div>
-          </div>
-        </div>
+        </section>
       </div>
-    </>
+    </div>
   );
 }

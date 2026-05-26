@@ -1,38 +1,48 @@
-/* Channels settings section — tables, dialogs, badges.
- *
- * 不复用 settings-page.module.css 里 provider-specific 的 left/right
- * 分栏类, 因为 channels 是垂直堆叠的两块 (accounts + bindings), 跟
- * provider 那种 "left list, right detail" 排版不一样.
- */
+/* Channels settings — restyled to share the design language with the
+   rest of /settings (Providers, Search, General). The previous file
+   used hard-coded colour literals (#1c1c1c, #888, etc.) that didn't
+   honour the theme tokens, which is why the page rendered as a
+   "black hole" in the user's screenshot.
 
-/* ----- Section frame -------------------------------------------------- */
+   All colours now route through the design tokens from
+   web/app/styles/base.css:
+     surface levels:  bg-primary < bg-secondary < bg-tertiary
+     text levels:     text-tertiary < text-muted < text-secondary
+                    < text-primary < text-bright
+     border:          --border (single-source-of-truth divider colour)
+
+   Layout mirrors settings-page.module.css's .detail / .detailHeader
+   pattern so the four settings tabs look like siblings instead of
+   four bespoke pages. */
+
 .detail {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 16px 24px 32px;
-  max-width: 900px;
+  gap: 28px;
+  padding: 24px 28px 32px;
+  max-width: 1000px;
   width: 100%;
 }
 
 .detailHeader {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border, #2a2a2a);
+  gap: 6px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 .detailTitle {
   font-size: 18px;
   font-weight: 600;
-  color: var(--text, #e8e8e8);
+  color: var(--text-bright);
 }
 
 .detailMeta {
-  font-size: 12px;
-  color: var(--muted, #888);
-  line-height: 1.5;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  max-width: 760px;
 }
 
 .detailSection {
@@ -41,97 +51,134 @@
   gap: 12px;
 }
 
+/* Section header — title block on the left, action button on the
+   right. Matches the proportions used in the Providers detail panel. */
 .sectionHeader {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 
 .sectionTitle {
   font-size: 15px;
   font-weight: 600;
-  color: var(--text, #e8e8e8);
+  color: var(--text-bright);
 }
 
 .sectionSub {
-  font-size: 12px;
-  color: var(--muted, #888);
+  font-size: 13px;
+  color: var(--text-secondary);
   line-height: 1.55;
   margin-top: 4px;
-  max-width: 540px;
+  max-width: 620px;
 }
 
-.formHelp {
-  font-size: 12px;
-  line-height: 1.6;
-  padding: 10px 12px;
-  background: rgba(74, 141, 255, 0.08);
-  border-left: 3px solid var(--accent, #4a8dff);
-  border-radius: 4px;
-  color: var(--text, #e8e8e8);
-}
-.formHelp b {
-  color: var(--accent, #4a8dff);
-}
-
+/* Hint surfaces — the "no bots yet" empty state and the "info" callout
+   inside dialogs share one look (subtle bg-tertiary card, dashed for
+   empty / accent left-rule for callout). */
 .emptyHint {
-  padding: 16px;
-  border: 1px dashed var(--border, #2a2a2a);
+  padding: 16px 18px;
+  border: 1px dashed var(--border);
   border-radius: 8px;
   font-size: 13px;
-  color: var(--muted, #888);
+  color: var(--text-secondary);
   line-height: 1.6;
+  background: var(--bg-tertiary);
 }
 .emptyHint code {
-  background: var(--card-bg, #1c1c1c);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 12px;
+  color: var(--text-bright);
 }
 
-/* ----- Row table ------------------------------------------------------ */
+.formHelp {
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+  border-left: 3px solid var(--accent-blue);
+  border-radius: 4px;
+  color: var(--text-primary);
+}
+.formHelp b {
+  color: var(--accent-blue);
+}
+
+/* ----- Row table ------------------------------------------------------
+   Matches the cadence of the providers model-list rows: column header
+   row in muted upper-case, data rows separated by the same --border
+   divider so the table feels uniform with the rest of /settings. */
 .rowTable {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
 }
 .rowTable th {
   text-align: left;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted, #888);
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border, #2a2a2a);
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
 }
 .rowTable td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-subtle, #1a1a1a);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
   vertical-align: middle;
-  color: var(--text, #e8e8e8);
+  color: var(--text-primary);
+}
+.rowTable tr:last-child td {
+  border-bottom: none;
 }
 .rowTable code {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
-  background: var(--card-bg, #1c1c1c);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   padding: 2px 6px;
   border-radius: 4px;
+  color: var(--text-bright);
 }
 
-/* ----- Badges --------------------------------------------------------- */
+/* ----- Status badges / dots ------------------------------------------
+   Soft tinted fills matching the pill aesthetic used elsewhere (skills
+   catalog buttons, status badge on the topbar). All tints derived from
+   the accent palette via color-mix so they track theme changes. */
 .badgeOk,
 .badgeWarn,
 .badgeMuted {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
   font-size: 11px;
   font-weight: 500;
   line-height: 1.5;
 }
-.badgeOk    { background: rgba(0, 180, 100, 0.15); color: #43c785; }
+.badgeOk {
+  background: color-mix(in srgb, var(--accent-green) 18%, transparent);
+  color: var(--accent-green);
+}
+.badgeWarn {
+  background: color-mix(in srgb, var(--accent-yellow) 18%, transparent);
+  color: var(--accent-yellow);
+}
+.badgeMuted {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  margin-left: 6px;
+}
 
 .statusDot {
   display: inline-block;
@@ -141,81 +188,112 @@
   margin-right: 8px;
   vertical-align: 1px;
 }
-.dotGreen { background: #43c785; box-shadow: 0 0 6px rgba(67, 199, 133, 0.5); }
-.dotRed   { background: #e07070; box-shadow: 0 0 6px rgba(224, 112, 112, 0.4); }
-.dotGray  { background: #555; }
-.badgeWarn  { background: rgba(255, 165, 0, 0.15);  color: #f0a040; }
-.badgeMuted { background: rgba(150, 150, 150, 0.15); color: #888; margin-left: 4px; }
+.dotGreen {
+  background: var(--accent-green);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent-green) 50%, transparent);
+}
+.dotRed {
+  background: var(--accent-red);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent-red) 40%, transparent);
+}
+.dotGray {
+  background: var(--text-muted);
+}
 
-/* ----- Buttons -------------------------------------------------------- */
+/* ----- Buttons -------------------------------------------------------
+   Pill-shaped, tinted-fill — same pattern as skills catalog buttons
+   (web/components/skills/discovery/catalog-list.tsx). Three intents:
+   primary action, neutral secondary, destructive. */
 .primaryBtn,
 .secondaryBtn,
 .dangerBtn {
   cursor: pointer;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
+  padding: 6px 14px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 .primaryBtn {
-  background: var(--accent, #4a8dff);
-  color: white;
+  background: color-mix(in srgb, var(--accent-blue) 22%, transparent);
+  color: var(--accent-blue);
 }
-.primaryBtn:hover { filter: brightness(1.1); }
-.primaryBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.primaryBtn:hover {
+  background: color-mix(in srgb, var(--accent-blue) 32%, transparent);
+}
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .secondaryBtn {
-  border-color: var(--border, #2a2a2a);
-  color: var(--text, #e8e8e8);
+  background: var(--bg-tertiary);
+  color: var(--text-bright);
 }
-.secondaryBtn:hover { background: var(--card-bg, #1c1c1c); }
+.secondaryBtn:hover {
+  background: color-mix(in srgb, var(--text-bright) 10%, var(--bg-tertiary));
+}
 
 .dangerBtn {
-  border-color: rgba(220, 80, 80, 0.5);
-  color: #e07070;
-  padding: 4px 10px;
+  background: color-mix(in srgb, var(--accent-red) 18%, transparent);
+  color: var(--accent-red);
+  padding: 4px 12px;
+  height: 28px;
   font-size: 12px;
 }
-.dangerBtn:hover { background: rgba(220, 80, 80, 0.1); }
-.dangerBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.dangerBtn:hover {
+  background: color-mix(in srgb, var(--accent-red) 28%, transparent);
+}
+.dangerBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .iconBtn {
   cursor: pointer;
   background: transparent;
   border: none;
-  color: var(--muted, #888);
+  color: var(--text-muted);
   font-size: 18px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
 }
-.iconBtn:hover { background: var(--card-bg, #1c1c1c); color: var(--text, #e8e8e8); }
+.iconBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
 
-/* ----- Modal ---------------------------------------------------------- */
+/* ----- Modal --------------------------------------------------------- */
 .modalBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
 .modal {
-  background: var(--surface, #161616);
-  border: 1px solid var(--border, #2a2a2a);
-  border-radius: 10px;
-  min-width: 420px;
-  max-width: 520px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 440px;
+  max-width: 560px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
 }
 .modalHeader {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border, #2a2a2a);
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -223,68 +301,70 @@
 .modalTitle {
   font-size: 15px;
   font-weight: 600;
-  color: var(--text, #e8e8e8);
+  color: var(--text-bright);
 }
 .modalBody {
-  padding: 16px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   overflow-y: auto;
 }
 .modalFooter {
-  padding: 12px 16px;
-  border-top: 1px solid var(--border, #2a2a2a);
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
 
-/* ----- Form ----------------------------------------------------------- */
+/* ----- Form --------------------------------------------------------- */
 .formRow {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .formLabel {
   font-size: 12px;
   font-weight: 500;
-  color: var(--muted, #888);
+  color: var(--text-secondary);
 }
 .formInput {
-  background: var(--card-bg, #1c1c1c);
-  border: 1px solid var(--border, #2a2a2a);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 13px;
-  color: var(--text, #e8e8e8);
+  color: var(--text-primary);
   font-family: inherit;
   width: 100%;
   box-sizing: border-box;
+  transition: border-color 0.15s;
 }
 .formInput:focus {
   outline: none;
-  border-color: var(--accent, #4a8dff);
+  border-color: var(--accent-blue);
 }
 .formHint {
-  font-size: 11px;
-  color: var(--muted, #888);
+  font-size: 12px;
+  color: var(--text-muted);
 }
 .formError {
   font-size: 12px;
-  color: #e07070;
+  color: var(--accent-red);
   padding: 8px 12px;
-  background: rgba(220, 80, 80, 0.1);
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
   border-radius: 6px;
   line-height: 1.5;
 }
 .codeBlock {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
-  background: var(--card-bg, #1c1c1c);
-  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  padding: 10px 14px;
   border-radius: 6px;
   margin: 8px 0 0;
   overflow-x: auto;
-  color: var(--text, #e8e8e8);
+  color: var(--text-bright);
 }

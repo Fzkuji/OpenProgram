@@ -33,59 +33,12 @@ export function ProvidersSection() {
   const [search, setSearch] = useState("");
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  // Forward wheel events to the page scroll once the sidebar's own
-  // scroll is at top/bottom. Browsers' default scroll-chaining only
-  // kicks in on the NEXT wheel event after the boundary is hit, so a
-  // user trying to scroll past the end of a long provider list sees
-  // their small wheel ticks get consumed without page movement until
-  // they "force" a larger gesture. We rAF-accumulate deltas so the
-  // forwarded scroll feels as smooth as the browser's own.
-  useEffect(() => {
-    const sb = sidebarRef.current;
-    if (!sb) return;
-    let pendingDelta = 0;
-    let rafId = 0;
-    let scrollTarget: HTMLElement | null = null;
-    function flush() {
-      rafId = 0;
-      if (!scrollTarget || pendingDelta === 0) return;
-      scrollTarget.scrollTop += pendingDelta;
-      pendingDelta = 0;
-    }
-    function onWheel(e: WheelEvent) {
-      const el = sidebarRef.current;
-      if (!el) return;
-      const atTop = el.scrollTop === 0;
-      const atBottom =
-        Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight;
-      if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) {
-        // Find the closest scrollable ancestor once and cache it.
-        if (!scrollTarget) {
-          let p: HTMLElement | null = el.parentElement;
-          while (p) {
-            const cs = getComputedStyle(p);
-            if (
-              (cs.overflowY === "auto" || cs.overflowY === "scroll") &&
-              p.scrollHeight > p.clientHeight
-            ) {
-              scrollTarget = p;
-              break;
-            }
-            p = p.parentElement;
-          }
-        }
-        if (!scrollTarget) return;
-        e.preventDefault();
-        pendingDelta += e.deltaY;
-        if (!rafId) rafId = requestAnimationFrame(flush);
-      }
-    }
-    sb.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      sb.removeEventListener("wheel", onWheel);
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, []);
+  // Sidebar scroll is intentionally CONTAINED — see the matching
+  // `overscroll-behavior: contain` in settings-page.module.css. The
+  // previous version forwarded wheel deltas from the sidebar onto the
+  // page scroller once the list hit its boundary; that made the right
+  // detail column drift up/down while the user was just trying to
+  // scroll the provider list, which read as a bug.
 
   const reload = useCallback(async (preserveSelection?: boolean) => {
     let list: Provider[] = [];
@@ -131,20 +84,27 @@ export function ProvidersSection() {
   }
 
   return (
-    <div className={styles.section}>
-      <div className={styles.providersLayout}>
-        <div className={styles.providersSidebar} ref={sidebarRef}>
-          <div className={styles.providersStickyHeader}>
-            <h2 className={styles.sectionTitle}>AI Providers</h2>
-            <div className={styles.providersSearch}>
-              <input
-                type="search"
-                placeholder="Search providers…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+    <div className={styles.page}>
+      <div className={styles.pageHeader}>
+        <h2 className={styles.pageTitle}>LLM Providers</h2>
+        <p className={styles.pageMeta}>
+          Enable an LLM backend, paste an API key (or rely on local OAuth /
+          subscription), and pick which models the chat composer exposes.
+        </p>
+      </div>
+      <div className={`${styles.pageBody} ${styles.pageBodyTwoPane}`}>
+        <div className={styles.providersLayout}>
+          <div className={styles.providersSidebar} ref={sidebarRef}>
+            <div className={styles.providersStickyHeader}>
+              <div className={styles.providersSearch}>
+                <input
+                  type="search"
+                  placeholder="Search providers…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
             </div>
-          </div>
           {enabled.filter(matches).length > 0 && (
             <>
               <div className={styles.providersGroupLabel}>Enabled</div>
@@ -172,17 +132,18 @@ export function ProvidersSection() {
             </>
           )}
         </div>
-        <div className={styles.detail}>
-          {!selected ? (
-            <div className={styles.detailEmpty}>Select a provider on the left</div>
-          ) : (
-            <Detail
-              key={selected.id}
-              provider={selected}
-              onToggle={(en) => toggleProvider(selected.id, en)}
-              onChanged={() => reload(true)}
-            />
-          )}
+          <div className={styles.detail}>
+            {!selected ? (
+              <div className={styles.detailEmpty}>Select a provider on the left</div>
+            ) : (
+              <Detail
+                key={selected.id}
+                provider={selected}
+                onToggle={(en) => toggleProvider(selected.id, en)}
+                onChanged={() => reload(true)}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

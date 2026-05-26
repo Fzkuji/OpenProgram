@@ -88,25 +88,38 @@ export function SearchProvidersSection() {
 
   if (loading) {
     return (
-      <div className={styles.section}>
-        <div style={{ padding: 24, opacity: 0.6 }}>Loading…</div>
+      <div className={styles.page}>
+        <div className={styles.pageHeader}>
+          <h2 className={styles.pageTitle}>Web Search</h2>
+        </div>
+        <div className={styles.pageBody} style={{ opacity: 0.6 }}>Loading…</div>
       </div>
     );
   }
 
   return (
-    <div className={styles.section}>
-      <div className={styles.providersLayout}>
-        <div className={styles.providersSidebar}>
-          <h2 className={styles.sectionTitle}>Web Search</h2>
-          <div className={styles.providersSearch}>
-            <input
-              type="search"
-              placeholder="Search backends…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+    <div className={styles.page}>
+      <div className={styles.pageHeader}>
+        <h2 className={styles.pageTitle}>Web Search</h2>
+        <p className={styles.pageMeta}>
+          Pick which backend handles ``web_search`` calls. Tavily / Exa /
+          Brave / Perplexity need an API key; DuckDuckGo and SearXNG work
+          zero-config as fallbacks.
+        </p>
+      </div>
+      <div className={`${styles.pageBody} ${styles.pageBodyTwoPane}`}>
+        <div className={styles.providersLayout}>
+          <div className={styles.providersSidebar}>
+            <div className={styles.providersStickyHeader}>
+              <div className={styles.providersSearch}>
+                <input
+                  type="search"
+                  placeholder="Search backends…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
           {active.length > 0 && (
             <>
               <div className={styles.providersGroupLabel}>Available</div>
@@ -135,20 +148,21 @@ export function SearchProvidersSection() {
           )}
         </div>
 
-        <div className={styles.detail}>
-          {selected ? (
-            <SearchProviderDetail
-              provider={selected}
-              defaultId={defaultId}
-              saving={saving}
-              onSetDefault={setDefault}
-              onChanged={load}
-            />
-          ) : (
-            <div className={styles.detailEmpty}>
-              Select a search backend on the left
-            </div>
-          )}
+          <div className={styles.detail}>
+            {selected ? (
+              <SearchProviderDetail
+                provider={selected}
+                defaultId={defaultId}
+                saving={saving}
+                onSetDefault={setDefault}
+                onChanged={load}
+              />
+            ) : (
+              <div className={styles.detailEmpty}>
+                Select a search backend on the left
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

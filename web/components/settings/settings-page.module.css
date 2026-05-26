@@ -3,21 +3,20 @@
    legacy file belong elsewhere and are not duplicated here. */
 
 .view {
-  min-height: 0;
-  /* This is the single scroll root for the whole settings page,
-     mirroring claude.ai's settings UX: topbar + nav + content all
-     scroll up together instead of being pinned with a tiny inner
-     scroller for the model list. */
+  /* Decoupled panes: `.view` itself never scrolls. It pins the
+     topbar + .body within the viewport; the panes inside .body
+     (2nd-level nav, provider list, detail) own their own
+     overflow:auto so wheeling one column doesn't drag the others. */
   height: 100vh;
-  overflow-y: auto;
-  /* Whole settings surface uses bg-secondary so the nav columns
-     blend with the content columns (no more 'gray AI Providers area
-     vs darker nav'). Cards inside use bg-tertiary to lift. */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   background: var(--bg-secondary);
 }
 
-/* Match programs/memory topbar pattern. Sticky so the page title stays
-   visible while the long providers/models content scrolls below. */
+/* Match programs/memory topbar pattern. Plain flex child; .view is
+   non-scrolling now so we don't need position:sticky to pin it. */
 .topbar {
   display: flex;
   align-items: center;
@@ -28,8 +27,6 @@
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
   flex-shrink: 0;
-  position: sticky;
-  top: 0;
   z-index: 10;
 }
 
@@ -41,39 +38,27 @@
 }
 
 .body {
+  /* Body takes the remaining viewport height after the topbar. Each
+     column inside it scrolls independently (overflow:auto), so the
+     body itself stays a fixed-height grid container. */
+  flex: 1;
+  min-height: 0;
   display: grid;
-  /* sidebar has a 1px border-right, so its inner content is 287px.
-     Match that here so the 2nd-level nav is the same width as the
-     1st-level sidebar visually. */
   grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
-  /* Fill the rest of the view (100vh − topbar 64) so the nav column's
-     bg-secondary + border-right reach the viewport bottom even when
-     content (e.g. General tab) is short. Long content (Providers) still
-     grows past this minimum. */
-  min-height: calc(100vh - 64px);
-  /* No outer margin — nav sits flush against topbar bottom, matching the
-     programs/memory pattern. Inner breathing room lives on .content. */
-  max-width: 1600px;
-}
-.body.providersWide {
-  max-width: none;
 }
 
 .nav {
   width: 100%;
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  /* align-self:start (default in grid) so sticky works correctly.
-     bg-secondary + border-right are painted by .body's background
-     gradient at the column boundary, so they extend full body height
-     without forcing .nav to stretch. */
-  align-self: start;
   padding: 8px;
-  position: sticky;
-  /* Sticky just below the sticky topbar (64px) */
-  top: 64px;
+  /* Body row has fixed height now (.view → flex column with .body
+     taking the remainder), and .nav owns its column. If the nav list
+     ever gets long enough to outrun the viewport, an internal
+     scrollbar keeps it self-contained instead of pushing content
+     past the viewport bottom. */
+  overflow-y: auto;
 }
 .navItem {
   padding: 6px 8px;
@@ -98,10 +83,72 @@
 
 .content {
   padding: 0;
-  /* 1px divider between 2nd-level nav and content column. Drawn on the
-     content column itself (not on the nav) so it spans the full body
-     height continuously while the nav can stay sticky. */
   border-left: 1px solid var(--border);
+  min-width: 0;
+  /* Content column fills the body row's height. The .page inside is
+     a flex column so its pageHeader is fixed and pageBody takes the
+     remainder. */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Unified page shell ────────────────────────────────────────────────
+   Every settings subpage (Providers / Search / Channels / General)
+   wraps its content in this same shell so the four pages look like
+   siblings — same title position, same description font, same divider,
+   same body padding. The shell lives at the top of the content column
+   (right of the 2nd-level nav). */
+.page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.pageHeader {
+  padding: 20px 28px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  /* Fixed header at the top of the content column; pageBody (below)
+     gets the remaining vertical room and owns the scroll. */
+  flex-shrink: 0;
+}
+.pageTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin: 0;
+  line-height: 1.3;
+}
+.pageMeta {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  max-width: 760px;
+  margin: 0;
+}
+.pageBody {
+  /* Single-column variant (Channels / General): own the vertical
+     overflow, leave the page-header anchored above. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 24px 28px 32px;
+}
+/* Two-pane variant: Providers / Search. The two columns inside the
+   layout grid scroll INDEPENDENTLY — wheeling over the provider
+   list never drags the detail column, and vice versa. The page
+   body itself doesn't scroll (overflow: hidden); each column owns
+   its own overflow:auto. */
+.pageBodyTwoPane {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
 }
 
 .section {
@@ -130,18 +177,27 @@
 }
 
 .card {
-  /* View is now bg-secondary; cards use bg-tertiary to lift visually. */
+  /* View is now bg-secondary; cards use bg-tertiary to lift visually.
+     No outer margin — the parent (`.pageBody`) supplies horizontal
+     padding so the card sits flush with the page-header divider above
+     and the page-body's 28px gutters. */
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 16px 20px;
-  /* Body has no horizontal padding; the card gets its own margin so it
-     doesn't touch the 2nd-level nav divider on the left or the viewport
-     edge on the right. */
-  margin: 0 24px;
+  padding: 14px 18px;
 }
 .card + .card {
   margin-top: 12px;
+}
+/* Section title used inside `.pageBody` — sits 8px above its card so
+   the heading reads as the card's label. */
+.pageBody .sectionTitle {
+  padding: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
 }
 
 .row {
@@ -218,40 +274,30 @@
 .providersLayout {
   display: grid;
   grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
+  /* Fill the page-body's available height so each column gets a
+     definite height and can own its own overflow:auto. */
+  height: 100%;
+  min-height: 0;
 }
 .providersSidebar {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  /* No top padding — the sticky header below provides its own 8px
-     padding-top. That way the sticky header can stick at top:0 with
-     no negative-margin trickery, which was making the sticky
-     position calc unreliable (scroll content leaked above it). */
-  padding: 0 8px 8px 8px;
-  /* Sidebar gets its own solid background so the sticky header and
-     the padding gutters never show through to scrolling content
-     behind them — the gradient comment below was aspirational; no
-     parent actually paints a background here. */
+  padding: 8px;
   background: var(--bg-primary);
-  align-self: start;
-  /* Stay in view next to the scrolling detail column. The provider
-     list can get long (20+ providers), so cap its own height and
-     give it its own scrollbar — same shape as claude.ai's left
-     settings nav. */
-  position: sticky;
-  top: 64px;
-  max-height: calc(100vh - 64px);
+  /* Own this column's vertical scroll. Decoupled from the right
+     detail column — wheeling the list never moves the detail, and
+     wheeling the detail never moves the list. */
   overflow-y: auto;
+  overscroll-behavior: contain;
+  border-right: 1px solid var(--border);
+  min-height: 0;
 }
-/* Title + search wrapped in a sticky header — pinned to the top of
-   the (scrollable) sidebar while the provider list scrolls
-   underneath. */
+/* Search input wrapper at the top of the provider list. Plain
+   in-flow block — sidebar no longer has its own scroll, so there's
+   nothing for this header to "pin to". */
 .providersStickyHeader {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--bg-primary);
-  padding: 8px 0;
+  padding: 0 0 8px;
 }
 .providersStickyHeader > .providersSearch { margin-top: 0; }
 .providersSidebar > .providersGroupLabel { margin-top: 20px; }
@@ -384,16 +430,12 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  /* 4th-level content panel — internal padding so cards/labels don't
-     touch the 3rd-level providers list on the left or viewport edge on the right.
-     Kept compact (16/20) — the panel is content-heavy, large gutters
-     waste space without improving readability. */
   padding: 16px 20px 20px;
-  /* No divider between 3rd and 4th — visual separation comes from the
-     padding gap alone (cleaner per user feedback). */
-  /* No inner overflow — single page-level scroll. The sticky
-     `.providersSidebar` keeps the provider picker on screen while
-     the user scans this column's full content. */
+  /* Detail column owns its own scroll — wheeling here doesn't move
+     the provider list on the left. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
 }
 .detailEmpty {
   color: var(--text-muted);
