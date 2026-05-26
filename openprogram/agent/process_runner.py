@@ -57,6 +57,7 @@ def _child_entry(
     work_dir: Optional[str],
     result_path: str,
     event_queue: "mp.Queue",
+    parent_call_id: Optional[str] = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
     # takes down every grandchild (browser, subprocess providers, ...).
@@ -156,8 +157,20 @@ def _child_entry(
         import asyncio
         loop = asyncio.new_event_loop()
         try:
-            import uuid as _uuid
-            call_id = f"forced_{_uuid.uuid4().hex[:8]}"
+            # If parent passed its own call_id (LLM-driven path: this is
+            # the LLM's tool_call_id), reuse it so the placeholder we
+            # write here upserts the same row the parent wrote, and the
+            # nested @agentic_function nodes anchor under the same
+            # runtime_id the parent's build_exec_dag looks up. Without
+            # this the subprocess generated ``forced_<random>`` and we
+            # ended up with two placeholders for one call — the parent's
+            # was empty, the subprocess's had the tree, but the UI showed
+            # the parent's.
+            if parent_call_id:
+                call_id = parent_call_id
+            else:
+                import uuid as _uuid
+                call_id = f"forced_{_uuid.uuid4().hex[:8]}"
             result = loop.run_until_complete(
                 wrapped.execute(call_id, dict(kwargs or {}), None, None)
             )
@@ -202,6 +215,7 @@ def run_agentic_in_subprocess(
     anchor_msg_id: str,
     work_dir: Optional[str] = None,
     on_event: Optional[Callable[[dict], None]] = None,
+    parent_call_id: Optional[str] = None,
 ) -> dict:
     """Run a single @agentic_function tool in a fork()'d subprocess.
 
@@ -220,7 +234,7 @@ def run_agentic_in_subprocess(
     p = ctx.Process(
         target=_child_entry,
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
-              work_dir, result_path, event_queue),
+              work_dir, result_path, event_queue, parent_call_id),
         daemon=False,
     )
     p.start()

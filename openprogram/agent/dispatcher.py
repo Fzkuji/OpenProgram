@@ -260,6 +260,12 @@ def _wrap_agentic_runtime_block(
                         anchor_msg_id=assistant_msg_id,
                         work_dir=None,
                         on_event=on_event,
+                        # LLM-driven: pass the LLM's tool_call_id so the
+                        # subprocess writes its placeholder under the
+                        # SAME runtime_id the parent persisted, instead
+                        # of inventing a ``forced_<random>`` and leaving
+                        # us with two orphan placeholders for one call.
+                        parent_call_id=call_id,
                     ),
                 )
                 if out.get("killed"):
