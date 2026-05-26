@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import styles from "../settings-page.module.css";
+import { cachedFetch, invalidate } from "@/lib/settings-cache";
 import { SearchProviderDetail } from "./detail";
 import { SearchProviderItem } from "./item";
 import type { SearchProvider } from "./types";
@@ -22,8 +23,9 @@ export function SearchProvidersSection() {
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch("/api/search-providers/list");
-      const d = await r.json();
+      const d = await cachedFetch<{ providers?: SearchProvider[]; default?: string | null }>(
+        "/api/search-providers/list",
+      );
       const list: SearchProvider[] = d.providers || [];
       const def = d.default ?? null;
       setProviders(list);
@@ -56,6 +58,7 @@ export function SearchProvidersSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: id }),
       });
+      invalidate("/api/search-providers/list");
       setDefaultId(id);
       // Refresh `is_default` flags on every row.
       setProviders((prev) =>

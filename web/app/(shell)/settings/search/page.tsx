@@ -1,15 +1,7 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { SettingsTabsLayout } from "@/components/settings/settings-tabs-layout";
-
-const SearchProvidersSection = dynamic(
-  () =>
-    import("@/components/settings/search-providers").then(
-      (m) => m.SearchProvidersSection,
-    ),
-  { ssr: false },
-);
+import { SearchProvidersSection } from "@/components/settings/search-providers";
 
 export default function Page() {
   return (

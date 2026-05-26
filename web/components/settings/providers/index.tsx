@@ -21,6 +21,7 @@ import { Detail } from "./detail";
 import { ProviderItem } from "./provider-item";
 import type { Provider } from "./types";
 import styles from "../settings-page.module.css";
+import { cachedFetch, invalidate } from "@/lib/settings-cache";
 
 // Re-export ApiKey for search-providers-section.tsx (the only other
 // consumer outside this subdirectory).
@@ -43,8 +44,11 @@ export function ProvidersSection() {
   const reload = useCallback(async (preserveSelection?: boolean) => {
     let list: Provider[] = [];
     try {
-      const r = await fetch("/api/providers/list");
-      const d = await r.json();
+      // ``cachedFetch`` shares in-flight promises and keeps successful
+      // responses for 30s, so tab-switching back here within that
+      // window is instant. Mutations call ``invalidate()`` below to
+      // force the next read to hit the network.
+      const d = await cachedFetch<{ providers?: Provider[] }>("/api/providers/list");
       list = d.providers || [];
     } catch {
       /* empty */
@@ -80,6 +84,7 @@ export function ProvidersSection() {
     } catch {
       /* ignore */
     }
+    invalidate("/api/providers/list");
     reload(true);
   }
 

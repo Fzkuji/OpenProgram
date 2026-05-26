@@ -1,13 +1,7 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { SettingsTabsLayout } from "@/components/settings/settings-tabs-layout";
-
-const ChannelsSection = dynamic(
-  () =>
-    import("@/components/settings/channels").then((m) => m.ChannelsSection),
-  { ssr: false },
-);
+import { ChannelsSection } from "@/components/settings/channels";
 
 export default function Page() {
   return (

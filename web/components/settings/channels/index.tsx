@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import shellStyles from "../settings-page.module.css";
 import styles from "./channels.module.css";
+import { cachedFetch, invalidate } from "@/lib/settings-cache";
 import { AccountsList } from "./accounts-list";
 import { BindingsList } from "./bindings-list";
 import type {
@@ -57,14 +58,20 @@ export function ChannelsSection() {
     [],
   );
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (skipCache?: boolean) => {
     try {
-      const [accountsResp, bindingsResp] = await Promise.all([
-        fetch("/api/channels/accounts"),
-        fetch("/api/channels/bindings"),
+      // Account / bindings lists rarely change — let the shared
+      // ``cachedFetch`` dedupe them across tab switches. Mutations
+      // (add/delete account, add/remove binding) pass skipCache=true
+      // after invalidating so the next read is authoritative.
+      if (skipCache) {
+        invalidate("/api/channels/accounts");
+        invalidate("/api/channels/bindings");
+      }
+      const [accountsData, bindingsData] = await Promise.all([
+        cachedFetch<{ accounts?: ChannelAccount[] }>("/api/channels/accounts"),
+        cachedFetch<{ bindings?: ChannelBinding[] }>("/api/channels/bindings"),
       ]);
-      const accountsData = await accountsResp.json();
-      const bindingsData = await bindingsResp.json();
       const accountsList: ChannelAccount[] = accountsData.accounts || [];
       setAccounts(accountsList);
       setBindings(bindingsData.bindings || []);
@@ -110,14 +117,14 @@ export function ChannelsSection() {
               <AccountsList
                 accounts={accounts}
                 statuses={statuses}
-                onChange={reload}
+                onChange={() => reload(true)}
               />
             </div>
             <div className={styles.detailSection}>
               <BindingsList
                 bindings={bindings}
                 accounts={accounts}
-                onChange={reload}
+                onChange={() => reload(true)}
               />
             </div>
           </>

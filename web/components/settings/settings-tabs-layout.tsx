@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
 import styles from "./settings-page.module.css";
+import { prefetchSettings } from "@/lib/settings-cache";
+
+const TABS: SettingsTab[] = ["providers", "search", "channels", "general"];
 
 export type SettingsTab = "providers" | "search" | "channels" | "general";
 
@@ -23,6 +27,18 @@ export function SettingsTabsLayout({
   active: SettingsTab;
   children: ReactNode;
 }) {
+  const router = useRouter();
+  // Warm the per-tab API cache + ask Next.js to compile/prefetch the
+  // sibling route chunks as soon as the user lands on /settings/*. In
+  // dev mode each route is compiled lazily on first navigation, which
+  // is the main reason the first cross-tab click feels janky — kicking
+  // off the compile in the background here means by the time the user
+  // actually clicks the link the chunk is usually ready.
+  useEffect(() => {
+    prefetchSettings();
+    TABS.forEach((t) => router.prefetch(`/settings/${t}`));
+  }, [router]);
+
   const isWide =
     active === "providers" || active === "search" || active === "channels";
   return (
