@@ -93,6 +93,14 @@ DEFAULT_TOOLS: list[str] = [
     "read_mcp_resource",
     "list_mcp_prompts",
     "get_mcp_prompt",
+    # Agentic harness entry points — these are the user-facing
+    # programs (gui_agent / research_agent / wiki_agent) that the
+    # LLM should know about by default. Without them in DEFAULT_TOOLS
+    # the model has no idea these exist and resorts to bash-grepping
+    # the filesystem when asked to "use gui_agent" or similar.
+    "gui_agent",
+    "research_agent",
+    "wiki_agent",
 ]
 
 
