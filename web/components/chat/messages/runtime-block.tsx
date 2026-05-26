@@ -19,7 +19,8 @@ import { formatUsageFooterLabel } from "@/lib/format";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 
 import { ExecutionDag } from "./execution-dag/index";
-import { renderMarkdown, useMarkdownReady } from "./markdown";
+import { useMarkdownReady } from "./markdown";
+import { distillReturn, pickPreview, pickRenderer } from "./runtime-renderers";
 
 interface RuntimeLegacyGlobals {
   retryCurrentBlock?: (fn: string) => void;
@@ -59,16 +60,56 @@ function displayContent(msg: ChatMsg): { content: string; tree: unknown } {
   return { content, tree };
 }
 
+/** Format the call-site kwargs for the header so the user sees what
+ *  was passed in, not just an empty ``()``. Pulls from the Execution
+ *  DAG root's ``params`` field (the wrapper records kwargs there).
+ *  Truncates long string values. */
+function formatHeaderParams(tree: unknown): string {
+  if (!tree || typeof tree !== "object") return "";
+  const t = tree as { params?: Record<string, unknown> };
+  const p = t.params;
+  if (!p || typeof p !== "object") return "";
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(p)) {
+    if (k === "runtime" || k === "callback") continue;
+    let s: string;
+    if (typeof v === "string") {
+      s = v.length > 40 ? `"${v.slice(0, 40)}…"` : `"${v}"`;
+    } else if (v === null || v === undefined) {
+      s = "null";
+    } else if (typeof v === "object") {
+      s = "{...}";
+    } else {
+      s = String(v);
+    }
+    parts.push(`${k}: ${s}`);
+  }
+  return parts.join(", ");
+}
+
 export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
   const ref = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
   useMarkdownReady();
 
   const sessionId = useSessionStore((s) => s.currentSessionId);
-  const streaming = msg.status === "streaming" || msg.status === "pending";
-  const { fn, params } = parseRun(msg.function || msg.content || "");
+  const streaming =
+    msg.status === "streaming" ||
+    msg.status === "pending" ||
+    msg.status === "running";
+  const { fn, params: parsedParams } = parseRun(msg.function || msg.content || "");
   const fnName = msg.function || fn;
-  const { content, tree } = displayContent(msg);
+  const { content: rawContent, tree } = displayContent(msg);
+  // Prefer the structured kwargs from the Execution DAG root over a
+  // text re-parse of the user command — LLM-called agentic functions
+  // never have a "run foo k=v" command line, only the tree carries
+  // their input.
+  const params = formatHeaderParams(tree) || parsedParams;
+  const Renderer = pickRenderer(fnName);
+  const previewFn = pickPreview(fnName);
+  const previewText =
+    previewFn?.({ rawOutput: rawContent, contextTree: tree, fnName }) ??
+    distillReturn(rawContent);
 
   // KaTeX pass over the rendered output (same as the legacy renderer).
   useEffect(() => {
@@ -87,7 +128,7 @@ export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
         /* ignore */
       }
     }
-  }, [content]);
+  }, [previewText]);
 
   const cls = [
     "runtime-block",
@@ -117,8 +158,8 @@ export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
       {!streaming ? (
         <span className="runtime-result-preview">
           {"-> " +
-            content.replace(/\s+/g, " ").trim().slice(0, 60) +
-            (content.length > 60 ? "…" : "")}
+            previewText.replace(/\s+/g, " ").trim().slice(0, 60) +
+            (previewText.length > 60 ? "…" : "")}
         </span>
       ) : null}
     </div>
@@ -179,9 +220,10 @@ export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
           <div className="runtime-result">
             <span className="runtime-return-label">return:</span>
           </div>
-          <div
-            className="runtime-output"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+          <Renderer
+            rawOutput={rawContent}
+            contextTree={tree}
+            fnName={fnName}
           />
           {tree ? <ExecutionDag tree={tree as never} /> : null}
         </div>
