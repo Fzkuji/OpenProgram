@@ -91,9 +91,14 @@ const ThinkingEffortSliderPill = React.forwardRef<
   HTMLDivElement,
   ThinkingEffortPillProps
 >(function ThinkingEffortSliderPill(
-  { expanded, onToggle, options, value, onChange },
+  { options, value, onChange },
   ref,
 ) {
+  // Hover-driven open/close — no click required. The `expanded` /
+  // `onToggle` props from the parent are intentionally ignored: the
+  // pill manages its own state via mouseenter / mouseleave on the
+  // relative wrapper (so leaving the spacer footprint also collapses).
+  const [expanded, setExpanded] = useState(false);
   const valueIndex = Math.max(
     0,
     options.findIndex((o) => o.value === value),
@@ -178,6 +183,9 @@ const ThinkingEffortSliderPill = React.forwardRef<
     <div
       ref={ref}
       className="relative inline-flex h-[32px] items-center"
+      data-effort-expanded={expanded ? "true" : undefined}
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
     >
       {/* Invisible spacer keeps the collapsed pill's footprint in the
           flex layout so expanding doesn't push the context badge or
@@ -211,7 +219,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
       <div
         className={[
           "absolute left-0 top-0 h-[32px] overflow-hidden",
-          "rounded-full cursor-pointer select-none",
+          "rounded-full select-none",
           "text-[14px]",
           // Width transition is gated on `measured` so the first-mount
           // 120px → real-width correction doesn't animate (no bounce
@@ -236,10 +244,6 @@ const ThinkingEffortSliderPill = React.forwardRef<
           ["--slider-active" as string]: activeColor,
           ["--slider-active-solid" as string]: activeColorSolid,
         } as React.CSSProperties}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
       >
         {/* Collapsed content. `hidden` (display: none) when expanded
             so there's no overlap / fade — instant swap on toggle.

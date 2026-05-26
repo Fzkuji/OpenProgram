@@ -1258,6 +1258,40 @@
   align-items: center;
 }
 
+/* Composer bottom-row container. Declared globally (not in the CSS
+   module) because CSS Modules in this project scope `container-name`
+   into a hashed identifier, which makes the `@container` rule below
+   never match. The class is applied alongside `styles.inputBottomRow`
+   in composer/index.tsx. Container queries (not viewport `@media`)
+   are required here — the composer also renders inside narrow side
+   panels where viewport width says nothing useful. */
+.composer-bottom-row {
+  container-type: inline-size;
+  container-name: composer-row;
+}
+
+/* Narrow composer row → drop the token-usage pill entirely instead of
+   letting it clip past the right edge (the previous behavior showed
+   half a "5.1k in" pill cut off mid-character). Threshold picked so
+   the badge disappears before the Effort pill (which can grow to
+   260px on hover) would push it under the wrapper edge. */
+@container composer-row (max-width: 500px) {
+  .context-stats-label {
+    display: none;
+  }
+}
+
+/* Wider threshold while the Effort pill is hover-expanded: it grows
+   from ~120px to 260px, eating ~140px of slack. Without this rule the
+   expanded pill would overlap the badge at borderline composer widths.
+   The data attribute is set on the pill wrapper in
+   thinking-effort-pill.tsx when its internal `expanded` state flips. */
+@container composer-row (max-width: 640px) {
+  .composer-bottom-row:has([data-effort-expanded="true"]) .context-stats-label {
+    display: none;
+  }
+}
+
 
 /* Per-turn modified-files chips at the bottom of an assistant bubble.
    Populated lazily via the `list_turn_files` WS action; absent when
@@ -1291,7 +1325,10 @@
    margin so the card lines up with the chat text column instead of
    the avatar column. */
 .attach-row {
-  margin: 12px 60px;
+  /* Vertical gap matches the user / assistant bubble spacing (16px)
+     so the card flows with the chat rhythm instead of feeling
+     tighter than the surrounding turns. */
+  margin: 16px 60px;
 }
 .attach-card {
   margin-top: 0;
@@ -1496,4 +1533,17 @@
   line-height: 1.45;
   max-height: 96px;
   overflow: auto;
+}
+
+/* Brief flash applied by history-graph._scrollChatTo when a DAG
+ * dblclick maps to an existing chat row (function-internal node →
+ * its owner's runtime block). Pure visual cue, no layout effect. */
+@keyframes dagFlash {
+  0%   { background-color: transparent; }
+  20%  { background-color: rgba(255, 196, 92, 0.28); }
+  100% { background-color: transparent; }
+}
+.dag-flash {
+  animation: dagFlash 1.3s ease-out 1;
+  border-radius: 6px;
 }

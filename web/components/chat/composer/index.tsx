@@ -894,7 +894,7 @@ export function Composer() {
           </div>
         )}
 
-        <div key="bottom-row" className={styles.inputBottomRow}>
+        <div key="bottom-row" className={`${styles.inputBottomRow} composer-bottom-row`}>
           <div className={styles.inputOptions}>
             <button
               ref={plusTriggerRef}

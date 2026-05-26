@@ -355,6 +355,11 @@
   background: var(--bg-tertiary);
   border-radius: 0 0 var(--composer-corner) var(--composer-corner);
   z-index: 1;
+  /* The container declaration lives in chat.css under the global
+     `.composer-bottom-row` class (also applied in composer/index.tsx).
+     CSS Modules scope `container-name`, which broke `@container` rules
+     that lived in non-module stylesheets — moving the declaration to a
+     global class avoids that mismatch. */
 }
 /* In fn-form mode the wrapper-level action button glides into the
    bottom-right corner of the row. Reserve right-side padding equal to
