@@ -15,67 +15,27 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-interface GNode {
-  id: string;
-  parent_id?: string | null;
-  role?: string;
-  display?: string;
-  created_at?: number;
-  function?: string;
-  name?: string;
-  preview?: string;
-  is_named?: boolean;
-  head_msg_id?: string;
-  children?: GNode[];
-  _depth?: number;
-  _lane?: number;
-  _tier?: number;
-  _anchor?: GNode;
-  _internal?: boolean;
-  _runNode?: boolean;
-  [k: string]: any;
-}
-
-interface HGWindow {
-  currentSessionId?: string | null;
-  _branchesByConv?: Record<string, GNode[]>;
-  _branchLaneColorMap?: Record<string, string>;
-  _postCheckoutScrollTo?: string | null;
-  ws?: WebSocket | null;
-  [k: string]: any;
-}
-
-const HGW = window as unknown as HGWindow;
-
-const ROW_H = 32;
-const COL_W = 48;
-const NODE_R = 5;
-const PAD_X = 18;
-const PAD_Y = 16;
-
-// Index 0 is the trunk colour; 1..N-1 are side-branch colours, picked
-// by a hash of the branch's leaf id. Distinct, evenly-spread hues so
-// neighbouring branches never read as the same colour.
-const LANE_COLORS = [
-  "#4f8ef7", // blue        (trunk)
-  "#5aad4e", // green
-  "#d4843a", // orange
-  "#9d6fe0", // purple
-  "#e0445a", // red
-  "#2db3d5", // cyan
-  "#e0b020", // gold
-  "#35b89a", // teal
-  "#e066b3", // magenta
-  "#6b8dd6", // slate blue
-  "#8fbf3f", // lime
-  "#d9694f", // coral
-  "#52c4c4", // aqua
-  "#b08be0", // lavender
-  "#c79a4a", // tan
-  "#e08a3a", // amber
-  "#6fae6f", // sage
-  "#d05fa0", // rose
-];
+import {
+  type GNode,
+  type HighlightMode,
+  HGW,
+  LANE_COLORS,
+  NODE_R,
+  PAD_X,
+  PAD_Y,
+  ROW_H,
+  COL_W,
+} from "./history/types";
+import {
+  CURSOR_R,
+  _branchColor,
+  _buildShapeEl,
+  _edgePath,
+  _shapeFor,
+  _applyShapeSize,
+  _shapeTypeFromTag,
+  _svg,
+} from "./history/shapes";
 
 let _currentHead: string | null = null;
 let _contextSet: Record<string, boolean> | null = null;
@@ -106,22 +66,6 @@ let _collapsed: Record<string, boolean> = Object.create(null);
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 let _seenCollapsible: Record<string, boolean> = Object.create(null);
 let _collapseSession: string | null = null;
-
-/** Stable per-branch colour. Lane 0 (the trunk) is always
- *  LANE_COLORS[0]. A side branch is coloured by a hash of its leaf id
- *  — a stable node id — NOT by its lane index. So checking out a
- *  different branch (which reshuffles lane indices) does not repaint
- *  the other branches: each keeps the colour tied to its identity. */
-function _branchColor(node: GNode, leafOfNode: Record<string, string>): string {
-  if ((node._lane || 0) === 0) return LANE_COLORS[0];
-  const leafId = leafOfNode[node.id] || node.id;
-  let h = 0;
-  for (let i = 0; i < leafId.length; i++) {
-    h = (h * 31 + leafId.charCodeAt(i)) | 0;
-  }
-  // Reserve index 0 for the trunk; side branches use 1..N-1.
-  return LANE_COLORS[1 + (Math.abs(h) % (LANE_COLORS.length - 1))];
-}
 
 function _signature(graph: GNode[], headId: string | null): string {
   if (!graph || !graph.length) return "empty|" + (headId || "");
@@ -510,87 +454,8 @@ function _assignLanes(
   return { leaves, laneCount, leafOfNode };
 }
 
-function _svg(tag: string, attrs?: Record<string, string | number>): SVGElement {
-  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  if (attrs) Object.keys(attrs).forEach((k) => el.setAttribute(k, String(attrs[k])));
-  return el as SVGElement;
-}
+// SVG primitives, shape helpers, branch colour — see ./history/shapes.
 
-function _edgePath(x1: number, y1: number, x2: number, y2: number): string {
-  if (x1 === x2) return "M" + x1 + "," + y1 + " L" + x2 + "," + y2;
-  const my = (y1 + y2) / 2;
-  return (
-    "M" + x1 + "," + y1 + " C" + x1 + "," + my + " " + x2 + "," + my + " " + x2 + "," + y2
-  );
-}
-
-function _shapeFor(node: GNode): string {
-  const role = node.role;
-  const display = node.display;
-  if (display === "runtime") return "square";
-  if (role === "tool") return "square";
-  if (role === "assistant") return "triangle";
-  if (role === "user") return "circle";
-  return "circle";
-}
-
-// Note: _labelFor / _fitLabel previously decided the inline text
-// next to each node. With inline labels removed (hover-tooltip
-// now), they're unused; deleted to keep the file small.
-
-function _applyShapeSize(shape: SVGElement, isCurrent: boolean): void {
-  const r = isCurrent ? NODE_R + 1.8 : NODE_R;
-  if (shape.tagName === "circle") {
-    shape.setAttribute("r", String(r));
-  } else if (shape.tagName === "polygon") {
-    const t = r * 1.5;
-    const COS30 = 0.8660254;
-    shape.setAttribute(
-      "points",
-      "0," + -t + " " + t * COS30 + "," + t * 0.5 + " " + -t * COS30 + "," + t * 0.5,
-    );
-  } else if (shape.tagName === "rect") {
-    const s = r - 0.2;
-    shape.setAttribute("x", String(-s));
-    shape.setAttribute("y", String(-s));
-    shape.setAttribute("width", String(s * 2));
-    shape.setAttribute("height", String(s * 2));
-  }
-}
-
-function _buildShapeEl(shape: string, color: string, r: number): SVGElement | null {
-  if (shape === "circle") {
-    return _svg("circle", { r, fill: color });
-  } else if (shape === "triangle") {
-    const t = r * 1.5;
-    const COS30 = 0.8660254;
-    return _svg("polygon", {
-      points:
-        "0," + -t + " " + t * COS30 + "," + t * 0.5 + " " + -t * COS30 + "," + t * 0.5,
-      fill: color,
-    });
-  } else if (shape === "square") {
-    const s = r - 0.2;
-    return _svg("rect", {
-      x: -s,
-      y: -s,
-      width: s * 2,
-      height: s * 2,
-      rx: 0.8,
-      ry: 0.8,
-      fill: color,
-    });
-  }
-  return null;
-}
-
-const CURSOR_R = NODE_R * 0.55;
-
-function _shapeTypeFromTag(tagName: string): string {
-  if (tagName === "polygon") return "triangle";
-  if (tagName === "rect") return "square";
-  return "circle";
-}
 
 function _ensureTooltip(body: HTMLElement): HTMLDivElement {
   if (_tooltip && _tooltip.parentElement === body) return _tooltip;
@@ -639,6 +504,16 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   graph = collapsedR.graph;
   headId = collapsedR.headId;
 
+  // Compute a STABLE leafOfNode from the pre-collapse graph for
+  // colouring. Collapsing the sub-call subtree removes its leaf
+  // (e.g. the sub-agent tip), which would make the task spawn node
+  // itself become a leaf — and `_branchColor` would hash a different
+  // id, producing a different colour. By snapshotting leafOfNode here
+  // (before _applyCollapse), the collapsed and expanded states agree.
+  const preCollapseTree = _buildTree(graph);
+  const preCollapseLanes = _assignLanes(preCollapseTree.byId, headId);
+  const stableLeafOfNode = preCollapseLanes.leafOfNode;
+
   const cinfo = _applyCollapse(graph);
   graph = cinfo.visible;
 
@@ -671,7 +546,7 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     if (node._lane !== undefined) {
-      _colorMap[id] = _branchColor(node, lanes.leafOfNode);
+      _colorMap[id] = _branchColor(node, stableLeafOfNode);
     }
   });
   HGW._branchLaneColorMap = _colorMap;
@@ -763,16 +638,21 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
 
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
-    // Attach pointers are reference-only — not events on the conv
-    // chain. We render them as a single dashed edge below; skip the
-    // solid parent edge here so they don't look like a square call.
-    if (node.function === "attach") return;
-    if (!node.parent_id || !tree.byId[node.parent_id]) return;
-    const parent = tree.byId[node.parent_id];
+    // Branch-referencing function_calls (attach / merge) sit on
+    // the caller's main lane as sequence-level nodes. Schema-wise
+    // they have a non-empty ``caller`` but no ``parent_id``; treat
+    // the caller as their conv parent for the solid sequence edge.
+    // See docs/design/dag-node-model.md.
+    const isBranchRef = node.function === "attach" || node.function === "merge";
+    const conv_parent_id = isBranchRef
+      ? (node.caller || node.called_by || node.parent_id)
+      : node.parent_id;
+    if (!conv_parent_id || !tree.byId[conv_parent_id]) return;
+    const parent = tree.byId[conv_parent_id];
     const p = pos(parent);
     const c = pos(node);
-    const color = _branchColor(node, lanes.leafOfNode);
-    const onHead = headAncestors[id] && headAncestors[node.parent_id];
+    const color = _branchColor(node, stableLeafOfNode);
+    const onHead = headAncestors[id] && headAncestors[conv_parent_id];
     edgeG.appendChild(
       _svg("path", {
         d: _edgePath(p.x, p.y, c.x, c.y),
@@ -818,17 +698,19 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   }
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
-    if (node.function !== "attach") return;
+    // Reference edges from attach AND merge — both are
+    // branch-referencing function_calls per docs/design/dag-node-model.md.
+    if (node.function !== "attach" && node.function !== "merge") return;
     const ref = node.attach_ref as string | undefined;
     if (!ref) return;
     const src = tree.byId[ref];
     if (!src) return;
-    const anchorId = node.parent_id || node.caller;
-    const anchor = anchorId ? tree.byId[anchorId] : null;
-    if (!anchor) return;
+    // Reference edge: source branch tip → the function_call node
+    // itself. The node is now drawn (square_outline shape), so we
+    // anchor on it directly.
     const srcPos = pos(src);
-    const anchorPos = pos(anchor);
-    const color = _branchColor(src, lanes.leafOfNode);
+    const anchorPos = pos(node);
+    const color = _branchColor(src, stableLeafOfNode);
     // Always draw the dashed attach edge. The old "skip when ref is a
     // conv-descendant of anchor" rule killed the only visual signal
     // for spawned sub-agents: sub-agent's user msg hangs off the
@@ -849,32 +731,16 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
         class: "history-edge attach-edge",
       }),
     );
-    // Anchor-side landing dot — ALWAYS draw, even when the dashed
-    // edge is skipped, so the trunk (e.g. main) shows a small mark
-    // wherever an attach grafts. Without this, an attach onto a
-    // mid-trunk turn leaves zero visible signal on the trunk itself.
-    edgeG.appendChild(
-      _svg("circle", {
-        cx: String(anchorPos.x),
-        cy: String(anchorPos.y),
-        r: "3.5",
-        fill: color,
-        stroke: "var(--bg-secondary, #1a1a1a)",
-        "stroke-width": "1",
-        class: "attach-landing-dot",
-      }),
-    );
+    // The attach-pointer node itself is the landing marker now — no
+    // separate dot needed.
   });
 
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
-    // Attach pointers are pure references — represented as a dashed
-    // edge above, never as a square node.
-    if (node.function === "attach") return;
     const p = pos(node);
     const isHead = id === headId;
     const onHead = !!headAncestors[id];
-    const color = _branchColor(node, lanes.leafOfNode);
+    const color = _branchColor(node, stableLeafOfNode);
     const isCollapsible = cinfo.isCollapsible(node);
     const isFolded = isCollapsible && !!_collapsed[id];
     const g = _svg("g", {
@@ -955,7 +821,7 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
       // overlap. The text color tracks the branch's lane colour so
       // each label still reads as "belongs to that line".
       const dy = 22;
-      const color = _branchColor(node, lanes.leafOfNode);
+      const color = _branchColor(node, stableLeafOfNode);
       const tg = _svg("g", {
         class: "history-branch-tag",
         transform: "translate(" + p.x + "," + p.y + ")",
