@@ -288,6 +288,133 @@ def _wrap_agentic_runtime_block(
 
 
 # ---------------------------------------------------------------------------
+# Forced tool-call dispatch (UI-triggered @agentic_function run)
+# ---------------------------------------------------------------------------
+
+def dispatch_forced_tool_call(
+    session_id: str,
+    anchor_msg_id: str,
+    tool_name: str,
+    tool_input: dict | None,
+    work_dir: Optional[str] = None,
+    *,
+    agent_id: str = "main",
+    source: str = "web",
+    on_event: Optional[EventCallback] = None,
+) -> dict:
+    """Run a single @agentic_function without invoking the LLM.
+
+    Shares the exact same wrapper / placeholder / finalize plumbing as
+    an LLM-issued tool call (see ``_wrap_agentic_runtime_block``).
+    Used by the Functions panel / fn-form / former ``/run`` UI path,
+    so all @agentic_function invocations land on one execution path.
+
+    Caller is responsible for having already persisted the user-side
+    command message under ``anchor_msg_id`` — this function only adds
+    the runtime-block row + the DAG subtree.
+    """
+    import asyncio
+
+    on_event = on_event or _noop
+
+    # Look up the tool by name from the global catalog.
+    try:
+        from openprogram.functions import agent_tools as _agent_tools
+        tools = _agent_tools(names=[tool_name]) or []
+    except Exception as e:  # noqa: BLE001
+        raise ValueError(f"failed to resolve tool {tool_name!r}: {e}") from e
+    tool = next((t for t in tools if t.name == tool_name), None)
+    if tool is None:
+        raise ValueError(f"tool not found: {tool_name!r}")
+    if not getattr(tool, "_is_agentic", False):
+        raise ValueError(
+            f"tool {tool_name!r} is not an @agentic_function — only "
+            "agentic tools can be forced via this path"
+        )
+
+    # Build a minimal TurnRequest carrying just the fields the wrapper
+    # reads (session_id, source, agent_id). No user_text — this is not
+    # a conversational turn.
+    req = TurnRequest(
+        session_id=session_id,
+        user_text="",
+        agent_id=agent_id,
+        source=source,
+    )
+
+    # Install the session's GraphStore + Runtime context vars so the
+    # @agentic_function decorator inside the tool body anchors its DAG
+    # nodes into this session (same setup process_user_turn does).
+    from openprogram.store import (
+        GraphStoreShim as _GraphStore,
+        _store as _store_var,
+        _current_turn_id as _turn_id_var,
+    )
+    from openprogram.agentic_programming.function import (
+        _current_runtime as _current_runtime_var,
+    )
+    from openprogram.agent.session_db import default_db
+    db = default_db()
+
+    _runtime_token = None
+    _store_token = None
+    _turn_token = _turn_id_var.set(anchor_msg_id)
+    try:
+        try:
+            from openprogram.providers.registry import create_runtime as _create_rt
+            _dag_runtime = _create_rt()
+            if work_dir:
+                try:
+                    import os
+                    abs_wd = os.path.abspath(os.path.expanduser(work_dir))
+                    os.makedirs(abs_wd, exist_ok=True)
+                    if hasattr(_dag_runtime, "set_workdir"):
+                        _dag_runtime.set_workdir(abs_wd)
+                except Exception:
+                    pass
+            _runtime_token = _current_runtime_var.set(_dag_runtime)
+            _store_token = _store_var.set(_GraphStore(db, session_id))
+        except Exception:
+            _runtime_token = None
+            _store_token = None
+
+        # Anchor the wrapper's runtime-block under anchor_msg_id (the
+        # user's "[function call] ..." row), matching the chat path's
+        # assistant_msg_id role.
+        wrapped = _wrap_agentic_runtime_block(
+            tool, req, on_event, anchor_msg_id,
+        )
+
+        # Each forced call gets its own synthetic tool_call_id so
+        # multiple runs hang off independent runtime-block rows.
+        call_id = f"forced_{uuid.uuid4().hex[:8]}"
+        args = dict(tool_input or {})
+
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(
+                wrapped.execute(call_id, args, None, None)
+            )
+        finally:
+            loop.close()
+    finally:
+        try:
+            if _runtime_token is not None:
+                _current_runtime_var.reset(_runtime_token)
+            if _store_token is not None:
+                _store_var.reset(_store_token)
+            if _turn_token is not None:
+                _turn_id_var.reset(_turn_token)
+        except Exception:
+            pass
+
+    return {
+        "runtime_msg_id": f"{anchor_msg_id}_rt_{call_id}",
+        "ok": True,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 

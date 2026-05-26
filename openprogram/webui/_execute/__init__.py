@@ -1,12 +1,16 @@
-"""execute_in_context — chat/run dispatch with shared setup + error handling.
+"""execute_in_context — chat dispatch with shared setup + error handling.
 
 Originally lived as `_execute_in_context` in openprogram/webui/server.py.
 Split into:
   - this module: common setup, branch dispatch, unified try/except/finally
   - chat.py: action="query" body (run_query)
-  - run.py:  action="run"  body (run_function)
 
-Two newer actions handled inline here (small enough not to warrant
+The former ``action="run"`` path (manual @agentic_function trigger via
+``/run`` slash command or fn-form) was removed in favour of
+``dispatcher.dispatch_forced_tool_call`` — UI-triggered and LLM-issued
+@agentic_function calls now share one execution path.
+
+Two other actions handled inline here (small enough not to warrant
 their own modules):
   - spawn  : ``/spawn label: prompt`` — user-initiated peer agent
              spawn (same session, new branch / new root). Runs
@@ -579,17 +583,6 @@ def execute_in_context(
                     effective_permission=effective_permission,
                     agent_id=_agent_id,
                     attachments=attachments,
-                )
-            elif action == "run":
-                from . import run as _run
-                _run.run_function(
-                    session_id=session_id,
-                    msg_id=msg_id,
-                    func_name=func_name,
-                    kwargs=kwargs,
-                    conv=conv,
-                    runtime=runtime,
-                    exec_thinking_effort=exec_thinking_effort,
                 )
             elif action == "spawn":
                 _run_spawn(

@@ -127,20 +127,15 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
     # Kick off the run against the new user message. Same dispatch
     # logic as POST /api/chat.
     parsed = _srv._parse_chat_input(new_user["content"] or "")
-    if parsed["action"] == "run":
-        threading.Thread(
-            target=_srv._execute_in_context,
-            args=(session_id, new_msg_id, "run"),
-            kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"]},
-            daemon=True,
-        ).start()
-    else:
-        threading.Thread(
-            target=_srv._execute_in_context,
-            args=(session_id, new_msg_id, "query"),
-            kwargs={"query": parsed["raw"]},
-            daemon=True,
-        ).start()
+    # @agentic_function dispatch left the chat parser — retries always
+    # route through the LLM ``query`` path now. Direct function calls
+    # use POST /api/function/{name} explicitly.
+    threading.Thread(
+        target=_srv._execute_in_context,
+        args=(session_id, new_msg_id, "query"),
+        kwargs={"query": parsed["raw"]},
+        daemon=True,
+    ).start()
 
     return {
         "session_id": session_id,
@@ -223,6 +218,27 @@ async def post_chat_checkout(body: dict = None):
     db = default_db()
     if not db.message_exists(session_id, target_id):
         return JSONResponse(content={"error": "unknown msg"}, status_code=404)
+    # Reject checkout to function-internal nodes — a node with a
+    # ``called_by`` set lives inside an @agentic_function's execution
+    # subtree (LLM exec rows, nested code calls). Those are not
+    # conversation branches and switching HEAD into one yields a
+    # nonsense linear transcript that mixes internal exec output with
+    # the user-visible reply. Conv branches are the nodes reachable
+    # purely via parent_id; ``called_by`` is the DAG's separate "call"
+    # edge.
+    _node = None
+    try:
+        for _n in db.get_nodes(session_id):
+            if _n.id == target_id:
+                _node = _n
+                break
+    except Exception:
+        _node = None
+    if _node is not None and getattr(_node, "called_by", None):
+        return JSONResponse(
+            content={"error": "function-internal node is not a checkout target"},
+            status_code=400,
+        )
     db.set_head(session_id, target_id)
     with _srv._sessions_lock:
         conv = _srv._sessions.get(session_id)

@@ -202,9 +202,7 @@ async def handle_chat(ws, cmd: dict):
         "timestamp": time.time(),
         "source": "web",
     }
-    if parsed["action"] == "run":
-        user_msg["display"] = "runtime"
-    elif parsed["action"] == "spawn":
+    if parsed["action"] == "spawn":
         # SYNC path only: tag the /task user msg so the DAG layout
         # treats it as a branch fork (main trunk stops here; the
         # spawned turn + sub-agent reply live on a new lane). Same
@@ -246,17 +244,7 @@ async def handle_chat(ws, cmd: dict):
         "data": {"session_id": session_id, "msg_id": msg_id},
     }))
 
-    if parsed["action"] == "run":
-        threading.Thread(
-            target=_s._execute_in_context,
-            args=(session_id, msg_id, "run"),
-            kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"],
-                    "thinking_effort": run_cfg.thinking_effort,
-                    "exec_thinking_effort": exec_thinking_effort,
-                    "permission_mode": run_cfg.permission_mode},
-            daemon=True,
-        ).start()
-    elif parsed["action"] == "query":
+    if parsed["action"] == "query":
         threading.Thread(
             target=_s._execute_in_context,
             args=(session_id, msg_id, "query"),
@@ -379,19 +367,24 @@ async def handle_retry_overwrite(ws, cmd: dict):
     parsed = _s._parse_chat_input(text)
     print(f"[retry] text={text[:200]}")
     print(f"[retry] parsed={parsed}")
-    if parsed["action"] == "run":
+    # The legacy /run retry path was removed when @agentic_function
+    # dispatch unified onto dispatcher.dispatch_forced_tool_call.
+    # Frontend retry should now call POST /api/function/{name} directly.
+    if parsed["action"] == "query":
         threading.Thread(
             target=_s._execute_in_context,
-            args=(session_id, msg_id, "run"),
-            kwargs={"func_name": parsed["function"], "kwargs": parsed["kwargs"],
-                    "thinking_effort": thinking_effort,
-                    "exec_thinking_effort": exec_thinking_effort},
+            args=(session_id, msg_id, "query"),
+            kwargs={"query": parsed["raw"],
+                    "thinking_effort": thinking_effort},
             daemon=True,
         ).start()
     else:
         _s._broadcast_chat_response(session_id, msg_id, {
             "type": "error",
-            "content": f"Could not parse retry command: {text[:100]}",
+            "content": (
+                "retry_overwrite no longer dispatches @agentic_function "
+                "runs — call POST /api/function/{name} instead."
+            ),
             "function": func_name,
             "display": "runtime",
         })
