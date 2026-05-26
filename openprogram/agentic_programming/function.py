@@ -645,6 +645,14 @@ class agentic_function:
             unsafe_in=self.unsafe_in,
             register_globally=self.register_globally,
         )
+        # Mark the AgentTool so the dispatcher can route an LLM-issued
+        # call to this @agentic_function through the same runtime-block
+        # rendering that the manual /run path uses, instead of the
+        # collapsed tool-call card.
+        try:
+            setattr(self._agent_tool, "_is_agentic", True)
+        except Exception:
+            pass
 
     def _make_wrapper(self, fn: Callable) -> Callable:
         sig = inspect.signature(fn)

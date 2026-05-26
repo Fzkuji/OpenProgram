@@ -135,6 +135,159 @@ from openprogram.agent._approval import (
 
 
 # ---------------------------------------------------------------------------
+# @agentic_function → runtime-block wrapper
+# ---------------------------------------------------------------------------
+
+def _wrap_agentic_runtime_block(
+    agent_tool,
+    req: "TurnRequest",
+    on_event: EventCallback,
+    assistant_msg_id: str,
+):
+    """Wrap an @agentic_function AgentTool's execute so an LLM-issued
+    call renders the same way as a manual ``/run <fn>`` invocation —
+    a ``display=runtime`` row with the full Execution DAG, duration,
+    parameters, and return preview.
+
+    Before exec: persist a ``role=assistant, type=status,
+    display=runtime, status=running`` placeholder and broadcast it.
+    Set ``_call_id`` so the @agentic_function decorator anchors its
+    top DAG node under our placeholder id (build_exec_dag walks from
+    that id to reconstruct the tree).
+
+    After exec: rebuild the exec DAG, update the placeholder in place
+    with ``status=done`` + ``context_tree`` + final output, broadcast
+    a runtime-block result envelope so live UIs flip without a
+    refresh.
+    """
+    from openprogram.agent.types import AgentTool as _AgentTool
+
+    orig_execute = agent_tool.execute
+    tool_name = agent_tool.name
+
+    async def _runtime_block_execute(call_id, args, cancel, on_update):
+        from openprogram.agent.session_db import default_db
+        from openprogram.agentic_programming.function import (
+            _call_id as _call_id_var,
+        )
+        from openprogram.store import GraphStoreShim
+        from openprogram.webui._exec_dag import build_exec_dag
+
+        # ``call_id`` here is the LLM's tool_call_id — unique per call,
+        # so multiple invocations of the same agentic tool in one turn
+        # each get their own runtime-block row.
+        runtime_id = f"{assistant_msg_id}_rt_{call_id}"
+        now = time.time()
+        placeholder = {
+            "id": runtime_id,
+            "role": "assistant",
+            "type": "status",
+            "content": "",
+            "function": tool_name,
+            "display": "runtime",
+            "status": "running",
+            "started_at": now,
+            "last_update_at": now,
+            "timestamp": now,
+            "parent_id": assistant_msg_id,
+            "source": req.source,
+            "agent_id": req.agent_id,
+        }
+        db = default_db()
+        try:
+            db.append_message(req.session_id, placeholder)
+        except Exception:
+            pass
+        on_event({
+            "type": "chat_response",
+            "data": {
+                "type": "status",
+                "session_id": req.session_id,
+                "msg_id": runtime_id,
+                "content": "",
+                "function": tool_name,
+                "display": "runtime",
+                "status": "running",
+                "parent_id": assistant_msg_id,
+                "timestamp": now,
+            },
+        })
+
+        # Anchor the @agentic_function decorator's top DAG node under
+        # our runtime-block id so build_exec_dag(..., runtime_id) finds
+        # it. Reset in finally so we don't leak into sibling calls.
+        _call_token = _call_id_var.set(runtime_id)
+        try:
+            result = await orig_execute(call_id, args, cancel, on_update)
+        finally:
+            try:
+                _call_id_var.reset(_call_token)
+            except Exception:
+                pass
+
+        # Finalize the placeholder.
+        try:
+            text_out = "".join(
+                c.text for c in (result.content or [])
+                if hasattr(c, "text") and isinstance(c.text, str)
+            )
+        except Exception:
+            text_out = ""
+        tree_dict = build_exec_dag(req.session_id, tool_name, runtime_id) or {
+            "path": tool_name,
+            "name": tool_name,
+            "params": {k: v for k, v in (args or {}).items() if k != "runtime"},
+            "output": text_out,
+            "status": "success",
+        }
+        done_at = time.time()
+        try:
+            _shim = GraphStoreShim(db, req.session_id)
+            _shim.update(
+                runtime_id,
+                output=text_out,
+                metadata={
+                    "status": "done",
+                    "function": tool_name,
+                    "display": "runtime",
+                    "last_update_at": done_at,
+                    "context_tree": tree_dict,
+                },
+            )
+        except Exception:
+            pass
+        on_event({
+            "type": "chat_response",
+            "data": {
+                "type": "result",
+                "session_id": req.session_id,
+                "msg_id": runtime_id,
+                "content": text_out,
+                "function": tool_name,
+                "display": "runtime",
+                "context_tree": tree_dict,
+                "parent_id": assistant_msg_id,
+                "timestamp": done_at,
+            },
+        })
+        return result
+
+    wrapped = _AgentTool(
+        name=agent_tool.name,
+        description=agent_tool.description,
+        parameters=agent_tool.parameters,
+        label=getattr(agent_tool, "label", agent_tool.name) or agent_tool.name,
+        execute=_runtime_block_execute,
+    )
+    for _attr in ("_is_agentic", "_defer"):
+        try:
+            setattr(wrapped, _attr, getattr(agent_tool, _attr, None))
+        except Exception:
+            pass
+    return wrapped
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -440,6 +593,14 @@ def process_user_turn(
                     if not tid:
                         return
                     meta = _tool_args_by_id.get(tid, {})
+                    # @agentic_function tool calls are rendered as a
+                    # runtime-block row (persisted by the wrapper in
+                    # _wrap_agentic_runtime_block) — don't ALSO persist
+                    # them as collapsed role=tool entries, that would
+                    # duplicate the call in chat.
+                    _tname = meta.get("tool") or evt.get("tool") or ""
+                    if _tname in _agentic_tool_names:
+                        return
                     try:
                         from openprogram.agent.session_db import (
                             default_db as _db,
@@ -466,11 +627,19 @@ def process_user_turn(
             except Exception:
                 pass
 
+        # _agentic_tool_names is filled by _run_loop_blocking once it
+        # resolves the tool list — used below in step 5 to filter
+        # @agentic_function calls out of the assistant message's
+        # tool_calls/blocks (they render as their own runtime-block row
+        # instead of as collapsed tool cards under the assistant bubble).
+        _agentic_tool_names: set[str] = set()
         final_text, usage, tool_calls = _run_loop_blocking(
             req=req,
             history=loop_history,
             on_event=_on_event_persist,
             cancel_event=cancel_event,
+            assistant_msg_id=assistant_msg_id,
+            agentic_tool_names_out=_agentic_tool_names,
         )
     except Exception as e:
         # Two paths, both delegated to _turn_lifecycle:
@@ -606,6 +775,14 @@ def process_user_turn(
             "token_source": token_source,
             "token_model":  model_id,
         })
+    # Strip @agentic_function calls — they render as their own
+    # runtime-block message (see _wrap_agentic_runtime_block) rather
+    # than as collapsed cards under the assistant bubble.
+    if tool_calls and _agentic_tool_names:
+        tool_calls = [
+            t for t in tool_calls
+            if (t.get("tool") or "") not in _agentic_tool_names
+        ]
     if tool_calls:
         # Persist BOTH shapes:
         #   * tool_calls — legacy slim list (id/tool/result/is_error)
@@ -930,6 +1107,8 @@ def _run_loop_blocking(
     on_event: EventCallback,
     cancel_event: Optional[threading.Event],
     stream_fn=None,
+    assistant_msg_id: Optional[str] = None,
+    agentic_tool_names_out: Optional[set[str]] = None,
 ) -> tuple[str, dict, list[dict]]:
     """Build AgentContext, kick off agent_loop, drain its EventStream.
 
@@ -962,6 +1141,22 @@ def _run_loop_blocking(
     _log_resolved_tools(req, tools)
     if tools:
         tools = [_wrap_with_approval(t, req, on_event) for t in tools]
+        # Route @agentic_function calls through the runtime-block
+        # rendering path (same UX as the manual /run handler): persist
+        # a display=runtime placeholder, set _call_id so the DAG
+        # subtree anchors under it, finalize with the rebuilt exec DAG.
+        if assistant_msg_id is not None:
+            _wrapped: list = []
+            for _t in tools:
+                if getattr(_t, "_is_agentic", False):
+                    if agentic_tool_names_out is not None:
+                        agentic_tool_names_out.add(_t.name)
+                    _wrapped.append(_wrap_agentic_runtime_block(
+                        _t, req, on_event, assistant_msg_id,
+                    ))
+                else:
+                    _wrapped.append(_t)
+            tools = _wrapped
     # Layer 6 catalog text in the system prompt. We do NOT split
     # ``tools`` here — the agent_loop re-splits before every provider
     # call so newly-loaded deferred tools show up on the next turn

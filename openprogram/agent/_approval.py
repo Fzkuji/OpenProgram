@@ -128,13 +128,22 @@ def wrap_with_approval(
             )
         return await orig_execute(call_id, args, cancel, on_update)
 
-    return AgentTool(
+    wrapped = AgentTool(
         name=agent_tool.name,
         description=agent_tool.description,
         parameters=agent_tool.parameters,
         label=getattr(agent_tool, "label", agent_tool.name) or agent_tool.name,
         execute=_gated_execute,
     )
+    # Carry over sidecar flags the dispatcher reads downstream.
+    # _is_agentic in particular is how runtime-block rendering is
+    # triggered for LLM-invoked @agentic_function calls.
+    for _attr in ("_is_agentic", "_defer"):
+        try:
+            setattr(wrapped, _attr, getattr(agent_tool, _attr, None))
+        except Exception:
+            pass
+    return wrapped
 
 
 async def await_user_approval(
