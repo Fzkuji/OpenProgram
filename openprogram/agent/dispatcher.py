@@ -1078,20 +1078,15 @@ def process_user_turn(
     # Stamp terminal lifecycle status — see _turn_lifecycle for the
     # state machine. ``cancel_event.is_set()`` here means the user
     # clicked stop mid-stream and the agent loop returned early with
-    # partial output → record as "cancelled", not "completed".
-    _is_cancelled_turn = bool(cancel_event and cancel_event.is_set())
+    # partial output → record as "cancelled", not "completed". Leave
+    # the streamed content alone — user wants whatever was visible at
+    # click time to stay visible, not get replaced. Frontend optimistic
+    # update appends a "*[cancelled by user]*" marker right when the
+    # stop button is clicked; here we just stamp the terminal status.
     _mark_terminal_status(
         assistant_msg,
-        cancelled=_is_cancelled_turn,
+        cancelled=bool(cancel_event and cancel_event.is_set()),
     )
-    # Post-stop content suppression: user expectation is that whatever
-    # the LLM eventually returns after they hit stop is irrelevant —
-    # they already moved on. Replace any final content / thinking
-    # with a "[cancelled by user]" marker so a refresh after stop
-    # shows the cancellation, not the late-arriving model answer.
-    if _is_cancelled_turn:
-        assistant_msg["content"] = "[cancelled by user]"
-        assistant_msg.pop("thinking", None)
     if has_usage:
         assistant_msg.update({
             "input_tokens":  int(usage.get("input_tokens")  or 0),
