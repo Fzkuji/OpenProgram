@@ -55,6 +55,7 @@ import { _mergeRuns } from "./passes/merge-runs";
 import { _collapseRuntimePlaceholders } from "./passes/collapse-runtime-placeholders";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
 import { _applyCollapse } from "./passes/apply-collapse";
+import { _applyD3TreeLayout } from "./passes/d3-tree-layout";
 import { _buildTree } from "./layout/build-tree";
 import { _assignDepth } from "./layout/depth";
 import { _assignLanes, _headAncestors } from "./layout/assign-lanes";
@@ -72,6 +73,7 @@ import {
   _lastGraph,
   _lastHeadId,
   _lastSignature,
+  _layoutMode,
   setCurrentHead,
   setHeadAncestorSet,
   setInternalOwner,
@@ -132,6 +134,23 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const cinfo = _applyCollapse(graph);
   graph = cinfo.visible;
+
+  // d3-tree layout mode: re-position function-call subtrees via
+  // d3-hierarchy's Reingold-Tilford layout so siblings spread to
+  // accommodate their own subtree widths (no overlap on complex
+  // agentic call trees). Trunk (user/reply chain) stays on its
+  // legacy lane=0 column. Mode flip is reactive — toggling at
+  // runtime re-renders with the new positions.
+  if (_layoutMode === "d3") {
+    _applyD3TreeLayout(graph);
+  } else {
+    // Clear any d3 coords from a previous run when switching back
+    // to legacy, so ``pos()`` falls through to the lane/tier formula.
+    graph.forEach((n) => {
+      if ("_x" in n) delete (n as { _x?: number })._x;
+      if ("_y" in n) delete (n as { _y?: number })._y;
+    });
+  }
 
   const sig = _signature(graph, headId);
   if (sig === _lastSignature && _currentHead === headId) return;
@@ -244,6 +263,13 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   svg.appendChild(nodeG);
 
   function pos(n: GNode): { x: number; y: number } {
+    // d3-tree layout (if active) writes absolute pixel positions to
+    // ``_x`` / ``_y`` for function-call subtree nodes. Trunk nodes
+    // keep the legacy lane/tier/depth formula. Either way the
+    // ``pos()`` API returns one resolved (x, y) per node.
+    if (typeof n._x === "number" && typeof n._y === "number") {
+      return { x: n._x, y: n._y };
+    }
     const tier = typeof n._tier === "number" ? n._tier : 0;
     const tierOff = tier * COL_W;
     return {
