@@ -78,9 +78,32 @@ function ToolNodeRow({ call }: { call: ChatToolCall }) {
 
 function ToolInlineTree({ call }: { call: ChatToolCall }) {
   const [collapsed, setCollapsed] = useState(true);
+  const [copied, setCopied] = useState(false);
   const { text } = useTranslation();
   const running = call.status === "running";
   const errored = call.isError || call.status === "error";
+
+  function copy(e: React.MouseEvent) {
+    e.stopPropagation();
+    let parsedArgs: unknown = call.input;
+    try { parsedArgs = JSON.parse(call.input); } catch { /* keep raw */ }
+    const payload = {
+      tool: call.tool,
+      id: call.id,
+      args: parsedArgs,
+      result: call.result,
+      status: call.status,
+      is_error: call.isError,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const done = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(json).then(done, done);
+    } else { done(); }
+  }
   return (
     <div
       className={"inline-tree" + (errored ? " is-error" : "")}
@@ -105,6 +128,13 @@ function ToolInlineTree({ call }: { call: ChatToolCall }) {
           {text("Function call", "函数调用")}
         </span>
         <span className="inline-tree-actions">
+          <button
+            className={"inline-tree-copy" + (copied ? " copied" : "")}
+            title={text("Copy call as JSON", "复制调用 JSON")}
+            onClick={copy}
+          >
+            {copied ? text("Copied", "已复制") : text("Copy JSON", "复制 JSON")}
+          </button>
           <span
             className={"inline-tree-toggle" + (collapsed ? " collapsed" : "")}
           >

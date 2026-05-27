@@ -56,7 +56,17 @@ function displayTree(msg: ChatMsg): unknown {
   return tree;
 }
 
-export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
+export function RuntimeBlock({
+  msg,
+  nested,
+}: {
+  msg: ChatMsg;
+  /** True when rendered inside an assistant bubble (i.e. the call was
+   *  initiated by the LLM itself, not by the user via fn-form). The
+   *  user can't usefully "retry" a call the model made on its own —
+   *  hide the Retry button in that mode, keep Copy JSON. */
+  nested?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const { text } = useTranslation();
   useMarkdownReady();
@@ -141,7 +151,7 @@ export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
           </button>
         </span>
       ) : null}
-      {!streaming && fnName ? (
+      {!streaming && fnName && !nested ? (
         <button
           className="rerun-btn"
           title={text("Retry", "重试")}

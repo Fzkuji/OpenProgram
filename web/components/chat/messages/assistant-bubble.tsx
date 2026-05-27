@@ -86,7 +86,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
       if (rc) {
         return (
           <div key={`rt_${idx}`} className="assistant-runtime-children">
-            <RuntimeBlock msg={rc} />
+            <RuntimeBlock msg={rc} nested />
           </div>
         );
       }
@@ -173,7 +173,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                     className="assistant-runtime-children"
                   >
                     {fifo.map((c) => (
-                      <RuntimeBlock key={c.id} msg={c} />
+                      <RuntimeBlock key={c.id} msg={c} nested />
                     ))}
                   </div>,
                 );
@@ -214,7 +214,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               {runtimeChildren.length > 0 ? (
                 <div className="assistant-runtime-children">
                   {runtimeChildren.map((c) => (
-                    <RuntimeBlock key={c.id} msg={c} />
+                    <RuntimeBlock key={c.id} msg={c} nested />
                   ))}
                 </div>
               ) : null}

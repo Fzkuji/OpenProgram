@@ -21,8 +21,20 @@ export function ThinkingBlock({
   // block looks "still" while content actually fills underneath —
   // users couldn't tell streaming from a single end-of-reply dump.
   const [collapsed, setCollapsed] = useState(false);
+  const [copied, setCopied] = useState(false);
   const { text: tr } = useTranslation();
   if (!text) return null;
+
+  function copy(e: React.MouseEvent) {
+    e.stopPropagation();
+    const done = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else { done(); }
+  }
   return (
     <div className="inline-tree" data-collapsed={collapsed ? "1" : "0"}>
       <div
@@ -36,6 +48,13 @@ export function ThinkingBlock({
           {streaming ? "…" : ""}
         </span>
         <span className="inline-tree-actions">
+          <button
+            className={"inline-tree-copy" + (copied ? " copied" : "")}
+            title={tr("Copy thinking text", "复制思考内容")}
+            onClick={copy}
+          >
+            {copied ? tr("Copied", "已复制") : tr("Copy", "复制")}
+          </button>
           <span
             className={"inline-tree-toggle" + (collapsed ? " collapsed" : "")}
           >
