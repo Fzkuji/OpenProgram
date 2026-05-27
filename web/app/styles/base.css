@@ -312,19 +312,9 @@ button, input, select, textarea, optgroup {
 }
 .sidebar.collapsed .sidebar-nav-item {
   gap: 0;
-  /* Force the nav button to a clean 32x32 square in the collapsed
-   * sidebar. Without this, w-full inside the px-[8px] inner column
-   * picks up the 1px right border of the 48px sidebar, leaving
-   * 47-16=31px wide — 31x32 looked off-center. Pinning width here
-   * gives a clean square + centers the icon inside the icon column.
-   * Also drop the inline px-[8px] padding so the icon (16px box) sits
-   * dead-centered in the 32px square (8px on each side, auto-by-flex). */
-  width: 32px !important;
-  min-width: 32px !important;
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
+  /* Sidebar is now 49px outer (48px content + 1px border), so the
+   * inner column's px-[8px] yields exactly 32px for the nav button
+   * via w-full. Center the icon inside that 32px row. */
   justify-content: center;
 }
 .sidebar.collapsed .sidebar-nav-label { display: none; }

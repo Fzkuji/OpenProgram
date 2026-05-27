@@ -220,7 +220,7 @@ export function Sidebar() {
         "[transition:width_0.3s_ease,min-width_0.3s_ease] " +
         (open
           ? "w-sidebar-w"
-          : "w-[48px] min-w-[48px] collapsed")
+          : "w-[49px] min-w-[49px] collapsed")
       }
     >
       <div className="flex h-[48px] shrink-0 items-center justify-between p-[8px] box-border">

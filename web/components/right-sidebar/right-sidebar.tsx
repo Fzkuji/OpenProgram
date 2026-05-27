@@ -207,7 +207,7 @@ export function RightSidebar() {
       }
       style={open
         ? { width: `${width}px`, minWidth: `${RIGHT_W_MIN}px` }
-        : { width: "48px", minWidth: "48px" }}
+        : { width: "49px", minWidth: "49px" }}
       data-view={view}
     >
       {/* Resize handle — 6px-wide strip on the LEFT edge, drag
