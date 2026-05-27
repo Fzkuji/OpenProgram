@@ -247,12 +247,49 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     ? COL_W * 0.7 + Math.max(0, maxTier - 1) * COL_W * 0.5 + NODE_R * 2
     : 0;
   const panelW = (body && body.clientWidth) || 240;
-  const width = Math.max(panelW - 4, laneArea + subForkMargin + PAD_X);
-  const height = PAD_Y * 2 + ROW_H * maxDepth + 24;
+  // In d3 layout mode the effective node positions live in ``_x`` /
+  // ``_y`` and can extend past (or before) what the legacy lane/tier
+  // formula projects. Scan the actual coords so the SVG canvas is
+  // sized to fit every node and the viewBox can shift if d3 produced
+  // a negative x (the left half of a symmetric subtree spread).
+  let minX = 0;
+  let maxX = 0;
+  let maxYpx = 0;
+  Object.keys(tree.byId).forEach((id) => {
+    const n = tree.byId[id];
+    let x: number;
+    let y: number;
+    if (typeof n._x === "number" && typeof n._y === "number") {
+      x = n._x;
+      y = n._y;
+    } else {
+      const t = typeof n._tier === "number" ? n._tier : 0;
+      x = PAD_X + (n._lane || 0) * COL_W + t * COL_W;
+      y = PAD_Y + (n._depth || 0) * ROW_H;
+    }
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y > maxYpx) maxYpx = y;
+  });
+  // Pad both ends so node shapes (radius NODE_R) don't clip.
+  const xPad = NODE_R + 4;
+  const left = Math.min(0, minX - xPad);
+  const right = Math.max(
+    laneArea + subForkMargin + PAD_X,
+    maxX + xPad,
+  );
+  const width = Math.max(panelW - 4, right - left);
+  const height = Math.max(
+    PAD_Y * 2 + ROW_H * maxDepth + 24,
+    maxYpx + ROW_H + PAD_Y,
+  );
 
   const svg = _svg("svg", {
     class: "history-svg",
-    viewBox: "0 0 " + Math.max(width, 40) + " " + Math.max(height, 40),
+    // viewBox starts at ``left`` (negative if d3 produced left-side
+    // children) so off-origin geometry stays inside the visible
+    // canvas without re-translating every node.
+    viewBox: `${left} 0 ${Math.max(width, 40)} ${Math.max(height, 40)}`,
     width: Math.max(width, 40),
     height: Math.max(height, 40),
   });
