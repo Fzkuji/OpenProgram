@@ -124,7 +124,13 @@ export function GuiAgentRenderer({ rawOutput }: RuntimeRendererProps) {
           dangerouslySetInnerHTML={{ __html: renderMarkdown(obj.summary) }}
         />
       ) : null}
-      {obj.issues ? (
+      {/* Only render the red ``issues`` banner when the call actually
+       *  failed. gui_agent's success path sometimes still fills in
+       *  ``issues`` with informational notes like "Screenshot content
+       *  was not available to inspect" — those duplicate what the
+       *  summary already covers and aren't real failures, so don't
+       *  flag them in red. */}
+      {obj.issues && badgeBad ? (
         <div
           style={{
             marginTop: 4,
