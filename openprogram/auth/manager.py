@@ -101,19 +101,62 @@ class ProviderAuthConfig:
 # first (last registration wins; useful for tests).
 _provider_configs: dict[str, ProviderAuthConfig] = {}
 
+# Have we lazily triggered the providers package to populate
+# ``_provider_configs``? Set once so we only pay the import cost on
+# the first ``get_provider_config`` miss per process.
+_PROVIDER_PLUGINS_LOADED = False
+
 
 def register_provider_config(cfg: ProviderAuthConfig) -> None:
     _provider_configs[cfg.provider_id] = cfg
 
 
+def _load_provider_plugins() -> None:
+    """Import ``openprogram.providers`` once so its provider plugins
+    register their refresh callbacks.
+
+    Deferred until the first miss in :func:`get_provider_config` to
+    keep ``openprogram.auth`` independently importable (providers
+    imports auth, so eager-importing the reverse would form a cycle
+    and the auth_adapter modules wouldn't see manager's symbols yet).
+
+    Idempotent: safe to call multiple times; ``_PROVIDER_PLUGINS_LOADED``
+    short-circuits on the second visit.
+    """
+    global _PROVIDER_PLUGINS_LOADED
+    if _PROVIDER_PLUGINS_LOADED:
+        return
+    _PROVIDER_PLUGINS_LOADED = True  # set BEFORE the import so a
+    # re-entry from within provider init (rare but possible if an
+    # auth_adapter happens to look us up at module load) doesn't
+    # recurse and try to import providers a second time mid-init.
+    try:
+        import openprogram.providers  # noqa: F401 — side-effect import
+    except Exception:
+        # Import failure (missing SDK extras, etc.) is non-fatal: the
+        # default config path below still gives callers a usable
+        # ProviderAuthConfig stub. We just won't have the refresh hook.
+        pass
+
+
 def get_provider_config(provider_id: str) -> ProviderAuthConfig:
     cfg = _provider_configs.get(provider_id)
-    if cfg is None:
-        # A default config is usable for API-key-only providers — no
-        # refresh, no fallback, default cooldowns. Providers with real
-        # OAuth must register explicitly.
-        cfg = ProviderAuthConfig(provider_id=provider_id)
-    return cfg
+    if cfg is not None:
+        return cfg
+    # Miss — give provider plugins a chance to register before we
+    # fall back to the default. ``openprogram providers doctor`` runs
+    # entirely inside the auth package, so without this nudge it
+    # never imports the providers package and forever reports
+    # "no_refresh_registered" for OAuth credentials whose refresh
+    # callbacks are sitting in ``providers/<x>/auth_adapter.py``.
+    _load_provider_plugins()
+    cfg = _provider_configs.get(provider_id)
+    if cfg is not None:
+        return cfg
+    # A default config is usable for API-key-only providers — no
+    # refresh, no fallback, default cooldowns. Providers with real
+    # OAuth must register explicitly.
+    return ProviderAuthConfig(provider_id=provider_id)
 
 
 # ---------------------------------------------------------------------------
