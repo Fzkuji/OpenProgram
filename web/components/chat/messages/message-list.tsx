@@ -118,29 +118,19 @@ function useChatAreaStick(newTurnSeed: number) {
   }, [newTurnSeed]);
 }
 
-/** Standalone breathing-dot indicator shown between a user msg and
- *  the (yet-to-arrive) assistant reply.
+/** Breathing "Agentic is thinking" indicator shown between a user
+ *  msg and the (yet-to-arrive) assistant reply (or an assistant
+ *  bubble that exists but is still empty).
  *
- *  Window: from chat send / chat_ack to the first assistant delta.
- *  Without this the user sees an empty chat tail while waiting on
- *  network + LLM warmup — feels stuck.
- *
- *  Conditions:
- *    1. session has a running task (we're waiting on something)
- *    2. last message is a user turn (no assistant placeholder yet, or
- *       the placeholder is itself a user-runtime anchor like fn-form)
- *
- *  Once any assistant row lands, that bubble's own TypingIndicator
- *  takes over and this standalone one is hidden.
+ *  Once the bubble has ANY content (text, thinking, tool, runtime
+ *  child), that bubble's own streaming UI takes over and this is
+ *  hidden by ``MessageList``.
  */
 function PendingReplyIndicator() {
   return (
     <div className="message assistant pending-standalone">
-      <div className="typing-indicator">
-        <div className="dot" />
-        <div className="dot" />
-        <div className="dot" />
-      </div>
+      <span className="pending-pulse" aria-hidden="true" />
+      <span className="pending-label">{"Agentic is thinking…"}</span>
     </div>
   );
 }

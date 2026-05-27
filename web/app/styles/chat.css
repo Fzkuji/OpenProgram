@@ -787,13 +787,48 @@
   padding-left: 36px;
 }
 /* Standalone "AI is thinking" indicator — appears between a user
-   turn and the (yet-to-arrive) assistant bubble. Sits flush left so
-   it reads like the assistant's response area is warming up. */
+   turn and the (yet-to-arrive) assistant bubble. Inherits the
+   ``.message`` base padding (16px 24px) so the row size matches
+   real bubbles; the inner pulse + label start at the same x as the
+   text column in a real assistant bubble (avatar 28px + 8px gap). */
 .message.assistant.pending-standalone {
-  padding: 12px 0 12px 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  padding: 8px 24px;
+  /* Indent past the spot where the avatar would sit so the pulse +
+     text line up with the text in the bubble above. */
+  padding-left: 60px;
 }
-.message.assistant.pending-standalone .typing-indicator {
-  height: 20px;
+.pending-pulse {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-blue, #6cb4ff);
+  box-shadow: 0 0 0 0 currentColor;
+  animation: pendingPulse 1.4s ease-in-out infinite;
+  color: var(--accent-blue, #6cb4ff);
+}
+.pending-label {
+  color: var(--text-muted);
+  font-size: 13px;
+  letter-spacing: 0.1px;
+  font-style: italic;
+  opacity: 0.85;
+}
+@keyframes pendingPulse {
+  0%, 100% {
+    transform: scale(0.85);
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 6px transparent;
+    opacity: 0.55;
+  }
 }
 .typing-indicator .dot {
   width: 8px;
