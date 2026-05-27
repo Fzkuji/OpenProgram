@@ -1751,11 +1751,29 @@
   font-family: var(--font-mono);
   padding: 0 2px;
 }
-.inline-tree-actions .rerun-btn {
-  padding: 0 8px;
-  height: 22px;
-  line-height: 22px;
-  font-size: 11px;
+/* Buttons inside .inline-tree-actions — match each other so Retry
+ * and Copy don't read as two different control families. Same
+ * background / border / radius / font, identical to .inline-tree-copy
+ * so the row reads as a uniform action strip. */
+.inline-tree-actions .rerun-btn,
+.inline-tree-actions .inline-tree-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  height: auto;
+  line-height: 1.3;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.inline-tree-actions .rerun-btn:hover,
+.inline-tree-actions .inline-tree-copy:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
 }
 /* Usage stat strip rendered below the inline-tree for agentic
  * function calls — small muted footer, no border / background. */
