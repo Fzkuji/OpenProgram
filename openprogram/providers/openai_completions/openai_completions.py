@@ -7,7 +7,14 @@ import json
 import time
 from typing import Any, AsyncGenerator
 
-import openai as _openai
+# The ``openai`` Python SDK is an optional extra (``openprogram[openai]``)
+# — importing this module must succeed without it so the provider
+# *catalog* stays usable in environments that haven't installed the SDK
+# yet. Functions below re-check ``_openai`` and raise a clear error.
+try:
+    import openai as _openai
+except ImportError:  # pragma: no cover — SDK is an optional extra
+    _openai = None  # type: ignore[assignment]
 
 from ..types import (
     AssistantMessage,
@@ -170,6 +177,13 @@ async def stream_simple(
     options: SimpleStreamOptions | None = None,
 ) -> AsyncGenerator[AssistantMessageEvent, None]:
     """Stream a response from the OpenAI Chat Completions API."""
+    if _openai is None:
+        raise ImportError(
+            "The 'openai' Python SDK is required to use the OpenAI "
+            "(Chat Completions) provider. Install it with `pip install "
+            "openai` (or, when installing OpenProgram, "
+            "`pip install 'openprogram[openai]'`)."
+        )
     opts = options or SimpleStreamOptions()
 
     validate_input_modalities(model, context)
