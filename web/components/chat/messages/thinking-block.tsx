@@ -17,7 +17,11 @@ export function ThinkingBlock({
   text: string;
   streaming?: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(true);
+  // Default expanded so the user sees thinking content stream in
+  // live. Click the fold button to collapse manually. Without this
+  // the block looks "still" while content actually fills underneath
+  // — users couldn't tell streaming from a single end-of-reply dump.
+  const [collapsed, setCollapsed] = useState(false);
   const { text: tr } = useTranslation();
   if (!text) return null;
 
