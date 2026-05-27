@@ -47,16 +47,82 @@ def read_worker_port() -> Optional[int]:
     Returns None if there's no live worker, no port file, or the file
     can't be parsed. Verifies liveness so a stale port file from a
     crashed prior worker doesn't get handed out.
+
+    Also falls back to a TCP probe of the default port (8109) so a
+    foreground ``openprogram --web`` / ``openprogram web`` — which
+    doesn't write the lock/pid/port files — is still discoverable by
+    HTTP-client commands like ``openprogram mcp list``. Returns the
+    port even if we can't name the PID owning it; callers that need
+    the PID can use :func:`find_running_webui` instead.
     """
-    if current_worker_pid() is None:
-        return None
-    p = paths.port_path()
-    if not p.exists():
-        return None
+    if current_worker_pid() is not None:
+        p = paths.port_path()
+        if p.exists():
+            try:
+                return int(p.read_text().strip())
+            except (OSError, ValueError):
+                pass
+    # Fallback: probe the conventional default port. An unmanaged
+    # ``--web`` foreground process is just as serviceable to an HTTP
+    # client as a managed worker.
+    port = _DEFAULT_WEBUI_PORT
+    if _probe_tcp_listening(port):
+        return port
+    return None
+
+
+_DEFAULT_WEBUI_PORT = 8109
+
+
+def _probe_tcp_listening(port: int, host: str = "127.0.0.1",
+                         timeout_s: float = 0.4) -> bool:
+    """Cheap TCP-connect probe. True if something accepted; False on
+    refusal, timeout, or any other socket error.
+    """
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout_s)
     try:
-        return int(p.read_text().strip())
-    except (OSError, ValueError):
-        return None
+        s.connect((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        try:
+            s.close()
+        except OSError:
+            pass
+
+
+def find_running_webui() -> tuple[Optional[int], Optional[int], str]:
+    """Locate any webui the user has running. Returns (port, pid, source).
+
+    Three states:
+
+    - ``(port, pid, "managed")`` — ``worker.lock`` + ``worker.pid`` say
+      a worker is alive; this is the well-supported path.
+    - ``(8109, None, "unmanaged")`` — no lock/pid, but a process is
+      listening on the conventional default port. Almost always a
+      foreground ``openprogram --web`` / ``openprogram web``. The PID
+      isn't resolved cross-platform-cheaply, so callers that just
+      want to talk HTTP get a usable answer.
+    - ``(None, None, "none")`` — nothing is up.
+    """
+    pid = current_worker_pid()
+    if pid is not None:
+        p = paths.port_path()
+        if p.exists():
+            try:
+                return int(p.read_text().strip()), pid, "managed"
+            except (OSError, ValueError):
+                pass
+        # PID present but no port file — uncommon but treat as managed
+        # at the default port (we know SOMETHING owns the lock).
+        if _probe_tcp_listening(_DEFAULT_WEBUI_PORT):
+            return _DEFAULT_WEBUI_PORT, pid, "managed"
+    if _probe_tcp_listening(_DEFAULT_WEBUI_PORT):
+        return _DEFAULT_WEBUI_PORT, None, "unmanaged"
+    return None, None, "none"
 
 
 # ── pid file ─────────────────────────────────────────────────────────────────
@@ -258,20 +324,34 @@ def _format_duration(seconds: float) -> str:
 
 def print_status() -> int:
     """One-screen status report for the worker."""
-    pid = current_worker_pid()
-    if pid is None:
+    port, pid, source = find_running_webui()
+
+    if source == "none":
         print("openprogram worker: not running")
         print()
         print("  Start it with:  openprogram worker start")
         print("  Or install as a service:  openprogram worker install")
         return 0
 
-    started = _worker_start_time(pid)
+    if source == "unmanaged":
+        # Foreground ``--web`` or ``web`` — webui is up, but not under
+        # ``worker start`` management, so ``worker stop`` / ``restart``
+        # can't touch it. Be transparent about that.
+        print(f"openprogram webui: running on :{port}  (unmanaged)")
+        print()
+        print("  Started via `openprogram --web` or `openprogram web` —")
+        print("  the foreground process owns it. `worker stop` will not")
+        print("  affect this instance; Ctrl-C in that terminal will.")
+        print()
+        print("  For a managed worker, stop the foreground process and")
+        print("  run:  openprogram worker start")
+        return 0
+
+    started = _worker_start_time(pid) if pid is not None else None
     age = ""
     if started is not None:
         age = f", up {_format_duration(time.time() - started)}"
 
-    port = read_worker_port()
     port_str = f", port {port}" if port else ""
     print(f"openprogram worker: running (PID {pid}{port_str}{age})")
     print(f"  logs: {paths.log_path()}")
