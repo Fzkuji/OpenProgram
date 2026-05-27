@@ -896,6 +896,26 @@
   background: inherit;
   border-color: inherit;
 }
+/* Persisted Chat/Exec model is no longer in the live enabled-models
+   list (provider got disabled, never finished setup, daemon not
+   running, etc). Swap the blue chip for an amber one so the user can
+   tell at a glance their next message won't actually go through. The
+   chip stays clickable — clicking opens the same agent selector so
+   they can swap to a working model. */
+.runtime-badge.agent-badge.unavailable {
+  background: rgba(184, 101, 31, 0.10);
+  color: var(--accent-orange);
+  border-color: rgba(184, 101, 31, 0.30);
+}
+.runtime-badge.agent-badge.unavailable:hover {
+  background: rgba(184, 101, 31, 0.18);
+  border-color: rgba(184, 101, 31, 0.40);
+}
+.agent-badge .badge-warning {
+  margin-right: 4px;
+  font-size: 11px;
+  line-height: 1;
+}
 /* The topbar agent / channel / branch dropdowns are React popovers
    (shadcn <Popover> + Tailwind) now — the `.agent-selector` and
    `.model-dropdown` chrome rules were removed. */

@@ -193,8 +193,23 @@ def _probe_one_provider(p_name: str):
     `runtime` is kept open so a successful probe can be reused as the default
     runtime without rebuilding. Caller is responsible for closing the ones it
     doesn't keep.
+
+    Constructibility ≠ usability. ``Runtime.__init__`` for HTTP-based
+    providers like ``claude-code`` only stamps a base_url + model list
+    onto the runtime; nothing actually hits the network. So the
+    structural probe alone is happy to pick a provider whose backing
+    daemon isn't running, or whose credential is stale-but-present.
+    That gets persisted into the new session's ``provider_name`` field
+    and then explodes at send time. Defer to ``_is_configured`` — the
+    same predicate the Settings page uses — so the auto-detect default
+    only picks providers that pass the catalog's own usability check
+    (API key present / CLI binary on PATH / local proxy actually
+    answering on its port).
     """
     try:
+        from openprogram.webui._model_catalog import _is_configured
+        if not _is_configured(p_name):
+            raise RuntimeError(f"{p_name} not configured")
         if p_name in _CLI_PROVIDERS:
             import shutil as _shutil
             if not _shutil.which(_CLI_BINS.get(p_name, p_name)):
