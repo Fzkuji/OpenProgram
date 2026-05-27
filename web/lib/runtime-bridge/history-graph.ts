@@ -308,7 +308,17 @@ function _applyCollapse(graph: GNode[]): {
     if (_seenCollapsible[m.id]) return;
     _seenCollapsible[m.id] = true;
     const kidCount = (callerKidsOf[m.id] || []).length;
-    if (kidCount > AUTO_COLLAPSE_THRESHOLD) {
+    // @agentic_function tool nodes (gui_agent, etc.) always present
+    // their internal step tree collapsed by default — the user wants
+    // the top-level tool square visible in the mini-DAG without the
+    // whole sub-call subtree painting underneath. Any tool node with
+    // caller-edge kids whose caller chain bottoms out at the runtime
+    // placeholder (i.e. the agentic top-level) qualifies. Recognise
+    // by role=tool with at least one caller-kid; the threshold path
+    // below still applies to non-agentic tool stacks (30x read()).
+    if (m.role === "tool" && kidCount > 0) {
+      _collapsed[m.id] = true;
+    } else if (kidCount > AUTO_COLLAPSE_THRESHOLD) {
       _collapsed[m.id] = true;
     }
   });
@@ -1329,8 +1339,14 @@ document.addEventListener("click", (e) => {
   // Single-click → scroll + flash the owner runtime block. We skip
   // the collapse-toggle path so single-click doesn't fight with the
   // dblclick scroll (and because internal leaves don't have children
-  // to fold anyway).
-  if (g.getAttribute("data-internal") === "1") {
+  // to fold anyway). EXCEPTION: an internal node that itself owns a
+  // collapsible sub-call cluster (gui_agent square — top-level
+  // @agentic_function call with gui_step / conclusion underneath)
+  // wants click-to-toggle so the user can open the nested tree.
+  // Without this the auto-collapsed gui_agent stays sealed forever
+  // because every click bounces into the "scroll to owner" branch.
+  if (g.getAttribute("data-internal") === "1"
+      && g.getAttribute("data-collapsible") !== "1") {
     const owner = g.getAttribute("data-owner");
     if (owner) _scrollChatTo(owner);
     return;

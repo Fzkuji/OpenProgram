@@ -327,6 +327,22 @@ def _wrap_agentic_runtime_block(
             )
         except Exception:
             text_out = ""
+        # The @agentic_function ran in a spawn()'d subprocess (see
+        # process_runner.py). That child wrote every nested code /
+        # tool / LLM Call directly to the session's git history via
+        # its OWN SessionStore. The parent worker's cached
+        # SessionMemoryIndex never observed those writes, so any
+        # subsequent build_branches_payload / get_messages would
+        # return the pre-subprocess snapshot — missing the gui_agent
+        # square and all of its sub-call children, leaving the
+        # mini-DAG showing only the conv chain (user / llm reply /
+        # runtime placeholder). Drop the cache so build_exec_dag
+        # below + the broadcast list_branches both see the on-disk
+        # truth.
+        try:
+            db.invalidate_cache(req.session_id)
+        except Exception:
+            pass
         tree_dict = build_exec_dag(req.session_id, tool_name, runtime_id) or {
             "path": tool_name,
             "name": tool_name,

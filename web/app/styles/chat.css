@@ -596,11 +596,21 @@
 .runtime-block.collapsed .runtime-icon { transform: rotate(0deg); }
 .runtime-block-header .runtime-result-preview { display: none; }
 .runtime-block.collapsed .runtime-block-header .runtime-result-preview {
-  display: inline;
+  /* Collapsed-state preview tail: "-> success · 1 steps · 37s".
+   * inline-flex + flex-shrink:0 so it sits on the same row as the
+   * function signature; the .runtime-func ellipsis-truncates as
+   * needed to make room. */
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--text-muted);
   font-size: 14px;
   margin-left: 8px;
   font-weight: normal;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .runtime-func {
   color: var(--text-bright);
@@ -1167,7 +1177,11 @@
   align-items: center;
   width: 100%;
   gap: 8px;
-  padding: 3px 10px;
+  /* Match .inline-tree-header (6px 10px) so the Thinking header,
+   * chat-tools card header, and Execution-DAG inline-tree headers
+   * all hit the same ~28px row height. Was 3px 10px which made the
+   * Thinking row look ~4px shorter than its neighbours. */
+  padding: 6px 10px;
   background: transparent;
   border: none;
   color: var(--text-secondary);

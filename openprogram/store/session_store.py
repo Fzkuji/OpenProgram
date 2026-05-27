@@ -297,6 +297,24 @@ class SessionStore:
     ) -> int:
         return len(self.list_sessions(agent_id=agent_id, source=source, limit=10**9))
 
+    def invalidate_cache(self, session_id: str) -> None:
+        """Drop the in-memory ``SessionMemoryIndex`` for ``session_id`` so
+        the next ``_open`` rebuilds it from disk.
+
+        Needed because @agentic_function tools run in a spawn()'d
+        subprocess (see ``openprogram/agent/process_runner.py``) that
+        writes Call nodes directly to the per-session git history with
+        its OWN ``SessionStore`` instance. The parent worker's cached
+        index never observes those writes, so ``get_messages`` /
+        ``build_branches_payload`` keep returning the pre-subprocess
+        snapshot — which is missing every nested code/tool node (the
+        gui_agent square + its gui_step / conclusion / exec children).
+
+        Cheap: O(history length) git directory listing on next access.
+        """
+        with self._lock:
+            self._sessions.pop(session_id, None)
+
     # ── Message append / read ─────────────────────────────────
 
     def append_message(self, session_id: str, msg: dict[str, Any]) -> None:
