@@ -61,31 +61,83 @@ def _resolve_node() -> str:
     return node
 
 
+def _tty_write(msg: str) -> None:
+    """Write ``msg`` to the user's actual terminal even when
+    :mod:`openprogram.cli` has already dup2'd ``sys.stderr`` to the
+    Ink startup log.
+
+    Without this, the "no worker is running" hint and similar
+    actionable errors would land in
+    ``~/.openprogram/logs/ink-startup.log`` and the user would see a
+    silent prompt return — exactly the "I ran openprogram and nothing
+    happened" bug.
+    """
+    from openprogram import cli as _cli
+    fd = getattr(_cli, "_TUI_TTY_ERR", None)
+    if fd is None:
+        # Redirect didn't happen (non-tty / non-TUI launch / earlier
+        # error). Plain stderr is fine.
+        try:
+            sys.stderr.write(msg)
+            sys.stderr.flush()
+        except (OSError, ValueError):
+            pass
+        return
+    data = msg.encode("utf-8", errors="replace")
+    try:
+        os.write(fd, data)
+    except OSError:
+        # Saved fd somehow invalid (e.g. terminal closed underneath
+        # us) — last-ditch attempt at sys.stderr, may also fail.
+        try:
+            sys.stderr.write(msg)
+            sys.stderr.flush()
+        except (OSError, ValueError):
+            pass
+
+
 def _print_no_worker_hint() -> None:
-    """Tell the user how to start a worker."""
-    print("openprogram: no worker is running.", file=sys.stderr)
-    print(file=sys.stderr)
-    print("The TUI connects to a persistent worker process that hosts the", file=sys.stderr)
-    print("model API, sessions, and any chat-channel adapters. Start one:", file=sys.stderr)
-    print(file=sys.stderr)
-    print("  openprogram worker start          # one-off background process", file=sys.stderr)
-    print("  openprogram worker install        # install as a system service", file=sys.stderr)
-    print(file=sys.stderr)
-    print("Then re-run `openprogram` to open the TUI.", file=sys.stderr)
+    """Tell the user how to start a worker. Always writes to the
+    saved original tty, so the message survives the TUI startup
+    stdio redirect.
+    """
+    _tty_write(
+        "openprogram: no worker is running.\n"
+        "\n"
+        "The TUI connects to a persistent worker process that hosts the\n"
+        "model API, sessions, and any chat-channel adapters. Start one:\n"
+        "\n"
+        "  openprogram worker start          # one-off background process\n"
+        "  openprogram worker install        # install as a system service\n"
+        "\n"
+        "Then re-run `openprogram` to open the TUI.\n"
+    )
 
 
 def _resolve_worker_port(*, autostart: bool) -> int | None:
-    """Find a live worker's port, optionally starting one if missing.
+    """Find a live webui port, optionally starting a worker if none.
 
-    With ``autostart=False`` (the strict mode the TUI uses), simply
-    returns the port from ``worker.port`` if a worker is alive, else
-    None. With ``autostart=True``, this could spawn a worker — kept as
-    an opt-in for non-interactive flows that want the legacy convenience.
+    Three sources, in order:
+
+    1. A managed worker (``worker.lock`` + ``worker.port``). The
+       well-supported path; ``worker stop`` / ``restart`` know about it.
+    2. An unmanaged webui — i.e. a foreground ``openprogram --web``
+       process that the user launched themselves. Doesn't write the
+       lock files, but ``find_running_webui()`` discovers it via a
+       TCP probe on the default port. The TUI can talk to it just
+       fine (same WS protocol).
+    3. ``autostart=True`` and nothing is up — spawn a detached
+       worker and wait briefly for it to start.
+
+    Returns the port number on success, ``None`` on failure (caller
+    prints the "no worker" hint).
     """
-    from openprogram.worker import current_worker_pid, read_worker_port, spawn_detached
+    from openprogram.worker import spawn_detached
+    from openprogram.worker.lifecycle import find_running_webui
 
-    if current_worker_pid() is not None:
-        port = read_worker_port()
+    port, _pid, source = find_running_webui()
+    if source != "none":
+        # Already up — managed or unmanaged, doesn't matter for the TUI.
         if port is not None and _wait_until_listening(port, timeout=2.0):
             return port
 
@@ -94,12 +146,23 @@ def _resolve_worker_port(*, autostart: bool) -> int | None:
 
     rc = spawn_detached()
     if rc != 0:
+        # Common cause on Windows: port already in use by a foreground
+        # ``--web`` instance whose lock file we couldn't detect for
+        # some reason. Surface a more actionable error.
+        _tty_write(
+            "openprogram: couldn't start a worker (likely port in use).\n"
+            "If you have ``openprogram --web`` running in another terminal,\n"
+            "that webui is what the TUI should connect to — but its port\n"
+            "wasn't detected. Stop it and either rerun `openprogram` (TUI\n"
+            "will auto-start a managed worker) or run\n"
+            "``openprogram worker start`` first.\n"
+        )
         return None
     deadline = time.time() + 8.0
     while time.time() < deadline:
-        if current_worker_pid() is not None:
-            port = read_worker_port()
-            if port is not None and _wait_until_listening(port, timeout=0.5):
+        port, _pid, source = find_running_webui()
+        if source != "none" and port is not None:
+            if _wait_until_listening(port, timeout=0.5):
                 return port
         time.sleep(0.1)
     return None
@@ -113,12 +176,39 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
     agent over the ws ``list_agents`` action and picks its own session_id when
     the user sends the first message.
     """
-    node = _resolve_node()
-    entry = _resolve_cli_entry()
+    # Resolve the Node binary + the built Ink bundle. Both errors are
+    # actionable for the user but trivial to surface invisibly — at
+    # this point ``cli._maybe_redirect_for_tui`` has already pointed
+    # stderr at ``~/.openprogram/logs/ink-startup.log``, so an
+    # uncaught FileNotFoundError would land there and the user would
+    # see ``openprogram`` exit with no output. Route them through
+    # ``_tty_write`` instead.
+    try:
+        node = _resolve_node()
+    except RuntimeError as e:
+        _tty_write(f"openprogram: {e}\n")
+        sys.exit(2)
+    try:
+        entry = _resolve_cli_entry()
+    except FileNotFoundError as e:
+        _tty_write(
+            f"openprogram: {e}\n\n"
+            "The terminal UI ships as a Node.js bundle that needs to be\n"
+            "built once. From the repo root:\n\n"
+            "  cd cli\n"
+            "  npm install\n"
+            "  npm run build\n\n"
+            "Or skip the TUI entirely:\n\n"
+            "  openprogram --no-tui          # Rich-based REPL (text only)\n"
+            "  openprogram --web             # browser UI\n"
+            "  openprogram --print \"hi\"      # one-shot prompt\n"
+        )
+        sys.exit(2)
 
-    # Surface any update that was applied since the last launch. This
-    # runs before the dup2 redirect so the user actually sees it on
-    # their terminal instead of in ink-server.log.
+    # Surface any update that was applied since the last launch.
+    # Goes to the saved tty so the user sees it even after the dup2
+    # redirect that ``cli._maybe_redirect_for_tui`` performed at
+    # module import.
     try:
         from openprogram.updater import pop_staged_notice
         notice = pop_staged_notice()
@@ -128,19 +218,20 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
             line = f"openprogram: updated to {target}"
             if summary and summary != "up to date":
                 line += f" ({summary})"
-            print(line, file=sys.stderr)
+            _tty_write(line + "\n")
     except Exception:  # noqa: BLE001
         pass
 
     # Auto-start the worker if missing (overridable via env var for the rare
     # case where the user wants a strictly-connecting TUI). The worker manages
     # its own singleton lock, so concurrent CLI launches won't race-spawn.
-    from openprogram.worker import current_worker_pid
+    from openprogram.worker.lifecycle import find_running_webui
     no_autostart = os.environ.get("OPENPROGRAM_NO_AUTO_WORKER", "").strip() in ("1", "true", "yes")
     autostart = not no_autostart
-    started_here = autostart and current_worker_pid() is None
+    _port, _pid, _source = find_running_webui()
+    started_here = autostart and _source == "none"
     if started_here:
-        print("openprogram: starting worker…", file=sys.stderr)
+        _tty_write("openprogram: starting worker…\n")
     port = _resolve_worker_port(autostart=autostart)
     if port is None:
         _print_no_worker_hint()
