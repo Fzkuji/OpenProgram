@@ -8,6 +8,7 @@
  * show/hide.
  */
 import { useState } from "react";
+import { useTranslation } from "@/lib/i18n";
 
 export function ThinkingBlock({
   text,
@@ -17,6 +18,7 @@ export function ThinkingBlock({
   streaming?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(true);
+  const { text: tr } = useTranslation();
   if (!text) return null;
 
   return (
@@ -28,7 +30,7 @@ export function ThinkingBlock({
         onMouseDown={(e) => e.preventDefault()}
       >
         <span className="chat-fold-caret">{"▶"}</span>
-        <span className="chat-fold-label">Thinking</span>
+        <span className="chat-fold-label">{tr("Thinking", "思考")}</span>
         <span className="chat-fold-elapsed">{streaming ? "…" : ""}</span>
       </button>
       <div className="chat-fold-content">{text}</div>
