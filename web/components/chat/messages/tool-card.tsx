@@ -63,7 +63,17 @@ function ToolInlineTree({ call }: { call: ChatToolCall }) {
           ) : errored ? (
             <span style={{ color: "var(--accent-red)" }}>{"✗"}</span>
           ) : (
-            <span style={{ color: "var(--accent-cyan)" }}>{"◆"}</span>
+            <span
+              style={{
+                color: "var(--accent-cyan)",
+                fontStyle: "italic",
+                fontWeight: 700,
+                fontFamily: "Georgia, 'Times New Roman', serif",
+              }}
+              title="function"
+            >
+              {"ƒ"}
+            </span>
           )}{" "}
           <span className="runtime-func">{call.tool || "?"}</span>
           (<span className="runtime-params">{argsLabel}</span>)
