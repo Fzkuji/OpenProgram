@@ -130,27 +130,34 @@ def stream_openai_codex_responses(
             if opts.get("on_payload"):
                 opts["on_payload"](request_body)
 
-            try:
-                _cache_key = request_body.get("prompt_cache_key", "")
-                _instr_len = len(request_body.get("instructions") or "")
-                _tool_names = sorted(t.get("name", "") for t in (request_body.get("tools") or []))
-                _reasoning = request_body.get("reasoning")
-                _input_items = request_body.get("input") or []
-                _input_text_len = sum(
-                    len(c.get("text", ""))
-                    for item in _input_items
-                    if isinstance(item, dict)
-                    for c in (item.get("content") or [])
-                    if isinstance(c, dict) and isinstance(c.get("text"), str)
-                )
-                print(
-                    f"[{model.api} req] key={_cache_key!r} items={len(_input_items)} "
-                    f"text_chars={_input_text_len} instr={_instr_len} "
-                    f"tools={_tool_names} reasoning={_reasoning}",
-                    flush=True,
-                )
-            except Exception:
-                pass
+            # Per-request debug print — useful for tracing prompt cache
+            # hits / payload growth, but it polluted the chat UI on every
+            # turn ("[openai-codex req] key=... text_chars=... reasoning=
+            # {...}" landing between the user's message and the model's
+            # reply). Gate it behind an opt-in env var.
+            if os.environ.get("OPENPROGRAM_DEBUG_PROVIDER", "").strip() in ("1", "true", "yes"):
+                try:
+                    _cache_key = request_body.get("prompt_cache_key", "")
+                    _instr_len = len(request_body.get("instructions") or "")
+                    _tool_names = sorted(t.get("name", "") for t in (request_body.get("tools") or []))
+                    _reasoning = request_body.get("reasoning")
+                    _input_items = request_body.get("input") or []
+                    _input_text_len = sum(
+                        len(c.get("text", ""))
+                        for item in _input_items
+                        if isinstance(item, dict)
+                        for c in (item.get("content") or [])
+                        if isinstance(c, dict) and isinstance(c.get("text"), str)
+                    )
+                    print(
+                        f"[{model.api} req] key={_cache_key!r} items={len(_input_items)} "
+                        f"text_chars={_input_text_len} instr={_instr_len} "
+                        f"tools={_tool_names} reasoning={_reasoning}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                except Exception:
+                    pass
 
             headers: dict[str, str] = {
                 "Authorization": f"Bearer {api_key}",

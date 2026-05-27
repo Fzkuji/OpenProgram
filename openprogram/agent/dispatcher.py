@@ -369,22 +369,30 @@ def _wrap_agentic_runtime_block(
             db.invalidate_cache(req.session_id)
         except Exception:
             pass
-        # DEBUG: inspect what build_exec_dag sees after invalidate_cache
-        try:
-            _dbg_nodes = db.get_nodes(req.session_id)
-            _dbg_kids = [n for n in _dbg_nodes
-                         if n.is_code() and n.name == tool_name
-                         and n.called_by == runtime_id]
-            _dbg_total = len(_dbg_nodes)
-            _dbg_top_id = _dbg_kids[-1].id if _dbg_kids else None
-            _dbg_grand = sum(1 for n in _dbg_nodes
-                             if n.called_by == _dbg_top_id) if _dbg_top_id else 0
-            print(f"[dispatcher.debug] LLM-called finalize tool={tool_name} "
-                  f"runtime_id={runtime_id} total_nodes={_dbg_total} "
-                  f"top_match={bool(_dbg_top_id)} grand_children={_dbg_grand}",
-                  flush=True)
-        except Exception as _e:
-            print(f"[dispatcher.debug] inspect failed: {_e}", flush=True)
+        # DEBUG: inspect what build_exec_dag sees after invalidate_cache.
+        # Gated behind ``OPENPROGRAM_DEBUG_DISPATCHER`` because the
+        # ``[dispatcher.debug]`` line was landing in the user-facing chat
+        # transcript on every tool call. Useful for debugging the
+        # exec-DAG / runtime-finalize wiring; off by default.
+        import os as _os
+        if _os.environ.get("OPENPROGRAM_DEBUG_DISPATCHER", "").strip() in ("1", "true", "yes"):
+            import sys as _sys
+            try:
+                _dbg_nodes = db.get_nodes(req.session_id)
+                _dbg_kids = [n for n in _dbg_nodes
+                             if n.is_code() and n.name == tool_name
+                             and n.called_by == runtime_id]
+                _dbg_total = len(_dbg_nodes)
+                _dbg_top_id = _dbg_kids[-1].id if _dbg_kids else None
+                _dbg_grand = sum(1 for n in _dbg_nodes
+                                 if n.called_by == _dbg_top_id) if _dbg_top_id else 0
+                print(f"[dispatcher.debug] LLM-called finalize tool={tool_name} "
+                      f"runtime_id={runtime_id} total_nodes={_dbg_total} "
+                      f"top_match={bool(_dbg_top_id)} grand_children={_dbg_grand}",
+                      file=_sys.stderr, flush=True)
+            except Exception as _e:
+                print(f"[dispatcher.debug] inspect failed: {_e}",
+                      file=_sys.stderr, flush=True)
         tree_dict = build_exec_dag(req.session_id, tool_name, runtime_id) or {
             "path": tool_name,
             "name": tool_name,
