@@ -155,14 +155,41 @@ export function _recomputeVisibility(): void {
       if (single) newSet[single] = true;
     }
   }
+  // Walk up parent_id to mark SUPPRESSED ancestors (display=runtime
+  // user anchors that chat-panel hides, so they have no DOM bubble
+  // and can never be seeded by the viewport sweep above). STOP at
+  // the first ancestor that has its own DOM bubble — that ancestor's
+  // visibility is governed by its own getBoundingClientRect; if it's
+  // off-screen, marking it visible here is a stale-highlight bug.
+  //
+  // Build a set of ids that DO have a DOM bubble in #chatMessages.
+  // Anything in this set is a "real" ancestor — break on encountering
+  // one. Anything NOT in it is suppressed (or absent from chat) —
+  // safe to propagate visibility through.
+  const inDom: Record<string, boolean> = Object.create(null);
+  for (let i = 0; i < bubbles.length; i++) {
+    const single = bubbles[i].getAttribute("data-msg-id");
+    if (single) inDom[single] = true;
+    const multi = bubbles[i].getAttribute("data-msg-ids");
+    if (multi) {
+      const parts = multi.split(/\s+/);
+      for (let j = 0; j < parts.length; j++) {
+        if (parts[j]) inDom[parts[j]] = true;
+      }
+    }
+  }
   {
     const seeds = Object.keys(newSet);
     for (let si = 0; si < seeds.length; si++) {
       let cur: string | undefined = seeds[si];
       let hops = 0;
       while (cur && _parentOf[cur] && hops < 256) {
-        cur = _parentOf[cur];
+        const parent = _parentOf[cur];
+        cur = parent;
         if (newSet[cur]) break;
+        // If the parent has its own DOM bubble, don't override its
+        // viewport status — leave it to the rect check above.
+        if (inDom[cur]) break;
         newSet[cur] = true;
         hops++;
       }
