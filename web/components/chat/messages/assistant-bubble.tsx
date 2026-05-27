@@ -10,6 +10,7 @@
  */
 import type { AssistantBlock, ChatMsg, ChatToolCall } from "@/lib/session-store";
 import { agentColor, agentDisplayName, agentInitial } from "@/lib/agent-style";
+import { useTranslation } from "@/lib/i18n";
 
 import { MessageActions } from "./message-actions";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
@@ -32,6 +33,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   // Subscribed so the bubble re-renders once `renderMd` lands and the
   // markdown can be rendered for real instead of escaped.
   useMarkdownReady();
+  const { text } = useTranslation();
   const streaming = msg.status === "streaming" || msg.status === "pending";
   const tools = msg.tools ?? [];
   const hasContent = !!msg.content;
@@ -117,7 +119,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
       </div>
 
       {msg.status === "error" ? (
-        <div className="error-content">{msg.content || "Request failed."}</div>
+        <div className="error-content">{msg.content || text("Request failed.", "请求失败。")}</div>
       ) : empty && streaming ? (
         <TypingIndicator />
       ) : (
@@ -180,7 +182,20 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               {msg.thinking ? (
                 <ThinkingBlock text={msg.thinking} streaming={streaming} />
               ) : null}
-              {tools.length > 0 ? <ToolsBlock tools={tools} /> : null}
+              {(() => {
+                // Filter agentic tool calls out of the folded "Tool calls"
+                // card — they have their own RuntimeBlock (gui_agent
+                // function card with Execution DAG, params, return
+                // preview). Without this filter the user sees BOTH a
+                // generic "Tool calls (1)" row AND the RuntimeBlock,
+                // which double-renders the same call.
+                const nonAgentic = tools.filter(
+                  (t) => !AGENTIC_TOOL_NAMES.has(t.tool || ""),
+                );
+                return nonAgentic.length > 0
+                  ? <ToolsBlock tools={nonAgentic} />
+                  : null;
+              })()}
               {hasContent ? (
                 <div
                   className="chat-text message-content"

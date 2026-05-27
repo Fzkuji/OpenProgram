@@ -154,16 +154,29 @@ export function MessageList() {
   const messagesById = useSessionStore((s) => s.messagesById);
   useChatAreaStick(ids.length);
 
-  // Show the standalone indicator only between "user sent → assistant
-  // reply created". Once any assistant-role msg appears tailing the
-  // list, the assistant bubble's own TypingIndicator covers it.
+  // Show the standalone indicator while we're still waiting on the
+  // turn — either:
+  //   * the assistant placeholder hasn't landed yet (last msg is the
+  //     user turn we just sent), OR
+  //   * the placeholder exists but is still empty (chat_ack landed
+  //     but no text/thinking/tool deltas yet)
+  // Once the bubble has ANY content, that bubble's own
+  // TypingIndicator / streaming text takes over and we hide.
   const lastId = ids.length ? ids[ids.length - 1] : null;
   const lastMsg = lastId ? messagesById[lastId] : null;
+  const replyEmpty = lastMsg
+    ? lastMsg.role === "assistant"
+      && !lastMsg.content
+      && !lastMsg.thinking
+      && !(lastMsg.tools && lastMsg.tools.length)
+      && !(lastMsg.blocks && lastMsg.blocks.length)
+      && !(lastMsg.runtimeChildren && lastMsg.runtimeChildren.length)
+    : false;
   const showPending =
     runningTask !== null
     && lastMsg !== null
     && lastMsg !== undefined
-    && lastMsg.role === "user";
+    && (lastMsg.role === "user" || replyEmpty);
 
   return (
     <>
