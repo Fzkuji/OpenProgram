@@ -132,11 +132,22 @@ def build_exec_dag(session_id: str, func_name: str,
 # ── Live progress streaming ──────────────────────────────────────────
 
 def _poll(session_id: str, msg_id: str, func_name: str,
-          stop: threading.Event) -> None:
+          stop: threading.Event,
+          on_event=None) -> None:
     """Poll the DAG every ~1.2s and push two live streams until
     ``stop`` is set: ``tree_update`` (inline Execution DAG) and
     ``branches_list`` (right-rail History graph). Both are
-    signature-deduped so an idle tick sends nothing."""
+    signature-deduped so an idle tick sends nothing.
+
+    ``on_event`` (optional) routes envelopes through a caller-provided
+    callback instead of importing the worker's ``_broadcast_*``. This
+    is what lets the @agentic_function subprocess push live progress
+    to clients: the parent worker registers ``on_event`` to drain the
+    subprocess's mp.Queue and re-broadcast, so the subprocess just
+    drops envelopes onto the queue and the parent does the actual
+    fanout. In-process callers (no subprocess) leave ``on_event`` None
+    and we broadcast directly — same UX, no extra hop.
+    """
     from openprogram.webui import server as _s
     from openprogram.webui.ws_actions.branch import build_branches_payload
 
@@ -155,11 +166,27 @@ def _poll(session_id: str, msg_id: str, func_name: str,
                 sig = json.dumps(tree, default=str, sort_keys=True)
                 if sig != last_tree:
                     last_tree = sig
-                    _s._broadcast_chat_response(session_id, msg_id, {
-                        "type": "tree_update",
-                        "tree": tree,
-                        "function": func_name,
-                    })
+                    _envelope = {
+                        "type": "chat_response",
+                        "data": {
+                            "type": "tree_update",
+                            "session_id": session_id,
+                            "msg_id": msg_id,
+                            "tree": tree,
+                            "function": func_name,
+                        },
+                    }
+                    if on_event is not None:
+                        try:
+                            on_event(_envelope)
+                        except Exception:
+                            pass
+                    else:
+                        _s._broadcast_chat_response(session_id, msg_id, {
+                            "type": "tree_update",
+                            "tree": tree,
+                            "function": func_name,
+                        })
                     # Throttled persist: write the latest tree onto the
                     # placeholder so a refresh-after-crash also recovers
                     # the partial view. Cheap — the index is in memory,
@@ -187,14 +214,20 @@ def _poll(session_id: str, msg_id: str, func_name: str,
             gsig = json.dumps(payload.get("graph"), default=str, sort_keys=True)
             if gsig != last_graph:
                 last_graph = gsig
-                _s._broadcast(json.dumps(
-                    {"type": "branches_list", "data": payload}, default=str))
+                if on_event is not None:
+                    try:
+                        on_event({"type": "branches_list", "data": payload})
+                    except Exception:
+                        pass
+                else:
+                    _s._broadcast(json.dumps(
+                        {"type": "branches_list", "data": payload}, default=str))
         except Exception:
             pass
 
 
 @contextmanager
-def live_progress(session_id: str, msg_id: str, func_name: str):
+def live_progress(session_id: str, msg_id: str, func_name: str, on_event=None):
     """Stream a run's progress to the UI for the duration of the block.
 
     Usage::
@@ -208,7 +241,7 @@ def live_progress(session_id: str, msg_id: str, func_name: str):
     """
     stop = threading.Event()
     thread = threading.Thread(
-        target=_poll, args=(session_id, msg_id, func_name, stop),
+        target=_poll, args=(session_id, msg_id, func_name, stop, on_event),
         daemon=True, name=f"live-progress-{session_id}")
     thread.start()
     try:

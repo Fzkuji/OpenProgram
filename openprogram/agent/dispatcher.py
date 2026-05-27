@@ -232,7 +232,17 @@ def _wrap_agentic_runtime_block(
             from openprogram.webui._exec_dag import (
                 live_progress as _live_progress,
             )
-            _live_ctx = _live_progress(req.session_id, runtime_id, tool_name)
+            # In the @agentic_function subprocess the worker's
+            # ``_broadcast_*`` globals point at an empty ws-clients set
+            # — there's no parent process here. Route progress
+            # envelopes through ``on_event`` instead so the subprocess
+            # writes onto its mp.Queue and the parent's drain thread
+            # does the actual fanout. In-process runs leave on_event
+            # at the dispatcher's default (worker broadcast wrapper)
+            # and the same code path keeps working unchanged.
+            _live_ctx = _live_progress(
+                req.session_id, runtime_id, tool_name, on_event=on_event,
+            )
         except Exception:
             _live_ctx = None
         if _live_ctx is not None:
