@@ -68,14 +68,31 @@ const MessageRow = memo(function MessageRow({ id }: { id: string }) {
 /** Pin `#chatArea` to the bottom as `#chatMessages` grows, unless the
  *  user has scrolled up. Observes the container rather than threading a
  *  dependency through, so both new bubbles and streamed text deltas
- *  keep the viewport at the bottom. */
-function useChatAreaStick() {
+ *  keep the viewport at the bottom.
+ *
+ *  Also runs KaTeX over freshly-streamed bubbles. ``renderMd`` only
+ *  parses markdown-it; it leaves ``\[ ... \]`` / ``$$...$$`` deltas
+ *  raw, marked with a ``.md-rendered`` span. The legacy
+ *  ``renderMathInChat`` (called by ``scrollToBottom`` in the legacy
+ *  path) is what actually swaps math delimiters for KaTeX HTML. The
+ *  React message-list never calls ``scrollToBottom`` so streaming
+ *  bubbles stayed unrendered until something else (the next send,
+ *  page refresh, ...) triggered the legacy hook. Fire it on every
+ *  container resize so React-side updates show math live.
+ *
+ *  ``newTurnSeed`` (changes when message count grows) force-resets
+ *  the stuck flag — sending or receiving a new turn pulls focus back
+ *  to the bottom even if the user had scrolled up earlier.
+ */
+function useChatAreaStick(newTurnSeed: number) {
   useEffect(() => {
     const area = document.getElementById("chatArea");
     const msgs = document.getElementById("chatMessages");
     if (!area || !msgs) return;
     let stuck = true;
     const pin = () => {
+      const w = window as unknown as { renderMathInChat?: () => void };
+      try { w.renderMathInChat?.(); } catch { /* ignore */ }
       if (stuck) area.scrollTop = area.scrollHeight;
     };
     const onScroll = () => {
@@ -89,12 +106,22 @@ function useChatAreaStick() {
       ro.disconnect();
     };
   }, []);
+  // Force re-stick whenever a new turn arrives — chat composer / a
+  // streamed assistant reply both bump ``newTurnSeed`` so this hook
+  // pulls scroll back to the latest content. After this, the user can
+  // freely scroll up; the ResizeObserver only auto-pins while still
+  // within 80px of the bottom.
+  useEffect(() => {
+    const area = document.getElementById("chatArea");
+    if (!area) return;
+    area.scrollTop = area.scrollHeight;
+  }, [newTurnSeed]);
 }
 
 export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const ids = useMessageIds(sessionId);
-  useChatAreaStick();
+  useChatAreaStick(ids.length);
 
   return (
     <>
