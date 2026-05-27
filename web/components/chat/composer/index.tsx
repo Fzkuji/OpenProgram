@@ -20,6 +20,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 
 import { useSessionStore } from "@/lib/session-store";
 
@@ -254,6 +255,8 @@ export function Composer() {
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
   const setFnFormClosing = useSessionStore((s) => s.setFnFormClosing);
+  const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
+  const router = useRouter();
   const send = wsSend;
 
   const isRunning = runningTask !== null;
@@ -342,7 +345,9 @@ export function Composer() {
     const t = textareaRef.current;
     if (!t) return;
     t.style.height = "auto";
-    t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
+    const nextHeight = Math.min(t.scrollHeight, 200);
+    t.style.height = `${nextHeight}px`;
+    t.style.overflowY = t.scrollHeight > 200 ? "auto" : "hidden";
   }, [input]);
 
   // External focus requests via the store (welcome buttons,
@@ -764,10 +769,28 @@ export function Composer() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }).catch((err) => {
-      console.error("function call failed:", err);
-      w.setRunning?.(false);
-    });
+    })
+      .then(async (r) => {
+        // POST returns {session_id, msg_id}. If we weren't already
+        // bound to a session, navigate to /s/<sid> + flip the store's
+        // currentSessionId — without this the runtime placeholder
+        // stream-resumes into a session the chat area can't see, and
+        // the page stays blank while gui_agent runs in the background.
+        try {
+          const j = await r.json();
+          const sid = j && j.session_id;
+          if (sid && sid !== currentSessionId) {
+            setCurrentConv(sid);
+            router.push(`/s/${encodeURIComponent(sid)}`);
+          }
+        } catch {
+          /* ignore — bad JSON would already have errored above */
+        }
+      })
+      .catch((err) => {
+        console.error("function call failed:", err);
+        w.setRunning?.(false);
+      });
     handleFnFormClose();
   }, [
     currentSessionId,
@@ -775,6 +798,8 @@ export function Composer() {
     fnForm,
     handleFnFormClose,
     isRunning,
+    router,
+    setCurrentConv,
   ]);
 
   const onSendButtonClick = fnFormActive ? submitFnForm : submit;

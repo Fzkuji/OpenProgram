@@ -41,6 +41,17 @@ export function _collapseRuntimePlaceholders(
     if (p.display !== "runtime") return;
     const fn = p.function;
     if (!fn) return;
+    // fn-form path: the placeholder's parent is the synthetic
+    // "[function call]" user msg, so the placeholder IS the main-line
+    // turn. Keep it visible — collapsing would re-parent the same-
+    // named code call as a tier=1 side child off the user msg,
+    // pushing the agentic square off the main trunk and leaving the
+    // turn's main column with just user/reply circles + triangle.
+    // Only collapse the LLM-called case (parent = assistant reply)
+    // where the placeholder genuinely duplicates the code call.
+    const parent = p.parent_id ? byId[p.parent_id] : null;
+    if (!parent || parent.role !== "assistant") return;
+    if (parent.display === "runtime") return;
     const kids = callerKidsOf[p.id] || [];
     const sameNameKid = kids.find((k) => (k.name || "") === fn);
     if (!sameNameKid) return;
