@@ -36,8 +36,26 @@ from ..types import (
     CliDelegatedPayload,
     Credential,
     CredentialSource,
+    OAuthPayload,
     RemovalStep,
 )
+
+
+def _codex_binary_present() -> bool:
+    """True if a ``codex`` (or ``codex.exe`` on Windows) executable is
+    on PATH and can be invoked. We treat presence as "Codex CLI is
+    actively maintaining ~/.codex/auth.json", which is the contract
+    behind ``cli_delegated`` mode — every read re-checks the file so
+    rotations from the external CLI propagate for free.
+
+    Without the binary that contract is a lie: the file just rots,
+    refresh tokens get consumed by other processes, and the in-process
+    runtime ends up with stale bytes it can't refresh. In that case we
+    should claim ownership (adopt as ``oauth``) so OpenProgram's own
+    AuthManager can refresh the tokens.
+    """
+    import shutil
+    return shutil.which("codex") is not None
 
 
 @dataclass
@@ -81,21 +99,64 @@ class CodexCliSource:
         if tokens.get("account_id"):
             metadata["account_id"] = tokens["account_id"]
 
+        # Two adoption modes, picked based on whether the Codex CLI is
+        # actually around to maintain ~/.codex/auth.json:
+        #
+        #   * codex binary present → ``cli_delegated``. We just point at
+        #     the file. Codex CLI handles refresh; we re-read on every
+        #     use so rotations propagate. Read-only by design — only
+        #     ``codex logout`` should mutate the file.
+        #
+        #   * codex binary missing → ``oauth``. The file is a one-shot
+        #     snapshot of an OAuth session; nobody else will refresh it
+        #     when the access_token expires. Copy the tokens into our
+        #     own store and let AuthManager own refresh. Writable so
+        #     refresh-token rotation actually persists.
+        if _codex_binary_present():
+            return [
+                Credential(
+                    provider_id=self.provider_id,
+                    profile_id=self.profile_id,
+                    kind="cli_delegated",
+                    payload=CliDelegatedPayload(
+                        store_path=str(path),
+                        access_key_path=["tokens", "access_token"],
+                        refresh_key_path=["tokens", "refresh_token"],
+                        # No expires_at in Codex's file — intentionally empty.
+                        expires_key_path=[],
+                    ),
+                    source=self.source_id,
+                    metadata=metadata,
+                    read_only=True,
+                )
+            ]
+
+        # Codex CLI not installed — bytes-copy the tokens. The Codex
+        # OAuth token endpoint, client_id, and rotation scheme match
+        # what ``providers/openai_codex/auth_adapter.register_codex_auth``
+        # would refresh against, so AuthManager can take over cleanly.
+        access_token = tokens.get("access_token") or ""
+        refresh_token = tokens.get("refresh_token") or ""
+        if not access_token or not refresh_token:
+            # Nothing usable to adopt without the CLI to mediate.
+            return []
         return [
             Credential(
                 provider_id=self.provider_id,
                 profile_id=self.profile_id,
-                kind="cli_delegated",
-                payload=CliDelegatedPayload(
-                    store_path=str(path),
-                    access_key_path=["tokens", "access_token"],
-                    refresh_key_path=["tokens", "refresh_token"],
-                    # No expires_at in Codex's file — intentionally empty.
-                    expires_key_path=[],
+                kind="oauth",
+                payload=OAuthPayload(
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    expires_at_ms=0,  # Codex CLI's file doesn't carry expiry
+                    scope=["openid", "profile", "email", "offline_access"],
+                    client_id="app_EMoamEEZ73f0CkXaXp7hrann",
+                    token_endpoint="https://auth.openai.com/oauth/token",
+                    id_token=tokens.get("id_token") or "",
+                    extra={"account_id": tokens.get("account_id") or ""},
                 ),
                 source=self.source_id,
                 metadata=metadata,
-                read_only=True,
             )
         ]
 
