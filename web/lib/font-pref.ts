@@ -19,6 +19,8 @@ const STORAGE_KEY = "agentic_font";
 
 // Latin face + CJK fallback per option.
 const FONT_STACKS: Record<FontKey, string> = {
+  // OS-native stack (pure system look). No Inter — picks up SF on
+  // macOS, Segoe on Windows, etc.
   system: [
     "system-ui",
     "-apple-system",
@@ -30,7 +32,11 @@ const FONT_STACKS: Record<FontKey, string> = {
     "'Hiragino Sans GB'",
     "sans-serif",
   ].join(", "),
+  // Inter Variable is bundled locally (see app/globals.css). High
+  // x-height + tight rhythm — visually matches Claude's Anthropic
+  // Sans. Fall back to any system-installed Inter, then to OS native.
   inter: [
+    "'Inter Variable'",
     "'Inter'",
     "-apple-system",
     "BlinkMacSystemFont",
@@ -80,9 +86,11 @@ export function fontStack(key: FontKey): string {
 const subscribers = new Set<(f: FontKey) => void>();
 
 function readStored(): FontKey {
-  if (typeof window === "undefined") return "system";
+  if (typeof window === "undefined") return "inter";
   const v = localStorage.getItem(STORAGE_KEY);
-  return (v as FontKey) in FONT_STACKS ? (v as FontKey) : "system";
+  // Default to Inter — bundled, matches Claude's typography out of
+  // the box. Users can switch to system/serif/mono from Settings.
+  return (v as FontKey) in FONT_STACKS ? (v as FontKey) : "inter";
 }
 
 function applyFont(font: FontKey): void {
@@ -90,7 +98,7 @@ function applyFont(font: FontKey): void {
   document.documentElement.style.setProperty("--font-sans", FONT_STACKS[font]);
 }
 
-let current: FontKey = "system";
+let current: FontKey = "inter";
 
 export function setFont(next: FontKey): void {
   if (!(next in FONT_STACKS)) return;

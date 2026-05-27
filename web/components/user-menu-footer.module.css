@@ -9,14 +9,26 @@
   flex-shrink: 0;
 }
 
-/* Mirror Claude's footer button: full-bleed, generous vertical padding,
-   12px gap, 36px avatar, medium 14px name, 12px subtle subtitle, and
-   a trailing chevron-pair on the right. */
+/* 1:1 mirror of Claude.ai's user-menu footer (measured live):
+     btn          h=64px  padding=32px 16px  gap=0  text-align=left
+     avatar box   37x37   border-radius=9999px  border=0.5px transparent
+     avatar svg   36x36
+     name         14/20   weight 510   bright text color
+     subtitle     12/16   weight 400   muted text color
+     chevron      14x14   color = bright text (same as name)
+   We keep avatar/text physically adjacent (gap:0) and rely on the
+   text wrapper's left margin for visual separation. */
 .trigger {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 12px;
+  gap: 0;
+  /* Claude footer: fixed 64px height with padding 32/16. Padding eats
+     the content box (height - padding = 0), so the 37px avatar visually
+     centers via flex alignment rather than physically fitting in
+     content. Looks like a 64px-tall row with a 37px circle in it. */
+  height: 64px;
+  padding: 32px 16px;
+  box-sizing: border-box;
   border-radius: 0;
   cursor: pointer;
   user-select: none;
@@ -26,14 +38,17 @@
   text-align: left;
   font-family: inherit;
   color: var(--text-primary);
-  transition: background 0.15s ease;
+  /* Match Claude: gap animates 300ms, info opacity 150ms (declared on
+     .info below). Both use the same easing. */
+  transition: background 0.15s ease, gap 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+  overflow: hidden;
 }
 .trigger:hover { background: var(--bg-hover); }
 
 .avatar {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: 9999px;
   background: var(--accent-blue);
   color: #fff;
   display: flex;
@@ -43,6 +58,7 @@
   font-weight: 600;
   flex-shrink: 0;
   border: 0.5px solid transparent;
+  box-sizing: content-box;
   transition: border-color 0.15s ease, opacity 0.15s ease;
 }
 .trigger:hover .avatar {
@@ -56,33 +72,38 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  line-height: 1.25;
+  margin-left: 12px;
   padding-right: 4px;
 }
 .name {
   width: 100%;
-  color: var(--text-bright);
+  /* Claude rgb(195,194,183) = #c3c2b7 = our --text-primary exactly. */
+  color: var(--text-primary);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 510;
+  line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .subtitle {
   width: 100%;
-  color: var(--text-muted);
+  /* Claude rgb(151,149,140) = #97958c = our --text-secondary exactly. */
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 400;
+  line-height: 16px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Trailing chevron-up-down on the right (matches Claude's footer). */
+/* Trailing chevron-up-down — Claude colors it the same as name (primary). */
 .chevron {
   flex-shrink: 0;
-  color: var(--text-muted);
-  opacity: 0.7;
+  color: var(--text-primary);
+  margin-left: 8px;
+  opacity: 0.85;
   transition: opacity 0.15s ease;
 }
 .trigger:hover .chevron { opacity: 1; }

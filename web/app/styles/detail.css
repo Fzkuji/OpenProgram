@@ -187,10 +187,15 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
 .retry-cancel-btn { background: var(--bg-hover); color: var(--text-secondary); }
 .retry-cancel-btn:hover { color: var(--text-primary); }
 
+/* Vertical guide line column aligns with the parent ▶/▼ toggle's
+ * visual center: ``.node-row`` padding-left is 6px, ``.node-toggle``
+ * is 16px wide → toggle centre lives at 6 + 8 = 14px from the
+ * ``.tree-node`` left edge. With margin-left:13 + 1px border, the
+ * guide line sits at column 13–14 — flush with the toggle centre. */
 .node-children {
-  margin-left: 18px;
+  margin-left: 13px;
   border-left: 1px solid var(--border);
-  padding-left: 4px;
+  padding-left: 9px;
   overflow: hidden;
   transition: max-height 0.3s ease;
 }

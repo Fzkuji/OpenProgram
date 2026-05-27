@@ -9,7 +9,10 @@
   --sidebar-width: 288px;
   --detail-width: 300px;
   --font-mono: var(--font-jetbrains-mono), 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
-  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  /* SSR default — overridden at runtime by the inline font script in
+     layout.tsx (reads agentic_font from localStorage). Inter Variable
+     first so the SSR paint matches the default 'inter' choice. */
+  --font-sans: 'Inter Variable', var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   /* Accent colors (shared) */
   --accent-blue: #3886e5;
@@ -332,26 +335,40 @@ button, input, select, textarea, optgroup {
 
 /* React UserMenuFooter companion-class overrides — base styling
    lives in user-menu-footer.module.css. Only sidebar-level concerns
-   (collapsed-sidebar info hide, centered avatar) go here. */
+   (collapse animation, centered avatar) go here.
+
+   Claude's animation pattern, replicated 1:1:
+   - sidebar width: instant snap (no transition on width itself)
+   - info text: opacity 1→0 over 150ms ease-out (cubic-bezier .165 .84 .44 1)
+   - button gap: 12→0 over 300ms (declared on the .trigger in module CSS)
+   The width visually appears smooth because the info fades while the
+   inner content reflows. */
 .user-menu-footer-info {
-  overflow: hidden;
-  white-space: nowrap;
-  transition: opacity 0.2s ease, max-width 0.3s ease, margin 0.3s ease;
+  transition: opacity 0.15s cubic-bezier(0.165, 0.84, 0.44, 1);
 }
 .sidebar.collapsed .user-menu-footer-info {
   opacity: 0;
-  max-width: 0;
-  margin: 0;
   pointer-events: none;
 }
-/* Collapsed sidebar hides chevron + centers avatar. */
+/* Collapsed sidebar — match Claude's collapsed trigger geometry:
+   height 64 → 48, padding 32/16 → 24/16, avatar centered, chevron
+   hidden. Height/padding snap (no transition), info opacity fades. */
 .sidebar.collapsed .user-menu-footer-trigger {
+  height: 48px;
+  padding: 24px 0;
   justify-content: center;
-  padding-left: 0;
-  padding-right: 0;
-  gap: 0;
 }
 .sidebar.collapsed .user-menu-footer-trigger > svg:last-child { display: none; }
+/* Info wrapper shrinks to nothing horizontally when collapsed so the
+   avatar can actually center in the 49px rail; opacity already fades
+   it via the rule above. */
+.sidebar.collapsed .user-menu-footer-info {
+  flex: 0 0 0;
+  margin: 0;
+  padding: 0;
+  width: 0;
+  min-width: 0;
+}
 
 /* User-message avatar (chat stream — React <UserBubble />). */
 .user-avatar {

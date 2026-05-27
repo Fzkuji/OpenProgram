@@ -1,6 +1,12 @@
 /* App styles — port from openprogram/webui/static/css/style.css */
 @import "./styles.css";
 
+/* Inter Variable — loaded locally so the font picker's "Inter" option
+   actually resolves (was a CSS reference to an uninstalled family).
+   Inter has the high x-height we need to match Claude's Anthropic Sans
+   visual weight in the user-menu footer and other UI text. */
+@import "@fontsource-variable/inter";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

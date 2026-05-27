@@ -16,11 +16,14 @@ import { Providers } from "./providers";
 export const metadata: Metadata = {
   title: "OpenProgram",
   description: "Agentic programming runtime",
-  // Explicit icon path keeps browsers from requesting /favicon.ico
-  // (which would 404). app/icon.svg + this metadata combine to set
-  // <link rel="icon" href="/icon.svg"> in the rendered <head>.
+  // Register both SVG and ICO. The ICO covers browser fallbacks and
+  // framework error pages that request /favicon.ico directly.
   icons: {
-    icon: "/icon.svg",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    shortcut: "/favicon.ico",
   },
 };
 
@@ -60,13 +63,17 @@ export default function RootLayout({
                 // paint already shows the user's choice (otherwise the page
                 // flashes in the default font/locale for ~200ms while React
                 // mounts useFontPref / useTranslation).
+                // Inter Variable is bundled locally (see globals.css).
+                // Default is 'inter' so first paint matches Claude's
+                // Anthropic-Sans-style high-x-height look. 'system' stays
+                // pure OS-native for users who prefer that.
                 var FONTS = {
                   system: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
-                  inter:  "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
+                  inter:  "'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
                   serif:  "'Source Serif Pro', 'Iowan Old Style', Georgia, 'Times New Roman', 'Songti SC', SimSun, 'Noto Serif CJK SC', serif",
                   mono:   "'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace"
                 };
-                var f = localStorage.getItem('agentic_font') || 'system';
+                var f = localStorage.getItem('agentic_font') || 'inter';
                 if (FONTS[f]) document.documentElement.style.setProperty('--font-sans', FONTS[f]);
 
                 var lang = localStorage.getItem('agentic_locale') || 'en';
