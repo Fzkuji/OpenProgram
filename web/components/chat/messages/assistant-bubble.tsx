@@ -90,7 +90,12 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
           </div>
         );
       }
-      return null;
+      // No matching runtime row (e.g. the LLM's call was rejected by
+      // validation before the @agentic_function body ran, so no
+      // runtime placeholder was created). Fall through to the regular
+      // ToolsBlock so the failed attempt is still visible — otherwise
+      // the bubble silently drops it and adjacent thinking / runtime
+      // rows collapse against each other.
     }
     const tc: ChatToolCall = {
       id: b.tool_call_id || `tc_${idx}`,
@@ -205,18 +210,22 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   ? <ToolsBlock tools={nonAgentic} />
                   : null;
               })()}
-              {hasContent ? (
-                <div
-                  className="chat-text message-content"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
-                />
-              ) : null}
+              {/* Streaming fallback (msg.blocks not yet built): runtime
+                  children BEFORE the chat-text so the final reply sits
+                  below the function call card — matches the persisted
+                  block order on refresh. */}
               {runtimeChildren.length > 0 ? (
                 <div className="assistant-runtime-children">
                   {runtimeChildren.map((c) => (
                     <RuntimeBlock key={c.id} msg={c} nested />
                   ))}
                 </div>
+              ) : null}
+              {hasContent ? (
+                <div
+                  className="chat-text message-content"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                />
               ) : null}
               {streaming && !hasContent ? <TypingIndicator name={sender} /> : null}
             </>
