@@ -70,7 +70,7 @@ def _load_raw(path: Path) -> dict[str, dict[str, Any]]:
     if not path.exists():
         return {}
     try:
-        blob = json.loads(path.read_text())
+        blob = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
     if not isinstance(blob, dict):
@@ -84,7 +84,7 @@ def _load_raw(path: Path) -> dict[str, dict[str, Any]]:
 def _write_raw(path: Path, tasks: dict[str, dict[str, Any]]) -> None:
     payload = {"version": 1, "tasks": tasks}
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str, indent=2))
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
     tmp.replace(path)
 
 

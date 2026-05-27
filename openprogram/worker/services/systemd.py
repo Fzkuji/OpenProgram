@@ -73,7 +73,7 @@ def install() -> int:
     if current_worker_pid() is not None:
         stop_worker()
 
-    unit_file.write_text(_build_unit())
+    unit_file.write_text(_build_unit(), encoding="utf-8")
     rc, msg = _systemctl("daemon-reload")
     if rc != 0:
         print(f"systemctl daemon-reload failed (rc={rc}): {msg}")

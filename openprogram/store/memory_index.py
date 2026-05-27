@@ -163,7 +163,7 @@ class SessionMemoryIndex:
         self.reset()
         for fpath in history_files:
             try:
-                payload = json.loads(fpath.read_text())
+                payload = json.loads(fpath.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 continue
             # Drop fields not on the Call dataclass; tolerate extras.

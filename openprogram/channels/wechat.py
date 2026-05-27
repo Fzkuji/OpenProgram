@@ -193,7 +193,7 @@ def _load_cursor_for_account(account_id: str) -> str:
     from openprogram.channels.accounts import account_dir
     path = account_dir("wechat", account_id) / "cursor.json"
     try:
-        return (json.loads(path.read_text()) or {}).get("get_updates_buf", "")
+        return (json.loads(path.read_text(encoding="utf-8")) or {}).get("get_updates_buf", "")
     except (FileNotFoundError, json.JSONDecodeError):
         return ""
 
@@ -202,7 +202,7 @@ def _save_cursor_for_account(account_id: str, cursor: str) -> None:
     from openprogram.channels.accounts import account_dir
     path = account_dir("wechat", account_id) / "cursor.json"
     try:
-        path.write_text(json.dumps({"get_updates_buf": cursor}))
+        path.write_text(json.dumps({"get_updates_buf": cursor}), encoding="utf-8")
     except OSError:
         pass
 

@@ -28,13 +28,13 @@ def _load_auth() -> dict[str, Any]:
     if not _AUTH_FILE.exists():
         return {}
     try:
-        return json.loads(_AUTH_FILE.read_text())
+        return json.loads(_AUTH_FILE.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
 
 def _save_auth(auth: dict[str, Any]) -> None:
-    _AUTH_FILE.write_text(json.dumps(auth, indent=2))
+    _AUTH_FILE.write_text(json.dumps(auth, indent=2), encoding="utf-8")
 
 
 async def _do_login(provider_id: str) -> None:

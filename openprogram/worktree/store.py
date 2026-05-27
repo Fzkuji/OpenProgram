@@ -38,7 +38,7 @@ def _load_raw() -> dict[str, dict[str, Any]]:
     if not path.exists():
         return {}
     try:
-        blob = json.loads(path.read_text())
+        blob = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
     if not isinstance(blob, dict):
@@ -54,7 +54,7 @@ def _write_raw(rows: dict[str, dict[str, Any]]) -> None:
     path = _store_path()
     payload = {"version": 1, "worktrees": rows}
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str, indent=2))
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
     tmp.replace(path)
 
 

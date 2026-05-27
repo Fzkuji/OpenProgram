@@ -153,7 +153,7 @@ def register(app):
         except SyntaxError as e:
             return JSONResponse(content={"error": f"Syntax error: {e}"}, status_code=400)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, "w") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             f.write(body["source"])
         mod_name = f"openprogram.functions.agentics.{name}"
         if mod_name in sys.modules:

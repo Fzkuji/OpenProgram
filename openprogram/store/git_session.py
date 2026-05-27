@@ -107,7 +107,7 @@ class GitSession:
             wd.mkdir(exist_ok=True)
             keep = wd / ".gitkeep"
             if not keep.exists():
-                keep.write_text("")
+                keep.write_text("", encoding="utf-8")
             if not (self.path / ".git").exists():
                 self._run("init", "--quiet", "--initial-branch=main")
                 # Local identity — no fallback to ~/.gitconfig.
@@ -135,7 +135,7 @@ class GitSession:
         # Atomic-ish: write to tmp then rename. Avoids partial reads if
         # another thread reads the file mid-write.
         tmp = fpath.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str))
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
         tmp.replace(fpath)
         return fpath
 
@@ -147,7 +147,7 @@ class GitSession:
         self._ensure_init()
         fpath = self.path / "context" / name
         tmp = fpath.with_suffix(fpath.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str))
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
         tmp.replace(fpath)
         return fpath
 
@@ -158,7 +158,7 @@ class GitSession:
         self._ensure_init()
         fpath = self.path / "meta.json"
         tmp = fpath.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(meta, ensure_ascii=False, default=str))
+        tmp.write_text(json.dumps(meta, ensure_ascii=False, default=str), encoding="utf-8")
         tmp.replace(fpath)
         return fpath
 
@@ -167,7 +167,7 @@ class GitSession:
         if not fpath.exists():
             return {}
         try:
-            return json.loads(fpath.read_text())
+            return json.loads(fpath.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return {}
 
@@ -183,7 +183,7 @@ class GitSession:
         if not fpath.exists():
             return None
         try:
-            return json.loads(fpath.read_text())
+            return json.loads(fpath.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
 

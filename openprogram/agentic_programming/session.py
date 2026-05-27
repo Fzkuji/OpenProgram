@@ -58,7 +58,7 @@ class Session:
     def write_meta(self, question: str):
         """Write session metadata (called by the original process)."""
         os.makedirs(self.dir, exist_ok=True)
-        with open(self._meta_path(), "w") as f:
+        with open(self._meta_path(), "w", encoding="utf-8") as f:
             json.dump({
                 "question": question,
                 "pid": os.getpid(),
@@ -69,7 +69,7 @@ class Session:
     def read_meta(self) -> dict | None:
         """Read session metadata."""
         try:
-            with open(self._meta_path()) as f:
+            with open(self._meta_path(), encoding="utf-8") as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return None
@@ -83,7 +83,7 @@ class Session:
         deadline = time.time() + timeout
         while time.time() < deadline:
             if os.path.exists(path):
-                with open(path) as f:
+                with open(path, encoding="utf-8") as f:
                     answer = f.read()
                 os.remove(path)  # consumed
                 return answer
@@ -93,7 +93,7 @@ class Session:
     def send_answer(self, answer: str):
         """Write the answer file (called by `agentic resume`)."""
         os.makedirs(self.dir, exist_ok=True)
-        with open(self._answer_path(), "w") as f:
+        with open(self._answer_path(), "w", encoding="utf-8") as f:
             f.write(answer)
 
     def cleanup(self):

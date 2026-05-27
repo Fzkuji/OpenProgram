@@ -112,5 +112,5 @@ class GraphStoreShim:
             tmp = fpath.with_suffix(".json.tmp")
             tmp.write_text(
                 __import__("json").dumps(node.to_dict(), ensure_ascii=False, default=str)
-            )
+            , encoding="utf-8")
             tmp.replace(fpath)

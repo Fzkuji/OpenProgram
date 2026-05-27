@@ -562,7 +562,7 @@ class CliRunner:
 
     def _load_session_id(self) -> Optional[str]:
         try:
-            raw = self._session_state_path.read_text()
+            raw = self._session_state_path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return None
         except OSError:
@@ -584,7 +584,7 @@ class CliRunner:
         blob: dict[str, str] = {}
         if self._session_state_path.exists():
             try:
-                loaded = json.loads(self._session_state_path.read_text())
+                loaded = json.loads(self._session_state_path.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
                     blob = {k: v for k, v in loaded.items() if isinstance(v, str)}
             except (OSError, json.JSONDecodeError):
@@ -595,7 +595,7 @@ class CliRunner:
         else:
             blob[key] = sid
         try:
-            self._session_state_path.write_text(json.dumps(blob, indent=2))
+            self._session_state_path.write_text(json.dumps(blob, indent=2), encoding="utf-8")
         except OSError:
             pass
 

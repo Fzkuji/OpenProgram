@@ -43,9 +43,9 @@ class _ConfigPathProxy:
     def parent(self) -> Path:
         return get_config_path().parent
     def read_text(self, *a, **kw):
-        return get_config_path().read_text(*a, **kw)
+        return get_config_path().read_text(*a, **kw, encoding="utf-8")
     def write_text(self, *a, **kw):
-        return get_config_path().write_text(*a, **kw)
+        return get_config_path().write_text(*a, **kw, encoding="utf-8")
 
 
 CONFIG_PATH: Any = _ConfigPathProxy()
@@ -55,7 +55,7 @@ CONFIG_PATH: Any = _ConfigPathProxy()
 
 def _read_config() -> dict[str, Any]:
     try:
-        return json.loads(get_config_path().read_text())
+        return json.loads(get_config_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
@@ -63,7 +63,7 @@ def _read_config() -> dict[str, Any]:
 def _write_config(cfg: dict[str, Any]) -> None:
     path = get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(cfg, indent=2) + "\n")
+    path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
 
 
 def read_disabled_tools() -> set[str]:

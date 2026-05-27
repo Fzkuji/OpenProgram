@@ -242,7 +242,7 @@ def _state_path(state_dir: str, task: str) -> str:
 
 def _load_state(path: str) -> Optional[dict]:
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return None
@@ -250,7 +250,7 @@ def _load_state(path: str) -> Optional[dict]:
 
 def _save_state(path: str, state: dict):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2, default=str)
 
 
@@ -479,7 +479,7 @@ def _build_work_summary(history: list, max_entries: int = 20) -> str:
             lines.append(f"\n--- File: {fpath} (skipped, budget exceeded) ---")
             continue
         try:
-            with open(fpath, "r") as f:
+            with open(fpath, "r", encoding="utf-8") as f:
                 content = f.read()
             remaining = max_total - total_file_chars
             if len(content) > remaining:

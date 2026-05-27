@@ -77,7 +77,7 @@ def _read_paper(paper_dir: str) -> str:
     parts = []
     for fname in sorted(os.listdir(paper_dir)):
         if fname.endswith(".tex"):
-            with open(os.path.join(paper_dir, fname), "r") as f:
+            with open(os.path.join(paper_dir, fname), "r", encoding="utf-8") as f:
                 parts.append(f"% === {fname} ===\n{f.read()}")
     return "\n\n".join(parts)
 
@@ -93,7 +93,7 @@ def _save_review_log(log_path: str, rounds: list):
             for w in r["weaknesses"]:
                 lines.append(f"- Weakness: {w}")
         lines.append("")
-    with open(log_path, "w") as f:
+    with open(log_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
 

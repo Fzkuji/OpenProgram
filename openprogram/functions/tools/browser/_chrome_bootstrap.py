@@ -77,7 +77,7 @@ def read_last_used_profile(user_data_dir: str) -> str:
     path = Path(user_data_dir) / "Local State"
     if path.exists():
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
             picked = data.get("profile", {}).get("last_used")
             if picked:
                 return picked
@@ -155,7 +155,7 @@ def _acquire_bootstrap_lock(timeout_s: float = 60.0):
     from openprogram import _compat as fcntl
     lock_path = _bootstrap_lock_path()
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fp = open(lock_path, "w")
+    fp = open(lock_path, "w", encoding="utf-8")
     deadline = time.time() + timeout_s
     while True:
         try:
@@ -190,14 +190,14 @@ def launch_sidecar_chrome(
     """
     if is_port_listening(port):
         port_file().parent.mkdir(parents=True, exist_ok=True)
-        port_file().write_text(str(port))
+        port_file().write_text(str(port), encoding="utf-8")
         return True
     lock = _acquire_bootstrap_lock()
     try:
         # Re-check inside the lock — the other caller may have finished.
         if is_port_listening(port):
             port_file().parent.mkdir(parents=True, exist_ok=True)
-            port_file().write_text(str(port))
+            port_file().write_text(str(port), encoding="utf-8")
             return True
 
         chrome = chrome_binary()
@@ -231,7 +231,7 @@ def launch_sidecar_chrome(
         while time.time() < deadline:
             if is_port_listening(port):
                 port_file().parent.mkdir(parents=True, exist_ok=True)
-                port_file().write_text(str(port))
+                port_file().write_text(str(port), encoding="utf-8")
                 return True
             time.sleep(0.25)
         return False
@@ -248,7 +248,7 @@ def cdp_url_if_available() -> Optional[str]:
     pf = port_file()
     if pf.exists():
         try:
-            port = int(pf.read_text().strip())
+            port = int(pf.read_text(encoding="utf-8").strip())
             if is_port_listening(port):
                 return f"http://localhost:{port}"
         except (OSError, ValueError):
@@ -257,7 +257,7 @@ def cdp_url_if_available() -> Optional[str]:
     if is_port_listening(DEFAULT_PORT):
         try:
             port_file().parent.mkdir(parents=True, exist_ok=True)
-            port_file().write_text(str(DEFAULT_PORT))
+            port_file().write_text(str(DEFAULT_PORT), encoding="utf-8")
         except OSError:
             pass
         return f"http://localhost:{DEFAULT_PORT}"

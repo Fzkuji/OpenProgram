@@ -108,7 +108,7 @@ def revert_turn(session_id: str, assistant_msg_id: str) -> dict[str, Any]:
                     tmp.write_text(
                         _json.dumps(node.to_dict(), ensure_ascii=False,
                                     default=str)
-                    )
+                    , encoding="utf-8")
                     tmp.replace(fpath)
             except Exception:
                 # In-memory stamp still works for the live process;

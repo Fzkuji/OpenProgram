@@ -61,7 +61,7 @@ def save_commit(store: "SessionStore", commit: ContextCommit) -> None:
         return
     payload = commit.to_dict()
     commit_path = _commit_dir(git) / f"{commit.id}.json"
-    commit_path.write_text(json.dumps(payload, ensure_ascii=False, default=str))
+    commit_path.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
 
 
 def load_commit(store: "SessionStore", commit_id: str, *, session_id: Optional[str] = None) -> Optional[ContextCommit]:
@@ -89,7 +89,7 @@ def _load_commit_in_session(store: "SessionStore", session_id: str, commit_id: s
     if not p.exists():
         return None
     try:
-        payload = json.loads(p.read_text())
+        payload = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
     return _payload_to_commit(payload)
@@ -162,7 +162,7 @@ def load_commit_for_head(
     best: Optional[ContextCommit] = None
     for fpath in sdir.glob("*.json"):
         try:
-            payload = json.loads(fpath.read_text())
+            payload = json.loads(fpath.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
         if (payload.get("head_node_id") or "") not in ancestors:
@@ -191,7 +191,7 @@ def list_commits(store: "SessionStore", session_id: str, *, limit: int = 50) -> 
     snaps: list[ContextCommit] = []
     for fpath in sdir.glob("*.json"):
         try:
-            payload = json.loads(fpath.read_text())
+            payload = json.loads(fpath.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
         commit = _payload_to_commit(payload)

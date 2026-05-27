@@ -138,7 +138,7 @@ def _python_search(target_dir: Path, query: str, max_hits: int) -> list[tuple[st
         paths = list(target_dir.glob("*/history/*.json"))
     for p in paths:
         try:
-            content = p.read_text(errors="ignore")
+            content = p.read_text(errors="ignore", encoding="utf-8")
         except OSError:
             continue
         if needle in content.lower():

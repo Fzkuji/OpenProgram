@@ -158,7 +158,7 @@ def _stage_analysis(project_dir, runtime):
         return {"status": "no_data_files"}
     results = {}
     for fname in data_files:
-        with open(os.path.join(exp_dir, fname), "r") as f:
+        with open(os.path.join(exp_dir, fname), "r", encoding="utf-8") as f:
             data = f.read()
         output = analyze_results(data=data, runtime=runtime)
         results[fname] = output
@@ -180,7 +180,7 @@ def _stage_writing(project_dir, runtime):
         ctx = gather_context(project_dir, section)
         content = write_section(section=section, context=ctx, runtime=runtime)
         tex_file = section_files[section]
-        with open(os.path.join(project_dir, "paper", tex_file), "w") as f:
+        with open(os.path.join(project_dir, "paper", tex_file), "w", encoding="utf-8") as f:
             f.write(content)
         results[section] = {"status": "written", "length": len(content)}
     return results

@@ -28,7 +28,7 @@ class WorkerLock:
 
     def try_acquire(self) -> bool:
         """Non-blocking acquire. Populates ``holder_pid`` on failure."""
-        fh = open(self.path, "a+")
+        fh = open(self.path, "a+", encoding="utf-8")
         try:
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -76,7 +76,7 @@ def read_holder_pid() -> Optional[int]:
     if not p.exists():
         return None
     try:
-        raw = p.read_text().strip()
+        raw = p.read_text(encoding="utf-8").strip()
         return int(raw) if raw else None
     except (OSError, ValueError):
         return None

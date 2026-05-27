@@ -805,7 +805,7 @@ def main():
             print(f"last reindex:    {stats['last_reindex'] or '(never)'}")
             ls = _mstore.last_sleep_path()
             if ls.exists():
-                print(f"last sleep:      {ls.read_text().strip()[:200]}")
+                print(f"last sleep:      {ls.read_text(encoding="utf-8").strip()[:200]}")
             else:
                 print("last sleep:      (never)")
             sys.exit(0)

@@ -114,7 +114,7 @@ def run_idea(
         "synthesis/gaps.md",
     )
     if gaps_path is not None:
-        with open(gaps_path, "r") as f:
+        with open(gaps_path, "r", encoding="utf-8") as f:
             gaps = f.read()
     else:
         import warnings
@@ -136,7 +136,7 @@ def run_idea(
     # Save
     output_dir = writable_project_dir(project_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    with open(output_dir / "IDEA_REPORT.md", "w") as f:
+    with open(output_dir / "IDEA_REPORT.md", "w", encoding="utf-8") as f:
         f.write(f"# Idea Report: {topic}\n\n")
         f.write(f"## Generated Ideas\n{ideas}\n\n")
         f.write(f"## Novelty Assessment\n{novelty}\n\n")

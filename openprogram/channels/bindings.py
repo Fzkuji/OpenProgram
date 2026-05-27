@@ -98,7 +98,7 @@ def _read() -> list[dict[str, Any]]:
 def _write(bindings: list[dict[str, Any]]) -> None:
     path = _path()
     lock_path = path.with_suffix(path.suffix + ".lock")
-    with open(lock_path, "a+") as lock_fh:
+    with open(lock_path, "a+", encoding="utf-8") as lock_fh:
         try:
             fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
         except OSError:

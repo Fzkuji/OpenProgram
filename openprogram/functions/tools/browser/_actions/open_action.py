@@ -100,7 +100,7 @@ def _read_cdp_port() -> int | None:
     if not p.exists():
         return None
     try:
-        return int(p.read_text().strip())
+        return int(p.read_text(encoding="utf-8").strip())
     except (ValueError, OSError):
         return None
 

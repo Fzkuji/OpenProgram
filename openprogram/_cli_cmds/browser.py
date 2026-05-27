@@ -126,7 +126,7 @@ def _cmd_browser_status() -> int:
     pf = port_file()
     if pf.exists():
         try:
-            port = int(pf.read_text().strip())
+            port = int(pf.read_text(encoding="utf-8").strip())
             alive = is_port_listening(port)
             print(f"  port file: {pf} → :{port} {'(LISTENING)' if alive else '(stale, not listening)'}")
         except (OSError, ValueError):

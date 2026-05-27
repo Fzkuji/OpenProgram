@@ -49,14 +49,14 @@ def _staged_path() -> Path:
 
 def _read_last_check() -> float:
     try:
-        return float(_last_check_path().read_text().strip())
+        return float(_last_check_path().read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         return 0.0
 
 
 def _write_last_check(ts: float) -> None:
     try:
-        _last_check_path().write_text(f"{ts:.0f}\n")
+        _last_check_path().write_text(f"{ts:.0f}\n", encoding="utf-8")
     except OSError:
         pass
 
@@ -68,7 +68,7 @@ def _write_staged_notice(version: str, summary: str = "") -> None:
         "applied_at": int(time.time()),
     }
     try:
-        _staged_path().write_text(json.dumps(payload))
+        _staged_path().write_text(json.dumps(payload), encoding="utf-8")
     except OSError:
         pass
 
@@ -79,7 +79,7 @@ def pop_staged_notice() -> Optional[dict]:
     if not p.exists():
         return None
     try:
-        data = json.loads(p.read_text())
+        data = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     try:

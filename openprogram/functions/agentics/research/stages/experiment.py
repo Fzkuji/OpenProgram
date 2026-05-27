@@ -105,7 +105,7 @@ def run_experiments(
     # Read idea
     idea_path = os.path.join(project_dir, "IDEA_REPORT.md")
     if os.path.exists(idea_path):
-        with open(idea_path, "r") as f:
+        with open(idea_path, "r", encoding="utf-8") as f:
             idea = f.read()
     else:
         import warnings
@@ -118,7 +118,7 @@ def run_experiments(
         # Fallback to outline
         outline_path = os.path.join(project_dir, "outline", "outline.md")
         if os.path.exists(outline_path):
-            with open(outline_path, "r") as f:
+            with open(outline_path, "r", encoding="utf-8") as f:
                 idea = f.read()
 
     # Design
@@ -127,7 +127,7 @@ def run_experiments(
     # Save plan
     exp_dir = os.path.join(project_dir, "experiments")
     os.makedirs(exp_dir, exist_ok=True)
-    with open(os.path.join(exp_dir, "EXPERIMENT_PLAN.md"), "w") as f:
+    with open(os.path.join(exp_dir, "EXPERIMENT_PLAN.md"), "w", encoding="utf-8") as f:
         f.write(f"# Experiment Plan\n\n{plan}")
 
     return {"plan": plan, "status": "planned"}

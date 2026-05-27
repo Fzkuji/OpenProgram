@@ -36,7 +36,7 @@ def load(manifest_path: Path) -> dict:
     if not manifest_path.exists():
         return _empty()
     try:
-        data = json.loads(manifest_path.read_text())
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return _empty()
     if not isinstance(data, dict) or "files" not in data:
@@ -49,7 +49,7 @@ def save(manifest_path: Path, manifest: dict) -> None:
     never leaves a half-parsed JSON behind."""
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = manifest_path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
+    tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(manifest_path)
 
 

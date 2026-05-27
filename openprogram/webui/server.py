@@ -485,7 +485,7 @@ def _load_config() -> dict:
 def _save_config(config: dict):
     """Save config to ~/.agentic/config.json."""
     os.makedirs(os.path.dirname(_CONFIG_PATH()), exist_ok=True)
-    with open(_CONFIG_PATH(), "w") as f:
+    with open(_CONFIG_PATH(), "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
 
 

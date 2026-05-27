@@ -110,7 +110,7 @@ def get_default_workdir() -> str:
     if env_v and env_v.strip() and os.path.isdir(env_v):
         return env_v
     try:
-        cfg = json.loads(get_config_path().read_text())
+        cfg = json.loads(get_config_path().read_text(encoding="utf-8"))
         wd = cfg.get("default_workdir")
         if isinstance(wd, str) and wd.strip() and os.path.isdir(wd):
             return wd

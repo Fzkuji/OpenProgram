@@ -194,7 +194,7 @@ def _file_lock(path: Path):
     close it to release the lock. Used for cross-process synchronization
     around the single agents.json and each agent.json."""
     lock_path = path.with_suffix(path.suffix + ".lock")
-    fh = open(lock_path, "a+")
+    fh = open(lock_path, "a+", encoding="utf-8")
     try:
         fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
     except OSError:

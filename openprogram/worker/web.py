@@ -118,7 +118,7 @@ def _patch_manifest_ports(wd: Path, backend_port: int) -> bool:
         if not path.exists():
             continue
         try:
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
         except OSError:
             ok = False
             continue
@@ -127,7 +127,7 @@ def _patch_manifest_ports(wd: Path, backend_port: int) -> bool:
             continue
         try:
             json.loads(new_text)  # sanity check
-            path.write_text(new_text)
+            path.write_text(new_text, encoding="utf-8")
             print(f"[worker] web: patched {fname} → :{backend_port}")
         except (json.JSONDecodeError, OSError) as e:
             print(f"[worker] web: failed to patch {fname}: {e}")
@@ -257,7 +257,7 @@ def _start_build_id_watcher(
 
     def _read_id() -> Optional[str]:
         try:
-            return build_id_path.read_text().strip()
+            return build_id_path.read_text(encoding="utf-8").strip()
         except OSError:
             return None
 

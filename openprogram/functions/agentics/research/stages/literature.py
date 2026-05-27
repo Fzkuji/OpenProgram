@@ -83,10 +83,10 @@ def run_literature(
     rw_dir = os.path.join(project_dir, "related_work")
     os.makedirs(rw_dir, exist_ok=True)
 
-    with open(os.path.join(rw_dir, "survey.md"), "w") as f:
+    with open(os.path.join(rw_dir, "survey.md"), "w", encoding="utf-8") as f:
         f.write(f"# Literature Survey: {topic}\n\n{survey}")
 
-    with open(os.path.join(rw_dir, "gaps.md"), "w") as f:
+    with open(os.path.join(rw_dir, "gaps.md"), "w", encoding="utf-8") as f:
         f.write(f"# Research Gaps\n\n{gaps}")
 
     return {"survey": survey, "gaps": gaps}

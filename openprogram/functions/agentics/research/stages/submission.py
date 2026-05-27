@@ -89,7 +89,7 @@ def run_submission_check(
     parts = []
     for fname in sorted(os.listdir(paper_dir)):
         if fname.endswith(".tex"):
-            with open(os.path.join(paper_dir, fname), "r") as f:
+            with open(os.path.join(paper_dir, fname), "r", encoding="utf-8") as f:
                 parts.append(f.read())
     paper_content = "\n\n".join(parts)
 
@@ -100,7 +100,7 @@ def run_submission_check(
     )
 
     # Save report
-    with open(os.path.join(project_dir, "SUBMISSION_CHECKLIST.md"), "w") as f:
+    with open(os.path.join(project_dir, "SUBMISSION_CHECKLIST.md"), "w", encoding="utf-8") as f:
         f.write(f"# Submission Checklist — {venue}\n\n{result}")
 
     return {"checklist": result}

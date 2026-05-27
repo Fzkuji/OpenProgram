@@ -31,7 +31,7 @@ from .lock import read_holder_pid
 
 
 def write_port_file(port: int) -> None:
-    paths.port_path().write_text(f"{port}\n")
+    paths.port_path().write_text(f"{port}\n", encoding="utf-8")
 
 
 def clear_port_file() -> None:
@@ -59,7 +59,7 @@ def read_worker_port() -> Optional[int]:
         p = paths.port_path()
         if p.exists():
             try:
-                return int(p.read_text().strip())
+                return int(p.read_text(encoding="utf-8").strip())
             except (OSError, ValueError):
                 pass
     # Fallback: probe the conventional default port. An unmanaged
@@ -113,7 +113,7 @@ def find_running_webui() -> tuple[Optional[int], Optional[int], str]:
         p = paths.port_path()
         if p.exists():
             try:
-                return int(p.read_text().strip()), pid, "managed"
+                return int(p.read_text(encoding="utf-8").strip()), pid, "managed"
             except (OSError, ValueError):
                 pass
         # PID present but no port file — uncommon but treat as managed
@@ -133,7 +133,7 @@ def _read_pid_file() -> Optional[int]:
     if not p.exists():
         return None
     try:
-        raw = p.read_text().strip().splitlines()
+        raw = p.read_text(encoding="utf-8").strip().splitlines()
         return int(raw[0]) if raw else None
     except (OSError, ValueError):
         return None
@@ -141,7 +141,7 @@ def _read_pid_file() -> Optional[int]:
 
 def write_pid_file() -> None:
     """Write current PID + start timestamp. Called by the running worker."""
-    paths.pid_path().write_text(f"{os.getpid()}\n{int(time.time())}\n")
+    paths.pid_path().write_text(f"{os.getpid()}\n{int(time.time())}\n", encoding="utf-8")
 
 
 def clear_pid_file() -> None:
@@ -220,7 +220,7 @@ def spawn_detached() -> int:
         if rc is not None:
             print(f"worker exited immediately (rc={rc}). Tail of {log_file}:")
             try:
-                lines = log_file.read_text().splitlines()[-20:]
+                lines = log_file.read_text(encoding="utf-8").splitlines()[-20:]
                 for line in lines:
                     print(f"  {line}")
             except OSError:
@@ -304,7 +304,7 @@ def restart_worker() -> int:
 def _worker_start_time(pid: int) -> Optional[float]:
     p = paths.pid_path()
     try:
-        raw = p.read_text().strip().splitlines()
+        raw = p.read_text(encoding="utf-8").strip().splitlines()
         if len(raw) >= 2 and int(raw[0]) == pid:
             return float(raw[1])
     except (OSError, ValueError):
