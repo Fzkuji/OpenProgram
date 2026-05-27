@@ -146,7 +146,7 @@
 }
 .branch-item-tokens {
   font-size: 12px;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -815,7 +815,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-bright);
 }
@@ -824,7 +824,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
 }
 .worktree-item-time {
   flex-shrink: 0;

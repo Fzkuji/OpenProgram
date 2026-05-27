@@ -827,7 +827,7 @@
 }
 .runtime-badge.agent-badge {
   cursor: pointer;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 12px;
   /* Blue chip for the model selectors (chat + exec). Distinct from
      the status badge's green ("Local / connected") and the branch
