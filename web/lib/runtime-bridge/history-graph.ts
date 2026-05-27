@@ -655,43 +655,20 @@ function _collapseRuntimePlaceholders(
   });
   if (!Object.keys(removeIds).length) return { graph, headId };
   if (headId && replaceWith[headId]) headId = replaceWith[headId];
-  // Compute tier shift for promoted code call + its caller-subtree:
-  // the placeholder it replaces sits at the main lane (_tier ~0); the
-  // code call is one tier deeper (it was a caller-edge child). When
-  // we promote it onto the conv chain, that tier offset becomes
-  // wrong — the lane algorithm draws it off to the right with a
-  // curved edge from the reply, instead of straight down the trunk.
-  // Subtract the code call's tier from itself + every descendant
-  // (caller-edge) so they snap back to the trunk column.
-  const tierShiftOf: Record<string, number> = Object.create(null);
-  Object.keys(replaceWith).forEach((placeholderId) => {
-    const code = byId[replaceWith[placeholderId]];
-    if (!code) return;
-    const t = typeof code._tier === "number" ? code._tier : 0;
-    if (t <= 0) return;
-    const stack: string[] = [code.id];
-    while (stack.length) {
-      const id = stack.pop()!;
-      if (id in tierShiftOf) continue;
-      tierShiftOf[id] = t;
-      (callerKidsOf[id] || []).forEach((c) => stack.push(c.id));
-    }
-  });
   const out: GNode[] = [];
   graph.forEach((m) => {
     if (removeIds[m.id]) return;
     let nm: GNode = m;
     // Reparent the surviving code call to take the placeholder's
-    // parent_id slot in the conv chain.
+    // parent_id slot — but as a side child of the reply (one tier
+    // deeper), NOT on the main lane. The code call retains its
+    // existing _tier so the lane algorithm places it off-trunk
+    // with a curved edge from the reply (treated as a decoration
+    // / child branch). User intent: the function call hangs OFF
+    // the assistant reply as a side node, not on the main chain.
     if (replaceWith[m.parent_id || ""]) {
       const removed = byId[m.parent_id!];
       nm = Object.assign({}, m, { parent_id: removed?.parent_id || null });
-    }
-    if (m.id in tierShiftOf) {
-      nm = nm === m ? Object.assign({}, m) : nm;
-      const sh = tierShiftOf[m.id];
-      const curT = typeof nm._tier === "number" ? nm._tier : 0;
-      nm._tier = Math.max(0, curT - sh);
     }
     out.push(nm);
   });
