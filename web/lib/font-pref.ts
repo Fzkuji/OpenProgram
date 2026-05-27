@@ -4,37 +4,78 @@
  * variable on `<html>`. Base CSS (`web/app/styles/base.css`) already
  * binds `body { font-family: var(--font-sans); }`, so changing the
  * variable cascades through the whole UI.
+ *
+ * Each stack ends with a CJK fallback (PingFang SC / Microsoft YaHei /
+ * etc.) so Chinese text picks up a matching weight even when the
+ * primary Latin face has no CJK glyphs of its own.
  */
 "use client";
 
 import { useEffect, useState } from "react";
 
-export type FontKey = "system" | "inter" | "serif" | "mono" | "rounded";
+export type FontKey = "system" | "inter" | "serif" | "mono";
 
 const STORAGE_KEY = "agentic_font";
 
-// One CSS font-stack per option. `system` is the original stack from
-// base.css — picking it removes the inline override so the page falls
-// back to the project default.
+// Latin face + CJK fallback per option.
 const FONT_STACKS: Record<FontKey, string> = {
-  system: "",
-  inter:
-    "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-  serif:
-    "'Source Serif Pro', Georgia, 'Times New Roman', serif",
-  mono:
-    "'JetBrains Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
-  rounded:
-    "ui-rounded, 'SF Pro Rounded', 'Nunito', system-ui, sans-serif",
+  system: [
+    "system-ui",
+    "-apple-system",
+    "BlinkMacSystemFont",
+    "'Segoe UI'",
+    // CJK
+    "'PingFang SC'",
+    "'Microsoft YaHei'",
+    "'Hiragino Sans GB'",
+    "sans-serif",
+  ].join(", "),
+  inter: [
+    "'Inter'",
+    "-apple-system",
+    "BlinkMacSystemFont",
+    "'Segoe UI'",
+    "'PingFang SC'",
+    "'Microsoft YaHei'",
+    "'Hiragino Sans GB'",
+    "sans-serif",
+  ].join(", "),
+  serif: [
+    "'Source Serif Pro'",
+    "'Iowan Old Style'",
+    "Georgia",
+    "'Times New Roman'",
+    "'Songti SC'",
+    "SimSun",
+    "'Noto Serif CJK SC'",
+    "serif",
+  ].join(", "),
+  mono: [
+    "'JetBrains Mono'",
+    "ui-monospace",
+    "Menlo",
+    "Monaco",
+    "Consolas",
+    "'PingFang SC'",
+    "'Microsoft YaHei'",
+    "monospace",
+  ].join(", "),
 };
 
-export const FONT_LABELS: Record<FontKey, { en: string; zh: string }> = {
-  system: { en: "System default", zh: "系统默认" },
-  inter: { en: "Inter (sans)", zh: "Inter（无衬线）" },
-  serif: { en: "Serif", zh: "衬线" },
-  mono: { en: "Monospace", zh: "等宽" },
-  rounded: { en: "Rounded", zh: "圆润" },
+/** Display labels — shown using their OWN font in the picker so the
+ *  user sees what they'll get. Names match what most users recognise
+ *  rather than CSS jargon ("Serif" not "Source Serif Pro"; "Inter"
+ *  because the typeface itself is widely known). */
+export const FONT_LABELS: Record<FontKey, string> = {
+  system: "System",
+  inter: "Inter",
+  serif: "Serif",
+  mono: "JetBrains Mono",
 };
+
+export function fontStack(key: FontKey): string {
+  return FONT_STACKS[key];
+}
 
 const subscribers = new Set<(f: FontKey) => void>();
 
@@ -46,13 +87,7 @@ function readStored(): FontKey {
 
 function applyFont(font: FontKey): void {
   if (typeof document === "undefined") return;
-  const stack = FONT_STACKS[font];
-  if (stack) {
-    document.documentElement.style.setProperty("--font-sans", stack);
-  } else {
-    // Remove the override so the base.css fallback wins again.
-    document.documentElement.style.removeProperty("--font-sans");
-  }
+  document.documentElement.style.setProperty("--font-sans", FONT_STACKS[font]);
 }
 
 let current: FontKey = "system";

@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { useTranslation } from "@/lib/i18n";
 import styles from "@/components/settings/settings-page.module.css";
 
 /**
@@ -21,22 +22,24 @@ import styles from "@/components/settings/settings-page.module.css";
  *    layout, so when the actual page replaces the fallback there's
  *    no width/height shift.
  */
-const TAB_META: Record<string, { title: string }> = {
-  providers: { title: "LLM Providers" },
-  search: { title: "Web Search" },
-  channels: { title: "Channels" },
-  general: { title: "General" },
+const TAB_KEYS: Record<string, "settings.tab.providers"|"settings.tab.search"|"settings.tab.channels"|"settings.tab.general"> = {
+  providers: "settings.tab.providers",
+  search: "settings.tab.search",
+  channels: "settings.tab.channels",
+  general: "settings.tab.general",
 };
 
 export default function SettingsLoading() {
+  const { t } = useTranslation();
   const pathname = usePathname() || "";
   const tab = pathname.split("/")[2] || "providers";
-  const meta = TAB_META[tab] || { title: "Settings" };
+  const key = TAB_KEYS[tab];
+  const title = key ? t(key) : t("settings.title");
 
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
-        <h2 className={styles.pageTitle}>{meta.title}</h2>
+        <h2 className={styles.pageTitle}>{title}</h2>
         <div className={styles.skelMeta} />
       </div>
       <div className={styles.pageBody}>

@@ -22,6 +22,7 @@ import { ProviderItem } from "./provider-item";
 import type { Provider } from "./types";
 import styles from "../settings-page.module.css";
 import { cachedFetch, invalidate } from "@/lib/settings-cache";
+import { useTranslation } from "@/lib/i18n";
 
 // Re-export ApiKey for search-providers-section.tsx (the only other
 // consumer outside this subdirectory).
@@ -29,6 +30,7 @@ export { ApiKey } from "./api-key";
 export type { Provider, Model } from "./types";
 
 export function ProvidersSection() {
+  const { t } = useTranslation();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -91,7 +93,7 @@ export function ProvidersSection() {
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
-        <h2 className={styles.pageTitle}>LLM Providers</h2>
+        <h2 className={styles.pageTitle}>{t("settings.tab.providers")}</h2>
         <p className={styles.pageMeta}>
           Enable an LLM backend, paste an API key (or rely on local OAuth /
           subscription), and pick which models the chat composer exposes.

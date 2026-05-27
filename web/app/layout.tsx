@@ -55,6 +55,22 @@ export default function RootLayout({
                 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
                   if ((localStorage.getItem('agentic_theme') || 'auto') === 'auto') apply('auto');
                 });
+
+                // Apply persisted font + language before hydrate so the first
+                // paint already shows the user's choice (otherwise the page
+                // flashes in the default font/locale for ~200ms while React
+                // mounts useFontPref / useTranslation).
+                var FONTS = {
+                  system: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
+                  inter:  "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
+                  serif:  "'Source Serif Pro', 'Iowan Old Style', Georgia, 'Times New Roman', 'Songti SC', SimSun, 'Noto Serif CJK SC', serif",
+                  mono:   "'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace"
+                };
+                var f = localStorage.getItem('agentic_font') || 'system';
+                if (FONTS[f]) document.documentElement.style.setProperty('--font-sans', FONTS[f]);
+
+                var lang = localStorage.getItem('agentic_locale') || 'en';
+                document.documentElement.setAttribute('lang', lang === 'zh' ? 'zh-CN' : 'en');
               } catch (e) {}
             })();`,
           }}

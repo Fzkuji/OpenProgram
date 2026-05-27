@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { useTranslation } from "@/lib/i18n";
 import styles from "./shell-loading.module.css";
 
 /**
@@ -16,19 +17,21 @@ import styles from "./shell-loading.module.css";
  * /s/<id> don't suspense because their UI is mounted inside AppShell
  * itself — their page.tsx is just ``return null;``.
  */
-const ROUTE_TITLES: Record<string, string> = {
-  functions: "Functions",
-  skills: "Skills",
-  memory: "Memory",
-  mcp: "MCP Servers",
-  plugins: "Plugins",
-  chats: "Chats",
+const ROUTE_KEYS: Record<string, "nav.functions"|"nav.skills"|"nav.memory"|"nav.mcp"|"nav.plugins"|"nav.chats"> = {
+  functions: "nav.functions",
+  skills: "nav.skills",
+  memory: "nav.memory",
+  mcp: "nav.mcp",
+  plugins: "nav.plugins",
+  chats: "nav.chats",
 };
 
 export default function ShellLoading() {
+  const { t } = useTranslation();
   const pathname = usePathname() || "";
   const seg = pathname.split("/")[1] || "";
-  const title = ROUTE_TITLES[seg] || "Loading…";
+  const key = ROUTE_KEYS[seg];
+  const title = key ? t(key) : "Loading…";
 
   return (
     <div className={styles.wrap}>

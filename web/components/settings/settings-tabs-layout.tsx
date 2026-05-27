@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import styles from "./settings-page.module.css";
 import { prefetchSettings } from "@/lib/settings-cache";
+import { useTranslation } from "@/lib/i18n";
 
 export type SettingsTab = "providers" | "search" | "channels" | "general";
 
@@ -23,6 +24,7 @@ export function SettingsTabsLayout({
 }: {
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   // Mounted once when the user enters /settings/* (now an app-router
   // layout). useEffect fires once for the whole settings visit — no
   // remount per tab click — so the topbar + nav don't tear down + set
@@ -46,7 +48,7 @@ export function SettingsTabsLayout({
     <div className="main">
       <div className={styles.view}>
         <div className={styles.topbar}>
-          <span className={styles.title}>Settings</span>
+          <span className={styles.title}>{t("settings.title")}</span>
         </div>
         <div
           className={styles.body + (isWide ? " " + styles.providersWide : "")}
@@ -59,7 +61,7 @@ export function SettingsTabsLayout({
                 (active === "providers" ? " " + styles.active : "")
               }
             >
-              LLM Providers
+              {t("settings.tab.providers")}
             </Link>
             <Link
               href="/settings/search"
@@ -68,7 +70,7 @@ export function SettingsTabsLayout({
                 (active === "search" ? " " + styles.active : "")
               }
             >
-              Web Search
+              {t("settings.tab.search")}
             </Link>
             <Link
               href="/settings/channels"
@@ -77,7 +79,7 @@ export function SettingsTabsLayout({
                 (active === "channels" ? " " + styles.active : "")
               }
             >
-              Channels
+              {t("settings.tab.channels")}
             </Link>
             <Link
               href="/settings/general"
@@ -86,7 +88,7 @@ export function SettingsTabsLayout({
                 (active === "general" ? " " + styles.active : "")
               }
             >
-              General
+              {t("settings.tab.general")}
             </Link>
           </div>
           <div className={styles.content}>{children}</div>

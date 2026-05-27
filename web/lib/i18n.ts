@@ -61,6 +61,22 @@ const DICT = {
   "general.section.application": { en: "Application", zh: "应用信息" },
   "general.version": { en: "Version", zh: "版本" },
   "general.framework": { en: "Framework", zh: "框架" },
+
+  // Settings shell + tab labels
+  "settings.title": { en: "Settings", zh: "设置" },
+  "settings.tab.providers": { en: "LLM Providers", zh: "大模型 Provider" },
+  "settings.tab.search": { en: "Web Search", zh: "网页搜索" },
+  "settings.tab.channels": { en: "Channels", zh: "消息渠道" },
+  "settings.tab.general": { en: "General", zh: "通用" },
+
+  // Left sidebar nav (AppShell)
+  "nav.new_chat": { en: "New chat", zh: "新会话" },
+  "nav.functions": { en: "Functions", zh: "函数" },
+  "nav.skills": { en: "Skills", zh: "技能" },
+  "nav.plugins": { en: "Plugins", zh: "插件" },
+  "nav.mcp": { en: "MCP Servers", zh: "MCP 服务器" },
+  "nav.memory": { en: "Memory", zh: "记忆" },
+  "nav.chats": { en: "Chats", zh: "会话历史" },
 } as const;
 
 type Key = keyof typeof DICT;

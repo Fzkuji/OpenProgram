@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 import shellStyles from "../settings-page.module.css";
 import styles from "./channels.module.css";
 import { cachedFetch, invalidate } from "@/lib/settings-cache";
+import { useTranslation } from "@/lib/i18n";
 import { AccountsList } from "./accounts-list";
 import { BindingsList } from "./bindings-list";
 import type {
@@ -26,6 +27,7 @@ import type {
 } from "./types";
 
 export function ChannelsSection() {
+  const { t } = useTranslation();
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [bindings, setBindings] = useState<ChannelBinding[]>([]);
   const [statuses, setStatuses] = useState<StatusMap>({});
@@ -100,7 +102,7 @@ export function ChannelsSection() {
   return (
     <div className={shellStyles.page}>
       <div className={shellStyles.pageHeader}>
-        <h2 className={shellStyles.pageTitle}>Channels</h2>
+        <h2 className={shellStyles.pageTitle}>{t("settings.tab.channels")}</h2>
         <p className={shellStyles.pageMeta}>
           Let your agents send and receive messages on Telegram / Discord
           / Slack / WeChat. Two steps: 1) add a bot account (paste a bot

@@ -143,6 +143,16 @@ html, body {
   line-height: 1.5;
 }
 
+/* Native form elements default to the browser's UI font instead of
+   inheriting from <body>, so without this rule buttons/inputs/selects
+   ignored the global font switch on /settings/general. Force them to
+   pick up `--font-sans` like everything else. Anything intentionally
+   monospace declares its own `font-family: var(--font-mono)` later
+   and overrides this. */
+button, input, select, textarea, optgroup {
+  font-family: inherit;
+}
+
 /* ===== Layout: 3-column ===== */
 .app {
   display: flex;

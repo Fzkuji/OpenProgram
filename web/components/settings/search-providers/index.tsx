@@ -9,11 +9,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import styles from "../settings-page.module.css";
 import { cachedFetch, invalidate } from "@/lib/settings-cache";
+import { useTranslation } from "@/lib/i18n";
 import { SearchProviderDetail } from "./detail";
 import { SearchProviderItem } from "./item";
 import type { SearchProvider } from "./types";
 
 export function SearchProvidersSection() {
+  const { t } = useTranslation();
   const [providers, setProviders] = useState<SearchProvider[]>([]);
   const [defaultId, setDefaultId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,7 +95,7 @@ export function SearchProvidersSection() {
     return (
       <div className={styles.page}>
         <div className={styles.pageHeader}>
-          <h2 className={styles.pageTitle}>Web Search</h2>
+          <h2 className={styles.pageTitle}>{t("settings.tab.search")}</h2>
         </div>
         <div className={styles.pageBody} style={{ opacity: 0.6 }}>Loading…</div>
       </div>

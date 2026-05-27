@@ -38,6 +38,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useSessionStore } from "@/lib/session-store";
 import { refreshFunctionsList } from "@/lib/functions-actions";
+import { useTranslation } from "@/lib/i18n";
 import { UserMenuFooter } from "../user-menu-footer";
 import { SessionsList } from "./sessions-list";
 import { FavoritesList } from "./favorites-list";
@@ -65,6 +66,7 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
+  const { t } = useTranslation();
 
   const [open, setOpen] = useState<boolean>(true);
   const [favCollapsed, setFavCollapsed] = useState(false);
@@ -269,7 +271,7 @@ export function Sidebar() {
               <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>New chat</span>
+          <span className={sidebarNavLabelClass}>{t("nav.new_chat")}</span>
         </div>
 
         <Link
@@ -285,7 +287,7 @@ export function Sidebar() {
               <path d="M4.25 2A2.25 2.25 0 0 0 2 4.25v2.5A2.25 2.25 0 0 0 4.25 9h2.5A2.25 2.25 0 0 0 9 6.75v-2.5A2.25 2.25 0 0 0 6.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 2 13.25v2.5A2.25 2.25 0 0 0 4.25 18h2.5A2.25 2.25 0 0 0 9 15.75v-2.5A2.25 2.25 0 0 0 6.75 11h-2.5Zm9-9A2.25 2.25 0 0 0 11 4.25v2.5A2.25 2.25 0 0 0 13.25 9h2.5A2.25 2.25 0 0 0 18 6.75v-2.5A2.25 2.25 0 0 0 15.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 11 13.25v2.5A2.25 2.25 0 0 0 13.25 18h2.5A2.25 2.25 0 0 0 18 15.75v-2.5A2.25 2.25 0 0 0 15.75 11h-2.5Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>Functions</span>
+          <span className={sidebarNavLabelClass}>{t("nav.functions")}</span>
           <span
             className={
               sidebarNavActionClass +
@@ -334,7 +336,7 @@ export function Sidebar() {
               <path d="M9 3.5a.75.75 0 0 1 .714.518l.66 2.034a3 3 0 0 0 1.91 1.91l2.034.66a.75.75 0 0 1 0 1.428l-2.034.66a3 3 0 0 0-1.91 1.91l-.66 2.034a.75.75 0 0 1-1.428 0l-.66-2.034a3 3 0 0 0-1.91-1.91l-2.034-.66a.75.75 0 0 1 0-1.428l2.034-.66a3 3 0 0 0 1.91-1.91l.66-2.034A.75.75 0 0 1 9 3.5ZM15.5 11.5a.5.5 0 0 1 .476.345l.342 1.054a2 2 0 0 0 1.283 1.283l1.054.342a.5.5 0 0 1 0 .952l-1.054.342a2 2 0 0 0-1.283 1.283l-.342 1.054a.5.5 0 0 1-.952 0l-.342-1.054a2 2 0 0 0-1.283-1.283l-1.054-.342a.5.5 0 0 1 0-.952l1.054-.342a2 2 0 0 0 1.283-1.283l.342-1.054A.5.5 0 0 1 15.5 11.5ZM14.5 2a.5.5 0 0 1 .47.331l.18.485a1.5 1.5 0 0 0 .884.884l.485.18a.5.5 0 0 1 0 .94l-.485.18a1.5 1.5 0 0 0-.884.884l-.18.485a.5.5 0 0 1-.94 0l-.18-.485a1.5 1.5 0 0 0-.884-.884l-.485-.18a.5.5 0 0 1 0-.94l.485-.18a1.5 1.5 0 0 0 .884-.884l.18-.485A.5.5 0 0 1 14.5 2Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>Skills</span>
+          <span className={sidebarNavLabelClass}>{t("nav.skills")}</span>
         </Link>
 
         <Link
@@ -350,7 +352,7 @@ export function Sidebar() {
               <path d="M7 2a1 1 0 0 1 1 1v2h4V3a1 1 0 1 1 2 0v2h1.5A1.5 1.5 0 0 1 17 6.5V8h2a1 1 0 1 1 0 2h-2v4h2a1 1 0 1 1 0 2h-2v1.5a1.5 1.5 0 0 1-1.5 1.5H14v-2a1 1 0 1 0-2 0v2H8v-2a1 1 0 1 0-2 0v2H4.5A1.5 1.5 0 0 1 3 17.5V16H1a1 1 0 1 1 0-2h2v-4H1a1 1 0 1 1 0-2h2V6.5A1.5 1.5 0 0 1 4.5 5H6V3a1 1 0 0 1 1-1Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>Plugins</span>
+          <span className={sidebarNavLabelClass}>{t("nav.plugins")}</span>
         </Link>
 
         <Link
@@ -366,7 +368,7 @@ export function Sidebar() {
               <path d="M3 4.5A2.5 2.5 0 0 1 5.5 2h9A2.5 2.5 0 0 1 17 4.5v3A2.5 2.5 0 0 1 14.5 10h-9A2.5 2.5 0 0 1 3 7.5v-3Zm2 0a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H5Zm0 8A2.5 2.5 0 0 0 2.5 15v.5A2.5 2.5 0 0 0 5 18h10a2.5 2.5 0 0 0 2.5-2.5V15A2.5 2.5 0 0 0 15 12.5H5Zm0 2h2a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>MCP Servers</span>
+          <span className={sidebarNavLabelClass}>{t("nav.mcp")}</span>
         </Link>
 
         <Link
@@ -382,7 +384,7 @@ export function Sidebar() {
               <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2h11a2.5 2.5 0 0 1 0 5h-11A2.5 2.5 0 0 1 2 4.5ZM2.75 9.083a.75.75 0 0 0 0 1.5h14.5a.75.75 0 0 0 0-1.5H2.75ZM2.75 12.663a.75.75 0 0 0 0 1.5h14.5a.75.75 0 0 0 0-1.5H2.75ZM2.75 16.25a.75.75 0 0 0 0 1.5h14.5a.75.75 0 1 0 0-1.5H2.75Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>Memory</span>
+          <span className={sidebarNavLabelClass}>{t("nav.memory")}</span>
         </Link>
 
         <Link
@@ -411,7 +413,7 @@ export function Sidebar() {
               />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>Chats</span>
+          <span className={sidebarNavLabelClass}>{t("nav.chats")}</span>
         </Link>
       </div>
 
