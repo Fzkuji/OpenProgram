@@ -798,11 +798,23 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     }
 
 
+_CODEX_RESPONSES_PROVIDERS = frozenset({"openai-codex"})
+
+
 def test_provider(provider_id: str, model: str | None = None, timeout: float = 15.0) -> dict[str, Any]:
     """Send a one-shot tiny PING to verify api_key + base_url work.
 
-    Uses OpenAI Chat Completions shape (most universal). Returns
-    {"ok": True, "latency_ms": ...} or {"ok": False, "error": "..."}.
+    Uses OpenAI Chat Completions shape for most providers (most
+    universal), but routes ChatGPT-subscription / Codex providers
+    through ``/codex/responses`` instead. The Codex backend doesn't
+    expose ``/chat/completions`` — Cloudflare's anti-abuse rules on
+    chatgpt.com return a 403 for that path while letting the Responses
+    API through fine. Hitting the wrong path made the catalog UI
+    report a healthy Codex provider as "blocked by Cloudflare" even
+    though the actual chat traffic worked end-to-end.
+
+    Returns ``{"ok": True, "latency_ms": ...}`` or
+    ``{"ok": False, "error": "..."}``.
     """
     import time as _time
     import httpx
@@ -828,15 +840,78 @@ def test_provider(provider_id: str, model: str | None = None, timeout: float = 1
                 return {"ok": False, "error": "No model available to test with"}
             model = ms[0].id
 
-    url = base + "/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    body = {
-        "model": model,
-        "messages": [{"role": "user", "content": "PING"}],
-        "max_tokens": 4,
-    }
+    use_codex_shape = provider_id in _CODEX_RESPONSES_PROVIDERS
+
+    if use_codex_shape:
+        # ChatGPT subscription path: Responses API on chatgpt.com.
+        # ``store=False`` keeps the request light and avoids polluting
+        # the user's Codex run history with PING messages. ``stream``
+        # MUST be true — the Codex Responses backend rejects non-stream
+        # calls with HTTP 400 "Stream must be set to true". We don't
+        # actually consume the stream; we just need the initial status
+        # line (200 vs 4xx) to know if auth + model selection is OK.
+        url = base.rstrip("/") + "/codex/responses"
+        body = {
+            "model": model,
+            "input": [{"role": "user",
+                       "content": [{"type": "input_text", "text": "PING"}]}],
+            "instructions": "",
+            "stream": True,
+            "store": False,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "originator": "openprogram",
+            "OpenAI-Beta": "responses=experimental",
+        }
+        # openai-codex has no api_key_env — its credential lives in the
+        # OAuth pool. ``_resolve_api_key`` only checks env + config so
+        # it returns None here; we have to ask AuthManager. Also
+        # surface chatgpt-account-id when available so OpenAI's side
+        # gets a clean account mapping.
+        if not api_key:
+            try:
+                from openprogram.auth.manager import get_manager
+                cred = get_manager().acquire_sync(provider_id)
+                api_key = getattr(cred.payload, "access_token", None) or None
+                account_id = (getattr(cred.payload, "extra", None) or {}).get("account_id", "")
+                if account_id:
+                    headers["chatgpt-account-id"] = account_id
+            except Exception as _e:
+                return {"ok": False,
+                        "error": f"No usable Codex credential. "
+                                 f"Run `openprogram providers login openai-codex`."}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+    else:
+        url = base.rstrip("/") + "/chat/completions"
+        body = {
+            "model": model,
+            "messages": [{"role": "user", "content": "PING"}],
+            "max_tokens": 4,
+        }
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
     t0 = _time.time()
     try:
+        if use_codex_shape:
+            # Codex responds with SSE — a bare ``httpx.post`` would block
+            # reading the stream until close. Use ``client.stream`` so
+            # we read headers, capture the status, and tear the
+            # connection down immediately.
+            with httpx.Client(timeout=timeout) as client:
+                with client.stream("POST", url, headers=headers, json=body) as r:
+                    latency_ms = int((_time.time() - t0) * 1000)
+                    if r.status_code != 200:
+                        err_body = b"".join(r.iter_bytes()).decode("utf-8", errors="replace")
+                        return {"ok": False,
+                                "error": f"HTTP {r.status_code}: {err_body[:200]}",
+                                "latency_ms": latency_ms}
+            return {"ok": True, "latency_ms": latency_ms, "model": model}
+
         r = httpx.post(url, headers=headers, json=body, timeout=timeout)
         latency_ms = int((_time.time() - t0) * 1000)
         if r.status_code != 200:
