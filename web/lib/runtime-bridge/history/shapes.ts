@@ -80,6 +80,22 @@ export function _shapeFor(node: GNode): string {
   const role = node.role;
   const fn = node.function;
   if (fn && BRANCH_OP_FUNCTIONS.has(fn)) return "square_outline";
+  // Function-call runtime row (LLM-driven OR fn-form triggered) —
+  // the node represents a tool/function invocation, so render as a
+  // square regardless of role mapping. Without this both kinds of
+  // runtime card render as triangles (because the persisted role
+  // mapped to "assistant"), which misleads the reader into thinking
+  // there's another LLM turn happening at that step. Guarded by
+  // ``function`` being set + not a branch op so it doesn't catch
+  // sub-agent user-msgs (those have display=runtime but no
+  // ``function`` field).
+  if (
+    node.display === "runtime"
+    && fn
+    && !BRANCH_OP_FUNCTIONS.has(fn)
+  ) {
+    return "square";
+  }
   // role drives the shape unconditionally — display=runtime used to
   // force square here, which mis-rendered sub-agent user_msgs
   // (role=user, display=runtime) as squares instead of circles.
