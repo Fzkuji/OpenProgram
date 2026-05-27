@@ -1,7 +1,7 @@
 "use client";
 
 /** General settings — theme, font, language, app metadata. */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { useFontPref, FONT_LABELS, fontStack, type FontKey } from "@/lib/font-pref";
@@ -20,13 +20,24 @@ function applyTheme(theme: Theme) {
 
 const FONT_OPTIONS: FontKey[] = ["system", "inter", "serif", "mono"];
 
-/** Dropdown where every option is rendered in its OWN font, so the
- *  user picks by visual preview ("Serif" is shown in serif, "Inter"
- *  in Inter, etc.) instead of having to read a category label and
- *  guess what it'll look like. */
-function FontPicker({ value, onChange }: { value: FontKey; onChange: (v: FontKey) => void }) {
+type DropdownOption<T extends string> = {
+  value: T;
+  label: string;
+  style?: CSSProperties;
+};
+
+function SettingsDropdown<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: DropdownOption<T>[];
+  onChange: (v: T) => void;
+}) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const current = options.find((option) => option.value === value);
 
   useEffect(() => {
     if (!open) return;
@@ -45,45 +56,60 @@ function FontPicker({ value, onChange }: { value: FontKey; onChange: (v: FontKey
   }, [open]);
 
   return (
-    <div ref={wrapRef} className={styles.fontPickerWrap}>
+    <div ref={wrapRef} className={styles.settingsDropdownWrap}>
       <button
         type="button"
-        className={styles.fontPickerTrigger}
+        className={styles.settingsDropdownTrigger}
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span style={{ fontFamily: fontStack(value) }}>{FONT_LABELS[value]}</span>
-        <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-          <path d="M5 8l5 5 5-5z" />
+        <span style={current?.style}>{current?.label}</span>
+        <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden>
+          <path
+            d="M2 4l4 4 4-4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </button>
       {open && (
-        <ul className={styles.fontPickerMenu} role="listbox">
-          {FONT_OPTIONS.map((f) => (
-            <li key={f}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={f === value}
-                className={styles.fontPickerOption}
-                style={{ fontFamily: fontStack(f) }}
-                onClick={() => { onChange(f); setOpen(false); }}
-              >
-                <span className={styles.fontPickerOptionLabel}>{FONT_LABELS[f]}</span>
-                {f === value && (
-                  <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-                    <path d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0z" />
-                  </svg>
-                )}
-              </button>
-            </li>
+        <div className={styles.settingsDropdownMenu} role="listbox">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              className={
+                styles.settingsDropdownOption +
+                (option.value === value ? " " + styles.settingsDropdownOptionActive : "")
+              }
+              style={option.style}
+              onClick={() => { onChange(option.value); setOpen(false); }}
+            >
+              {option.label}
+            </button>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
 }
+
+const FONT_SELECT_OPTIONS: DropdownOption<FontKey>[] = FONT_OPTIONS.map((font) => ({
+  value: font,
+  label: FONT_LABELS[font],
+  style: { fontFamily: fontStack(font) },
+}));
+
+const LANG_OPTIONS: DropdownOption<Locale>[] = [
+  { value: "en", label: "English" },
+  { value: "zh", label: "中文" },
+];
 
 export function GeneralSection() {
   const { t, locale, setLocale } = useTranslation();
@@ -107,11 +133,6 @@ export function GeneralSection() {
     setThemeState(next);
     applyTheme(next);
   }
-
-  const LANG_OPTIONS: { value: Locale; label: string }[] = [
-    { value: "en", label: "English" },
-    { value: "zh", label: "中文" },
-  ];
 
   return (
     <div className={styles.page}>
@@ -148,24 +169,22 @@ export function GeneralSection() {
             <div className={styles.row}>
               <div className={styles.label}>{t("general.font")}</div>
               <div className={styles.value}>
-                <FontPicker value={font} onChange={setFont} />
+                <SettingsDropdown
+                  value={font}
+                  options={FONT_SELECT_OPTIONS}
+                  onChange={setFont}
+                />
               </div>
             </div>
 
             <div className={styles.row}>
               <div className={styles.label}>{t("general.language")}</div>
               <div className={styles.value}>
-                <select
-                  className={styles.prefSelect}
+                <SettingsDropdown
                   value={locale}
-                  onChange={(e) => setLocale(e.target.value as Locale)}
-                >
-                  {LANG_OPTIONS.map((l) => (
-                    <option key={l.value} value={l.value}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
+                  options={LANG_OPTIONS}
+                  onChange={setLocale}
+                />
               </div>
             </div>
           </div>
