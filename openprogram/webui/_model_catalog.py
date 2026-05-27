@@ -213,6 +213,54 @@ _SETUP_HINTS: dict[str, str] = {
         "ChatGPT subscription, use the regular **OpenAI** provider instead\n"
         "of this one — they're separate billing paths."
     ),
+    "anthropic": (
+        "Anthropic API uses a static key issued from the Console:\n"
+        "\n"
+        "$ open https://console.anthropic.com/settings/keys\n"
+        "\n"
+        "Create a key, then either paste it into the field below or set\n"
+        "the env var `ANTHROPIC_API_KEY=sk-ant-...` and restart\n"
+        "`openprogram --web`. Either source works; the field takes\n"
+        "precedence when both are set.\n"
+        "\n"
+        "This is the metered pay-per-token path. If you have an\n"
+        "Anthropic Pro / Team subscription and want to route through\n"
+        "your existing Claude session instead, use the **Claude Code**\n"
+        "provider (Meridian proxy, no API key needed)."
+    ),
+    "gemini-subscription": (
+        "Gemini CLI reuses your Gemini Advanced / Workspace subscription\n"
+        "via Google Cloud Code Assist — no API key to paste.\n"
+        "\n"
+        "Install Google's `gemini` CLI and log in there once. OpenProgram\n"
+        "auto-detects ``~/.gemini/oauth_creds.json`` and refreshes via\n"
+        "the bundled refresh flow:\n"
+        "\n"
+        "$ npm install -g @google/gemini-cli\n"
+        "$ gemini\n"
+        "$ openprogram providers discover\n"
+        "$ openprogram providers adopt gemini_cli\n"
+        "\n"
+        "If you only want a bare Google AI Studio API key instead\n"
+        "(pay-per-token), use the **Google AI** provider — that one\n"
+        "takes `GOOGLE_GENERATIVE_AI_API_KEY` and skips the OAuth dance."
+    ),
+    "github-copilot": (
+        "GitHub Copilot uses your existing Copilot subscription's OAuth\n"
+        "token — no API key, no separate billing.\n"
+        "\n"
+        "Log in via the GitHub CLI once and OpenProgram will pick the\n"
+        "token up automatically:\n"
+        "\n"
+        "$ winget install GitHub.cli         # or: brew install gh\n"
+        "$ gh auth login --scopes copilot\n"
+        "$ openprogram providers discover\n"
+        "$ openprogram providers adopt github_copilot\n"
+        "\n"
+        "Subscription state is checked on every request — the moment\n"
+        "your Copilot trial / plan lapses the connectivity check goes\n"
+        "red here. Re-running `gh auth refresh` is enough to recover."
+    ),
 }
 
 
@@ -276,10 +324,13 @@ def list_providers() -> list[dict[str, Any]]:
         hint = _setup_hint(pid)
         if hint:
             entry["setup_hint"] = hint
-            # claude-code doesn't use an API key env — the proxy
-            # forwards via Claude Code's OAuth — so skip the API-key
-            # input UI for it.
-            entry["api_key_env"] = None
+            # Note: we no longer force ``api_key_env = None`` when a
+            # hint is present. That override was originally there for
+            # claude-code (whose Meridian proxy doesn't take an API
+            # key), but it also clobbered ``anthropic``'s hint — which
+            # IS API-key based and needs both the hint AND the paste
+            # field. The ``_ENV_API_KEYS`` dict already carries the
+            # correct null/non-null state per provider, so trust it.
         result.append(entry)
 
     # CLI-backed providers (not in registry)
