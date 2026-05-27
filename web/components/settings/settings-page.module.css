@@ -286,6 +286,35 @@
   color: var(--text-bright);
 }
 
+/* Native <select> styled to match the themeSwitcher pill height/look
+   — used for Font / Language pickers on /settings/general. Keeps the
+   row visually aligned with the appearance toggle above so all three
+   preference rows feel like siblings. */
+.prefSelect {
+  height: 30px;
+  padding: 0 28px 0 12px;
+  font-size: 14px;
+  font-family: var(--font-sans);
+  color: var(--text-bright);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='%23888'><path d='M5 8l5 5 5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.prefSelect:hover {
+  border-color: var(--accent-blue);
+}
+.prefSelect:focus {
+  border-color: var(--accent-blue);
+}
+
 /* `.input` — the API-key / base-URL fields are the shadcn <Input> now.
    `.btn` — settings action buttons are the shadcn <Button> now. */
 
