@@ -99,18 +99,9 @@ function ToolInlineTree({ call }: { call: ChatToolCall }) {
           ) : errored ? (
             <span style={{ color: "var(--accent-red)" }}>{"✗"}</span>
           ) : (
-            <span
-              style={{
-                color: "var(--accent-cyan)",
-                fontStyle: "italic",
-                fontWeight: 700,
-                fontFamily: "Georgia, 'Times New Roman', serif",
-              }}
-              title="function"
-            >
-              {"ƒ"}
-            </span>
-          )}{" "}
+            <span className="inline-tree-script" title="function">{"𝓕"}</span>
+          )}
+          {"  "}
           {text("Function call", "函数调用")}
         </span>
         <span className="inline-tree-actions">

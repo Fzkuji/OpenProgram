@@ -344,18 +344,9 @@ export function ExecutionDag({
               {"●"}
             </span>
           ) : (
-            <span
-              style={{
-                color: "var(--accent-cyan)",
-                fontStyle: "italic",
-                fontWeight: 700,
-                fontFamily: "Georgia, 'Times New Roman', serif",
-              }}
-              title="function"
-            >
-              {"ƒ"}
-            </span>
-          )}{" "}
+            <span className="inline-tree-script" title="function">{"𝓕"}</span>
+          )}
+          {"  "}
           {headerLabel ?? text("Execution DAG", "执行 DAG")}
         </span>
         <span className="inline-tree-actions">
