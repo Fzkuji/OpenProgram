@@ -85,7 +85,7 @@ def build_exec_dag(session_id: str, func_name: str,
             tn["node_type"] = "exec"
             inp = n.input
             if isinstance(inp, (list, dict)):
-                inp = json.dumps(inp, default=str)
+                inp = json.dumps(inp, default=str, ensure_ascii=False)
             tn["params"] = {"_content": str(inp or "")}
             tn["raw_reply"] = str(n.output or "")
         else:
@@ -94,7 +94,8 @@ def build_exec_dag(session_id: str, func_name: str,
                                 if k not in ("runtime", "callback")}
             out = n.output
             tn["output"] = (out if isinstance(out, str)
-                            else json.dumps(out, default=str))
+                            else json.dumps(out, default=str,
+                                            ensure_ascii=False))
         children = [_to_tnode(c)
                     for c in sorted(kids.get(n.id, []), key=lambda x: x.seq)]
         if children:

@@ -1693,6 +1693,32 @@
 .chat-stream-body > .inline-tree {
   margin: 10px 0 0;
 }
+/* Top-level RuntimeBlock — a message whose display === "runtime"
+ * (e.g. a fn-form spawn). Without a host bubble providing 36px chat
+ * column indent, the inline-tree would span full chat-area width.
+ * Wrap it in this margin-aware host so it aligns with chat text
+ * (avatar 28px + gap 8px + parent .message 24px padding = 60px). */
+.runtime-card-host {
+  margin: 20px 60px;
+}
+.runtime-card-host > div > .inline-tree {
+  margin: 0;
+}
+/* Truncate the inline-tree-header label so long ``fnName(params)``
+ * signatures don't shove the Retry / Copy JSON / collapse buttons
+ * off-row or out of view. The label span shrinks; the actions span
+ * is flex-shrink:0. */
+.inline-tree-header > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: inline-block;
+}
+.inline-tree-actions {
+  flex-shrink: 0;
+}
 /* Slot for Retry / attempt-nav inside the inline-tree header. */
 .inline-tree-actions .attempt-nav {
   display: inline-flex;

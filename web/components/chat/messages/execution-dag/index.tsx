@@ -32,6 +32,35 @@ import {
 import { RetryPanel } from "./retry-panel";
 
 
+/** Backend's `_to_tnode` historically called `json.dumps()` with the
+ *  default `ensure_ascii=True`, producing strings like
+ *  `'{"task": "\\u4f60..."}'` — so old persisted trees show raw
+ *  `\uXXXX` escapes instead of Chinese. New trees ship the dict
+ *  natively (or with `ensure_ascii=False`), so this helper is a
+ *  read-side compat for those old payloads.
+ *
+ *  Strategy: if the value is already an object, restringify it (JS
+ *  default doesn't escape non-ASCII). If it's a string that parses
+ *  as JSON, parse + restringify. Otherwise — last-resort regex sweep
+ *  to decode bare `\uXXXX` sequences embedded in plain text. */
+function decodeUnicodeEscapes(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  if (typeof v !== "string") return String(v);
+  if (!v.includes("\\u")) return v;
+  try {
+    const parsed = JSON.parse(v);
+    if (typeof parsed === "object" && parsed !== null) return JSON.stringify(parsed);
+    if (typeof parsed === "string") return parsed;
+  } catch {
+    /* not parseable JSON — fall through to regex sweep */
+  }
+  return v.replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
+}
+
+
 /* ---- node row ------------------------------------------------------ */
 
 interface RowCtx {
@@ -107,10 +136,7 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
     const outPart = execOut ? " ← " + truncate(execOut, 50) : "";
     preview = (inPart + outPart).trim();
   } else if (node.output != null) {
-    output =
-      typeof node.output === "string"
-        ? truncate(node.output, 80)
-        : truncate(JSON.stringify(node.output), 80);
+    output = truncate(decodeUnicodeEscapes(node.output), 80);
   }
 
   const canRetry =

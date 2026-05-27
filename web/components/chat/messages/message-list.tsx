@@ -53,7 +53,11 @@ function dispatch(msg: ChatMsg) {
   }
   if (msg.display === "runtime") {
     if (msg.role === "user") return null;
-    return <RuntimeBlock msg={msg} />;
+    return (
+      <div className="runtime-card-host">
+        <RuntimeBlock msg={msg} />
+      </div>
+    );
   }
   if (msg.role === "user") {
     return <UserBubble msg={msg} />;
