@@ -64,21 +64,36 @@ function _activeHeadId(sessionId: string | null | undefined): string {
  *  Returns its rendered content (the "[系统消息]..." prompt) so the
  *  attach card can surface it inline. Returns null when the task
  *  hasn't completed or the relationship isn't found. */
+function _findFollowupMsgId(
+  s: ReturnType<typeof useSessionStore.getState>,
+  sessionId: string | null,
+  attachMsgId: string,
+): string | null {
+  if (!sessionId) return null;
+  const order = s.messageOrder[sessionId] || [];
+  const myIdx = order.indexOf(attachMsgId);
+  if (myIdx < 0) return null;
+  for (let i = myIdx + 1; i < order.length; i++) {
+    const next = s.messagesById[order[i]];
+    if (!next) continue;
+    if (next.role === "user" && next.source === "task_followup") {
+      return next.id;
+    }
+  }
+  return null;
+}
+
+function useFollowupMsgId(attachMsgId: string): string | null {
+  const sessionId = useSessionStore((s) => s.currentSessionId);
+  return useSessionStore((s) => _findFollowupMsgId(s, sessionId, attachMsgId));
+}
+
 function useFollowupNotice(attachMsgId: string): string | null {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   return useSessionStore((s) => {
-    if (!sessionId) return null;
-    const order = s.messageOrder[sessionId] || [];
-    const myIdx = order.indexOf(attachMsgId);
-    if (myIdx < 0) return null;
-    for (let i = myIdx + 1; i < order.length; i++) {
-      const next = s.messagesById[order[i]];
-      if (!next) continue;
-      if (next.role === "user" && next.source === "task_followup") {
-        return next.content || null;
-      }
-    }
-    return null;
+    const id = _findFollowupMsgId(s, sessionId, attachMsgId);
+    if (!id) return null;
+    return s.messagesById[id]?.content || null;
   });
 }
 
@@ -87,6 +102,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const attach = msg.attach || {};
   const followupNotice = useFollowupNotice(msg.id);
+  const followupMsgId = useFollowupMsgId(msg.id);
   const targetSessionId = attach.session_id || "";
   const targetHead = attach.head_id || "";
   const label = (attach.label || "").trim();
@@ -299,7 +315,15 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           attach card so the card represents the full sub-task
           lifecycle: spawn → status → preview → auto-followup. */}
       {followupNotice ? (
-        <div className="attach-card-followup">
+        <div
+          className="attach-card-followup"
+          // The followup user msg has no chat bubble of its own
+          // (display=runtime). Tag this card section with its id so
+          // the history-graph visibility scan marks the DAG node
+          // visible while the card is in view — and crucially, lets
+          // it scroll out of view with the card.
+          data-msg-id={followupMsgId || undefined}
+        >
           <div className="attach-card-followup-label">自动 followup</div>
           <div className="attach-card-followup-body">{followupNotice}</div>
         </div>

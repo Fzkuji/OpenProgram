@@ -397,6 +397,57 @@ html, body {
   100% { clip-path: inset(0 100% 0 0); }
 }
 
+/* Sidebar conversation-row running indicator. Lives here (not in
+   sidebar.module.css) because Turbopack's CSS-module pass mangles the
+   ``animation: <name>`` value references — leaving them pointing at
+   hashed keyframe names that the global @keyframes blocks above don't
+   match. Keeping selector + animation reference together in plain CSS
+   sidesteps the mangling. Classes are applied via string literals in
+   sessions-list.tsx (not styles.convRunning). */
+.convRunning,
+.convFinishing {
+  position: relative;
+  isolation: isolate;
+}
+
+.convRunning::before,
+.convFinishing::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* Sit above the row's own background-color (bg-bg-hover) but below
+     the text/icons. Row has isolation:isolate so this z-index is
+     scoped to the row's stacking context. z-index:-1 used to put
+     the pseudo BEHIND the row bg, making the glow invisible whenever
+     the row was selected/hovered. */
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: linear-gradient(
+    100deg,
+    rgba(79,  140, 255, 0.28) 0%,
+    rgba(160, 107, 255, 0.32) 25%,
+    rgba(62,  207, 142, 0.28) 50%,
+    rgba(160, 107, 255, 0.32) 75%,
+    rgba(79,  140, 255, 0.28) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: repeat-x;
+  box-shadow:
+    inset 0 0 14px rgba(79,  140, 255, 0.22),
+    0 0 6px rgba(160, 107, 255, 0.20);
+}
+
+.convRunning::before {
+  animation:
+    convRunningFlow 2.6s linear infinite,
+    convRunningBreathe 1.8s ease-in-out infinite;
+}
+
+.convFinishing::before {
+  animation: convFinishingWipe 1.1s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
 /* Marching-ants flow for attach-reference edges. The negative
    stroke-dashoffset makes the dashes travel along the path in the
    draw direction (source → anchor), so the eye sees content moving

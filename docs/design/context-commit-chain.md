@@ -1,343 +1,185 @@
-# Session Memory: DAG + Context Commit
+# Session Memory: DAG + ContextCommit
 
-## 心智模型
+状态：当前准文档，按 git-backed SessionStore 和 `openprogram/context/commit/` 实现整理。
 
-**session memory = DAG + Context Commit**, 两层完全独立的存储:
+## 1. 当前口径
 
-```
-Layer 1: DAG (会话的真实历史)
-  - append-only, 不可变, 不被压缩动到
-  - 用户主动删整个 session 才会消失
+Session memory 由两层组成：
 
-Layer 2: Context Commit Chain (LLM 视角的上下文演化)
-  - 每个 commit = 某个时刻 LLM 看到的完整 context
-  - 一个 commit 一旦生成就不可变
-  - 时间序排列, 像 git commit log, 增量生成
-  - 老 commit 可以归档 / GC, 不影响 Layer 1
-```
+- DAG：会话真实历史，存 user / assistant / tool / runtime 节点，以及 branch / retry / attach / merge 的拓扑关系。
+- ContextCommit：某个 head 下 LLM 输入上下文的不可变记录，存压缩、老化、summary、attach 展开后的结果。
 
-类比:
-- DAG 是完整事件流 (全量, 永久)
-- Context Commit 是每个时刻 LLM 实际看到的版本 (压缩 / 替换 / 删减后)
+ContextCommit 以 JSON 文件形式存入 session-git 仓库。
 
-任何时刻看 "LLM 实际看到啥" = 读对应 commit, **不需要从 DAG 重算**。
+## 2. 存储实现
 
-## 1. DAG 节点存储 (Layer 1)
+实现文件：
 
-**Schema (现有, 不动)**:
+- `openprogram/context/commit/types.py`
+- `openprogram/context/commit/store.py`
+- `openprogram/context/commit/ensure.py`
+- `openprogram/context/commit/generator.py`
+- `openprogram/context/commit/views.py`
 
-```sql
-CREATE TABLE nodes (
-    id           TEXT PRIMARY KEY,
-    session_id   TEXT NOT NULL,
-    type         TEXT NOT NULL,        -- "user"/"assistant"/"tool"/"system"
-    predecessor  TEXT,                  -- conv edge (与 caller 互斥)
-    caller       TEXT,                  -- call edge
-    created_at   REAL NOT NULL,
-    seq          INTEGER NOT NULL,
-    data_json    TEXT NOT NULL          -- name/input/output/metadata
-);
+每个 session 是一个 git-backed repo。ContextCommit 文件写在：
+
+```text
+<session_repo>/context/commits/<commit_id>.json
 ```
 
-**约束**:
-- 节点写入后只 `metadata.status` 可改 (生命周期翻转), `output` 一经填好不动
-- 用户删 session 才 cascade delete, 单条永不主动删
-- conv-edge 和 call-edge 互斥, 同节点至多一条入边
+`openprogram/context/commit/store.py::init_schema()` 是 no-op，只保留给旧调用方兼容。
 
-## 2. Context Commit 存储 (Layer 2)
+当前没有单独的应用层 blob 去重表。重复文本的磁盘去重依赖 git object storage；ContextCommit JSON 自身仍保存 `ContextItem.rendered`。
 
-### 2.1 表结构
+## 3. ContextCommit 数据结构
 
-```sql
-CREATE TABLE context_commits (
-    id              TEXT PRIMARY KEY,    -- commit_<hex>
-    session_id      TEXT NOT NULL,
-    parent_id       TEXT,                -- 上一个 commit, NULL = 第一个
-    created_at      REAL NOT NULL,
-    head_node_id    TEXT NOT NULL,       -- 这 commit 对应 DAG 哪个 head
-    rules_version   TEXT NOT NULL,       -- 哪一版规则生成的
-    total_tokens    INTEGER NOT NULL,
-    items_json      TEXT NOT NULL,       -- list[ContextItem]
-    summary         TEXT NOT NULL DEFAULT ''  -- 这次变化的 1 行描述
-);
+`ContextCommit` 字段：
 
-CREATE INDEX idx_commits_session
-    ON context_commits(session_id, created_at DESC);
-CREATE INDEX idx_commits_parent
-    ON context_commits(parent_id);
+```python
+@dataclass
+class ContextCommit:
+    id: str
+    session_id: str
+    parent_id: Optional[str]
+    created_at: float
+    head_node_id: str
+    rules_version: str
+    total_tokens: int
+    items: list[ContextItem]
+    summary: str = ""
+    parent_ids: list[str] = field(default_factory=list)
 ```
 
-### 2.2 ContextItem
+`parent_id` 是兼容字段。普通 turn 的 `parent_ids` 通常只有一个 parent；merge turn 会写多父：
 
-一个 commit 是按渲染顺序排好的 ContextItem 列表:
+```text
+parent_ids = [target_previous_commit_id, peer_commit_id_1, peer_commit_id_2, ...]
+```
+
+## 4. ContextItem 数据结构
+
+`ContextItem` 字段：
 
 ```python
 @dataclass
 class ContextItem:
-    # ── 溯源 ───────────────────────────────────────
-    source_node_id: str          # 来自 DAG 哪个节点
-    role: str                    # "user"/"assistant"/"tool"/"summary"
-                                  #   role="summary" 是合成的, source_node_id 用
-                                  #   "sm_<hex>" 虚拟 id, 不在 DAG 里
-
-    # ── 当前呈现状态 ──────────────────────────────
-    state: Literal[
-        "full",        # 全文进 context
-        "aged",        # 替成语义 stub
-        "cleared",     # 替成固定占位符
-        "summarized",  # 已合进某个 summary item, 这条不渲染
-    ]
-    locked: bool                 # True = 状态已锁定, 后续规则跳过
-
-    # ── 渲染内容 ──────────────────────────────────
-    rendered: str                # state=full 时 = 原 output
-                                  # state=aged 时 = stub 字符串
-                                  # state=cleared 时 = 固定占位符
-                                  # state=summarized 时 = "" (不渲染)
-    tokens: int                  # rendered 的 token 估算
-
-    # ── 决策追溯 ──────────────────────────────────
-    state_set_at: str            # 这个 state 是在哪个 commit 第一次定的
-    reason: str                  # "new" / "tail_window" / "idle_60min" /
-                                  #  "summarized_into:sm_abc" 等
-    merged_into: Optional[str]   # state=summarized 时, 指向 summary item id
+    source_node_id: str
+    role: str
+    state: Literal["full", "aged", "cleared", "summarized", "summary"]
+    locked: bool
+    rendered: str
+    tokens: int
+    state_set_at: str
+    reason: str
+    merged_into: Optional[str]
+    is_anchor: bool
+    anchor_for_summary: Optional[str]
+    attached_from: Optional[str]
 ```
 
-**没有用户 pin 机制**。"必须永久保留" 的内容走 `memory/core.md` (always-on 系统提示)
-或 `memory/wiki` (按主题召回), 不在 session 级 / 消息级解决。
+状态含义：
 
-## 3. Commit 生成 (增量, 不从 DAG 重算)
-
-### 3.1 核心原则
-
-**每个新 commit 都是从上一个 commit 复制过来 + 加 delta**, 不重新扫 DAG。
-规则只动 **unlocked** 的 item, 已经决定状态的 item (locked=True) 永不重判。
-
-每轮真实工作量: 1 次 DB 读 + 3-5 条 item 改 state + 1 次 DB 写。
-不是 O(全部历史), 是 O(delta)。
-
-### 3.2 生成算法
-
-```python
-def generate_commit(
-    session_id: str,
-    parent_commit_id: Optional[str],
-    new_nodes: list[Call],        # 这一轮新增的 DAG 节点
-    head_id: str,
-    budget: TokenBudget,
-) -> ContextCommit:
-
-    # Step 1: 起点 = 上一 commit 的 items 复制一份 (没有就空)
-    if parent_commit_id:
-        items = list(load_commit(parent_commit_id).items)
-    else:
-        items = []   # 新 session 或冷启动
-
-    # Step 2: 把新节点追加为 state="full" 的新 items (locked=False)
-    for node in new_nodes:
-        if node.role in ("user", "assistant", "tool"):
-            items.append(ContextItem(
-                source_node_id=node.id,
-                role=node.role,
-                state="full",
-                locked=False,
-                rendered=node.output or "",
-                tokens=estimate_tokens(node.output),
-                state_set_at=this_commit_id,
-                reason="new",
-                merged_into=None,
-            ))
-
-    # Step 3: 应用压缩规则 pipeline
-    # 规则只看 locked=False 的 item, 已 lock 的跳过
-    apply_compaction_rules(items, budget)
-
-    # Step 4: 计算总 token, 存 commit
-    total = sum(i.tokens for i in items)
-    commit = ContextCommit(
-        id=new_id("commit"),
-        session_id=session_id,
-        parent_id=parent_commit_id,
-        created_at=now(),
-        head_node_id=head_id,
-        rules_version=CURRENT_RULES,
-        total_tokens=total,
-        items=items,
-        summary=describe_changes(items, parent_commit_id),
-    )
-    save_commit(commit)
-    return commit
-```
-
-### 3.3 压缩规则 pipeline
-
-```python
-def apply_compaction_rules(items: list[ContextItem], budget):
-    # 顺序固定. 每个规则:
-    #   - 只看 locked=False 的 item
-    #   - 满足条件就改 state + 设 locked=True
-    #   - 已 locked 的 item 永不改
-    
-    rule_dedup_tool_results(items)        # 同 tool+args 老的标 aged_dup
-    rule_tool_aging(items, tail_turns=3)  # 超 tail 的 tool result → aged
-    rule_idle_clear(items, gap_min=60)    # 60min idle 老 tool → cleared
-    
-    if total_tokens(items) > budget.summarize_threshold:
-        rule_summarize_old(items, budget) # 跑 LLM 摘要, 生成 summary item
-
-# 状态转移规则:
-# full → aged / cleared / summarized   ✓
-# aged → cleared                       ✓ (可继续严)
-# cleared / summarized → 任何          ✗ (已锁定)
-# 任何 → full                          ✗ (不能回头)
-```
-
-每个规则的工作集只是少数 unlocked item。tail_turns=3 时:
-- 上 commit 已 aged 的 70 条 → locked, 跳过
-- 新加的 3-5 条 (state=full, unlocked)
-- 边界移动后落出 tail 的 1-3 条 (state=full, unlocked)
-→ 实际 check 8-10 条, 不是全量。
-
-### 3.4 summary item 怎么生成
-
-`rule_summarize_old` 触发时:
-1. 挑最老一段连续 items (比如最老 5 条 user/asst + 它们的 tool)
-2. 跑 LLM 生成 summary 文本
-3. 把这些 item 标 state="summarized" + locked=True + merged_into="sm_xxx"
-4. 在它们位置插入新 ContextItem(role="summary", source_node_id="sm_xxx",
-   state="full", rendered=summary 文本)
-5. summary item 不写 DAG —— 只活在 commit 里, source_node_id 是虚拟的
-
-下一次再触发 summarize 时, summary item 本身可以被合进更大的 summary 里
-(再合一层)。彻底解决了之前 `summary_*` / `k_*` 污染 DAG 的问题。
-
-## 4. 任意时刻 LLM 看到啥
-
-### 4.1 当前 turn 发给 LLM
-
-```python
-def get_llm_messages(session_id):
-    commit = load_latest_commit(session_id)
-    return [
-        render_to_provider_message(item)
-        for item in commit.items
-        if item.state != "summarized"  # 已合进 summary, 跳过
-    ]
-```
-
-复杂度: 1 次 DB 读 + 内存映射, 无计算。
-
-### 4.2 回溯任意历史时刻
-
-```python
-def get_context_at(session_id, target_time):
-    commit = find_commit_before(session_id, target_time)
-    return commit.items  # 那时 LLM 看到的
-```
-
-## 5. Retry / 分支
-
-DAG 已经原生支持 (predecessor 多个 conv-child)。Commit 链对应 fork:
-
-```
-DAG:                  Context Commit:
-
-user1                 commit_1 ← commit_2 ← commit_3a (主线)
-  |                                  ↖
-  asst1                                commit_3b (retry 分支)
-  ├── user2a (主线)
-  └── user2b (retry)
-        |
-        asst2b
-```
-
-用户在 user2 处 retry 走第二条 → commit_3b.parent_id = commit_2 (跟主线同 fork 点)。
-
-## 6. 存储成本控制
-
-100 turn × 100 item/commit × ~500 字节 = 5 MB/commit, 100 commit = 500 MB。
-不可接受, 必须 dedup。
-
-### 内容寻址 blob
-
-ContextItem.rendered 抽到独立表:
-
-```sql
-CREATE TABLE context_blobs (
-    hash         TEXT PRIMARY KEY,    -- SHA1(content)
-    content      TEXT NOT NULL,
-    refcount     INTEGER NOT NULL DEFAULT 0
-);
-```
-
-ContextItem 只存 rendered_hash, 不存 rendered。
-
-90% 的 item 在相邻 commit 里 rendered 没变 (老节点 state 锁了, 内容不变), 同
-hash 共享 blob。实际 blob 数 ≈ DAG 节点数 + summary 节点数, 跟 commit 数无关。
-
-100 commit × 100 item 列表, 真实 blob 大概 200-300 行, 总存储 < 10 MB。
-
-### GC 策略
-
-- 默认保留最近 50 commit 全量 items_json
-- 老 commit 转 "metadata-only" (留 summary + total_tokens, items_json 清空)
-- 用户能看的: 最近 50 轮任意回溯, 更老的只能看 commit summary
-
-blob 表的 refcount 维护:
-- 新 commit 引用一个 hash → refcount +1
-- 老 commit GC 掉 → 它引用的 hash refcount -1, 归零的 blob 删
-
-## 7. 跟现状对比 + 迁移
-
-### 现状问题
-```
-context/
-├── microcompact.py          每轮 mutate history dict
-├── summarize.py             写 summary_*/k_* 节点污染 DAG
-├── tool_aging/              每轮 mutate history dict
-└── references.py            只 microcompact 内部用
-
-问题:
-- 每轮重算, 不增量
-- 没有"时刻状态"概念, 查不到 5 分钟前 LLM 看到啥
-- summary 污染 DAG
-- 多模块互相不知道对方做了啥
-```
-
-### 新结构
-```
-context/
-├── commit.py                生成 / 加载 commit 的入口
-├── rules/                   压缩规则模块, 每个一个文件
-│   ├── tool_aging.py
-│   ├── microcompact.py
-│   ├── summarize.py
-│   └── dedup.py
-├── blob_store.py            内容寻址存储
-└── views.py                 commit → provider Message 翻译
-```
-
-### 迁移
-- 现 session 没 commit, 第一次跑时从 DAG 当前 head 倒推生成 commit_0
-- 老的 `summary_*` / `k_*` DAG 节点保留但不渲染, 也不再新增
-- 新生成 summary 全走 commit, 不写 DAG
-
-## 8. 实施 Phase
-
-| Phase | 工作 | 时长 |
+| state | 含义 | 渲染 |
 |---|---|---|
-| 1 | commit 表 + 生成器 + LLM 改读最新 commit | 1-2 天 |
-| 2 | UI commit timeline (right-dock 第三 tab) | 1 天 |
-| 3 | blob dedup + GC | 1 天 |
-| 4 | 把现有 microcompact / summarize / tool_aging 改造成 rules/ 下的规则 | 1 天 |
-| 5+ | 后续补规则 (per-tool source cap / thinking_clean 等) | 按需 |
+| `full` | 原内容进入上下文 | 渲染 |
+| `aged` | 工具结果被替换为较短文本 | 渲染 |
+| `cleared` | 老工具结果被清空为固定占位符 | 渲染 |
+| `summarized` | 已经合入 summary item | 不渲染 |
+| `summary` | 合成 summary item | 渲染 |
 
-## 9. 不变式
+`locked=True` 的 item 不再被规则修改。`is_anchor=True` 表示 summary 过程中保留的高价值原文 item。`attached_from` 表示该 item 来自某个 attach pointer 展开的 source ContextCommit。
 
-1. **DAG 永不被压缩动到** —— 所有压缩操作产生新 commit, 不改 DAG
-2. **Commit 一旦生成就不可变** —— 升级规则 → 下个 commit 用新规则, 老 commit 保持原样
-3. **state 不可回退** —— full → aged 可以, aged → full 不行
-4. **locked item 永不被规则改** —— 保证决策一次性
-5. **summary item 不写 DAG** —— 只活在 commit 里
-6. **没有强制保留机制** —— 没有 pin。需要保留就走 core.md / wiki / summarize
-7. **同份 rendered 只存一次** —— blob hash dedup
+## 5. 生成流程
+
+入口是 `ensure_latest_commit()`：
+
+1. 通过 `load_commit_for_head(store, session_id, head_node_id)` 找当前 branch head 祖先链上最近的 ContextCommit。
+2. 如果找到的 commit 已经对应当前 head，直接返回。
+3. 如果当前 head 之后有新 DAG 节点，调用 `generate_commit()`。
+4. 如果当前 branch 没有 commit，把当前 branch history 作为 cold start 输入生成第一份 commit。
+
+`generate_commit()` 做四件事：
+
+1. 从 parent commit 复制已有 items。
+2. 把本轮新增 DAG 节点转成 `ContextItem(state="full")`。
+3. 运行 `RULE_PIPELINE`。
+4. 计算 `total_tokens` 并保存新的 ContextCommit JSON。
+
+## 6. 规则流水线
+
+当前规则从 `openprogram/context/rules/__init__.py::RULE_PIPELINE` 引入。规则的共同约束：
+
+- 只修改未锁定 item。
+- 不回写 DAG 节点内容。
+- summary item 只存在于 ContextCommit 中，`source_node_id` 使用 `sm_<hex>`。
+- `state="summarized"` 的 item 不再渲染给 provider。
+
+当前实现还包含 anchor 机制：summary 时可保留部分原文 item，让 summary 与少量原文同时进入上下文。
+
+## 7. Provider 渲染
+
+`render_commit(commit)` 将 ContextCommit 转为 provider messages：
+
+- `summarized` item 跳过。
+- `summary` item 渲染为 assistant 文本，并加 `[Summary]` 前缀。
+- `user` item 渲染为 user message。
+- `assistant` item 渲染为 assistant message。
+- `tool` item 降级为 user 文本消息，避免缺少 provider tool call 配对信息时触发协议错误。
+
+## 8. Attach
+
+Attach pointer 是 DAG 中的 `function="attach"` 节点。它的 metadata 当前使用以下字段：
+
+```json
+{
+  "attach": {
+    "session_id": "...",
+    "head_id": "...",
+    "label": "...",
+    "manual": true,
+    "source_commit_id": "..."
+  }
+}
+```
+
+生成 ContextCommit 时，generator 会读取 `source_commit_id`：
+
+- 如果 source commit 可加载，展开 source commit 的 items。
+- 展开结果用 open marker、内容 item、close marker 包住。
+- 每条展开 item 写 `attached_from = source_commit_id`。
+- 如果 parent commit 中已经有同一个 `attached_from`，本次 attach pointer 不再重复展开。
+- 如果 source commit 不可加载，走 legacy fallback，生成单条 user-role item。
+
+Merge 的 base peer 会在临时 attach pointer 中写 `is_base=True`。generator 看到后把该 attach block 的 item 设为 locked，避免 base 内容在 merge 输入阶段被压缩规则移除。
+
+## 9. Merge
+
+Merge 通过 `openprogram/agent/_merge.py::process_merge_turn()` 实现：
+
+1. 解析 peers，每个 peer 是 `(session_id, head_id)`。
+2. 为每个 peer 找到对应 ContextCommit。
+3. 在 target session 当前 head 上写临时 attach pointer。
+4. 调用 `process_user_turn()` 生成一次新的 assistant reply。
+5. 保存 multi-parent ContextCommit。
+6. 将被合并的 peer head 标记为 merged，使 Branches panel 不再把它们作为独立可见分支列出。
+
+当前已实现 multi-parent ContextCommit；DAG history graph 对 merge reference edge 的展示仍需另行对齐。
+
+## 10. UI
+
+右侧栏当前使用 `ContextCommitTimeline`：
+
+- 前端组件：`web/components/right-sidebar/context-commit-timeline/`
+- WS action：`openprogram/webui/ws_actions/context_commits.py`
+- 注册入口：`openprogram/webui/server.py::_build_ws_action_registry()`
+
+## 11. 当前不变式
+
+1. DAG 是会话历史来源；ContextCommit 是 LLM 输入上下文记录。
+2. ContextCommit 保存后不回写修改；新规则只影响后续 commit。
+3. ContextItem 的压缩状态不回退到更完整的状态。
+4. `locked=True` 的 item 不被规则修改。
+5. summary item 不写 DAG。
+6. attach 展开通过 `attached_from` 去重。
+7. merge 是当前唯一会写多父 ContextCommit 的常规路径。
+8. 当前存储是 git-backed JSON 文件，不是 SQLite schema。

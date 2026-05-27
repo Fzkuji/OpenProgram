@@ -36,6 +36,12 @@ import {
   _shapeTypeFromTag,
   _svg,
 } from "./history/shapes";
+import {
+  ensureTooltip as _ensureTooltip,
+  hideTooltip as _hideTooltip,
+  resetTooltip as _resetTooltip,
+  showTooltip as _showTooltip,
+} from "./history/tooltip";
 
 let _currentHead: string | null = null;
 let _contextSet: Record<string, boolean> | null = null;
@@ -54,7 +60,15 @@ let _internalSet: Record<string, boolean> = Object.create(null);
 // lights up whenever its owner turn is on screen — internal nodes
 // have no chat bubble of their own to drive `_recomputeVisibility`.
 let _internalOwner: Record<string, string> = Object.create(null);
-let _tooltip: HTMLDivElement | null = null;
+// node id → conv parent id (parent_id edge in the DAG). Lets the
+// visibility scan light up a turn even when its own bubble is
+// suppressed in chat: a ``display=runtime`` user command has its
+// content rolled into the assistant's runtime block, so the chat
+// only carries the reply's ``data-msg-id``; the user turn the
+// runtime block belongs to (and every internal sub-call that
+// chains back to it as its owner) would otherwise miss the seed.
+let _parentOf: Record<string, string> = Object.create(null);
+// _tooltip lives in ./history/tooltip.ts now.
 let _lastSignature: string | null = null;
 let _leafOfNode: Record<string, string> = Object.create(null);
 let _collapsed: Record<string, boolean> = Object.create(null);
@@ -129,6 +143,14 @@ function _mergeRuns(
   const runNode: Record<string, boolean> = Object.create(null);
   const mergeTarget: Record<string, string> = Object.create(null);
   const internalOf: Record<string, string> = Object.create(null);
+  // Tier offset to subtract from each internal node's ``_tier`` so the
+  // surviving sub-call cluster's leftmost column sits exactly one
+  // ``COL_W`` to the right of its visible run-node (its caller chain
+  // collapsed when the tool wrapper got merged away). Without this
+  // the cluster keeps the removed tool's tier and ends up offset by
+  // the full call-stack depth — 2 COL_W instead of 1 for a single
+  // wrapper, more for nested @agentic_function calls.
+  const tierShift: Record<string, number> = Object.create(null);
   Object.keys(kidsOf).forEach((pid) => {
     const kids = kidsOf[pid];
     const tools = kids.filter((k) => k.role === "tool");
@@ -145,11 +167,15 @@ function _mergeRuns(
       removeIds[t.id] = true;
       mergeTarget[t.id] = k.id;
       runNode[k.id] = true;
+      const shift =
+        (typeof t._tier === "number" ? t._tier : 0)
+        - (typeof k._tier === "number" ? k._tier : 0);
       const stack = (kidsOf[t.id] || []).slice();
       while (stack.length) {
         const ic = stack.pop()!;
         if (ic.id in internalOf) continue;
         internalOf[ic.id] = k.id;
+        if (shift > 0) tierShift[ic.id] = shift;
         (kidsOf[ic.id] || []).forEach((g) => stack.push(g));
       }
     });
@@ -181,6 +207,11 @@ function _mergeRuns(
     if (m.id in internalOf) {
       nm = nm || Object.assign({}, m);
       nm._internal = true;
+      const sh = tierShift[m.id];
+      if (sh) {
+        const curT = typeof nm._tier === "number" ? nm._tier : 0;
+        nm._tier = Math.max(0, curT - sh);
+      }
     }
     if (runNode[m.id]) {
       nm = nm || Object.assign({}, m);
@@ -457,40 +488,7 @@ function _assignLanes(
 // SVG primitives, shape helpers, branch colour — see ./history/shapes.
 
 
-function _ensureTooltip(body: HTMLElement): HTMLDivElement {
-  if (_tooltip && _tooltip.parentElement === body) return _tooltip;
-  _tooltip = document.createElement("div");
-  _tooltip.className = "history-tooltip";
-  body.appendChild(_tooltip);
-  return _tooltip;
-}
-
-function _showTooltip(body: HTMLElement, node: GNode, x: number, y: number): void {
-  const tip = _ensureTooltip(body);
-  const role =
-    node.display === "runtime"
-      ? "runtime · " + (node.function || "")
-      : node.role || "?";
-  tip.innerHTML = "";
-  const r = document.createElement("div");
-  r.className = "history-tooltip-role";
-  r.textContent = role;
-  tip.appendChild(r);
-  const p = document.createElement("div");
-  p.textContent = node.preview || "(empty)";
-  tip.appendChild(p);
-  const bw = body.clientWidth;
-  tip.classList.add("visible");
-  const tw = tip.offsetWidth;
-  let left = x + 14;
-  if (left + tw > bw - 6) left = Math.max(6, x - 14 - tw);
-  tip.style.left = left + "px";
-  tip.style.top = Math.max(6, y - 10) + "px";
-}
-
-function _hideTooltip(): void {
-  if (_tooltip) _tooltip.classList.remove("visible");
-}
+// Tooltip rendering / lifecycle moved to ./history/tooltip.ts.
 
 function render(graphIn: GNode[], headIdIn: string | null): void {
   let graph = graphIn;
@@ -532,7 +530,7 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     empty.className = "history-empty";
     empty.textContent = "No messages yet.";
     body.replaceChildren(empty);
-    _tooltip = null;
+    _resetTooltip();
     _leafOfNode = Object.create(null);
     return;
   }
@@ -583,8 +581,35 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
       }
     }
   });
+  // Function-internal blanket: ANY node with a non-empty ``caller``
+  // (the DAG's separate "call" edge — set by the @agentic_function
+  // decorator on every nested LLM / code call) is internal, full
+  // stop. The tool-role / _runNode walks above catch the legacy chat
+  // tool clusters; this catches sub-call LLM rows that those walks
+  // miss. Without it a dblclick on a gui_step LLM node tries to
+  // checkout into the function's internal exec subtree and the chat
+  // re-renders with mid-execution garbage.
+  Object.keys(tree.byId).forEach((nid) => {
+    const n = tree.byId[nid];
+    const c = (n as { caller?: string; called_by?: string }).caller
+      || (n as { called_by?: string }).called_by;
+    if (c) {
+      internalSet[nid] = true;
+      if (!internalOwner[nid]) internalOwner[nid] = c;
+    }
+  });
   _internalSet = internalSet;
   _internalOwner = internalOwner;
+  // Build parent-of map from the DAG tree's conv edges so the
+  // visibility scan can walk up parent_id from a visible bubble to
+  // mark its (chat-hidden) ancestor turns. Cheap rebuild — runs once
+  // per render.
+  const parentOf: Record<string, string> = Object.create(null);
+  Object.keys(tree.byId).forEach((nid) => {
+    const pid = (tree.byId[nid] as { parent_id?: string }).parent_id;
+    if (pid) parentOf[nid] = pid;
+  });
+  _parentOf = parentOf;
 
   const laneArea = PAD_X + COL_W * Math.max(lanes.laneCount - 1, 0);
   // Tool / nested-call sub-forks add a horizontal offset (see
@@ -628,8 +653,11 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     //    │     └── sub-LLM (t=2) ← further right
     //    │
     //   user (t=0)               ← back on main column
+    // Strict grid: every node sits at an integer (lane, row) cell.
+    // ``_tier`` is rolled into ``_lane`` upstream so we don't apply a
+    // fractional offset here — see ``lane.py``'s sub-call handling.
     const tier = typeof n._tier === "number" ? n._tier : 0;
-    const tierOff = tier <= 0 ? 0 : COL_W * 0.7 + (tier - 1) * COL_W * 0.5;
+    const tierOff = tier * COL_W;
     return {
       x: PAD_X + (n._lane || 0) * COL_W + tierOff,
       y: PAD_Y + (n._depth || 0) * ROW_H,
@@ -653,20 +681,45 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     const c = pos(node);
     const color = _branchColor(node, stableLeafOfNode);
     const onHead = headAncestors[id] && headAncestors[conv_parent_id];
-    edgeG.appendChild(
-      _svg("path", {
-        d: _edgePath(p.x, p.y, c.x, c.y),
-        stroke: color,
-        "stroke-width": onHead ? 2 : 1.6,
-        fill: "none",
-        "stroke-linecap": "round",
-        opacity: onHead ? 1 : 0.85,
-        class:
-          "history-edge" +
-          (onHead ? " on-head" : "") +
-          (_contextSet && !_contextSet[id] ? " out-of-context" : ""),
-      }),
-    );
+    const group = _svg("g", {
+      class:
+        "history-edge-group"
+        + (onHead ? " on-head" : "")
+        + (_contextSet && !_contextSet[id] ? " out-of-context" : ""),
+      "data-target-id": id,
+    });
+    // Wide invisible hit-area underneath the visible stroke — gives
+    // a generous double-click target without making the line look
+    // fat. ``pointer-events: stroke`` so the cursor reads the path
+    // shape (not the bounding box). Bind dblclick directly so we
+    // don't depend on document-level event bubbling working through
+    // every parent (some browsers stop bubbling at SVG roots when
+    // the originating element has pointer-events: none siblings).
+    const hit = _svg("path", {
+      d: _edgePath(p.x, p.y, c.x, c.y),
+      stroke: "transparent",
+      "stroke-width": 14,
+      fill: "none",
+      "pointer-events": "stroke",
+      class: "history-edge-hit",
+    });
+    (hit as SVGGraphicsElement).style.cursor = "pointer";
+    hit.addEventListener("dblclick", (ev) => {
+      ev.stopPropagation();
+      _onEdgeDblclick(id);
+    });
+    group.appendChild(hit);
+    group.appendChild(_svg("path", {
+      d: _edgePath(p.x, p.y, c.x, c.y),
+      stroke: color,
+      "stroke-width": onHead ? 2 : 1.6,
+      fill: "none",
+      "stroke-linecap": "round",
+      opacity: onHead ? 1 : 0.85,
+      "pointer-events": "none",
+      class: "history-edge",
+    }));
+    edgeG.appendChild(group);
   });
 
   // Attach-reference edges: dashed line from the source branch tip
@@ -719,6 +772,23 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     // no visible "merge back" line. The dashed stroke + marching-ants
     // animation is exactly what conveys "this branch flows back into
     // the anchor"; without it the figure reads as two unrelated lanes.
+    // Hit-area FIRST (so the visible edge is its later sibling and
+    // ``hit:hover ~ visible`` CSS works).
+    const ahit = _svg("path", {
+      d: _edgePath(srcPos.x, srcPos.y, anchorPos.x, anchorPos.y),
+      stroke: "transparent",
+      "stroke-width": 14,
+      fill: "none",
+      "pointer-events": "stroke",
+      "data-target-id": ref,
+      class: "history-edge-hit attach-edge-hit",
+    });
+    (ahit as SVGGraphicsElement).style.cursor = "pointer";
+    ahit.addEventListener("dblclick", (ev) => {
+      ev.stopPropagation();
+      _onEdgeDblclick(ref);
+    });
+    edgeG.appendChild(ahit);
     edgeG.appendChild(
       _svg("path", {
         d: _edgePath(srcPos.x, srcPos.y, anchorPos.x, anchorPos.y),
@@ -728,11 +798,88 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
         "stroke-linecap": "round",
         "stroke-dasharray": "4 4",
         opacity: 0.9,
+        "pointer-events": "none",
         class: "history-edge attach-edge",
       }),
     );
     // The attach-pointer node itself is the landing marker now — no
     // separate dot needed.
+  });
+
+  // Spawn edges — a function_call(task) on the caller's lane
+  // creates a new branch starting at a sub_user_msg (source=agent_spawn).
+  // Without a visible edge from the task call to that orphan root,
+  // the sub-branch looks like it appeared out of nowhere. Pair them
+  // up via ``attach_ref`` (which already points at the sub-branch
+  // tip) — walk parent_id back to the conv root and draw a call
+  // edge from the task node to that root.
+  Object.keys(tree.byId).forEach((id) => {
+    const taskNode = tree.byId[id];
+    if (taskNode.role !== "tool" || taskNode.function !== "task") return;
+    // Find the attach pointer that shares this task's caller — its
+    // attach_ref is the sub-branch tip we want to walk back from.
+    const callerId = taskNode.caller || taskNode.called_by || "";
+    if (!callerId) return;
+    let subTipId = "";
+    for (const k of Object.keys(tree.byId)) {
+      const n = tree.byId[k];
+      if (n.function !== "attach") continue;
+      const ac = n.caller || n.called_by || "";
+      const ap = n.parent_id || "";
+      if (ac === callerId || ap === callerId) {
+        subTipId = String(n.attach_ref || "");
+        break;
+      }
+    }
+    if (!subTipId || !tree.byId[subTipId]) return;
+    // Walk parent_id to the conv root of the sub-branch.
+    let cur: string | undefined = subTipId;
+    const seen: Record<string, boolean> = Object.create(null);
+    while (cur && !seen[cur]) {
+      seen[cur] = true;
+      const n = tree.byId[cur];
+      const p = n && n.parent_id;
+      if (!p || !tree.byId[p]) break;
+      cur = p;
+    }
+    const subRoot = cur && tree.byId[cur];
+    if (!subRoot) return;
+    const srcPos = pos(taskNode);
+    const dstPos = pos(subRoot);
+    // Spawn edges have their own visual identity — distinct from
+    // both the solid sequence/call edges and the marching-ants
+    // reference edge. Use a long dot-dash pattern in a neutral
+    // grey so the eye reads it as a "spawned from here" marker,
+    // not a regular conv link.
+    const shit = _svg("path", {
+      d: _edgePath(srcPos.x, srcPos.y, dstPos.x, dstPos.y),
+      stroke: "transparent",
+      "stroke-width": 14,
+      fill: "none",
+      "pointer-events": "stroke",
+      "data-target-id": subRoot.id,
+      class: "history-edge-hit spawn-edge-hit",
+    });
+    (shit as SVGGraphicsElement).style.cursor = "pointer";
+    const subRootId = subRoot.id;
+    shit.addEventListener("dblclick", (ev) => {
+      ev.stopPropagation();
+      _onEdgeDblclick(subRootId);
+    });
+    edgeG.appendChild(shit);
+    edgeG.appendChild(
+      _svg("path", {
+        d: _edgePath(srcPos.x, srcPos.y, dstPos.x, dstPos.y),
+        stroke: "var(--text-muted, #8b8b8b)",
+        "stroke-width": 1.2,
+        fill: "none",
+        "stroke-linecap": "round",
+        "stroke-dasharray": "1 4",
+        opacity: 0.8,
+        "pointer-events": "none",
+        class: "history-edge spawn-edge",
+      }),
+    );
   });
 
   Object.keys(tree.byId).forEach((id) => {
@@ -743,13 +890,23 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
     const color = _branchColor(node, stableLeafOfNode);
     const isCollapsible = cinfo.isCollapsible(node);
     const isFolded = isCollapsible && !!_collapsed[id];
+    // Branch-op function_calls (task / attach / merge) are pointers
+    // to other branches — they never participate in the LLM context
+    // window the same way regular turns do, so dimming them via
+    // out-of-context misrepresents their state. Force them to read
+    // as normal (in-context) regardless of what the context engine
+    // says, so task / attach / merge always look identical.
+    const isBranchOp = node.function === "task"
+      || node.function === "attach"
+      || node.function === "merge";
+    const oocFlag = _contextSet && !_contextSet[id] && !isBranchOp;
     const g = _svg("g", {
       class:
         "history-node" +
         (isHead ? " is-head" : "") +
         (onHead ? "" : " off-head") +
         (isCollapsible ? " is-collapsible" : "") +
-        (_contextSet && !_contextSet[id] ? " out-of-context" : ""),
+        (oocFlag ? " out-of-context" : ""),
       transform: "translate(" + p.x + "," + p.y + ")",
       "data-msg-id": id,
       "data-collapsible": isCollapsible ? "1" : "0",
@@ -757,8 +914,11 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
       "data-internal": internalSet[id] ? "1" : "0",
       "data-owner": internalOwner[id] || "",
     });
+    // Hit radius matches edge hit-area half-width (14px stroke / 2 = 7),
+    // so node and edge hover triggers feel the same — nothing fires
+    // until the cursor is within the cell's own footprint.
     const hit = _svg("circle", {
-      r: "14",
+      r: "7",
       fill: "transparent",
       "pointer-events": "all",
     });
@@ -843,7 +1003,7 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   })();
 
   body.replaceChildren(svg);
-  _tooltip = null;
+  _resetTooltip();
   _visibleIds = Object.create(null);
 
   _wireChatScrollSync();
@@ -857,22 +1017,36 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   const bodyAny = body as any;
   if (!bodyAny._historyHoverWired) {
     bodyAny._historyHoverWired = true;
-    body.addEventListener("mousemove", (e: MouseEvent) => {
+    // Visibility tracks node-hover only. Use mouseover/mouseout
+    // (which bubble) so we react to entering/leaving SVG <g>
+    // elements directly — not to mouse movement within the panel.
+    // The tooltip itself has pointer-events: none so the cursor
+    // never "lands" on it.
+    let _activeNode: any = null;
+    body.addEventListener("mouseover", (e: MouseEvent) => {
       const tgt = e.target as HTMLElement;
       const g = tgt.closest && (tgt.closest(".history-node") as any);
-      if (!g || !g._nodeData) {
-        _hideTooltip();
-        return;
-      }
-      const rect = body.getBoundingClientRect();
-      _showTooltip(
-        body,
-        g._nodeData,
-        e.clientX - rect.left + body.scrollLeft,
-        e.clientY - rect.top + body.scrollTop,
-      );
+      if (!g || !g._nodeData) return;
+      if (g === _activeNode) return;
+      _activeNode = g;
+      _showTooltip(body, g._nodeData, g.getBoundingClientRect());
     });
-    body.addEventListener("mouseleave", _hideTooltip);
+    body.addEventListener("mouseout", (e: MouseEvent) => {
+      const tgt = e.target as HTMLElement;
+      const g = tgt.closest && (tgt.closest(".history-node") as any);
+      if (!g) return;
+      const rel = e.relatedTarget as HTMLElement | null;
+      // Still inside the same node group? Don't hide.
+      if (rel && rel.closest && rel.closest(".history-node") === g) return;
+      if (_activeNode === g) {
+        _activeNode = null;
+        _hideTooltip();
+      }
+    });
+    body.addEventListener("mouseleave", () => {
+      _activeNode = null;
+      _hideTooltip();
+    });
   }
 }
 
@@ -999,6 +1173,25 @@ function _recomputeVisibility(): void {
       if (single) newSet[single] = true;
     }
   }
+  // Walk up the conv parent_id chain from every visible bubble so
+  // turns whose chat row is suppressed (e.g. a ``display=runtime``
+  // user command rolled into the assistant's runtime block) still
+  // light up. Without this seeding, every internal node owner
+  // chain dead-ends at a turn id that isn't in newSet → the whole
+  // run subtree stays grey while the user is visibly viewing it.
+  {
+    const seeds = Object.keys(newSet);
+    for (let si = 0; si < seeds.length; si++) {
+      let cur: string | undefined = seeds[si];
+      let hops = 0;
+      while (cur && _parentOf[cur] && hops < 256) {
+        cur = _parentOf[cur];
+        if (newSet[cur]) break;
+        newSet[cur] = true;
+        hops++;
+      }
+    }
+  }
   // Internal execution nodes (an @agentic_function's LLM / tool
   // calls) have no chat bubble of their own — they surface inside
   // their owner turn's runtime block. The DOM scan above can never
@@ -1035,6 +1228,16 @@ function _scrollChatTo(msgId: string): void {
   const bubble = _chatBubbleFor(msgId);
   if (!bubble) return;
   bubble.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Brief flash so the user sees *which* chat row the DAG click
+  // mapped to — pure visual cue, no DOM mutation beyond the class
+  // toggle. CSS keyframe is in app/styles/chat.css.
+  bubble.classList.remove("dag-flash");
+  // Reflow to restart the animation if the class was just removed.
+  void (bubble as HTMLElement).offsetWidth;
+  bubble.classList.add("dag-flash");
+  window.setTimeout(() => {
+    bubble.classList.remove("dag-flash");
+  }, 1400);
 }
 
 let _chatScrollWired = false;
@@ -1097,6 +1300,18 @@ async function _checkout(msgId: string): Promise<void> {
   }
 }
 
+/** Shared edge-dblclick handler — called by listeners attached
+ *  directly to each edge hit path (more reliable than relying on
+ *  the document-level dblclick capture). */
+function _onEdgeDblclick(targetId: string): void {
+  if (!targetId) return;
+  if (_headAncestorSet[targetId]) {
+    _scrollChatTo(targetId);
+  } else {
+    _checkout(targetId);
+  }
+}
+
 // Single click on a node: toggle collapse / expand if the node has
 // a collapsible subtree. Nothing else — switching branches /
 // scrolling to a message moved to double-click (below) so that
@@ -1108,6 +1323,18 @@ document.addEventListener("click", (e) => {
   if (!g) return;
   const id = g.getAttribute("data-msg-id");
   if (!id) return;
+  // Function-internal nodes (any node with a ``caller`` — gui_agent's
+  // nested LLM / code sub-calls) are NOT checkout candidates, so the
+  // user gesture for them is "show me which chat row this maps to".
+  // Single-click → scroll + flash the owner runtime block. We skip
+  // the collapse-toggle path so single-click doesn't fight with the
+  // dblclick scroll (and because internal leaves don't have children
+  // to fold anyway).
+  if (g.getAttribute("data-internal") === "1") {
+    const owner = g.getAttribute("data-owner");
+    if (owner) _scrollChatTo(owner);
+    return;
+  }
   if (g.getAttribute("data-collapsible") === "1") {
     if (_collapsed[id]) delete _collapsed[id];
     else _collapsed[id] = true;
@@ -1118,20 +1345,37 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// Double click on a node: switch HEAD to that branch (or just scroll
-// the chat into view when the clicked node already sits on the
-// current HEAD chain).
+// Double click on a node OR edge: switch HEAD to that branch (or
+// just scroll the chat into view when the target already sits on
+// the current HEAD chain). Edges carry ``data-target-id`` pointing
+// at the same id the equivalent node click would resolve, so a
+// dblclick on the line between two nodes is equivalent to dblclick
+// on the node the line lands at.
 document.addEventListener("dblclick", (e) => {
   const tgt = e.target as HTMLElement;
-  const g = tgt.closest && tgt.closest(".history-node");
-  if (!g) return;
-  const id = g.getAttribute("data-msg-id");
+  // Prefer node hit first; fall back to edge hit-area. The hit-area
+  // paths carry ``data-target-id`` rather than ``data-msg-id``, so
+  // we look up the nearest ancestor (including the hit path itself)
+  // that carries either attribute.
+  const node = tgt.closest && tgt.closest(".history-node");
+  const edgeHit = node
+    ? null
+    : tgt.closest && (tgt.closest(".history-edge-hit, .history-edge-group, [data-target-id]") as Element | null);
+  let id: string | null = null;
+  let isInternal = false;
+  let owner: string | null = null;
+  if (node) {
+    id = node.getAttribute("data-msg-id");
+    isInternal = node.getAttribute("data-internal") === "1";
+    owner = node.getAttribute("data-owner");
+  } else if (edgeHit) {
+    id = edgeHit.getAttribute("data-target-id");
+  }
   if (!id) return;
   // The two ``click`` events that precede a dblclick may have
   // toggled a collapsible node twice — net zero — so the visible
   // state is unchanged by the time we get here.
-  if (g.getAttribute("data-internal") === "1") {
-    const owner = g.getAttribute("data-owner");
+  if (isInternal) {
     if (owner) _scrollChatTo(owner);
     return;
   }

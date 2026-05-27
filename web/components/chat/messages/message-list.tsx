@@ -25,16 +25,13 @@ import {
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
 import { RuntimeBlock } from "./runtime-block";
+import { SpawnedFromCard } from "./spawned-from-card";
 import { UserBubble } from "./user-bubble";
 
 function dispatch(msg: ChatMsg) {
   if (msg.role === "system") {
     return <div className="message system">{msg.content}</div>;
   }
-  // Attach pointer rows are not a turn — they mark "this turn spawned a
-  // peer session". Render the AttachCard standalone (no avatar / no
-  // "Agentic" header) so the chat doesn't read as N extra assistant
-  // replies. The card itself has enough chrome to stand on its own.
   if (msg.role === "assistant" && msg.function === "attach") {
     return (
       <div className="attach-row" data-msg-id={msg.id}>
@@ -42,11 +39,17 @@ function dispatch(msg: ChatMsg) {
       </div>
     );
   }
+  if (msg.role === "user" && msg.spawnedFrom) {
+    return (
+      <>
+        <div className="attach-row" data-spawned-root={msg.id}>
+          <SpawnedFromCard msg={msg} />
+        </div>
+        <UserBubble msg={msg} />
+      </>
+    );
+  }
   if (msg.display === "runtime") {
-    // A `/run` turn renders as ONE runtime block, owned by the
-    // assistant reply (it carries the result + the `function`
-    // signature). The paired user message only holds the raw command
-    // — drop it so the command isn't shown twice.
     if (msg.role === "user") return null;
     return <RuntimeBlock msg={msg} />;
   }

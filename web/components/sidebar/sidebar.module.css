@@ -1,12 +1,22 @@
-/* React Sidebar — companion module to web/app/styles/02-sidebar.css.
-   Visual rules for sidebar shell / nav-items / fav-items / conv-items
-   live in 02-sidebar.css (and 03-settings.css for `.conv-item`). This
-   module only adds:
+/* React Sidebar — companion module to global sidebar styles in base.css.
+
+   This module only adds:
      - tiny extras for the React-only "no conversations / favorites"
        empty-state hints
      - the `clearAll` row hover (mirrors the legacy `.conv-clear-all`).
-   Everything else relies on the existing global selectors so visual
-   parity is exact. */
+
+   The conversation-row running indicator (.convRunning / .convFinishing)
+   lives in app/styles/base.css as plain (non-module) CSS. Reason: Turbopack's
+   CSS-module pass mangles BOTH @keyframes declarations AND the animation:
+   value references inside *.module.css. The earlier fn-form fix
+   (commit b6fff9a) moved keyframes into base.css to keep their names
+   stable — but that workaround broke later when Turbopack started
+   mangling animation: references too, leaving sidebar.module.css
+   pointing at hashed keyframe names that no @keyframes block matched.
+   Solution: keep the whole running-indicator rule (selector + animation
+   references) outside any *.module.css so nothing is mangled. The
+   classes ``convRunning`` / ``convFinishing`` are applied via plain
+   string literals in sessions-list.tsx, not via styles.*. */
 
 .empty {
   padding: 8px 16px;
@@ -22,79 +32,3 @@
   text-align: center;
 }
 .clearAll:hover { color: var(--accent-red); }
-
-/* Conversation row running indicator.
-
-   When a session has a turn in flight on the server, its sidebar row
-   gets this class. The visual is a colored breathing gradient
-   running around the row's edge — same idea as the Claude.ai
-   "this conversation is still processing" border. We use a
-   1px gradient-conic background under the row, animated by rotating
-   its hue / position. The actual row content stays unchanged; we add
-   a subtle border + box-shadow that pulses in sync.
-
-   Implementation: a ::before pseudo-element holds a 4-stop conic
-   gradient using the three accent variables. Rotating
-   ``--conv-running-angle`` (declared via @property so it's
-   animatable) sweeps the gradient around at ~2s per cycle. */
-/* Sidebar 会话项动画. 彩色发光放在 ::before 伪元素上, 这样收尾
-   阶段裁切伪元素不影响文字内容.
-
-   阶段一 (.convRunning): 整条无缝循环彩色渐变 + 呼吸.
-   阶段二 (.convFinishing): clip-path 从右往左裁切伪元素, 跑完
-       1.1s 后伪元素完全消失. forwards 保持最终态, React 1.2s
-       后摘 class — 因为最终态已经是 "完全裁掉", 摘 class 跳变
-       为 "无伪元素", 视觉零差异, 不突兀. */
-
-/* @keyframes convRunningFlow / convRunningBreathe / convFinishingWipe
-   live in web/app/styles/base.css. Turbopack's CSS-module pass mangles
-   keyframe names declared inside *.module.css while leaving the
-   ``animation: <name>`` reference unmangled — same bug pattern as the
-   fn-form keyframes (commit b6fff9a). Keep the names global so this
-   module's animation references resolve. */
-
-/* 共享: 把彩色渐变放在 ::before 上, 而不是 .convRunning 本身.
-   这样 clip-path 收尾时只裁伪元素, 不影响文字 / icon. */
-.convRunning,
-.convFinishing {
-  position: relative;
-  isolation: isolate;
-}
-
-.convRunning::before,
-.convFinishing::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  border-radius: inherit;
-  background-image: linear-gradient(
-    100deg,
-    rgba(79,  140, 255, 0.28) 0%,
-    rgba(160, 107, 255, 0.32) 25%,
-    rgba(62,  207, 142, 0.28) 50%,
-    rgba(160, 107, 255, 0.32) 75%,
-    rgba(79,  140, 255, 0.28) 100%
-  );
-  background-size: 200% 100%;
-  background-repeat: repeat-x;
-  box-shadow:
-    inset 0 0 14px rgba(79,  140, 255, 0.22),
-    0 0 6px rgba(160, 107, 255, 0.20);
-}
-
-.convRunning::before {
-  animation:
-    convRunningFlow 2.6s linear infinite,
-    convRunningBreathe 1.8s ease-in-out infinite;
-}
-
-/* 收尾 wipe — clip-path inset 右侧从 0% 涨到 100%, 等于"从右往左
-   裁切". 裁掉的部分露出底色 = "白色从右往左出现"的视觉. 跑完时
-   伪元素完全隐藏, 跟 class 摘掉后无差异, 所以不突兀.
-   @keyframes convFinishingWipe lives in app/styles/base.css. */
-
-.convFinishing::before {
-  animation: convFinishingWipe 1.1s cubic-bezier(0.4, 0, 0.6, 1) forwards;
-}

@@ -142,6 +142,12 @@ def _poll(session_id: str, msg_id: str, func_name: str,
 
     last_tree = None
     last_graph = None
+    # streaming-resume: also patch the persisted placeholder reply with
+    # the latest tree so a mid-run page refresh sees the in-progress
+    # Execution DAG, not an empty ``gui_agent()`` shell. The reply
+    # placeholder lives at ``msg_id + "_reply"`` (see _execute/run.py).
+    _placeholder_id = msg_id + "_reply"
+    _shim = None
     while not stop.wait(1.2):
         try:
             tree = build_exec_dag(session_id, func_name, msg_id)
@@ -154,6 +160,26 @@ def _poll(session_id: str, msg_id: str, func_name: str,
                         "tree": tree,
                         "function": func_name,
                     })
+                    # Throttled persist: write the latest tree onto the
+                    # placeholder so a refresh-after-crash also recovers
+                    # the partial view. Cheap — the index is in memory,
+                    # write touches one JSON file + git add (commit
+                    # happens at turn end).
+                    try:
+                        if _shim is None:
+                            from openprogram.store import GraphStoreShim
+                            from openprogram.agent.session_db import default_db
+                            _shim = GraphStoreShim(default_db(), session_id)
+                        _shim.update(
+                            _placeholder_id,
+                            metadata={
+                                "status": "running",
+                                "context_tree": tree,
+                                "last_update_at": time.time(),
+                            },
+                        )
+                    except Exception:
+                        pass
         except Exception:
             pass
         try:

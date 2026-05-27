@@ -5,6 +5,60 @@ import json
 import time
 
 
+def _annotate_spawn_origin(graph: list[dict]) -> None:
+    """Attach ``spawned_from`` to each ``source=agent_spawn`` user msg
+    that's the root of a sub-branch.
+
+    The field is a dict ``{caller_id, caller_branch, caller_session_id,
+    label}`` pointing at the main-lane turn that produced the sub
+    branch (so the frontend can render a "Spawned from" card with a
+    Switch button mirroring the main-lane AttachCard).
+
+    Discovery: scan attach pointer nodes for ``attach_ref`` → sub
+    branch tip. Walk parent_id back from the tip to reach the
+    sub-branch root. The attach node's own ``parent_id`` (= the main
+    LLM reply that ran the task() tool) is the caller id we record.
+    """
+    by_id = {n.get("id"): n for n in graph if n.get("id")}
+    # Build conv_children from parent_id
+    conv_children: dict[str, list[str]] = {}
+    for n in graph:
+        p = n.get("parent_id")
+        if p:
+            conv_children.setdefault(p, []).append(n.get("id") or "")
+    for attach in graph:
+        if attach.get("function") != "attach":
+            continue
+        tip = attach.get("attach_ref")
+        caller = attach.get("parent_id") or attach.get("caller")
+        if not tip or tip not in by_id or not caller:
+            continue
+        # Walk parent_id up from the tip to the sub-branch's
+        # ``source=agent_spawn`` root.
+        cur: str | None = tip
+        hops = 0
+        sub_root = None
+        seen: set[str] = set()
+        while cur and cur not in seen and hops < 500:
+            seen.add(cur)
+            hops += 1
+            n = by_id.get(cur) or {}
+            if (n.get("source") == "agent_spawn"
+                    and n.get("role") == "user"):
+                sub_root = n
+                break
+            p = n.get("parent_id")
+            if not p:
+                break
+            cur = p
+        if not sub_root:
+            continue
+        sub_root["spawned_from"] = {
+            "caller_id": caller,
+            "label": (attach.get("attach_label") or "").strip() or None,
+        }
+
+
 async def handle_delete_session(ws, cmd: dict):
     from openprogram.webui import server as _s
     from openprogram.webui import persistence as _persist
@@ -241,6 +295,14 @@ async def handle_load_session(ws, cmd: dict):
             preview = content.strip().replace("\n", " ")
             if len(preview) > 80:
                 preview = preview[:77] + "…"
+            from openprogram.webui.ws_actions.branch import (
+                _extract_tool_input,
+                _extract_function_name,
+                _extract_tool_is_error,
+                _extract_llm_meta,
+                _extract_attach_label,
+            )
+            input_str = _extract_tool_input(m)
             _aref, _amanual, _asrc_commit = _ainfo(m)
             _aembed_n, _aembed_tok = _astats(_ddb(), conv["id"], _asrc_commit)
             graph.append({
@@ -252,9 +314,14 @@ async def handle_load_session(ws, cmd: dict):
                 "display": m.get("display"),
                 "source": m.get("source"),
                 "preview": preview,
+                "input": input_str,
+                "name": _extract_function_name(m),
+                "is_error": _extract_tool_is_error(m),
+                "llm": _extract_llm_meta(m),
                 "created_at": m.get("created_at"),
                 "attach_ref": _aref,
                 "attach_manual": _amanual,
+                "attach_label": _extract_attach_label(m),
                 "attach_source_commit_id": _asrc_commit,
                 "attach_embed_count": _aembed_n,
                 "attach_embed_tokens": _aembed_tok,
@@ -265,6 +332,22 @@ async def handle_load_session(ws, cmd: dict):
         # (summary_*/k_*) — reassign so the WS payload ships only
         # the DAG-visible subset.
         graph = annotate_graph(graph, head)
+
+        # Reverse-link each spawned sub-branch's root user msg back
+        # to the main-lane turn that produced it, so the frontend
+        # can render a "Spawned from: <branch>" card at the top of
+        # the sub branch (mirror of the AttachCard on main).
+        _annotate_spawn_origin(graph)
+        # Mirror the spawned_from annotation onto ``shown`` (what the
+        # chat list renders), keyed by id.
+        _spawn_by_id = {
+            n["id"]: n["spawned_from"]
+            for n in graph if n.get("spawned_from")
+        }
+        for m in shown:
+            sf = _spawn_by_id.get(m.get("id"))
+            if sf:
+                m["spawned_from"] = sf
         from openprogram.agent.session_config import load_session_run_config
         run_cfg = load_session_run_config(conv["id"])
         await ws.send_text(json.dumps({

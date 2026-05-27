@@ -46,6 +46,100 @@ def _attach_ref(m: dict) -> Optional[str]:
     return src
 
 
+def _extract_attach_label(m: dict) -> Optional[str]:
+    """``attach.label`` from an attach pointer row, if present."""
+    if m.get("function") != "attach":
+        return None
+    raw = m.get("attach") or m.get("extra")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    if isinstance(raw, dict) and "attach" in raw and isinstance(raw["attach"], dict):
+        raw = raw["attach"]
+    if isinstance(raw, dict):
+        v = raw.get("label")
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _extract_function_name(m: dict) -> Optional[str]:
+    """For a tool node, the underlying function name (``bash``, ``task``,
+    ``read``, ...). Pulled from the legacy ``function`` field with a
+    ``extra.tool_use.name`` fallback. ``None`` for non-tool nodes."""
+    if m.get("role") != "tool":
+        return None
+    name = m.get("function")
+    if isinstance(name, str) and name:
+        return name
+    extra = m.get("extra")
+    if isinstance(extra, str) and extra:
+        try:
+            import json as _json
+            parsed = _json.loads(extra)
+            n = (parsed.get("tool_use") or {}).get("name")
+            if isinstance(n, str) and n:
+                return n
+        except Exception:
+            return None
+    return None
+
+
+def _extract_tool_is_error(m: dict) -> bool:
+    """Tool node's ``metadata.is_error`` flag (default False)."""
+    if m.get("role") != "tool":
+        return False
+    return bool(m.get("is_error"))
+
+
+def _extract_llm_meta(m: dict) -> dict:
+    """Compact dict of the LLM call stats we surface on the tooltip:
+    ``model`` / ``input_tokens`` / ``output_tokens``. Skips fields that
+    are absent so the frontend only renders rows that have data."""
+    if (m.get("role") or "") not in ("assistant", "llm"):
+        return {}
+    out: dict = {}
+    for k in ("model", "input_tokens", "output_tokens"):
+        v = m.get(k)
+        if v is not None and v != "":
+            out[k] = v
+    return out
+
+
+def _extract_tool_input(m: dict) -> Optional[str]:
+    """Pull ``arguments`` out of a tool/code node's extra blob.
+
+    The DAG tooltip uses this to show "what the LLM called this function
+    with" alongside the result. Returns a JSON string (pretty-stable
+    enough for hover display) or ``None`` for non-tool nodes / when no
+    args were captured.
+    """
+    if m.get("role") != "tool":
+        return None
+    extra = m.get("extra")
+    args = None
+    if isinstance(extra, str) and extra:
+        try:
+            import json as _json
+            parsed = _json.loads(extra)
+            args = (parsed.get("tool_use") or {}).get("arguments")
+        except Exception:
+            return None
+    elif isinstance(extra, dict):
+        args = (extra.get("tool_use") or {}).get("arguments")
+    if args is None:
+        return None
+    if isinstance(args, str):
+        return args
+    try:
+        import json as _json
+        return _json.dumps(args, ensure_ascii=False)
+    except Exception:
+        return str(args)
+
+
 def _attach_embed_stats(
     store, session_id: Optional[str], source_commit_id: Optional[str],
 ) -> tuple[Optional[int], Optional[int]]:
@@ -119,9 +213,14 @@ def build_branches_payload(session_id: str | None) -> dict:
                     "display": m.get("display"),
                     "source": m.get("source"),
                     "preview": preview,
+                    "input": _extract_tool_input(m),
+                    "name": _extract_function_name(m),
+                    "is_error": _extract_tool_is_error(m),
+                    "llm": _extract_llm_meta(m),
                     "created_at": m.get("created_at"),
                     "attach_ref": _aref,
                     "attach_manual": _amanual,
+                    "attach_label": _extract_attach_label(m),
                     "attach_source_commit_id": _asrc_commit,
                     "attach_embed_count": _aembed_n,
                     "attach_embed_tokens": _aembed_tok,
@@ -139,21 +238,13 @@ def build_branches_payload(session_id: str | None) -> dict:
                 mid = row["head_msg_id"]
                 name = row.get("name")
                 if not name:
-                    # Walk the chain back from the tip; pick the most
-                    # recent user/assistant message's content as the
-                    # auto-label.
-                    chain = db.get_branch(session_id, mid) or []
-                    latest_text = None
-                    for r in reversed(chain):
-                        if r.get("role") in ("user", "assistant") \
-                                and isinstance(r.get("content"), str):
-                            latest_text = r["content"]
-                            break
-                    if latest_text:
-                        txt = latest_text.strip().replace("\n", " ")
-                        name = (txt[:40] + "…") if len(txt) > 40 else txt
-                    else:
-                        name = mid[:8]
+                    # Unnamed branch → fall back to the head msg id's
+                    # short hex prefix (git-style). The user can run
+                    # auto_name_branch to get an LLM-summarized label
+                    # on demand. Pulling chat content as the label was
+                    # confusing (the panel filled up with assistant
+                    # reply text) and didn't match git mental model.
+                    name = mid[:8]
                 rows.append({
                     "head_msg_id": mid,
                     "name": name,
@@ -565,6 +656,16 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
             )
         except Exception:
             pass
+        # Manual attach consumes the source branch — its content is
+        # now embedded into the anchor lane, so the sub-branch should
+        # disappear from the Branches panel (same semantics as merge
+        # turn). Apply only when source == anchor (same-session
+        # attach); cross-session attaches don't own the source head.
+        if anchor_session_id == session_id:
+            try:
+                db.mark_merged(session_id, [target_head])
+            except Exception:
+                pass
         ok = True
     except Exception as e:  # noqa: BLE001
         error = f"{type(e).__name__}: {e}"

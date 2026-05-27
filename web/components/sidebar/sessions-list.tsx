@@ -295,10 +295,16 @@ function ConvItem({
     prevRunning.current = running;
   }, [running]);
 
+  // convRunning / convFinishing are declared as :global in
+  // sidebar.module.css so the @keyframes name references stay unmangled
+  // (Turbopack's CSS-module pass mangles both keyframe declarations and
+  // animation: references, which broke the running indicator). Reference
+  // by plain string literal instead of styles.* — see the comment block
+  // in sidebar.module.css for the full story.
   const stateCls = running
-    ? styles.convRunning
+    ? "convRunning"
     : finishing
-      ? styles.convFinishing
+      ? "convFinishing"
       : "";
   return (
     <div

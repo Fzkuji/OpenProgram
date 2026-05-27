@@ -139,22 +139,15 @@ def write_attach_pointer_for_spawn(
         store = default_db()
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
-        # Anchor the attach pointer to the fork point — the parent of
-        # the caller user/assistant msg — so it shows up on both the
-        # caller's lane AND any descendants. If the caller has no
-        # parent, fall back to caller_msg_id.
+        # Anchor the attach pointer DIRECTLY to the caller turn (the
+        # LLM reply that ran the task() tool call, or the user_msg of
+        # a slash-command path). This is the call-edge semantics from
+        # docs/design/dag-node-model.md: attach is a function_call
+        # whose ``called_by`` is the turn that triggered it. Previously
+        # this code re-anchored to the caller's parent (the spawn
+        # user_msg) which made depth.py collapse attach onto the same
+        # row as the LLM reply.
         fork_anchor = caller_msg_id
-        try:
-            pair = store._open(session_id)  # noqa: SLF001
-            if pair is not None:
-                _, _idx = pair
-                spawn_node = _idx.nodes_by_id.get(caller_msg_id)
-                if spawn_node:
-                    parent_id = (spawn_node.metadata or {}).get("parent_id")
-                    if parent_id:
-                        fork_anchor = parent_id
-        except Exception:
-            pass
 
         source_commit_id = None
         try:
@@ -166,13 +159,18 @@ def write_attach_pointer_for_spawn(
             pass
 
         attach_node_id = _uuid.uuid4().hex[:12]
+        # Attach is a branch-referencing function_call that lives ON
+        # the main sequence (per docs/design/dag-node-model.md), so it
+        # must hang off the caller via ``parent_id`` (sequence edge),
+        # not ``called_by`` (which would put it on a side branch and
+        # leave the caller's reply orphaned as its own tip).
         attach_msg = {
             "id": attach_node_id,
             "role": "assistant",
             "display": "runtime",
             "function": "attach",
             "content": (result.final_text or result.error or "(no output)").strip(),
-            "called_by": fork_anchor,
+            "parent_id": fork_anchor,
             "timestamp": _time.time(),
             "is_error": bool(result.failed or result.error),
             "agent_id": chosen_agent,

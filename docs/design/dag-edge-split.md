@@ -1,5 +1,10 @@
 # DAG 数据模型重设计: 拆分 conv_pred 与 caller 两条边
 
+> **更新**: 这份文档讲两条**父指针**（sequence / call）的 schema 拆分。
+> 完整的节点 / 边语义模型（3 类节点 + 3 类边，含 reference edge，以及
+> attach / merge / spawn 节点的位置规则）参见
+> `docs/design/dag-node-model.md`。本文是它在数据层的具体落地。
+
 ## 背景
 
 当前 `nodes.predecessor` 一个字段同时承担两种完全不同的"父子关系":

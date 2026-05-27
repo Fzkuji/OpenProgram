@@ -139,10 +139,12 @@ export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
     .filter(Boolean)
     .join(" ");
 
+  const headerTitle = `${fnName}(${params || ""})`;
   const header = (
     <div
       className="runtime-block-header"
       onClick={() => setCollapsed((c) => !c)}
+      title={headerTitle}
     >
       <span className="runtime-icon">{"▶"}</span>
       <span className="runtime-func">

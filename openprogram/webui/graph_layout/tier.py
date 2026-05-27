@@ -20,6 +20,19 @@ def compute_tier(by_id: dict[str, dict]) -> dict[str, int]:
             tier[nid] = 0
             return 0
         m = by_id[nid]
+        # Branch-referencing function_calls (attach / merge) live on
+        # the caller's branch as sequence-level nodes — same tier as
+        # the caller, not bumped by +1 like a sub-call. See
+        # docs/design/dag-node-model.md.
+        if m.get("function") in ("attach", "merge"):
+            ca = caller_of(by_id, m)
+            if ca:
+                t = _t(ca, depth + 1)
+            else:
+                cp = m.get("parent_id")
+                t = _t(cp, depth + 1) if cp and cp in by_id and cp != nid else 0
+            tier[nid] = t
+            return t
         ca = caller_of(by_id, m)
         if ca:
             t = _t(ca, depth + 1) + 1

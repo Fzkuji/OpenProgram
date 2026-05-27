@@ -4,6 +4,11 @@ Backend layout for the History panel. Each chat session's nodes are
 annotated with `_depth` (row), `_lane` (column), `_tier` (call-stack
 depth) so the frontend renderer doesn't have to re-derive topology.
 
+> **Semantic spec**: see `docs/design/dag-node-model.md` for what a
+> node / edge *represents* (3 node kinds, 3 edge kinds, where
+> attach / merge / spawn nodes attach). This file describes the
+> pipeline that turns that model into `_lane` / `_depth` / `_tier`.
+
 ## Stages
 
 Each stage is a small, single-purpose module — keep them under ~150

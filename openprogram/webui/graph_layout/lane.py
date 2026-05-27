@@ -99,6 +99,10 @@ def compute_lane(
         # main thread, matching the list_branches walk's main-lane
         # detection, and the attach pointer (which piggy-backs on the
         # caller user msg's lane via called_by) lands on main too.
+        # Attach pointers always stay on the caller's lane — they
+        # represent the spawn event on the main thread, not a fork.
+        # Their dashed-edge child (sub-agent lane) will pick up a
+        # fresh lane via the agent_spawn branch.
         primary = None
         for k in kids:
             if (by_id.get(k, {}).get("source")) == "agent_spawn":
@@ -108,7 +112,11 @@ def compute_lane(
         if primary is None:
             primary = kids[0]
         for k in kids:
-            _walk(k, my_lane if k == primary else alloc.alloc())
+            kn = by_id.get(k, {})
+            if kn.get("function") == "attach":
+                _walk(k, my_lane)
+            else:
+                _walk(k, my_lane if k == primary else alloc.alloc())
 
     for root in conv_roots:
         if root not in lane:
@@ -130,5 +138,21 @@ def compute_lane(
             hops += 1
             cur = caller_of(by_id, by_id[cur])
         lane.setdefault(nid, 0)
+
+    # Branch-referencing function_calls (attach / merge) sit on
+    # their caller's lane as sequence-level nodes — their own conv
+    # children (e.g. the auto-followup reply re-parented onto the
+    # attach pointer) need to be walked too. The initial _walk only
+    # descends from conv_roots; attach/merge nodes aren't roots
+    # (they have a non-empty caller), so this extra pass picks up
+    # the chain that hangs off them.
+    for nid, m in by_id.items():
+        if m.get("function") not in ("attach", "merge"):
+            continue
+        if nid not in lane:
+            continue
+        for k in conv_children.get(nid, []):
+            if k not in lane:
+                _walk(k, lane[nid])
 
     return lane, alloc

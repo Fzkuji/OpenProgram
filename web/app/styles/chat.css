@@ -575,6 +575,9 @@
   color: var(--text-bright);
   cursor: pointer;
   user-select: none;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  min-width: 0;
 }
 .runtime-block-header:hover { background: var(--bg-hover); }
 .runtime-block.collapsed .runtime-block-header { border-bottom: none; }
@@ -602,10 +605,16 @@
 .runtime-func {
   color: var(--text-bright);
   font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .runtime-params {
   color: var(--text-secondary);
   font-size: 14px;
+  white-space: nowrap;
 }
 .runtime-block-body {
   padding: 0;
@@ -1216,8 +1225,8 @@
 [data-collapsed="0"] > .chat-fold-content { display: block; }
 .chat-thinking .chat-fold-content {
   white-space: pre-wrap;
-  font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--text-secondary);
 }
 .chat-tool-section + .chat-tool-section { margin-top: 8px; }

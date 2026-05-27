@@ -108,6 +108,14 @@ def _msg_to_node(msg: dict) -> Call:
 def _node_to_msg(node: Call, session_id: str) -> dict:
     meta = dict(node.metadata or {})
 
+    # ── streaming-resume schema (docs/design/streaming-resume.md) ──
+    # Every msg dict carries a ``status`` so the chat can tell at a
+    # glance whether the producer is still running. Legacy nodes
+    # without an explicit status default to ``done`` (they were
+    # written by the pre-streaming-resume code path which only
+    # persisted finished messages).
+    meta.setdefault("status", "done")
+
     if node.is_user():
         base = {
             "id": node.id,
@@ -131,8 +139,12 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
         if isinstance(meta.get("extra"), dict):
             extra_blob.update(meta.pop("extra"))
         result = node.output
+        # ``ensure_ascii=False`` so Chinese / non-ASCII characters in
+        # tool output render naturally in chat instead of as ``\uXXXX``
+        # escape sequences. Same for ``extra`` (which carries the
+        # call's input args, often containing user-typed text).
         content = (
-            json.dumps(result, default=str)
+            json.dumps(result, ensure_ascii=False, default=str)
             if not isinstance(result, str) else result
         )
         base = {
@@ -144,7 +156,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "caller": node.called_by or called_by or "",
             "timestamp": node.created_at,
             "function": node.name,
-            "extra": json.dumps(extra_blob, default=str),
+            "extra": json.dumps(extra_blob, ensure_ascii=False, default=str),
         }
         base.update(meta)
         return base
