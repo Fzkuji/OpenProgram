@@ -111,10 +111,27 @@ def resolve_model(profile: dict, override: Optional[str] = None):
             if m:
                 return m
 
+    # Registry lookup failed for every (provider, model_id) combo we
+    # tried. Fall through to a stub Model so callers don't have to
+    # null-guard, but use a *real* api id (``openai-completions``) — the
+    # legacy value here was ``"completion"`` which isn't registered in
+    # ``api_registry``, so the moment the dispatcher tried to stream
+    # against this stub it crashed with
+    # ``No stream function registered for API: 'completion'``. Picking
+    # an api that's actually registered means the failure becomes
+    # "OpenAI rejected your model id" — recoverable by switching the
+    # agent's model — rather than a hard ImportError-shaped crash on a
+    # fresh install whose ``agent.json`` happens to be missing.
+    import sys
+    sys.stderr.write(
+        f"[_model_tools.resolve_model] WARN: no registry entry for "
+        f"{requested!r}; falling back to openai-completions stub. "
+        f"Set the agent's model explicitly via Settings → Agents.\n"
+    )
     return Model(
         id=requested or "stub",
         name=requested or "stub",
-        api="completion",
+        api="openai-completions",
         provider="openai",
         base_url="https://api.openai.com/v1",
     )
