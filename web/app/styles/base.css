@@ -13,14 +13,24 @@
      layout.tsx overrides per agentic_font in localStorage. */
   --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
 
-  /* Accent colors (shared) */
-  --accent-blue: #3886e5;
+  /* Accent colors (shared)
+     ---------------------------------------------------------------
+     ``--accent-orange`` is the canonical "primary action" colour —
+     the warm amber sampled from Claude's own UI. All buttons /
+     active states / focus rings / links that used to be blue resolve
+     here now. The historical ``--accent-blue`` token is kept as an
+     alias so the 300+ existing references update in one place; new
+     code should prefer ``--accent-orange`` directly. Blue is no
+     longer a UI colour in this product — only used informationally
+     in chrome (file paths, hashes) where it survives via the alias.
+     --------------------------------------------------------------- */
+  --accent-orange: #d19a66;
+  --accent-blue: var(--accent-orange);
   --accent-green: #18a96b;
   --accent-red: #e5534b;
   --accent-yellow: #c69026;
   --accent-purple: #a371f7;
   --accent-cyan: #3bc9db;
-  --accent-orange: #d19a66;
 
   /* ===== Composer / fn-form geometry tokens ============================
      The chat input wrapper, its corner buttons (send / stop / close /

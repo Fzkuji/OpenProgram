@@ -881,13 +881,13 @@
      The `.runtime-badge` qualifier keeps this from being tied with
      the plain `.runtime-badge` default that lives later in the
      file — without it that green default wins on cascade order. */
-  background: rgba(56, 134, 229, 0.10);
-  color: var(--accent-blue);
-  border-color: rgba(56, 134, 229, 0.25);
+  background: color-mix(in srgb, var(--accent-orange) 10%, transparent);
+  color: var(--accent-orange);
+  border-color: color-mix(in srgb, var(--accent-orange) 25%, transparent);
 }
 .runtime-badge.agent-badge:hover {
-  background: rgba(56, 134, 229, 0.18);
-  border-color: rgba(56, 134, 229, 0.35);
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent-orange) 35%, transparent);
 }
 .agent-badge.locked {
   cursor: default;

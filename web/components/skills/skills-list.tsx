@@ -62,10 +62,14 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
       onClick={() => router.push(`/skills/${skill.name.split("/").map(encodeURIComponent).join("/")}`)}
       style={{
         paddingLeft: 8 + depth * 16,
-        // Tint the active row with the same accent the border uses so
-        // light mode shows a clear blue wash instead of the muddy grey
-        // var(--bg-selected) gives us.
-        background: active ? "rgba(56, 134, 229, 0.12)" : undefined,
+        // Tint the active row with the page-wide accent so light mode
+        // shows a clear amber wash instead of the muddy grey that
+        // ``var(--bg-selected)`` collapses to. ``color-mix`` keeps it
+        // theme-aware — auto-flips with ``--accent-orange``'s dark /
+        // light variants without a JS branch.
+        background: active
+          ? "color-mix(in srgb, var(--accent-orange) 12%, transparent)"
+          : undefined,
       }}
       className={
         "group flex items-center gap-2 rounded-md border py-1.5 pr-3 cursor-pointer transition-colors " +
