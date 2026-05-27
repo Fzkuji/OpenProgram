@@ -379,6 +379,16 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
       - Static registry (from openprogram.providers)
       - Dynamic custom_models the user pulled via /api/providers/<name>/fetch-models
         or added by hand (stored under config.providers[<name>].custom_models).
+
+    Override behavior: once the user has clicked "Fetch models"
+    successfully (``pcfg["models_fetched"] = True``), we treat upstream
+    as authoritative — builtin-registry rows that aren't in the
+    fetched-or-manual set are hidden. This is what makes a Fetch click
+    feel like "replace" instead of "append": before this guard, every
+    Fetch left the legacy aliases (``claude-opus-4`` / ``claude-sonnet-4``)
+    next to the real upstream ids (``claude-opus-4-7`` /
+    ``claude-sonnet-4-6``), which the user correctly described as the
+    list "not getting overwritten properly".
     """
     from openprogram.providers import get_models
     from openprogram.providers.types import Model, ModelCost
@@ -386,16 +396,31 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
     cfg = _read_providers_cfg()
     pcfg = cfg.get(provider_id, {})
     enabled_ids = set(pcfg.get("enabled_models") or [])
+    fetched_only = bool(pcfg.get("models_fetched"))
+    custom_ids: set[str] = {
+        m.get("id") for m in (pcfg.get("custom_models") or []) if m.get("id")
+    }
 
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
 
     for m in get_models(provider_id):
+        # When upstream's answer is on file, only emit the builtin row
+        # if it's still in upstream's list (or a manual addition). Lets
+        # us keep one source of truth without forcing users to nuke
+        # ``models_generated.py``.
+        if fetched_only and m.id not in custom_ids:
+            continue
         seen.add(m.id)
         out.append(_model_to_dict(m, m.id in enabled_ids))
 
     # Custom models: just {id, name?, context_window?} dicts from the user.
     from openprogram.providers.thinking_catalog import derive_thinking_fields
+    # Default API to dispatch through for this provider — see
+    # ``_PROVIDER_DEFAULT_API`` for the rationale. Falls back to
+    # ``"custom"`` (the legacy unrouteable sentinel) for providers
+    # not in the map so we don't silently mis-route an unknown one.
+    default_api = _PROVIDER_DEFAULT_API.get(provider_id, "custom")
     for raw in pcfg.get("custom_models", []):
         mid = raw.get("id") or ""
         if not mid or mid in seen:
@@ -409,7 +434,7 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
         out.append({
             "id": mid,
             "name": raw.get("name", mid),
-            "api": raw.get("api", "custom"),
+            "api": raw.get("api") or default_api,
             "context_window": int(raw.get("context_window", 0)) or 0,
             "max_tokens": int(raw.get("max_tokens", 0)) or 0,
             "vision": bool(raw.get("vision", False)),
@@ -475,6 +500,66 @@ def add_custom_models(provider_id: str, models: list[dict[str, Any]]) -> dict[st
     return {"provider": provider_id, "added": added, "total": len(existing)}
 
 
+def replace_fetched_models(provider_id: str, models: list[dict[str, Any]]) -> dict[str, Any]:
+    """Replace the fetched-from-upstream model set for a provider, leaving
+    any manually-added rows alone.
+
+    "Fetch models" is the user saying "tell me what the upstream provider
+    actually serves right now". When upstream's answer drifts (rename, new
+    family, dropped variant) the previous answer is wrong — we shouldn't
+    leave stale rows hanging around. ``add_custom_models`` was union /
+    merge semantics, which manifested in the UI as a Claude Code provider
+    showing both ``claude-opus-4`` (the legacy alias from the builtin
+    registry, re-emitted by an older fetch) and ``claude-opus-4-7`` (the
+    real current id) side by side.
+
+    Rows marked ``_source: "fetched"`` are owned by this function and
+    rotate on each fetch. Anything without that marker is a manual
+    addition and we leave it untouched. Also flips
+    ``pcfg["models_fetched"] = True`` so the list endpoint knows to
+    hide builtin-registry rows that upstream's fresh answer doesn't
+    endorse — otherwise the legacy ``claude-opus-4`` row keeps showing
+    up even after a successful fetch, since it comes from
+    ``providers/models_generated.py`` not config.
+    """
+    with _cache_lock:
+        cfg = _read_providers_cfg()
+        pcfg = cfg.setdefault(provider_id, {})
+        prior = pcfg.get("custom_models", []) or []
+        # Keep manual entries; rotate out anything we previously fetched.
+        kept_manual = [m for m in prior if m.get("_source") != "fetched"]
+        kept_ids = {m.get("id") for m in kept_manual if m.get("id")}
+        new_rows: list[dict[str, Any]] = []
+        for m in models:
+            mid = (m.get("id") or "").strip()
+            if not mid or mid in kept_ids:
+                # Manual override of an upstream id wins — don't overwrite
+                # what the user typed in by hand.
+                continue
+            row = dict(m)
+            row["_source"] = "fetched"
+            new_rows.append(row)
+        pcfg["custom_models"] = kept_manual + new_rows
+        # Prune enabled_models that no longer correspond to a visible
+        # row. After a rename like ``claude-opus-4`` → ``claude-opus-4-7``,
+        # the old id is dead — leaving it in enabled_models means the
+        # picker tries to instantiate a model that the runtime can't
+        # resolve. Visible row = any new fetched row + any manual row.
+        visible_ids = {r["id"] for r in (new_rows + kept_manual) if r.get("id")}
+        prior_enabled = list(pcfg.get("enabled_models") or [])
+        pcfg["enabled_models"] = [mid for mid in prior_enabled if mid in visible_ids]
+        dropped_enabled = [mid for mid in prior_enabled if mid not in visible_ids]
+        pcfg["models_fetched"] = True
+        _write_providers_cfg(cfg)
+        return {
+            "provider": provider_id,
+            "added": len(new_rows),
+            "removed": len(prior) - len(kept_manual),  # rotated-out fetched rows
+            "total": len(pcfg["custom_models"]),
+            "dropped_enabled": dropped_enabled,
+        }
+
+
 def remove_custom_model(provider_id: str, model_id: str) -> dict[str, Any]:
     with _cache_lock:
         cfg = _read_providers_cfg()
@@ -492,8 +577,22 @@ def list_enabled_models() -> list[dict[str, Any]]:
     """Flat list of all enabled models across enabled providers.
 
     Used by the chat page model picker.
+
+    Walks two sources to find enabled models:
+
+    1. The static registry (``get_models(pid)``) — the canonical builtin
+       catalogue from ``providers/models_generated.py``.
+    2. The ``custom_models`` list under each provider's config entry —
+       rows the user pulled via Fetch Models or added by hand. Without
+       this second pass, a freshly-fetched id like ``claude-sonnet-4-6``
+       (which doesn't exist in the static registry) gets toggled
+       enabled, persists to config, but silently never appears in the
+       chat picker — a particularly invisible failure mode because
+       ``/api/providers/<id>/models`` happily lists the row with
+       ``enabled: true``.
     """
     from openprogram.providers import get_providers, get_models
+    from openprogram.providers.thinking_catalog import derive_thinking_fields
 
     cfg = _read_providers_cfg()
     out: list[dict[str, Any]] = []
@@ -506,12 +605,59 @@ def list_enabled_models() -> list[dict[str, Any]]:
             continue
         if not _is_configured(pid):
             continue
+        emitted_ids: set[str] = set()
+        fetched_only = bool(pcfg.get("models_fetched"))
+        custom_ids = {
+            m.get("id") for m in (pcfg.get("custom_models") or []) if m.get("id")
+        }
         for m in get_models(pid):
             if m.id not in enabled_ids:
+                continue
+            # After a Fetch, the user's upstream answer takes precedence
+            # over the static catalogue — hide builtin rows that the
+            # fetch didn't reaffirm (matches ``list_models_for_provider``).
+            if fetched_only and m.id not in custom_ids:
                 continue
             entry = _model_to_dict(m, True)
             entry["provider"] = pid
             entry["provider_label"] = _label(pid)
+            out.append(entry)
+            emitted_ids.add(m.id)
+
+        # Now the second pass: custom_models that the registry doesn't
+        # know about. Build a minimal ``Model``-shaped dict that the
+        # chat dispatcher accepts via ``api: <default_api>``.
+        default_api = _PROVIDER_DEFAULT_API.get(pid, "custom")
+        for raw in (pcfg.get("custom_models") or []):
+            mid = raw.get("id") or ""
+            if not mid or mid not in enabled_ids or mid in emitted_ids:
+                continue
+            reasoning = bool(raw.get("reasoning", False))
+            levels, default_lv, variant = derive_thinking_fields(
+                pid, mid, reasoning, bool(raw.get("supports_xhigh", False))
+            )
+            inputs = []
+            if raw.get("vision"):
+                inputs.append("image")
+            entry = {
+                "id": mid,
+                "name": raw.get("name", mid),
+                "api": raw.get("api") or default_api,
+                "context_window": int(raw.get("context_window", 0)) or 0,
+                "max_tokens": int(raw.get("max_tokens", 0)) or 0,
+                "vision": bool(raw.get("vision", False)),
+                "video": False,
+                "audio": False,
+                "reasoning": reasoning,
+                "thinking_levels": levels,
+                "default_thinking_level": default_lv,
+                "thinking_variant": variant,
+                "tools": bool(raw.get("tools", True)),
+                "enabled": True,
+                "provider": pid,
+                "provider_label": _label(pid),
+                "custom": True,
+            }
             out.append(entry)
     return out
 
@@ -880,13 +1026,54 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
                 entry["thinking_variant"] = variant
         models.append(entry)
 
-    result = add_custom_models(provider_id, models)
+    # Fetch is authoritative: replace the previous fetched set rather
+    # than merge into it. ``replace_fetched_models`` preserves any
+    # rows the user added by hand (no ``_source: "fetched"`` marker)
+    # so a power user can still pin a row that upstream doesn't list.
+    result = replace_fetched_models(provider_id, models)
     return {
         "provider": provider_id,
         "fetched": len(models),
         "added": result["added"],
+        "removed": result["removed"],
         "total_custom": result["total"],
+        "dropped_enabled": result.get("dropped_enabled", []),
     }
+
+
+# Which registered API id each provider's models route through. The
+# entries here must match strings registered in
+# ``providers/register.py::register_builtins``. Used to stamp
+# fetched / custom rows with a working ``api`` so the chat dispatcher
+# can find a stream function for them — without this the fetch flow
+# silently produces ``api: "custom"`` rows that the model picker
+# happily lists but the chat path can't run, since the api registry
+# has no "custom" entry. Fetched ``claude-sonnet-4-6`` looked usable
+# in the UI but silently dropped out of ``/api/models/enabled`` for
+# exactly this reason.
+_PROVIDER_DEFAULT_API: dict[str, str] = {
+    "anthropic": "anthropic-messages",
+    "claude-code": "openai-completions",  # Meridian proxy speaks OpenAI Chat Completions
+    "openai": "openai-completions",
+    "openai-codex": "openai-codex",
+    "google": "google-generative-ai",
+    "gemini-subscription": "gemini-subscription",
+    "amazon-bedrock": "bedrock-converse-stream",
+    "azure-openai-responses": "azure-openai-responses",
+    "openrouter": "openai-completions",
+    "groq": "openai-completions",
+    "cerebras": "openai-completions",
+    "mistral": "openai-completions",
+    "huggingface": "openai-completions",
+    "kimi-coding": "openai-completions",
+    "minimax": "openai-completions",
+    "minimax-cn": "openai-completions",
+    "vercel-ai-gateway": "openai-completions",
+    "opencode": "openai-completions",
+    "github-copilot": "openai-completions",
+    "xai": "openai-completions",
+    "zai": "openai-completions",
+}
 
 
 _CODEX_RESPONSES_PROVIDERS = frozenset({"openai-codex"})
