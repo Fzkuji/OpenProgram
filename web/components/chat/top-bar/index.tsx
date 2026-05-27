@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 
 import {
   Popover,
@@ -104,6 +105,8 @@ export function TopBar() {
 /* ---- Sub-components --------------------------------------------- */
 
 function HamburgerButton() {
+  const { t } = useTranslation();
+
   function onClick() {
     const w = window as unknown as { toggleSidebar?: () => void };
     w.toggleSidebar?.();
@@ -114,7 +117,7 @@ function HamburgerButton() {
       className="menu-btn"
       id="menuBtn"
       onClick={onClick}
-      aria-label="Toggle sidebar"
+      aria-label={t("sidebar.toggle")}
     >
       <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
         <path d="M16.5 4A1.5 1.5 0 0 1 18 5.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 14.5v-9A1.5 1.5 0 0 1 3.5 4zM7 15h9.5a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5H7zM3.5 5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5H6V5z" />
@@ -268,6 +271,7 @@ function AgentBadge({
   model?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
 
   // A `topbar-close-menus` event (fired by another top-bar dropdown)
   // closes this menu, so only one is ever open.
@@ -286,8 +290,8 @@ function AgentBadge({
     setOpen(next);
   }
 
-  const label = kind === "chat" ? "Chat" : "Exec";
-  const tooltip = (kind === "chat" ? "Chat agent" : "Execution agent") + details;
+  const label = kind === "chat" ? t("agent.chat") : t("agent.exec");
+  const tooltip = (kind === "chat" ? t("agent.chat_agent") : t("agent.execution_agent")) + details;
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>

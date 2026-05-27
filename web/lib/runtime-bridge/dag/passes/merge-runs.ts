@@ -41,6 +41,13 @@ export function _mergeRuns(
     tools.sort((a, b) => idx[a.id] - idx[b.id]);
     kids.forEach((k) => {
       if (k.role === "tool") return;
+      // user msgs are conv continuations, NOT run-output of a sibling
+      // tool. Without this guard a fn-form's gui_step (parent=code via
+      // _collapseRuntimePlaceholders reparenting) gets merged into the
+      // follow-up user "你好" msg, dragging the whole caller-tree onto
+      // the user dot and leaving inner LLM nodes leaking out of the
+      // square's "+N" collapse.
+      if (k.role === "user") return;
       let t: GNode | null = null;
       for (let i = 0; i < tools.length; i++) {
         if (idx[tools[i].id] < idx[k.id]) t = tools[i];
