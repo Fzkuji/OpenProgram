@@ -303,10 +303,13 @@ export function _collapseRuntimePlaceholders(
     const surv = outById[codeId];
     if (!surv || typeof surv._tier !== "number") return;
     const desiredTier = (parentNode._tier ?? 0) + 1;
-    const extra = desiredTier - (surv._tier ?? 0);
-    if (extra === 0) return;
+    const desiredDepth = (parentNode._depth ?? 0) + 1;
+    const extraTier = desiredTier - (surv._tier ?? 0);
+    const extraDepth = desiredDepth - (surv._depth ?? 0);
+    if (extraTier === 0 && extraDepth === 0) return;
     // Apply extra shift to survivor + all its caller-descendants in
-    // the output graph.
+    // the output graph. Both axes shift as a block so the entire
+    // caller-tree slides into the desired slot together.
     const stack: string[] = [codeId];
     const seen: Record<string, boolean> = Object.create(null);
     while (stack.length) {
@@ -314,8 +317,13 @@ export function _collapseRuntimePlaceholders(
       if (seen[id]) continue;
       seen[id] = true;
       const n = outById[id];
-      if (n && typeof n._tier === "number") {
-        n._tier = Math.max(0, (n._tier ?? 0) + extra);
+      if (n) {
+        if (typeof n._tier === "number") {
+          n._tier = Math.max(0, (n._tier ?? 0) + extraTier);
+        }
+        if (typeof n._depth === "number") {
+          n._depth = Math.max(0, (n._depth ?? 0) + extraDepth);
+        }
       }
       (callerKidsOut[id] || []).forEach((cid) => stack.push(cid));
     }
