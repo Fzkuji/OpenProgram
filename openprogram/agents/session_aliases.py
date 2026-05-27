@@ -31,12 +31,13 @@ safely.
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import threading
 import time
 from pathlib import Path
+
+from openprogram import _compat as fcntl
 from typing import Any, Optional
 
 

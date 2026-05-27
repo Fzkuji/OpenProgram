@@ -1,10 +1,11 @@
 """Orchestrate light → deep → REM and own the sleep lock."""
 from __future__ import annotations
 
-import fcntl
 import logging
 import os
 from typing import Any, Callable
+
+from openprogram import _compat as fcntl
 
 from .. import store
 from . import deep, light, rem

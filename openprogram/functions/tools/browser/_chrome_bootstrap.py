@@ -152,7 +152,7 @@ def _acquire_bootstrap_lock(timeout_s: float = 60.0):
     finish, then proceeds (the second caller will likely find the port
     already up and short-circuit).
     """
-    import fcntl
+    from openprogram import _compat as fcntl
     lock_path = _bootstrap_lock_path()
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fp = open(lock_path, "w")

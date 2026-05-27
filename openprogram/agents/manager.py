@@ -17,12 +17,13 @@ to defaults).
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import re
 import shutil
 import threading
+
+from openprogram import _compat as fcntl
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
