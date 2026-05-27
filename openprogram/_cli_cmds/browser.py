@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import subprocess
 import shutil
+import sys
 from pathlib import Path
 
 
@@ -12,6 +13,55 @@ def _python_pkg_present(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
 
+def _pip_install(spec: str) -> subprocess.CompletedProcess:
+    """Cross-platform ``pip install``.
+
+    Calls ``python -m pip`` rather than bare ``pip`` because the latter
+    isn't resolvable as a Windows executable in ``subprocess.run`` (no
+    ``.exe`` auto-append outside the shell) — would raise
+    ``PermissionError [WinError 5]`` on Windows.
+    """
+    return subprocess.run([sys.executable, "-m", "pip", "install", spec])
+
+
+def _kill_chrome_profile() -> None:
+    """Best-effort kill of any sidecar Chrome locked into our profile.
+
+    POSIX: ``pkill -9 -f openprogram/chrome-profile``.
+    Windows: ``taskkill /F /IM chrome.exe`` filtered by command line via
+    WMIC is fragile; we use the simpler approach of ``taskkill`` against
+    chrome.exe processes whose command line mentions the profile path.
+    Failure is non-fatal — the caller's ``rmtree`` will still run.
+    """
+    needle = "openprogram/chrome-profile" if sys.platform != "win32" else r"openprogram\chrome-profile"
+    try:
+        if sys.platform == "win32":
+            # WMIC is deprecated but still ships on Win10/11. Find PIDs
+            # whose CommandLine contains the profile path, then kill.
+            res = subprocess.run(
+                ["wmic", "process", "where",
+                 f"CommandLine like '%{needle}%' and Name='chrome.exe'",
+                 "get", "ProcessId"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for line in (res.stdout or "").splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", line],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+        else:
+            subprocess.run(
+                ["pkill", "-9", "-f", needle],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        # No pkill / wmic / taskkill on PATH, or all chrome procs already
+        # gone. Caller's rmtree still does the visible work.
+        pass
+
+
 def _cmd_browser_install(target: str) -> int:
     """Install browser-tool dependencies. Pure shell-out — no agent involved."""
     targets = ["playwright", "patchright", "camoufox", "agent"] if target == "all" else [target]
@@ -19,27 +69,33 @@ def _cmd_browser_install(target: str) -> int:
     for t in targets:
         print(f"\n=== installing {t} ===")
         if t == "playwright":
-            r1 = subprocess.run(["pip", "install", "playwright>=1.45.0"])
+            r1 = _pip_install("playwright>=1.45.0")
             r2 = subprocess.run(["playwright", "install", "chromium"]) if shutil.which("playwright") else r1
             if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
                 rc = 1
         elif t == "patchright":
-            r1 = subprocess.run(["pip", "install", "patchright>=1.40"])
+            r1 = _pip_install("patchright>=1.40")
             r2 = subprocess.run(["patchright", "install", "chromium"]) if shutil.which("patchright") else r1
             if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
                 rc = 1
         elif t == "camoufox":
-            r1 = subprocess.run(["pip", "install", "camoufox>=0.4.0"])
+            r1 = _pip_install("camoufox>=0.4.0")
             r2 = subprocess.run(["camoufox", "fetch"]) if shutil.which("camoufox") else r1
             if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
                 rc = 1
         elif t == "agent":
-            if not shutil.which("npm"):
+            npm_path = shutil.which("npm")
+            if not npm_path:
                 print("npm not found — install Node.js first.")
                 rc = 1
                 continue
-            r1 = subprocess.run(["npm", "install", "-g", "agent-browser"])
-            r2 = subprocess.run(["agent-browser", "install"]) if shutil.which("agent-browser") else r1
+            # Pass the resolved path (e.g. ``C:\Program Files\nodejs\npm.CMD``
+            # on Windows) rather than the bare name. Windows' subprocess
+            # without ``shell=True`` can't execute ``.cmd``/``.bat`` shims
+            # by bare name — would raise ``FileNotFoundError [WinError 2]``.
+            r1 = subprocess.run([npm_path, "install", "-g", "agent-browser"])
+            ab_path = shutil.which("agent-browser")
+            r2 = subprocess.run([ab_path, "install"]) if ab_path else r1
             if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
                 rc = 1
         else:
@@ -101,8 +157,7 @@ def _cmd_browser_refresh() -> int:
 
     sd = sidecar_dir()
     if sd.exists():
-        subprocess.run(["pkill", "-9", "-f", "openprogram/chrome-profile"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _kill_chrome_profile()
         shutil.rmtree(sd, ignore_errors=True)
         print(f"Removed old sidecar profile at {sd}")
     pf = port_file()
@@ -115,8 +170,7 @@ def _cmd_browser_refresh() -> int:
 
 def _cmd_browser_reset() -> int:
     """Full reset — sidecar + states + port file."""
-    subprocess.run(["pkill", "-9", "-f", "openprogram/chrome-profile"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _kill_chrome_profile()
     sd = Path.home() / ".openprogram" / "chrome-profile"
     if sd.exists():
         shutil.rmtree(sd, ignore_errors=True)
