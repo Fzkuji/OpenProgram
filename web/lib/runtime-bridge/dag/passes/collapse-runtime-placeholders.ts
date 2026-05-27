@@ -74,17 +74,25 @@ export function _collapseRuntimePlaceholders(
     removeIds[p.id] = true;
     replaceWith[p.id] = sameNameKid.id;
     inheritedFrom[sameNameKid.id] = p;
-    // fn-form anchor fold: if this placeholder's parent is a
-    // user-runtime msg whose only conv-child is the placeholder
-    // itself, drop the anchor too and let the surviving code inherit
-    // the anchor's parent (= null for a fresh session, or the prior
-    // turn's tip otherwise).
+    // fn-form anchor fold: the synthetic ``[function call] foo(...)``
+    // user-runtime msg has no semantic content in the visible chat —
+    // chat panel hides it (display=runtime + role=user → return null).
+    // In mini-DAG we likewise want to hide it so the user sees
+    // ``code square → follow-up user msg`` directly, not
+    // ``anchor circle → fork → [code square, user msg]``.
+    //
+    // backend ``linear_history`` filters runtime placeholders out of
+    // the user-visible chain, so the next chat turn's user msg gets
+    // ``parent_id = anchor`` instead of placeholder. That makes anchor
+    // appear to have TWO conv-children (placeholder + new user msg)
+    // which lane.py turns into a fork. Fold the anchor here so the
+    // new user msg gets reparented onto the surviving code instead,
+    // keeping the mini-DAG on a single trunk.
     const anchor = p.parent_id ? byId[p.parent_id] : null;
     if (
       anchor
       && anchor.role === "user"
       && anchor.display === "runtime"
-      && (convKidsOf[anchor.id] || []).length === 1
     ) {
       removeIds[anchor.id] = true;
       replaceWith[anchor.id] = sameNameKid.id;
@@ -143,37 +151,52 @@ export function _collapseRuntimePlaceholders(
       depthDeltaOf[id] = dDelta;
       (callerKidsOf[id] || []).forEach((c) => callerStack.push(c.id));
     }
-    // Conv-descendants of the removed placeholder (e.g. follow-up
-    // user msg + its reply chain) get reparented onto code. Their
-    // depth shift is different from the caller-tree's: they slide UP
-    // exactly one row for each REMOVED PLACEHOLDER ancestor between
-    // them and root. (The anchor-removal in fn-form contributes only
-    // to code's own shift, not to its conv-descendants' — since they
-    // were never under anchor in the conv chain, they were under
-    // placeholder.)
+    // Conv-descendants of any removed ancestor get reparented onto
+    // code. The depth shift depends on WHICH removed ancestor each
+    // conv-child was hanging off:
+    //   shift = topRemoved.depth - directRemovedAncestor.depth
     //
-    // For the simple fn-form case (anchor + placeholder removed,
-    // user-msg hangs off placeholder):
-    //   * code shift     = topRemoved.depth - code.depth     (= -2)
-    //   * user-msg shift = topRemoved.depth - placeholder.depth (= -1)
-    const convShift = (topRemoved._depth ?? 0) - (p._depth ?? 0);
-    const convDescendants: string[] = [];
-    function gatherConv(id: string): void {
+    // For anchor's direct kid (e.g. follow-up user msg with
+    // parent=anchor): shift = 0 - 0 = 0 (already at the right row).
+    // For placeholder's direct kid: shift = 0 - 1 = -1.
+    //
+    // Conv-descendants of a NON-removed survivor inherit the parent's
+    // shift implicitly (parent's depth was shifted; child's old depth
+    // - parent's old depth = same delta from new parent.depth → no
+    // additional shift needed).
+    const topRemovedDepth = topRemoved._depth ?? 0;
+    function gatherConv(id: string, hostRemoved: GNode): void {
       (convKidsOf[id] || []).forEach((c) => {
         if (c.id === codeId) return;
         if (removeIds[c.id]) {
-          gatherConv(c.id);
+          gatherConv(c.id, c);
           return;
         }
         if (c.id in depthDeltaOf) return;
-        convDescendants.push(c.id);
-        gatherConv(c.id);
+        depthDeltaOf[c.id] = topRemovedDepth - (hostRemoved._depth ?? 0);
+        // Survivor child's own conv-descendants inherit the SAME shift
+        // because they slid as one block with their parent. Walk
+        // through any further removed-ancestor pockets (e.g. the
+        // LLM-called placeholder hanging off a reply mid-chain) so
+        // their post-collapse survivor descendants also get shifted.
+        const sameShift = depthDeltaOf[c.id];
+        const stack2: string[] = [c.id];
+        while (stack2.length) {
+          const nid = stack2.pop()!;
+          (convKidsOf[nid] || []).forEach((cc) => {
+            if (cc.id === codeId) return;
+            if (removeIds[cc.id]) {
+              stack2.push(cc.id);
+              return;
+            }
+            if (cc.id in depthDeltaOf) return;
+            depthDeltaOf[cc.id] = sameShift;
+            stack2.push(cc.id);
+          });
+        }
       });
     }
-    gatherConv(p.id);
-    convDescendants.forEach((id) => {
-      depthDeltaOf[id] = convShift;
-    });
+    gatherConv(topRemoved.id, topRemoved);
   });
 
   // Resolve the live ancestor for any parent_id that points at a
