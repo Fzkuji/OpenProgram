@@ -498,9 +498,13 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     });
     g.appendChild(hit);
     (g as SVGGraphicsElement).style.cursor = "pointer";
-    const tier = typeof node._tier === "number" ? node._tier : 0;
-    const tierShrink = Math.min(0.55, tier * 0.18);
-    const r = NODE_R * (onHead ? 0.85 : 0.7) * (1 - tierShrink);
+    // Uniform node radius — older code shrank by tier (deeper caller
+    // chain = smaller dot) and by onHead status. That left top-of-DAG
+    // function-call squares hard to see whenever the chat had
+    // scrolled away. Keep one consistent size for all nodes; the
+    // "currently in chat viewport" cue is shown via the white inner
+    // fill overlay instead.
+    const r = NODE_R + 1.8;
     const el = _buildShapeEl(_shapeFor(node), color, r);
     if (el) {
       el.setAttribute("pointer-events", "none");

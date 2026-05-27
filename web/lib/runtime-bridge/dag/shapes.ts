@@ -67,8 +67,13 @@ export function _shapeFor(node: GNode): string {
   return "circle";
 }
 
-export function _applyShapeSize(shape: SVGElement, isCurrent: boolean): void {
-  const r = isCurrent ? NODE_R + 1.8 : NODE_R;
+export function _applyShapeSize(shape: SVGElement, _isCurrent: boolean): void {
+  // Uniform node size — viewport visibility now ONLY toggles the
+  // white inner-fill (``.n-inner`` overlay), not the outer shape
+  // dimensions. Out-of-viewport nodes used to shrink, which made
+  // tiny squares like the top fn-form gui_agent hard to spot when
+  // chat had scrolled away from them.
+  const r = NODE_R + 1.8;
   if (shape.tagName === "circle") {
     shape.setAttribute("r", String(r));
   } else if (shape.tagName === "polygon") {
