@@ -43,17 +43,6 @@ def _check_skills_loader() -> tuple[bool, str, str]:
         return False, "skills load", f"{type(e).__name__}: {e}"
 
 
-def _check_skills_watcher() -> tuple[bool, str, str]:
-    try:
-        import openprogram.skills.watcher as w
-        running = w._thread is not None and w._thread.is_alive()
-        if running:
-            return True, "skills watcher", "running"
-        return False, "skills watcher", "not started (server hasn't booted?)"
-    except Exception as e:
-        return False, "skills watcher", f"{type(e).__name__}: {e}"
-
-
 def _check_plugin_loader() -> tuple[bool, str, str]:
     try:
         from openprogram.plugins.loader import list_plugins
@@ -67,17 +56,45 @@ def _check_plugin_loader() -> tuple[bool, str, str]:
 
 
 def _check_providers() -> tuple[bool, str, str]:
+    """Real provider status — what credentials does ``AuthManager`` actually
+    have on disk?
+
+    Earlier versions of this check called ``check_providers()`` from the
+    provider registry, which inspects env vars + binary presence (not
+    the auth store), and then summed a field that doesn't exist on the
+    returned dict (``v.get("ok")`` vs the real key ``"available"``).
+    Both bugs combined into a permanent "0/5 authed: anthropic, gemini,
+    gemini-cli, openai, openai-codex" no matter what the user had
+    actually logged into. Query the auth store directly instead.
+    """
     try:
-        from openprogram.providers.registry import check_providers
-        info = check_providers()
-        ok_count = sum(1 for v in info.values() if v.get("ok"))
-        total = len(info)
-        names = ", ".join(sorted(info.keys())[:5])
-        if total > 5:
-            names += "…"
-        return ok_count > 0, "providers", f"{ok_count}/{total} authed: {names}"
-    except Exception as e:
+        from openprogram.auth.store import get_store
+        pools = get_store().list_pools()
+    except Exception as e:  # noqa: BLE001
         return False, "providers", f"{type(e).__name__}: {e}"
+
+    if not pools:
+        return False, "providers", (
+            "0 configured — run `openprogram providers setup` or "
+            "`openprogram providers login <name>`"
+        )
+
+    names_seen: list[str] = []
+    for p in pools:
+        # Pools with at least one credential count as "have something".
+        if not p.credentials:
+            continue
+        label = p.provider_id if p.profile_id == "default" else f"{p.provider_id}/{p.profile_id}"
+        if label not in names_seen:
+            names_seen.append(label)
+
+    if not names_seen:
+        return False, "providers", "pools exist but no credentials inside"
+
+    head = ", ".join(names_seen[:5])
+    if len(names_seen) > 5:
+        head += "…"
+    return True, "providers", f"{len(names_seen)} authed: {head}"
 
 
 def _check_mcp() -> tuple[bool, str, str]:
@@ -137,7 +154,12 @@ CHECKS: tuple[Callable[[], tuple[bool, str, str]], ...] = (
     _check_npm,
     _check_git,
     _check_skills_loader,
-    _check_skills_watcher,
+    # ``_check_skills_watcher`` removed: the watcher only runs inside
+    # the webui server process, so a CLI ``openprogram doctor`` always
+    # saw it as "not started" and reported FAIL — actionable for
+    # nobody. The watcher's health is now visible inside the webui
+    # itself; the CLI doctor doesn't pretend to see into a different
+    # process.
     _check_plugin_loader,
     _check_providers,
     _check_mcp,
