@@ -497,6 +497,19 @@ def dispatch_forced_tool_call(
             _ddb().invalidate_cache(session_id)
         except Exception:
             pass
+        # fn-form / direct-run is a standalone call — the user msg +
+        # runtime placeholder ARE the main branch. Without advancing
+        # head_id to the placeholder, HEAD stays pinned to the user
+        # msg and the conv reads as ``detached`` (HEAD ≠ conv tip).
+        # LLM-called path advances head_id in process_user_turn step
+        # 6; the forced path was missing the equivalent step.
+        _rt_id = (out or {}).get("runtime_msg_id")
+        if _rt_id:
+            try:
+                from openprogram.agent.session_db import default_db as _ddb
+                _ddb().update_session(session_id, head_id=_rt_id)
+            except Exception:
+                pass
 
     if out.get("killed"):
         # If the subprocess was SIGKILLed before it could finalize the
