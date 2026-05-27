@@ -133,7 +133,7 @@ function ToolInlineTree({ call }: { call: ChatToolCall }) {
             title={text("Copy call as JSON", "复制调用 JSON")}
             onClick={copy}
           >
-            {copied ? text("Copied", "已复制") : text("Copy JSON", "复制 JSON")}
+            {copied ? text("Copied", "已复制") : text("Copy", "复制")}
           </button>
           <span
             className={"inline-tree-toggle" + (collapsed ? " collapsed" : "")}

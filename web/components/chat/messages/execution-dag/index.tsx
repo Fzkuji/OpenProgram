@@ -359,7 +359,7 @@ export function ExecutionDag({
               copy();
             }}
           >
-            {copied ? text("Copied", "已复制") : text("Copy JSON", "复制 JSON")}
+            {copied ? text("Copied", "已复制") : text("Copy", "复制")}
           </button>
           <span
             className={"inline-tree-toggle" + (collapsed ? " collapsed" : "")}
