@@ -24,7 +24,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  padding: 8px 12px;
   height: 48px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
@@ -41,7 +41,7 @@
 .topbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   /* min-width: 0 lets the flex children shrink properly so the
      ellipsis on individual badges activates instead of pushing
      siblings off-screen. */
@@ -73,30 +73,30 @@
   text-overflow: ellipsis;
   min-width: 0;
   flex: 0 1 auto;
+  /* Fluid responsive: grows from 0 at 540cqi container up to a 40ch
+     cap by ~1100cqi. Smooth instead of stage-jumping, so sidebar
+     collapse/expand only nudges truncation a few chars at a time
+     rather than chopping a whole segment off. */
+  max-width: clamp(0px, calc((100cqi - 540px) * 0.5), 40ch);
 }
 
-/* Four-stage responsive collapse — driven by the topbar's own width
-   (container query) so the sidebar's collapse / expand also adjusts
-   the badges without depending on viewport size.
-   • >1080px:        full details (default)
-   • 760-1080px:    details ellipsis-truncate at ~18ch each
-   • 560-760px:     details disappear, only the short label remains
-                     ("connected" / "main (1)" / "Chat" / "Exec")
-   • <560px:        even the short label collapses to its leading
-                     letter, leaving four single-glyph chips that fit
-                     side-by-side without overflow. Dropdowns still
-                     open on click, so functionality is preserved. */
-@container topbar (max-width: 1080px) {
-  .badge-details { max-width: 18ch; }
+/* Branch name — same fluid idea (was inline maxWidth: 180 in tsx). */
+.branch-name {
+  display: inline-block;
+  vertical-align: bottom;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: clamp(0px, calc((100cqi - 540px) * 0.3), 24ch);
 }
-@container topbar (max-width: 760px) {
-  .badge-details { display: none; }
-}
-@container topbar (max-width: 560px) {
+
+/* Ultra-narrow only: even the short labels collapse to their leading
+   glyph so four chips still fit. Dropdowns still open on click. */
+@container topbar (max-width: 480px) {
   .badge-short {
     max-width: 1ch;
     overflow: hidden;
-    /* Letter-spacing 0 keeps the single glyph snug inside the chip. */
     letter-spacing: 0;
   }
 }

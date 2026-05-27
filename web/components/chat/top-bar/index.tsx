@@ -188,6 +188,7 @@ function BranchBadge({
   branchInfo: ReturnType<typeof useSessionStore.getState>["branchInfo"];
 }) {
   const [open, setOpen] = useState(false);
+  const { text } = useTranslation();
 
   useEffect(() => {
     const close = () => setOpen(false);
@@ -210,7 +211,7 @@ function BranchBadge({
     <span
       id="branchBadge"
       className="runtime-badge branch-badge"
-      title={`${branchInfo.name} (${branchInfo.count} branches)`}
+      title={`${branchInfo.name} (${branchInfo.count} ${text("branches", "个分支")})`}
     >
       <span className="branch-icon" aria-hidden="true">
         <svg
@@ -229,17 +230,7 @@ function BranchBadge({
           <path d="M11.5 5.6a6 6 0 0 1-6 6" />
         </svg>
       </span>
-      <span
-        className="branch-name"
-        style={{
-          display: "inline-block",
-          maxWidth: 180,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          verticalAlign: "bottom",
-        }}
-      >
+      <span className="branch-name">
         {branchInfo.name} ({branchInfo.count})
       </span>
     </span>
