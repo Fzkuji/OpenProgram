@@ -14,10 +14,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
 
-import { api } from "@/lib/api";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 
@@ -31,7 +29,7 @@ import { AgentSelector } from "./agent-selector";
 import { BranchMenu } from "./branch-menu";
 import { ChannelMenu } from "./channel-menu";
 import { installLegacyWrappers, legacyTopbarReady } from "./window-bridge";
-import { formatAgentDetails, isModelAvailable } from "./format";
+import { formatAgentDetails } from "./format";
 import styles from "./top-bar.module.css";
 
 export function TopBar() {
@@ -65,18 +63,6 @@ export function TopBar() {
     })),
   );
 
-  // Live list of "models the user can actually pick right now". Used
-  // to flag the Chat/Exec badges when an old session was persisted
-  // with a provider/model that's since been disabled or whose
-  // provider was never set up (e.g. claude-code without Meridian
-  // running on localhost:3456). Without this guard the badges
-  // happily display a model name that explodes at send time.
-  const { data: enabledModels } = useQuery({
-    queryKey: ["models-enabled"],
-    queryFn: api.listEnabledModels,
-    staleTime: 30_000,
-  });
-
   const chat = agentSettings.chat || {};
   const exec = agentSettings.exec || {};
   const chatDetails = formatAgentDetails(
@@ -86,8 +72,6 @@ export function TopBar() {
   );
   const execDetails = formatAgentDetails(exec.provider, exec.model);
   const chatLocked = !!chat.locked;
-  const chatAvailable = isModelAvailable(chat.provider, chat.model, enabledModels);
-  const execAvailable = isModelAvailable(exec.provider, exec.model, enabledModels);
 
   return (
     <div className={`topbar ${styles.bar}`} id="mainTopbar">
@@ -100,7 +84,6 @@ export function TopBar() {
           kind="chat"
           details={chatDetails}
           locked={chatLocked}
-          unavailable={!chatAvailable}
           provider={chat.provider}
           model={chat.model}
         />
@@ -109,7 +92,6 @@ export function TopBar() {
           kind="exec"
           details={execDetails}
           locked={false}
-          unavailable={!execAvailable}
           provider={exec.provider}
           model={exec.model}
         />
@@ -269,7 +251,6 @@ function AgentBadge({
   kind,
   details,
   locked,
-  unavailable,
   provider,
   model,
 }: {
@@ -277,7 +258,6 @@ function AgentBadge({
   kind: "chat" | "exec";
   details: string;
   locked: boolean;
-  unavailable: boolean;
   provider?: string;
   model?: string;
 }) {
@@ -302,32 +282,15 @@ function AgentBadge({
   }
 
   const label = kind === "chat" ? t("agent.chat") : t("agent.exec");
-  const baseTooltip =
-    (kind === "chat" ? t("agent.chat_agent") : t("agent.execution_agent")) + details;
-  // Unavailable = persisted (provider, model) pair isn't in the live
-  // enabled-models list. Surface the reason in the tooltip so users
-  // know why the chip is amber instead of blue — they almost always
-  // arrive here from clicking "New chat" on an older session whose
-  // provider has since been disabled (or never finished setup).
-  const tooltip = unavailable
-    ? baseTooltip +
-      "\n\n⚠ This model isn't enabled right now. Click to pick one of " +
-      "your enabled models, or set the original provider up in " +
-      "Settings → LLM Providers."
-    : baseTooltip;
-  const className =
-    "runtime-badge agent-badge" +
-    (locked ? " locked" : "") +
-    (unavailable ? " unavailable" : "");
+  const tooltip = (kind === "chat" ? t("agent.chat_agent") : t("agent.execution_agent")) + details;
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <span id={id} className={className} title={tooltip}>
-          {unavailable ? (
-            <span className="badge-warning" aria-hidden="true">
-              ⚠
-            </span>
-          ) : null}
+        <span
+          id={id}
+          className={"runtime-badge agent-badge" + (locked ? " locked" : "")}
+          title={tooltip}
+        >
           <span className="badge-short">{label}</span>
           <span className="badge-details">{details}</span>
         </span>
