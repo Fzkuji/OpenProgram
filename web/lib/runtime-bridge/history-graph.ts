@@ -500,6 +500,120 @@ function _assignLanes(
 
 // Tooltip rendering / lifecycle moved to ./history/tooltip.ts.
 
+// When an LLM main-reply triggers an @agentic_function (e.g. gui_agent),
+// the runtime placeholder card is persisted as a conv-child of the reply
+// (parent_id = reply_id). If the user then sends a follow-up turn, the
+// reply ends up with TWO conv-children: the card and the next user msg.
+// Backend lane.py treats that as a fork and allocates a fresh lane for
+// the new-user subtree, so the figure visually splits into two lanes
+// even though it's a single linear conversation.
+//
+// Fix in the front-end: detect these "LLM-triggered runtime cards" and
+// re-stamp the lane of the next-turn subtree back onto the parent
+// reply's lane. The card itself is also pinned to the parent's lane so
+// it doesn't pull caller-edge descendants off-axis. Legit retries
+// (multiple non-runtime conv-children) are preserved — only the FIRST
+// non-runtime sibling (by created_at) gets promoted to the parent's
+// lane; siblings beyond it stay on their backend-allocated fork lanes.
+//
+// Manually-triggered fn-form cards have parent_id = a `[function call]`
+// user pseudo-msg, NOT a reply, so they don't match this rule and stay
+// as main-lane peer nodes.
+function _demoteDecorationCards(graph: GNode[]): void {
+  if (!graph || !graph.length) return;
+  const byId: Record<string, GNode> = Object.create(null);
+  graph.forEach((m) => {
+    byId[m.id] = m;
+  });
+  const convKidsOf: Record<string, GNode[]> = Object.create(null);
+  const callerKidsOf: Record<string, GNode[]> = Object.create(null);
+  graph.forEach((m) => {
+    if (m.parent_id && byId[m.parent_id]) {
+      (convKidsOf[m.parent_id] = convKidsOf[m.parent_id] || []).push(m);
+    }
+    const ca = (m as { caller?: string }).caller;
+    if (ca && byId[ca]) {
+      (callerKidsOf[ca] = callerKidsOf[ca] || []).push(m);
+    }
+  });
+  function _isRuntimeCard(n: GNode): boolean {
+    // ``_node_to_msg`` defaults LLM rows' legacy role to "assistant"
+    // (the meta carries the runtime placeholder flag separately).
+    // Both "assistant" and "llm" are accepted here so the detection
+    // still works if upstream changes the default mapping.
+    return (
+      (n.role === "assistant" || n.role === "llm")
+      && n.display === "runtime"
+    );
+  }
+  function _isMainReply(n: GNode): boolean {
+    return (
+      (n.role === "assistant" || n.role === "llm")
+      && n.display !== "runtime"
+    );
+  }
+  // Collect affected parents: any LLM main reply that has at least one
+  // runtime-card conv-child AND at least one non-runtime conv-child.
+  const affected: Record<string, true> = Object.create(null);
+  graph.forEach((p) => {
+    if (!_isMainReply(p)) return;
+    const kids = convKidsOf[p.id] || [];
+    if (kids.length < 2) return;
+    const hasCard = kids.some((k) => _isRuntimeCard(k));
+    const nonCard = kids.filter((k) => !_isRuntimeCard(k));
+    if (!hasCard || !nonCard.length) return;
+    affected[p.id] = true;
+  });
+  if (!Object.keys(affected).length) return;
+  Object.keys(affected).forEach((pid) => {
+    const p = byId[pid];
+    if (typeof p._lane !== "number") return;
+    const targetLane = p._lane;
+    const kids = (convKidsOf[pid] || []).slice();
+    // Cards: pin to parent's lane, mark decoration so downstream
+    // renderers can suppress / restyle them if they want.
+    kids.forEach((k) => {
+      if (_isRuntimeCard(k)) {
+        k._lane = targetLane;
+        k._decoration = true;
+      }
+    });
+    // Promote the earliest non-runtime sibling (and its conv-subtree)
+    // back onto the parent's lane. This undoes lane.py's "fork on
+    // multiple conv-children" decision for the case where the extra
+    // children are runtime cards, not real retries.
+    const nonRt = kids
+      .filter((k) => !_isRuntimeCard(k))
+      .sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+    if (!nonRt.length) return;
+    const promote = nonRt[0];
+    const stack: string[] = [promote.id];
+    // Re-stamp the conv-subtree of the promoted sibling AND all
+    // runtime cards on the parent — including their caller-edge
+    // subtrees (the tool-cluster hanging off each runtime card),
+    // since those would otherwise stay on the lane the backend
+    // allocated when it thought the card was a separate fork.
+    kids.forEach((k) => {
+      if (_isRuntimeCard(k)) stack.push(k.id);
+    });
+    const seen: Record<string, true> = Object.create(null);
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (seen[id]) continue;
+      seen[id] = true;
+      const n = byId[id];
+      if (!n) continue;
+      n._lane = targetLane;
+      (convKidsOf[id] || []).forEach((c) => {
+        stack.push(c.id);
+      });
+      (callerKidsOf[id] || []).forEach((c) => {
+        stack.push(c.id);
+      });
+    }
+  });
+}
+
 function render(graphIn: GNode[], headIdIn: string | null): void {
   let graph = graphIn;
   let headId = headIdIn;
@@ -511,6 +625,10 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   const collapsedR = _collapseRuntimePairs(graph, headId);
   graph = collapsedR.graph;
   headId = collapsedR.headId;
+
+  // Re-stamp lanes around LLM-triggered runtime cards so they don't
+  // visually fork the trunk. See _demoteDecorationCards.
+  _demoteDecorationCards(graph);
 
   // Compute a STABLE leafOfNode from the pre-collapse graph for
   // colouring. Collapsing the sub-call subtree removes its leaf
