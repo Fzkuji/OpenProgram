@@ -94,7 +94,12 @@
      calm but the two surfaces are immediately tellable apart. */
   --user-msg-bg: #2e2f29;
   --assistant-msg-bg: #25282e;
-  --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  --shadow-popover: 0 6px 18px rgba(0, 0, 0, 0.24);
+  --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.3);
+  --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.28);
+  --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.28);
   /* Collapsed `off` effort-pill chip. Lighter than --bg-hover so it
      reads as a distinct chip on the dark composer rather than blending
      into the surface. */
@@ -122,7 +127,12 @@
   /* Light theme: same warm/cool split as dark, but lighter. */
   --user-msg-bg: #ece9d8;
   --assistant-msg-bg: #e2e7f0;
-  --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-sm: 0 1px 2px rgba(31, 30, 29, 0.08);
+  --shadow: 0 3px 10px rgba(31, 30, 29, 0.08);
+  --shadow-popover: 0 8px 20px rgba(31, 30, 29, 0.12);
+  --shadow-dialog: 0 14px 34px rgba(31, 30, 29, 0.16);
+  --shadow-sidebar-left: 4px 0 20px rgba(31, 30, 29, 0.18);
+  --shadow-sidebar-right: -4px 0 20px rgba(31, 30, 29, 0.18);
   /* Collapsed `off` effort-pill chip — light-theme counterpart. */
   --effort-off-bg: #e8e6dc;
   /* Deeper orange in light mode — the default `#d19a66` reads as a
@@ -261,7 +271,7 @@ button, input, select, textarea, optgroup {
   }
   .sidebar:not(.right-sidebar) { left: 0; }
   .sidebar:not(.right-sidebar):not(.collapsed) {
-    box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+    box-shadow: var(--shadow-sidebar-left);
   }
   .right-sidebar,
   .detail-panel {
@@ -269,7 +279,7 @@ button, input, select, textarea, optgroup {
   }
   .right-sidebar:not(.collapsed),
   .detail-panel:not(.collapsed) {
-    box-shadow: -4px 0 20px rgba(0,0,0,0.5);
+    box-shadow: var(--shadow-sidebar-right);
   }
 
   /* No gutter reserved — collapsed sidebars are position:fixed at the
@@ -320,10 +330,9 @@ button, input, select, textarea, optgroup {
 .sidebar.collapsed .sidebar-nav-label { display: none; }
 .sidebar.collapsed .sidebar-nav-action { display: none; }
 
-/* React UserMenuFooter companion-class overrides — see the component's
-   own module CSS (user-menu-footer.module.css) for the base styling. */
-.user-menu-footer { padding: 8px 0 !important; }
-.user-menu-footer-trigger { padding: 8px 10px !important; }
+/* React UserMenuFooter companion-class overrides — base styling
+   lives in user-menu-footer.module.css. Only sidebar-level concerns
+   (collapsed-sidebar info hide, centered avatar) go here. */
 .user-menu-footer-info {
   overflow: hidden;
   white-space: nowrap;
@@ -335,6 +344,14 @@ button, input, select, textarea, optgroup {
   margin: 0;
   pointer-events: none;
 }
+/* Collapsed sidebar hides chevron + centers avatar. */
+.sidebar.collapsed .user-menu-footer-trigger {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+.sidebar.collapsed .user-menu-footer-trigger > svg:last-child { display: none; }
 
 /* User-message avatar (chat stream — React <UserBubble />). */
 .user-avatar {
@@ -501,4 +518,3 @@ button, input, select, textarea, optgroup {
 .history-node.is-running polygon {
   animation: historyNodePulse 1.2s ease-in-out infinite;
 }
-

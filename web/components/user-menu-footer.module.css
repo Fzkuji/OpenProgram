@@ -5,19 +5,18 @@
   position: relative;
   border-top: 1px solid var(--border);
   margin-top: auto;
-  padding: 8px;
+  padding: 0;
   flex-shrink: 0;
 }
 
+/* Mirror Claude's footer button: full-bleed, generous vertical padding,
+   12px gap, 36px avatar, medium 14px name, 12px subtle subtitle, and
+   a trailing chevron-pair on the right. */
 .trigger {
   display: flex;
   align-items: center;
-  gap: 10px;
-  /* Full-bleed hover: span the entire footer width so the click /
-     hover target isn't just an inset rounded pill. Horizontal padding
-     stays at 10px so the avatar sits at the same x as before, but
-     border-radius is gone and width is 100% of footer. */
-  padding: 8px 10px;
+  gap: 12px;
+  padding: 14px 12px;
   border-radius: 0;
   cursor: pointer;
   user-select: none;
@@ -26,34 +25,67 @@
   width: 100%;
   text-align: left;
   font-family: inherit;
-  font-size: inherit;
   color: var(--text-primary);
+  transition: background 0.15s ease;
 }
 .trigger:hover { background: var(--bg-hover); }
 
 .avatar {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--accent-blue);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   flex-shrink: 0;
+  border: 0.5px solid transparent;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
+}
+.trigger:hover .avatar {
+  border-color: var(--border);
+  opacity: 0.92;
 }
 
 .info {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
+  align-items: flex-start;
+  line-height: 1.25;
+  padding-right: 4px;
 }
-.name { color: var(--text-bright); font-size: 13px; }
-.subtitle { color: var(--text-muted); font-size: 11px; }
+.name {
+  width: 100%;
+  color: var(--text-bright);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.subtitle {
+  width: 100%;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Trailing chevron-up-down on the right (matches Claude's footer). */
+.chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+}
+.trigger:hover .chevron { opacity: 1; }
 
 /* Popover anchored above the trigger. Gap below matches left/right
    8px so the menu floats with even breathing room. */
@@ -65,7 +97,7 @@
   background: var(--bg-tertiary, var(--bg-secondary));
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-popover);
   padding: 4px;
   z-index: 50;
   display: flex;
