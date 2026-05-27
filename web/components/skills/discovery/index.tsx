@@ -27,6 +27,7 @@ export function DiscoverySources() {
     fetchDiscoverySources, fetchDiscoverySuggested,
     addDiscoverySource, removeDiscoverySource,
     browseDiscovery, installFromDiscovery,
+    deleteSkill,
   } = useSkills();
 
   const [newUrl, setNewUrl] = useState("");
@@ -231,6 +232,93 @@ export function DiscoverySources() {
     }
   }
 
+  // -- Bulk install ----------------------------------------------------
+  // Confirm + sequentially install every catalog entry not already in
+  // the user's skills list. We hand the count to ``window.confirm``
+  // explicitly because some catalogs are huge (Reza's Mega Pack ships
+  // ~300 skills) and an accidental click would otherwise queue a
+  // 30-minute background download with no undo affordance.
+  async function handleBulkInstall(source: Source, toInstall: string[]) {
+    if (toInstall.length === 0) return;
+    const ok = window.confirm(
+      `Install all ${toInstall.length} skill${toInstall.length === 1 ? "" : "s"} ` +
+        `from ${source.label} into the “${source.slug}/” namespace?\n\n` +
+        `Each entry is downloaded sequentially — large catalogs can take a while. ` +
+        `You can cancel by closing the tab; partial installs are kept.`,
+    );
+    if (!ok) return;
+    setBulkUrl(source.url);
+    setStatus(`Installing 0/${toInstall.length} from ${source.label}…`);
+    let done = 0;
+    let fail = 0;
+    try {
+      for (const name of toInstall) {
+        try {
+          await installFromDiscovery(source.url, name, source.slug);
+        } catch {
+          fail += 1;
+        }
+        done += 1;
+        setStatus(
+          `Installing ${done}/${toInstall.length} from ${source.label}` +
+            (fail ? ` (${fail} failed)` : "") + "…",
+        );
+      }
+      setStatus(
+        `Installed ${done - fail}/${toInstall.length} from ${source.label}` +
+          (fail ? ` (${fail} failed)` : ""),
+      );
+    } finally {
+      setBulkUrl(null);
+    }
+  }
+
+  // -- Bulk uninstall --------------------------------------------------
+  // Walk the live ``skills`` list (not the catalog) so we delete
+  // every skill currently under the source's namespace, even ones
+  // the catalog has since dropped. Same confirm + sequential loop +
+  // status pattern as the install path; ``deleteSkill`` already
+  // refreshes ``skills`` via the store so the green "N/N installed"
+  // badge ticks down in real time.
+  async function handleBulkUninstall(source: Source) {
+    const prefix = source.slug + "/";
+    const toRemove = (skills as Skill[])
+      .filter((sk) => sk.name.startsWith(prefix))
+      .map((sk) => sk.name);
+    if (toRemove.length === 0) return;
+    const ok = window.confirm(
+      `Uninstall all ${toRemove.length} skill${toRemove.length === 1 ? "" : "s"} ` +
+        `currently installed under “${source.slug}/”?\n\n` +
+        `This deletes them from disk. You can reinstall any of them from ` +
+        `this catalog later.`,
+    );
+    if (!ok) return;
+    setBulkUrl(source.url);
+    setStatus(`Uninstalling 0/${toRemove.length} from ${source.label}…`);
+    let done = 0;
+    let fail = 0;
+    try {
+      for (const fullName of toRemove) {
+        try {
+          await deleteSkill(fullName);
+        } catch {
+          fail += 1;
+        }
+        done += 1;
+        setStatus(
+          `Uninstalling ${done}/${toRemove.length} from ${source.label}` +
+            (fail ? ` (${fail} failed)` : "") + "…",
+        );
+      }
+      setStatus(
+        `Uninstalled ${done - fail}/${toRemove.length} from ${source.label}` +
+          (fail ? ` (${fail} failed)` : ""),
+      );
+    } finally {
+      setBulkUrl(null);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <section>
@@ -245,6 +333,20 @@ export function DiscoverySources() {
             const installed = installedCounts[s.url] || 0;
             const catalogTotal = cat?.entries?.length;
             const outdatedCount = cat?.outdated?.size ?? 0;
+            // Names in this catalog that aren't already installed
+            // under the source's namespace. Drives the "Install all N"
+            // button on the source row; empty list means we either
+            // haven't loaded the catalog yet (no button) or the user
+            // is fully installed (Update button shows instead).
+            const uninstalledNames: string[] = cat?.entries
+              ? cat.entries
+                  .filter((e) => !installedNames.has(
+                    s.slug ? `${s.slug}/${e.name}` : e.name,
+                  ))
+                  .map((e) => e.name)
+              : [];
+            const uninstalledCount = uninstalledNames.length;
+            const isBulkBusy = bulkUrl === s.url;
             return (
               <li key={s.url} className="rounded-md border border-[var(--border)] overflow-hidden">
                 <div
@@ -288,11 +390,29 @@ export function DiscoverySources() {
                     )}
                     <p className="mt-1 text-[11px] font-mono text-[var(--text-tertiary)] truncate">{s.url}</p>
                   </div>
-                  {(installed > 0 || s.origin === "custom") && (
+                  {(installed > 0 || uninstalledCount > 0 || s.origin === "custom") && (
                     <div
                       className="flex items-center gap-2 shrink-0 self-center"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {/* Install all — appears whenever the catalog has been
+                          loaded (cat?.entries) and there are entries not yet
+                          present in the user's skills list. Sits to the LEFT
+                          of the Update button so the user reads the row
+                          left-to-right as: install missing → update existing
+                          → uninstall existing → (custom) remove the source. */}
+                      {uninstalledCount > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleBulkInstall(s, uninstalledNames)}
+                          disabled={isBulkBusy || checkingUrl === s.url}
+                          title={`Install the ${uninstalledCount} skill${uninstalledCount === 1 ? "" : "s"} in this catalog not already present locally`}
+                          className="min-w-[110px]"
+                        >
+                          {isBulkBusy ? "Working…" : `Install ${uninstalledCount}`}
+                        </Button>
+                      )}
                       {installed > 0 && (
                         <Button
                           size="sm"
@@ -303,7 +423,7 @@ export function DiscoverySources() {
                             if (outdatedCount > 0) handleUpdateOutdated(s);
                             else handleRefreshDiff(s);
                           }}
-                          disabled={bulkUrl === s.url || checkingUrl === s.url}
+                          disabled={isBulkBusy || checkingUrl === s.url}
                           title={
                             outdatedCount > 0
                               ? `Re-pull ${outdatedCount} skill${outdatedCount === 1 ? "" : "s"} whose upstream SKILL.md changed`
@@ -311,7 +431,7 @@ export function DiscoverySources() {
                           }
                           className="group min-w-[110px]"
                         >
-                          {bulkUrl === s.url ? (
+                          {isBulkBusy ? (
                             "Updating…"
                           ) : checkingUrl === s.url ? (
                             "Checking…"
@@ -328,9 +448,25 @@ export function DiscoverySources() {
                           )}
                         </Button>
                       )}
+                      {/* Uninstall all — confirms first, then deletes every
+                          skill currently under this source's namespace.
+                          Destructive variant so it reads as different from
+                          the blue Install / Update buttons. */}
+                      {installed > 0 && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleBulkUninstall(s)}
+                          disabled={isBulkBusy}
+                          title={`Delete the ${installed} skill${installed === 1 ? "" : "s"} installed from this catalog`}
+                          className="min-w-[110px]"
+                        >
+                          {isBulkBusy ? "Working…" : `Uninstall ${installed}`}
+                        </Button>
+                      )}
                       {s.origin === "custom" && (
-                        <Button size="sm" variant="destructive"
-                          onClick={() => removeDiscoverySource(s.url)}>Remove</Button>
+                        <Button size="sm" variant="ghost"
+                          onClick={() => removeDiscoverySource(s.url)}>Remove source</Button>
                       )}
                     </div>
                   )}
@@ -351,6 +487,7 @@ export function DiscoverySources() {
                         outdatedNames={cat.outdated}
                         installingKey={installingKey}
                         onInstall={handleInstallOne}
+                        bulkBusy={isBulkBusy}
                       />
                     )}
                   </div>
