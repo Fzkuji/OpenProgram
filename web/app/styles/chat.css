@@ -796,10 +796,11 @@
   height: 20px;
 }
 .typing-indicator .dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--accent-blue, #6cb4ff);
+  opacity: 0.85;
   animation: bounce 1.4s ease-in-out infinite;
 }
 .typing-indicator .dot:nth-child(2) { animation-delay: 0.2s; }
