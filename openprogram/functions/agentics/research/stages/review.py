@@ -16,7 +16,7 @@ from openprogram.agentic_programming.runtime import Runtime
 from openprogram.functions.agentics._utils import parse_json
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def review_paper(paper_content: str, venue: str, runtime: Runtime) -> str:
     """Review a paper at the level expected by top CS conferences.
 
@@ -51,7 +51,7 @@ def review_paper(paper_content: str, venue: str, runtime: Runtime) -> str:
     ])
 
 
-@agentic_function(render_range={"siblings": -1})
+@agentic_function
 def fix_paper(paper_content: str, review_feedback: str,
               round_num: int, runtime: Runtime) -> str:
     """Fix the paper based on reviewer feedback.

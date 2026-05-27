@@ -519,16 +519,22 @@ def compute_reads(
                           "in-frame" (the function's own sub-calls);
                           nodes with seq <= frame_entry_seq are
                           "pre-frame". Use -1 (the default) for
-                          top-level chat (no frame) — siblings capping
-                          never applies there.
-        render_range:     ``{"depth": int, "siblings": int}`` limits.
-                          ``depth``  — caps pre-frame; ``None``
+                          top-level chat — that frame simply has no
+                          pre-frame, and all nodes are in-frame.
+        render_range:     ``{"callers": int, "subcalls": int}`` limits.
+                          ``callers`` — caps pre-frame nodes (history
+                            before this frame started); ``None``
                             (default) uncapped, ``0`` walls off prior
-                            context, ``N`` keeps the last N.
-                          ``siblings`` — caps in-frame; ``0`` (default)
-                            a function does not auto-see its own
-                            sub-calls, ``-1`` uncapped, ``N`` keeps the
-                            last N.
+                            context, ``N`` keeps the last N nodes by
+                            seq.
+                          ``subcalls`` — caps in-frame nodes (what
+                            happened since the frame started); ``-1``
+                            (default) uncapped — the frame naturally
+                            sees its own progress. Trimming a
+                            sub-function's internals is done by that
+                            sub-function's ``expose`` setting, not by
+                            subcalls counting. Set ``N>=0`` only to
+                            actively bound prompt size in a long loop.
 
     Visibility filtering (per-function ``metadata.expose``):
         ``io``   (default) — drop the function's direct llm Calls;
@@ -548,27 +554,29 @@ def compute_reads(
     if head_seq < 0:
         return []
 
-    # depth_cap → caps pre-frame (history before the frame started).
+    # callers_cap → caps pre-frame (history before the frame started).
     #   None = uncapped (the conversation stays fully visible).
-    # siblings_cap → caps in-frame (what happened since the frame
-    #   started — the function's own sub-calls).
-    #   DEFAULT 0 — a function does NOT auto-pull its own sub-calls
-    #   into its LLM prompts. Sub-results reach the caller through the
-    #   normal Python ``return``; a function that wants its in-frame
-    #   detail in-prompt must opt in with ``render_range``.
-    #   -1 = uncapped. N>=0 = keep the N most recent in-frame nodes.
-    depth_cap: Optional[int] = None
-    siblings_cap: int = 0
+    # subcalls_cap → caps in-frame (what happened since the frame
+    #   started — earlier exec calls and direct sub-functions).
+    #   DEFAULT -1 (uncapped). A frame naturally sees everything that
+    #   happened inside it so far. Trimming a sub-function's internals
+    #   is the job of that sub-function's ``expose`` setting, not of
+    #   subcalls counting. Set N>=0 to actively trim to the N most
+    #   recent in-frame nodes (e.g. to bound prompt size in a long loop).
+    callers_cap: Optional[int] = None
+    subcalls_cap: int = -1
     if isinstance(render_range, dict):
-        if render_range.get("depth") is not None:
-            depth_cap = int(render_range["depth"])
-        if render_range.get("siblings") is not None:
-            siblings_cap = int(render_range["siblings"])
+        cv = render_range.get("callers")
+        if cv is not None:
+            callers_cap = int(cv)
+        sv = render_range.get("subcalls")
+        if sv is not None:
+            subcalls_cap = int(sv)
 
     # TODO(render_range): today render_range only expresses *distance*
-    # — depth (how far up the conversation) and siblings (how far into
-    # the current frame). It cannot pin SPECIFIC nodes. A planned but
-    # unimplemented extension: select particular functions/nodes by
+    # — callers (how far up the conversation) and subcalls (how far
+    # into the current frame). It cannot pin SPECIFIC nodes. A planned
+    # but unimplemented extension: select particular functions/nodes by
     # name or position and force them into the prompt regardless of
     # distance, e.g. render_range={"pin": ["plan_next_action", ...]}
     # or an explicit node-id selector on runtime.exec. Until then a
@@ -579,12 +587,12 @@ def compute_reads(
     in_frame = [n for n in visible if n.seq > frame_entry_seq]
     pre_frame = [n for n in visible if n.seq <= frame_entry_seq]
 
-    # depth_cap: keep the most-recent ``depth_cap`` pre-frame nodes.
-    if depth_cap is not None:
-        if depth_cap <= 0:
+    # callers_cap: keep the most-recent ``callers_cap`` pre-frame nodes.
+    if callers_cap is not None:
+        if callers_cap <= 0:
             pre_frame = []
         else:
-            pre_frame = pre_frame[-depth_cap:]
+            pre_frame = pre_frame[-callers_cap:]
 
     chain = pre_frame + in_frame
 
@@ -619,16 +627,18 @@ def compute_reads(
             continue
         kept.append(n)
 
-    # siblings_cap: keep at most N in-frame nodes (most recent).
-    # -1 means uncapped — skip the trim entirely.
-    if siblings_cap >= 0 and frame_entry_seq >= 0:
+    # subcalls_cap: keep at most N in-frame nodes (most recent).
+    # -1 (default) means uncapped — skip the trim entirely. Top-level
+    # chat (frame_entry_seq == -1) is just a frame with no pre-frame;
+    # it goes through the same path with no special-casing.
+    if subcalls_cap >= 0:
         in_frame_ids = {n.id for n in in_frame}
         in_frame_kept = 0
         final: list = []
         for n in reversed(kept):
             if n.id in in_frame_ids:
                 in_frame_kept += 1
-                if in_frame_kept > siblings_cap:
+                if in_frame_kept > subcalls_cap:
                     continue
             final.append(n)
         kept = list(reversed(final))

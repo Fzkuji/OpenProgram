@@ -52,12 +52,24 @@
 | 工作目录选择器模式 | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")` | `fn.workdir_mode` |
 | 框架自动注入参数 | 全局常量 `_AUTO_PARAMS = {"runtime", "exec_runtime", "review_runtime"}` | 模块级 |
 | runtime.exec system prompt 覆盖 | `@agentic_function(system="...")` | `fn.system` |
-| context 暴露程度 | `@agentic_function(expose="io"\|"full"\|"hidden")` | `fn.expose` |
-| context 渲染范围 | `@agentic_function(render_range={"depth": ..., "siblings": ...})` | `fn.render_range` |
+| context 暴露程度 | `@agentic_function(expose="io"\|"llm"\|"full"\|"hidden")` —— **朝外**:别人渲染 DAG 时能看到我的什么 | `fn.expose` |
+| context 渲染范围 | `@agentic_function(render_range={"callers": N, "subcalls": M})` —— **朝内**:本函数自己的 `runtime.exec` 拼 prompt 时,从 DAG 读多少历史节点。两个都是按 `seq` 的节点计数切片:`callers` = 本函数 frame **启动前**写入的节点,取最近 N 个(默认 `None` = 不限,`0` = 墙掉所有);`subcalls` = 本函数 frame **启动后**写入的节点,取最近 N 个(默认 `-1` = 不限,frame 自然看见自己的进度;子函数内部由它自己的 `expose` 负责藏,不靠 subcalls 计数;只在长 loop 想截断 prompt 时才显式设 `N>=0`) | `fn.render_range` |
 | 是否给 runtime 工具集 | `@agentic_function(no_tools=True)` | `fn.no_tools` |
 | skill trigger 词 / agent 发现 | 同目录 `SKILL.md` frontmatter | skill loader 单独加载 |
 
 **核心原则**：能在 signature / annotation 里表达的，不在装饰器里重复；能用 `input=` 装饰器表达的结构化信息，不在 docstring 里重复。
+
+### 裸 `@agentic_function` 的实际默认行为
+
+| 项 | 默认 | 效果 |
+|---|---|---|
+| `expose` | `"io"` | 调用方在 DAG 里看到我的 name + input + output。我内部的 `runtime.exec`（`llm` 节点）对调用方不可见 |
+| `render_range` | `None` → `compute_reads` 退到 `callers=None, subcalls=-1` | pre-frame 全保留。in-frame（frame 自己的进度：前几次 `runtime.exec` 结果、已 return 的子函数 io）也全保留。子 `@agentic_function` 的内部之所以看不到，是因为子函数自带 `expose="io"`，不是因为 subcalls 在切。 |
+| 顶层 chat turn | `frame_entry_seq=-1`，无 pre-frame | 走和普通 frame 一模一样的路径——所有节点都算 in-frame，全部可见。没有特殊处理。 |
+| `no_tools` | `False` | runtime 自动注入当前 toolset |
+| `system` | `None` | 用 runtime 现有 system prompt |
+
+含义：frame 默认会自然累加自己 frame 内的产物。只有想截断长 loop 的 prompt 时才显式设 `subcalls=N`；想完全墙掉 in-frame（罕见）就显式设 `subcalls=0`。
 
 ## 4. docstring 与 `content` 的分工
 
@@ -266,4 +278,5 @@ WebUI 表单按以下规则渲染每个参数（在 `web/components/programs/pro
 - `openprogram/agentic_programming/function.py` — `@agentic_function` 装饰器实现
 - `openprogram/agentic_programming/decision.py` — 选项菜单渲染、回复解析,以及下一步决策原语(`decision.make`、`render_options`、`parse_args`、`DecisionError`)
 - `docs/design/function/agentic_function.md` — 装饰器使用指南
-- `docs/design/function/function_calling/llm_call.md` — 原生 tool_use 协议
+- `docs/design/function-calling-unification.md` — function/tool calling 框架
+- `docs/design/tool-calling.md` — 单轮原生 tool-use 循环机制

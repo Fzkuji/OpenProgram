@@ -134,8 +134,8 @@ def test_dag_prompt_inside_io_function_frame(rt, store):
     assert msgs[-1].content[0].text == "step 1"
 
 
-def test_render_range_depth_zero_hides_history(rt, store):
-    """When inside a frame with render_range={'depth':0}, prior chat
+def test_render_range_callers_zero_hides_history(rt, store):
+    """When inside a frame with render_range={'callers':0}, prior chat
     history is walled off — only in-frame nodes + current turn appear."""
     from openprogram.agentic_programming.function import _call_id
     from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
@@ -145,7 +145,7 @@ def test_render_range_depth_zero_hides_history(rt, store):
     isolated = Call(
         role=ROLE_CODE, name="isolated", input={}, output=None,
         metadata={"expose": "io", "status": "running",
-                  "render_range": {"depth": 0, "siblings": 99}},
+                  "render_range": {"callers": 0, "subcalls": 99}},
     )
     store.append(isolated)
 

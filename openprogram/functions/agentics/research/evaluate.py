@@ -26,7 +26,7 @@ from openprogram.agentic_programming.runtime import Runtime
 from openprogram.functions.agentics._utils import parse_json
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def _evaluate_candidates(task: str, candidates: list[dict],
                          runtime: Runtime) -> dict:
     """Pick the best candidate output for an academic writing task.

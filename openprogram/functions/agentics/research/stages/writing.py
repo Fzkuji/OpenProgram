@@ -20,7 +20,7 @@ from openprogram.agentic_programming.runtime import Runtime
 # Section writing
 # ---------------------------------------------------------------------------
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def write_section(section: str, context: str, runtime: Runtime) -> str:
     """Write one section of an academic paper in LaTeX.
 
@@ -84,7 +84,7 @@ def gather_context(project_dir: str, section: str) -> str:
 # Translation
 # ---------------------------------------------------------------------------
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def translate_zh2en(text: str, runtime: Runtime) -> str:
     """Translate Chinese academic draft to English LaTeX.
 
@@ -110,7 +110,7 @@ def translate_zh2en(text: str, runtime: Runtime) -> str:
     ])
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def translate_en2zh(text: str, runtime: Runtime) -> str:
     """Translate English LaTeX to readable Chinese text.
 
@@ -135,7 +135,7 @@ def translate_en2zh(text: str, runtime: Runtime) -> str:
 # Polishing — two competing approaches
 # ---------------------------------------------------------------------------
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def polish_rigorous(text: str, runtime: Runtime) -> str:
     """Deep polish for top-tier conference submission (rigor-focused).
 
@@ -163,7 +163,7 @@ def polish_rigorous(text: str, runtime: Runtime) -> str:
     ])
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def polish_natural(text: str, runtime: Runtime) -> str:
     """Polish for naturalness — remove mechanical/AI writing patterns.
 
@@ -194,7 +194,7 @@ def polish_natural(text: str, runtime: Runtime) -> str:
 # Logic check
 # ---------------------------------------------------------------------------
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def check_logic(text: str, runtime: Runtime) -> str:
     """Final manuscript check — only flag fatal errors.
 
@@ -217,7 +217,7 @@ def check_logic(text: str, runtime: Runtime) -> str:
 # Experiment analysis
 # ---------------------------------------------------------------------------
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def analyze_results(data: str, runtime: Runtime) -> str:
     """Analyze experimental data and write LaTeX analysis paragraphs.
 
@@ -248,7 +248,7 @@ def analyze_results(data: str, runtime: Runtime) -> str:
 # Compression / expansion
 # ---------------------------------------------------------------------------
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def compress_text(text: str, runtime: Runtime) -> str:
     """Reduce word count by 5-15 words through sentence optimization.
 
@@ -265,7 +265,7 @@ def compress_text(text: str, runtime: Runtime) -> str:
     ])
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def expand_text(text: str, runtime: Runtime) -> str:
     """Add 5-15 words by deepening logic, adding connectors, upgrading expressions.
 

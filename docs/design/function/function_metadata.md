@@ -50,12 +50,24 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 | Working-directory picker mode | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")` | `fn.workdir_mode` |
 | Framework-auto-injected parameters | global constant `_AUTO_PARAMS = {"runtime", "exec_runtime", "review_runtime"}` | module level |
 | Override of `runtime.exec` system prompt | `@agentic_function(system="...")` | `fn.system` |
-| Context-tree expose mode | `@agentic_function(expose="io"\|"full"\|"hidden")` | `fn.expose` |
-| Context-tree render range | `@agentic_function(render_range={"depth": ..., "siblings": ...})` | `fn.render_range` |
+| Context-tree expose mode | `@agentic_function(expose="io"\|"llm"\|"full"\|"hidden")` — controls what **callers** see of this function in their DAG render | `fn.expose` |
+| Context-tree render range | `@agentic_function(render_range={"callers": N, "subcalls": M})` — controls how much DAG history **this function's own** `runtime.exec` reads. Both are node-count slices on `seq`: `callers` = most-recent N nodes written **before** this function's frame started (default `None` = uncapped, `0` = wall off all prior context); `subcalls` = most-recent N nodes written **since** this function's frame started (default `-1` = uncapped — the frame sees its own progress; child internals are hidden by *their* `expose` setting, not by subcalls counting; set `N>=0` only to actively cap prompt size in a loop). | `fn.render_range` |
 | Whether runtime gets a tool set | `@agentic_function(no_tools=True)` | `fn.no_tools` |
 | Skill trigger words / agent discovery | sibling `SKILL.md` frontmatter | loaded separately by the skill loader |
 
 **Core principle**: anything expressible in the signature / annotation is not repeated in the decorator; anything expressible in `input=` is not repeated in the docstring.
+
+### Effective defaults for a bare `@agentic_function`
+
+| Aspect | Default | Resulting behavior |
+|---|---|---|
+| `expose` | `"io"` | Callers see my name + input + output. My internal `runtime.exec` (`llm` Calls) are hidden from them. |
+| `render_range` | `None` → `compute_reads` falls through to `callers=None, subcalls=-1` | Pre-frame history is uncapped. In-frame nodes (the frame's own progress: earlier `runtime.exec` results, returned sub-function io) are also uncapped. Child `@agentic_function` internals stay hidden because the child carries `expose="io"`, not because subcalls trims them. |
+| top-level chat turn | `frame_entry_seq=-1`, no pre-frame | Same code path as any other frame — all nodes are in-frame and visible. No special-casing. |
+| `no_tools` | `False` | The active toolset is injected into `runtime.exec`. |
+| `system` | `None` | Use the runtime's existing system prompt as-is. |
+
+Implication: a frame naturally accumulates its own work. Set `subcalls=N` explicitly only to bound prompt size in a long loop. Set `subcalls=0` explicitly to fully wall off in-frame nodes (rare).
 
 ## 4. The role of the docstring vs `content`
 
@@ -264,4 +276,5 @@ When writing a new `@agentic_function`:
 - `openprogram/agentic_programming/function.py` — `@agentic_function` decorator implementation
 - `openprogram/agentic_programming/decision.py` — options-menu rendering, reply parsing, and the next-step decision primitive (`decision.make`, `render_options`, `parse_args`, `DecisionError`)
 - `docs/design/function/agentic_function.md` — decorator usage guide
-- `docs/design/function/function_calling/llm_call.md` — native tool_use protocol
+- `docs/design/function-calling-unification.md` — function/tool calling framework
+- `docs/design/tool-calling.md` — per-turn native tool-use loop mechanics

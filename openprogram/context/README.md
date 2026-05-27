@@ -178,11 +178,11 @@ message dict ↔ Call 的双向映射在这一层：
 @agentic_function 内部          frame_entry_seq 之前 + frame 内部新增节点
 expose='io' 的 code Call        把它内部 llm Call（called_by == this）从 reads 里去掉
 expose='full'                  保留内部所有 llm Call
-render_range['depth']           pre-frame 节点最多保留多少（0 = 完全隔离）
-render_range['siblings']        in-frame 节点最多保留多少（最近 N 个）
+render_range['callers']         pre-frame 节点最多保留多少（默认 None 不限，0 = 完全隔离）
+render_range['subcalls']        in-frame 节点最多保留多少（默认 -1 不限；frame 自然看见自己进度，子函数内部由各自 expose 负责藏）
 ```
 
-所有节点**始终写进 DAG**（不影响存储），expose 只影响算 reads 时的可见性过滤。`compute_reads` + `render_dag_messages` 已经是 `runtime.exec` 的 prompt 拼接路径；旧的 `render_context` 字符串拼接已删除。
+所有节点**始终写进 DAG**（不影响存储），expose 只影响算 reads 时的可见性过滤。`compute_reads` + `render_dag_messages` 是 `runtime.exec` 的 prompt 拼接路径。
 
 ---
 

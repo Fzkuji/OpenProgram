@@ -102,8 +102,8 @@ The framework's components (WebUI, catalog menus, provider-native `tools=[...]`)
 | Working-directory picker mode | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")` | `fn.workdir_mode` |
 | Auto-injected by the framework | param name in `{"runtime", "exec_runtime", "review_runtime"}` | framework checks signature |
 | System-prompt override | `@agentic_function(system="...")` | `fn.system` |
-| Context-tree visibility | `@agentic_function(expose="io"\|"full"\|"hidden")` | `fn.expose` |
-| Context-tree render range | `@agentic_function(render_range={"depth": ..., "siblings": ...})` | `fn.render_range` |
+| Context-tree visibility | `@agentic_function(expose="io"\|"llm"\|"full"\|"hidden")` — default `"io"` | `fn.expose` |
+| Context-tree render range | `@agentic_function(render_range={"callers": N, "subcalls": M})` — defaults `callers=None` (pre-frame uncapped), `subcalls=-1` (in-frame uncapped); set explicit `N>=0` only to cap | `fn.render_range` |
 | Tool set policy | `@agentic_function(no_tools=True)` | `fn.no_tools` |
 | Skill trigger keywords | sibling `SKILL.md` frontmatter | skill loader |
 

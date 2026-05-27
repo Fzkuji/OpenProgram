@@ -13,7 +13,7 @@ from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def design_experiments(idea: str, runtime: Runtime) -> str:
     """Design a complete experiment plan for a research idea.
 
@@ -41,7 +41,7 @@ def design_experiments(idea: str, runtime: Runtime) -> str:
     ])
 
 
-@agentic_function(render_range={"siblings": -1})
+@agentic_function
 def run_experiment(plan: str, step: str, runtime: Runtime) -> str:
     """Execute one step of the experiment plan.
 
@@ -64,7 +64,7 @@ def run_experiment(plan: str, step: str, runtime: Runtime) -> str:
     ])
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def check_training(log: str, runtime: Runtime) -> str:
     """Check training logs for issues.
 

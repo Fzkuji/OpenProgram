@@ -15,7 +15,7 @@ from openprogram.agentic_programming.runtime import Runtime
 from openprogram.functions.agentics._utils import parse_json
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def survey_topic(topic: str, runtime: Runtime) -> str:
     """Survey the literature for a given research topic.
 
@@ -40,7 +40,7 @@ def survey_topic(topic: str, runtime: Runtime) -> str:
     ])
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def identify_gaps(survey: str, runtime: Runtime) -> str:
     """Identify research gaps from a literature survey.
 

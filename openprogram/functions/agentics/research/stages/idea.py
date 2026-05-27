@@ -19,7 +19,7 @@ from openprogram.functions.agentics.research._paths import (
 from openprogram.functions.agentics._utils import parse_json
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def generate_ideas(topic: str, gaps: str, runtime: Runtime) -> str:
     """Generate research ideas that address identified gaps.
 
@@ -45,7 +45,7 @@ def generate_ideas(topic: str, gaps: str, runtime: Runtime) -> str:
     ])
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def check_novelty(idea: str, runtime: Runtime) -> str:
     """Check if a research idea is novel.
 
@@ -67,7 +67,7 @@ def check_novelty(idea: str, runtime: Runtime) -> str:
     ])
 
 
-@agentic_function(render_range={"depth": 0, "siblings": 0})
+@agentic_function(render_range={"callers": 0})
 def rank_ideas(ideas: str, novelty_results: str, runtime: Runtime) -> str:
     """Rank research ideas by overall promise.
 

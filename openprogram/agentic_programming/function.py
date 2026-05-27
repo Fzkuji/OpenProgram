@@ -6,7 +6,7 @@ Usage is identical to a decorator function:
     @agentic_function
     def observe(task): ...
 
-    @agentic_function(expose="full", render_range={"depth": 1})
+    @agentic_function(expose="full", render_range={"callers": 1})
     def navigate(target): ...
 
 Internally it's a class (like torch.no_grad), but users interact with it
@@ -100,7 +100,7 @@ def _append_function_call_entry(
 
     ``render_range`` is stamped into metadata so ``compute_reads``
     (which reads frame settings off the in-DAG code Call) can apply
-    depth / siblings limits without needing a separate in-memory frame.
+    callers / subcalls limits without needing a separate in-memory frame.
 
     No-op when:
       - no ``_store`` is installed (standalone scripts / tests)
@@ -359,14 +359,31 @@ class agentic_function:
                     Dict stamped into the code Call's metadata; the
                     runtime's ``compute_reads`` reads it to bound the
                     history a nested ``runtime.exec`` sees.
-                    Example: {"depth": 1, "siblings": 3}
+                    Shape: {"callers": N, "subcalls": M}.
 
-                    If None (default), no extra bound is applied.
+                    Effective default when omitted (``None``):
+                      callers  = None  — uncapped pre-frame (the full
+                                         conversation history that
+                                         existed when this function
+                                         started flows in)
+                      subcalls = -1    — uncapped in-frame (the frame
+                                         naturally sees its own
+                                         progress: earlier runtime.exec
+                                         results and returned sub-
+                                         function io). Trimming a
+                                         child @agentic_function's
+                                         internals is done by the
+                                         child's ``expose`` setting,
+                                         not by subcalls counting.
 
                     Common patterns:
-                      {"depth": 0, "siblings": 0}    — isolated, see nothing
-                      {"depth": 1, "siblings": 1}    — parent + last sibling
-                      {"siblings": 3}                 — all ancestors + last 3
+                      {"callers": 0}                  — isolated from
+                                                        prior conversation
+                      {"subcalls": 0}                 — wall off in-frame
+                                                        (rarely needed)
+                      {"subcalls": 3}                 — cap in-frame at
+                                                        3 most recent
+                                                        (loop budget)
 
         input:      UI metadata for function parameters (used by the visualizer
                     to render structured input forms).

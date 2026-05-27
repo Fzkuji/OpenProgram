@@ -58,23 +58,38 @@ def test_empty_graph_returns_empty_list():
     assert compute_reads(g) == []
 
 
-# ── Inside a frame: in-frame hidden by default (siblings → 0) ──────
+# ── Inside a frame: in-frame uncapped by default ───────────────────
 
 
-def test_in_frame_hidden_by_default():
-    """A frame does NOT auto-pull its own in-frame sub-calls — the
-    default ``siblings`` is 0, so only pre-frame survives."""
+def test_in_frame_visible_by_default():
+    """A frame naturally sees its own in-frame progress. Default
+    ``subcalls`` is -1 (uncapped); expose handles hiding internals
+    of child @agentic_functions, not subcalls counting."""
+    g = Graph()
+    u = _user(g, "q")
+    m = _llm(g, "a")
+    entry = m.seq
+    s1 = _llm(g, "step1")
+    s2 = _llm(g, "step2")
+    reads = compute_reads(g, frame_entry_seq=entry)
+    assert reads == [u.id, m.id, s1.id, s2.id]
+
+
+def test_subcalls_zero_explicitly_hides_in_frame():
+    """Opt in to ``subcalls=0`` to actively wall off in-frame nodes."""
     g = Graph()
     u = _user(g, "q")
     m = _llm(g, "a")
     entry = m.seq
     _llm(g, "step1")
     _llm(g, "step2")
-    reads = compute_reads(g, frame_entry_seq=entry)
+    reads = compute_reads(
+        g, frame_entry_seq=entry, render_range={"subcalls": 0}
+    )
     assert reads == [u.id, m.id]
 
 
-def test_siblings_uncapped_shows_all_in_frame():
+def test_subcalls_uncapped_shows_all_in_frame():
     """``siblings=-1`` opts back into seeing every in-frame node."""
     g = Graph()
     u = _user(g, "q")
@@ -83,22 +98,22 @@ def test_siblings_uncapped_shows_all_in_frame():
     in1 = _llm(g, "step1")
     in2 = _llm(g, "step2")
     reads = compute_reads(g, frame_entry_seq=entry,
-                          render_range={"siblings": -1})
+                          render_range={"subcalls": -1})
     assert reads == [u.id, m.id, in1.id, in2.id]
 
 
-def test_depth_zero_isolates_in_frame():
+def test_callers_zero_isolates_in_frame():
     g = Graph()
     _user(g, "q")
     _llm(g, "a")
     entry = g.last().seq
     s1 = _llm(g, "s1")
     reads = compute_reads(g, frame_entry_seq=entry,
-                          render_range={"depth": 0, "siblings": -1})
+                          render_range={"callers": 0, "subcalls": -1})
     assert reads == [s1.id]
 
 
-def test_depth_keeps_recent_pre_frame_only():
+def test_callers_keeps_recent_pre_frame_only():
     g = Graph()
     a = _user(g, "1")
     b = _llm(g, "2")
@@ -106,14 +121,14 @@ def test_depth_keeps_recent_pre_frame_only():
     d = _llm(g, "4")
     entry = d.seq
     s = _llm(g, "step")
-    # depth=2 → keep most recent 2 pre-frame (c, d); siblings=-1 → all
+    # callers=2 → keep most recent 2 pre-frame (c, d); subcalls=-1 → all
     # in-frame (s).
     reads = compute_reads(g, frame_entry_seq=entry,
-                          render_range={"depth": 2, "siblings": -1})
+                          render_range={"callers": 2, "subcalls": -1})
     assert reads == [c.id, d.id, s.id]
 
 
-def test_siblings_cap_keeps_recent_in_frame_nodes_only():
+def test_subcalls_cap_keeps_recent_in_frame_nodes_only():
     g = Graph()
     u = _user(g, "q")
     entry = u.seq
@@ -121,7 +136,7 @@ def test_siblings_cap_keeps_recent_in_frame_nodes_only():
     s2 = _llm(g, "2")
     s3 = _llm(g, "3")
     reads = compute_reads(g, frame_entry_seq=entry,
-                          render_range={"siblings": 2})
+                          render_range={"subcalls": 2})
     assert u.id in reads
     assert s3.id in reads
     assert s2.id in reads
@@ -183,6 +198,6 @@ def test_head_seq_limits_chain_inside_frame_too():
     s2 = _llm(g, "2")
     s3 = _llm(g, "3")
     reads = compute_reads(g, head_seq=s2.seq, frame_entry_seq=entry,
-                          render_range={"siblings": -1})
+                          render_range={"subcalls": -1})
     assert reads == [u.id, s1.id, s2.id]
     assert s3.id not in reads

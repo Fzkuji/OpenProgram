@@ -76,7 +76,7 @@ The framework's components (WebUI, catalog menus, provider-native `tools=[...]`)
 | Auto-injected by the framework | param name in `{"runtime", "exec_runtime", "review_runtime"}` | framework checks signature |
 | System-prompt override | `@agentic_function(system="...")` | `fn.system` |
 | Context-tree visibility | `@agentic_function(expose="io"\|"full"\|"hidden")` | `fn.expose` |
-| Context-tree render range | `@agentic_function(render_range={"depth": ..., "siblings": ...})` | `fn.render_range` |
+| Context-tree render range | `@agentic_function(render_range={"callers": ..., "subcalls": ...})` | `fn.render_range` |
 | Tool set policy | `@agentic_function(no_tools=True)` | `fn.no_tools` |
 | Skill trigger keywords | sibling `SKILL.md` frontmatter | skill loader |
 

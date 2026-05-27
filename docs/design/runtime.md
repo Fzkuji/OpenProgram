@@ -1,151 +1,106 @@
-# Runtime 设计文档
+# Runtime — 设计理由
 
-## 概述
+API 用法见 [`../api/runtime.md`](../api/runtime.md)。本文档只讲**为什么**
+Runtime 长成这样、哪些备选方案被否决、哪些权衡是有意识做的。
 
-Runtime 是 LLM 的调用接口。它封装了具体的 provider（Claude Code CLI / Codex CLI / Anthropic API 等），
-提供统一的 `exec()` 方法调用 LLM。
+## 1 runtime = 1 session
 
-**核心设计：一个 runtime 就是一个 session，1:1 关系。**
-
-- 创建 runtime = 创建 session
-- 关闭 runtime = 关闭 session
-- 想要新 session？创建新 runtime
-
-没有 reset，没有 new_session。
-
-## 生命周期
+每个 `Runtime` 实例绑定一个 provider session,生命周期 1:1:
 
 ```
-create_runtime() → runtime 对象（= 一个 session）
-    ↓
-runtime.exec() → 创建 exec 子节点，调 LLM
-runtime.exec() → 再创建一个 exec 子节点，调 LLM
-    ↓
-runtime.close() → 释放资源，之后 exec() 报错
+create_runtime()      = 开 session
+runtime.exec()        = session 里发一次请求
+runtime.close()       = 关 session
 ```
 
-每次 `exec()` 调用会在当前函数节点下创建一个 exec 子节点（`node_type="exec"`），
-然后通过 `summarize()` 读取上下文树构建 LLM 输入。
+不提供 `reset()` / `new_session()`,要新 session 就再 `create_runtime()`。
 
-### 三个生命周期方法
+**为什么不让一个 Runtime 复用多 session?**
 
-| 方法 | 作用 |
-|------|------|
-| `create_runtime()` | 创建 runtime，自动检测 provider |
-| `runtime.exec()` | 调用 LLM |
-| `runtime.close()` | 释放资源，标记关闭 |
+- CLI provider(Claude Code / Codex / Gemini CLI)的 session 状态在子进程里。
+  复用就要在 Runtime 上挂"当前哪个 session id"这种可变状态,引入并发竞态。
+- API provider 本身无状态,做"多 session"也只是上层 dict,跟"多个 Runtime"
+  等价,没新功能。
+- ContextVar 自动注入(下条)依赖"runtime 跟当前函数树绑定"这个简单模型;
+  多 session 会让注入语义复杂化。
 
-### with 语法
+代价:用户想跑两套独立对话要管两个 runtime 对象。可以接受,因为这种场景少。
 
-```python
-with create_runtime() as rt:
-    result = rt.exec(content="hello")
-# 自动 close
-```
+## ContextVar 自动注入 runtime
 
-### 关闭后不可用
+`@agentic_function` 装饰器读 `_current_runtime` ContextVar,如果当前函数
+没传 `runtime=` 参数就用它;入口函数也没有,就自动 `create_runtime()`。
 
-```python
-rt = create_runtime()
-rt.close()
-rt.exec("hello")  # → RuntimeError: Runtime is closed.
-```
+**为什么不让函数显式声明 runtime?**
 
-## 自动注入
+显式声明的话每个 agentic function 都得在签名里加 `runtime: Runtime`,
+而且每次嵌套调用都得显式传 `runtime=runtime` 透传——纯粹是 plumbing
+样板代码,跟函数逻辑无关。ContextVar 把它隐去:子函数自然继承父函数的
+runtime,入口处自动起一个,出口处自动关。
 
-`@agentic_function` 装饰器通过 `_current_runtime`（ContextVar）自动管理 runtime。
-函数不需要手动创建或传递 runtime。
+**为什么不用 module-level singleton?**
 
-### 情况 1：不传 runtime（入口函数）
+singleton 跨线程 / 跨协程共享,两个并发 agent 会互相踩 session 状态。
+ContextVar 按线程 + 协程隔离,天然并发安全。
 
-```python
-polish_text(text="hello")
-```
+## Session-provider vs API-provider 共用一套抽象
 
-- `_inject_runtime` 检测到 `runtime=None`
-- `_current_runtime` ContextVar 也是 None
-- 自动 `create_runtime()`，设置 ContextVar
-- 函数结束后自动 `close()` + 清理 ContextVar
+无论底层是 Claude Code CLI(有 session)还是 Anthropic API(无 session),
+对 `@agentic_function` 作者都是一样的接口 `runtime.exec(content=[...])`。
+框架靠 `has_session` 属性区分两类 provider 在内部走不同路径:
 
-### 情况 2：不传 runtime（子函数）
-
-```python
-@agentic_function
-def gui_agent(task, runtime=None):
-    _gui_step(task=task)  # 没传 runtime
-
-@agentic_function
-def _gui_step(task, runtime=None):
-    runtime.exec(...)  # 自动拿到 gui_agent 的 runtime
-```
-
-- `_inject_runtime` 检测到 `runtime=None`
-- `_current_runtime` ContextVar 有值（gui_agent 的 runtime）
-- 用 ContextVar 里的，不创建新的
-- 不负责 close
-
-### 情况 3：显式传 runtime
-
-```python
-rt = create_runtime()
-polish_text(text="hello", runtime=rt)
-# 子函数自动继承 rt
-# 函数结束后不 close（调用方管）
-rt.close()
-```
-
-- `_inject_runtime` 检测到 `runtime` 不是 None
-- 把它放进 ContextVar（供子函数继承）
-- 函数结束后不 close（`owns_runtime=False`）
-
-## Provider 的 close() 实现
-
-| Provider | close() 做什么 |
-|----------|----------------|
-| Claude Code | 杀掉 CLI 进程 + 标记关闭 |
-| Codex | 清除 session_id + 标记关闭 |
-| Gemini CLI | 清除 session_id + 标记关闭 |
-| Anthropic API | 标记关闭（无状态，无需额外清理） |
-| OpenAI API | 标记关闭（无状态） |
-| Gemini API | 标记关闭（无状态） |
-
-所有 provider 的 `close()` 最终都调用 `super().close()`，设置 `_closed=True`。
-
-## Session vs API Provider
-
-| | Session provider (CLI) | API provider |
+| | session provider (CLI) | API provider |
 |---|---|---|
-| 例子 | Claude Code, Codex, Gemini CLI | Anthropic API, OpenAI API |
-| 对话记忆 | CLI 进程/session 自己管 | 无，每次 exec() 独立 |
-| 上下文注入 | 跳过 summarize()，只发 docstring | 用 summarize() 注入 context tree |
-| `has_session` | True（首次 exec 后） | False |
-| siblings 设置 | 不生效（session 自己记得） | 生效（注入历史） |
+| 对话记忆 | 子进程自己管 | 无,每次 exec 独立 |
+| 上下文注入 | 跳过 DAG render,只发 docstring + 当次 content | 通过 `compute_reads` + `render_dag_messages` 从 DAG 拼历史 |
+| `render_range.subcalls` | 不生效(session 自己记得对话) | 生效(用来限制注入历史的窗口) |
 
-框架通过 `has_session` 自动区分，函数代码不需要关心用的是哪种 provider。
+**为什么不分两套独立的 Runtime 类?**
 
-## 自动检测 Provider
+作者写 `gui_agent` 时不应该关心后端是哪种 provider。强行分开就要每个函数
+两份实现,违背"函数描述任务、provider 描述执行通道"的分层。共用抽象的
+代价是 `has_session` 这点条件分支,值得。
 
-`create_runtime()` 调用 `detect_provider()`，按优先级检测：
+## Retry 在 runtime 层,不在 provider 层
 
-1. **环境变量** — `AGENTIC_PROVIDER` / `AGENTIC_MODEL`
-2. **配置文件** — `~/.agentic/config.json`
-3. **调用环境** — 检测是否在 Claude Code / Codex 里运行
-4. **已安装的 CLI** — `claude` / `codex` / `gemini` 命令
-5. **API Key** — `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`
+`exec()` / `async_exec()` 内置 `max_retries` 默认 2,任何 provider 都
+享受重试。
 
-## 并发安全
+**为什么不在每个 provider 类里各自加 retry?**
 
-`_current_runtime` 是 `ContextVar`，每个线程和协程有独立的值。
+- 重试策略对所有 provider 一致(网络超时 / 速率限制 / 5xx),没必要重复
+- 失败报告统一格式(`Attempt N: ErrorType: msg`),便于排查
+- `TypeError` / `NotImplementedError` 这类编程错误统一不重试(只有
+  runtime 层知道"这是 provider 实现 bug,重试也没用")
 
-```python
-# 两个并发调用，各自有自己的 runtime，互不干扰
-Thread 1: gui_agent(task="A")  → runtime A
-Thread 2: gui_agent(task="B")  → runtime B
+provider 层只关心"把请求发出去、把回复拿回来"。重试 / 节流 / 缓存这种
+横切关注点全在 runtime。
+
+## DAG 写入:进出函数都写 code 节点,exec 写 llm 节点
+
+```
+进入 @agentic_function       → 写一个 code 节点 (status=running)
+                              → 设 _call_id ContextVar 指向此节点
+函数体里 runtime.exec()      → 在当前 _call_id 下写一个 llm 节点
+                              → 节点的 called_by = _call_id
+退出函数(return / except)     → 回填同一 code 节点的 output / status
 ```
 
-## 相关文件
+`expose="hidden"` 时跳过 code 节点写入(但 `_call_id` 仍设了一个 phantom
+id,以便函数体内 LLM 调用有 frame 可参照)。
 
-- Runtime 基类：`agentic/runtime.py`
-- 自动注入逻辑：`agentic/function.py`（`_inject_runtime`、`_current_runtime`）
-- Provider 实现：`openprogram/providers/` 下各文件
-- 自动检测：`openprogram/providers/__init__.py`（`detect_provider`、`create_runtime`）
+**为什么不只在退出时写一个完成态节点?**
+
+- 函数还在跑时 webui visualizer 需要立刻能看到"它在跑"(显示 spinner)
+- 异常退出时也要有节点存在(才能记错误信息)
+
+写两次(entry + exit 回填)比写一次(完成时)更适合实时可观察。
+
+## 相关实现文件
+
+- `openprogram/agentic_programming/runtime.py` — Runtime 基类、`exec` / `_call` 协议、retry 循环
+- `openprogram/agentic_programming/function.py` — 装饰器 / `_inject_runtime` / `_call_id` / `_current_runtime` ContextVar
+- `openprogram/providers/__init__.py` — `detect_provider` / `create_runtime` 自动检测
+- `openprogram/providers/<vendor>/runtime.py` — 各 provider 的 `_call` 实现
+- `openprogram/context/nodes.py` `compute_reads` — DAG → reads 计算(`render_range` 的实际语义)
+- `openprogram/context/render.py` `render_dag_messages` — reads → provider messages 转换
