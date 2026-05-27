@@ -129,8 +129,14 @@ function useChatAreaStick(newTurnSeed: number) {
 function PendingReplyIndicator() {
   return (
     <div className="message assistant pending-standalone">
-      <span className="pending-pulse" aria-hidden="true" />
-      <span className="pending-label">{"Agentic is thinking…"}</span>
+      <div className="message-header">
+        <div className="message-avatar bot-avatar">A</div>
+        <div className="message-sender">Agentic</div>
+      </div>
+      <div className="chat-stream-body pending-body">
+        <span className="pending-pulse" aria-hidden="true" />
+        <span className="pending-label">{"Agentic is thinking…"}</span>
+      </div>
     </div>
   );
 }

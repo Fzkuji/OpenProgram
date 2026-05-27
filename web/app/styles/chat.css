@@ -786,20 +786,15 @@
 .message.assistant > .typing-indicator {
   padding-left: 36px;
 }
-/* Standalone "AI is thinking" indicator — appears between a user
-   turn and the (yet-to-arrive) assistant bubble. Inherits the
-   ``.message`` base padding (16px 24px) so the row size matches
-   real bubbles; the inner pulse + label start at the same x as the
-   text column in a real assistant bubble (avatar 28px + 8px gap). */
-.message.assistant.pending-standalone {
+/* Standalone "AI is thinking" indicator — full assistant-bubble
+   shape (avatar + Agentic header + body with breathing pulse)
+   while we're waiting on the real reply. Inherits the base
+   ``.message`` and ``.message.assistant`` styles for padding /
+   background so it sits inline with neighbouring bubbles. */
+.pending-body {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: transparent;
-  padding: 8px 24px;
-  /* Indent past the spot where the avatar would sit so the pulse +
-     text line up with the text in the bubble above. */
-  padding-left: 60px;
 }
 .pending-pulse {
   display: inline-block;
