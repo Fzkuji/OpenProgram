@@ -1,7 +1,91 @@
 "use client";
 
+import { useState } from "react";
+
 import styles from "../settings-page.module.css";
 import type { Provider } from "./types";
+
+
+/** One ``$ command`` row in a setup hint, with a "Copy" button so
+ *  users don't have to drag-select the text. Falls back gracefully
+ *  when ``navigator.clipboard`` is unavailable (older browsers,
+ *  non-HTTPS contexts) by using a hidden textarea + ``execCommand``. */
+function CommandRow({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Older / non-HTTPS fallback: throwaway textarea + execCommand.
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // If even the fallback failed (paranoid environments), at
+      // least the command text is still selectable — leave the
+      // button state alone so the user knows the click didn't take.
+    }
+  }
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        margin: "8px 0",
+      }}
+    >
+      <pre
+        style={{
+          margin: 0,
+          padding: "6px 56px 6px 10px", // right padding leaves room for the button
+          background: "var(--bg-secondary)",
+          border: "1px solid var(--border)",
+          borderRadius: 6,
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          overflow: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+        }}
+      >
+        {text}
+      </pre>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={copied ? "Copied" : "Copy command"}
+        title={copied ? "Copied" : "Copy"}
+        style={{
+          position: "absolute",
+          top: 4,
+          right: 4,
+          padding: "2px 8px",
+          background: copied ? "var(--accent)" : "var(--bg-tertiary)",
+          color: copied ? "white" : "var(--text-muted)",
+          border: "1px solid var(--border)",
+          borderRadius: 4,
+          fontSize: 11,
+          fontFamily: "var(--font-sans, inherit)",
+          cursor: "pointer",
+          lineHeight: 1.4,
+          transition: "background 120ms, color 120ms",
+        }}
+      >
+        {copied ? "✓ Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
 
 /** Provider-specific setup blurb rendered in the detail pane.
  *  Tiny markdown subset:
@@ -72,21 +156,7 @@ export function SetupHint({ hint, configured }: { hint: string; configured: bool
       <div style={{ color: "var(--text-muted)", fontSize: 13, lineHeight: 1.55 }}>
         {blocks.map((b, i) =>
           b.kind === "cmd" ? (
-            <pre
-              key={i}
-              style={{
-                margin: "8px 0",
-                padding: "6px 10px",
-                background: "var(--bg-secondary)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                overflow: "auto",
-              }}
-            >
-              {b.text}
-            </pre>
+            <CommandRow key={i} text={b.text} />
           ) : (
             <p key={i} style={{ margin: "8px 0" }}>
               {renderInline(b.text)}
