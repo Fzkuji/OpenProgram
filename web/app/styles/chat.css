@@ -1770,3 +1770,27 @@
 .inline-tree.is-error {
   border-left: 3px solid var(--accent-red);
 }
+
+/* Inline-tree header script glyph — 𝓕 / 𝓣 prefix on Function call
+ * / Thinking cards. Larger + cyan so it reads as a decorative
+ * type-set prefix, distinct from the regular label text. */
+.inline-tree-script {
+  color: var(--accent-cyan);
+  font-size: 16px;
+  line-height: 1;
+  display: inline-block;
+  vertical-align: -1px;
+}
+
+/* Thinking body — paragraph of text the model produced while
+ * reasoning. Slightly muted vs the chat-text content. */
+.inline-tree-body .thinking-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 2px 4px;
+}
