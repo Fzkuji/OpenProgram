@@ -970,7 +970,11 @@
   cursor: pointer;
   user-select: none;
   color: var(--text-secondary);
-  font-size: 12px;
+  /* Match normal chat-text size (14px) — Function call / Thinking
+     read as first-class blocks, not footnotes. The Copy / toggle
+     action elements inside .inline-tree-actions keep their own
+     smaller sizes. */
+  font-size: 14px;
 }
 .inline-tree-header:hover { background: var(--bg-selected); }
 .inline-tree-toggle {
@@ -1790,14 +1794,15 @@
 }
 
 /* Inline-tree header script glyph — 𝓕 / 𝓣 prefix on Function call
- * / Thinking cards. Larger + cyan so it reads as a decorative
- * type-set prefix, distinct from the regular label text. */
+ * / Thinking cards. Slightly larger than the 14px label + cyan so
+ * it reads as a decorative type-set prefix, distinct from regular
+ * label text. */
 .inline-tree-script {
   color: var(--accent-cyan);
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1;
   display: inline-block;
-  vertical-align: -1px;
+  vertical-align: -2px;
 }
 
 /* Thinking body — paragraph of text the model produced while
