@@ -96,6 +96,21 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   let graph = graphIn;
   let headId = headIdIn;
 
+  // collapseRuntimePlaceholders MUST run first. It folds the
+  // ``runtime placeholder + same-named code call`` pair into a single
+  // surviving code node, with the placeholder's old conv-children
+  // (e.g. a follow-up user msg whose parent_id pointed at the
+  // placeholder) reparented onto the surviving code.
+  //
+  // Without this ordering, ``_mergeRuns`` would see the placeholder
+  // still in place with two kids — the code (tool) + the followup
+  // user msg — treat them as ``wrapper + run-output``, and merge the
+  // code's caller-tree onto the user msg. That visually attaches
+  // ``gui_step`` + ``conclusion`` to the user dot in mini-DAG.
+  const collapsedRP = _collapseRuntimePlaceholders(graph, headId);
+  graph = collapsedRP.graph;
+  headId = collapsedRP.headId;
+
   const merged = _mergeRuns(graph, headId);
   graph = merged.graph;
   headId = merged.headId;
@@ -103,10 +118,6 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const collapsedR = _collapseRuntimePairs(graph, headId);
   graph = collapsedR.graph;
   headId = collapsedR.headId;
-
-  const collapsedRP = _collapseRuntimePlaceholders(graph, headId);
-  graph = collapsedRP.graph;
-  headId = collapsedRP.headId;
 
   _demoteDecorationCards(graph);
 
