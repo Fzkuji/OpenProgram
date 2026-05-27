@@ -655,6 +655,21 @@ function _collapseRuntimePlaceholders(
   });
   if (!Object.keys(removeIds).length) return { graph, headId };
   if (headId && replaceWith[headId]) headId = replaceWith[headId];
+  // Shift _depth by -1 for the surviving code call + every caller-edge
+  // descendant: the placeholder above them has been removed, so the
+  // row they sit on should move up one ROW_H. Without this the square
+  // appears 2 rows below the reply instead of 1.
+  const depthShiftOf: Record<string, true> = Object.create(null);
+  Object.keys(replaceWith).forEach((placeholderId) => {
+    const codeId = replaceWith[placeholderId];
+    const stack: string[] = [codeId];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (depthShiftOf[id]) continue;
+      depthShiftOf[id] = true;
+      (callerKidsOf[id] || []).forEach((c) => stack.push(c.id));
+    }
+  });
   const out: GNode[] = [];
   graph.forEach((m) => {
     if (removeIds[m.id]) return;
@@ -669,6 +684,10 @@ function _collapseRuntimePlaceholders(
     if (replaceWith[m.parent_id || ""]) {
       const removed = byId[m.parent_id!];
       nm = Object.assign({}, m, { parent_id: removed?.parent_id || null });
+    }
+    if (depthShiftOf[m.id] && typeof m._depth === "number") {
+      nm = nm === m ? Object.assign({}, m) : nm;
+      nm._depth = Math.max(0, (nm._depth || 0) - 1);
     }
     out.push(nm);
   });
