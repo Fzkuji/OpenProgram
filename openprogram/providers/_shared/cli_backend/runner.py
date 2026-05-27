@@ -610,12 +610,17 @@ class CliRunner:
 
     @staticmethod
     def _kill_tree(proc: asyncio.subprocess.Process) -> None:
-        """SIGKILL the whole process group — kills shell wrappers' children too."""
+        """Force-kill the whole process tree — children too.
+
+        POSIX: SIGKILL the process group (requires
+        ``start_new_session=True`` at spawn, which this runner already
+        passes). Windows: ``taskkill /F /T``. Both via the cross-
+        platform helper in :mod:`openprogram._compat`.
+        """
         if proc.returncode is not None:
             return
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
+        from openprogram._compat import kill_process_tree
+        if not kill_process_tree(proc.pid):
             try:
                 proc.kill()
             except ProcessLookupError:

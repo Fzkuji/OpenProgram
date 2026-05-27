@@ -87,10 +87,11 @@ def _reclaim_web_port(port: int) -> None:
             except OSError:
                 break
         else:
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
+            # SIGTERM ignored — escalate. signal.SIGKILL doesn't exist
+            # on Windows Python so the cross-platform helper does
+            # taskkill /F /T there instead.
+            from openprogram._compat import kill_process_tree
+            kill_process_tree(pid)
 
 
 _MANIFEST_FILES = ("routes-manifest.json",)

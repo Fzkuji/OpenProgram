@@ -1,14 +1,22 @@
-"""Cross-platform shim for the subset of :mod:`fcntl` used across the
-codebase: ``flock(fd, mode)`` plus the ``LOCK_EX`` / ``LOCK_UN`` /
-``LOCK_NB`` constants.
+"""Cross-platform shims for OS APIs that differ between POSIX and Windows.
 
-On POSIX this is a thin re-export of :mod:`fcntl`. On Windows the
-``fcntl`` module does not exist — we emulate advisory exclusive
-locking on a single byte at offset 0 of the file using
-:func:`msvcrt.locking`, and translate ``PermissionError`` (raised by
-msvcrt when ``LK_NBLCK`` finds the byte already held) into
-:class:`BlockingIOError` so call sites can keep the POSIX exception
-pattern.
+Two surfaces:
+
+1. ``fcntl`` subset — ``flock`` + ``LOCK_EX`` / ``LOCK_UN`` / ``LOCK_NB``.
+   On POSIX this is a thin re-export of :mod:`fcntl`. On Windows the
+   module doesn't exist, so we emulate single-byte advisory locking
+   via :func:`msvcrt.locking` and translate ``PermissionError`` (raised
+   on contention) into :class:`BlockingIOError` so call sites can keep
+   the POSIX exception pattern.
+
+2. ``kill_process_tree(pid)`` — force-kill a process and every child it
+   spawned. POSIX uses ``os.killpg(getpgid(pid), SIGKILL)`` (requires
+   the target was launched with ``start_new_session=True`` so it owns
+   its own pgid). Windows uses ``taskkill /F /T /PID <pid>``; ``/T``
+   kills the tree, ``/F`` forces it. Both branches swallow
+   already-dead errors. ``signal.SIGKILL`` doesn't exist on Windows
+   Python, so the helper exists precisely so callers don't need
+   per-platform branches.
 
 Usage — replace ``import fcntl`` with::
 
@@ -17,7 +25,7 @@ Usage — replace ``import fcntl`` with::
 Everything downstream stays the same: ``fcntl.flock(fd, fcntl.LOCK_EX
 | fcntl.LOCK_NB)`` etc.
 
-Notes on Windows semantics:
+Notes on Windows ``flock`` semantics:
 
 * The lock is on byte 0 of the file; we ``lseek`` to 0 before each
   call so a subsequent ``seek``/``write`` to the same fd is
@@ -31,6 +39,59 @@ Notes on Windows semantics:
   semantics — no current call site relies on re-entrant locking.
 """
 from __future__ import annotations
+
+import os as _os
+import signal as _signal
+import subprocess as _subprocess
+import sys as _sys
+
+
+def kill_process_tree(pid: int) -> bool:
+    """Force-kill ``pid`` and every descendant. Best-effort, non-raising.
+
+    POSIX path requires the target was started with
+    ``start_new_session=True`` (i.e. it leads its own process group).
+    If it doesn't, we fall back to a single-process ``SIGKILL``.
+
+    Returns True if at least one ``kill`` syscall succeeded, False if
+    the process was already gone (or no permission to signal it).
+    """
+    if _sys.platform == "win32":
+        try:
+            res = _subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True, timeout=10,
+            )
+            return res.returncode == 0
+        except (FileNotFoundError, _subprocess.TimeoutExpired, OSError):
+            # taskkill missing (extremely old Windows / locked-down env)
+            # — fall through to bare TerminateProcess via os.kill.
+            pass
+        try:
+            _os.kill(pid, _signal.SIGTERM)  # maps to TerminateProcess
+            return True
+        except (ProcessLookupError, OSError):
+            return False
+
+    # POSIX
+    try:
+        pgid = _os.getpgid(pid)
+    except (ProcessLookupError, PermissionError):
+        return False
+    try:
+        _os.killpg(pgid, _signal.SIGKILL)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # pgid mismatch (target wasn't a session leader) — fall back to
+        # single-process kill so callers that forgot start_new_session
+        # still get the process gone.
+        try:
+            _os.kill(pid, _signal.SIGKILL)
+            return True
+        except (ProcessLookupError, OSError):
+            return False
 
 try:  # POSIX (macOS, Linux)
     import fcntl as _fcntl
@@ -105,4 +166,4 @@ except ImportError:  # Windows
                 _time.sleep(_RETRY_INTERVAL)
 
 
-__all__ = ["LOCK_EX", "LOCK_NB", "LOCK_UN", "flock"]
+__all__ = ["LOCK_EX", "LOCK_NB", "LOCK_UN", "flock", "kill_process_tree"]

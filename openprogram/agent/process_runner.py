@@ -316,13 +316,14 @@ def kill_active_subprocess(session_id: str) -> bool:
         return False
     if not p.is_alive():
         return False
+    # kill_process_tree handles both POSIX (killpg + SIGKILL) and
+    # Windows (taskkill /F /T). Falls back to single-process kill if
+    # the target wasn't started as a session leader.
+    from openprogram._compat import kill_process_tree
+    if kill_process_tree(p.pid):
+        return True
     try:
-        pgid = os.getpgid(p.pid)
-        os.killpg(pgid, signal.SIGKILL)
+        p.kill()
         return True
     except Exception:
-        try:
-            p.kill()
-            return True
-        except Exception:
-            return False
+        return False

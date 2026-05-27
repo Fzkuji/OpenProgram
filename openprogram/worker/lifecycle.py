@@ -130,7 +130,7 @@ def spawn_detached() -> int:
     # -u: unbuffered, so 'worker status' shows fresh output immediately.
     # --foreground: re-exec must not loop back through spawn_detached.
     cmd = [sys.executable, "-u", "-m", "openprogram", "worker", "run"]
-    log = open(log_file, "a", buffering=1)
+    log = open(log_file, "a", buffering=1, encoding="utf-8")
     log.write(f"\n--- worker starting at {time.ctime()} ---\n")
     log.flush()
     try:
@@ -195,16 +195,17 @@ def stop_worker() -> int:
             return 0
         time.sleep(0.2)
 
-    print(f"PID {pid} didn't exit after SIGTERM; sending SIGKILL.")
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
+    print(f"PID {pid} didn't exit after SIGTERM; force-killing.")
+    # kill_process_tree handles both POSIX SIGKILL and Windows taskkill;
+    # also takes out any uvicorn / channel-bot children the worker
+    # spawned. signal.SIGKILL doesn't exist on Windows Python so we
+    # can't do ``os.kill(pid, signal.SIGKILL)`` directly there.
+    from openprogram._compat import kill_process_tree
+    if not kill_process_tree(pid):
         clear_pid_file()
         clear_port_file()
         print("Stopped.")
         return 0
-    except OSError:
-        return 1
 
     deadline = time.time() + 3.0
     while time.time() < deadline:
