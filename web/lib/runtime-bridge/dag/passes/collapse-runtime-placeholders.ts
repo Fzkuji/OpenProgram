@@ -165,6 +165,7 @@ export function _collapseRuntimePlaceholders(
     // - parent's old depth = same delta from new parent.depth → no
     // additional shift needed).
     const topRemovedDepth = topRemoved._depth ?? 0;
+    const topRemovedTier = topRemoved._tier ?? 0;
     function gatherConv(id: string, hostRemoved: GNode): void {
       (convKidsOf[id] || []).forEach((c) => {
         if (c.id === codeId) return;
@@ -174,12 +175,23 @@ export function _collapseRuntimePlaceholders(
         }
         if (c.id in depthDeltaOf) return;
         depthDeltaOf[c.id] = topRemovedDepth - (hostRemoved._depth ?? 0);
-        // Survivor child's own conv-descendants inherit the SAME shift
-        // because they slid as one block with their parent. Walk
-        // through any further removed-ancestor pockets (e.g. the
-        // LLM-called placeholder hanging off a reply mid-chain) so
-        // their post-collapse survivor descendants also get shifted.
+        // Backend's tier-from-caller-chain walk gives the placeholder
+        // tier=hostRemoved.tier+1 (placeholder.caller = anchor, so
+        // tier rolls up off the anchor's caller chain). Any conv-kid
+        // hanging off the placeholder inherits that bumped tier even
+        // though semantically it's a regular main-trunk msg. Apply
+        // the same delta as depth so the conv-descendant slides back
+        // to the topRemoved's tier slot.
+        const tierShiftSame = topRemovedTier - (hostRemoved._tier ?? 0);
+        if (tierShiftSame !== 0) tierDeltaOf[c.id] = tierShiftSame;
+        // Survivor child's own conv-descendants inherit the SAME
+        // depth + tier shift because they slid as one block with
+        // their parent. Walk through any further removed-ancestor
+        // pockets (e.g. the LLM-called placeholder hanging off a
+        // reply mid-chain) so their post-collapse survivor descendants
+        // also get shifted.
         const sameShift = depthDeltaOf[c.id];
+        const sameTier = tierDeltaOf[c.id];
         const stack2: string[] = [c.id];
         while (stack2.length) {
           const nid = stack2.pop()!;
@@ -191,6 +203,7 @@ export function _collapseRuntimePlaceholders(
             }
             if (cc.id in depthDeltaOf) return;
             depthDeltaOf[cc.id] = sameShift;
+            if (sameTier) tierDeltaOf[cc.id] = sameTier;
             stack2.push(cc.id);
           });
         }
