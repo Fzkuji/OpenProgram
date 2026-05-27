@@ -786,6 +786,15 @@
 .message.assistant > .typing-indicator {
   padding-left: 36px;
 }
+/* Standalone "AI is thinking" indicator — appears between a user
+   turn and the (yet-to-arrive) assistant bubble. Sits flush left so
+   it reads like the assistant's response area is warming up. */
+.message.assistant.pending-standalone {
+  padding: 12px 0 12px 36px;
+}
+.message.assistant.pending-standalone .typing-indicator {
+  height: 20px;
+}
 .typing-indicator .dot {
   width: 6px;
   height: 6px;
@@ -1309,25 +1318,76 @@
   container-name: composer-row;
 }
 
+.effort-pill-host {
+  flex: 0 0 auto;
+}
+
+.effort-pill-compact-icon {
+  display: none;
+}
+
 /* Narrow composer row → drop the token-usage pill entirely instead of
    letting it clip past the right edge (the previous behavior showed
-   half a "5.1k in" pill cut off mid-character). Threshold picked so
-   the badge disappears before the Effort pill (which can grow to
-   260px on hover) would push it under the wrapper edge. */
-@container composer-row (max-width: 500px) {
+   half a "5.1k in" pill cut off mid-character). */
+@container composer-row (max-width: 380px) {
   .context-stats-label {
     display: none;
   }
 }
 
-/* Wider threshold while the Effort pill is hover-expanded: it grows
-   from ~120px to 260px, eating ~140px of slack. Without this rule the
-   expanded pill would overlap the badge at borderline composer widths.
-   The data attribute is set on the pill wrapper in
-   thinking-effort-pill.tsx when its internal `expanded` state flips. */
-@container composer-row (max-width: 640px) {
+@container composer-row (max-width: 520px) {
   .composer-bottom-row:has([data-effort-expanded="true"]) .context-stats-label {
     display: none;
+  }
+}
+
+/* Narrow composer row → keep the effort trigger at the same 32px
+   width as the other round controls. Expanded controls stay inside the
+   same pill and use the remaining composer row width. */
+@container composer-row (max-width: 520px) {
+  .effort-pill-host {
+    width: var(--composer-button-size);
+  }
+
+  .effort-pill-shell {
+    width: var(--composer-button-size) !important;
+  }
+
+  .effort-pill-shell[data-expanded="true"] {
+    width: min(260px, calc(100cqw - 136px)) !important;
+  }
+
+  .effort-pill-collapsed {
+    position: relative;
+    width: var(--composer-button-size);
+    justify-content: center;
+    padding: 0;
+  }
+
+  .effort-pill-fixed {
+    position: relative;
+    width: var(--composer-button-size);
+    justify-content: center;
+    padding: 0;
+  }
+
+  .effort-pill-collapsed-label,
+  .effort-pill-caret {
+    display: none;
+  }
+
+  .effort-pill-compact-icon {
+    display: block;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 18px;
+    height: 18px;
+    transform: translate(-50%, -50%);
+  }
+
+  .effort-pill-expanded {
+    width: min(260px, calc(100cqw - 136px)) !important;
   }
 }
 

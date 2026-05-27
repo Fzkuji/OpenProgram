@@ -118,16 +118,59 @@ function useChatAreaStick(newTurnSeed: number) {
   }, [newTurnSeed]);
 }
 
+/** Standalone breathing-dot indicator shown between a user msg and
+ *  the (yet-to-arrive) assistant reply.
+ *
+ *  Window: from chat send / chat_ack to the first assistant delta.
+ *  Without this the user sees an empty chat tail while waiting on
+ *  network + LLM warmup — feels stuck.
+ *
+ *  Conditions:
+ *    1. session has a running task (we're waiting on something)
+ *    2. last message is a user turn (no assistant placeholder yet, or
+ *       the placeholder is itself a user-runtime anchor like fn-form)
+ *
+ *  Once any assistant row lands, that bubble's own TypingIndicator
+ *  takes over and this standalone one is hidden.
+ */
+function PendingReplyIndicator() {
+  return (
+    <div className="message assistant pending-standalone">
+      <div className="typing-indicator">
+        <div className="dot" />
+        <div className="dot" />
+        <div className="dot" />
+      </div>
+    </div>
+  );
+}
+
 export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const ids = useMessageIds(sessionId);
+  const runningTask = useSessionStore((s) =>
+    sessionId ? s.runningTasks[sessionId] ?? null : null,
+  );
+  const messagesById = useSessionStore((s) => s.messagesById);
   useChatAreaStick(ids.length);
+
+  // Show the standalone indicator only between "user sent → assistant
+  // reply created". Once any assistant-role msg appears tailing the
+  // list, the assistant bubble's own TypingIndicator covers it.
+  const lastId = ids.length ? ids[ids.length - 1] : null;
+  const lastMsg = lastId ? messagesById[lastId] : null;
+  const showPending =
+    runningTask !== null
+    && lastMsg !== null
+    && lastMsg !== undefined
+    && lastMsg.role === "user";
 
   return (
     <>
       {ids.map((id) => (
         <MessageRow key={id} id={id} />
       ))}
+      {showPending ? <PendingReplyIndicator /> : null}
     </>
   );
 }
