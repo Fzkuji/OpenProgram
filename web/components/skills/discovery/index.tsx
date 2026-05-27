@@ -16,7 +16,14 @@ import { useSkills, type CatalogEntry, type Skill } from "@/lib/skills-store";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-import { CatalogList } from "./catalog-list";
+import {
+  CatalogList,
+  pillBase,
+  pillPrimary,
+  pillNeutral,
+  pillWarn,
+  pillDanger,
+} from "./catalog-list";
 import { hostname, slugFromUrl } from "./helpers";
 import type { CatalogState, Source } from "./types";
 
@@ -395,28 +402,27 @@ export function DiscoverySources() {
                       className="flex items-center gap-2 shrink-0 self-center"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {/* Install all — appears whenever the catalog has been
-                          loaded (cat?.entries) and there are entries not yet
-                          present in the user's skills list. Sits to the LEFT
-                          of the Update button so the user reads the row
-                          left-to-right as: install missing → update existing
-                          → uninstall existing → (custom) remove the source. */}
+                      {/* Source-row pills use the SAME idle-neutral /
+                          colored-on-hover system as the per-card pills.
+                          Intent (install / update / destroy) is signalled
+                          by which accent the row reveals when the cursor
+                          lands on it, not by a permanent paint job. Each
+                          gets ``min-w-[110px]`` so a row with all four
+                          chips stays grid-aligned. */}
                       {uninstalledCount > 0 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
+                        <button
+                          type="button"
                           onClick={() => handleBulkInstall(s, uninstalledNames)}
                           disabled={isBulkBusy || checkingUrl === s.url}
                           title={`Install the ${uninstalledCount} skill${uninstalledCount === 1 ? "" : "s"} in this catalog not already present locally`}
-                          className="min-w-[110px]"
+                          className={pillBase + " min-w-[110px] " + pillPrimary}
                         >
                           {isBulkBusy ? "Working…" : `Install ${uninstalledCount}`}
-                        </Button>
+                        </button>
                       )}
                       {installed > 0 && (
-                        <Button
-                          size="sm"
-                          variant={outdatedCount > 0 ? "default" : "outline"}
+                        <button
+                          type="button"
                           onClick={() => {
                             // Outdated > 0  → install the drifted skills.
                             // Outdated == 0 → re-check upstream (no destructive op).
@@ -429,7 +435,10 @@ export function DiscoverySources() {
                               ? `Re-pull ${outdatedCount} skill${outdatedCount === 1 ? "" : "s"} whose upstream SKILL.md changed`
                               : "Check upstream for new versions"
                           }
-                          className="group min-w-[110px]"
+                          className={
+                            pillBase + " group min-w-[110px] " +
+                            (outdatedCount > 0 ? pillWarn : pillNeutral)
+                          }
                         >
                           {isBulkBusy ? (
                             "Updating…"
@@ -446,27 +455,27 @@ export function DiscoverySources() {
                               <span className="hidden group-hover:inline">↻ Check now</span>
                             </>
                           )}
-                        </Button>
+                        </button>
                       )}
-                      {/* Uninstall all — confirms first, then deletes every
-                          skill currently under this source's namespace.
-                          Destructive variant so it reads as different from
-                          the blue Install / Update buttons. */}
                       {installed > 0 && (
-                        <Button
-                          size="sm"
-                          variant="destructive"
+                        <button
+                          type="button"
                           onClick={() => handleBulkUninstall(s)}
                           disabled={isBulkBusy}
                           title={`Delete the ${installed} skill${installed === 1 ? "" : "s"} installed from this catalog`}
-                          className="min-w-[110px]"
+                          className={pillBase + " min-w-[110px] " + pillDanger}
                         >
                           {isBulkBusy ? "Working…" : `Uninstall ${installed}`}
-                        </Button>
+                        </button>
                       )}
                       {s.origin === "custom" && (
-                        <Button size="sm" variant="ghost"
-                          onClick={() => removeDiscoverySource(s.url)}>Remove source</Button>
+                        <button
+                          type="button"
+                          onClick={() => removeDiscoverySource(s.url)}
+                          className={pillBase + " " + pillNeutral}
+                        >
+                          Remove source
+                        </button>
                       )}
                     </div>
                   )}

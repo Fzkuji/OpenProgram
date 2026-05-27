@@ -8,27 +8,30 @@ import { useSkills } from "@/lib/skills-store";
 import { fmtCount, hasStats, relTime } from "./helpers";
 import type { Source, SortKey } from "./types";
 
-// Pill-shaped action buttons, sized + tinted to match the rest of the
-// app (composer pills, /functions card buttons). Three intents:
-//   - primary:    install — accent-tinted fill so it reads as the
-//                 main action on the card
-//   - neutral:    reinstall / minor refresh — bg-tertiary fill that
-//                 sits one shade darker than the card so it doesn't
-//                 vanish into the surface (the old `outline` Button
-//                 variant rendered as just a thin border on the same
-//                 bg, which is what the user flagged as ugly)
-//   - danger:     uninstall — red-tinted fill, low-saturation so it's
-//                 visibly destructive without screaming
-const pillBase =
-  "inline-flex items-center justify-center h-7 rounded-full px-3 text-[12px] font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none";
-const pillPrimary =
-  "bg-[color-mix(in_srgb,var(--accent-blue)_22%,transparent)] text-[var(--accent-blue)] hover:bg-[color-mix(in_srgb,var(--accent-blue)_32%,transparent)]";
-const pillNeutral =
-  "bg-[var(--bg-tertiary)] text-[var(--text-bright)] hover:bg-[color-mix(in_srgb,var(--text-bright)_10%,var(--bg-tertiary))]";
-const pillWarn =
-  "bg-[color-mix(in_srgb,#f59e0b_22%,transparent)] text-[#f59e0b] hover:bg-[color-mix(in_srgb,#f59e0b_32%,transparent)]";
-const pillDanger =
-  "bg-[color-mix(in_srgb,#ef4444_18%,transparent)] text-[#ef4444] hover:bg-[color-mix(in_srgb,#ef4444_28%,transparent)]";
+// Pill-shaped action buttons. Design philosophy: every button looks
+// the same in its idle state — a subtle ``bg-tertiary`` chip that sits
+// one shade brighter than the card surface, with muted text. The
+// button's *intent* (install / update / destroy / etc.) only emerges
+// on hover, when the appropriate accent tints the fill and recolors
+// the label. Idle UI stays calm; the user reads intent the moment
+// they reach for a control. Applies equally to the per-card pills here
+// and the source-row pills in ``index.tsx``.
+export const pillBase =
+  "inline-flex items-center justify-center h-7 rounded-full px-3 text-[12px] font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none border border-transparent";
+const pillIdle =
+  "bg-[var(--bg-tertiary)] text-[var(--text-secondary)]";
+export const pillPrimary =
+  pillIdle +
+  " hover:bg-[color-mix(in_srgb,var(--accent-blue)_22%,transparent)] hover:text-[var(--accent-blue)]";
+export const pillNeutral =
+  pillIdle +
+  " hover:bg-[color-mix(in_srgb,var(--text-bright)_10%,var(--bg-tertiary))] hover:text-[var(--text-bright)]";
+export const pillWarn =
+  pillIdle +
+  " hover:bg-[color-mix(in_srgb,#f59e0b_22%,transparent)] hover:text-[#f59e0b]";
+export const pillDanger =
+  pillIdle +
+  " hover:bg-[color-mix(in_srgb,#ef4444_18%,transparent)] hover:text-[#ef4444]";
 
 export function CatalogList({
   entries, source, installedNames, outdatedNames, installingKey, onInstall,
