@@ -361,19 +361,79 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
         env["OPENPROGRAM_CONV"] = session_id
 
     cmd = [node, str(entry), "--ws", ws_url]
+    # Track launch time so we can distinguish "TUI started, user
+    # quit" (normal) from "TUI couldn't start at all" (raw-mode
+    # failure, missing console, etc.) — the latter exits within
+    # ~1 second with a non-zero code and we want to fall through
+    # to the Rich REPL instead of leaving the user staring at a
+    # silently-restored prompt.
+    _t_launch = time.monotonic()
     proc = subprocess.Popen(cmd, env=env, stdin=0, stdout=tty_out, stderr=tty_err)
+    user_interrupted = False
     try:
         proc.wait()
     except KeyboardInterrupt:
+        user_interrupted = True
         proc.terminate()
         try:
             proc.wait(timeout=2.0)
         except subprocess.TimeoutExpired:
             proc.kill()
-    finally:
-        try:
-            os.close(tty_out)
-            os.close(tty_err)
-        except OSError:
-            pass
-        sys.exit(proc.returncode or 0)
+
+    elapsed = time.monotonic() - _t_launch
+    rc = proc.returncode or 0
+
+    # Heuristic: Node + Ink that successfully entered raw-mode runs
+    # until the user explicitly quits — minimum lifespan is seconds,
+    # usually much more. A non-zero exit within 1.5 s almost always
+    # means the TUI couldn't initialise (the canonical case on
+    # Windows is "Raw mode is not supported on the current process
+    # .stdin" from Ink, when subprocess inheritance didn't preserve
+    # the console handle properly).
+    tui_quick_fail = not user_interrupted and rc != 0 and elapsed < 1.5
+
+    if tui_quick_fail:
+        # Surface what just happened, while we still have working
+        # handles. ``_tty_write`` goes directly to the saved tty fd via
+        # ``os.write`` so it bypasses any Python-level stdio buffering
+        # left over from the dup2 redirect — Rich's ``console.print``
+        # in cli_chat's fallback path can't be trusted here because
+        # ``sys.stdout`` was attached to a non-tty target (the log
+        # file) and may have switched to block-buffered mode.
+        _tty_write(
+            "\n"
+            f"openprogram: Ink TUI exited rc={rc} after {elapsed:.2f}s.\n"
+            "  This usually means the terminal can't enter raw input mode\n"
+            "  (Windows Git Bash / MinTTY, or a PowerShell + Node combo where\n"
+            "  the console handle didn't pass through Python's subprocess).\n"
+            "  Falling back to the Rich REPL (text-only chat).\n"
+            "  Skip this attempt next time with: openprogram --no-tui\n"
+            "\n"
+        )
+        # Restore stdio so the Rich REPL fallback in cli_chat writes to
+        # the user's terminal instead of into the dup2-redirected log.
+        # cli_chat does the same restore, but doing it here too is
+        # safe (idempotent) and means even bare callers get a working
+        # fallback. Don't close tty_out / tty_err afterward — they're
+        # the SOURCE of the dup2, closing would kill the restored
+        # stdio.
+        for std_fd, saved in ((1, tty_out), (2, tty_err)):
+            try:
+                os.dup2(saved, std_fd)
+            except OSError:
+                pass
+        raise RuntimeError(
+            f"Ink TUI exited immediately (rc={rc}, after {elapsed:.2f}s). "
+            "Falling back to the Rich REPL."
+        )
+
+    # Normal exit path — Node finished cleanly (user quit, or a real
+    # runtime error after the TUI had been running long enough that
+    # the user almost certainly saw it). Close our saved fds so we
+    # don't leak, then exit.
+    try:
+        os.close(tty_out)
+        os.close(tty_err)
+    except OSError:
+        pass
+    sys.exit(rc)
