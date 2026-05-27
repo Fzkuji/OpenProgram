@@ -185,9 +185,6 @@ export function Composer() {
     removeDoc,
     onPickImages,
     onFileInputChange,
-    onDragOver,
-    onDragLeave,
-    onDrop,
     clearAfterSubmit: clearAttachmentsAfterSubmit,
   } = useComposerAttachments();
 
@@ -239,7 +236,7 @@ export function Composer() {
         ta.setSelectionRange(pos, pos);
       });
     },
-    [input, setInput, addImages],
+    [input, setInput, addImages, setImageError],
   );
 
   // Remove a paste chip — also strips the token from the textarea.
@@ -268,7 +265,6 @@ export function Composer() {
   // sit here.
   const {
     atToken,
-    caretPos,
     setCaretPos,
     fileMatches,
     fileMenuIndex,
@@ -301,6 +297,7 @@ export function Composer() {
   // flag) is owned by `./use-fn-form-state`; it also runs the
   // default-value seeding effect on fn change.
   const fnForm = useFnFormState(fnFormFunction);
+  const setFnFormClosingLocal = fnForm.setClosing;
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
@@ -334,8 +331,8 @@ export function Composer() {
     // mid-flight and made the send button jump.
     onCloseComplete: useCallback(() => {
       closeFnFormStore();
-      fnForm.setClosing(false);
-    }, [closeFnFormStore, fnForm.setClosing]),
+      setFnFormClosingLocal(false);
+    }, [closeFnFormStore, setFnFormClosingLocal]),
     wrapperRef,
     sendBtnRef,
   });
@@ -389,7 +386,7 @@ export function Composer() {
     }
     document.addEventListener("click", onDoc);
     return () => document.removeEventListener("click", onDoc);
-  }, []);
+  }, [setThinkingMenuOpen]);
 
   useLayoutEffect(() => {
     if (!plusMenuOpen) {
@@ -706,13 +703,13 @@ export function Composer() {
   // `.closing` class. Store unmount happens after the height
   // transition ends (handled inside the useLayoutEffect).
   const handleFnFormClose = useCallback(() => {
-    fnForm.setClosing(true);
+    setFnFormClosingLocal(true);
     // Mirror into the store so the welcome screen flips its examples
     // row out of the collapsed state NOW — in sync with the form
     // shrinking — instead of a beat later when `fnFormFunction`
     // finally clears at transition end.
     setFnFormClosing(true);
-  }, [fnForm, setFnFormClosing]);
+  }, [setFnFormClosingLocal, setFnFormClosing]);
 
   const submitFnForm = useCallback(() => {
     if (!fnFormFunction || isRunning) return;
@@ -771,20 +768,27 @@ export function Composer() {
       body: JSON.stringify(body),
     })
       .then(async (r) => {
+        const j = await r.json().catch(() => null);
+        if (!r.ok) {
+          const msg =
+            j && typeof j.error === "string"
+              ? j.error
+              : `HTTP ${r.status}`;
+          throw new Error(msg);
+        }
         // POST returns {session_id, msg_id}. If we weren't already
         // bound to a session, navigate to /s/<sid> + flip the store's
         // currentSessionId — without this the runtime placeholder
         // stream-resumes into a session the chat area can't see, and
         // the page stays blank while gui_agent runs in the background.
-        try {
-          const j = await r.json();
-          const sid = j && j.session_id;
-          if (sid && sid !== currentSessionId) {
+        const sid = j && j.session_id;
+        if (typeof sid === "string" && sid) {
+          (window as unknown as { currentSessionId?: string }).currentSessionId =
+            sid;
+          if (sid !== currentSessionId) {
             setCurrentConv(sid);
             router.push(`/s/${encodeURIComponent(sid)}`);
           }
-        } catch {
-          /* ignore — bad JSON would already have errored above */
         }
       })
       .catch((err) => {
@@ -808,22 +812,37 @@ export function Composer() {
   //   in the "lost" state would silently strip the token — see the
   //   submit() guard mirror.
   // In fn-form mode: disabled when any required param has no value,
-  //   OR when workdir is required and empty.
+  //   OR when workdir is required and empty. Also surface WHICH field
+  //   is blocking via the title attribute so hovering over a greyed
+  //   send button explains why nothing happens on click.
+  const missingFnParams: string[] = (() => {
+    if (!fnFormActive) return [];
+    const fn = fnFormFunction!;
+    const out: string[] = [];
+    const workdirMode = fn.workdir_mode ?? "optional";
+    if (workdirMode === "required" && !fnForm.workdir.trim()) {
+      out.push("work_dir");
+    }
+    for (const p of visibleParams(fn)) {
+      if (!p.required) continue;
+      const v = (fnForm.values[p.name] ?? "").trim();
+      if (!v) out.push(p.name);
+    }
+    return out;
+  })();
+  // In fn-form mode we no longer disable the send button just because
+  // a required field is empty — a disabled button doesn't fire onClick,
+  // so the user gets zero feedback ("点了没反应"). Keep it enabled and
+  // let submitFnForm's setError path light up the missing field's red
+  // border instead. The button still LOOKS dim (data-fn-missing) and
+  // its title spells out which field is blocking.
   const sendDisabled = fnFormActive
-    ? (() => {
-        const fn = fnFormFunction!;
-        const workdirMode = fn.workdir_mode ?? "optional";
-        if (workdirMode === "required" && !fnForm.workdir.trim()) return true;
-        for (const p of visibleParams(fn)) {
-          if (!p.required) continue;
-          const v = (fnForm.values[p.name] ?? "").trim();
-          if (!v) return true;
-        }
-        return false;
-      })()
+    ? false
     : !input.trim() || pasteMissing.size > 0;
   const sendTitle = fnFormActive
-    ? "Run"
+    ? missingFnParams.length > 0
+      ? `Fill required field${missingFnParams.length > 1 ? "s" : ""}: ${missingFnParams.join(", ")}`
+      : "Run"
     : pasteMissing.size > 0
     ? "Paste content lost — remove the red chip and re-paste"
     : "Send message";
@@ -1059,6 +1078,11 @@ export function Composer() {
           className={`${styles.actionBtn} ${isRunning ? styles.stopBtn : styles.sendBtn}`}
           onClick={isRunning ? stop : onSendButtonClick}
           disabled={!isRunning && sendDisabled}
+          data-fn-missing={
+            !isRunning && fnFormActive && missingFnParams.length > 0
+              ? "true"
+              : undefined
+          }
           title={isRunning ? "Stop" : sendTitle}
           type="button"
         >
