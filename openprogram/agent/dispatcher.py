@@ -184,15 +184,20 @@ def _wrap_agentic_runtime_block(
         # each get their own runtime-block row.
         runtime_id = f"{assistant_msg_id}_rt_{call_id}"
         now = time.time()
-        # The LLM-called placeholder is structurally a tool call WITHIN
-        # the assistant reply, NOT a conv-child of the reply. Writing
-        # it with ``caller=reply_id`` (caller-edge) + ``parent_id=None``
-        # (no conv-edge) means lane.py / branch detection treats it
-        # like any other tool call — it doesn't fork the conv trunk,
-        # doesn't create a branch leaf, and doesn't get a branch tag in
-        # the right-rail. When the user sends a follow-up turn after
-        # the tool call, that turn's parent_id = reply, reply has only
-        # ONE conv-child (the new user msg), no fork.
+        # Placeholder is structurally a tool call. Set BOTH parent_id
+        # (so the frontend's ``_collapseRuntimePlaceholders`` anchor-
+        # fold still sees the fn-form user-runtime anchor as the
+        # placeholder's parent and can fold it) AND caller (so
+        # ``conv_parent_of`` returns null because caller wins — the
+        # placeholder doesn't count as a conv-child and lane.py /
+        # branches_list don't treat it as a fork). Net effect:
+        #   * LLM-called: parent=reply (assistant), caller=reply.
+        #     ``_collapseRuntimePlaceholders`` matches LLM-called rule
+        #     (reply.role==assistant) and folds the pair.
+        #   * fn-form:    parent=anchor (user-runtime), caller=anchor.
+        #     The pass's anchor-fold (anchor.role==user,
+        #     anchor.display==runtime) removes the user circle so the
+        #     mini-DAG shows ONE square on main trunk.
         placeholder = {
             "id": runtime_id,
             "role": "assistant",
@@ -204,7 +209,7 @@ def _wrap_agentic_runtime_block(
             "started_at": now,
             "last_update_at": now,
             "timestamp": now,
-            "parent_id": None,
+            "parent_id": assistant_msg_id,
             "caller": assistant_msg_id,
             "called_by": assistant_msg_id,
             "source": req.source,
