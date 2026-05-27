@@ -346,7 +346,7 @@ export function ExecutionDag({
           ) : (
             <span className="inline-tree-script" title="function">{"𝓕"}</span>
           )}
-          {"  "}
+          {"\u00a0\u00a0"}
           {headerLabel ?? text("Execution DAG", "执行 DAG")}
         </span>
         <span className="inline-tree-actions">

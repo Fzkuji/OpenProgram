@@ -31,7 +31,7 @@ export function ThinkingBlock({
       >
         <span>
           <span className="inline-tree-script" title="thinking">{"𝓣"}</span>
-          {"  "}
+          {"\u00a0\u00a0"}
           {tr("Thinking", "思考")}
           {streaming ? "…" : ""}
         </span>

@@ -101,7 +101,7 @@ function ToolInlineTree({ call }: { call: ChatToolCall }) {
           ) : (
             <span className="inline-tree-script" title="function">{"𝓕"}</span>
           )}
-          {"  "}
+          {"\u00a0\u00a0"}
           {text("Function call", "函数调用")}
         </span>
         <span className="inline-tree-actions">
