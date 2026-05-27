@@ -21,10 +21,9 @@ import { TurnFilesChips } from "./turn-files-chips";
 
 function TypingIndicator() {
   return (
-    <div className="typing-indicator">
-      <div className="dot" />
-      <div className="dot" />
-      <div className="dot" />
+    <div className="pending-body">
+      <span className="pending-pulse" aria-hidden="true" />
+      <span className="pending-label">{"Agentic is thinking…"}</span>
     </div>
   );
 }

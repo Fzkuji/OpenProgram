@@ -792,9 +792,14 @@
    ``.message`` and ``.message.assistant`` styles for padding /
    background so it sits inline with neighbouring bubbles. */
 .pending-body {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
+  /* Match where chat text starts inside a normal assistant bubble:
+     avatar (28px) + flex gap (8px) = 36px past the bubble's left
+     padding. No further indent here — the parent ``.chat-stream-body``
+     already sits inside the bubble's natural padding. */
+  padding-left: 0;
 }
 .pending-pulse {
   display: inline-block;

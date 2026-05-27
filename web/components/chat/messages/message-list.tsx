@@ -160,19 +160,17 @@ export function MessageList() {
   // TypingIndicator / streaming text takes over and we hide.
   const lastId = ids.length ? ids[ids.length - 1] : null;
   const lastMsg = lastId ? messagesById[lastId] : null;
-  const replyEmpty = lastMsg
-    ? lastMsg.role === "assistant"
-      && !lastMsg.content
-      && !lastMsg.thinking
-      && !(lastMsg.tools && lastMsg.tools.length)
-      && !(lastMsg.blocks && lastMsg.blocks.length)
-      && !(lastMsg.runtimeChildren && lastMsg.runtimeChildren.length)
-    : false;
+  // Only show the STANDALONE indicator when there's no assistant
+  // placeholder yet — i.e. between user send and ``chat_ack``. Once
+  // the assistant bubble exists (even empty), its own
+  // ``TypingIndicator`` handles the empty-streaming state. Without
+  // this guard the user sees two stacked "Agentic" rows: the real
+  // placeholder bubble + the standalone, double-rendering.
   const showPending =
     runningTask !== null
     && lastMsg !== null
     && lastMsg !== undefined
-    && (lastMsg.role === "user" || replyEmpty);
+    && lastMsg.role === "user";
 
   return (
     <>
