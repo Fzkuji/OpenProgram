@@ -41,15 +41,113 @@ def _wait_until_listening(port: int, timeout: float = 5.0) -> bool:
 
 
 def _resolve_cli_entry() -> Path:
+    """Return path to the built Ink TUI bundle, building it if needed.
+
+    Fast path: ``cli/dist/index.js`` already exists → return immediately
+    (one stat call). Cold path (first run on a fresh clone, any platform):
+    transparently run ``npm install`` + ``npm run build`` in ``cli/`` and
+    return the new bundle. Progress is streamed to the user's saved tty
+    so they see it even after the TUI startup stdio redirect.
+
+    The TUI source ships as TypeScript / TSX (React-for-terminal via
+    Ink); Node can't execute it directly. The build is a one-time
+    compile per machine — git ignores ``cli/dist/`` so every clone
+    needs it. Before this autobuild, users had to read the README and
+    run the commands manually; "I just ran openprogram and nothing
+    happened" was the most common first-run report.
+
+    Raises ``FileNotFoundError`` if ``cli/`` is missing (e.g. wheel
+    install without the source tree) or if the build failed in a way
+    that didn't produce the expected output.
+    """
     here = Path(__file__).resolve()
     project_root = here.parent.parent
-    candidate = project_root / "cli" / "dist" / "index.js"
+    cli_dir = project_root / "cli"
+    candidate = cli_dir / "dist" / "index.js"
     if candidate.exists():
         return candidate
-    raise FileNotFoundError(
-        f"Ink CLI bundle not found at {candidate}. "
-        f"Run `cd cli && npm install && npm run build` first."
-    )
+
+    if not cli_dir.exists():
+        raise FileNotFoundError(
+            f"Ink TUI source missing: no {cli_dir} directory. "
+            "The TUI ships with the source tree — install openprogram "
+            "from a git clone (``pip install -e .``) for the full "
+            "experience, or use ``openprogram --web`` / ``--no-tui``."
+        )
+
+    _build_ink_bundle(cli_dir, candidate)
+
+    if not candidate.exists():
+        raise FileNotFoundError(
+            f"Build completed but {candidate} still missing. "
+            "Inspect the npm output above and re-run."
+        )
+    return candidate
+
+
+def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
+    """Run ``npm install`` (if needed) + ``npm run build`` in ``cli_dir``.
+
+    Cross-platform. Streams npm's own output to the user's saved tty
+    so they can see exactly what's happening (download progress,
+    esbuild lines, errors). Skipping ``npm install`` when
+    ``node_modules/`` already exists halves the cold-start cost on a
+    re-build after a pull.
+    """
+    from openprogram import cli as _cli
+
+    npm = shutil.which("npm")
+    if npm is None:
+        raise RuntimeError(
+            "npm not found in PATH. Install Node.js 20+ (https://nodejs.org/) "
+            "to build the TUI. Alternatively use ``openprogram --no-tui`` or "
+            "``--web``."
+        )
+
+    # Stream to the saved-original tty if the TUI dup2 already happened,
+    # otherwise stdout/stderr is fine (POSIX without TUI redirect, or
+    # any non-TTY invocation).
+    tty_out = getattr(_cli, "_TUI_TTY_OUT", None)
+    tty_err = getattr(_cli, "_TUI_TTY_ERR", None)
+    stdout_target = tty_out if tty_out is not None else None
+    stderr_target = tty_err if tty_err is not None else None
+
+    node_modules = cli_dir / "node_modules"
+    if not node_modules.exists():
+        _tty_write(
+            "openprogram: building Ink TUI (first run, ~1-2 minutes)…\n"
+            "  → npm install\n"
+        )
+        rc = subprocess.run(
+            [npm, "install", "--no-audit", "--no-fund", "--loglevel=error"],
+            cwd=str(cli_dir),
+            stdout=stdout_target,
+            stderr=stderr_target,
+        ).returncode
+        if rc != 0:
+            raise RuntimeError(
+                f"npm install failed (exit {rc}). Fix the error above and "
+                "retry — the next ``openprogram`` will resume from where "
+                "this left off."
+            )
+    else:
+        _tty_write("openprogram: rebuilding Ink TUI (cli/dist/ missing)…\n")
+
+    _tty_write("  → npm run build\n")
+    rc = subprocess.run(
+        [npm, "run", "build"],
+        cwd=str(cli_dir),
+        stdout=stdout_target,
+        stderr=stderr_target,
+    ).returncode
+    if rc != 0:
+        raise RuntimeError(
+            f"npm run build failed (exit {rc}). Fix the error above and "
+            "retry."
+        )
+
+    if expected_bundle.exists():
+        _tty_write("  → built.\n\n")
 
 
 def _resolve_node() -> str:
@@ -190,15 +288,15 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
         sys.exit(2)
     try:
         entry = _resolve_cli_entry()
-    except FileNotFoundError as e:
+    except (FileNotFoundError, RuntimeError) as e:
+        # ``_resolve_cli_entry`` auto-builds the Ink bundle when
+        # missing, so reaching here means either ``cli/`` is gone (wheel
+        # install without source) or the npm install / build failed.
+        # Either way, the inner error string already explains it; just
+        # add the bail-out options.
         _tty_write(
             f"openprogram: {e}\n\n"
-            "The terminal UI ships as a Node.js bundle that needs to be\n"
-            "built once. From the repo root:\n\n"
-            "  cd cli\n"
-            "  npm install\n"
-            "  npm run build\n\n"
-            "Or skip the TUI entirely:\n\n"
+            "Alternatives that don't need the TUI:\n\n"
             "  openprogram --no-tui          # Rich-based REPL (text only)\n"
             "  openprogram --web             # browser UI\n"
             "  openprogram --print \"hi\"      # one-shot prompt\n"
