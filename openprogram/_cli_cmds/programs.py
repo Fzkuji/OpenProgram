@@ -102,13 +102,13 @@ def _cmd_list():
         name = mod_name
         desc = ""
         try:
-            with open(filepath) as f:
+            with open(filepath, encoding="utf-8") as f:
                 content = f.read()
             if '"""' in content:
                 start = content.index('"""') + 3
                 end = content.index('"""', start)
                 desc = content[start:end].strip().split("\n")[0]
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             pass
         entries.append((name, desc))
 

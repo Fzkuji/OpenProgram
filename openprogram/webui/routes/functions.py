@@ -44,7 +44,7 @@ def register(app):
         ]
         for filepath, category in candidates:
             if os.path.isfile(filepath):
-                with open(filepath) as f:
+                with open(filepath, encoding="utf-8") as f:
                     source = f.read()
                 return JSONResponse(content={
                     "name": name,
@@ -63,7 +63,7 @@ def register(app):
                         dirs[:] = [x for x in dirs if not x.startswith(("_", "."))]
                         if "main.py" in files:
                             main_py = os.path.join(root, "main.py")
-                            with open(main_py) as f:
+                            with open(main_py, encoding="utf-8") as f:
                                 source = f.read()
                             info = _s._extract_function_info(main_py, None, "app")
                             if info and info["name"] == name:
@@ -120,7 +120,7 @@ def register(app):
                         continue
                     filepath = os.path.join(root, f)
                     try:
-                        with open(filepath) as fh:
+                        with open(filepath, encoding="utf-8") as fh:
                             source = fh.read()
                         if func_pattern.search(source):
                             return JSONResponse(content={

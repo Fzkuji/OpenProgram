@@ -91,7 +91,7 @@ def _load_provider_config() -> tuple[str, str] | None:
         from openprogram.paths import get_config_path
         config_path = get_config_path()
         import json
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = json.load(f)
         provider = config.get("default_provider")
         model = config.get("default_model")

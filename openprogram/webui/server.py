@@ -476,7 +476,7 @@ def _restore_sessions():
 def _load_config() -> dict:
     """Load config from ~/.agentic/config.json."""
     try:
-        with open(_CONFIG_PATH()) as f:
+        with open(_CONFIG_PATH(), encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}

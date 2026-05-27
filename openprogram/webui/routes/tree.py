@@ -118,7 +118,7 @@ def register(app):
         from openprogram.webui import server as _s
         meta_path = os.path.join(os.path.dirname(_s.__file__), "programs_meta.json")
         if os.path.isfile(meta_path):
-            with open(meta_path) as f:
+            with open(meta_path, encoding="utf-8") as f:
                 return JSONResponse(content=json.load(f))
         return JSONResponse(content={"favorites": [], "folders": {}})
 
@@ -126,6 +126,6 @@ def register(app):
     async def save_programs_meta(body: dict = None):
         from openprogram.webui import server as _s
         meta_path = os.path.join(os.path.dirname(_s.__file__), "programs_meta.json")
-        with open(meta_path, "w") as f:
+        with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(body, f, indent=2)
         return JSONResponse(content={"ok": True})

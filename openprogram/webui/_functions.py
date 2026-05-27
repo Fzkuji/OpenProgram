@@ -131,7 +131,7 @@ def _extract_workdir_mode(source: str, func_name: str) -> str:
 def _extract_function_info(filepath: str, name: Optional[str], category: str) -> Optional[dict]:
     """Extract function name and docstring from a .py file."""
     try:
-        with open(filepath) as f:
+        with open(filepath, encoding="utf-8") as f:
             content = f.read()
 
         if name is None:
@@ -289,7 +289,7 @@ def _extract_all_functions(filepath: str, category: str) -> list[dict]:
     """
     results: list[dict] = []
     try:
-        with open(filepath) as f:
+        with open(filepath, encoding="utf-8") as f:
             content = f.read()
 
         # Anchor ``@agentic_function`` to start-of-line (with only
@@ -407,9 +407,9 @@ class _FunctionStub:
 def _make_stub_from_file(func_name: str, filepath: str):
     """Read a .py file and build a _FunctionStub for the named function."""
     try:
-        with open(filepath, "r") as fh:
+        with open(filepath, "r", encoding="utf-8") as fh:
             source = fh.read()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     if f"def {func_name}" not in source:
         return None

@@ -261,7 +261,7 @@ def load_claude_models() -> dict:
     if not os.path.exists(CLAUDE_MODELS_JSON_PATH):
         return doctor()
     try:
-        with open(CLAUDE_MODELS_JSON_PATH, "r") as f:
+        with open(CLAUDE_MODELS_JSON_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         validate_schema(data)
         return data
@@ -340,7 +340,7 @@ def _fetch_anthropic_api_models() -> list[dict]:
             from openprogram.paths import get_config_path
             cfg_path = get_config_path()
             if cfg_path.exists():
-                with open(cfg_path, "r") as f:
+                with open(cfg_path, "r", encoding="utf-8") as f:
                     cfg = json.load(f)
                 api_key = cfg.get("api_keys", {}).get("ANTHROPIC_API_KEY")
         except Exception:
