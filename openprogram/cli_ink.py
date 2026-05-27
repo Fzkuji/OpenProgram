@@ -368,7 +368,16 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
     # to the Rich REPL instead of leaving the user staring at a
     # silently-restored prompt.
     _t_launch = time.monotonic()
-    proc = subprocess.Popen(cmd, env=env, stdin=0, stdout=tty_out, stderr=tty_err)
+    # stdin handling: ``stdin=None`` (default) lets the OS inherit
+    # the parent's stdin handle naturally. On Windows this is the
+    # crucial path for Ink — passing ``stdin=0`` makes Python's
+    # subprocess explicitly hand over a CRT-fd-derived handle with
+    # ``STARTF_USESTDHANDLES``, and Node + Ink see that as a plain
+    # handle rather than the console, so ``process.stdin.isTTY`` is
+    # false and ``setRawMode`` throws. ``stdin=None`` keeps the
+    # console attribute intact across the spawn boundary on both
+    # Windows and POSIX (POSIX inherits fd 0 either way).
+    proc = subprocess.Popen(cmd, env=env, stdout=tty_out, stderr=tty_err)
     user_interrupted = False
     try:
         proc.wait()
