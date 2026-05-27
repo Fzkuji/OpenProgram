@@ -1682,3 +1682,79 @@
   animation: dagFlash 1.3s ease-out 1;
   border-radius: 6px;
 }
+
+/* ===== Unified function-call card ===== */
+/* Both agentic ``RuntimeBlock`` and regular tool calls render as a
+ * single ``.inline-tree`` (header + body). When stacked inside an
+ * assistant bubble give each its own breathing room without the
+ * legacy ``.runtime-block`` margins. */
+.assistant-runtime-children > .inline-tree,
+.assistant-runtime-children > div > .inline-tree,
+.chat-stream-body > .inline-tree {
+  margin: 10px 0 0;
+}
+/* Slot for Retry / attempt-nav inside the inline-tree header. */
+.inline-tree-actions .attempt-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.inline-tree-actions .attempt-nav-btn {
+  -webkit-appearance: none; appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.inline-tree-actions .attempt-nav-btn:hover:not(:disabled) {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+.inline-tree-actions .attempt-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.inline-tree-actions .attempt-nav-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  padding: 0 2px;
+}
+.inline-tree-actions .rerun-btn {
+  padding: 0 8px;
+  height: 22px;
+  line-height: 22px;
+  font-size: 11px;
+}
+/* Usage stat strip rendered below the inline-tree for agentic
+ * function calls — small muted footer, no border / background. */
+.runtime-usage-footer {
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+.inline-tree.is-error {
+  border-left: 3px solid var(--accent-red);
+}
+
+/* Inline pulse next to the assistant sender label — visible whenever
+ * the LLM is still streaming and the bubble has no chat-text yet.
+ * Stays visible during the thinking phase so the user always sees
+ * forward motion, even when ThinkingBlock content is collapsed. */
+.pending-inline {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+}
+.pending-inline .pending-pulse {
+  width: 7px;
+  height: 7px;
+}

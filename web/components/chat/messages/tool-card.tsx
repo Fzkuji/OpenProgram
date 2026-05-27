@@ -1,18 +1,22 @@
 "use client";
 
 /**
- * Tool-calls card — React port of the legacy `.chat-tools` / `.chat-tool`
- * scaffold (chat-ws.js). All calls in one assistant turn collapse into
- * a single bordered card; each row inside is itself collapsible.
+ * Regular-tool-call card — each tool call renders as its own
+ * ``.inline-tree`` (the same frame agentic functions use via
+ * ``RuntimeBlock`` → ``ExecutionDag``). No outer "Tool calls (N)"
+ * grouping — when the LLM calls three functions in a turn the user
+ * sees three stacked cards, the same way agentic function calls
+ * stack.
  *
- * Reuses 05-chat.css: both the outer card and each row fold purely on
- * the `data-collapsed` attribute, so this component just flips strings.
+ * Header label = ``fnName(args)`` so the user sees what was called.
+ * Body shows the args / result blocks when expanded.
  */
 import { useState } from "react";
 
 import type { ChatToolCall } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 
-/** Compact a raw JSON args string for the one-line row preview —
+/** Compact a raw JSON args string for the header signature —
  *  mirrors the legacy `_compactToolArgs` intent without its full
  *  path-shortening: parse, drop to a short `k: v, …` form, cap length. */
 function compactArgs(raw: string): string {
@@ -35,41 +39,53 @@ function compactArgs(raw: string): string {
   return joined.length > 80 ? joined.slice(0, 80) + "…" : joined;
 }
 
-function ToolRow({ call }: { call: ChatToolCall }) {
+function ToolInlineTree({ call }: { call: ChatToolCall }) {
   const [collapsed, setCollapsed] = useState(true);
-  const status =
-    call.status === "running"
-      ? "running…"
-      : call.status === "error"
-        ? "error"
-        : "done";
+  const { text } = useTranslation();
+  const argsLabel = compactArgs(call.input);
+  const running = call.status === "running";
+  const errored = call.isError || call.status === "error";
   return (
     <div
-      className={`chat-tool${call.isError ? " is-error" : ""}`}
+      className={"inline-tree" + (errored ? " is-error" : "")}
       data-collapsed={collapsed ? "1" : "0"}
       data-call-id={call.id}
     >
-      <button
-        type="button"
-        className="chat-fold-btn"
+      <div
+        className="inline-tree-header"
         onClick={() => setCollapsed((c) => !c)}
-        onMouseDown={(e) => e.preventDefault()}
       >
-        <span className="chat-fold-caret">{"▶"}</span>
-        <span className="chat-fold-label">
-          <span className="chat-tool-name">{call.tool || "?"}</span>
-          <span className="chat-tool-args">({compactArgs(call.input)})</span>
+        <span>
+          {running ? (
+            <span className="pulse" style={{ color: "var(--accent-blue)" }}>
+              {"●"}
+            </span>
+          ) : errored ? (
+            <span style={{ color: "var(--accent-red)" }}>{"✗"}</span>
+          ) : (
+            <span style={{ color: "var(--accent-cyan)" }}>{"◆"}</span>
+          )}{" "}
+          <span className="runtime-func">{call.tool || "?"}</span>
+          (<span className="runtime-params">{argsLabel}</span>)
         </span>
-        <span className="chat-fold-elapsed chat-tool-status">{status}</span>
-      </button>
-      <div className="chat-fold-content">
+        <span className="inline-tree-actions">
+          <span
+            className={"inline-tree-toggle" + (collapsed ? " collapsed" : "")}
+          >
+            {"▶"}
+          </span>
+        </span>
+      </div>
+      <div className={"inline-tree-body" + (collapsed ? " collapsed" : "")}>
         <div className="chat-tool-section">
-          <div className="chat-tool-section-label">args</div>
+          <div className="chat-tool-section-label">{text("args", "参数")}</div>
           <pre className="chat-tool-pre">{call.input}</pre>
         </div>
         {call.result !== undefined ? (
           <div className="chat-tool-section chat-tool-result-section">
-            <div className="chat-tool-section-label">result</div>
+            <div className="chat-tool-section-label">
+              {text("result", "结果")}
+            </div>
             <pre className="chat-tool-pre chat-tool-result">{call.result}</pre>
           </div>
         ) : null}
@@ -79,46 +95,12 @@ function ToolRow({ call }: { call: ChatToolCall }) {
 }
 
 export function ToolsBlock({ tools }: { tools: ChatToolCall[] }) {
-  const [collapsed, setCollapsed] = useState(true);
   if (!tools.length) return null;
-  const hasRunning = tools.some((t) => t.status === "running");
   return (
-    <div className="chat-tools inline-tree" data-collapsed={collapsed ? "1" : "0"}>
-      <div
-        className="inline-tree-header chat-tools-header"
-        onClick={() => setCollapsed((c) => !c)}
-      >
-        <span>
-          <span
-            style={{
-              color: "var(--accent-cyan)",
-              display: "inline-block",
-              animation: hasRunning
-                ? "tool-dot-pulse 1.1s ease-in-out infinite"
-                : undefined,
-            }}
-          >
-            ◆
-          </span>
-          {" Tool calls "}
-          <span className="chat-tools-count">{tools.length}</span>
-        </span>
-        <span className="inline-tree-actions">
-          <span className="inline-tree-toggle chat-tools-toggle">{"▶"}</span>
-        </span>
-      </div>
-      <div className="inline-tree-body chat-tools-body">
-        {tools.map((t) => (
-          <ToolRow key={t.id} call={t} />
-        ))}
-      </div>
-      {/* Pulse keyframe — colocated so this file owns the animation. */}
-      <style jsx>{`
-        @keyframes tool-dot-pulse {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50%      { transform: scale(1.35); opacity: 0.55; }
-        }
-      `}</style>
-    </div>
+    <>
+      {tools.map((t) => (
+        <ToolInlineTree key={t.id} call={t} />
+      ))}
+    </>
   );
 }

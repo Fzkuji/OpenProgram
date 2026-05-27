@@ -19,28 +19,17 @@ import { ThinkingBlock } from "./thinking-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
 
-function TypingIndicator() {
-  return (
-    <div className="pending-body">
-      <span className="pending-pulse" aria-hidden="true" />
-      <span className="pending-label">{"Agentic is thinking…"}</span>
-    </div>
-  );
-}
-
 export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   // Subscribed so the bubble re-renders once `renderMd` lands and the
   // markdown can be rendered for real instead of escaped.
   useMarkdownReady();
   const { text } = useTranslation();
-  const streaming = msg.status === "streaming" || msg.status === "pending";
+  const streaming =
+    msg.status === "streaming" ||
+    msg.status === "pending" ||
+    msg.status === "running";
   const tools = msg.tools ?? [];
   const hasContent = !!msg.content;
-  const empty =
-    !hasContent &&
-    !msg.thinking &&
-    tools.length === 0 &&
-    !(msg.runtimeChildren && msg.runtimeChildren.length > 0);
 
   const AGENTIC_TOOL_NAMES = new Set(["gui_agent", "research_agent", "wiki_agent"]);
   const runtimeChildren = msg.runtimeChildren ?? [];
@@ -114,13 +103,25 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
           {initial}
         </div>
         <div className="message-sender">{sender}</div>
+        {streaming && !hasContent ? (
+          // Visible "still working" pulse next to the sender label —
+          // stays until the first chat-text delta arrives. Thinking
+          // content alone doesn't clear it; the user wants to see
+          // forward motion even while the model is still in the
+          // thinking phase.
+          <span
+            className="pending-inline"
+            aria-label="generating"
+            title={text("Agentic is thinking…", "Agentic 正在思考…")}
+          >
+            <span className="pending-pulse" aria-hidden="true" />
+          </span>
+        ) : null}
         {!streaming ? <MessageActions msg={msg} /> : null}
       </div>
 
       {msg.status === "error" ? (
         <div className="error-content">{msg.content || text("Request failed.", "请求失败。")}</div>
-      ) : empty && streaming ? (
-        <TypingIndicator />
       ) : (
         <div className="chat-stream-body">
           {msg.blocks && msg.blocks.length > 0 ? (

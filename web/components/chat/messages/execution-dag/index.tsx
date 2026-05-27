@@ -17,18 +17,17 @@
  * `selectedPath`, and the node objects are walked directly instead of
  * via the `_nodeCache` path map.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 
 import {
   cleanForCopy,
   collectPaths,
-  filteredParams,
   type TNode,
   treeHasRunning,
   truncate,
-  wsSend,
 } from "./types";
 import { RetryPanel } from "./retry-panel";
 
@@ -43,6 +42,7 @@ interface RowCtx {
   retryOpen: Set<string>;
   toggleRetry: (path: string) => void;
   paused: boolean;
+  text: (en: string, zh: string) => string;
   /** Re-render tick — bumped every second so running durations advance. */
   tick: number;
 }
@@ -69,7 +69,7 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
     displayStatus === "success" ? (
       <span style={{ color: "var(--accent-green)" }}>{"✓"}</span>
     ) : isCancelled ? (
-      <span style={{ color: "var(--text-muted)" }} title="Cancelled">
+      <span style={{ color: "var(--text-muted)" }} title={ctx.text("Cancelled", "已取消")}>
         {"◉"}
       </span>
     ) : displayStatus === "error" ? (
@@ -91,7 +91,7 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
         : Math.round(node.duration_ms) + "ms";
   } else if (running && node.start_time && node.start_time > 0) {
     const elapsed = Math.round(Date.now() / 1000 - node.start_time);
-    dur = displayStatus === "paused" ? elapsed + "s (paused)" : elapsed + "s...";
+    dur = displayStatus === "paused" ? elapsed + ctx.text("s (paused)", "秒（已暂停）") : elapsed + "s...";
   }
 
   const isExec = node.node_type === "exec";
@@ -147,7 +147,7 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
           <span
             className="node-name"
             style={{ cursor: "pointer" }}
-            title="View source"
+            title={ctx.text("View source", "查看源码")}
             onClick={(e) => {
               e.stopPropagation();
               (
@@ -166,7 +166,7 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
               (isCancelled ? " cancelled" : "")
             }
           >
-            {isCancelled ? "cancelled" : displayStatus}
+            {isCancelled ? ctx.text("cancelled", "已取消") : ctx.text(displayStatus, statusZh(displayStatus))}
           </span>
         )}
         {dur ? <span className="node-duration">{dur}</span> : null}
@@ -179,7 +179,7 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
         {canRetry ? (
           <span
             className="retry-icon"
-            title="Modify"
+            title={ctx.text("Modify", "修改")}
             onClick={(e) => {
               e.stopPropagation();
               ctx.toggleRetry(path);
@@ -207,8 +207,31 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
 
 /* ---- tree card ----------------------------------------------------- */
 
-export function ExecutionDag({ tree }: { tree: TNode }) {
+interface ExecutionDagProps {
+  tree: TNode;
+  /** Override the default "Execution DAG" / "执行 DAG" header label.
+   *  Used by ``RuntimeBlock`` to surface the function signature directly
+   *  in the inline-tree header so any function call (agentic or regular
+   *  tool) renders with a unified `.inline-tree` frame. */
+  headerLabel?: React.ReactNode;
+  /** Extra elements rendered inside ``inline-tree-actions`` before the
+   *  Copy JSON button — e.g. attempt-nav arrows, Retry. */
+  actions?: React.ReactNode;
+  /** Forwarded to the wrapper so legacy CLI/stream code can target the
+   *  pending block via ``id="runtime_pending"`` / ``data-function``. */
+  pendingId?: string;
+  dataFunction?: string;
+}
+
+export function ExecutionDag({
+  tree,
+  headerLabel,
+  actions,
+  pendingId,
+  dataFunction,
+}: ExecutionDagProps) {
   const paused = useSessionStore((s) => s.paused);
+  const { text } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     const s = new Set<string>();
@@ -275,11 +298,16 @@ export function ExecutionDag({ tree }: { tree: TNode }) {
     retryOpen,
     toggleRetry,
     paused,
+    text,
     tick,
   };
 
   return (
-    <div className="inline-tree">
+    <div
+      className="inline-tree"
+      id={pendingId}
+      data-function={dataFunction || undefined}
+    >
       <div
         className="inline-tree-header"
         onClick={() => setCollapsed((c) => !c)}
@@ -292,18 +320,19 @@ export function ExecutionDag({ tree }: { tree: TNode }) {
           ) : (
             <span style={{ color: "var(--accent-cyan)" }}>{"◆"}</span>
           )}{" "}
-          Execution DAG
+          {headerLabel ?? text("Execution DAG", "执行 DAG")}
         </span>
         <span className="inline-tree-actions">
+          {actions}
           <button
             className={"inline-tree-copy" + (copied ? " copied" : "")}
-            title="Copy tree as JSON"
+            title={text("Copy tree as JSON", "复制执行树 JSON")}
             onClick={(e) => {
               e.stopPropagation();
               copy();
             }}
           >
-            {copied ? "Copied" : "Copy JSON"}
+            {copied ? text("Copied", "已复制") : text("Copy JSON", "复制 JSON")}
           </button>
           <span
             className={"inline-tree-toggle" + (collapsed ? " collapsed" : "")}
@@ -317,4 +346,13 @@ export function ExecutionDag({ tree }: { tree: TNode }) {
       </div>
     </div>
   );
+}
+
+function statusZh(status: string): string {
+  if (status === "success") return "成功";
+  if (status === "error") return "错误";
+  if (status === "paused") return "已暂停";
+  if (status === "running") return "运行中";
+  if (status === "pending") return "等待中";
+  return status;
 }
