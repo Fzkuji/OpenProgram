@@ -486,6 +486,17 @@ def dispatch_forced_tool_call(
             _clear_cancel(session_id)
         except Exception:
             pass
+        # Subprocess wrote every nested Call directly to the per-session
+        # git history via its OWN SessionStore. Parent worker's cached
+        # SessionMemoryIndex never observed those writes — drop the
+        # cache so handle_load_session / build_branches_payload read
+        # the on-disk truth instead of the pre-subprocess snapshot
+        # (which contains only the user msg + runtime placeholder).
+        try:
+            from openprogram.agent.session_db import default_db as _ddb
+            _ddb().invalidate_cache(session_id)
+        except Exception:
+            pass
 
     if out.get("killed"):
         # If the subprocess was SIGKILLed before it could finalize the
