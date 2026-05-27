@@ -52,10 +52,15 @@ export const sidebarNavItemClass = [
 /** Active variant — appended to `.sidebarNavItemClass` when current route matches. */
 export const sidebarNavItemActiveClass = "bg-bg-hover text-nav-color-hover";
 
-/** 16×16 icon container. Holds a 20×20 SVG that overflows visually. */
+/** 16-wide icon container, 20-tall. Holds a 20×20 SVG centered, so
+ *  the SVG overflows ±2px horizontally without pushing the text.
+ *  This matches Claude's sidebar pattern: every icon's visual center
+ *  lands at the same x regardless of SVG size (16×16 New-chat plus and
+ *  20×20 nav glyphs both center on the same gridline; text starts at a
+ *  fixed offset). */
 export const sidebarNavIconClass = [
   "sidebar-nav-icon",
-  "flex size-[20px] shrink-0 items-center justify-center",
+  "flex w-[16px] h-[20px] shrink-0 items-center justify-center",
   "overflow-visible text-nav-color",
   "transition-colors duration-75",
   "group-hover:text-nav-color-hover group-[.active]:text-nav-color-hover",
@@ -66,7 +71,9 @@ export const sidebarNavIconClass = [
  * Heroicons-style icons get a uniform spring-out scale on hover.
  */
 export const sidebarNavIconSvgClass = [
-  // Container + SVG both 20x20 — 16 was too small to read at a glance.
+  // SVG stays 20×20 — overflows the 16-wide container by 2px on each
+  // side, centered, to align with smaller icons (like the New-chat
+  // 16×16 plus) on the same optical centerline.
   "size-[20px] shrink-0",
   "transition-transform duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]",
   "group-hover:scale-[1.12]",

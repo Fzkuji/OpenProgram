@@ -25,9 +25,20 @@
   /* Claude footer: fixed 64px height with padding 32/16. Padding eats
      the content box (height - padding = 0), so the 37px avatar visually
      centers via flex alignment rather than physically fitting in
-     content. Looks like a 64px-tall row with a 37px circle in it. */
+     content. Looks like a 64px-tall row with a 37px circle in it.
+
+     Horizontal padding uses a clamp tied to the trigger's own width
+     (which mirrors sidebar width). At full width (288): padding-left
+     resolves to 16. As sidebar collapses and width approaches 53
+     (avatar 37 + 16 padding), padding-left smoothly drops toward 6
+     (the centered position in a 49-wide rail). So the avatar stays
+     at x=16 during most of the collapse and only slides left in the
+     final few pixels — no teleport, no early move. */
   height: 64px;
-  padding: 32px 16px;
+  padding-top: 32px;
+  padding-bottom: 32px;
+  padding-left: max(6px, min(16px, calc(100% - 47px)));
+  padding-right: max(6px, min(16px, calc(100% - 47px)));
   box-sizing: border-box;
   border-radius: 0;
   cursor: pointer;
@@ -38,9 +49,7 @@
   text-align: left;
   font-family: inherit;
   color: var(--text-primary);
-  /* Match Claude: gap animates 300ms, info opacity 150ms (declared on
-     .info below). Both use the same easing. */
-  transition: background 0.15s ease, gap 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+  transition: background 0.15s ease;
   overflow: hidden;
 }
 .trigger:hover { background: var(--bg-hover); }

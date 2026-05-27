@@ -28,6 +28,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 import { BranchesPanel } from "./branches";
 import { ContextCommitTimeline } from "./context-commit-timeline";
 import { WorktreesPanel } from "./worktrees";
@@ -56,6 +57,7 @@ const RIGHT_W_MAX = 720;
 const RIGHT_W_DEFAULT = 288;
 
 export function RightSidebar() {
+  const { t } = useTranslation();
   const open = useSessionStore((s) => s.rightDock.open);
   const view = useSessionStore((s) => s.rightDock.view);
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
@@ -201,8 +203,9 @@ export function RightSidebar() {
         "bg-bg-secondary border-l border-[var(--border)] " +
         // Skip the width transition while dragging so the handle
         // feels responsive; the only transition we still want is the
-        // open/close collapse animation.
-        (dragRef.current ? "" : "[transition:width_0.3s_ease,min-width_0.3s_ease] ") +
+        // open/close collapse animation. 150ms matches the left
+        // sidebar so both panels feel like the same component.
+        (dragRef.current ? "" : "[transition:width_0.15s_cubic-bezier(0.165,0.84,0.44,1),min-width_0.15s_cubic-bezier(0.165,0.84,0.44,1)] ") +
         (open ? "" : "collapsed")
       }
       style={open
@@ -227,7 +230,7 @@ export function RightSidebar() {
             zIndex: 10,
             background: "transparent",
           }}
-          title="Drag to resize panel"
+          title={t("right.resize_panel")}
         />
       )}
       {/* Header — same 48px row + 8px padding as the left sidebar
@@ -238,7 +241,7 @@ export function RightSidebar() {
         <button
           className={sidebarToggleClass}
           onClick={onToggleRail}
-          title="Toggle panel"
+          title={t("right.toggle_panel")}
           type="button"
         >
           <svg
@@ -268,7 +271,7 @@ export function RightSidebar() {
               <path d="M232,64a32,32,0,1,0-40,31v17a8,8,0,0,1-8,8H96a23.84,23.84,0,0,0-8,1.38V95a32,32,0,1,0-16,0v66a32,32,0,1,0,16,0V144a8,8,0,0,1,8-8h88a24,24,0,0,0,24-24V95A32.06,32.06,0,0,0,232,64ZM64,64A16,16,0,1,1,80,80,16,16,0,0,1,64,64ZM96,192a16,16,0,1,1-16-16A16,16,0,0,1,96,192Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>History</span>
+          <span className={sidebarNavLabelClass}>{t("right.history")}</span>
         </div>
         <div
           className={
@@ -278,14 +281,14 @@ export function RightSidebar() {
           data-view={VIEW_CONTEXT}
           onClick={() => onNavClick(VIEW_CONTEXT)}
           role="button"
-          title="Compacted context the next LLM turn will see"
+          title={t("right.context_tooltip")}
         >
           <span className={sidebarNavIconClass}>
             <svg className={sidebarNavIconSvgClass} viewBox="0 0 256 256" fill="currentColor">
               <path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>Context</span>
+          <span className={sidebarNavLabelClass}>{t("right.context")}</span>
         </div>
         <div
           className={
@@ -301,7 +304,7 @@ export function RightSidebar() {
               <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm-8,96H188.64L159,188a8,8,0,0,1-6.95,4h-.46a8,8,0,0,1-6.89-4.84L103,89.92,79,132a8,8,0,0,1-7,4H48a8,8,0,0,1,0-16H67.36L97.05,68a8,8,0,0,1,14.3.82L153,166.08l24-42.05a8,8,0,0,1,6.95-4h24a8,8,0,0,1,0,16Z" />
             </svg>
           </span>
-          <span className={sidebarNavLabelClass}>Executions</span>
+          <span className={sidebarNavLabelClass}>{t("right.executions")}</span>
         </div>
       </div>
 
@@ -349,6 +352,7 @@ function HistoryGraphPanel() {
  *  position (viewport) or the next-LLM-call context range
  *  (context). Drives ``window.setHistoryHighlightMode``. */
 function HighlightModeToggle() {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<"viewport" | "context">("viewport");
   function pick(next: "viewport" | "context") {
     setMode(next);
@@ -382,17 +386,17 @@ function HighlightModeToggle() {
         type="button"
         onClick={() => pick("viewport")}
         style={style(mode === "viewport")}
-        title="High light follows chat scroll position"
+        title={t("right.viewport_tooltip")}
       >
-        Viewport
+        {t("right.viewport")}
       </button>
       <button
         type="button"
         onClick={() => pick("context")}
         style={style(mode === "context")}
-        title="Highlight the message set the next LLM turn will load"
+        title={t("right.context_highlight_tooltip")}
       >
-        Context
+        {t("right.context")}
       </button>
     </div>
   );
@@ -405,15 +409,13 @@ function HighlightModeToggle() {
  * AppShell route-change handler when entering /chat with no session.
  */
 function DetailPanel() {
+  const { t } = useTranslation();
   return (
     <div id="detailBody" className="detail-body">
       <div className="detail-empty">
-        No execution selected.
+        {t("right.no_execution")}
         <br />
-        <span>
-          Click a node in the conversation tree to inspect its context and
-          output.
-        </span>
+        <span>{t("right.no_execution_hint")}</span>
       </div>
     </div>
   );

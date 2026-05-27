@@ -217,7 +217,11 @@ export function Sidebar() {
         // collapsed-state rules in 02-sidebar.css.
         "sidebar relative flex shrink-0 flex-col overflow-hidden " +
         "bg-bg-secondary border-r border-[var(--border)] " +
-        "[transition:width_0.3s_ease,min-width_0.3s_ease] " +
+        // 150ms is the sweet spot — visible enough to feel intentional
+        // (so the icons don't pop), short enough not to drag. Same
+        // cubic-bezier Claude uses on its info-opacity fade for a
+        // consistent timing feel.
+        "[transition:width_0.15s_cubic-bezier(0.165,0.84,0.44,1),min-width_0.15s_cubic-bezier(0.165,0.84,0.44,1)] " +
         (open
           ? "w-sidebar-w"
           : "w-[49px] min-w-[49px] collapsed")
@@ -240,7 +244,7 @@ export function Sidebar() {
         <button
           className={sidebarToggleClass}
           onClick={toggleSidebar}
-          title="Toggle sidebar"
+          title={t("sidebar.toggle")}
           type="button"
         >
           <svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor">
@@ -303,7 +307,7 @@ export function Sidebar() {
               e.stopPropagation();
               doRefresh();
             }}
-            title="Refresh"
+            title={t("sidebar.refresh")}
           >
             {refreshDone ? (
               <span>&#10003;</span>
@@ -422,7 +426,7 @@ export function Sidebar() {
       {open && hasFavorites && (
         <SidebarSection
           id="favSection"
-          title="Favorite Functions"
+          title={t("sidebar.favorite_functions")}
           collapsed={favCollapsed}
           onToggle={() => setFavCollapsed((v) => !v)}
           className="shrink-0 pt-[16px]"
@@ -441,7 +445,7 @@ export function Sidebar() {
       {open && (
         <SidebarSection
           id="convSection"
-          title="Recents"
+          title={t("sidebar.recents")}
           collapsed={convCollapsed}
           onToggle={() => setConvCollapsed((v) => !v)}
           className="flex flex-1 min-h-0 flex-col pt-[16px]"
@@ -490,6 +494,8 @@ function SidebarSection({
   className: string;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div id={id} className={className}>
       <div
@@ -507,7 +513,7 @@ function SidebarSection({
               : "opacity-0 group-hover:opacity-75")
           }
         >
-          {collapsed ? "Show" : "Hide"}
+          {collapsed ? t("sidebar.show") : t("sidebar.hide")}
         </span>
       </div>
       {!collapsed && children}

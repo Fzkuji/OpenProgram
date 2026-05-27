@@ -322,13 +322,12 @@ button, input, select, textarea, optgroup {
   overflow: hidden !important;
   scrollbar-width: none !important;
 }
-.sidebar.collapsed .sidebar-nav-item {
-  gap: 0;
-  /* Sidebar is now 49px outer (48px content + 1px border), so the
-   * inner column's px-[8px] yields exactly 32px for the nav button
-   * via w-full. Center the icon inside that 32px row. */
-  justify-content: center;
-}
+/* Nav items in collapsed sidebar:
+ *  - keep them left-aligned at the original padding so icons stay at
+ *    the SAME x position as when expanded — no "center, then move"
+ *    visual reflow. Sidebar's overflow:hidden clips the label area on
+ *    the right.
+ *  - label / action just disappear; icons hold their column. */
 .sidebar.collapsed .sidebar-nav-label { display: none; }
 .sidebar.collapsed .sidebar-nav-action { display: none; }
 
@@ -349,25 +348,14 @@ button, input, select, textarea, optgroup {
   opacity: 0;
   pointer-events: none;
 }
-/* Collapsed sidebar — match Claude's collapsed trigger geometry:
-   height 64 → 48, padding 32/16 → 24/16, avatar centered, chevron
-   hidden. Height/padding snap (no transition), info opacity fades. */
-.sidebar.collapsed .user-menu-footer-trigger {
-  height: 48px;
-  padding: 24px 0;
-  justify-content: center;
-}
+/* Footer trigger in collapsed sidebar:
+ *  - height stays 64px so the top divider line stays at the same y
+ *  - padding-left is a clamp on the trigger's own width (declared in
+ *    user-menu-footer.module.css), so the avatar stays at x=16 during
+ *    most of the collapse and only slides leftward when the sidebar
+ *    width gets close to 53 (where it would otherwise clip the avatar)
+ *  - chevron hidden, info opacity fades via the rule above */
 .sidebar.collapsed .user-menu-footer-trigger > svg:last-child { display: none; }
-/* Info wrapper shrinks to nothing horizontally when collapsed so the
-   avatar can actually center in the 49px rail; opacity already fades
-   it via the rule above. */
-.sidebar.collapsed .user-menu-footer-info {
-  flex: 0 0 0;
-  margin: 0;
-  padding: 0;
-  width: 0;
-  min-width: 0;
-}
 
 /* User-message avatar (chat stream — React <UserBubble />). */
 .user-avatar {
