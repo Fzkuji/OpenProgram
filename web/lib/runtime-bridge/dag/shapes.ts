@@ -4,6 +4,8 @@
  * Pure functions, no module-level state. Shapes encode the node kind
  * defined in ``docs/design/dag-node-model.md`` (3 kinds × function class
  * → 6 visual shapes).
+ *
+ * Moved from ``../history/shapes.ts``; see ``./README.md``.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -32,16 +34,6 @@ export function _edgePath(x1: number, y1: number, x2: number, y2: number): strin
   );
 }
 
-/** Per-branch colour driven directly by ``_lane``. Lane 0 (the trunk)
- *  is always LANE_COLORS[0]; lane k uses LANE_COLORS[1 + (k-1) % N].
- *  Driving from the lane index (rather than a leaf-id hash) means
- *  every node on the same lane gets the same fill — tool calls on
- *  a sub branch never split into a second colour, even when the
- *  trunk walk happened to seize the sub branch's tip as its leaf
- *  label after a HEAD switch.
- *
- *  ``leafOfNode`` is kept in the signature for callers that still
- *  pass it (no-op now). */
 export function _branchColor(
   node: GNode,
   _leafOfNode?: Record<string, string>,
@@ -52,24 +44,6 @@ export function _branchColor(
   return LANE_COLORS[1 + ((lane - 1) % (LANE_COLORS.length - 1))];
 }
 
-/**
- * Map a node to its shape token (consumed by ``_buildShapeEl``).
- *
- * Visual taxonomy (docs/design/dag-node-model.md):
- * | shape token      | node kind                          |
- * |------------------|------------------------------------|
- * | circle           | user_msg                           |
- * | triangle         | llm_reply                          |
- * | square           | inline tool (bash, read, ...) +    |
- * |                  | runtime-display rows               |
- * | square_outline   | branch-referencing (attach, merge) |
- * | diamond          | branch-creating (task spawn)       |
- */
-// Functions whose semantics is "this node's real content lives on
-// another branch" — task spawns one, attach pulls from one, merge
-// folds one in. They all share the dashed-outline shape so the user
-// can tell at a glance "this isn't a self-contained tool execution,
-// it's a branch operation".
 const BRANCH_OP_FUNCTIONS = new Set([
   "attach",
   "merge",
@@ -80,15 +54,6 @@ export function _shapeFor(node: GNode): string {
   const role = node.role;
   const fn = node.function;
   if (fn && BRANCH_OP_FUNCTIONS.has(fn)) return "square_outline";
-  // Function-call runtime row (LLM-driven OR fn-form triggered) —
-  // the node represents a tool/function invocation, so render as a
-  // square regardless of role mapping. Without this both kinds of
-  // runtime card render as triangles (because the persisted role
-  // mapped to "assistant"), which misleads the reader into thinking
-  // there's another LLM turn happening at that step. Guarded by
-  // ``function`` being set + not a branch op so it doesn't catch
-  // sub-agent user-msgs (those have display=runtime but no
-  // ``function`` field).
   if (
     node.display === "runtime"
     && fn
@@ -96,10 +61,6 @@ export function _shapeFor(node: GNode): string {
   ) {
     return "square";
   }
-  // role drives the shape unconditionally — display=runtime used to
-  // force square here, which mis-rendered sub-agent user_msgs
-  // (role=user, display=runtime) as squares instead of circles.
-  // runtime visibility belongs to the chat panel, not the DAG.
   if (role === "tool") return "square";
   if (role === "assistant") return "triangle";
   if (role === "user") return "circle";
@@ -148,8 +109,6 @@ export function _buildShapeEl(
       rx: 0.8, ry: 0.8, fill: color,
     });
   } else if (shape === "square_outline") {
-    // Branch-op nodes (task / attach / merge) — dashed outline, dark
-    // fill so the node reads as "reference, not a new turn".
     const s = r - 0.2;
     return _svg("rect", {
       x: -s, y: -s, width: s * 2, height: s * 2,
@@ -159,8 +118,6 @@ export function _buildShapeEl(
       "stroke-dasharray": "3 2",
     });
   } else if (shape === "diamond") {
-    // Branch-creating function_call (task spawn) — rotated square /
-    // diamond marks the fork point.
     const t = r * 1.15;
     return _svg("polygon", {
       points: "0," + -t + " " + t + ",0 0," + t + " " + -t + ",0",

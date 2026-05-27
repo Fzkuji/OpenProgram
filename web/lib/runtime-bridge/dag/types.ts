@@ -1,9 +1,10 @@
 /**
  * History DAG renderer — shared types + constants.
  *
- * Split out of the previous monolithic ``history-graph.ts``. See
- * ``docs/design/dag-node-model.md`` for what these node fields mean
- * (function, role, _tier, _depth, _lane).
+ * Moved from ``web/lib/runtime-bridge/history/types.ts`` as part of the
+ * DAG module reorganisation. See ``./README.md`` for the full module
+ * layout and ``docs/design/dag-node-model.md`` for the node-field
+ * semantics (function, role, _tier, _depth, _lane).
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

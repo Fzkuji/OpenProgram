@@ -21,7 +21,7 @@ import "@/lib/runtime-bridge/helpers";
 import "@/lib/runtime-bridge/ui";
 import "@/lib/runtime-bridge/providers";
 import "@/lib/runtime-bridge/functions-panel";
-import "@/lib/runtime-bridge/history-graph";
+import "@/lib/runtime-bridge/dag";
 import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
