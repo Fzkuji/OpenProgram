@@ -66,7 +66,12 @@ export const sidebarNavIconClass = [
  * Heroicons-style icons get a uniform spring-out scale on hover.
  */
 export const sidebarNavIconSvgClass = [
-  "size-[20px] shrink-0",
+  // Match the 16x16 icon container — the SVG used to be 20x20 with
+  // overflow-visible to oversize the glyph, but visually that made
+  // icons jut beyond their button slot and confused users about
+  // "why is the inner element bigger than its container?". Hover
+  // scale still gives a subtle pop without breaking the bounding box.
+  "size-[16px] shrink-0",
   "transition-transform duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]",
   "group-hover:scale-[1.12]",
 ].join(" ");
