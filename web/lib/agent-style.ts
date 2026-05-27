@@ -1,10 +1,12 @@
 /**
- * agent-style — deterministic colour + initial for an agent_id.
+ * agent-style — deterministic colour + initial for an agent_id, with
+ * a localStorage-backed override for the default profile (the one
+ * shown when agent_id is missing or "main").
  *
- * Same agent_id always lands on the same palette slot, so multi-agent
- * chats stay visually consistent across reloads. The palette mirrors
- * the lane colours used by the history-graph so the chat avatar and
- * the DAG branch line read as the same agent.
+ * The default-profile knobs (display name, avatar initial, avatar
+ * colour) are configured in /settings/general → Agent. Named agents
+ * (research_agent, gui_agent, etc.) still hash deterministically so
+ * multi-agent chats stay visually consistent across reloads.
  */
 
 // Kept in sync with web/components/right-sidebar/branches-panel.tsx
@@ -27,29 +29,133 @@ function _hash(s: string): number {
   return h >>> 0;
 }
 
-/** Pick a palette colour for an agent_id. Empty / falsy → null,
- *  let the caller use the existing neutral avatar. */
-export function agentColor(agentId: string | undefined | null): string | null {
-  if (!agentId) return null;
-  return PALETTE[_hash(agentId) % PALETTE.length];
+/* ---- Default-profile overrides --------------------------------- */
+
+export interface AgentProfilePrefs {
+  name: string;
+  initial: string;
+  color: string;
 }
 
-/** One-character avatar text for an agent. Picks the first
- *  letter / digit of the id, uppercased. Empty / falsy → "A"
- *  (the legacy "Agentic" initial) so we don't regress when no
- *  agent_id is stamped. */
+export const DEFAULT_AGENT_PROFILE: AgentProfilePrefs = {
+  name: "Agent",
+  initial: "A",
+  color: "#35b89a",
+};
+
+const STORAGE_KEY = "agent_profile";
+const CHANGE_EVT = "agent-profile-change";
+
+// Cached snapshot — ``useSyncExternalStore`` requires the same object
+// identity for unchanged state. Without this cache React sees a brand
+// new object literal every render and triggers an infinite re-render
+// loop. The cache is invalidated only when ``setAgentProfile`` runs
+// or a cross-tab storage event fires (see ``subscribeAgentProfile``).
+let _cached: AgentProfilePrefs | null = null;
+
+function _read(): AgentProfilePrefs {
+  if (typeof window === "undefined") return DEFAULT_AGENT_PROFILE;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_AGENT_PROFILE;
+    const parsed = JSON.parse(raw) as Partial<AgentProfilePrefs>;
+    return {
+      name: parsed.name || DEFAULT_AGENT_PROFILE.name,
+      initial: (parsed.initial || DEFAULT_AGENT_PROFILE.initial).slice(0, 2),
+      color: parsed.color || DEFAULT_AGENT_PROFILE.color,
+    };
+  } catch {
+    return DEFAULT_AGENT_PROFILE;
+  }
+}
+
+/** Read the cached default-profile prefs. The cache is initialised on
+ *  first call and refreshed only when ``setAgentProfile`` runs. */
+export function getAgentProfile(): AgentProfilePrefs {
+  if (_cached === null) _cached = _read();
+  return _cached;
+}
+
+/** Write the default-profile prefs to localStorage, refresh the
+ *  in-memory cache, and fire ``agent-profile-change`` so subscribers
+ *  re-render. */
+export function setAgentProfile(next: AgentProfilePrefs): void {
+  if (typeof window === "undefined") return;
+  _cached = {
+    name: next.name || DEFAULT_AGENT_PROFILE.name,
+    initial: (next.initial || DEFAULT_AGENT_PROFILE.initial).slice(0, 2),
+    color: next.color || DEFAULT_AGENT_PROFILE.color,
+  };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_cached));
+  window.dispatchEvent(new Event(CHANGE_EVT));
+}
+
+/** Subscribe to default-profile changes. Returns an unsubscribe fn.
+ *  Listens for both same-tab dispatches (``CHANGE_EVT``) and other-tab
+ *  ``storage`` events so updates in one window propagate everywhere.
+ *  Invalidates the cache on cross-tab storage events so the next
+ *  ``getAgentProfile()`` re-reads from localStorage. */
+export function subscribeAgentProfile(fn: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const onChange = () => fn();
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEY) {
+      _cached = null;
+      fn();
+    }
+  };
+  window.addEventListener(CHANGE_EVT, onChange);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(CHANGE_EVT, onChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+/* ---- React hook ------------------------------------------------ */
+
+import { useSyncExternalStore } from "react";
+
+/** Re-renders whenever the default-profile prefs change. Use in any
+ *  component that displays the agent name / avatar so it picks up
+ *  edits made in /settings/general live. */
+export function useAgentProfile(): AgentProfilePrefs {
+  return useSyncExternalStore(
+    subscribeAgentProfile,
+    getAgentProfile,
+    () => DEFAULT_AGENT_PROFILE,
+  );
+}
+
+/* ---- Per-message style ----------------------------------------- */
+
+/** Is this an "anonymous" agent_id — i.e. the default profile shown
+ *  in /settings? Centralised so the three helpers below stay in sync. */
+function _isDefaultProfile(agentId: string | undefined | null): boolean {
+  return !agentId || agentId === "main";
+}
+
+/** Pick a palette colour for an agent_id. For the default profile,
+ *  returns the user-configured colour. For named agents, hashes to a
+ *  stable palette slot. */
+export function agentColor(agentId: string | undefined | null): string | null {
+  if (_isDefaultProfile(agentId)) return getAgentProfile().color;
+  return PALETTE[_hash(agentId!) % PALETTE.length];
+}
+
+/** One-character avatar text for an agent. Default profile reads from
+ *  prefs; named agents take the first letter / digit of the id. */
 export function agentInitial(agentId: string | undefined | null): string {
-  if (!agentId) return "A";
-  for (const ch of agentId) {
+  if (_isDefaultProfile(agentId)) return getAgentProfile().initial;
+  for (const ch of agentId!) {
     if (/[a-zA-Z0-9]/.test(ch)) return ch.toUpperCase();
   }
   return "A";
 }
 
-/** Display name for an agent. "main" is the default profile so we
- *  keep showing "Agentic" for it (avoids gratuitously renaming the
- *  most common case). Other ids show as-is. */
+/** Display name for an agent. Default profile reads from prefs;
+ *  named agents show their id verbatim. */
 export function agentDisplayName(agentId: string | undefined | null): string {
-  if (!agentId || agentId === "main") return "Agentic";
-  return agentId;
+  if (_isDefaultProfile(agentId)) return getAgentProfile().name;
+  return agentId!;
 }

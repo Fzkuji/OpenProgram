@@ -3,13 +3,12 @@
  * a `useTranslation()` hook returning a `t(key)` function + the
  * current locale + a setter that broadcasts to subscribers.
  *
- * Scope (v1): only the /settings/general page is translated. The rest
- * of the app stays English. The hook is wired through so any new page
- * can opt in by adding its strings to the dictionary below.
+ * Scope: shared UI labels that have been migrated to this helper.
+ * Components opt in by adding stable keys to the dictionary below.
  */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type Locale = "en" | "zh";
 
@@ -41,6 +40,10 @@ export function getLocale(): Locale {
   return current;
 }
 
+export function translateText(en: string, zh: string): string {
+  return current === "zh" ? zh : en;
+}
+
 // Per-key dictionary. Top-level keys are stable identifiers; the
 // inner record holds the per-locale string. Falls back to English
 // when a translation is missing.
@@ -61,6 +64,16 @@ const DICT = {
   "general.section.application": { en: "Application", zh: "应用信息" },
   "general.version": { en: "Version", zh: "版本" },
   "general.framework": { en: "Framework", zh: "框架" },
+  "general.section.agent": { en: "Agent", zh: "Agent" },
+  "general.agent.name": { en: "Display name", zh: "显示名称" },
+  "general.agent.name.placeholder": { en: "Agent", zh: "Agent" },
+  "general.agent.initial": { en: "Avatar initial", zh: "头像字符" },
+  "general.agent.initial.hint": {
+    en: "One character shown in the round avatar.",
+    zh: "圆形头像里显示的一个字符。",
+  },
+  "general.agent.color": { en: "Avatar color", zh: "头像颜色" },
+  "general.agent.preview": { en: "Preview", zh: "预览" },
 
   // Settings shell + tab labels
   "settings.title": { en: "Settings", zh: "设置" },
@@ -77,6 +90,135 @@ const DICT = {
   "nav.mcp": { en: "MCP Servers", zh: "MCP 服务器" },
   "nav.memory": { en: "Memory", zh: "记忆" },
   "nav.chats": { en: "Chats", zh: "会话历史" },
+
+  // Sidebar secondary labels and actions
+  "sidebar.toggle": { en: "Toggle sidebar", zh: "切换侧边栏" },
+  "sidebar.refresh": { en: "Refresh", zh: "刷新" },
+  "sidebar.favorite_functions": { en: "Favorite Functions", zh: "收藏函数" },
+  "sidebar.recents": { en: "Recents", zh: "最近会话" },
+  "sidebar.show": { en: "Show", zh: "显示" },
+  "sidebar.hide": { en: "Hide", zh: "隐藏" },
+  "sidebar.clear_all": { en: "Clear all", zh: "清空全部" },
+  "sidebar.no_conversations": { en: "No conversations yet", zh: "暂无会话" },
+  "sidebar.delete_chat": { en: "Delete chat", zh: "删除会话" },
+  "sidebar.delete_all_chats": { en: "Delete all chats", zh: "删除全部会话" },
+  "sidebar.cancel": { en: "Cancel", zh: "取消" },
+  "sidebar.delete": { en: "Delete", zh: "删除" },
+  "sidebar.untitled": { en: "Untitled", zh: "未命名" },
+  "sidebar.running": { en: "running", zh: "运行中" },
+  "sidebar.delete_all_irreversible": {
+    en: "This cannot be undone.",
+    zh: "此操作无法撤销。",
+  },
+
+  // User footer menu
+  "user.local_instance": { en: "Local instance", zh: "本地实例" },
+  "user.settings": { en: "Settings", zh: "设置" },
+  "user.about": { en: "About", zh: "关于" },
+
+  // Chat topbar agent selector
+  "agent.chat": { en: "Chat", zh: "对话" },
+  "agent.exec": { en: "Exec", zh: "执行" },
+  "agent.chat_agent": { en: "Chat Agent", zh: "对话 Agent" },
+  "agent.execution_agent": { en: "Execution Agent", zh: "执行 Agent" },
+  "agent.no_enabled_models": { en: "No enabled models", zh: "没有启用的模型" },
+  "agent.enable_models": { en: "enable some in Settings", zh: "去设置中启用模型" },
+  "agent.manage_models": { en: "Manage models in Settings", zh: "在设置中管理模型" },
+  "agent.switch_failed": { en: "Agent switch failed: ", zh: "Agent 切换失败：" },
+
+  // Right sidebar panels
+  "right.resize_panel": { en: "Drag to resize panel", zh: "拖动调整面板宽度" },
+  "right.toggle_panel": { en: "Toggle panel", zh: "切换面板" },
+  "right.history": { en: "History", zh: "历史" },
+  "right.context": { en: "Context", zh: "上下文" },
+  "right.executions": { en: "Executions", zh: "执行" },
+  "right.context_tooltip": {
+    en: "Compacted context the next LLM turn will see",
+    zh: "下一次大模型调用会读取的压缩上下文",
+  },
+  "right.viewport": { en: "Viewport", zh: "视口" },
+  "right.viewport_tooltip": {
+    en: "Highlight follows chat scroll position",
+    zh: "高亮跟随当前聊天滚动位置",
+  },
+  "right.context_highlight_tooltip": {
+    en: "Highlight the message set the next LLM turn will load",
+    zh: "高亮下一次大模型调用会读取的消息集合",
+  },
+  "right.no_execution": { en: "No execution selected.", zh: "未选择执行记录。" },
+  "right.no_execution_hint": {
+    en: "Click a node in the conversation tree to inspect its context and output.",
+    zh: "点击会话树中的节点查看它的上下文和输出。",
+  },
+  "right.branches": { en: "Branches", zh: "分支" },
+  "right.worktrees": { en: "Worktrees", zh: "Worktree" },
+  "right.selected": { en: "selected", zh: "已选择" },
+  "right.base": { en: "base", zh: "基准" },
+  "right.attach_to": { en: "Attach to", zh: "附加到" },
+  "right.attach_title": {
+    en: "Attach selected branch(es) to another branch",
+    zh: "把选中的分支附加到另一个分支",
+  },
+  "right.this_session": { en: "This session", zh: "当前会话" },
+  "right.other_session": { en: "Other session...", zh: "其他会话..." },
+  "right.no_other_branches": {
+    en: "No other branches in this session.",
+    zh: "当前会话没有其他分支。",
+  },
+  "right.loading": { en: "Loading...", zh: "加载中..." },
+  "right.merge_ellipsis": { en: "Merge...", zh: "合并..." },
+  "right.merge": { en: "Merge", zh: "合并" },
+  "right.clear_selection": { en: "Clear selection", zh: "清除选择" },
+  "right.task_running_merge_wait": {
+    en: "Task is running; wait for it to finish before merging",
+    zh: "任务正在运行，完成后才能合并",
+  },
+  "right.deselect_base_hint": {
+    en: "Click again to deselect; Cmd-click to mark as base",
+    zh: "再次点击取消选择；按住 Cmd 点击可标为基准",
+  },
+  "right.select_merge_hint": {
+    en: "Select for merge (Cmd-click to mark as base)",
+    zh: "选择用于合并（按住 Cmd 点击可标为基准）",
+  },
+  "right.delete_branch_confirm": {
+    en: "Delete this branch and its messages? This cannot be undone.",
+    zh: "删除这个分支及其消息？此操作无法撤销。",
+  },
+  "right.rename_branch": { en: "Rename branch", zh: "重命名分支" },
+  "right.delete_branch": { en: "Delete branch", zh: "删除分支" },
+  "right.head": { en: "HEAD", zh: "当前" },
+  "right.running": { en: "running", zh: "运行中" },
+  "right.equal_merge": { en: "Equal merge", zh: "平等合并" },
+  "right.equal_merge_desc": {
+    en: "write a new turn whose parents are all selected branches. Reply lands as a fresh branch tip.",
+    zh: "写入一个新回合，父节点为所有已选分支；回复会落在新的分支末端。",
+  },
+  "right.attach_base": { en: "Attach into base", zh: "附加到基准" },
+  "right.attach_base_desc": {
+    en: "reply continues the base branch, and the other selections are loaded as context. Cmd-click a row to pick the base.",
+    zh: "回复继续写入基准分支，其他已选分支作为上下文读取。按住 Cmd 点击行可选择基准。",
+  },
+  "right.merge_instruction_placeholder": {
+    en: "Optional instruction for the merge agent (how to reconcile)",
+    zh: "可选：给合并 Agent 的指令（如何整合）",
+  },
+  "right.merge_shortcut_hint": { en: "Cmd/Ctrl + Enter to merge", zh: "Cmd/Ctrl + Enter 合并" },
+  "right.status": { en: "Status", zh: "状态" },
+  "right.created": { en: "Created", zh: "创建时间" },
+  "right.file": { en: "file", zh: "个文件" },
+  "right.files": { en: "files", zh: "个文件" },
+  "right.keep": { en: "Keep", zh: "保留" },
+  "right.discard": { en: "Discard", zh: "丢弃" },
+  "right.keep_worktree_title": {
+    en: "Keep the on-disk worktree, detach from OpenProgram",
+    zh: "保留磁盘上的 worktree，并从 OpenProgram 中解除关联",
+  },
+  "right.discard_worktree_title": {
+    en: "Remove worktree dir and delete branch",
+    zh: "删除 worktree 目录并删除分支",
+  },
+  "right.merging": { en: "merging...", zh: "正在合并..." },
 } as const;
 
 type Key = keyof typeof DICT;
@@ -98,9 +240,10 @@ export function useTranslation() {
     return () => { subscribers.delete(sub); };
   }, []);
 
-  const t = (key: Key): string => {
+  const t = useCallback((key: Key): string => {
     const row = DICT[key];
     return (row && (row[loc] ?? row.en)) || String(key);
-  };
-  return { t, locale: loc, setLocale };
+  }, [loc]);
+  const text = useCallback((en: string, zh: string): string => (loc === "zh" ? zh : en), [loc]);
+  return { t, text, locale: loc, setLocale };
 }

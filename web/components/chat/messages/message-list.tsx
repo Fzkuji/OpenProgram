@@ -22,6 +22,8 @@ import {
   type ChatMsg,
 } from "@/lib/session-store";
 
+import { agentInitial, useAgentProfile } from "@/lib/agent-style";
+
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
 import { RuntimeBlock } from "./runtime-block";
@@ -118,7 +120,7 @@ function useChatAreaStick(newTurnSeed: number) {
   }, [newTurnSeed]);
 }
 
-/** Breathing "Agentic is thinking" indicator shown between a user
+/** Breathing "<Agent> is thinking…" indicator shown between a user
  *  msg and the (yet-to-arrive) assistant reply (or an assistant
  *  bubble that exists but is still empty).
  *
@@ -127,15 +129,21 @@ function useChatAreaStick(newTurnSeed: number) {
  *  hidden by ``MessageList``.
  */
 function PendingReplyIndicator() {
+  const profile = useAgentProfile();
   return (
     <div className="message assistant pending-standalone">
       <div className="message-header">
-        <div className="message-avatar bot-avatar">A</div>
-        <div className="message-sender">Agentic</div>
+        <div
+          className="message-avatar bot-avatar"
+          style={{ background: profile.color, color: "#fff" }}
+        >
+          {profile.initial || agentInitial(null)}
+        </div>
+        <div className="message-sender">{profile.name}</div>
       </div>
       <div className="chat-stream-body pending-body">
         <span className="pending-pulse" aria-hidden="true" />
-        <span className="pending-label">{"Agentic is thinking…"}</span>
+        <span className="pending-label">{`${profile.name} is thinking…`}</span>
       </div>
     </div>
   );

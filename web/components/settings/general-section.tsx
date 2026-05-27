@@ -5,6 +5,11 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { useFontPref, FONT_LABELS, fontStack, type FontKey } from "@/lib/font-pref";
+import {
+  DEFAULT_AGENT_PROFILE,
+  setAgentProfile,
+  useAgentProfile,
+} from "@/lib/agent-style";
 import styles from "./settings-page.module.css";
 
 type Theme = "light" | "auto" | "dark";
@@ -111,6 +116,162 @@ const LANG_OPTIONS: DropdownOption<Locale>[] = [
   { value: "zh", label: "中文" },
 ];
 
+/** Eighteen palette colours kept in sync with agent-style.PALETTE so
+ *  the swatches in /settings match what bubbles can actually display. */
+const AGENT_COLORS = [
+  "#4f8ef7", "#5aad4e", "#d4843a", "#9d6fe0", "#e0445a", "#2db3d5",
+  "#e0b020", "#35b89a", "#e066b3", "#6b8dd6", "#8fbf3f", "#d9694f",
+  "#52c4c4", "#b08be0", "#c79a4a", "#e08a3a", "#6fae6f", "#d05fa0",
+];
+
+function AgentSection() {
+  const { t } = useTranslation();
+  const profile = useAgentProfile();
+
+  function updateName(name: string) {
+    setAgentProfile({ ...profile, name: name.slice(0, 32) });
+  }
+  function updateInitial(raw: string) {
+    // Single visible character — strip whitespace, take the first
+    // grapheme. Fall back to default if the user clears it (empty
+    // string would render an invisible bubble).
+    const cleaned = raw.trim();
+    const next = cleaned.length === 0
+      ? DEFAULT_AGENT_PROFILE.initial
+      : Array.from(cleaned)[0]!.toUpperCase();
+    setAgentProfile({ ...profile, initial: next });
+  }
+  function updateColor(color: string) {
+    setAgentProfile({ ...profile, color });
+  }
+
+  return (
+    <section>
+      <h3 className={styles.sectionTitle}>{t("general.section.agent")}</h3>
+      <div className={styles.card}>
+        <div className={styles.row}>
+          <div className={styles.label}>{t("general.agent.preview")}</div>
+          <div className={styles.value}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <span
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background: profile.color,
+                  color: "#fff",
+                  fontWeight: 700,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {profile.initial}
+              </span>
+              <span style={{ fontWeight: 600 }}>{profile.name}</span>
+            </span>
+          </div>
+        </div>
+
+        <div className={styles.row}>
+          <div className={styles.label}>{t("general.agent.name")}</div>
+          <div className={styles.value}>
+            <input
+              type="text"
+              value={profile.name}
+              maxLength={32}
+              placeholder={t("general.agent.name.placeholder")}
+              onChange={(e) => updateName(e.target.value)}
+              style={{
+                padding: "6px 10px",
+                background: "var(--bg-secondary)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                color: "var(--text-primary)",
+                font: "inherit",
+                width: 200,
+              }}
+            />
+          </div>
+        </div>
+
+        <div className={styles.row}>
+          <div className={styles.label}>{t("general.agent.initial")}</div>
+          <div className={styles.value}>
+            <input
+              type="text"
+              value={profile.initial}
+              maxLength={2}
+              onChange={(e) => updateInitial(e.target.value)}
+              style={{
+                padding: "6px 10px",
+                background: "var(--bg-secondary)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                color: "var(--text-primary)",
+                font: "inherit",
+                width: 64,
+                textAlign: "center",
+              }}
+            />
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                marginTop: 4,
+              }}
+            >
+              {t("general.agent.initial.hint")}
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.row}>
+          <div className={styles.label}>{t("general.agent.color")}</div>
+          <div className={styles.value}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                maxWidth: 280,
+              }}
+            >
+              {AGENT_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => updateColor(c)}
+                  aria-label={c}
+                  title={c}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 6,
+                    background: c,
+                    border:
+                      profile.color === c
+                        ? "2px solid var(--text-primary)"
+                        : "1px solid var(--border)",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function GeneralSection() {
   const { t, locale, setLocale } = useTranslation();
   const { font, setFont } = useFontPref();
@@ -189,6 +350,8 @@ export function GeneralSection() {
             </div>
           </div>
         </section>
+
+        <AgentSection />
 
         <section>
           <h3 className={styles.sectionTitle}>{t("general.section.application")}</h3>

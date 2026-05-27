@@ -9,7 +9,12 @@
  * nothing rendered yet, a typing indicator stands in.
  */
 import type { AssistantBlock, ChatMsg, ChatToolCall } from "@/lib/session-store";
-import { agentColor, agentDisplayName, agentInitial } from "@/lib/agent-style";
+import {
+  agentColor,
+  agentDisplayName,
+  agentInitial,
+  useAgentProfile,
+} from "@/lib/agent-style";
 import { useTranslation } from "@/lib/i18n";
 
 import { MessageActions } from "./message-actions";
@@ -19,11 +24,11 @@ import { ThinkingBlock } from "./thinking-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
 
-function TypingIndicator() {
+function TypingIndicator({ name }: { name: string }) {
   return (
     <div className="pending-body">
       <span className="pending-pulse" aria-hidden="true" />
-      <span className="pending-label">{"Agentic is thinking…"}</span>
+      <span className="pending-label">{`${name} is thinking…`}</span>
     </div>
   );
 }
@@ -32,6 +37,9 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   // Subscribed so the bubble re-renders once `renderMd` lands and the
   // markdown can be rendered for real instead of escaped.
   useMarkdownReady();
+  // Subscribed so the avatar/name pick up edits made in
+  // /settings/general → Agent without a reload.
+  useAgentProfile();
   const { text } = useTranslation();
   const streaming =
     msg.status === "streaming" ||
@@ -174,7 +182,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               // tail the body with the breathing pulse. Bottom of the
               // bubble, aligned to the chat-text column.
               if (streaming && !hasContent) {
-                rendered.push(<TypingIndicator key="typing_tail" />);
+                rendered.push(<TypingIndicator key="typing_tail" name={sender} />);
               }
               return rendered;
             })()
@@ -210,7 +218,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   ))}
                 </div>
               ) : null}
-              {streaming && !hasContent ? <TypingIndicator /> : null}
+              {streaming && !hasContent ? <TypingIndicator name={sender} /> : null}
             </>
           )}
           {!streaming && msg.id ? (
