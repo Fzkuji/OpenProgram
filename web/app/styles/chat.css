@@ -1744,17 +1744,3 @@
 .inline-tree.is-error {
   border-left: 3px solid var(--accent-red);
 }
-
-/* Inline pulse next to the assistant sender label — visible whenever
- * the LLM is still streaming and the bubble has no chat-text yet.
- * Stays visible during the thinking phase so the user always sees
- * forward motion, even when ThinkingBlock content is collapsed. */
-.pending-inline {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 8px;
-}
-.pending-inline .pending-pulse {
-  width: 7px;
-  height: 7px;
-}

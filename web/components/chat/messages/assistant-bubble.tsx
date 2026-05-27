@@ -19,6 +19,15 @@ import { ThinkingBlock } from "./thinking-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
 
+function TypingIndicator() {
+  return (
+    <div className="pending-body">
+      <span className="pending-pulse" aria-hidden="true" />
+      <span className="pending-label">{"Agentic is thinking…"}</span>
+    </div>
+  );
+}
+
 export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   // Subscribed so the bubble re-renders once `renderMd` lands and the
   // markdown can be rendered for real instead of escaped.
@@ -103,20 +112,6 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
           {initial}
         </div>
         <div className="message-sender">{sender}</div>
-        {streaming && !hasContent ? (
-          // Visible "still working" pulse next to the sender label —
-          // stays until the first chat-text delta arrives. Thinking
-          // content alone doesn't clear it; the user wants to see
-          // forward motion even while the model is still in the
-          // thinking phase.
-          <span
-            className="pending-inline"
-            aria-label="generating"
-            title={text("Agentic is thinking…", "Agentic 正在思考…")}
-          >
-            <span className="pending-pulse" aria-hidden="true" />
-          </span>
-        ) : null}
         {!streaming ? <MessageActions msg={msg} /> : null}
       </div>
 
@@ -175,6 +170,12 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   </div>,
                 );
               }
+              // While streaming and no final chat-text has landed yet,
+              // tail the body with the breathing pulse. Bottom of the
+              // bubble, aligned to the chat-text column.
+              if (streaming && !hasContent) {
+                rendered.push(<TypingIndicator key="typing_tail" />);
+              }
               return rendered;
             })()
           ) : (
@@ -209,6 +210,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   ))}
                 </div>
               ) : null}
+              {streaming && !hasContent ? <TypingIndicator /> : null}
             </>
           )}
           {!streaming && msg.id ? (
