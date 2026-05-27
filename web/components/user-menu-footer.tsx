@@ -44,9 +44,16 @@ export function UserMenuFooter() {
     setCollapsed(isCollapsed);
     if (trig && isCollapsed) {
       const r = trig.getBoundingClientRect();
+      // Anchor the menu to the trigger's BOTTOM-RIGHT so it pops up
+      // and to the right of the avatar — same visual placement the
+      // sidebar's open-state menu has relative to its trigger, but
+      // shifted out of the 49px collapsed rail. ``left = r.right + 8``
+      // puts the menu's left edge right next to the avatar with a
+      // small gap; ``bottom`` anchors the menu's bottom to the
+      // trigger's bottom so it grows upward like the open variant.
       setMenuPos({
-        left: r.left,
-        bottom: window.innerHeight - r.top + 8,
+        left: r.right + 8,
+        bottom: window.innerHeight - r.bottom,
       });
     } else {
       setMenuPos(null);
