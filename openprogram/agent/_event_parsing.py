@@ -43,6 +43,14 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
                          "event": {"type": "text",
                                    "text": getattr(ame, "delta", "")}},
             }
+        if ame_type == "thinking_delta":
+            return {
+                "type": "chat_response",
+                "data": {"type": "stream_event",
+                         "session_id": cid,
+                         "event": {"type": "thinking",
+                                   "text": getattr(ame, "delta", "")}},
+            }
         return None
 
     if t == "tool_execution_start":
