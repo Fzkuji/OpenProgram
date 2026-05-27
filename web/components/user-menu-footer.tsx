@@ -44,16 +44,15 @@ export function UserMenuFooter() {
     setCollapsed(isCollapsed);
     if (trig && isCollapsed) {
       const r = trig.getBoundingClientRect();
-      // Anchor the menu to the trigger's BOTTOM-RIGHT so it pops up
-      // and to the right of the avatar — same visual placement the
-      // sidebar's open-state menu has relative to its trigger, but
-      // shifted out of the 49px collapsed rail. ``left = r.right + 8``
-      // puts the menu's left edge right next to the avatar with a
-      // small gap; ``bottom`` anchors the menu's bottom to the
-      // trigger's bottom so it grows upward like the open variant.
+      // EXACT same viewport position as the open-sidebar menu would
+      // have: open sidebar is 288px (--sidebar-width), the menu sits
+      // inside it with left:8 right:8 → viewport coords [8, 280].
+      // Reproduce those coords here (left=8, width=272), and anchor
+      // the menu's bottom 8px above the trigger so it sits exactly
+      // where the open variant did.
       setMenuPos({
-        left: r.right + 8,
-        bottom: window.innerHeight - r.bottom,
+        left: 8,
+        bottom: window.innerHeight - r.top + 8,
       });
     } else {
       setMenuPos(null);
@@ -109,7 +108,9 @@ export function UserMenuFooter() {
               left: `${menuPos.left}px`,
               bottom: `${menuPos.bottom}px`,
               right: "auto",
-              minWidth: "240px",
+              // 288px sidebar - 8px left - 8px right padding = 272.
+              // Match the open variant's visible width exactly.
+              width: "272px",
             } : undefined}
           >
             <button type="button" className={styles.item} onClick={goSettings}>
