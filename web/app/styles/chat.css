@@ -1114,6 +1114,15 @@
   overflow: hidden;
   font-size: 12px;
 }
+/* Make the Thinking header visually match the @agentic_function
+ * runtime-block header (mono + bold + bright) so the assistant's
+ * pre-tool reasoning and tool call card read as one consistent
+ * family, not "small muted sans" next to "big bold mono". */
+.chat-thinking > .chat-fold-btn {
+  font-family: var(--font-mono);
+  color: var(--text-bright);
+  font-weight: 600;
+}
 /* Tool calls render as a single bordered "card" containing dense
    rows separated by hairlines, instead of each call being its own
    rounded box with an 8px gap. Cuts vertical space ~60% for the
