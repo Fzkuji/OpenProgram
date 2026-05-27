@@ -149,11 +149,21 @@ def read_agent_prefs() -> dict[str, Any]:
 # --- UI primitives (questionary w/ input() fallback) ------------------------
 
 def _have_questionary() -> bool:
+    """Return True only if questionary is importable AND the underlying
+    ``prompt_toolkit`` output backend can render in this terminal.
+
+    Git Bash / MinTTY on Windows passes the import check but raises
+    ``NoConsoleScreenBufferError`` at first prompt — would crash the
+    whole setup wizard before any input was read. The cross-platform
+    probe in :mod:`openprogram._compat` catches that case so the
+    plain-``input()`` fallback below kicks in instead.
+    """
     try:
         import questionary  # noqa: F401
-        return True
     except ImportError:
         return False
+    from openprogram._compat import prompt_toolkit_usable
+    return prompt_toolkit_usable()
 
 
 # Consistent look across every prompt in the wizard. Cursor-highlighted

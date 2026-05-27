@@ -166,4 +166,50 @@ except ImportError:  # Windows
                 _time.sleep(_RETRY_INTERVAL)
 
 
-__all__ = ["LOCK_EX", "LOCK_NB", "LOCK_UN", "flock", "kill_process_tree"]
+_PROMPT_TOOLKIT_USABLE_CACHE: bool | None = None
+
+
+def prompt_toolkit_usable() -> bool:
+    """Return True if ``prompt_toolkit`` (and therefore ``questionary``,
+    ``inquirer``, …) can render a full-screen interactive prompt in the
+    current terminal.
+
+    On POSIX with a tty, or Windows with a native ``cmd.exe`` /
+    Windows Terminal / PowerShell console, returns True.
+
+    On Git Bash (MinTTY), Cygwin without a winpty wrapper, redirected
+    stdio, IDEs that pipe through pseudo-ttys, or any other case where
+    prompt_toolkit's ``create_output()`` fails — returns False, so
+    callers can fall back to plain ``input()``-driven menus.
+
+    The probe is destructive-free (it creates and immediately drops
+    the output backend) but does a small amount of work, so the
+    result is cached for the lifetime of the process.
+    """
+    global _PROMPT_TOOLKIT_USABLE_CACHE
+    if _PROMPT_TOOLKIT_USABLE_CACHE is not None:
+        return _PROMPT_TOOLKIT_USABLE_CACHE
+    try:
+        from prompt_toolkit.output.defaults import create_output
+    except ImportError:
+        _PROMPT_TOOLKIT_USABLE_CACHE = False
+        return False
+    try:
+        # create_output() raises NoConsoleScreenBufferError on Windows
+        # MinTTY and friends; any other terminal-detection issue also
+        # surfaces here.
+        create_output()
+        _PROMPT_TOOLKIT_USABLE_CACHE = True
+    except Exception:  # noqa: BLE001 — any failure is "don't use it"
+        _PROMPT_TOOLKIT_USABLE_CACHE = False
+    return _PROMPT_TOOLKIT_USABLE_CACHE
+
+
+__all__ = [
+    "LOCK_EX",
+    "LOCK_NB",
+    "LOCK_UN",
+    "flock",
+    "kill_process_tree",
+    "prompt_toolkit_usable",
+]

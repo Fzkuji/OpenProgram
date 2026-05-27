@@ -36,6 +36,23 @@ except ImportError:  # pragma: no cover — graceful degradation
     _HAS_QUESTIONARY = False
 
 
+def _questionary_usable() -> bool:
+    """Combined "is questionary actually usable here?" check.
+
+    Wraps both the import test and the prompt_toolkit terminal probe
+    so call sites can replace ``_HAS_QUESTIONARY and sys.stdin.isatty()``
+    with one call that also catches Git Bash / MinTTY / non-native
+    Windows consoles where ``questionary.select(...).ask()`` would
+    raise ``NoConsoleScreenBufferError`` on first prompt.
+    """
+    if not _HAS_QUESTIONARY:
+        return False
+    if not sys.stdin.isatty():
+        return False
+    from openprogram._compat import prompt_toolkit_usable
+    return prompt_toolkit_usable()
+
+
 # ---------------------------------------------------------------------------
 # Public entry points
 # ---------------------------------------------------------------------------
@@ -52,7 +69,7 @@ def run_interactive_setup() -> int:
 
     Returns 0 on clean exit.
     """
-    if not _HAS_QUESTIONARY or not sys.stdin.isatty():
+    if not _questionary_usable():
         # Non-TTY stdin (test harness, CI, piped input) can't drive
         # questionary's prompt_toolkit UI — it would raise reading from
         # a closed fd. Fall back to the plain-input wizard, which still
@@ -196,7 +213,7 @@ def pick_login_method_interactive(
     Falls back to the numeric picker the CLI used before when
     questionary isn't available.
     """
-    if not _HAS_QUESTIONARY or not sys.stdin.isatty():
+    if not _questionary_usable():
         return None  # signal to caller: fall through to numeric prompt
 
     return questionary.select(
