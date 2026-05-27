@@ -50,6 +50,17 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     subcommand (programs, skills, agents, sessions, channels, config,
     providers, web), and any one-shot flag (--print, -p, --no-tui), keep
     stdio plain.
+
+    Windows note: Node + Ink's ``setRawMode`` reliably fails on common
+    Windows terminal configurations (PowerShell + Python subprocess
+    inheritance loses the console-handle flag; Git Bash / MinTTY
+    doesn't expose a Windows console at all). Defaulting bare
+    ``openprogram`` to the TUI there means users get a silent /
+    half-rendered failure with no clear message. We default Windows to
+    the Rich REPL instead, and let users opt back into the TUI with
+    ``--tui`` if their terminal supports it (Windows Terminal sometimes
+    does, depending on the Node version). POSIX is unaffected — TUI
+    stays the default on macOS / Linux.
     """
     bypass_words = {
         "agents", "sessions", "channels", "config", "programs", "skills", "plugins", "doctor",
@@ -60,6 +71,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
         "--print", "-p", "--no-tui", "--web", "--help", "-h", "--version",
         "--print-prompt",
     }
+    has_explicit_tui = "--tui" in argv
     for arg in argv:
         if arg in bypass_flags:
             return False
@@ -67,6 +79,9 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
             return False
         if arg in bypass_words:
             return False
+    # Windows default-off (unless --tui explicitly opts in)
+    if sys.platform == "win32" and not has_explicit_tui:
+        return False
     return True
 
 
@@ -165,7 +180,11 @@ def main():
     parser.add_argument("--no-tui", action="store_true",
         help="Fall back to the Rich REPL instead of the full-screen "
              "TUI. Useful when recording or in a terminal without "
-             "alt-screen support.")
+             "alt-screen support. Default on Windows.")
+    parser.add_argument("--tui", action="store_true",
+        help="Force the full-screen Ink TUI even on Windows (where "
+             "it may fail with 'Raw mode is not supported' depending "
+             "on the terminal). POSIX uses the TUI by default.")
 
     sub = parser.add_subparsers(dest="command", help="Subcommand")
 
@@ -623,16 +642,28 @@ def main():
     # -------- No subcommand: bare `openprogram` drops into CLI chat --------
     # Hermes-style: no mode chooser, the banner + REPL is the default
     # experience. --web routes to the browser UI; --print runs one-shot.
+    #
+    # TUI default resolution: explicit ``--tui`` always wins, ``--no-tui``
+    # next, otherwise platform default — TUI on POSIX, REPL on Windows
+    # (Node + Ink ``setRawMode`` reliably fails in common Windows
+    # terminal setups; the REPL works everywhere).
+    if args.tui:
+        tui_enabled = True
+    elif args.no_tui:
+        tui_enabled = False
+    else:
+        tui_enabled = sys.platform != "win32"
+
     if args.command is None:
         if args.print_prompt:
             _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
-                          tui=not args.no_tui)
+                          tui=tui_enabled)
             return
         if args.web:
             _cmd_web(args.port, False if args.no_browser else None)
             return
         _cmd_cli_chat(oneshot=None, resume=args.resume,
-                      tui=not args.no_tui)
+                      tui=tui_enabled)
         return
 
     # -------- Subcommand dispatch --------
