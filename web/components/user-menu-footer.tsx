@@ -36,11 +36,11 @@ export function UserMenuFooter() {
     const trig = triggerRef.current;
     if (trig) {
       const r = trig.getBoundingClientRect();
-      // Anchor menu's left to trigger's right edge + 8px gap,
-      // bottom-align to the trigger so it floats next to the avatar.
+      // Float above the trigger (original position), anchored to its
+      // left edge with an 8px gap underneath the menu's bottom.
       setMenuPos({
-        left: r.right + 8,
-        bottom: window.innerHeight - r.bottom,
+        left: r.left,
+        bottom: window.innerHeight - r.top + 8,
       });
     }
     function onDocClick(e: MouseEvent) {
