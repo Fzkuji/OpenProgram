@@ -55,7 +55,7 @@ export const sidebarNavItemActiveClass = "bg-bg-hover text-nav-color-hover";
 /** 16×16 icon container. Holds a 20×20 SVG that overflows visually. */
 export const sidebarNavIconClass = [
   "sidebar-nav-icon",
-  "flex size-[16px] shrink-0 items-center justify-center",
+  "flex size-[20px] shrink-0 items-center justify-center",
   "overflow-visible text-nav-color",
   "transition-colors duration-75",
   "group-hover:text-nav-color-hover group-[.active]:text-nav-color-hover",
@@ -66,12 +66,8 @@ export const sidebarNavIconClass = [
  * Heroicons-style icons get a uniform spring-out scale on hover.
  */
 export const sidebarNavIconSvgClass = [
-  // Match the 16x16 icon container — the SVG used to be 20x20 with
-  // overflow-visible to oversize the glyph, but visually that made
-  // icons jut beyond their button slot and confused users about
-  // "why is the inner element bigger than its container?". Hover
-  // scale still gives a subtle pop without breaking the bounding box.
-  "size-[16px] shrink-0",
+  // Container + SVG both 20x20 — 16 was too small to read at a glance.
+  "size-[20px] shrink-0",
   "transition-transform duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]",
   "group-hover:scale-[1.12]",
 ].join(" ");
