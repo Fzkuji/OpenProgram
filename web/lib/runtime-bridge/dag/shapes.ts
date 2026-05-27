@@ -103,10 +103,14 @@ export function _buildShapeEl(
       fill: color,
     });
   } else if (shape === "square") {
+    // Sharp corners (rx=0) so a small function-call square reads as
+    // clearly DIFFERENT from a user-msg circle at the tight scale
+    // mini-DAG renders at — a 13×13 rect with rx=0.8 looked too round
+    // and users mistook collapsed function-call nodes for user dots.
     const s = r - 0.2;
     return _svg("rect", {
       x: -s, y: -s, width: s * 2, height: s * 2,
-      rx: 0.8, ry: 0.8, fill: color,
+      rx: 0, ry: 0, fill: color,
     });
   } else if (shape === "square_outline") {
     const s = r - 0.2;
