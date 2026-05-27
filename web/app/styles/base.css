@@ -299,7 +299,14 @@ button, input, select, textarea, optgroup {
    These target descendant stable classes across the sidebar tree, so
    they stay a single global cascade rather than threading an `open`
    prop through every nav row / the portal-mounted footer. */
-.sidebar.collapsed * {
+/* Was: ``.sidebar.collapsed * { overflow: hidden !important; }``
+ * which clipped icon-button focus rings + hover backgrounds across
+ * every descendant. Only scrollable inner regions actually need
+ * overflow suppression when collapsed; the rest can keep their
+ * default overflow so icons render fully. */
+.sidebar.collapsed,
+.sidebar.collapsed .sidebar-scroll,
+.sidebar.collapsed [data-scrollable] {
   overflow: hidden !important;
   scrollbar-width: none !important;
 }
