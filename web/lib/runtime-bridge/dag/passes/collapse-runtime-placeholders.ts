@@ -1,18 +1,27 @@
 /**
  * Pass: collapse a runtime placeholder card into its same-named code call.
  *
- * When an LLM main-reply triggers an ``@agentic_function`` (e.g.
- * gui_agent), backend persists a "runtime placeholder" row that the
- * chat panel turns into a RuntimeBlock. That placeholder has a
- * caller-edge child which is the actual function-call code row. In
- * the mini-DAG those two squares show up back-to-back ("runtime
- * placeholder square → gui_agent code call square") and read as a
- * duplicate visit. This pass drops the placeholder, reparents the
- * code call onto the placeholder's parent slot (one tier deeper
- * than the reply, since it's a side child not on the main chain),
- * and shifts ``_depth`` by ``-1`` for the code call + every
- * caller-edge descendant so the surviving cluster moves up one
- * ``ROW_H``.
+ * Backend writes TWO rows for every ``@agentic_function`` invocation:
+ *  1. ``runtime placeholder`` (role=assistant, display=runtime) — the
+ *     RuntimeBlock card the chat panel renders.
+ *  2. ``code call`` (role=tool, name=<fn>, caller=placeholder) — the
+ *     actual function-call entry the @agentic_function decorator wrote.
+ *
+ * In the mini-DAG these show as two squares back-to-back which reads
+ * as a duplicate visit. This pass drops the placeholder + reparents
+ * the code call into the placeholder's slot (same parent_id, same
+ * tier, same depth) so the user sees ONE square representing the
+ * whole call. The code call's caller-tree (gui_step / plan_next_action
+ * / conclusion / ...) is auto-collapsed under it by the standard tool-
+ * subtree rule and the "+N" badge shows the hidden count.
+ *
+ * This applies uniformly to BOTH paths:
+ *  * LLM-called: parent is the main reply (an assistant row). The
+ *    surviving code lands one tier inside the reply's lane — same
+ *    spot the placeholder occupied.
+ *  * fn-form / direct: parent is the synthetic "[function call]" user
+ *    msg. The surviving code lands ON the main trunk at tier=0,
+ *    again where the placeholder was.
  *
  * Pure function. Returns transformed graph + possibly-rewritten HEAD.
  */
@@ -37,40 +46,48 @@ export function _collapseRuntimePlaceholders(
   });
   const removeIds: Record<string, boolean> = Object.create(null);
   const replaceWith: Record<string, string> = Object.create(null);
+  // ``codeFromPlaceholder[placeholderId]`` carries the geometry slots
+  // (tier, depth, lane) we want the surviving code node to inherit so
+  // it lands exactly where the placeholder was, not one tier off as a
+  // caller-child of nothing.
+  const inheritedFrom: Record<string, GNode> = Object.create(null);
   graph.forEach((p) => {
     if (p.display !== "runtime") return;
     const fn = p.function;
     if (!fn) return;
-    // fn-form path: the placeholder's parent is the synthetic
-    // "[function call]" user msg, so the placeholder IS the main-line
-    // turn. Keep it visible — collapsing would re-parent the same-
-    // named code call as a tier=1 side child off the user msg,
-    // pushing the agentic square off the main trunk and leaving the
-    // turn's main column with just user/reply circles + triangle.
-    // Only collapse the LLM-called case (parent = assistant reply)
-    // where the placeholder genuinely duplicates the code call.
-    const parent = p.parent_id ? byId[p.parent_id] : null;
-    if (!parent || parent.role !== "assistant") return;
-    if (parent.display === "runtime") return;
     const kids = callerKidsOf[p.id] || [];
     const sameNameKid = kids.find((k) => (k.name || "") === fn);
     if (!sameNameKid) return;
     removeIds[p.id] = true;
     replaceWith[p.id] = sameNameKid.id;
+    inheritedFrom[sameNameKid.id] = p;
   });
   if (!Object.keys(removeIds).length) return { graph, headId };
   if (headId && replaceWith[headId]) headId = replaceWith[headId];
-  const depthShiftOf: Record<string, true> = Object.create(null);
+
+  // Compute per-node tier/depth adjustments so the surviving cluster
+  // inherits the placeholder's position. We snap the code call to the
+  // placeholder's tier/depth, then for each caller-edge descendant we
+  // shift by the same deltas so the subtree stays connected.
+  const tierDeltaOf: Record<string, number> = Object.create(null);
+  const depthDeltaOf: Record<string, number> = Object.create(null);
   Object.keys(replaceWith).forEach((placeholderId) => {
     const codeId = replaceWith[placeholderId];
+    const placeholder = byId[placeholderId];
+    const code = byId[codeId];
+    if (!placeholder || !code) return;
+    const tDelta = (placeholder._tier ?? 0) - (code._tier ?? 0);
+    const dDelta = (placeholder._depth ?? 0) - (code._depth ?? 0);
     const stack: string[] = [codeId];
     while (stack.length) {
       const id = stack.pop()!;
-      if (depthShiftOf[id]) continue;
-      depthShiftOf[id] = true;
+      if (id in tierDeltaOf) continue;
+      tierDeltaOf[id] = tDelta;
+      depthDeltaOf[id] = dDelta;
       (callerKidsOf[id] || []).forEach((c) => stack.push(c.id));
     }
   });
+
   const out: GNode[] = [];
   graph.forEach((m) => {
     if (removeIds[m.id]) return;
@@ -79,9 +96,12 @@ export function _collapseRuntimePlaceholders(
       const removed = byId[m.parent_id!];
       nm = Object.assign({}, m, { parent_id: removed?.parent_id || null });
     }
-    if (depthShiftOf[m.id] && typeof m._depth === "number") {
+    const tD = tierDeltaOf[m.id];
+    const dD = depthDeltaOf[m.id];
+    if ((tD || dD) && typeof m._tier === "number") {
       nm = nm === m ? Object.assign({}, m) : nm;
-      nm._depth = Math.max(0, (nm._depth || 0) - 1);
+      if (typeof nm._tier === "number") nm._tier = Math.max(0, nm._tier + (tD || 0));
+      if (typeof nm._depth === "number") nm._depth = Math.max(0, nm._depth + (dD || 0));
     }
     out.push(nm);
   });
