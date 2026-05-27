@@ -393,13 +393,16 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
     rc = proc.returncode or 0
 
     # Heuristic: Node + Ink that successfully entered raw-mode runs
-    # until the user explicitly quits — minimum lifespan is seconds,
-    # usually much more. A non-zero exit within 1.5 s almost always
-    # means the TUI couldn't initialise (the canonical case on
-    # Windows is "Raw mode is not supported on the current process
-    # .stdin" from Ink, when subprocess inheritance didn't preserve
-    # the console handle properly).
-    tui_quick_fail = not user_interrupted and rc != 0 and elapsed < 1.5
+    # until the user explicitly quits — minimum lifespan is seconds.
+    # ANY exit within 1.5 s (regardless of return code) almost always
+    # means the TUI couldn't initialise. The canonical case is Ink's
+    # "Raw mode is not supported on the current process.stdin" on
+    # Windows when subprocess inheritance didn't preserve the console
+    # handle properly — Ink prints the error but Node sometimes exits
+    # with rc=0, sometimes with rc=1, so we can't gate on rc alone.
+    # The user couldn't realistically type "/quit" in under a second
+    # anyway, so the false-positive risk is negligible.
+    tui_quick_fail = not user_interrupted and elapsed < 1.5
 
     if tui_quick_fail:
         # Surface what just happened, while we still have working
