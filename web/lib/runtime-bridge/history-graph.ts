@@ -614,6 +614,62 @@ function _demoteDecorationCards(graph: GNode[]): void {
   });
 }
 
+// Fold a function-call runtime placeholder INTO its same-named code
+// call so the mini-DAG shows a single square instead of "runtime
+// placeholder square → gui_agent code call square". The placeholder
+// is bookkeeping for chat's RuntimeBlock; the code call is the real
+// DAG node for the function invocation. The two squares back-to-back
+// just look like a duplicate visit. Drop the placeholder from the
+// DAG (chat still reads it from SessionStore; only the visual layout
+// changes).
+function _collapseRuntimePlaceholders(
+  graph: GNode[],
+  headId: string | null,
+): { graph: GNode[]; headId: string | null } {
+  if (!graph || !graph.length) return { graph, headId };
+  const byId: Record<string, GNode> = Object.create(null);
+  graph.forEach((m) => {
+    byId[m.id] = m;
+  });
+  const callerKidsOf: Record<string, GNode[]> = Object.create(null);
+  graph.forEach((m) => {
+    const ca = (m as { caller?: string }).caller;
+    if (ca && byId[ca]) {
+      (callerKidsOf[ca] = callerKidsOf[ca] || []).push(m);
+    }
+  });
+  const removeIds: Record<string, boolean> = Object.create(null);
+  const replaceWith: Record<string, string> = Object.create(null);
+  graph.forEach((p) => {
+    if (p.display !== "runtime") return;
+    const fn = p.function;
+    if (!fn) return;
+    const kids = callerKidsOf[p.id] || [];
+    const sameNameKid = kids.find((k) => (k.name || "") === fn);
+    if (!sameNameKid) return;
+    // Drop the placeholder, reparent the code call onto the
+    // placeholder's parent. Caller-edges from grand-children stay
+    // anchored to the code call (sameNameKid) unchanged.
+    removeIds[p.id] = true;
+    replaceWith[p.id] = sameNameKid.id;
+  });
+  if (!Object.keys(removeIds).length) return { graph, headId };
+  if (headId && replaceWith[headId]) headId = replaceWith[headId];
+  const out: GNode[] = [];
+  graph.forEach((m) => {
+    if (removeIds[m.id]) return;
+    let nm: GNode = m;
+    // Reparent the surviving code call to take the placeholder's
+    // parent_id slot in the conv chain.
+    if (replaceWith[m.parent_id || ""]) {
+      const removed = byId[m.parent_id!];
+      nm = Object.assign({}, m, { parent_id: removed?.parent_id || null });
+    }
+    out.push(nm);
+  });
+  return { graph: out, headId };
+}
+
 function render(graphIn: GNode[], headIdIn: string | null): void {
   let graph = graphIn;
   let headId = headIdIn;
@@ -625,6 +681,13 @@ function render(graphIn: GNode[], headIdIn: string | null): void {
   const collapsedR = _collapseRuntimePairs(graph, headId);
   graph = collapsedR.graph;
   headId = collapsedR.headId;
+
+  // Fold runtime-placeholder + same-named code call into one node
+  // so the mini-DAG shows a single square per function call instead
+  // of two redundant squares back-to-back.
+  const collapsedRP = _collapseRuntimePlaceholders(graph, headId);
+  graph = collapsedRP.graph;
+  headId = collapsedRP.headId;
 
   // Re-stamp lanes around LLM-triggered runtime cards so they don't
   // visually fork the trunk. See _demoteDecorationCards.
