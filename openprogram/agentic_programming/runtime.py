@@ -451,7 +451,6 @@ class Runtime:
         try:
             from openprogram.context.nodes import compute_reads
             from openprogram.context.render import render_dag_messages
-            from openprogram.providers.types import UserMessage, TextContent
             from openprogram.agentic_programming.function import _call_id
 
             graph = store.load()
@@ -477,22 +476,16 @@ class Runtime:
             )
             history = render_dag_messages(graph, read_ids)
 
-            # Synthesize the current turn from ``content`` blocks. Most
-            # callers pass a single ``{"type":"text","text":"..."}``
-            # block; we concatenate all text blocks and skip non-text
-            # ones for now (multimodal is a future extension).
-            text_parts: list[str] = []
-            for block in content or []:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    text_parts.append(block.get("text", ""))
-            current_text = "\n".join(p for p in text_parts if p)
-            import time as _time
-            current_msg = UserMessage(
-                role="user",
-                content=[TextContent(type="text", text=current_text)],
-                timestamp=int(_time.time() * 1000),
-            )
-            return history + [current_msg]
+            # Synthesize the current turn from ``content`` blocks via
+            # the same helper the no-store fallback uses, so image /
+            # video / audio blocks survive the DAG render path. The old
+            # version concatenated text parts only — any screenshot the
+            # caller attached to this turn (gui_agent's verify / plan /
+            # locate sub-calls all do this) was silently dropped, so
+            # the LLM ended up reasoning over the OCR/component text
+            # alone and missed the current frame.
+            ctx, _sp = _build_pi_context(content or [])
+            return history + [ctx.messages[0]]
         except Exception:
             # If anything goes wrong building DAG messages, fall back
             # to the legacy render_messages path. Never break exec().

@@ -73,17 +73,6 @@
   gap: 1px;
 }
 
-/* Collapsed sidebar: the 49px outer is way too narrow for a usable
- * menu. Pop out to the right of the trigger as a floating panel
- * (Claude-style). The .sidebar.collapsed class lives on a parent
- * sidebar element, so :global() reaches up to it from the CSS
- * module-scoped .menu selector. */
-:global(.sidebar.collapsed) .menu {
-  left: calc(100% + 8px);
-  right: auto;
-  bottom: 0;
-  min-width: 240px;
-}
 
 .item {
   display: flex;
