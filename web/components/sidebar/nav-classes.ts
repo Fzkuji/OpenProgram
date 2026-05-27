@@ -16,6 +16,11 @@
 
 /** Header button — toggle / collapse the rail. 32×32 round-corner. */
 export const sidebarToggleClass = [
+  // Legacy global class — used by .sidebar.collapsed CSS selectors
+  // in app/styles/base.css. Without it those rules silently miss
+  // the React-rendered DOM. Keep the descriptive name + the Tailwind
+  // utilities side by side.
+  "sidebar-toggle",
   "flex size-[32px] shrink-0 cursor-pointer items-center justify-center",
   "rounded-[6px] border-none bg-transparent p-0",
   "text-nav-color",
@@ -31,6 +36,11 @@ export const sidebarToggleClass = [
  * fire when the row is hovered.
  */
 export const sidebarNavItemClass = [
+  // Legacy global class — `.sidebar.collapsed .sidebar-nav-item`
+  // rules in base.css force a 32×32 centered square in collapsed
+  // state. Without this class string the rule misses and the
+  // button renders 31×32 with the icon off-centered to the right.
+  "sidebar-nav-item",
   "group inline-flex h-[32px] w-full shrink-0 cursor-pointer",
   "items-center gap-[12px] rounded-[6px] px-[8px] py-[6px]",
   "text-fs-base font-normal text-nav-color no-underline",
@@ -44,6 +54,7 @@ export const sidebarNavItemActiveClass = "bg-bg-hover text-nav-color-hover";
 
 /** 16×16 icon container. Holds a 20×20 SVG that overflows visually. */
 export const sidebarNavIconClass = [
+  "sidebar-nav-icon",
   "flex size-[16px] shrink-0 items-center justify-center",
   "overflow-visible text-nav-color",
   "transition-colors duration-75",
@@ -62,6 +73,7 @@ export const sidebarNavIconSvgClass = [
 
 /** Text label inside a nav row. */
 export const sidebarNavLabelClass = [
+  "sidebar-nav-label",
   "flex-1 truncate leading-[20px]",
 ].join(" ");
 
@@ -70,6 +82,7 @@ export const sidebarNavLabelClass = [
  * Hidden at rest, fades in on parent hover.
  */
 export const sidebarNavActionClass = [
+  "sidebar-nav-action",
   "ml-auto opacity-0",
   "transition-opacity duration-150 ease-out",
   "group-hover:opacity-60",
