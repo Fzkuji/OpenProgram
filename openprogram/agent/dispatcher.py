@@ -184,6 +184,15 @@ def _wrap_agentic_runtime_block(
         # each get their own runtime-block row.
         runtime_id = f"{assistant_msg_id}_rt_{call_id}"
         now = time.time()
+        # The LLM-called placeholder is structurally a tool call WITHIN
+        # the assistant reply, NOT a conv-child of the reply. Writing
+        # it with ``caller=reply_id`` (caller-edge) + ``parent_id=None``
+        # (no conv-edge) means lane.py / branch detection treats it
+        # like any other tool call — it doesn't fork the conv trunk,
+        # doesn't create a branch leaf, and doesn't get a branch tag in
+        # the right-rail. When the user sends a follow-up turn after
+        # the tool call, that turn's parent_id = reply, reply has only
+        # ONE conv-child (the new user msg), no fork.
         placeholder = {
             "id": runtime_id,
             "role": "assistant",
@@ -195,7 +204,9 @@ def _wrap_agentic_runtime_block(
             "started_at": now,
             "last_update_at": now,
             "timestamp": now,
-            "parent_id": assistant_msg_id,
+            "parent_id": None,
+            "caller": assistant_msg_id,
+            "called_by": assistant_msg_id,
             "source": req.source,
             "agent_id": req.agent_id,
         }
