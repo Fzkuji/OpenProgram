@@ -189,6 +189,78 @@ _SETUP_HINTS: dict[str, str] = {
         "port for text-only traffic, but mangles multipart image content — prefer\n"
         "Meridian for any agent that sends screenshots (e.g. `gui_agent`)."
     ),
+    "openai-codex": (
+        "OpenAI Codex reuses your ChatGPT Plus / Pro / Team / Enterprise\n"
+        "subscription via OAuth — there's no API key to paste here.\n"
+        "\n"
+        "Run the PKCE login from a terminal. A browser tab will open to\n"
+        "`auth.openai.com`; sign in with the account that holds your\n"
+        "subscription and approve the scope:\n"
+        "\n"
+        "$ openprogram providers login openai-codex --method pkce_oauth\n"
+        "\n"
+        "The callback lands on `localhost:1455` — don't have another `codex`\n"
+        "or `pi-ai` process holding that port. Tokens are saved to\n"
+        "`~/.openprogram/openai-codex/default.json` and auto-refreshed.\n"
+        "\n"
+        "Once login completes this section flips to \"Configured\" and the\n"
+        "Connectivity probe below will go green. Requests stream against\n"
+        "`chatgpt.com/backend-api/codex/responses`, so traffic to that host\n"
+        "must be reachable from your network — corporate proxies that block\n"
+        "consumer ChatGPT will block Codex too.\n"
+        "\n"
+        "If you're on a bare OpenAI API key (pay-per-token) instead of a\n"
+        "ChatGPT subscription, use the regular **OpenAI** provider instead\n"
+        "of this one — they're separate billing paths."
+    ),
+    "anthropic": (
+        "Anthropic API uses a static key issued from the Console:\n"
+        "\n"
+        "$ open https://console.anthropic.com/settings/keys\n"
+        "\n"
+        "Create a key, then either paste it into the field below or set\n"
+        "the env var `ANTHROPIC_API_KEY=sk-ant-...` and restart\n"
+        "`openprogram --web`. Either source works; the field takes\n"
+        "precedence when both are set.\n"
+        "\n"
+        "This is the metered pay-per-token path. If you have an\n"
+        "Anthropic Pro / Team subscription and want to route through\n"
+        "your existing Claude session instead, use the **Claude Code**\n"
+        "provider (Meridian proxy, no API key needed)."
+    ),
+    "gemini-subscription": (
+        "Gemini CLI reuses your Gemini Advanced / Workspace subscription\n"
+        "via Google Cloud Code Assist — no API key to paste.\n"
+        "\n"
+        "Install Google's `gemini` CLI and log in there once. OpenProgram\n"
+        "auto-detects ``~/.gemini/oauth_creds.json`` and refreshes via\n"
+        "the bundled refresh flow:\n"
+        "\n"
+        "$ npm install -g @google/gemini-cli\n"
+        "$ gemini\n"
+        "$ openprogram providers discover\n"
+        "$ openprogram providers adopt gemini_cli\n"
+        "\n"
+        "If you only want a bare Google AI Studio API key instead\n"
+        "(pay-per-token), use the **Google AI** provider — that one\n"
+        "takes `GOOGLE_GENERATIVE_AI_API_KEY` and skips the OAuth dance."
+    ),
+    "github-copilot": (
+        "GitHub Copilot uses your existing Copilot subscription's OAuth\n"
+        "token — no API key, no separate billing.\n"
+        "\n"
+        "Log in via the GitHub CLI once and OpenProgram will pick the\n"
+        "token up automatically:\n"
+        "\n"
+        "$ winget install GitHub.cli         # or: brew install gh\n"
+        "$ gh auth login --scopes copilot\n"
+        "$ openprogram providers discover\n"
+        "$ openprogram providers adopt github_copilot\n"
+        "\n"
+        "Subscription state is checked on every request — the moment\n"
+        "your Copilot trial / plan lapses the connectivity check goes\n"
+        "red here. Re-running `gh auth refresh` is enough to recover."
+    ),
 }
 
 
@@ -252,10 +324,13 @@ def list_providers() -> list[dict[str, Any]]:
         hint = _setup_hint(pid)
         if hint:
             entry["setup_hint"] = hint
-            # claude-code doesn't use an API key env — the proxy
-            # forwards via Claude Code's OAuth — so skip the API-key
-            # input UI for it.
-            entry["api_key_env"] = None
+            # Note: we no longer force ``api_key_env = None`` when a
+            # hint is present. That override was originally there for
+            # claude-code (whose Meridian proxy doesn't take an API
+            # key), but it also clobbered ``anthropic``'s hint — which
+            # IS API-key based and needs both the hint AND the paste
+            # field. The ``_ENV_API_KEYS`` dict already carries the
+            # correct null/non-null state per provider, so trust it.
         result.append(entry)
 
     # CLI-backed providers (not in registry)
@@ -798,11 +873,23 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     }
 
 
+_CODEX_RESPONSES_PROVIDERS = frozenset({"openai-codex"})
+
+
 def test_provider(provider_id: str, model: str | None = None, timeout: float = 15.0) -> dict[str, Any]:
     """Send a one-shot tiny PING to verify api_key + base_url work.
 
-    Uses OpenAI Chat Completions shape (most universal). Returns
-    {"ok": True, "latency_ms": ...} or {"ok": False, "error": "..."}.
+    Uses OpenAI Chat Completions shape for most providers (most
+    universal), but routes ChatGPT-subscription / Codex providers
+    through ``/codex/responses`` instead. The Codex backend doesn't
+    expose ``/chat/completions`` — Cloudflare's anti-abuse rules on
+    chatgpt.com return a 403 for that path while letting the Responses
+    API through fine. Hitting the wrong path made the catalog UI
+    report a healthy Codex provider as "blocked by Cloudflare" even
+    though the actual chat traffic worked end-to-end.
+
+    Returns ``{"ok": True, "latency_ms": ...}`` or
+    ``{"ok": False, "error": "..."}``.
     """
     import time as _time
     import httpx
@@ -828,15 +915,78 @@ def test_provider(provider_id: str, model: str | None = None, timeout: float = 1
                 return {"ok": False, "error": "No model available to test with"}
             model = ms[0].id
 
-    url = base + "/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    body = {
-        "model": model,
-        "messages": [{"role": "user", "content": "PING"}],
-        "max_tokens": 4,
-    }
+    use_codex_shape = provider_id in _CODEX_RESPONSES_PROVIDERS
+
+    if use_codex_shape:
+        # ChatGPT subscription path: Responses API on chatgpt.com.
+        # ``store=False`` keeps the request light and avoids polluting
+        # the user's Codex run history with PING messages. ``stream``
+        # MUST be true — the Codex Responses backend rejects non-stream
+        # calls with HTTP 400 "Stream must be set to true". We don't
+        # actually consume the stream; we just need the initial status
+        # line (200 vs 4xx) to know if auth + model selection is OK.
+        url = base.rstrip("/") + "/codex/responses"
+        body = {
+            "model": model,
+            "input": [{"role": "user",
+                       "content": [{"type": "input_text", "text": "PING"}]}],
+            "instructions": "",
+            "stream": True,
+            "store": False,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "originator": "openprogram",
+            "OpenAI-Beta": "responses=experimental",
+        }
+        # openai-codex has no api_key_env — its credential lives in the
+        # OAuth pool. ``_resolve_api_key`` only checks env + config so
+        # it returns None here; we have to ask AuthManager. Also
+        # surface chatgpt-account-id when available so OpenAI's side
+        # gets a clean account mapping.
+        if not api_key:
+            try:
+                from openprogram.auth.manager import get_manager
+                cred = get_manager().acquire_sync(provider_id)
+                api_key = getattr(cred.payload, "access_token", None) or None
+                account_id = (getattr(cred.payload, "extra", None) or {}).get("account_id", "")
+                if account_id:
+                    headers["chatgpt-account-id"] = account_id
+            except Exception as _e:
+                return {"ok": False,
+                        "error": f"No usable Codex credential. "
+                                 f"Run `openprogram providers login openai-codex`."}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+    else:
+        url = base.rstrip("/") + "/chat/completions"
+        body = {
+            "model": model,
+            "messages": [{"role": "user", "content": "PING"}],
+            "max_tokens": 4,
+        }
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
     t0 = _time.time()
     try:
+        if use_codex_shape:
+            # Codex responds with SSE — a bare ``httpx.post`` would block
+            # reading the stream until close. Use ``client.stream`` so
+            # we read headers, capture the status, and tear the
+            # connection down immediately.
+            with httpx.Client(timeout=timeout) as client:
+                with client.stream("POST", url, headers=headers, json=body) as r:
+                    latency_ms = int((_time.time() - t0) * 1000)
+                    if r.status_code != 200:
+                        err_body = b"".join(r.iter_bytes()).decode("utf-8", errors="replace")
+                        return {"ok": False,
+                                "error": f"HTTP {r.status_code}: {err_body[:200]}",
+                                "latency_ms": latency_ms}
+            return {"ok": True, "latency_ms": latency_ms, "model": model}
+
         r = httpx.post(url, headers=headers, json=body, timeout=timeout)
         latency_ms = int((_time.time() - t0) * 1000)
         if r.status_code != 200:

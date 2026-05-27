@@ -30,7 +30,19 @@ if TYPE_CHECKING:
 
 def load_agent_profile(agent_id: str) -> dict:
     """Load agent.json. Returns at least {"id": agent_id} so callers
-    don't have to null-guard."""
+    don't have to null-guard.
+
+    On a fresh install ``agent.json`` for the default agent doesn't
+    exist yet — neither ``openprogram setup`` (which the README
+    suggests but is skippable) nor the implicit first-chat path
+    creates it. The dispatcher then dispatches against an empty
+    profile, ``resolve_model`` finds nothing, and the stub crashes the
+    very first turn. To make first-launch chats Just Work we seed a
+    minimal default agent here: pick the first enabled model from
+    ``~/.agentic/config.json`` (whatever the user (or
+    ``providers adopt``) configured) and write it as the agent's
+    default model. Subsequent loads return the persisted profile.
+    """
     try:
         from openprogram.agents import manager as _A
         agent = _A.get(agent_id) if hasattr(_A, "get") else None
@@ -38,9 +50,95 @@ def load_agent_profile(agent_id: str) -> dict:
             return agent.to_dict()
         if agent and hasattr(agent, "__dict__"):
             return dict(agent.__dict__)
+        # No agent.json on disk. Seed one if this is the default agent
+        # and we can pick a model from existing provider config. We
+        # only auto-create for the canonical default agent id ("main")
+        # — other agent_ids stay as empty profiles, since a user who
+        # asked for an agent_id we've never heard of is probably mid-
+        # typo and we don't want to silently create stub records.
+        if agent_id == getattr(_A, "DEFAULT_AGENT_ID", "main"):
+            seeded = _seed_default_agent(_A, agent_id)
+            if seeded is not None:
+                return seeded
     except Exception:
         pass
     return {"id": agent_id}
+
+
+def _seed_default_agent(_A, agent_id: str) -> dict | None:
+    """Best-effort: write a minimal agent.json so first-chat resolution
+    finds a valid model. Returns the profile dict on success, ``None``
+    on any failure (caller falls back to empty profile).
+
+    Model selection priority:
+      1. ``default_provider`` + ``default_model`` from top-level
+         ``~/.agentic/config.json``
+      2. First entry of ``providers.<pid>.enabled_models`` for any
+         provider with ``enabled: true``
+      3. None — return None so callers continue with stub behavior
+
+    Uses only the public-ish manager helpers so this stays decoupled
+    from the on-disk schema; if ``AgentSpec`` / ``_write_agent`` aren't
+    importable for any reason we bail out and let the legacy stub
+    path run.
+    """
+    try:
+        from openprogram.agents.manager import (
+            AgentSpec, AgentModelRef, _write_agent,
+        )
+        from openprogram.webui._model_catalog import _read_providers_cfg
+        from openprogram.paths import get_config_path
+        import json as _json
+    except Exception:
+        return None
+
+    provider_id: str | None = None
+    model_id: str | None = None
+
+    # 1. Top-level default_provider / default_model
+    try:
+        with open(get_config_path(), "r", encoding="utf-8") as f:
+            root_cfg = _json.load(f)
+        dp = root_cfg.get("default_provider")
+        dm = root_cfg.get("default_model")
+        if dp and dm:
+            provider_id, model_id = dp, dm
+    except Exception:
+        root_cfg = {}
+
+    # 2. Walk enabled providers for the first one with enabled_models
+    if not (provider_id and model_id):
+        try:
+            providers_cfg = _read_providers_cfg()
+            for pid, pcfg in providers_cfg.items():
+                if not pcfg.get("enabled"):
+                    continue
+                enabled_models = pcfg.get("enabled_models") or []
+                if enabled_models:
+                    provider_id, model_id = pid, enabled_models[0]
+                    break
+        except Exception:
+            pass
+
+    if not (provider_id and model_id):
+        return None
+
+    try:
+        spec = AgentSpec(
+            id=agent_id,
+            name=agent_id,
+            default=True,
+            model=AgentModelRef(provider=provider_id, id=model_id),
+        )
+        _write_agent(spec)
+        import sys
+        sys.stderr.write(
+            f"[load_agent_profile] seeded default agent {agent_id!r} "
+            f"with model {provider_id}/{model_id}\n"
+        )
+        return spec.to_dict()
+    except Exception:
+        return None
 
 
 def is_anthropic_family(model_id: Optional[str], provider_id: Optional[str]) -> bool:
@@ -111,10 +209,27 @@ def resolve_model(profile: dict, override: Optional[str] = None):
             if m:
                 return m
 
+    # Registry lookup failed for every (provider, model_id) combo we
+    # tried. Fall through to a stub Model so callers don't have to
+    # null-guard, but use a *real* api id (``openai-completions``) — the
+    # legacy value here was ``"completion"`` which isn't registered in
+    # ``api_registry``, so the moment the dispatcher tried to stream
+    # against this stub it crashed with
+    # ``No stream function registered for API: 'completion'``. Picking
+    # an api that's actually registered means the failure becomes
+    # "OpenAI rejected your model id" — recoverable by switching the
+    # agent's model — rather than a hard ImportError-shaped crash on a
+    # fresh install whose ``agent.json`` happens to be missing.
+    import sys
+    sys.stderr.write(
+        f"[_model_tools.resolve_model] WARN: no registry entry for "
+        f"{requested!r}; falling back to openai-completions stub. "
+        f"Set the agent's model explicitly via Settings → Agents.\n"
+    )
     return Model(
         id=requested or "stub",
         name=requested or "stub",
-        api="completion",
+        api="openai-completions",
         provider="openai",
         base_url="https://api.openai.com/v1",
     )

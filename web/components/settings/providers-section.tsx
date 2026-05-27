@@ -314,7 +314,12 @@ function Detail({
       {provider.api_key_env && (
         <BaseUrl provider={provider} onChanged={onChanged} />
       )}
-      {provider.api_key_env && <Connectivity providerId={provider.id} />}
+      {/* Connectivity check applies to every HTTP provider, not just
+          api-key ones. OAuth providers (openai-codex, gemini-subscription,
+          github-copilot, …) need this control too — without it the
+          ChatGPT subscription flow has no in-UI way to verify the OAuth
+          token survived restart. */}
+      {provider.kind === "api" && <Connectivity providerId={provider.id} />}
 
       {provider.kind === "cli" ? (
         <CliInfo provider={provider} />

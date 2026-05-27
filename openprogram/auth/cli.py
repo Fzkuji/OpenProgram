@@ -326,6 +326,15 @@ def _cmd_login(provider: str, profile: str, method: Optional[str]) -> int:
     print(f"  kind: {cred.kind}")
     print(f"  preview: {_payload_summary(cred)}")
     print(f"  store: {store.root}/{saved_provider}/{saved_profile}.json")
+    # OAuth pool hygiene: a fresh PKCE / device-code login supersedes
+    # any older OAuth rows in the same pool (refresh-token rotation
+    # makes them dead bytes). Drop them so ``providers status`` doesn't
+    # latch onto the stale row and report "expired" right after a
+    # successful relogin.
+    pruned = _prune_superseded_oauth(store, cred)
+    if pruned:
+        print(f"  retired {len(pruned)} superseded OAuth credential(s): "
+              f"{', '.join(pruned)}")
     if saved_provider != provider:
         print(f"\n  Note: routed to {saved_provider!r} (not {provider!r}) "
               f"because that's where this credential shape belongs.")
@@ -356,6 +365,44 @@ def _available_login_methods(provider: str) -> list[tuple[str, str]]:
         choices.append(("import_from_cli", "Import from ~/.qwen/oauth_creds.json"))
     choices.append(("api_key", "Paste a static API key"))
     return choices
+
+
+def _prune_superseded_oauth(store: AuthStore, new_cred: Credential) -> list[str]:
+    """Retire sibling OAuth credentials after a fresh interactive login.
+
+    OAuth refresh-token rotation means at most one OAuth credential in a
+    given pool can be valid at a time — once the user runs ``providers
+    login`` and lands a fresh access+refresh pair, every older OAuth row
+    in the same pool is dead bytes. Without pruning them, ``providers
+    status`` (which iterates pool members in insertion order) keeps
+    reporting the stale row as "expired and no refresh is configured",
+    making the user think the relogin didn't take. Observed in practice
+    against ``openai-codex`` after a successful PKCE flow.
+
+    Only ``kind == "oauth"`` siblings are touched. Non-OAuth members
+    (``api_key``, ``cli_delegated`` pointing at a sibling tool's auth
+    file) are left alone — they're independent artifacts the user
+    might still want.
+
+    Returns the list of removed credential ids so the caller can mention
+    them in the success message.
+    """
+    if new_cred.kind != "oauth":
+        return []
+    pool = store.find_pool(new_cred.provider_id, new_cred.profile_id)
+    if pool is None:
+        return []
+    removed: list[str] = []
+    for sibling in list(pool.credentials):
+        if sibling.credential_id == new_cred.credential_id:
+            continue
+        if sibling.kind != "oauth":
+            continue
+        store.remove_credential(
+            sibling.provider_id, sibling.profile_id, sibling.credential_id,
+        )
+        removed.append(sibling.credential_id)
+    return removed
 
 
 def _run_login_method(provider: str, profile: str, method: str) -> Credential:

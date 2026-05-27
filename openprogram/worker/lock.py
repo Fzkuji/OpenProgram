@@ -1,16 +1,19 @@
 """Single-holder file lock for the persistent worker.
 
 Only one worker process can run at a time per profile. Uses
-``fcntl.flock`` (macOS + Linux). The lock file also stores the holder
-PID so peek-style callers (`worker status`) can report the owner without
-trying to acquire.
+``fcntl.flock`` (macOS + Linux) via the cross-platform
+:mod:`openprogram._compat` shim, which emulates the same surface
+on Windows via :func:`msvcrt.locking`. The lock file also stores
+the holder PID so peek-style callers (`worker status`) can report
+the owner without trying to acquire.
 """
 from __future__ import annotations
 
-import fcntl
 import os
 from pathlib import Path
 from typing import IO, Optional
+
+from openprogram import _compat as fcntl
 
 from .paths import lock_path
 

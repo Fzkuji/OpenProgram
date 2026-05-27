@@ -282,13 +282,22 @@ def import_from_codex_file(
     # import Codex credentials, and an apikey-mode file isn't one. If
     # they want OAuth, they need to re-run `codex login` without
     # --api-key. Matches OpenClaw's codex-cli-auth handling.
+    #
+    # Pre-2026 Codex CLI builds didn't write ``auth_mode`` at all —
+    # they relied entirely on which keys were populated. Infer the
+    # shape so older files don't silently fall through: if the
+    # discriminator is missing but ``tokens.access_token`` is set
+    # *and* the apikey slot is empty, treat as chatgpt mode.
     auth_mode = (data.get("auth_mode") or "").lower()
-    if auth_mode != "chatgpt":
-        return None
-
     tokens = data.get("tokens") or {}
     access = tokens.get("access_token")
     refresh = tokens.get("refresh_token")
+    if not auth_mode:
+        if access and not (data.get("OPENAI_API_KEY") or "").strip():
+            auth_mode = "chatgpt"
+    if auth_mode != "chatgpt":
+        return None
+
     if not access or not refresh:
         return None
 

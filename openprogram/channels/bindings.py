@@ -35,7 +35,6 @@ If a binding has multiple fields, all specified fields must match
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import threading
@@ -43,6 +42,8 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Optional
+
+from openprogram import _compat as fcntl
 
 
 _FILE = "bindings.json"

@@ -115,7 +115,30 @@ def _add_provider_args(parser):
     )
 
 
+def _ensure_utf8_stdio() -> None:
+    """Force ``sys.stdout`` / ``sys.stderr`` to UTF-8 with replacement.
+
+    On Windows the console defaults to ``cp1252`` (or ``gbk``, depending
+    on locale) — both unable to encode the chat content that flows
+    through our ``print`` -based ``_log``. Non-ASCII traffic (Chinese
+    queries, em-dashes, …) raises ``UnicodeEncodeError`` mid-handler and
+    bubbles out as a 500. ``errors='replace'`` is intentionally lossy —
+    logs are diagnostic, not data: better a "?" placeholder than a
+    crashed request.
+
+    No-op on POSIX (stdout already utf-8) and on Python builds that
+    don't expose ``reconfigure``.
+    """
+    import sys as _sys
+    for stream in (_sys.stdout, _sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, OSError):
+            pass
+
+
 def main():
+    _ensure_utf8_stdio()
     parser = argparse.ArgumentParser(
         prog="openprogram",
         description="OpenProgram — build, run, and chat with agentic programs.",
