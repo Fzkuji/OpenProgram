@@ -40,10 +40,21 @@ export function CatalogList({
   installingKey: string | null;
   onInstall: (source: Source, name: string) => void;
 }) {
-  const { deleteSkill } = useSkills();
+  const { deleteSkill, installFromDiscovery } = useSkills();
   const [filter, setFilter] = useState("");
   const hasMeta = useMemo(() => hasStats(entries), [entries]);
   const [sort, setSort] = useState<SortKey>(hasMeta ? "downloads" : "default");
+
+  // Bulk-install state. While ``bulk`` is non-null, the per-card
+  // Install / Reinstall / Update / Delete buttons are disabled so the
+  // user can't queue a second op on top of the running loop. The
+  // counter is updated after each request — successes and failures both
+  // tick ``done``, failures additionally bump ``failed`` — so the UI
+  // reflects forward progress even when a few entries in the middle
+  // 404 or 5xx.
+  const [bulk, setBulk] = useState<
+    { done: number; total: number; failed: number } | null
+  >(null);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return entries;
@@ -78,6 +89,46 @@ export function CatalogList({
     return arr;
   }, [filtered, sort]);
 
+  // The "Install all" bulk action operates on what the user can see —
+  // i.e. ``shown`` minus anything already installed in this source's
+  // namespace. That way filtering / search narrows the bulk target,
+  // which is what users intuitively expect (and is the only way to
+  // "install just the ones matching X" without per-card checkboxes).
+  const bulkTargets = useMemo(
+    () =>
+      shown.filter((e) => {
+        const fullName = source.slug ? `${source.slug}/${e.name}` : e.name;
+        return !installedNames.has(fullName);
+      }),
+    [shown, source.slug, installedNames],
+  );
+
+  async function handleBulkInstall() {
+    if (bulk) return;
+    const queue = bulkTargets.map((e) => e.name);
+    if (queue.length === 0) return;
+    setBulk({ done: 0, total: queue.length, failed: 0 });
+    for (const name of queue) {
+      try {
+        await installFromDiscovery(source.url, name, source.slug);
+        setBulk((prev) =>
+          prev ? { ...prev, done: prev.done + 1 } : prev,
+        );
+      } catch {
+        setBulk((prev) =>
+          prev
+            ? { ...prev, done: prev.done + 1, failed: prev.failed + 1 }
+            : prev,
+        );
+      }
+    }
+    // Hold the final count visible for a moment so users see e.g.
+    // "20/24 done (4 failed)" instead of it instantly flipping back to
+    // the idle "Install all" label. 1.8s is long enough to read,
+    // short enough not to feel sticky.
+    window.setTimeout(() => setBulk(null), 1800);
+  }
+
   return (
     <div>
       <div className="mb-3 flex items-center gap-2">
@@ -107,6 +158,30 @@ export function CatalogList({
           {hasMeta && <option value="stars">Most starred</option>}
           {hasMeta && <option value="updated">Recently updated</option>}
         </select>
+        {/* Bulk install — shown when there's more than one uninstalled
+            entry in the current view. While the loop is running, the
+            label flips to a live progress counter so users can tell at
+            a glance that it's making forward progress (and where it
+            stopped if a few entries fail). */}
+        {(bulk || bulkTargets.length > 1) && (
+          <button
+            type="button"
+            onClick={handleBulkInstall}
+            disabled={!!bulk || bulkTargets.length === 0}
+            title={
+              bulk
+                ? "Installing in sequence — leave this tab open"
+                : `Install the ${bulkTargets.length} uninstalled skill${bulkTargets.length === 1 ? "" : "s"} matching the current filter`
+            }
+            className={pillBase + " shrink-0 px-4 " + pillPrimary}
+          >
+            {bulk
+              ? `Installing ${bulk.done}/${bulk.total}` +
+                (bulk.failed > 0 ? ` (${bulk.failed} failed)` : "") +
+                (bulk.done < bulk.total ? "…" : "")
+              : `Install all ${bulkTargets.length}`}
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -171,7 +246,7 @@ export function CatalogList({
                   <button
                     type="button"
                     onClick={() => onInstall(source, e.name)}
-                    disabled={installingKey === key}
+                    disabled={installingKey === key || !!bulk}
                     className={
                       pillBase + " " +
                       (outdated ? pillWarn : installed ? pillNeutral : pillPrimary)
@@ -190,6 +265,7 @@ export function CatalogList({
                       type="button"
                       title={`Uninstall ${fullName}`}
                       aria-label={`Uninstall ${fullName}`}
+                      disabled={!!bulk}
                       onClick={() => {
                         if (confirm(`Delete skill "${fullName}"?`)) {
                           void deleteSkill(fullName);
