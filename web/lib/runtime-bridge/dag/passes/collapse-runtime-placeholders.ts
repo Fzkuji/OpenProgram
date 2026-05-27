@@ -263,5 +263,62 @@ export function _collapseRuntimePlaceholders(
     }
     out.push(nm);
   });
+  // Pass-2 re-anchor: for LLM-called placeholders (placeholder.parent
+  // is a regular assistant reply, NOT a folded user-runtime anchor),
+  // the survivor code call and its caller-tree should land at
+  // ``parent.tier + 1`` so the square sits one column right of the
+  // LLM reply — same column a non-agentic ``tool_use`` would render
+  // at. The primary tier-shift above uses ``placeholder.tier`` as
+  // the target, but backend tier propagation through the conv chain
+  // means trunk siblings (and thus the LLM reply itself) often end
+  // up at a different effective tier post-shift than the placeholder
+  // was at pre-shift, so the survivor lands one column too far.
+  // Compute the final effective tier of each survivor's parent in
+  // the OUTPUT graph and re-shift if needed. */
+  const outById: Record<string, GNode> = Object.create(null);
+  out.forEach((n) => { outById[n.id] = n; });
+  const callerKidsOut: Record<string, string[]> = Object.create(null);
+  out.forEach((n) => {
+    const ca = (n as { caller?: string }).caller;
+    if (ca && outById[ca]) {
+      (callerKidsOut[ca] = callerKidsOut[ca] || []).push(n.id);
+    }
+  });
+  graph.forEach((p) => {
+    if (!removeIds[p.id]) return;
+    if (p.display !== "runtime") return;
+    if (!p.function) return;
+    // Skip fn-form (anchor was also removed → topRemoved walked past
+    // the placeholder; survivor already sits at anchor's slot).
+    if (p.parent_id && removeIds[p.parent_id]) return;
+    const codeId = replaceWith[p.id];
+    if (!codeId) return;
+    // Live ancestor of the placeholder = the survivor code's effective
+    // parent. Use the OUTPUT graph's tier for that node so the desired
+    // slot reflects shifts from earlier processing.
+    const liveAnc = liveAncestor(p.parent_id || null);
+    if (!liveAnc) return;
+    const parentNode = outById[liveAnc];
+    if (!parentNode || typeof parentNode._tier !== "number") return;
+    const surv = outById[codeId];
+    if (!surv || typeof surv._tier !== "number") return;
+    const desiredTier = (parentNode._tier ?? 0) + 1;
+    const extra = desiredTier - (surv._tier ?? 0);
+    if (extra === 0) return;
+    // Apply extra shift to survivor + all its caller-descendants in
+    // the output graph.
+    const stack: string[] = [codeId];
+    const seen: Record<string, boolean> = Object.create(null);
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (seen[id]) continue;
+      seen[id] = true;
+      const n = outById[id];
+      if (n && typeof n._tier === "number") {
+        n._tier = Math.max(0, (n._tier ?? 0) + extra);
+      }
+      (callerKidsOut[id] || []).forEach((cid) => stack.push(cid));
+    }
+  });
   return { graph: out, headId };
 }
