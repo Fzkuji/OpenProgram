@@ -57,6 +57,14 @@ dependencies = [
     # install aiohttp" at login time — moved into base deps so the
     # ChatGPT subscription flow works out of the box.
     "aiohttp>=3.9.0",
+    # Model Context Protocol Python SDK. ``webui/routes/mcp.py`` does
+    # ``from mcp.types import ...`` at module top, which is reached
+    # during FastAPI app construction. Without this dep,
+    # ``/api/providers/list`` (and the whole MCP page) raise
+    # ``ModuleNotFoundError: No module named 'mcp'`` and the LLM
+    # Providers settings panel renders empty. MCP is also a headline
+    # feature of OpenProgram, not an optional extra.
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]
