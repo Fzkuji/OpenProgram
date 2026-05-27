@@ -33,15 +33,15 @@ function wsSend(payload: unknown): boolean {
   return true;
 }
 
-/** Split a `run fn(args)` / `run fn arg1 arg2` command into name +
- *  params for the header signature. */
-function parseRun(cmd: string): { fn: string; params: string } {
+/** Extract the function name from a ``run fn(args)`` / ``run fn arg1``
+ *  command — RuntimeBlock no longer renders the params in its header,
+ *  so we don't need to parse them out. */
+function parseRun(cmd: string): { fn: string } {
   const text = cmd.replace(/^(run|create|fix)\s+/i, "").trim();
-  const paren = text.match(/^([\w.-]+)\s*\(([^]*)\)\s*$/);
-  if (paren) return { fn: paren[1], params: paren[2] };
+  const paren = text.match(/^([\w.-]+)\s*\(/);
+  if (paren) return { fn: paren[1] };
   const sp = text.indexOf(" ");
-  if (sp < 0) return { fn: text, params: "" };
-  return { fn: text.slice(0, sp), params: text.slice(sp + 1).trim() };
+  return { fn: sp < 0 ? text : text.slice(0, sp) };
 }
 
 /** Tree for the selected attempt — mirrors legacy `_getDisplayContent`,
@@ -56,33 +56,6 @@ function displayTree(msg: ChatMsg): unknown {
   return tree;
 }
 
-/** Format the call-site kwargs for the header so the user sees what
- *  was passed in, not just an empty ``()``. Pulls from the Execution
- *  DAG root's ``params`` field (the wrapper records kwargs there).
- *  Truncates long string values. */
-function formatHeaderParams(tree: unknown): string {
-  if (!tree || typeof tree !== "object") return "";
-  const t = tree as { params?: Record<string, unknown> };
-  const p = t.params;
-  if (!p || typeof p !== "object") return "";
-  const parts: string[] = [];
-  for (const [k, v] of Object.entries(p)) {
-    if (k === "runtime" || k === "callback") continue;
-    let s: string;
-    if (typeof v === "string") {
-      s = v.length > 40 ? `"${v.slice(0, 40)}…"` : `"${v}"`;
-    } else if (v === null || v === undefined) {
-      s = "null";
-    } else if (typeof v === "object") {
-      s = "{...}";
-    } else {
-      s = String(v);
-    }
-    parts.push(`${k}: ${s}`);
-  }
-  return parts.join(", ");
-}
-
 export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
   const ref = useRef<HTMLDivElement>(null);
   const { text } = useTranslation();
@@ -93,10 +66,9 @@ export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
     msg.status === "streaming" ||
     msg.status === "pending" ||
     msg.status === "running";
-  const { fn, params: parsedParams } = parseRun(msg.function || msg.content || "");
+  const { fn } = parseRun(msg.function || msg.content || "");
   const fnName = msg.function || fn;
   const tree = displayTree(msg);
-  const params = formatHeaderParams(tree) || parsedParams;
 
   useEffect(() => {
     const el = ref.current;
@@ -137,18 +109,12 @@ export function RuntimeBlock({ msg }: { msg: ChatMsg }) {
     });
   }
 
-  const headerLabel = (
-    <>
-      <span className="runtime-func">{fnName}</span>
-      {params ? (
-        <>
-          (<span className="runtime-params">{params}</span>)
-        </>
-      ) : (
-        "()"
-      )}
-    </>
-  );
+  // Static header label — the function name + args are already
+  // visible on the body's root tree row, so repeating them up here
+  // both wastes space and forces a choice ("which call gets the
+  // title?") that has no good answer when the tree contains many
+  // nested calls. Drop the signature; keep the frame.
+  const headerLabel = text("Function call", "函数调用");
 
   const actions = (
     <>
