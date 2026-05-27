@@ -189,6 +189,30 @@ _SETUP_HINTS: dict[str, str] = {
         "port for text-only traffic, but mangles multipart image content — prefer\n"
         "Meridian for any agent that sends screenshots (e.g. `gui_agent`)."
     ),
+    "openai-codex": (
+        "OpenAI Codex reuses your ChatGPT Plus / Pro / Team / Enterprise\n"
+        "subscription via OAuth — there's no API key to paste here.\n"
+        "\n"
+        "Run the PKCE login from a terminal. A browser tab will open to\n"
+        "`auth.openai.com`; sign in with the account that holds your\n"
+        "subscription and approve the scope:\n"
+        "\n"
+        "$ openprogram providers login openai-codex --method pkce_oauth\n"
+        "\n"
+        "The callback lands on `localhost:1455` — don't have another `codex`\n"
+        "or `pi-ai` process holding that port. Tokens are saved to\n"
+        "`~/.openprogram/openai-codex/default.json` and auto-refreshed.\n"
+        "\n"
+        "Once login completes this section flips to \"Configured\" and the\n"
+        "Connectivity probe below will go green. Requests stream against\n"
+        "`chatgpt.com/backend-api/codex/responses`, so traffic to that host\n"
+        "must be reachable from your network — corporate proxies that block\n"
+        "consumer ChatGPT will block Codex too.\n"
+        "\n"
+        "If you're on a bare OpenAI API key (pay-per-token) instead of a\n"
+        "ChatGPT subscription, use the regular **OpenAI** provider instead\n"
+        "of this one — they're separate billing paths."
+    ),
 }
 
 
