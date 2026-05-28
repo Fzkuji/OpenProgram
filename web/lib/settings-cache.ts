@@ -65,7 +65,7 @@ export function invalidate(url: string | RegExp): void {
     cache.delete(url);
     return;
   }
-  for (const k of cache.keys()) if (url.test(k)) cache.delete(k);
+  for (const k of Array.from(cache.keys())) if (url.test(k)) cache.delete(k);
 }
 
 export function invalidateAllSettings(): void {

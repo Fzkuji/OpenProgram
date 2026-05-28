@@ -48,7 +48,7 @@ export function _applyVisibility(nodeEl: Element, visible: boolean): void {
     shape = c as SVGElement;
     break;
   }
-  if (shape) _applyShapeSize(shape, visible);
+  if (shape) _applyShapeSize(shape);
   const inner = nodeEl.querySelector(".n-inner");
   if (visible) {
     if (!inner && shape) {
@@ -184,7 +184,8 @@ export function _recomputeVisibility(): void {
       let cur: string | undefined = seeds[si];
       let hops = 0;
       while (cur && _parentOf[cur] && hops < 256) {
-        const parent = _parentOf[cur];
+        const parent: string | undefined = _parentOf[cur];
+        if (!parent) break;
         cur = parent;
         if (newSet[cur]) break;
         // If the parent has its own DOM bubble, don't override its

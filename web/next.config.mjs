@@ -32,13 +32,6 @@ const BACKEND = resolveBackend();
 
 const nextConfig = {
   reactStrictMode: false,
-  // Skip lint / typecheck during build — they're useful for CI but
-  // the repo has known half-typed files (e.g. shiki-code referencing
-  // a still-unwritten ``@/lib/shiki``) that block a quick local
-  // production build. The lint/typecheck still run in the editor and
-  // via explicit ``npm run lint`` / ``tsc --noEmit``.
-  eslint: { ignoreDuringBuilds: true },
-  typescript: { ignoreBuildErrors: true },
   async rewrites() {
     return [
       // ``/api/*`` is handled by the dynamic route at

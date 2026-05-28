@@ -91,8 +91,8 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
     effectiveStatus === "error" &&
     typeof node.error === "string" &&
     /cancel/i.test(node.error);
-  const displayStatus =
-    ctx.paused && effectiveStatus === "running" ? "paused" : effectiveStatus;
+  const displayStatus: string =
+    ctx.paused && effectiveStatus === "running" ? "paused" : (effectiveStatus ?? "");
 
   const icon =
     displayStatus === "success" ? (

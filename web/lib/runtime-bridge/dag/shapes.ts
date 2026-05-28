@@ -67,7 +67,7 @@ export function _shapeFor(node: GNode): string {
   return "circle";
 }
 
-export function _applyShapeSize(shape: SVGElement, _isCurrent: boolean): void {
+export function _applyShapeSize(shape: SVGElement): void {
   // Uniform node size — viewport visibility now ONLY toggles the
   // white inner-fill (``.n-inner`` overlay), not the outer shape
   // dimensions. Out-of-viewport nodes used to shrink, which made
