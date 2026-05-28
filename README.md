@@ -75,22 +75,30 @@ openprogram                                         # full-screen TUI
 
 Both share the same backend (`~/.agentic/`), so a session started in the TUI shows up in the browser tab and vice versa. The web UI gets the richer surface (mini-DAG, branch / merge / attach, multi-agent, file attachments); the TUI is the same backend without the chrome.
 
-### 3. Try a built-in agent
+### 3. Try a built-in function
 
-The sidebar's **Favorite Functions** ships with three real harnesses:
+A fresh install ships with `deep_work`, `ask_user`, `research`, PDF helpers, and a few testing fixtures under the sidebar's Functions list. The simplest first run is `deep_work` — give it a task and a quality level, it plans → executes → self-evaluates → revises until the result meets the bar.
 
-| Slash | Calls | What it does |
-|---|---|---|
-| `gui_agent` | desktop GUI loop | Observe → plan → click → verify. OSWorld Multi-Apps 79.8%. |
-| `wiki_agent` | wiki builder | Ingests notes / docs / chats into an Obsidian-compatible vault. |
-| `research_agent` | research pipeline | Survey → idea → experiments → paper draft → cross-model review. |
+### 4. Add the harness suite (optional)
 
-Click any one to open its **fn-form** (a typed parameter sheet), fill in the required fields, hit send. Output streams into the same chat thread — the right-rail mini-DAG records every step.
+The three sibling agent harnesses — **GUI Agent Harness** (OSWorld Multi-Apps 79.8%), **Wiki Agent Harness**, **Research Agent Harness** — are separate repos. To make them appear in the sidebar, clone them and drop a symlink under `openprogram/functions/agentics/`:
 
-### 4. Write your first `@agentic_function`
+```bash
+git clone https://github.com/Fzkuji/GUI-Agent-Harness        ~/GUI-Agent-Harness
+git clone https://github.com/Fzkuji/Wiki-Agent-Harness       ~/Wiki-Agent-Harness
+git clone https://github.com/Fzkuji/Research-Agent-Harness   ~/Research-Agent-Harness
+
+pip install -e ~/GUI-Agent-Harness ~/Wiki-Agent-Harness ~/Research-Agent-Harness
+ln -s ~/GUI-Agent-Harness      "$(python -m openprogram._meta agentics_dir)/GUI-Agent-Harness"
+ln -s ~/Wiki-Agent-Harness     "$(python -m openprogram._meta agentics_dir)/Wiki-Agent-Harness"
+ln -s ~/Research-Agent-Harness "$(python -m openprogram._meta agentics_dir)/Research-Agent-Harness"
+```
+
+Each harness ships `AGENTIC_FUNCTIONS = [...]` in its own `<pkg>/agentics/__init__.py`; OpenProgram's auto-discovery picks the symlink up on next worker restart. Heavy GUI dependencies (Playwright, OCR, vision stack ~2 GB) live in `pip install openprogram[gui]` — install separately to keep base install slim.
+
+### 5. Write your first `@agentic_function`
 
 ```python
-# my_agent.py
 from openprogram.agentic_programming import agentic_function
 
 @agentic_function
@@ -101,9 +109,7 @@ def login_flow(url: str, runtime=None):
     return runtime.exec(content=[{"type": "text", "text": f"After clicking {action!r}, what's on screen now?"}])
 ```
 
-Drop it in `~/.agentic/functions/` (or any directory on `PYTHONPATH`) and it appears in the sidebar — clickable from the web UI, callable as `from my_agent import login_flow` from any other script. Every `runtime.exec` call lands in the conversation DAG, so the next turn sees the full plan / observation chain without you threading any state.
-
-Full tour: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md). Why this design beats LLM-as-scheduler: [docs/philosophy/agentic-programming.md](docs/philosophy/agentic-programming.md).
+Drop it in `~/.agentic/functions/` (or any path on `PYTHONPATH`); it appears in the sidebar and every `runtime.exec` call lands in the conversation DAG so the next turn sees the full chain without manual state. Full walkthrough — and the bigger picture on **why Python should hold the flow** — in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and [docs/philosophy/agentic-programming.md](docs/philosophy/agentic-programming.md).
 
 ## Optional extras
 
