@@ -8,7 +8,7 @@ def _cmd_web(port, open_browser):
     """Start the web UI.
 
     ``port=None`` / ``open_browser=None`` means "use the user's stored
-    UI pref" (written by ``openprogram config ui``), falling back to
+    UI pref" (written by ``openprogram setup ui``), falling back to
     the legacy defaults if none set.
     """
     try:

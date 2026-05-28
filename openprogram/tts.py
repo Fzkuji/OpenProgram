@@ -88,7 +88,7 @@ def _openai_tts(text: str, cfg: dict[str, Any]) -> str | None:
     """
     key = _api_key(cfg.get("api_key_env") or "OPENAI_API_KEY")
     if not key:
-        print("[tts] OPENAI_API_KEY missing — run `openprogram config tts`.")
+        print("[tts] OPENAI_API_KEY missing — run `openprogram setup tts`.")
         return None
     try:
         import requests
@@ -130,7 +130,7 @@ def _elevenlabs_tts(text: str, cfg: dict[str, Any]) -> str | None:
     """
     key = _api_key(cfg.get("api_key_env") or "ELEVENLABS_API_KEY")
     if not key:
-        print("[tts] ELEVENLABS_API_KEY missing — run `openprogram config tts`.")
+        print("[tts] ELEVENLABS_API_KEY missing — run `openprogram setup tts`.")
         return None
     try:
         import requests
@@ -241,7 +241,7 @@ def speak(text: str) -> None:
             _WARNED_PROVIDERS.add(provider)
             print(f"[tts] provider {provider!r} is not yet implemented "
                   f"(config is stored). Pick openai / elevenlabs / "
-                  f"edge-tts / none with `openprogram config tts`.")
+                  f"edge-tts / none with `openprogram setup tts`.")
             return
         if path:
             _play_file(path)

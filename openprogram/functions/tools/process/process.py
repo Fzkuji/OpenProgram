@@ -80,7 +80,7 @@ class _Session:
         self.offset = 0  # bytes of buffer already returned by poll()
         self._lock = threading.Lock()
         self.started_at = time.time()
-        # Route through backend so `openprogram config backend` takes
+        # Route through backend so `openprogram setup backend` takes
         # effect here too. LocalBackend.spawn reproduces the original
         # Popen flags; ssh / docker backends wrap appropriately.
         from openprogram.backend import get_active_backend

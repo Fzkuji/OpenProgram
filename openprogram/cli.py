@@ -658,42 +658,38 @@ def main():
     from openprogram.auth.cli import build_parser as _build_provider_verbs
     _build_provider_verbs(providers_sub)
 
-    # ---- setup (top-level, full first-run wizard) -------------------------
-    sub.add_parser("setup",
-        help="First-run setup (QuickStart or Advanced)")
-    sub.add_parser("configure",
-        help="Re-edit any config section through a menu loop")
-
-    # ---- config -----------------------------------------------------------
-    p_config = sub.add_parser("config",
-        help="Configure OpenProgram — individual setup sections")
-    p_config_sub = p_config.add_subparsers(dest="config_target", metavar="target")
-    p_cfg_provider = p_config_sub.add_parser("provider",
-        help="Interactive wizard to set up a provider (legacy name)")
-    p_cfg_provider.add_argument("name", nargs="?", default=None,
-        help="Provider id. If omitted, pick from a menu.")
-    p_config_sub.add_parser("model",
-        help="Pick the default chat model across enabled providers")
-    p_config_sub.add_parser("tools",
-        help="Enable / disable individual tools")
-    p_config_sub.add_parser("agent",
-        help="Set agent defaults (thinking effort, ...)")
-    p_config_sub.add_parser("skills",
-        help="Enable / disable individual skills (SKILL.md entries)")
-    p_config_sub.add_parser("ui",
-        help="Web UI preferences (port, auto-open browser)")
-    p_config_sub.add_parser("memory",
-        help="Pick the memory backend for the `memory` tool")
-    p_config_sub.add_parser("profile",
-        help="Active profile name (config-path isolation pending)")
-    p_config_sub.add_parser("search",
-        help="Default web search backend (Tavily / Brave / Google PSE / …)")
-    p_config_sub.add_parser("tts",
-        help="Text-to-speech provider (runtime hookup pending)")
-    p_config_sub.add_parser("channels",
-        help="Chat-channel bots (Telegram/Discord/Slack — runtime pending)")
-    p_config_sub.add_parser("backend",
-        help="Terminal exec backend (local/docker/ssh — runtime pending)")
+    # ---- setup (unified) — first-run wizard, menu loop, or jump-to-section
+    # Three usage shapes under one verb:
+    #
+    #   openprogram setup                  # full wizard (default — first-run)
+    #   openprogram setup --menu           # interactive section picker
+    #   openprogram setup <section>        # jump to one section
+    #
+    # Sections (the <section> positional): model, tools, agent, skills, ui,
+    # memory, profile, search, tts, channels, backend.
+    #
+    # Provider configuration lives under ``openprogram providers setup`` —
+    # it has its own dedicated surface there (login flows, profile
+    # management) and we don't duplicate it here.
+    SETUP_SECTIONS = (
+        "model", "tools", "agent", "skills", "ui", "memory",
+        "profile", "search", "tts", "channels", "backend",
+    )
+    p_setup = sub.add_parser(
+        "setup",
+        help="Run the setup wizard (first-run by default; "
+             "`--menu` for picker, `<section>` to jump).",
+    )
+    p_setup.add_argument(
+        "section", nargs="?", default=None, choices=SETUP_SECTIONS,
+        help="Jump directly to one config section. Omit for the full "
+             "first-run wizard.",
+    )
+    p_setup.add_argument(
+        "--menu", action="store_true",
+        help="Interactive picker — choose a section from a list, run it, "
+             "loop back to the picker. Like the old `configure` verb.",
+    )
 
     args = parser.parse_args()
 
@@ -1136,36 +1132,30 @@ def main():
         sys.exit(_providers_dispatch(args))
 
     if args.command == "setup":
-        from openprogram.setup import run_full_setup
-        sys.exit(run_full_setup())
-
-    if args.command == "configure":
-        from openprogram.setup import run_configure_menu
-        sys.exit(run_configure_menu())
-
-    if args.command == "config":
         from openprogram import setup as _sw
-        target = args.config_target
-        handlers = {
-            "model":    _sw.run_model_section,
-            "tools":    _sw.run_tools_section,
-            "agent":    _sw.run_agent_section,
-            "skills":   _sw.run_skills_section,
-            "ui":       _sw.run_ui_section,
-            "memory":   _sw.run_memory_section,
-            "profile":  _sw.run_profile_section,
-            "search":   _sw.run_search_section,
-            "tts":      _sw.run_tts_section,
-            "channels": _sw.run_channels_section,
-            "backend":  _sw.run_backend_section,
-        }
-        if target == "provider":
-            _cmd_configure(args.name)
-        elif target in handlers:
-            sys.exit(handlers[target]())
-        else:
-            p_config.print_help()
-        return
+        section = getattr(args, "section", None)
+        if section:
+            # Jump straight to one section.
+            handlers = {
+                "model":    _sw.run_model_section,
+                "tools":    _sw.run_tools_section,
+                "agent":    _sw.run_agent_section,
+                "skills":   _sw.run_skills_section,
+                "ui":       _sw.run_ui_section,
+                "memory":   _sw.run_memory_section,
+                "profile":  _sw.run_profile_section,
+                "search":   _sw.run_search_section,
+                "tts":      _sw.run_tts_section,
+                "channels": _sw.run_channels_section,
+                "backend":  _sw.run_backend_section,
+            }
+            sys.exit(handlers[section]())
+        if getattr(args, "menu", False):
+            # Interactive picker that loops back to itself between
+            # sections (old ``configure`` verb behaviour).
+            sys.exit(_sw.run_configure_menu())
+        # Default: full first-run wizard.
+        sys.exit(_sw.run_full_setup())
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ Shared provider configuration framework.
 
 Each provider declares a list of configuration steps (check_cli, check_auth,
 select_model, save, ...) as callables. Both the CLI wizard
-(`openprogram configure`) and the WebUI wizard modal consume this same
+(`openprogram setup --menu`) and the WebUI wizard modal consume this same
 schema, so configuration logic lives in one place.
 
 Step contract:

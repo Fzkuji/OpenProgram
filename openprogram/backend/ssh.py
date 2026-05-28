@@ -19,7 +19,7 @@ class SshBackend(Backend):
         if not target:
             raise RuntimeError(
                 "ssh backend: `backend.ssh_target` is empty. Run "
-                "`openprogram config backend` to set user@host."
+                "`openprogram setup backend` to set user@host."
             )
         self.target = target
 
@@ -56,7 +56,7 @@ class SshBackend(Backend):
                 exit_code=127,
                 stdout="",
                 stderr="ssh CLI not on PATH — install OpenSSH or switch "
-                       "backend via `openprogram config backend`.",
+                       "backend via `openprogram setup backend`.",
             )
 
     def spawn(self, command: str,

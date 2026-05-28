@@ -1,4 +1,4 @@
-"""``openprogram programs`` + ``openprogram configure`` handlers."""
+"""``openprogram programs`` + provider-config wizard handlers."""
 from __future__ import annotations
 
 import os

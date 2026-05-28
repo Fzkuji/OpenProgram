@@ -260,7 +260,7 @@ def _exposed_set() -> set[str] | None:
 def list_available() -> list[str]:
     """Names of every registered function that (a) is on the exposure
     whitelist, (b) passes its sidecar gating, and (c) the user hasn't
-    disabled via ``openprogram config tools``.
+    disabled via ``openprogram setup tools``.
 
     Reads ``check_fn`` / ``requires_env`` / ``can_use`` from each
     registered AgentTool's sidecar attributes (set by ``@function``).

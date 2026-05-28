@@ -4,9 +4,9 @@ Four sections, each runnable standalone:
 
     openprogram setup                 # full walk-through
     openprogram providers setup       # section 1 alone
-    openprogram config model          # section 2 alone
-    openprogram config tools          # section 3 alone
-    openprogram config agent          # section 4 alone
+    openprogram setup model           # section 2 alone
+    openprogram setup tools           # section 3 alone
+    openprogram setup agent           # section 4 alone
 
 UI layer: uses ``questionary`` for arrow-key navigation when the
 dep is present, falls back to plain ``input()`` otherwise so a

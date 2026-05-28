@@ -48,7 +48,7 @@ class DockerBackend(Backend):
                 exit_code=127,
                 stdout="",
                 stderr="docker CLI not on PATH — install Docker or "
-                       "switch backend via `openprogram config backend`.",
+                       "switch backend via `openprogram setup backend`.",
             )
 
     def spawn(self, command: str,

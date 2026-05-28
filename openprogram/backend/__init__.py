@@ -3,7 +3,7 @@
 The ``bash`` tool (and any future sibling that wants to) routes
 command execution through ``get_active_backend().run(...)`` instead
 of calling ``subprocess`` directly. That keeps the tool code
-backend-agnostic and lets ``openprogram config backend`` actually
+backend-agnostic and lets ``openprogram setup backend`` actually
 reroute where commands execute.
 
 Three backends ship out of the box:
