@@ -45,6 +45,25 @@ export function sourceOf(cfg: AvatarConfig | undefined): AvatarSource {
   return (cfg.style ?? "shapes") as AvatarSource;
 }
 
+/** Fixed sample seed used in the style picker tiles. Some DiceBear
+ *  styles (notionists, lorelei) sometimes generate avatars with
+ *  near-transparent backgrounds for arbitrary seeds — the tile then
+ *  looked empty on a dark page. ``Sample`` deterministically produces
+ *  a visible glyph in every shipped style, so the tile always reads
+ *  as "this is what this style looks like". The user's own seed
+ *  drives the variant grid below, not the style tiles. */
+const STYLE_PICKER_SEED = "Sample";
+
+/** Pre-baked variant seeds shown as a grid for the currently-selected
+ *  DiceBear style. 12 stable strings give the user "browse and pick"
+ *  semantics without the dice-roll feel of the old Random button.
+ *  Strings are intentionally short + memorable so initials-style users
+ *  get readable two-letter chips when this style is active. */
+const VARIANT_SEEDS = [
+  "Atlas", "Bento", "Cobalt", "Drift", "Ember", "Fjord",
+  "Gleam", "Halo",  "Indigo", "Juno",  "Klein", "Lumen",
+];
+
 export interface AvatarPickerProps {
   /** Current avatar config. ``undefined`` is treated as the default
    *  DiceBear ``shapes`` seeded by ``name``. */
@@ -92,19 +111,12 @@ export function AvatarPicker({
     });
   }
 
-  function updateSeed(seed: string) {
+  function pickVariant(seed: string) {
     onChange({
       kind: "dicebear",
       style: (value?.style ?? "shapes") as AvatarStyle,
       seed,
     });
-  }
-
-  function randomSeed() {
-    const fresh =
-      Math.random().toString(36).slice(2, 10) +
-      Math.random().toString(36).slice(2, 6);
-    updateSeed(fresh);
   }
 
   async function onFilePicked(file: File) {
@@ -119,7 +131,12 @@ export function AvatarPicker({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Source picker — preview tiles for each style + letter + upload. */}
+      {/* Source picker — each tile shows the same fixed sample seed
+          so every style renders something visible (avoids the
+          empty-tile bug where the user's current seed happened to
+          produce a near-blank notionists / lorelei glyph). The
+          tile is "what does THIS STYLE look like", not "what does
+          MY identity look like in this style". */}
       <div
         style={{
           display: "grid",
@@ -138,11 +155,11 @@ export function AvatarPicker({
           >
             <Avatar
               size={40}
-              name={name}
+              name={STYLE_PICKER_SEED}
               config={{
                 kind: "dicebear",
                 style: s.id,
-                seed: value?.seed ?? name,
+                seed: STYLE_PICKER_SEED,
               }}
             />
             <span style={_pickerLabel}>{s.label}</span>
@@ -195,38 +212,47 @@ export function AvatarPicker({
         </button>
       </div>
 
-      {/* Seed input — DiceBear only. Same seed always renders the
-          same glyph for a given style, so users can dial it in or
-          randomise until they like one. */}
+      {/* Variant grid — when a DiceBear style is active, show 12
+          pre-baked seeds rendered IN THAT STYLE. The user clicks the
+          one they like; that seed becomes their avatar. Replaces the
+          old "Random + free-text seed input" combo with a
+          browse-and-pick UX so users don't have to dice-roll. */}
       {isDicebear && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              type="text"
-              value={value?.seed ?? name}
-              placeholder={name}
-              onChange={(e) => updateSeed(e.target.value)}
-              style={{
-                padding: "6px 10px",
-                background: "var(--bg-secondary)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                color: "var(--text-primary)",
-                font: "inherit",
-                width: 200,
-              }}
-            />
-            <button
-              type="button"
-              onClick={randomSeed}
-              title="Roll a fresh random seed"
-              style={_smallBtn}
-            >
-              ↻ Random
-            </button>
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Same seed always renders the same glyph.
+            Pick a variant — each renders the same style with a
+            different seed.
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, 56px)",
+              gap: 8,
+              maxWidth: 520,
+            }}
+          >
+            {VARIANT_SEEDS.map((seed) => {
+              const selected = (value?.seed ?? name) === seed;
+              return (
+                <button
+                  key={seed}
+                  type="button"
+                  onClick={() => pickVariant(seed)}
+                  title={seed}
+                  style={_variantBtn(selected)}
+                >
+                  <Avatar
+                    size={40}
+                    name={seed}
+                    config={{
+                      kind: "dicebear",
+                      style: (value?.style ?? "shapes") as AvatarStyle,
+                      seed,
+                    }}
+                  />
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -289,6 +315,25 @@ const _pickerBtn = (selected: boolean): CSSProperties => ({
   alignItems: "center",
   gap: 4,
   padding: 6,
+  borderRadius: 8,
+  background: selected ? "var(--bg-hover)" : "transparent",
+  border: selected
+    ? "1px solid color-mix(in srgb, var(--accent-orange) 50%, transparent)"
+    : "1px solid var(--border)",
+  cursor: "pointer",
+  transition: "background-color 0.15s, border-color 0.15s",
+});
+
+// Variant tile — same idle/selected pattern as the style picker but
+// without a label underneath, so the grid packs denser. Padding is
+// tighter (the variant tiles don't carry an extra text row).
+const _variantBtn = (selected: boolean): CSSProperties => ({
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 56,
+  height: 56,
+  padding: 4,
   borderRadius: 8,
   background: selected ? "var(--bg-hover)" : "transparent",
   border: selected

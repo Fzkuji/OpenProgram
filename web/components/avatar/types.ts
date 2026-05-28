@@ -22,8 +22,8 @@ export type AvatarKind = "dicebear" | "upload" | "letter";
  *  ``AVATAR_STYLES`` in ``styles.ts``. */
 export type AvatarStyle =
   | "shapes"
-  | "notionists"
-  | "lorelei"
+  | "avataaars"
+  | "funEmoji"
   | "bottts"
   | "initials";
 

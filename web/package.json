@@ -9,11 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@dicebear/avataaars": "^9.4.2",
     "@dicebear/bottts": "^9.4.2",
     "@dicebear/core": "^9.4.2",
+    "@dicebear/fun-emoji": "^9.4.2",
     "@dicebear/initials": "^9.4.2",
-    "@dicebear/lorelei": "^9.4.2",
-    "@dicebear/notionists": "^9.4.2",
     "@dicebear/shapes": "^9.4.2",
     "@fontsource-variable/inter": "^5.2.8",
     "@heroicons/react": "^2.2.0",

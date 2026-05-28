@@ -16,19 +16,25 @@
  */
 
 import * as shapes from "@dicebear/shapes";
-import * as notionists from "@dicebear/notionists";
-import * as lorelei from "@dicebear/lorelei";
+import * as avataaars from "@dicebear/avataaars";
+import * as funEmoji from "@dicebear/fun-emoji";
 import * as bottts from "@dicebear/bottts";
 import * as initials from "@dicebear/initials";
 
 import type { AvatarStyle } from "./types";
 
 /** Runtime: ``style -> DiceBear namespace``. ``<Avatar>`` looks the
- *  style up here when ``createAvatar`` needs a Style object. */
+ *  style up here when ``createAvatar`` needs a Style object.
+ *
+ *  Earlier bundles shipped notionists / lorelei here too, but those
+ *  styles draw their characters into only a fraction of the viewBox
+ *  and rendered as visually blank tiles at the 40-px picker size.
+ *  Avataaars and Fun Emoji both fill their viewBox cleanly so they
+ *  read correctly at every size we use. */
 export const STYLES = {
   shapes,
-  notionists,
-  lorelei,
+  avataaars,
+  funEmoji,
   bottts,
   initials,
 } as const;
@@ -36,9 +42,9 @@ export const STYLES = {
 /** UI metadata for the style picker. Order is the order tiles render
  *  in. ``Shapes`` is first because it's the default for new profiles. */
 export const AVATAR_STYLES: { id: AvatarStyle; label: string; hint: string }[] = [
-  { id: "shapes",     label: "Shapes",     hint: "Abstract geometric (default)" },
-  { id: "notionists", label: "Notionists", hint: "Hand-drawn characters" },
-  { id: "lorelei",    label: "Lorelei",    hint: "Soft cartoon faces" },
-  { id: "bottts",     label: "Bottts",     hint: "Robot avatars" },
-  { id: "initials",   label: "Initials",   hint: "Letter on coloured chip" },
+  { id: "shapes",    label: "Shapes",    hint: "Abstract geometric (default)" },
+  { id: "avataaars", label: "Avataaars", hint: "Sketch-style portrait characters" },
+  { id: "funEmoji",  label: "Fun Emoji", hint: "Simple emoji-like faces" },
+  { id: "bottts",    label: "Bottts",    hint: "Robot avatars" },
+  { id: "initials",  label: "Initials",  hint: "Letter on coloured chip" },
 ];

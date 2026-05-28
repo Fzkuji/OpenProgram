@@ -77,20 +77,71 @@ export function Avatar({
   // Pre-render the DiceBear SVG even when we're in upload / letter
   // mode so toggling modes in settings doesn't lose its memo cache.
   // The SVG string is ~1 KB, cheap to keep around.
+  //
+  // ``backgroundColor`` is set for every style — some styles
+  // (notionists, lorelei) default to ``transparent`` and render
+  // their characters in dark line art, which on a dark page makes
+  // the entire avatar invisible. The palette below is DiceBear's
+  // own pastel default; the seed picks deterministically so the
+  // same seed always gets the same colour. Styles that already
+  // fill their circle (shapes, bottts, initials) draw on top of
+  // the background colour, so this is a safe no-op for them.
   const svg = useMemo(() => {
     try {
-      // The styles export as namespace objects; the createAvatar typing
-      // wants a Style<O> but ``import * as`` gives us a namespace that
-      // structurally matches. ``as never`` keeps TS quiet without
-      // pulling in @dicebear's deep style generics here.
-      return createAvatar(STYLES[style] as never, {
+      // Don't pass ``size`` to createAvatar — some styles
+      // (notionists, lorelei) render their character at a tiny
+      // fraction of the SVG viewport, so a 40-px-fixed SVG ends up
+      // with a 4-px head that visually disappears. By omitting
+      // ``size`` we get an unsized SVG with the style's native
+      // viewBox; the wrapping ``<span>`` then scales it down with
+      // ``width: 100%; height: 100%`` so the whole character is
+      // visible regardless of container size.
+      //
+      // ``backgroundColor`` is set for every style — some styles
+      // (notionists, lorelei) default to transparent and render
+      // their characters in dark line art, which on a dark page
+      // makes the entire avatar invisible. The palette is DiceBear's
+      // own pastel default; the seed picks deterministically so the
+      // same seed always gets the same colour. Styles that already
+      // fill their circle (shapes, bottts, initials) draw on top of
+      // the background colour, so this is a safe no-op for them.
+      const raw = createAvatar(STYLES[style] as never, {
         seed,
-        size,
+        // Render at 200px internally — some character styles
+        // (notionists, lorelei) draw their bodies into only a
+        // fraction of the viewBox at small sizes, so a 40-px
+        // bake leaves a 4-px head that visually disappears. Big
+        // canvas + CSS-driven shrink keeps the head readable.
+        size: 200,
+        backgroundColor: [
+          "b6e3f4",
+          "c0aede",
+          "d1d4f9",
+          "ffd5dc",
+          "ffdfbf",
+        ],
       }).toString();
+      // Rewrite ONLY the attributes in the root <svg> tag — strip
+      // width / height (they're HTML attributes that win against
+      // CSS sizing) and inject a style that stretches the SVG to
+      // fill its container. The capture-group form scopes the
+      // strip to the opening tag only, so width="…" inside child
+      // <path>/<rect> nodes survives — the buggy first pass that
+      // used a global string replace blanked everything because it
+      // ate the first child element's own width attribute.
+      return raw.replace(
+        /<svg\b([^>]*)>/,
+        (_match, attrs: string) => {
+          const cleaned = attrs
+            .replace(/\s+width="[^"]*"/g, "")
+            .replace(/\s+height="[^"]*"/g, "");
+          return `<svg${cleaned} style="width:100%;height:100%;display:block" preserveAspectRatio="xMidYMid meet">`;
+        },
+      );
     } catch {
       return null;
     }
-  }, [style, seed, size]);
+  }, [style, seed]);
 
   const sharedStyle: CSSProperties = {
     width: size,
