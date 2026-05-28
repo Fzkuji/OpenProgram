@@ -195,6 +195,24 @@ def main():
 
     sub = parser.add_subparsers(dest="command", help="Subcommand")
 
+    # ---- logs (structured log viewer) -------------------------------------
+    p_logs = sub.add_parser(
+        "logs",
+        help="Inspect worker / runtime / ink-startup log files",
+    )
+    logs_sub = p_logs.add_subparsers(dest="logs_verb", metavar="verb")
+    p_l_list = logs_sub.add_parser("list", help="Show all log files (size, age)")
+    p_l_path = logs_sub.add_parser("path", help="Print absolute path to a log")
+    p_l_path.add_argument("name", nargs="?", default=None,
+        help="Log name (worker / runtime / ink). Default: worker.")
+    p_l_tail = logs_sub.add_parser("tail", help="Print last N lines (optionally follow)")
+    p_l_tail.add_argument("name", nargs="?", default=None,
+        help="Log name (worker / runtime / ink). Default: worker.")
+    p_l_tail.add_argument("-n", "--lines", type=int, default=50,
+        help="Number of trailing lines to print (default 50)")
+    p_l_tail.add_argument("-f", "--follow", action="store_true",
+        help="Keep streaming new appends until Ctrl-C")
+
     # ---- completion (shell autocomplete) ----------------------------------
     p_completion = sub.add_parser(
         "completion",
@@ -688,6 +706,20 @@ def main():
     # ``tui_enabled`` flag selects which implementation to launch.
     # There is no user-facing knob — the platform decides.
     tui_enabled = sys.platform != "win32"
+
+    if args.command == "logs":
+        from openprogram._cli_cmds.logs import (
+            _cmd_logs_list, _cmd_logs_path, _cmd_logs_tail,
+        )
+        verb = getattr(args, "logs_verb", None)
+        if verb == "list" or verb is None:
+            sys.exit(_cmd_logs_list())
+        if verb == "path":
+            sys.exit(_cmd_logs_path(args.name))
+        if verb == "tail":
+            sys.exit(_cmd_logs_tail(args.name, args.lines, args.follow))
+        p_logs.print_help()
+        sys.exit(2)
 
     if args.command == "completion":
         from openprogram._cli_cmds.completion import _cmd_completion
