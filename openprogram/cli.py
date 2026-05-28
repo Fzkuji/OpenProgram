@@ -4,9 +4,12 @@ OpenProgram CLI.
 Single-verb model (openclaw / gh / docker style). The top-level grammar
 is:
 
-    openprogram                           launch chat (Ink TUI on
-                                          macOS/Linux, Rich REPL on
-                                          Windows where Ink can't run)
+    openprogram                           launch the terminal UI
+                                          (Ink on macOS/Linux, Rich on
+                                          Windows — both are "TUI";
+                                          platform decides which)
+    openprogram tui                       same as bare openprogram
+    openprogram chat                      alias for `openprogram tui`
     openprogram --print "prompt"          one-shot — send prompt,
                                           print reply, exit
     openprogram --resume <session-id>     resume a prior chat session
@@ -17,8 +20,10 @@ is:
 Examples:
 
     openprogram
-    openprogram --print "summarise this file"
-    openprogram --resume local_a1b2c3
+    openprogram tui
+    openprogram chat
+    openprogram tui --print "summarise this file"
+    openprogram tui --resume local_a1b2c3
 
     openprogram web                       browser UI (frontend + backend)
 
@@ -189,6 +194,26 @@ def main():
              "`openprogram sessions list` or the Web UI sidebar.")
 
     sub = parser.add_subparsers(dest="command", help="Subcommand")
+
+    # ---- tui (alias: chat) — explicit verb for the default chat mode -----
+    # Bare ``openprogram`` already launches the terminal UI; this verb
+    # lets users write ``openprogram tui`` for clarity and parity with
+    # other verbs (``openprogram web``, ``openprogram programs``, etc).
+    # ``chat`` is accepted as an alias because it reads more naturally
+    # for newcomers. Both ``--print`` and ``--resume`` are re-declared
+    # on the subparser so they work after the verb
+    # (``openprogram tui --print "hi"``) the same way they work at top
+    # level (``openprogram --print "hi"``).
+    p_tui = sub.add_parser(
+        "tui",
+        aliases=["chat"],
+        help="Launch the terminal UI (Ink on macOS/Linux, Rich on "
+             "Windows). Same as running `openprogram` with no verb.",
+    )
+    p_tui.add_argument("--print", dest="print_prompt", metavar="PROMPT",
+        help="One-shot prompt; send, print reply, exit")
+    p_tui.add_argument("--resume", default=None, metavar="SESSION_ID",
+        help="Resume a prior CLI chat session.")
 
     # ---- programs ---------------------------------------------------------
     # Authoring (new / edit / app) lives in the `agentic-programming` skill now —
@@ -641,15 +666,19 @@ def main():
         from openprogram.paths import set_active_profile
         set_active_profile(args.profile)
 
-    # -------- No subcommand: bare `openprogram` drops into chat --------
-    # Chat is the default experience. Ink TUI on macOS/Linux; Rich REPL
-    # on Windows where Ink can't initialise raw input mode (the user
-    # never sees a flag for this — the platform default is the only
-    # control). Other modes go through verbs: ``openprogram web``,
-    # ``openprogram programs run``, etc.
+    # -------- TUI launch (bare openprogram OR `openprogram tui/chat`) --
+    # Chat is the default experience. Two backing implementations:
+    #
+    #   * macOS / Linux — full-screen Ink TUI (React-in-terminal, Node)
+    #   * Windows       — Rich-driven terminal UI (Python; Ink can't
+    #                     initialise raw input mode on Windows consoles)
+    #
+    # Both are valid "terminal UIs" from a user's perspective; the
+    # ``tui_enabled`` flag selects which implementation to launch.
+    # There is no user-facing knob — the platform decides.
     tui_enabled = sys.platform != "win32"
 
-    if args.command is None:
+    if args.command in (None, "tui", "chat"):
         if args.print_prompt:
             _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
                           tui=tui_enabled)
