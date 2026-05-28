@@ -1,7 +1,7 @@
-"""Terminal chat for ``openprogram`` / ``openprogram --cli``.
+"""Terminal chat for bare ``openprogram``.
 
-Hermes-style welcome banner (tools + skills inventory) followed by a
-REPL. Slash commands (``/help``, ``/web``, ``/quit``, ...) are handled
+Welcome banner (tools + skills inventory) followed by a chat loop.
+Slash commands (``/help``, ``/web``, ``/quit``, ...) are handled
 locally; non-slash input goes through the same chat runtime the Web UI
 uses, so behaviour stays aligned.
 
@@ -58,10 +58,11 @@ def run_cli_chat(oneshot: str | None = None,
     ``resume`` picks up a prior session id under the current default
     agent instead of starting a fresh one.
 
-    ``tui`` defaults True: launches the full-screen Textual UI. Set
-    False (or pass ``--no-tui``) to stay on the Rich REPL — useful
-    for recording asciinema sessions or terminals without alt-screen
-    support. ``oneshot`` always uses the Rich path.
+    ``tui`` defaults True on macOS / Linux and False on Windows (Ink
+    can't enter raw input mode on Windows consoles). Callers don't
+    need to pass it — ``openprogram`` resolves it from platform.
+    ``oneshot`` always uses the Rich path (one-shot doesn't render
+    a TUI).
     """
     import uuid as _uuid
     from rich.console import Console

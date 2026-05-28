@@ -72,7 +72,7 @@ def _resolve_cli_entry() -> Path:
             f"Ink TUI source missing: no {cli_dir} directory. "
             "The TUI ships with the source tree — install openprogram "
             "from a git clone (``pip install -e .``) for the full "
-            "experience, or use ``openprogram --web`` / ``--no-tui``."
+            "experience, or use ``openprogram web`` for the browser UI."
         )
 
     _build_ink_bundle(cli_dir, candidate)
@@ -100,8 +100,8 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
     if npm is None:
         raise RuntimeError(
             "npm not found in PATH. Install Node.js 20+ (https://nodejs.org/) "
-            "to build the TUI. Alternatively use ``openprogram --no-tui`` or "
-            "``--web``."
+            "to build the TUI. Alternatively use ``openprogram web`` "
+            "for the browser UI."
         )
 
     # Stream to the saved-original tty if the TUI dup2 already happened,
@@ -219,7 +219,7 @@ def _resolve_worker_port(*, autostart: bool) -> int | None:
 
     1. A managed worker (``worker.lock`` + ``worker.port``). The
        well-supported path; ``worker stop`` / ``restart`` know about it.
-    2. An unmanaged webui — i.e. a foreground ``openprogram --web``
+    2. An unmanaged webui — i.e. a foreground ``openprogram web``
        process that the user launched themselves. Doesn't write the
        lock files, but ``find_running_webui()`` discovers it via a
        TCP probe on the default port. The TUI can talk to it just
@@ -249,7 +249,7 @@ def _resolve_worker_port(*, autostart: bool) -> int | None:
         # some reason. Surface a more actionable error.
         _tty_write(
             "openprogram: couldn't start a worker (likely port in use).\n"
-            "If you have ``openprogram --web`` running in another terminal,\n"
+            "If you have ``openprogram web`` running in another terminal,\n"
             "that webui is what the TUI should connect to — but its port\n"
             "wasn't detected. Stop it and either rerun `openprogram` (TUI\n"
             "will auto-start a managed worker) or run\n"
@@ -419,7 +419,7 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
             "  (Windows Git Bash / MinTTY, or a PowerShell + Node combo where\n"
             "  the console handle didn't pass through Python's subprocess).\n"
             "  Falling back to the Rich REPL (text-only chat).\n"
-            "  Skip this attempt next time with: openprogram --no-tui\n"
+            "  Use the browser UI instead with: openprogram web\n"
             "\n"
         )
         # Restore stdio so the Rich REPL fallback in cli_chat writes to

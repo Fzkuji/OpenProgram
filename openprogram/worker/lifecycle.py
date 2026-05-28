@@ -49,8 +49,8 @@ def read_worker_port() -> Optional[int]:
     crashed prior worker doesn't get handed out.
 
     Also falls back to a TCP probe of the default port (8109) so a
-    foreground ``openprogram --web`` / ``openprogram web`` — which
-    doesn't write the lock/pid/port files — is still discoverable by
+    foreground ``openprogram web`` — which doesn't write the
+    lock/pid/port files — is still discoverable by
     HTTP-client commands like ``openprogram mcp list``. Returns the
     port even if we can't name the PID owning it; callers that need
     the PID can use :func:`find_running_webui` instead.
@@ -103,9 +103,9 @@ def find_running_webui() -> tuple[Optional[int], Optional[int], str]:
       a worker is alive; this is the well-supported path.
     - ``(8109, None, "unmanaged")`` — no lock/pid, but a process is
       listening on the conventional default port. Almost always a
-      foreground ``openprogram --web`` / ``openprogram web``. The PID
-      isn't resolved cross-platform-cheaply, so callers that just
-      want to talk HTTP get a usable answer.
+      foreground ``openprogram web``. The PID isn't resolved
+      cross-platform-cheaply, so callers that just want to talk
+      HTTP get a usable answer.
     - ``(None, None, "none")`` — nothing is up.
     """
     pid = current_worker_pid()
@@ -372,7 +372,7 @@ def print_status() -> int:
         # can't touch it. Be transparent about that.
         print(f"openprogram webui: running on :{port}  (unmanaged)")
         print()
-        print("  Started via `openprogram --web` or `openprogram web` —")
+        print("  Started via `openprogram web` —")
         print("  the foreground process owns it. `worker stop` will not")
         print("  affect this instance; Ctrl-C in that terminal will.")
         print()

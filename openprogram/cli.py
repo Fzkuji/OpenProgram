@@ -1,18 +1,28 @@
 """
 OpenProgram CLI.
 
-Run `openprogram` with no arguments to get an interactive mode chooser
-(CLI chat or Web UI). Subcommands manage programs, skills, sessions,
-providers, and config.
+Single-verb model (openclaw / gh / docker style). The top-level grammar
+is:
+
+    openprogram                           launch chat (Ink TUI on
+                                          macOS/Linux, Rich REPL on
+                                          Windows where Ink can't run)
+    openprogram --print "prompt"          one-shot — send prompt,
+                                          print reply, exit
+    openprogram --resume <session-id>     resume a prior chat session
+
+    openprogram <verb> ...                everything else (web, programs,
+                                          skills, providers, ...)
 
 Examples:
-    openprogram                           # interactive chooser
-    openprogram --web                     # launch web UI
-    openprogram --cli                     # launch terminal chat
-    openprogram -p "prompt"               # one-shot prompt
+
+    openprogram
+    openprogram --print "summarise this file"
+    openprogram --resume local_a1b2c3
+
+    openprogram web                       browser UI (frontend + backend)
 
     openprogram programs list
-    openprogram programs new my_func "what it does"
     openprogram programs run my_func --arg key=value
 
     openprogram skills list
@@ -23,6 +33,13 @@ Examples:
 
     openprogram providers list
     openprogram providers login anthropic
+
+Note on retired flags: ``--tui`` / ``--no-tui`` / ``--web`` / ``--cli``
+are gone. The chat mode is now implicit (``openprogram`` is chat); the
+browser is a verb (``openprogram web``); the REPL is a Windows-only
+silent fallback when Ink can't initialise. ``--no-tui`` had no good
+analogue (the verb-based design wins where the flag would have lost),
+so it's removed entirely.
 """
 
 import argparse
@@ -44,34 +61,35 @@ _TUI_TTY_ERR: int | None = None
 
 
 def _looks_like_tui_invocation(argv: list[str]) -> bool:
-    """Return True if argv corresponds to launching the chat TUI.
+    """Return True if argv corresponds to launching the Ink TUI.
 
-    Bare `openprogram` and `openprogram --resume <id>` go to the TUI. Any
-    subcommand (programs, skills, agents, sessions, channels, config,
-    providers, web), and any one-shot flag (--print, -p, --no-tui), keep
-    stdio plain.
+    Used by :func:`_maybe_redirect_for_tui` to decide whether to dup2
+    stdio into a log file before the Ink Node process takes over the
+    terminal — only worth doing when a TUI launch is actually going
+    to happen.
 
-    Windows note: Node + Ink's ``setRawMode`` reliably fails on common
-    Windows terminal configurations (PowerShell + Python subprocess
-    inheritance loses the console-handle flag; Git Bash / MinTTY
-    doesn't expose a Windows console at all). Defaulting bare
-    ``openprogram`` to the TUI there means users get a silent /
-    half-rendered failure with no clear message. We default Windows to
-    the Rich REPL instead, and let users opt back into the TUI with
-    ``--tui`` if their terminal supports it (Windows Terminal sometimes
-    does, depending on the Node version). POSIX is unaffected — TUI
-    stays the default on macOS / Linux.
+    Bare ``openprogram`` and ``openprogram --resume <id>`` go to chat
+    (which is TUI on POSIX). Any subcommand (``programs``, ``skills``,
+    ``web``, ...) and one-shot flags (``--print`` / ``-p``) keep stdio
+    plain — no TUI, no redirect.
+
+    Windows: Ink's ``setRawMode`` reliably fails on common Windows
+    terminal configurations (PowerShell loses the console-handle flag
+    across Python subprocess inheritance; Git Bash / MinTTY doesn't
+    expose a Windows console at all). So Windows skips the TUI attempt
+    entirely and goes straight to the Rich REPL — which also means no
+    stdio redirect is needed there.
     """
+    if sys.platform == "win32":
+        return False
     bypass_words = {
         "agents", "sessions", "channels", "config", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp",
     }
     bypass_flags = {
-        "--print", "-p", "--no-tui", "--web", "--help", "-h", "--version",
-        "--print-prompt",
+        "--print", "-p", "--help", "-h", "--version", "--print-prompt",
     }
-    has_explicit_tui = "--tui" in argv
     for arg in argv:
         if arg in bypass_flags:
             return False
@@ -79,9 +97,6 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
             return False
         if arg in bypass_words:
             return False
-    # Windows default-off (unless --tui explicitly opts in)
-    if sys.platform == "win32" and not has_explicit_tui:
-        return False
     return True
 
 
@@ -158,18 +173,13 @@ def main():
         prog="openprogram",
         description="OpenProgram — build, run, and chat with agentic programs.",
     )
-    # Top-level mode flags for a bare `openprogram` launch. If any of
-    # these are set, we skip the interactive chooser and go straight in.
-    parser.add_argument("--web", action="store_true",
-        help="Launch the Web UI (browser)")
-    parser.add_argument("--cli", action="store_true",
-        help="Launch the terminal chat")
+    # Top-level options for bare ``openprogram`` (chat mode). All other
+    # modes are subcommands — see ``openprogram web``, ``openprogram
+    # programs``, etc. The ``--web`` / ``--cli`` / ``--tui`` / ``--no-tui``
+    # flags from earlier versions are gone; use the equivalent verb
+    # (``openprogram web``) or just bare ``openprogram`` (chat).
     parser.add_argument("--print", dest="print_prompt", metavar="PROMPT",
         help="One-shot prompt; send, print reply, exit")
-    parser.add_argument("--port", type=int, default=None,
-        help="Port for --web / `web` (default: stored UI pref, then 8109)")
-    parser.add_argument("--no-browser", action="store_true",
-        help="Don't auto-open browser with --web")
     parser.add_argument("--profile", default=None,
         help="State-dir profile name. Reroutes config/sessions/logs to "
              "~/.agentic-<name>/ so parallel workspaces don't share state. "
@@ -177,14 +187,6 @@ def main():
     parser.add_argument("--resume", default=None, metavar="SESSION_ID",
         help="Resume a prior CLI chat session. Find ids via "
              "`openprogram sessions list` or the Web UI sidebar.")
-    parser.add_argument("--no-tui", action="store_true",
-        help="Fall back to the Rich REPL instead of the full-screen "
-             "TUI. Useful when recording or in a terminal without "
-             "alt-screen support. Default on Windows.")
-    parser.add_argument("--tui", action="store_true",
-        help="Force the full-screen Ink TUI even on Windows (where "
-             "it may fail with 'Raw mode is not supported' depending "
-             "on the terminal). POSIX uses the TUI by default.")
 
     sub = parser.add_subparsers(dest="command", help="Subcommand")
 
@@ -639,28 +641,18 @@ def main():
         from openprogram.paths import set_active_profile
         set_active_profile(args.profile)
 
-    # -------- No subcommand: bare `openprogram` drops into CLI chat --------
-    # Hermes-style: no mode chooser, the banner + REPL is the default
-    # experience. --web routes to the browser UI; --print runs one-shot.
-    #
-    # TUI default resolution: explicit ``--tui`` always wins, ``--no-tui``
-    # next, otherwise platform default — TUI on POSIX, REPL on Windows
-    # (Node + Ink ``setRawMode`` reliably fails in common Windows
-    # terminal setups; the REPL works everywhere).
-    if args.tui:
-        tui_enabled = True
-    elif args.no_tui:
-        tui_enabled = False
-    else:
-        tui_enabled = sys.platform != "win32"
+    # -------- No subcommand: bare `openprogram` drops into chat --------
+    # Chat is the default experience. Ink TUI on macOS/Linux; Rich REPL
+    # on Windows where Ink can't initialise raw input mode (the user
+    # never sees a flag for this — the platform default is the only
+    # control). Other modes go through verbs: ``openprogram web``,
+    # ``openprogram programs run``, etc.
+    tui_enabled = sys.platform != "win32"
 
     if args.command is None:
         if args.print_prompt:
             _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
                           tui=tui_enabled)
-            return
-        if args.web:
-            _cmd_web(args.port, False if args.no_browser else None)
             return
         _cmd_cli_chat(oneshot=None, resume=args.resume,
                       tui=tui_enabled)
