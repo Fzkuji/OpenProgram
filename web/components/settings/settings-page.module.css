@@ -402,7 +402,12 @@
   flex-direction: column;
   gap: 1px;
   padding: 8px;
-  background: var(--bg-primary);
+  /* Deep surface — matches the settings page-level background
+     (.view + 2nd-level .nav) so the whole left half of the page
+     reads as one continuous navigation column. Detail column on
+     the right shows through the .content border-left, not via a
+     bg shift. See docs/design/surface-system.md. */
+  background: var(--bg-secondary);
   /* Own this column's vertical scroll. Decoupled from the right
      detail column — wheeling the list never moves the detail, and
      wheeling the detail never moves the list. */
