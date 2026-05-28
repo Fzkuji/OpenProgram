@@ -80,12 +80,21 @@ def test_empty_store_yields_only_current_turn(rt, store):
     assert msgs[0].content[0].text == "first ping"
 
 
-def test_multiple_text_blocks_joined_with_newline(rt, store):
+def test_multiple_text_blocks_keep_separate_parts(rt, store):
+    """``_build_pi_context`` no longer concatenates multiple text
+    blocks. Each block becomes its own ``TextContent`` part so that
+    image / video / audio blocks interleaved with text survive in
+    their original order (concatenation used to drop non-text
+    blocks). The test verifies the new contract: two text blocks
+    appear as two parts."""
     msgs = rt._render_history_messages(content=[
         {"type": "text", "text": "line 1"},
         {"type": "text", "text": "line 2"},
     ])
-    assert msgs[-1].content[0].text == "line 1\nline 2"
+    parts = msgs[-1].content
+    assert len(parts) == 2
+    assert parts[0].text == "line 1"
+    assert parts[1].text == "line 2"
 
 
 # ── Inside an @agentic_function frame ───────────────────────────────

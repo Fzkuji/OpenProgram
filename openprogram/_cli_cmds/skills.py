@@ -187,6 +187,15 @@ def _cmd_skills_list(override_dirs, as_json: bool) -> int:
                 "file_path": s.file_path,
             } for s in skills], indent=2))
             return 0
+        if not skills:
+            # Match the non-legacy branch (line 211 below) so callers
+            # passing ``--dir`` to an empty directory get the same
+            # "(no skills discovered)" line as the default discovery
+            # path. Without this the legacy branch silently printed
+            # "Discovered 0 skill(s):" + no rows, which read as a
+            # render bug.
+            print("(no skills discovered)")
+            return 0
         print(f"Discovered {len(skills)} skill(s):\n")
         for s in skills:
             print(f"  {s.name}  ({s.slug})")
