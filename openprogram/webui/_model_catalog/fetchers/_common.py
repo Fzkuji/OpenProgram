@@ -14,12 +14,13 @@ def _fetch_openai_compat(provider_id: str, timeout: float) -> Any:
     """OpenAI-compatible /v1/models: GET base + '/models', Bearer auth."""
     import httpx
 
-    from ..providers import _ENV_API_KEYS
+    from ..providers import _env_var_for
     from ..storage import _resolve_api_key, _resolve_base_url
 
     api_key = _resolve_api_key(provider_id)
-    if api_key is None and _ENV_API_KEYS.get(provider_id):
-        return {"error": f"No API key for {provider_id} (set {_ENV_API_KEYS[provider_id]})"}
+    env = _env_var_for(provider_id)
+    if api_key is None and env:
+        return {"error": f"No API key for {provider_id} (set {env})"}
     base = _resolve_base_url(provider_id)
     if not base:
         return {"error": f"No base URL resolvable for {provider_id}"}

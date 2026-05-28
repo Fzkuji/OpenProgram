@@ -189,20 +189,32 @@ def remove_custom_model(provider_id: str, model_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _resolve_base_url(provider_id: str) -> str | None:
-    """Resolved base URL: user override → Model.base_url → provider
-    default. Returns ``None`` when no source yields a URL — caller is
-    expected to surface a "No base URL resolvable" error rather than
-    proceed with an empty string.
+    """Resolved base URL across four sources, in order:
+
+      1. User override saved at ``config.providers.<pid>.base_url``.
+      2. First model's ``Model.base_url`` from the static registry.
+      3. models.dev's ``api`` field for this provider id.
+      4. ``None`` — caller is expected to surface a "No base URL
+         resolvable" error rather than proceed with an empty string.
+
+    Source 3 is what makes a community-only provider (no static
+    registry entry yet) still able to fetch + test out of the box —
+    the user just pastes the env var and goes.
     """
     cfg = _read_providers_cfg()
     pcfg = cfg.get(provider_id, {})
     if pcfg.get("base_url"):
         return pcfg["base_url"].rstrip("/")
-    # Fallback: first model's base_url in the registry.
+    # Static registry baked-in base URL.
     from openprogram.providers import get_models
     ms = get_models(provider_id)
     if ms and ms[0].base_url:
         return ms[0].base_url.rstrip("/")
+    # Community catalogue.
+    from .providers import _default_base_url_for
+    md_base = _default_base_url_for(provider_id)
+    if md_base:
+        return md_base.rstrip("/")
     return None
 
 
@@ -210,15 +222,16 @@ def _resolve_api_key(provider_id: str) -> str | None:
     """Resolved API key for a provider (env var > config api_keys).
 
     Looks up the provider's standard env var via
-    ``providers.providers._ENV_API_KEYS`` and falls back to the
-    ``api_keys`` section of ``~/.agentic/config.json``. Returns
-    ``None`` for providers that have no standard env var (OAuth /
-    daemon providers like ``openai-codex``, ``claude-code``,
-    ``github-copilot``) — those need their own resolution path (e.g.
-    AuthManager.acquire_sync, daemon HEAD probe).
+    ``providers._env_var_for`` (manual override → models.dev community
+    catalogue) and falls back to the ``api_keys`` section of
+    ``~/.agentic/config.json``. Returns ``None`` for providers that
+    have no standard env var (OAuth / daemon providers like
+    ``openai-codex``, ``claude-code``, ``github-copilot``) — those
+    need their own resolution path (e.g. AuthManager.acquire_sync,
+    daemon HEAD probe).
     """
-    from .providers import _ENV_API_KEYS
-    env = _ENV_API_KEYS.get(provider_id)
+    from .providers import _env_var_for
+    env = _env_var_for(provider_id)
     if env:
         import os
         val = os.environ.get(env)

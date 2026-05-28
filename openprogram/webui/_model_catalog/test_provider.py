@@ -44,12 +44,13 @@ def test_provider(
     """Send a one-shot tiny PING to verify api_key + base_url work."""
     import httpx
 
-    from .providers import _ENV_API_KEYS
+    from .providers import _env_var_for
     from .storage import _read_providers_cfg, _resolve_api_key, _resolve_base_url
 
     api_key = _resolve_api_key(provider_id)
-    if api_key is None and _ENV_API_KEYS.get(provider_id):
-        return {"ok": False, "error": f"No API key set ({_ENV_API_KEYS[provider_id]})"}
+    env = _env_var_for(provider_id)
+    if api_key is None and env:
+        return {"ok": False, "error": f"No API key set ({env})"}
 
     base = _resolve_base_url(provider_id)
     if not base:

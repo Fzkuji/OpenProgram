@@ -45,24 +45,46 @@ def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:
 
 
 def list_providers() -> list[dict[str, Any]]:
-    """Unified provider list with enable/configure status and model counts."""
+    """Unified provider list with enable/configure status and model
+    counts.
+
+    Two source-of-truth tiers merged:
+
+      1. **Static registry** — providers with at least one ``Model``
+         row in ``providers/models_generated.py``. These have a baked-
+         in ``Model.base_url`` and known model ids the runtime can
+         dispatch against on day one.
+
+      2. **Community catalogue** (``sources.models_dev``) — every
+         provider models.dev knows about, including ones we don't
+         have a static-registry entry for. The user can enable +
+         configure these too; clicking Fetch will hit the upstream
+         API and surface real models. Lets the user reach for e.g.
+         ``fireworks`` or ``together`` without us shipping a code
+         change first.
+
+    Static-registry entries take precedence on id collisions (so e.g.
+    our ``openai-codex`` keeps its OpenProgram-specific routing rather
+    than getting overwritten by models.dev's ``openai`` row).
+    """
     from openprogram.providers import get_providers, get_models
 
     from .providers import (
         _CLI_PROVIDERS,
-        _ENV_API_KEYS,
         _FETCH_MODELS_PROVIDERS,
+        _env_var_for,
         _is_configured,
         _label,
     )
     from .setup_hints import _setup_hint
+    from .sources import models_dev
     from .storage import _read_providers_cfg
     from .fetchers import _FETCHERS
 
     cfg = _read_providers_cfg()
     result: list[dict[str, Any]] = []
 
-    # HTTP providers from registry
+    # Tier 1: HTTP providers from the static registry
     seen: set[str] = set()
     for pid in get_providers():
         seen.add(pid)
@@ -78,7 +100,7 @@ def list_providers() -> list[dict[str, Any]]:
             "kind": "api",
             "enabled": bool(pcfg.get("enabled", False)),
             "configured": _is_configured(pid),
-            "api_key_env": _ENV_API_KEYS.get(pid),
+            "api_key_env": _env_var_for(pid),
             "default_base_url": default_base,
             "base_url": pcfg.get("base_url") or "",
             "use_responses_api": bool(pcfg.get("use_responses_api", False)),
@@ -89,14 +111,45 @@ def list_providers() -> list[dict[str, Any]]:
         hint = _setup_hint(pid)
         if hint:
             entry["setup_hint"] = hint
-            # Note: we no longer force ``api_key_env = None`` when a
-            # hint is present. That override was originally there for
-            # claude-code (whose Meridian proxy doesn't take an API
-            # key), but it also clobbered ``anthropic``'s hint — which
-            # IS API-key based and needs both the hint AND the paste
-            # field. The ``_ENV_API_KEYS`` dict already carries the
-            # correct null/non-null state per provider, so trust it.
         result.append(entry)
+
+    # Tier 2: community-catalogue providers we don't have a static
+    # entry for. Configurable (paste key + Fetch); ``model_count`` is
+    # what models.dev says is available pre-fetch, so the user sees
+    # "OpenRouter has 233 models" without enabling anything first.
+    for md_prov in models_dev.list_providers():
+        pid = md_prov.get("id")
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        pcfg = cfg.get(pid, {})
+        custom = pcfg.get("custom_models") or []
+        enabled_ids = set(pcfg.get("enabled_models") or [])
+        community_ids = set(md_prov.get("model_ids") or [])
+        custom_ids = {c.get("id") for c in custom if c.get("id")}
+        result.append({
+            "id": pid,
+            "label": md_prov.get("label") or pid,
+            "kind": "api",
+            "enabled": bool(pcfg.get("enabled", False)),
+            "configured": _is_configured(pid),
+            "api_key_env": _env_var_for(pid),
+            "default_base_url": md_prov.get("base_url") or "",
+            "base_url": pcfg.get("base_url") or "",
+            "use_responses_api": bool(pcfg.get("use_responses_api", False)),
+            # Every OpenAI-compatible provider models.dev knows about
+            # is fetch-able by default; the dispatcher in
+            # ``fetchers.fetch_models_remote`` falls through to
+            # ``_fetch_openai_compat`` when there's no explicit
+            # ``_FETCHERS`` entry.
+            "supports_fetch": True,
+            "model_count": len(community_ids | custom_ids),
+            "enabled_model_count": sum(
+                1 for mid in (community_ids | custom_ids) if mid in enabled_ids
+            ),
+            "doc_url": md_prov.get("doc_url"),
+            "community_source": "models.dev",
+        })
 
     # CLI-backed providers (currently empty, kept for forward-compat)
     for cli in _CLI_PROVIDERS:

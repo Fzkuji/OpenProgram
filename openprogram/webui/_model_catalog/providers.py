@@ -1,10 +1,25 @@
 """Provider-level metadata: display labels, env-var mappings, default
 API routes, configured-status detection.
 
-All static tables in one place so adding a new provider only touches
-this module + a fetcher + (optionally) a setup hint. The functions
-``_label`` / ``_is_configured`` keep the same names they had in the
-old monolith so import sites that grab them directly keep working.
+Two-layer source of truth:
+
+  1. **Community catalogue** (``sources.models_dev``) — 135 providers
+     with normalised ``label`` / ``env_var`` / ``base_url`` / ``doc_url``.
+     This is the *default* answer for any provider we don't have a
+     manual override for. New providers on models.dev appear
+     automatically the moment the in-process 1h TTL cache refreshes.
+
+  2. **Manual overrides** below — only entries here that *differ from
+     what models.dev says* genuinely need to live in code. The legacy
+     full-set tables (21 providers, hand-maintained) collapsed down
+     to the handful where we want to:
+       * pin a friendlier label (e.g. "MiniMax (CN)" vs upstream's "Minimax"),
+       * declare a provider that isn't on models.dev,
+       * route a fetched row through a non-standard API id.
+
+The public lookup functions (``_label``, ``_env_var_for``,
+``_default_api_for``) check overrides first and fall through to
+``sources.models_dev``. That's why the override dicts are short.
 """
 from __future__ import annotations
 
@@ -13,7 +28,8 @@ from typing import Any
 
 
 # Display labels for provider ids. Anything not listed falls back to
-# prettified id ("amazon-bedrock" -> "Amazon Bedrock").
+# models.dev's ``name`` field, then a prettified id ("amazon-bedrock"
+# -> "Amazon Bedrock") as a last resort.
 _PROVIDER_LABELS: dict[str, str] = {
     "openai": "OpenAI",
     "openai-codex": "OpenAI Codex",
@@ -141,8 +157,71 @@ def _prettify(provider_id: str) -> str:
     return " ".join(w.capitalize() for w in provider_id.replace("_", "-").split("-"))
 
 
+def _models_dev_info(provider_id: str) -> dict[str, Any]:
+    """Cached lookup against ``sources.models_dev.provider_info``.
+
+    Lazy imported because ``sources`` is a sibling subpackage and a
+    top-level import would form a circular-import path on cold start
+    (sources → providers → sources). Always returns a dict to
+    simplify call sites; ``{}`` on cache miss / network failure.
+    """
+    try:
+        from .sources import models_dev
+    except Exception:
+        return {}
+    try:
+        return models_dev.provider_info(provider_id) or {}
+    except Exception:
+        return {}
+
+
 def _label(provider_id: str) -> str:
-    return _PROVIDER_LABELS.get(provider_id, _prettify(provider_id))
+    """Manual override → models.dev → prettified id. Manual override is
+    only useful when we want a different display name from upstream
+    (rare — most fall through to models.dev's clean ``name`` field)."""
+    if provider_id in _PROVIDER_LABELS:
+        return _PROVIDER_LABELS[provider_id]
+    md = _models_dev_info(provider_id)
+    if md.get("label"):
+        return md["label"]
+    return _prettify(provider_id)
+
+
+def _env_var_for(provider_id: str) -> str | None:
+    """Env var name holding the API key for ``provider_id``. Same
+    override-first semantics as ``_label`` — manual ``_ENV_API_KEYS``
+    entry wins (so we can pin "claude-code → None" even if a future
+    models.dev edit gives it an env), otherwise models.dev's first
+    ``env[]`` entry, otherwise ``None``."""
+    if provider_id in _ENV_API_KEYS:
+        return _ENV_API_KEYS[provider_id]
+    md = _models_dev_info(provider_id)
+    return md.get("env_var")
+
+
+def _default_api_for(provider_id: str) -> str | None:
+    """Registered ``api`` id this provider's models dispatch through.
+    Only the manual table is consulted today — models.dev exposes
+    ``npm`` (the SDK) but not "which of *our* registered API stream
+    functions handles this provider", which is OpenProgram-internal.
+    Returns ``None`` when unmapped; callers default to
+    ``"openai-completions"`` for unknown OpenAI-compatible providers."""
+    return _PROVIDER_DEFAULT_API.get(provider_id)
+
+
+def _default_base_url_for(provider_id: str) -> str | None:
+    """Default API base URL for ``provider_id``. Pulled straight from
+    models.dev's ``api`` field; static-registry ``Model.base_url`` is
+    still preferred when the runtime has one baked in."""
+    md = _models_dev_info(provider_id)
+    return md.get("base_url")
+
+
+def _doc_url_for(provider_id: str) -> str | None:
+    """Provider docs URL (for the "Get an API key →" link in the
+    setup hint). models.dev only — there's no manual table for this."""
+    md = _models_dev_info(provider_id)
+    return md.get("doc_url")
 
 
 def _is_configured(provider_id: str) -> bool:
@@ -185,8 +264,11 @@ def _is_configured(provider_id: str) -> bool:
                 return True
         except (urllib.error.URLError, ConnectionError, OSError):
             return False
-    env = _ENV_API_KEYS.get(provider_id)
+    env = _env_var_for(provider_id)
     if env is None:
-        return True  # assume true for providers without a standard key var
+        # Either an OAuth / no-key provider, or one we don't have a
+        # standard env var for. Conservatively say "configured" so
+        # the UI doesn't show a red dot the user can't act on.
+        return True
     from openprogram.webui.server import _get_api_key  # re-use helper
     return bool(_get_api_key(env))

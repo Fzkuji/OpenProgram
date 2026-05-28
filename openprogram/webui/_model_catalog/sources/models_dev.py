@@ -165,6 +165,79 @@ def lookup(provider_id: str, model_id: str) -> dict[str, Any] | None:
     return _normalise(raw) or None
 
 
+# ---------------------------------------------------------------------------
+# Provider-level (catalog-wide) accessors
+# ---------------------------------------------------------------------------
+
+def _normalise_provider(pid: str, raw: dict[str, Any]) -> dict[str, Any]:
+    """Pick the fields we care about out of a models.dev provider row.
+
+    Shape returned matches what ``providers.py`` consumes:
+
+      * ``label`` — display name (str)
+      * ``env_var`` — primary env var holding the API key (str | None)
+      * ``base_url`` — default API base URL (str | None)
+      * ``doc_url`` — link to provider docs (str | None)
+      * ``npm`` — vendor SDK on npm (str | None) — informational
+      * ``model_ids`` — full id list of models in the catalogue (list)
+    """
+    env = raw.get("env")
+    env_var: str | None = None
+    if isinstance(env, list) and env:
+        env_var = str(env[0]) if env[0] else None
+    elif isinstance(env, str) and env:
+        env_var = env
+
+    models = raw.get("models") or {}
+    model_ids = list(models.keys()) if isinstance(models, dict) else []
+
+    return {
+        "id": pid,
+        "label": raw.get("name") or pid,
+        "env_var": env_var,
+        "base_url": raw.get("api") or None,
+        "doc_url": raw.get("doc") or None,
+        "npm": raw.get("npm") or None,
+        "model_ids": model_ids,
+    }
+
+
+def provider_info(provider_id: str) -> dict[str, Any] | None:
+    """Look up provider-level metadata. Honours the same id alias map
+    as ``lookup()``, so e.g. ``openai-codex`` falls back to the
+    ``openai`` row when no Codex-specific entry exists in the
+    catalogue."""
+    catalogue = _load()
+    if not catalogue:
+        return None
+    # First try the verbatim id (a few providers like ``openai-codex``
+    # genuinely have a distinct entry).
+    raw = catalogue.get(provider_id)
+    if not isinstance(raw, dict):
+        # Fall back to alias mapping for "shares the same upstream
+        # catalogue" cases.
+        aliased = _PROVIDER_ID_ALIASES.get(provider_id)
+        if aliased:
+            raw = catalogue.get(aliased)
+    if not isinstance(raw, dict):
+        return None
+    return _normalise_provider(provider_id, raw)
+
+
+def list_providers() -> list[dict[str, Any]]:
+    """Every provider in the cached catalogue, normalised. Used by the
+    listing layer to surface community-known providers we haven't yet
+    hard-coded in ``providers._PROVIDER_LABELS`` etc."""
+    catalogue = _load()
+    if not catalogue:
+        return []
+    return [
+        _normalise_provider(pid, raw)
+        for pid, raw in catalogue.items()
+        if isinstance(raw, dict) and isinstance(raw.get("models"), dict)
+    ]
+
+
 # Provider id mapping for the few cases where our id differs from the
 # models.dev key. Empty for now — DeepSeek / OpenAI / Anthropic /
 # Groq / Cerebras / OpenRouter / Mistral / HuggingFace all match
