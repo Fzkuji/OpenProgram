@@ -26,8 +26,11 @@ import { useEffect, useState } from "react";
 import styles from "./settings-page.module.css";
 
 /** Explicit slug mapping for the providers whose id differs from
- *  LobeHub's icon key. Everything not listed here falls through to
- *  ``id`` verbatim. */
+ *  LobeHub's icon key in ways no automatic suffix-strip can recover
+ *  (mostly: "X is conceptually the Y brand", e.g. ``openai-codex`` →
+ *  ``openai``). Auto-derived suffix variants like ``fireworks-ai`` →
+ *  ``fireworks`` don't need entries here — they fall out of
+ *  ``slugCandidates`` below. */
 const SLUGS: Record<string, string> = {
   // OpenAI family — Codex / consumer-ChatGPT share the OpenAI mark
   "openai-codex": "openai",
@@ -41,17 +44,73 @@ const SLUGS: Record<string, string> = {
   "google-gemini-cli": "gemini",
   "gemini-cli": "gemini",
   "gemini-subscription": "gemini",
-  // Cloud providers
+  // Cloud providers (amazon-bedrock gets stripped to bedrock by the
+  // prefix rule below, but azure-openai-responses needs the explicit
+  // "land on the azure brand" mapping)
   "azure-openai-responses": "azure",
-  "amazon-bedrock": "bedrock",
   // Inference gateways
   "vercel-ai-gateway": "vercel",
-  // Chinese providers — LobeHub keys these slightly differently
-  "minimax-cn": "minimax",
-  "kimi-coding": "moonshot",
-  // GitHub Copilot's slug isn't ``github-copilot``
+  // GitHub Copilot's LobeHub slug is the squashed form
   "github-copilot": "githubcopilot",
 };
+
+
+/** Suffixes that just qualify *which flavour* of a provider this is
+ *  (Chinese region, Coding plan, Workers Edge, Token Plan tier, …)
+ *  but don't change the underlying brand. LobeHub keys its icons on
+ *  the brand, so stripping these gets us a hit. Ordered longest-
+ *  first so we don't peel off a ``-cn`` and miss the ``-coding-plan-cn``
+ *  it was actually part of. */
+const _STRIP_SUFFIXES = [
+  "-token-plan-cn",
+  "-token-plan-ams",
+  "-token-plan-sgp",
+  "-token-plan",
+  "-coding-plan-cn",
+  "-coding-plan",
+  "-ai-gateway",
+  "-workers-ai",
+  "-for-coding",
+  "-coding",
+  "-responses",
+  "-ai",
+  "-cn",
+];
+
+/** Build the ordered list of slugs to try against LobeHub for a
+ *  given provider id. Explicit mapping (if any) wins; raw id next;
+ *  then strip common qualifier suffixes one at a time so e.g.
+ *  ``alibaba-coding-plan-cn`` → ``alibaba-coding-plan`` →
+ *  ``alibaba`` → hit. Also strips the ``amazon-`` prefix so
+ *  ``amazon-bedrock`` → ``bedrock``. Deduped; original order
+ *  preserved. */
+function slugCandidates(id: string): string[] {
+  const out: string[] = [];
+  const push = (s: string) => {
+    if (s && !out.includes(s)) out.push(s);
+  };
+  const mapped = SLUGS[id];
+  if (mapped) push(mapped);
+  push(id);
+
+  let cur = id;
+  for (let i = 0; i < 3; i++) {
+    let stripped = cur;
+    for (const sfx of _STRIP_SUFFIXES) {
+      if (stripped.endsWith(sfx)) {
+        stripped = stripped.slice(0, -sfx.length);
+        break;
+      }
+    }
+    if (stripped === cur || !stripped) break;
+    push(stripped);
+    cur = stripped;
+  }
+
+  if (id.startsWith("amazon-")) push(id.slice("amazon-".length));
+
+  return out;
+}
 
 const LOBEHUB_CDN = "https://unpkg.com/@lobehub/icons-static-svg@1.90.0/icons/";
 const MODELS_DEV_CDN = "https://models.dev/logos/";
@@ -117,10 +176,14 @@ async function _loadSvg(id: string): Promise<string | null> {
 
 
 export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
-  const slug = SLUGS[id] ?? id;
+  const candidates = slugCandidates(id);
   const letter = (id[0] || "?").toUpperCase();
   // Tier index: 0=lobe-color, 1=lobe-mono, 2=models.dev (inline), 3=letter.
   const [tier, setTier] = useState<0 | 1 | 2 | 3>(0);
+  // Within the LobeHub tiers, walk ``candidates`` one by one on
+  // 404. Reset to 0 when we move from colour → mono so the same
+  // candidate list gets tried again at the mono CDN.
+  const [slugIdx, setSlugIdx] = useState(0);
   const [svg, setSvg] = useState<string | null | undefined>(undefined);
 
   // Kick off the models.dev fetch the moment we land on tier 2. We
@@ -170,6 +233,7 @@ export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
     );
   }
 
+  const slug = candidates[slugIdx] ?? id;
   const url =
     tier === 0
       ? `${LOBEHUB_CDN}${encodeURIComponent(slug)}-color.svg`
@@ -182,7 +246,17 @@ export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
         key={url}
         src={url}
         alt={id}
-        onError={() => setTier((t) => (t < 3 ? ((t + 1) as 0 | 1 | 2 | 3) : 3))}
+        onError={() => {
+          // Walk the candidate list within the current tier first;
+          // only escalate to the next tier (mono → models.dev →
+          // letter) once we've exhausted every slug variant.
+          if (slugIdx + 1 < candidates.length) {
+            setSlugIdx(slugIdx + 1);
+          } else {
+            setSlugIdx(0);
+            setTier((t) => (t < 3 ? ((t + 1) as 0 | 1 | 2 | 3) : 3));
+          }
+        }}
       />
     </div>
   );
