@@ -194,6 +194,16 @@ html, body {
   overflow: hidden;
   font-size: 14px;
   line-height: 1.5;
+  /* Lock font rendering to grayscale antialiasing in BOTH themes.
+     Without this, macOS / Safari swap to subpixel rendering on
+     light backgrounds and to a different smoothing on dark, so
+     identical font-weight rules visually read as "lighter in
+     dark mode, heavier in light mode" — a swap of theme drifts
+     the perceived boldness. Forcing antialiased + grayscale keeps
+     weight consistent across the switch. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* Native form elements default to the browser's UI font instead of
