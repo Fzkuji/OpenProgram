@@ -67,6 +67,25 @@ def _log(text: str) -> None:
         print(text, file=_sys.stderr, flush=True)
 
 
+def _any_agent_has_pinned_provider() -> bool:
+    """True if any saved agent has a non-empty ``model.provider``.
+
+    Used by ``_init_providers`` to suppress the "no provider available"
+    warning when auto-detection fails but an agent has a pin that the
+    CLI's ``_get_chat_runtime`` will honour next. Best-effort: any
+    error means "we don't know" which we treat conservatively as False
+    so a genuinely-broken install still gets the warning.
+    """
+    try:
+        from openprogram.agents import manager as _A
+        for spec in _A.list_all():
+            if spec.model and (spec.model.provider or "").strip():
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def _user_log(text: str) -> None:
     """Important event that should surface to the user.
 
@@ -342,12 +361,21 @@ def _init_providers():
             # path still logs to file via ``_log``.
             _log(f"[detect] {provider_name} OK")
         else:
-            # No provider at all is something the user must see.
-            _user_log(
-                "openprogram: no LLM provider configured.\n"
-                "  Run `openprogram providers setup` to connect one,\n"
-                "  or `openprogram providers login <name>` for a specific provider."
-            )
+            # Auto-detect failed, but an agent may still have a pinned
+            # provider that bypasses ``_is_configured`` (e.g.
+            # ``_is_configured("openai-codex")`` returns False under
+            # some config-file layouts even when an OAuth token is in
+            # AuthManager). Suppress the user-visible "no provider"
+            # warning when any agent has a pinned model.provider —
+            # ``_cli_chat.setup._get_chat_runtime`` will try it next
+            # and the banner will say so.
+            _log("[detect] no provider via auto-detect")
+            if not _any_agent_has_pinned_provider():
+                _user_log(
+                    "openprogram: no LLM provider configured.\n"
+                    "  Run `openprogram providers setup` to connect one,\n"
+                    "  or `openprogram providers login <name>` for a specific provider."
+                )
 
         _chat_provider = provider_name
         _chat_model = rt.model if rt else None
