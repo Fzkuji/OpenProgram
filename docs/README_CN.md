@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="GETTING_STARTED.md">快速上手</a> &middot;
+  <a href="README.md">文档入口</a> &middot;
   <a href="API.md">API 参考</a> &middot;
   <a href="philosophy/agentic-programming.md">设计哲学</a> &middot;
   <a href="../README.md">English</a>
@@ -100,7 +101,7 @@ pip install "openprogram[web]"
 openprogram web
 ```
 
-访问 `http://localhost:8765`，即可交互式创建、运行、修复函数。支持明暗主题（Settings → General）。
+访问 `http://localhost:3000`。Next.js 前端运行在 3000，FastAPI 后端默认运行在 8109。支持明暗主题（Settings → General）。
 
 ---
 

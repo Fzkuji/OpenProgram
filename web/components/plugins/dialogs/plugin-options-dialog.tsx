@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/plugins-store";
+import { useTranslation } from "@/lib/i18n";
 
 interface Props {
   name: string;
@@ -52,6 +53,7 @@ function normaliseSchema(raw: unknown): Schema {
 }
 
 export function PluginOptionsDialog({ name, onClose }: Props) {
+  const { t, text } = useTranslation();
   const { getOptions, setOptions } = usePluginsStore();
   const [schema, setSchema] = useState<Schema>({});
   const [values, setValues] = useState<Record<string, string | number | boolean>>({});
@@ -117,7 +119,7 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
       try {
         payload = JSON.parse(rawText);
       } catch (e) {
-        setErr(`JSON parse failed: ${(e as Error).message}`);
+        setErr(text(`JSON parse failed: ${(e as Error).message}`, `JSON 解析失败：${(e as Error).message}`));
         return;
       }
     } else {
@@ -132,14 +134,14 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
         if (f.type === "number") {
           if (v === "" || v === null || v === undefined) {
             if (f.required) {
-              setErr(`Field ${k} is required`);
+              setErr(text(`Field ${k} is required`, `字段 ${k} 为必填项`));
               return;
             }
             continue;
           }
           const n = Number(v);
           if (Number.isNaN(n)) {
-            setErr(`Field ${k} is not a valid number`);
+            setErr(text(`Field ${k} is not a valid number`, `字段 ${k} 不是有效数字`));
             return;
           }
           payload[k] = n;
@@ -147,7 +149,7 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
           payload[k] = Boolean(v);
         } else {
           if (f.required && (v === "" || v === undefined)) {
-            setErr(`Field ${k} is required`);
+            setErr(text(`Field ${k} is required`, `字段 ${k} 为必填项`));
             return;
           }
           payload[k] = v ?? "";
@@ -173,13 +175,13 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
         style={{ width: "min(560px, 90vw)" }}
       >
         <div className="flex items-center justify-between gap-3">
-          <div className={styles.dialogTitle}>{name} options</div>
+          <div className={styles.dialogTitle}>{text(`${name} options`, `${name} 选项`)}</div>
           {hasSchema && (
             <button
               onClick={() => setRawMode((v) => !v)}
               className="text-xs text-[var(--text-secondary)] hover:text-nav-color-hover"
             >
-              {rawMode ? "Form" : "Raw JSON"}
+              {rawMode ? text("Form", "表单") : "Raw JSON"}
             </button>
           )}
         </div>
@@ -198,7 +200,7 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
                   <label className="block text-xs font-semibold text-[var(--text-bright)] mb-1">
                     {f.title || k}
                     {f.required && <span className="ml-1 text-[var(--accent-red,#ef4444)]">*</span>}
-                    {f.sensitive && <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-400">sensitive</span>}
+                    {f.sensitive && <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-400">{text("sensitive", "敏感")}</span>}
                   </label>
                   {f.description && (
                     <div className="text-[11px] text-[var(--text-tertiary)] mb-1">{f.description}</div>
@@ -210,7 +212,7 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
                         checked={Boolean(values[k])}
                         onChange={(e) => update(k, e.target.checked)}
                       />
-                      <span className="text-[var(--text-secondary)]">enabled</span>
+                      <span className="text-[var(--text-secondary)]">{text("enabled", "已启用")}</span>
                     </label>
                   ) : f.enum && f.enum.length > 0 ? (
                     <select
@@ -227,7 +229,7 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
                       type={f.sensitive ? "password" : f.type === "number" ? "number" : "text"}
                       value={String(values[k] ?? "")}
                       onChange={(e) => update(k, e.target.value)}
-                      placeholder={f.sensitive ? "(unchanged)" : f.default !== undefined ? String(f.default) : ""}
+                      placeholder={f.sensitive ? text("(unchanged)", "（不变）") : f.default !== undefined ? String(f.default) : ""}
                       className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-sm"
                     />
                   )}
@@ -238,9 +240,9 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
           {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 10 }}>{err}</div>}
         </div>
         <div className={styles.dialogActions}>
-          <button className={styles.btn} onClick={onClose} disabled={busy}>Cancel</button>
+          <button className={styles.btn} onClick={onClose} disabled={busy}>{t("sidebar.cancel")}</button>
           <button className={styles.btnPrimary} onClick={save} disabled={busy}>
-            {busy ? "Saving…" : "Save"}
+            {busy ? text("Saving...", "保存中...") : text("Save", "保存")}
           </button>
         </div>
       </div>

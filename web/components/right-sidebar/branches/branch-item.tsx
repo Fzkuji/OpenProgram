@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useTranslation } from "@/lib/i18n";
+
 import {
   DEL_SVG,
   RENAME_SVG,
@@ -37,6 +39,7 @@ export function BranchItem({
   onToggleSelect: (headId: string, e: React.MouseEvent) => void;
   onSetBase: (headId: string, e: React.MouseEvent) => void;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(branch.name || "");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -82,12 +85,7 @@ export function BranchItem({
   function del(e: React.MouseEvent) {
     e.stopPropagation();
     if (isPending) return;
-    if (
-      !window.confirm(
-        "Delete this branch and its messages? This cannot be undone.",
-      )
-    )
-      return;
+    if (!window.confirm(t("right.delete_branch_confirm"))) return;
     wsSend({
       action: "delete_branch",
       session_id: sessionId,
@@ -115,10 +113,10 @@ export function BranchItem({
         className="branch-item-check"
         title={
           isPending
-            ? "Task is running — wait for it to finish before merging"
+            ? t("right.task_running_merge_wait")
             : (selected
-                ? "Click again to deselect; ⌘-click to mark as base"
-                : "Select for merge (⌘-click to mark as base)")
+                ? t("right.deselect_base_hint")
+                : t("right.select_merge_hint"))
         }
         onClick={(e) => {
           if (isPending) {
@@ -165,19 +163,19 @@ export function BranchItem({
       ) : (
         <span className="branch-item-name">{branch.name}</span>
       )}
-      {branch.active ? <span className="branch-item-badge">HEAD</span> : null}
+      {branch.active ? <span className="branch-item-badge">{t("right.head")}</span> : null}
       {isPending ? (
         <span
           className="branch-item-badge"
           style={{ background: "rgba(160, 107, 255, 0.18)" }}
         >
-          running
+          {t("right.running")}
         </span>
       ) : null}
       <span className="branch-item-actions">
         <span
           className="branch-item-action branch-item-rename"
-          title="Rename branch"
+          title={t("right.rename_branch")}
           onClick={(e) => {
             e.stopPropagation();
             setValue(branch.name || "");
@@ -188,7 +186,7 @@ export function BranchItem({
         </span>
         <span
           className="branch-item-action branch-item-del"
-          title="Delete branch"
+          title={t("right.delete_branch")}
           onClick={del}
         >
           {DEL_SVG}

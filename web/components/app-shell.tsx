@@ -14,6 +14,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/chat-stream";
 import { convToChatMsgs } from "@/lib/conv-mapper";
 import { useColResize } from "@/lib/use-col-resize";
+import { useTranslation } from "@/lib/i18n";
 // Migrated legacy modules — imported for side effects (they install
 // their `window.*` bridges for the still-legacy scripts).
 import "@/lib/runtime-bridge/state";
@@ -111,6 +112,7 @@ function isChatRoute(pathname: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { t } = useTranslation();
 
   // Background route warm-up. After AppShell paints and the main
   // thread goes idle, prefetch each commonly-used route in priority
@@ -315,9 +317,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const detailBody = document.getElementById("detailBody");
       if (detailBody) {
         detailBody.innerHTML =
-          '<div class="detail-empty">No execution selected.<br/>' +
-          "<span>Click a node in the conversation tree to inspect " +
-          "its context and output.</span></div>";
+          `<div class="detail-empty">${t("right.no_execution")}<br/>` +
+          `<span>${t("right.no_execution_hint")}</span></div>`;
       }
       const detailTitle = document.getElementById("detailTitle");
       if (detailTitle) detailTitle.textContent = "";
@@ -325,7 +326,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // The React `<Sidebar />` renders nav items synchronously on mount,
     // so depending on `pathname` alone is sufficient now — no need to
     // wait for an async HTML inject before the first .active sync.
-  }, [pathname]);
+  }, [pathname, router, t]);
 
   useEffect(() => {
     // Expose a client-side navigation helper vanilla JS can call instead of

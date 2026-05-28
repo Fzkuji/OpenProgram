@@ -2,32 +2,20 @@
  * Effort pill — the trigger IS the picker.
  *
  * Collapsed: a pill that reads `effort: medium ⌄`, sized to its content.
- * Click to expand.
+ * Hover to expand.
  *
- * Expanded: the same pill animates its width out and the caret/text
- * content swaps for `{value}` + an inline ``<Slider />``. Dragging the
- * slider only updates the value — it doesn't collapse. Closes when the
- * user clicks anywhere outside the composer wrapper (the document-level
- * click-outside handler in the composer flips ``expanded`` back to
- * ``false``).
+ * Expanded: the same pill expands to the right and swaps its label for
+ * the current value plus an inline slider.
  *
- * Layout: the pill is wrapped in a ``position: relative`` host that
- * keeps the collapsed footprint reserved in the bottom-row flex flow.
- * The visible pill is ``position: absolute`` on top of that footprint,
- * so when it expands it floats over the rest of the row without
- * shoving the context badge / other controls aside.
+ * Layout: the pill is wrapped in a ``position: relative`` host. The
+ * visible pill is absolute so expanding it does not resize the row.
  *
  * Extracted from composer/index.tsx to keep that file under the
  * project's no-1000-line-files rule.
  */
 "use client";
 
-import React, {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Slider } from "@/components/ui/slider";
 import { Lightning } from "@phosphor-icons/react/dist/ssr";
@@ -58,15 +46,23 @@ export const ThinkingEffortPill = React.forwardRef<
   // Exactly one option → the effort is fixed (e.g. claude-code, where
   // the proxy ignores reasoning_effort and the value is always
   // "auto"). Show it as a static label — no caret, no expand, no
-  // slider, not clickable. A dropdown with a single choice is dead UI.
+  // slider, not clickable. A dropdown with a single choice is not useful.
   if (options.length === 1) {
     return (
       <div
         ref={ref}
-        className="inline-flex h-[32px] items-center rounded-full pl-[14px] pr-[14px] text-[14px] text-text-primary select-none whitespace-nowrap"
+        className="effort-pill-fixed inline-flex h-[32px] items-center gap-[5px] rounded-full pl-[14px] pr-[14px] text-[14px] text-text-primary select-none whitespace-nowrap"
         style={{ backgroundColor: "var(--effort-off-bg)" }}
       >
-        <span>Effort: {capEffort(options[0].value)}</span>
+        <Lightning
+          size={18}
+          weight="fill"
+          className="effort-pill-compact-icon text-text-primary"
+          aria-hidden="true"
+        />
+        <span className="effort-pill-collapsed-label">
+          Effort: {capEffort(options[0].value)}
+        </span>
       </div>
     );
   }
@@ -105,9 +101,8 @@ const ThinkingEffortSliderPill = React.forwardRef<
   );
   const maxIndex = Math.max(0, options.length - 1);
   // Lightning size scales linearly with effort: from 10px at the
-  // `off` end to 18px at `xhigh`. A single bolt rides on the thumb
-  // — its position tells "where on the scale" and its size tells
-  // "how much effort" at a glance.
+  // `off` end to 18px at `xhigh`. The icon is rendered at the slider
+  // thumb; position and size both encode the current value.
   const lightningSize =
     maxIndex > 0
       ? Math.round(10 + (valueIndex / maxIndex) * 8)
@@ -145,9 +140,8 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // `--slider-active` CSS custom property.
   const activeColor = `color-mix(in srgb, ${warmHue} 72%, transparent)`;
 
-  // Fully-opaque variant for the Lightning bolt itself — it floats
-  // above the ring as a standalone glyph and would look faded if it
-  // inherited the half-alpha `--slider-active`.
+  // Fully-opaque variant for the Lightning icon. It stays visually
+  // distinct from the half-alpha `--slider-active` track color.
   const activeColorSolid = warmHue;
 
   // Measure the spacer so the collapsed pill width exactly matches
@@ -160,7 +154,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // renders at the 120px placeholder (also what SSR ships), then the
   // layout effect below corrects it to the real measured width. If
   // the transition were live, that 120 → real correction would
-  // visibly "bounce" on every page load.
+  // visibly animate on every page load.
   //
   // Critically, `measured` must flip to true in a LATER render than
   // the width correction — if both happen in the same render the
@@ -182,43 +176,31 @@ const ThinkingEffortSliderPill = React.forwardRef<
   return (
     <div
       ref={ref}
-      className="relative inline-flex h-[32px] items-center"
+      className="effort-pill-host relative inline-flex h-[32px] items-center"
       data-effort-expanded={expanded ? "true" : undefined}
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
     >
-      {/* Invisible spacer keeps the collapsed pill's footprint in the
-          flex layout so expanding doesn't push the context badge or
-          other controls. Mirrors the collapsed pill content exactly. */}
+      {/* Invisible spacer reserves the collapsed pill width in the flex
+          layout. It mirrors the collapsed pill content exactly. */}
       <span
         ref={spacerRef}
         aria-hidden="true"
         // `whitespace-nowrap` + `shrink-0` keep the spacer measuring
         // its FULL single-line content width even when the parent
         // flex row would otherwise compress it (which would wrap the
-        // text and make the spacer report a too-narrow offsetWidth,
-        // dragging the pill down with it).
-        className="invisible inline-flex shrink-0 items-center gap-[5px] pl-[14px] pr-[10px] text-[14px] whitespace-nowrap"
+        // text and make the spacer report a too-narrow offsetWidth.
+        className="effort-pill-spacer invisible inline-flex shrink-0 items-center gap-[5px] pl-[14px] pr-[10px] text-[14px] whitespace-nowrap"
       >
         <span>Effort: {capEffort(value)}</span>
         <CaretIcon />
       </span>
 
-      {/* Visible pill. Only the WIDTH and the background colour
-          animate — the two content layers below switch via
-          `display: none` rather than opacity, so there's no
-          fade-in/fade-out crossfade (the user explicitly wanted
-          this gone). The slider lives in a fixed-260px-wide layer,
-          so as the pill expands the slider's internal layout never
-          recalculates — `overflow: hidden` on the pill just reveals
-          progressively more of the same stable layer.
-
-          Pill widths: 132px collapsed → 260px expanded (narrower
-          than the previous 340 since the slider track + icons
-          read fine in a tighter footprint). */}
+      {/* Visible pill. It stays in the bottom row and expands to the right. */}
       <div
+        data-expanded={expanded ? "true" : undefined}
         className={[
-          "absolute left-0 top-0 h-[32px] overflow-hidden",
+          "effort-pill-shell absolute left-0 top-0 h-[32px] overflow-hidden",
           "rounded-full select-none",
           "text-[14px]",
           // Width transition is gated on `measured` so the first-mount
@@ -245,26 +227,28 @@ const ThinkingEffortSliderPill = React.forwardRef<
           ["--slider-active-solid" as string]: activeColorSolid,
         } as React.CSSProperties}
       >
-        {/* Collapsed content. `hidden` (display: none) when expanded
-            so there's no overlap / fade — instant swap on toggle.
-            `whitespace-nowrap` keeps the label on a single line at
-            the same width the spacer measured. */}
         <div
           className={[
-            "h-full flex items-center gap-[5px] pl-[14px] pr-[10px] whitespace-nowrap",
+            "effort-pill-collapsed h-full flex items-center gap-[5px] pl-[14px] pr-[10px] whitespace-nowrap",
             expanded ? "hidden" : "",
           ].join(" ")}
         >
-          <span>Effort: {capEffort(value)}</span>
-          <CaretIcon />
+          <Lightning
+            size={18}
+            weight="fill"
+            className="effort-pill-compact-icon text-[var(--slider-active-solid)]"
+            aria-hidden="true"
+          />
+          <span className="effort-pill-collapsed-label">
+            Effort: {capEffort(value)}
+          </span>
+          <span className="effort-pill-caret">
+            <CaretIcon />
+          </span>
         </div>
-
-        {/* Expanded content. Fixed 260px wide so the slider track +
-            tick math don't recompute mid-transition. Hidden via
-            display:none when collapsed. */}
         <div
           className={[
-            "h-full flex items-center gap-[10px] px-[12px]",
+            "effort-pill-expanded h-full flex items-center gap-[10px] px-[12px]",
             !expanded ? "hidden" : "",
           ].join(" ")}
           style={{ width: 260 }}
@@ -283,36 +267,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
               const next = options[idx];
               if (next) onChange(next.value);
             }}
-            // Stop click from bubbling to the pill's onClick.
             onClick={(e) => e.stopPropagation()}
-            // The thumb itself is a Lightning bolt that travels with
-            // the value. Size scales from 10px (off) → 22px (xhigh)
-            // so position tells you "where" and size tells you
-            // "how much" simultaneously. Colour is the same effort
-            // hue used by the filled range (via `--slider-active`).
-            // `aria-hidden` on the icon since the slider Root
-            // already announces value/min/max.
             thumb={
               <>
-                {/* Hollow-looking ring around the bolt:
-                    - Interior is painted in `bg-bg-hover` (the
-                      expanded pill's own background), so it appears
-                      "transparent" against the surrounding pill and
-                      visually cuts the slider track + any tick at
-                      the thumb's position.
-                    - The 1px border in soft `text-bright` gives the
-                      shape a visible outline so it reads as a ring,
-                      not just an invisible mask.
-                    Sized 4px wider than the bolt so the cut feels
-                    generous and the ring frames the glyph cleanly. */}
                 <span
                   aria-hidden="true"
-                  // Ring scales with the bolt — always `lightningSize
-                  // + 8`, so as effort climbs both the bolt and its
-                  // frame grow together (the bolt still sits proudly
-                  // inside the ring rather than bursting through it).
-                  // Size animates with the same 150ms easing as the
-                  // bolt's `transition-[width,height]`.
                   className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover border-[3px] border-[color-mix(in_srgb,var(--text-bright)_40%,transparent)] transition-[width,height] duration-150 ease-out"
                   style={{
                     width: lightningSize + 8,

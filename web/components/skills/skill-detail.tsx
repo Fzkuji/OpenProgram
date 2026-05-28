@@ -3,13 +3,15 @@
 import { useSkills } from "@/lib/skills-store";
 import { Markdown } from "@/lib/markdown";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n";
 
 export function SkillDetail() {
+  const { t, text } = useTranslation();
   const { detail, deleteSkill } = useSkills();
   if (!detail) {
     return (
       <div className="p-6 text-sm text-[var(--text-tertiary)]">
-        Select a skill to view its SKILL.md and resources.
+        {text("Select a skill to view its SKILL.md and resources.", "选择一个技能查看它的 SKILL.md 和资源。")}
       </div>
     );
   }
@@ -31,10 +33,10 @@ export function SkillDetail() {
             variant="destructive"
             size="sm"
             onClick={() => {
-              if (confirm(`Delete skill "${detail.name}"?`)) deleteSkill(detail.name);
+              if (confirm(text(`Delete skill "${detail.name}"?`, `删除技能“${detail.name}”？`))) deleteSkill(detail.name);
             }}
           >
-            Delete
+            {t("sidebar.delete")}
           </Button>
         )}
       </div>
@@ -42,7 +44,7 @@ export function SkillDetail() {
         {detail.resources.length > 0 && (
           <div className="mb-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-2">
-              Resources
+              {text("Resources", "资源")}
             </h3>
             <ul className="space-y-1 text-xs font-mono text-[var(--text-secondary)]">
               {detail.resources.map((r) => (

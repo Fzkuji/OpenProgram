@@ -5,6 +5,7 @@ import { ChevronRight, X } from "lucide-react";
 import type { ContextTreeNode } from "@/lib/types";
 import { cn, formatDuration } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n";
 
 interface Props {
   tree: ContextTreeNode | null;
@@ -13,18 +14,19 @@ interface Props {
 
 /** Right-rail panel that visualizes the live execution tree. */
 export function TreePanel({ tree, onClose }: Props) {
+  const { text } = useTranslation();
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-l border-(--border) bg-(--bg-elevated)">
       <div className="flex h-12 items-center justify-between border-b border-(--border) px-3">
-        <span className="text-[13px] font-medium text-(--fg)">Execution tree</span>
-        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close">
+        <span className="text-[13px] font-medium text-(--fg)">{text("Execution tree", "执行树")}</span>
+        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={text("Close", "关闭")}>
           <X size={14} />
         </Button>
       </div>
       <div className="scroll-y min-h-0 flex-1 p-2">
         {!tree ? (
           <p className="px-2 py-3 text-xs text-(--fg-subtle)">
-            No execution yet. Start a function or chat with tools enabled.
+            {text("No execution yet. Start a function or chat with tools enabled.", "还没有执行记录。运行函数或启用工具后开始对话即可显示。")}
           </p>
         ) : (
           <TreeRow node={tree} depth={0} />
@@ -37,6 +39,7 @@ export function TreePanel({ tree, onClose }: Props) {
 function TreeRow({ node, depth }: { node: ContextTreeNode; depth: number }) {
   const [open, setOpen] = useState(depth < 2);
   const [showDetails, setShowDetails] = useState(false);
+  const { text } = useTranslation();
   const children = Array.isArray(node.children) ? node.children : [];
   const status = (node.status as string | undefined) ?? "";
   const running = node._in_progress || status === "running";
@@ -59,7 +62,7 @@ function TreeRow({ node, depth }: { node: ContextTreeNode; depth: number }) {
             "flex h-4 w-4 shrink-0 items-center justify-center rounded text-(--fg-subtle)",
             children.length === 0 && "invisible",
           )}
-          aria-label={open ? "Collapse" : "Expand"}
+          aria-label={open ? text("Collapse", "折叠") : text("Expand", "展开")}
         >
           <ChevronRight
             size={11}
@@ -84,8 +87,8 @@ function TreeRow({ node, depth }: { node: ContextTreeNode; depth: number }) {
           className="ml-6 mt-1 mb-1.5 rounded-md border border-(--border) bg-(--bg-base) px-2 py-1.5 text-[11px]"
           style={{ marginLeft: 22 + depth * 12 }}
         >
-          {node.inputs && <Detail label="inputs" value={node.inputs} />}
-          {node.outputs !== undefined && <Detail label="outputs" value={node.outputs} />}
+          {node.inputs && <Detail label={text("inputs", "输入")} value={node.inputs} />}
+          {node.outputs !== undefined && <Detail label={text("outputs", "输出")} value={node.outputs} />}
         </div>
       )}
       {open && children.length > 0 && (

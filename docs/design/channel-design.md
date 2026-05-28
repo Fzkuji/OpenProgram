@@ -266,7 +266,7 @@ openprogram/channels/   14 文件
 | **Slack** | Socket Mode (slack_sdk) | `chat.postMessage` / `chat.update` | ✓ | bot_token (xoxb-) + app_token (xapp-) |
 | **WeChat** | iLink `getupdates` 长轮询 | iLink `sendmessage` | ✗ (iLink 不支持 edit) | 个微扫码登录, 无企业认证门槛 |
 
-详见 [`channel-platforms.md`](./channel-platforms.md) (如有，否则各 adapter 顶部 docstring)。
+平台差异以本表和各 adapter 顶部 docstring 为准。
 
 ## 7. 用户入口
 

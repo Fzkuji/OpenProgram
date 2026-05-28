@@ -3,18 +3,21 @@
 import { useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore, type PluginRow } from "@/lib/plugins-store";
+import { useTranslation } from "@/lib/i18n";
 import { PluginTrustWarning } from "../dialogs/plugin-trust-warning";
 import { PluginOptionsDialog } from "../dialogs/plugin-options-dialog";
 import { ValidatePluginDialog } from "../dialogs/validate-plugin";
 import { PluginDetailDialog } from "../dialogs/plugin-detail";
 
 function TrustBadge({ level }: { level: string }) {
-  if (level === "verified") return <span className={styles.badgeVerified}>verified</span>;
-  if (level === "community") return <span className={styles.badgeCommunity}>community</span>;
-  return <span className={styles.badgeUntrusted}>untrusted</span>;
+  const { text } = useTranslation();
+  if (level === "verified") return <span className={styles.badgeVerified}>{text("verified", "已验证")}</span>;
+  if (level === "community") return <span className={styles.badgeCommunity}>{text("community", "社区")}</span>;
+  return <span className={styles.badgeUntrusted}>{text("untrusted", "未信任")}</span>;
 }
 
 export function InstalledList() {
+  const { text } = useTranslation();
   const { plugins, toggle, uninstall, reload } = usePluginsStore();
   const [trustDialog, setTrustDialog] = useState<PluginRow | null>(null);
   const [optsDialog, setOptsDialog] = useState<PluginRow | null>(null);
@@ -43,7 +46,7 @@ export function InstalledList() {
   };
 
   if (plugins.length === 0) {
-    return <div className={styles.empty}>暂无已安装插件。可从 Marketplace 安装或本地 pin 一个目录。</div>;
+    return <div className={styles.empty}>{text("No installed plugins. Install from Marketplace or pin a local directory.", "暂无已安装插件。可从 Marketplace 安装或本地 pin 一个目录。")}</div>;
   }
 
   return (
@@ -60,8 +63,8 @@ export function InstalledList() {
             <div className={styles.rowMeta}>
               <TrustBadge level={p.trust} />
               <span className={styles.badge}>{p.source}</span>
-              {p.deprecated && <span className={styles.badgeUntrusted}>deprecated</span>}
-              {p.error && <span className={styles.badgeUntrusted}>error</span>}
+              {p.deprecated && <span className={styles.badgeUntrusted}>{text("deprecated", "已废弃")}</span>}
+              {p.error && <span className={styles.badgeUntrusted}>{text("error", "错误")}</span>}
             </div>
             {p.description && <div className={styles.rowDesc}>{p.description}</div>}
           </div>
@@ -69,12 +72,12 @@ export function InstalledList() {
             className={p.enabled ? styles.toggleOn : styles.toggle}
             onClick={() => tryToggle(p)}
             disabled={busy === p.name}
-            title={p.enabled ? "Disable" : "Enable"}
+            title={p.enabled ? text("Disable", "禁用") : text("Enable", "启用")}
           >
             <span className={p.enabled ? styles.toggleKnobOn : styles.toggleKnob} />
           </button>
-          <button className={styles.btn} onClick={() => setOptsDialog(p)}>Options</button>
-          <button className={styles.btn} onClick={() => setValidateDialog(p)}>Validate</button>
+          <button className={styles.btn} onClick={() => setOptsDialog(p)}>{text("Options", "选项")}</button>
+          <button className={styles.btn} onClick={() => setValidateDialog(p)}>{text("Validate", "校验")}</button>
           <button
             className={styles.btn}
             onClick={async () => {
@@ -82,8 +85,8 @@ export function InstalledList() {
               try { await reload(p.name); } finally { setBusy(""); }
             }}
             disabled={busy === p.name}
-          >Reload</button>
-          <button className={styles.btn} onClick={() => setDetailDialog(p)}>Detail</button>
+          >{text("Reload", "重新加载")}</button>
+          <button className={styles.btn} onClick={() => setDetailDialog(p)}>{text("Detail", "详情")}</button>
           <button
             className={styles.btnDanger}
             onClick={async () => {
@@ -97,7 +100,7 @@ export function InstalledList() {
               }
             }}
             disabled={busy === p.name}
-          >Uninstall</button>
+          >{text("Uninstall", "卸载")}</button>
         </div>
       ))}
 

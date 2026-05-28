@@ -10,6 +10,7 @@ import { ProviderIcon } from "../provider-icon";
 
 import styles from "../settings-page.module.css";
 import { formatCtx, type Model, type Provider } from "./types";
+import { useTranslation } from "@/lib/i18n";
 
 /** Searchable + bulk-toggleable list of a provider's models, plus a
  *  "Fetch models" button when the backend can refresh from the
@@ -27,6 +28,7 @@ export function ModelList({
   onSearch: (s: string) => void;
   onReload: () => void;
 }) {
+  const { text } = useTranslation();
   const enabledCount = models.filter((m) => m.enabled).length;
   const filtered = !search
     ? models
@@ -71,7 +73,7 @@ export function ModelList({
 
   const [fetchStatus, setFetchStatus] = useState<string | null>(null);
   async function fetchRemote() {
-    setFetchStatus("Fetching…");
+    setFetchStatus(text("Fetching...", "获取中..."));
     try {
       const r = await fetch(
         `/api/providers/${encodeURIComponent(provider.id)}/fetch-models`,
@@ -83,7 +85,7 @@ export function ModelList({
       );
       const d = await r.json();
       if (d.error) {
-        setFetchStatus("Failed: " + d.error);
+        setFetchStatus(text("Failed: ", "失败：") + d.error);
         // Auto-clear failure message after 6 s so the row resets.
         setTimeout(() => setFetchStatus(null), 6_000);
         return;
@@ -91,13 +93,13 @@ export function ModelList({
       // Brief summary; added > 0 → new rows merged; added == 0 →
       // registry already had everything the provider returned.
       const summary = d.added > 0
-        ? `Fetched ${d.fetched}, added ${d.added} new`
-        : `Fetched ${d.fetched} — already up to date`;
+        ? text(`Fetched ${d.fetched}, added ${d.added} new`, `已获取 ${d.fetched} 个，新增 ${d.added} 个`)
+        : text(`Fetched ${d.fetched} - already up to date`, `已获取 ${d.fetched} 个，已是最新`);
       setFetchStatus(summary);
       onReload();
       setTimeout(() => setFetchStatus(null), 4_000);
     } catch (e) {
-      setFetchStatus("Failed: " + (e as Error).message);
+      setFetchStatus(text("Failed: ", "失败：") + (e as Error).message);
       setTimeout(() => setFetchStatus(null), 6_000);
     }
   }
@@ -106,9 +108,9 @@ export function ModelList({
     <div className={styles.detailSection}>
       <div className={styles.detailSectionTitle}>
         <span>
-          Models{" "}
+          {text("Models", "模型")}{" "}
           <span className={styles.modelCountSummary}>
-            {enabledCount} / {models.length} available
+            {text(`${enabledCount} / ${models.length} available`, `${enabledCount} / ${models.length} 可用`)}
           </span>
         </span>
         <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -119,21 +121,21 @@ export function ModelList({
           )}
           {provider.supports_fetch && (
             <Button variant="outline" size="sm" onClick={fetchRemote}>
-              Fetch models
+              {text("Fetch models", "获取模型")}
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={() => bulkToggle(true)}>
-            Enable all
+            {text("Enable all", "全部启用")}
           </Button>
           <Button variant="outline" size="sm" onClick={() => bulkToggle(false)}>
-            Disable all
+            {text("Disable all", "全部禁用")}
           </Button>
         </span>
       </div>
       <div className={styles.modelSearch}>
         <input
           type="search"
-          placeholder="Search models…"
+          placeholder={text("Search models...", "搜索模型...")}
           value={search}
           onChange={(e) => onSearch(e.target.value)}
         />
@@ -162,11 +164,12 @@ function ModelRow({
   model: Model;
   onToggle: (enabled: boolean) => void;
 }) {
+  const { text } = useTranslation();
   const caps: React.ReactNode[] = [];
-  if (model.vision) caps.push(<span key="v" className={styles.capBadge + " " + styles.vision} title="Vision"><Eye size={11} strokeWidth={1.8} /></span>);
-  if (model.video) caps.push(<span key="vid" className={styles.capBadge + " " + styles.video} title="Video"><Video size={11} strokeWidth={1.8} /></span>);
-  if (model.tools) caps.push(<span key="t" className={styles.capBadge + " " + styles.tools} title="Tools"><Wrench size={11} strokeWidth={1.8} /></span>);
-  if (model.reasoning) caps.push(<span key="r" className={styles.capBadge + " " + styles.reasoning} title="Reasoning"><Brain size={11} strokeWidth={1.8} /></span>);
+  if (model.vision) caps.push(<span key="v" className={styles.capBadge + " " + styles.vision} title={text("Vision", "视觉")}><Eye size={11} strokeWidth={1.8} /></span>);
+  if (model.video) caps.push(<span key="vid" className={styles.capBadge + " " + styles.video} title={text("Video", "视频")}><Video size={11} strokeWidth={1.8} /></span>);
+  if (model.tools) caps.push(<span key="t" className={styles.capBadge + " " + styles.tools} title={text("Tools", "工具")}><Wrench size={11} strokeWidth={1.8} /></span>);
+  if (model.reasoning) caps.push(<span key="r" className={styles.capBadge + " " + styles.reasoning} title={text("Reasoning", "推理")}><Brain size={11} strokeWidth={1.8} /></span>);
   if (model.context_window)
     caps.push(<span key="c" className={styles.capBadge + " " + styles.ctx}>{formatCtx(model.context_window)}</span>);
 

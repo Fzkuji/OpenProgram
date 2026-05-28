@@ -15,7 +15,7 @@ import { SearchProviderItem } from "./item";
 import type { SearchProvider } from "./types";
 
 export function SearchProvidersSection() {
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const [providers, setProviders] = useState<SearchProvider[]>([]);
   const [defaultId, setDefaultId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,7 +97,7 @@ export function SearchProvidersSection() {
         <div className={styles.pageHeader}>
           <h2 className={styles.pageTitle}>{t("settings.tab.search")}</h2>
         </div>
-        <div className={styles.pageBody} style={{ opacity: 0.6 }}>Loading…</div>
+        <div className={styles.pageBody} style={{ opacity: 0.6 }}>{text("Loading...", "加载中...")}</div>
       </div>
     );
   }
@@ -105,11 +105,12 @@ export function SearchProvidersSection() {
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
-        <h2 className={styles.pageTitle}>Web Search</h2>
+        <h2 className={styles.pageTitle}>{t("settings.tab.search")}</h2>
         <p className={styles.pageMeta}>
-          Pick which backend handles ``web_search`` calls. Tavily / Exa /
-          Brave / Perplexity need an API key; DuckDuckGo and SearXNG work
-          zero-config as fallbacks.
+          {text(
+            "Pick which backend handles web_search calls. Tavily / Exa / Brave / Perplexity need an API key; DuckDuckGo and SearXNG work zero-config as fallbacks.",
+            "选择由哪个后端处理 web_search 调用。Tavily / Exa / Brave / Perplexity 需要 API key；DuckDuckGo 和 SearXNG 可作为零配置 fallback。",
+          )}
         </p>
       </div>
       <div className={`${styles.pageBody} ${styles.pageBodyTwoPane}`}>
@@ -119,7 +120,7 @@ export function SearchProvidersSection() {
               <div className={styles.providersSearch}>
                 <input
                   type="search"
-                  placeholder="Search backends…"
+                  placeholder={text("Search backends...", "搜索后端...")}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -127,7 +128,7 @@ export function SearchProvidersSection() {
             </div>
           {active.length > 0 && (
             <>
-              <div className={styles.providersGroupLabel}>Available</div>
+              <div className={styles.providersGroupLabel}>{text("Available", "可用")}</div>
               {active.map((p) => (
                 <SearchProviderItem
                   key={p.id}
@@ -140,7 +141,7 @@ export function SearchProvidersSection() {
           )}
           {inactive.length > 0 && (
             <>
-              <div className={styles.providersGroupLabel}>Not configured</div>
+              <div className={styles.providersGroupLabel}>{text("Not configured", "未配置")}</div>
               {inactive.map((p) => (
                 <SearchProviderItem
                   key={p.id}
@@ -164,7 +165,7 @@ export function SearchProvidersSection() {
               />
             ) : (
               <div className={styles.detailEmpty}>
-                Select a search backend on the left
+                {text("Select a search backend on the left", "选择左侧搜索后端")}
               </div>
             )}
           </div>
@@ -173,4 +174,3 @@ export function SearchProvidersSection() {
     </div>
   );
 }
-

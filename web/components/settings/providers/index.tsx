@@ -30,7 +30,7 @@ export { ApiKey } from "./api-key";
 export type { Provider, Model } from "./types";
 
 export function ProvidersSection() {
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -95,8 +95,10 @@ export function ProvidersSection() {
       <div className={styles.pageHeader}>
         <h2 className={styles.pageTitle}>{t("settings.tab.providers")}</h2>
         <p className={styles.pageMeta}>
-          Enable an LLM backend, paste an API key (or rely on local OAuth /
-          subscription), and pick which models the chat composer exposes.
+          {text(
+            "Enable an LLM backend, paste an API key (or rely on local OAuth / subscription), and pick which models the chat composer exposes.",
+            "启用大模型后端，填写 API key（或使用本地 OAuth / 订阅），并选择聊天输入框可用的模型。",
+          )}
         </p>
       </div>
       <div className={`${styles.pageBody} ${styles.pageBodyTwoPane}`}>
@@ -106,7 +108,7 @@ export function ProvidersSection() {
               <div className={styles.providersSearch}>
                 <input
                   type="search"
-                  placeholder="Search providers…"
+                  placeholder={text("Search providers...", "搜索 Provider...")}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -114,7 +116,7 @@ export function ProvidersSection() {
             </div>
           {enabled.filter(matches).length > 0 && (
             <>
-              <div className={styles.providersGroupLabel}>Enabled</div>
+              <div className={styles.providersGroupLabel}>{text("Enabled", "已启用")}</div>
               {enabled.filter(matches).map((p) => (
                 <ProviderItem
                   key={p.id}
@@ -127,7 +129,7 @@ export function ProvidersSection() {
           )}
           {disabled.filter(matches).length > 0 && (
             <>
-              <div className={styles.providersGroupLabel}>Not enabled</div>
+              <div className={styles.providersGroupLabel}>{text("Not enabled", "未启用")}</div>
               {disabled.filter(matches).map((p) => (
                 <ProviderItem
                   key={p.id}
@@ -141,7 +143,7 @@ export function ProvidersSection() {
         </div>
           <div className={styles.detail}>
             {!selected ? (
-              <div className={styles.detailEmpty}>Select a provider on the left</div>
+              <div className={styles.detailEmpty}>{text("Select a provider on the left", "选择左侧 Provider")}</div>
             ) : (
               <Detail
                 key={selected.id}

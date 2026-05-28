@@ -57,34 +57,17 @@
   border: none;
   border-radius: var(--composer-corner);
   padding: 0 0 var(--composer-bottom-row-h);
-  /* OUTSET ring (no inset) on the wrapper itself — the previous
-     attempt put it on ``::after`` which sits inside the wrapper's
-     own ``overflow: hidden`` clip, so the outward-pointing shadow
-     got eaten everywhere except faint slivers at the four corners.
-     Drawn directly on the wrapper, the shadow is outside the
-     clipping region and renders the full perimeter uniformly.
-     Updated on focus via the :focus-within rule below — no pseudo
-     needed. */
-  box-shadow: 0 0 0 1px var(--border);
+  /* Keep the edge transparent until the textarea or an inner control
+     receives focus. Using box-shadow avoids layout shifts from a real
+     border while preserving the wrapper's rounded geometry. */
+  box-shadow: 0 0 0 1px transparent;
   overflow: hidden;
   transition: box-shadow 180ms ease,
     height var(--composer-height-transition);
 }
 .inputWrapper:focus-within {
-  box-shadow: 0 0 0 1px rgba(226,225,218,0.32);
+  box-shadow: 0 0 0 1px var(--border-light);
 }
-/* Focus indicator on the chat-input wrapper: a 1px border drawn via
-   `::after` so it stacks ABOVE `.inputBottomRow` (z-index 1 +
-   opaque background, which covered the bottom strip of any
-   inset-shadow / outline approach). The pseudo fills the wrapper
-   (`inset: 0`), inherits its border-radius, and is `pointer-events:
-   none` so it doesn't intercept clicks. `--text-secondary` keeps
-   the edge readable without the harsh contrast `--text-bright`
-   produces; the token auto-flips with light / dark theme. */
-/* Ring moved to ``.inputWrapper`` itself (above). The previous
-   ``::after`` approach was an artifact of when the ring was an
-   ``inset`` shadow that needed to stack above ``.inputBottomRow``'s
-   opaque background — outset shadows don't have that problem. */
 
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
    switches. Sits on top of the new form (z-index 1, same as
@@ -137,9 +120,11 @@
    "overlapping padding" effect that keeps the chat-mode wrapper
    compact while still leaving room for the bottom row's controls. */
 .inputTopRow {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 30px;
   /* Right padding reserves space for the absolute-positioned action
      button (send / stop) that lives at the wrapper level: 16 (right
@@ -148,6 +133,11 @@
     calc(var(--composer-bottom-row-pad) + var(--composer-button-size) + 8px) 0
     var(--composer-bottom-row-pad);
   flex-shrink: 0;
+}
+.inputField {
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 .chatInput {
   width: 100%;
@@ -170,6 +160,20 @@
      32px-tall textarea instead of sitting at the top. */
   line-height: var(--composer-button-size);
   flex: 1;
+  overflow: hidden;
+}
+.chatPlaceholder {
+  position: absolute;
+  inset: 0 8px auto;
+  height: var(--composer-button-size);
+  line-height: var(--composer-button-size);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  overflow: hidden;
+  pointer-events: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chatInput::placeholder {
   color: var(--text-muted);
@@ -422,6 +426,12 @@
 .sendBtn:hover {
   background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 22%, transparent);
 }
+.sendBtn[data-fn-missing="true"] {
+  opacity: 0.58;
+}
+.sendBtn[data-fn-missing="true"]:hover {
+  opacity: 0.72;
+}
 .sendBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -609,10 +619,7 @@
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.04),
-    0 4px 6px -2px rgba(0, 0, 0, 0.06),
-    0 12px 24px -8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-popover);
   padding: 6px;
   display: flex;
   flex-direction: column;

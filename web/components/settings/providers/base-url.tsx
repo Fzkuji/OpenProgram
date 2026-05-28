@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTranslation } from "@/lib/i18n";
 
 import styles from "../settings-page.module.css";
 import type { Provider } from "./types";
@@ -18,9 +19,10 @@ export function BaseUrl({
   provider: Provider;
   onChanged: () => void;
 }) {
+  const { text } = useTranslation();
   const [value, setValue] = useState(provider.base_url || "");
   const baseDefault = provider.default_base_url
-    ? `default: ${provider.default_base_url}`
+    ? text(`default: ${provider.default_base_url}`, `默认：${provider.default_base_url}`)
     : "";
 
   async function save() {
@@ -49,7 +51,7 @@ export function BaseUrl({
           onChange={(e) => setValue(e.target.value)}
         />
         <Button size="sm" onClick={save}>
-          Save
+          {text("Save", "保存")}
         </Button>
       </div>
     </div>

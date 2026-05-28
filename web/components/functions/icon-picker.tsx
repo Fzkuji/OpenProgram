@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import styles from "./icon-picker.module.css";
+import { useTranslation } from "@/lib/i18n";
 
 export const DEFAULT_ICON = "📦";
 
@@ -23,6 +24,7 @@ export function IconPicker({
   onPick: (icon: string | null) => void;
   onClose: () => void;
 }) {
+  const { text } = useTranslation();
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -36,24 +38,24 @@ export function IconPicker({
       <div className={styles.picker} onClick={(e) => e.stopPropagation()}>
         <div className={styles.head}>
           <span className={styles.title}>
-            Pick an icon for <code>{name}</code>
+            {text("Pick an icon for", "为以下函数选择图标")} <code>{name}</code>
           </span>
           <div className={styles.actions}>
             <button
               type="button"
               className={styles.btnGhost}
               onClick={() => onPick(null)}
-              title="Reset to default"
+              title={text("Reset to default", "恢复默认")}
             >
-              Reset
+              {text("Reset", "重置")}
             </button>
             <button
               type="button"
               className={styles.btnGhost}
               onClick={onClose}
-              title="Close"
+              title={text("Close", "关闭")}
             >
-              Close
+              {text("Close", "关闭")}
             </button>
           </div>
         </div>

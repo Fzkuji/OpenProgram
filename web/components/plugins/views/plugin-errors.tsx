@@ -2,8 +2,10 @@
 
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/plugins-store";
+import { useTranslation } from "@/lib/i18n";
 
 export function PluginErrors() {
+  const { text } = useTranslation();
   const { errors, plugins } = usePluginsStore();
   const rows: Array<[string, string]> = [];
   for (const p of plugins) {
@@ -13,7 +15,7 @@ export function PluginErrors() {
     if (!rows.find((r) => r[0] === k)) rows.push([k, v]);
   }
   if (rows.length === 0) {
-    return <div className={styles.empty}>没有错误。</div>;
+    return <div className={styles.empty}>{text("No errors.", "没有错误。")}</div>;
   }
   return (
     <div>

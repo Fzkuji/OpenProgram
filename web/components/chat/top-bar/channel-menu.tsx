@@ -15,6 +15,7 @@
 import { useEffect, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
 
@@ -47,6 +48,7 @@ function brandFor(plat: string): string {
 }
 
 export function ChannelMenu({ onClose }: { onClose: () => void }) {
+  const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [rows, setRows] = useState<ChannelAccount[] | null>(null);
 
@@ -110,18 +112,18 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
   return (
     <div className={`${MENU_PANEL} min-w-[300px] max-w-[480px]`}>
       <div className={GROUP_LABEL}>
-        <span>Conversation channel</span>
+        <span>{text("Conversation channel", "会话渠道")}</span>
       </div>
 
       <div className={itemCls(!cur.channel)} onClick={() => pick("", "")}>
-        <span className="flex-1 truncate">Local</span>
+        <span className="flex-1 truncate">{text("Local", "本地")}</span>
         {!cur.channel ? <span className={CHECK}>✓</span> : null}
       </div>
 
       {rows !== null && enabled.length === 0 ? (
         <div className={`${GROUP_LABEL} text-[11px]`}>
           <a href="/settings" className="text-[var(--accent-blue)] no-underline">
-            Add a channel in Settings →
+            {text("Add a channel in Settings", "在设置中添加渠道")} →
           </a>
         </div>
       ) : null}

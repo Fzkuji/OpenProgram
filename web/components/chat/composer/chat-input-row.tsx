@@ -73,37 +73,44 @@ export function ChatInputRow({
         onRemove={removePaste}
       />
       <div key="top-half" className={styles.inputTopRow}>
-        <textarea
-          ref={textareaRef}
-          id="composer-chat-input"
-          name="chat_input"
-          autoComplete="off"
-          className={styles.chatInput}
-          placeholder=" create / run / edit or ask anything... (type / for commands)"
-          rows={1}
-          value={input}
-          onChange={(e) => {
-            setInput(e.target.value);
-            setCaretPos(e.target.selectionStart ?? e.target.value.length);
-          }}
-          onSelect={(e) => setCaretPos(
-            e.currentTarget.selectionStart ?? 0,
+        <div className={styles.inputField}>
+          {input.length === 0 && (
+            <span className={styles.chatPlaceholder} aria-hidden="true">
+              create / run / edit or ask anything... (type / for commands)
+            </span>
           )}
-          onKeyUp={(e) => setCaretPos(
-            e.currentTarget.selectionStart ?? 0,
-          )}
-          onClick={(e) => setCaretPos(
-            e.currentTarget.selectionStart ?? 0,
-          )}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          // File drops are caught at the window level (see
-          // useComposerAttachments) so the textarea doesn't need its
-          // own onDragOver/onDrop — the window handler beats the
-          // textarea's default text-insert.
-          onFocus={onFocus}
-          onBlur={onBlur}
-        />
+          <textarea
+            ref={textareaRef}
+            id="composer-chat-input"
+            name="chat_input"
+            autoComplete="off"
+            aria-label="create / run / edit or ask anything... (type / for commands)"
+            className={styles.chatInput}
+            rows={1}
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value);
+              setCaretPos(e.target.selectionStart ?? e.target.value.length);
+            }}
+            onSelect={(e) => setCaretPos(
+              e.currentTarget.selectionStart ?? 0,
+            )}
+            onKeyUp={(e) => setCaretPos(
+              e.currentTarget.selectionStart ?? 0,
+            )}
+            onClick={(e) => setCaretPos(
+              e.currentTarget.selectionStart ?? 0,
+            )}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            // File drops are caught at the window level (see
+            // useComposerAttachments) so the textarea doesn't need its
+            // own onDragOver/onDrop — the window handler beats the
+            // textarea's default text-insert.
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
+        </div>
         <FileMenu
           items={fileMatches}
           selectedIndex={fileMenuIndex}

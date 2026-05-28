@@ -18,6 +18,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
 import { api } from "@/lib/api";
+import { useTranslation } from "@/lib/i18n";
 
 export function AgentSelector({
   kind,
@@ -31,6 +32,7 @@ export function AgentSelector({
   onClose: () => void;
 }) {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const { t } = useTranslation();
   const { data: models } = useQuery({
     queryKey: ["models-enabled"],
     queryFn: api.listEnabledModels,
@@ -48,7 +50,7 @@ export function AgentSelector({
         await api.switchModel(provider, model, currentSessionId);
       }
     } catch (e) {
-      alert("Agent switch failed: " + String(e));
+      alert(t("agent.switch_failed") + String(e));
     }
   }
 
@@ -69,21 +71,21 @@ export function AgentSelector({
         "max-h-[60vh] w-[300px] overflow-y-auto",
         "rounded-[10px] border border-[var(--border)] bg-bg-tertiary",
         "p-[6px]",
-        "shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_6px_-2px_rgba(0,0,0,0.06),0_12px_24px_-8px_rgba(0,0,0,0.1)]",
+        "shadow-(--shadow-popover)",
       ].join(" ")}
     >
       <div className="px-[10px] pb-[4px] pt-[6px] text-[12px] font-semibold text-text-muted">
-        {kind === "chat" ? "Chat Agent" : "Execution Agent"}
+        {kind === "chat" ? t("agent.chat_agent") : t("agent.execution_agent")}
       </div>
 
       {(models ?? []).length === 0 ? (
         <div className="px-[10px] py-[8px] text-[12px] text-text-muted">
-          No enabled models —{" "}
+          {t("agent.no_enabled_models")}{" "}
           <a
             href="/settings"
             className="text-[var(--accent-blue)] no-underline"
           >
-            enable some in Settings →
+            {t("agent.enable_models")} →
           </a>
         </div>
       ) : (
@@ -135,7 +137,7 @@ export function AgentSelector({
           href="/settings"
           className="text-[var(--accent-blue)] no-underline"
         >
-          Manage models in Settings →
+          {t("agent.manage_models")} →
         </a>
       </div>
     </div>

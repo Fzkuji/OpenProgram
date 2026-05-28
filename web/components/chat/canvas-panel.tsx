@@ -5,6 +5,7 @@ import { FileText, X, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { useTranslation } from "@/lib/i18n";
 
 /**
  * Live view of the agent's canvas.md.
@@ -20,6 +21,7 @@ import { useState } from "react";
  * user knows which file this is and whether it's actively updating.
  */
 export function CanvasPanel({ onClose }: { onClose: () => void }) {
+  const { text, locale } = useTranslation();
   const [pathOverride] = useState<string | undefined>(
     undefined,
   );
@@ -32,7 +34,7 @@ export function CanvasPanel({ onClose }: { onClose: () => void }) {
   });
 
   const mtimeLabel = data?.mtime
-    ? new Date(data.mtime).toLocaleTimeString()
+    ? new Date(data.mtime).toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US")
     : "—";
 
   return (
@@ -48,7 +50,7 @@ export function CanvasPanel({ onClose }: { onClose: () => void }) {
           <FileText className="h-4 w-4 shrink-0" style={{ color: "var(--text-muted)" }} />
           <div className="min-w-0">
             <div className="text-[12px] truncate" style={{ color: "var(--text-secondary)" }}>
-              Canvas
+              {text("Canvas", "画布")}
             </div>
             <div
               className="text-[10px] truncate font-mono"
@@ -63,7 +65,7 @@ export function CanvasPanel({ onClose }: { onClose: () => void }) {
           <span
             className="text-[10px] tabular-nums"
             style={{ color: "var(--text-muted)" }}
-            title="Last modified"
+            title={text("Last modified", "最后修改时间")}
           >
             {mtimeLabel}
           </span>
@@ -72,14 +74,14 @@ export function CanvasPanel({ onClose }: { onClose: () => void }) {
             variant="ghost"
             className="h-7 w-7"
             onClick={() => refetch()}
-            title="Refresh now"
+            title={text("Refresh now", "立即刷新")}
             disabled={isFetching}
           >
             <RefreshCw
               className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`}
             />
           </Button>
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onClose} title="Close">
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onClose} title={text("Close", "关闭")}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -95,7 +97,7 @@ export function CanvasPanel({ onClose }: { onClose: () => void }) {
               key={b.id}
               className="rounded px-1.5 py-0.5 font-mono"
               style={{ background: "var(--bg-tertiary)" }}
-              title={`${b.length} chars`}
+              title={`${b.length} ${text("chars", "字符")}`}
             >
               {b.id}
             </span>
@@ -106,18 +108,20 @@ export function CanvasPanel({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-auto">
         {error && (
           <div className="p-3 text-[12px]" style={{ color: "var(--accent-red)" }}>
-            Failed to load canvas: {String(error)}
+            {text("Failed to load canvas: ", "加载画布失败：")}{String(error)}
           </div>
         )}
         {isLoading && !data && (
           <div className="p-3 text-[12px]" style={{ color: "var(--text-muted)" }}>
-            Loading…
+            {text("Loading...", "加载中...")}
           </div>
         )}
         {data && !data.exists && (
           <div className="p-3 text-[12px]" style={{ color: "var(--text-muted)" }}>
-            Canvas file doesn&apos;t exist yet. It will appear when the agent writes
-            its first block via the <code className="font-mono">canvas</code> tool.
+            {text(
+              "Canvas file does not exist yet. It will appear when the agent writes its first block via the canvas tool.",
+              "画布文件尚不存在。Agent 通过 canvas 工具写入第一个块后会显示在这里。",
+            )}
           </div>
         )}
         {data?.exists && (
@@ -125,7 +129,7 @@ export function CanvasPanel({ onClose }: { onClose: () => void }) {
             className="whitespace-pre-wrap break-words px-3 py-2 text-[12px] font-mono"
             style={{ color: "var(--text-primary)" }}
           >
-            {data.content || "(empty)"}
+            {data.content || text("(empty)", "（空）")}
           </pre>
         )}
       </div>

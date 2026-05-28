@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTranslation } from "@/lib/i18n";
 
 import styles from "../settings-page.module.css";
 
@@ -20,6 +21,7 @@ export function ApiKey({
   configured: boolean;
   onChanged: () => void;
 }) {
+  const { text } = useTranslation();
   const [value, setValue] = useState("");
   const [state, setState] = useState<"empty" | "masked" | "editing" | "revealed">("empty");
   const [showText, setShowText] = useState(false);
@@ -96,7 +98,7 @@ export function ApiKey({
       const d = await r.json();
       if (d.saved) {
         setValue("");
-        if (inputRef.current) inputRef.current.placeholder = `${envVar} (saved)`;
+        if (inputRef.current) inputRef.current.placeholder = text(`${envVar} (saved)`, `${envVar}（已保存）`);
         onChanged();
         loadPreview();
       }
@@ -108,7 +110,7 @@ export function ApiKey({
       <div className={styles.detailSectionTitle}>
         <span>API Key</span>
         <span className={styles.modelCountSummary}>
-          {configured ? "Configured" : "Not set"}
+          {configured ? text("Configured", "已配置") : text("Not set", "未设置")}
         </span>
       </div>
       <div className={styles.detailRow}>
@@ -122,13 +124,13 @@ export function ApiKey({
         />
         <button
           className={styles.iconBtn}
-          title="Show/hide"
+          title={text("Show/hide", "显示/隐藏")}
           onClick={toggleVisibility}
         >
           {showText ? "🙈" : "👁"}
         </button>
         <Button size="sm" onClick={save}>
-          Save
+          {text("Save", "保存")}
         </Button>
       </div>
     </div>

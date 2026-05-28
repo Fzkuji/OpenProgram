@@ -12,6 +12,7 @@
 import type { ChatMsg } from "@/lib/session-store";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 
 function wsSend(payload: unknown): void {
   const w = window as unknown as { ws?: WebSocket };
@@ -22,6 +23,7 @@ function wsSend(payload: unknown): void {
 
 export function SpawnedFromCard({ msg }: { msg: ChatMsg }) {
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const { text } = useTranslation();
   const sf = msg.spawnedFrom;
   if (!sf || !sf.callerId) return null;
 
@@ -50,20 +52,20 @@ export function SpawnedFromCard({ msg }: { msg: ChatMsg }) {
         </div>
         <div className="attach-card-meta">
           <div className="attach-card-label">
-            Spawned from: <span className="attach-card-source">{label}</span>
+            {text("Spawned from:", "创建自：")} <span className="attach-card-source">{label}</span>
           </div>
           <div className="attach-card-sub">
-            this branch was started by a task() call on another turn
+            {text("this branch was started by a task() call on another turn", "这个分支由另一个回合中的 task() 调用创建")}
           </div>
         </div>
         <button
           type="button"
           className="attach-card-open"
           onClick={switchBack}
-          aria-label="Switch back to the calling turn"
-          title="Switch back to the calling turn"
+          aria-label={text("Switch back to the calling turn", "切回调用它的回合")}
+          title={text("Switch back to the calling turn", "切回调用它的回合")}
         >
-          Switch
+          {text("Switch", "切换")}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                aria-hidden="true">

@@ -357,7 +357,7 @@
   line-height: 1.4;
   width: 240px;
   max-width: 240px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-popover);
   opacity: 0;
   transition: opacity 0.1s,
               width 0.18s ease,
@@ -559,7 +559,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-dialog);
 }
 .branches-merge-modal-title {
   font-size: 14px;
@@ -611,7 +611,7 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-popover);
   padding: 4px;
   display: flex;
   flex-direction: column;

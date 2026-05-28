@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import styles from "./plugins.module.css";
 import { usePluginsStore } from "@/lib/plugins-store";
+import { useTranslation } from "@/lib/i18n";
 import { InstalledList } from "./views/installed-list";
 import { MarketplaceBrowser } from "./views/marketplace-browser";
 import { PluginErrors } from "./views/plugin-errors";
 
 export function PluginsPage() {
+  const { t, text } = useTranslation();
   const { tab, setTab, refresh, plugins, errors } = usePluginsStore();
   const [installOpen, setInstallOpen] = useState(false);
 
@@ -21,12 +23,12 @@ export function PluginsPage() {
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
     <div className={styles.view}>
       <div className={styles.topbar}>
-        <div className={styles.title}>Plugins</div>
+        <div className={styles.title}>{t("nav.plugins")}</div>
         <div className={styles.tabs}>
           <button
             className={tab === "installed" ? styles.tabActive : styles.tab}
             onClick={() => setTab("installed")}
-          >Installed ({plugins.length})</button>
+          >{text("Installed", "已安装")} ({plugins.length})</button>
           <button
             className={tab === "marketplace" ? styles.tabActive : styles.tab}
             onClick={() => setTab("marketplace")}
@@ -34,11 +36,11 @@ export function PluginsPage() {
           <button
             className={tab === "errors" ? styles.tabActive : styles.tab}
             onClick={() => setTab("errors")}
-          >Errors ({errCount})</button>
+          >{text("Errors", "错误")} ({errCount})</button>
         </div>
         <div className={styles.spacer} />
-        <button className={styles.btn} onClick={() => refresh()}>Refresh</button>
-        <button className={styles.btnPrimary} onClick={() => setInstallOpen(true)}>+ Install</button>
+        <button className={styles.btn} onClick={() => refresh()}>{t("sidebar.refresh")}</button>
+        <button className={styles.btnPrimary} onClick={() => setInstallOpen(true)}>+ {text("Install", "安装")}</button>
       </div>
       <div className={styles.body}>
         {tab === "installed" && <InstalledList />}
@@ -52,6 +54,7 @@ export function PluginsPage() {
 }
 
 function ManualInstallDialog({ onClose }: { onClose: () => void }) {
+  const { text } = useTranslation();
   const install = usePluginsStore((s) => s.install);
   const [source, setSource] = useState("pip");
   const [spec, setSpec] = useState("");
@@ -76,14 +79,14 @@ function ManualInstallDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className={styles.dialogBackdrop} onClick={onClose}>
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.dialogTitle}>手动安装插件</div>
+        <div className={styles.dialogTitle}>{text("Manual plugin install", "手动安装插件")}</div>
         <div className={styles.dialogBody}>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <select className={styles.select} value={source} onChange={(e) => setSource(e.target.value)}>
               <option value="pip">pip</option>
               <option value="npm">npm</option>
               <option value="git">git</option>
-              <option value="path">path (本地目录)</option>
+              <option value="path">{text("path (local directory)", "path（本地目录）")}</option>
             </select>
             <input
               className={styles.input}
@@ -101,7 +104,7 @@ function ManualInstallDialog({ onClose }: { onClose: () => void }) {
           {source === "git" && (
             <input
               className={styles.input}
-              placeholder="ref (可选，branch/tag/sha)"
+              placeholder={text("ref (optional, branch/tag/sha)", "ref（可选，branch/tag/sha）")}
               value={ref}
               onChange={(e) => setRef(e.target.value)}
             />
@@ -120,9 +123,9 @@ function ManualInstallDialog({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <div className={styles.dialogActions}>
-          <button className={styles.btn} onClick={onClose} disabled={busy}>关闭</button>
+          <button className={styles.btn} onClick={onClose} disabled={busy}>{text("Close", "关闭")}</button>
           <button className={styles.btnPrimary} onClick={submit} disabled={busy || !spec.trim()}>
-            {busy ? "安装中…" : "安装"}
+            {busy ? text("Installing...", "安装中...") : text("Install", "安装")}
           </button>
         </div>
       </div>

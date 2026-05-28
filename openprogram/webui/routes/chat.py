@@ -12,8 +12,19 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+import os
 
 from fastapi.responses import JSONResponse
+
+
+_FUNCTION_BODY_CONTROL_KEYS = {
+    "kwargs",
+    "session_id",
+    "_session_id",
+    "work_dir",
+    "_workdir",
+    "workdir",
+}
 
 
 def _kwargs_repr(kwargs: dict) -> str:
@@ -140,21 +151,42 @@ def register(app):
         Body:
           ``session_id`` (optional) — target conversation; created if absent.
           ``kwargs`` (dict)         — function arguments.
-          ``work_dir`` (str, required) — workdir bound to the call.
+          ``work_dir`` (str, optional) — workdir bound to the call.
+            Falls back to the session's last workdir for this function,
+            then the repo root.
         """
         from openprogram.webui import server as _s
         body = body or {}
-        session_id = body.get("session_id")
-        kwargs = dict(body.get("kwargs") or {})
-        work_dir = body.get("work_dir")
-        if not work_dir or not str(work_dir).strip():
-            return JSONResponse(
-                content={"error": "work_dir is required"},
-                status_code=400,
-            )
+        session_id = body.get("session_id") or body.get("_session_id")
+        if isinstance(body.get("kwargs"), dict):
+            kwargs = dict(body.get("kwargs") or {})
+        else:
+            # Compatibility for older callers that posted function
+            # params at the top level instead of under ``kwargs``.
+            kwargs = {
+                k: v
+                for k, v in body.items()
+                if k not in _FUNCTION_BODY_CONTROL_KEYS
+            }
+        work_dir = (
+            body.get("work_dir")
+            or body.get("_workdir")
+            or body.get("workdir")
+        )
 
         conv = _s._get_or_create_session(session_id)
         session_id = conv["id"]
+        if not work_dir or not str(work_dir).strip():
+            work_dir = (conv.get("last_workdirs") or {}).get(name)
+        if not work_dir or not str(work_dir).strip():
+            work_dir = os.path.abspath(
+                os.path.join(os.path.dirname(_s.__file__), "..", "..")
+            )
+        work_dir = os.path.abspath(os.path.expanduser(str(work_dir)))
+        try:
+            conv.setdefault("last_workdirs", {})[name] = work_dir
+        except Exception:
+            pass
         msg_id = uuid.uuid4().hex[:8]
 
         # Persist the user-side command marker that anchors the

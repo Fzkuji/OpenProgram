@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 import styles from "./mcp-page.module.css";
 
@@ -51,6 +52,7 @@ export function EditDialog({
   onClose: () => void;
   onSaved: (newName?: string) => void;
 }) {
+  const { t, text } = useTranslation();
   const [state, setState] = useState<EditTarget>(target);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -79,7 +81,7 @@ export function EditDialog({
   }
 
   function buildBody(): { ok: true; body: Record<string, unknown> } | { ok: false; err: string } {
-    if (!state.name.trim()) return { ok: false, err: "name is required" };
+    if (!state.name.trim()) return { ok: false, err: text("name is required", "名称为必填项") };
     const base = {
       name: state.name.trim(),
       type: state.transport,
@@ -89,14 +91,14 @@ export function EditDialog({
     };
     if (state.transport === "local") {
       const cmd = splitCommand(state.command);
-      if (cmd.length === 0) return { ok: false, err: "command is required" };
+      if (cmd.length === 0) return { ok: false, err: text("command is required", "命令为必填项") };
       return { ok: true, body: { ...base, command: cmd, env: parseEnv(state.env) } };
     }
-    if (!state.url.trim()) return { ok: false, err: "url is required" };
+    if (!state.url.trim()) return { ok: false, err: text("url is required", "URL 为必填项") };
     let auth: Record<string, unknown>;
     if (state.authKind === "bearer") {
       if (!state.bearerToken.trim())
-        return { ok: false, err: "bearer token is required" };
+        return { ok: false, err: text("bearer token is required", "Bearer token 为必填项") };
       auth = { kind: "bearer", token: state.bearerToken.trim() };
     } else if (state.authKind === "oauth") {
       auth = {
@@ -154,7 +156,7 @@ export function EditDialog({
   async function testRun() {
     setErr(null); setNote(null);
     const built = buildBody();
-    if (!built.ok) { setErr(`${built.err} (to test)`); return; }
+    if (!built.ok) { setErr(text(`${built.err} (to test)`, `${built.err}（测试前需要修正）`)); return; }
     const body = { ...built.body, name: state.name || "test", enabled: true };
     setBusy("test");
     try {
@@ -164,10 +166,13 @@ export function EditDialog({
       });
       const data = await r.json();
       if (!r.ok || !data.ok) {
-        setErr(`test failed: ${data.error || data.detail || `HTTP ${r.status}`}`);
+        setErr(text(`test failed: ${data.error || data.detail || `HTTP ${r.status}`}`, `测试失败：${data.error || data.detail || `HTTP ${r.status}`}`));
         return;
       }
-      setNote(`✓ test ok — ${data.tool_count} tool(s): ${data.tools.join(", ")}`);
+      setNote(text(
+        `✓ test ok - ${data.tool_count} tool(s): ${data.tools.join(", ")}`,
+        `✓ 测试通过 - ${data.tool_count} 个工具：${data.tools.join(", ")}`,
+      ));
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -180,13 +185,13 @@ export function EditDialog({
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>
-            {isAdd ? "Add MCP server" : `Edit ${target.name}`}
+            {isAdd ? text("Add MCP server", "添加 MCP 服务器") : text(`Edit ${target.name}`, `编辑 ${target.name}`)}
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mcp-name">Name</Label>
+            <Label htmlFor="mcp-name">{text("Name", "名称")}</Label>
             <Input
               id="mcp-name"
               value={state.name}
@@ -198,7 +203,7 @@ export function EditDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mcp-transport">Transport</Label>
+            <Label htmlFor="mcp-transport">{text("Transport", "传输")}</Label>
             <select
               id="mcp-transport"
               value={state.transport}
@@ -216,7 +221,7 @@ export function EditDialog({
           {state.transport === "local" ? (
             <>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="mcp-cmd">Command</Label>
+                <Label htmlFor="mcp-cmd">{text("Command", "命令")}</Label>
                 <Input
                   id="mcp-cmd"
                   value={state.command}
@@ -227,7 +232,7 @@ export function EditDialog({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="mcp-env">Environment (KEY=VALUE per line)</Label>
+                <Label htmlFor="mcp-env">{text("Environment (KEY=VALUE per line)", "环境变量（每行 KEY=VALUE）")}</Label>
                 <textarea
                   id="mcp-env"
                   value={state.env}
@@ -253,7 +258,7 @@ export function EditDialog({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="mcp-headers">Headers (Key: Value per line)</Label>
+                <Label htmlFor="mcp-headers">{text("Headers (Key: Value per line)", "请求头（每行 Key: Value）")}</Label>
                 <textarea
                   id="mcp-headers"
                   value={state.headers}
@@ -266,7 +271,7 @@ export function EditDialog({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="mcp-auth">Authentication</Label>
+                <Label htmlFor="mcp-auth">{text("Authentication", "认证")}</Label>
                 <select
                   id="mcp-auth"
                   value={state.authKind}
@@ -275,9 +280,9 @@ export function EditDialog({
                   className="flex h-10 rounded-md border bg-background px-3 font-mono text-sm
                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <option value="none">none</option>
-                  <option value="bearer">bearer token (static)</option>
-                  <option value="oauth">OAuth 2.1 (browser flow)</option>
+                  <option value="none">{text("none", "无")}</option>
+                  <option value="bearer">{text("bearer token (static)", "Bearer token（静态）")}</option>
+                  <option value="oauth">{text("OAuth 2.1 (browser flow)", "OAuth 2.1（浏览器流程）")}</option>
                 </select>
               </div>
 
@@ -289,7 +294,7 @@ export function EditDialog({
                     type="password"
                     value={state.bearerToken}
                     onChange={(e) => setState({ ...state, bearerToken: e.target.value })}
-                    placeholder="paste token"
+                    placeholder={text("paste token", "粘贴 token")}
                     className="font-mono"
                   />
                 </div>
@@ -298,7 +303,7 @@ export function EditDialog({
               {state.authKind === "oauth" && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="mcp-oa-name">Client name</Label>
+                    <Label htmlFor="mcp-oa-name">{text("Client name", "客户端名称")}</Label>
                     <Input
                       id="mcp-oa-name"
                       value={state.oauthClientName}
@@ -308,7 +313,7 @@ export function EditDialog({
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="mcp-oa-scope">Scope (optional)</Label>
+                    <Label htmlFor="mcp-oa-scope">{text("Scope (optional)", "Scope（可选）")}</Label>
                     <Input
                       id="mcp-oa-scope"
                       value={state.oauthScope}
@@ -318,18 +323,18 @@ export function EditDialog({
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="mcp-oa-cid">Client ID (optional)</Label>
+                    <Label htmlFor="mcp-oa-cid">{text("Client ID (optional)", "Client ID（可选）")}</Label>
                     <Input
                       id="mcp-oa-cid"
                       value={state.oauthClientId}
                       onChange={(e) =>
                         setState({ ...state, oauthClientId: e.target.value })}
-                      placeholder="leave blank for dynamic registration"
+                      placeholder={text("leave blank for dynamic registration", "留空则使用动态注册")}
                       className="font-mono"
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="mcp-oa-csec">Client secret (optional)</Label>
+                    <Label htmlFor="mcp-oa-csec">{text("Client secret (optional)", "Client secret（可选）")}</Label>
                     <Input
                       id="mcp-oa-csec"
                       type="password"
@@ -340,7 +345,7 @@ export function EditDialog({
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="mcp-oa-port">Redirect port (0 = auto)</Label>
+                    <Label htmlFor="mcp-oa-port">{text("Redirect port (0 = auto)", "重定向端口（0 = 自动）")}</Label>
                     <Input
                       id="mcp-oa-port"
                       type="number"
@@ -359,7 +364,7 @@ export function EditDialog({
 
           <div className="flex items-center gap-4">
             <div className="flex flex-1 flex-col gap-1.5">
-              <Label htmlFor="mcp-timeout">Timeout (s)</Label>
+              <Label htmlFor="mcp-timeout">{text("Timeout (s)", "超时（秒）")}</Label>
               <Input
                 id="mcp-timeout" type="number"
                 value={state.timeout_seconds}
@@ -374,7 +379,7 @@ export function EditDialog({
                 checked={state.enabled}
                 onCheckedChange={(c) => setState({ ...state, enabled: c })}
               />
-              <Label htmlFor="mcp-enabled" className="cursor-pointer">Enabled</Label>
+              <Label htmlFor="mcp-enabled" className="cursor-pointer">{text("Enabled", "已启用")}</Label>
             </div>
           </div>
 
@@ -387,16 +392,18 @@ export function EditDialog({
             />
             <div className="flex-1">
               <Label htmlFor="mcp-always-load" className="cursor-pointer">
-                Always load tool schemas (skip deferred-loading)
+                {text("Always load tool schemas (skip deferred-loading)", "始终加载工具 schema（跳过延迟加载）")}
               </Label>
               <div className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
-                Off (default): tools appear by name in a system-prompt
-                catalog; the model loads schemas on demand via
-                <code className="mx-1">tool_search</code>, saving tokens
-                when this server has many tools. On: every tool ships
-                its full JSON Schema with each LLM request — flip this
-                for small focused servers (3-5 tools) the model uses
-                every turn.
+                {text(
+                  "Off (default): tools appear by name in a system-prompt catalog; the model loads schemas on demand via",
+                  "关闭（默认）：工具只以名称出现在系统提示词目录中；模型按需通过",
+                )}
+                <code className="mx-1">tool_search</code>
+                {text(
+                  "to save tokens when this server has many tools. On: every tool sends its full JSON Schema with each LLM request; use this for small focused servers (3-5 tools) the model uses every turn.",
+                  "加载 schema，以便在工具较多时节省 token。开启后，每次大模型请求都会发送所有工具的完整 JSON Schema；适合模型每轮都会使用的小型服务器（3-5 个工具）。",
+                )}
               </div>
             </div>
           </div>
@@ -421,17 +428,17 @@ export function EditDialog({
             onClick={() => void testRun()}
             disabled={saving}
           >
-            {busy === "test" ? "Testing…" : "Test"}
+            {busy === "test" ? text("Testing...", "测试中...") : text("Test", "测试")}
           </button>
           <button className={styles.actionBtn} onClick={onClose} disabled={saving}>
-            Cancel
+            {t("sidebar.cancel")}
           </button>
           <button
             className={cn(styles.actionBtn, styles.actionBtnPrimary)}
             onClick={() => void save()}
             disabled={saving}
           >
-            {busy === "save" ? "Saving…" : isAdd ? "Add" : "Save"}
+            {busy === "save" ? text("Saving...", "保存中...") : isAdd ? text("Add", "添加") : text("Save", "保存")}
           </button>
         </DialogFooter>
       </DialogContent>

@@ -6,6 +6,8 @@
  * adding an entry here — no Composer changes needed.
  */
 
+import { translateText } from "@/lib/i18n";
+
 export interface SlashContext {
   sessionId: string | null;
   send: (payload: unknown) => boolean;
@@ -143,18 +145,20 @@ export const SLASH_COMMANDS: SlashCommand[] = [
             all_ok: boolean;
           } = await r.json();
           const lines = data.results.map(
-            (x) => `${x.ok ? "✓" : "✗"} ${x.label} — ${x.detail}`,
+            (x) => `${x.ok ? "✓" : "✗"} ${x.label} - ${x.detail}`,
           );
           const text =
-            "Doctor report\n\n" + lines.join("\n") +
-            (data.all_ok ? "\n\nAll checks passed." : "\n\nSome checks failed.");
+            translateText("Doctor report", "Doctor 检查报告") + "\n\n" + lines.join("\n") +
+            (data.all_ok
+              ? "\n\n" + translateText("All checks passed.", "所有检查通过。")
+              : "\n\n" + translateText("Some checks failed.", "部分检查失败。"));
           if (sessionId) {
             send({ action: "chat", session_id: sessionId, text });
           } else {
             alert(text);
           }
         } catch (e) {
-          alert("Doctor check failed: " + String(e));
+          alert(translateText("Doctor check failed: ", "Doctor 检查失败：") + String(e));
         }
       })();
       return true;

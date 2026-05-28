@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useWindowGlobals, useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 import {
   Dialog,
   DialogContent,
@@ -52,6 +53,8 @@ function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <Dialog
       open
@@ -73,14 +76,14 @@ function ConfirmDialog({
             onClick={onCancel}
             className="rounded-full bg-[var(--bg-selected)] text-[var(--text-bright)] transition-[filter] hover:bg-[var(--bg-selected)] hover:brightness-125"
           >
-            Cancel
+            {t("sidebar.cancel")}
           </Button>
           <Button
             variant="destructive"
             onClick={onConfirm}
             className="rounded-full hover:bg-[#c9413a]"
           >
-            Delete
+            {t("sidebar.delete")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -128,7 +131,7 @@ function displayTitle(c: LegacyConv): string {
   return t.length > 30 ? t.slice(0, 30) + "…" : t;
 }
 
-function labelFor(c: LegacyConv): string {
+function labelFor(c: LegacyConv, untitled: string): string {
   const prefix = channelPrefix(c.channel, c.account_id);
   let real = displayTitle(c);
   if (!real && c.preview) {
@@ -138,12 +141,13 @@ function labelFor(c: LegacyConv): string {
   if (prefix && real) return prefix + ": " + real;
   if (prefix) return prefix;
   if (real) return real;
-  return c.title || "Untitled";
+  return c.title || untitled;
 }
 
 export function SessionsList() {
   const router = useRouter();
   const pathname = usePathname();
+  const { t, locale } = useTranslation();
   const { conversations } = useWindowGlobals();
   const currentId = useCurrentSessionId();
   // Per-session running map drives the breathing colored indicator
@@ -172,9 +176,12 @@ export function SessionsList() {
   function del(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     const conv = conversations[id] as { title?: string } | undefined;
+    const title = conv?.title || t("sidebar.untitled");
     setConfirm({
-      title: "Delete chat",
-      message: `Are you sure you want to delete "${conv?.title || "Untitled"}"?`,
+      title: t("sidebar.delete_chat"),
+      message: locale === "zh"
+        ? `确定要删除「${title}」吗？`
+        : `Are you sure you want to delete "${title}"?`,
       run: () => {
         const w = window as unknown as SessionWindow;
         wsSend({ action: "delete_session", session_id: id });
@@ -188,8 +195,10 @@ export function SessionsList() {
     const count = Object.keys(conversations).length;
     if (!count) return;
     setConfirm({
-      title: "Delete all chats",
-      message: `Are you sure you want to delete all ${count} conversations? This cannot be undone.`,
+      title: t("sidebar.delete_all_chats"),
+      message: locale === "zh"
+        ? `确定要删除全部 ${count} 个会话吗？${t("sidebar.delete_all_irreversible")}`
+        : `Are you sure you want to delete all ${count} conversations? ${t("sidebar.delete_all_irreversible")}`,
       run: () => {
         const w = window as unknown as SessionWindow;
         wsSend({ action: "clear_sessions" });
@@ -202,7 +211,7 @@ export function SessionsList() {
   }
 
   if (list.length === 0) {
-    return <div className={styles.empty}>No conversations yet</div>;
+    return <div className={styles.empty}>{t("sidebar.no_conversations")}</div>;
   }
 
   return (
@@ -212,7 +221,7 @@ export function SessionsList() {
         return (
           <ConvItem
             key={c.id}
-            label={labelFor(c)}
+            label={labelFor(c, t("sidebar.untitled"))}
             active={active}
             running={!!runningTasks[c.id]}
             onClick={() => switchTo(c.id)}
@@ -221,7 +230,7 @@ export function SessionsList() {
         );
       })}
       <div className={styles.clearAll} onClick={clearAll}>
-        Clear all
+        {t("sidebar.clear_all")}
       </div>
       {confirm ? (
         <ConfirmDialog
@@ -255,6 +264,7 @@ function ConvItem({
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
+  const { t } = useTranslation();
   // Pixel values are explicit (not `h-8`, `px-2`, etc.) because this
   // project's `html { font-size: 14px }` makes Tailwind's rem-based
   // scale 0.875× off — see the same note in FavoritesList.
@@ -310,7 +320,7 @@ function ConvItem({
     <div
       className={`${base} ${colorCls} ${stateCls}`}
       onClick={onClick}
-      title={running ? `${label} (running)` : label}
+      title={running ? `${label} (${t("sidebar.running")})` : label}
     >
       <span
         className={`flex-1 overflow-hidden truncate text-fs-base leading-[20px] ${maskOnHover}`}
@@ -333,7 +343,7 @@ function ConvItem({
           group-hover:opacity-100 group-hover:pointer-events-auto
           hover:!bg-accent-red hover:!text-white"
         onClick={onDelete}
-        title="Delete"
+        title={t("sidebar.delete")}
       >
         <svg
           width="10"

@@ -2,12 +2,23 @@
 
 import { useState } from "react";
 
+import { useTranslation } from "@/lib/i18n";
+
 import {
   relativeTime,
   shortPath,
   wsSend,
   type Worktree,
 } from "./types";
+
+const STATUS_LABELS: Record<string, { en: string; zh: string }> = {
+  active: { en: "active", zh: "活动中" },
+  committing: { en: "committing", zh: "提交中" },
+  merged: { en: "merged", zh: "已合并" },
+  discarded: { en: "discarded", zh: "已丢弃" },
+  kept: { en: "kept", zh: "已保留" },
+  errored: { en: "errored", zh: "出错" },
+};
 
 /**
  * Single row in the Worktrees panel. Pure presentational — parent
@@ -26,6 +37,7 @@ import {
  * worktree returns to active with `.error` populated).
  */
 export function WorktreeItem({ wt }: { wt: Worktree }) {
+  const { t, locale } = useTranslation();
   // While a destructive action is in-flight we visually lock the row
   // and disable buttons so a double-click can't send two requests
   // against the same id.
@@ -51,9 +63,9 @@ export function WorktreeItem({ wt }: { wt: Worktree }) {
   function discard() {
     if (busy) return;
     const force = wt.status === "errored";
-    const ok = window.confirm(
-      `Discard worktree ${wt.branch_name}? This removes ${wt.worktree_path} and deletes the branch. This cannot be undone.`,
-    );
+    const ok = window.confirm(locale === "zh"
+      ? `丢弃 worktree ${wt.branch_name}？这会删除 ${wt.worktree_path} 并删除分支。此操作无法撤销。`
+      : `Discard worktree ${wt.branch_name}? This removes ${wt.worktree_path} and deletes the branch. This cannot be undone.`);
     if (!ok) return;
     setBusy(true);
     wsSend({
@@ -75,6 +87,7 @@ export function WorktreeItem({ wt }: { wt: Worktree }) {
   const isActive = wt.status === "active";
   const isErrored = wt.status === "errored";
   const isCommitting = wt.status === "committing";
+  const statusLabel = STATUS_LABELS[wt.status]?.[locale] || wt.status;
 
   return (
     <div
@@ -88,15 +101,15 @@ export function WorktreeItem({ wt }: { wt: Worktree }) {
       <div className="worktree-item-row">
         <span
           className={"worktree-status-pill worktree-status-pill-" + wt.status}
-          title={`Status: ${wt.status}`}
+          title={`${t("right.status")}: ${statusLabel}`}
         >
-          {wt.status}
+          {statusLabel}
         </span>
         <span className="worktree-item-branch" title={wt.branch_name}>
           {wt.branch_name}
         </span>
-        <span className="worktree-item-time" title={`Created ${new Date(wt.created_at * 1000).toLocaleString()}`}>
-          {relativeTime(wt.created_at)}
+        <span className="worktree-item-time" title={`${t("right.created")} ${new Date(wt.created_at * 1000).toLocaleString()}`}>
+          {relativeTime(wt.created_at, locale)}
         </span>
       </div>
       <div className="worktree-item-row worktree-item-meta">
@@ -108,7 +121,9 @@ export function WorktreeItem({ wt }: { wt: Worktree }) {
         </span>
         {wt.files_changed > 0 ? (
           <span className="worktree-item-files">
-            {wt.files_changed} file{wt.files_changed === 1 ? "" : "s"}
+            {locale === "zh"
+              ? `${wt.files_changed} ${t("right.files")}`
+              : `${wt.files_changed} ${wt.files_changed === 1 ? t("right.file") : t("right.files")}`}
           </span>
         ) : null}
       </div>
@@ -125,9 +140,11 @@ export function WorktreeItem({ wt }: { wt: Worktree }) {
               className="worktree-btn worktree-btn-merge"
               onClick={merge}
               disabled={busy}
-              title={`Merge into ${shortPath(wt.source_repo)} (${wt.merge_strategy || "ff-only"})`}
+              title={locale === "zh"
+                ? `合并到 ${shortPath(wt.source_repo)}（${wt.merge_strategy || "ff-only"}）`
+                : `Merge into ${shortPath(wt.source_repo)} (${wt.merge_strategy || "ff-only"})`}
             >
-              Merge
+              {t("right.merge")}
             </button>
           ) : null}
           {isErrored ? (
@@ -136,9 +153,9 @@ export function WorktreeItem({ wt }: { wt: Worktree }) {
               className="worktree-btn worktree-btn-keep"
               onClick={keep}
               disabled={busy}
-              title="Keep the on-disk worktree, detach from OpenProgram"
+              title={t("right.keep_worktree_title")}
             >
-              Keep
+              {t("right.keep")}
             </button>
           ) : null}
           <button
@@ -146,15 +163,15 @@ export function WorktreeItem({ wt }: { wt: Worktree }) {
             className="worktree-btn worktree-btn-discard"
             onClick={discard}
             disabled={busy}
-            title="Remove worktree dir + delete branch"
+            title={t("right.discard_worktree_title")}
           >
-            Discard
+            {t("right.discard")}
           </button>
         </div>
       ) : null}
       {isCommitting ? (
         <div className="worktree-item-actions worktree-item-actions-hint">
-          merging…
+          {t("right.merging")}
         </div>
       ) : null}
     </div>

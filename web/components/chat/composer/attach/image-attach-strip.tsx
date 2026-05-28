@@ -13,6 +13,7 @@ import React from "react";
 
 import type { PendingImage } from "./image-attach";
 import styles from "../composer.module.css";
+import { useTranslation } from "@/lib/i18n";
 
 interface ImageAttachStripProps {
   pendingImages: PendingImage[];
@@ -37,6 +38,7 @@ export function ImageAttachStrip({
   onRemove,
   onDismissError,
 }: ImageAttachStripProps) {
+  const { text } = useTranslation();
   return (
     <>
       {/* Hidden file input — opened by the plus-menu "Attach image"
@@ -61,7 +63,7 @@ export function ImageAttachStrip({
               {p.previewUrl ? (
                 <img
                   src={p.previewUrl}
-                  alt={p.attachment.filename || "image"}
+                  alt={p.attachment.filename || text("image", "图片")}
                   className={styles.imageAttachImg}
                 />
               ) : (
@@ -70,14 +72,14 @@ export function ImageAttachStrip({
                 // the chip doesn't jump when the bitmap arrives.
                 <span
                   className={styles.imageAttachImg}
-                  aria-label="Loading…"
+                  aria-label={text("Loading...", "加载中...")}
                   data-loading="true"
                 />
               )}
               <button
                 type="button"
                 onClick={() => onRemove(p.id)}
-                aria-label={`Remove image ${p.attachment.filename || p.id}`}
+                aria-label={`${text("Remove image", "移除图片")} ${p.attachment.filename || p.id}`}
                 className={styles.imageAttachRemove}
               >
                 <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden>
@@ -97,7 +99,7 @@ export function ImageAttachStrip({
               <button
                 type="button"
                 onClick={onDismissError}
-                aria-label="Dismiss image error"
+                aria-label={text("Dismiss image error", "关闭图片错误")}
                 className={styles.imageAttachErrorDismiss}
               >
                 ×

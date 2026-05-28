@@ -77,16 +77,24 @@ export function shortPath(p: string | null | undefined): string {
   return ".../" + parts.slice(-2).join("/");
 }
 
-/** "5m ago" style relative timestamp. Falls back to absolute ISO for
- *  things older than a week. Mirrors what the topbar uses elsewhere
- *  so the visual language stays consistent. */
-export function relativeTime(unix: number | null | undefined): string {
+/** Relative timestamp. Falls back to absolute ISO for things older than a week. */
+export function relativeTime(
+  unix: number | null | undefined,
+  locale: "en" | "zh" = "en",
+): string {
   if (!unix) return "";
   const seconds = Math.max(0, Date.now() / 1000 - unix);
-  if (seconds < 60) return `${Math.floor(seconds)}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  if (seconds < 86400 * 7) return `${Math.floor(seconds / 86400)}d ago`;
+  if (locale === "zh") {
+    if (seconds < 60) return `${Math.floor(seconds)} 秒前`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
+    if (seconds < 86400 * 7) return `${Math.floor(seconds / 86400)} 天前`;
+  } else {
+    if (seconds < 60) return `${Math.floor(seconds)}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 86400 * 7) return `${Math.floor(seconds / 86400)}d ago`;
+  }
   try {
     return new Date(unix * 1000).toISOString().slice(0, 10);
   } catch {

@@ -6,8 +6,7 @@
 
 export const MENU_PANEL =
   "flex max-h-[60vh] flex-col gap-px overflow-y-auto rounded-[10px] " +
-  "border border-[var(--border)] bg-bg-tertiary p-[6px] " +
-  "shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_6px_-2px_rgba(0,0,0,0.06),0_12px_24px_-8px_rgba(0,0,0,0.1)]";
+  "border border-[var(--border)] bg-bg-tertiary p-[6px] shadow-(--shadow-popover)";
 
 export const GROUP_LABEL =
   "flex items-center gap-[6px] px-[10px] pb-[4px] pt-[8px] " +

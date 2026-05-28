@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import type { ChatMsg } from "@/lib/session-store";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 
 function wsSend(payload: unknown): void {
@@ -99,6 +100,7 @@ function useFollowupNotice(attachMsgId: string): string | null {
 
 export function AttachCard({ msg }: { msg: ChatMsg }) {
   useMarkdownReady();
+  const { text } = useTranslation();
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const attach = msg.attach || {};
   const followupNotice = useFollowupNotice(msg.id);
@@ -106,7 +108,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const targetSessionId = attach.session_id || "";
   const targetHead = attach.head_id || "";
   const label = (attach.label || "").trim();
-  const preview = msg.content || "(no output)";
+  const preview = msg.content || text("(no output)", "（无输出）");
   const headTag = targetHead ? targetHead.slice(0, 8) : "";
   // The expanded-block stats — populated server-side when the
   // attach pointer pinned a source_commit_id (post attach-commit
@@ -169,21 +171,21 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   // so the chat row reads "Attached: alpha A" not "attached · alpha A".
   const isManual = !!attach.manual;
   const labelKind = !sameSession
-    ? "Imported from"
+    ? text("Imported from", "导入自")
     : isManual
-      ? "Attached"
-      : "Spawned";
+      ? text("Attached", "已附加")
+      : text("Spawned", "已创建子任务");
   // Prefer the source branch's named label; fall back to the manual
   // ``attach.label`` field; then to the looked-up branch name; then
   // to a short hex tip. ``9cc78e93_reply`` was leaking through as
   // the visible title because none of those layers fired.
   const lookedUpName = _branchNameFor(currentSessionId, targetHead);
-  const sourceName = (label || lookedUpName || (targetHead ? targetHead.slice(0, 8) : "")) || "(branch)";
+  const sourceName = (label || lookedUpName || (targetHead ? targetHead.slice(0, 8) : "")) || text("(branch)", "（分支）");
   // Sub-label: short, human-readable context so the user knows what
   // they're looking at without parsing a hex id.
   const subtitle = sameSession
-    ? "source branch — its content is embedded below"
-    : `from session ${targetSessionId}`;
+    ? text("source branch - its content is embedded below", "源分支，内容已嵌入下方")
+    : `${text("from session", "来自会话")} ${targetSessionId}`;
 
 
   return (
@@ -208,13 +210,13 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
                 className={`attach-card-status-pill attach-card-status-${attach.status}`}
                 title={
                   attach.status === "running"
-                    ? "Sub-agent is still running"
+                    ? text("Sub-agent is still running", "子 Agent 仍在运行")
                     : attach.status === "errored"
-                      ? "Sub-task errored"
+                      ? text("Sub-task errored", "子任务出错")
                       : attach.status === "cancelled"
-                        ? "Sub-task cancelled"
+                        ? text("Sub-task cancelled", "子任务已取消")
                         : attach.status === "pending" || attach.status === "queued"
-                          ? "Sub-task is waiting to start"
+                          ? text("Sub-task is waiting to start", "子任务等待开始")
                           : ""
                 }
               >
@@ -238,19 +240,19 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           // of a Switch button. Keeps the row layout consistent.
           <span
             className="attach-card-here"
-            title="You're already on this branch"
+            title={text("You are already on this branch", "当前已在这个分支")}
           >
-            current
+            {text("current", "当前")}
           </span>
         ) : (sameSession ? !!targetHead : !!targetSessionId) ? (
           <button
             type="button"
             className="attach-card-open"
             onClick={open}
-            aria-label={sameSession ? "Switch to this branch" : "Open peer session"}
-            title={sameSession ? "Switch to this branch" : "Open peer session"}
+            aria-label={sameSession ? text("Switch to this branch", "切换到这个分支") : text("Open peer session", "打开关联会话")}
+            title={sameSession ? text("Switch to this branch", "切换到这个分支") : text("Open peer session", "打开关联会话")}
           >
-            {sameSession ? "Switch" : "Open"}
+            {sameSession ? text("Switch", "切换") : text("Open", "打开")}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                  aria-hidden="true">
@@ -262,12 +264,12 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
       </div>
       <div className="attach-card-preview-label">
         {hasEmbedStats
-          ? `EMBEDS ${embedCount} message${embedCount === 1 ? "" : "s"}${
+          ? `${text("EMBEDS", "嵌入")} ${embedCount} ${text("messages", "条消息")}${
               typeof embedTokens === "number"
-                ? ` · ${embedTokens} tokens`
+                ? ` · ${embedTokens} ${text("tokens", "tokens")}`
                 : ""
             }${sourceCommitId ? ` · commit ${sourceCommitId.slice(0, 8)}` : ""}`
-          : "Preview (tip of this branch)"}
+          : text("Preview (tip of this branch)", "预览（该分支末端）")}
       </div>
       <div
         className="attach-card-preview chat-text"
@@ -277,8 +279,8 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
         <div className="attach-card-footer">
           <span className="attach-card-status">
             {hasEmbedStats
-              ? "Will be expanded into your next message"
-              : "Will be included in your next message"}
+              ? text("Will be expanded into your next message", "会展开到你的下一条消息中")
+              : text("Will be included in your next message", "会包含在你的下一条消息中")}
           </span>
         </div>
       ) : null}
@@ -288,7 +290,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
             || attach.status === "queued") ? (
         <div className="attach-card-footer">
           <span className="attach-card-status">
-            Running — embedding placeholder until done
+            {text("Running - embedding placeholder until done", "运行中，完成前使用嵌入占位")}
           </span>
           <button
             type="button"
@@ -299,9 +301,9 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
                 task_id: attach.task_id,
               });
             }}
-            title="Stop this sub-agent"
+            title={text("Stop this sub-agent", "停止这个子 Agent")}
           >
-            Cancel
+            {text("Cancel", "取消")}
           </button>
         </div>
       ) : null}
@@ -324,7 +326,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           // it scroll out of view with the card.
           data-msg-id={followupMsgId || undefined}
         >
-          <div className="attach-card-followup-label">自动 followup</div>
+          <div className="attach-card-followup-label">{text("Auto follow-up", "自动 follow-up")}</div>
           <div className="attach-card-followup-body">{followupNotice}</div>
         </div>
       ) : null}

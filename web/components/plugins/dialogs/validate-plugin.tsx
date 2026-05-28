@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/plugins-store";
+import { useTranslation } from "@/lib/i18n";
 
 interface Check {
   name: string;
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function ValidatePluginDialog({ name, onClose }: Props) {
+  const { text } = useTranslation();
   const validate = usePluginsStore((s) => s.validate);
   const [checks, setChecks] = useState<Check[] | null>(null);
   const [err, setErr] = useState("");
@@ -29,10 +31,10 @@ export function ValidatePluginDialog({ name, onClose }: Props) {
   return (
     <div className={styles.dialogBackdrop} onClick={onClose}>
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.dialogTitle}>Validate {name}</div>
+        <div className={styles.dialogTitle}>{text(`Validate ${name}`, `校验 ${name}`)}</div>
         <div className={styles.dialogBody}>
           {err && <div style={{ color: "#ef4444" }}>{err}</div>}
-          {!checks && !err && <div className={styles.empty}>正在校验…</div>}
+          {!checks && !err && <div className={styles.empty}>{text("Validating...", "正在校验...")}</div>}
           {checks?.map((c) => (
             <div key={c.name} className={styles.checkRow}>
               <span className={c.ok ? styles.checkOk : styles.checkFail}>
@@ -44,7 +46,7 @@ export function ValidatePluginDialog({ name, onClose }: Props) {
           ))}
         </div>
         <div className={styles.dialogActions}>
-          <button className={styles.btn} onClick={onClose}>关闭</button>
+          <button className={styles.btn} onClick={onClose}>{text("Close", "关闭")}</button>
         </div>
       </div>
     </div>

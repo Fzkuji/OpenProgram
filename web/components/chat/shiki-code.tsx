@@ -6,6 +6,7 @@ import { Check, Copy } from "lucide-react";
 import { ensureLang, getHighlighter, SHIKI_DARK, SHIKI_LIGHT } from "@/lib/shiki";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 const ALIASES: Record<string, string> = {
   python: "py",
@@ -26,6 +27,7 @@ interface Props {
 
 export function ShikiCode({ code, language }: Props) {
   const { resolvedTheme } = useTheme();
+  const { text } = useTranslation();
   const lang = (language && (ALIASES[language] ?? language)) || "txt";
   const [html, setHtml] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -66,7 +68,7 @@ export function ShikiCode({ code, language }: Props) {
           size="icon-sm"
           onClick={copy}
           className="opacity-0 transition group-hover:opacity-100"
-          aria-label={copied ? "Copied" : "Copy"}
+          aria-label={copied ? text("Copied", "已复制") : text("Copy", "复制")}
         >
           {copied ? <Check size={11} /> : <Copy size={11} />}
         </Button>

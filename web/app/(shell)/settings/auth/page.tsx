@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { useTranslation } from "@/lib/i18n";
 import { subscribeProviderAuthEvents as subscribeAuthEvents } from "@/lib/provider-auth-events";
 import type {
   AuthProfile,
@@ -38,6 +39,7 @@ const POOL_REFETCH_EVENTS = new Set([
 ]);
 
 export default function AuthSettingsPage() {
+  const { text } = useTranslation();
   const [profiles, setProfiles] = useState<AuthProfile[]>([]);
   const [activeProfile, setActiveProfile] = useState<string>("default");
   const [pools, setPools] = useState<PoolView[]>([]);
@@ -133,15 +135,17 @@ export default function AuthSettingsPage() {
     }
   };
 
-  if (loading) return <div className="p-6 text-sm text-muted-foreground">Loading auth…</div>;
+  if (loading) return <div className="p-6 text-sm text-muted-foreground">{text("Loading auth...", "加载认证信息中...")}</div>;
 
   return (
     <div className="mx-auto max-w-5xl p-6 space-y-8">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">Auth</h1>
+        <h1 className="text-2xl font-semibold">{text("Auth", "认证")}</h1>
         <p className="text-sm text-muted-foreground">
-          Credential pools for each provider in the active profile. Secrets are masked on
-          display; the raw value never leaves the server after it has been stored.
+          {text(
+            "Credential pools for each provider in the active profile. Secrets are masked on display; the raw value never leaves the server after it has been stored.",
+            "当前 profile 下每个 provider 的凭据池。密钥展示时会被遮蔽；保存后原始值不会离开服务器。",
+          )}
         </p>
       </header>
 
@@ -153,7 +157,7 @@ export default function AuthSettingsPage() {
 
       <section className="space-y-2">
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">Profile</label>
+          <label className="text-sm font-medium">{text("Profile", "配置档案")}</label>
           <select
             className="rounded border bg-background px-2 py-1 text-sm"
             value={activeProfile}
@@ -170,23 +174,25 @@ export default function AuthSettingsPage() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium">Credential pools</h2>
+          <h2 className="text-lg font-medium">{text("Credential pools", "凭据池")}</h2>
           <button
             className="rounded border px-3 py-1 text-sm hover:bg-muted"
             onClick={onDiscover}
           >
-            Discover
+            {text("Discover", "发现")}
           </button>
         </div>
         {pools.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No credentials for this profile yet. Add one below or click Discover to scan
-            external sources.
+            {text(
+              "No credentials for this profile yet. Add one below or click Discover to scan external sources.",
+              "这个 profile 还没有凭据。可以在下方添加，或点击发现扫描外部来源。",
+            )}
           </p>
         ) : (
           <div className="space-y-4">
             {pools.map((pool) => (
-              <PoolCard key={`${pool.provider_id}:${pool.profile_id}`} pool={pool} onRemove={onRemove} />
+              <PoolCard key={`${pool.provider_id}:${pool.profile_id}`} pool={pool} onRemove={onRemove} text={text} />
             ))}
           </div>
         )}
@@ -194,10 +200,12 @@ export default function AuthSettingsPage() {
 
       {discovered && (
         <section className="space-y-2">
-          <h2 className="text-lg font-medium">Discovered credentials</h2>
+          <h2 className="text-lg font-medium">{text("Discovered credentials", "发现的凭据")}</h2>
           <p className="text-xs text-muted-foreground">
-            Found on this machine but not yet adopted. Add them via the form below if
-            you want OpenProgram to use them.
+            {text(
+              "Found on this machine but not yet adopted. Add them via the form below if you want OpenProgram to use them.",
+              "这些凭据存在于本机，但尚未被采用。如需 OpenProgram 使用它们，请通过下方表单添加。",
+            )}
           </p>
           <ul className="space-y-2 text-sm">
             {discovered.map((d, i) => (
@@ -207,10 +215,10 @@ export default function AuthSettingsPage() {
                   <div>
                     {d.credential.provider_id} / {d.credential.profile_id}
                     {" — "}
-                    {renderPayloadPreview(d.credential)}
+                    {renderPayloadPreview(d.credential, text)}
                   </div>
                 ) : (
-                  <div className="text-destructive">Error: {d.error}</div>
+                  <div className="text-destructive">{text("Error: ", "错误：")}{d.error}</div>
                 )}
               </li>
             ))}
@@ -219,10 +227,10 @@ export default function AuthSettingsPage() {
       )}
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium">Add credential</h2>
+        <h2 className="text-lg font-medium">{text("Add credential", "添加凭据")}</h2>
         <form onSubmit={onAdd} className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded border p-4">
           <label className="text-sm">
-            Provider
+            {text("Provider", "服务商")}
             <input
               className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm"
               placeholder="openai / anthropic / google-gemini-cli / …"
@@ -232,7 +240,7 @@ export default function AuthSettingsPage() {
             />
           </label>
           <label className="text-sm">
-            Type
+            {text("Type", "类型")}
             <select
               className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm"
               value={addForm.type}
@@ -240,13 +248,13 @@ export default function AuthSettingsPage() {
                 setAddForm((f) => ({ ...f, type: e.target.value as "api_key" | "oauth" }))
               }
             >
-              <option value="api_key">API key</option>
+              <option value="api_key">{text("API key", "API key")}</option>
               <option value="oauth">OAuth</option>
             </select>
           </label>
           {addForm.type === "api_key" ? (
             <label className="text-sm md:col-span-2">
-              API key
+              {text("API key", "API key")}
               <input
                 type="password"
                 className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm font-mono"
@@ -258,7 +266,7 @@ export default function AuthSettingsPage() {
           ) : (
             <>
               <label className="text-sm md:col-span-2">
-                Access token
+                {text("Access token", "访问 token")}
                 <input
                   type="password"
                   className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm font-mono"
@@ -268,7 +276,7 @@ export default function AuthSettingsPage() {
                 />
               </label>
               <label className="text-sm md:col-span-2">
-                Refresh token (optional)
+                {text("Refresh token (optional)", "刷新 token（可选）")}
                 <input
                   type="password"
                   className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm font-mono"
@@ -279,7 +287,7 @@ export default function AuthSettingsPage() {
             </>
           )}
           <button type="submit" className="md:col-span-2 rounded bg-primary px-3 py-2 text-sm text-primary-foreground">
-            Add
+            {text("Add", "添加")}
           </button>
         </form>
       </section>
@@ -290,9 +298,11 @@ export default function AuthSettingsPage() {
 function PoolCard({
   pool,
   onRemove,
+  text,
 }: {
   pool: PoolView;
   onRemove: (cred: CredentialView) => void;
+  text: (en: string, zh: string) => string;
 }) {
   return (
     <div className="rounded border">
@@ -300,10 +310,10 @@ function PoolCard({
         <div>
           <div className="font-medium">{pool.provider_id}</div>
           <div className="text-xs text-muted-foreground">
-            profile: {pool.profile_id} · strategy: {pool.strategy}
+            {text("profile", "配置档案")}：{pool.profile_id} · {text("strategy", "策略")}：{pool.strategy}
           </div>
         </div>
-        <div className="text-xs text-muted-foreground">{pool.credentials.length} credential(s)</div>
+        <div className="text-xs text-muted-foreground">{pool.credentials.length} {text("credential(s)", "个凭据")}</div>
       </div>
       <ul>
         {pool.credentials.map((cred) => (
@@ -313,20 +323,20 @@ function PoolCard({
           >
             <div className="flex flex-col gap-0.5">
               <div className="font-mono text-xs">{cred.credential_id}</div>
-              <div>{renderPayloadPreview(cred)}</div>
+              <div>{renderPayloadPreview(cred, text)}</div>
               <div className="text-xs text-muted-foreground">
-                source: {cred.source}
-                {cred.read_only ? " · read-only" : ""}
-                {" · status: "}
+                {text("source", "来源")}：{cred.source}
+                {cred.read_only ? ` · ${text("read-only", "只读")}` : ""}
+                {" · "}{text("status", "状态")}：
                 {cred.status}
               </div>
             </div>
             <button
               className="rounded border px-2 py-1 text-xs hover:bg-destructive/10"
               onClick={() => onRemove(cred)}
-              aria-label={`Remove ${cred.credential_id}`}
+              aria-label={`${text("Remove", "移除")} ${cred.credential_id}`}
             >
-              Remove
+              {text("Remove", "移除")}
             </button>
           </li>
         ))}
@@ -335,13 +345,13 @@ function PoolCard({
   );
 }
 
-function renderPayloadPreview(cred: CredentialView): string {
+function renderPayloadPreview(cred: CredentialView, text: (en: string, zh: string) => string): string {
   const p = cred.payload;
   if (p.type === "api_key") return `API key ${p.api_key_preview ?? ""}`;
   if (p.type === "oauth")
-    return `OAuth ${p.access_token_preview ?? ""}${p.has_refresh_token ? " (+refresh)" : ""}`;
-  if (p.type === "cli_delegated") return `CLI-delegated → ${p.store_path ?? ""}`;
-  if (p.type === "device_code") return `Device code ${p.access_token_preview ?? ""}`;
-  if (p.type === "external_process") return `Helper ${(p.command || []).join(" ")}`;
+    return `OAuth ${p.access_token_preview ?? ""}${p.has_refresh_token ? ` (${text("+refresh", "+刷新")})` : ""}`;
+  if (p.type === "cli_delegated") return `${text("CLI-delegated", "CLI 委托")} -> ${p.store_path ?? ""}`;
+  if (p.type === "device_code") return `${text("Device code", "设备码")} ${p.access_token_preview ?? ""}`;
+  if (p.type === "external_process") return `${text("Helper", "辅助进程")} ${(p.command || []).join(" ")}`;
   return cred.kind;
 }

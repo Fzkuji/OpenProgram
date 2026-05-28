@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 import { CatalogDialog } from "./mcp-catalog-dialog";
 import {
@@ -36,6 +37,7 @@ import { EditDialog, type EditTarget } from "./mcp-edit-dialog";
 import styles from "./mcp-page.module.css";
 
 export function McpPage() {
+  const { t, text } = useTranslation();
   const [servers, setServers] = useState<ServerStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -178,7 +180,10 @@ export function McpPage() {
     });
   }
   async function doDelete(name: string) {
-    if (!confirm(`Remove MCP server "${name}"? Config will be deleted.`)) return;
+    if (!confirm(text(
+      `Remove MCP server "${name}"? Config will be deleted.`,
+      `移除 MCP 服务器“${name}”？配置会被删除。`,
+    ))) return;
     await runAction("delete", async () => {
       const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`,
         { method: "DELETE" });
@@ -240,22 +245,22 @@ export function McpPage() {
     <div className="main">
       <div className={styles.view}>
         <div className={styles.topbar}>
-          <span className={styles.title}>MCP Servers</span>
+          <span className={styles.title}>{t("nav.mcp")}</span>
           <div className={styles.toolbar}>
             <button className={styles.actionBtn} onClick={() => void reload()}>
-              Refresh
+              {t("sidebar.refresh")}
             </button>
             <button
               className={styles.actionBtn}
               onClick={() => setCatalogOpen(true)}
             >
-              Browse catalog
+              {text("Browse catalog", "浏览目录")}
             </button>
             <button
               className={cn(styles.actionBtn, styles.actionBtnPrimary)}
               onClick={openAdd}
             >
-              + Add server
+              + {text("Add server", "添加服务器")}
             </button>
           </div>
         </div>
@@ -265,13 +270,13 @@ export function McpPage() {
             {loading && servers.length === 0 ? (
               <div className={styles.serverItem} style={{ cursor: "default" }}>
                 <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
-                  Loading…
+                  {text("Loading...", "加载中...")}
                 </span>
               </div>
             ) : servers.length === 0 ? (
               <div className={styles.serverItem} style={{ cursor: "default" }}>
                 <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
-                  No servers
+                  {text("No servers", "没有服务器")}
                 </span>
               </div>
             ) : (
@@ -295,7 +300,7 @@ export function McpPage() {
             )}
             <div className={styles.navSep} />
             <button className={cn(styles.serverItem, styles.navAddItem)} onClick={openAdd}>
-              <span className={styles.serverName}>+ Add server</span>
+              <span className={styles.serverName}>+ {text("Add server", "添加服务器")}</span>
             </button>
           </div>
 
@@ -310,7 +315,7 @@ export function McpPage() {
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}>🔌</div>
                 <div className={styles.emptyText}>
-                  Select a server on the left to view tools and settings.
+                  {text("Select a server on the left to view tools and settings.", "选择左侧服务器查看工具和设置。")}
                 </div>
               </div>
             ) : (

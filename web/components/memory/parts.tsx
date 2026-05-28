@@ -7,6 +7,7 @@
 import { parseFrontmatter, renderMarkdown } from "./markdown";
 import { formatDate } from "./format";
 import { DocIcon, TypeBadge } from "./icons";
+import { useTranslation } from "@/lib/i18n";
 import type { EditorState, WikiPage } from "./types";
 import styles from "./memory-page.module.css";
 
@@ -28,6 +29,7 @@ export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelec
   forceOpen?: boolean;
   onSelect: (p: WikiPage) => void;
 }) {
+  const { locale } = useTranslation();
   const isExpanded = !folder || expanded.has(folder) || forceOpen;
   return (
     <div className={styles.treeGroup}>
@@ -54,7 +56,7 @@ export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelec
               <DocIcon className={styles.fileIcon} />
               <span className={styles.fileName}>{page.title || page.path.split("/").pop()}</span>
               {page.type && <TypeBadge type={page.type} />}
-              <span className={styles.fileMeta}>{formatDate(page.mtime)}</span>
+              <span className={styles.fileMeta}>{formatDate(page.mtime, locale)}</span>
             </button>
           ))}
         </div>
@@ -74,6 +76,7 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
   onDelete?: () => void | Promise<void>;
   onPreviewClick?: (e: React.MouseEvent) => void;
 }) {
+  const { text } = useTranslation();
   const { frontmatter, body } = parseFrontmatter(state.content);
   const lines = state.content.split("\n").length;
   const words = state.content.trim() ? state.content.trim().split(/\s+/).length : 0;
@@ -89,16 +92,16 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
         </div>
         <div className={styles.editorActions}>
           <div className={styles.modeSwitcher}>
-            <button className={`${styles.modeBtn} ${state.viewMode === "edit" ? styles.modeBtnActive : ""}`} onClick={() => onViewMode("edit")}>Edit</button>
-            <button className={`${styles.modeBtn} ${state.viewMode === "preview" ? styles.modeBtnActive : ""}`} onClick={() => onViewMode("preview")}>Preview</button>
+            <button className={`${styles.modeBtn} ${state.viewMode === "edit" ? styles.modeBtnActive : ""}`} onClick={() => onViewMode("edit")}>{text("Edit", "编辑")}</button>
+            <button className={`${styles.modeBtn} ${state.viewMode === "preview" ? styles.modeBtnActive : ""}`} onClick={() => onViewMode("preview")}>{text("Preview", "预览")}</button>
           </div>
-          {state.saveStatus === "saved" && <span className={styles.saveOk}>✓ Saved</span>}
-          {state.saveStatus === "error" && <span className={styles.saveErr}>✗ Error</span>}
+          {state.saveStatus === "saved" && <span className={styles.saveOk}>✓ {text("Saved", "已保存")}</span>}
+          {state.saveStatus === "error" && <span className={styles.saveErr}>✗ {text("Error", "错误")}</span>}
           <button className={styles.saveBtn} onClick={onSave} disabled={state.saving}>
-            {state.saving ? "Saving…" : "Save"}
+            {state.saving ? text("Saving...", "保存中...") : text("Save", "保存")}
           </button>
           {onDelete && (
-            <button className={styles.dangerBtn} onClick={onDelete} title="Delete page">
+            <button className={styles.dangerBtn} onClick={onDelete} title={text("Delete page", "删除页面")}>
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" width="12" height="12" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 4h10M6 4V2.5h4V4M5 4l.5 9.5h5L11 4M6.5 6.5v5M9.5 6.5v5"/>
               </svg>
@@ -115,7 +118,7 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
           value={state.content}
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
-          placeholder="Empty…"
+          placeholder={text("Empty...", "空内容...")}
         />
       ) : (
         <div className={styles.preview} onClick={onPreviewClick}>
@@ -132,17 +135,21 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
           {body ? (
             <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: previewHtml }} />
           ) : (
-            <div className={styles.previewEmpty}>Nothing to preview</div>
+            <div className={styles.previewEmpty}>{text("Nothing to preview", "没有可预览内容")}</div>
           )}
         </div>
       )}
       <div className={styles.editorFooter}>
-        <span>{lines} lines</span>
-        <span>{words} words</span>
-        <span>{state.content.length} chars</span>
+        <span>{localeTextCount(lines, text("line", "行"), text("lines", "行"))}</span>
+        <span>{localeTextCount(words, text("word", "词"), text("words", "词"))}</span>
+        <span>{localeTextCount(state.content.length, text("char", "字符"), text("chars", "字符"))}</span>
       </div>
     </div>
   );
+}
+
+function localeTextCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 export function LoadingSkeleton() {

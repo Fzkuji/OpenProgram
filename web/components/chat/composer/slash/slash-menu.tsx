@@ -10,6 +10,7 @@
  */
 import type { SlashCommand } from "./slash-commands";
 import styles from "../composer.module.css";
+import { useTranslation } from "@/lib/i18n";
 
 interface SlashMenuProps {
   visible: boolean;
@@ -26,6 +27,7 @@ export function SlashMenu({
   activeIndex,
   onPick,
 }: SlashMenuProps) {
+  const { text } = useTranslation();
   if (!visible) return null;
   return (
     <div
@@ -58,9 +60,45 @@ export function SlashMenu({
               <span className={styles.slashMenuArgs}>{c.args}</span>
             </>
           ) : null}
-          <div className={styles.slashMenuDesc}>{c.description}</div>
+          <div className={styles.slashMenuDesc}>{slashDescription(c, text)}</div>
         </div>
       ))}
     </div>
   );
+}
+
+function slashDescription(c: SlashCommand, text: (en: string, zh: string) => string): string {
+  switch (c.name) {
+    case "/compact":
+      return text(
+        "Summarise older history; keep recent N tokens verbatim (default: window-adaptive)",
+        "总结较早历史；最近 N 个 token 原样保留（默认按窗口自适应）",
+      );
+    case "/clear":
+      return text('Start a fresh conversation (equivalent to "New chat")', "开始新会话（等同于“新会话”）");
+    case "/new":
+      return text("Alias of /clear - open a brand-new conversation", "/clear 的别名，打开一个全新会话");
+    case "/branch":
+      return text("Branch the current conversation from this point", "从当前位置创建当前会话的分支");
+    case "/skill":
+      return text("Run a registered skill by name", "按名称运行已注册技能");
+    case "/memory":
+      return text("Open the memory page in a new tab", "在新标签页打开记忆页面");
+    case "/task":
+      return text(
+        "Run another agent in this session as a new branch. Default inherits this conversation; --clean starts at a new root. Add --async to spawn the task to the background runner.",
+        "在当前会话中以新分支运行另一个 Agent。默认继承当前会话；--clean 从新根开始；--async 放到后台运行。",
+      );
+    case "/merge":
+      return text(
+        "Merge N peer branches into a reply on this session. Same-session: 'sid:head_id'. Mark base with '*' prefix.",
+        "把多个同级分支合并为当前会话的一条回复。同会话格式为 sid:head_id；用 * 前缀标记基准。",
+      );
+    case "/help":
+      return text("Open the command list (built-ins, plugin commands, skills)", "打开命令列表（内置、插件命令、技能）");
+    case "/doctor":
+      return text("Run health checks: python, node, skills, plugins, providers, mcp, cache", "运行健康检查：Python、Node、技能、插件、Provider、MCP、缓存");
+    default:
+      return c.description;
+  }
 }

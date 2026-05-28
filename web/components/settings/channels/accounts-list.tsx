@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import styles from "./channels.module.css";
+import { useTranslation } from "@/lib/i18n";
 import { AddAccountDialog } from "./add-account-dialog";
 import { PLATFORMS, PLATFORM_LABEL } from "./types";
 import type { ChannelAccount, StatusMap } from "./types";
@@ -14,11 +15,15 @@ interface Props {
 }
 
 export function AccountsList({ accounts, statuses, onChange }: Props) {
+  const { t, text } = useTranslation();
   const [addOpen, setAddOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const handleDelete = async (channel: string, account_id: string) => {
-    if (!confirm(`Delete ${channel}:${account_id}? Any rules using this bot will also be removed.`)) {
+    if (!confirm(text(
+      `Delete ${channel}:${account_id}? Any rules using this bot will also be removed.`,
+      `删除 ${channel}:${account_id}？使用这个 bot 的规则也会被移除。`,
+    ))) {
       return;
     }
     const key = `${channel}:${account_id}`;
@@ -30,7 +35,7 @@ export function AccountsList({ accounts, statuses, onChange }: Props) {
       );
       if (!r.ok) {
         const d = await r.json().catch(() => null);
-        alert(d?.detail || "Delete failed");
+        alert(d?.detail || text("Delete failed", "删除失败"));
       } else {
         await onChange();
       }
@@ -43,11 +48,12 @@ export function AccountsList({ accounts, statuses, onChange }: Props) {
     <>
       <div className={styles.sectionHeader}>
         <div>
-          <div className={styles.sectionTitle}>Step 1 — Bot accounts</div>
+          <div className={styles.sectionTitle}>{text("Step 1 - Bot accounts", "步骤 1 - Bot 账号")}</div>
           <div className={styles.sectionSub}>
-            Add your bot tokens (Telegram / Discord / Slack). One platform
-            can hold multiple bots — give each one a short name to tell
-            them apart.
+            {text(
+              "Add your bot tokens (Telegram / Discord / Slack). One platform can hold multiple bots. Give each one a short name to tell them apart.",
+              "添加 bot token（Telegram / Discord / Slack）。一个平台可以有多个 bot，请给每个 bot 一个短名称方便区分。",
+            )}
           </div>
         </div>
         <button
@@ -55,23 +61,23 @@ export function AccountsList({ accounts, statuses, onChange }: Props) {
           onClick={() => setAddOpen(true)}
           type="button"
         >
-          + Add bot
+          + {text("Add bot", "添加 bot")}
         </button>
       </div>
 
       {accounts.length === 0 ? (
         <div className={styles.emptyHint}>
-          No bots yet. Click "+ Add bot" to paste a token, or run{" "}
+          {text("No bots yet. Click \"+ Add bot\" to paste a token, or run ", "还没有 bot。点击“+ 添加 bot”粘贴 token，或运行 ")}
           <code>openprogram channels accounts login wechat</code>{" "}
-          to scan a WeChat QR.
+          {text("to scan a WeChat QR.", "扫描 WeChat 二维码。")}
         </div>
       ) : (
         <table className={styles.rowTable}>
           <thead>
             <tr>
-              <th>Platform</th>
-              <th>Account name</th>
-              <th>Status</th>
+              <th>{text("Platform", "平台")}</th>
+              <th>{text("Account name", "账号名称")}</th>
+              <th>{text("Status", "状态")}</th>
               <th></th>
             </tr>
           </thead>
@@ -93,9 +99,9 @@ export function AccountsList({ accounts, statuses, onChange }: Props) {
                     : status?.state === "stale" ? styles.dotRed
                     : styles.dotGray;
                   const dotTitle =
-                    status?.state === "alive" ? "Adapter running"
-                    : status?.state === "stale" ? "Adapter heartbeat stale — likely crashed"
-                    : "Adapter not started";
+                    status?.state === "alive" ? text("Adapter running", "适配器正在运行")
+                    : status?.state === "stale" ? text("Adapter heartbeat stale; likely crashed", "适配器心跳过期，可能已崩溃")
+                    : text("Adapter not started", "适配器未启动");
                   return (
                     <tr key={key}>
                       <td>{PLATFORM_LABEL[a.channel] || a.channel}</td>
@@ -106,12 +112,12 @@ export function AccountsList({ accounts, statuses, onChange }: Props) {
                           title={dotTitle}
                         />
                         {a.configured ? (
-                          <span className={styles.badgeOk}>configured</span>
+                          <span className={styles.badgeOk}>{text("configured", "已配置")}</span>
                         ) : (
-                          <span className={styles.badgeWarn}>missing token</span>
+                          <span className={styles.badgeWarn}>{text("missing token", "缺少 token")}</span>
                         )}
                         {!a.enabled && (
-                          <span className={styles.badgeMuted}> disabled</span>
+                          <span className={styles.badgeMuted}> {text("disabled", "已禁用")}</span>
                         )}
                       </td>
                       <td>
@@ -121,7 +127,7 @@ export function AccountsList({ accounts, statuses, onChange }: Props) {
                           disabled={busy}
                           type="button"
                         >
-                          {busy ? "Deleting…" : "Delete"}
+                          {busy ? text("Deleting...", "删除中...") : t("sidebar.delete")}
                         </button>
                       </td>
                     </tr>

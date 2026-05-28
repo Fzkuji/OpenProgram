@@ -16,6 +16,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { renderMarkdown } from "./markdown";
 import { formatDate, formatSize, groupByFolder } from "./format";
 import { ClockIcon, DocIcon, TypeBadge } from "./icons";
+import { useTranslation } from "@/lib/i18n";
 import {
   EditorPanel,
   EmptyState,
@@ -33,6 +34,7 @@ import type {
 import styles from "./memory-page.module.css";
 
 export function MemoryPage() {
+  const { t, text, locale } = useTranslation();
   const [tab, setTab] = useState<Tab>("wiki");
 
   // Wiki state
@@ -117,13 +119,16 @@ export function MemoryPage() {
 
   async function deleteWikiPage() {
     if (!selectedWiki) return;
-    if (!confirm(`Delete "${selectedWiki.title || selectedWiki.path}"? This cannot be undone.`)) return;
+    if (!confirm(text(
+      `Delete "${selectedWiki.title || selectedWiki.path}"? This cannot be undone.`,
+      `删除“${selectedWiki.title || selectedWiki.path}”？此操作无法撤销。`,
+    ))) return;
     const r = await fetch(`/api/memory/wiki/${selectedWiki.path}`, { method: "DELETE" });
     if (r.ok) {
       setSelectedWiki(null);
       fetchWikiPages();
     } else {
-      alert("Delete failed");
+      alert(text("Delete failed", "删除失败"));
     }
   }
 
@@ -203,7 +208,7 @@ export function MemoryPage() {
     <div className={styles.view}>
       {/* Header — same pattern as functions page */}
       <div className={styles.topbar}>
-        <span className={styles.title}>Memory</span>
+        <span className={styles.title}>{t("nav.memory")}</span>
       </div>
 
       {/* Body — single grid: tabBar (row 1 col 1) + tree (row 2 col 1) +
@@ -217,17 +222,17 @@ export function MemoryPage() {
                 <path d="M3 2.5A1.5 1.5 0 0 1 4.5 1h5L12 3.5V14a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 3 14V2.5z"/>
                 <path d="M9.5 1v2.5H12M5 7h5M5 9.5h5M5 12h3"/>
               </svg>
-            }>Wiki</TabButton>
+            }>{text("Wiki", "维基")}</TabButton>
             <TabButton active={tab === "journal"} onClick={() => setTab("journal")} icon={
               <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
                 <path d="M224,128v80a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V48A16,16,0,0,1,48,32h80a8,8,0,0,1,0,16H48V208H208V128a8,8,0,0,1,16,0Zm5.66-58.34-96,96A8,8,0,0,1,128,168H96a8,8,0,0,1-8-8V128a8,8,0,0,1,2.34-5.66l96-96a8,8,0,0,1,11.32,0l32,32A8,8,0,0,1,229.66,69.66Zm-17-5.66L192,43.31,179.31,56,200,76.69Z"/>
               </svg>
-            }>Journal</TabButton>
+            }>{text("Journal", "日志")}</TabButton>
             <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={
               <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
                 <path d="M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z"/>
               </svg>
-            }>Core</TabButton>
+            }>{text("Core", "核心")}</TabButton>
           </div>
 
           {/* ── Wiki ── */}
@@ -244,15 +249,15 @@ export function MemoryPage() {
                   <input
                     type="text"
                     className={styles.searchInput}
-                    placeholder="Search pages…"
+                    placeholder={text("Search pages...", "搜索页面...")}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                   {search && (
-                    <button className={styles.searchClear} onClick={() => setSearch("")} title="Clear">✕</button>
+                    <button className={styles.searchClear} onClick={() => setSearch("")} title={text("Clear", "清除")}>✕</button>
                   )}
                 </div>
-                <button className={styles.iconBtn} onClick={fetchWikiPages} title="Refresh">
+                <button className={styles.iconBtn} onClick={fetchWikiPages} title={t("sidebar.refresh")}>
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" width="12" height="12" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14 8a6 6 0 1 1-1.76-4.24"/>
                     <path d="M14 2v3h-3"/>
@@ -260,7 +265,11 @@ export function MemoryPage() {
                 </button>
               </div>
               {wikiLoading ? <LoadingSkeleton /> : filteredWiki.length === 0 && filteredSystem.length === 0 ? (
-                <EmptyState icon="doc" text={search ? "No matches" : "No wiki pages found"} sub={search ? "Try a different query" : "The agent will populate this as it runs"} />
+                <EmptyState
+                  icon="doc"
+                  text={search ? text("No matches", "没有匹配结果") : text("No wiki pages found", "没有找到维基页面")}
+                  sub={search ? text("Try a different query", "换一个查询试试") : text("The agent will populate this as it runs", "Agent 运行后会填充这里")}
+                />
               ) : (
                 <div className={styles.treeContent}>
                   {Array.from(wikiGroups.entries()).map(([folder, pages]) => (
@@ -286,7 +295,7 @@ export function MemoryPage() {
                           <circle cx="8" cy="8" r="6"/>
                           <path d="M8 5v3M8 10.5v.5" strokeLinecap="round"/>
                         </svg>
-                        <span className={styles.folderName}>System</span>
+                        <span className={styles.folderName}>{text("System", "系统")}</span>
                         <span className={styles.folderCount}>{filteredSystem.length}</span>
                       </button>
                       {(showSystem || search) && filteredSystem.map((page) => (
@@ -297,7 +306,7 @@ export function MemoryPage() {
                         >
                           <DocIcon className={styles.fileIcon} />
                           <span className={styles.fileName}>{page.title}</span>
-                          <span className={styles.fileMeta}>{formatDate(page.mtime)}</span>
+                          <span className={styles.fileMeta}>{formatDate(page.mtime, locale)}</span>
                         </button>
                       ))}
                     </div>
@@ -310,7 +319,11 @@ export function MemoryPage() {
                   <EditorPanel
                     title={selectedWiki.title || selectedWiki.path}
                     badge={selectedWiki.type ? <TypeBadge type={selectedWiki.type} /> : null}
-                    meta={[selectedWiki.path, formatSize(selectedWiki.size), `Modified ${formatDate(selectedWiki.mtime)}`]}
+                    meta={[
+                      selectedWiki.path,
+                      formatSize(selectedWiki.size),
+                      text(`Modified ${formatDate(selectedWiki.mtime, locale)}`, `修改于 ${formatDate(selectedWiki.mtime, locale)}`),
+                    ]}
                     state={wikiEditor}
                     onChange={(c) => setWikiEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
                     onSave={saveWikiPage}
@@ -319,7 +332,7 @@ export function MemoryPage() {
                     onPreviewClick={handlePreviewClick}
                   />
                 ) : (
-                  <Placeholder icon="doc" text="Select a page to view or edit" />
+                  <Placeholder icon="doc" text={text("Select a page to view or edit", "选择一个页面进行查看或编辑")} />
                 )}
               </div>
             </>
@@ -330,7 +343,11 @@ export function MemoryPage() {
             <>
               <div className={styles.tree}>
               {journalLoading ? <LoadingSkeleton /> : journalEntries.length === 0 ? (
-                <EmptyState icon="clock" text="No journal memory" sub="Context commits appear here after sessions" />
+                <EmptyState
+                  icon="clock"
+                  text={text("No journal memory", "没有日志记忆")}
+                  sub={text("Context commits appear here after sessions", "会话后的上下文提交会显示在这里")}
+                />
               ) : (
                 <div className={styles.treeContent}>
                   {journalEntries.map((entry) => (
@@ -344,7 +361,7 @@ export function MemoryPage() {
                         <span className={styles.fileName}>{entry.date}</span>
                         <span className={styles.fileMeta}>{formatSize(entry.size)}</span>
                       </div>
-                      <span className={styles.fileMeta}>{formatDate(entry.mtime)}</span>
+                      <span className={styles.fileMeta}>{formatDate(entry.mtime, locale)}</span>
                     </button>
                   ))}
                 </div>
@@ -359,15 +376,15 @@ export function MemoryPage() {
                         <span className={styles.editorTitle}>{selectedDate}</span>
                       </div>
                       <div className={styles.editorActions}>
-                        <span className={styles.fileMeta}>{journalContent.length} chars</span>
+                        <span className={styles.fileMeta}>{journalContent.length} {text("chars", "字符")}</span>
                       </div>
                     </div>
                     <div className={styles.preview}>
-                      <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: journalContent ? renderMarkdown(journalContent) : "<em>Loading…</em>" }} />
+                      <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: journalContent ? renderMarkdown(journalContent) : `<em>${text("Loading...", "加载中...")}</em>` }} />
                     </div>
                   </div>
                 ) : (
-                  <Placeholder icon="clock" text="Select a session to view its memory" />
+                  <Placeholder icon="clock" text={text("Select a session to view its memory", "选择一个会话查看它的记忆")} />
                 )}
               </div>
             </>
@@ -383,16 +400,26 @@ export function MemoryPage() {
                     <path d="M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z"/>
                   </svg>
                 </div>
-                <div className={styles.coreInfoTitle}>Core Memory</div>
+                <div className={styles.coreInfoTitle}>{text("Core Memory", "核心记忆")}</div>
                 <div className={styles.coreInfoDesc}>
-                  Injected into every system prompt. Keep it under 2 KB — concise, high-signal facts about the user and current context.
+                  {text(
+                    "Injected into every system prompt. Keep it under 2 KB. Use concise facts about the user and current context.",
+                    "会注入到每次系统提示词中。请控制在 2 KB 以内，记录关于用户和当前上下文的简洁事实。",
+                  )}
                 </div>
                 {coreMeta && (
                   <div className={styles.coreInfoMeta}>
                     <span className={coreMeta.size > 2048 ? styles.metaWarn : styles.metaOk}>
-                      {formatSize(coreMeta.size)}{coreMeta.size > 2048 ? " ⚠ exceeds 2 KB" : " / 2 KB"}
+                      {formatSize(coreMeta.size)}
+                      {coreMeta.size > 2048
+                        ? text(" exceeds 2 KB", " 超过 2 KB")
+                        : " / 2 KB"}
                     </span>
-                    {coreMeta.mtime > 0 && <span>Modified {formatDate(coreMeta.mtime)}</span>}
+                    {coreMeta.mtime > 0 && (
+                      <span>
+                        {text(`Modified ${formatDate(coreMeta.mtime, locale)}`, `修改于 ${formatDate(coreMeta.mtime, locale)}`)}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -419,4 +446,3 @@ export function MemoryPage() {
     </div>
   );
 }
-

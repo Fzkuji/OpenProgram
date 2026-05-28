@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 
 import styles from "../composer.module.css";
 import { CheckIcon, ChipCloseIcon } from "../icons";
+import { useTranslation } from "@/lib/i18n";
 
 export function ToolChip({
   icon,
@@ -19,6 +20,7 @@ export function ToolChip({
   label: string;
   onRemove: () => void;
 }) {
+  const { text } = useTranslation();
   return (
     <div
       className={styles.toolChip}
@@ -27,7 +29,7 @@ export function ToolChip({
       title=""
     >
       <span className={styles.toolChipIcon}>{icon}</span>
-      <span className={styles.toolChipClose} aria-label="Remove">
+      <span className={styles.toolChipClose} aria-label={text("Remove", "移除")}>
         <ChipCloseIcon />
       </span>
     </div>

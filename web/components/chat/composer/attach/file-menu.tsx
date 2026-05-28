@@ -11,6 +11,7 @@
 
 import React from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "@/lib/i18n";
 
 export interface FileMatch {
   path: string;
@@ -30,6 +31,7 @@ interface FileMenuProps {
 export function FileMenu({
   items, selectedIndex, position, onHover, onPick, loading, query,
 }: FileMenuProps) {
+  const { text } = useTranslation();
   if (!position || typeof document === "undefined") return null;
   const content = (
     <div
@@ -47,18 +49,20 @@ export function FileMenu({
         background: "var(--bg-secondary)",
         border: "1px solid var(--border)",
         borderRadius: 6,
-        boxShadow: "0 6px 24px rgba(0,0,0,0.25)",
+        boxShadow: "var(--shadow-popover)",
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
         fontSize: 12,
       }}
     >
       {loading && items.length === 0 ? (
         <div style={{ padding: "6px 10px", color: "var(--text-muted)" }}>
-          Searching…
+          {text("Searching...", "搜索中...")}
         </div>
       ) : items.length === 0 ? (
         <div style={{ padding: "6px 10px", color: "var(--text-muted)" }}>
-          {query ? `No files match "${query}"` : "Type to search files"}
+          {query
+            ? text(`No files match "${query}"`, `没有匹配“${query}”的文件`)
+            : text("Type to search files", "输入以搜索文件")}
         </div>
       ) : (
         items.map((item, i) => {

@@ -12,6 +12,7 @@ import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 
 import { MessageActions } from "./message-actions";
 
@@ -22,6 +23,7 @@ function EditBox({
   msg: ChatMsg;
   onDone: () => void;
 }) {
+  const { t, text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [value, setValue] = useState(msg.content || "");
   const [submitting, setSubmitting] = useState(false);
@@ -93,7 +95,7 @@ function EditBox({
           onClick={onDone}
           disabled={submitting}
         >
-          Cancel
+          {t("sidebar.cancel")}
         </Button>
         <Button
           type="button"
@@ -102,7 +104,7 @@ function EditBox({
           onClick={save}
           disabled={submitting}
         >
-          {submitting ? "Submitting…" : "Save & resend"}
+          {submitting ? text("Submitting...", "提交中...") : text("Save & resend", "保存并重新发送")}
         </Button>
       </div>
     </>
@@ -110,6 +112,7 @@ function EditBox({
 }
 
 export function UserBubble({ msg }: { msg: ChatMsg }) {
+  const { text } = useTranslation();
   const [editing, setEditing] = useState(false);
 
   return (
@@ -119,7 +122,7 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
     >
       <div className="message-header">
         <div className="message-avatar user-avatar">U</div>
-        <div className="message-sender">You</div>
+        <div className="message-sender">{text("You", "你")}</div>
         <MessageActions msg={msg} onEdit={() => setEditing(true)} />
       </div>
       <div className="message-content">

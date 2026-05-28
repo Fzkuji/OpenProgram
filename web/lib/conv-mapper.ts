@@ -75,6 +75,7 @@ interface LegacyMsg {
   started_at?: number;
   last_update_at?: number;
   parent_id?: string;
+  source?: string;
 }
 
 export interface AttachMeta {

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Markdown } from "@/lib/markdown";
 import { Button } from "@/components/ui/button";
 import type { SkillDetail } from "@/lib/skills-store";
+import { useTranslation, type Locale } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import styles from "./skills-page.module.css";
 
@@ -23,10 +24,22 @@ function encodePath(name: string): string {
   return name.split("/").map(encodeURIComponent).join("/");
 }
 
-function relTime(ms: number): string {
+function relTime(ms: number, locale: Locale): string {
   const diff = Date.now() - ms;
-  if (diff < 0) return "just now";
+  if (diff < 0) return locale === "zh" ? "刚刚" : "just now";
   const sec = Math.floor(diff / 1000);
+  if (locale === "zh") {
+    if (sec < 60) return `${sec} 秒前`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min} 分钟前`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} 小时前`;
+    const d = Math.floor(hr / 24);
+    if (d < 7) return `${d} 天前`;
+    if (d < 30) return `${Math.floor(d / 7)} 周前`;
+    if (d < 365) return `${Math.floor(d / 30)} 个月前`;
+    return `${Math.floor(d / 365)} 年前`;
+  }
   if (sec < 60) return `${sec}s ago`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m ago`;
@@ -40,6 +53,7 @@ function relTime(ms: number): string {
 }
 
 export function SkillDetailPage({ name }: { name: string }) {
+  const { t, text, locale } = useTranslation();
   const router = useRouter();
   const setComposerInput = useSessionStore((s) => s.setComposerInput);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
@@ -128,7 +142,7 @@ export function SkillDetailPage({ name }: { name: string }) {
       <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
         <div className={styles.view}>
           <div className={styles.topbar}>
-            <Link href="/skills" className={styles.tabBtn}>← Skills</Link>
+            <Link href="/skills" className={styles.tabBtn}>← {t("nav.skills")}</Link>
             <span className={styles.title}>{name}</span>
           </div>
           <div className="p-6 text-sm text-[var(--accent-red,#ef4444)]">{error}</div>
@@ -141,8 +155,8 @@ export function SkillDetailPage({ name }: { name: string }) {
       <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
         <div className={styles.view}>
           <div className={styles.topbar}>
-            <Link href="/skills" className={styles.tabBtn}>← Skills</Link>
-            <span className={styles.title}>Loading…</span>
+            <Link href="/skills" className={styles.tabBtn}>← {t("nav.skills")}</Link>
+            <span className={styles.title}>{text("Loading...", "加载中...")}</span>
           </div>
         </div>
       </div>
@@ -163,7 +177,7 @@ export function SkillDetailPage({ name }: { name: string }) {
   };
 
   const doDelete = async () => {
-    if (!confirm(`Delete skill "${detail.name}"?`)) return;
+    if (!confirm(text(`Delete skill "${detail.name}"?`, `删除技能“${detail.name}”？`))) return;
     await fetch(`/api/skills/${encodePath(detail.name)}`, { method: "DELETE" });
     router.push("/skills");
   };
@@ -203,7 +217,7 @@ export function SkillDetailPage({ name }: { name: string }) {
       if (fresh.ok) setDetail(await fresh.json());
       setEditing(false);
     } catch (e) {
-      alert(`Save failed: ${e}`);
+      alert(text(`Save failed: ${e}`, `保存失败：${e}`));
     } finally {
       setSaving(false);
     }
@@ -213,7 +227,7 @@ export function SkillDetailPage({ name }: { name: string }) {
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
       <div className={styles.view}>
         <div className={styles.topbar}>
-          <Link href="/skills" className={styles.tabBtn}>← Skills</Link>
+          <Link href="/skills" className={styles.tabBtn}>← {t("nav.skills")}</Link>
           <span className={styles.title}>{detail.name}</span>
           {detail.version && (
             <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
@@ -232,19 +246,19 @@ export function SkillDetailPage({ name }: { name: string }) {
                 // session if one is open, otherwise on /chat.
                 setComposerInput(`/skill ${detail.name} `);
                 router.push(currentSessionId ? `/s/${currentSessionId}` : "/chat");
-              }}>Use in chat →</Button>
+              }}>{text("Use in chat", "在对话中使用")} →</Button>
             )}
             {canEdit && !editing && (
-              <Button variant="outline" size="sm" onClick={startEdit}>Edit</Button>
+              <Button variant="outline" size="sm" onClick={startEdit}>{text("Edit", "编辑")}</Button>
             )}
             {editing && (
               <>
-                <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving}>Cancel</Button>
-                <Button size="sm" onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+                <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving}>{t("sidebar.cancel")}</Button>
+                <Button size="sm" onClick={saveEdit} disabled={saving}>{saving ? text("Saving...", "保存中...") : text("Save", "保存")}</Button>
               </>
             )}
             {canDelete && !editing && (
-              <Button variant="destructive" size="sm" onClick={doDelete}>Delete</Button>
+              <Button variant="destructive" size="sm" onClick={doDelete}>{t("sidebar.delete")}</Button>
             )}
           </div>
         </div>
@@ -262,12 +276,12 @@ export function SkillDetailPage({ name }: { name: string }) {
             {/* install command card */}
             <div className="mb-5 rounded-md border border-[var(--border)]">
               <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 bg-[var(--bg-secondary)]">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-dim)]">Install</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-dim)]">{text("Install", "安装")}</span>
                 <button
                   onClick={doCopy}
                   className="text-xs text-[var(--text-secondary)] hover:text-nav-color-hover"
                 >
-                  {copied ? "Copied" : "Copy"}
+                  {copied ? text("Copied", "已复制") : text("Copy", "复制")}
                 </button>
               </div>
               <pre className="px-3 py-2 text-xs font-mono text-[var(--text-bright)] overflow-x-auto">
@@ -288,7 +302,11 @@ export function SkillDetailPage({ name }: { name: string }) {
                       : "border-transparent text-[var(--text-secondary)] hover:text-nav-color-hover")
                   }
                 >
-                  {t === "skill" ? "SKILL.md" : t === "files" ? `Files (${detail.resources.length})` : "Versions"}
+                  {t === "skill"
+                    ? "SKILL.md"
+                    : t === "files"
+                      ? `${text("Files", "文件")} (${detail.resources.length})`
+                      : text("Versions", "版本")}
                 </button>
               ))}
             </div>
@@ -339,18 +357,18 @@ export function SkillDetailPage({ name }: { name: string }) {
                     </li>
                   ))}
                   {detail.resources.length === 0 && (
-                    <li className="text-[var(--text-tertiary)] px-2 py-1">(no companion files)</li>
+                    <li className="text-[var(--text-tertiary)] px-2 py-1">{text("(no companion files)", "（没有附属文件）")}</li>
                   )}
                 </ul>
                 <div className="flex-1 min-w-0 rounded-md border border-[var(--border)] bg-[var(--bg-input)] p-3 overflow-auto">
                   {!openFile && (
-                    <div className="text-xs text-[var(--text-tertiary)]">Select a file to preview.</div>
+                    <div className="text-xs text-[var(--text-tertiary)]">{text("Select a file to preview.", "选择一个文件进行预览。")}</div>
                   )}
                   {openFile && fileError && (
                     <div className="text-xs text-[var(--accent-red,#ef4444)]">{fileError}</div>
                   )}
                   {openFile && fileContent === null && !fileError && (
-                    <div className="text-xs text-[var(--text-tertiary)]">Loading…</div>
+                    <div className="text-xs text-[var(--text-tertiary)]">{text("Loading...", "加载中...")}</div>
                   )}
                   {openFile && fileContent !== null && (
                     <pre className="whitespace-pre-wrap text-xs font-mono text-[var(--text-primary)]">{fileContent}</pre>
@@ -361,69 +379,78 @@ export function SkillDetailPage({ name }: { name: string }) {
             {tab === "versions" && (
               <div className="text-xs text-[var(--text-tertiary)]">
                 {detail.version
-                  ? `Current: v${detail.version}. Version history requires the registry to be a ClawHub source.`
-                  : "Version history is only available for remote registries (ClawHub) — this skill ships without a version field."}
+                  ? text(
+                      `Current: v${detail.version}. Version history requires the registry to be a ClawHub source.`,
+                      `当前：v${detail.version}。版本历史需要注册表来源为 ClawHub。`,
+                    )
+                  : text(
+                      "Version history is only available for remote registries (ClawHub). This skill ships without a version field.",
+                      "版本历史仅适用于远程注册表（ClawHub）。这个技能没有版本字段。",
+                    )}
               </div>
             )}
           </div>
 
           {/* right sidebar with metadata */}
           <aside className="border-l border-[var(--border)] bg-[var(--bg-secondary)]/40 overflow-y-auto p-4 text-sm">
-            <SideField label="Source">
+            <SideField label={text("Source", "来源")}>
               <span className="font-mono">{detail.source}</span>
             </SideField>
 
             {detail.category && (
-              <SideField label="Category">{detail.category}</SideField>
+              <SideField label={text("Category", "分类")}>{detail.category}</SideField>
             )}
 
             {namespace && (
-              <SideField label="Namespace">
+              <SideField label={text("Namespace", "命名空间")}>
                 <span className="font-mono">{namespace}/</span>
               </SideField>
             )}
 
             {detail.version && (
-              <SideField label="Current version">v{detail.version}</SideField>
+              <SideField label={text("Current version", "当前版本")}>v{detail.version}</SideField>
             )}
 
-            <SideField label="Path">
+            <SideField label={text("Path", "路径")}>
               <span className="font-mono text-xs break-all">{detail.path}</span>
             </SideField>
 
-            <SideField label="Aliases">
+            <SideField label={text("Aliases", "别名")}>
               {detail.aliases && detail.aliases.length > 0
                 ? detail.aliases.join(", ")
-                : <span className="text-[var(--text-tertiary)]">none</span>}
+                : <span className="text-[var(--text-tertiary)]">{text("none", "无")}</span>}
             </SideField>
 
-            <SideField label="Allowed tools">
+            <SideField label={text("Allowed tools", "允许的工具")}>
               {detail.allowed_tools && detail.allowed_tools.length > 0
                 ? detail.allowed_tools.join(", ")
-                : <span className="text-[var(--text-tertiary)]">unrestricted</span>}
+                : <span className="text-[var(--text-tertiary)]">{text("unrestricted", "不限制")}</span>}
             </SideField>
 
-            <SideField label="Resources">
+            <SideField label={text("Resources", "资源")}>
               {detail.resources.length > 0
-                ? `${detail.resources.length} file${detail.resources.length === 1 ? "" : "s"}`
-                : <span className="text-[var(--text-tertiary)]">SKILL.md only</span>}
+                ? text(
+                    `${detail.resources.length} file${detail.resources.length === 1 ? "" : "s"}`,
+                    `${detail.resources.length} 个文件`,
+                  )
+                : <span className="text-[var(--text-tertiary)]">{text("SKILL.md only", "仅 SKILL.md")}</span>}
             </SideField>
 
-            <SideField label="Enabled">
-              {detail.enabled ? "yes" : "no"}
+            <SideField label={text("Enabled", "已启用")}>
+              {detail.enabled ? text("yes", "是") : text("no", "否")}
             </SideField>
 
-            <SideField label="Invocations">
+            <SideField label={text("Invocations", "调用次数")}>
               {trace.length === 0 ? (
-                <span className="text-[var(--text-tertiary)]">never invoked</span>
+                <span className="text-[var(--text-tertiary)]">{text("never invoked", "从未调用")}</span>
               ) : (
                 <>
                   <div className="text-sm">
                     {trace.length}
-                    {trace.length === 100 ? "+" : ""} call{trace.length === 1 ? "" : "s"}
+                    {trace.length === 100 ? "+" : ""} {text(trace.length === 1 ? "call" : "calls", "次调用")}
                   </div>
                   <div className="mt-1 text-xs text-[var(--text-tertiary)]">
-                    last: {relTime(trace[0].ts * 1000)}
+                    {text("last", "最近")}: {relTime(trace[0].ts * 1000, locale)}
                   </div>
                 </>
               )}

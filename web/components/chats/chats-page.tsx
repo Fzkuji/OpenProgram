@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./chats-page.module.css";
+import { useTranslation, type Locale } from "@/lib/i18n";
 
 type SortKey = "recent" | "oldest" | "title";
 type StatusFilter = "all" | "active" | "archived";
@@ -30,27 +31,6 @@ type FilterId =
   | "month"
   | "older";
 
-const NAV_GROUPS: Array<{
-  label: string;
-  items: Array<{ id: FilterId; name: string; icon: string }>;
-}> = [
-  {
-    label: "Library",
-    items: [
-      { id: "all", name: "All chats", icon: "💬" },
-    ],
-  },
-  {
-    label: "By recency",
-    items: [
-      { id: "today", name: "Today", icon: "·" },
-      { id: "week", name: "Last 7 days", icon: "·" },
-      { id: "month", name: "Last 30 days", icon: "·" },
-      { id: "older", name: "Older", icon: "·" },
-    ],
-  },
-];
-
 const DAY = 86400;
 
 function bucketOf(ts: number): Exclude<FilterId, "all"> {
@@ -62,14 +42,8 @@ function bucketOf(ts: number): Exclude<FilterId, "all"> {
   return "older";
 }
 
-const SECTION_LABELS: Record<Exclude<FilterId, "all">, string> = {
-  today: "Today",
-  week: "Last 7 days",
-  month: "Last 30 days",
-  older: "Older",
-};
-
 export function ChatsPage() {
+  const { t, text, locale } = useTranslation();
   const router = useRouter();
   const [convs, setConvs] = useState<Record<string, ConvSummary>>({});
   const [query, setQuery] = useState("");
@@ -184,16 +158,43 @@ export function ChatsPage() {
     return out;
   }, [items, filter]);
 
+  const navGroups: Array<{
+    label: string;
+    items: Array<{ id: FilterId; name: string; icon: string }>;
+  }> = [
+    {
+      label: text("Library", "会话库"),
+      items: [
+        { id: "all", name: text("All chats", "全部会话"), icon: "💬" },
+      ],
+    },
+    {
+      label: text("By recency", "按时间"),
+      items: [
+        { id: "today", name: text("Today", "今天"), icon: "·" },
+        { id: "week", name: text("Last 7 days", "最近 7 天"), icon: "·" },
+        { id: "month", name: text("Last 30 days", "最近 30 天"), icon: "·" },
+        { id: "older", name: text("Older", "更早"), icon: "·" },
+      ],
+    },
+  ];
+  const sectionLabels: Record<Exclude<FilterId, "all">, string> = {
+    today: text("Today", "今天"),
+    week: text("Last 7 days", "最近 7 天"),
+    month: text("Last 30 days", "最近 30 天"),
+    older: text("Older", "更早"),
+  };
+
   return (
     <div className="main">
       <div className={styles.view}>
         <div className={styles.topbar}>
-          <span className={styles.title}>Chats</span>
+          <span className={styles.title}>{t("nav.chats")}</span>
           <div className={styles.toolbar}>
             <input
               type="text"
               className={styles.search}
-              placeholder="Search chats..."
+              placeholder={text("Search chats...", "搜索会话...")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -201,18 +202,18 @@ export function ChatsPage() {
               value={sort}
               onChange={setSort}
               options={[
-                { value: "recent", label: "Sort: Recent" },
-                { value: "oldest", label: "Sort: Oldest" },
-                { value: "title", label: "Sort: Title" },
+                { value: "recent", label: text("Sort: Recent", "排序：最近") },
+                { value: "oldest", label: text("Sort: Oldest", "排序：最早") },
+                { value: "title", label: text("Sort: Title", "排序：标题") },
               ]}
             />
             <CustomSelect
               value={statusFilter}
               onChange={setStatusFilter}
               options={[
-                { value: "all", label: "All" },
-                { value: "active", label: "Active sessions" },
-                { value: "archived", label: "No session" },
+                { value: "all", label: text("All", "全部") },
+                { value: "active", label: text("Active sessions", "活动会话") },
+                { value: "archived", label: text("No session", "无会话") },
               ]}
             />
           </div>
@@ -220,7 +221,7 @@ export function ChatsPage() {
 
         <div className={styles.body}>
           <div className={styles.nav}>
-            {NAV_GROUPS.map((group) => (
+            {navGroups.map((group) => (
               <div key={group.label}>
                 <div className={styles.navGroupLabel}>{group.label}</div>
                 {group.items.map((it) => (
@@ -247,10 +248,10 @@ export function ChatsPage() {
                 <div className={styles.emptyIcon}>💬</div>
                 <div className={styles.emptyText}>
                   {query
-                    ? "No chats match your search"
+                    ? text("No chats match your search", "没有匹配的会话")
                     : filter === "all"
-                      ? "No conversations yet — start one above"
-                      : "Nothing in this range"}
+                      ? text("No conversations yet. Start one above.", "暂无会话。可以从上方开始。")
+                      : text("Nothing in this range", "这个时间范围内没有内容")}
                 </div>
               </div>
             ) : grouped ? (
@@ -260,13 +261,15 @@ export function ChatsPage() {
                   .map((b) => (
                     <div className={styles.section} key={b}>
                       <div className={styles.sectionHeader}>
-                        {SECTION_LABELS[b]} ({grouped[b]!.length})
+                        {sectionLabels[b]} ({grouped[b]!.length})
                       </div>
                       <div>
                         {grouped[b]!.map((c) => (
                           <ChatRow
                             key={c.id}
                             conv={c}
+                            locale={locale}
+                            untitled={t("sidebar.untitled")}
                             onClick={() => router.push(`/s/${c.id}`)}
                           />
                         ))}
@@ -280,6 +283,8 @@ export function ChatsPage() {
                   <ChatRow
                     key={c.id}
                     conv={c}
+                    locale={locale}
+                    untitled={t("sidebar.untitled")}
                     onClick={() => router.push(`/s/${c.id}`)}
                   />
                 ))}
@@ -294,12 +299,16 @@ export function ChatsPage() {
 
 function ChatRow({
   conv,
+  locale,
+  untitled,
   onClick,
 }: {
   conv: ConvSummary;
+  locale: Locale;
+  untitled: string;
   onClick: () => void;
 }) {
-  const title = conv.title || "Untitled";
+  const title = conv.title || untitled;
   const initial = title.replace(/^\s+/, "").slice(0, 1).toUpperCase() || "?";
   return (
     <div className={styles.row} onClick={onClick}>
@@ -310,7 +319,7 @@ function ChatRow({
           <span title={String(conv.id)}>{conv.id.slice(0, 12)}</span>
         </div>
       </div>
-      <div className={styles.rowTime}>{formatRelativeTime(conv.created_at ?? 0)}</div>
+      <div className={styles.rowTime}>{formatRelativeTime(conv.created_at ?? 0, locale)}</div>
     </div>
   );
 }
@@ -385,10 +394,17 @@ function CustomSelect<T extends string>({
   );
 }
 
-function formatRelativeTime(ts: number): string {
+function formatRelativeTime(ts: number, locale: Locale): string {
   if (!ts) return "";
   const now = Date.now() / 1000;
   const diff = Math.max(0, now - ts);
+  if (locale === "zh") {
+    if (diff < 60) return "刚刚";
+    if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+    if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} 天前`;
+    return `${Math.floor(diff / (86400 * 30))} 个月前`;
+  }
   if (diff < 60) return "just now";
   if (diff < 3600) {
     const m = Math.floor(diff / 60);

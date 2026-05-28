@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronRight, ChevronDown, Activity, X } from "lucide-react";
 import type { TreeNode } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 interface Props {
   tree: TreeNode | null;
@@ -12,6 +13,7 @@ interface Props {
 
 export function ContextTreePanel({ tree, onClose }: Props) {
   const [selected, setSelected] = useState<TreeNode | null>(null);
+  const { text } = useTranslation();
 
   return (
     <aside
@@ -34,7 +36,7 @@ export function ContextTreePanel({ tree, onClose }: Props) {
             className="text-[13px] font-semibold"
             style={{ color: "var(--text-bright)" }}
           >
-            Context Tree
+            {text("Context Tree", "上下文树")}
           </h3>
         </div>
         <button onClick={onClose}>
@@ -48,7 +50,7 @@ export function ContextTreePanel({ tree, onClose }: Props) {
             className="p-6 text-center text-[12px]"
             style={{ color: "var(--text-muted)" }}
           >
-            No live execution. Run a function to see its Context tree here.
+            {text("No live execution. Run a function to see its Context tree here.", "当前没有执行记录。运行函数后可在这里查看上下文树。")}
           </div>
         ) : (
           <div className="p-2">
@@ -167,6 +169,7 @@ function TreeNodeView({
 }
 
 function NodeDetail({ node }: { node: TreeNode }) {
+  const { text } = useTranslation();
   const rawFields: [string, unknown][] = [
     ["name", node.name],
     ["type", node.type ?? node.node_type],
@@ -191,7 +194,7 @@ function NodeDetail({ node }: { node: TreeNode }) {
             className="mb-1 text-[10px] font-semibold uppercase"
             style={{ color: "var(--text-muted)" }}
           >
-            Inputs
+            {text("Inputs", "输入")}
           </div>
           <pre
             className="overflow-x-auto rounded p-2 font-mono text-[10px]"
@@ -210,7 +213,7 @@ function NodeDetail({ node }: { node: TreeNode }) {
             className="mb-1 text-[10px] font-semibold uppercase"
             style={{ color: "var(--text-muted)" }}
           >
-            Output
+            {text("Output", "输出")}
           </div>
           <pre
             className="max-h-48 overflow-auto rounded p-2 font-mono text-[10px]"

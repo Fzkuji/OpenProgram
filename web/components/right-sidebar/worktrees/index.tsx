@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 
 import { WorktreeItem } from "./worktree-item";
@@ -49,6 +50,7 @@ interface WorktreeStatusDetail {
 }
 
 export function WorktreesPanel() {
+  const { t } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [collapsed, setCollapsed] = useState(false);
@@ -214,10 +216,10 @@ export function WorktreesPanel() {
         onClick={() => setCollapsed((c) => !c)}
       >
         <span className="sidebar-section-title">
-          Worktrees ({visible.length})
+          {t("right.worktrees")} ({visible.length})
         </span>
         <span className="sidebar-section-hint">
-          {collapsed ? "Show" : "Hide"}
+          {collapsed ? t("sidebar.show") : t("sidebar.hide")}
         </span>
       </div>
       {!collapsed ? (

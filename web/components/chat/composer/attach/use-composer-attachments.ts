@@ -18,7 +18,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   type PendingImage,
-  collectImagesFromFiles,
   readDroppedTextFile,
   readImageFile,
   ACCEPTED_IMAGE_MIME,

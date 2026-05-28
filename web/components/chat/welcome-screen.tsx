@@ -13,6 +13,7 @@
 
 import { useSessionStore } from "@/lib/session-store";
 import { useWindowGlobals } from "@/components/sidebar/use-window-globals";
+import { useTranslation } from "@/lib/i18n";
 
 import styles from "./welcome-screen.module.css";
 
@@ -53,6 +54,7 @@ export function WelcomeScreen() {
   const setComposerInput = useSessionStore((s) => s.setComposerInput);
   const focusComposer = useSessionStore((s) => s.focusComposer);
   const { availableFunctions } = useWindowGlobals();
+  const { text } = useTranslation();
 
   if (!visible) return null;
 
@@ -95,8 +97,10 @@ export function WelcomeScreen() {
         </div>
         <div className={styles.title}>Agentic Programming</div>
         <div className={styles.text}>
-          Run agentic functions, create new ones, or ask questions. Type a
-          command or natural language below.
+          {text(
+            "Run agentic functions, create new ones, or ask questions. Type a command or natural language below.",
+            "运行 Agentic 函数、创建新函数，或直接提问。可以在下方输入命令或自然语言。",
+          )}
         </div>
       </div>
       <div
@@ -113,7 +117,7 @@ export function WelcomeScreen() {
             onClick={(e) => pickExample(ex.name, e)}
           >
             {ex.icon}
-            {ex.label}
+            {text(ex.label, `运行 ${ex.name}`)}
           </button>
         ))}
       </div>

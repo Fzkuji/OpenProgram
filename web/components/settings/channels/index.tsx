@@ -27,7 +27,7 @@ import type {
 } from "./types";
 
 export function ChannelsSection() {
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [bindings, setBindings] = useState<ChannelBinding[]>([]);
   const [statuses, setStatuses] = useState<StatusMap>({});
@@ -104,15 +104,15 @@ export function ChannelsSection() {
       <div className={shellStyles.pageHeader}>
         <h2 className={shellStyles.pageTitle}>{t("settings.tab.channels")}</h2>
         <p className={shellStyles.pageMeta}>
-          Let your agents send and receive messages on Telegram / Discord
-          / Slack / WeChat. Two steps: 1) add a bot account (paste a bot
-          token, or scan a QR for WeChat) → 2) add rules that decide
-          which platform / sender goes to which agent.
+          {text(
+            "Let your agents send and receive messages on Telegram / Discord / Slack / WeChat. Two steps: 1) add a bot account (paste a bot token, or scan a QR for WeChat); 2) add rules that decide which platform / sender goes to which agent.",
+            "让 Agent 在 Telegram / Discord / Slack / WeChat 上收发消息。两步：1）添加 bot 账号（粘贴 bot token，或为 WeChat 扫码）；2）添加规则，决定哪个平台 / 发送者转给哪个 Agent。",
+          )}
         </p>
       </div>
       <div className={shellStyles.pageBody}>
         {loading ? (
-          <div className={styles.emptyHint}>Loading…</div>
+          <div className={styles.emptyHint}>{text("Loading...", "加载中...")}</div>
         ) : (
           <>
             <div className={styles.detailSection}>

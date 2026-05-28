@@ -11,7 +11,6 @@ type Page = "chat" | "settings" | "chats";
 const PAGE_HTML: Record<Page, string> = {
   chat: "/html/index.html",
   settings: "/html/settings.html",
-  programs: "(legacy /html/(legacy programs.html) — gone)",
   chats: "/html/chats.html",
 };
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import styles from "../settings-page.module.css";
 import type { Provider } from "./types";
+import { useTranslation } from "@/lib/i18n";
 
 
 /** One ``$ command`` row in a setup hint, with a "Copy" button so
@@ -100,6 +101,7 @@ function CommandRow({ text }: { text: string }) {
  *  source-line ends up as its own <div>, producing the ragged column
  *  the user complained about. */
 export function SetupHint({ hint, configured }: { hint: string; configured: boolean }) {
+  const { text } = useTranslation();
   type Block = { kind: "para"; text: string } | { kind: "cmd"; text: string };
   const blocks: Block[] = [];
   let buf: string[] = [];
@@ -122,8 +124,8 @@ export function SetupHint({ hint, configured }: { hint: string; configured: bool
   }
   flushPara();
 
-  const renderInline = (text: string) =>
-    text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).map((seg, j) => {
+  const renderInline = (s: string) =>
+    s.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).map((seg, j) => {
       if (seg.startsWith("`") && seg.endsWith("`")) {
         return (
           <code
@@ -148,9 +150,9 @@ export function SetupHint({ hint, configured }: { hint: string; configured: bool
   return (
     <div className={styles.detailSection}>
       <div className={styles.detailSectionTitle}>
-        <span>Setup</span>
+        <span>{text("Setup", "设置")}</span>
         <span className={styles.modelCountSummary}>
-          {configured ? "Detected" : "Not running"}
+          {configured ? text("Detected", "已检测到") : text("Not running", "未运行")}
         </span>
       </div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, lineHeight: 1.55 }}>
@@ -171,17 +173,22 @@ export function SetupHint({ hint, configured }: { hint: string; configured: bool
 /** CLI-runtime providers (e.g. claude-code) — show the binary name
  *  and whether it was found in PATH instead of an API-key input. */
 export function CliInfo({ provider }: { provider: Provider }) {
+  const { text } = useTranslation();
   return (
     <div className={styles.detailSection}>
       <div className={styles.detailSectionTitle}>
         <span>CLI Binary</span>
         <span className={styles.modelCountSummary}>
-          {provider.configured ? "Found in PATH" : "Not found"}
+          {provider.configured ? text("Found in PATH", "已在 PATH 中找到") : text("Not found", "未找到")}
         </span>
       </div>
       <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-        This provider wraps the <code>{provider.cli_binary}</code> CLI. Install it
-        and run its own login command; enable the toggle above to use it here.
+        {text("This provider wraps the ", "这个 Provider 封装 ")}
+        <code>{provider.cli_binary}</code>
+        {text(
+          " CLI. Install it and run its own login command; enable the toggle above to use it here.",
+          " CLI。安装它并运行它自己的登录命令；启用上方开关后即可在这里使用。",
+        )}
       </p>
     </div>
   );

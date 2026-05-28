@@ -13,6 +13,7 @@ import { ModelList } from "./model-list";
 import { CliInfo, SetupHint } from "./setup-hint";
 import styles from "../settings-page.module.css";
 import type { Model, Provider } from "./types";
+import { useTranslation } from "@/lib/i18n";
 
 /** Right-pane detail view for one selected provider. Header + enable
  *  toggle, then a stack of sections: setup hint (optional), API key
@@ -27,12 +28,13 @@ export function Detail({
   onToggle: (enabled: boolean) => void;
   onChanged: () => void;
 }) {
+  const { text } = useTranslation();
   const subtitle =
     provider.kind === "cli"
-      ? `CLI runtime — binary: ${provider.cli_binary || "?"}`
+      ? text(`CLI runtime - binary: ${provider.cli_binary || "?"}`, `CLI 运行时 - binary：${provider.cli_binary || "?"}`)
       : provider.api_key_env
         ? `API key env: ${provider.api_key_env}`
-        : "Subscription required";
+        : text("Subscription required", "需要订阅");
 
   const [models, setModels] = useState<Model[]>([]);
   const [modelSearch, setModelSearch] = useState("");
@@ -70,7 +72,7 @@ export function Detail({
         <Switch
           checked={provider.enabled}
           onCheckedChange={onToggle}
-          title="Enable this provider"
+          title={text("Enable this provider", "启用这个 Provider")}
         />
       </div>
 
@@ -99,7 +101,7 @@ export function Detail({
       ) : (
         <div className={styles.detailSection}>
           <p className={styles.modelCountSummary}>
-            No models in the registry for this provider.
+            {text("No models in the registry for this provider.", "这个 Provider 在注册表中没有模型。")}
           </p>
         </div>
       )}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { X, Play, Eye, Loader2, Folder } from "lucide-react";
 import type { AgenticFunction, FunctionParamDetail } from "@/lib/types";
 import { api } from "@/lib/api";
+import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function FunctionRunDialog({ fn, onClose }: Props) {
+  const { t, text } = useTranslation();
   const router = useRouter();
   const visible = fn.params_detail.filter((p) => !p.hidden);
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -123,7 +125,7 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           {visible.length === 0 ? (
             <p className="text-[13px]" style={{ color: "var(--text-muted)" }}>
-              No parameters. Click Run to execute.
+              {text("No parameters. Click Run to execute.", "没有参数。点击运行即可执行。")}
             </p>
           ) : (
             visible.map((p) => (
@@ -141,7 +143,7 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
                 className="mb-1 text-[11px] font-semibold uppercase tracking-wide"
                 style={{ color: "var(--text-secondary)" }}
               >
-                Result
+                {text("Result", "结果")}
               </h3>
               <pre
                 className="max-h-64 overflow-auto rounded-md border p-3 font-mono text-[11px]"
@@ -162,7 +164,7 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
           style={{ borderColor: "var(--border)" }}
         >
           <Button variant="outline" size="sm" onClick={onClose}>
-            Cancel
+            {t("sidebar.cancel")}
           </Button>
           <Button
             variant="outline"
@@ -171,11 +173,11 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
             disabled={running}
           >
             {running ? <Loader2 className="animate-spin" /> : <Eye />}
-            Run inline
+            {text("Run inline", "直接运行")}
           </Button>
           <Button size="sm" onClick={runInChat}>
             <Play />
-            Run in chat
+            {text("Run in chat", "在对话中运行")}
           </Button>
         </div>
       </div>
@@ -192,6 +194,7 @@ function ParamInput({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const { text } = useTranslation();
   return (
     <div>
       <div className="mb-1 flex items-center gap-2">
@@ -212,7 +215,7 @@ function ParamInput({
             className="text-[10px]"
             style={{ color: "var(--accent-red)" }}
           >
-            required
+            {text("required", "必填")}
           </span>
         )}
       </div>
@@ -285,12 +288,12 @@ function ParamInput({
                 const j = await r.json();
                 if (j.path) onChange(j.path);
               } catch (e) {
-                alert("Folder picker unavailable: " + String(e));
+                alert(text("Folder picker unavailable: ", "文件夹选择器不可用：") + String(e));
               }
             }}
           >
             <Folder />
-            Browse
+            {text("Browse", "浏览")}
           </Button>
         </div>
       ) : (

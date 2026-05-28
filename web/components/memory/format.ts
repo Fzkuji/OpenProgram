@@ -12,10 +12,17 @@ export function formatSize(bytes: number): string {
 
 /** Relative timestamp: "just now" / "5m ago" / "3h ago" / "2d ago" /
  *  locale-formatted date for anything older than a week. */
-export function formatDate(mtime: number): string {
+export function formatDate(mtime: number, locale: "en" | "zh" = "en"): string {
   const d = new Date(mtime * 1000);
   const now = new Date();
   const diff = now.getTime() - d.getTime();
+  if (locale === "zh") {
+    if (diff < 60000) return "刚刚";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+    if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)} 天前`;
+    return d.toLocaleDateString("zh-CN");
+  }
   if (diff < 60000) return "just now";
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;

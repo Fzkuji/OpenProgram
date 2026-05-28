@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/plugins-store";
+import { useTranslation } from "@/lib/i18n";
 import { AddMarketplaceDialog } from "../dialogs/add-marketplace-dialog";
 
 interface IndexItem {
@@ -20,6 +21,7 @@ interface IndexItem {
 type SortKey = "default" | "name" | "official";
 
 export function MarketplaceBrowser() {
+  const { text } = useTranslation();
   const {
     plugins,
     marketplaces,
@@ -69,21 +71,21 @@ export function MarketplaceBrowser() {
     const source = item.source || (item.url ? "git" : "pip");
     const spec = item.spec || item.url || item.name || "";
     if (!spec) {
-      alert("Missing source/spec/url — cannot install");
+      alert(text("Missing source/spec/url. Cannot install.", "缺少 source/spec/url，无法安装。"));
       return;
     }
     setBusySpec(spec);
     try {
       const r = await install(source, spec);
       if (!r.success) {
-        alert(`Install failed:\n${r.log.slice(0, 500)}`);
+        alert(text(`Install failed:\n${r.log.slice(0, 500)}`, `安装失败：\n${r.log.slice(0, 500)}`));
       }
     } finally {
       setBusySpec("");
     }
   };
 
-  function filterAndSort(arr: IndexItem[]): IndexItem[] {
+  const filterAndSort = useCallback((arr: IndexItem[]): IndexItem[] => {
     let out = arr;
     if (filter.trim()) {
       const q = filter.toLowerCase();
@@ -101,10 +103,10 @@ export function MarketplaceBrowser() {
       out = [...out].sort((a, b) => (b.official ? 1 : 0) - (a.official ? 1 : 0));
     }
     return out;
-  }
+  }, [filter, sort]);
 
-  const shownBuiltin = useMemo(() => filterAndSort(builtin), [builtin, filter, sort]);
-  const shownItems = useMemo(() => filterAndSort(items), [items, filter, sort]);
+  const shownBuiltin = useMemo(() => filterAndSort(builtin), [builtin, filterAndSort]);
+  const shownItems = useMemo(() => filterAndSort(items), [items, filterAndSort]);
 
   return (
     <div className="space-y-5">
@@ -121,7 +123,7 @@ export function MarketplaceBrowser() {
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder={`Search plugins…`}
+            placeholder={text("Search plugins...", "搜索插件...")}
             className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20"
           />
         </div>
@@ -130,22 +132,25 @@ export function MarketplaceBrowser() {
           onChange={(e) => setSort(e.target.value as SortKey)}
           className="shrink-0 rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none"
         >
-          <option value="default">Sort: default</option>
-          <option value="name">Name</option>
-          <option value="official">Official first</option>
+          <option value="default">{text("Sort: default", "排序：默认")}</option>
+          <option value="name">{text("Name", "名称")}</option>
+          <option value="official">{text("Official first", "官方优先")}</option>
         </select>
       </div>
 
       {/* Built-in catalog */}
       <section>
         <h3 className="text-sm font-semibold text-[var(--text-bright)] mb-1">
-          Curated plugins
+          {text("Curated plugins", "精选插件")}
           <span className="ml-2 text-[11px] font-normal text-[var(--text-tertiary)]">
-            built-in catalog · {builtin.length} total
+            {text(`built-in catalog · ${builtin.length} total`, `内置目录 · 共 ${builtin.length} 个`)}
           </span>
         </h3>
         <p className="text-xs text-[var(--text-tertiary)] mb-3">
-          One-click installs maintained by OpenProgram. Source &amp; pkg-manager are bundled with each entry — no marketplace registration needed.
+          {text(
+            "One-click installs maintained by OpenProgram. Source and package manager are bundled with each entry. No marketplace registration needed.",
+            "由 OpenProgram 维护的一键安装项。每个条目都包含来源和包管理器信息，不需要注册 marketplace。",
+          )}
         </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {shownBuiltin.map((it) => (
@@ -159,7 +164,7 @@ export function MarketplaceBrowser() {
           ))}
           {shownBuiltin.length === 0 && (
             <div className="col-span-full text-xs text-[var(--text-tertiary)] py-2">
-              {filter.trim() ? "No matches." : "No built-in plugins available."}
+              {filter.trim() ? text("No matches.", "没有匹配结果。") : text("No built-in plugins available.", "没有可用的内置插件。")}
             </div>
           )}
         </div>
@@ -167,9 +172,9 @@ export function MarketplaceBrowser() {
 
       {/* Custom marketplaces */}
       <section>
-        <h3 className="text-sm font-semibold text-[var(--text-bright)] mb-1">External marketplaces</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-bright)] mb-1">{text("External marketplaces", "外部 Marketplace")}</h3>
         <p className="text-xs text-[var(--text-tertiary)] mb-3">
-          Add any JSON index URL (claude-code marketplace schema compatible).
+          {text("Add any JSON index URL (claude-code marketplace schema compatible).", "添加任意 JSON 索引 URL（兼容 claude-code marketplace schema）。")}
         </p>
         <div className="flex items-center gap-2 mb-3">
           <select
@@ -177,32 +182,32 @@ export function MarketplaceBrowser() {
             onChange={(e) => setSelectedId(e.target.value)}
             className="rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] outline-none"
           >
-            <option value="">— Select a marketplace —</option>
+            <option value="">{text("- Select a marketplace -", "- 选择 Marketplace -")}</option>
             {marketplaces.map((m) => (
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
-          <button className={styles.btn} onClick={() => setAddOpen(true)}>+ Add</button>
+          <button className={styles.btn} onClick={() => setAddOpen(true)}>+ {text("Add", "添加")}</button>
           {selectedId && (
             <button
               className={styles.btnDanger}
               onClick={async () => {
-                if (!confirm("Remove this marketplace?")) return;
+                if (!confirm(text("Remove this marketplace?", "移除这个 Marketplace？"))) return;
                 await removeMarketplace(selectedId);
                 setSelectedId("");
                 setItems([]);
               }}
-            >Remove</button>
+            >{text("Remove", "移除")}</button>
           )}
         </div>
 
-        {loading && <div className="text-xs text-[var(--text-tertiary)]">Loading…</div>}
+        {loading && <div className="text-xs text-[var(--text-tertiary)]">{text("Loading...", "加载中...")}</div>}
         {err && <div className={styles.errorBox}>{err}</div>}
         {!loading && !err && selectedId && shownItems.length === 0 && (
-          <div className="text-xs text-[var(--text-tertiary)]">No items in this marketplace.</div>
+          <div className="text-xs text-[var(--text-tertiary)]">{text("No items in this marketplace.", "这个 Marketplace 中没有条目。")}</div>
         )}
         {!selectedId && !loading && (
-          <div className="text-xs text-[var(--text-tertiary)]">Pick a marketplace to browse its plugins.</div>
+          <div className="text-xs text-[var(--text-tertiary)]">{text("Pick a marketplace to browse its plugins.", "选择一个 Marketplace 浏览插件。")}</div>
         )}
         {shownItems.length > 0 && (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -232,6 +237,7 @@ function PluginCard({
   installing: boolean;
   onInstall: () => void;
 }) {
+  const { text } = useTranslation();
   const title = item.displayName || item.name || "(unnamed)";
   const slug = item.name || item.spec || "";
   return (
@@ -244,10 +250,10 @@ function PluginCard({
               <span className="text-[10px] text-[var(--text-tertiary)]">v{item.version}</span>
             )}
             {item.official && (
-              <span className="rounded border border-blue-500/40 bg-blue-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-blue-400">official</span>
+              <span className="rounded border border-blue-500/40 bg-blue-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-blue-400">{text("official", "官方")}</span>
             )}
             {installed && (
-              <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400">installed</span>
+              <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400">{text("installed", "已安装")}</span>
             )}
           </div>
           {slug && slug !== title && (
@@ -270,7 +276,7 @@ function PluginCard({
           disabled={installing}
           className={installed ? styles.btn : styles.btnPrimary}
         >
-          {installing ? "Installing…" : installed ? "Reinstall" : "Install"}
+          {installing ? text("Installing...", "安装中...") : installed ? text("Reinstall", "重新安装") : text("Install", "安装")}
         </button>
       </div>
     </div>

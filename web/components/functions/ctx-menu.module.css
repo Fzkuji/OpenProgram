@@ -5,7 +5,7 @@
   border-radius: var(--radius);
   padding: 4px 0;
   z-index: 999;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popover);
   min-width: 160px;
 }
 .ctxItem {

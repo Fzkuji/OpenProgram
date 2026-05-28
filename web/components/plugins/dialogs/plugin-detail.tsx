@@ -2,6 +2,7 @@
 
 import styles from "../plugins.module.css";
 import type { PluginRow } from "@/lib/plugins-store";
+import { useTranslation } from "@/lib/i18n";
 
 interface Props {
   plugin: PluginRow;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function PluginDetailDialog({ plugin, onClose }: Props) {
+  const { text } = useTranslation();
   return (
     <div className={styles.dialogBackdrop} onClick={onClose}>
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
@@ -17,7 +19,7 @@ export function PluginDetailDialog({ plugin, onClose }: Props) {
           <div className={styles.rowMeta}>
             v{plugin.version} · source={plugin.source} · manifest={plugin.manifest_form}
             {plugin.compatibility && ` · compat=${plugin.compatibility}`}
-            {plugin.deprecated && " · DEPRECATED"}
+            {plugin.deprecated && text(" · DEPRECATED", " · 已废弃")}
           </div>
           {plugin.description && <p style={{ marginTop: 8 }}>{plugin.description}</p>}
           <pre style={{
@@ -40,7 +42,7 @@ export function PluginDetailDialog({ plugin, onClose }: Props) {
           </pre>
         </div>
         <div className={styles.dialogActions}>
-          <button className={styles.btn} onClick={onClose}>关闭</button>
+          <button className={styles.btn} onClick={onClose}>{text("Close", "关闭")}</button>
         </div>
       </div>
     </div>

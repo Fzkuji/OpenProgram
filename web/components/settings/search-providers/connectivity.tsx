@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import styles from "../settings-page.module.css";
+import { useTranslation } from "@/lib/i18n";
 
 export function SearchConnectivity({
   providerId,
@@ -12,6 +13,7 @@ export function SearchConnectivity({
   providerId: string;
   disabled: boolean;
 }) {
+  const { text } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{
     kind: "ok" | "err";
@@ -44,11 +46,14 @@ export function SearchConnectivity({
           text: `✓ ${d.latency_ms || 0} ms`,
           title:
             typeof d.result_count === "number"
-              ? `Returned ${d.result_count} result${d.result_count === 1 ? "" : "s"}`
+              ? text(
+                  `Returned ${d.result_count} result${d.result_count === 1 ? "" : "s"}`,
+                  `返回 ${d.result_count} 条结果`,
+                )
               : undefined,
         });
       } else {
-        setResult({ kind: "err", text: "✗ failed", title: d.error });
+        setResult({ kind: "err", text: text("✗ failed", "✗ 失败"), title: d.error });
       }
     } catch (e) {
       setResult({ kind: "err", text: "✗", title: (e as Error).message });
@@ -60,11 +65,11 @@ export function SearchConnectivity({
   return (
     <div className={styles.detailSection}>
       <div className={styles.detailSectionTitle}>
-        <span>Connectivity check</span>
+        <span>{text("Connectivity check", "连接检查")}</span>
       </div>
       <div className={styles.detailRow}>
         <span className={styles.modelCountSummary} style={{ flex: 1 }}>
-          Runs a tiny live query to validate the API key.
+          {text("Runs a tiny live query to validate the API key.", "运行一个小型实时查询来验证 API key。")}
         </span>
         {result && (
           <span
@@ -82,12 +87,11 @@ export function SearchConnectivity({
           size="sm"
           onClick={test}
           disabled={busy || disabled}
-          title={disabled ? "Configure the API key first" : undefined}
+          title={disabled ? text("Configure the API key first", "请先配置 API key") : undefined}
         >
-          Check
+          {text("Check", "检查")}
         </Button>
       </div>
     </div>
   );
 }
-

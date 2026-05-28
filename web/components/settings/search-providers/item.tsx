@@ -3,6 +3,7 @@
 import styles from "../settings-page.module.css";
 import { SearchProviderGlyph } from "./glyph";
 import type { SearchProvider } from "./types";
+import { useTranslation } from "@/lib/i18n";
 
 export function SearchProviderItem({
   p,
@@ -13,6 +14,7 @@ export function SearchProviderItem({
   active: boolean;
   onSelect: () => void;
 }) {
+  const { text } = useTranslation();
   const dot = p.available ? "on" : p.configured ? "off" : "unconfigured";
   return (
     <div
@@ -22,7 +24,7 @@ export function SearchProviderItem({
       <SearchProviderGlyph id={p.id} />
       <span className={styles.providerLabel}>{p.name}</span>
       {p.is_default && (
-        <span className={styles.providerDefaultBadge}>Default</span>
+        <span className={styles.providerDefaultBadge}>{text("Default", "默认")}</span>
       )}
       <span
         className={
@@ -36,13 +38,12 @@ export function SearchProviderItem({
         }
         title={
           p.available
-            ? "Available"
+            ? text("Available", "可用")
             : p.configured
-              ? "Configured (inactive)"
-              : "Not configured"
+              ? text("Configured (inactive)", "已配置（未启用）")
+              : text("Not configured", "未配置")
         }
       />
     </div>
   );
 }
-

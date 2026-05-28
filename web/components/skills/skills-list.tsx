@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSkills, type Skill } from "@/lib/skills-store";
 import { Switch } from "@/components/ui/switch";
+import { useTranslation } from "@/lib/i18n";
 
 // --- tree node model -----------------------------------------------------
 
@@ -185,6 +186,7 @@ function TreeBranch({
 }
 
 export function SkillsList() {
+  const { text } = useTranslation();
   const { skills, toggleSkill } = useSkills();
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set<string>());
   const [filter, setFilter] = useState("");
@@ -282,12 +284,14 @@ export function SkillsList() {
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Search skills..."
+          placeholder={text("Search skills...", "搜索技能...")}
           className="flex-1 min-w-0 rounded border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-sm"
         />
         <button
           onClick={() => setSearchBody((v) => !v)}
-          title={searchBody ? "Searching name + description + body" : "Click to also search SKILL.md body"}
+          title={searchBody
+            ? text("Searching name + description + body", "正在搜索名称、描述和正文")
+            : text("Click to also search SKILL.md body", "点击后同时搜索 SKILL.md 正文")}
           className={
             "shrink-0 rounded px-1.5 py-1 text-[11px] " +
             (searchBody
@@ -296,10 +300,10 @@ export function SkillsList() {
           }
         >body</button>
         <button onClick={expandAll}
-          title="Expand all"
+          title={text("Expand all", "全部展开")}
           className="shrink-0 rounded px-1.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊕</button>
         <button onClick={collapseAll}
-          title="Collapse all"
+          title={text("Collapse all", "全部折叠")}
           className="shrink-0 rounded px-1.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊖</button>
       </div>
       <div className="space-y-1">
@@ -325,7 +329,7 @@ export function SkillsList() {
             className="flex w-full items-center gap-2 text-xs text-[var(--text-secondary)] hover:text-nav-color-hover select-none"
           >
             <span className="w-3 text-center">{showOptional ? "▾" : "▸"}</span>
-            <span>Optional ({optionalSkills.length})</span>
+            <span>{text("Optional", "可选")} ({optionalSkills.length})</span>
           </button>
           {showOptional && (
             <div className="mt-2 space-y-1">
@@ -348,7 +352,7 @@ export function SkillsList() {
         </div>
       )}
       {skills.length === 0 && (
-        <div className="text-sm text-[var(--text-tertiary)]">No skills found.</div>
+        <div className="text-sm text-[var(--text-tertiary)]">{text("No skills found.", "没有找到技能。")}</div>
       )}
     </div>
   );

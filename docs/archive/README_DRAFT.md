@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/logo.svg" alt="OpenProgram" width="280">
+  <img src="../images/logo.svg" alt="OpenProgram" width="280">
 </p>
 
 <h1 align="center">OpenProgram</h1>
@@ -16,10 +16,11 @@
 </p>
 
 <p align="center">
-  <a href="docs/GETTING_STARTED.md">Getting Started</a> ·
-  <a href="docs/API.md">API Reference</a> ·
-  <a href="docs/philosophy/agentic-programming.md">Philosophy</a> ·
-  <a href="docs/README_CN.md">中文</a>
+  <a href="../GETTING_STARTED.md">Getting Started</a> ·
+  <a href="../README.md">Current Docs</a> ·
+  <a href="../API.md">API Reference</a> ·
+  <a href="../philosophy/agentic-programming.md">Philosophy</a> ·
+  <a href="../README_CN.md">中文</a>
 </p>
 
 ---
@@ -127,7 +128,7 @@ What just happened: `summarize` is a real Python function. The docstring is the 
 
 MCP is a *transport* protocol. Agentic Programming is an *execution model*. They are orthogonal — OpenProgram speaks MCP, but the scheduler is Python.
 
-[Full rationale →](docs/philosophy/agentic-programming.md)
+[Full rationale →](../philosophy/agentic-programming.md)
 
 ---
 
@@ -135,14 +136,14 @@ MCP is a *transport* protocol. Agentic Programming is an *execution model*. They
 
 | Section | What's inside |
 |---|---|
-| [Getting Started](docs/GETTING_STARTED.md) | Three-minute install + first runnable example |
-| [API Reference](docs/API.md) | `@agentic_function`, `Runtime`, `Context`, `create_runtime` |
-| [Providers](docs/api/providers.md) | All six providers, detection order, CLI vs API trade-offs |
+| [Getting Started](../GETTING_STARTED.md) | Three-minute install + first runnable example |
+| [API Reference](../API.md) | `@agentic_function`, `Runtime`, `Context`, `create_runtime` |
+| [Providers](../api/providers.md) | All six providers, detection order, CLI vs API trade-offs |
 | Built-in Functions | `deep_work`, `ask_user`, PDF helpers, etc. — see `openprogram/functions/agentics/` |
-| [Worker & Channels](docs/WORKER.md) | Persistent process, system service install, Discord / Telegram / WeChat |
-| [Web UI](docs/WEB_UI.md) | Browser interface, execution tree, history graph |
-| [Skills Integration](docs/INTEGRATION_CLAUDE_CODE.md) | Use as a Claude Code / Gemini CLI / OpenClaw skill pack |
-| [Memory](docs/MEMORY.md) | Three-layer memory, wiki, sleep-time reflection |
+| Worker & Channels | Persistent process, system service install, Discord / Telegram / WeChat |
+| Web UI | Browser interface, execution tree, history graph |
+| [Skills Integration](../INTEGRATION_CLAUDE_CODE.md) | Use as a Claude Code / Gemini CLI / OpenClaw skill pack |
+| Memory | Three-layer memory, wiki, sleep-time reflection |
 
 ---
 
@@ -170,7 +171,7 @@ Two real applications ship with the repo:
 Coming from another agent framework? OpenProgram is designed to coexist:
 
 - **Claude Code / Gemini CLI users** — `openprogram install-skills` drops a SKILL.md into your CLI. Talk to your existing agent: *"Create a function that extracts emails from text."* The agent calls into OpenProgram for you.
-- **OpenClaw users** — see [INTEGRATION_OPENCLAW.md](docs/INTEGRATION_OPENCLAW.md). OpenProgram registers as an OpenClaw skill pack.
+- **OpenClaw users** — see [INTEGRATION_OPENCLAW.md](../INTEGRATION_OPENCLAW.md). OpenProgram registers as an OpenClaw skill pack.
 - **MCP servers** — OpenProgram speaks MCP both as client and server. Pipe any MCP server in, expose your `@agentic_function`s as MCP tools.
 
 ---
@@ -184,7 +185,7 @@ This is a **paradigm proposal** with a reference implementation. We welcome:
 - bug reports and provider integrations
 - new built-in functions and applications
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Quick start:
+See [CONTRIBUTING.md](../../CONTRIBUTING.md). Quick start:
 
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram.git
@@ -220,4 +221,4 @@ File-level docstrings call out direct inspirations where the lineage is more spe
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](../../LICENSE).

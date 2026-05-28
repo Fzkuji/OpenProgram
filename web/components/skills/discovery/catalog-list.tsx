@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import type { CatalogEntry } from "@/lib/skills-store";
 import { useSkills } from "@/lib/skills-store";
+import { useTranslation } from "@/lib/i18n";
 
 import { fmtCount, hasStats, relTime } from "./helpers";
 import type { Source, SortKey } from "./types";
@@ -49,6 +50,7 @@ export function CatalogList({
   // and confuse the queue.
   bulkBusy: boolean;
 }) {
+  const { text, locale } = useTranslation();
   const { deleteSkill } = useSkills();
   const [filter, setFilter] = useState("");
   const hasMeta = useMemo(() => hasStats(entries), [entries]);
@@ -101,7 +103,10 @@ export function CatalogList({
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder={`Search ${entries.length} skill${entries.length === 1 ? "" : "s"}…`}
+            placeholder={text(
+              `Search ${entries.length} skill${entries.length === 1 ? "" : "s"}...`,
+              `搜索 ${entries.length} 个技能...`,
+            )}
             className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20"
           />
         </div>
@@ -110,11 +115,11 @@ export function CatalogList({
           onChange={(e) => setSort(e.target.value as SortKey)}
           className="shrink-0 rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)]"
         >
-          <option value="default">Sort: {hasMeta ? "Trending" : "Default"}</option>
-          <option value="name">Name</option>
-          {hasMeta && <option value="downloads">Most downloaded</option>}
-          {hasMeta && <option value="stars">Most starred</option>}
-          {hasMeta && <option value="updated">Recently updated</option>}
+          <option value="default">{text("Sort", "排序")}：{hasMeta ? text("Trending", "热门") : text("Default", "默认")}</option>
+          <option value="name">{text("Name", "名称")}</option>
+          {hasMeta && <option value="downloads">{text("Most downloaded", "下载最多")}</option>}
+          {hasMeta && <option value="stars">{text("Most starred", "收藏最多")}</option>}
+          {hasMeta && <option value="updated">{text("Recently updated", "最近更新")}</option>}
         </select>
       </div>
 
@@ -148,10 +153,10 @@ export function CatalogList({
                 </div>
                 <div className="flex gap-1 shrink-0">
                   {installed && !outdated && (
-                    <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400">in</span>
+                    <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400">{text("in", "已装")}</span>
                   )}
                   {outdated && (
-                    <span className="rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-amber-400" title="Upstream changed">old</span>
+                    <span className="rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-amber-400" title={text("Upstream changed", "上游已变化")}>{text("old", "旧")}</span>
                   )}
                 </div>
               </div>
@@ -164,13 +169,13 @@ export function CatalogList({
                 {showStats ? (
                   <div className="flex items-center gap-3 text-[11px] text-[var(--text-tertiary)]">
                     {(e.stars || 0) > 0 && (
-                      <span title="stars">★ {fmtCount(e.stars)}</span>
+                      <span title={text("stars", "星标")}>★ {fmtCount(e.stars)}</span>
                     )}
                     {(e.downloads || 0) > 0 && (
-                      <span title="downloads">↓ {fmtCount(e.downloads)}</span>
+                      <span title={text("downloads", "下载")}>↓ {fmtCount(e.downloads)}</span>
                     )}
                     {(e.updated_at || 0) > 0 && (
-                      <span title="last updated">{relTime(e.updated_at)}</span>
+                      <span title={text("last updated", "最近更新")}>{relTime(e.updated_at, locale)}</span>
                     )}
                   </div>
                 ) : (
@@ -189,19 +194,19 @@ export function CatalogList({
                     {installingKey === key
                       ? "…"
                       : outdated
-                        ? "Update"
+                        ? text("Update", "更新")
                         : installed
-                          ? "Reinstall"
-                          : "Install"}
+                          ? text("Reinstall", "重新安装")
+                          : text("Install", "安装")}
                   </button>
                   {installed && (
                     <button
                       type="button"
-                      title={`Uninstall ${fullName}`}
-                      aria-label={`Uninstall ${fullName}`}
+                      title={text(`Uninstall ${fullName}`, `卸载 ${fullName}`)}
+                      aria-label={text(`Uninstall ${fullName}`, `卸载 ${fullName}`)}
                       disabled={bulkBusy}
                       onClick={() => {
-                        if (confirm(`Delete skill "${fullName}"?`)) {
+                        if (confirm(text(`Delete skill "${fullName}"?`, `删除技能“${fullName}”？`))) {
                           void deleteSkill(fullName);
                         }
                       }}
@@ -224,10 +229,9 @@ export function CatalogList({
           );
         })}
         {shown.length === 0 && (
-          <div className="col-span-full text-xs text-[var(--text-tertiary)] py-2">No matches.</div>
+          <div className="col-span-full text-xs text-[var(--text-tertiary)] py-2">{text("No matches.", "没有匹配结果。")}</div>
         )}
       </div>
     </div>
   );
 }
-

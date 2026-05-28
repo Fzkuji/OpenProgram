@@ -265,18 +265,15 @@ claude login
 
 ---
 
-## ChatGPTSubscriptionRuntime
+## OpenAICodexRuntime
 
-ChatGPT 订阅（OAuth HTTP）。适合已经在本机登录 `codex` 的开发环境。
+ChatGPT / Codex subscription runtime. It reads OAuth credentials from the Codex
+CLI auth file and uses the ChatGPT Responses backend.
 
 ```python
-from openprogram.providers import ChatGPTSubscriptionRuntime
+from openprogram.providers import OpenAICodexRuntime
 
-rt = ChatGPTSubscriptionRuntime(
-    model="gpt-5.4-mini",
-    timeout=120,
-    full_auto=True,
-)
+rt = OpenAICodexRuntime(model="gpt-5.5")
 ```
 
 使用前先完成：
@@ -290,42 +287,34 @@ codex login --device-auth
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `model` | `str \| None` | `None` | 默认模型；`None` 时使用 CLI 默认值 |
-| `timeout` | `int` | `120` | 单次 CLI 调用超时秒数 |
-| `cli_path` | `str \| None` | `None` | Codex CLI 可执行文件路径；为空时自动查找 |
-| `session_id` | `str \| None` | `"auto"` | `"auto"` 会在首次调用后捕获 CLI 的真实线程 ID；`None` 表示无状态 |
-| `workdir` | `str \| None` | `None` | 通过 `--cd` 指定工作目录 |
-| `full_auto` | `bool` | `True` | 是否添加 `--full-auto` |
-| `sandbox` | `str` | `"workspace-write"` | CLI sandbox 模式 |
-| `max_retries` | `int` | `2` | 重试次数 |
+| `model` | `str` | `"gpt-5.5-mini"` | 默认模型 |
+| `system` | `str \| None` | `None` | 作为 `instructions` 转发 |
+| `profile` | `str \| None` | active profile | 指定 OpenProgram auth profile |
 
 说明：
-- 支持 text 与 image 文件输入
-- image URL 会降级为文本提示
-- audio / video / file blocks 会 warning 并跳过
+- 需要 OAuth credential，不使用 bare OpenAI API key
+- 兼容旧调用方传入的 subprocess-era 参数；这些额外参数会被忽略
+- 如果只有 OpenAI API key，请使用 `OpenAIRuntime`
 
 ---
 
-## GeminiSubscriptionRuntime
+## GeminiCLIRuntime
 
-Gemini 订阅（OAuth HTTP）。`openprogram.providers.GeminiSubscriptionRuntime` 是当前正式类名，旧别名 `GeminiSubscriptionRuntime` 和 `GeminiSubscriptionRuntime` 均保留兼容。
+Gemini CLI / subscription runtime. It reads Gemini CLI OAuth credentials and
+uses the Gemini HTTP backend through OpenProgram's provider layer.
 
 ```python
-from openprogram.providers import GeminiSubscriptionRuntime
+from openprogram.providers import GeminiCLIRuntime
 
-rt = GeminiSubscriptionRuntime(
-    model="gemini-2.5-flash",
-    timeout=120,
-    yolo=True,
-)
+rt = GeminiCLIRuntime(model="gemini-2.5-flash")
 ```
 
 如果你想显式使用类，也可以直接这样写：
 
 ```python
-from openprogram.providers.google_gemini_cli import GeminiSubscriptionRuntime
+from openprogram.providers.google_gemini_cli import GeminiCLIRuntime
 
-rt = GeminiSubscriptionRuntime(model="gemini-2.5-flash")
+rt = GeminiCLIRuntime(model="gemini-2.5-flash")
 ```
 
 使用前先完成：
@@ -339,18 +328,14 @@ gemini
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `model` | `str \| None` | `None` | 默认模型；`None` 时使用 CLI 默认值 |
-| `timeout` | `int` | `120` | 单次 CLI 调用超时秒数 |
-| `cli_path` | `str \| None` | `None` | Gemini CLI 可执行文件路径；为空时自动查找 |
-| `sandbox` | `bool` | `False` | 是否启用 CLI sandbox 标志 `-s` |
-| `yolo` | `bool` | `True` | 是否启用自动确认 `-y` |
-| `max_retries` | `int` | `2` | 重试次数 |
+| `model` | `str` | `"gemini-2.5-flash"` | 默认模型 |
+| `system` | `str \| None` | `None` | 作为 `instructions` 转发 |
+| `profile` | `str \| None` | active profile | 指定 OpenProgram auth profile |
 
 说明：
-- text blocks 原样拼接为 prompt
-- image 会降级为文本占位并给出 warning
-- audio / video / file blocks 也会降级为文本占位并 warning
-- `response_format` 会附加为 “只返回 JSON” 的文本约束
+- 需要 Gemini CLI OAuth credential
+- 兼容旧调用方传入的 subprocess-era 参数；这些额外参数会被忽略
+- 如果只有 Google API key，请使用 `GeminiRuntime`
 
 ---
 

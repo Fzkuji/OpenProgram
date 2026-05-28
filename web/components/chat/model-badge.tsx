@@ -6,8 +6,10 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { useSessionStore } from "@/lib/session-store";
 import { api } from "@/lib/api";
+import { useTranslation } from "@/lib/i18n";
 
 export function ModelBadge() {
+  const { text } = useTranslation();
   const providerInfo = useSessionStore((s) => s.providerInfo);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const { data: enabledModels } = useQuery({
@@ -30,7 +32,7 @@ export function ModelBadge() {
       // where picking "Opus" silently still ran Sonnet.
       await api.switchModel(provider, model, currentSessionId || undefined);
     } catch (e) {
-      alert("Switch failed: " + String(e));
+      alert(text("Switch failed: ", "切换失败：") + String(e));
     }
   }
 
@@ -67,7 +69,7 @@ export function ModelBadge() {
               className="px-3 py-2 text-[12px]"
               style={{ color: "var(--text-muted)" }}
             >
-              No enabled models. Go to Settings → LLM Providers.
+              {text("No enabled models. Go to Settings -> LLM Providers.", "没有启用的模型。请前往设置 -> 大模型 Provider。")}
             </div>
           )}
           {Object.entries(byProvider).map(([provider, models]) => (

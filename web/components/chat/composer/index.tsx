@@ -23,6 +23,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";
 import { FunctionForm, visibleParams } from "./fn-form/fn-form";
@@ -81,6 +82,7 @@ function wsSend(payload: unknown): boolean {
 const noop = () => {};
 
 export function Composer() {
+  const { text } = useTranslation();
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   // Per-session running state: send/stop button binds to the current
   // session's running task, not a global flag. This is what lets the
@@ -841,11 +843,14 @@ export function Composer() {
     : !input.trim() || pasteMissing.size > 0;
   const sendTitle = fnFormActive
     ? missingFnParams.length > 0
-      ? `Fill required field${missingFnParams.length > 1 ? "s" : ""}: ${missingFnParams.join(", ")}`
-      : "Run"
+      ? text(
+          `Fill required field${missingFnParams.length > 1 ? "s" : ""}: ${missingFnParams.join(", ")}`,
+          `请填写必填字段：${missingFnParams.join(", ")}`,
+        )
+      : text("Run", "运行")
     : pasteMissing.size > 0
-    ? "Paste content lost — remove the red chip and re-paste"
-    : "Send message";
+    ? text("Paste content lost. Remove the red chip and re-paste.", "粘贴内容已丢失。请移除红色标签后重新粘贴。")
+    : text("Send message", "发送消息");
 
   /* ---- Render -------------------------------------------------------- */
 
@@ -982,8 +987,8 @@ export function Composer() {
                 setPlusMenuOpen((v) => !v);
                 setThinkingMenuOpen(false);
               }}
-              title="Add tools, files, and more"
-              aria-label="More options"
+              title={text("Add tools, files, and more", "添加工具、文件等")}
+              aria-label={text("More options", "更多选项")}
               type="button"
             >
               <PlusIcon />
@@ -993,14 +998,14 @@ export function Composer() {
               {toolsEnabled && (
                 <ToolChip
                   icon={<ToolsIcon size={16} />}
-                  label="Tools"
+                  label={text("Tools", "工具")}
                   onRemove={toggleTools}
                 />
               )}
               {webSearchEnabled && (
                 <ToolChip
                   icon={<WebSearchIcon size={16} />}
-                  label="Web Search"
+                  label={text("Web Search", "网页搜索")}
                   onRemove={toggleWebSearch}
                 />
               )}
@@ -1024,15 +1029,15 @@ export function Composer() {
                       active={toolsEnabled}
                       onClick={toggleTools}
                       icon={<ToolsIcon />}
-                      label="Tools"
-                      title="Shell, read/write/edit, grep/glob, list, patch, todo"
+                      label={text("Tools", "工具")}
+                      title={text("Shell, read/write/edit, grep/glob, list, patch, todo", "Shell、读写编辑、grep/glob、列表、patch、todo")}
                     />
                     <PlusMenuItem
                       active={webSearchEnabled}
                       onClick={toggleWebSearch}
                       icon={<WebSearchIcon />}
-                      label="Web Search"
-                      title="Give the agent web search this turn"
+                      label={text("Web Search", "网页搜索")}
+                      title={text("Give the agent web search this turn", "本轮允许 Agent 使用网页搜索")}
                     />
                     <PlusMenuItem
                       active={pendingImages.length > 0 || pendingDocs.length > 0}
@@ -1041,8 +1046,8 @@ export function Composer() {
                         onPickImages();
                       }}
                       icon={<span aria-hidden style={{ fontSize: 14 }}>📎</span>}
-                      label="Attach file"
-                      title="Attach images, documents, or any file (also paste / drag-drop)"
+                      label={text("Attach file", "附加文件")}
+                      title={text("Attach images, documents, or any file (also paste / drag-drop)", "附加图片、文档或任意文件（也可粘贴 / 拖放）")}
                     />
                   </div>,
                   document.body,
@@ -1083,7 +1088,7 @@ export function Composer() {
               ? "true"
               : undefined
           }
-          title={isRunning ? "Stop" : sendTitle}
+          title={isRunning ? text("Stop", "停止") : sendTitle}
           type="button"
         >
           {isRunning ? <StopIcon /> : <SendIcon />}
@@ -1100,8 +1105,8 @@ export function Composer() {
             onClick={handleFnFormClose}
             onMouseDown={(e) => e.preventDefault()}
             tabIndex={-1}
-            title="Close"
-            aria-label="Close"
+            title={text("Close", "关闭")}
+            aria-label={text("Close", "关闭")}
           >
             <svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
               <path

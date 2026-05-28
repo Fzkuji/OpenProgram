@@ -6,6 +6,7 @@ import { X, Save, Loader2, FileCode } from "lucide-react";
 import type { AgenticFunction } from "@/lib/types";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n";
 
 interface Props {
   fn: AgenticFunction;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function SourceModal({ fn, onClose }: Props) {
+  const { text } = useTranslation();
   const qc = useQueryClient();
   const [edited, setEdited] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -42,7 +44,7 @@ export function SourceModal({ fn, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ["functions"] });
       setEdited(null);
     } catch (e) {
-      alert("Save failed: " + String(e));
+      alert(text("Save failed: ", "保存失败：") + String(e));
     } finally {
       setSaving(false);
     }
@@ -89,7 +91,7 @@ export function SourceModal({ fn, onClose }: Props) {
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={save} disabled={!dirty || saving}>
               {saving ? <Loader2 className="animate-spin" /> : <Save />}
-              Save
+              {text("Save", "保存")}
             </Button>
             <button onClick={onClose}>
               <X className="h-4 w-4" style={{ color: "var(--text-muted)" }} />

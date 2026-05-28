@@ -16,6 +16,7 @@
 import { useState } from "react";
 
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 
 function wsSend(payload: unknown): boolean {
   const w = window as Window & { ws?: WebSocket };
@@ -103,6 +104,7 @@ export function MessageActions({
   msg: ChatMsg;
   onEdit?: () => void;
 }) {
+  const { text: tr } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -186,8 +188,11 @@ export function MessageActions({
         const restored = data?.data?.restored_paths ?? [];
         const err = data?.data?.error;
         const text = err
-          ? `Revert failed: ${err}`
-          : `Reverted ${restored.length} file${restored.length === 1 ? "" : "s"}`;
+          ? tr(`Revert failed: ${err}`, `撤销失败：${err}`)
+          : tr(
+              `Reverted ${restored.length} file${restored.length === 1 ? "" : "s"}`,
+              `已撤销 ${restored.length} 个文件`,
+            );
         if (w.__toast) w.__toast(text);
         else console.log("[revert]", text);
         setBusy(false);
@@ -230,8 +235,8 @@ export function MessageActions({
       <button
         type="button"
         className={"message-action-btn" + (copied ? " is-copied" : "")}
-        title="Copy"
-        aria-label="Copy"
+        title={tr("Copy", "复制")}
+        aria-label={tr("Copy", "复制")}
         onClick={copy}
       >
         {copied ? SVG.check : SVG.copy}
@@ -239,8 +244,8 @@ export function MessageActions({
       <button
         type="button"
         className="message-action-btn"
-        title="Retry from here"
-        aria-label="Retry from here"
+        title={tr("Retry from here", "从这里重试")}
+        aria-label={tr("Retry from here", "从这里重试")}
         disabled={busy}
         onClick={retry}
       >
@@ -250,8 +255,8 @@ export function MessageActions({
         <button
           type="button"
           className="message-action-btn"
-          title="Edit message"
-          aria-label="Edit message"
+          title={tr("Edit message", "编辑消息")}
+          aria-label={tr("Edit message", "编辑消息")}
           onClick={onEdit}
         >
           {SVG.pencil}
@@ -261,8 +266,8 @@ export function MessageActions({
         <button
           type="button"
           className="message-action-btn"
-          title="Branch into a new conversation"
-          aria-label="Branch into a new conversation"
+          title={tr("Branch into a new conversation", "分支到新会话")}
+          aria-label={tr("Branch into a new conversation", "分支到新会话")}
           disabled={busy}
           onClick={branch}
         >
@@ -273,8 +278,8 @@ export function MessageActions({
         <button
           type="button"
           className="message-action-btn"
-          title="Revert file edits from this turn"
-          aria-label="Revert file edits"
+          title={tr("Revert file edits from this turn", "撤销这一轮的文件编辑")}
+          aria-label={tr("Revert file edits", "撤销文件编辑")}
           disabled={busy}
           onClick={revertTurn}
         >
@@ -287,7 +292,7 @@ export function MessageActions({
             type="button"
             className="message-nav-btn"
             data-nav="prev"
-            aria-label="Previous version"
+            aria-label={tr("Previous version", "上一个版本")}
             disabled={busy || idx <= 1}
             onClick={() => checkout(msg.prevSiblingId)}
           >
@@ -300,7 +305,7 @@ export function MessageActions({
             type="button"
             className="message-nav-btn"
             data-nav="next"
-            aria-label="Next version"
+            aria-label={tr("Next version", "下一个版本")}
             disabled={busy || idx >= total}
             onClick={() => checkout(msg.nextSiblingId)}
           >

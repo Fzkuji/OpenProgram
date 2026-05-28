@@ -27,11 +27,11 @@ const ROUTE_KEYS: Record<string, "nav.functions"|"nav.skills"|"nav.memory"|"nav.
 };
 
 export default function ShellLoading() {
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const pathname = usePathname() || "";
   const seg = pathname.split("/")[1] || "";
   const key = ROUTE_KEYS[seg];
-  const title = key ? t(key) : "Loading…";
+  const title = key ? t(key) : text("Loading...", "加载中...");
 
   return (
     <div className={styles.wrap}>

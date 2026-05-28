@@ -139,7 +139,7 @@ const Slider = React.forwardRef<
           : cn(
               "bg-[var(--slider-active)]",
               "border-2 border-[var(--bg-tertiary)]",
-              "shadow-[0_1px_2px_rgba(0,0,0,0.15)]",
+              "shadow-(--shadow-sm)",
               "hover:scale-110",
               "focus-visible:ring-2 focus-visible:ring-[var(--slider-active)]",
             ),

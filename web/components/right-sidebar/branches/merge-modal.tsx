@@ -10,6 +10,8 @@
  */
 import type React from "react";
 
+import { useTranslation } from "@/lib/i18n";
+
 interface MergeModalProps {
   /** Selected branch head ids (≥2 when this modal is open). */
   selected: string[];
@@ -33,6 +35,7 @@ export function MergeModal({
   onCancel,
   onMerge,
 }: MergeModalProps) {
+  const { t, locale } = useTranslation();
   return (
     <div className="branches-merge-modal-backdrop" onClick={onCancel}>
       <div
@@ -40,7 +43,9 @@ export function MergeModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="branches-merge-modal-title">
-          Merge {selected.length} branches
+          {locale === "zh"
+            ? `合并 ${selected.length} 个分支`
+            : `Merge ${selected.length} branches`}
         </div>
         <div className="branches-merge-mode">
           <label className="branches-merge-mode-row">
@@ -51,9 +56,9 @@ export function MergeModal({
               onChange={() => setBaseHead(null)}
             />
             <span>
-              <strong>Equal merge</strong> — write a new turn whose
-              parents are all selected branches. Reply lands as a
-              fresh branch tip.
+              <strong>{t("right.equal_merge")}</strong>
+              {" - "}
+              {t("right.equal_merge_desc")}
             </span>
           </label>
           <label className="branches-merge-mode-row">
@@ -71,15 +76,15 @@ export function MergeModal({
               }}
             />
             <span>
-              <strong>Attach into ★ base</strong> — reply continues
-              the ★ branch, the other selections feed in as
-              context. ⌘-click a row to pick the base.
+              <strong>{t("right.attach_base")}</strong>
+              {" - "}
+              {t("right.attach_base_desc")}
             </span>
           </label>
         </div>
         <textarea
           className="branches-merge-modal-input"
-          placeholder="Optional instruction for the merge agent (how to reconcile)"
+          placeholder={t("right.merge_instruction_placeholder")}
           value={mergeInstruction}
           onChange={(e) => setMergeInstruction(e.target.value)}
           autoFocus
@@ -92,7 +97,7 @@ export function MergeModal({
           }}
         />
         <div className="branches-merge-modal-hint">
-          ⌘/Ctrl + Enter to merge
+          {t("right.merge_shortcut_hint")}
         </div>
         <div className="branches-merge-modal-actions">
           <button
@@ -100,14 +105,14 @@ export function MergeModal({
             className="branches-merge-cancel"
             onClick={onCancel}
           >
-            Cancel
+            {t("sidebar.cancel")}
           </button>
           <button
             type="button"
             className="branches-merge-go"
             onClick={onMerge}
           >
-            Merge
+            {t("right.merge")}
           </button>
         </div>
       </div>

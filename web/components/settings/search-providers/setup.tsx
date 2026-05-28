@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import styles from "../settings-page.module.css";
 import type { SearchProvider } from "./types";
+import { useTranslation } from "@/lib/i18n";
 
 /**
  * "Setup" block in the provider detail panel: a "Get API key →" button
@@ -11,11 +12,12 @@ import type { SearchProvider } from "./types";
  * when both fields are empty (e.g. zero-config DuckDuckGo).
  */
 export function SearchProviderSetup({ provider }: { provider: SearchProvider }) {
+  const { text } = useTranslation();
   const steps = provider.setup_steps || [];
   return (
     <div className={styles.detailSection}>
       <div className={styles.detailSectionTitle}>
-        <span>Setup</span>
+        <span>{text("Setup", "设置")}</span>
       </div>
       {provider.signup_url && (
         <div className={styles.detailRow}>
@@ -25,7 +27,7 @@ export function SearchProviderSetup({ provider }: { provider: SearchProvider }) 
             target="_blank"
             rel="noopener noreferrer"
           >
-            Get API key <span aria-hidden>→</span>
+            {text("Get API key", "获取 API key")} <span aria-hidden>→</span>
           </a>
           {provider.docs_url && provider.docs_url !== provider.signup_url && (
             <Button asChild variant="outline" size="sm">
@@ -34,7 +36,7 @@ export function SearchProviderSetup({ provider }: { provider: SearchProvider }) 
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Docs
+                {text("Docs", "文档")}
               </a>
             </Button>
           )}
@@ -50,4 +52,3 @@ export function SearchProviderSetup({ provider }: { provider: SearchProvider }) 
     </div>
   );
 }
-

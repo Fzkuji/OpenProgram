@@ -1,6 +1,7 @@
 "use client";
 
 import styles from "./function-card.module.css";
+import { useTranslation } from "@/lib/i18n";
 
 export interface ProgramSummary {
   name: string;
@@ -32,6 +33,7 @@ export function FunctionCard({
   onToggleFav: (e: React.MouseEvent) => void;
   onChangeIcon: (e: React.MouseEvent) => void;
 }) {
+  const { text } = useTranslation();
   const desc = p.description ? p.description.split(".")[0] : "";
   return (
     <div
@@ -48,8 +50,8 @@ export function FunctionCard({
           type="button"
           className={styles.cardIconEditBtn}
           onClick={onChangeIcon}
-          title="Change icon"
-          aria-label="Change icon"
+          title={text("Change icon", "更换图标")}
+          aria-label={text("Change icon", "更换图标")}
         >
           <svg
             viewBox="0 0 24 24"

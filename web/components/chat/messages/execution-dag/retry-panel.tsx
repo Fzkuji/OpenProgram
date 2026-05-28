@@ -12,6 +12,7 @@ import type React from "react";
 import { useMemo, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 
 import type { TNode } from "./types";
 import { filteredParams, flattenParams, wsSend } from "./types";
@@ -23,6 +24,7 @@ export function RetryPanel({
   node: TNode;
   onClose: () => void;
 }) {
+  const { text } = useTranslation();
   const fields = useMemo(() => {
     const out: { key: string; value: string; long: boolean }[] = [];
     flattenParams(filteredParams(node.params), "", out);
@@ -73,7 +75,7 @@ export function RetryPanel({
           fontSize: 11,
         }}
       >
-        Modify <b>{node.name}</b> with:
+        {text("Modify", "修改")} <b>{node.name}</b> {text("with:", "参数：")}
       </div>
       {fields.length === 0 ? (
         <div
@@ -83,7 +85,7 @@ export function RetryPanel({
             marginBottom: 6,
           }}
         >
-          No editable parameters
+          {text("No editable parameters", "没有可编辑参数")}
         </div>
       ) : (
         fields.map((f) => (
@@ -111,10 +113,10 @@ export function RetryPanel({
       )}
       <div className="retry-panel-actions">
         <button className="retry-exec-btn" onClick={execute}>
-          {"▶ Execute"}
+          {text("▶ Execute", "▶ 执行")}
         </button>
         <button className="retry-cancel-btn" onClick={onClose}>
-          Cancel
+          {text("Cancel", "取消")}
         </button>
       </div>
     </div>

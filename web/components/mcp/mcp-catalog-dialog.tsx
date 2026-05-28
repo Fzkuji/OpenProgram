@@ -11,10 +11,10 @@ import { useEffect, useState } from "react";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 import styles from "./mcp-page.module.css";
 
@@ -38,6 +38,7 @@ export function CatalogDialog({
   onClose: () => void;
   onInstalled: (name: string) => void;
 }) {
+  const { text } = useTranslation();
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<null | "fetch" | string>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -67,7 +68,7 @@ export function CatalogDialog({
 
   async function fetchCatalog() {
     setErr(null); setCatalog(null);
-    if (!url.trim()) { setErr("paste a catalog URL first"); return; }
+    if (!url.trim()) { setErr(text("paste a catalog URL first", "请先粘贴目录 URL")); return; }
     setBusy("fetch");
     try {
       const r = await fetch(
@@ -89,7 +90,7 @@ export function CatalogDialog({
   async function install(entry: CatalogServer) {
     setErr(null);
     if (existingNames.has(entry.name)) {
-      setErr(`already installed: ${entry.name}`);
+      setErr(text(`already installed: ${entry.name}`, `已安装：${entry.name}`));
       return;
     }
     setBusy(entry.name);
@@ -125,13 +126,13 @@ export function CatalogDialog({
     <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-[640px]">
         <DialogHeader>
-          <DialogTitle>Browse MCP catalog</DialogTitle>
+          <DialogTitle>{text("Browse MCP catalog", "浏览 MCP 目录")}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
           {suggested.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <Label>Suggested catalogs</Label>
+              <Label>{text("Suggested catalogs", "推荐目录")}</Label>
               <div className="flex flex-wrap gap-1.5">
                 {suggested.map((s) => (
                   <button
@@ -149,7 +150,7 @@ export function CatalogDialog({
 
           {quickInstall.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <Label>Quick install</Label>
+              <Label>{text("Quick install", "快速安装")}</Label>
               <div className="flex flex-col gap-1.5">
                 {quickInstall.map((s) => {
                   const installed = existingNames.has(s.name);
@@ -170,7 +171,7 @@ export function CatalogDialog({
                         onClick={() => void install(s)}
                         disabled={installed || busy === s.name}
                       >
-                        {installed ? "Installed" : busy === s.name ? "Installing…" : "Install"}
+                        {installed ? text("Installed", "已安装") : busy === s.name ? text("Installing...", "安装中...") : text("Install", "安装")}
                       </button>
                     </div>
                   );
@@ -180,7 +181,7 @@ export function CatalogDialog({
           )}
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="cat-url">Custom catalog URL</Label>
+            <Label htmlFor="cat-url">{text("Custom catalog URL", "自定义目录 URL")}</Label>
             <div className="flex gap-2">
               <Input
                 id="cat-url"
@@ -194,12 +195,13 @@ export function CatalogDialog({
                 onClick={() => void fetchCatalog()}
                 disabled={busy === "fetch"}
               >
-                {busy === "fetch" ? "Fetching…" : "Load"}
+                {busy === "fetch" ? text("Fetching...", "获取中...") : text("Load", "加载")}
               </button>
             </div>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-              Catalog is a JSON object with a <code>servers</code> array;
-              each entry matches the local mcp_servers.json schema.
+              {text("Catalog is a JSON object with a ", "目录是一个包含 ")}
+              <code>servers</code>
+              {text(" array; each entry matches the local mcp_servers.json schema.", " 数组的 JSON 对象；每一项都匹配本地 mcp_servers.json schema。")}
             </div>
           </div>
 
@@ -213,8 +215,14 @@ export function CatalogDialog({
           {catalog && (
             <div className="flex flex-col gap-2">
               <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-                {catalog.name} — {catalog.servers.length} installable
-                {catalog.skipped > 0 && `, ${catalog.skipped} skipped (invalid)`}
+                {text(
+                  `${catalog.name} - ${catalog.servers.length} installable`,
+                  `${catalog.name} - ${catalog.servers.length} 个可安装`,
+                )}
+                {catalog.skipped > 0 && text(
+                  `, ${catalog.skipped} skipped (invalid)`,
+                  `，跳过 ${catalog.skipped} 个无效项`,
+                )}
               </div>
               <div className="flex max-h-[360px] flex-col gap-1.5 overflow-y-auto">
                 {catalog.servers.map((s) => {
@@ -251,10 +259,10 @@ export function CatalogDialog({
                         disabled={installed || busy === s.name}
                       >
                         {installed
-                          ? "Installed"
+                          ? text("Installed", "已安装")
                           : busy === s.name
-                            ? "Installing…"
-                            : "Install"}
+                            ? text("Installing...", "安装中...")
+                            : text("Install", "安装")}
                       </button>
                     </div>
                   );
@@ -266,7 +274,7 @@ export function CatalogDialog({
 
         <DialogFooter>
           <button className={styles.actionBtn} onClick={onClose}>
-            Close
+            {text("Close", "关闭")}
           </button>
         </DialogFooter>
       </DialogContent>

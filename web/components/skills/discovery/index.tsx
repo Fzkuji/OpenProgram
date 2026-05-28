@@ -12,7 +12,8 @@
  */
 import { useEffect, useMemo, useState } from "react";
 
-import { useSkills, type CatalogEntry, type Skill } from "@/lib/skills-store";
+import { useSkills, type Skill } from "@/lib/skills-store";
+import { useTranslation } from "@/lib/i18n";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -28,6 +29,7 @@ import { hostname, slugFromUrl } from "./helpers";
 import type { CatalogState, Source } from "./types";
 
 export function DiscoverySources() {
+  const { text } = useTranslation();
   const {
     skills,
     discoverySources, discoverySuggested,
@@ -154,9 +156,9 @@ export function DiscoverySources() {
     setStatus(null);
     try {
       const full = await installFromDiscovery(source.url, name, source.slug);
-      setStatus(`Installed ${full}`);
+      setStatus(text(`Installed ${full}`, `已安装 ${full}`));
     } catch (e) {
-      setStatus(`Failed: ${String(e)}`);
+      setStatus(text(`Failed: ${String(e)}`, `失败：${String(e)}`));
     } finally {
       setInstallingKey(null);
     }
@@ -183,14 +185,17 @@ export function DiscoverySources() {
         });
         setStatus(
           newOutdated.size > 0
-            ? `${source.label}: ${newOutdated.size} update${newOutdated.size === 1 ? "" : "s"} available`
-            : `${source.label}: already up to date`,
+            ? text(
+                `${source.label}: ${newOutdated.size} update${newOutdated.size === 1 ? "" : "s"} available`,
+                `${source.label}：有 ${newOutdated.size} 个更新`,
+              )
+            : text(`${source.label}: already up to date`, `${source.label}：已是最新`),
         );
       } else {
-        setStatus(`Check failed: HTTP ${r.status}`);
+        setStatus(text(`Check failed: HTTP ${r.status}`, `检查失败：HTTP ${r.status}`));
       }
     } catch (e) {
-      setStatus(`Check failed: ${String(e)}`);
+      setStatus(text(`Check failed: ${String(e)}`, `检查失败：${String(e)}`));
     } finally {
       setCheckingUrl(null);
     }
@@ -216,8 +221,12 @@ export function DiscoverySources() {
         }
       }
       setStatus(
-        `Updated ${ok}/${cat.outdated.size} outdated skill${ok === 1 ? "" : "s"}` +
-          (fail ? ` (${fail} failed)` : ""),
+        text(
+          `Updated ${ok}/${cat.outdated.size} outdated skill${ok === 1 ? "" : "s"}` +
+            (fail ? ` (${fail} failed)` : ""),
+          `已更新 ${ok}/${cat.outdated.size} 个过期技能` +
+            (fail ? `（${fail} 个失败）` : ""),
+        ),
       );
       // Refresh diff so the badge counts catch up.
       try {
@@ -329,9 +338,11 @@ export function DiscoverySources() {
   return (
     <div className="space-y-5">
       <section>
-        <h3 className="text-sm font-semibold text-[var(--text-bright)] mb-1">Skill catalogs</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-bright)] mb-1">{text("Skill catalogs", "技能目录")}</h3>
         <p className="text-xs text-[var(--text-tertiary)] mb-3">
-          Discovery only finds and downloads skills. Installed skills appear in the <strong>Browse</strong> tab — enable, disable or delete them there.
+          {text("Discovery only finds and downloads skills. Installed skills appear in the ", "发现页只负责查找和下载技能。已安装技能会显示在")}
+          <strong>{text("Browse", "浏览")}</strong>
+          {text(" tab. Enable, disable or delete them there.", "标签页，可以在那里启用、禁用或删除。")}
         </p>
         <ul className="space-y-2">
           {sources.map((s) => {
@@ -373,23 +384,23 @@ export function DiscoverySources() {
                       {installed > 0 && (
                         <span
                           className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400"
-                          title={`Installed under ${s.slug}/`}
+                          title={text(`Installed under ${s.slug}/`, `安装在 ${s.slug}/ 下`)}
                         >
                           {catalogTotal !== undefined
-                            ? `${installed}/${catalogTotal} installed`
-                            : `${installed} installed`}
+                            ? text(`${installed}/${catalogTotal} installed`, `已安装 ${installed}/${catalogTotal}`)
+                            : text(`${installed} installed`, `已安装 ${installed}`)}
                         </span>
                       )}
                       {outdatedCount > 0 && (
                         <span
                           className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-amber-400"
-                          title="Local SKILL.md content differs from upstream"
+                          title={text("Local SKILL.md content differs from upstream", "本地 SKILL.md 与上游不同")}
                         >
-                          {outdatedCount} outdated
+                          {text(`${outdatedCount} outdated`, `${outdatedCount} 个过期`)}
                         </span>
                       )}
                       {s.origin === "custom" && (
-                        <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">custom</span>
+                        <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">{text("custom", "自定义")}</span>
                       )}
                     </div>
                     {s.description && (
@@ -432,8 +443,11 @@ export function DiscoverySources() {
                           disabled={isBulkBusy || checkingUrl === s.url}
                           title={
                             outdatedCount > 0
-                              ? `Re-pull ${outdatedCount} skill${outdatedCount === 1 ? "" : "s"} whose upstream SKILL.md changed`
-                              : "Check upstream for new versions"
+                              ? text(
+                                  `Re-pull ${outdatedCount} skill${outdatedCount === 1 ? "" : "s"} whose upstream SKILL.md changed`,
+                                  `重新拉取 ${outdatedCount} 个上游 SKILL.md 已变化的技能`,
+                                )
+                              : text("Check upstream for new versions", "检查上游新版本")
                           }
                           className={
                             pillBase + " group min-w-[110px] " +
@@ -441,18 +455,18 @@ export function DiscoverySources() {
                           }
                         >
                           {isBulkBusy ? (
-                            "Updating…"
+                            text("Updating...", "更新中...")
                           ) : checkingUrl === s.url ? (
-                            "Checking…"
+                            text("Checking...", "检查中...")
                           ) : outdatedCount > 0 ? (
                             <>
-                              <span className="group-hover:hidden">{`Update ${outdatedCount}`}</span>
-                              <span className="hidden group-hover:inline">↻ Check again</span>
+                              <span className="group-hover:hidden">{text(`Update ${outdatedCount}`, `更新 ${outdatedCount}`)}</span>
+                              <span className="hidden group-hover:inline">↻ {text("Check again", "重新检查")}</span>
                             </>
                           ) : (
                             <>
-                              <span className="group-hover:hidden">Up to date</span>
-                              <span className="hidden group-hover:inline">↻ Check now</span>
+                              <span className="group-hover:hidden">{text("Up to date", "已是最新")}</span>
+                              <span className="hidden group-hover:inline">↻ {text("Check now", "立即检查")}</span>
                             </>
                           )}
                         </button>
@@ -474,7 +488,7 @@ export function DiscoverySources() {
                           onClick={() => removeDiscoverySource(s.url)}
                           className={pillBase + " " + pillNeutral}
                         >
-                          Remove source
+                          {text("Remove source", "移除来源")}
                         </button>
                       )}
                     </div>
@@ -483,7 +497,7 @@ export function DiscoverySources() {
                 {open && (
                   <div className="border-t border-[var(--border)] p-3 bg-[var(--bg-secondary)]/40">
                     {cat?.loading && (
-                      <div className="text-xs text-[var(--text-tertiary)]">Loading catalog…</div>
+                      <div className="text-xs text-[var(--text-tertiary)]">{text("Loading catalog...", "正在加载目录...")}</div>
                     )}
                     {cat?.error && (
                       <div className="text-xs text-[var(--accent-red,#ef4444)]">{cat.error}</div>
@@ -508,9 +522,11 @@ export function DiscoverySources() {
       </section>
 
       <section>
-        <h3 className="text-sm font-semibold text-[var(--text-bright)] mb-2">Add a source</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-bright)] mb-2">{text("Add a source", "添加来源")}</h3>
         <p className="text-xs text-[var(--text-tertiary)] mb-2">
-          Paste a GitHub repo URL (e.g. <code>https://github.com/owner/repo</code>) or a JSON index URL.
+          {text("Paste a GitHub repo URL (e.g. ", "粘贴 GitHub 仓库 URL（例如 ")}
+          <code>https://github.com/owner/repo</code>
+          {text(") or a JSON index URL.", "）或 JSON 索引 URL。")}
         </p>
         <div className="flex gap-2">
           <Input
@@ -518,7 +534,7 @@ export function DiscoverySources() {
             onChange={(e) => setNewUrl(e.target.value)}
             placeholder="https://github.com/owner/repo"
           />
-          <Button onClick={handleAddCustom}>Add</Button>
+          <Button onClick={handleAddCustom}>{text("Add", "添加")}</Button>
         </div>
       </section>
 
@@ -526,4 +542,3 @@ export function DiscoverySources() {
     </div>
   );
 }
-

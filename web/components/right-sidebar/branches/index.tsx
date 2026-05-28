@@ -11,8 +11,9 @@
  * into types.tsx (shared types + helpers + SVG glyphs),
  * branch-item.tsx (single row), and this index.tsx (the panel itself).
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
+import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 
 import { BranchItem } from "./branch-item";
@@ -23,11 +24,11 @@ import {
   wsSend,
   type BranchRow,
   type BranchWindow,
-  type ConvSummary,
   type TaskStatusDetail,
 } from "./types";
 
 export function BranchesPanel() {
+  const { t, locale } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [collapsed, setCollapsed] = useState(false);
   const [, setTick] = useState(0);
@@ -354,9 +355,9 @@ export function BranchesPanel() {
         className="sidebar-section-header"
         onClick={() => setCollapsed((c) => !c)}
       >
-        <span className="sidebar-section-title">Branches</span>
+        <span className="sidebar-section-title">{t("right.branches")}</span>
         <span className="sidebar-section-hint">
-          {collapsed ? "Show" : "Hide"}
+          {collapsed ? t("sidebar.show") : t("sidebar.hide")}
         </span>
       </div>
       <div className="branches-list">
@@ -382,17 +383,19 @@ export function BranchesPanel() {
       {!collapsed && selected.length >= 1 ? (
         <div className="branches-merge-bar">
           <span className="branches-merge-summary">
-            {selected.length} selected
-            {selected.length >= 2 && baseHead ? " · ★ base" : ""}
+            {locale === "zh"
+              ? `${selected.length} ${t("right.selected")}`
+              : `${selected.length} ${t("right.selected")}`}
+            {selected.length >= 2 && baseHead ? ` · ★ ${t("right.base")}` : ""}
           </span>
           <div className="branches-attach-wrap">
             <button
               type="button"
               className="branches-merge-btn"
               onClick={() => setAttachOpen((v) => !v)}
-              title="Attach selected branch(es) to another branch"
+              title={t("right.attach_title")}
             >
-              Attach to ▾
+              {t("right.attach_to")} ▾
             </button>
             {attachOpen ? (
               <div
@@ -412,7 +415,7 @@ export function BranchesPanel() {
                     }
                     onClick={() => setPickerScope(null)}
                   >
-                    This session
+                    {t("right.this_session")}
                   </button>
                   {otherSessions.length > 0 ? (
                     <select
@@ -420,7 +423,7 @@ export function BranchesPanel() {
                       value={pickerScope || ""}
                       onChange={(e) => setPickerScope(e.target.value || null)}
                     >
-                      <option value="">Other session…</option>
+                      <option value="">{t("right.other_session")}</option>
                       {otherSessions.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.title || c.id.slice(0, 12)}
@@ -432,8 +435,8 @@ export function BranchesPanel() {
                 {attachCandidates.length === 0 ? (
                   <div className="branches-attach-picker-empty">
                     {pickerScope === null
-                      ? "No other branches in this session."
-                      : "Loading…"}
+                      ? t("right.no_other_branches")
+                      : t("right.loading")}
                   </div>
                 ) : (
                   attachCandidates.map((b) => (
@@ -460,7 +463,7 @@ export function BranchesPanel() {
                 setMerging(true);
               }}
             >
-              Merge…
+              {t("right.merge_ellipsis")}
             </button>
           ) : null}
           <button
@@ -471,7 +474,7 @@ export function BranchesPanel() {
               setBaseHead(null);
               setAttachOpen(false);
             }}
-            title="Clear selection"
+            title={t("right.clear_selection")}
           >
             ×
           </button>

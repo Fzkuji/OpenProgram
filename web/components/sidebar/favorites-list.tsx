@@ -155,7 +155,7 @@ export function FavoritesList(): React.ReactElement | null {
             // While dragging, raise the item visually.
             whileDrag={{
               scale: 1.02,
-              boxShadow: "0 4px 12px rgba(0,0,0,0.18)",
+              boxShadow: "var(--shadow)",
               zIndex: 5,
             }}
             // Springy easing for the surrounding items as they slide

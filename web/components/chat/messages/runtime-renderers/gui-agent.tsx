@@ -15,6 +15,7 @@
  */
 import { renderMarkdown } from "../markdown";
 import type { RuntimeRendererProps, RuntimePreview } from "./types";
+import { useTranslation } from "@/lib/i18n";
 
 interface GuiAgentReturn {
   task?: string;
@@ -49,6 +50,7 @@ function fmtTime(t: number | undefined): string | null {
 }
 
 export function GuiAgentRenderer({ rawOutput }: RuntimeRendererProps) {
+  const { text } = useTranslation();
   const obj = parse(rawOutput);
   if (!obj) {
     // Fall back to raw markdown when the payload isn't the expected
@@ -65,7 +67,7 @@ export function GuiAgentRenderer({ rawOutput }: RuntimeRendererProps) {
   const badgeOk = obj.success === true;
   const badgeBad = obj.success === false;
   const meta: string[] = [];
-  if (typeof obj.steps_taken === "number") meta.push(`${obj.steps_taken} steps`);
+  if (typeof obj.steps_taken === "number") meta.push(`${obj.steps_taken} ${text("steps", "步")}`);
   const t = fmtTime(obj.total_time);
   if (t) meta.push(t);
 
@@ -93,7 +95,7 @@ export function GuiAgentRenderer({ rawOutput }: RuntimeRendererProps) {
               lineHeight: 1.4,
             }}
           >
-            success
+            {text("success", "成功")}
           </span>
         ) : null}
         {badgeBad ? (
@@ -109,7 +111,7 @@ export function GuiAgentRenderer({ rawOutput }: RuntimeRendererProps) {
               lineHeight: 1.4,
             }}
           >
-            failed
+            {text("failed", "失败")}
           </span>
         ) : null}
         {meta.length ? (
@@ -143,7 +145,7 @@ export function GuiAgentRenderer({ rawOutput }: RuntimeRendererProps) {
             lineHeight: 1.4,
           }}
         >
-          <strong>issues: </strong>
+          <strong>{text("issues: ", "问题：")}</strong>
           {obj.issues}
         </div>
       ) : null}

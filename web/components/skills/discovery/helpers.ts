@@ -32,10 +32,17 @@ export function fmtCount(n: number | undefined): string {
   return String(v);
 }
 
-export function relTime(ms: number | undefined): string {
+export function relTime(ms: number | undefined, locale: "en" | "zh" = "en"): string {
   if (!ms) return "";
   const diff = Date.now() - ms;
   const d = Math.floor(diff / 86_400_000);
+  if (locale === "zh") {
+    if (d < 1) return "今天";
+    if (d < 30) return d + " 天前";
+    const mo = Math.floor(d / 30);
+    if (mo < 12) return mo + " 个月前";
+    return Math.floor(d / 365) + " 年前";
+  }
   if (d < 1) return "today";
   if (d < 30) return d + "d ago";
   const mo = Math.floor(d / 30);

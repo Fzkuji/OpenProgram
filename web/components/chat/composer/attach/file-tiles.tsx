@@ -16,6 +16,7 @@
 
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "@/lib/i18n";
 
 export interface PendingDoc {
   id: string;
@@ -132,6 +133,7 @@ export function FileTiles({ docs, onRemove }: FileTilesProps) {
 }
 
 function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) {
+  const { text } = useTranslation();
   const sizeLabel = doc.sizeBytes >= 1024 * 1024
     ? `${(doc.sizeBytes / 1024 / 1024).toFixed(1)} MB`
     : `${(doc.sizeBytes / 1024).toFixed(0)} KB`;
@@ -149,7 +151,7 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
             setPreviewOpen(true);
           }
         }}
-        aria-label={`${doc.filename} · ${sizeLabel} · click to preview`}
+        aria-label={`${doc.filename} · ${sizeLabel} · ${text("click to preview", "点击预览")}`}
         style={{
           position: "relative",
           // Roomier pill-ish card to match claude.ai. Wider so CJK
@@ -206,9 +208,9 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
           // vertical rhythm so it doesn't jump once the badge appears.
           <div
             className="composer-file-tile-skeleton"
-            aria-label="Loading…"
+            aria-label={text("Loading...", "加载中...")}
           >
-            Loading
+            {text("Loading", "加载中")}
           </div>
         ) : doc.ext && (
           <div
@@ -237,7 +239,7 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
             e.stopPropagation();
             onRemove();
           }}
-          aria-label={`Remove ${doc.filename}`}
+          aria-label={`${text("Remove", "移除")} ${doc.filename}`}
           style={{
             position: "absolute",
             // Sits fully inside the tile in the top-right corner — no
@@ -281,6 +283,7 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
 function FilePreviewModal({
   doc, onClose,
 }: { doc: PendingDoc; onClose: () => void }) {
+  const { text } = useTranslation();
   // Esc closes. Defensive — only attach the listener while open.
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -339,7 +342,7 @@ function FilePreviewModal({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close preview"
+            aria-label={text("Close preview", "关闭预览")}
             style={{
               width: 26, height: 26,
               border: "none",
@@ -367,12 +370,13 @@ function FilePreviewModal({
         >
           {doc.content === null ? (
             <span style={{ color: "var(--text-muted)" }}>
-              Binary file — no inline preview available. The LLM will
-              still know the file is attached (via filename + size in
-              the outgoing message).
+              {text(
+                "Binary file - no inline preview available. The LLM will still know the file is attached via filename and size in the outgoing message.",
+                "二进制文件无法内联预览。发送消息时仍会通过文件名和大小告知模型该文件已附加。",
+              )}
             </span>
           ) : doc.content || (
-            <span style={{ color: "var(--text-muted)" }}>(empty)</span>
+            <span style={{ color: "var(--text-muted)" }}>{text("(empty)", "（空）")}</span>
           )}
         </div>
       </div>

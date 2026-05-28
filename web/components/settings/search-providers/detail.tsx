@@ -5,6 +5,7 @@ import styles from "../settings-page.module.css";
 import { SearchConnectivity } from "./connectivity";
 import { SearchProviderSetup } from "./setup";
 import type { SearchProvider } from "./types";
+import { useTranslation } from "@/lib/i18n";
 
 export function SearchProviderDetail({
   provider,
@@ -19,9 +20,10 @@ export function SearchProviderDetail({
   onSetDefault: (id: string | null) => void;
   onChanged: () => void;
 }) {
+  const { text } = useTranslation();
   const subtitle = provider.env_var
     ? `API key env: ${provider.env_var}`
-    : "No key needed — zero-config";
+    : text("No key needed - zero-config", "不需要 key - 零配置");
   const isDefault = provider.id === defaultId;
 
   return (
@@ -34,7 +36,7 @@ export function SearchProviderDetail({
           >
             {provider.name}
             {provider.tier && (
-              <span className={styles.searchTierChip} title="Pricing / availability">
+              <span className={styles.searchTierChip} title={text("Pricing / availability", "价格 / 可用性")}>
                 {provider.tier}
               </span>
             )}
@@ -57,10 +59,10 @@ export function SearchProviderDetail({
           />
           <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
             {provider.available
-              ? "Available"
+              ? text("Available", "可用")
               : provider.configured
-                ? "Configured"
-                : "Not configured"}
+                ? text("Configured", "已配置")
+                : text("Not configured", "未配置")}
           </span>
         </div>
       </header>
@@ -76,8 +78,10 @@ export function SearchProviderDetail({
       >
         {provider.description}
         <div className="mt-2" style={{ color: "var(--text-muted)", fontSize: 12 }}>
-          Priority {provider.priority} — used as a fallback when no default is set
-          or the default backend is unavailable.
+          {text(
+            `Priority ${provider.priority}. Used as a fallback when no default is set or the default backend is unavailable.`,
+            `优先级 ${provider.priority}。未设置默认后端或默认后端不可用时，会作为 fallback 使用。`,
+          )}
         </div>
       </div>
 
@@ -108,7 +112,7 @@ export function SearchProviderDetail({
             (isDefault ? " " + styles.setDefaultActive : "")
           }
         >
-          {isDefault ? "Default backend" : "Set as default"}
+          {isDefault ? text("Default backend", "默认后端") : text("Set as default", "设为默认")}
         </button>
       </div>
 
@@ -134,11 +138,12 @@ export function SearchProviderDetail({
             color: "var(--text-primary)",
           }}
         >
-          This backend doesn&apos;t require an API key — it&apos;s always available
-          as a zero-config fallback when no other configured backend returns results.
+          {text(
+            "This backend doesn't require an API key. It's always available as a zero-config fallback when no other configured backend returns results.",
+            "这个后端不需要 API key。当其他已配置后端没有返回结果时，它会作为零配置 fallback 使用。",
+          )}
         </div>
       )}
     </>
   );
 }
-

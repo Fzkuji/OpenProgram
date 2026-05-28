@@ -93,14 +93,19 @@ export function FunctionForm({
         if (data && typeof data.home === "string") {
           w._workdirHome = data.home;
         }
-        if (data && data.last) setWorkdir(data.last);
+        if (workdirMode !== "hidden" && data) {
+          const last = typeof data.last === "string" ? data.last.trim() : "";
+          const repo = typeof data.repo === "string" ? data.repo.trim() : "";
+          const next = last || repo;
+          if (next) setWorkdir(next);
+        }
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fn.name]);
+  }, [fn.name, workdirMode]);
 
   const pickWorkdir = useCallback(async () => {
     const w = window as unknown as { _workdirHome?: string };

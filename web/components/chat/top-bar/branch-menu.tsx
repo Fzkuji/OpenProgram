@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
 
@@ -58,6 +59,7 @@ function BranchRowItem({
   sessionId: string;
   onClose: () => void;
 }) {
+  const { t, text } = useTranslation();
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(branch.is_named ? branch.name || "" : "");
@@ -98,7 +100,7 @@ function BranchRowItem({
     e.stopPropagation();
     if (
       !window.confirm(
-        "Delete this branch and its messages? This cannot be undone.",
+        t("right.delete_branch_confirm"),
       )
     )
       return;
@@ -149,7 +151,7 @@ function BranchRowItem({
             outline: "none",
           }}
           value={value}
-          placeholder="new branch name (empty = cancel)"
+          placeholder={text("new branch name (empty = cancel)", "新分支名称（留空则取消）")}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => setValue(e.target.value)}
           onBlur={commitRename}
@@ -187,14 +189,14 @@ function BranchRowItem({
             alignItems: "center",
           }}
         >
-          HEAD
+          {t("right.head")}
         </Badge>
       ) : null}
       {hovered && !editing ? (
         <>
           <span
             className="branch-rename"
-            title="Rename branch"
+            title={t("right.rename_branch")}
             style={{ ...btnStyle, right: 36 }}
             onClick={(e) => {
               e.stopPropagation();
@@ -206,7 +208,7 @@ function BranchRowItem({
           </span>
           <span
             className="branch-del"
-            title="Delete this branch"
+            title={t("right.delete_branch")}
             style={{ ...btnStyle, right: 8 }}
             onClick={del}
           >
@@ -219,6 +221,7 @@ function BranchRowItem({
 }
 
 export function BranchMenu({ onClose }: { onClose: () => void }) {
+  const { t, text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [rows, setRows] = useState<BranchRow[] | null>(null);
 
@@ -239,11 +242,11 @@ export function BranchMenu({ onClose }: { onClose: () => void }) {
   return (
     <div className={`${MENU_PANEL} w-auto`}>
       <div className={GROUP_LABEL}>
-        <span>Branches</span>
+        <span>{t("right.branches")}</span>
       </div>
       {rows !== null && rows.length === 0 ? (
         <div className={`${GROUP_LABEL} text-[11px]`}>
-          <span>No branches yet — retry or edit a message to fork.</span>
+          <span>{text("No branches yet. Retry or edit a message to fork.", "还没有分支。重试或编辑消息后会创建分支。")}</span>
         </div>
       ) : null}
       {(rows ?? []).map((b) => (

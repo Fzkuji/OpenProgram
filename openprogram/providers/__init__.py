@@ -125,8 +125,8 @@ _DEFERRABLE_LEGACY_EXPORTS = {
 def __getattr__(name: str):
     """Lazy-load legacy runtime classes while preserving modern exports."""
     if name in _DEFERRABLE_LEGACY_EXPORTS:
-        from openprogram import legacy_providers
-        return getattr(legacy_providers, name)
+        from openprogram.providers import registry
+        return getattr(registry, name)
     raise AttributeError(f"module 'openprogram.providers' has no attribute {name!r}")
 
 

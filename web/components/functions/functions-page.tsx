@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./functions-page.module.css";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n";
 import { CustomSelect } from "./custom-select";
 import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
 import { IconPicker, DEFAULT_ICON } from "./icon-picker";
@@ -21,6 +22,7 @@ import { useFolderMeta } from "./use-folder-meta";
 import type { FunctionInfo, FunctionsMeta } from "./types";
 
 export function FunctionsPage() {
+  const { t, text, locale } = useTranslation();
   const router = useRouter();
   const [functions, setFunctions] = useState<FunctionInfo[]>([]);
   const [meta, setMeta] = useState<FunctionsMeta>({
@@ -138,6 +140,12 @@ export function FunctionsPage() {
   function formatDate(ts?: number): string {
     if (!ts) return "";
     const diff = Date.now() - ts * 1000;
+    if (locale === "zh") {
+      if (diff < 3_600_000) return Math.floor(diff / 60_000) + " 分钟前";
+      if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + " 小时前";
+      if (diff < 604_800_000) return Math.floor(diff / 86_400_000) + " 天前";
+      return new Date(ts * 1000).toLocaleDateString("zh-CN");
+    }
     if (diff < 3_600_000) return Math.floor(diff / 60_000) + "m ago";
     if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + "h ago";
     if (diff < 604_800_000) return Math.floor(diff / 86_400_000) + "d ago";
@@ -243,25 +251,25 @@ export function FunctionsPage() {
     const fav = isFavorite(name);
     const items: CtxItem[] = [
       {
-        label: fav ? "★ Unfavorite" : "☆ Favorite",
+        label: fav ? `★ ${text("Unfavorite", "取消收藏")}` : `☆ ${text("Favorite", "收藏")}`,
         action: () =>
           toggleFav(name, {
             stopPropagation: () => {},
           } as unknown as React.MouseEvent),
       },
-      { label: "🎨 Change icon...", action: () => setIconPickerFor(name) },
-      { label: "✎ Edit...", action: () => editProgram(name) },
+      { label: `🎨 ${text("Change icon...", "更换图标...")}`, action: () => setIconPickerFor(name) },
+      { label: `✎ ${text("Edit...", "编辑...")}`, action: () => editProgram(name) },
       { type: "sep" },
     ];
     for (const f of Object.keys(meta.folders).sort()) {
       items.push({
-        label: `📁 Move to ${f}`,
+        label: text(`📁 Move to ${f}`, `📁 移动到 ${f}`),
         action: () => moveToFolder(name, f),
       });
     }
     if (getFolderForProgram(name)) {
       items.push({
-        label: "📂 Remove from folder",
+        label: `📂 ${text("Remove from folder", "从文件夹中移除")}`,
         action: () => moveToFolder(name, null),
       });
     }
@@ -275,11 +283,11 @@ export function FunctionsPage() {
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: "Rename", action: () => setRenamingFolder(name) },
-        { label: "Delete", action: () => deleteFolder(name) },
+        { label: text("Rename", "重命名"), action: () => setRenamingFolder(name) },
+        { label: t("sidebar.delete"), action: () => deleteFolder(name) },
         { type: "sep" },
         {
-          label: "📁 New folder",
+          label: `📁 ${text("New folder", "新建文件夹")}`,
           action: () => setCreatingFolder(true),
         },
       ],
@@ -294,7 +302,7 @@ export function FunctionsPage() {
       y: e.clientY,
       items: [
         {
-          label: "📁 New folder",
+          label: `📁 ${text("New folder", "新建文件夹")}`,
           action: () => setCreatingFolder(true),
         },
       ],
@@ -309,7 +317,7 @@ export function FunctionsPage() {
       y: e.clientY,
       items: [
         {
-          label: "📁 New folder",
+          label: `📁 ${text("New folder", "新建文件夹")}`,
           action: () => setCreatingFolder(true),
         },
       ],
@@ -326,19 +334,19 @@ export function FunctionsPage() {
   const builtinFolders = [
     {
       id: "__all__",
-      name: "All Functions",
+      name: text("All Functions", "全部函数"),
       icon: "📋",
       count: functions.length,
     },
     {
       id: "__favorites__",
-      name: "Favorites",
+      name: text("Favorites", "收藏"),
       icon: "★",
       count: liveCount(meta.favorites),
     },
     {
       id: "__uncategorized__",
-      name: "Uncategorized",
+      name: text("Uncategorized", "未分类"),
       icon: "📂",
       count: getFunctionsInFolder("__uncategorized__").length,
     },
@@ -349,12 +357,12 @@ export function FunctionsPage() {
     <div className="main">
       <div className={styles.view}>
         <div className={styles.topbar}>
-          <span className={styles.title}>Functions</span>
+          <span className={styles.title}>{t("nav.functions")}</span>
           <div className={styles.toolbar}>
             <input
               type="text"
               className={styles.search}
-              placeholder="Search functions..."
+              placeholder={text("Search functions...", "搜索函数...")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -362,16 +370,16 @@ export function FunctionsPage() {
               value={sort}
               onChange={(v) => setSort(v)}
               options={[
-                { value: "name", label: "Sort: Name" },
-                { value: "recent", label: "Sort: Recent" },
+                { value: "name", label: text("Sort: Name", "排序：名称") },
+                { value: "recent", label: text("Sort: Recent", "排序：最近") },
               ]}
             />
             <CustomSelect
               value={filter}
               onChange={(v) => setFilter(v)}
               options={[
-                { value: "all", label: "All" },
-                { value: "favorites", label: "Favorites" },
+                { value: "all", label: text("All", "全部") },
+                { value: "favorites", label: text("Favorites", "收藏") },
               ]}
             />
             <Button
@@ -379,7 +387,7 @@ export function FunctionsPage() {
               size="sm"
               onClick={() => setView((v) => (v === "grid" ? "list" : "grid"))}
             >
-              {view === "grid" ? "List" : "Grid"}
+              {view === "grid" ? text("List", "列表") : text("Grid", "网格")}
             </Button>
           </div>
         </div>
@@ -456,7 +464,7 @@ export function FunctionsPage() {
                 <span className={styles.folderIcon}>📁</span>
                 <RenameInput
                   initial=""
-                  placeholder="New folder"
+                  placeholder={text("New folder", "新建文件夹")}
                   onCommit={(n) => {
                     setCreatingFolder(false);
                     createFolder(n);
@@ -468,10 +476,10 @@ export function FunctionsPage() {
             <div
               className={cls(styles.folderItem, styles.folderNew)}
               onClick={() => setCreatingFolder(true)}
-              title="Create a new folder"
+              title={text("Create a new folder", "新建文件夹")}
             >
               <span className={styles.folderIcon}>+</span>
-              <span className={styles.folderName}>New folder</span>
+              <span className={styles.folderName}>{text("New folder", "新建文件夹")}</span>
             </div>
           </div>
 
@@ -483,10 +491,10 @@ export function FunctionsPage() {
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}>📂</div>
                 <div className={styles.emptyText}>
-                  {search ? "No matching functions" : "This folder is empty"}
+                  {search ? text("No matching functions", "没有匹配的函数") : text("This folder is empty", "这个文件夹是空的")}
                 </div>
                 <div className={styles.emptyHint}>
-                  Drag functions here to organize
+                  {text("Drag functions here to organize", "拖动函数到这里进行整理")}
                 </div>
               </div>
             ) : (
