@@ -75,68 +75,38 @@ openprogram                                         # full-screen TUI
 
 Both share the same backend (`~/.agentic/`), so a session started in the TUI shows up in the browser tab and vice versa. The web UI gets the richer surface (mini-DAG, branch / merge / attach, multi-agent, file attachments); the TUI is the same backend without the chrome.
 
-### 3. Try a built-in function
+### 3. Write your own functions
 
-A fresh install ships with `deep_work`, `ask_user`, `research`, PDF helpers, and a few testing fixtures under the sidebar's Functions list. The simplest first run is `deep_work` — give it a task and a quality level, it plans → executes → self-evaluates → revises until the result meets the bar.
+Ask the agent itself — it has a skill for this. Open chat and type something like *"create an @agentic_function that summarises a PDF"*; the bundled [`agentic-programming` skill](skills/agentic-programming/SKILL.md) walks the agent through location, decorator, smoke test, validation. No template hunting.
 
 ### 4. Add the harness suite (optional)
 
-The three sibling agent harnesses — **GUI Agent Harness** (OSWorld Multi-Apps 79.8%), **Wiki Agent Harness**, **Research Agent Harness** — are separate repos. To make them appear in the sidebar, clone them and drop a symlink under `openprogram/functions/agentics/`:
+Three sibling agent harnesses ship as separate repos. Symlink them under `openprogram/functions/agentics/` and the auto-discovery picks them up on the next worker restart — full clone + symlink commands and the heavy `[gui]` extras path in [docs/GETTING_STARTED.md#external-harnesses](docs/GETTING_STARTED.md).
 
-```bash
-git clone https://github.com/Fzkuji/GUI-Agent-Harness        ~/GUI-Agent-Harness
-git clone https://github.com/Fzkuji/Wiki-Agent-Harness       ~/Wiki-Agent-Harness
-git clone https://github.com/Fzkuji/Research-Agent-Harness   ~/Research-Agent-Harness
-
-pip install -e ~/GUI-Agent-Harness ~/Wiki-Agent-Harness ~/Research-Agent-Harness
-ln -s ~/GUI-Agent-Harness      "$(python -m openprogram._meta agentics_dir)/GUI-Agent-Harness"
-ln -s ~/Wiki-Agent-Harness     "$(python -m openprogram._meta agentics_dir)/Wiki-Agent-Harness"
-ln -s ~/Research-Agent-Harness "$(python -m openprogram._meta agentics_dir)/Research-Agent-Harness"
-```
-
-Each harness ships `AGENTIC_FUNCTIONS = [...]` in its own `<pkg>/agentics/__init__.py`; OpenProgram's auto-discovery picks the symlink up on next worker restart. Heavy GUI dependencies (Playwright, OCR, vision stack ~2 GB) live in `pip install openprogram[gui]` — install separately to keep base install slim.
-
-### 5. Write your first `@agentic_function`
-
-```python
-from openprogram.agentic_programming import agentic_function
-
-@agentic_function
-def login_flow(url: str, runtime=None):
-    """Drive a login form: observe, click submit, confirm dashboard."""
-    seen   = runtime.exec(content=[{"type": "text", "text": f"Visit {url} and describe the page."}])
-    action = runtime.exec(content=[{"type": "text", "text": "Where should I click to log in?"}])
-    return runtime.exec(content=[{"type": "text", "text": f"After clicking {action!r}, what's on screen now?"}])
-```
-
-Drop it in `~/.agentic/functions/` (or any path on `PYTHONPATH`); it appears in the sidebar and every `runtime.exec` call lands in the conversation DAG so the next turn sees the full chain without manual state. Full walkthrough — and the bigger picture on **why Python should hold the flow** — in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and [docs/philosophy/agentic-programming.md](docs/philosophy/agentic-programming.md).
+| Harness | What it does | Track record |
+|---|---|---|
+| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Observe → plan → click → verify, drives desktop apps and OSWorld VMs by vision. | **OSWorld Multi-Apps 79.8%** (72.6 / 91 evaluated tasks) |
+| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Literature survey → idea → experiments → paper draft → cross-model review. | Topic → submission-ready draft in one run |
+| [Wiki&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Wiki-Agent-Harness) | Ingests notes / docs / chats into an Obsidian-compatible vault with `[[wikilinks]]`. | Obsidian-compatible vault output |
 
 ## Optional extras
 
-| Extra | Adds | Post-install |
-|---|---|---|
-| `[anthropic]` / `[openai]` / `[gemini]` | Provider SDKs | — |
-| `[browser]` | Playwright (~150 MB) | `playwright install chromium` |
-| `[browser-stealth]` | Cloudflare-bypassing browsers | `patchright install chromium && camoufox fetch` |
-| `[gui]` | Vision/control deps for GUI harness (~2 GB) | — |
-| `[channels]` | Discord / Slack / WeChat bots | — |
-| `[all]` | Everything except `[browser-stealth]` | run post-install commands as needed |
+| Extra | Adds |
+|---|---|
+| `[anthropic]` / `[openai]` / `[gemini]` | Provider SDKs |
+| `[browser]` | Playwright (~150 MB) |
+| `[browser-stealth]` | Cloudflare-bypassing browsers |
+| `[gui]` | Vision/control deps for GUI harness (~2 GB) |
+| `[channels]` | Discord / Slack / WeChat bots |
+| `[all]` | Everything except `[browser-stealth]` |
+
+Post-install steps (`playwright install`, `patchright install chromium`, `camoufox fetch`, etc.) and per-extra notes live in [docs/install.md](docs/install.md).
 
 ## Troubleshooting
 
 `openprogram doctor` runs a fast end-to-end check. Common case-by-case fixes (no provider detected, port in use, multi-repo install, missing `openprogram` on PATH) live in [docs/troubleshooting.md](docs/troubleshooting.md). For platform-builder topics (`Runtime` retry semantics, the full `@agentic_function` decorator API, the flat-DAG context model) see [docs/API.md](docs/API.md) and the per-topic notes under [docs/api/](docs/api/).
 
 ---
-
-## Supported Projects
-
-Three agent applications ship with OpenProgram, under `openprogram/functions/agentics/` — each a full agent built on the `@agentic_function` paradigm:
-
-| Project | What it does | Track record |
-|---------|--------------|---------------|
-| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Autonomous GUI agent — operates desktop apps (and OSWorld VMs) by vision: observe → plan → act → verify. Python drives the loop, the LLM only reasons when asked. | **OSWorld Multi-Apps 79.8%** (72.6 / 91 evaluated tasks) |
-| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Autonomous research agent — literature survey → idea → experiments → paper writing → cross-model review. Full pipeline from topic to submission-ready paper. | Topic → submission-ready draft in one run |
-| [Wiki&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Wiki-Agent-Harness) | Autonomous wiki builder — ingests notes, documents and conversations into a structured, Obsidian-compatible knowledge vault with `[[wikilinks]]`. | Obsidian-compatible vault output |
 
 ## Why Agentic Programming?
 

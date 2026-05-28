@@ -8,6 +8,7 @@ This directory is the documentation entry point for OpenProgram.
 |---|---|
 | [`GETTING_STARTED.md`](GETTING_STARTED.md) | Installation, provider setup, and runnable examples |
 | [`features.md`](features.md) | Detailed tour of the key features the README summarises |
+| [`install.md`](install.md) | What each pip extra adds + post-install steps |
 | [`troubleshooting.md`](troubleshooting.md) | "It doesn't work" cookbook (no provider, port in use, multi-repo install …) |
 | [`API.md`](API.md) | Public API index |
 | [`README_CN.md`](README_CN.md) | Chinese project overview |
