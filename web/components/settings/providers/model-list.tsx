@@ -408,15 +408,19 @@ function ModelDetailsPanel({ model }: { model: Model }) {
   );
 
   // ── Section heading ───────────────────────────────────────────────
-  const heading = (s: string) => (
+  // ``isFirst`` strips the top padding on the first heading so the
+  // container's own top padding doesn't compound. Without that the
+  // visual stack ended up "Capabilities" pushed way down from the
+  // top border while "Metadata" hugged the bottom border — exactly
+  // the asymmetry the user complained about.
+  const heading = (s: string, isFirst = false) => (
     <div style={{
       fontSize: 10,
       fontWeight: 700,
       letterSpacing: "0.08em",
       textTransform: "uppercase",
       color: "var(--text-primary)",
-      padding: "12px 0 6px",
-      marginTop: 4,
+      padding: isFirst ? "0 0 8px" : "14px 0 8px",
       borderBottom: "1px solid var(--border)",
     }}>{s}</div>
   );
@@ -424,17 +428,19 @@ function ModelDetailsPanel({ model }: { model: Model }) {
   return (
     <div
       style={{
+        // Symmetric on both axes — top=bottom, left=right.
         marginTop: 10,
-        marginLeft: 36,
+        marginBottom: 10,
+        marginLeft: 12,
         marginRight: 12,
-        padding: "4px 16px 16px",
+        padding: "16px",
         background: "var(--bg-tertiary)",
         border: "1px solid var(--border)",
         borderRadius: 8,
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
       }}
     >
-      {heading(text("Capabilities", "能力"))}
+      {heading(text("Capabilities", "能力"), true)}
       {caps}
       {heading(text("Limits", "容量"))}
       {limitsBlock}
