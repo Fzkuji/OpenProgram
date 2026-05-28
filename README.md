@@ -69,11 +69,15 @@ Check detection with `openprogram providers`. Auto-priority: **Claude Code → C
 ### 2. Chat — pick a surface
 
 ```bash
-openprogram                                         # full-screen TUI
-# OR open http://localhost:3000 in any browser     # web UI
+openprogram                                         # default: terminal UI
+openprogram tui                                     # same thing, explicit verb
+openprogram web                                     # start the browser UI
+openprogram --print "summarise this file"           # one-shot, no UI
 ```
 
-Both share the same backend (`~/.agentic/`), so a session started in the TUI shows up in the browser tab and vice versa. The web UI gets the richer surface (mini-DAG, branch / merge / attach, multi-agent, file attachments); the TUI is the same backend without the chrome.
+Both surfaces share the same backend (`~/.agentic/`), so a session started in the terminal shows up in the browser tab and vice versa. The web UI gets the richer surface (mini-DAG, branch / merge / attach, multi-agent, file attachments); the terminal UI is the same backend without the chrome.
+
+The terminal UI picks the right implementation per-platform automatically: **macOS / Linux** → Ink (Node-based, full-screen alt-screen); **Windows** → Rich (Python-based, scrolls in place — Ink's raw input mode doesn't work in Windows consoles). Same backend, same commands, same chat history.
 
 ### 3. Write your own functions
 
@@ -104,7 +108,29 @@ Post-install steps (`playwright install`, `patchright install chromium`, `camouf
 
 ## Troubleshooting
 
-`openprogram doctor` runs a fast end-to-end check. Common case-by-case fixes (no provider detected, port in use, multi-repo install, missing `openprogram` on PATH) live in [docs/troubleshooting.md](docs/troubleshooting.md). For platform-builder topics (`Runtime` retry semantics, the full `@agentic_function` decorator API, the flat-DAG context model) see [docs/API.md](docs/API.md) and the per-topic notes under [docs/api/](docs/api/).
+Two diagnostic commands cover most "it broke and I don't know why" situations:
+
+```bash
+openprogram rescue          # 11 platform-agnostic probes, each with a fix command
+openprogram doctor          # quick "is the install healthy?" check
+openprogram logs tail       # follow the worker log live
+openprogram providers doctor # OAuth tokens — expiring? refresh wired?
+```
+
+`rescue` is the one to reach for first when something doesn't work — it doesn't depend on an LLM being reachable, walks through provider config, ports, dependencies, build artefacts, and prints the exact command to fix each finding. Case-by-case docs live in [docs/troubleshooting.md](docs/troubleshooting.md).
+
+For platform-builder topics (`Runtime` retry semantics, the full `@agentic_function` decorator API, the flat-DAG context model) see [docs/API.md](docs/API.md) and the per-topic notes under [docs/api/](docs/api/).
+
+### Power-user commands
+
+```bash
+openprogram logs list                # all log files with size + age
+openprogram logs tail worker -f      # follow worker.log
+openprogram completion bash          # autocomplete: bash | zsh | powershell
+openprogram secrets list             # same as `providers list` (openclaw-style alias)
+openprogram worker status            # is the backend up? on what port?
+openprogram --resume <session-id>    # pick up a previous chat
+```
 
 ---
 
