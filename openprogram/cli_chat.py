@@ -161,9 +161,14 @@ def run_cli_chat(oneshot: str | None = None,
                              agent=agent, session_id=session_id):
                 return
             continue
-        reply = _run_turn_with_history(agent, session_id, user_input)
-        console.print()
-        console.print(reply)
+        # Stream the reply token-by-token to the terminal. The turn
+        # function writes directly to stdout via ``rt.on_stream``; we
+        # don't print again after it returns or the text would
+        # duplicate. The returned ``reply`` is the canonical full
+        # string — passed to TTS which needs the whole utterance.
+        reply = _run_turn_with_history(
+            agent, session_id, user_input, console=console,
+        )
         # Fire-and-forget TTS; no-ops unless tts.provider is set.
         try:
             from openprogram.tts import speak
