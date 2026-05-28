@@ -331,7 +331,7 @@ function ModelDetailsPanel({ model }: { model: Model }) {
           </span>)}
       {model.context_window != null &&
         fact(text("Context window", "上下文窗口"),
-          <span><strong style={{ color: "var(--text-bright)" }}>
+          <span><strong style={{ color: "var(--text-primary)" }}>
             {model.context_window.toLocaleString()}
           </strong> tokens</span>)}
       {model.input_limit != null &&
@@ -339,7 +339,7 @@ function ModelDetailsPanel({ model }: { model: Model }) {
           <span>{model.input_limit.toLocaleString()} tokens</span>)}
       {model.max_tokens != null && model.max_tokens > 0 &&
         fact(text("Output cap", "输出上限"),
-          <span><strong style={{ color: "var(--text-bright)" }}>
+          <span><strong style={{ color: "var(--text-primary)" }}>
             {model.max_tokens.toLocaleString()}
           </strong> tokens</span>)}
     </>
@@ -380,7 +380,7 @@ function ModelDetailsPanel({ model }: { model: Model }) {
           background: "var(--bg-tertiary)",
           padding: "1px 6px",
           borderRadius: 3,
-          color: "var(--text-bright)",
+          color: "var(--text-primary)",
           fontSize: 11,
         }}>{model.family}</code>)}
       {model.knowledge_cutoff && fact(text("Knowledge cutoff", "训练截止"), model.knowledge_cutoff)}
@@ -401,7 +401,7 @@ function ModelDetailsPanel({ model }: { model: Model }) {
           background: "var(--bg-tertiary)",
           padding: "1px 6px",
           borderRadius: 3,
-          color: "var(--text-bright)",
+          color: "var(--text-primary)",
           fontSize: 11,
         }}>{model.api}</code>)}
     </>
@@ -414,7 +414,7 @@ function ModelDetailsPanel({ model }: { model: Model }) {
       fontWeight: 700,
       letterSpacing: "0.08em",
       textTransform: "uppercase",
-      color: "var(--text-bright)",
+      color: "var(--text-primary)",
       padding: "12px 0 6px",
       marginTop: 4,
       borderBottom: "1px solid var(--border)",
