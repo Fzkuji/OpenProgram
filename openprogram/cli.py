@@ -644,7 +644,9 @@ def main():
 
     # ---- providers --------------------------------------------------------
     p_providers = sub.add_parser("providers",
-        help="Manage LLM providers (login, list, status, ...)")
+        aliases=["secrets"],
+        help="Manage LLM providers / stored credentials "
+             "(login, list, status, doctor, ...). `secrets` is an alias.")
     providers_sub = p_providers.add_subparsers(dest="providers_cmd", metavar="verb")
     from openprogram.auth.cli import build_parser as _build_provider_verbs
     _build_provider_verbs(providers_sub)
@@ -1105,7 +1107,7 @@ def main():
         _cmd_cron_worker(args.once, args.list)
         return
 
-    if args.command == "providers":
+    if args.command in ("providers", "secrets"):
         from openprogram.auth.cli import dispatch as _providers_dispatch
         if getattr(args, "providers_cmd", None) is None:
             args.providers_cmd = "list"
