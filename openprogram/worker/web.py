@@ -35,6 +35,93 @@ def _node_available() -> bool:
     return shutil.which("node") is not None and shutil.which("npm") is not None
 
 
+def _pids_on_port(port: int) -> list[int]:
+    """Cross-platform: return PIDs listening on TCP ``port``.
+
+    POSIX: ``lsof -iTCP:<port> -sTCP:LISTEN -nP -Fp``.
+    Windows: ``netstat -ano | findstr LISTENING :<port>`` — last
+    column is PID.
+
+    Empty list on any error (tool missing, parse failure, no match).
+    """
+    if sys.platform == "win32":
+        try:
+            res = subprocess.run(
+                ["netstat", "-ano", "-p", "TCP"],
+                capture_output=True, text=True, timeout=3,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        pids: list[int] = []
+        needle = f":{port}"
+        for line in (res.stdout or "").splitlines():
+            parts = line.split()
+            # Format: "  TCP    0.0.0.0:3000   0.0.0.0:0   LISTENING   1234"
+            if len(parts) < 5:
+                continue
+            if parts[3] != "LISTENING":
+                continue
+            local = parts[1]
+            if not local.endswith(needle):
+                continue
+            try:
+                pids.append(int(parts[4]))
+            except ValueError:
+                pass
+        return pids
+
+    try:
+        out = subprocess.run(
+            ["lsof", "-iTCP:%d" % port, "-sTCP:LISTEN", "-nP", "-Fp"],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [int(line[1:]) for line in out.stdout.splitlines() if line.startswith("p")]
+
+
+def _process_cmdline(pid: int) -> str:
+    """Best-effort: return ``pid``'s command line as a single string.
+
+    Three sources, in fallback order:
+      * Linux ``/proc/<pid>/cmdline`` (fast, no spawn)
+      * POSIX ``ps -p <pid> -o command=`` (works on macOS too)
+      * Windows ``wmic process where ProcessId=<pid> get CommandLine``
+        (deprecated but still ships on Win10/11)
+
+    Empty string on failure — callers should treat that as "unknown,
+    leave it alone".
+    """
+    if sys.platform != "win32":
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                return f.read().decode("utf-8", "replace")
+        except OSError:
+            pass
+        try:
+            ps = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "command="],
+                capture_output=True, text=True, timeout=2,
+            )
+            return ps.stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+
+    try:
+        wm = subprocess.run(
+            ["wmic", "process", "where", f"ProcessId={pid}",
+             "get", "CommandLine", "/format:list"],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    for line in (wm.stdout or "").splitlines():
+        line = line.strip()
+        if line.startswith("CommandLine="):
+            return line[len("CommandLine="):]
+    return ""
+
+
 def _reclaim_web_port(port: int) -> None:
     """Kill any leftover Next.js process holding ``port``.
 
@@ -45,33 +132,18 @@ def _reclaim_web_port(port: int) -> None:
 
     Conservative: only kills processes whose command line looks like the
     Next.js server, never anything else listening on that port.
+
+    Cross-platform via the helpers above — POSIX uses lsof / proc;
+    Windows uses netstat / wmic.
     """
-    try:
-        out = subprocess.run(
-            ["lsof", "-iTCP:%d" % port, "-sTCP:LISTEN", "-nP", "-Fp"],
-            capture_output=True, text=True, timeout=3,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return
-    pids = [int(line[1:]) for line in out.stdout.splitlines() if line.startswith("p")]
+    pids = _pids_on_port(port)
     if not pids:
         return
 
     import signal
     import time as _time
     for pid in pids:
-        try:
-            with open(f"/proc/{pid}/cmdline", "rb") as f:
-                cmdline = f.read().decode("utf-8", "replace")
-        except OSError:
-            try:
-                ps = subprocess.run(
-                    ["ps", "-p", str(pid), "-o", "command="],
-                    capture_output=True, text=True, timeout=2,
-                )
-                cmdline = ps.stdout
-            except (OSError, subprocess.TimeoutExpired):
-                continue
+        cmdline = _process_cmdline(pid)
         if "next-server" not in cmdline and "next/dist/bin/next" not in cmdline:
             print(f"[worker] web: port {port} held by PID {pid} (not next); leaving alone")
             continue
@@ -80,11 +152,13 @@ def _reclaim_web_port(port: int) -> None:
             os.kill(pid, signal.SIGTERM)
         except OSError:
             continue
+        # Poll for process exit. POSIX ``os.kill(pid, 0)`` is the no-op
+        # check; Windows doesn't support that (always raises WinError 87)
+        # so route through the cross-platform helper.
+        from openprogram.worker.lifecycle import _process_alive
         for _ in range(20):
             _time.sleep(0.1)
-            try:
-                os.kill(pid, 0)
-            except OSError:
+            if not _process_alive(pid):
                 break
         else:
             # SIGTERM ignored — escalate. signal.SIGKILL doesn't exist
