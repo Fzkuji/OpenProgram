@@ -195,6 +195,13 @@ def main():
 
     sub = parser.add_subparsers(dest="command", help="Subcommand")
 
+    # ---- rescue (crestodian-style first-aid diagnostic) -------------------
+    sub.add_parser(
+        "rescue",
+        help="Diagnose common openprogram problems and print fix commands "
+             "(deterministic — works when LLM/agent path is broken)",
+    )
+
     # ---- logs (structured log viewer) -------------------------------------
     p_logs = sub.add_parser(
         "logs",
@@ -708,6 +715,10 @@ def main():
     # ``tui_enabled`` flag selects which implementation to launch.
     # There is no user-facing knob — the platform decides.
     tui_enabled = sys.platform != "win32"
+
+    if args.command == "rescue":
+        from openprogram._cli_cmds.rescue import _cmd_rescue
+        sys.exit(_cmd_rescue())
 
     if args.command == "logs":
         from openprogram._cli_cmds.logs import (
