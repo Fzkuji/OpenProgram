@@ -37,49 +37,96 @@ from .registry import SearchResult, registry
 
 NAME = "web_search"
 
-DESCRIPTION = (
-    "Search the web and return a ranked list of results (title, URL, "
-    "snippet). Use when you have a question and need to discover URLs — "
-    "pair with `web_fetch` to read the full page.\n\n"
-    "Backend selection:\n"
-    "  • `provider=<name>` forces a specific backend. Available: "
-    "tavily, exa, kagi, perplexity, brave, youcom, serper, google, "
-    "firecrawl, searxng, minimax, moonshot, ollama, jina, arxiv, "
-    "duckduckgo. Use `arxiv` for academic / paper searches.\n"
-    "  • Omit `provider` to auto-select by priority + availability "
-    "(highest-quality configured backend wins).\n"
-    "  • `combine='rrf'` runs several backends in parallel and merges "
-    "via Reciprocal Rank Fusion — strongly recommended for high-stakes "
-    "research queries; results corroborated across providers float "
-    "to the top. Pair with `providers=['tavily','brave','exa']` to "
-    "pin which backends to blend.\n"
-    "  • `combine='race'` returns whichever backend responds first — "
-    "use when latency matters more than coverage."
-)
+
+def _build_description() -> str:
+    """Generate the LLM-facing description from the providers that are
+    actually configured at this moment.
+
+    The point: the LLM should see exactly the backends the user has set
+    keys for — not the full 16-name menu — so it doesn't waste a
+    function-call slot trying ``provider=kagi`` when no Kagi key is
+    set. Frozen at registration time (i.e. at backend startup), so
+    adding a key mid-session requires a restart for the LLM to see
+    the new provider listed. That matches every other key-driven
+    config OpenProgram has.
+    """
+    avail = [p.name for p in registry.available()]
+    avail_str = ", ".join(avail) if avail else "(none configured — set an API key to enable)"
+
+    # Pull the academic / paper hint forward only if arxiv is one of
+    # the configured backends — no point teaching the LLM about a
+    # mode that isn't available.
+    arxiv_hint = (
+        " Use `arxiv` for academic / paper searches."
+        if "arxiv" in avail else ""
+    )
+
+    return (
+        "Search the web and return a ranked list of results (title, URL, "
+        "snippet). Use when you have a question and need to discover URLs — "
+        "pair with `web_fetch` to read the full page.\n\n"
+        "Backend selection:\n"
+        f"  • `provider=<name>` forces a specific backend. Available right "
+        f"now: {avail_str}.{arxiv_hint}\n"
+        "  • Omit `provider` to auto-select by priority + availability "
+        "(highest-quality configured backend wins).\n"
+        "  • `combine='rrf'` runs several backends in parallel and merges "
+        "via Reciprocal Rank Fusion — strongly recommended for high-stakes "
+        "research queries; results corroborated across providers float "
+        "to the top. Pair with `providers=['tavily','brave','exa']` to "
+        "pin which backends to blend.\n"
+        "  • `combine='race'` returns whichever backend responds first — "
+        "use when latency matters more than coverage."
+    )
 
 
-SPEC: dict[str, Any] = {
-    "name": NAME,
-    "description": DESCRIPTION,
-    "parameters": {
+def _build_spec() -> dict:
+    """Build the JSON-schema spec with the ``provider`` enum locked to
+    the providers that are actually available right now.
+
+    The enum constraint tells well-behaved tool runners (OpenAI's
+    function-calling validator, Anthropic's tool use) that the model
+    *can't* legally name an unconfigured backend — saves a round trip
+    on every "I'll try kagi, oh it's not configured, fall back to
+    tavily" sequence the LLM would otherwise stumble into.
+    """
+    avail = [p.name for p in registry.available()]
+    provider_schema = {
+        "type": "string",
+        "description": (
+            "Force a specific backend (omit for auto-select)."
+            + (" Use `arxiv` for academic / paper searches." if "arxiv" in avail else "")
+        ),
+    }
+    if avail:
+        provider_schema["enum"] = avail
+
+    providers_schema = {
+        "type": "array",
+        "items": (
+            {"type": "string", "enum": avail} if avail else {"type": "string"}
+        ),
+        "description": (
+            "Explicit provider list for combine mode. Defaults to every "
+            "available provider when `combine` is set and this is omitted."
+        ),
+    }
+
+    return {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Search query. Natural-language is fine for Tavily/Exa; keyword-style works best for DDG.",
+                "description": (
+                    "Search query. Natural-language is fine for "
+                    "Tavily/Exa; keyword-style works best for DDG."
+                ),
             },
             "num_results": {
                 "type": "integer",
                 "description": "Maximum number of results (default 8, typical cap 20).",
             },
-            "provider": {
-                "type": "string",
-                "description": (
-                    "Force a specific backend (e.g. tavily, brave, exa, kagi, "
-                    "serper, youcom, jina, arxiv, …). Omit for auto-select "
-                    "by priority + availability. Ignored when `combine` is set."
-                ),
-            },
+            "provider": provider_schema,
             "combine": {
                 "type": "string",
                 "description": (
@@ -91,18 +138,21 @@ SPEC: dict[str, Any] = {
                 ),
                 "enum": ["rrf", "race"],
             },
-            "providers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Explicit provider list for combine mode (e.g. "
-                    "['tavily','brave','exa']). Defaults to every available "
-                    "provider when `combine` is set and this is omitted."
-                ),
-            },
+            "providers": providers_schema,
         },
         "required": ["query"],
-    },
+    }
+
+
+# Description + SPEC are computed at registration time so they reflect
+# the providers configured AT THIS BACKEND STARTUP. Adding an API key
+# mid-session requires a backend restart for the LLM-visible tool
+# schema to refresh — same pattern as every other key-driven setting.
+DESCRIPTION = _build_description()
+SPEC: dict[str, Any] = {
+    "name": NAME,
+    "description": DESCRIPTION,
+    "parameters": _build_spec(),
 }
 
 
