@@ -44,6 +44,7 @@ function Resolve-Slug($id) {
     if ($slugOverrides.ContainsKey($id)) { $candidates.Add($slugOverrides[$id]) | Out-Null }
     $candidates.Add($id) | Out-Null
 
+    # Hyphen-separated suffix strip: -ai-gateway, -coding-plan-cn, …
     $cur = $id
     for ($i = 0; $i -lt 3; $i++) {
         $stripped = $cur
@@ -57,7 +58,21 @@ function Resolve-Slug($id) {
         $candidates.Add($stripped) | Out-Null
         $cur = $stripped
     }
+    # ``amazon-bedrock`` -> ``bedrock``.
     if ($id.StartsWith("amazon-")) { $candidates.Add($id.Substring("amazon-".Length)) | Out-Null }
+    # No-hyphen "ai" suffix glue: ``togetherai`` -> ``together``,
+    # ``zhipuai`` -> ``zhipu``, ``moonshotai`` -> ``moonshot``.
+    if ($id -match '^([a-z][a-z0-9]+?)ai$' -and $matches[1].Length -ge 3) {
+        $candidates.Add($matches[1]) | Out-Null
+    }
+    # Digit/letter prefix-suffix swap: ``302ai`` <-> ``ai302``,
+    # ``360ai`` <-> ``ai360``, ``ai21`` <-> ``21ai``.
+    if ($id -match '^(\d+)([a-z][a-z0-9]*)$') {
+        $candidates.Add($matches[2] + $matches[1]) | Out-Null
+    }
+    if ($id -match '^([a-z]+)(\d+)$') {
+        $candidates.Add($matches[2] + $matches[1]) | Out-Null
+    }
 
     foreach ($c in ($candidates | Select-Object -Unique)) {
         $clower = $c.ToLower()

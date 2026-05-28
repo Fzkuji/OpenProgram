@@ -10,6 +10,7 @@ export interface LobeMatch {
 }
 
 export const LOBE_ICONS: Record<string, LobeMatch> = {
+  "302ai": { slug: "ai302", hasColor: true, hasMono: true },
   "aihubmix": { slug: "aihubmix", hasColor: true, hasMono: true },
   "alibaba": { slug: "alibaba", hasColor: true, hasMono: true },
   "alibaba-cn": { slug: "alibaba", hasColor: true, hasMono: true },
@@ -45,6 +46,7 @@ export const LOBE_ICONS: Record<string, LobeMatch> = {
   "minimax-coding-plan": { slug: "minimax", hasColor: true, hasMono: true },
   "mistral": { slug: "mistral", hasColor: true, hasMono: true },
   "modelscope": { slug: "modelscope", hasColor: true, hasMono: true },
+  "moonshotai": { slug: "moonshot", hasColor: false, hasMono: true },
   "morph": { slug: "morph", hasColor: true, hasMono: true },
   "nebius": { slug: "nebius", hasColor: false, hasMono: true },
   "nova": { slug: "nova", hasColor: true, hasMono: true },
@@ -61,6 +63,7 @@ export const LOBE_ICONS: Record<string, LobeMatch> = {
   "stepfun-ai": { slug: "stepfun", hasColor: true, hasMono: true },
   "submodel": { slug: "submodel", hasColor: true, hasMono: true },
   "tencent-coding-plan": { slug: "tencent", hasColor: true, hasMono: true },
+  "togetherai": { slug: "together", hasColor: true, hasMono: true },
   "upstage": { slug: "upstage", hasColor: true, hasMono: true },
   "v0": { slug: "v0", hasColor: false, hasMono: true },
   "venice": { slug: "venice", hasColor: true, hasMono: true },
@@ -70,4 +73,5 @@ export const LOBE_ICONS: Record<string, LobeMatch> = {
   "zai": { slug: "zai", hasColor: false, hasMono: true },
   "zai-coding-plan": { slug: "zai", hasColor: false, hasMono: true },
   "zenmux": { slug: "zenmux", hasColor: false, hasMono: true },
+  "zhipuai": { slug: "zhipu", hasColor: true, hasMono: true },
 };
