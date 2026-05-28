@@ -1,116 +1,37 @@
 "use client";
 
-/** Provider icon with three-tier fallback.
+/** Provider icon with a precomputed LobeHub coverage map + a
+ *  models.dev fallback for the long tail.
  *
- *   1. **LobeHub colour SVG** keyed on either an explicit
- *      ``SLUGS`` mapping (for ids where ours differs from LobeHub's
- *      — e.g. ``openai-codex`` → ``openai``) or the raw provider id
- *      itself. Most community-imported providers from models.dev
- *      (fireworks, together, perplexity, qwen, alibaba, doubao,
- *      baichuan, baidu, tencentcloud, novita, aihubmix, …) live
- *      under their raw id in LobeHub too, so they pick up colour
- *      glyphs without any local mapping work.
- *   2. **LobeHub mono SVG** as the next try when colour 404s.
- *   3. **models.dev mono SVG via CSS mask** — for the long tail
- *      LobeHub doesn't carry (abacus, 302ai, siliconflow, …). The
- *      SVG itself is ``currentColor`` so we render it as a
- *      ``mask-image`` with ``backgroundColor: var(--text-primary)``
- *      to follow the active theme (cream on dark, near-black on
- *      light). models.dev serves a generic placeholder SVG for
- *      unknown ids rather than 404'ing, so this tier is the
- *      effective end of the chain — no letter-avatar fallback is
- *      needed (and the previous one was dead code anyway since the
- *      mask path can't dispatch ``onError``).
+ *  Lookup flow per render:
+ *
+ *    1. ``LOBE_ICONS[id]`` — generated offline by
+ *       ``_gen_lobe_slugs.ps1`` against the live LobeHub icon
+ *       catalogue. One O(1) hash hit decides which CDN URL to load:
+ *       colour SVG when ``hasColor`` is true, else mono SVG when
+ *       ``hasMono`` is true. No 404 round-trips, no runtime
+ *       suffix-stripping. Coverage on the current
+ *       ``/api/providers/list`` (141 ids): 41 colour + 19 mono = 60.
+ *
+ *    2. **models.dev inline SVG** — for the 81 community providers
+ *       LobeHub doesn't carry (302ai, abacus, atomic-chat,
+ *       siliconflow, …). Fetched once via ``_loadSvg`` and injected
+ *       as DOM. Handles both vector ``currentColor`` glyphs
+ *       (theme-coloured) and PNG-embedded SVGs (raster verbatim
+ *       with the upstream's branded colour intact).
+ *
+ *    3. **Letter avatar** as the absolute fallback when models.dev's
+ *       fetch hard-fails. models.dev returns a placeholder for
+ *       unknown ids rather than 404'ing, so in practice tier 3 only
+ *       fires on a network failure.
+ *
+ *  Re-run ``_gen_lobe_slugs.ps1`` whenever
+ *  ``/api/providers/list`` grows or LobeHub publishes new icons —
+ *  it overwrites ``./lobe-icons.ts`` in place.
  */
 import { useEffect, useState } from "react";
 import styles from "./settings-page.module.css";
-
-/** Explicit slug mapping for the providers whose id differs from
- *  LobeHub's icon key in ways no automatic suffix-strip can recover
- *  (mostly: "X is conceptually the Y brand", e.g. ``openai-codex`` →
- *  ``openai``). Auto-derived suffix variants like ``fireworks-ai`` →
- *  ``fireworks`` don't need entries here — they fall out of
- *  ``slugCandidates`` below. */
-const SLUGS: Record<string, string> = {
-  // OpenAI family — Codex / consumer-ChatGPT share the OpenAI mark
-  "openai-codex": "openai",
-  "chatgpt-subscription": "openai",
-  // Anthropic family — Meridian / claude-max-proxy share Claude's mark
-  anthropic: "claude",
-  "claude-code": "claude",
-  "claude-max-proxy": "claude",
-  // Google family — multiple Gemini delivery flavours share the icon
-  google: "gemini",
-  "google-gemini-cli": "gemini",
-  "gemini-cli": "gemini",
-  "gemini-subscription": "gemini",
-  // Cloud providers (amazon-bedrock gets stripped to bedrock by the
-  // prefix rule below, but azure-openai-responses needs the explicit
-  // "land on the azure brand" mapping)
-  "azure-openai-responses": "azure",
-  // Inference gateways
-  "vercel-ai-gateway": "vercel",
-  // GitHub Copilot's LobeHub slug is the squashed form
-  "github-copilot": "githubcopilot",
-};
-
-
-/** Suffixes that just qualify *which flavour* of a provider this is
- *  (Chinese region, Coding plan, Workers Edge, Token Plan tier, …)
- *  but don't change the underlying brand. LobeHub keys its icons on
- *  the brand, so stripping these gets us a hit. Ordered longest-
- *  first so we don't peel off a ``-cn`` and miss the ``-coding-plan-cn``
- *  it was actually part of. */
-const _STRIP_SUFFIXES = [
-  "-token-plan-cn",
-  "-token-plan-ams",
-  "-token-plan-sgp",
-  "-token-plan",
-  "-coding-plan-cn",
-  "-coding-plan",
-  "-ai-gateway",
-  "-workers-ai",
-  "-for-coding",
-  "-coding",
-  "-responses",
-  "-ai",
-  "-cn",
-];
-
-/** Build the ordered list of slugs to try against LobeHub for a
- *  given provider id. Explicit mapping (if any) wins; raw id next;
- *  then strip common qualifier suffixes one at a time so e.g.
- *  ``alibaba-coding-plan-cn`` → ``alibaba-coding-plan`` →
- *  ``alibaba`` → hit. Also strips the ``amazon-`` prefix so
- *  ``amazon-bedrock`` → ``bedrock``. Deduped; original order
- *  preserved. */
-function slugCandidates(id: string): string[] {
-  const out: string[] = [];
-  const push = (s: string) => {
-    if (s && !out.includes(s)) out.push(s);
-  };
-  const mapped = SLUGS[id];
-  if (mapped) push(mapped);
-  push(id);
-
-  let cur = id;
-  for (let i = 0; i < 3; i++) {
-    let stripped = cur;
-    for (const sfx of _STRIP_SUFFIXES) {
-      if (stripped.endsWith(sfx)) {
-        stripped = stripped.slice(0, -sfx.length);
-        break;
-      }
-    }
-    if (stripped === cur || !stripped) break;
-    push(stripped);
-    cur = stripped;
-  }
-
-  if (id.startsWith("amazon-")) push(id.slice("amazon-".length));
-
-  return out;
-}
+import { LOBE_ICONS } from "./lobe-icons";
 
 const LOBEHUB_CDN = "https://unpkg.com/@lobehub/icons-static-svg@1.90.0/icons/";
 const MODELS_DEV_CDN = "https://models.dev/logos/";
@@ -121,21 +42,21 @@ const MODELS_DEV_CDN = "https://models.dev/logos/";
  *  id share one in-flight request. ``null`` means the fetch failed
  *  (e.g. offline) so the consumer falls through to the letter tier. */
 const _svgCache = new Map<string, string | "loading" | null>();
-/** ``Promise``s for in-flight fetches keyed by id, so concurrent
- *  mounts await the same network round trip. */
+/** Promises for in-flight fetches keyed by id, so concurrent mounts
+ *  await the same network round trip. */
 const _svgInFlight = new Map<string, Promise<string | null>>();
 
 
 /** Fetch a models.dev SVG once and cache the markup. Inlining the
  *  SVG (instead of using it as an ``<img>`` src or CSS mask) lets us
- *  handle the two layout shapes models.dev ships with one renderer:
+ *  handle both shapes models.dev ships with one renderer:
  *
- *   * Pure ``currentColor`` SVGs (the common case) — pick up the
+ *   * Pure ``currentColor`` SVGs (the common case) — adopt the
  *     parent's ``color`` so they follow the theme.
  *   * PNG-embedded SVGs (e.g. ``atomic-chat``) — rendered verbatim,
- *     including the embedded raster's original colours. The CSS
- *     mask path previously turned these into solid colour blocks
- *     because the PNG's alpha channel was fully opaque end-to-end. */
+ *     including the embedded raster's original colours. The earlier
+ *     CSS-mask path turned these into solid colour blocks because
+ *     the PNG's alpha channel was fully opaque end-to-end. */
 async function _loadSvg(id: string): Promise<string | null> {
   const cached = _svgCache.get(id);
   if (cached === null || (typeof cached === "string" && cached !== "loading")) {
@@ -176,26 +97,30 @@ async function _loadSvg(id: string): Promise<string | null> {
 
 
 export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
-  const candidates = slugCandidates(id);
+  const match = LOBE_ICONS[id];
   const letter = (id[0] || "?").toUpperCase();
-  // Tier index: 0=lobe-color, 1=lobe-mono, 2=models.dev (inline), 3=letter.
-  const [tier, setTier] = useState<0 | 1 | 2 | 3>(0);
-  // Within the LobeHub tiers, walk ``candidates`` one by one on
-  // 404. Reset to 0 when we move from colour → mono so the same
-  // candidate list gets tried again at the mono CDN.
-  const [slugIdx, setSlugIdx] = useState(0);
+
+  // Pick the starting tier from the precomputed map. ``hasColor`` →
+  // tier 0; ``hasMono`` only → tier 1; nothing in LobeHub → skip
+  // straight to tier 2 (models.dev inline). Saves one or two 404
+  // round-trips on every render for providers we know LobeHub
+  // doesn't carry.
+  const startTier: 0 | 1 | 2 = !match
+    ? 2
+    : match.hasColor
+      ? 0
+      : 1;
+  const [tier, setTier] = useState<0 | 1 | 2 | 3>(startTier);
   const [svg, setSvg] = useState<string | null | undefined>(undefined);
 
-  // Kick off the models.dev fetch the moment we land on tier 2. We
-  // re-key the effect on ``id`` so navigating between providers
-  // doesn't reuse a stale fetch result.
+  // Kick off the models.dev fetch the moment we land on tier 2.
   useEffect(() => {
     if (tier !== 2) return;
     let cancelled = false;
     _loadSvg(id).then((markup) => {
       if (cancelled) return;
       setSvg(markup);
-      if (markup === null) setTier(3); // hard failure → letter
+      if (markup === null) setTier(3);
     });
     return () => {
       cancelled = true;
@@ -211,11 +136,11 @@ export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
   }
 
   if (tier === 2) {
-    // Render whatever models.dev returned, inline. ``color`` cascades
-    // into ``currentColor`` fills; PNG-embedded SVGs render their
-    // raster verbatim. While we're still fetching, render an empty
-    // placeholder of the correct footprint so the row's layout
-    // doesn't reflow on resolve.
+    // Inline whatever models.dev returned. ``color`` cascades into
+    // ``currentColor`` fills; PNG-embedded SVGs render their raster
+    // verbatim. While we're still fetching, render an empty
+    // placeholder of the correct footprint so the row doesn't
+    // reflow on resolve.
     return (
       <div
         className={styles.providerIcon}
@@ -233,7 +158,11 @@ export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
     );
   }
 
-  const slug = candidates[slugIdx] ?? id;
+  // Tier 0 / 1: LobeHub. ``match`` is guaranteed non-null here
+  // because ``startTier`` would have been 2 otherwise — and the
+  // ``onError`` handler only advances from 0 → 1 when ``hasMono``
+  // is true, otherwise it jumps straight to 2.
+  const slug = match!.slug;
   const url =
     tier === 0
       ? `${LOBEHUB_CDN}${encodeURIComponent(slug)}-color.svg`
@@ -247,14 +176,13 @@ export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
         src={url}
         alt={id}
         onError={() => {
-          // Walk the candidate list within the current tier first;
-          // only escalate to the next tier (mono → models.dev →
-          // letter) once we've exhausted every slug variant.
-          if (slugIdx + 1 < candidates.length) {
-            setSlugIdx(slugIdx + 1);
+          // Tier 0 → 1 only if mono also exists in LobeHub; else
+          // skip to tier 2 (models.dev). Tier 1 always escalates to
+          // tier 2 on failure.
+          if (tier === 0 && match!.hasMono) {
+            setTier(1);
           } else {
-            setSlugIdx(0);
-            setTier((t) => (t < 3 ? ((t + 1) as 0 | 1 | 2 | 3) : 3));
+            setTier(2);
           }
         }}
       />
