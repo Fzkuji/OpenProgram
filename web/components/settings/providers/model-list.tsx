@@ -120,11 +120,11 @@ export function ModelList({
             </span>
           )}
           {provider.supports_fetch && (
-            <Button variant="outline" size="sm" onClick={fetchRemote}>
+            <Button size="sm" onClick={fetchRemote}>
               {text("Fetch models", "获取模型")}
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => bulkToggle(true)}>
+          <Button size="sm" onClick={() => bulkToggle(true)}>
             {text("Enable all", "全部启用")}
           </Button>
           <Button variant="outline" size="sm" onClick={() => bulkToggle(false)}>

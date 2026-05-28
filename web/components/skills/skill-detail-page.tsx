@@ -249,7 +249,7 @@ export function SkillDetailPage({ name }: { name: string }) {
               }}>{text("Use in chat", "在对话中使用")} →</Button>
             )}
             {canEdit && !editing && (
-              <Button variant="outline" size="sm" onClick={startEdit}>{text("Edit", "编辑")}</Button>
+              <Button size="sm" onClick={startEdit}>{text("Edit", "编辑")}</Button>
             )}
             {editing && (
               <>

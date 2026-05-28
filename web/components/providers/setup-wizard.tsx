@@ -276,7 +276,7 @@ function StepRow({
               </code>
             </div>
             <div className="mt-2 flex gap-2">
-              <Button variant="outline" size="sm" onClick={onRetry}>
+              <Button size="sm" onClick={onRetry}>
                 Retry
               </Button>
               <Button variant="outline" size="sm" onClick={onClose}>
