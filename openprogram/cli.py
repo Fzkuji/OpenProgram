@@ -659,36 +659,35 @@ def main():
     _build_provider_verbs(providers_sub)
 
     # ---- setup (unified) — first-run wizard, menu loop, or jump-to-section
-    # Three usage shapes under one verb:
+    # Three usage shapes under one verb. All three are positional — no
+    # mode flags — so the help reads as one consistent grammar:
     #
     #   openprogram setup                  # full wizard (default — first-run)
-    #   openprogram setup --menu           # interactive section picker
+    #   openprogram setup menu             # interactive section picker
     #   openprogram setup <section>        # jump to one section
     #
-    # Sections (the <section> positional): model, tools, agent, skills, ui,
-    # memory, profile, search, tts, channels, backend.
-    #
-    # Provider configuration lives under ``openprogram providers setup`` —
-    # it has its own dedicated surface there (login flows, profile
-    # management) and we don't duplicate it here.
+    # The positional accepts ``menu`` (special) plus every section name:
+    # model, tools, agent, skills, ui, memory, profile, search, tts,
+    # channels, backend. Provider configuration lives under
+    # ``openprogram providers setup`` — it has its own login / profile
+    # flows that don't fit the section model, so we don't duplicate it.
     SETUP_SECTIONS = (
         "model", "tools", "agent", "skills", "ui", "memory",
         "profile", "search", "tts", "channels", "backend",
     )
+    SETUP_TARGETS = ("menu",) + SETUP_SECTIONS
     p_setup = sub.add_parser(
         "setup",
         help="Run the setup wizard (first-run by default; "
-             "`--menu` for picker, `<section>` to jump).",
+             "`menu` for picker, `<section>` to jump).",
     )
     p_setup.add_argument(
-        "section", nargs="?", default=None, choices=SETUP_SECTIONS,
-        help="Jump directly to one config section. Omit for the full "
-             "first-run wizard.",
-    )
-    p_setup.add_argument(
-        "--menu", action="store_true",
-        help="Interactive picker — choose a section from a list, run it, "
-             "loop back to the picker. Like the old `configure` verb.",
+        "target", nargs="?", default=None, choices=SETUP_TARGETS,
+        metavar="[menu | <section>]",
+        help="``menu`` opens the interactive picker; a section name "
+             "(model / tools / agent / skills / ui / memory / profile / "
+             "search / tts / channels / backend) jumps to that section; "
+             "omit for the full first-run wizard.",
     )
 
     args = parser.parse_args()
@@ -1133,8 +1132,12 @@ def main():
 
     if args.command == "setup":
         from openprogram import setup as _sw
-        section = getattr(args, "section", None)
-        if section:
+        target = getattr(args, "target", None)
+        if target == "menu":
+            # Interactive picker that loops back to itself between
+            # sections (old ``configure`` verb behaviour).
+            sys.exit(_sw.run_configure_menu())
+        if target:
             # Jump straight to one section.
             handlers = {
                 "model":    _sw.run_model_section,
@@ -1149,11 +1152,7 @@ def main():
                 "channels": _sw.run_channels_section,
                 "backend":  _sw.run_backend_section,
             }
-            sys.exit(handlers[section]())
-        if getattr(args, "menu", False):
-            # Interactive picker that loops back to itself between
-            # sections (old ``configure`` verb behaviour).
-            sys.exit(_sw.run_configure_menu())
+            sys.exit(handlers[target]())
         # Default: full first-run wizard.
         sys.exit(_sw.run_full_setup())
 
