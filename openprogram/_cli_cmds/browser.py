@@ -70,17 +70,24 @@ def _cmd_browser_install(target: str) -> int:
         print(f"\n=== installing {t} ===")
         if t == "playwright":
             r1 = _pip_install("playwright>=1.45.0")
-            r2 = subprocess.run(["playwright", "install", "chromium"]) if shutil.which("playwright") else r1
+            pw_path = shutil.which("playwright")
+            # Pass the resolved path (``.exe`` on Windows, full path on
+            # POSIX) so subprocess doesn't have to do extension /
+            # PATHEXT resolution on Windows for the bare name. Same
+            # pattern as the npm case below.
+            r2 = subprocess.run([pw_path, "install", "chromium"]) if pw_path else r1
             if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
                 rc = 1
         elif t == "patchright":
             r1 = _pip_install("patchright>=1.40")
-            r2 = subprocess.run(["patchright", "install", "chromium"]) if shutil.which("patchright") else r1
+            pr_path = shutil.which("patchright")
+            r2 = subprocess.run([pr_path, "install", "chromium"]) if pr_path else r1
             if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
                 rc = 1
         elif t == "camoufox":
             r1 = _pip_install("camoufox>=0.4.0")
-            r2 = subprocess.run(["camoufox", "fetch"]) if shutil.which("camoufox") else r1
+            cf_path = shutil.which("camoufox")
+            r2 = subprocess.run([cf_path, "fetch"]) if cf_path else r1
             if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
                 rc = 1
         elif t == "agent":
