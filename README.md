@@ -2,12 +2,15 @@
   <img src="docs/images/logo.svg" alt="OpenProgram" width="300">
 </p>
 
-<p align="center">Open Source Agent Harness Framework. Any LLM. Any platform. Agentic Programming Paradigm.</p>
+<p align="center"><b>Open-source agent harness where Python controls the flow and the LLM only reasons when asked.</b><br/>Any LLM, any platform, one paradigm.</p>
 
 <p align="center">
+  <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.4.0"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
   <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
+  <a href="https://github.com/Fzkuji/GUI-Agent-Harness"><img alt="OSWorld" src="https://img.shields.io/badge/OSWorld_Multi--Apps-79.8%25-brightgreen?style=flat-square"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Fzkuji/OpenProgram?style=flat-square"></a>
 </p>
 
@@ -24,8 +27,10 @@
 > **Built on the Agentic Programming paradigm.** Current LLM agent frameworks let the LLM control everything — what to do, when, and how. The result? Unpredictable execution, context explosion, and no output guarantees. OpenProgram flips this: **Python controls the flow, LLM only reasons when asked.** See [philosophy](docs/philosophy/agentic-programming.md) for the full rationale.
 
 <p align="center">
-  <img src="docs/images/code_hero.png" alt="OpenProgram code example" width="800">
+  <img src="docs/images/chat_hero.png" alt="OpenProgram chat UI — agentic function call tree, streaming thinking, and bilingual output side by side with the conversation DAG" width="900">
 </p>
+
+<p align="center"><sub>Chat UI rendering a <code>gui_agent</code> turn — the agentic function's internal plan / step / verify calls show as an inline execution tree, the model's streamed thinking is its own collapsible block, and the right-rail mini-DAG tracks every commit. Same backend powers the TUI.</sub></p>
 
 ## Quick Start
 
@@ -131,11 +136,11 @@ For platform-builder topics — `Runtime` retry semantics, the full `agentic_fun
 
 Three agent applications ship with OpenProgram, under `openprogram/functions/agentics/` — each a full agent built on the `@agentic_function` paradigm:
 
-| Project | What it does |
-|---------|--------------|
-| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Autonomous GUI agent — operates desktop apps (and OSWorld VMs) by vision: observe → plan → act → verify. Python drives the loop, the LLM only reasons when asked. |
-| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Autonomous research agent — literature survey → idea → experiments → paper writing → cross-model review. Full pipeline from topic to submission-ready paper. |
-| [Wiki&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Wiki-Agent-Harness) | Autonomous wiki builder — ingests notes, documents and conversations into a structured, Obsidian-compatible knowledge vault with `[[wikilinks]]`. |
+| Project | What it does | Track record |
+|---------|--------------|---------------|
+| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Autonomous GUI agent — operates desktop apps (and OSWorld VMs) by vision: observe → plan → act → verify. Python drives the loop, the LLM only reasons when asked. | **OSWorld Multi-Apps 79.8%** (72.6 / 91 evaluated tasks) |
+| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Autonomous research agent — literature survey → idea → experiments → paper writing → cross-model review. Full pipeline from topic to submission-ready paper. | Topic → submission-ready draft in one run |
+| [Wiki&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Wiki-Agent-Harness) | Autonomous wiki builder — ingests notes, documents and conversations into a structured, Obsidian-compatible knowledge vault with `[[wikilinks]]`. | Obsidian-compatible vault output |
 
 ## Why Agentic Programming?
 
