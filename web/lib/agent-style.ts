@@ -31,10 +31,26 @@ function _hash(s: string): number {
 
 /* ---- Default-profile overrides --------------------------------- */
 
+export interface AgentAvatarConfig {
+  /** Render mode the Avatar component should use. ``undefined`` (the
+   *  default for old profiles in localStorage) is treated as
+   *  ``"dicebear"`` with style ``shapes`` so existing users get the
+   *  visual upgrade without touching their settings. */
+  kind?: "dicebear" | "upload" | "letter";
+  style?:
+    | "shapes" | "notionists" | "lorelei" | "bottts" | "initials";
+  seed?: string;
+  file?: string;
+}
+
 export interface AgentProfilePrefs {
   name: string;
   initial: string;
   color: string;
+  /** Avatar config. Optional so profiles persisted before this field
+   *  existed still parse cleanly — callers fall back to a DiceBear
+   *  ``shapes`` avatar seeded by ``name``. */
+  avatar?: AgentAvatarConfig;
 }
 
 export const DEFAULT_AGENT_PROFILE: AgentProfilePrefs = {
@@ -63,6 +79,10 @@ function _read(): AgentProfilePrefs {
       name: parsed.name || DEFAULT_AGENT_PROFILE.name,
       initial: (parsed.initial || DEFAULT_AGENT_PROFILE.initial).slice(0, 2),
       color: parsed.color || DEFAULT_AGENT_PROFILE.color,
+      // ``avatar`` is optional; old profiles round-trip as ``undefined``
+      // and downstream callers default to DiceBear ``shapes`` seeded
+      // by ``name`` so the visual upgrade is automatic.
+      avatar: parsed.avatar,
     };
   } catch {
     return DEFAULT_AGENT_PROFILE;
@@ -85,6 +105,7 @@ export function setAgentProfile(next: AgentProfilePrefs): void {
     name: next.name || DEFAULT_AGENT_PROFILE.name,
     initial: (next.initial || DEFAULT_AGENT_PROFILE.initial).slice(0, 2),
     color: next.color || DEFAULT_AGENT_PROFILE.color,
+    avatar: next.avatar,
   };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_cached));
   window.dispatchEvent(new Event(CHANGE_EVT));

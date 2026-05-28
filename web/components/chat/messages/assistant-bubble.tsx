@@ -16,6 +16,7 @@ import {
   useAgentProfile,
 } from "@/lib/agent-style";
 import { useTranslation } from "@/lib/i18n";
+import { Avatar } from "@/components/avatar/Avatar";
 
 import { MessageActions } from "./message-actions";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
@@ -117,13 +118,23 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
       data-agent-id={msg.agentId || undefined}
     >
       <div className="message-header">
-        <div
+        {/* Per-message agent avatar. Seeded on the sender's display
+            name (not the volatile agent_id) so the "Agent" / named
+            agent always renders the same glyph across sessions. Falls
+            back to the legacy coloured-letter chip when the profile
+            explicitly picks that mode in settings, and to upload mode
+            when the user has supplied a custom image. */}
+        <Avatar
           className="message-avatar bot-avatar"
-          style={color ? { background: color, color: "#fff" } : undefined}
+          size={36}
+          name={sender}
           title={msg.agentId || ""}
-        >
-          {initial}
-        </div>
+          config={{
+            kind: "dicebear",
+            style: "shapes",
+            seed: sender,
+          }}
+        />
         <div className="message-sender">{sender}</div>
         {!streaming ? <MessageActions msg={msg} /> : null}
       </div>

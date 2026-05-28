@@ -23,6 +23,7 @@ import {
 } from "@/lib/session-store";
 
 import { agentInitial, useAgentProfile } from "@/lib/agent-style";
+import { Avatar } from "@/components/avatar/Avatar";
 
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
@@ -137,12 +138,18 @@ function PendingReplyIndicator() {
   return (
     <div className="message assistant pending-standalone">
       <div className="message-header">
-        <div
+        <Avatar
           className="message-avatar bot-avatar"
-          style={{ background: profile.color, color: "#fff" }}
-        >
-          {profile.initial || agentInitial(null)}
-        </div>
+          size={36}
+          name={profile.name}
+          config={
+            profile.avatar ?? {
+              kind: "dicebear",
+              style: "shapes",
+              seed: profile.name,
+            }
+          }
+        />
         <div className="message-sender">{profile.name}</div>
       </div>
       <div className="chat-stream-body pending-body">

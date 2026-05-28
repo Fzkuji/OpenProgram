@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useAgentProfile } from "@/lib/agent-style";
 import { useTranslation } from "@/lib/i18n";
+import { Avatar } from "@/components/avatar/Avatar";
 import styles from "./user-menu-footer.module.css";
 
 export function UserMenuFooter() {
@@ -95,12 +96,19 @@ export function UserMenuFooter() {
         className={`${styles.trigger} user-menu-footer-trigger`}
         onClick={() => setOpen((v) => !v)}
       >
-        <span
+        {/* Avatar — DiceBear-generated SVG by default, seeded by the
+            profile name so the same user always gets the same glyph.
+            Pass ``profile.avatar`` through directly: when undefined
+            (existing users with no avatar config) the Avatar
+            component defaults to DiceBear ``shapes``, which is the
+            visual upgrade. The outer CSS-module ``avatar`` class
+            still owns sizing / ring / hover state. */}
+        <Avatar
           className={`${styles.avatar} user-menu-footer-avatar`}
-          style={{ background: profile.color, color: "#fff" }}
-        >
-          {profile.initial}
-        </span>
+          size={36}
+          name={profile.name}
+          config={profile.avatar}
+        />
         <span className={`${styles.info} user-menu-footer-info`}>
           <span className={styles.name}>{profile.name}</span>
           <span className={styles.subtitle}>{t("user.local_instance")}</span>

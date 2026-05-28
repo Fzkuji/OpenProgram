@@ -13,6 +13,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { Avatar } from "@/components/avatar/Avatar";
 
 import { MessageActions } from "./message-actions";
 
@@ -121,7 +122,18 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
       data-msg-id={msg.id}
     >
       <div className="message-header">
-        <div className="message-avatar user-avatar">U</div>
+        {/* "You" avatar — a DiceBear glyph seeded by the literal
+            string "you" so the human side of every chat reads as the
+            same identity, separate from any agent's avatar. (When we
+            add per-user account profiles this will switch to a real
+            user id seed; for now there's just one local user per
+            install.) */}
+        <Avatar
+          className="message-avatar user-avatar"
+          size={36}
+          name="You"
+          config={{ kind: "dicebear", style: "shapes", seed: "you" }}
+        />
         <div className="message-sender">{text("You", "你")}</div>
         <MessageActions msg={msg} onEdit={() => setEditing(true)} />
       </div>
