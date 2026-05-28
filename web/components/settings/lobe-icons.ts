@@ -48,6 +48,7 @@ export const LOBE_ICONS: Record<string, LobeMatch> = {
   "mistral": { slug: "mistral", hasColor: true, hasMono: true },
   "modelscope": { slug: "modelscope", hasColor: true, hasMono: true },
   "moonshotai": { slug: "moonshot", hasColor: false, hasMono: true },
+  "moonshotai-cn": { slug: "moonshot", hasColor: false, hasMono: true },
   "morph": { slug: "morph", hasColor: true, hasMono: true },
   "nebius": { slug: "nebius", hasColor: false, hasMono: true },
   "nova": { slug: "nova", hasColor: true, hasMono: true },
@@ -76,4 +77,5 @@ export const LOBE_ICONS: Record<string, LobeMatch> = {
   "zai-coding-plan": { slug: "zai", hasColor: false, hasMono: true },
   "zenmux": { slug: "zenmux", hasColor: false, hasMono: true },
   "zhipuai": { slug: "zhipu", hasColor: true, hasMono: true },
+  "zhipuai-coding-plan": { slug: "zhipu", hasColor: true, hasMono: true },
 };

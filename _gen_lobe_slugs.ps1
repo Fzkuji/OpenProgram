@@ -50,9 +50,15 @@ function Resolve-Slug($id) {
     if ($slugOverrides.ContainsKey($id)) { $candidates.Add($slugOverrides[$id]) | Out-Null }
     $candidates.Add($id) | Out-Null
 
-    # Hyphen-separated suffix strip: -ai-gateway, -coding-plan-cn, …
+    # Iteratively strip qualifier suffixes. Each round tries (a) the
+    # hyphen-separated suffix list, then (b) the "no-hyphen ``ai`` glue"
+    # regex. (b) inside the loop catches cases like
+    # ``zhipuai-coding-plan`` -> strip ``-coding-plan`` -> ``zhipuai``
+    # -> strip glued ``ai`` -> ``zhipu``. Without it, only the original
+    # id was tested against (b), so any provider that needed both
+    # a -coding-plan strip *and* the noai strip never resolved.
     $cur = $id
-    for ($i = 0; $i -lt 3; $i++) {
+    for ($i = 0; $i -lt 4; $i++) {
         $stripped = $cur
         foreach ($sfx in $stripSuffixes) {
             if ($stripped.EndsWith($sfx)) {
@@ -60,17 +66,16 @@ function Resolve-Slug($id) {
                 break
             }
         }
+        # No hyphen-separated suffix peeled? Try the glued "ai" suffix.
+        if ($stripped -eq $cur -and $cur -match '^([a-z][a-z0-9]+?)ai$' -and $matches[1].Length -ge 3) {
+            $stripped = $matches[1]
+        }
         if ($stripped -eq $cur -or [string]::IsNullOrEmpty($stripped)) { break }
         $candidates.Add($stripped) | Out-Null
         $cur = $stripped
     }
     # ``amazon-bedrock`` -> ``bedrock``.
     if ($id.StartsWith("amazon-")) { $candidates.Add($id.Substring("amazon-".Length)) | Out-Null }
-    # No-hyphen "ai" suffix glue: ``togetherai`` -> ``together``,
-    # ``zhipuai`` -> ``zhipu``, ``moonshotai`` -> ``moonshot``.
-    if ($id -match '^([a-z][a-z0-9]+?)ai$' -and $matches[1].Length -ge 3) {
-        $candidates.Add($matches[1]) | Out-Null
-    }
     # Digit/letter prefix-suffix swap: ``302ai`` <-> ``ai302``,
     # ``360ai`` <-> ``ai360``, ``ai21`` <-> ``21ai``.
     if ($id -match '^(\d+)([a-z][a-z0-9]*)$') {
