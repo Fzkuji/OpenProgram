@@ -4,8 +4,20 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+// Buttons live on the panel surface and use the ``button`` size set
+// from docs/design/surface-system.md: ONE height (--ui-button-h,
+// 36px), ONE radius (--ui-button-radius, 10px). No sm / lg ladder —
+// every Button rendered anywhere is the same height + same corners.
+// (The previous default/sm/lg/icon ladder is gone; ``size="icon"``
+// is the only modifier kept because square buttons still need a
+// width that matches the height.)
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  // leading-none drops the inherited 1.25 line-height so the text
+  // line-box equals the font size; flex ``items-center`` then puts
+  // the glyph centre exactly on the button centre. Without this
+  // the extra line-leading (~3px) shows up as a tiny vertical
+  // drift between glyphs and pill geometry on some fonts.
+  "inline-flex h-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] items-center justify-center gap-2 whitespace-nowrap px-4 text-sm leading-none font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -26,11 +38,17 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-3",
-        lg: "h-11 rounded-md px-8",
-        icon: "h-10 w-10",
-        "icon-sm": "h-8 w-8 p-1",
+        // Default = the canonical button size (token-driven height +
+        // radius set on the base class). ``icon`` pins width to the
+        // same token for a square footprint. ``sm`` / ``lg`` /
+        // ``icon-sm`` are kept ONLY as aliases for backwards
+        // compatibility with the 33 + 5 + ... existing callers —
+        // they now resolve to the same size, on purpose.
+        default: "",
+        sm: "",
+        lg: "",
+        icon: "w-[var(--ui-button-h)] px-0",
+        "icon-sm": "w-[var(--ui-button-h)] px-0",
       },
     },
     defaultVariants: {

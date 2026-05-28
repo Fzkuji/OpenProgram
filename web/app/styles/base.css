@@ -8,6 +8,29 @@
   --transition: 0.2s ease;
   --sidebar-width: 288px;
   --detail-width: 300px;
+
+  /* Two-set sizing system — see docs/design/surface-system.md.
+     Every interactive primitive picks ONE set in full (height +
+     radius bundled together). No sm/md/lg ladder inside a set.
+
+     Set A — LIST. Compact rows on the deep surface (sidebar
+       conversations, favourites, branches, worktrees). Tight
+       vertical rhythm so dense scans stay legible; corners are
+       gentle so the row reads as a content slot, not a chip.
+
+     Set B — BUTTON. Buttons / pills on the panel surface
+       (chat actions, settings actions, dialog footers). A bit
+       taller so the click target is comfortable; corners are
+       rounder so the pill silhouette is unmistakeable against
+       the surrounding text. */
+  --ui-list-h: 32px;
+  --ui-list-radius: 6px;
+  /* Button height intentionally a touch SHORTER than list height —
+     a pill on the panel surface should not visually outweigh the
+     sidebar rows it sits next to. The slightly larger radius
+     differentiates the two without competing on height. */
+  --ui-button-h: 30px;
+  --ui-button-radius: 8px;
   --font-mono: var(--font-jetbrains-mono), 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
   /* SSR default = OS-native (system). Runtime inline script in
      layout.tsx overrides per agentic_font in localStorage. */
@@ -116,6 +139,11 @@
      reads as a distinct chip on the dark composer rather than blending
      into the surface. */
   --effort-off-bg: #3c3c39;
+  /* Text colour for hover-fill primary buttons. Near-black so warm
+     orange reads as a "press me" tile rather than a glowing neon
+     pill — pure white on the warm brand colour has too much chroma
+     in dark mode. */
+  --primary-foreground: #1a1a19;
   color-scheme: dark;
 }
 
@@ -152,6 +180,9 @@
      contrast for the function-name token + the user / pg-card icons
      in the various theme-aware components that reference it. */
   --accent-orange: #b8651f;
+  /* Light mode keeps the white-on-brand convention — the deeper
+     burnt orange above is dark enough that white still reads. */
+  --primary-foreground: #ffffff;
   color-scheme: light;
 }
 

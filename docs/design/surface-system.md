@@ -121,6 +121,39 @@ Pick per surface:
   — saved for a separate pass since each call site needs a
   human decision about primary vs secondary intent.
 
+## Size system — two sets, no in-set variants
+
+Every interactive primitive picks ONE of two size sets. There is
+no sm / md / lg ladder inside a set — once you choose list vs
+button, height and radius are locked. CSS variables in
+`web/app/styles/base.css`:
+
+```
+set         height               radius             css tokens
+─────────────────────────────────────────────────────────────────
+list        32 px                6 px               --ui-list-h
+                                                    --ui-list-radius
+─────────────────────────────────────────────────────────────────
+button      30 px (slightly      8 px               --ui-button-h
+            shorter than list)                      --ui-button-radius
+─────────────────────────────────────────────────────────────────
+```
+
+Why button shorter than list: a pill on the panel surface should
+not visually outweigh the sidebar rows it sits next to. The
+slightly larger radius (8 vs 6) differentiates the two without
+competing on height.
+
+Why no in-set variants: when the design lets one slot pick from
+sm / md / lg, every author starts negotiating with the design;
+the result is the audit we saw on `Button` (5 size options,
+chaotic distribution). Two fixed sets is enforceable.
+
+Backward-compat for `Button`: `size="sm" | "lg" | "icon-sm"` are
+kept as aliases for the 33 + ... existing call sites but they
+resolve to the same height as `default`. The token names are
+the source of truth.
+
 ## Don'ts
 
 - Don't introduce a new pill background colour without listing it

@@ -268,9 +268,13 @@ function ConvItem({
   // Pixel values are explicit (not `h-8`, `px-2`, etc.) because this
   // project's `html { font-size: 14px }` makes Tailwind's rem-based
   // scale 0.875× off — see the same note in FavoritesList.
+  // h + radius come from the LIST set in docs/design/surface-system.md
+  // (--ui-list-h 32px, --ui-list-radius 6px). Sidebar rows are the
+  // canonical list surface; favourites, branches, worktree rows
+  // should pick up the same tokens when they're touched.
   const base =
-    "group relative flex h-[32px] shrink-0 cursor-pointer items-center" +
-    " gap-[12px] overflow-hidden rounded-[6px] px-[8px] py-[6px]" +
+    "group relative flex h-[var(--ui-list-h)] shrink-0 cursor-pointer items-center" +
+    " gap-[12px] overflow-hidden rounded-[var(--ui-list-radius)] px-[8px] py-[6px]" +
     " text-fs-base leading-[20px] whitespace-nowrap" +
     " transition-colors duration-150 ease-out hover:bg-bg-hover";
   const colorCls = active

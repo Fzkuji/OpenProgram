@@ -20,7 +20,11 @@
   --popover: var(--bg-tertiary);
   --popover-foreground: var(--text-primary);
   --primary: var(--accent-blue);
-  --primary-foreground: #ffffff;
+  /* Defined per theme block in app/styles/base.css. Dark mode
+     wants near-black text on the brand-fill button so the warm
+     orange reads as a "press me" tile rather than a glowing
+     neon pill — pure white on orange has too much chroma. Light
+     mode keeps the classic white-on-coloured pattern. */
   --secondary: var(--bg-tertiary);
   --secondary-foreground: var(--text-primary);
   --muted: var(--bg-tertiary);
