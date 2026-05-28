@@ -195,6 +195,17 @@ def main():
 
     sub = parser.add_subparsers(dest="command", help="Subcommand")
 
+    # ---- completion (shell autocomplete) ----------------------------------
+    p_completion = sub.add_parser(
+        "completion",
+        help="Emit shell autocompletion script (bash / zsh / powershell)",
+    )
+    p_completion.add_argument(
+        "shell",
+        choices=["bash", "zsh", "powershell", "pwsh"],
+        help="Target shell — pipe stdout into your shell rc or eval it.",
+    )
+
     # ---- tui (alias: chat) — explicit verb for the default chat mode -----
     # Bare ``openprogram`` already launches the terminal UI; this verb
     # lets users write ``openprogram tui`` for clarity and parity with
@@ -677,6 +688,10 @@ def main():
     # ``tui_enabled`` flag selects which implementation to launch.
     # There is no user-facing knob — the platform decides.
     tui_enabled = sys.platform != "win32"
+
+    if args.command == "completion":
+        from openprogram._cli_cmds.completion import _cmd_completion
+        sys.exit(_cmd_completion(args.shell))
 
     if args.command in (None, "tui", "chat"):
         if args.print_prompt:
