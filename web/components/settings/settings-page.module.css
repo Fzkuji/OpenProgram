@@ -753,26 +753,67 @@
 }
 
 /* "Get API key →" button + numbered setup steps for search providers.
-   Reuses the surface look of the description box (bg-tertiary + 1px
-   border) so the Setup card sits visually beside it instead of
-   competing for attention. */
+   Idle = ``bg-hover`` chip one shade brighter than the surrounding
+   ``bg-tertiary`` description box, with ``text-primary`` for the
+   label — readable as a button without competing for attention.
+   The amber accent only emerges on hover, matching the rest of the
+   product's idle-neutral / colored-on-hover button philosophy. The
+   solid orange + white-text version this replaced was the loudest
+   chip on /settings; on a Claude-style warm-neutral page the user
+   flagged it as visually jarring. */
 .searchSetupGetKey {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
   border-radius: 6px;
-  background: var(--accent-blue, #4f8ef7);
-  color: #fff;
+  background: var(--bg-hover);
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 500;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   cursor: pointer;
   text-decoration: none;
-  transition: filter 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
 }
 .searchSetupGetKey:hover {
-  filter: brightness(1.08);
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
+  color: var(--accent-orange);
+  border-color: color-mix(in srgb, var(--accent-orange) 30%, transparent);
+}
+
+/* "Set as default" pin-this-as-default action on each search /
+   provider card. Same idle-neutral / amber-on-hover pattern as
+   ``.searchSetupGetKey`` above — was a solid orange + white-text
+   block, the loudest control on /settings. Two states:
+     - default (idle, clickable): bg-hover chip + bordered, amber
+       on hover
+     - already-default (terminal): bg-tertiary chip + muted text,
+       no hover affordance because there's nothing to do */
+.setDefaultBtn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.setDefaultBtn:hover:not(:disabled):not(.setDefaultActive) {
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
+  color: var(--accent-orange);
+  border-color: color-mix(in srgb, var(--accent-orange) 30%, transparent);
+}
+.setDefaultBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.setDefaultBtn.setDefaultActive {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: default;
 }
 .searchSetupSteps {
   margin: 4px 0 0;

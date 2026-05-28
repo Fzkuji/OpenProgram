@@ -308,20 +308,10 @@ function SearchProviderDetail({
           type="button"
           disabled={!provider.available || saving || isDefault}
           onClick={() => onSetDefault(provider.id)}
-          style={{
-            padding: "6px 12px",
-            borderRadius: 6,
-            fontSize: 13,
-            fontWeight: 500,
-            background: isDefault
-              ? "var(--bg-tertiary)"
-              : "var(--accent-blue, #4f8ef7)",
-            color: isDefault ? "var(--text-muted)" : "#fff",
-            border: isDefault ? "1px solid var(--border)" : "1px solid transparent",
-            cursor:
-              !provider.available || saving || isDefault ? "default" : "pointer",
-            opacity: !provider.available ? 0.5 : 1,
-          }}
+          className={
+            styles.setDefaultBtn +
+            (isDefault ? " " + styles.setDefaultActive : "")
+          }
         >
           {isDefault ? "Default backend" : "Set as default"}
         </button>

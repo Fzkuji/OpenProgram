@@ -182,8 +182,20 @@ textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertic
   padding: 4px 12px; font-size: 12px; border-radius: 4px; cursor: pointer;
   border: 1px solid var(--border); font-family: var(--font-sans);
 }
-.retry-exec-btn { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
-.retry-exec-btn:hover { opacity: 0.9; }
+/* Retry-panel buttons: same idle-neutral / amber-on-hover philosophy
+   as the rest of the product. Was solid orange + white text — read as
+   the single loudest control on the page. The cancel button already
+   followed this pattern, the exec button was the outlier. */
+.retry-exec-btn {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+.retry-exec-btn:hover {
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
+  color: var(--accent-orange);
+  border-color: color-mix(in srgb, var(--accent-orange) 30%, transparent);
+}
 .retry-cancel-btn { background: var(--bg-hover); color: var(--text-secondary); }
 .retry-cancel-btn:hover { color: var(--text-primary); }
 
