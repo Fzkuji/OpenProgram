@@ -36,7 +36,7 @@ def _stub_loop(text: str):
     the dispatcher's try block, where the runtime/store is attached —
     we exercise an @agentic_function call from here and verify the
     nodes land in the session DAG."""
-    def _stub(*, req, history, on_event, cancel_event):
+    def _stub(*, req, history, on_event, cancel_event, **_extra):
         # Invoke an @agentic_function from inside the loop: it should
         # pick up the dispatcher-attached Runtime via _current_runtime
         # and write placeholder + LLM Call + exit-update to the DAG.
@@ -106,7 +106,7 @@ def test_dispatcher_detaches_runtime_on_exception(tmp_db):
     inherit a stale runtime."""
     from openprogram.agentic_programming.function import _current_runtime
 
-    def _explode(*, req, history, on_event, cancel_event):
+    def _explode(*, req, history, on_event, cancel_event, **_extra):
         raise RuntimeError("boom")
 
     pre = _current_runtime.get(None)

@@ -163,7 +163,7 @@ def test_real_loop_text_only(tmp_db: SessionDB, captured, collector) -> None:
     # can't pass stream_fn into process_user_turn directly, so we wrap.
     orig = D._run_loop_blocking
 
-    def _wrapped(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _wrapped(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=fake_stream)
 
@@ -207,7 +207,7 @@ def test_real_loop_text_only(tmp_db: SessionDB, captured, collector) -> None:
 def test_real_loop_persists_session_meta(tmp_db: SessionDB) -> None:
     fake_stream = make_text_stream_fn(["done"])
 
-    def _wrapped(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _wrapped(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return D._run_loop_blocking.__wrapped__(  # type: ignore[attr-defined]
             req=req, history=history, on_event=on_event,
             cancel_event=cancel_event, stream_fn=fake_stream,
@@ -216,7 +216,7 @@ def test_real_loop_persists_session_meta(tmp_db: SessionDB) -> None:
     # Use the simpler patched approach
     orig = D._run_loop_blocking
 
-    def _w(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _w(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=fake_stream)
 
@@ -239,7 +239,7 @@ def test_real_loop_history_replay(tmp_db: SessionDB, captured, collector) -> Non
     orig = D._run_loop_blocking
 
     fake_stream = make_text_stream_fn(["first"])
-    def _w1(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _w1(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=fake_stream)
     with patch.object(D, "_run_loop_blocking", _w1):
@@ -260,7 +260,7 @@ def test_real_loop_history_replay(tmp_db: SessionDB, captured, collector) -> Non
         yield EventTextEnd(content_index=0, content="ok", partial=partial)
         yield EventDone(reason="stop", message=_build_final("ok"))
 
-    def _w2(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _w2(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=_capturing_stream_fn)
     with patch.object(D, "_run_loop_blocking", _w2):
@@ -286,7 +286,7 @@ def test_parent_id_forks_sibling_branch(
 
     # Turn 1: first message → reply "alpha"
     s1 = make_text_stream_fn(["alpha"])
-    def _w1(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _w1(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=s1)
     with patch.object(D, "_run_loop_blocking", _w1):
@@ -299,7 +299,7 @@ def test_parent_id_forks_sibling_branch(
     # contextgit/dag.py's "first-turn retry" semantics where the
     # forked branch shares the conversation root, not turn 1's user).
     s2 = make_text_stream_fn(["beta"])
-    def _w2(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _w2(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=s2)
     with patch.object(D, "_run_loop_blocking", _w2):
@@ -347,7 +347,7 @@ def test_history_override_skips_session_db_walk(
 
     orig = D._run_loop_blocking
 
-    def _w(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _w(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=_capturing)
 
@@ -419,7 +419,7 @@ def test_user_already_persisted_skips_duplicate_user_msg(
 
     orig = D._run_loop_blocking
 
-    def _w(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _w(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=_capturing)
 
@@ -474,7 +474,7 @@ def test_provider_error_persists_as_system_message(
 
     orig = D._run_loop_blocking
 
-    def _w(*, req, history, on_event, cancel_event, stream_fn=None):
+    def _w(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=_angry_stream)
 

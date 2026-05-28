@@ -27,7 +27,7 @@ def dag_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> DagSessionDB:
 
 
 def _stub_loop(text: str, usage=None, tool_calls=None):
-    def _stub(*, req, history, on_event, cancel_event):
+    def _stub(*, req, history, on_event, cancel_event, **_extra):
         on_event({"type": "chat_response",
                   "data": {"type": "stream_event",
                            "event": {"type": "text", "text": text}}})
@@ -89,7 +89,7 @@ def test_history_passed_to_loop_on_dag(dag_db: DagSessionDB):
     # Round 2: capture history
     captured_history: list = []
 
-    def _stub2(*, req, history, on_event, cancel_event):
+    def _stub2(*, req, history, on_event, cancel_event, **_extra):
         captured_history.extend(history)
         return "reply 2", {"input_tokens": 1, "output_tokens": 1}, []
 

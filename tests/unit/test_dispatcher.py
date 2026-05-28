@@ -60,7 +60,12 @@ def _stub_loop_returning(text: str, *,
                          usage: dict | None = None):
     """Build a _run_loop_blocking replacement that emits a few stream
     events then returns the given final text/usage/tool_calls."""
-    def _stub(*, req: D.TurnRequest, history, on_event, cancel_event):
+    def _stub(*, req: D.TurnRequest, history, on_event, cancel_event, **_extra):
+        # ``**_extra`` swallows assistant_msg_id /
+        # agentic_tool_names_out / ordered_blocks_out (and any future
+        # plumbing kw-args the dispatcher adds) so test stubs don't
+        # have to track every new argument as the real loop signature
+        # evolves.
         # Emit a couple of stream events so consumers see live deltas.
         on_event({"type": "chat_response",
                   "data": {"type": "stream_event",
@@ -150,7 +155,7 @@ def test_history_is_passed_to_loop(tmp_db) -> None:
         )
 
     seen_history: list[list[dict]] = []
-    def _capture_stub(*, req, history, on_event, cancel_event):
+    def _capture_stub(*, req, history, on_event, cancel_event, **_extra):
         seen_history.append(list(history))
         return "second reply", {"input_tokens": 0, "output_tokens": 0}, []
 

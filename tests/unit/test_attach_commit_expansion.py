@@ -130,13 +130,16 @@ def test_attach_with_source_commit_expands_into_items(store):
     # All four items tag the source commit id.
     for it in commit.items:
         assert it.attached_from == "src_commit_aa"
-    # Middle two items carry the source content verbatim, unlocked
-    # and reset to state=full so the rule pipeline can re-evaluate
-    # them on the receiving branch.
-    assert commit.items[1].rendered == "src user msg"
+    # Middle two items carry the source content (now prefixed with
+    # a sub-agent marker so the receiving branch knows which agent
+    # produced each line — added by generator.py once Source-labelled
+    # attaches landed). Items are unlocked and reset to state=full
+    # so the rule pipeline can re-evaluate them on the receiving
+    # branch.
+    assert "src user msg" in commit.items[1].rendered
     assert commit.items[1].locked is False
     assert commit.items[1].state == "full"
-    assert commit.items[2].rendered == "src assistant reply"
+    assert "src assistant reply" in commit.items[2].rendered
     # Markers reference the short hex of the source commit id.
     assert "src_comm" in commit.items[0].rendered
 
@@ -213,7 +216,10 @@ def test_attach_missing_source_commit_id_uses_legacy_fallback(store):
     # because there's no source_commit_id.
     assert only.attached_from is None
     assert "legacy preview body" in only.rendered
-    assert "[Attached from branch" in only.rendered
+    # Header text was switched from the English "[Attached from
+    # branch …]" to the Chinese "[以下是从分支 … 附加进来的内容]"
+    # when the rest of the attach UI moved to bilingual labels.
+    assert "[以下是从分支" in only.rendered
 
 
 def test_attach_with_unloadable_source_commit_id_falls_back(store):
