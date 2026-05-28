@@ -796,6 +796,12 @@ export function Composer() {
       .catch((err) => {
         console.error("function call failed:", err);
         w.setRunning?.(false);
+        // Surface the reason to the user. The backend now returns a
+        // structured 400 when a non-agentic tool is invoked via
+        // fn-form, so without this the only feedback was a silent
+        // console line — the chat panel showed nothing.
+        const msg = err instanceof Error ? err.message : String(err);
+        alert(`Function call failed: ${msg}`);
       });
     handleFnFormClose();
   }, [

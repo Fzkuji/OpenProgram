@@ -156,6 +156,45 @@ def register(app):
             then the repo root.
         """
         from openprogram.webui import server as _s
+
+        # Synchronously validate the tool exists AND is @agentic_function
+        # BEFORE we create a session / write a user msg / spawn the
+        # subprocess. Without this gate, picking a non-agentic function
+        # in fn-form would land in dispatch_forced_tool_call's raise
+        # path inside a daemon thread; the HTTP response had already
+        # returned 200 with a session_id + msg_id, so the frontend
+        # showed a phantom "[function call] foo()" user row that never
+        # produced output. Reject early so the caller sees the reason
+        # in the response body.
+        try:
+            from openprogram.functions import agent_tools as _agent_tools
+            _tools = _agent_tools(names=[name]) or []
+        except Exception as e:  # noqa: BLE001
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"failed to resolve tool {name!r}: {type(e).__name__}: {e}"},
+            )
+        _tool = next((t for t in _tools if t.name == name), None)
+        if _tool is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"tool not found: {name!r}"},
+            )
+        if not getattr(_tool, "_is_agentic", False):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": (
+                        f"tool {name!r} is not an @agentic_function — "
+                        "only agentic tools can be invoked via fn-form. "
+                        "Use the chat interface or LLM tool-call path "
+                        "for ordinary tools."
+                    ),
+                    "tool": name,
+                    "is_agentic": False,
+                },
+            )
+
         body = body or {}
         session_id = body.get("session_id") or body.get("_session_id")
         if isinstance(body.get("kwargs"), dict):
