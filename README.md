@@ -124,51 +124,7 @@ Drop it in `~/.agentic/functions/` (or any path on `PYTHONPATH`); it appears in 
 
 ## Troubleshooting
 
-<details>
-<summary><b>"No provider available"</b></summary>
-
-`openprogram providers` shows what's detected. Common causes: forgot `claude login` / `codex auth`; API key set in a different shell than you're running in; token expired (re-login).
-
-</details>
-
-<details>
-<summary><b>"command not found: openprogram"</b></summary>
-
-pip install dir not on PATH. Use `python3 -m openprogram <args>` instead, or add `$(python3 -m site --user-base)/bin` to your PATH.
-
-</details>
-
-<details>
-<summary><b>Web UI port in use</b></summary>
-
-Set `OPENPROGRAM_WEB_PORT=8101` (frontend) or `OPENPROGRAM_BACKEND_PORT=8102` (FastAPI) before starting the worker. Or store the preference via `openprogram config ui`.
-
-</details>
-
-<details>
-<summary><b>Local-development install (multi-repo)</b></summary>
-
-For [GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness) / [Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness):
-
-```bash
-pip install -e "$OPENPROGRAM_DIR"                   # first
-pip install -e "$GUI_HARNESS_DIR"                   # depends on openprogram
-pip install -e "$RESEARCH_HARNESS_DIR"
-```
-
-`openprogram/functions/agentics/{GUI,Research}-Agent-Harness` are symlinks — recreate if a repo moves:
-
-```bash
-cd openprogram/functions/agentics
-rm -f GUI-Agent-Harness && ln -s "$GUI_HARNESS_DIR" GUI-Agent-Harness
-rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Harness
-```
-
-`pip install -e` writes absolute paths — rerun it from the new location if you rename a parent folder.
-
-</details>
-
-For platform-builder topics — `Runtime` retry semantics, the full `agentic_function` decorator API, the flat-DAG context model — see [docs/API.md](docs/API.md) and the per-topic notes under [docs/api/](docs/api/).
+`openprogram doctor` runs a fast end-to-end check. Common case-by-case fixes (no provider detected, port in use, multi-repo install, missing `openprogram` on PATH) live in [docs/troubleshooting.md](docs/troubleshooting.md). For platform-builder topics (`Runtime` retry semantics, the full `@agentic_function` decorator API, the flat-DAG context model) see [docs/API.md](docs/API.md) and the per-topic notes under [docs/api/](docs/api/).
 
 ---
 
@@ -226,66 +182,17 @@ MCP is the *transport*. Agentic Programming is the *execution model*. They're or
 
 ## Key Features
 
-### Automatic Context
-
-Every `@agentic_function` call creates a **Context** node. Nodes form a tree that is automatically injected into LLM calls:
-
-```
-login_flow ✓ 8.8s
-├── observe ✓ 3.1s → "found login form at (200, 300)"
-├── click ✓ 2.5s → "clicked login button"
-└── verify ✓ 3.2s → "dashboard confirmed"
-```
-
-When `verify` calls the LLM, it automatically sees what `observe` and `click` returned. No manual context management.
-
-### Deep Work — Autonomous Quality Loop
-
-For complex tasks that demand sustained effort and high standards, `deep_work` runs an autonomous plan-execute-evaluate loop until the result meets the specified quality level:
-
-```python
-from openprogram.functions.agentics.deep_work import deep_work
-
-result = deep_work(
-    task="Write a survey on context management in LLM agents.",
-    level="phd",        # high_school → bachelor → master → phd → professor
-    runtime=runtime,
-)
-```
-
-The agent clarifies requirements upfront, then works fully autonomously — executing, self-evaluating, and revising until the output passes quality review. State is persisted to disk, so interrupted work resumes where it left off.
-
-### Functions that author functions
-
-Writing, fixing and scaffolding `@agentic_function`s is itself agent work — done with ordinary file-editing tools, guided by the **`agentic-programming` skill** (`skills/agentic-programming/SKILL.md`). There are no dedicated `create()` / `fix()` framework calls: they only ever wrapped one LLM call plus a file write, which an agent does directly.
-
-The skill is the complete spec — where the file goes, the decorator's metadata, the docstring vs `content` split, a rule-based validation checklist, and a smoke test. An agent reads it, writes the function, validates it, runs it; the `write → run → fail → fix` cycle still means programs improve through use.
-
-### Conversation as a git DAG
-
-Session history is stored like a git repository, not a flat list. Every exchange is a commit, branches are first-class, and the right sidebar exposes the usual git operations:
-
-- **Branch off** any past exchange to explore an alternative without losing the original thread
-- **Attach** context from another session (cross-session reuse) as a labelled user message
-- **Merge** two threads when their branches converge
-- **Cherry-pick** specific commits across branches
-
-Branches that touch files run in **isolated git worktrees** under the hood, so two concurrent agents on different branches can't fight over the same source tree. Other frameworks fork conversations by copying messages; we fork the underlying repo.
-
-### Layered memory
-
-Memory isn't a single bag. Six separate stores under `~/.agentic/memory/` cover different timescales and purposes:
-
-| Layer | What goes there |
+| Feature | One-line summary |
 |---|---|
-| `journal` | Short-term — recent observations, raw notes |
-| `wiki` | Durable — facts the agent decided to keep around |
-| `sleep` | Periodic consolidation (offline daemon merges journal → wiki) |
-| `scheduler` | Cron-driven recalls that surface a memory at a specific time |
-| `recall_counts` | Hit counts that boost frequently-used memories |
-| `store` | Project-scoped key/value |
+| **Automatic context** | Every `@agentic_function` call is a tree node; the runtime threads it through nested LLM calls — no manual prompt assembly. |
+| **Deep work** | `deep_work(task, level)` runs an autonomous plan → execute → evaluate → revise loop until the output meets the chosen quality bar. State persists to disk. |
+| **Functions that author functions** | New / fixed `@agentic_function`s are written by the agent itself via ordinary file-editing tools, guided by the `agentic-programming` skill. No dedicated `create()` / `fix()` calls. |
+| **Conversation as a git DAG** | Sessions are commits + branches + merges + cherry-picks, with the right sidebar exposing the operations. File-touching branches run in isolated git worktrees. |
+| **Layered memory** | Six stores under `~/.agentic/memory/` (journal / wiki / sleep / scheduler / recall_counts / store), each for a different timescale. The agent picks the layer. |
+| **Mini-DAG execution view** | The right rail draws every node + edge of the active session, scrolls with the chat, and offers a d3-hierarchy layout for fan-out-heavy traces. |
+| **Multi-agent + multi-channel** | Every row tagged with its producer agent; channel layer wires external transports (Discord today, more coming). |
 
-Open `/memory` to inspect or hand-edit any layer; the agent decides which layer to write to based on what it learned. The split exists because "remember this until I tell you to forget" and "remember this for the next 10 turns" want different storage strategies.
+The detailed tour of each one — code samples, design rationale, where to look in the codebase — lives in [**docs/features.md**](docs/features.md).
 
 ## API Reference
 
