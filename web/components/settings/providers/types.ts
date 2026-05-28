@@ -29,11 +29,51 @@ export interface Model {
   id: string;
   name?: string;
   enabled: boolean;
+
+  // Capabilities -----------------------------------------------------
   vision?: boolean;
   video?: boolean;
+  audio?: boolean;
   tools?: boolean;
   reasoning?: boolean;
+  /** JSON-schema strict output mode */
+  structured_output?: boolean;
+  /** File / PDF attachments (separate from raw image input) */
+  attachment?: boolean;
+  /** ``temperature`` parameter has any effect on this model */
+  temperature_param?: boolean;
+
+  // Modality lists (verbatim from models.dev) ------------------------
+  input_modalities?: string[];
+  output_modalities?: string[];
+
+  // Limits -----------------------------------------------------------
   context_window?: number;
+  /** Some models cap the *single-call* input lower than total context
+   *  (e.g. GPT-5.5: 1.05M context, 922K input cap). */
+  input_limit?: number;
+  /** Output cap per completion. */
+  max_tokens?: number;
+
+  // Pricing (USD per 1M tokens) --------------------------------------
+  input_cost?: number;
+  output_cost?: number;
+  cache_read_cost?: number;
+  cache_write_cost?: number;
+  /** Tiered or service-tier pricing pass-throughs. UI renders these
+   *  as a sub-list when present; structure varies per provider so we
+   *  keep them loosely typed. */
+  cost_tiers?: unknown[];
+  cost_context_over_200k?: Record<string, unknown>;
+
+  // Identity / metadata ----------------------------------------------
+  family?: string;
+  /** Training data cutoff date as the upstream catalogue reports it
+   *  (usually ``YYYY-MM`` or ``YYYY-MM-DD``). */
+  knowledge_cutoff?: string;
+  release_date?: string;
+  last_updated?: string;
+  open_weights?: boolean;
 }
 
 /** Compact 'context window' formatter — 128_000 → "128K", 1_000_000 → "1M". */

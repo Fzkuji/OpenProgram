@@ -49,34 +49,93 @@ def _load() -> dict[str, Any]:
 
 
 def _normalise(raw: dict[str, Any]) -> dict[str, Any]:
-    """Map the models.dev row shape onto our internal schema."""
+    """Map the models.dev row shape onto our internal schema.
+
+    Captures every field the catalogue exposes that the UI can do
+    something useful with — capabilities (tool_call, reasoning,
+    structured_output, attachment), full modality lists, all limit
+    components (context / input cap / output cap), full pricing
+    surface (input / output / cache_read / cache_write), and the
+    metadata block (family, knowledge cutoff, release / update
+    dates, open-weights flag).
+
+    Anything missing from the upstream row is just omitted from the
+    output — the React side checks for ``!= undefined`` and hides the
+    corresponding line in the expanded panel.
+    """
     out: dict[str, Any] = {}
-    name = raw.get("name")
-    if name:
-        out["name"] = name
+    # ── identity / metadata ───────────────────────────────────────
+    for src_key, dst_key in (
+        ("name", "name"),
+        ("family", "family"),
+        ("knowledge", "knowledge_cutoff"),
+        ("release_date", "release_date"),
+        ("last_updated", "last_updated"),
+    ):
+        v = raw.get(src_key)
+        if v is not None and v != "":
+            out[dst_key] = v
+    if raw.get("open_weights") is not None:
+        out["open_weights"] = bool(raw["open_weights"])
+
+    # ── capabilities ──────────────────────────────────────────────
+    if raw.get("reasoning") is not None:
+        out["reasoning"] = bool(raw["reasoning"])
+    if raw.get("tool_call") is not None:
+        out["tools"] = bool(raw["tool_call"])
+    if raw.get("structured_output") is not None:
+        out["structured_output"] = bool(raw["structured_output"])
+    if raw.get("attachment") is not None:
+        out["attachment"] = bool(raw["attachment"])
+    if raw.get("temperature") is not None:
+        out["temperature_param"] = bool(raw["temperature"])
+
+    # ── modalities ─────────────────────────────────────────────────
+    modalities = raw.get("modalities") or {}
+    in_mods = modalities.get("input") or []
+    out_mods = modalities.get("output") or []
+    if in_mods:
+        out["input_modalities"] = list(in_mods)
+    if out_mods:
+        out["output_modalities"] = list(out_mods)
+    # Legacy flat booleans the existing UI consumes for badge rendering.
+    if "image" in in_mods:
+        out["vision"] = True
+    if "video" in in_mods:
+        out["video"] = True
+    if "audio" in in_mods:
+        out["audio"] = True
+
+    # ── limits ─────────────────────────────────────────────────────
     limit = raw.get("limit") or {}
     if limit.get("context"):
         try: out["context_window"] = int(limit["context"])
         except Exception: pass
+    if limit.get("input"):
+        try: out["input_limit"] = int(limit["input"])
+        except Exception: pass
     if limit.get("output"):
         try: out["max_tokens"] = int(limit["output"])
         except Exception: pass
-    if raw.get("reasoning") is not None:
-        out["reasoning"] = bool(raw["reasoning"])
-    modalities = (raw.get("modalities") or {}).get("input") or []
-    if "image" in modalities:
-        out["vision"] = True
-    if raw.get("tool_call") is not None:
-        out["tools"] = bool(raw["tool_call"])
+
+    # ── pricing (USD / 1M tokens) ──────────────────────────────────
     cost = raw.get("cost") or {}
     for src_key, dst_key in (
         ("input", "input_cost"),
         ("output", "output_cost"),
         ("cache_read", "cache_read_cost"),
+        ("cache_write", "cache_write_cost"),
     ):
         if cost.get(src_key) is not None:
             try: out[dst_key] = float(cost[src_key])
             except Exception: pass
+    # Tiered pricing (e.g. OpenAI's >200K context surcharge). Pass
+    # through verbatim — the UI just renders it as JSON in the
+    # expanded panel for now.
+    if cost.get("tiers"):
+        out["cost_tiers"] = cost["tiers"]
+    if cost.get("context_over_200k"):
+        out["cost_context_over_200k"] = cost["context_over_200k"]
     return out
 
 

@@ -169,7 +169,15 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
         levels, default_lv, variant = derive_thinking_fields(
             provider_id, mid, reasoning, bool(raw.get("supports_xhigh", False))
         )
-        out.append({
+        # Start with everything the fetcher / enricher recorded (so
+        # ``input_modalities``, ``input_cost``, ``family``, etc. all
+        # surface in the UI's expanded-row panel), then overwrite the
+        # few fields where we have authoritative values.
+        entry: dict[str, Any] = {
+            k: v for k, v in raw.items()
+            if not k.startswith("_")  # _source marker etc. stay internal
+        }
+        entry.update({
             "id": mid,
             "name": raw.get("name", mid),
             "api": raw.get("api") or default_api,
@@ -184,6 +192,7 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
             "enabled": mid in enabled_ids,
             "custom": True,
         })
+        out.append(entry)
 
     return out
 
