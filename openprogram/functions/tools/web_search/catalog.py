@@ -254,6 +254,87 @@ _CATALOG: dict[str, ProviderInfo] = {
             "Pick `ollama` as the default search backend in Settings",
         ],
     ),
+    "serper": ProviderInfo(
+        name="Serper",
+        description=(
+            "Cheapest path to real Google SERP results from an agent. "
+            "Returns clean JSON with title / link / snippet plus knowledge "
+            "graph / answer-box extras when Google has them."
+        ),
+        tier="Free 2500 q (one-shot)",
+        signup_url="https://serper.dev/",
+        docs_url="https://serper.dev/api-key",
+        setup_steps=[
+            "Sign up at serper.dev",
+            "Copy the API key from the dashboard",
+            "Set SERPER_API_KEY in the environment",
+        ],
+    ),
+    "youcom": ProviderInfo(
+        name="You.com",
+        description=(
+            "Search API with sentence-level extracts (snippets array) "
+            "pre-shaped for agent consumption. Cleaner than scraping "
+            "general SERPs for short-answer Q&A."
+        ),
+        tier="Pay-as-you-go",
+        signup_url="https://api.you.com/",
+        docs_url="https://documentation.you.com/api-reference/search",
+        setup_steps=[
+            "Sign up at api.you.com",
+            "Generate an API key from the Developer Console",
+            "Set YDC_API_KEY (or YOU_API_KEY) in the environment",
+        ],
+    ),
+    "jina": ProviderInfo(
+        name="Jina AI",
+        description=(
+            "s.jina.ai search returns markdown-formatted hit blocks "
+            "optimised for LLM consumption. Free unauthenticated tier "
+            "with rate limits; JINA_API_KEY raises the cap."
+        ),
+        tier="Free (rate-limited)",
+        signup_url="https://jina.ai/",
+        docs_url="https://jina.ai/reader/",
+        setup_steps=[
+            "Optional: sign up at jina.ai and grab an API key for higher rate limits",
+            "Set JINA_API_KEY in the environment (or skip for the free tier)",
+        ],
+    ),
+    "kagi": ProviderInfo(
+        name="Kagi",
+        description=(
+            "Paid premium search — independent index plus their T-Rank "
+            "re-ranking. Substantially higher quality than free engines, "
+            "especially on technical / academic queries. Subscription + "
+            "per-search billing."
+        ),
+        tier="Subscription + per-search",
+        signup_url="https://kagi.com/settings/api",
+        docs_url="https://help.kagi.com/kagi/api/search.html",
+        setup_steps=[
+            "Subscribe to Kagi (Standard plan or above)",
+            "Enable API access on the Settings → API page",
+            "Add credit to the API balance (usage is metered)",
+            "Set KAGI_API_KEY in the environment",
+        ],
+    ),
+    "arxiv": ProviderInfo(
+        name="ArXiv",
+        description=(
+            "Academic paper search against export.arxiv.org. Returns "
+            "title / authors / abstract / primary-category for each hit. "
+            "Best for literature-review queries; general-web providers "
+            "skip ArXiv's full metadata."
+        ),
+        tier="No key needed",
+        signup_url=None,
+        docs_url="https://info.arxiv.org/help/api/index.html",
+        setup_steps=[
+            "No setup required — endpoint is public and unauthenticated",
+            "Pass `provider=arxiv` from the agent for paper-focused queries",
+        ],
+    ),
 }
 
 

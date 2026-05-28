@@ -53,7 +53,31 @@ SPEC: dict[str, Any] = {
             },
             "provider": {
                 "type": "string",
-                "description": "Force a specific backend: tavily | exa | duckduckgo. Omit for auto-select by priority + availability.",
+                "description": (
+                    "Force a specific backend (e.g. tavily, brave, exa, kagi, "
+                    "serper, youcom, jina, arxiv, …). Omit for auto-select "
+                    "by priority + availability. Ignored when `combine` is set."
+                ),
+            },
+            "combine": {
+                "type": "string",
+                "description": (
+                    "Multi-provider blend strategy. 'rrf' runs the query "
+                    "against several backends in parallel and merges via "
+                    "Reciprocal Rank Fusion (best for high-stakes research). "
+                    "'race' returns the first backend's results that arrive "
+                    "(best when latency matters)."
+                ),
+                "enum": ["rrf", "race"],
+            },
+            "providers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Explicit provider list for combine mode (e.g. "
+                    "['tavily','brave','exa']). Defaults to every available "
+                    "provider when `combine` is set and this is omitted."
+                ),
             },
         },
         "required": ["query"],
@@ -82,6 +106,8 @@ def execute(
     query: str | None = None,
     num_results: int = 8,
     provider: str | None = None,
+    combine: str | None = None,
+    providers: list | None = None,
     **kw: Any,
 ) -> str:
     if query is None:
@@ -91,7 +117,32 @@ def execute(
     num_results = read_int_param(kw, "num_results", "numResults", default=num_results) or num_results
     num_results = max(1, min(int(num_results), 25))
     provider = read_string_param(kw, "provider", "backend", default=provider)
+    combine = read_string_param(kw, "combine", "strategy", default=combine)
 
+    # ``providers`` may arrive as a JSON array (from the LLM tool call)
+    # or a comma-separated string (from CLI / legacy callers). Normalise
+    # to ``list[str]``.
+    if providers is None:
+        providers = kw.get("providers")
+    if isinstance(providers, str):
+        providers = [p.strip() for p in providers.split(",") if p.strip()]
+
+    # --- Combine path: run RRF / race across several providers ---------
+    if combine:
+        from .combine import combine_race, combine_rrf
+        fn = combine_rrf if combine.lower() == "rrf" else combine_race
+        try:
+            merged, contributors = fn(
+                query, num_results=num_results, providers=providers,
+            )
+        except LookupError as e:
+            return f"Error: {e}"
+        except Exception as e:
+            return f"Error: combine ({combine}) failed: {type(e).__name__}: {e}"
+        label = f"{combine}: {' + '.join(contributors) or '(none)'}"
+        return _format(query, label, merged)
+
+    # --- Single-provider path (legacy default) -------------------------
     # Caller didn't pin a backend → use the user's saved default if any,
     # otherwise fall through to priority-based auto-select.
     if not provider:
