@@ -35,6 +35,7 @@ const SLUGS: Record<string, string> = {
   "minimax-cn": "minimax",
   "kimi-coding": "moonshot",
   zai: "zai",
+  deepseek: "deepseek",
   // Other
   "github-copilot": "githubcopilot",
   xai: "xai",
