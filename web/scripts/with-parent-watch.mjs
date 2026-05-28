@@ -13,11 +13,21 @@ const parentPid = parseInt(process.env.OPENPROGRAM_PARENT_PID || "0", 10);
 // overrides via PORT; this fallback handles direct npm invocations.
 const port = process.env.PORT || "8100";
 
-const nextBin = resolve(process.cwd(), "node_modules/.bin/next");
+// npm bin shims on Windows are .cmd batch files, not directly executable
+// by Node's child_process.spawn without ``shell: true``. The ``next``
+// (no extension) shim ships as a shell script that Windows can't run
+// directly — spawning it raises ENOENT and the Next.js frontend never
+// starts. ``next.cmd`` is the Windows-native shim; use it explicitly,
+// and pass ``shell: true`` so Windows resolves the rest correctly
+// (PATHEXT, quoting, etc.). POSIX keeps the original behaviour.
+const isWin = process.platform === "win32";
+const nextBinName = isWin ? "next.cmd" : "next";
+const nextBin = resolve(process.cwd(), "node_modules/.bin", nextBinName);
 const child = spawn(nextBin, ["start", "-p", String(port)], {
   cwd: process.cwd(),
   env: process.env,
   stdio: "inherit",
+  shell: isWin,
 });
 
 let stopping = false;
