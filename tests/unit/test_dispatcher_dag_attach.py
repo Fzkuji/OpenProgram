@@ -28,7 +28,22 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     monkeypatch.setattr("openprogram.store.session_store.default_store",
                         lambda: db)
     monkeypatch.setattr("openprogram.store.default_store", lambda: db)
-    return db
+
+    # Pre-attach a GraphStore via the ContextVar BEFORE dispatcher runs.
+    # On hosts without a configured provider (GitHub Actions Linux
+    # runners) dispatcher's ``create_runtime()`` raises and the try-block
+    # falls through to the except branch WITHOUT installing ``_store``,
+    # so the planner's @agentic_function had nowhere to land — only
+    # ``user`` and ``llm`` roles ended up in the graph. Setting
+    # ``_store`` here guarantees the planner code Call lands in our
+    # SessionDB regardless of whether dispatcher's own setup succeeded.
+    from openprogram.store import _store as _store_var, GraphStoreShim
+    _token = _store_var.set(GraphStoreShim(db, "s1"))
+    yield db
+    try:
+        _store_var.reset(_token)
+    except Exception:
+        pass
 
 
 def _stub_loop(text: str):
