@@ -34,26 +34,19 @@
 
 ## Quick Start
 
-Requires **Python 3.11+**.
+Requires **Python 3.11+**. macOS / Linux / Windows.
+
+### 1. Install
 
 ```bash
-pip install openprogram                             # install (TUI + web UI included)
-openprogram setup                                   # connect a provider (interactive)
+pip install openprogram                             # TUI + web UI in one wheel
+openprogram setup                                   # interactive provider wizard
 ```
 
-Then chat with it — either in the terminal or the browser:
+`openprogram setup` adopts credentials from any CLI you've already logged into (Claude Code, Codex, Gemini CLI) and offers to enter API keys for the rest. When it exits, the worker is already running — web UI on `http://localhost:3000`, FastAPI backend on `:8109`.
 
-```bash
-openprogram                                         # full-screen TUI
-```
-
-For the web UI, just open your browser at **http://localhost:3000** — `openprogram setup` starts the worker in the background (frontend on 3000, FastAPI backend on 8109) so the page is already live.
-
-Both surfaces share the same backend — sessions, settings, web-search defaults are persisted in `~/.agentic/` and visible from either entry point.
-
-## Setup
-
-`openprogram setup` is a wizard that imports credentials from any CLI you've already logged into and asks for missing API keys. Skip it by setting one of these env vars yourself:
+<details>
+<summary><b>Prefer to skip the wizard? Set one env var.</b></summary>
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...                 # Claude
@@ -61,7 +54,7 @@ export OPENAI_API_KEY=sk-...                        # GPT
 export GOOGLE_API_KEY=...                           # Gemini
 ```
 
-Or use a CLI provider (no API key, uses your existing subscription):
+Or wire up a CLI provider (no API key, rides your existing subscription):
 
 ```bash
 npm i -g @anthropic-ai/claude-code && claude login
@@ -69,7 +62,48 @@ npm i -g @openai/codex && codex auth
 npm i -g @google/gemini-cli && gemini auth login
 ```
 
-Check what's detected with `openprogram providers`. Auto-detection order: **Claude Code → Codex → Gemini CLI → Anthropic API → OpenAI API → Gemini API**.
+Check detection with `openprogram providers`. Auto-priority: **Claude Code → Codex → Gemini CLI → Anthropic API → OpenAI API → Gemini API**.
+
+</details>
+
+### 2. Chat — pick a surface
+
+```bash
+openprogram                                         # full-screen TUI
+# OR open http://localhost:3000 in any browser     # web UI
+```
+
+Both share the same backend (`~/.agentic/`), so a session started in the TUI shows up in the browser tab and vice versa. The web UI gets the richer surface (mini-DAG, branch / merge / attach, multi-agent, file attachments); the TUI is the same backend without the chrome.
+
+### 3. Try a built-in agent
+
+The sidebar's **Favorite Functions** ships with three real harnesses:
+
+| Slash | Calls | What it does |
+|---|---|---|
+| `gui_agent` | desktop GUI loop | Observe → plan → click → verify. OSWorld Multi-Apps 79.8%. |
+| `wiki_agent` | wiki builder | Ingests notes / docs / chats into an Obsidian-compatible vault. |
+| `research_agent` | research pipeline | Survey → idea → experiments → paper draft → cross-model review. |
+
+Click any one to open its **fn-form** (a typed parameter sheet), fill in the required fields, hit send. Output streams into the same chat thread — the right-rail mini-DAG records every step.
+
+### 4. Write your first `@agentic_function`
+
+```python
+# my_agent.py
+from openprogram.agentic_programming import agentic_function
+
+@agentic_function
+def login_flow(url: str, runtime=None):
+    """Drive a login form: observe, click submit, confirm dashboard."""
+    seen   = runtime.exec(content=[{"type": "text", "text": f"Visit {url} and describe the page."}])
+    action = runtime.exec(content=[{"type": "text", "text": "Where should I click to log in?"}])
+    return runtime.exec(content=[{"type": "text", "text": f"After clicking {action!r}, what's on screen now?"}])
+```
+
+Drop it in `~/.agentic/functions/` (or any directory on `PYTHONPATH`) and it appears in the sidebar — clickable from the web UI, callable as `from my_agent import login_flow` from any other script. Every `runtime.exec` call lands in the conversation DAG, so the next turn sees the full plan / observation chain without you threading any state.
+
+Full tour: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md). Why this design beats LLM-as-scheduler: [docs/philosophy/agentic-programming.md](docs/philosophy/agentic-programming.md).
 
 ## Optional extras
 
