@@ -9,12 +9,10 @@ Docs: https://serper.dev/api-key
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import post_json
 from ..registry import SearchResult
 
 
@@ -38,35 +36,25 @@ class SerperProvider:
         key = os.environ.get("SERPER_API_KEY", "")
         if not key:
             raise RuntimeError("SERPER_API_KEY not set")
-        payload = json.dumps({
-            "q": query,
-            # ``num`` is 10/20/30/100. We round up to the nearest valid
-            # bucket above ``num_results`` so the agent gets at least
-            # what it asked for; we'll truncate the response below.
-            "num": _bucket(num_results),
-        }).encode("utf-8")
-        req = urllib.request.Request(
+        data = post_json(
             API_URL,
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "X-API-KEY": key,
+            headers={"X-API-KEY": key},
+            body={
+                "q": query,
+                # ``num`` is 10/20/30/100. Round up to the nearest valid
+                # bucket above ``num_results`` so the agent gets at
+                # least what it asked for; we truncate below.
+                "num": _bucket(num_results),
             },
+            timeout=TIMEOUT,
+            provider_label="Serper",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Serper HTTP {e.code}: {body}") from e
         results: list[SearchResult] = []
-        # Serper returns several sections (organic / answerBox / knowledgeGraph
-        # / topStories). We only consume `organic` for the SearchResult shape;
-        # the rest is rendering-style metadata that agents either don't need
-        # or can pull from a follow-up web_fetch.
+        # Serper returns several sections (organic / answerBox /
+        # knowledgeGraph / topStories). We only consume ``organic`` for
+        # the SearchResult shape; the rest is rendering-style metadata
+        # agents either don't need or can pull from a follow-up
+        # web_fetch.
         for r in (data.get("organic") or [])[: max(1, int(num_results))]:
             results.append(SearchResult(
                 title=str(r.get("title", "")),

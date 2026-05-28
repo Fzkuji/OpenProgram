@@ -17,13 +17,11 @@ Docs: https://jina.ai/reader/#apiform — search docs are on the same page.
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import get_json
 from ..registry import SearchResult
 
 
@@ -54,29 +52,21 @@ class JinaProvider:
         url = API_URL + urllib.parse.quote(query, safe="")
         headers = {
             "Accept": "application/json",
-            # Return ``http://`` URLs in result links — without this
-            # header some hits come back without the scheme.
+            # Skip page-content extraction — we only need the link
+            # list (web_fetch handles content if the agent wants it).
             "X-Respond-With": "no-content",
         }
         key = os.environ.get("JINA_API_KEY")
         if key:
             headers["Authorization"] = f"Bearer {key}"
-        req = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Jina HTTP {e.code}: {body}") from e
+        data = get_json(url, headers=headers, timeout=TIMEOUT, provider_label="Jina")
+
         # ``data.data`` is the result array. Each entry has title /
         # url / description / content.
-        rows = []
+        rows: list = []
         if isinstance(data, dict):
             rows = data.get("data") or []
-        if isinstance(data, list):
+        elif isinstance(data, list):
             rows = data
         results: list[SearchResult] = []
         for r in rows[: max(1, int(num_results))]:

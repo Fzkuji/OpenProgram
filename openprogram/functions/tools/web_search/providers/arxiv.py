@@ -18,12 +18,10 @@ Docs: https://info.arxiv.org/help/api/index.html
 
 from __future__ import annotations
 
-import urllib.error
-import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
+from .._http import get_bytes
 from ..registry import SearchResult
 
 
@@ -53,30 +51,24 @@ class ArxivProvider:
         return True
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
-        params = urllib.parse.urlencode({
-            # ``all:`` searches title + abstract + authors. Without a
-            # field qualifier ArXiv interprets the query as a free-text
-            # match across everything, which is the right default.
-            "search_query": f"all:{query}",
-            "start": 0,
-            "max_results": max(1, min(int(num_results), 50)),
-            # Most-relevant first; alternative is `submittedDate desc`.
-            "sortBy": "relevance",
-            "sortOrder": "descending",
-        })
-        req = urllib.request.Request(
-            f"{API_URL}?{params}",
+        body = get_bytes(
+            API_URL,
+            params={
+                # ``all:`` searches title + abstract + authors. Without
+                # a field qualifier ArXiv interprets the query as a
+                # free-text match across everything.
+                "search_query": f"all:{query}",
+                "start": 0,
+                "max_results": max(1, min(int(num_results), 50)),
+                # Most-relevant first; alternative is
+                # ``submittedDate desc``.
+                "sortBy": "relevance",
+                "sortOrder": "descending",
+            },
             headers={"Accept": "application/atom+xml"},
+            timeout=TIMEOUT,
+            provider_label="ArXiv",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                body = resp.read()
-        except urllib.error.HTTPError as e:
-            try:
-                detail = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                detail = str(e)
-            raise RuntimeError(f"ArXiv HTTP {e.code}: {detail}") from e
         try:
             root = ET.fromstring(body)
         except ET.ParseError as e:
@@ -96,9 +88,9 @@ class ArxivProvider:
             ]
             authors = [a for a in authors if a]
 
-            # ``<id>http://arxiv.org/abs/2401.01234v1</id>`` — strip the
-            # trailing version suffix from the displayed link so the
-            # latest-version page is what the agent fetches.
+            # ``<id>http://arxiv.org/abs/2401.01234v1</id>`` — keep the
+            # version suffix as ArXiv serves it; the abs/<id> page
+            # auto-redirects to the latest version anyway.
             url = (id_el.text if id_el is not None else "") or ""
             url = url.strip().split(" ")[0]
 

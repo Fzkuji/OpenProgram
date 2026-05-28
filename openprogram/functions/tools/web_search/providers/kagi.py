@@ -8,19 +8,14 @@ default when a Kagi key is set.
 
 Requires ``KAGI_API_KEY``. The Kagi Search API is a paid add-on on top
 of the regular subscription — see https://help.kagi.com/kagi/api/search.html
-
-Docs: https://help.kagi.com/kagi/api/search.html
 """
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import get_json
 from ..registry import SearchResult
 
 
@@ -46,27 +41,20 @@ class KagiProvider:
         key = os.environ.get("KAGI_API_KEY", "")
         if not key:
             raise RuntimeError("KAGI_API_KEY not set")
-        params = urllib.parse.urlencode({
-            "q": query,
-            # ``limit`` is 1-10 per result type; cap at 10.
-            "limit": max(1, min(int(num_results), 10)),
-        })
-        req = urllib.request.Request(
-            f"{API_URL}?{params}",
+        data = get_json(
+            API_URL,
             headers={
                 "Accept": "application/json",
                 "Authorization": f"Bot {key}",
             },
+            params={
+                "q": query,
+                # ``limit`` is 1-10 per result type; cap at 10.
+                "limit": max(1, min(int(num_results), 10)),
+            },
+            timeout=TIMEOUT,
+            provider_label="Kagi",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Kagi HTTP {e.code}: {body}") from e
         results: list[SearchResult] = []
         # ``data`` is a list of entries with ``t`` (type) — 0 = search
         # result, 1 = related, 2 = "fast answer". We only consume

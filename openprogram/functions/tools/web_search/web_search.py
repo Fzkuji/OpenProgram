@@ -3,16 +3,25 @@
 Pairs with ``web_fetch``: web_search gets the agent the URLs, web_fetch
 reads them. The tool itself is small — it just:
 
-  1. Picks a backend via ``registry.select(prefer=provider)``. Default
-     priority order: Tavily → Exa → DuckDuckGo.
-  2. Delegates the actual search to that backend.
+  1. Picks a backend via ``registry.select(prefer=provider)``, OR runs
+     several backends in parallel and merges them via the
+     ``combine.py`` aggregator (RRF / race).
+  2. Delegates the actual search to the chosen backend(s).
   3. Formats results into a stable numbered-list string the agent can
      scan (title, URL, 1-2 sentence snippet).
 
+16 backends register at import time, sorted by ``priority`` for the
+auto-select path:
+
+    100 tavily       95 exa        93 kagi       90 perplexity
+     85 brave        83 youcom     82 serper     80 google
+     75 firecrawl    70 searxng    65 minimax    60 moonshot
+     55 ollama       35 jina       30 arxiv      10 duckduckgo
+
 Provider backends live in ``web_search/providers/`` — each one is a
 small dataclass with ``name / priority / requires_env / is_available /
-search`` methods. Adding a new provider (Brave, Serper, Perplexity…)
-is a single file and one registry.register() call.
+search`` methods. Adding a new provider is a single file plus one
+registry.register() call.
 """
 
 from __future__ import annotations
@@ -31,9 +40,21 @@ NAME = "web_search"
 DESCRIPTION = (
     "Search the web and return a ranked list of results (title, URL, "
     "snippet). Use when you have a question and need to discover URLs — "
-    "pair with `web_fetch` to read the full page. Pass `provider=tavily|"
-    "exa|duckduckgo` to force a specific backend, otherwise the "
-    "highest-priority available backend is used (Tavily > Exa > DDG)."
+    "pair with `web_fetch` to read the full page.\n\n"
+    "Backend selection:\n"
+    "  • `provider=<name>` forces a specific backend. Available: "
+    "tavily, exa, kagi, perplexity, brave, youcom, serper, google, "
+    "firecrawl, searxng, minimax, moonshot, ollama, jina, arxiv, "
+    "duckduckgo. Use `arxiv` for academic / paper searches.\n"
+    "  • Omit `provider` to auto-select by priority + availability "
+    "(highest-quality configured backend wins).\n"
+    "  • `combine='rrf'` runs several backends in parallel and merges "
+    "via Reciprocal Rank Fusion — strongly recommended for high-stakes "
+    "research queries; results corroborated across providers float "
+    "to the top. Pair with `providers=['tavily','brave','exa']` to "
+    "pin which backends to blend.\n"
+    "  • `combine='race'` returns whichever backend responds first — "
+    "use when latency matters more than coverage."
 )
 
 

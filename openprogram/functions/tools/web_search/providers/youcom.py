@@ -10,13 +10,10 @@ Docs: https://documentation.you.com/api-reference/search
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import get_json
 from ..registry import SearchResult
 
 
@@ -42,27 +39,20 @@ class YouComProvider:
         key = _resolve_key()
         if not key:
             raise RuntimeError("YDC_API_KEY / YOU_API_KEY not set")
-        params = urllib.parse.urlencode({
-            "query": query,
-            # ``num_web_results`` cap is 20 per the public docs.
-            "num_web_results": max(1, min(int(num_results), 20)),
-        })
-        req = urllib.request.Request(
-            f"{API_URL}?{params}",
+        data = get_json(
+            API_URL,
             headers={
                 "Accept": "application/json",
                 "X-API-Key": key,
             },
+            params={
+                "query": query,
+                # ``num_web_results`` cap is 20 per the public docs.
+                "num_web_results": max(1, min(int(num_results), 20)),
+            },
+            timeout=TIMEOUT,
+            provider_label="You.com",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"You.com HTTP {e.code}: {body}") from e
         results: list[SearchResult] = []
         # Newer Search-API responses use ``hits`` directly; older /smart
         # endpoint nests under ``search.results``. Cover both.
