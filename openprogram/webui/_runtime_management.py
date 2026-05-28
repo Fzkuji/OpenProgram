@@ -205,12 +205,99 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     from openprogram.providers import get_model as _get_model, get_models as _get_models
     if model is None:
         models = _get_models(provider)
+        # Static registry empty? Fall back to the user's custom_models
+        # (post-Fetch rows or hand-pinned ones) before giving up — same
+        # rule that drives the Settings model table.
         if not models:
-            raise RuntimeError(f"Provider {provider!r} has no models registered")
-        model = models[0].id
+            from openprogram.webui._model_catalog import _read_providers_cfg
+            customs = (_read_providers_cfg().get(provider, {}).get("custom_models") or [])
+            if not customs:
+                raise RuntimeError(f"Provider {provider!r} has no models registered")
+            model = customs[0].get("id")
+            if not model:
+                raise RuntimeError(f"Provider {provider!r} has no models registered")
+        else:
+            model = models[0].id
+    # ``custom_models`` (fetched + manual) are valid runtime targets
+    # too. ``get_model`` only looks at the static MODELS dict baked
+    # into ``providers/models_generated.py``; without this side-effect
+    # registration, every model the user pulled via Fetch
+    # (DeepSeek V4, claude-sonnet-4-6, …) trips the
+    # ``raise ValueError("Unknown model ...")`` inside Runtime.__init__
+    # and the picker switch 500s — even though Settings → Models
+    # happily toggles those rows enabled.
     if _get_model(provider, model) is None:
-        raise RuntimeError(f"Unknown model {provider}:{model}")
+        if not _register_custom_model_in_registry(provider, model):
+            raise RuntimeError(f"Unknown model {provider}:{model}")
     return Runtime(model=f"{provider}:{model}")
+
+
+def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
+    """Look ``model_id`` up in the user's ``custom_models`` for
+    ``provider`` and, if present, insert a ``Model`` row into the
+    global ``MODELS`` dict so ``providers.get_model`` finds it.
+
+    Side-effect on the module-level registry — deliberate. The
+    alternative is plumbing custom-model metadata through every
+    callsite that goes "look up Model row → read context_window /
+    cost / modalities". Registering once at runtime-construction
+    time is the smallest change that makes the registry the single
+    source of truth.
+
+    Returns ``True`` when a registration happened, ``False`` when the
+    model wasn't in custom_models either (genuine unknown id → caller
+    re-raises).
+    """
+    try:
+        from openprogram.webui._model_catalog import (
+            _read_providers_cfg,
+            _PROVIDER_DEFAULT_API,
+        )
+        from openprogram.providers.models_generated import MODELS
+        from openprogram.providers.types import Model, ModelCost
+    except Exception:
+        return False
+
+    cfg_pcfg = _read_providers_cfg().get(provider, {})
+    raw = next(
+        (c for c in (cfg_pcfg.get("custom_models") or []) if c.get("id") == model_id),
+        None,
+    )
+    if not raw:
+        return False
+
+    api = raw.get("api") or _PROVIDER_DEFAULT_API.get(provider) or "openai-completions"
+    inputs: list[str] = list(raw.get("input_modalities") or ["text"])
+    # Cost is optional — only stamp the fields the row actually has,
+    # default 0.0 for missing keys so ModelCost validates.
+    cost = ModelCost(
+        input=float(raw.get("input_cost", 0) or 0),
+        output=float(raw.get("output_cost", 0) or 0),
+        cache_read=float(raw.get("cache_read_cost", 0) or 0),
+        cache_write=float(raw.get("cache_write_cost", 0) or 0),
+    )
+    base_url = cfg_pcfg.get("base_url") or ""
+    if not base_url:
+        from ._model_catalog.providers import _default_base_url_for
+        base_url = _default_base_url_for(provider) or ""
+
+    try:
+        m = Model(
+            id=model_id,
+            name=str(raw.get("name") or model_id),
+            api=api,
+            provider=provider,
+            base_url=base_url,
+            reasoning=bool(raw.get("reasoning", False)),
+            input=inputs,
+            cost=cost,
+            context_window=int(raw.get("context_window", 0) or 0),
+            max_tokens=int(raw.get("max_tokens", 0) or 0),
+        )
+    except Exception:
+        return False
+    MODELS[f"{provider}/{model_id}"] = m
+    return True
 
 
 _PROVIDER_PRIORITY = ("openai-codex", "gemini-cli", "anthropic", "gemini", "openai", "claude-code")
