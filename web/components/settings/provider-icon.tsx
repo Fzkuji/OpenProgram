@@ -85,6 +85,37 @@ export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
         ? `${LOBEHUB_CDN}${slug}.svg`
         : `${MODELS_DEV_CDN}${encodeURIComponent(id)}.svg`;
 
+  // models.dev's SVGs use ``fill="currentColor"`` so they're meant to
+  // adopt their parent's text colour. Loaded via ``<img>`` they fall
+  // back to black, which on the dark theme looks like a missing
+  // icon. Render this tier as a CSS ``mask-image`` instead so the
+  // SVG shape becomes a mask and the visible fill is
+  // ``currentColor`` (resolved against ``color: var(--text-primary)``
+  // from the wrapper). LobeHub's brand-colour tier stays on ``<img>``
+  // because we want their hex-coded brand colours preserved.
+  if (tier === 2) {
+    return (
+      <div
+        className={styles.providerIcon}
+        style={{
+          width: size,
+          height: size,
+          backgroundColor: "var(--text-primary)",
+          color: "var(--text-primary)",
+          WebkitMaskImage: `url(${url})`,
+          maskImage: `url(${url})`,
+          WebkitMaskSize: "contain",
+          maskSize: "contain",
+          WebkitMaskRepeat: "no-repeat",
+          maskRepeat: "no-repeat",
+          WebkitMaskPosition: "center",
+          maskPosition: "center",
+        }}
+        title={id}
+      />
+    );
+  }
+
   return (
     <div className={styles.providerIcon} style={{ width: size, height: size }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
