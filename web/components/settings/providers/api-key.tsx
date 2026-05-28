@@ -116,7 +116,7 @@ export function ApiKey({
       <div className={styles.detailRow}>
         <Input
           ref={inputRef}
-          className="h-9 flex-1 font-mono"
+          className="flex-1 font-mono"
           type={showText ? "text" : "password"}
           placeholder={envVar}
           value={value}

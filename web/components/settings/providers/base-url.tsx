@@ -44,7 +44,7 @@ export function BaseUrl({
       </div>
       <div className={styles.detailRow}>
         <Input
-          className="h-9 flex-1 font-mono"
+          className="flex-1 font-mono"
           type="text"
           placeholder={provider.default_base_url || "https://..."}
           value={value}

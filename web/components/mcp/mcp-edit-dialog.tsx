@@ -209,7 +209,7 @@ export function EditDialog({
               value={state.transport}
               onChange={(e) =>
                 setState({ ...state, transport: e.target.value as EditTarget["transport"] })}
-              className="flex h-10 rounded-md border bg-background px-3 font-mono text-sm
+              className="flex h-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] border bg-background px-3 font-mono text-sm
                           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="local">local (stdio subprocess)</option>
@@ -277,7 +277,7 @@ export function EditDialog({
                   value={state.authKind}
                   onChange={(e) =>
                     setState({ ...state, authKind: e.target.value as EditTarget["authKind"] })}
-                  className="flex h-10 rounded-md border bg-background px-3 font-mono text-sm
+                  className="flex h-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] border bg-background px-3 font-mono text-sm
                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="none">{text("none", "无")}</option>
