@@ -53,6 +53,7 @@ _PROVIDER_LABELS = {
     "kimi-coding": "Kimi Coding",
     "vercel-ai-gateway": "Vercel AI Gateway",
     "opencode": "OpenCode",
+    "deepseek": "DeepSeek",
     # Claude via local HTTP proxy daemon (replaces the old Claude Code CLI
     # provider). Tools come from OpenProgram's own registry instead of the
     # CLI's built-ins.
@@ -85,6 +86,7 @@ _FETCH_MODELS_PROVIDERS = frozenset({
     "minimax",
     "minimax-cn",
     "vercel-ai-gateway",
+    "deepseek",
     # Excluded deliberately:
     #   anthropic      — /v1/models uses x-api-key header, not Bearer
     #   google*        — custom endpoints / OAuth
@@ -115,6 +117,7 @@ _ENV_API_KEYS = {
     "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
     "opencode": None,
     "openai-codex": None,  # OAuth via ~/.codex/auth.json
+    "deepseek": "DEEPSEEK_API_KEY",
 }
 
 
@@ -276,6 +279,27 @@ _SETUP_HINTS: dict[str, str] = {
         "Subscription state is checked on every request — the moment\n"
         "your Copilot trial / plan lapses the connectivity check goes\n"
         "red here. Re-running `gh auth refresh` is enough to recover."
+    ),
+    "deepseek": (
+        "DeepSeek's first-party API at `api.deepseek.com` is OpenAI-\n"
+        "compatible, so this is the standard paste-an-API-key flow:\n"
+        "\n"
+        "$ open https://platform.deepseek.com/api_keys\n"
+        "\n"
+        "Create a key, paste it into the field below, or set the env var\n"
+        "`DEEPSEEK_API_KEY=sk-...` and restart `openprogram --web`. Either\n"
+        "source works; the field wins when both are set.\n"
+        "\n"
+        "Two models register out of the box, both V3.2-Exp on a 128K\n"
+        "context: `deepseek-chat` and `deepseek-reasoner` (same base, the\n"
+        "reasoner has thinking-trace output enabled). Click **Fetch\n"
+        "models** if you want to refresh from `api.deepseek.com/v1/models`\n"
+        "— useful if DeepSeek ships a new model and we haven't.\n"
+        "\n"
+        "Hosted in mainland China; the API gateway is reachable without\n"
+        "a VPN from CN ISPs, unlike ChatGPT / Anthropic. Pricing is also\n"
+        "an order of magnitude lower than OpenAI's o-class models, with\n"
+        "cache-hit discounts on repeated prompts."
     ),
 }
 
@@ -1073,6 +1097,7 @@ _PROVIDER_DEFAULT_API: dict[str, str] = {
     "github-copilot": "openai-completions",
     "xai": "openai-completions",
     "zai": "openai-completions",
+    "deepseek": "openai-completions",
 }
 
 

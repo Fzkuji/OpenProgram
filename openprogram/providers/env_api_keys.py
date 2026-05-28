@@ -27,6 +27,7 @@ PROVIDER_ENV_VARS: dict[str, str] = {
     "kimi-coding": "KIMI_API_KEY",
     "kimi": "KIMI_API_KEY",
     "moonshot": "MOONSHOT_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
 }
 
 

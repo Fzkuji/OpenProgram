@@ -2338,6 +2338,37 @@ MODELS: dict[str, Model] = {
         context_window=131072,
         max_tokens=65536,
     ),
+    # DeepSeek (api.deepseek.com) — official first-party endpoint, OpenAI-
+    # compatible Chat Completions. Two models share the same context (128K)
+    # and output (8K) limits and per-token pricing; ``deepseek-reasoner``
+    # is the same V3.2 base with the reasoning trace enabled. Pricing from
+    # https://api-docs.deepseek.com/quick_start/pricing (units: USD / 1M
+    # tokens). Cache hit / miss split is real on this provider so we keep
+    # ``cache_read`` separate.
+    "deepseek/deepseek-chat": Model(
+        id='deepseek-chat',
+        name='DeepSeek-V3.2 (Chat)',
+        api='openai-completions',
+        provider='deepseek',
+        base_url='https://api.deepseek.com/v1',
+        reasoning=False,
+        input=["text"],
+        cost=ModelCost(input=0.27, output=1.10, cache_read=0.07, cache_write=0.0),
+        context_window=128000,
+        max_tokens=8192,
+    ),
+    "deepseek/deepseek-reasoner": Model(
+        id='deepseek-reasoner',
+        name='DeepSeek-V3.2 (Reasoner)',
+        api='openai-completions',
+        provider='deepseek',
+        base_url='https://api.deepseek.com/v1',
+        reasoning=True,
+        input=["text"],
+        cost=ModelCost(input=0.27, output=1.10, cache_read=0.07, cache_write=0.0),
+        context_window=128000,
+        max_tokens=8192,
+    ),
     "groq/deepseek-r1-distill-llama-70b": Model(
         id='deepseek-r1-distill-llama-70b',
         name='DeepSeek R1 Distill Llama 70B',
