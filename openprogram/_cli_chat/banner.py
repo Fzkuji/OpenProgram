@@ -95,62 +95,76 @@ def _section_text(label: str, items: list[str], count: int, accent: str,
     return t
 
 
-def _print_banner(console, provider: str, model: str) -> None:
-    """Two-row Hermes-style welcome panel: tools/skills + functions/apps."""
+def _print_banner(console, provider: str, model: str,
+                  agent_id: str = "", session_id: str = "") -> None:
+    """Concise welcome banner.
+
+    Earlier versions splashed a two-row 18-line panel listing 50 tool
+    names, 9 function names, 1 skill name, etc. — useful as an
+    inventory dump, but TMI for a user who just wants to chat. The
+    detailed inventory is still one slash-command away (``/tools``,
+    ``/skills``, ``/functions``, ``/apps``); the banner now shows
+    only what the user actually needs at the prompt: which model is
+    active, which agent owns the session, and where to look for
+    everything else.
+    """
     from rich.panel import Panel
     from rich.table import Table
     from rich.text import Text
     from rich import box
 
-    tool_count, tool_names = _tool_inventory()
-    skill_count, skill_items = _skill_inventory()
-    fn_count, fn_names = _function_inventory()
-    app_count, app_names = _application_inventory()
+    # The model id is sometimes returned with the provider prefix
+    # already baked in (``openai-codex:gpt-5.5``). Strip it so the
+    # banner doesn't render the provider twice.
+    pretty_model = model
+    if isinstance(model, str) and ":" in model:
+        head, _, tail = model.partition(":")
+        if head == provider:
+            pretty_model = tail
 
-    logo = Text("OpenProgram", style="bold bright_blue")
-    subtitle = Text(f"  ·  {provider}/{model}", style="dim")
-    header = logo + subtitle
+    # Counts only — names are now available via slash commands.
+    tool_count, _ = _tool_inventory()
+    skill_count, _ = _skill_inventory()
+    fn_count, _ = _function_inventory()
+    app_count, _ = _application_inventory()
 
-    grid = Table.grid(padding=(0, 2), expand=True)
-    grid.add_column(ratio=1)
-    grid.add_column(ratio=1)
+    body = Table.grid(padding=(0, 1))
+    body.add_column(style="dim", justify="right")
+    body.add_column()
 
-    grid.add_row(
-        _section_text("Tools", tool_names, tool_count, "cyan"),
-        _section_text("Skills", [n for n, _ in skill_items], skill_count,
-                      "magenta", empty_msg="no skills loaded"),
-    )
-    grid.add_row(Text(""), Text(""))  # spacer
-    grid.add_row(
-        _section_text("Functions", fn_names, fn_count, "green",
-                      empty_msg="no functions registered"),
-        _section_text("Applications", app_names, app_count, "yellow",
-                      empty_msg="no applications registered"),
-    )
+    body.add_row("Model:", Text(f"{provider} / {pretty_model}", style="bold cyan"))
+    if agent_id:
+        body.add_row("Agent:", Text(agent_id, style="green"))
+    if session_id:
+        body.add_row("Session:", Text(session_id, style="dim"))
 
-    footer = Text()
-    footer.append(f"{tool_count} tools", style="cyan")
-    footer.append(" · ")
-    footer.append(f"{skill_count} skills", style="magenta")
-    footer.append(" · ")
-    footer.append(f"{fn_count} functions", style="green")
-    footer.append(" · ")
-    footer.append(f"{app_count} apps", style="yellow")
-    footer.append(" · /help for commands", style="dim")
+    inv = Text()
+    inv.append(f"{tool_count}", style="cyan")
+    inv.append(" tools  ", style="dim")
+    inv.append(f"{skill_count}", style="magenta")
+    inv.append(" skills  ", style="dim")
+    inv.append(f"{fn_count}", style="green")
+    inv.append(" functions", style="dim")
+    if app_count:
+        inv.append("  ")
+        inv.append(f"{app_count}", style="yellow")
+        inv.append(" apps", style="dim")
+    body.add_row("Loaded:", inv)
+
+    hint = Text()
+    hint.append("Type your message — or ", style="dim")
+    hint.append("/help", style="yellow bold")
+    hint.append(" for commands.", style="dim")
 
     panel_body = Table.grid(padding=(1, 0))
-    panel_body.add_row(grid)
-    panel_body.add_row(footer)
+    panel_body.add_row(body)
+    panel_body.add_row(hint)
 
     console.print()
     console.print(Panel(
         panel_body,
-        title=header,
+        title=Text("OpenProgram", style="bold bright_blue"),
         border_style="bright_blue",
         box=box.ROUNDED,
         padding=(1, 2),
     ))
-    console.print(
-        Text("Tip: ", style="yellow bold")
-        + Text("type your message, or /help to see commands.", style="dim")
-    )

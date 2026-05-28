@@ -116,18 +116,17 @@ def run_cli_chat(oneshot: str | None = None,
                 f"falling back to REPL.[/]"
             )
 
-    # Rich REPL fallback / oneshot path
-    if resume:
-        console.print(f"[dim]Resuming session {session_id} under "
-                      f"agent {agent.id}[/]")
-    else:
-        console.print(f"[dim]New session {session_id} under "
-                      f"agent {agent.id}[/]")
-
+    # Rich REPL fallback / oneshot path. For the chat REPL, the banner
+    # below already shows agent + session — no need for a separate
+    # "New session ..." line above it. For ``--print`` / oneshot, skip
+    # the banner entirely and just print the reply; the user wanted a
+    # quick answer, not a UI.
     if oneshot:
         reply = _run_turn_with_history(agent, session_id, oneshot)
         print(reply)
         return
+    if resume:
+        console.print(f"[dim]↪ Resuming previous session.[/]")
 
     # Show the channels worker status without asking the user to start
     # anything: the primary thing this REPL does is chat. Channels are
@@ -144,7 +143,9 @@ def run_cli_chat(oneshot: str | None = None,
     except Exception:
         pass
 
-    _print_banner(console, provider, model)
+    _print_banner(console, provider, model,
+                  agent_id=getattr(agent, "id", "") or "",
+                  session_id=session_id)
 
     while True:
         try:
