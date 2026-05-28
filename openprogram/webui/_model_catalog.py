@@ -970,6 +970,141 @@ def _fetch_codex_static(provider_id: str, timeout: float) -> Any:
     return out
 
 
+# Curated metadata for known DeepSeek model ids. ``/v1/models`` on
+# DeepSeek only returns ``{id, owned_by}`` — no context window, no
+# pricing, no display name — so a naive OpenAI-compatible fetcher
+# leaves the table empty. We layer this static dict on top of the
+# upstream id list to give each row a sensible context budget,
+# friendly name, reasoning flag, and cost (USD / 1M tokens). Anything
+# DeepSeek ships that isn't here still comes through via
+# ``_deepseek_default_metadata`` — better than a blank row.
+_DEEPSEEK_MODEL_METADATA: dict[str, dict[str, Any]] = {
+    # V3.2-Exp generation (current as of 2025; both at the same price
+    # because the reasoner is the same base with thinking enabled).
+    "deepseek-chat": {
+        "name": "DeepSeek-V3.2 (Chat)",
+        "context_window": 128000,
+        "max_tokens": 8192,
+        "reasoning": False,
+        "input_cost": 0.27,
+        "output_cost": 1.10,
+        "cache_read_cost": 0.07,
+    },
+    "deepseek-reasoner": {
+        "name": "DeepSeek-V3.2 (Reasoner)",
+        "context_window": 128000,
+        "max_tokens": 8192,
+        "reasoning": True,
+        "input_cost": 0.27,
+        "output_cost": 1.10,
+        "cache_read_cost": 0.07,
+    },
+    # V4 generation. Pricing approximated from the published "next-gen"
+    # tier; update once DeepSeek publishes the final per-model sheet.
+    "deepseek-v4-pro": {
+        "name": "DeepSeek-V4 Pro",
+        "context_window": 128000,
+        "max_tokens": 8192,
+        "reasoning": True,
+        "input_cost": 0.55,
+        "output_cost": 2.19,
+        "cache_read_cost": 0.14,
+    },
+    "deepseek-v4-flash": {
+        "name": "DeepSeek-V4 Flash",
+        "context_window": 128000,
+        "max_tokens": 8192,
+        "reasoning": False,
+        "input_cost": 0.14,
+        "output_cost": 0.55,
+        "cache_read_cost": 0.04,
+    },
+}
+
+
+def _deepseek_default_metadata(model_id: str) -> dict[str, Any]:
+    """Best-effort defaults for a DeepSeek id we don't have in
+    ``_DEEPSEEK_MODEL_METADATA``. Picks reasoning capability from
+    name signals (``pro`` / ``reasoner`` / ``r1`` are reasoning;
+    everything else assumed chat). Context window stays at 128K which
+    is the V3.2 / V4 default; users can edit the row by hand if a new
+    family changes that. Pricing is intentionally omitted on unknowns
+    so the UI shows a blank cell rather than a wrong number."""
+    lower = model_id.lower()
+    is_reasoning = any(tok in lower for tok in ("reason", "-r1", "-pro", "-thinking"))
+    pretty = " ".join(w.capitalize() for w in model_id.replace("_", "-").split("-"))
+    return {
+        "name": pretty.replace("Deepseek", "DeepSeek"),
+        "context_window": 128000,
+        "max_tokens": 8192,
+        "reasoning": is_reasoning,
+    }
+
+
+def _fetch_deepseek(provider_id: str, timeout: float) -> Any:
+    """DeepSeek's ``/v1/models`` is OpenAI-compatible but returns
+    ``id``-only rows. Hit it for the live id list, then enrich each id
+    locally so the table the UI renders isn't ``{id, "", 0, ?}`` four
+    times over. Unknown ids still appear, just with conservative
+    defaults and no pricing — better than dropping them.
+
+    Keeps fetch as the source of truth for *which* models exist (so
+    DeepSeek's V3 → V4 transition rolls through with a single click);
+    leaves the per-model attributes to a curated table we own."""
+    import httpx
+    from openprogram.providers.env_api_keys import get_env_api_key
+
+    api_key = _resolve_api_key(provider_id) or get_env_api_key(provider_id)
+    if not api_key:
+        return {"error": "No API key set (DEEPSEEK_API_KEY)"}
+
+    base = (_resolve_base_url(provider_id) or "https://api.deepseek.com/v1").rstrip("/")
+    try:
+        r = httpx.get(
+            base + "/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except httpx.HTTPStatusError as e:
+        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+    out: list[dict[str, Any]] = []
+    for raw in (data.get("data") or data.get("models") or []):
+        if isinstance(raw, str):
+            mid = raw
+        elif isinstance(raw, dict):
+            mid = raw.get("id") or raw.get("name") or ""
+        else:
+            continue
+        mid = (mid or "").strip()
+        if not mid:
+            continue
+        meta = _DEEPSEEK_MODEL_METADATA.get(mid) or _deepseek_default_metadata(mid)
+        entry: dict[str, Any] = {
+            "id": mid,
+            "name": meta.get("name", mid),
+            "context_window": int(meta.get("context_window", 128000)),
+            "max_tokens": int(meta.get("max_tokens", 8192)),
+            "reasoning": bool(meta.get("reasoning", False)),
+            "vision": bool(meta.get("vision", False)),
+            "tools": True,
+        }
+        # Stamp cost when known. Doesn't make it into the registry
+        # ``Model`` directly (that lives in ``models_generated.py``)
+        # but the catalog renders it inline.
+        for cost_key in ("input_cost", "output_cost", "cache_read_cost"):
+            if cost_key in meta:
+                entry[cost_key] = float(meta[cost_key])
+        out.append(entry)
+    if not out:
+        return {"error": "DeepSeek returned an empty model list"}
+    return out
+
+
 # Provider id → fetcher function. Providers in _FETCH_MODELS_PROVIDERS
 # (OpenAI-compatible) use _fetch_openai_compat by default; explicit
 # entries here override.
@@ -980,6 +1115,7 @@ _FETCHERS: dict[str, Any] = {
     "google": _fetch_google,
     "amazon-bedrock": _fetch_bedrock,
     "github-copilot": _fetch_github_copilot,
+    "deepseek": _fetch_deepseek,  # /v1/models is id-only, enrich locally
 }
 
 
@@ -1031,11 +1167,25 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
         if ctx:
             try: entry["context_window"] = int(ctx)
             except Exception: pass
+        # Some fetchers (DeepSeek, custom enrichers) supply a max-tokens
+        # cap they know about — surface it instead of zeroing out the
+        # column. OpenRouter / OpenAI ``/v1/models`` don't include this
+        # natively so the conditional makes it a no-op there.
+        mtok = it.get("max_tokens") or it.get("maxTokens") or it.get("output_token_limit")
+        if mtok:
+            try: entry["max_tokens"] = int(mtok)
+            except Exception: pass
         if it.get("vision") or "vision" in str(it.get("architecture", {})).lower():
             entry["vision"] = True
         reasoning_hint = bool(it.get("reasoning"))
         if reasoning_hint:
             entry["reasoning"] = True
+        # Pass through cost hints when the fetcher computed them
+        # (DeepSeek enricher does; vanilla OpenAI-compatible fetchers
+        # don't). The catalog UI renders these inline.
+        for cost_key in ("input_cost", "output_cost", "cache_read_cost"):
+            if cost_key in it:
+                entry[cost_key] = it[cost_key]
         # Derive thinking capability so newly-discovered models come through
         # with a working picker. Static data only — still re-derived at read
         # time in list_models_for_provider to pick up override-table edits.
