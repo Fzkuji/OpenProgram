@@ -244,7 +244,12 @@ def test_bootstrap_chrome_binary_returns_path_or_none():
 def test_bootstrap_real_user_data_dir_is_platform_specific():
     from openprogram.functions.tools.browser._chrome_bootstrap import real_user_data_dir
     p = real_user_data_dir()
-    assert "Chrome" in p or "chromium" in p.lower()
+    # macOS: ``…/Library/Application Support/Google/Chrome`` (capital C).
+    # Linux: ``~/.config/google-chrome`` (lowercase, hyphenated).
+    # Windows: ``…/Google/Chrome/User Data``. Lower-case both sides so
+    # the assertion holds across all three runners.
+    lp = p.lower()
+    assert "chrome" in lp or "chromium" in lp
 
 
 def test_bootstrap_sidecar_dir_under_dot_openprogram():

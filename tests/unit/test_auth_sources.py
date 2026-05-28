@@ -77,7 +77,16 @@ def test_env_source_id_encodes_var_name():
 
 # ---- CodexCliSource -------------------------------------------------------
 
-def test_codex_source_imports_from_file(tmp_path: Path):
+def test_codex_source_imports_from_file(tmp_path: Path, monkeypatch):
+    # Force the "codex binary is on PATH" branch so the test asserts
+    # the cli_delegated path regardless of whether the test runner
+    # (e.g. GitHub Actions ubuntu image) actually has codex installed.
+    # Without this the CI box hits the fallback adoption path that
+    # tags the credential as ``oauth`` instead.
+    monkeypatch.setattr(
+        "openprogram.auth.sources.codex_cli._codex_binary_present",
+        lambda: True,
+    )
     path = tmp_path / "codex" / "auth.json"
     path.parent.mkdir()
     path.write_text(json.dumps({
