@@ -49,4 +49,4 @@ platforms via:
 - **`wechat.py`** — WeChat bot channel via Tencent's iLink bot API
 - **`worker.py`** — Backward-compatible channel worker imports
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `_gen_dir_readmes.py` to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

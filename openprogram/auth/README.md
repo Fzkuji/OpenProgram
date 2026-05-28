@@ -38,4 +38,4 @@ mocking the network.
 - **`methods/`** — Auth v2
 - **`sources/`** — External credential sources
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `_gen_dir_readmes.py` to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

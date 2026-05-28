@@ -13,4 +13,4 @@ See ``docs/design/skills-and-plugins.md`` section 2 for the design.
 - **`tool.py`** — Built-in SkillTool
 - **`watcher.py`** — Skill directory watcher
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `_gen_dir_readmes.py` to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

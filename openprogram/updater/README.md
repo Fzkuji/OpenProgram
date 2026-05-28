@@ -37,4 +37,4 @@ State files (under ``<state-dir>/``):
 - **`pip.py`** — PyPI / pip-wheel install update path
 - **`runner.py`** — Top-level orchestration for auto-update
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `_gen_dir_readmes.py` to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

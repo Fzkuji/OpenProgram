@@ -297,8 +297,8 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
         _tty_write(
             f"openprogram: {e}\n\n"
             "Alternatives that don't need the TUI:\n\n"
-            "  openprogram --no-tui          # Rich-based REPL (text only)\n"
-            "  openprogram --web             # browser UI\n"
+            "  openprogram web               # browser UI\n"
+            "  openprogram --print \"...\"     # one-shot prompt\n"
             "  openprogram --print \"hi\"      # one-shot prompt\n"
         )
         sys.exit(2)

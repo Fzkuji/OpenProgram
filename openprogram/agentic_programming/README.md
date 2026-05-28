@@ -26,4 +26,4 @@ agentic_programming, never the other way around.
 - **`session.py`** — Session management
 - **`skills.py`** — Skill discovery and prompt formatting
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `_gen_dir_readmes.py` to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

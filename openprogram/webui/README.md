@@ -41,4 +41,4 @@ Or from CLI:
 - **`static/`**
 - **`ws_actions/`** — WebSocket action handlers, split out from server._handle_ws_command
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `_gen_dir_readmes.py` to refresh._
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
