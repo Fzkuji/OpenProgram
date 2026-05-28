@@ -74,6 +74,11 @@ export interface Model {
   release_date?: string;
   last_updated?: string;
   open_weights?: boolean;
+  /** Wire format / endpoint family the model expects
+   *  (``"anthropic-messages-2023-06-01"``, ``"openai-chat-completions"``, …).
+   *  Surfaced in the detail panel so it's clear at a glance which
+   *  SDK / wire schema a model speaks. */
+  api?: string;
 }
 
 /** Compact 'context window' formatter — 128_000 → "128K", 1_000_000 → "1M". */
