@@ -222,16 +222,37 @@ def convert_responses_messages(
 
 def convert_responses_tools(
     tools: "list[Tool]",
-    strict: bool | None = False,
+    strict: bool | None = None,
 ) -> list[dict[str, Any]]:
-    """Convert tools to OpenAI Responses API function format."""
+    """Convert tools to OpenAI Responses API function format.
+
+    When ``strict`` is True (the default for Codex / Responses API
+    callers — OpenAI's docs recommend always enabling strict mode), we
+    rewrite each tool's parameters schema through
+    ``strict_schema.fixup_for_strict`` so OpenAI's structured-outputs
+    subset is met without each tool having to hand-author a strict
+    schema. ``strict=None`` honours the global default; ``strict=False``
+    forces the legacy lax path for tools whose schemas can't be
+    strict-fitted (none today, kept as an escape hatch).
+    """
+    from openprogram.providers._shared.strict_schema import fixup_for_strict
+    import os
+
+    if strict is None:
+        env = os.environ.get("OPENPROGRAM_STRICT_TOOLS", "1").lower()
+        strict = env not in ("0", "false", "no", "off", "")
+
     return [
         {
             "type": "function",
             "name": t.name,
             "description": t.description,
-            "parameters": t.parameters,
-            "strict": strict if strict is not None else False,
+            "parameters": (
+                fixup_for_strict(t.parameters)
+                if (strict and isinstance(t.parameters, dict))
+                else t.parameters
+            ),
+            "strict": bool(strict),
         }
         for t in tools
     ]
