@@ -805,7 +805,11 @@ def main():
             print(f"last reindex:    {stats['last_reindex'] or '(never)'}")
             ls = _mstore.last_sleep_path()
             if ls.exists():
-                print(f"last sleep:      {ls.read_text(encoding="utf-8").strip()[:200]}")
+                # Python 3.11 can't nest the same quote inside an
+                # f-string expression (PEP 701 lifted that restriction
+                # in 3.12). Compute the snippet first, then interpolate.
+                _snippet = ls.read_text(encoding="utf-8").strip()[:200]
+                print(f"last sleep:      {_snippet}")
             else:
                 print("last sleep:      (never)")
             sys.exit(0)
