@@ -14,7 +14,9 @@ Write-Host "Fetching our provider list..."
 $providers = (Invoke-RestMethod -Uri "http://localhost:8109/api/providers/list" -TimeoutSec 15).providers
 Write-Host "  providers: $($providers.Count)"
 
-# Explicit "brand alias" overrides — same as SLUGS in provider-icon.tsx
+# Explicit "brand alias" overrides — same as SLUGS in provider-icon.tsx.
+# Each entry is a case where "provider X is conceptually brand Y, but
+# the suffix-strip rules can't infer that connection from the id alone".
 $slugOverrides = @{
     "openai-codex"           = "openai"
     "chatgpt-subscription"   = "openai"
@@ -28,6 +30,9 @@ $slugOverrides = @{
     "azure-openai-responses" = "azure"
     "vercel-ai-gateway"      = "vercel"
     "github-copilot"         = "githubcopilot"
+    # Llama is Meta's LLM family — LobeHub doesn't ship a Llama-specific
+    # icon, so use the Meta parent-company logo.
+    "llama"                  = "meta"
 }
 
 $stripSuffixes = @(
@@ -36,6 +41,7 @@ $stripSuffixes = @(
     "-ai-gateway", "-workers-ai",
     "-for-coding", "-coding",
     "-responses",
+    "-cloud",                       # ``ollama-cloud`` -> ``ollama``
     "-ai", "-cn"
 )
 
