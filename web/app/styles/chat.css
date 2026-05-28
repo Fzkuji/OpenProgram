@@ -802,14 +802,29 @@
   padding-left: 0;
 }
 .pending-pulse {
+  /* Outer box width = ``●`` glyph advance width at 14px font
+     (~13px). The visual disc is painted by ::before, centred
+     inside the box. With this layout the pulse occupies the same
+     horizontal slot as a header ``●`` so the two line up by
+     layout alone — no margin-left hack. ::before owns the scale
+     animation so the outer box stays a stable 13×13 slot while
+     the disc breathes. See docs/design/indicator-dots.md for
+     the rest of the unification plan. */
   display: inline-block;
-  width: 10px;
-  height: 10px;
+  position: relative;
+  width: 12.8px;
+  height: 12.8px;
+  vertical-align: middle;
+  color: var(--accent-blue, #6cb4ff);
+}
+.pending-pulse::before {
+  content: "";
+  position: absolute;
+  inset: 1.4px;
   border-radius: 50%;
   background: var(--accent-blue, #6cb4ff);
   box-shadow: 0 0 0 0 currentColor;
   animation: pendingPulse 1.4s ease-in-out infinite;
-  color: var(--accent-blue, #6cb4ff);
 }
 .pending-label {
   color: var(--text-muted);
@@ -1012,7 +1027,11 @@
   border-color: var(--accent-green, #98c379);
 }
 .inline-tree-body {
-  padding: 6px 8px;
+  /* padding-left matches .inline-tree-header (10px) so dots and
+     labels in the body line up with the header's left column —
+     mismatched paddings (was 8px) used to leave .pending-pulse
+     2px further left than the header ``●``. */
+  padding: 6px 10px;
   display: block;
   max-height: 300px;
   overflow-y: auto;
