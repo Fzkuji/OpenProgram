@@ -222,7 +222,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
               >
                 {attach.status === "running" || attach.status === "pending"
                   || attach.status === "queued" ? (
-                  <span className="attach-card-status-dot" />
+                  <span className="indicator-dot sm pulse-opacity" />
                 ) : null}
                 {attach.status}
               </span>

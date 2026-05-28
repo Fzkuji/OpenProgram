@@ -180,16 +180,14 @@ export function RuntimeBlock({
       >
         <div className="inline-tree-header">
           <span>
-            <span className="pulse" style={{ color: "var(--accent-blue)" }}>
-              {"●"}
-            </span>{" "}
+            <span className="indicator-dot pulse-opacity" />{" "}
             {headerLabel}
           </span>
           <span className="inline-tree-actions">{actions}</span>
         </div>
         <div className="inline-tree-body">
           <div className="pending-body" style={{ padding: "4px 0" }}>
-            <span className="pending-pulse" aria-hidden="true" />
+            <span className="indicator-dot pulse-scale" aria-hidden="true" />
             <span className="pending-label">
               {text("Running…", "运行中…")}
             </span>

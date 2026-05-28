@@ -27,7 +27,7 @@ import { TurnFilesChips } from "./turn-files-chips";
 function TypingIndicator({ name }: { name: string }) {
   return (
     <div className="pending-body">
-      <span className="pending-pulse" aria-hidden="true" />
+      <span className="indicator-dot pulse-scale" aria-hidden="true" />
       <span className="pending-label">{`${name} is thinking…`}</span>
     </div>
   );

@@ -155,10 +155,10 @@ function StatusBadge({
     (statusBadge.tone === "err" ? " disconnected" : "") +
     (statusBadge.paused ? " paused" : "");
   const dotCls =
-    "status-dot " +
-    (statusBadge.tone === "ok" ? "ok" :
-     statusBadge.tone === "warn" ? "warn" :
-     statusBadge.tone === "err" ? "err" : "");
+    "indicator-dot sm " +
+    (statusBadge.tone === "ok" ? "--ok" :
+     statusBadge.tone === "warn" ? "--warn" :
+     statusBadge.tone === "err" ? "--err" : "--neutral");
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>

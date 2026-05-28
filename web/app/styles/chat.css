@@ -160,22 +160,8 @@
   text-overflow: ellipsis;
 }
 
-/* Connection-state dot inside the status badge. */
-.status-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  margin-right: 6px;
-  flex-shrink: 0;
-  background: var(--accent-blue);
-}
-.status-dot.ok {
-  background: var(--accent-green);
-  box-shadow: 0 0 4px rgba(152, 195, 121, 0.5);
-}
-.status-dot.warn { background: var(--accent-yellow); }
-.status-dot.err { background: var(--accent-red); }
+/* Connection-state dot inside .status-badge is now an
+   .indicator-dot — see the indicator-dot section below. */
 /* Double-class selector so this beats `.runtime-badge`'s green
    default (defined later in the file at L886). Without the extra
    `.runtime-badge` qualifier these rules and that block tie on
@@ -801,31 +787,8 @@
      already sits inside the bubble's natural padding. */
   padding-left: 0;
 }
-.pending-pulse {
-  /* Outer box width = ``●`` glyph advance width at 14px font
-     (~13px). The visual disc is painted by ::before, centred
-     inside the box. With this layout the pulse occupies the same
-     horizontal slot as a header ``●`` so the two line up by
-     layout alone — no margin-left hack. ::before owns the scale
-     animation so the outer box stays a stable 13×13 slot while
-     the disc breathes. See docs/design/indicator-dots.md for
-     the rest of the unification plan. */
-  display: inline-block;
-  position: relative;
-  width: 12.8px;
-  height: 12.8px;
-  vertical-align: middle;
-  color: var(--accent-blue, #6cb4ff);
-}
-.pending-pulse::before {
-  content: "";
-  position: absolute;
-  inset: 1.4px;
-  border-radius: 50%;
-  background: var(--accent-blue, #6cb4ff);
-  box-shadow: 0 0 0 0 currentColor;
-  animation: pendingPulse 1.4s ease-in-out infinite;
-}
+/* .pending-pulse retired — runtime / chat surfaces now use the
+   generic .indicator-dot system. See section below. */
 .pending-label {
   color: var(--text-muted);
   font-size: 13px;
@@ -833,17 +796,65 @@
   font-style: italic;
   opacity: 0.85;
 }
-@keyframes pendingPulse {
-  0%, 100% {
-    transform: scale(0.85);
-    box-shadow: 0 0 0 0 currentColor;
-    opacity: 0.9;
-  }
-  50% {
-    transform: scale(1.15);
-    box-shadow: 0 0 0 6px transparent;
-    opacity: 0.55;
-  }
+
+/* ===== indicator-dot — unified status dot system =====
+ * One CSS class for every "small coloured circle" indicator in
+ * the chat UI (Function call header dot, Running… pulse,
+ * provider connection status, attach-card status). The outer
+ * box is always 12.8x12.8 (matches the ``●`` glyph advance
+ * width at 14px font) so dots line up by layout — no per-call-
+ * site margin tweaks. ::before paints the visible disc and
+ * carries any breathing animation, keeping the layout slot
+ * stable. Modifier classes pick size, colour, animation.
+ *
+ * See docs/design/indicator-dots.md for the full plan.            */
+.indicator-dot {
+  display: inline-block;
+  position: relative;
+  width: 12.8px;
+  height: 12.8px;
+  vertical-align: middle;
+  color: var(--accent-blue, #6cb4ff);
+  flex-shrink: 0;
+}
+.indicator-dot::before {
+  content: "";
+  position: absolute;
+  inset: 1.4px;             /* default md = 10x10 disc inside 12.8x12.8 box */
+  border-radius: 50%;
+  /* Disc colour resolution order:
+       1. --dot-color set by a modifier (.--ok / .--warn / ...)
+       2. currentColor — lets the caller drive the dot by setting
+          ``color`` on a parent (matches how the old
+          .attach-card-status-dot inherited its parent pill's hue).
+     Outer ``.indicator-dot`` sets a sane ``color`` default so an
+     unscoped <span class="indicator-dot" /> still shows up. */
+  background: var(--dot-color, currentColor);
+}
+.indicator-dot.sm {
+  width: 10px;
+  height: 10px;
+}
+.indicator-dot.sm::before {
+  inset: 2px;                /* sm = 6x6 disc inside 10x10 box */
+}
+.indicator-dot.--ok      { --dot-color: var(--accent-green); }
+.indicator-dot.--warn    { --dot-color: var(--accent-yellow); }
+.indicator-dot.--err     { --dot-color: var(--accent-red); }
+.indicator-dot.--neutral { --dot-color: var(--accent-blue, #6cb4ff); }
+.indicator-dot.pulse-opacity::before {
+  animation: indicatorPulseOpacity 1.5s ease-in-out infinite;
+}
+.indicator-dot.pulse-scale::before {
+  animation: indicatorPulseScale 1.4s ease-in-out infinite;
+}
+@keyframes indicatorPulseOpacity {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+@keyframes indicatorPulseScale {
+  0%, 100% { transform: scale(0.85); opacity: 0.9; }
+  50%      { transform: scale(1.15); }
 }
 .typing-indicator .dot {
   width: 8px;
@@ -1535,13 +1546,6 @@
   padding: 1px 7px;
   border-radius: 999px;
   font-family: var(--font-sans);
-}
-.attach-card-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: attachPulse 1.2s ease-in-out infinite;
 }
 .attach-card-status-pending,
 .attach-card-status-queued {

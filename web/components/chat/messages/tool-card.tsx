@@ -29,9 +29,7 @@ function ToolNodeRow({ call }: { call: ChatToolCall }) {
     ) : status === "error" ? (
       <span style={{ color: "var(--accent-red)" }}>{"✗"}</span>
     ) : (
-      <span className="pulse" style={{ color: "var(--accent-blue)" }}>
-        {"●"}
-      </span>
+      <span className="indicator-dot pulse-opacity" />
     );
 
   // Build a 1-line result preview from the raw result string.
@@ -116,9 +114,7 @@ function ToolInlineTree({ call }: { call: ChatToolCall }) {
       >
         <span>
           {running ? (
-            <span className="pulse" style={{ color: "var(--accent-blue)" }}>
-              {"●"}
-            </span>
+            <span className="indicator-dot pulse-opacity" />
           ) : errored ? (
             <span style={{ color: "var(--accent-red)" }}>{"✗"}</span>
           ) : (

@@ -146,7 +146,7 @@ function PendingReplyIndicator() {
         <div className="message-sender">{profile.name}</div>
       </div>
       <div className="chat-stream-body pending-body">
-        <span className="pending-pulse" aria-hidden="true" />
+        <span className="indicator-dot pulse-scale" aria-hidden="true" />
         <span className="pending-label">{`${profile.name} is thinking…`}</span>
       </div>
     </div>

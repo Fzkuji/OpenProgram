@@ -106,9 +106,7 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
     ) : displayStatus === "paused" ? (
       <span style={{ color: "var(--accent-yellow)" }}>{"❙❙"}</span>
     ) : (
-      <span className="pulse" style={{ color: "var(--accent-blue)" }}>
-        {"●"}
-      </span>
+      <span className="indicator-dot pulse-opacity" />
     );
 
   let dur = "";
@@ -340,9 +338,7 @@ export function ExecutionDag({
       >
         <span>
           {running ? (
-            <span className="pulse" style={{ color: "var(--accent-blue)" }}>
-              {"●"}
-            </span>
+            <span className="indicator-dot pulse-opacity" />
           ) : (
             <span className="inline-tree-script" title="function">{"𝓕"}</span>
           )}

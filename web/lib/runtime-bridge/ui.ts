@@ -109,9 +109,10 @@ function renderStatusBadge(
 export function setStatusDotHealth(state: string): void {
   const badge = document.getElementById("statusBadge");
   if (!badge) return;
-  const dot = badge.querySelector(".status-dot");
+  const dot = badge.querySelector(".indicator-dot");
   if (!dot) return;
-  dot.className = "status-dot" + (state ? " " + state : "");
+  const mod = state === "ok" ? "--ok" : state === "warn" ? "--warn" : state === "err" ? "--err" : "--neutral";
+  dot.className = "indicator-dot sm " + mod;
 }
 
 export function updateSendBtn(): void {
@@ -130,13 +131,13 @@ export function updateSendBtn(): void {
     sendBtn.title = "Resume";
     sendBtn.className = "send-btn paused-state";
     stopBtn.style.display = "flex";
-    if (badge) renderStatusBadge(badge, "paused", "status-badge paused", "status-dot warn");
+    if (badge) renderStatusBadge(badge, "paused", "status-badge paused", "indicator-dot sm --warn");
   } else {
     sendBtn.innerHTML = SVG_PAUSE;
     sendBtn.title = "Pause";
     sendBtn.className = "send-btn";
     stopBtn.style.display = "none";
-    if (badge) renderStatusBadge(badge, "running", "status-badge", "status-dot ok");
+    if (badge) renderStatusBadge(badge, "running", "status-badge", "indicator-dot sm --ok");
   }
 }
 
@@ -148,7 +149,7 @@ export function updateStatus(status: string, source?: string): void {
   const badge = document.getElementById("statusBadge");
   if (!badge) return;
   const connected = status === "connected";
-  const dotKlass = connected ? "status-dot ok" : "status-dot err";
+  const dotKlass = connected ? "indicator-dot sm --ok" : "indicator-dot sm --err";
   const text = connected ? source || "Local" : "disconnected";
   renderStatusBadge(
     badge,

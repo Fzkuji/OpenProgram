@@ -509,11 +509,6 @@ button, input, select, textarea, optgroup {
 @keyframes attachEdgeFlow {
   to { stroke-dashoffset: -16; }
 }
-/* Pulse for attach-card running-status dot. */
-@keyframes attachPulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.35; }
-}
 .history-edge.attach-edge {
   animation: attachEdgeFlow 0.9s linear infinite;
 }
