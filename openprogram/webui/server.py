@@ -602,8 +602,29 @@ def _broadcast(msg: str):
 
 
 def _log(text: str):
-    """Print to terminal AND broadcast to frontend as a visible log."""
-    print(text)
+    """Webui server log line.
+
+    Stdout print is gated on "are we actually running as the webui
+    server right now?" — when ``start_server`` has booted, the
+    ``_server_thread`` global is alive, and stdout is the server's
+    terminal where logs belong. Without that guard, every CLI REPL
+    call that just imports ``_runtime_management`` (which calls this
+    via ``_log``) would pollute the chat transcript with "[probe] xxx
+    unavailable", "[restore] ...", etc.
+
+    Broadcast to ws clients always runs — when no clients are
+    connected ``_broadcast`` is a no-op anyway.
+
+    ``OPENPROGRAM_DEBUG_RUNTIME=1`` mirrors lines to stderr regardless
+    of mode for devs tracing CLI startup.
+    """
+    if _server_thread is not None and _server_thread.is_alive():
+        print(text)
+    else:
+        import os as _os
+        if _os.environ.get("OPENPROGRAM_DEBUG_RUNTIME", "").strip() in ("1", "true", "yes"):
+            import sys as _sys
+            print(text, file=_sys.stderr, flush=True)
     try:
         msg = json.dumps({"type": "server_log", "text": text}, default=str)
         _broadcast(msg)

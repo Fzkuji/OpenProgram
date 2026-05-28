@@ -36,11 +36,51 @@ _available_providers: dict[str, dict] = {}
 
 
 def _log(text: str) -> None:
+    """Log line — surfaces to webui clients and writes to a log file.
+
+    Earlier versions just ``print(text)`` to stdout as a fallback when
+    the webui ``_log`` import failed. That polluted CLI chat with
+    "[probe] xxx unavailable" lines on every startup. Now: broadcast
+    via webui when available, always write to
+    ``~/.openprogram/logs/runtime.log``, only mirror to stderr when
+    ``OPENPROGRAM_DEBUG_RUNTIME=1``. Per-call sites that DO want to
+    surface a one-liner to the user (e.g. "no provider available")
+    use ``_user_log`` instead.
+    """
     try:
         from openprogram.webui.server import _log as _srv_log
         _srv_log(text)
     except Exception:
-        print(text)
+        pass
+    try:
+        from pathlib import Path as _Path
+        log_dir = _Path.home() / ".openprogram" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        with open(log_dir / "runtime.log", "a", encoding="utf-8") as f:
+            import time as _time
+            f.write(f"{_time.strftime('%Y-%m-%d %H:%M:%S')} {text}\n")
+    except OSError:
+        pass
+    import os as _os
+    if _os.environ.get("OPENPROGRAM_DEBUG_RUNTIME", "").strip() in ("1", "true", "yes"):
+        import sys as _sys
+        print(text, file=_sys.stderr, flush=True)
+
+
+def _user_log(text: str) -> None:
+    """Important event that should surface to the user.
+
+    Used sparingly — e.g. "no provider available, run `openprogram
+    providers setup`". Goes through the same broadcast + file-log path
+    as ``_log`` plus a stderr print so the user sees it even when
+    running bare ``openprogram`` without other diagnostic output.
+    """
+    _log(text)
+    try:
+        import sys as _sys
+        print(text, file=_sys.stderr, flush=True)
+    except Exception:
+        pass
 
 
 def _broadcast(msg: str) -> None:
@@ -297,9 +337,17 @@ def _init_providers():
             break
 
         if provider_name:
+            # Quiet — banner will show the active provider; users don't
+            # need a separate "detect: OK" line above it. Diagnostic
+            # path still logs to file via ``_log``.
             _log(f"[detect] {provider_name} OK")
         else:
-            _log("[detect] No provider available — server will start without LLM support")
+            # No provider at all is something the user must see.
+            _user_log(
+                "openprogram: no LLM provider configured.\n"
+                "  Run `openprogram providers setup` to connect one,\n"
+                "  or `openprogram providers login <name>` for a specific provider."
+            )
 
         _chat_provider = provider_name
         _chat_model = rt.model if rt else None

@@ -3,16 +3,59 @@ from __future__ import annotations
 
 
 def _get_chat_runtime():
-    """Return (provider_name, runtime) for the configured chat agent.
+    """Return (provider_name, runtime) for the active chat agent.
 
-    Also applies the user's stored default thinking effort so
-    ``rt.exec()`` picks it up without callers having to pass it.
+    Resolution order (first match wins):
+
+    1. The default agent's pinned model (``agent.model.provider`` /
+       ``agent.model.id`` from ``agents/<id>/agent.json``). If the
+       user spent time picking a provider in settings, that's the
+       contract — honour it. Earlier versions of this function went
+       straight to ``_chat_runtime`` (auto-detect default), which
+       silently overrode the agent setting whenever a higher-priority
+       provider was probeable (e.g. claude-code happened to be
+       configured, so openai-codex agents got hijacked to claude-code).
+    2. Global auto-detected default from ``_init_providers``.
+
+    Also applies the user's stored default thinking effort.
     """
     from openprogram.webui import _runtime_management as rm
     rm._init_providers()
-    rt = rm._chat_runtime
+
+    # Try agent-pinned provider first.
+    agent_provider = None
+    agent_model = None
+    try:
+        from openprogram.agents import manager as _A
+        spec = _A.get_default()
+        if spec is not None and spec.model:
+            agent_provider = (spec.model.provider or "").strip() or None
+            agent_model = (spec.model.id or "").strip() or None
+    except Exception:
+        spec = None
+
+    rt = None
+    provider_name = None
+    if agent_provider:
+        try:
+            rt = rm._create_runtime_for_visualizer(agent_provider, model=agent_model)
+            provider_name = agent_provider
+        except Exception:
+            # Agent's pinned provider couldn't be built (auth missing,
+            # daemon down, etc.). Fall through to auto-detect default
+            # so the user still gets a working REPL instead of a
+            # hard fail — but the next /agent or /model prompt should
+            # make it visible that the pin didn't take.
+            rt = None
+            provider_name = None
+
+    if rt is None:
+        rt = rm._chat_runtime
+        provider_name = rm._chat_provider
+
     if rt is None:
         return None, None
+
     try:
         from openprogram.setup import read_agent_prefs
         effort = read_agent_prefs().get("thinking_effort")
@@ -20,7 +63,7 @@ def _get_chat_runtime():
             rt.thinking_level = effort
     except Exception:
         pass
-    return rm._chat_provider, rt
+    return provider_name, rt
 
 
 def _reset_provider_cache() -> None:
