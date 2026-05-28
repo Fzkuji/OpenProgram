@@ -9,9 +9,12 @@
  * global rules are gone — every consumer must reach for these
  * constants instead.
  *
- * Pixel values are explicit (`h-[32px]`, `gap-[12px]`, `px-[8px]`,
- * `rounded-[6px]`) because this project's `html { font-size: 14px }`
- * makes Tailwind's rem-based scale 0.875× off.
+ * Pixel-y values are explicit (`gap-[12px]`, `px-[8px]`) because
+ * this project's `html { font-size: 14px }` makes Tailwind's
+ * rem-based scale 0.875× off. Height + corner come from the LIST
+ * set in docs/design/surface-system.md
+ * (--ui-list-h, --ui-list-radius) so future size adjustments
+ * happen in one place.
  */
 
 /** Header button — toggle / collapse the rail. 32×32 round-corner. */
@@ -21,8 +24,8 @@ export const sidebarToggleClass = [
   // the React-rendered DOM. Keep the descriptive name + the Tailwind
   // utilities side by side.
   "sidebar-toggle",
-  "flex size-[32px] shrink-0 cursor-pointer items-center justify-center",
-  "rounded-[6px] border-none bg-transparent p-0",
+  "flex h-[var(--ui-list-h)] w-[var(--ui-list-h)] shrink-0 cursor-pointer items-center justify-center",
+  "rounded-[var(--ui-list-radius)] border-none bg-transparent p-0",
   "text-nav-color",
   "transition-colors duration-150 ease-out",
   "hover:bg-bg-hover hover:text-nav-color-hover",
@@ -41,8 +44,8 @@ export const sidebarNavItemClass = [
   // state. Without this class string the rule misses and the
   // button renders 31×32 with the icon off-centered to the right.
   "sidebar-nav-item",
-  "group inline-flex h-[32px] w-full shrink-0 cursor-pointer",
-  "items-center gap-[12px] rounded-[6px] px-[8px] py-[6px]",
+  "group inline-flex h-[var(--ui-list-h)] w-full shrink-0 cursor-pointer",
+  "items-center gap-[12px] rounded-[var(--ui-list-radius)] px-[8px] py-[6px]",
   "text-fs-base font-normal text-nav-color no-underline",
   "transition-colors duration-150 ease-out",
   "hover:bg-bg-hover hover:text-nav-color-hover",

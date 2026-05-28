@@ -17,7 +17,7 @@ export const CHECK = "shrink-0 text-[var(--accent-blue)]";
 /** A selectable menu row — `active` swaps the resting / hover colours. */
 export function itemCls(active: boolean): string {
   return (
-    "flex min-h-[32px] cursor-pointer items-center gap-[8px] rounded-[8px] " +
+    "flex min-h-[var(--ui-list-h)] cursor-pointer items-center gap-[8px] rounded-[var(--ui-list-radius)] " +
     "px-[8px] py-[6px] text-[14px] leading-[20px] transition-colors duration-75 " +
     (active
       ? "bg-bg-hover text-text-bright"

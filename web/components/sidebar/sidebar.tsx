@@ -230,7 +230,7 @@ export function Sidebar() {
       <div className="flex h-[48px] shrink-0 items-center justify-between p-[8px] box-border">
         <div
           className={
-            "flex h-[32px] min-w-0 flex-1 items-center overflow-hidden " +
+            "flex h-[var(--ui-list-h)] min-w-0 flex-1 items-center overflow-hidden " +
             "[transition:opacity_0.15s_ease,padding-left_0.3s_ease] " +
             (open ? "opacity-100 pl-[8px]" : "opacity-0 pl-0")
           }
@@ -295,7 +295,7 @@ export function Sidebar() {
           <span
             className={
               sidebarNavActionClass +
-              " inline-flex size-[24px] items-center justify-center rounded-[6px]" +
+              " inline-flex size-[24px] items-center justify-center rounded-[var(--ui-list-radius)]" +
               " [transition:background_0.15s,color_0.15s,opacity_0.15s]" +
               " hover:bg-bg-hover hover:text-text-bright hover:!opacity-100" +
               " active:bg-bg-tertiary" +
