@@ -3,15 +3,14 @@
 /**
  * Avatar — single component for every "who is this" glyph in the app.
  *
- * Replaces the historical ``<span style={{ background: color }}>{initial}</span>``
- * pattern that lived in user-menu-footer, the chat assistant / user
- * bubbles, and the settings preview. Three render modes:
+ * Replaces the historical ``<span style={{ background: color }}>{initial}
+ * </span>`` pattern that lived in user-menu-footer, the chat bubbles,
+ * and the settings preview. Three render modes:
  *
- *   * ``dicebear`` (default) — generative SVG from @dicebear/core.
- *     One npm package per style; we pre-import five so the bundle
- *     statically knows what to ship. Seeded by ``seed`` (caller
- *     usually passes the agent name) so the same identity always
- *     gets the same glyph across reloads / pages.
+ *   * ``dicebear`` (default) — generative SVG via @dicebear/core.
+ *     Style + seed picked from ``config``; defaults are ``shapes`` +
+ *     the display name so old profiles upgrade with no settings
+ *     change. The SVG is memoised on ``(style, seed, size)``.
  *
  *   * ``upload`` — render a user-supplied file via ``<img>``. PNG /
  *     JPG / SVG / GIF / WebP / APNG all just work because the browser
@@ -19,59 +18,23 @@
  *
  *   * ``letter`` — the legacy coloured-circle-with-initial. Kept as
  *     an explicit choice for users who prefer minimal, and as the
- *     fallback shape when no name is available yet.
+ *     fallback shape when callers ask for it directly.
  *
  * The component is theme-agnostic and size-agnostic. Pass ``size`` in
  * pixels and you get back a perfectly circular avatar at that size,
  * regardless of the mode.
+ *
+ * Related modules:
+ *   * ``./types``    — shape of ``AvatarConfig`` + the kind / style unions
+ *   * ``./styles``   — DiceBear style registry (add a style there)
+ *   * ``./AvatarPicker`` — the settings-page UI that mutates ``AvatarConfig``
  */
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { createAvatar } from "@dicebear/core";
-import * as shapes from "@dicebear/shapes";
-import * as notionists from "@dicebear/notionists";
-import * as lorelei from "@dicebear/lorelei";
-import * as bottts from "@dicebear/bottts";
-import * as initials from "@dicebear/initials";
 
-// Hand-picked subset of DiceBear's 35+ styles — the ones that fit a
-// Claude-style warm neutral UI. ``shapes`` is the default because it
-// reads as abstract geometric (similar to claude.ai's own avatars).
-const STYLES = {
-  shapes,
-  notionists,
-  lorelei,
-  bottts,
-  initials,
-} as const;
-
-export type AvatarKind = "dicebear" | "upload" | "letter";
-export type AvatarStyle = keyof typeof STYLES;
-
-export const AVATAR_STYLES: { id: AvatarStyle; label: string; hint: string }[] = [
-  { id: "shapes",     label: "Shapes",     hint: "Abstract geometric (default)" },
-  { id: "notionists", label: "Notionists", hint: "Hand-drawn characters" },
-  { id: "lorelei",    label: "Lorelei",    hint: "Soft cartoon faces" },
-  { id: "bottts",     label: "Bottts",     hint: "Robot avatars" },
-  { id: "initials",   label: "Initials",   hint: "Letter on coloured chip" },
-];
-
-export interface AvatarConfig {
-  /** Render mode. Defaults to ``"dicebear"``. */
-  kind?: AvatarKind;
-  /** DiceBear style key. Used when ``kind === "dicebear"``. */
-  style?: AvatarStyle;
-  /** Seed string for DiceBear — same seed = same glyph. Falls back
-   *  to ``name`` when omitted. */
-  seed?: string;
-  /** Image URL / data URI / file path for ``kind === "upload"``. */
-  file?: string;
-  /** One-or-two-char fallback. Used by ``kind === "letter"``, or
-   *  silently when DiceBear fails to render. */
-  letter?: string;
-  /** Background colour for letter mode (CSS colour). */
-  bg?: string;
-}
+import { STYLES } from "./styles";
+import type { AvatarConfig, AvatarKind, AvatarStyle } from "./types";
 
 export interface AvatarProps {
   /** Pixel diameter. The component renders a perfect circle at this
@@ -90,7 +53,9 @@ export interface AvatarProps {
   title?: string;
 }
 
-/** Best-effort one-char extraction from a display name. */
+/** Best-effort one-char extraction from a display name. Handles
+ *  CJK so a name like "助手" still produces a sensible letter chip
+ *  in fallback mode. */
 function _initialFor(name: string): string {
   for (const ch of name) {
     if (/[a-zA-Z0-9一-鿿]/.test(ch)) return ch.toUpperCase();
@@ -109,9 +74,9 @@ export function Avatar({
   const style: AvatarStyle = config?.style ?? "shapes";
   const seed = config?.seed ?? name ?? "default";
 
-  // Pre-render the DiceBear SVG even when we're in upload/letter mode
-  // so toggling modes in settings doesn't lose its memo cache. The
-  // SVG string is ~1KB, cheap to keep around.
+  // Pre-render the DiceBear SVG even when we're in upload / letter
+  // mode so toggling modes in settings doesn't lose its memo cache.
+  // The SVG string is ~1 KB, cheap to keep around.
   const svg = useMemo(() => {
     try {
       // The styles export as namespace objects; the createAvatar typing
@@ -127,7 +92,7 @@ export function Avatar({
     }
   }, [style, seed, size]);
 
-  const sharedStyle: React.CSSProperties = {
+  const sharedStyle: CSSProperties = {
     width: size,
     height: size,
     borderRadius: 9999,
@@ -150,8 +115,7 @@ export function Avatar({
   }
 
   if (kind === "letter") {
-    const letter =
-      (config?.letter || _initialFor(name)).slice(0, 2);
+    const letter = (config?.letter || _initialFor(name)).slice(0, 2);
     return (
       <span
         title={title}

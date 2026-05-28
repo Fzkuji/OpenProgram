@@ -18,7 +18,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useAgentProfile } from "@/lib/agent-style";
 import { useTranslation } from "@/lib/i18n";
-import { Avatar } from "@/components/avatar/Avatar";
+import { Avatar } from "@/components/avatar";
 import styles from "./user-menu-footer.module.css";
 
 export function UserMenuFooter() {

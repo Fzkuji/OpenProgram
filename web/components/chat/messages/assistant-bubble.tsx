@@ -16,7 +16,7 @@ import {
   useAgentProfile,
 } from "@/lib/agent-style";
 import { useTranslation } from "@/lib/i18n";
-import { Avatar } from "@/components/avatar/Avatar";
+import { Avatar } from "@/components/avatar";
 
 import { MessageActions } from "./message-actions";
 import { renderMarkdown, useMarkdownReady } from "./markdown";

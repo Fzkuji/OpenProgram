@@ -31,17 +31,12 @@ function _hash(s: string): number {
 
 /* ---- Default-profile overrides --------------------------------- */
 
-export interface AgentAvatarConfig {
-  /** Render mode the Avatar component should use. ``undefined`` (the
-   *  default for old profiles in localStorage) is treated as
-   *  ``"dicebear"`` with style ``shapes`` so existing users get the
-   *  visual upgrade without touching their settings. */
-  kind?: "dicebear" | "upload" | "letter";
-  style?:
-    | "shapes" | "notionists" | "lorelei" | "bottts" | "initials";
-  seed?: string;
-  file?: string;
-}
+// AgentAvatarConfig lives in the avatar feature module — see
+// ``components/avatar/types.ts``. Re-export it from here so existing
+// importers of ``lib/agent-style`` keep compiling, but the canonical
+// definition stays next to the rest of the avatar code.
+import type { AgentAvatarConfig } from "@/components/avatar/types";
+export type { AgentAvatarConfig };
 
 export interface AgentProfilePrefs {
   name: string;

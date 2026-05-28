@@ -23,7 +23,7 @@ import {
 } from "@/lib/session-store";
 
 import { agentInitial, useAgentProfile } from "@/lib/agent-style";
-import { Avatar } from "@/components/avatar/Avatar";
+import { Avatar } from "@/components/avatar";
 
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";

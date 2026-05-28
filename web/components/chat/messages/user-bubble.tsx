@@ -13,7 +13,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import { Avatar } from "@/components/avatar/Avatar";
+import { Avatar } from "@/components/avatar";
 
 import { MessageActions } from "./message-actions";
 
