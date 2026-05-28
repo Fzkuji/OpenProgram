@@ -97,68 +97,96 @@ def _section_text(label: str, items: list[str], count: int, accent: str,
 
 def _print_banner(console, provider: str, model: str,
                   agent_id: str = "", session_id: str = "") -> None:
-    """Concise welcome banner.
+    """Welcome banner: session metadata on top, capability inventory below.
 
-    Earlier versions splashed a two-row 18-line panel listing 50 tool
-    names, 9 function names, 1 skill name, etc. — useful as an
-    inventory dump, but TMI for a user who just wants to chat. The
-    detailed inventory is still one slash-command away (``/tools``,
-    ``/skills``, ``/functions``, ``/apps``); the banner now shows
-    only what the user actually needs at the prompt: which model is
-    active, which agent owns the session, and where to look for
-    everything else.
+    Layout:
+
+      ┌──── OpenProgram ────────────────────────┐
+      │                                         │
+      │    Model: openai-codex / gpt-5.5        │
+      │    Agent: main                          │
+      │  Session: local_xxx                     │
+      │                                         │
+      │  Tools (50)            Skills (1)       │
+      │  tool_search, ...      agentic-programming
+      │                                         │
+      │  Functions (9)         Applications (0) │
+      │  ask_user, ...         no applications  │
+      │                                         │
+      │  50 tools · 1 skills · 9 functions ·    │
+      │  /help for commands                     │
+      └─────────────────────────────────────────┘
+
+    The detailed inventory rows are preserved (the user explicitly
+    asked for them — they're how you discover what tools / skills /
+    functions are loaded without leaving the prompt). The Model /
+    Agent / Session header rows are added on top because the user
+    needs to know which agent owns the session and which model
+    backs it — that info used to only appear in the panel title and
+    was easy to miss.
     """
     from rich.panel import Panel
     from rich.table import Table
     from rich.text import Text
     from rich import box
 
-    # The model id is sometimes returned with the provider prefix
-    # already baked in (``openai-codex:gpt-5.5``). Strip it so the
-    # banner doesn't render the provider twice.
+    # Strip the redundant ``provider:`` prefix from a model id like
+    # ``openai-codex:gpt-5.5`` so the banner doesn't say
+    # ``openai-codex / openai-codex:gpt-5.5``.
     pretty_model = model
     if isinstance(model, str) and ":" in model:
         head, _, tail = model.partition(":")
         if head == provider:
             pretty_model = tail
 
-    # Counts only — names are now available via slash commands.
-    tool_count, _ = _tool_inventory()
-    skill_count, _ = _skill_inventory()
-    fn_count, _ = _function_inventory()
-    app_count, _ = _application_inventory()
+    tool_count, tool_names = _tool_inventory()
+    skill_count, skill_items = _skill_inventory()
+    fn_count, fn_names = _function_inventory()
+    app_count, app_names = _application_inventory()
 
-    body = Table.grid(padding=(0, 1))
-    body.add_column(style="dim", justify="right")
-    body.add_column()
-
-    body.add_row("Model:", Text(f"{provider} / {pretty_model}", style="bold cyan"))
+    # --- Header rows: Model / Agent / Session ---------------------
+    header = Table.grid(padding=(0, 1))
+    header.add_column(style="dim", justify="right")
+    header.add_column()
+    header.add_row("Model:", Text(f"{provider} / {pretty_model}", style="bold cyan"))
     if agent_id:
-        body.add_row("Agent:", Text(agent_id, style="green"))
+        header.add_row("Agent:", Text(agent_id, style="green"))
     if session_id:
-        body.add_row("Session:", Text(session_id, style="dim"))
+        header.add_row("Session:", Text(session_id, style="dim"))
 
-    inv = Text()
-    inv.append(f"{tool_count}", style="cyan")
-    inv.append(" tools  ", style="dim")
-    inv.append(f"{skill_count}", style="magenta")
-    inv.append(" skills  ", style="dim")
-    inv.append(f"{fn_count}", style="green")
-    inv.append(" functions", style="dim")
-    if app_count:
-        inv.append("  ")
-        inv.append(f"{app_count}", style="yellow")
-        inv.append(" apps", style="dim")
-    body.add_row("Loaded:", inv)
+    # --- Inventory grid (Tools/Skills then Functions/Applications) ---
+    grid = Table.grid(padding=(0, 2), expand=True)
+    grid.add_column(ratio=1)
+    grid.add_column(ratio=1)
 
-    hint = Text()
-    hint.append("Type your message — or ", style="dim")
-    hint.append("/help", style="yellow bold")
-    hint.append(" for commands.", style="dim")
+    grid.add_row(
+        _section_text("Tools", tool_names, tool_count, "cyan"),
+        _section_text("Skills", [n for n, _ in skill_items], skill_count,
+                      "magenta", empty_msg="no skills loaded"),
+    )
+    grid.add_row(Text(""), Text(""))  # spacer
+    grid.add_row(
+        _section_text("Functions", fn_names, fn_count, "green",
+                      empty_msg="no functions registered"),
+        _section_text("Applications", app_names, app_count, "yellow",
+                      empty_msg="no applications registered"),
+    )
+
+    # --- Footer: totals + /help hint -----------------------------
+    footer = Text()
+    footer.append(f"{tool_count} tools", style="cyan")
+    footer.append(" · ")
+    footer.append(f"{skill_count} skills", style="magenta")
+    footer.append(" · ")
+    footer.append(f"{fn_count} functions", style="green")
+    footer.append(" · ")
+    footer.append(f"{app_count} apps", style="yellow")
+    footer.append(" · /help for commands", style="dim")
 
     panel_body = Table.grid(padding=(1, 0))
-    panel_body.add_row(body)
-    panel_body.add_row(hint)
+    panel_body.add_row(header)
+    panel_body.add_row(grid)
+    panel_body.add_row(footer)
 
     console.print()
     console.print(Panel(
