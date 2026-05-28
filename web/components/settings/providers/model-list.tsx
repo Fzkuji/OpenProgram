@@ -260,23 +260,52 @@ function ModelRow({
 function ModelDetailsPanel({ model }: { model: Model }) {
   const { text } = useTranslation();
 
+  // ── Color tokens used throughout the panel ────────────────────────
+  // The first pass of this component reached for ``--text-muted``
+  // everywhere, which the dark theme resolves to ``#6b6a63`` —
+  // basically invisible against ``--bg-secondary``. Pin the role of
+  // each text colour explicitly: label = secondary (readable), value
+  // = primary (clear), heading = bright, "absent" = muted (correctly
+  // dim by design), yes-checks = accent-green, no-marks = muted.
+  const labelStyle: React.CSSProperties = {
+    color: "var(--text-secondary)",
+    fontSize: 12,
+    fontWeight: 500,
+  };
+  const valueStyle: React.CSSProperties = {
+    color: "var(--text-primary)",
+    fontSize: 12,
+  };
+  const valueMutedStyle: React.CSSProperties = {
+    color: "var(--text-muted)",
+    fontSize: 12,
+  };
+
   const fact = (label: string, value: React.ReactNode) => (
-    <div style={{ display: "flex", gap: 8, fontSize: 12, lineHeight: 1.6 }}>
-      <span style={{ minWidth: 130, color: "var(--text-muted)" }}>{label}</span>
-      <span>{value}</span>
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "150px 1fr",
+      gap: 12,
+      padding: "3px 0",
+      borderBottom: "1px dotted var(--border)",
+    }}>
+      <span style={labelStyle}>{label}</span>
+      <span style={valueStyle}>{value}</span>
     </div>
   );
 
   const boolMark = (v?: boolean) =>
     v == null
-      ? <span style={{ color: "var(--text-muted)" }}>—</span>
+      ? <span style={valueMutedStyle}>—</span>
       : v
-        ? <span style={{ color: "var(--accent, #4ade80)" }}>✓ {text("Yes", "是")}</span>
-        : <span style={{ color: "var(--text-muted)" }}>— {text("No", "否")}</span>;
+        ? <span style={{ color: "var(--accent-green)", fontWeight: 500 }}>
+            ✓ {text("Yes", "是")}
+          </span>
+        : <span style={valueMutedStyle}>— {text("No", "否")}</span>;
 
-  // Section: capabilities ---------------------------------------------
+  // ── Section blocks ────────────────────────────────────────────────
   const caps = (
-    <div>
+    <>
       {fact(text("Vision", "视觉"), boolMark(model.vision))}
       {fact(text("Audio", "音频"), boolMark(model.audio))}
       {fact(text("Tool calls", "工具调用"), boolMark(model.tools))}
@@ -285,88 +314,124 @@ function ModelDetailsPanel({ model }: { model: Model }) {
       {fact(text("File attachments", "文件附件"), boolMark(model.attachment))}
       {model.temperature_param != null &&
         fact(text("Temperature param", "Temperature 参数"), boolMark(model.temperature_param))}
-    </div>
+    </>
   );
 
-  // Section: modalities + limits ---------------------------------------
   const limitsBlock = (
-    <div>
+    <>
       {model.input_modalities &&
-        fact(text("Input modalities", "输入模态"), model.input_modalities.join(", "))}
+        fact(text("Input modalities", "输入模态"),
+          <span style={{ fontFamily: "var(--font-mono, monospace)" }}>
+            {model.input_modalities.join(" · ")}
+          </span>)}
       {model.output_modalities &&
-        fact(text("Output modalities", "输出模态"), model.output_modalities.join(", "))}
+        fact(text("Output modalities", "输出模态"),
+          <span style={{ fontFamily: "var(--font-mono, monospace)" }}>
+            {model.output_modalities.join(" · ")}
+          </span>)}
       {model.context_window != null &&
         fact(text("Context window", "上下文窗口"),
-          `${model.context_window.toLocaleString()} tokens`)}
+          <span><strong style={{ color: "var(--text-bright)" }}>
+            {model.context_window.toLocaleString()}
+          </strong> tokens</span>)}
       {model.input_limit != null &&
         fact(text("Single-call input cap", "单次输入上限"),
-          `${model.input_limit.toLocaleString()} tokens`)}
+          <span>{model.input_limit.toLocaleString()} tokens</span>)}
       {model.max_tokens != null && model.max_tokens > 0 &&
         fact(text("Output cap", "输出上限"),
-          `${model.max_tokens.toLocaleString()} tokens`)}
-    </div>
+          <span><strong style={{ color: "var(--text-bright)" }}>
+            {model.max_tokens.toLocaleString()}
+          </strong> tokens</span>)}
+    </>
   );
 
-  // Section: pricing ---------------------------------------------------
   const hasCost =
     model.input_cost != null ||
     model.output_cost != null ||
     model.cache_read_cost != null ||
     model.cache_write_cost != null;
   const pricing = hasCost ? (
-    <div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2 }}>
+    <>
+      <div style={{
+        gridColumn: "1 / -1",
+        fontSize: 10,
+        color: "var(--text-muted)",
+        textAlign: "right",
+        padding: "2px 0 4px",
+      }}>
         {text("USD per 1M tokens", "美元 / 1M tokens")}
       </div>
       {model.input_cost != null && fact(text("Input", "输入"), formatPrice(model.input_cost))}
       {model.output_cost != null && fact(text("Output", "输出"), formatPrice(model.output_cost))}
       {model.cache_read_cost != null &&
-        fact(text("Cache hit (read)", "缓存命中 (读)"), formatPrice(model.cache_read_cost))}
+        fact(text("Cache hit (read)", "缓存命中 (读)"),
+          <span style={{ color: "var(--accent-green)" }}>
+            {formatPrice(model.cache_read_cost)}
+          </span>)}
       {model.cache_write_cost != null &&
         fact(text("Cache write", "缓存写入"), formatPrice(model.cache_write_cost))}
-    </div>
+    </>
   ) : null;
 
-  // Section: metadata --------------------------------------------------
   const metaBlock = (
-    <div>
-      {model.family && fact(text("Family", "系列"), model.family)}
+    <>
+      {model.family && fact(text("Family", "系列"),
+        <code style={{
+          background: "var(--bg-tertiary)",
+          padding: "1px 6px",
+          borderRadius: 3,
+          color: "var(--text-bright)",
+          fontSize: 11,
+        }}>{model.family}</code>)}
       {model.knowledge_cutoff && fact(text("Knowledge cutoff", "训练截止"), model.knowledge_cutoff)}
       {model.release_date && fact(text("Released", "发布日期"), model.release_date)}
       {model.last_updated && model.last_updated !== model.release_date &&
         fact(text("Updated", "更新日期"), model.last_updated)}
       {model.open_weights != null &&
-        fact(
-          text("Open weights", "开放权重"),
+        fact(text("Open weights", "开放权重"),
           model.open_weights
-            ? <span><Unlock size={11} style={{ display: "inline", marginRight: 4 }} />{text("Yes", "是")}</span>
-            : <span><Lock size={11} style={{ display: "inline", marginRight: 4 }} />{text("No", "否")}</span>,
-        )}
-      {model.api && fact("API", <code style={{ fontSize: 11 }}>{model.api}</code>)}
-    </div>
+            ? <span style={{ color: "var(--accent-green)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Unlock size={11} strokeWidth={2} />{text("Yes", "是")}
+              </span>
+            : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Lock size={11} strokeWidth={2} />{text("No", "否")}
+              </span>)}
+      {model.api && fact("API",
+        <code style={{
+          background: "var(--bg-tertiary)",
+          padding: "1px 6px",
+          borderRadius: 3,
+          color: "var(--text-bright)",
+          fontSize: 11,
+        }}>{model.api}</code>)}
+    </>
   );
 
+  // ── Section heading ───────────────────────────────────────────────
   const heading = (s: string) => (
     <div style={{
-      fontSize: 11,
-      fontWeight: 600,
-      letterSpacing: "0.04em",
+      fontSize: 10,
+      fontWeight: 700,
+      letterSpacing: "0.08em",
       textTransform: "uppercase",
-      color: "var(--text-muted)",
-      marginBottom: 4,
-      marginTop: 8,
+      color: "var(--text-bright)",
+      padding: "12px 0 6px",
+      marginTop: 4,
+      borderBottom: "1px solid var(--border)",
     }}>{s}</div>
   );
 
   return (
     <div
       style={{
-        marginTop: 8,
-        marginLeft: 38,                   // align with the row's name column
-        padding: "8px 12px 12px",
-        background: "var(--bg-secondary)",
-        borderLeft: "2px solid var(--border)",
-        borderRadius: "0 6px 6px 0",
+        marginTop: 10,
+        marginLeft: 36,
+        marginRight: 12,
+        padding: "4px 16px 16px",
+        background: "var(--bg-tertiary)",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
       }}
     >
       {heading(text("Capabilities", "能力"))}
