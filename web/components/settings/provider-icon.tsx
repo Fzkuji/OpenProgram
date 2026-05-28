@@ -1,37 +1,36 @@
 "use client";
 
-/** Provider icon with three-tier fallback.
+/** Provider icon with three-tier LobeHub fallback.
  *
- *   1. **LobeHub colour SVG** for the providers we've explicitly
- *      mapped in ``SLUGS`` — these are the major branded ones
- *      (OpenAI, Anthropic, DeepSeek, Gemini, …) where the
- *      hand-curated colour glyph reads cleaner than models.dev's.
- *   2. **LobeHub mono SVG** for the same set, if colour is missing.
- *   3. **models.dev logo** for everything else — covers the 119
- *      community-imported providers (Fireworks, Together, 302.AI,
- *      Lambda, Perplexity, …) that aren't in our hand-rolled
- *      LobeHub slug map. The URL is keyed on the raw provider id
- *      we already use elsewhere, no alias table required.
- *   4. **Letter avatar** if all three return errors.
- *
- *  models.dev *does* serve a generic placeholder SVG for unknown
- *  ids rather than 404'ing, so step 3 won't fall through to step 4
- *  on miss — it just shows the placeholder, which is still nicer
- *  than the bare letter.
+ *   1. **LobeHub colour SVG** keyed on either an explicit
+ *      ``SLUGS`` mapping (for ids where ours differs from LobeHub's —
+ *      e.g. ``openai-codex`` → ``openai``) or the raw provider id
+ *      itself. Most community-imported providers from models.dev
+ *      (fireworks, together, perplexity, qwen, alibaba, doubao,
+ *      baichuan, baidu, tencentcloud, novita, aihubmix, …) live
+ *      under their raw id in LobeHub too, so they pick up colour
+ *      glyphs without any local mapping work.
+ *   2. **LobeHub mono SVG** as the next try when colour 404s — covers
+ *      providers LobeHub ships mono-only (lambda, replicate, …).
+ *   3. **Letter avatar** when both LobeHub tiers miss. Chosen over a
+ *      currentColor monochrome SVG because the user wanted clean
+ *      coloured icons or no icon, not a partial-coverage mono fallback.
  */
 import { useState } from "react";
 import styles from "./settings-page.module.css";
 
+/** Explicit slug mapping for the providers whose id differs from
+ *  LobeHub's icon key. Everything not listed here falls through to
+ *  ``id`` verbatim. */
 const SLUGS: Record<string, string> = {
-  // OpenAI family
-  openai: "openai",
+  // OpenAI family — Codex / consumer-ChatGPT share the OpenAI mark
   "openai-codex": "openai",
   "chatgpt-subscription": "openai",
-  // Anthropic family
+  // Anthropic family — Meridian / claude-max-proxy share Claude's mark
   anthropic: "claude",
   "claude-code": "claude",
   "claude-max-proxy": "claude",
-  // Google family
+  // Google family — multiple Gemini delivery flavours share the icon
   google: "gemini",
   "google-gemini-cli": "gemini",
   "gemini-cli": "gemini",
@@ -40,37 +39,23 @@ const SLUGS: Record<string, string> = {
   "azure-openai-responses": "azure",
   "amazon-bedrock": "bedrock",
   // Inference gateways
-  openrouter: "openrouter",
   "vercel-ai-gateway": "vercel",
-  opencode: "opencode",
-  // Inference clouds
-  groq: "groq",
-  cerebras: "cerebras",
-  mistral: "mistral",
-  huggingface: "huggingface",
-  // Chinese providers
-  minimax: "minimax",
+  // Chinese providers — LobeHub keys these slightly differently
   "minimax-cn": "minimax",
   "kimi-coding": "moonshot",
-  zai: "zai",
-  deepseek: "deepseek",
-  // Other
+  // GitHub Copilot's slug isn't ``github-copilot``
   "github-copilot": "githubcopilot",
-  xai: "xai",
 };
-// v1.90.0: covers openai/openrouter/groq/githubcopilot/moonshot/vercel/
-// opencode/xai/zai (all mono-only) on top of the brand-color SVGs.
+
 const LOBEHUB_CDN = "https://unpkg.com/@lobehub/icons-static-svg@1.90.0/icons/";
-const MODELS_DEV_CDN = "https://models.dev/logos/";
 
 export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
-  const slug = SLUGS[id];
+  const slug = SLUGS[id] ?? id;
   const letter = (id[0] || "?").toUpperCase();
-  // Tier index: 0=lobe-color, 1=lobe-mono, 2=models.dev, 3=letter.
-  // Mapped ids start at 0; unmapped ids skip straight to tier 2.
-  const [tier, setTier] = useState<0 | 1 | 2 | 3>(slug ? 0 : 2);
+  // Tier index: 0 = colour, 1 = mono, 2 = letter avatar.
+  const [tier, setTier] = useState<0 | 1 | 2>(0);
 
-  if (tier === 3) {
+  if (tier === 2) {
     return (
       <span className={styles.providerIconLetter} style={{ width: size, height: size }}>
         {letter}
@@ -80,41 +65,8 @@ export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
 
   const url =
     tier === 0
-      ? `${LOBEHUB_CDN}${slug}-color.svg`
-      : tier === 1
-        ? `${LOBEHUB_CDN}${slug}.svg`
-        : `${MODELS_DEV_CDN}${encodeURIComponent(id)}.svg`;
-
-  // models.dev's SVGs use ``fill="currentColor"`` so they're meant to
-  // adopt their parent's text colour. Loaded via ``<img>`` they fall
-  // back to black, which on the dark theme looks like a missing
-  // icon. Render this tier as a CSS ``mask-image`` instead so the
-  // SVG shape becomes a mask and the visible fill is
-  // ``currentColor`` (resolved against ``color: var(--text-primary)``
-  // from the wrapper). LobeHub's brand-colour tier stays on ``<img>``
-  // because we want their hex-coded brand colours preserved.
-  if (tier === 2) {
-    return (
-      <div
-        className={styles.providerIcon}
-        style={{
-          width: size,
-          height: size,
-          backgroundColor: "var(--text-primary)",
-          color: "var(--text-primary)",
-          WebkitMaskImage: `url(${url})`,
-          maskImage: `url(${url})`,
-          WebkitMaskSize: "contain",
-          maskSize: "contain",
-          WebkitMaskRepeat: "no-repeat",
-          maskRepeat: "no-repeat",
-          WebkitMaskPosition: "center",
-          maskPosition: "center",
-        }}
-        title={id}
-      />
-    );
-  }
+      ? `${LOBEHUB_CDN}${encodeURIComponent(slug)}-color.svg`
+      : `${LOBEHUB_CDN}${encodeURIComponent(slug)}.svg`;
 
   return (
     <div className={styles.providerIcon} style={{ width: size, height: size }}>
@@ -123,7 +75,7 @@ export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
         key={url}
         src={url}
         alt={id}
-        onError={() => setTier((t) => (t < 3 ? ((t + 1) as 0 | 1 | 2 | 3) : 3))}
+        onError={() => setTier((t) => (t < 2 ? ((t + 1) as 0 | 1 | 2) : 2))}
       />
     </div>
   );
