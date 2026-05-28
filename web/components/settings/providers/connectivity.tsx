@@ -7,9 +7,71 @@ import { useTranslation } from "@/lib/i18n";
 
 import styles from "../settings-page.module.css";
 
+
+/** Classify a backend ``test_provider`` error string into a short
+ *  human-readable summary the connectivity check can show inline.
+ *
+ *  The raw ``error`` field shape is ``HTTP <code>: <upstream body>``
+ *  (mirroring ``test_provider`` in ``webui/_model_catalog.py``). The
+ *  upstream body is usually JSON; the most actionable signal is the
+ *  HTTP status (401 → bad key, 402 → no balance, 429 → rate limit,
+ *  403 → CF block, …). We surface a short tag + the upstream's own
+ *  ``message`` field when present, so the user doesn't have to hover
+ *  over a generic "✗ failed" to learn that DeepSeek wants them to
+ *  top up. The full untouched error stays available as a tooltip. */
+function summarizeError(raw: string | undefined): { short: string; tooltip: string } {
+  const tooltip = raw || "Unknown error";
+  if (!raw) return { short: "✗ failed", tooltip };
+
+  // Pull out the status code if the upstream wrapper formatted as "HTTP <n>: ...".
+  const m = raw.match(/^HTTP (\d+):\s*([\s\S]*)$/);
+  const code = m ? Number(m[1]) : NaN;
+  const body = m ? m[2] : raw;
+
+  // Best-effort JSON parse: most providers return {"error":{"message":"...","type":"..."}}.
+  let upstreamMsg = "";
+  try {
+    const j = JSON.parse(body);
+    upstreamMsg =
+      j?.error?.message ||
+      j?.message ||
+      j?.error_message ||
+      "";
+  } catch {
+    // Body isn't JSON — leave upstreamMsg empty; raw stays in tooltip.
+  }
+
+  const tag = (() => {
+    switch (code) {
+      case 401:
+      case 403:
+        return "✗ auth";
+      case 402:
+        return "✗ no balance";
+      case 404:
+        return "✗ not found";
+      case 408:
+      case 504:
+        return "✗ timeout";
+      case 429:
+        return "✗ rate limited";
+      case 500:
+      case 502:
+      case 503:
+        return "✗ upstream";
+      default:
+        return code ? `✗ HTTP ${code}` : "✗ failed";
+    }
+  })();
+
+  const short = upstreamMsg ? `${tag}: ${upstreamMsg}` : tag;
+  return { short, tooltip };
+}
+
 /** Connectivity-check button — POSTs to /api/providers/<id>/test and
- *  shows ✓ + latency or ✗ + error tooltip. Lets the user verify the
- *  API key + base URL are correct without leaving the settings page. */
+ *  shows ✓ + latency or ✗ + an inline error summary. The full raw
+ *  upstream response stays on the hover tooltip for paste-into-bug-
+ *  report cases. */
 export function Connectivity({ providerId }: { providerId: string }) {
   const { text } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -32,7 +94,8 @@ export function Connectivity({ providerId }: { providerId: string }) {
           title: d.model ? text(`Tested with ${d.model}`, `已使用 ${d.model} 测试`) : undefined,
         });
       } else {
-        setResult({ kind: "err", text: text("✗ failed", "✗ 失败"), title: d.error });
+        const { short, tooltip } = summarizeError(d.error);
+        setResult({ kind: "err", text: short, title: tooltip });
       }
     } catch (e) {
       setResult({ kind: "err", text: "✗", title: (e as Error).message });
@@ -51,7 +114,11 @@ export function Connectivity({ providerId }: { providerId: string }) {
           {text("Validates API key + base URL with a tiny PING.", "用小型 PING 验证 API key 和 base URL。")}
         </span>
         {result && (
-          <span className={styles.testResult + " " + (result.kind === "ok" ? styles.ok : styles.err)} title={result.title}>
+          <span
+            className={styles.testResult + " " + (result.kind === "ok" ? styles.ok : styles.err)}
+            title={result.title}
+            style={{ maxWidth: 480, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
             {result.text}
           </span>
         )}
