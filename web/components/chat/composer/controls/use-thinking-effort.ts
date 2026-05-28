@@ -42,6 +42,18 @@ export interface ThinkingOption {
 }
 
 function readThinkingOptions(): ThinkingOption[] {
+  // SSR / pre-hydration: ``window`` is undefined. Returning the
+  // fallback (instead of throwing) lets the component render its
+  // visible pill during the very first paint — the legacy
+  // providers.js then writes _thinkingConfig client-side and the
+  // 500ms tick refreshes us into the real provider-specific list.
+  // Without this guard a ReferenceError ate the pill during SSR;
+  // hydration had to retry the subtree before it appeared, which
+  // showed up as "the effort pill sometimes doesn't display, or
+  // takes ages".
+  if (typeof window === "undefined") {
+    return FALLBACK_LEVELS.map((v) => ({ value: v }));
+  }
   const w = window as unknown as {
     _thinkingConfig?: { options?: ThinkingOption[] };
   };
@@ -51,6 +63,7 @@ function readThinkingOptions(): ThinkingOption[] {
 }
 
 function readBackendDefault(): string | undefined {
+  if (typeof window === "undefined") return undefined;
   const w = window as unknown as { _thinkingConfig?: { default?: string } };
   return w._thinkingConfig?.default;
 }

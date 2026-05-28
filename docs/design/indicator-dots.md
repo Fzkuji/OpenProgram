@@ -111,6 +111,6 @@ Touched files (8 JSX call sites, 2 CSS files):
   fixes the immediate misalignment between `Function call` header
   and `Running…` body without touching the other dot variants.
 
-- **Step 2 (deferred)** — add `.indicator-dot` class + migrate the
-  four call sites. Cosmetic, no behaviour change; do when the
-  next round of UI polish makes it worthwhile.
+- **Step 2 (done)** — `.indicator-dot` class added with size /
+  colour / animation modifiers; the four legacy classes are gone
+  and the eight call sites migrated. See commit `40cef5a2`.
