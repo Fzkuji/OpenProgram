@@ -21,6 +21,7 @@ import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 import {
   type AnimatedNavIconHandle,
+  ChevronsUpDownIcon,
   CircleHelpIcon,
   SettingsIcon,
 } from "@/components/animated-icons";
@@ -36,6 +37,7 @@ export function UserMenuFooter() {
   const menuRef = useRef<HTMLDivElement>(null);
   const settingsIconRef = useRef<AnimatedNavIconHandle>(null);
   const aboutIconRef = useRef<AnimatedNavIconHandle>(null);
+  const chevronIconRef = useRef<AnimatedNavIconHandle>(null);
   // Viewport coords for the floating menu — recomputed when opening.
   // Used in collapsed sidebar so the menu can escape the sidebar's
   // ``overflow: hidden`` ancestor via a portal + ``position: fixed``.
@@ -102,6 +104,8 @@ export function UserMenuFooter() {
         type="button"
         className={`${styles.trigger} user-menu-footer-trigger`}
         onClick={() => setOpen((v) => !v)}
+        onMouseEnter={() => chevronIconRef.current?.startAnimation?.()}
+        onMouseLeave={() => chevronIconRef.current?.stopAnimation?.()}
       >
         {/* Avatar — DiceBear-generated SVG by default, seeded by the
             profile name so the same user always gets the same glyph.
@@ -120,16 +124,12 @@ export function UserMenuFooter() {
           <span className={styles.name}>{profile.name}</span>
           <span className={styles.subtitle}>{t("user.local_instance")}</span>
         </span>
-        <svg
+        <ChevronsUpDownIcon
+          ref={chevronIconRef}
+          size={14}
           className={styles.chevron}
-          width="14"
-          height="14"
-          viewBox="0 0 256 256"
-          fill="currentColor"
           aria-hidden="true"
-        >
-          <path d="M181.66,170.34a8,8,0,0,1,0,11.32l-48,48a8,8,0,0,1-11.32,0l-48-48a8,8,0,0,1,11.32-11.32L128,212.69l42.34-42.35A8,8,0,0,1,181.66,170.34Zm-96-84.68L128,43.31l42.34,42.35a8,8,0,0,0,11.32-11.32l-48-48a8,8,0,0,0-11.32,0l-48,48A8,8,0,0,0,85.66,85.66Z" />
-        </svg>
+        />
       </button>
       {open && (() => {
         const menuBody = (

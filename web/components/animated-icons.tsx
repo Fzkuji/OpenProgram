@@ -2298,3 +2298,702 @@ export const ArrowUpRightIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIco
   },
 );
 ArrowUpRightIcon.displayName = "ArrowUpRightIcon";
+
+// ─── file-text (Memory → Wiki tab) ───────────────────────────────────
+export const FileTextIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <motion.svg
+          animate={controls}
+          fill="none"
+          height={size}
+          initial="normal"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          variants={{
+            normal: { scale: 1 },
+            animate: {
+              scale: 1.05,
+              transition: { duration: 0.3, ease: "easeOut" },
+            },
+          }}
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+          <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+          <motion.path
+            d="M10 9H8"
+            stroke="currentColor"
+            strokeWidth="2"
+            variants={{
+              normal: { pathLength: 1, x1: 8, x2: 10 },
+              animate: {
+                pathLength: [1, 0, 1],
+                x1: [8, 10, 8],
+                x2: [10, 10, 10],
+                transition: { duration: 0.7, delay: 0.3 },
+              },
+            }}
+          />
+          <motion.path
+            d="M16 13H8"
+            stroke="currentColor"
+            strokeWidth="2"
+            variants={{
+              normal: { pathLength: 1, x1: 8, x2: 16 },
+              animate: {
+                pathLength: [1, 0, 1],
+                x1: [8, 16, 8],
+                x2: [16, 16, 16],
+                transition: { duration: 0.7, delay: 0.5 },
+              },
+            }}
+          />
+          <motion.path
+            d="M16 17H8"
+            stroke="currentColor"
+            strokeWidth="2"
+            variants={{
+              normal: { pathLength: 1, x1: 8, x2: 16 },
+              animate: {
+                pathLength: [1, 0, 1],
+                x1: [8, 16, 8],
+                x2: [16, 16, 16],
+                transition: { duration: 0.7, delay: 0.7 },
+              },
+            }}
+          />
+        </motion.svg>
+      </div>
+    );
+  },
+);
+FileTextIcon.displayName = "FileTextIcon";
+
+// ─── sparkles (Memory → Core tab; pqoqubbw has no `star`) ────────────
+const SPARKLE_VARIANTS: Variants = {
+  initial: { y: 0, fill: "none" },
+  hover: {
+    y: [0, -1, 0, 0],
+    fill: "currentColor",
+    transition: { duration: 1, bounce: 0.3 },
+  },
+};
+
+const STAR_VARIANTS: Variants = {
+  initial: { opacity: 1, x: 0, y: 0 },
+  blink: () => ({
+    opacity: [0, 1, 0, 0, 0, 0, 1],
+    transition: {
+      duration: 2,
+      type: "spring",
+      stiffness: 70,
+      damping: 10,
+      mass: 0.4,
+    },
+  }),
+};
+
+export const SparklesIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const starControls = useAnimation();
+    const sparkleControls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => {
+          sparkleControls.start("hover");
+          starControls.start("blink", { delay: 1 });
+        },
+        stopAnimation: () => {
+          sparkleControls.start("initial");
+          starControls.start("initial");
+        },
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else {
+          sparkleControls.start("hover");
+          starControls.start("blink", { delay: 1 });
+        }
+      },
+      [onMouseEnter, sparkleControls, starControls],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else {
+          sparkleControls.start("initial");
+          starControls.start("initial");
+        }
+      },
+      [sparkleControls, starControls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={sparkleControls}
+            d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"
+            variants={SPARKLE_VARIANTS}
+          />
+          <motion.path animate={starControls} d="M20 3v4" variants={STAR_VARIANTS} />
+          <motion.path animate={starControls} d="M22 5h-4" variants={STAR_VARIANTS} />
+          <motion.path animate={starControls} d="M4 17v2" variants={STAR_VARIANTS} />
+          <motion.path animate={starControls} d="M5 18H3" variants={STAR_VARIANTS} />
+        </svg>
+      </div>
+    );
+  },
+);
+SparklesIcon.displayName = "SparklesIcon";
+
+// ─── chevrons-up-down (sidebar user-menu footer trigger) ─────────────
+const CHEVRONS_UP_DOWN_TRANSITION: Transition = {
+  type: "spring",
+  stiffness: 250,
+  damping: 25,
+};
+
+export const ChevronsUpDownIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={controls}
+            d="m7 15 5 5 5-5"
+            initial="normal"
+            transition={CHEVRONS_UP_DOWN_TRANSITION}
+            variants={{
+              normal: { translateY: "0%" },
+              animate: { translateY: "2px" },
+            }}
+          />
+          <motion.path
+            animate={controls}
+            d="m7 9 5-5 5 5"
+            initial="normal"
+            transition={CHEVRONS_UP_DOWN_TRANSITION}
+            variants={{
+              normal: { translateY: "0%" },
+              animate: { translateY: "-2px" },
+            }}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+ChevronsUpDownIcon.displayName = "ChevronsUpDownIcon";
+
+// ─── gallery-vertical-end (Recents filter / view-options button) ─────
+const GALLERY_VERTICAL_END_VARIANTS: Variants = {
+  normal: {
+    translateY: 0,
+    opacity: 1,
+    transition: { type: "tween", stiffness: 200, damping: 13 },
+  },
+  animate: (i: number) => ({
+    translateY: [2 * i, 0],
+    opacity: [0, 1],
+    transition: {
+      delay: 0.25 * (2 - i),
+      type: "tween",
+      stiffness: 200,
+      damping: 13,
+    },
+  }),
+};
+
+export const GalleryVerticalEndIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={controls}
+            custom={1}
+            d="M7 2h10"
+            variants={GALLERY_VERTICAL_END_VARIANTS}
+          />
+          <motion.path
+            animate={controls}
+            custom={2}
+            d="M5 6h14"
+            variants={GALLERY_VERTICAL_END_VARIANTS}
+          />
+          <rect height="12" rx="2" width="18" x="3" y="10" />
+        </svg>
+      </div>
+    );
+  },
+);
+GalleryVerticalEndIcon.displayName = "GalleryVerticalEndIcon";
+
+// ─── plug-zap (MCP page — empty state + detail header) ───────────────
+const PLUG_ZAP_VARIANT: Variants = {
+  normal: { opacity: 1 },
+  animate: {
+    opacity: [1, 0.4, 1],
+    transition: {
+      duration: 1,
+      repeat: Number.POSITIVE_INFINITY,
+      ease: "easeInOut",
+    },
+  },
+};
+
+export const PlugZapIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z" />
+          <path d="m2 22 3-3" />
+          <path d="M7.5 13.5 10 11" />
+          <path d="M10.5 16.5 13 14" />
+          <motion.path
+            animate={controls}
+            d="m18 3-4 4h6l-4 4"
+            initial="normal"
+            variants={PLUG_ZAP_VARIANT}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+PlugZapIcon.displayName = "PlugZapIcon";
+
+// ─── clock (Chats — "By recency" rows) ───────────────────────────────
+const CLOCK_HAND_TRANSITION: Transition = {
+  duration: 0.6,
+  ease: [0.4, 0, 0.2, 1],
+};
+const CLOCK_HAND_VARIANTS: Variants = {
+  normal: { rotate: 0, originX: "0%", originY: "100%" },
+  animate: { rotate: 360, originX: "0%", originY: "100%" },
+};
+const CLOCK_MINUTE_TRANSITION: Transition = {
+  duration: 0.5,
+  ease: "easeInOut",
+};
+const CLOCK_MINUTE_VARIANTS: Variants = {
+  normal: { rotate: 0, originX: "0%", originY: "100%" },
+  animate: { rotate: 45, originX: "0%", originY: "100%" },
+};
+
+export const ClockIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <motion.line
+            animate={controls}
+            initial="normal"
+            transition={CLOCK_HAND_TRANSITION}
+            variants={CLOCK_HAND_VARIANTS}
+            x1="12"
+            x2="12"
+            y1="12"
+            y2="6"
+          />
+          <motion.line
+            animate={controls}
+            initial="normal"
+            transition={CLOCK_MINUTE_TRANSITION}
+            variants={CLOCK_MINUTE_VARIANTS}
+            x1="12"
+            x2="16"
+            y1="12"
+            y2="12"
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+ClockIcon.displayName = "ClockIcon";
+
+// ─── folder-code (Skills tree group — collapsed state) ──────────────
+// Carried verbatim from pqoqubbw/icons (icons/folder-code.tsx): the two
+// chevrons of the embedded code glyph swing apart on hover.
+const FOLDER_CODE_VARIANTS: Variants = {
+  normal: { x: 0, rotate: 0, opacity: 1 },
+  animate: (direction: number) => ({
+    x: [0, direction * 2, 0],
+    rotate: [0, direction * -8, 0],
+    opacity: 1,
+    transition: { duration: 0.5, ease: "easeInOut" },
+  }),
+};
+
+export const FolderCodeIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z" />
+          <motion.path
+            animate={controls}
+            custom={-1}
+            d="M10 10.5 8 13l2 2.5"
+            initial="normal"
+            variants={FOLDER_CODE_VARIANTS}
+          />
+          <motion.path
+            animate={controls}
+            custom={1}
+            d="m14 10.5 2 2.5-2 2.5"
+            initial="normal"
+            variants={FOLDER_CODE_VARIANTS}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+FolderCodeIcon.displayName = "FolderCodeIcon";
+
+// ─── boxes (sidebar Plugins nav) ────────────────────────────────────
+export const BoxesIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          style={{ overflow: "visible" }}
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={controls}
+            d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z m4.03 3.58 -4.74 -2.85 m4.74 2.85 5-3 m-5 3v5.17"
+            variants={{
+              normal: { translateX: 0, translateY: 0 },
+              animate: { translateX: -1.5, translateY: 1.5 },
+            }}
+          />
+          <motion.path
+            animate={controls}
+            d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z m5 3-5-3 m5 3 4.74-2.85 M17 16.5v5.17"
+            variants={{
+              normal: { translateX: 0, translateY: 0 },
+              animate: { translateX: 1.5, translateY: 1.5 },
+            }}
+          />
+          <motion.path
+            animate={controls}
+            d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z M12 8 7.26 5.15 m4.74 2.85 4.74-2.85 M12 13.5V8"
+            variants={{
+              normal: { translateX: 0, translateY: 0 },
+              animate: { translateX: 0, translateY: -1.5 },
+            }}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+BoxesIcon.displayName = "BoxesIcon";

@@ -44,12 +44,12 @@ export const MENU_SEPARATOR = "-mx-[4px] my-[4px] h-px bg-[var(--border)]";
  *  `danger` makes it a destructive (red) action. ~28px tall (one tier
  *  shorter than the sidebar nav rows). */
 export function itemCls(active: boolean, danger = false): string {
-  // Fixed 32px height (NOT min-height) so a row's inner content — model
+  // Fixed 26px height (NOT min-height) so a row's inner content — model
   // capability icons, context-size labels, checkmarks — can never stretch
   // it taller than its neighbours. Every selection row in every dropdown
-  // is therefore exactly the same height, matching a standard small menu.
+  // is therefore exactly the same height, matching a compact small menu.
   const base =
-    "flex h-[32px] shrink-0 cursor-pointer items-center gap-[8px] rounded-[6px] " +
+    "flex h-[26px] shrink-0 cursor-pointer items-center gap-[8px] rounded-[6px] " +
     "px-[8px] text-[13px] leading-[18px] transition-colors duration-75 ";
   if (danger) {
     return (

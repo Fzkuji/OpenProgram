@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSkills, type Skill } from "@/lib/skills-store";
 import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/lib/i18n";
+import {
+  type AnimatedNavIconHandle,
+  FolderCodeIcon,
+  FolderOpenIcon,
+} from "@/components/animated-icons";
 
 // --- tree node model -----------------------------------------------------
 
@@ -132,26 +137,36 @@ function TreeBranch({
   walk(node);
   const enabledCount = subSkills.filter((s) => s.enabled).length;
   const allOn = enabledCount === subSkills.length && subSkills.length > 0;
+  const folderIconRef = useRef<AnimatedNavIconHandle>(null);
 
   return (
     <div>
       <div
         role="button"
         onClick={() => toggleExpanded(node.path)}
+        onMouseEnter={() => folderIconRef.current?.startAnimation?.()}
+        onMouseLeave={() => folderIconRef.current?.stopAnimation?.()}
         style={{ paddingLeft: 8 + depth * 16 }}
         className="group flex items-center gap-2 py-2 pr-3 cursor-pointer rounded border border-transparent bg-[var(--bg-secondary)]/50 hover:bg-bg-hover hover:text-nav-color-hover select-none"
       >
-        <svg
-          width="14" height="14" viewBox="0 0 20 20" fill="currentColor"
-          className="text-[var(--text-tertiary)] shrink-0"
-          aria-hidden
-        >
-          {isOpen ? (
-            <path d="M3.5 3A1.5 1.5 0 0 0 2 4.5v11A1.5 1.5 0 0 0 3.5 17h13a1.5 1.5 0 0 0 1.456-1.146l1.5-6A1.5 1.5 0 0 0 18 8H4V6.5h4.546a.5.5 0 0 0 .354-.146l1.853-1.854A.5.5 0 0 0 11.108 4.5H4.5A1.5 1.5 0 0 0 3.5 3Z" />
-          ) : (
-            <path d="M3.5 3A1.5 1.5 0 0 0 2 4.5v11A1.5 1.5 0 0 0 3.5 17h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 16.5 5h-6L8.354 3.146A.5.5 0 0 0 8 3H3.5Z" />
-          )}
-        </svg>
+        {/* Two states, both real pqoqubbw icons: collapsed = `folder-code`,
+            expanded = `folder-open`. Each animates on row hover via the
+            shared ref (only one is mounted at a time). */}
+        {isOpen ? (
+          <FolderOpenIcon
+            ref={folderIconRef}
+            size={16}
+            className="text-[var(--text-tertiary)] shrink-0"
+            aria-hidden
+          />
+        ) : (
+          <FolderCodeIcon
+            ref={folderIconRef}
+            size={16}
+            className="text-[var(--text-tertiary)] shrink-0"
+            aria-hidden
+          />
+        )}
         <span className="text-sm font-semibold text-nav-color group-hover:text-nav-color-hover">
           {node.segment}
         </span>

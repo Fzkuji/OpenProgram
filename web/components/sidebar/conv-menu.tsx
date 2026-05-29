@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -112,7 +113,7 @@ export function ConvMenu({
         aria-expanded={groupOpen}
       >
         <span className="flex-1 text-left">{t("sidebar.move_to_group")}</span>
-        <span className="text-text-muted">{groupOpen ? "▾" : "▸"}</span>
+        <span className="flex w-[16px] shrink-0 items-center justify-center text-text-muted">{groupOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
       </button>
       {groupOpen && (
         <div className="flex flex-col border-l border-[var(--border)] ml-3 my-0.5">
@@ -174,7 +175,9 @@ function MenuItem({
   return (
     <button type="button" onClick={onClick} className={itemCls(false, danger)}>
       <span className="flex-1 text-left">{label}</span>
-      {shortcut ? <span className={SHORTCUT}>{shortcut}</span> : null}
+      {shortcut ? (
+        <span className={SHORTCUT + " w-[16px] text-center"}>{shortcut}</span>
+      ) : null}
     </button>
   );
 }

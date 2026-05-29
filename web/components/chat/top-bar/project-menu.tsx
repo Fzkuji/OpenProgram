@@ -15,10 +15,11 @@
  * from the shadcn <Popover> in index.tsx.
  */
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Folder } from "lucide-react";
+import { Check, Folder } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
   FolderOpenIcon,
+  XIcon,
 } from "@/components/animated-icons";
 
 import {
@@ -224,13 +225,13 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
               <span
                 role="button"
                 title={text("Remove from list", "从列表移除")}
-                className="shrink-0 px-[1px] text-[14px] leading-none text-text-muted opacity-0 transition-opacity hover:text-[var(--accent-orange)] group-hover:opacity-100"
+                className="flex size-[22px] shrink-0 items-center justify-center rounded-[5px] text-text-muted opacity-0 transition group-hover:opacity-100 hover:bg-[color-mix(in_srgb,var(--accent-red)_15%,transparent)] hover:text-[var(--accent-red)]"
                 onClick={(e) => removeProject(p.id, e)}
               >
-                ×
+                <XIcon size={13} />
               </span>
             ) : null}
-            {active ? <span className={CHECK}>✓</span> : null}
+            {active ? <Check size={14} className={CHECK} /> : null}
           </div>
         );
       })}

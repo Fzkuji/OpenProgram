@@ -1,10 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type { CatalogEntry } from "@/lib/skills-store";
 import { useSkills } from "@/lib/skills-store";
 import { useTranslation } from "@/lib/i18n";
+import {
+  type AnimatedNavIconHandle,
+  SearchIcon,
+  XIcon,
+} from "@/components/animated-icons";
 
 import { fmtCount, hasStats, relTime } from "./helpers";
 import type { Source, SortKey } from "./types";
@@ -52,6 +57,7 @@ export function CatalogList({
 }) {
   const { text, locale } = useTranslation();
   const { deleteSkill } = useSkills();
+  const searchIconRef = useRef<AnimatedNavIconHandle>(null);
   const [filter, setFilter] = useState("");
   const hasMeta = useMemo(() => hasStats(entries), [entries]);
   const [sort, setSort] = useState<SortKey>(hasMeta ? "downloads" : "default");
@@ -92,14 +98,16 @@ export function CatalogList({
   return (
     <div>
       <div className="mb-3 flex items-center gap-2">
-        <div className="relative flex-1">
-          <svg
+        <div
+          className="relative flex-1"
+          onMouseEnter={() => searchIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => searchIconRef.current?.stopAnimation?.()}
+        >
+          <SearchIcon
+            ref={searchIconRef}
+            size={14}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
-            width="14" height="14" viewBox="0 0 20 20" fill="currentColor"
-          >
-            <path fillRule="evenodd" clipRule="evenodd"
-              d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" />
-          </svg>
+          />
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
@@ -212,14 +220,9 @@ export function CatalogList({
                       }}
                       className={pillBase + " gap-1 " + pillDanger}
                     >
-                      {/* trash icon — same family as the rest of the page's
-                          inline glyphs (search, branch). 14px reads cleanly
-                          at this button height (28px) without crowding the
-                          label, which the old icon-only ``w-7 px-0`` button
-                          collapsed into an unidentifiable red dot. */}
-                      <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-                        <path d="M8 3h4a1 1 0 0 1 1 1v1h3.5a.75.75 0 0 1 0 1.5H16l-.83 9.13A2 2 0 0 1 13.18 17H6.82a2 2 0 0 1-1.99-1.87L4 6.5h-.5a.75.75 0 0 1 0-1.5H7V4a1 1 0 0 1 1-1Zm.5 2h3V4h-3v1ZM8 8.25a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5A.75.75 0 0 1 8 8.25Zm4 0a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5A.75.75 0 0 1 12 8.25Z"/>
-                      </svg>
+                      {/* Animated delete glyph (X) — the app-standard delete
+                          icon used across the branch / project menus. */}
+                      <XIcon size={14} aria-hidden />
                       Remove
                     </button>
                   )}

@@ -24,6 +24,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
+import { PlugZapIcon } from "@/components/animated-icons";
 
 import { CatalogDialog } from "./mcp-catalog-dialog";
 import {
@@ -313,7 +314,9 @@ export function McpPage() {
             )}
             {selectedServer === null ? (
               <div className={styles.empty}>
-                <div className={styles.emptyIcon}>🔌</div>
+                <div className={styles.emptyIcon}>
+                  <PlugZapIcon size={40} />
+                </div>
                 <div className={styles.emptyText}>
                   {text("Select a server on the left to view tools and settings.", "选择左侧服务器查看工具和设置。")}
                 </div>

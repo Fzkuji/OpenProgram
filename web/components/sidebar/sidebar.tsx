@@ -48,7 +48,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
-  BlocksIcon,
+  BoxesIcon,
   BrainIcon,
   GraduationCapIcon,
   LayersIcon,
@@ -386,7 +386,7 @@ export function Sidebar() {
           onMouseLeave={() => pluginsIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <BlocksIcon ref={pluginsIconRef} size={20} />
+            <BoxesIcon ref={pluginsIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.plugins")}</span>
         </Link>

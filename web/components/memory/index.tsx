@@ -11,12 +11,19 @@
  *   - parts.tsx          TabButton, TreeGroup, EditorPanel,
  *                        LoadingSkeleton, EmptyState, Placeholder
  */
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 import { renderMarkdown } from "./markdown";
 import { formatDate, formatSize, groupByFolder } from "./format";
 import { ClockIcon, DocIcon, TypeBadge } from "./icons";
 import { useTranslation } from "@/lib/i18n";
+import {
+  type AnimatedNavIconHandle,
+  FileTextIcon,
+  RefreshCwIcon,
+  SparklesIcon,
+  SquarePenIcon,
+} from "@/components/animated-icons";
 import {
   EditorPanel,
   EmptyState,
@@ -35,6 +42,7 @@ import styles from "./memory-page.module.css";
 
 export function MemoryPage() {
   const { t, text, locale } = useTranslation();
+  const refreshIconRef = useRef<AnimatedNavIconHandle>(null);
   const [tab, setTab] = useState<Tab>("wiki");
 
   // Wiki state
@@ -217,22 +225,9 @@ export function MemoryPage() {
       <div className={styles.body}>
         <div className={styles.layout}>
           <div className={styles.tabBar}>
-            <TabButton active={tab === "wiki"} onClick={() => setTab("wiki")} icon={
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
-                <path d="M3 2.5A1.5 1.5 0 0 1 4.5 1h5L12 3.5V14a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 3 14V2.5z"/>
-                <path d="M9.5 1v2.5H12M5 7h5M5 9.5h5M5 12h3"/>
-              </svg>
-            }>{text("Wiki", "维基")}</TabButton>
-            <TabButton active={tab === "journal"} onClick={() => setTab("journal")} icon={
-              <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
-                <path d="M224,128v80a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V48A16,16,0,0,1,48,32h80a8,8,0,0,1,0,16H48V208H208V128a8,8,0,0,1,16,0Zm5.66-58.34-96,96A8,8,0,0,1,128,168H96a8,8,0,0,1-8-8V128a8,8,0,0,1,2.34-5.66l96-96a8,8,0,0,1,11.32,0l32,32A8,8,0,0,1,229.66,69.66Zm-17-5.66L192,43.31,179.31,56,200,76.69Z"/>
-              </svg>
-            }>{text("Journal", "日志")}</TabButton>
-            <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={
-              <svg viewBox="0 0 256 256" fill="currentColor" width="14" height="14">
-                <path d="M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z"/>
-              </svg>
-            }>{text("Core", "核心")}</TabButton>
+            <TabButton active={tab === "wiki"} onClick={() => setTab("wiki")} icon={<FileTextIcon size={14} />}>{text("Wiki", "维基")}</TabButton>
+            <TabButton active={tab === "journal"} onClick={() => setTab("journal")} icon={<SquarePenIcon size={14} />}>{text("Journal", "日志")}</TabButton>
+            <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={<SparklesIcon size={14} />}>{text("Core", "核心")}</TabButton>
           </div>
 
           {/* ── Wiki ── */}
@@ -257,11 +252,14 @@ export function MemoryPage() {
                     <button className={styles.searchClear} onClick={() => setSearch("")} title={text("Clear", "清除")}>✕</button>
                   )}
                 </div>
-                <button className={styles.iconBtn} onClick={fetchWikiPages} title={t("sidebar.refresh")}>
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" width="12" height="12" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 8a6 6 0 1 1-1.76-4.24"/>
-                    <path d="M14 2v3h-3"/>
-                  </svg>
+                <button
+                  className={styles.iconBtn}
+                  onClick={fetchWikiPages}
+                  title={t("sidebar.refresh")}
+                  onMouseEnter={() => refreshIconRef.current?.startAnimation?.()}
+                  onMouseLeave={() => refreshIconRef.current?.stopAnimation?.()}
+                >
+                  <RefreshCwIcon ref={refreshIconRef} size={13} />
                 </button>
               </div>
               {wikiLoading ? <LoadingSkeleton /> : filteredWiki.length === 0 && filteredSystem.length === 0 ? (

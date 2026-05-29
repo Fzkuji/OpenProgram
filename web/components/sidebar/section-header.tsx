@@ -57,7 +57,6 @@ export function SectionHeader({
   const chevronRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
-      onClick={collapsible ? onToggle : undefined}
       onMouseEnter={() => chevronRef.current?.startAnimation()}
       onMouseLeave={() => chevronRef.current?.stopAnimation()}
       className={
@@ -65,39 +64,50 @@ export function SectionHeader({
         // the label (section break) and 5px below it before the first
         // row. (Claude uses ~16 / 8; tuned a touch tighter below.)
         "flex select-none items-center gap-1 px-[8px] pt-[16px] pb-[5px]" +
-        (collapsible ? " cursor-pointer" : "") +
         (className ? " " + className : "")
       }
     >
-      {/* Label — 12px / 400 / text-secondary @ 80%, matching Claude's
-          section labels. Brightens to white together with the chevron
-          when the section is hovered. */}
-      <span
-        className="truncate text-[14px] font-normal leading-[20px] text-[var(--text-secondary)]
-          opacity-80 transition-colors group-hover/sec:text-[var(--text-primary)]
-          group-hover/sec:opacity-100"
+      {/* Collapse target = the label/chevron PLUS the empty gap, stretching
+          (flex-1) right up to the action button's left edge — but no
+          further. So the area to the RIGHT of an action button (e.g. the
+          Recents filter) is never a surprise collapse target. */}
+      <div
+        onClick={collapsible ? onToggle : undefined}
+        className={
+          "flex min-w-0 flex-1 items-center gap-1" +
+          (collapsible ? " cursor-pointer" : "")
+        }
       >
-        {name}
-      </span>
-      {collapsible ? (
-        // Shared animated chevron. Centred on the label (items-center)
-        // with a 1px upward nudge so it sits level with the text's
-        // cap-band, hidden until section hover, brightens with the label,
-        // rotates to › when collapsed.
-        <ChevronDownIcon
-          ref={chevronRef}
-          size={16}
-          className="relative top-[2px] shrink-0 text-[var(--text-secondary)] opacity-0
-            transition-[opacity,color,transform] duration-200 ease-out
-            group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-primary)]"
-          style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
-        />
-      ) : null}
+        {/* Label — 12px / 400 / text-secondary @ 80%, matching Claude's
+            section labels. Brightens to white together with the chevron
+            when the section is hovered. */}
+        <span
+          className="truncate text-[14px] font-normal leading-[20px] text-[var(--text-secondary)]
+            opacity-80 transition-colors group-hover/sec:text-[var(--text-primary)]
+            group-hover/sec:opacity-100"
+        >
+          {name}
+        </span>
+        {collapsible ? (
+          // Shared animated chevron. Centred on the label (items-center)
+          // with a 1px upward nudge so it sits level with the text's
+          // cap-band, hidden until section hover, brightens with the label,
+          // rotates to › when collapsed.
+          <ChevronDownIcon
+            ref={chevronRef}
+            size={16}
+            className="relative top-[2px] shrink-0 text-[var(--text-secondary)] opacity-0
+              transition-[opacity,color,transform] duration-200 ease-out
+              group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-primary)]"
+            style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
+          />
+        ) : null}
+      </div>
       {actions ? (
-        // The filter button is 22px — taller than the 18px label line.
-        // `-my-[2px]` absorbs the overflow so it doesn't stretch this
-        // header taller than the button-less sections; the button keeps
-        // its full 22px click target (centred on the label).
+        // Action button (e.g. Recents filter) has a slightly larger box
+        // than the 20px label line; `-my-[2px]` lets it overlap the line
+        // symmetrically instead of stretching the header taller than
+        // button-less sections (it stays vertically centred on the label).
         <span
           className="-my-[2px] ml-auto flex items-center"
           onClick={(e) => e.stopPropagation()}
