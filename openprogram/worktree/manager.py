@@ -133,8 +133,19 @@ def _slugify(name: str, default: str) -> str:
 
 def _sessions_git_root() -> Path:
     """Directory that OpenProgram uses for its own session-as-git
-    storage. Worktrees MUST NOT be created inside this tree."""
-    return get_state_dir() / "sessions-git"
+    storage. Worktrees MUST NOT be created inside this tree.
+
+    Mirrors ``session_store._default_root`` — the ``sessions-git`` →
+    ``sessions`` rename applies here too. We don't trigger the rename
+    (session_store owns that); we just point at the new canonical name,
+    falling back to the legacy dir if only it exists.
+    """
+    state = get_state_dir()
+    new = state / "sessions"
+    old = state / "sessions-git"
+    if new.exists() or not old.exists():
+        return new
+    return old
 
 
 def _is_inside_sessions_dir(path: Path) -> bool:

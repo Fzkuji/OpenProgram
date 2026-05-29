@@ -44,8 +44,26 @@ from .memory_index import SessionMemoryIndex
 
 
 def _default_root() -> Path:
+    """Root holding every session repo: ``<state>/sessions/<id>/``.
+
+    Renamed from ``sessions-git`` → ``sessions`` (the ``-git`` suffix
+    was an implementation detail leaking into the path). A one-time,
+    self-contained rename runs here so existing installs migrate
+    transparently — independent of the ``.agentic`` → ``.openprogram``
+    migration marker, since a machine may already be past that.
+    """
     from openprogram.paths import get_state_dir
-    return Path(get_state_dir()) / "sessions-git"
+    state = Path(get_state_dir())
+    new = state / "sessions"
+    old = state / "sessions-git"
+    if old.exists() and not new.exists():
+        try:
+            old.rename(new)
+        except OSError:
+            # Cross-device or perms — fall back to the old location so
+            # we never lose the user's sessions.
+            return old
+    return new
 
 
 def _projects_default_id_safe() -> str:
@@ -102,6 +120,12 @@ class SessionStore:
         # Cache: session_id → (GitSession, SessionMemoryIndex). Lazy.
         self._sessions: dict[str, tuple[GitSession, SessionMemoryIndex]] = {}
         self._lock = threading.Lock()
+        # Location index: session_id → absolute repo path, for sessions
+        # that live OUTSIDE the home root (i.e. inside a bound project's
+        # ``<project>/.openprogram/sessions/<id>/``). Sessions absent
+        # from this index resolve to the home root, exactly as before —
+        # so existing installs see zero behaviour change.
+        self._locations: dict[str, str] = self._load_locations()
 
     # Compatibility shim. Old code does ``db.db_path / "subdir"`` for
     # ancillary files — point that at the root so existing usage doesn't
@@ -110,9 +134,50 @@ class SessionStore:
     def db_path(self) -> Path:
         return self.root_path
 
+    # ── Location index (per-project session placement) ────────────
+
+    def _locations_path(self) -> Path:
+        return self.root_path / "locations.json"
+
+    def _load_locations(self) -> dict[str, str]:
+        p = self.root_path / "locations.json"
+        if not p.exists():
+            return {}
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _record_location(self, session_id: str, repo_dir: Path) -> None:
+        """Persist that ``session_id``'s repo lives at ``repo_dir`` (an
+        absolute path outside the home root). Idempotent."""
+        with self._lock:
+            self._locations[session_id] = str(repo_dir)
+            tmp = self._locations_path().with_suffix(".json.tmp")
+            try:
+                tmp.write_text(
+                    json.dumps(self._locations, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                tmp.replace(self._locations_path())
+            except OSError:
+                pass
+
     # ── Internals ─────────────────────────────────────────────
 
     def _session_dir(self, session_id: str) -> Path:
+        """Where ``session_id``'s git repo lives.
+
+        Project-bound sessions live inside their project at
+        ``<project>/.openprogram/sessions/<id>/`` (recorded in the
+        location index). Everything else — ad-hoc chats, all
+        pre-existing sessions — resolves to the home root
+        ``<state>/sessions/<id>/``.
+        """
+        loc = self._locations.get(session_id)
+        if loc:
+            return Path(loc)
         return self.root_path / session_id
 
     def _open(self, session_id: str, *, create_if_missing: bool = False) -> Optional[tuple[GitSession, SessionMemoryIndex]]:
@@ -190,6 +255,42 @@ class SessionStore:
         peer_id: Optional[str] = None,
         **other_fields: Any,
     ) -> None:
+        # Pull out the project hints BEFORE opening the repo, because
+        # they decide WHERE the repo lives (home vs inside a project).
+        project_id = other_fields.pop("project_id", None)
+        project_path = other_fields.pop("project_path", None)
+
+        # ── Resolve the project + decide the session's home on disk ──
+        # Every session belongs to a project (entity layer, half 2 —
+        # docs/design/memory-v2.md §2):
+        #   * caller passed ``project_path`` (a real dir) → that dir is
+        #     the project; the session repo lives INSIDE it at
+        #     ``<dir>/.openprogram/sessions/<id>/`` and we record the
+        #     location so later reads find it.
+        #   * caller passed ``project_id`` of a real (non-default)
+        #     project → same, using that project's stored path.
+        #   * neither, or the default project → ad-hoc: the session
+        #     stays in the home root and just carries
+        #     ``project_id="default"`` as a grouping label.
+        # All guarded — a project/git failure must never block session
+        # creation; we degrade to the home root.
+        try:
+            from openprogram.store import project_store as _projects
+            if project_path:
+                proj = _projects.resolve_project(project_path)
+            elif project_id and project_id != _projects.DEFAULT_PROJECT_ID:
+                proj = _projects.get_project(project_id) or _projects.get_default_project()
+            else:
+                proj = _projects.get_default_project()
+            project_id = proj.id
+            # Non-default project with a real path → relocate the
+            # session repo inside the project dir.
+            if (not proj.is_default) and proj.path:
+                repo_dir = Path(proj.path).expanduser() / ".openprogram" / "sessions" / session_id
+                self._record_location(session_id, repo_dir)
+        except Exception:
+            project_id = project_id or _projects_default_id_safe()
+
         pair = self._open(session_id, create_if_missing=True)
         if pair is None:
             return
@@ -213,35 +314,6 @@ class SessionStore:
         # with the named kwargs.
         created_at = extra.pop("created_at", now)
         updated_at = extra.pop("updated_at", now)
-
-        # ── Project entity-memory binding ──────────────────────────
-        # Every session belongs to a project (the second half of the
-        # entity layer — see docs/design/memory-v2.md §2). Resolve it
-        # now so the project's git repo auto-creates on session
-        # creation, exactly like the session's own repo does:
-        #   * caller passed ``project_id``     → use it
-        #   * caller passed ``project_path``   → bind that directory
-        #     (git-init it if needed)
-        #   * neither                          → the default project
-        #     (catch-all repo in the home hidden dir)
-        # Best-effort: a failure here must never block session
-        # creation, so the whole thing is guarded.
-        project_id = extra.pop("project_id", None)
-        project_path = extra.pop("project_path", None)
-        try:
-            from openprogram.store import project_store as _projects
-            if project_id:
-                proj = _projects.get_project(project_id) or _projects.resolve_project(project_path)
-            elif project_path:
-                proj = _projects.resolve_project(project_path)
-            else:
-                proj = _projects.resolve_project(None)  # default
-            project_id = proj.id
-        except Exception:
-            # git missing / disk error / etc. — degrade to no binding
-            # rather than failing the session. The session still works;
-            # it just isn't attributed to a project until next time.
-            project_id = project_id or _projects_default_id_safe()
 
         if project_id:
             extra["project_id"] = project_id
@@ -323,16 +395,29 @@ class SessionStore:
         offset: int = 0,
         source: Optional[str] = None,
     ) -> list[dict[str, Any]]:
-        if not self.root_path.exists():
-            return []
+        # Enumerate session ids from two sources, deduped:
+        #   1. the home root (ad-hoc + all pre-existing sessions)
+        #   2. the location index (project-bound sessions living inside
+        #      ``<project>/.openprogram/sessions/``)
+        seen: set[str] = set()
+        ids: list[str] = []
+        if self.root_path.exists():
+            for sdir in sorted(self.root_path.iterdir()):
+                if not sdir.is_dir():
+                    continue
+                if sdir.name not in seen:
+                    seen.add(sdir.name)
+                    ids.append(sdir.name)
+        for sid in self._locations:
+            if sid not in seen:
+                seen.add(sid)
+                ids.append(sid)
+
         out: list[dict[str, Any]] = []
-        for sdir in sorted(self.root_path.iterdir()):
-            if not sdir.is_dir():
-                continue
-            sid = sdir.name
+        for sid in ids:
             sess = self.get_session(sid)
             if not sess:
-                continue
+                continue  # repo missing (e.g. project dir deleted) — skip
             if agent_id is not None and sess.get("agent_id") != agent_id:
                 continue
             if source is not None and sess.get("source") != source:

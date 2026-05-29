@@ -312,21 +312,26 @@ def _upsert(project: Project) -> Project:
 
 
 def get_default_project() -> Project:
-    """The catch-all project. Auto-creates its git repo on first call.
+    """The catch-all project for ad-hoc chats with no bound directory.
 
-    Lives at ``<state>/projects/default/``. Every ad-hoc session (no
-    bound directory) belongs here, so the entity layer never has an
-    orphan session.
+    This is a **pure logical label** — it does NOT get its own git
+    repo. An ad-hoc conversation produces no project files (its file
+    edits, if any, land in the session's own ``workdir/``), so a
+    "default project repo" would always be empty. Such sessions just
+    carry ``project_id="default"`` for grouping / scope, and their
+    entity memory IS the session repo, stored at the home root
+    ``<state>/sessions/<id>/``.
+
+    A real git repo is created only when a session binds to an actual
+    working directory — see :func:`resolve_project` with a path.
     """
     existing = get_project(DEFAULT_PROJECT_ID)
-    repo = ProjectGit(_default_project_path())
-    repo.ensure_init()
     if existing is not None:
         return existing
     proj = Project(
         id=DEFAULT_PROJECT_ID,
         name="Default",
-        path=str(_default_project_path()),
+        path="",            # no backing repo — logical label only
         is_default=True,
     )
     return _upsert(proj)
