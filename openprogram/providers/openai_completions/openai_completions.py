@@ -144,47 +144,26 @@ def _build_messages(context: Context, model: Model) -> list[dict[str, Any]]:
 def _build_tools(context: Context) -> list[dict[str, Any]] | None:
     if not context.tools:
         return None
-    use_strict = _strict_tools_enabled()
+    # Tool-schema normalization lives in ``providers._schema`` — the one
+    # place that knows which APIs use OpenAI strict mode and how to fit
+    # a canonical schema to it (additionalProperties=false, all-required
+    # + nullable, unsupported-keyword stripping). This module is the
+    # Chat Completions path, so its API is always strict-family.
+    from openprogram.providers._schema import api_wants_strict, normalize_parameters
+    api = "openai-completions"
+    use_strict = api_wants_strict(api)
     return [
         {
             "type": "function",
             "function": {
                 "name": tool.name,
                 "description": tool.description,
-                # When strict mode is on, rewrite the schema so it
-                # satisfies OpenAI's structured-outputs subset
-                # (additionalProperties=false, all properties required,
-                # nullables for "optional" fields, no unsupported
-                # keywords). Without this fixup the API rejects the
-                # whole request with a 400 the moment any tool has a
-                # plain optional field. See providers/_shared/
-                # strict_schema.py for the rules being applied.
-                "parameters": _maybe_strict(tool.parameters, use_strict),
+                "parameters": normalize_parameters(api, tool.parameters),
                 "strict": use_strict,
             },
         }
         for tool in context.tools
     ]
-
-
-def _strict_tools_enabled() -> bool:
-    """Honour an opt-out via ``OPENPROGRAM_STRICT_TOOLS=0``. Defaults
-    to True because OpenAI's docs explicitly recommend always enabling
-    strict mode — the constrained-decoding guarantee is too valuable
-    to leave behind."""
-    import os
-    return os.environ.get("OPENPROGRAM_STRICT_TOOLS", "1").lower() not in (
-        "0", "false", "no", "off", ""
-    )
-
-
-def _maybe_strict(parameters: Any, use_strict: bool) -> Any:
-    if not use_strict:
-        return parameters
-    from openprogram.providers._shared.strict_schema import fixup_for_strict
-    if isinstance(parameters, dict):
-        return fixup_for_strict(parameters)
-    return parameters
 
 
 def _make_empty_assistant(model: Model) -> AssistantMessage:
