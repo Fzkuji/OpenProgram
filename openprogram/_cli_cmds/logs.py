@@ -30,12 +30,17 @@ from typing import Optional
 
 
 def _log_targets() -> list[tuple[str, Path]]:
-    """Return ``[(name, path), ...]`` for every known log."""
-    home = Path.home()
+    """Return ``[(name, path), ...]`` for every known log.
+
+    All under the canonical state dir (``~/.openprogram/``). worker.log
+    sits at the state-dir root; runtime/ink logs live in ``logs/``.
+    """
+    from openprogram.paths import get_state_dir
+    state = get_state_dir()
     return [
-        ("worker", home / ".agentic" / "worker.log"),
-        ("runtime", home / ".openprogram" / "logs" / "runtime.log"),
-        ("ink-startup", home / ".openprogram" / "logs" / "ink-startup.log"),
+        ("worker", state / "worker.log"),
+        ("runtime", state / "logs" / "runtime.log"),
+        ("ink-startup", state / "logs" / "ink-startup.log"),
     ]
 
 

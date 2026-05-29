@@ -30,8 +30,10 @@ import uuid
 
 
 # Kept as a legacy constant for back-compat; _sessions_dir() is the
-# live accessor that respects --profile / OPENPROGRAM_PROFILE.
-SESSIONS_DIR = os.path.join(os.path.expanduser("~"), ".agentic", "sessions")
+# live accessor that respects --profile / OPENPROGRAM_PROFILE and the
+# canonical ~/.openprogram state dir. This constant is only a default
+# hint — nothing live reads it — but keep it on the canonical name.
+SESSIONS_DIR = os.path.join(os.path.expanduser("~"), ".openprogram", "sessions")
 
 
 def _sessions_dir() -> str:

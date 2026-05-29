@@ -598,18 +598,20 @@ class MessageStore:
 
 
 # ---------------------------------------------------------------------------
-# Process-wide singleton. Conservative default: ~/.agentic/sessions.
-# Tests override via ``set_store_for_testing``.
+# Process-wide singleton. Default lives under the canonical state dir
+# (``~/.openprogram/sessions``), resolved lazily so ``--profile`` and
+# the legacy-migration in ``paths`` both apply. Tests override via
+# ``set_store_for_testing``.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_DIR = Path.home() / ".agentic" / "sessions"
 _store: Optional[MessageStore] = None
 
 
 def get_store() -> MessageStore:
     global _store
     if _store is None:
-        _store = MessageStore(persist_dir=_DEFAULT_DIR)
+        from openprogram.paths import get_state_dir
+        _store = MessageStore(persist_dir=get_state_dir() / "sessions")
     return _store
 
 

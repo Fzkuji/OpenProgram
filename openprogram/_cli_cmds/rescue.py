@@ -248,8 +248,12 @@ def _probe_credential_freshness() -> Finding:
 
 
 def _probe_disk_state_dir() -> Finding:
-    """Can we write to ~/.agentic?"""
-    p = Path.home() / ".agentic"
+    """Can we write to the state dir (~/.openprogram)?"""
+    try:
+        from openprogram.paths import get_state_dir
+        p = get_state_dir()
+    except Exception:
+        p = Path.home() / ".openprogram"
     try:
         p.mkdir(parents=True, exist_ok=True)
         test = p / ".write-test"

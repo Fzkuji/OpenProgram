@@ -94,8 +94,8 @@ def count_tokens_via_anthropic(
     key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         try:
-            from pathlib import Path
-            cfg_path = Path(os.path.expanduser("~/.agentic/config.json"))
+            from openprogram.paths import get_config_path
+            cfg_path = get_config_path()
             if cfg_path.exists():
                 cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
                 key = (cfg.get("api_keys") or {}).get("ANTHROPIC_API_KEY")

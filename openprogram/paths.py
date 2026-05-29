@@ -28,9 +28,23 @@ from pathlib import Path
 
 _ENV_PROFILE = "OPENPROGRAM_PROFILE"
 
-# Legacy state dir. Everything lands here for the default (unnamed)
-# profile so existing users see zero path changes.
+# Canonical state dir basename. Everything lives under
+# ``~/.openprogram/`` — one hidden directory, matching the project
+# name. Earlier builds split state across two dirs (``~/.agentic/``
+# for sessions/memory/config and ``~/.openprogram/`` for
+# auth/cache/logs/plugins), which was confusing and even let logs
+# land in both. We consolidated on ``~/.openprogram/``; existing
+# ``~/.agentic/`` data is migrated into it once, automatically, on
+# first ``get_state_dir`` call (see ``_migrate_legacy_state``).
+_CANONICAL_BASENAME = ".openprogram"
+
+# Old basename, kept only so the one-time migration knows where to
+# look. No new writes ever target this.
 _LEGACY_BASENAME = ".agentic"
+
+# Process-level guard so the migration probe runs at most once per
+# process (the marker file makes it once per machine).
+_migration_checked = False
 
 
 def get_active_profile() -> str | None:
@@ -57,11 +71,72 @@ def set_active_profile(name: str | None) -> None:
 
 
 def get_state_dir() -> Path:
-    """Root dir for all per-profile state (config + sessions + logs + ...)."""
+    """Root dir for all per-profile state (config + sessions + logs + ...).
+
+    Canonical location is ``~/.openprogram/`` (or
+    ``~/.openprogram-<profile>/`` under a named profile). On the first
+    call for the default profile we migrate any legacy ``~/.agentic/``
+    data into it — once, guarded by a marker file.
+    """
     profile = get_active_profile()
     if profile:
-        return Path.home() / f"{_LEGACY_BASENAME}-{profile}"
-    return Path.home() / _LEGACY_BASENAME
+        canonical = Path.home() / f"{_CANONICAL_BASENAME}-{profile}"
+        legacy = Path.home() / f"{_LEGACY_BASENAME}-{profile}"
+    else:
+        canonical = Path.home() / _CANONICAL_BASENAME
+        legacy = Path.home() / _LEGACY_BASENAME
+    _maybe_migrate_legacy_state(legacy, canonical)
+    return canonical
+
+
+def _maybe_migrate_legacy_state(legacy: Path, canonical: Path) -> None:
+    """One-time move of ``~/.agentic/*`` → ``~/.openprogram/*``.
+
+    Best-effort and idempotent: a marker file in ``canonical`` records
+    that the migration ran, so subsequent calls cost one ``exists()``
+    check. Never raises — a half-migrated or unmigrated state is still
+    usable (canonical wins; anything left in legacy is just orphaned).
+
+    Move semantics: per-item, skip-if-destination-exists (so we never
+    clobber data already under the canonical dir, e.g. ``auth`` /
+    ``cache`` / ``logs`` that always lived there). Ephemeral worker
+    lock/pid/port files are skipped — they're re-created by the next
+    worker and moving a stale one would mislead ``worker status``.
+    """
+    global _migration_checked
+    if _migration_checked:
+        return
+    _migration_checked = True
+
+    marker = canonical / ".migrated_from_agentic"
+    try:
+        if marker.exists() or not legacy.exists():
+            return
+        canonical.mkdir(parents=True, exist_ok=True)
+        import shutil
+        _skip = {"worker.lock", "worker.pid", "worker.port"}
+        for item in legacy.iterdir():
+            if item.name in _skip:
+                continue
+            dest = canonical / item.name
+            if dest.exists():
+                # Already present under canonical (e.g. a dir that
+                # exists in both) — leave the legacy copy orphaned
+                # rather than risk a merge/clobber.
+                continue
+            try:
+                shutil.move(str(item), str(dest))
+            except (OSError, shutil.Error):
+                # Skip this item; keep going. Partial migration is fine.
+                continue
+        marker.write_text(
+            "Migrated from ~/.agentic on first run. Safe to delete the "
+            "(now mostly-empty) ~/.agentic dir.\n",
+            encoding="utf-8",
+        )
+    except Exception:
+        # Migration is a convenience, never a hard requirement.
+        pass
 
 
 def get_config_path() -> Path:
