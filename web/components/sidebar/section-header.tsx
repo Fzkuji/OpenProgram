@@ -94,8 +94,12 @@ export function SectionHeader({
         />
       ) : null}
       {actions ? (
+        // The filter button is 22px — taller than the 18px label line.
+        // `-my-[2px]` absorbs the overflow so it doesn't stretch this
+        // header taller than the button-less sections; the button keeps
+        // its full 22px click target (centred on the label).
         <span
-          className="ml-auto flex items-center"
+          className="-my-[2px] ml-auto flex items-center"
           onClick={(e) => e.stopPropagation()}
         >
           {actions}
