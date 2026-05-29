@@ -14,37 +14,36 @@ the LLM phase gracefully.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from pathlib import Path
 from typing import Callable
 
 logger = logging.getLogger(__name__)
 
 
 def _read_default_model() -> tuple[str, str] | None:
-    from openprogram.paths import get_state_dir
-    state = get_state_dir()
-    agents_meta = state / "agents.json"
-    if not agents_meta.exists():
-        return None
+    """Resolve the default agent's (provider, model_id).
+
+    Delegates to ``agents.manager.get_default()`` rather than re-reading
+    ``agents.json`` by hand. The hand-rolled version returned None
+    whenever the ``agents.json`` *index* file was absent — but a fresh
+    install often has only the per-agent record
+    (``agents/<id>/agent.json`` with ``"default": true``) and no index
+    yet. ``manager.get_default()`` has the fallback chain (index →
+    DEFAULT_AGENT_ID → first agent) that handles exactly that case, so
+    the memory subsystem was silently disabled (build_default_llm →
+    None → session-end ingest dropped every conversation) on any
+    machine where the index hadn't been written. Reuse the one
+    authoritative resolver instead of duplicating a buggy subset.
+    """
     try:
-        meta = json.loads(agents_meta.read_text(encoding="utf-8"))
+        from openprogram.agents import manager as _agents
+        spec = _agents.get_default()
     except Exception:
         return None
-    default_id = meta.get("default_id") or (meta.get("order") or [None])[0]
-    if not default_id:
+    if spec is None or spec.model is None:
         return None
-    agent_file = state / "agents" / default_id / "agent.json"
-    if not agent_file.exists():
-        return None
-    try:
-        agent = json.loads(agent_file.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    model = agent.get("model") or {}
-    provider = model.get("provider")
-    model_id = model.get("id")
+    provider = (spec.model.provider or "").strip()
+    model_id = (spec.model.id or "").strip()
     if not provider or not model_id:
         return None
     return provider, model_id

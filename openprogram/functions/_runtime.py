@@ -245,7 +245,19 @@ def _python_type_to_json_schema(tp: Any) -> dict[str, Any]:
     origin = get_origin(tp)
     args = get_args(tp)
 
-    if origin is Union:
+    # Two union spellings reach here and they have DIFFERENT origins:
+    #   * ``Optional[X]`` / ``Union[X, None]``  → origin is ``typing.Union``
+    #   * ``X | None`` (PEP 604, py3.10+)        → origin is ``types.UnionType``
+    # The old code only matched ``typing.Union``, so every parameter
+    # written in the modern ``X | None`` style (e.g. ``path: str | None``)
+    # fell through to the ``return {}`` at the bottom and produced a
+    # schema with NO ``type`` key. OpenAI/codex's Responses API rejects
+    # such a tool with HTTP 400 ("parameter '<x>' must have a 'type'
+    # key"), which silently broke tool use for every tool using that
+    # syntax (bash.timeout, glob.path, …) — including the main chat.
+    import types as _types
+    _union_origins = (Union, getattr(_types, "UnionType", ()))
+    if origin in _union_origins:
         non_none = [a for a in args if a is not type(None)]
         if len(non_none) == 1:
             # Optional[X] → schema of X (caller marks it optional via

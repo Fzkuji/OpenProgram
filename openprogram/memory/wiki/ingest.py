@@ -213,7 +213,18 @@ def _render_conversation(
     lines: list[str] = []
     for m in messages:
         role = m.get("role", "")
-        content = m.get("content", "")
+        # Session DAG nodes (Call) store text in ``output`` (and
+        # ``input`` for code/llm calls), NOT ``content``. The old code
+        # only read ``content``, so every real session rendered EMPTY
+        # and the ingest agent concluded "empty/test session" and wrote
+        # nothing. Read the right fields, in priority order, and fall
+        # back to ``content`` for any caller that still uses it.
+        content = (
+            m.get("content")
+            or m.get("output")
+            or m.get("input")
+            or ""
+        )
         if isinstance(content, list):
             content = " ".join(
                 str(p.get("text", p)) if isinstance(p, dict) else str(p)
@@ -347,9 +358,31 @@ def ingest_session(
         analysis=analysis,
         source=source,
     )
+    # The generation step is an AGENTIC write: the prompt tells the
+    # model to READ existing pages and WRITE / EDIT wiki files in place.
+    # ``Runtime.exec`` makes tools opt-in — a bare call with no tools is
+    # a pure reasoning turn, so the model could only emit a text
+    # "report" and never touch disk (ingest returned ok=True but wrote 0
+    # files).
+    #
+    # Hand it a *minimal* file toolset via ``toolset`` + ``tools_allow``:
+    # resolve the ``default`` preset, then intersect down to exactly the
+    # file tools the wiki-maintainer prompt references. We scope it this
+    # tight for two reasons: (1) the maintainer has no business running
+    # bash / web / browser; (2) ``bash``'s generated schema currently
+    # trips a codex 400 ("parameter 'timeout' must have a 'type' key") —
+    # a standalone tool-schema bug — so excluding it keeps ingest
+    # working regardless of that fix's timeline.
+    #
+    # NB: pass ``toolset`` + ``tools_allow`` (strings), NOT
+    # ``tools=<AgentTool objects>`` — ``Runtime.exec`` adapts the
+    # preset-resolved tools itself, but ``_adapt_tools`` rejects raw
+    # ``functions.AgentTool`` instances (they lack ``.spec``).
     try:
         report = runtime.exec(
             content=[{"type": "text", "text": gen_prompt}],
+            toolset="default",
+            tools_allow=["read", "write", "edit", "list", "glob", "grep", "apply_patch"],
             max_iterations=40,
         )
     except Exception as e:  # noqa: BLE001

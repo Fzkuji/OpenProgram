@@ -125,18 +125,38 @@ def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
     the ingest fails we fall through to it.
     """
     try:
-        from .wiki.ingest import ingest_session
-        from .llm_bridge import build_default_llm
+        from .wiki.ingest import ingest_session, _build_runtime
     except Exception:
         return False
-    llm = build_default_llm()
-    if llm is None:
-        # No LLM configured at all — safe to mark processed; we'd just
-        # loop on this same session forever otherwise.
-        return True
+
+    # Pre-flight: is any LLM runtime available at all? ``ingest_session``
+    # builds its own runtime internally via ``_build_runtime``; we probe
+    # the same way first so we can DEFER (not drop) when no provider is
+    # configured yet.
+    runtime = _build_runtime()
+    if runtime is None:
+        # No LLM available right now (fresh install with no provider
+        # configured yet, or a transient resolution failure). Return
+        # False so we DON'T mark this session processed — it stays in
+        # the queue and gets ingested once a provider is configured.
+        #
+        # Previously this returned True ("mark processed") to avoid
+        # looping, but that silently dropped every conversation on any
+        # machine where no runtime resolved. Re-trying is cheap, and the
+        # raw conversation is never lost — it lives permanently in
+        # session-git (the entity layer). So a deferred ingest costs
+        # nothing and loses nothing.
+        logger.debug(
+            "memory: no LLM runtime available; deferring ingest of %s (will retry)",
+            session_id,
+        )
+        return False
 
     try:
-        result = ingest_session(session_id, messages, llm=llm)
+        # Pass the runtime we already built so ingest doesn't build a
+        # second one. ``ingest_session`` takes ``runtime=`` (a Runtime
+        # object with ``.exec``), not an ``llm=`` callable.
+        result = ingest_session(session_id, messages, runtime=runtime)
     except Exception as e:  # noqa: BLE001
         logger.warning("memory: wiki ingest crashed for %s: %s", session_id, e)
         return False
