@@ -1,6 +1,7 @@
 """Task persistence — one ``tasks.json`` file per session repo.
 
-Lives at ``<sessions-git>/<session_id>/tasks.json`` so it rides the
+Lives at ``<session-repo>/tasks.json`` (i.e. ``<state>/sessions/<id>/``,
+or inside a project-bound session's repo) so it rides the
 same git history as ``meta.json`` and ``context/``. Schema:
 
   {"tasks": {<task_id>: <Task.to_dict>, ...}, "version": 1}

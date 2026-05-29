@@ -1,4 +1,4 @@
-"""Worktree persistence — single ``~/.agentic/worktrees.json``.
+"""Worktree persistence — single ``~/.openprogram/worktrees.json``.
 
 Worktrees are cross-session resources (a plan agent can hand one
 off to a sub-task, the user can keep a worktree across session

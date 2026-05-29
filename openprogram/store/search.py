@@ -1,7 +1,7 @@
 """Cross-session message search backed by ``ripgrep``.
 
 Replaces SQLite FTS5. ``ripgrep`` is invoked as a subprocess against
-the ``~/.agentic/sessions-git/*/history/*.json`` tree. Matches are
+the ``~/.openprogram/sessions/*/history/*.json`` tree. Matches are
 parsed, mapped back to ``{session_id, node_id}`` tuples, and rendered
 into the same message-dict shape the old ``DagSessionDB.search_messages``
 returned.

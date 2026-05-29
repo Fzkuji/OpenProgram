@@ -53,7 +53,7 @@ Two product properties we care about:
 ```
 
 Everything lives under `<state>/memory/`, which defaults to
-`~/.agentic/memory/` and follows `--profile` / `OPENPROGRAM_STATE_DIR`.
+`~/.openprogram/memory/` and follows `--profile` / `OPENPROGRAM_STATE_DIR`.
 
 ## End-to-end flow
 

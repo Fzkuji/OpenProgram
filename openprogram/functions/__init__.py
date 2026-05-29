@@ -265,7 +265,7 @@ def list_available() -> list[str]:
     Reads ``check_fn`` / ``requires_env`` / ``can_use`` from each
     registered AgentTool's sidecar attributes (set by ``@function``).
     The disabled-list lives at ``tools.disabled`` in
-    ``~/.agentic/config.json`` and is read lazily so this module
+    ``~/.openprogram/config.json`` and is read lazily so this module
     stays free of webui/FastAPI imports at registry-build time.
     """
     disabled: set[str] = set()

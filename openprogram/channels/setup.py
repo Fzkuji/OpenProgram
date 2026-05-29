@@ -74,7 +74,7 @@ def run() -> int:
             if _confirm("Start the channels worker now?", default=True):
                 pid = _worker.spawn_detached()
                 print(f"\n[setup] worker started, PID {pid}")
-                print("[setup] log: ~/.agentic/channels/worker.log")
+                print("[setup] log: ~/.openprogram/channels/worker.log")
             else:
                 print("\n[setup] worker not started — run "
                       "`openprogram channels start` when ready.")

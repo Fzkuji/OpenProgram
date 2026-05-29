@@ -643,7 +643,7 @@ def function(
         0.3 × context_window_chars)`` — see ``_effective_max_chars``.
         Over the cap we head+tail truncate with a marker.
       persist_full: when True, oversized results are also saved
-        whole to ``~/.agentic/tool_results/<call_id>.txt`` and the
+        whole to ``~/.openprogram/tool_results/<call_id>.txt`` and the
         marker mentions the path. The read tool can fetch it.
       stream_capacity_chars: bound on the streaming on_update tail
         accumulator. Defaults to ``max_result_chars``.

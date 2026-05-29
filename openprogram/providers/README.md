@@ -26,6 +26,7 @@ surface alive, so existing imports like ``detect_provider`` or
 
 ## Sub-packages
 
+- **`_schema/`** — Tool-schema normalization across providers
 - **`_shared/`** — Shared helpers used by multiple provider stream implementations
 - **`amazon_bedrock/`** — Amazon Bedrock Converse Stream provider
 - **`anthropic/`** — Anthropic provider

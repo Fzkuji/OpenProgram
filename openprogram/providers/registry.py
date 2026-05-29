@@ -74,7 +74,7 @@ def _detect_caller_env() -> tuple[str, str] | None:
 
 
 def _load_provider_config() -> tuple[str, str] | None:
-    """Load provider preference from env vars or ~/.agentic/config.json.
+    """Load provider preference from env vars or ~/.openprogram/config.json.
 
     Priority: env vars > config file.
     Returns (provider, model) if configured, None otherwise.
@@ -109,7 +109,7 @@ def detect_provider() -> tuple[str, str]:
 
     Detection priority:
       1. Env vars (AGENTIC_PROVIDER / AGENTIC_MODEL)
-      2. Config file (~/.agentic/config.json → default_provider / default_model)
+      2. Config file (~/.openprogram/config.json → default_provider / default_model)
       3. Caller environment (inside Claude Code? Codex? → use the same)
       4. Available CLI providers (claude → codex → gemini)
       5. Available API keys (ANTHROPIC_API_KEY → OPENAI_API_KEY → GOOGLE_API_KEY)

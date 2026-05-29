@@ -81,7 +81,7 @@ conversations by copying messages; we fork the underlying repo.
 ## Layered memory
 
 Memory isn't a single bag. Six separate stores under
-`~/.agentic/memory/` cover different timescales and purposes:
+`~/.openprogram/memory/` cover different timescales and purposes:
 
 | Layer | What goes there |
 |---|---|

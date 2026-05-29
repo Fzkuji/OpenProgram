@@ -17,7 +17,7 @@ Public surface:
   * :func:`set_worktree` / :func:`current_worktree_path` — ContextVar
     helpers (``openprogram.worktree.context``).
 
-The worktree directory is **never** placed inside ``~/.agentic/sessions-git/``
+The worktree directory is **never** placed inside ``~/.openprogram/sessions/``
 — that subtree belongs to OpenProgram's own conversation-memory git
 repositories. See ``docs/design/agent-worktree.md`` Part 1 D4.
 

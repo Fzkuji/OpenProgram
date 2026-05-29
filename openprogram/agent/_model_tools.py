@@ -39,7 +39,7 @@ def load_agent_profile(agent_id: str) -> dict:
     profile, ``resolve_model`` finds nothing, and the stub crashes the
     very first turn. To make first-launch chats Just Work we seed a
     minimal default agent here: pick the first enabled model from
-    ``~/.agentic/config.json`` (whatever the user (or
+    ``~/.openprogram/config.json`` (whatever the user (or
     ``providers adopt``) configured) and write it as the agent's
     default model. Subsequent loads return the persisted profile.
     """
@@ -72,7 +72,7 @@ def _seed_default_agent(_A, agent_id: str) -> dict | None:
 
     Model selection priority:
       1. ``default_provider`` + ``default_model`` from top-level
-         ``~/.agentic/config.json``
+         ``~/.openprogram/config.json``
       2. First entry of ``providers.<pid>.enabled_models`` for any
          provider with ``enabled: true``
       3. None — return None so callers continue with stub behavior

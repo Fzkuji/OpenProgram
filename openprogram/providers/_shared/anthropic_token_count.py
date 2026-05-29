@@ -83,7 +83,7 @@ def count_tokens_via_anthropic(
     The API key is resolved via, in order:
       1. ``api_key`` parameter
       2. ``ANTHROPIC_API_KEY`` env var
-      3. ``~/.agentic/config.json`` api_keys.ANTHROPIC_API_KEY
+      3. ``~/.openprogram/config.json`` api_keys.ANTHROPIC_API_KEY
 
     Returns None on any failure — never raises. Caller treats None as
     'we don't know' and leaves the token columns NULL.

@@ -8,7 +8,7 @@ Implements ``docs/design/agent-worktree.md`` Part 4 step 2:
   * :meth:`get_worktree` / :meth:`list_worktrees`
 
 Safety: every create call validates that the prospective
-``worktree_path`` is NOT under ``~/.agentic/sessions-git/`` (D4) and
+``worktree_path`` is NOT under ``~/.openprogram/sessions/`` (D4) and
 the ``source_repo`` IS a real git repo (D14). Merge failures keep
 the worktree alive (Part 5 #3); the entity transitions ``committing``
 → ``active`` with an ``error`` stamp.

@@ -1,6 +1,6 @@
 """MCP (Model Context Protocol) client integration.
 
-External MCP servers — listed in ``~/.agentic/mcp_servers.json`` — are
+External MCP servers — listed in ``~/.openprogram/mcp_servers.json`` — are
 spawned as stdio subprocesses on worker startup. Their ``tools/list``
 output is wrapped as :class:`~openprogram.agent.types.AgentTool` and
 registered in the shared registry so the LLM sees them alongside

@@ -164,7 +164,7 @@ for row in db.execute("SELECT id, predecessor, data_json FROM nodes"):
                    (row.predecessor, row.id))
 ```
 
-本地 `~/.agentic/dag_sessions.sqlite` 跑一次。
+本地 `~/.openprogram/dag_sessions.sqlite` 跑一次。
 
 ## 改动范围
 

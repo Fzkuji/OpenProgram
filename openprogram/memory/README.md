@@ -2,9 +2,18 @@
 
 Persistent, machine-wide memory for OpenProgram agents.
 
-**Full design doc:** [`docs/design/memory.md`](../../docs/design/memory.md).
-Read that first — this README is a navigation aid for working in the
+**Design docs:** [`docs/design/memory.md`](../../docs/design/memory.md) (v1,
+what this directory implements today) and
+[`docs/design/memory-v2.md`](../../docs/design/memory-v2.md) (the target
+two-tier entity/virtual design — Phase 0+1 done, Phase 2+ pending).
+Read those first — this README is a navigation aid for working in the
 directory, not a substitute.
+
+> **v1 vs v2:** the code in this directory is the v1 linear chain
+> (`journal → wiki → core`). The git-backed *entity* layer (Session-Git
+> + Project-Git) is already built under `openprogram/store/`, but the v2
+> *virtual* layer (timeline + knowledge graph with provenance) is not —
+> v1 is still what runs. See memory-v2.md §0.5 for the status table.
 
 ## TL;DR
 
@@ -31,7 +40,7 @@ journal.
 | `builtin/summarizer.py` | Session-end LLM prompt + JSON parser            |
 | `builtin/recall.py`   | FTS query + ranking for `memory_recall` tool      |
 | `journal.py`       | Append-only daily file writer                     |
-| `wiki.py`             | Wiki page read / write helpers                    |
+| `wiki/`               | Wiki page read / write helpers (package)          |
 | `core.py`             | `core.md` render + write                          |
 | `index.py`            | SQLite FTS index management                       |
 | `store.py`            | Filesystem layout (paths)                         |
@@ -67,13 +76,13 @@ implementation detail of the builtin provider.
 
 ```bash
 # Look at today's raw observations
-cat ~/.agentic/memory/journal/$(date +%Y-%m-%d).md
+cat ~/.openprogram/memory/journal/$(date +%Y-%m-%d).md
 
 # See what's in the always-on core
-cat ~/.agentic/memory/core.md
+cat ~/.openprogram/memory/core.md
 
 # When did sleep last run, and did it promote anything?
-cat ~/.agentic/memory/.state/last-sleep.json
+cat ~/.openprogram/memory/.state/last-sleep.json
 
 # Manually trigger a session-end scan (idle_minutes=0 = process everything)
 python -c "from openprogram.memory.session_watcher import run_now; print(run_now(idle_minutes=0))"
@@ -82,7 +91,7 @@ python -c "from openprogram.memory.session_watcher import run_now; print(run_now
 python -c "from openprogram.memory.sleep import run_sweep; from openprogram.memory.llm_bridge import build_default_llm; print(run_sweep(llm=build_default_llm()))"
 
 # Wipe everything (will rebuild on next session-end)
-rm -rf ~/.agentic/memory/journal ~/.agentic/memory/wiki ~/.agentic/memory/core.md ~/.agentic/memory/index.sqlite ~/.agentic/memory/.state
+rm -rf ~/.openprogram/memory/journal ~/.openprogram/memory/wiki ~/.openprogram/memory/core.md ~/.openprogram/memory/index.sqlite ~/.openprogram/memory/.state
 ```
 
 ## Provider quirks

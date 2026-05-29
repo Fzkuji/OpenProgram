@@ -15,7 +15,7 @@ Three backends ship out of the box:
     docker   — ``docker run --rm -i <image> sh -c "..."`` per call
     ssh      — ``ssh <target> "..."`` per call
 
-Selection is read lazily from ``~/.agentic/config.json`` (via
+Selection is read lazily from ``~/.openprogram/config.json`` (via
 ``setup._read_config``) so ``--profile`` and live config
 edits take effect without restarting anything.
 

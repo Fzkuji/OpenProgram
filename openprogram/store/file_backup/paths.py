@@ -7,7 +7,7 @@ its directory and copying each backup back to its original location.
 
 Layout::
 
-    ~/.agentic/sessions-git/<session_id>/file_backups/
+    ~/.openprogram/sessions/<session_id>/file_backups/
     └── <turn_id>/
         ├── manifest.json     # { backup_basename → original_abs_path }
         └── <hash>            # backup of one original file (no extension)

@@ -282,7 +282,7 @@ def deep_work(
         runtime:        The LLM runtime to use.
         max_steps:      Max total steps (None = unlimited).
         max_revisions:  Max evaluation-revision cycles (default: 5).
-        state_dir:      Directory for state persistence (default: ~/.agentic/logs/).
+        state_dir:      Directory for state persistence (default: ~/.openprogram/logs/).
         callback:       Called after each step/evaluation. Return False to stop.
         interactive:    If True, ask clarifying questions at start (default: True).
                         Set False for fully non-interactive execution.

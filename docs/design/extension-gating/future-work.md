@@ -77,7 +77,7 @@ If a user later hits one of these as a real problem, this doc should be updated 
 
 **Why we didn't build it**:
 - The per-type field shape is already self-documenting. Migration would be pure refactor with no new capability except syntactic.
-- Backward compatibility cost — every agent profile currently in users' `~/.agentic/agents/` would need migration code or a deprecation cycle.
+- Backward compatibility cost — every agent profile currently in users' `~/.openprogram/agents/` would need migration code or a deprecation cycle.
 - Opencode's ruleset is **first-match-wins**, which means rule ordering matters. The per-type structure has no ordering concerns (each block is independent), which is one less footgun.
 
 **When to revisit**: when we add a 5th or 6th gated extension type and the schema feels bloated. Today we have 3, which is the limit before it stops paying for itself.

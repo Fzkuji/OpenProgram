@@ -1,6 +1,6 @@
 """Persistence layer for the model catalog.
 
-All reads and writes against ``~/.agentic/config.json``'s ``providers``
+All reads and writes against ``~/.openprogram/config.json``'s ``providers``
 sub-tree, plus the small helpers that resolve per-provider API keys and
 base URLs from the same store.
 
@@ -224,7 +224,7 @@ def _resolve_api_key(provider_id: str) -> str | None:
     Looks up the provider's standard env var via
     ``providers._env_var_for`` (manual override → models.dev community
     catalogue) and falls back to the ``api_keys`` section of
-    ``~/.agentic/config.json``. Returns ``None`` for providers that
+    ``~/.openprogram/config.json``. Returns ``None`` for providers that
     have no standard env var (OAuth / daemon providers like
     ``openai-codex``, ``claude-code``, ``github-copilot``) — those
     need their own resolution path (e.g. AuthManager.acquire_sync,
@@ -237,7 +237,7 @@ def _resolve_api_key(provider_id: str) -> str | None:
         val = os.environ.get(env)
         if val:
             return val
-        # Fall back to ~/.agentic/config.json api_keys
+        # Fall back to ~/.openprogram/config.json api_keys
         from openprogram.webui.server import _load_config
         return _load_config().get("api_keys", {}).get(env) or None
     return None

@@ -82,7 +82,7 @@ def mint_worktree_id() -> str:
 class Worktree:
     """One ``git worktree`` instance the agent is using.
 
-    Persisted to ``~/.agentic/worktrees.json`` (see ``store.py``);
+    Persisted to ``~/.openprogram/worktrees.json`` (see ``store.py``);
     serialises through ``to_dict`` / ``from_dict``.
     """
 

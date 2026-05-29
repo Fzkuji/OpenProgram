@@ -15,7 +15,7 @@ def _tool_inventory() -> tuple[int, list[str]]:
 def _skill_inventory() -> tuple[int, list[tuple[str, str]]]:
     """Return (count, [(name, description), ...]) for enabled skills.
 
-    Respects ``skills.disabled`` in ``~/.agentic/config.json``.
+    Respects ``skills.disabled`` in ``~/.openprogram/config.json``.
     """
     try:
         from openprogram.agentic_programming import (

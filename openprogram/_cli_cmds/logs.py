@@ -2,7 +2,7 @@
 
 OpenProgram writes to three log files in two different state dirs:
 
-* ``~/.agentic/worker.log`` — backend webui + worker stdout/stderr
+* ``~/.openprogram/worker.log`` — backend webui + worker stdout/stderr
 * ``~/.openprogram/logs/runtime.log`` — provider probe / detect /
   agent runtime diagnostic chatter (silent on the terminal,
   always written here so it's findable)

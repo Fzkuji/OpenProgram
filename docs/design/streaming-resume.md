@@ -107,7 +107,7 @@ UI 层：
 ### 5. 死亡检测 + abort sweep
 
 worker 启动时：
-1. 扫 `~/.agentic/sessions-git/*/history/*.json`
+1. 扫 `~/.openprogram/sessions/*/history/*.json`
 2. 找 `status=running` 且 `last_update_at` 超过阈值（如 5 分钟）的 msg
 3. 改 status=`aborted`，append 一行 `metadata.aborted_reason="worker restart"`
 

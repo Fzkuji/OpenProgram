@@ -187,7 +187,7 @@ def main():
         help="One-shot prompt; send, print reply, exit")
     parser.add_argument("--profile", default=None,
         help="State-dir profile name. Reroutes config/sessions/logs to "
-             "~/.agentic-<name>/ so parallel workspaces don't share state. "
+             "~/.openprogram-<name>/ so parallel workspaces don't share state. "
              "Env: OPENPROGRAM_PROFILE.")
     parser.add_argument("--resume", default=None, metavar="SESSION_ID",
         help="Resume a prior CLI chat session. Find ids via "

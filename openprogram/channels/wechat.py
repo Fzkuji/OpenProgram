@@ -20,8 +20,8 @@ Protocol summary (host: ``https://ilinkai.weixin.qq.com``):
     POST /ilink/bot/sendmessage  send text reply
 
 Credentials persist under
-    ~/.agentic/wechat/<bot_id>.json    (mode 0600)
-    ~/.agentic/wechat/<bot_id>.sync.json
+    ~/.openprogram/wechat/<bot_id>.json    (mode 0600)
+    ~/.openprogram/wechat/<bot_id>.sync.json
 
 --profile-aware — routes through openprogram.paths.get_state_dir().
 

@@ -39,7 +39,7 @@ Core (自我认知)                       ← 已有 memory/core.md
 每个 session 一个独立 git repo:
 
 ```
-~/.agentic/sessions-git/<session_id>/
+~/.openprogram/sessions/<session_id>/
 ├── .git/
 ├── meta.json              # session 元数据 (title, agent_id, model, ...)
 ├── messages/
@@ -271,7 +271,7 @@ Phase B (这次设计的): Project + Session 都接 git
 
 - Claude Code 也支持回溯 (它有 "rewind to previous user message" UI)
 - 实现没公开, 但大概率是把 session messages 当文档 + 用某种 commit-like 机制
-- 我们这个设计**显式用 git**, 用户能直接 `cd ~/.agentic/sessions-git/<sid>` 看历史, 透明性更高
+- 我们这个设计**显式用 git**, 用户能直接 `cd ~/.openprogram/sessions/<sid>` 看历史, 透明性更高
 
 ## 9. 跟现有 commit chain 的关系
 

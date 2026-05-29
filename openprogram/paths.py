@@ -9,8 +9,8 @@ Profile resolution order (checked lazily on each call, so CLI argparse
 can set the env var before any getter runs):
 
     1. ``OPENPROGRAM_PROFILE`` env var — wins.
-    2. Default profile = writes to ``~/.agentic/`` for back-compat with
-       every existing install.
+    2. Default profile = writes to ``~/.openprogram/`` (legacy
+       ``~/.agentic/`` data is migrated in once; see ``get_state_dir``).
 
 Usage:
 
@@ -167,7 +167,7 @@ def get_default_workdir() -> str:
 
     Resolution order:
       1. ``OPENPROGRAM_WORKDIR`` env var.
-      2. ``default_workdir`` key in ``~/.agentic/config.json``.
+      2. ``default_workdir`` key in ``~/.openprogram/config.json``.
       3. ``os.getcwd()`` — the worker process's launch cwd.
 
     Why a separate concept from ``os.getcwd()``: the worker is a

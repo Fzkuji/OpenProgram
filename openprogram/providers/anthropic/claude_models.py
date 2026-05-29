@@ -325,7 +325,7 @@ def is_stale(max_age_hours: float = 24.0) -> bool:
 def _fetch_anthropic_api_models() -> list[dict]:
     """Pull the authoritative model list from the Anthropic API.
 
-    Uses the configured API key (env or ~/.agentic/config.json). Returns []
+    Uses the configured API key (env or ~/.openprogram/config.json). Returns []
     if no key is available — refresh will then probe a hard-coded candidate
     set derived from the current registry.
     """

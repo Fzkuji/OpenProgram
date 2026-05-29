@@ -1,5 +1,13 @@
 """Persistent, machine-wide memory for OpenProgram agents.
 
+This is the **v1** memory layer (the linear ``journal → wiki → core``
+chain described below). The *target* architecture is the two-tier
+entity/virtual design in ``docs/design/memory-v2.md``: the git-backed
+entity layer (Session-Git + Project-Git, in ``openprogram/store/``) is
+already built (Phase 0+1), but the v2 virtual layer (timeline +
+knowledge graph with provenance) is not yet — so v1 is what actually
+runs today.
+
 Three layers:
 
 1. **Short-term** (``journal/YYYY-MM-DD.md``)
@@ -20,8 +28,9 @@ Three layers:
 Sleep (background consolidation) runs nightly via the worker cron and
 promotes journal → wiki, regenerates core, surfaces reflections.
 
-The agent interacts via lifecycle hooks (``MemoryProvider``) and four
-tools: ``memory_note``, ``memory_recall``, ``memory_reflect``, ``memory_get``.
+The agent interacts via lifecycle hooks (``MemoryProvider``) and the
+``memory_*`` tool family (note / recall / browse / get / reflect /
+ingest / lint / status / backlinks / rename / relink / delete / review).
 
 Storage location: ``<state>/memory/`` (profile-global by default —
 shared across every agent and conversation on the machine).

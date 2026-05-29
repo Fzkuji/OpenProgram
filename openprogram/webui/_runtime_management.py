@@ -142,7 +142,7 @@ def _preferred_default_model(provider: str) -> str | None:
     """Pick a non-hardcoded default model for a provider based on user config.
 
     Priority:
-      1. Top-level ``default_model`` in ``~/.agentic/config.json``
+      1. Top-level ``default_model`` in ``~/.openprogram/config.json``
          (only when ``default_provider`` matches or is unset).
       2. First id in ``providers.<provider>.enabled_models`` if the user
          has any models enabled for this provider.

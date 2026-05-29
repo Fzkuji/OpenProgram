@@ -12,7 +12,7 @@ UI layer: uses ``questionary`` for arrow-key navigation when the
 dep is present, falls back to plain ``input()`` otherwise so a
 minimal install still gets a usable wizard.
 
-Storage lives under ``~/.agentic/config.json`` alongside the
+Storage lives under ``~/.openprogram/config.json`` alongside the
 existing provider / api_keys config. Keys written here:
     default_provider   str
     default_model      str

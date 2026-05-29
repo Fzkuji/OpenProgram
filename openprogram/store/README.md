@@ -19,7 +19,10 @@ Public surface (re-exported for legacy import paths):
                           from git on startup / cache miss
 
 Storage layout: every session is its own git repo at
-``~/.agentic/sessions-git/<session_id>/`` with two top-level dirs:
+``~/.openprogram/sessions/<session_id>/`` (ad-hoc chats) — or inside a
+bound project at ``<project>/.openprogram/sessions/<session_id>/``
+(indexed by ``sessions/locations.json``). Each repo has two top-level
+dirs:
 
     history/   append-only JSON files, one per DAG node, named
                ``NNNN-{u|a|t|s|...}-<id>.json`` where NNNN is the
@@ -43,6 +46,7 @@ fully rebuildable from git on demand. See
 - **`git_session.py`** — One git repo per session
 - **`graphstore_shim.py`** — Backward-compat shim emulating the old ``GraphStore`` API on top of
 - **`memory_index.py`** — Per-session in-memory DAG index
+- **`project_store.py`** — Project entity memory
 - **`search.py`** — Cross-session message search backed by ``ripgrep``
 - **`session_store.py`** — SessionStore
 

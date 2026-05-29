@@ -3,7 +3,8 @@
 ``SessionDB`` is now an alias for :class:`SessionStore` (see
 ``openprogram.store.session_store``). The old SQLite-backed
 ``DagSessionDB`` is retired; all session memory lives in
-``~/.agentic/sessions-git/<session_id>/`` git repos.
+``~/.openprogram/sessions/<session_id>/`` git repos (or, for a
+project-bound session, inside the project's ``.openprogram/sessions/``).
 
 The public method surface used by ``dispatcher``, channels, and the
 WebUI is preserved by ``SessionStore`` — same 22 methods, same

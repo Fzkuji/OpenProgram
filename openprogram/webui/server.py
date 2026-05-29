@@ -474,7 +474,7 @@ def _restore_sessions():
 
 
 def _load_config() -> dict:
-    """Load config from ~/.agentic/config.json."""
+    """Load config from ~/.openprogram/config.json."""
     try:
         with open(_CONFIG_PATH(), encoding="utf-8") as f:
             return json.load(f)
@@ -483,7 +483,7 @@ def _load_config() -> dict:
 
 
 def _save_config(config: dict):
-    """Save config to ~/.agentic/config.json."""
+    """Save config to ~/.openprogram/config.json."""
     os.makedirs(os.path.dirname(_CONFIG_PATH()), exist_ok=True)
     with open(_CONFIG_PATH(), "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)

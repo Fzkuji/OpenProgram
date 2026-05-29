@@ -37,7 +37,7 @@ These don't block shipping the current behavior but are the obvious next iterati
 
 4. **Concurrent sub-agents off the same parent.** Each gets its own worktree (no fs contention), but `default_db()` ContextVar override is per-context — two sub-agents spawned from the same WS handler would need separate executor threads (and `copy_context().run(...)` per thread) so the overrides don't clobber. The single-thread executor path used by the WS handler is fine for sequential spawns; parallel spawn would need a careful pass.
 
-5. **Old sessions with broken sub_agent tool rows need cleanup.** If you have `~/.agentic/sessions-git/<sid>/history/` JSON files where `role="code"` and `name="sub_agent"` (left over from the first E-part-3 implementation), they'll still trip `No tool call found for function call output` on subsequent turns. Wipe those files + their referencing context commits and `git commit` the deletion. Fresh sessions don't need this.
+5. **Old sessions with broken sub_agent tool rows need cleanup.** If you have `~/.openprogram/sessions/<sid>/history/` JSON files where `role="code"` and `name="sub_agent"` (left over from the first E-part-3 implementation), they'll still trip `No tool call found for function call output` on subsequent turns. Wipe those files + their referencing context commits and `git commit` the deletion. Fresh sessions don't need this.
 
 ## Touch-points worth re-reading before extending
 

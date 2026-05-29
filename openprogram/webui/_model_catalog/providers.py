@@ -235,7 +235,7 @@ def _is_configured(provider_id: str) -> bool:
       ``~/.codex/auth.json``) and ``claude-code`` (HEAD against the
       Meridian / claude-max-api daemon's health endpoint).
     * Everything else — env-var key set, or non-empty
-      ``~/.agentic/config.json :: api_keys.<env_var>`` row.
+      ``~/.openprogram/config.json :: api_keys.<env_var>`` row.
     """
     # CLI-backed: binary presence decides.
     for cli in _CLI_PROVIDERS:
