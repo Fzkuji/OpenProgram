@@ -166,6 +166,18 @@ function labelFor(c: LegacyConv, untitled: string): string {
   return c.title || untitled;
 }
 
+/** True for a brand-new chat with nothing in it yet: no channel, no real
+ *  (non-placeholder) title, and no message preview. These empty sessions
+ *  otherwise render as a pile of "Untitled" rows that look broken — hide
+ *  them until they gain actual content (the first message gives them a
+ *  preview / title and they appear), matching Claude's Recents. */
+function isEmptyPlaceholder(c: LegacyConv): boolean {
+  if (channelPrefix(c.channel, c.account_id)) return false; // channel chats always list
+  if (displayTitle(c)) return false; // has a real title
+  if (c.preview && String(c.preview).trim()) return false; // has a message preview
+  return true;
+}
+
 export function SessionsList() {
   const router = useRouter();
   const pathname = usePathname();
@@ -289,6 +301,10 @@ export function SessionsList() {
 
   const visible = (() => {
     let arr = convArr;
+    // Hide empty new-chat placeholders ("Untitled" with no messages) so
+    // they don't pile up and clutter the list — they reappear the moment
+    // they have real content.
+    arr = arr.filter((c) => !isEmptyPlaceholder(c));
     if (view.status === "active") arr = arr.filter((c) => !c.archived);
     else if (view.status === "archived") arr = arr.filter((c) => !!c.archived);
     // Last-activity window (uses created_at; swap to updated_at when the
