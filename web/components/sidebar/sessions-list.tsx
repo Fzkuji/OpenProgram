@@ -323,6 +323,8 @@ export function SessionsList() {
       if (view.sort === "title") {
         return labelFor(a, "").localeCompare(labelFor(b, ""));
       }
+      // recency + created both order by created_at (newest first) until
+      // the backend exposes a separate last-activity timestamp.
       return (b.created_at || nowTs) - (a.created_at || nowTs);
     };
     return [...arr].sort(cmp);
@@ -546,13 +548,13 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
     return out;
   }
 
-  // groupBy "none"
-  if (o.sort === "title") {
-    // Flat alphabetical run, no headers.
+  if (o.groupBy === "flat") {
+    // "None" — one flat run, no headers (order follows the sort).
     return [{ key: "flat", label: "", items: visible }];
   }
 
-  // recency → Pinned (if any) + date buckets, insertion order = recency.
+  // groupBy "none" → "Date": Pinned (if any) + date buckets; insertion
+  // order within each bucket follows the chosen sort.
   const pinned = visible.filter((c) => c.pinned);
   const rest = visible.filter((c) => !c.pinned);
   const buckets = new Map<string, Section>();
@@ -661,7 +663,10 @@ function ConvItem({
     " gap-[8px] overflow-hidden rounded-[var(--ui-list-radius)] px-[8px] py-[6px]" +
     " text-fs-base leading-[20px] whitespace-nowrap" +
     " transition-colors duration-150 ease-out hover:bg-bg-hover";
-  const colorCls = active ? "bg-bg-hover text-text-bright" : "text-text-primary";
+  // Selected row: a background highlight marks it; the text steps down
+  // from pure white to the warm off-white (--text-primary) so it isn't
+  // glaringly bright.
+  const colorCls = active ? "bg-bg-hover text-text-primary" : "text-text-primary";
   const maskOnHover =
     "group-hover:[text-overflow:clip]" +
     " group-hover:[-webkit-mask-image:linear-gradient(to_right,#000_70%,transparent_92%)]" +
