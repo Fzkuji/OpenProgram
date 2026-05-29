@@ -369,6 +369,9 @@ export function SessionsList() {
   // layout — no separate "Recents" bar). When the list is flat (title
   // sort → one header-less section) or empty, a thin right-aligned row
   // carries it instead so it's always reachable.
+  // Date buckets (groupBy "none") are plain separators; State / Project
+  // sections are collapsible.
+  const collapsible = view.groupBy !== "none";
   const firstHasHeader = sections.length > 0 && sections[0].label !== "";
   const body = (
     <>
@@ -385,12 +388,13 @@ export function SessionsList() {
           <div key={sec.key}>
             <GroupHeader
               name={sec.label}
-              count={sec.items.length}
+              collapsible={collapsible}
               collapsed={collapsedGroups.has(sec.key)}
               onToggle={() => toggleGroupCollapse(sec.key)}
               actions={i === 0 ? <RecentsFilter /> : undefined}
             />
-            {!collapsedGroups.has(sec.key) && sec.items.map(renderRow)}
+            {(!collapsible || !collapsedGroups.has(sec.key)) &&
+              sec.items.map(renderRow)}
           </div>
         ),
       )}
@@ -544,38 +548,55 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
 
 /* ---- group section header -------------------------------------- */
 
+/** Section label (Today / Working / a project …) in the SAME plain,
+ *  normal-weight muted style as the old "Recents" label — no weird
+ *  uppercase / letter-spacing. ``collapsible`` sections (State /
+ *  Project) get a small ⌄ toggle to the right of the label and fold
+ *  on click; date buckets pass ``collapsible={false}`` and render as
+ *  quiet, non-interactive separators. The first section also hosts
+ *  the filter button, far-right. */
 function GroupHeader({
   name,
-  count,
+  collapsible,
   collapsed,
   onToggle,
   actions,
 }: {
   name: string;
-  count: number;
+  collapsible: boolean;
   collapsed: boolean;
   onToggle: () => void;
-  /** Optional right-side control (the filter button on the first
-   *  section). Clicks inside don't toggle the section. */
   actions?: React.ReactNode;
 }) {
   return (
     <div
-      role="button"
-      onClick={onToggle}
-      className="group/h flex cursor-pointer select-none items-center gap-1 px-[8px] pt-[8px] pb-[2px]
-        text-[11px] uppercase tracking-wide text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+      onClick={collapsible ? onToggle : undefined}
+      className={
+        "flex select-none items-center gap-1.5 px-[8px] pt-[10px] pb-[2px]" +
+        " text-[13px] font-normal text-[var(--text-muted)]" +
+        (collapsible ? " cursor-pointer hover:text-[var(--text-secondary)]" : "")
+      }
     >
-      <span className="w-3 text-center">{collapsed ? "▸" : "▾"}</span>
       <span className="truncate">{name}</span>
-      <span className="opacity-70">{count}</span>
+      {collapsible ? (
+        <svg
+          width="11" height="11" viewBox="0 0 16 16" fill="none"
+          stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0 transition-transform duration-150"
+          style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
+        >
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+      ) : null}
       {actions ? (
-        <span className="ml-auto flex items-center" onClick={(e) => e.stopPropagation()}>
+        <span
+          className="ml-auto flex items-center"
+          onClick={(e) => e.stopPropagation()}
+        >
           {actions}
         </span>
-      ) : (
-        <span className="ml-auto" />
-      )}
+      ) : null}
     </div>
   );
 }
