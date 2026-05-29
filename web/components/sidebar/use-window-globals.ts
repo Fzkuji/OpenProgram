@@ -29,6 +29,8 @@ interface LegacyConv {
   pinned?: boolean;
   archived?: boolean;
   group?: string;
+  status?: string;
+  unread?: boolean;
 }
 
 /**
@@ -47,7 +49,8 @@ function convsSignature(convs: Record<string, LegacyConv>): string {
     const c = convs[id];
     sig +=
       "|" + id + ":" + (c.title || "") + ":" + (c.preview || "") +
-      ":" + (c.pinned ? 1 : 0) + (c.archived ? 1 : 0) + ":" + (c.group || "");
+      ":" + (c.pinned ? 1 : 0) + (c.archived ? 1 : 0) + ":" + (c.group || "") +
+      ":" + (c.status || "") + (c.unread ? 1 : 0);
   }
   return sig;
 }

@@ -191,6 +191,11 @@ interface SessionRow {
   pinned?: boolean;
   archived?: boolean;
   group?: string | null;
+  /** Lifecycle status for the sidebar's leading dot (Claude-Code-style):
+   *  "needs_input" → amber, "done" → completed; pairs with `unread`. */
+  status?: "needs_input" | "done" | "idle" | null;
+  /** Finished result not yet opened → blue dot. */
+  unread?: boolean;
 }
 
 export function handleSessionsList(data: SessionRow[]): void {
@@ -218,6 +223,8 @@ export function handleSessionsList(data: SessionRow[]): void {
           pinned: !!c.pinned,
           archived: !!c.archived,
           group: c.group || "",
+          status: c.status || undefined,
+          unread: !!c.unread,
         };
       } else {
         convs[c.id].has_session = c.has_session;
@@ -233,6 +240,8 @@ export function handleSessionsList(data: SessionRow[]): void {
         if ("pinned" in c) convs[c.id].pinned = !!c.pinned;
         if ("archived" in c) convs[c.id].archived = !!c.archived;
         if ("group" in c) convs[c.id].group = c.group || "";
+        if ("status" in c) convs[c.id].status = c.status || undefined;
+        if ("unread" in c) convs[c.id].unread = !!c.unread;
         // session_loaded 早到时 conv 没 created_at, 这里 sessions_list
         // 后到要补上, 不然 sidebar 排序拿不到时间戳, 新会话沉底.
         if (c.created_at != null && convs[c.id].created_at == null) {
@@ -274,6 +283,8 @@ export function handleSessionUpdated(
     pinned?: boolean;
     archived?: boolean;
     group?: string | null;
+    status?: "needs_input" | "done" | "idle" | null;
+    unread?: boolean;
   } | null,
 ): void {
   if (!data || !data.id) return;
@@ -284,6 +295,8 @@ export function handleSessionUpdated(
   if ("pinned" in data) conv.pinned = !!data.pinned;
   if ("archived" in data) conv.archived = !!data.archived;
   if ("group" in data) conv.group = data.group || "";
+  if ("status" in data) conv.status = data.status || undefined;
+  if ("unread" in data) conv.unread = !!data.unread;
   W.renderSessions?.();
 }
 
