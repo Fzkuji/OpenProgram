@@ -171,7 +171,7 @@ export function AvatarPicker({
             type="button"
             onClick={() => pickSource(s.id)}
             title={s.hint}
-            style={_pickerBtn(source === s.id)}
+            className={_pickerTile(source === s.id)}
           >
             <Avatar
               size={40}
@@ -189,7 +189,7 @@ export function AvatarPicker({
           type="button"
           onClick={() => pickSource("letter")}
           title="Coloured circle with one letter"
-          style={_pickerBtn(source === "letter")}
+          className={_pickerTile(source === "letter")}
         >
           <Avatar
             size={40}
@@ -206,7 +206,7 @@ export function AvatarPicker({
           type="button"
           onClick={() => pickSource("upload")}
           title="Upload your own PNG / JPG / SVG / GIF"
-          style={_pickerBtn(source === "upload")}
+          className={_pickerTile(source === "upload")}
         >
           {value?.kind === "upload" && value.file ? (
             <Avatar size={40} name={name} config={value} />
@@ -258,7 +258,7 @@ export function AvatarPicker({
               type="button"
               onClick={() => setVariantSeeds(_randomVariantSeeds(12))}
               title="Generate a fresh batch of variants"
-              style={_smallBtn}
+              className={_smallBtnCls}
             >
               ↻ Regenerate
             </button>
@@ -279,7 +279,7 @@ export function AvatarPicker({
                   type="button"
                   onClick={() => pickVariant(seed)}
                   title={seed}
-                  style={_variantBtn(selected)}
+                  className={_variantTile(selected)}
                 >
                   <Avatar
                     size={40}
@@ -306,7 +306,7 @@ export function AvatarPicker({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              style={_smallBtn}
+              className={_smallBtnCls}
             >
               Choose file…
             </button>
@@ -314,7 +314,7 @@ export function AvatarPicker({
               <button
                 type="button"
                 onClick={() => onChange({ kind: "upload", file: undefined })}
-                style={_smallBtn}
+                className={_smallBtnCls}
               >
                 Clear
               </button>
@@ -349,39 +349,29 @@ export function AvatarPicker({
   );
 }
 
-const _pickerBtn = (selected: boolean): CSSProperties => ({
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  gap: 4,
-  padding: 6,
-  borderRadius: 8,
-  background: selected ? "var(--bg-hover)" : "transparent",
-  border: selected
-    ? "1px solid color-mix(in srgb, var(--accent-orange) 50%, transparent)"
-    : "1px solid var(--border)",
-  cursor: "pointer",
-  transition: "background-color 0.15s, border-color 0.15s",
-});
+// All buttons here use Tailwind className strings (not inline style
+// objects) for one reason: inline styles can't express ``:hover``, so
+// the old inline-style buttons had zero hover feedback — which is what
+// made the Regenerate button feel dead and off-system. These mirror
+// the idle-neutral / amber-on-hover pill philosophy used across the
+// app (skills discovery, settings), with ``transition-colors`` for
+// the animation.
 
-// Variant tile — same idle/selected pattern as the style picker but
-// without a label underneath, so the grid packs denser. Padding is
-// tighter (the variant tiles don't carry an extra text row).
-const _variantBtn = (selected: boolean): CSSProperties => ({
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 56,
-  height: 56,
-  padding: 4,
-  borderRadius: 8,
-  background: selected ? "var(--bg-hover)" : "transparent",
-  border: selected
-    ? "1px solid color-mix(in srgb, var(--accent-orange) 50%, transparent)"
-    : "1px solid var(--border)",
-  cursor: "pointer",
-  transition: "background-color 0.15s, border-color 0.15s",
-});
+// Style + Letter + Custom tiles: column layout (avatar over label),
+// idle transparent, amber border when selected, subtle hover when not.
+const _pickerTile = (selected: boolean): string =>
+  "flex flex-col items-center gap-1 p-1.5 rounded-lg border cursor-pointer transition-colors " +
+  (selected
+    ? "bg-[var(--bg-hover)] border-[color-mix(in_srgb,var(--accent-orange)_50%,transparent)]"
+    : "border-[var(--border)] hover:bg-[var(--bg-hover)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]");
+
+// Variant tile — fixed 56×56, no label, denser grid. Same idle/
+// selected/hover treatment as the style tiles.
+const _variantTile = (selected: boolean): string =>
+  "inline-flex items-center justify-center w-14 h-14 p-1 rounded-lg border cursor-pointer transition-colors " +
+  (selected
+    ? "bg-[var(--bg-hover)] border-[color-mix(in_srgb,var(--accent-orange)_50%,transparent)]"
+    : "border-[var(--border)] hover:bg-[var(--bg-hover)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]");
 
 const _pickerLabel: CSSProperties = {
   fontSize: 11,
@@ -389,13 +379,8 @@ const _pickerLabel: CSSProperties = {
   fontWeight: 500,
 };
 
-const _smallBtn: CSSProperties = {
-  padding: "6px 12px",
-  borderRadius: 6,
-  fontSize: 13,
-  background: "var(--bg-hover)",
-  color: "var(--text-primary)",
-  border: "1px solid var(--border)",
-  cursor: "pointer",
-  transition: "background-color 0.15s, color 0.15s, border-color 0.15s",
-};
+// Small action button (Regenerate / Choose file / Clear). Fixed 28px
+// height (h-7) so it no longer towers over its caption, rounded, and
+// — crucially — an actual hover transition into the amber accent.
+const _smallBtnCls =
+  "inline-flex items-center justify-center h-7 rounded-md px-3 text-[12px] font-medium border border-[var(--border)] bg-[var(--bg-hover)] text-[var(--text-secondary)] cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--accent-orange)_18%,transparent)] hover:text-[var(--accent-orange)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]";
