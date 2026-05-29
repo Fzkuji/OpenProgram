@@ -13,7 +13,11 @@
  */
 
 export type RecentsStatus = "active" | "archived" | "all";
-export type RecentsGroupBy = "none" | "group";
+/** How the list is sectioned:
+ *  - none    → date buckets when sorted by recency, else a flat list
+ *  - state   → Working (a task is running) / Completed
+ *  - project → by the conversation's project path (backend-fed) */
+export type RecentsGroupBy = "none" | "state" | "project";
 export type RecentsSort = "recency" | "title";
 /** Time window on the conversation's last activity (created_at /
  *  updated_at). "all" = no window. */

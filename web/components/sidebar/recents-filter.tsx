@@ -137,7 +137,8 @@ export function RecentsFilter() {
             value={view.groupBy}
             options={[
               ["none", t("sidebar.group_none")],
-              ["group", t("sidebar.group_group")],
+              ["state", t("sidebar.group_state")],
+              ["project", t("sidebar.group_project")],
             ]}
             onPick={(groupBy) => setRecentsView({ groupBy })}
           />

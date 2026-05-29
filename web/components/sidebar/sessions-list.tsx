@@ -116,6 +116,9 @@ interface LegacyConv {
   pinned?: boolean;
   archived?: boolean;
   group?: string;
+  /** Project path the conversation lives under. Backend-fed (the cwd
+   *  where an OpenProgram project was activated); absent until then. */
+  project?: string;
 }
 
 const CHANNEL_BRAND: Record<string, string> = {
@@ -338,49 +341,49 @@ export function SessionsList() {
     />
   );
 
-  // Build the body: grouped sections or a flat list.
-  let body: React.ReactNode;
-  if (view.groupBy === "group") {
-    const byGroup = new Map<string, LegacyConv[]>();
-    const ungrouped: LegacyConv[] = [];
-    for (const c of visible) {
-      if (c.group) {
-        if (!byGroup.has(c.group)) byGroup.set(c.group, []);
-        byGroup.get(c.group)!.push(c);
-      } else ungrouped.push(c);
-    }
-    const groupNames = Array.from(byGroup.keys()).sort((a, b) => a.localeCompare(b));
-    body = (
-      <>
-        {groupNames.map((name) => (
-          <div key={name}>
+  // Build the sectioned list. Each section is { key, label, items };
+  // an empty label renders a flat (header-less) run of rows. Mirrors
+  // Claude's rich Recents logic — date buckets by default, Working /
+  // Completed when grouping by state, project paths when grouping by
+  // project.
+  const isWorking = (id: string) => !!runningTasks[id];
+  const sections = buildSections(visible, {
+    groupBy: view.groupBy,
+    sort: view.sort,
+    nowTs,
+    isWorking,
+    labels: {
+      pinned: t("sidebar.pinned"),
+      today: t("sidebar.today"),
+      yesterday: t("sidebar.yesterday"),
+      older: t("sidebar.older"),
+      working: t("sidebar.working"),
+      completed: t("sidebar.completed"),
+      ungrouped: t("sidebar.ungrouped"),
+    },
+    dateLocale: locale === "zh" ? "zh-CN" : undefined,
+  });
+
+  const body = (
+    <>
+      {sections.map((sec) =>
+        sec.label === "" ? (
+          // Flat run (title sort, no grouping) — no header.
+          <div key={sec.key}>{sec.items.map(renderRow)}</div>
+        ) : (
+          <div key={sec.key}>
             <GroupHeader
-              name={name}
-              count={byGroup.get(name)!.length}
-              collapsed={collapsedGroups.has(name)}
-              onToggle={() => toggleGroupCollapse(name)}
+              name={sec.label}
+              count={sec.items.length}
+              collapsed={collapsedGroups.has(sec.key)}
+              onToggle={() => toggleGroupCollapse(sec.key)}
             />
-            {!collapsedGroups.has(name) && byGroup.get(name)!.map(renderRow)}
+            {!collapsedGroups.has(sec.key) && sec.items.map(renderRow)}
           </div>
-        ))}
-        {ungrouped.length > 0 && (
-          <div>
-            {groupNames.length > 0 && (
-              <GroupHeader
-                name={t("sidebar.ungrouped")}
-                count={ungrouped.length}
-                collapsed={collapsedGroups.has("__ungrouped__")}
-                onToggle={() => toggleGroupCollapse("__ungrouped__")}
-              />
-            )}
-            {!collapsedGroups.has("__ungrouped__") && ungrouped.map(renderRow)}
-          </div>
-        )}
-      </>
-    );
-  } else {
-    body = <>{visible.map(renderRow)}</>;
-  }
+        ),
+      )}
+    </>
+  );
 
   return (
     <>
@@ -415,6 +418,118 @@ export function SessionsList() {
   );
 }
 
+/* ---- sectioning --------------------------------------------------
+ * Turns the filtered+sorted conversation list into labelled sections,
+ * mirroring Claude's Recents:
+ *   - groupBy "state"   → Working (a task running) / Completed
+ *   - groupBy "project" → one section per project path (+ Ungrouped)
+ *   - groupBy "none"    → date buckets when sorted by recency
+ *                         (Pinned / Today / Yesterday / <date> / Older),
+ *                         or a single flat header-less run when sorted
+ *                         by title
+ * `items` keep the incoming order (already pinned-first + sorted), so
+ * date buckets come out most-recent-first via insertion order.
+ */
+interface Section {
+  key: string;
+  label: string; // "" → flat, no header
+  items: LegacyConv[];
+}
+interface SectionOpts {
+  groupBy: "none" | "state" | "project";
+  sort: "recency" | "title";
+  nowTs: number;
+  isWorking: (id: string) => boolean;
+  labels: {
+    pinned: string;
+    today: string;
+    yesterday: string;
+    older: string;
+    working: string;
+    completed: string;
+    ungrouped: string;
+  };
+  dateLocale?: string;
+}
+
+function _dateBucket(
+  ts: number,
+  nowTs: number,
+  labels: SectionOpts["labels"],
+  dateLocale?: string,
+): { key: string; label: string } {
+  const d = new Date((ts || nowTs) * 1000);
+  const now = new Date(nowTs * 1000);
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const diff = Math.round((today - day) / 86_400_000);
+  if (diff <= 0) return { key: "b0_today", label: labels.today };
+  if (diff === 1) return { key: "b1_yesterday", label: labels.yesterday };
+  if (diff <= 30) {
+    const sameYear = d.getFullYear() === now.getFullYear();
+    return {
+      key: "b2_" + day,
+      label: d.toLocaleDateString(dateLocale, {
+        month: "short",
+        day: "numeric",
+        ...(sameYear ? {} : { year: "numeric" }),
+      }),
+    };
+  }
+  return { key: "b9_older", label: labels.older };
+}
+
+function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
+  if (o.groupBy === "state") {
+    const working = visible.filter((c) => o.isWorking(c.id));
+    const done = visible.filter((c) => !o.isWorking(c.id));
+    return [
+      { key: "st_working", label: o.labels.working, items: working },
+      { key: "st_completed", label: o.labels.completed, items: done },
+    ].filter((s) => s.items.length > 0);
+  }
+
+  if (o.groupBy === "project") {
+    const byProject = new Map<string, LegacyConv[]>();
+    const ungrouped: LegacyConv[] = [];
+    for (const c of visible) {
+      if (c.project) {
+        (byProject.get(c.project) ?? byProject.set(c.project, []).get(c.project)!).push(c);
+      } else ungrouped.push(c);
+    }
+    const names = Array.from(byProject.keys()).sort((a, b) => a.localeCompare(b));
+    const out: Section[] = names.map((n) => ({
+      key: "pj_" + n,
+      label: n,
+      items: byProject.get(n)!,
+    }));
+    if (ungrouped.length) {
+      out.push({ key: "pj__ungrouped", label: o.labels.ungrouped, items: ungrouped });
+    }
+    return out;
+  }
+
+  // groupBy "none"
+  if (o.sort === "title") {
+    // Flat alphabetical run, no headers.
+    return [{ key: "flat", label: "", items: visible }];
+  }
+
+  // recency → Pinned (if any) + date buckets, insertion order = recency.
+  const pinned = visible.filter((c) => c.pinned);
+  const rest = visible.filter((c) => !c.pinned);
+  const buckets = new Map<string, Section>();
+  for (const c of rest) {
+    const b = _dateBucket(c.created_at || 0, o.nowTs, o.labels, o.dateLocale);
+    if (!buckets.has(b.key)) buckets.set(b.key, { key: b.key, label: b.label, items: [] });
+    buckets.get(b.key)!.items.push(c);
+  }
+  const out: Section[] = [];
+  if (pinned.length) out.push({ key: "pinned", label: o.labels.pinned, items: pinned });
+  out.push(...buckets.values());
+  return out;
+}
+
 /* ---- group section header -------------------------------------- */
 
 function GroupHeader({
@@ -439,6 +554,60 @@ function GroupHeader({
       <span className="flex-1 truncate">{name}</span>
       <span className="opacity-70">{count}</span>
     </div>
+  );
+}
+
+/* ---- leading status marker ------------------------------------- */
+
+/** The dot to the left of a conversation title, mirroring Claude:
+ *   - pinned  → an amber pin
+ *   - working → three pulsing dots (a task is running)
+ *   - idle    → a hollow ring
+ *  Fixed 14px slot so titles stay aligned regardless of state. */
+function StatusMarker({
+  pinned,
+  working,
+  pinnedLabel,
+  workingLabel,
+}: {
+  pinned: boolean;
+  working: boolean;
+  pinnedLabel: string;
+  workingLabel: string;
+}) {
+  if (pinned) {
+    return (
+      <svg
+        className="shrink-0 text-[var(--accent-orange)]"
+        width="12" height="12" viewBox="0 0 16 16" fill="currentColor"
+        aria-label={pinnedLabel}
+      >
+        <path d="M9.5 1.5a1 1 0 0 0-1.7.7l.1 3.2-2.4 2.4a1 1 0 0 0-.3.7v.5l2.6-.0 0 4 .8 1.3.8-1.3 0-4 2.6.0v-.5a1 1 0 0 0-.3-.7L9.5 5.4l.1-3.2a1 1 0 0 0-.1-.7z" />
+      </svg>
+    );
+  }
+  if (working) {
+    return (
+      <span
+        className="flex w-[14px] shrink-0 items-center justify-center gap-[2px]"
+        aria-label={workingLabel}
+        title={workingLabel}
+      >
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="h-[3px] w-[3px] rounded-full bg-[var(--text-secondary)] animate-pulse"
+            style={{ animationDelay: `${i * 0.15}s` }}
+          />
+        ))}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="block size-[7px] shrink-0 rounded-full border border-[var(--text-muted)]"
+      aria-hidden="true"
+    />
   );
 }
 
@@ -532,15 +701,14 @@ function ConvItem({
         }}
         title={running ? `${label} (${t("sidebar.running")})` : label}
       >
-        {conv.pinned ? (
-          <svg
-            className="shrink-0 text-[var(--accent-orange)]"
-            width="11" height="11" viewBox="0 0 16 16" fill="currentColor"
-            aria-label={t("sidebar.pinned")}
-          >
-            <path d="M9.5 1.5a1 1 0 0 0-1.7.7l.1 3.2-2.4 2.4a1 1 0 0 0-.3.7v.5l2.6-.0 0 4 .8 1.3.8-1.3 0-4 2.6.0v-.5a1 1 0 0 0-.3-.7L9.5 5.4l.1-3.2a1 1 0 0 0-.1-.7z" />
-          </svg>
-        ) : null}
+        {/* Leading status marker (Claude-style): pinned → pin,
+            else a running task → animated dots, else an idle ring. */}
+        <StatusMarker
+          pinned={!!conv.pinned}
+          working={running}
+          pinnedLabel={t("sidebar.pinned")}
+          workingLabel={t("sidebar.running")}
+        />
 
         {renaming ? (
           <input
