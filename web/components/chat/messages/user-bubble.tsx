@@ -130,7 +130,8 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
             install.) */}
         <Avatar
           className="message-avatar user-avatar"
-          size={36}
+          size={28}
+          radius={8}
           name="You"
           config={{ kind: "dicebear", style: "shapes", seed: "you" }}
         />

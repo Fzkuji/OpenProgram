@@ -126,7 +126,8 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
             when the user has supplied a custom image. */}
         <Avatar
           className="message-avatar bot-avatar"
-          size={36}
+          size={28}
+          radius={8}
           name={sender}
           title={msg.agentId || ""}
           config={{

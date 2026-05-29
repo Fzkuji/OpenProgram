@@ -51,6 +51,9 @@ export interface AvatarProps {
   className?: string;
   /** Optional title for hover tooltip. */
   title?: string;
+  /** Corner radius in px. Defaults to a full circle (9999). Pass a
+   *  smaller value for a rounded-square avatar (e.g. message avatars). */
+  radius?: number;
 }
 
 /** Best-effort one-char extraction from a display name. Handles
@@ -120,6 +123,7 @@ export function Avatar({
   config,
   className,
   title,
+  radius = 9999,
 }: AvatarProps) {
   const kind: AvatarKind = config?.kind ?? "dicebear";
   const style: AvatarStyle = config?.style ?? "shapes";
@@ -205,7 +209,7 @@ export function Avatar({
   const sharedStyle: CSSProperties = {
     width: size,
     height: size,
-    borderRadius: 9999,
+    borderRadius: radius,
     flexShrink: 0,
     overflow: "hidden",
     display: "inline-block",

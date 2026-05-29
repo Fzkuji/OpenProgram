@@ -140,7 +140,8 @@ function PendingReplyIndicator() {
       <div className="message-header">
         <Avatar
           className="message-avatar bot-avatar"
-          size={36}
+          size={28}
+          radius={8}
           name={profile.name}
           config={
             profile.avatar ?? {
