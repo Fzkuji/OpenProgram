@@ -36,23 +36,26 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-// Sidebar nav uses the FILLED set = Heroicons solid (20). The icons
-// here were originally hand-pasted Heroicons paths, so importing from
-// the library is visually identical — it just satisfies the "icons
-// come from a library, never hand-authored" rule. The collapse button
-// uses lucide PanelLeft (the standard sidebar-toggle glyph; it's a
-// chrome action, not a nav item).
+// Sidebar icons. The six nav glyphs (functions / skills / plugins / mcp /
+// memory / chats) AND the collapse toggle use the ANIMATED line set
+// (pqoqubbw/icons — Lucide + Framer Motion, ./animated-nav-icons), each
+// driven from its row's / button's hover. The toggle swaps by state:
+// panel-left-close (chevron ‹) when open, panel-left-open (›) when
+// collapsed. The other two chrome actions keep their own existing motion
+// and just use the lucide LINE glyph: new-chat = Plus (badge already
+// rotates/scales on hover), refresh = RefreshCw (spins on click).
+import { Plus, RefreshCw } from "lucide-react";
 import {
-  ArrowPathIcon,
-  ChatBubbleLeftRightIcon,
-  PlusIcon,
-  PuzzlePieceIcon,
-  QueueListIcon,
-  RectangleStackIcon,
-  SparklesIcon,
-  Squares2X2Icon,
-} from "@heroicons/react/20/solid";
-import { PanelLeft } from "lucide-react";
+  type AnimatedNavIconHandle,
+  BlocksIcon,
+  BrainIcon,
+  GraduationCapIcon,
+  LayersIcon,
+  MessageCircleIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  WorkflowIcon,
+} from "../animated-icons";
 import { useSessionStore } from "@/lib/session-store";
 import { refreshFunctionsList } from "@/lib/functions-actions";
 import { useTranslation } from "@/lib/i18n";
@@ -63,7 +66,6 @@ import { RecentsFilter } from "./recents-filter";
 import {
   sidebarNavActionClass,
   sidebarNavIconClass,
-  sidebarNavIconSvgClass,
   sidebarNavItemActiveClass,
   sidebarNavItemClass,
   sidebarNavLabelClass,
@@ -93,6 +95,17 @@ export function Sidebar() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshDone, setRefreshDone] = useState(false);
   const refreshSvgRef = useRef<SVGSVGElement>(null);
+  // Animated nav icons (pqoqubbw/icons) are driven from the row's hover
+  // — each Link's onMouseEnter/Leave calls the icon handle, so the whole
+  // row is the hover target (claude.ai-style). Pilot: functions / skills
+  // / mcp only.
+  const functionsIconRef = useRef<AnimatedNavIconHandle>(null);
+  const skillsIconRef = useRef<AnimatedNavIconHandle>(null);
+  const mcpIconRef = useRef<AnimatedNavIconHandle>(null);
+  const pluginsIconRef = useRef<AnimatedNavIconHandle>(null);
+  const memoryIconRef = useRef<AnimatedNavIconHandle>(null);
+  const chatsIconRef = useRef<AnimatedNavIconHandle>(null);
+  const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
 
   const { availableFunctions, programsMeta } = useWindowGlobals();
   const favSet = new Set(programsMeta.favorites || []);
@@ -262,10 +275,16 @@ export function Sidebar() {
         <button
           className={sidebarToggleClass}
           onClick={toggleSidebar}
+          onMouseEnter={() => toggleIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => toggleIconRef.current?.stopAnimation?.()}
           title={t("sidebar.toggle")}
           type="button"
         >
-          <PanelLeft size={20} strokeWidth={1.75} />
+          {open ? (
+            <PanelLeftCloseIcon ref={toggleIconRef} size={20} />
+          ) : (
+            <PanelLeftOpenIcon ref={toggleIconRef} size={20} />
+          )}
         </button>
       </div>
 
@@ -287,7 +306,7 @@ export function Sidebar() {
               [transition:transform_0.3s_cubic-bezier(0.165,0.85,0.45,1),background_0.15s_ease,color_0.15s_ease]
               group-hover:text-nav-color-hover"
           >
-            <PlusIcon style={{ width: 16, height: 16 }} />
+            <Plus size={16} strokeWidth={2} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.new_chat")}</span>
         </div>
@@ -299,9 +318,11 @@ export function Sidebar() {
             (navActive.functions ? " " + sidebarNavItemActiveClass : "")
           }
           id="navPrograms"
+          onMouseEnter={() => functionsIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => functionsIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <Squares2X2Icon className={sidebarNavIconSvgClass} />
+            <WorkflowIcon ref={functionsIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.functions")}</span>
           <span
@@ -324,9 +345,10 @@ export function Sidebar() {
             {refreshDone ? (
               <span>&#10003;</span>
             ) : (
-              <ArrowPathIcon
+              <RefreshCw
                 ref={refreshSvgRef}
-                style={{ width: 12, height: 12 }}
+                size={12}
+                strokeWidth={2}
                 className={refreshing ? "animate-spin-refresh" : ""}
               />
             )}
@@ -340,9 +362,11 @@ export function Sidebar() {
             (navActive.skills ? " " + sidebarNavItemActiveClass : "")
           }
           id="navSkills"
+          onMouseEnter={() => skillsIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => skillsIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <SparklesIcon className={sidebarNavIconSvgClass} />
+            <GraduationCapIcon ref={skillsIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.skills")}</span>
         </Link>
@@ -354,9 +378,11 @@ export function Sidebar() {
             (navActive.plugins ? " " + sidebarNavItemActiveClass : "")
           }
           id="navPlugins"
+          onMouseEnter={() => pluginsIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => pluginsIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <PuzzlePieceIcon className={sidebarNavIconSvgClass} />
+            <BlocksIcon ref={pluginsIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.plugins")}</span>
         </Link>
@@ -368,9 +394,11 @@ export function Sidebar() {
             (navActive.mcp ? " " + sidebarNavItemActiveClass : "")
           }
           id="navMcp"
+          onMouseEnter={() => mcpIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => mcpIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <RectangleStackIcon className={sidebarNavIconSvgClass} />
+            <LayersIcon ref={mcpIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.mcp")}</span>
         </Link>
@@ -382,9 +410,11 @@ export function Sidebar() {
             (navActive.memory ? " " + sidebarNavItemActiveClass : "")
           }
           id="navMemory"
+          onMouseEnter={() => memoryIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => memoryIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <QueueListIcon className={sidebarNavIconSvgClass} />
+            <BrainIcon ref={memoryIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.memory")}</span>
         </Link>
@@ -397,9 +427,11 @@ export function Sidebar() {
             (navActive.chats ? " " + sidebarNavItemActiveClass : "")
           }
           id="navChats"
+          onMouseEnter={() => chatsIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => chatsIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <ChatBubbleLeftRightIcon className={sidebarNavIconSvgClass} aria-hidden="true" />
+            <MessageCircleIcon ref={chatsIconRef} size={20} aria-hidden="true" />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.chats")}</span>
         </Link>
@@ -487,19 +519,14 @@ function SidebarSection({
   return (
     <div id={id} className={className}>
       <div
-        className="group flex shrink-0 cursor-pointer select-none items-center gap-[6px]
+        className="group flex shrink-0 cursor-pointer select-none items-center
           px-[16px] py-[4px]"
         onClick={onToggle}
       >
-        {/* Rotating chevron — the Claude-style collapse cue. */}
-        <span
-          aria-hidden="true"
-          className="text-[10px] text-text-muted transition-transform duration-150 ease-out"
-          style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
-        >
-          ▾
-        </span>
+        {/* Title — left exactly as it was (no leading chevron). */}
         <span className="text-[12px] font-normal text-text-muted">{title}</span>
+        {/* Optional right-side controls (the Recents filter button).
+            On its own at the right; clicks don't toggle the section. */}
         {headerActions ? (
           <span
             className="ml-auto flex items-center opacity-60 transition-opacity
