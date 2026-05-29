@@ -543,6 +543,15 @@ button, input, select, textarea, optgroup {
   animation: convFinishingWipe 1.1s cubic-bezier(0.4, 0, 0.6, 1) forwards;
 }
 
+/* One-shot 360° spin for the avatar-picker "↻ Regenerate" glyph.
+   Non-infinite (no ``infinite`` keyword) so it rotates once per
+   click and settles back at 0°; the component re-triggers it by
+   toggling the animation off/on across a frame. */
+@keyframes avatarSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 /* Marching-ants flow for attach-reference edges. The negative
    stroke-dashoffset makes the dashes travel along the path in the
    draw direction (source → anchor), so the eye sees content moving

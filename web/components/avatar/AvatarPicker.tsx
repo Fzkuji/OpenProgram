@@ -110,9 +110,22 @@ export function AvatarPicker({
   const [variantSeeds, setVariantSeeds] = useState<string[]>(
     INITIAL_VARIANT_SEEDS,
   );
+  // Drives the one-shot spin of the ↻ glyph on each regenerate click.
+  const [spinning, setSpinning] = useState(false);
 
   const source = sourceOf(value);
   const isDicebear = source !== "letter" && source !== "upload";
+
+  function regenerate() {
+    setVariantSeeds(_randomVariantSeeds(12));
+    // Restart the spin: drop to false this frame, raise next frame so
+    // the CSS animation re-triggers even on rapid repeat clicks.
+    setSpinning(false);
+    requestAnimationFrame(() => {
+      setSpinning(true);
+      window.setTimeout(() => setSpinning(false), 600);
+    });
+  }
 
   function pickSource(src: AvatarSource) {
     setUploadError(null);
@@ -150,7 +163,7 @@ export function AvatarPicker({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Source picker — each tile shows the same fixed sample seed
           so every style renders something visible (avoids the
           empty-tile bug where the user's current seed happened to
@@ -240,14 +253,14 @@ export function AvatarPicker({
           clicks — without the dice-roll-into-the-void feel of the
           old single Random button. */}
       {isDicebear && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
               gap: 8,
-              maxWidth: 520,
+              maxWidth: 392,
             }}
           >
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -256,19 +269,29 @@ export function AvatarPicker({
             </span>
             <button
               type="button"
-              onClick={() => setVariantSeeds(_randomVariantSeeds(12))}
+              onClick={regenerate}
               title="Generate a fresh batch of variants"
               className={_smallBtnCls}
             >
-              ↻ Regenerate
+              <span
+                style={{
+                  display: "inline-block",
+                  animation: spinning ? "avatarSpin 0.6s linear" : "none",
+                }}
+              >
+                ↻
+              </span>
+              Regenerate
             </button>
           </div>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, 56px)",
+              // Exactly 6 columns so the 12-seed batch fills two even
+              // rows (6 × 2) instead of wrapping to a ragged 8 + 4.
+              gridTemplateColumns: "repeat(6, 56px)",
               gap: 8,
-              maxWidth: 520,
+              maxWidth: 392,
             }}
           >
             {variantSeeds.map((seed) => {
