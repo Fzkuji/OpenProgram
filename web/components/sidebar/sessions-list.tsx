@@ -604,7 +604,7 @@ function GroupHeader({
         // the text line, rotates to › when collapsed.
         <ChevronDownIcon
           ref={chevronRef}
-          size={18}
+          size={16}
           className="self-end shrink-0 text-[var(--text-secondary)] opacity-0
             transition-[opacity,color] duration-150
             group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
