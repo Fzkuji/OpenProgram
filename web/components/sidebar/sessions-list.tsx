@@ -385,6 +385,7 @@ export function SessionsList() {
     isWorking,
     labels: {
       pinned: t("sidebar.pinned"),
+      recents: t("sidebar.recents"),
       today: t("sidebar.today"),
       yesterday: t("sidebar.yesterday"),
       older: t("sidebar.older"),
@@ -486,12 +487,13 @@ interface Section {
   items: LegacyConv[];
 }
 interface SectionOpts {
-  groupBy: "none" | "state" | "project";
-  sort: "recency" | "title";
+  groupBy: "none" | "state" | "project" | "flat";
+  sort: "recency" | "created" | "title";
   nowTs: number;
   isWorking: (id: string) => boolean;
   labels: {
     pinned: string;
+    recents: string;
     today: string;
     yesterday: string;
     older: string;
@@ -560,8 +562,10 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
   }
 
   if (o.groupBy === "flat") {
-    // "None" — one flat run, no headers (order follows the sort).
-    return [{ key: "flat", label: "", items: visible }];
+    // "None" — one flat "Recents" run: a single header, no date sub-
+    // buckets (order follows the sort). Always headed so the list is
+    // never an empty / header-less strip.
+    return [{ key: "flat", label: o.labels.recents, items: visible }];
   }
 
   // groupBy "none" → "Date": Pinned (if any) + date buckets; insertion

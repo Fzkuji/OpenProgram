@@ -124,6 +124,7 @@ const DICT = {
   "sidebar.archive": { en: "Archive", zh: "归档" },
   "sidebar.unarchive": { en: "Unarchive", zh: "取消归档" },
   "sidebar.pinned": { en: "Pinned", zh: "已置顶" },
+  "sidebar.recents": { en: "Recents", zh: "最近" },
   "sidebar.needs_input": { en: "Needs input", zh: "等待输入" },
   "sidebar.unread": { en: "New result", zh: "有新结果" },
   "sidebar.today": { en: "Today", zh: "今天" },
