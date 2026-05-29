@@ -55,8 +55,9 @@ export function sourceOf(cfg: AvatarConfig | undefined): AvatarSource {
 const STYLE_PICKER_SEED = "Sample";
 
 /** Initial variant seeds shown as a grid for the currently-selected
- *  DiceBear style. 12 stable strings give the user "browse and pick"
- *  semantics without the dice-roll feel of the old Random button.
+ *  DiceBear style. 16 stable strings (two full rows of 8) give the
+ *  user "browse and pick" semantics without the dice-roll feel of the
+ *  old Random button.
  *  Strings are intentionally short + memorable so initials-style users
  *  get readable two-letter chips when this style is active.
  *
@@ -66,8 +67,8 @@ const STYLE_PICKER_SEED = "Sample";
  *  initial client render produce identical markup; randomisation only
  *  happens in a user-triggered click handler, never during render. */
 const INITIAL_VARIANT_SEEDS = [
-  "Atlas", "Bento", "Cobalt", "Drift", "Ember", "Fjord",
-  "Gleam", "Halo",  "Indigo", "Juno",  "Klein", "Lumen",
+  "Atlas", "Bento", "Cobalt", "Drift",  "Ember", "Fjord", "Gleam", "Halo",
+  "Indigo", "Juno", "Klein",  "Lumen",  "Mica",  "Nova",  "Onyx",  "Pearl",
 ];
 
 /** Build a fresh batch of N random seed strings for the Regenerate
@@ -117,7 +118,7 @@ export function AvatarPicker({
   const isDicebear = source !== "letter" && source !== "upload";
 
   function regenerate() {
-    setVariantSeeds(_randomVariantSeeds(12));
+    setVariantSeeds(_randomVariantSeeds(16));
     // Restart the spin: drop to false this frame, raise next frame so
     // the CSS animation re-triggers even on rapid repeat clicks.
     setSpinning(false);
@@ -173,9 +174,13 @@ export function AvatarPicker({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, 64px)",
-          gap: 10,
-          maxWidth: 520,
+          // 8 even columns. Style picker (11 tiles) fills row 1 fully
+          // (8) + 3 on row 2; the variant grid below uses the SAME
+          // 8-column / same-maxWidth setup so both blocks share left
+          // and right edges instead of one being wider than the other.
+          gridTemplateColumns: "repeat(8, 1fr)",
+          gap: 8,
+          maxWidth: 544,
         }}
       >
         {AVATAR_STYLES.map((s) => (
@@ -260,7 +265,7 @@ export function AvatarPicker({
               alignItems: "center",
               justifyContent: "space-between",
               gap: 8,
-              maxWidth: 392,
+              maxWidth: 544,
             }}
           >
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -287,11 +292,12 @@ export function AvatarPicker({
           <div
             style={{
               display: "grid",
-              // Exactly 6 columns so the 12-seed batch fills two even
-              // rows (6 × 2) instead of wrapping to a ragged 8 + 4.
-              gridTemplateColumns: "repeat(6, 56px)",
+              // Same 8-column / 544px setup as the style picker above
+              // so the two blocks line up edge to edge. 16 seeds →
+              // two full rows of 8.
+              gridTemplateColumns: "repeat(8, 1fr)",
               gap: 8,
-              maxWidth: 392,
+              maxWidth: 544,
             }}
           >
             {variantSeeds.map((seed) => {
@@ -388,10 +394,11 @@ const _pickerTile = (selected: boolean): string =>
     ? "bg-[var(--bg-hover)] border-[color-mix(in_srgb,var(--accent-orange)_50%,transparent)]"
     : "border-[var(--border)] hover:bg-[var(--bg-hover)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]");
 
-// Variant tile — fixed 56×56, no label, denser grid. Same idle/
-// selected/hover treatment as the style tiles.
+// Variant tile — fills its grid column (aspect-square keeps it
+// circular-friendly), no label. Same idle/selected/hover treatment
+// as the style tiles, so both grids read as one consistent system.
 const _variantTile = (selected: boolean): string =>
-  "inline-flex items-center justify-center w-14 h-14 p-1 rounded-lg border cursor-pointer transition-colors " +
+  "inline-flex items-center justify-center w-full aspect-square p-1 rounded-lg border cursor-pointer transition-colors " +
   (selected
     ? "bg-[var(--bg-hover)] border-[color-mix(in_srgb,var(--accent-orange)_50%,transparent)]"
     : "border-[var(--border)] hover:bg-[var(--bg-hover)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]");
