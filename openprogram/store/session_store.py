@@ -48,6 +48,17 @@ def _default_root() -> Path:
     return Path(get_state_dir()) / "sessions-git"
 
 
+def _projects_default_id_safe() -> str:
+    """The default project id, without touching git. Used as a last
+    resort when project resolution failed but we still want the meta to
+    carry a project_id pointer."""
+    try:
+        from openprogram.store.project_store import DEFAULT_PROJECT_ID
+        return DEFAULT_PROJECT_ID
+    except Exception:
+        return "default"
+
+
 # ── Edge resolvers ────────────────────────────────────────────────
 # A node's two edges live in different fields depending on what it is:
 #   * tool / sub-call rows  ─ Call.called_by  (the assistant that ran them)
@@ -202,6 +213,39 @@ class SessionStore:
         # with the named kwargs.
         created_at = extra.pop("created_at", now)
         updated_at = extra.pop("updated_at", now)
+
+        # ── Project entity-memory binding ──────────────────────────
+        # Every session belongs to a project (the second half of the
+        # entity layer — see docs/design/memory-v2.md §2). Resolve it
+        # now so the project's git repo auto-creates on session
+        # creation, exactly like the session's own repo does:
+        #   * caller passed ``project_id``     → use it
+        #   * caller passed ``project_path``   → bind that directory
+        #     (git-init it if needed)
+        #   * neither                          → the default project
+        #     (catch-all repo in the home hidden dir)
+        # Best-effort: a failure here must never block session
+        # creation, so the whole thing is guarded.
+        project_id = extra.pop("project_id", None)
+        project_path = extra.pop("project_path", None)
+        try:
+            from openprogram.store import project_store as _projects
+            if project_id:
+                proj = _projects.get_project(project_id) or _projects.resolve_project(project_path)
+            elif project_path:
+                proj = _projects.resolve_project(project_path)
+            else:
+                proj = _projects.resolve_project(None)  # default
+            project_id = proj.id
+        except Exception:
+            # git missing / disk error / etc. — degrade to no binding
+            # rather than failing the session. The session still works;
+            # it just isn't attributed to a project until next time.
+            project_id = project_id or _projects_default_id_safe()
+
+        if project_id:
+            extra["project_id"] = project_id
+
         idx.set_meta(
             id=session_id,
             agent_id=agent_id,
@@ -212,6 +256,15 @@ class SessionStore:
             **extra,
         )
         self._persist_meta(git, idx)
+
+        # Record the reverse index (project → sessions). Also
+        # best-effort.
+        if project_id:
+            try:
+                from openprogram.store import project_store as _projects
+                _projects.bind_session(session_id, project_id)
+            except Exception:
+                pass
 
     def update_session(self, session_id: str, **fields: Any) -> None:
         pair = self._open(session_id, create_if_missing=True)
