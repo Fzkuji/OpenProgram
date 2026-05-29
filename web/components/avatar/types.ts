@@ -25,12 +25,17 @@ export type AvatarKind = "dicebear" | "upload" | "letter";
 export type AvatarStyle =
   | "shapes"
   | "avataaars"
+  | "adventurer"
   | "micah"
   | "openPeeps"
+  | "personas"
+  | "bigSmile"
   | "funEmoji"
   | "bottts"
+  | "thumbs"
   | "pixelArt"
   | "identicon"
+  | "rings"
   | "initials";
 
 /**

@@ -9,7 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@dicebear/adventurer": "^9.4.2",
     "@dicebear/avataaars": "^9.4.2",
+    "@dicebear/big-smile": "^9.4.2",
     "@dicebear/bottts": "^9.4.2",
     "@dicebear/core": "^9.4.2",
     "@dicebear/fun-emoji": "^9.4.2",
@@ -17,8 +19,11 @@
     "@dicebear/initials": "^9.4.2",
     "@dicebear/micah": "^9.4.2",
     "@dicebear/open-peeps": "^9.4.2",
+    "@dicebear/personas": "^9.4.2",
     "@dicebear/pixel-art": "^9.4.2",
+    "@dicebear/rings": "^9.4.2",
     "@dicebear/shapes": "^9.4.2",
+    "@dicebear/thumbs": "^9.4.2",
     "@fontsource-variable/inter": "^5.2.8",
     "@heroicons/react": "^2.2.0",
     "@phosphor-icons/react": "^2.1.10",

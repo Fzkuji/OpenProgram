@@ -17,12 +17,17 @@
 
 import * as shapes from "@dicebear/shapes";
 import * as avataaars from "@dicebear/avataaars";
+import * as adventurer from "@dicebear/adventurer";
 import * as micah from "@dicebear/micah";
 import * as openPeeps from "@dicebear/open-peeps";
+import * as personas from "@dicebear/personas";
+import * as bigSmile from "@dicebear/big-smile";
 import * as funEmoji from "@dicebear/fun-emoji";
 import * as bottts from "@dicebear/bottts";
+import * as thumbs from "@dicebear/thumbs";
 import * as pixelArt from "@dicebear/pixel-art";
 import * as identicon from "@dicebear/identicon";
+import * as rings from "@dicebear/rings";
 import * as initials from "@dicebear/initials";
 
 import type { AvatarStyle } from "./types";
@@ -39,12 +44,17 @@ import type { AvatarStyle } from "./types";
 export const STYLES = {
   shapes,
   avataaars,
+  adventurer,
   micah,
   openPeeps,
+  personas,
+  bigSmile,
   funEmoji,
   bottts,
+  thumbs,
   pixelArt,
   identicon,
+  rings,
   initials,
 } as const;
 
@@ -53,13 +63,18 @@ export const STYLES = {
  *  Initials last. ``Shapes`` is first because it's the default for
  *  new profiles. */
 export const AVATAR_STYLES: { id: AvatarStyle; label: string; hint: string }[] = [
-  { id: "shapes",    label: "Shapes",     hint: "Abstract geometric (default)" },
-  { id: "avataaars", label: "Avataaars",  hint: "Sketch-style portrait characters" },
-  { id: "micah",     label: "Micah",      hint: "Flat illustrated portraits" },
-  { id: "openPeeps", label: "Open Peeps", hint: "Hand-drawn people" },
-  { id: "funEmoji",  label: "Fun Emoji",  hint: "Simple emoji-like faces" },
-  { id: "bottts",    label: "Bottts",     hint: "Robot avatars" },
-  { id: "pixelArt",  label: "Pixel Art",  hint: "8-bit retro characters" },
-  { id: "identicon", label: "Identicon",  hint: "GitHub-style geometric hash" },
-  { id: "initials",  label: "Initials",   hint: "Letter on coloured chip" },
+  { id: "shapes",     label: "Shapes",     hint: "Abstract geometric (default)" },
+  { id: "avataaars",  label: "Avataaars",  hint: "Sketch-style portrait characters" },
+  { id: "adventurer", label: "Adventurer", hint: "Illustrated adventurer faces" },
+  { id: "micah",      label: "Micah",      hint: "Flat illustrated portraits" },
+  { id: "openPeeps",  label: "Open Peeps", hint: "Hand-drawn people" },
+  { id: "personas",   label: "Personas",  hint: "Clean vector personas" },
+  { id: "bigSmile",   label: "Big Smile",  hint: "Cheerful cartoon faces" },
+  { id: "funEmoji",   label: "Fun Emoji",  hint: "Simple emoji-like faces" },
+  { id: "bottts",     label: "Bottts",     hint: "Robot avatars" },
+  { id: "thumbs",     label: "Thumbs",     hint: "Rounded thumb characters" },
+  { id: "pixelArt",   label: "Pixel Art",  hint: "8-bit retro characters" },
+  { id: "identicon",  label: "Identicon",  hint: "GitHub-style geometric hash" },
+  { id: "rings",      label: "Rings",      hint: "Concentric colour rings" },
+  { id: "initials",   label: "Initials",   hint: "Letter on coloured chip" },
 ];
