@@ -4,11 +4,17 @@
  * Sessions list (the "Recents" panel in the sidebar).
  *
  * Reads conversations from `window.conversations` via `useWindowGlobals`
- * — the legacy `init.js` is what populates that global from the
- * sessions_list / history_list WS events, so we piggy-back on it
- * instead of duplicating the WS handling here. Once the WSProvider
- * (which writes to useSessionStore) is wired into the layout, this
- * hook should switch to a store subscription.
+ * (populated by the runtime-bridge from the `sessions_list` WS event)
+ * and layers Claude.ai-style management on top:
+ *   - per-row right-click / ⋯ context menu (rename, pin, move to group,
+ *     copy link, archive, delete) — see `conv-menu.tsx`
+ *   - Recents-header filter (status / group-by / sort) — see
+ *     `recents-filter.tsx`, read here via `useRecentsView`
+ *
+ * Flags (pinned / archived / group) and renames are persisted server-
+ * side (meta.json) through WS actions; we optimistically patch
+ * `window.conversations` + bump a local tick for instant feedback,
+ * since `useWindowGlobals`'s poll doesn't notice in-entry mutations.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -16,6 +22,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useWindowGlobals, useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { useRecentsView } from "@/lib/recents-view";
 import {
   Dialog,
   DialogContent,
@@ -24,14 +31,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { ConvMenu } from "./conv-menu";
 import styles from "./sidebar.module.css";
 
 interface SessionWindow {
   ws?: WebSocket;
-  conversations?: Record<string, unknown>;
+  conversations?: Record<string, LegacyConv>;
   currentSessionId?: string | null;
   newSession?: () => void;
+  renderSessions?: () => void;
 }
 
 function wsSend(payload: unknown): void {
@@ -99,6 +113,9 @@ interface LegacyConv {
   account_id?: string | null;
   preview?: string | null;
   has_session?: boolean;
+  pinned?: boolean;
+  archived?: boolean;
+  group?: string;
 }
 
 const CHANNEL_BRAND: Record<string, string> = {
@@ -150,17 +167,26 @@ export function SessionsList() {
   const { t, locale } = useTranslation();
   const { conversations } = useWindowGlobals();
   const currentId = useCurrentSessionId();
-  // Per-session running map drives the breathing colored indicator
-  // on each conversation row — the visual "this session is still
-  // processing" cue so the user can fan out work across sessions
-  // and see at a glance which ones are working.
   const runningTasks = useSessionStore((s) => s.runningTasks);
+  const view = useRecentsView();
 
-  // 没有 created_at 的会话视为"刚刚创建" (now), 让新建会话立刻
-  // 出现在顶部, 而不是因为 fallback=0 沉到最底.
-  const nowTs = Date.now() / 1000;
-  const list = Object.values(conversations)
-    .sort((a, b) => (b.created_at || nowTs) - (a.created_at || nowTs));
+  // Bumped after every optimistic mutation of `window.conversations`
+  // so the list re-renders immediately (the useWindowGlobals poll
+  // ignores in-entry field changes).
+  const [, setTick] = useState(0);
+  const bump = () => setTick((n) => n + 1);
+
+  // Collapsed group names (only relevant when grouping is on).
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  // Transient "Link copied" toast.
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 1500);
+  }
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   function switchTo(id: string) {
     if (id === currentId && pathname === "/s/" + id) return;
@@ -173,8 +199,33 @@ export function SessionsList() {
     run: () => void;
   } | null>(null);
 
-  function del(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
+  /* ---- action senders (optimistic patch + WS) ------------------- */
+
+  function patchConv(id: string, fields: Partial<LegacyConv>) {
+    const w = window as unknown as SessionWindow;
+    const conv = w.conversations?.[id];
+    if (conv) Object.assign(conv, fields);
+    bump();
+  }
+
+  function renameSession(id: string, title: string) {
+    const clean = title.trim();
+    if (!clean) return;
+    patchConv(id, { title: clean });
+    wsSend({ action: "rename_session", session_id: id, title: clean });
+  }
+  function setFlags(id: string, fields: { pinned?: boolean; archived?: boolean; group?: string }) {
+    patchConv(id, fields);
+    wsSend({ action: "update_session_flags", session_id: id, ...fields });
+  }
+  function copyLink(id: string) {
+    const url = `${location.origin}/s/${id}`;
+    navigator.clipboard?.writeText(url).then(
+      () => showToast(t("sidebar.link_copied")),
+      () => showToast(url),
+    );
+  }
+  function del(id: string) {
     const conv = conversations[id] as { title?: string } | undefined;
     const title = conv?.title || t("sidebar.untitled");
     setConfirm({
@@ -187,6 +238,7 @@ export function SessionsList() {
         wsSend({ action: "delete_session", session_id: id });
         if (w.conversations) delete w.conversations[id];
         if (w.currentSessionId === id) w.newSession?.();
+        bump();
       },
     });
   }
@@ -206,32 +258,137 @@ export function SessionsList() {
           for (const k of Object.keys(w.conversations)) delete w.conversations[k];
         }
         w.newSession?.();
+        bump();
       },
     });
   }
 
-  if (list.length === 0) {
+  /* ---- filter / sort / group ------------------------------------ */
+
+  // NOTE: deliberately NOT memoised on `conversations`. The legacy
+  // code mutates `window.conversations` IN PLACE (same object ref), so
+  // a `useMemo([conversations])` would return a stale cached result
+  // after the WS populate / a flag change — the list would render
+  // empty even though the map has entries. The list is small, so
+  // recomputing every render is free and always correct. `useTick`
+  // (bumped on every optimistic action) + the useWindowGlobals content
+  // signature both guarantee a render when the data actually changes.
+  const nowTs = Date.now() / 1000;
+  const convArr = Object.values(conversations) as LegacyConv[];
+
+  const allGroups = (() => {
+    const s = new Set<string>();
+    for (const c of convArr) if (c.group) s.add(c.group);
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  })();
+
+  const visible = (() => {
+    let arr = convArr;
+    if (view.status === "active") arr = arr.filter((c) => !c.archived);
+    else if (view.status === "archived") arr = arr.filter((c) => !!c.archived);
+    const cmp = (a: LegacyConv, b: LegacyConv) => {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+      if (view.sort === "title") {
+        return labelFor(a, "").localeCompare(labelFor(b, ""));
+      }
+      return (b.created_at || nowTs) - (a.created_at || nowTs);
+    };
+    return [...arr].sort(cmp);
+  })();
+
+  function toggleGroupCollapse(name: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  if (Object.keys(conversations).length === 0) {
     return <div className={styles.empty}>{t("sidebar.no_conversations")}</div>;
+  }
+
+  const renderRow = (c: LegacyConv) => (
+    <ConvItem
+      key={c.id}
+      conv={c}
+      label={labelFor(c, t("sidebar.untitled"))}
+      active={c.id === currentId}
+      running={!!runningTasks[c.id]}
+      groups={allGroups}
+      onClick={() => switchTo(c.id)}
+      onRename={(title) => renameSession(c.id, title)}
+      onTogglePin={() => setFlags(c.id, { pinned: !c.pinned })}
+      onToggleArchive={() => setFlags(c.id, { archived: !c.archived })}
+      onMoveToGroup={(g) => setFlags(c.id, { group: g })}
+      onCopyLink={() => copyLink(c.id)}
+      onDelete={() => del(c.id)}
+    />
+  );
+
+  // Build the body: grouped sections or a flat list.
+  let body: React.ReactNode;
+  if (view.groupBy === "group") {
+    const byGroup = new Map<string, LegacyConv[]>();
+    const ungrouped: LegacyConv[] = [];
+    for (const c of visible) {
+      if (c.group) {
+        if (!byGroup.has(c.group)) byGroup.set(c.group, []);
+        byGroup.get(c.group)!.push(c);
+      } else ungrouped.push(c);
+    }
+    const groupNames = Array.from(byGroup.keys()).sort((a, b) => a.localeCompare(b));
+    body = (
+      <>
+        {groupNames.map((name) => (
+          <div key={name}>
+            <GroupHeader
+              name={name}
+              count={byGroup.get(name)!.length}
+              collapsed={collapsedGroups.has(name)}
+              onToggle={() => toggleGroupCollapse(name)}
+            />
+            {!collapsedGroups.has(name) && byGroup.get(name)!.map(renderRow)}
+          </div>
+        ))}
+        {ungrouped.length > 0 && (
+          <div>
+            {groupNames.length > 0 && (
+              <GroupHeader
+                name={t("sidebar.ungrouped")}
+                count={ungrouped.length}
+                collapsed={collapsedGroups.has("__ungrouped__")}
+                onToggle={() => toggleGroupCollapse("__ungrouped__")}
+              />
+            )}
+            {!collapsedGroups.has("__ungrouped__") && ungrouped.map(renderRow)}
+          </div>
+        )}
+      </>
+    );
+  } else {
+    body = <>{visible.map(renderRow)}</>;
   }
 
   return (
     <>
-      {list.map((c) => {
-        const active = c.id === currentId;
-        return (
-          <ConvItem
-            key={c.id}
-            label={labelFor(c, t("sidebar.untitled"))}
-            active={active}
-            running={!!runningTasks[c.id]}
-            onClick={() => switchTo(c.id)}
-            onDelete={(e) => del(c.id, e)}
-          />
-        );
-      })}
+      {body}
+      {visible.length === 0 ? (
+        <div className={styles.empty}>{t("sidebar.no_conversations")}</div>
+      ) : null}
       <div className={styles.clearAll} onClick={clearAll}>
         {t("sidebar.clear_all")}
       </div>
+      {toast ? (
+        <div
+          className="pointer-events-none fixed bottom-[80px] left-1/2 z-[200] -translate-x-1/2
+            rounded-full bg-[var(--bg-tertiary)] px-3 py-1.5 text-[12px]
+            text-[var(--text-bright)] shadow-[var(--shadow-popover)] border border-[var(--border)]"
+        >
+          {toast}
+        </div>
+      ) : null}
       {confirm ? (
         <ConfirmDialog
           title={confirm.title}
@@ -247,56 +404,80 @@ export function SessionsList() {
   );
 }
 
-/* Single row in the conversation list. Mirrors the legacy
-   `.conv-item / .conv-title / .conv-del` triplet from 03-settings.css:
-   32px-tall row with a title that fades on the right on hover so the
-   absolutely-positioned delete button doesn't visually collide. */
+/* ---- group section header -------------------------------------- */
+
+function GroupHeader({
+  name,
+  count,
+  collapsed,
+  onToggle,
+}: {
+  name: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      onClick={onToggle}
+      className="flex cursor-pointer select-none items-center gap-1 px-[8px] pt-[8px] pb-[2px]
+        text-[11px] uppercase tracking-wide text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+    >
+      <span className="w-3 text-center">{collapsed ? "▸" : "▾"}</span>
+      <span className="flex-1 truncate">{name}</span>
+      <span className="opacity-70">{count}</span>
+    </div>
+  );
+}
+
+/* ---- single conversation row ----------------------------------- */
+
 function ConvItem({
+  conv,
   label,
   active,
   running,
+  groups,
   onClick,
+  onRename,
+  onTogglePin,
+  onToggleArchive,
+  onMoveToGroup,
+  onCopyLink,
   onDelete,
 }: {
+  conv: LegacyConv;
   label: string;
   active: boolean;
   running: boolean;
+  groups: string[];
   onClick: () => void;
-  onDelete: (e: React.MouseEvent) => void;
+  onRename: (title: string) => void;
+  onTogglePin: () => void;
+  onToggleArchive: () => void;
+  onMoveToGroup: (group: string) => void;
+  onCopyLink: () => void;
+  onDelete: () => void;
 }) {
   const { t } = useTranslation();
-  // Pixel values are explicit (not `h-8`, `px-2`, etc.) because this
-  // project's `html { font-size: 14px }` makes Tailwind's rem-based
-  // scale 0.875× off — see the same note in FavoritesList.
-  // h + radius come from the LIST set in docs/design/surface-system.md
-  // (--ui-list-h 32px, --ui-list-radius 6px). Sidebar rows are the
-  // canonical list surface; favourites, branches, worktree rows
-  // should pick up the same tokens when they're touched.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(label);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const base =
     "group relative flex h-[var(--ui-list-h)] shrink-0 cursor-pointer items-center" +
-    " gap-[12px] overflow-hidden rounded-[var(--ui-list-radius)] px-[8px] py-[6px]" +
+    " gap-[8px] overflow-hidden rounded-[var(--ui-list-radius)] px-[8px] py-[6px]" +
     " text-fs-base leading-[20px] whitespace-nowrap" +
     " transition-colors duration-150 ease-out hover:bg-bg-hover";
-  const colorCls = active
-    ? "bg-bg-hover text-text-bright"
-    : "text-text-primary";
-  // The legacy `.conv-item:hover .conv-title` rule swaps the
-  // text-overflow from ellipsis (rest) to clip + a fade-out gradient
-  // mask so the delete button has visual headroom. Express the same
-  // via group-hover arbitrary utilities — Tailwind has no built-in
-  // for `mask-image` gradients.
+  const colorCls = active ? "bg-bg-hover text-text-bright" : "text-text-primary";
   const maskOnHover =
     "group-hover:[text-overflow:clip]" +
-    " group-hover:[-webkit-mask-image:linear-gradient(to_right,#000_78%,transparent_95%)]" +
-    " group-hover:[mask-image:linear-gradient(to_right,#000_78%,transparent_95%)]" +
-    " group-focus-within:[text-overflow:clip]" +
-    " group-focus-within:[-webkit-mask-image:linear-gradient(to_right,#000_78%,transparent_95%)]" +
-    " group-focus-within:[mask-image:linear-gradient(to_right,#000_78%,transparent_95%)]";
-  // 两阶段动画状态:
-  //   running=true       → .convRunning (彩色无缝循环 + 呼吸)
-  //   刚 running→false   → .convFinishing (wipe 1.1s 从右往左擦)
-  //   wipe 结束          → 普通样子
-  // 用 ref 记上一帧 running, useEffect 检测 true→false 边沿触发.
+    " group-hover:[-webkit-mask-image:linear-gradient(to_right,#000_70%,transparent_92%)]" +
+    " group-hover:[mask-image:linear-gradient(to_right,#000_70%,transparent_92%)]";
+
+  // running → finishing edge animation (unchanged from before).
   const prevRunning = useRef(running);
   const [finishing, setFinishing] = useState(false);
   useEffect(() => {
@@ -308,60 +489,116 @@ function ConvItem({
     }
     prevRunning.current = running;
   }, [running]);
+  const stateCls = running ? "convRunning" : finishing ? "convFinishing" : "";
 
-  // convRunning / convFinishing are declared as :global in
-  // sidebar.module.css so the @keyframes name references stay unmangled
-  // (Turbopack's CSS-module pass mangles both keyframe declarations and
-  // animation: references, which broke the running indicator). Reference
-  // by plain string literal instead of styles.* — see the comment block
-  // in sidebar.module.css for the full story.
-  const stateCls = running
-    ? "convRunning"
-    : finishing
-      ? "convFinishing"
-      : "";
+  function startRename() {
+    setDraft(conv.title || label);
+    setRenaming(true);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+  }
+  function commitRename() {
+    setRenaming(false);
+    const v = draft.trim();
+    if (v && v !== (conv.title || "")) onRename(v);
+  }
+
+  function newGroup() {
+    const name = window.prompt(t("sidebar.new_group_prompt"));
+    if (name && name.trim()) onMoveToGroup(name.trim());
+  }
+
   return (
-    <div
-      className={`${base} ${colorCls} ${stateCls}`}
-      onClick={onClick}
-      title={running ? `${label} (${t("sidebar.running")})` : label}
-    >
-      <span
-        className={`flex-1 overflow-hidden truncate text-fs-base leading-[20px] ${maskOnHover}`}
+    <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+      <div
+        className={`${base} ${colorCls} ${stateCls}`}
+        onClick={renaming ? undefined : onClick}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenuOpen(true);
+        }}
+        title={running ? `${label} (${t("sidebar.running")})` : label}
       >
-        {label}
-      </span>
-      <span
-        // Fade the delete button in/out on the same 300ms curve as
-        // the row's background. `display: none → flex` (the legacy
-        // approach) is instant, so the X used to pop in before the
-        // hover background had time to fade in. Using
-        // `opacity + pointer-events` keeps it visible only on
-        // hover (no pointer events when transparent) and lets
-        // `transition-opacity` smooth the appearance.
-        className="absolute right-[6px] top-1/2 flex size-[20px] -translate-y-1/2
-          items-center justify-center rounded-[4px] text-[12px]
-          leading-none text-text-muted
-          opacity-0 pointer-events-none
-          transition-opacity duration-150 ease-out
-          group-hover:opacity-100 group-hover:pointer-events-auto
-          hover:!bg-accent-red hover:!text-white"
-        onClick={onDelete}
-        title={t("sidebar.delete")}
+        {conv.pinned ? (
+          <svg
+            className="shrink-0 text-[var(--accent-orange)]"
+            width="11" height="11" viewBox="0 0 16 16" fill="currentColor"
+            aria-label={t("sidebar.pinned")}
+          >
+            <path d="M9.5 1.5a1 1 0 0 0-1.7.7l.1 3.2-2.4 2.4a1 1 0 0 0-.3.7v.5l2.6-.0 0 4 .8 1.3.8-1.3 0-4 2.6.0v-.5a1 1 0 0 0-.3-.7L9.5 5.4l.1-3.2a1 1 0 0 0-.1-.7z" />
+          </svg>
+        ) : null}
+
+        {renaming ? (
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+              else if (e.key === "Escape") { e.preventDefault(); setRenaming(false); }
+            }}
+            className="flex-1 min-w-0 rounded-[4px] border border-[var(--accent-orange)]
+              bg-[var(--bg-input)] px-[6px] py-[2px] text-fs-base leading-[18px]
+              text-text-bright outline-none"
+          />
+        ) : (
+          <span className={`flex-1 overflow-hidden truncate text-fs-base leading-[20px] ${maskOnHover}`}>
+            {label}
+          </span>
+        )}
+
+        {/* ⋯ button — hover-visible; anchors the menu. */}
+        <PopoverAnchor asChild>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+            }}
+            aria-label={t("sidebar.filter")}
+            className="absolute right-[4px] top-1/2 flex size-[22px] -translate-y-1/2
+              items-center justify-center rounded-[5px] text-text-muted
+              opacity-0 pointer-events-none transition-opacity duration-150 ease-out
+              group-hover:opacity-100 group-hover:pointer-events-auto
+              data-[state=open]:opacity-100 data-[state=open]:pointer-events-auto
+              hover:bg-[var(--bg-selected)] hover:text-text-bright"
+            data-state={menuOpen ? "open" : "closed"}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <circle cx="3" cy="8" r="1.4" />
+              <circle cx="8" cy="8" r="1.4" />
+              <circle cx="13" cy="8" r="1.4" />
+            </svg>
+          </button>
+        </PopoverAnchor>
+      </div>
+
+      <PopoverContent
+        align="start"
+        side="bottom"
+        sideOffset={4}
+        className="w-auto border border-[var(--border)] bg-[var(--bg-tertiary)] p-0
+          text-[var(--text-primary)] shadow-[var(--shadow-popover)]"
+        onClick={(e) => e.stopPropagation()}
       >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        >
-          <line x1="2" y1="2" x2="8" y2="8" />
-          <line x1="8" y1="2" x2="2" y2="8" />
-        </svg>
-      </span>
-    </div>
+        <ConvMenu
+          conv={conv}
+          groups={groups}
+          onRename={startRename}
+          onTogglePin={onTogglePin}
+          onToggleArchive={onToggleArchive}
+          onMoveToGroup={onMoveToGroup}
+          onNewGroup={newGroup}
+          onCopyLink={onCopyLink}
+          onDelete={onDelete}
+          onClose={() => setMenuOpen(false)}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }

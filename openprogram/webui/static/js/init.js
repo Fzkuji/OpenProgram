@@ -88,6 +88,16 @@ function handleMessage(msg) {
     case 'conversations_list':
       _handleConversationsList(msg.data);
       break;
+    case 'session_updated':
+      if (msg.data && msg.data.id && conversations[msg.data.id]) {
+        var _c = conversations[msg.data.id];
+        if (typeof msg.data.title === 'string') _c.title = msg.data.title;
+        if ('pinned' in msg.data) _c.pinned = !!msg.data.pinned;
+        if ('archived' in msg.data) _c.archived = !!msg.data.archived;
+        if ('group' in msg.data) _c.group = msg.data.group || '';
+        renderConversations();
+      }
+      break;
     case 'agents_list':
       if (typeof _handleAgentsList === 'function') _handleAgentsList(msg.data);
       break;
@@ -181,6 +191,9 @@ function _handleConversationsList(data) {
           id: c.id, title: c.title, messages: [],
           created_at: c.created_at,
           has_session: c.has_session,
+          pinned: !!c.pinned,
+          archived: !!c.archived,
+          group: c.group || '',
           agent_id: c.agent_id || null,
           source: c.source || null,
           peer_display: c.peer_display || null,
@@ -190,6 +203,9 @@ function _handleConversationsList(data) {
         if ('agent_id' in c) conversations[c.id].agent_id = c.agent_id;
         if ('source' in c) conversations[c.id].source = c.source;
         if ('peer_display' in c) conversations[c.id].peer_display = c.peer_display;
+        if ('pinned' in c) conversations[c.id].pinned = !!c.pinned;
+        if ('archived' in c) conversations[c.id].archived = !!c.archived;
+        if ('group' in c) conversations[c.id].group = c.group || '';
       }
     }
   }

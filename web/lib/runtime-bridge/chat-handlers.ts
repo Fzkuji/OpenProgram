@@ -188,6 +188,9 @@ interface SessionRow {
   source?: string | null;
   agent_id?: string | null;
   preview?: string | null;
+  pinned?: boolean;
+  archived?: boolean;
+  group?: string | null;
 }
 
 export function handleSessionsList(data: SessionRow[]): void {
@@ -212,6 +215,9 @@ export function handleSessionsList(data: SessionRow[]): void {
           source: c.source || null,
           agent_id: c.agent_id || null,
           preview: c.preview || null,
+          pinned: !!c.pinned,
+          archived: !!c.archived,
+          group: c.group || "",
         };
       } else {
         convs[c.id].has_session = c.has_session;
@@ -220,6 +226,13 @@ export function handleSessionsList(data: SessionRow[]): void {
         if ("peer" in c) convs[c.id].peer = c.peer || null;
         if ("peer_display" in c) convs[c.id].peer_display = c.peer_display || null;
         if ("preview" in c) convs[c.id].preview = c.preview || null;
+        // Conversation-management flags are authoritative from the
+        // server on every list — always overwrite (unlike title/preview
+        // which we only backfill) so a pin/archive/group change made in
+        // another tab propagates here on the next list.
+        if ("pinned" in c) convs[c.id].pinned = !!c.pinned;
+        if ("archived" in c) convs[c.id].archived = !!c.archived;
+        if ("group" in c) convs[c.id].group = c.group || "";
         // session_loaded 早到时 conv 没 created_at, 这里 sessions_list
         // 后到要补上, 不然 sidebar 排序拿不到时间戳, 新会话沉底.
         if (c.created_at != null && convs[c.id].created_at == null) {
@@ -248,6 +261,30 @@ export function handleSessionsList(data: SessionRow[]): void {
 // window to avoid an import cycle (it's only hit on a stale id).
 function newSessionImport(): void {
   (W.newSession as (() => void) | undefined)?.();
+}
+
+/** Patch a single conversation's title / pinned / archived / group
+ *  in place from a ``session_updated`` echo, then re-render. Lets a
+ *  rename / pin / archive / move-to-group done in this tab (or another
+ *  client) reflect immediately without a full re-list. */
+export function handleSessionUpdated(
+  data: {
+    id?: string;
+    title?: string;
+    pinned?: boolean;
+    archived?: boolean;
+    group?: string | null;
+  } | null,
+): void {
+  if (!data || !data.id) return;
+  const convs = W.conversations;
+  const conv = convs?.[data.id];
+  if (!conv) return;
+  if (typeof data.title === "string") conv.title = data.title;
+  if ("pinned" in data) conv.pinned = !!data.pinned;
+  if ("archived" in data) conv.archived = !!data.archived;
+  if ("group" in data) conv.group = data.group || "";
+  W.renderSessions?.();
 }
 
 export function handleRunningTask(rt: unknown): void {

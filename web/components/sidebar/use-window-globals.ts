@@ -26,6 +26,30 @@ interface LegacyConv {
   account_id?: string | null;
   preview?: string | null;
   has_session?: boolean;
+  pinned?: boolean;
+  archived?: boolean;
+  group?: string;
+}
+
+/**
+ * Cheap content signature of the conversations map over the fields the
+ * sidebar actually renders. The legacy code mutates `window.conversations`
+ * **in place** (same object ref) when the WS `sessions_list` populates it
+ * or a title / pin / archive / group flips — so a pure ref / key-count
+ * compare misses those updates (a freshly-populated list stays "empty",
+ * a rename never shows). Hashing the rendered fields catches all of it
+ * at a few µs per tick for a normal sidebar.
+ */
+function convsSignature(convs: Record<string, LegacyConv>): string {
+  const ids = Object.keys(convs);
+  let sig = String(ids.length);
+  for (const id of ids) {
+    const c = convs[id];
+    sig +=
+      "|" + id + ":" + (c.title || "") + ":" + (c.preview || "") +
+      ":" + (c.pinned ? 1 : 0) + (c.archived ? 1 : 0) + ":" + (c.group || "");
+  }
+  return sig;
 }
 
 interface FunctionsMeta {
@@ -74,36 +98,31 @@ export function useWindowGlobals(): WindowGlobalsState {
 
   useEffect(() => {
     let prev = snap;
+    let prevSig = convsSignature(prev.conversations);
     const id = setInterval(() => {
       const next = capture();
-      // Reference equality is enough — legacy code replaces these
-      // globals wholesale (`conversations[id] = ...` keeps the same
-      // ref but `availableFunctions = await fetch(...)` swaps it).
-      // For the conversations object the ref stays stable, so we also
-      // compare the Object.keys length + currentSessionId to catch
-      // adds / deletes / active-flip. Title changes inside an entry
-      // do mutate the same object, which means a streaming title
-      // update may not trigger a re-render until something else
-      // changes — acceptable for this slice (title is set at
-      // conversation creation, not per-token).
-      const convKeys = Object.keys(next.conversations).length;
-      const prevConvKeys = Object.keys(prev.conversations).length;
+      // `availableFunctions` / `programsMeta` get swapped wholesale, so
+      // a ref compare catches them. `conversations` is mutated in place
+      // (same ref) on WS populate / rename / pin / archive / group, so
+      // a ref or key-count compare misses those — hash the rendered
+      // fields instead (see convsSignature).
+      const nextSig = convsSignature(next.conversations);
       const cidNow =
         (window as unknown as { currentSessionId?: string | null })
           .currentSessionId ?? null;
       const cidPrev =
         (prev as unknown as { _cid?: string | null })._cid ?? null;
       if (
-        next.conversations !== prev.conversations ||
+        nextSig !== prevSig ||
         next.availableFunctions !== prev.availableFunctions ||
         next.programsMeta !== prev.programsMeta ||
         next.sidebarOpen !== prev.sidebarOpen ||
-        convKeys !== prevConvKeys ||
         cidNow !== cidPrev
       ) {
         const stamped = next as WindowGlobalsState & { _cid?: string | null };
         stamped._cid = cidNow;
         prev = stamped;
+        prevSig = nextSig;
         setSnap(stamped);
       }
     }, 250);

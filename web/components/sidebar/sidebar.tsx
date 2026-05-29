@@ -36,12 +36,30 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
+// Sidebar nav uses the FILLED set = Heroicons solid (20). The icons
+// here were originally hand-pasted Heroicons paths, so importing from
+// the library is visually identical — it just satisfies the "icons
+// come from a library, never hand-authored" rule. The collapse button
+// uses lucide PanelLeft (the standard sidebar-toggle glyph; it's a
+// chrome action, not a nav item).
+import {
+  ArrowPathIcon,
+  ChatBubbleLeftRightIcon,
+  PlusIcon,
+  PuzzlePieceIcon,
+  QueueListIcon,
+  RectangleStackIcon,
+  SparklesIcon,
+  Squares2X2Icon,
+} from "@heroicons/react/20/solid";
+import { PanelLeft } from "lucide-react";
 import { useSessionStore } from "@/lib/session-store";
 import { refreshFunctionsList } from "@/lib/functions-actions";
 import { useTranslation } from "@/lib/i18n";
 import { UserMenuFooter } from "../user-menu-footer";
 import { SessionsList } from "./sessions-list";
 import { FavoritesList } from "./favorites-list";
+import { RecentsFilter } from "./recents-filter";
 import {
   sidebarNavActionClass,
   sidebarNavIconClass,
@@ -247,9 +265,7 @@ export function Sidebar() {
           title={t("sidebar.toggle")}
           type="button"
         >
-          <svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor">
-            <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H88V56H216V200Z" />
-          </svg>
+          <PanelLeft size={20} strokeWidth={1.75} />
         </button>
       </div>
 
@@ -271,9 +287,7 @@ export function Sidebar() {
               [transition:transform_0.3s_cubic-bezier(0.165,0.85,0.45,1),background_0.15s_ease,color_0.15s_ease]
               group-hover:text-nav-color-hover"
           >
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
-            </svg>
+            <PlusIcon style={{ width: 16, height: 16 }} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.new_chat")}</span>
         </div>
@@ -287,9 +301,7 @@ export function Sidebar() {
           id="navPrograms"
         >
           <span className={sidebarNavIconClass}>
-            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
-              <path d="M4.25 2A2.25 2.25 0 0 0 2 4.25v2.5A2.25 2.25 0 0 0 4.25 9h2.5A2.25 2.25 0 0 0 9 6.75v-2.5A2.25 2.25 0 0 0 6.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 2 13.25v2.5A2.25 2.25 0 0 0 4.25 18h2.5A2.25 2.25 0 0 0 9 15.75v-2.5A2.25 2.25 0 0 0 6.75 11h-2.5Zm9-9A2.25 2.25 0 0 0 11 4.25v2.5A2.25 2.25 0 0 0 13.25 9h2.5A2.25 2.25 0 0 0 18 6.75v-2.5A2.25 2.25 0 0 0 15.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 11 13.25v2.5A2.25 2.25 0 0 0 13.25 18h2.5A2.25 2.25 0 0 0 18 15.75v-2.5A2.25 2.25 0 0 0 15.75 11h-2.5Z" />
-            </svg>
+            <Squares2X2Icon className={sidebarNavIconSvgClass} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.functions")}</span>
           <span
@@ -312,17 +324,11 @@ export function Sidebar() {
             {refreshDone ? (
               <span>&#10003;</span>
             ) : (
-              <svg
+              <ArrowPathIcon
                 ref={refreshSvgRef}
-                width="12"
-                height="12"
-                viewBox="0 0 16 16"
-                fill="currentColor"
+                style={{ width: 12, height: 12 }}
                 className={refreshing ? "animate-spin-refresh" : ""}
-              >
-                <path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5h-1.5A5 5 0 1 1 8 3V1.5z" />
-                <path d="M8 0l3 3-3 3V0z" />
-              </svg>
+              />
             )}
           </span>
         </Link>
@@ -336,9 +342,7 @@ export function Sidebar() {
           id="navSkills"
         >
           <span className={sidebarNavIconClass}>
-            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
-              <path d="M9 3.5a.75.75 0 0 1 .714.518l.66 2.034a3 3 0 0 0 1.91 1.91l2.034.66a.75.75 0 0 1 0 1.428l-2.034.66a3 3 0 0 0-1.91 1.91l-.66 2.034a.75.75 0 0 1-1.428 0l-.66-2.034a3 3 0 0 0-1.91-1.91l-2.034-.66a.75.75 0 0 1 0-1.428l2.034-.66a3 3 0 0 0 1.91-1.91l.66-2.034A.75.75 0 0 1 9 3.5ZM15.5 11.5a.5.5 0 0 1 .476.345l.342 1.054a2 2 0 0 0 1.283 1.283l1.054.342a.5.5 0 0 1 0 .952l-1.054.342a2 2 0 0 0-1.283 1.283l-.342 1.054a.5.5 0 0 1-.952 0l-.342-1.054a2 2 0 0 0-1.283-1.283l-1.054-.342a.5.5 0 0 1 0-.952l1.054-.342a2 2 0 0 0 1.283-1.283l.342-1.054A.5.5 0 0 1 15.5 11.5ZM14.5 2a.5.5 0 0 1 .47.331l.18.485a1.5 1.5 0 0 0 .884.884l.485.18a.5.5 0 0 1 0 .94l-.485.18a1.5 1.5 0 0 0-.884.884l-.18.485a.5.5 0 0 1-.94 0l-.18-.485a1.5 1.5 0 0 0-.884-.884l-.485-.18a.5.5 0 0 1 0-.94l.485-.18a1.5 1.5 0 0 0 .884-.884l.18-.485A.5.5 0 0 1 14.5 2Z" />
-            </svg>
+            <SparklesIcon className={sidebarNavIconSvgClass} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.skills")}</span>
         </Link>
@@ -352,9 +356,7 @@ export function Sidebar() {
           id="navPlugins"
         >
           <span className={sidebarNavIconClass}>
-            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
-              <path d="M7 2a1 1 0 0 1 1 1v2h4V3a1 1 0 1 1 2 0v2h1.5A1.5 1.5 0 0 1 17 6.5V8h2a1 1 0 1 1 0 2h-2v4h2a1 1 0 1 1 0 2h-2v1.5a1.5 1.5 0 0 1-1.5 1.5H14v-2a1 1 0 1 0-2 0v2H8v-2a1 1 0 1 0-2 0v2H4.5A1.5 1.5 0 0 1 3 17.5V16H1a1 1 0 1 1 0-2h2v-4H1a1 1 0 1 1 0-2h2V6.5A1.5 1.5 0 0 1 4.5 5H6V3a1 1 0 0 1 1-1Z" />
-            </svg>
+            <PuzzlePieceIcon className={sidebarNavIconSvgClass} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.plugins")}</span>
         </Link>
@@ -368,9 +370,7 @@ export function Sidebar() {
           id="navMcp"
         >
           <span className={sidebarNavIconClass}>
-            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
-              <path d="M3 4.5A2.5 2.5 0 0 1 5.5 2h9A2.5 2.5 0 0 1 17 4.5v3A2.5 2.5 0 0 1 14.5 10h-9A2.5 2.5 0 0 1 3 7.5v-3Zm2 0a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H5Zm0 8A2.5 2.5 0 0 0 2.5 15v.5A2.5 2.5 0 0 0 5 18h10a2.5 2.5 0 0 0 2.5-2.5V15A2.5 2.5 0 0 0 15 12.5H5Zm0 2h2a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1Z" />
-            </svg>
+            <RectangleStackIcon className={sidebarNavIconSvgClass} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.mcp")}</span>
         </Link>
@@ -384,9 +384,7 @@ export function Sidebar() {
           id="navMemory"
         >
           <span className={sidebarNavIconClass}>
-            <svg className={sidebarNavIconSvgClass} viewBox="0 0 20 20" fill="currentColor">
-              <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2h11a2.5 2.5 0 0 1 0 5h-11A2.5 2.5 0 0 1 2 4.5ZM2.75 9.083a.75.75 0 0 0 0 1.5h14.5a.75.75 0 0 0 0-1.5H2.75ZM2.75 12.663a.75.75 0 0 0 0 1.5h14.5a.75.75 0 0 0 0-1.5H2.75ZM2.75 16.25a.75.75 0 0 0 0 1.5h14.5a.75.75 0 1 0 0-1.5H2.75Z" />
-            </svg>
+            <QueueListIcon className={sidebarNavIconSvgClass} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.memory")}</span>
         </Link>
@@ -401,21 +399,7 @@ export function Sidebar() {
           id="navChats"
         >
           <span className={sidebarNavIconClass}>
-            <svg
-              className={sidebarNavIconSvgClass}
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                className="nav-chats-bubble-l"
-                d="M3.505 2.365A41.369 41.369 0 0 1 9 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 0 0-.577-.069 43.141 43.141 0 0 0-4.706 0C9.229 4.696 7.5 6.727 7.5 8.998v2.24c0 1.413.67 2.735 1.76 3.562l-2.98 2.98A.75.75 0 0 1 5 17.25v-3.443c-.501-.048-1-.106-1.495-.172C2.033 13.438 1 12.162 1 10.72V5.28c0-1.441 1.033-2.717 2.505-2.914Z"
-              />
-              <path
-                className="nav-chats-bubble-r"
-                d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.147 2.839 2.71 2.935.214.013.428.024.642.034.2.009.385.09.518.224l2.35 2.35a.75.75 0 0 0 1.28-.531v-2.07c1.453-.195 2.5-1.463 2.5-2.915V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z"
-              />
-            </svg>
+            <ChatBubbleLeftRightIcon className={sidebarNavIconSvgClass} aria-hidden="true" />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.chats")}</span>
         </Link>
@@ -448,6 +432,7 @@ export function Sidebar() {
           title={t("sidebar.recents")}
           collapsed={convCollapsed}
           onToggle={() => setConvCollapsed((v) => !v)}
+          headerActions={<RecentsFilter />}
           className="flex flex-1 min-h-0 flex-col pt-[16px]"
         >
           <div
@@ -485,6 +470,7 @@ function SidebarSection({
   collapsed,
   onToggle,
   className,
+  headerActions,
   children,
 }: {
   id: string;
@@ -492,29 +478,37 @@ function SidebarSection({
   collapsed: boolean;
   onToggle: () => void;
   className: string;
+  /** Optional controls rendered at the right of the header (e.g. the
+   *  Recents filter button). Clicks inside are stopped from toggling
+   *  the section. */
+  headerActions?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const { t } = useTranslation();
-
   return (
     <div id={id} className={className}>
       <div
-        className="group flex shrink-0 cursor-pointer select-none items-center
+        className="group flex shrink-0 cursor-pointer select-none items-center gap-[6px]
           px-[16px] py-[4px]"
         onClick={onToggle}
       >
-        <span className="text-[12px] font-normal text-text-muted">{title}</span>
+        {/* Rotating chevron — the Claude-style collapse cue. */}
         <span
-          className={
-            "ml-auto text-[12px] text-text-muted " +
-            "transition-opacity duration-150 ease-out " +
-            (collapsed
-              ? "opacity-75"
-              : "opacity-0 group-hover:opacity-75")
-          }
+          aria-hidden="true"
+          className="text-[10px] text-text-muted transition-transform duration-150 ease-out"
+          style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
         >
-          {collapsed ? t("sidebar.show") : t("sidebar.hide")}
+          ▾
         </span>
+        <span className="text-[12px] font-normal text-text-muted">{title}</span>
+        {headerActions ? (
+          <span
+            className="ml-auto flex items-center opacity-60 transition-opacity
+              duration-150 ease-out group-hover:opacity-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {headerActions}
+          </span>
+        ) : null}
       </div>
       {!collapsed && children}
     </div>

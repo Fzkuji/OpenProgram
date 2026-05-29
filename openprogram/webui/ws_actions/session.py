@@ -88,6 +88,79 @@ async def handle_delete_session(ws, cmd: dict):
         _s._delete_session_files(session_id)
 
 
+async def handle_rename_session(ws, cmd: dict):
+    """Set a conversation's display title.
+
+    Persists to ``meta.json`` via ``update_session`` AND patches the
+    in-memory ``_sessions`` dict (if the conv is hydrated) so the
+    next ``list_sessions`` and any live reference both see the new
+    title. Echoes ``session_updated`` so every connected client can
+    patch the one row without a full re-list.
+    """
+    from openprogram.webui import server as _s
+    from openprogram.agent.session_db import default_db
+
+    session_id = cmd.get("session_id")
+    title = cmd.get("title")
+    if not session_id or not isinstance(title, str):
+        return
+    title = title.strip()
+    if not title:
+        return
+    with _s._sessions_lock:
+        conv = _s._sessions.get(session_id)
+        if conv is not None:
+            conv["title"] = title
+    try:
+        default_db().update_session(session_id, title=title)
+    except Exception as e:
+        _s._log(f"[rename_session] {session_id}: {e}")
+    await ws.send_text(json.dumps({
+        "type": "session_updated",
+        "data": {"id": session_id, "title": title},
+    }, default=str))
+
+
+async def handle_update_session_flags(ws, cmd: dict):
+    """Set conversation management flags: pinned / archived / group.
+
+    Only the keys present in ``cmd`` are written, so a pin toggle
+    doesn't clobber the group and vice-versa. ``group`` may be an
+    empty string to ungroup (``update_session`` drops ``None`` but
+    keeps ``""`` / ``False``, so booleans + the ungroup sentinel
+    persist correctly). Dual-writes meta.json + the in-memory conv
+    and echoes ``session_updated``.
+    """
+    from openprogram.webui import server as _s
+    from openprogram.agent.session_db import default_db
+
+    session_id = cmd.get("session_id")
+    if not session_id:
+        return
+    fields: dict = {}
+    if "pinned" in cmd:
+        fields["pinned"] = bool(cmd.get("pinned"))
+    if "archived" in cmd:
+        fields["archived"] = bool(cmd.get("archived"))
+    if "group" in cmd:
+        g = cmd.get("group")
+        fields["group"] = "" if g is None else str(g)
+    if not fields:
+        return
+    with _s._sessions_lock:
+        conv = _s._sessions.get(session_id)
+        if conv is not None:
+            conv.update(fields)
+    try:
+        default_db().update_session(session_id, **fields)
+    except Exception as e:
+        _s._log(f"[update_session_flags] {session_id}: {e}")
+    await ws.send_text(json.dumps({
+        "type": "session_updated",
+        "data": {"id": session_id, **fields},
+    }, default=str))
+
+
 async def handle_clear_sessions(ws, cmd: dict):
     from openprogram.webui import server as _s
     from openprogram.webui import persistence as _persist
@@ -503,6 +576,9 @@ async def handle_list_sessions(ws, cmd: dict):
                 "account_id": conv.get("account_id"),
                 "peer": conv.get("peer"),
                 "preview": preview,
+                "pinned": bool(conv.get("pinned")),
+                "archived": bool(conv.get("archived")),
+                "group": conv.get("group") or "",
             })
     seen_ids = {row["id"] for row in conv_list if row.get("id")}
     try:
@@ -520,6 +596,16 @@ async def handle_list_sessions(ws, cmd: dict):
                             row["channel"] = srow["channel"]
                         if not row.get("account_id") and srow.get("account_id"):
                             row["account_id"] = srow["account_id"]
+                        # Flags persist to meta.json; a conv hydrated
+                        # into _sessions may not carry them in its dict,
+                        # so backfill from disk when the in-memory row
+                        # reported falsy/empty.
+                        if not row.get("pinned") and srow.get("pinned"):
+                            row["pinned"] = True
+                        if not row.get("archived") and srow.get("archived"):
+                            row["archived"] = True
+                        if not row.get("group") and srow.get("group"):
+                            row["group"] = srow["group"]
                         break
                 continue
             seen_ids.add(sid)
@@ -540,6 +626,9 @@ async def handle_list_sessions(ws, cmd: dict):
                 "account_id": srow.get("account_id"),
                 "peer": srow.get("peer") or srow.get("peer_id"),
                 "preview": preview,
+                "pinned": bool(srow.get("pinned")),
+                "archived": bool(srow.get("archived")),
+                "group": srow.get("group") or "",
             })
     except Exception:
         pass
@@ -559,6 +648,8 @@ async def handle_list_sessions(ws, cmd: dict):
 
 ACTIONS = {
     "delete_session": handle_delete_session,
+    "rename_session": handle_rename_session,
+    "update_session_flags": handle_update_session_flags,
     "clear_sessions": handle_clear_sessions,
     "load_session": handle_load_session,
     "follow_up_answer": handle_follow_up_answer,

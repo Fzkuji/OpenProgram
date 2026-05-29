@@ -27,6 +27,7 @@ import {
   handleRunningTask,
   handleRunningTaskClear,
   handleSessionsList,
+  handleSessionUpdated,
   initChatPage,
   wsHandleChatAck,
   wsHandleChatResponse,
@@ -285,6 +286,9 @@ export function useWS(): void {
           return true;
         case "sessions_list":
           handleSessionsList((d ?? []) as never);
+          return true;
+        case "session_updated":
+          handleSessionUpdated((d ?? null) as never);
           return true;
         case "session_channel_updated": {
           const sid = d?.session_id as string | undefined;
