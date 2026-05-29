@@ -600,12 +600,12 @@ function GroupHeader({
       {collapsible ? (
         // Animated chevron from the shared icon set (pqoqubbw / framer-
         // motion). Hidden until the section is hovered, bounces on
-        // hover, brightens to white with the label, centred to the
-        // text height, rotates to › when collapsed.
+        // hover, brightens to white with the label, bottom-aligned to
+        // the text line, rotates to › when collapsed.
         <ChevronDownIcon
           ref={chevronRef}
           size={12}
-          className="mt-[1px] shrink-0 text-[var(--text-secondary)] opacity-0
+          className="self-end shrink-0 text-[var(--text-secondary)] opacity-0
             transition-[opacity,color] duration-150
             group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
