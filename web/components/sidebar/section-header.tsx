@@ -62,9 +62,9 @@ export function SectionHeader({
       onMouseLeave={() => chevronRef.current?.stopAnimation()}
       className={
         // Vertical rhythm for the sidebar section headers: 16px above
-        // the label (section break) and 6px below it before the first
+        // the label (section break) and 5px below it before the first
         // row. (Claude uses ~16 / 8; tuned a touch tighter below.)
-        "flex select-none items-center gap-1 px-[8px] pt-[16px] pb-[6px]" +
+        "flex select-none items-center gap-1 px-[8px] pt-[16px] pb-[5px]" +
         (collapsible ? " cursor-pointer" : "") +
         (className ? " " + className : "")
       }
