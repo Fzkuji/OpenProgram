@@ -199,8 +199,10 @@ function AgentSection() {
         {/* Avatar style + seed + upload — all owned by the avatar
             feature module. This page just hands it the current
             config and a setter; the picker decides what controls to
-            render based on which source the user has chosen. */}
-        <div className={styles.row}>
+            render based on which source the user has chosen.
+            ``rowTop`` keeps the "Avatar style" label pinned to the
+            top of the tall picker block instead of centring it. */}
+        <div className={`${styles.row} ${styles.rowTop}`}>
           <div className={styles.label}>Avatar style</div>
           <div className={styles.value}>
             <AvatarPicker

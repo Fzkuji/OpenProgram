@@ -249,6 +249,18 @@
 .row + .row {
   border-top: 1px solid var(--border);
 }
+/* Top-align variant for rows whose value column is tall (e.g. the
+   avatar style picker with its tile grid + variant grid). Centering
+   the short left-hand label against that tall block leaves the label
+   floating in the middle; this pins it to the top so it reads as the
+   heading of the block beside it. A little top padding on the label
+   nudges it onto the same baseline as the first row of tiles. */
+.rowTop {
+  align-items: flex-start;
+}
+.rowTop .label {
+  padding-top: 6px;
+}
 .label {
   font-size: 14px;
   color: var(--text-primary);
