@@ -1473,6 +1473,19 @@ def process_user_turn(
     except Exception:
         pass
 
+    # 6.95. Evict old per-turn file-backup snapshots beyond the soft cap.
+    # The snapshots (file_backups/<turn>/) are full copies written before
+    # each edit; without this they grow unbounded. Cap is per-session and
+    # generous (gc.MAX_TURNS); we run it every turn-end since it's a cheap
+    # mtime sort + rmtree of only the excess. Best-effort.
+    try:
+        from openprogram.store import default_store
+        from openprogram.store.file_backup import gc_evict_old
+        _sdir = default_store()._session_dir(req.session_id)
+        gc_evict_old(_sdir)
+    except Exception:
+        pass
+
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal.
     on_event({"type": "chat_response",

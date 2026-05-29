@@ -184,21 +184,10 @@ class ProjectGit:
             return True
 
     def _ensure_self_ignored(self) -> None:
-        """Write ``<project>/.openprogram/.gitignore`` containing ``*`` so
-        git ignores OpenProgram's entire footprint inside the user's
-        tree. Best-effort; never raises."""
-        try:
-            op_dir = self.path / ".openprogram"
-            op_dir.mkdir(parents=True, exist_ok=True)
-            gi = op_dir / ".gitignore"
-            # ``*`` ignores everything in this dir (incl. the sessions/
-            # repos); ``.gitignore`` itself is ignored too, which is fine
-            # — we re-assert it on every ensure_init.
-            current = gi.read_text(encoding="utf-8") if gi.exists() else ""
-            if current != "*\n":
-                gi.write_text("*\n", encoding="utf-8")
-        except OSError:
-            pass
+        """Hide OpenProgram's footprint from the user's git. Delegates to
+        the standalone :func:`ensure_footprint_ignored` so the same logic
+        runs whether or not we ever git-init this folder."""
+        ensure_footprint_ignored(self.path)
 
     def _has_user_identity(self) -> bool:
         name = self._run("config", "user.name", check=False).strip()
@@ -367,6 +356,30 @@ def _project_id_for_path(path: Path) -> str:
     return f"proj_{h}"
 
 
+def ensure_footprint_ignored(project_path: str | Path) -> None:
+    """Write ``<project>/.openprogram/.gitignore`` = ``*`` so the user's
+    git ignores OpenProgram's entire footprint (the session repos we
+    store at ``<project>/.openprogram/sessions/<id>/`` live INSIDE the
+    user's working tree).
+
+    Crucially this is **independent of git-init** (rule A): we never
+    create the user's ``.git``, but we DO need the ``.gitignore`` in
+    place if the folder is — or later becomes — a git repo, otherwise
+    ``.openprogram/`` shows up as untracked and gets swept into commits.
+    Called when a session is relocated into a project dir, and again
+    from ``ProjectGit.ensure_init``. Best-effort; never raises.
+    """
+    try:
+        op_dir = Path(project_path).expanduser() / ".openprogram"
+        op_dir.mkdir(parents=True, exist_ok=True)
+        gi = op_dir / ".gitignore"
+        current = gi.read_text(encoding="utf-8") if gi.exists() else ""
+        if current != "*\n":
+            gi.write_text("*\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def list_projects() -> list[Project]:
     with _reg_lock:
         return [Project.from_dict(d) for d in _read_registry().values()]
@@ -413,28 +426,33 @@ def get_default_project() -> Project:
 
 
 def resolve_project(path: str | Path | None = None, *, name: str | None = None) -> Project:
-    """Resolve (and auto-create) the project for a working directory.
+    """Resolve (and register) the project for a working directory.
 
-    * ``path=None`` → the default project (home-dir catch-all repo).
-    * ``path=<dir>`` → the project bound to that directory. Reuses the
-      directory's existing ``.git`` if present, else ``git init``s it.
-      Registered in ``projects.json`` keyed by a path-derived id, so
-      the same directory always resolves to the same project.
+    * ``path=None`` → the default project (logical label, no repo).
+    * ``path=<dir>`` → the project bound to that directory. Registered
+      in ``projects.json`` keyed by a path-derived id, so the same
+      directory always resolves to the same project.
 
-    Both cases guarantee a git repo exists on return — this is the
-    "automatically create project entity memory" the entity layer
-    promises.
+    **Rule A — binding a folder NEVER touches its git.** We do not
+    ``git init`` the user's directory here, and we don't even require it
+    to be a git repo. Whether the agent's edits get committed is a
+    separate, opt-in concern handled at turn end by ``project_commit``,
+    and even then only if the directory is *already* a git repo. So
+    "open this folder as my project" has zero git side-effects — the
+    user stays in full control of whether/when their folder becomes a
+    repo. (The session's OWN entity memory still lives at
+    ``<dir>/.openprogram/sessions/<id>/`` regardless — that's a separate
+    git repo we manage, not the user's.)
     """
     if path is None:
         return get_default_project()
 
     p = Path(path).expanduser()
+    # Drop our .gitignore in NOW (rule A: no git-init, but the footprint
+    # must be hidden in case the folder is / becomes a git repo).
+    ensure_footprint_ignored(p)
     pid = _project_id_for_path(p)
     existing = get_project(pid)
-
-    repo = ProjectGit(p)
-    repo.ensure_init()
-
     if existing is not None:
         return existing
 
@@ -485,4 +503,5 @@ __all__ = [
     "resolve_project",
     "bind_session",
     "project_for_session",
+    "ensure_footprint_ignored",
 ]

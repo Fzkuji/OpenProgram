@@ -117,10 +117,20 @@ def main() -> int:
             bound_dir == expected and (bound_dir / ".git").exists(),
             str(bound_dir),
         )
+        # Rule A: binding a folder must NOT create a .git (we never
+        # git-init the user's dir). But it SHOULD drop the footprint
+        # .gitignore so our .openprogram/ stays invisible to the user's
+        # git if the folder is / becomes a repo.
         check(
-            "binding git-init'd the project dir",
-            (proj_dir / ".git").exists(),
+            "rule A: binding does NOT create .git",
+            not (proj_dir / ".git").exists(),
             str(proj_dir),
+        )
+        check(
+            "binding drops .openprogram/.gitignore (footprint hidden)",
+            (proj_dir / ".openprogram" / ".gitignore").read_text(encoding="utf-8") == "*\n"
+            if (proj_dir / ".openprogram" / ".gitignore").exists() else False,
+            "gitignore = *",
         )
 
         # ── 3. reverse index survives a store restart ─────────────
@@ -223,83 +233,138 @@ def main() -> int:
         check("project-git log readable", isinstance(log, list) and len(log) >= 1,
               f"{len(log)} commits")
 
-        # ── 7. project_commit dispatcher wiring (the new auto-commit) ──
-        # Use a fresh scratch project + a real bound session so
-        # project_for_session resolves it. Exercise the two helpers the
-        # dispatcher now calls: snapshot_baseline (turn start) and
-        # commit_turn_changes (turn end).
+        # ── 7. project_commit dispatcher wiring (auto-commit, default ON) ──
         from openprogram.store import project_commit as PC
 
+        # 7a. default is ON (no env, no config).
+        os.environ.pop("OPENPROGRAM_PROJECT_AUTOCOMMIT", None)
+        check("auto-commit ON by default", PC.is_enabled() is True, "default on")
+        # env can still force it off.
+        os.environ["OPENPROGRAM_PROJECT_AUTOCOMMIT"] = "0"
+        check("env can force auto-commit OFF", PC.is_enabled() is False, "env=0")
+        os.environ.pop("OPENPROGRAM_PROJECT_AUTOCOMMIT", None)
+
+        # 7b. RULE A: binding a NON-git folder must create NO .git, and
+        #     commit must skip with a 'not_a_git_repo' notice.
+        plain_dir = Path(tempfile.mkdtemp(prefix="op_plain_"))
+        try:
+            store.create_session("plain1", "main", title="plain", work_dir=str(plain_dir))
+            store.append_message("plain1", {"role": "user", "content": "hi", "id": "p1"})
+            store.commit_turn("plain1", "turn: hi")
+            git_created = (plain_dir / ".git").exists()
+            check("rule A: binding a non-git folder creates NO .git",
+                  not git_created, f".git exists={git_created}")
+            (plain_dir / "agent_made.py").write_text("# agent\n", encoding="utf-8")
+            evs: list[dict] = []
+            r = PC.commit_turn_changes("plain1", "do work",
+                                       PC.snapshot_baseline("plain1"),
+                                       on_event=evs.append)
+            not_repo_notice = any(
+                (e.get("data") or {}).get("reason") == "not_a_git_repo" for e in evs
+            )
+            check("rule A: non-git folder → skip + not_a_git_repo notice",
+                  r is None and not_repo_notice and not (plain_dir / ".git").exists(),
+                  f"res={r} notice={not_repo_notice}")
+        finally:
+            _rmtree_retry(plain_dir)
+
+        # 7c. folder that IS a git repo → default-on commits the agent edit.
         proj_dir2 = Path(tempfile.mkdtemp(prefix="op_proj2_"))
         try:
-            # toggle OFF by default → both helpers must no-op.
-            os.environ.pop("OPENPROGRAM_PROJECT_AUTOCOMMIT", None)
-            check("auto-commit disabled by default", PC.is_enabled() is False,
-                  "default off")
+            # user makes it a git repo themselves (we never do).
+            P.ProjectGit(proj_dir2)._run("init", "--quiet", "--initial-branch=main")
+            P.ProjectGit(proj_dir2)._run("config", "user.email", "u@u")
+            P.ProjectGit(proj_dir2)._run("config", "user.name", "User")
             store.create_session("wired1", "main", title="wired", work_dir=str(proj_dir2))
             store.append_message("wired1", {"role": "user", "content": "edit a file", "id": "w1"})
             store.commit_turn("wired1", "turn: edit a file")
-            off_base = PC.snapshot_baseline("wired1")
-            off_res = PC.commit_turn_changes("wired1", "edit a file", off_base)
-            check("disabled → snapshot/commit are no-ops",
-                  off_base is None and off_res is None,
-                  f"base={off_base} res={off_res}")
 
-            # toggle ON → full path.
-            os.environ["OPENPROGRAM_PROJECT_AUTOCOMMIT"] = "1"
-            check("auto-commit enabled via env", PC.is_enabled() is True, "env on")
-
-            # turn START: clean tree (only the .openprogram/.gitignore,
-            # which is ignored) → baseline empty-ish.
-            base = PC.snapshot_baseline("wired1")
-            # agent edits a file in the project during the "turn"
+            base = PC.snapshot_baseline("wired1")           # clean tree
             (proj_dir2 / "feature.py").write_text("# agent wrote this 功能\n", encoding="utf-8")
-            # turn END: should commit, attributable to the agent.
             sha = PC.commit_turn_changes("wired1", "add feature 功能", base)
-            committed_ok = isinstance(sha, str) and len(sha) >= 7
-            check("enabled + agent edit on clean tree → commits", committed_ok, str(sha))
+            check("default-on + git repo + agent edit → commits",
+                  isinstance(sha, str) and len(sha) >= 7, str(sha))
 
-            # verify the commit is in the PROJECT repo with agent identity
             pg2 = P.ProjectGit(proj_dir2)
-            top = pg2.log(limit=1)  # ProjectGit.log() → list[dict]
+            top = pg2.log(limit=1)
             top_msg = top[0]["message"] if top else ""
             author = ""
             try:
                 author = pg2._run("log", "-1", "--pretty=format:%an").strip()
             except Exception as e:
                 author = f"ERR {e}"
-            check(
-                "commit attributed to agent identity",
-                bool(top) and author == P.ProjectGit.AGENT_NAME
-                and "feature" in top_msg,
-                f"author={author!r} msg={top_msg!r}",
-            )
-            check(
-                "feature.py is committed (not left dirty)",
-                "feature.py" not in pg2.dirty_paths(),
-                "clean after commit",
-            )
+            check("commit attributed to agent identity",
+                  bool(top) and author == P.ProjectGit.AGENT_NAME and "feature" in top_msg,
+                  f"author={author!r} msg={top_msg!r}")
+            check("feature.py committed (not left dirty)",
+                  "feature.py" not in pg2.dirty_paths(), "clean after commit")
 
-            # dirty-refusal path emits a warning event
+            # dirty-refusal (Strategy A) still emits a skip event
             (proj_dir2 / "user_wip2.txt").write_text("user editing 用户改", encoding="utf-8")
-            base2 = PC.snapshot_baseline("wired1")        # captures user WIP
+            base2 = PC.snapshot_baseline("wired1")
             (proj_dir2 / "agent2.py").write_text("# agent again\n", encoding="utf-8")
-            events: list[dict] = []
-            res_skip = PC.commit_turn_changes(
-                "wired1", "more work", base2, on_event=events.append,
-            )
-            emitted = any(
-                (e.get("data") or {}).get("type") == "project_commit_skipped"
-                for e in events
-            )
-            check(
-                "dirty tree → refuses + emits project_commit_skipped event",
-                res_skip is None and emitted,
-                f"res={res_skip} events={[ (e.get('data') or {}).get('type') for e in events ]}",
-            )
+            evs2: list[dict] = []
+            res_skip = PC.commit_turn_changes("wired1", "more work", base2, on_event=evs2.append)
+            emitted = any((e.get("data") or {}).get("type") == "project_commit_skipped" for e in evs2)
+            check("dirty user tree → refuses + emits skip event",
+                  res_skip is None and emitted, f"res={res_skip}")
         finally:
-            os.environ.pop("OPENPROGRAM_PROJECT_AUTOCOMMIT", None)
             _rmtree_retry(proj_dir2)
+
+        # 7d. RULE B: an active worktree makes the real-repo commit yield.
+        #     We monkeypatch _has_active_worktree to simulate an active wt
+        #     (exercising the dispatcher's real call path without spinning
+        #     up a worktree).
+        proj_dir3 = Path(tempfile.mkdtemp(prefix="op_proj3_"))
+        try:
+            P.ProjectGit(proj_dir3)._run("init", "--quiet", "--initial-branch=main")
+            P.ProjectGit(proj_dir3)._run("config", "user.email", "u@u")
+            P.ProjectGit(proj_dir3)._run("config", "user.name", "User")
+            store.create_session("wt1", "main", title="wt", work_dir=str(proj_dir3))
+            store.commit_turn("wt1", "turn: x")
+            (proj_dir3 / "agent_wt.py").write_text("# agent in wt era\n", encoding="utf-8")
+            _orig = PC._has_active_worktree
+            PC._has_active_worktree = lambda sid: True
+            try:
+                yield_base = PC.snapshot_baseline("wt1")
+                yield_res = PC.commit_turn_changes("wt1", "work", yield_base)
+            finally:
+                PC._has_active_worktree = _orig
+            check("rule B: active worktree → real-repo commit yields",
+                  yield_base is None and yield_res is None,
+                  f"base={yield_base} res={yield_res}")
+            # With no active worktree, a fresh agent edit on a clean
+            # baseline DOES commit. (We commit the yielded file first so
+            # the tree is clean, then capture a baseline, then edit anew —
+            # mirroring how a real turn captures baseline at turn start.)
+            P.ProjectGit(proj_dir3).commit_agent_changes(
+                "[setup] land yielded file", baseline=set())
+            base_clean = PC.snapshot_baseline("wt1")          # now clean
+            (proj_dir3 / "agent_wt2.py").write_text("# fresh agent edit\n", encoding="utf-8")
+            commit_res = PC.commit_turn_changes("wt1", "work", base_clean)
+            check("rule B: without worktree the same edit commits",
+                  isinstance(commit_res, str), str(commit_res))
+        finally:
+            _rmtree_retry(proj_dir3)
+
+        # ── 8. snapshot GC actually evicts beyond the cap ──
+        from openprogram.store.file_backup import BackupStore, gc_evict_old
+        store.create_session("gc1", "main", title="gc")
+        gc_dir = store._session_dir("gc1")
+        bs = BackupStore(gc_dir)
+        # create 5 turn-dirs by backing up a throwaway file under 5 turn ids
+        tmpf = gc_dir / "scratch.txt"
+        tmpf.write_text("x", encoding="utf-8")
+        for i in range(5):
+            bs.backup_before_edit(f"turn{i}", str(tmpf))
+        from openprogram.store.file_backup.paths import session_backup_root
+        root = session_backup_root(gc_dir)
+        before = len([p for p in root.iterdir() if p.is_dir()])
+        removed = gc_evict_old(gc_dir, max_turns=2)
+        after = len([p for p in root.iterdir() if p.is_dir()])
+        check("GC evicts turn-dirs beyond the cap",
+              before == 5 and removed == 3 and after == 2,
+              f"before={before} removed={removed} after={after}")
 
     finally:
         store_root = get_state_dir()
