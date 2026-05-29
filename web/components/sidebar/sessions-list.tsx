@@ -36,13 +36,10 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
-import {
-  ChevronDownIcon,
-  type AnimatedNavIconHandle,
-} from "@/components/animated-icons";
 import { Button } from "@/components/ui/button";
 import { ConvMenu } from "./conv-menu";
 import { RecentsFilter } from "./recents-filter";
+import { SectionHeader } from "./section-header";
 import styles from "./sidebar.module.css";
 
 interface SessionWindow {
@@ -394,7 +391,7 @@ export function SessionsList() {
           // group/sec → hovering anywhere in the section reveals its
           // collapse chevron (hidden otherwise).
           <div key={sec.key} className="group/sec">
-            <GroupHeader
+            <SectionHeader
               name={sec.label}
               collapsible={collapsible}
               collapsed={collapsedGroups.has(sec.key)}
@@ -552,75 +549,6 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
   if (pinned.length) out.push({ key: "pinned", label: o.labels.pinned, items: pinned });
   out.push(...buckets.values());
   return out;
-}
-
-/* ---- group section header -------------------------------------- */
-
-/** Section label (Today / Working / a project …) in the SAME plain,
- *  normal-weight muted style as the old "Recents" label — no weird
- *  uppercase / letter-spacing. Every section is collapsible: a small
- *  ⌄ toggle sits to the right of the label (rotates to › when folded)
- *  and the header folds on click — date buckets included. The first
- *  section also hosts the filter button, far-right. */
-function GroupHeader({
-  name,
-  collapsible,
-  collapsed,
-  onToggle,
-  actions,
-}: {
-  name: string;
-  collapsible: boolean;
-  collapsed: boolean;
-  onToggle: () => void;
-  actions?: React.ReactNode;
-}) {
-  // Drive the chevron's bounce from the header hover (controlled mode).
-  const chevronRef = useRef<AnimatedNavIconHandle>(null);
-  return (
-    <div
-      onClick={collapsible ? onToggle : undefined}
-      onMouseEnter={() => chevronRef.current?.startAnimation()}
-      onMouseLeave={() => chevronRef.current?.stopAnimation()}
-      className={
-        "flex select-none items-center gap-1 px-[8px] pt-[10px] pb-[2px]" +
-        (collapsible ? " cursor-pointer" : "")
-      }
-    >
-      {/* Label — 12px / 400 / text-secondary @ 80%, matching Claude's
-          section labels. Brightens to white together with the chevron
-          when the section is hovered. */}
-      <span
-        className="truncate text-[12px] font-normal text-[var(--text-secondary)]
-          opacity-80 transition-colors group-hover/sec:text-[var(--text-bright)]
-          group-hover/sec:opacity-100"
-      >
-        {name}
-      </span>
-      {collapsible ? (
-        // Animated chevron from the shared icon set (pqoqubbw / framer-
-        // motion). Hidden until the section is hovered, bounces on
-        // hover, brightens to white with the label, bottom-aligned to
-        // the text line, rotates to › when collapsed.
-        <ChevronDownIcon
-          ref={chevronRef}
-          size={16}
-          className="self-end shrink-0 text-[var(--text-secondary)] opacity-0
-            transition-[opacity,color] duration-150
-            group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
-          style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
-        />
-      ) : null}
-      {actions ? (
-        <span
-          className="ml-auto flex items-center"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {actions}
-        </span>
-      ) : null}
-    </div>
-  );
 }
 
 /* ---- leading status marker ------------------------------------- */
@@ -828,8 +756,7 @@ function ConvItem({
         align="start"
         side="bottom"
         sideOffset={4}
-        className="w-auto border border-[var(--border)] bg-[var(--bg-tertiary)] p-0
-          text-[var(--text-primary)] shadow-[var(--shadow-popover)]"
+        className="w-auto border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none"
         onClick={(e) => e.stopPropagation()}
       >
         <ConvMenu

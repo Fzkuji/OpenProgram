@@ -62,6 +62,7 @@ import { useTranslation } from "@/lib/i18n";
 import { UserMenuFooter } from "../user-menu-footer";
 import { SessionsList } from "./sessions-list";
 import { FavoritesList } from "./favorites-list";
+import { SectionHeader } from "./section-header";
 import {
   sidebarNavActionClass,
   sidebarNavIconClass,
@@ -488,12 +489,14 @@ export function Sidebar() {
 }
 
 /**
- * Collapsible section in the sidebar (Favorite Functions / Recents).
- * Header is a click-target showing the title + a "Show/Hide" hint that
- * fades in on hover; body is rendered only when the section is open.
+ * Collapsible section in the sidebar (currently just Favorite
+ * Functions). The header is delegated to the shared `SectionHeader`, so
+ * the label + collapse chevron match the Recents date/group buckets
+ * exactly; the body is rendered only when the section is open.
  * `className` is the outer-container layout (flex / shrink / padding)
  * that used to live on `.sidebar-favorites` / `.sidebar-conversations`
- * in 02-sidebar.css — pass it in instead.
+ * in 02-sidebar.css — pass it in instead. The outer element also
+ * carries `group/sec` so hovering the section reveals the chevron.
  */
 function SidebarSection({
   id,
@@ -516,26 +519,16 @@ function SidebarSection({
   children: React.ReactNode;
 }) {
   return (
-    <div id={id} className={className}>
-      <div
-        className="group flex shrink-0 cursor-pointer select-none items-center
-          px-[16px] py-[4px]"
-        onClick={onToggle}
-      >
-        {/* Title — left exactly as it was (no leading chevron). */}
-        <span className="text-[12px] font-normal text-text-muted">{title}</span>
-        {/* Optional right-side controls (the Recents filter button).
-            On its own at the right; clicks don't toggle the section. */}
-        {headerActions ? (
-          <span
-            className="ml-auto flex items-center opacity-60 transition-opacity
-              duration-150 ease-out group-hover:opacity-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {headerActions}
-          </span>
-        ) : null}
-      </div>
+    // group/sec → hovering anywhere in the section (header or body)
+    // reveals the collapse chevron, exactly like the Recents buckets.
+    <div id={id} className={className + " group/sec"}>
+      <SectionHeader
+        name={title}
+        collapsible
+        collapsed={collapsed}
+        onToggle={onToggle}
+        actions={headerActions}
+      />
       {!collapsed && children}
     </div>
   );
