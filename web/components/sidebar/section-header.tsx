@@ -87,8 +87,8 @@ export function SectionHeader({
         // touch `transform`, so the rotate + bounce animation are intact.
         <ChevronDownIcon
           ref={chevronRef}
-          size={16}
-          className="relative top-[3px] shrink-0 text-[var(--text-secondary)] opacity-0
+          size={20}
+          className="relative top-[2px] shrink-0 text-[var(--text-secondary)] opacity-0
             transition-[opacity,color] duration-150
             group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
