@@ -699,7 +699,9 @@ function ConvItem({
 
   const base =
     "group relative flex h-[var(--ui-list-h)] shrink-0 cursor-pointer items-center" +
-    " gap-[8px] overflow-hidden rounded-[var(--ui-list-radius)] px-[8px] py-[6px]" +
+    // gap-[12px] + the 16px marker slot = the nav rows' icon-slot + gap,
+    // so conversation titles align to the same left indent as the nav.
+    " gap-[12px] overflow-hidden rounded-[var(--ui-list-radius)] px-[8px] py-[6px]" +
     " text-fs-base leading-[20px] whitespace-nowrap" +
     " transition-colors duration-150 ease-out hover:bg-bg-hover";
   // Selected row: a background highlight marks it; the text steps down
@@ -758,25 +760,31 @@ function ConvItem({
         {/* Leading status marker (Claude-Code-style). Priority: pinned →
             live running task → backend status (needs_input / unread) →
             idle. status/unread are backend-fed; until the server sends
-            them, rows simply show working or idle. */}
-        <StatusMarker
-          pinned={!!conv.pinned}
-          state={
-            running
-              ? "working"
-              : conv.status === "needs_input"
-                ? "needs_input"
-                : conv.unread
-                  ? "unread"
-                  : "idle"
-          }
-          labels={{
-            pinned: t("sidebar.pinned"),
-            working: t("sidebar.running"),
-            needsInput: t("sidebar.needs_input"),
-            unread: t("sidebar.unread"),
-          }}
-        />
+            them, rows simply show working or idle.
+            Wrapped in a 16px-wide centred slot — the SAME width as the
+            nav rows' icon slot (sidebarNavIconClass) — so with the row's
+            12px gap the conversation title lines up at the exact same
+            left indent as New chat / Functions / … above. */}
+        <span className="flex w-[16px] shrink-0 items-center justify-center">
+          <StatusMarker
+            pinned={!!conv.pinned}
+            state={
+              running
+                ? "working"
+                : conv.status === "needs_input"
+                  ? "needs_input"
+                  : conv.unread
+                    ? "unread"
+                    : "idle"
+            }
+            labels={{
+              pinned: t("sidebar.pinned"),
+              working: t("sidebar.running"),
+              needsInput: t("sidebar.needs_input"),
+              unread: t("sidebar.unread"),
+            }}
+          />
+        </span>
 
         {renaming ? (
           <input
