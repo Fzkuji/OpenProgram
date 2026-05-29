@@ -11,13 +11,15 @@
  *
  * - Label: 12px / 400 / text-secondary @ 80%, brightening to white on
  *   section hover (matches Claude's section labels).
- * - Chevron: a tight-viewBox inline chevron whose RENDERED height is the
- *   visible mark (unlike a lucide icon, which buries a small mark inside
- *   a big padded box). It's sized to the text's main body height (~9px,
- *   the cap-top→baseline band of the 12px label) and vertically centred
- *   on that band, so it reads as flush / level with the letters. Hidden
- *   until the section is hovered, brightens to white with the label,
- *   rotates to › when collapsed.
+ * - Chevron: the shared animated icon (pqoqubbw / framer-motion),
+ *   hidden until the section is hovered, bounces on hover, brightens to
+ *   white with the label, rotates to › when collapsed. The row is
+ *   `items-center`, so the chevron is centred on the LABEL — identical
+ *   on every section regardless of line height (the first section also
+ *   carries the 22px filter button, which would otherwise stretch the
+ *   line). A small `top` nudge centres it on the text's cap-band so it
+ *   reads level with the letters; `top`/`relative` don't touch
+ *   `transform`, so the rotate + bounce stay intact.
  *
  * Hover reveal relies on the SECTION WRAPPER carrying Tailwind's
  * `group/sec` marker, so hovering anywhere in the section (header or
@@ -25,7 +27,12 @@
  * `className="group/sec"` element.
  */
 
-import { type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+
+import {
+  ChevronDownIcon,
+  type AnimatedNavIconHandle,
+} from "@/components/animated-icons";
 
 export function SectionHeader({
   name,
@@ -46,9 +53,13 @@ export function SectionHeader({
    *  padding. Defaults to the bucket rhythm (px-8 / pt-10 / pb-2). */
   className?: string;
 }) {
+  // Drive the chevron's bounce from the header hover (controlled mode).
+  const chevronRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
       onClick={collapsible ? onToggle : undefined}
+      onMouseEnter={() => chevronRef.current?.startAnimation()}
+      onMouseLeave={() => chevronRef.current?.stopAnimation()}
       className={
         "flex select-none items-center gap-1 px-[8px] pt-[10px] pb-[2px]" +
         (collapsible ? " cursor-pointer" : "") +
@@ -66,31 +77,18 @@ export function SectionHeader({
         {name}
       </span>
       {collapsible ? (
-        // Tight-viewBox chevron: the rendered box IS the visible mark, so
-        // its height equals the text's main body height (cap-top→baseline,
-        // ~9px for the 12px label) and it sits level with the letters.
-        // `items-center` centres it on the label; a tiny `top` corrects
-        // for the descender so its centre matches the cap-band centre.
-        // Hidden until section hover, brightens with the label, rotates
-        // to › when collapsed (rotate via `transform`; vertical nudge via
-        // `top`, so they don't clash).
-        <svg
-          aria-hidden="true"
-          width="15"
-          height="9"
-          viewBox="0 0 15 9"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        // Shared animated chevron. Centred on the label (items-center)
+        // with a 1px upward nudge so it sits level with the text's
+        // cap-band, hidden until section hover, brightens with the label,
+        // rotates to › when collapsed.
+        <ChevronDownIcon
+          ref={chevronRef}
+          size={16}
           className="relative top-[-1px] shrink-0 text-[var(--text-secondary)] opacity-0
             transition-[opacity,color] duration-150
             group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
-        >
-          <path d="M1.5 2 L7.5 7 L13.5 2" />
-        </svg>
+        />
       ) : null}
       {actions ? (
         <span
