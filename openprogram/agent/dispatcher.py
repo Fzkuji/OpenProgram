@@ -945,6 +945,18 @@ def process_user_turn(
     # mutate it and subsequent turns see the updated set.
     from openprogram.functions import install_loaded_deferred
     install_loaded_deferred()
+
+    # Project auto-commit (entity layer): snapshot which paths are
+    # already dirty in the session's bound project BEFORE the agent
+    # touches anything, so the turn-end commit can tell the user's
+    # uncommitted work apart from the agent's edits (Strategy A). None
+    # when disabled / ad-hoc session. Best-effort — never blocks a turn.
+    _project_baseline = None
+    try:
+        from openprogram.store import project_commit as _pc
+        _project_baseline = _pc.snapshot_baseline(req.session_id)
+    except Exception:
+        _project_baseline = None
     try:
         from openprogram.providers.registry import create_runtime as _create_rt
         _dag_runtime = _create_rt()
@@ -1442,6 +1454,22 @@ def process_user_turn(
         if _store is db or hasattr(db, "commit_turn"):
             _msg = (req.user_text or "").strip().splitlines()[0][:60] or "turn"
             db.commit_turn(req.session_id, f"turn: {_msg}")
+    except Exception:
+        pass
+
+    # 6.9. Project auto-commit (entity layer, half 2): if this session is
+    # bound to a real project directory and the agent edited files there,
+    # commit them to the project's own git as an attributable agent
+    # commit — so the user gets a `git log` / `git revert`-able record of
+    # what changed. Refuses (and warns via on_event) when the user has
+    # pre-existing uncommitted work, per Strategy A. Off unless opted in
+    # (config ``project_auto_commit`` / env). Best-effort.
+    try:
+        from openprogram.store import project_commit as _pc
+        _pc.commit_turn_changes(
+            req.session_id, req.user_text or "",
+            _project_baseline, on_event=on_event,
+        )
     except Exception:
         pass
 

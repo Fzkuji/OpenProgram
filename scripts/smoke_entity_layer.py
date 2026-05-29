@@ -218,11 +218,88 @@ def main() -> int:
         check("Strategy A: no-baseline + dirty tree → refuses", res3 == P.ProjectGit.SKIPPED_DIRTY,
               str(res3))
 
-        # ── 6. is commit_agent_changes wired anywhere? (informational)
-        # (grep done outside; here we just confirm the method works)
+        # 5d. project-git log readable
         log = pg.log(limit=10)
         check("project-git log readable", isinstance(log, list) and len(log) >= 1,
               f"{len(log)} commits")
+
+        # ── 7. project_commit dispatcher wiring (the new auto-commit) ──
+        # Use a fresh scratch project + a real bound session so
+        # project_for_session resolves it. Exercise the two helpers the
+        # dispatcher now calls: snapshot_baseline (turn start) and
+        # commit_turn_changes (turn end).
+        from openprogram.store import project_commit as PC
+
+        proj_dir2 = Path(tempfile.mkdtemp(prefix="op_proj2_"))
+        try:
+            # toggle OFF by default → both helpers must no-op.
+            os.environ.pop("OPENPROGRAM_PROJECT_AUTOCOMMIT", None)
+            check("auto-commit disabled by default", PC.is_enabled() is False,
+                  "default off")
+            store.create_session("wired1", "main", title="wired", work_dir=str(proj_dir2))
+            store.append_message("wired1", {"role": "user", "content": "edit a file", "id": "w1"})
+            store.commit_turn("wired1", "turn: edit a file")
+            off_base = PC.snapshot_baseline("wired1")
+            off_res = PC.commit_turn_changes("wired1", "edit a file", off_base)
+            check("disabled → snapshot/commit are no-ops",
+                  off_base is None and off_res is None,
+                  f"base={off_base} res={off_res}")
+
+            # toggle ON → full path.
+            os.environ["OPENPROGRAM_PROJECT_AUTOCOMMIT"] = "1"
+            check("auto-commit enabled via env", PC.is_enabled() is True, "env on")
+
+            # turn START: clean tree (only the .openprogram/.gitignore,
+            # which is ignored) → baseline empty-ish.
+            base = PC.snapshot_baseline("wired1")
+            # agent edits a file in the project during the "turn"
+            (proj_dir2 / "feature.py").write_text("# agent wrote this 功能\n", encoding="utf-8")
+            # turn END: should commit, attributable to the agent.
+            sha = PC.commit_turn_changes("wired1", "add feature 功能", base)
+            committed_ok = isinstance(sha, str) and len(sha) >= 7
+            check("enabled + agent edit on clean tree → commits", committed_ok, str(sha))
+
+            # verify the commit is in the PROJECT repo with agent identity
+            pg2 = P.ProjectGit(proj_dir2)
+            top = pg2.log(limit=1)  # ProjectGit.log() → list[dict]
+            top_msg = top[0]["message"] if top else ""
+            author = ""
+            try:
+                author = pg2._run("log", "-1", "--pretty=format:%an").strip()
+            except Exception as e:
+                author = f"ERR {e}"
+            check(
+                "commit attributed to agent identity",
+                bool(top) and author == P.ProjectGit.AGENT_NAME
+                and "feature" in top_msg,
+                f"author={author!r} msg={top_msg!r}",
+            )
+            check(
+                "feature.py is committed (not left dirty)",
+                "feature.py" not in pg2.dirty_paths(),
+                "clean after commit",
+            )
+
+            # dirty-refusal path emits a warning event
+            (proj_dir2 / "user_wip2.txt").write_text("user editing 用户改", encoding="utf-8")
+            base2 = PC.snapshot_baseline("wired1")        # captures user WIP
+            (proj_dir2 / "agent2.py").write_text("# agent again\n", encoding="utf-8")
+            events: list[dict] = []
+            res_skip = PC.commit_turn_changes(
+                "wired1", "more work", base2, on_event=events.append,
+            )
+            emitted = any(
+                (e.get("data") or {}).get("type") == "project_commit_skipped"
+                for e in events
+            )
+            check(
+                "dirty tree → refuses + emits project_commit_skipped event",
+                res_skip is None and emitted,
+                f"res={res_skip} events={[ (e.get('data') or {}).get('type') for e in events ]}",
+            )
+        finally:
+            os.environ.pop("OPENPROGRAM_PROJECT_AUTOCOMMIT", None)
+            _rmtree_retry(proj_dir2)
 
     finally:
         store_root = get_state_dir()
