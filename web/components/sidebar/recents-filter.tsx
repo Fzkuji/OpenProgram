@@ -23,7 +23,7 @@
  * (lib/recents-view.ts).
  */
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import * as DM from "@radix-ui/react-dropdown-menu";
 
 import { useTranslation } from "@/lib/i18n";
@@ -136,18 +136,22 @@ export function RecentsFilter() {
             label={t("sidebar.group_by")}
             value={view.groupBy}
             options={[
-              ["none", t("sidebar.group_none")],
-              ["state", t("sidebar.group_state")],
+              ["none", t("sidebar.group_date")],
               ["project", t("sidebar.group_project")],
+              ["state", t("sidebar.group_state")],
+              ["flat", t("sidebar.group_none")],
             ]}
+            // "None" (flat) sits last, set off by a divider — like Claude.
+            separateLast
             onPick={(groupBy) => setRecentsView({ groupBy })}
           />
           <Row<RecentsSort>
             label={t("sidebar.sort_by")}
             value={view.sort}
             options={[
-              ["recency", t("sidebar.sort_recency")],
               ["title", t("sidebar.sort_title")],
+              ["created", t("sidebar.sort_created")],
+              ["recency", t("sidebar.sort_recency")],
             ]}
             onPick={(sort) => setRecentsView({ sort })}
           />
@@ -167,11 +171,14 @@ function Row<T extends string>({
   value,
   options,
   onPick,
+  separateLast,
 }: {
   label: string;
   value: T;
   options: [T, string][];
   onPick: (v: T) => void;
+  /** Render a divider before the last option (e.g. "None" in Group by). */
+  separateLast?: boolean;
 }) {
   const current = options.find(([v]) => v === value)?.[1] ?? "";
   return (
@@ -192,27 +199,32 @@ function Row<T extends string>({
       </DM.SubTrigger>
       <DM.Portal>
         <DM.SubContent className={surface} sideOffset={4} alignOffset={-5}>
-          {options.map(([val, optLabel]) => {
+          {options.map(([val, optLabel], i) => {
             const selected = val === value;
+            const divider = separateLast && i === options.length - 1;
             return (
-              <DM.Item
-                key={val}
-                onSelect={() => onPick(val)}
-                className="flex items-center gap-3 rounded-[6px] px-2 h-[26px] text-[12px]
-                  outline-none cursor-pointer select-none transition-colors
-                  data-[highlighted]:bg-[var(--bg-hover)]"
-              >
-                <span className="flex-1 text-left">{optLabel}</span>
-                {selected ? (
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
-                    stroke="var(--accent-orange)" strokeWidth="2" strokeLinecap="round"
-                    strokeLinejoin="round" className="shrink-0">
-                    <path d="M3 8.5l3.5 3.5L13 5" />
-                  </svg>
-                ) : (
-                  <span className="w-[14px] shrink-0" />
-                )}
-              </DM.Item>
+              <Fragment key={val}>
+                {divider ? (
+                  <DM.Separator className="my-1 h-px bg-[var(--border)]" />
+                ) : null}
+                <DM.Item
+                  onSelect={() => onPick(val)}
+                  className="flex items-center gap-3 rounded-[6px] px-2 h-[26px] text-[12px]
+                    outline-none cursor-pointer select-none transition-colors
+                    data-[highlighted]:bg-[var(--bg-hover)]"
+                >
+                  <span className="flex-1 text-left">{optLabel}</span>
+                  {selected ? (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+                      stroke="var(--accent-orange)" strokeWidth="2" strokeLinecap="round"
+                      strokeLinejoin="round" className="shrink-0">
+                      <path d="M3 8.5l3.5 3.5L13 5" />
+                    </svg>
+                  ) : (
+                    <span className="w-[14px] shrink-0" />
+                  )}
+                </DM.Item>
+              </Fragment>
             );
           })}
         </DM.SubContent>

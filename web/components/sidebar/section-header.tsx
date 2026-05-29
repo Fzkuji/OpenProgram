@@ -74,7 +74,7 @@ export function SectionHeader({
           when the section is hovered. */}
       <span
         className="truncate text-[14px] font-normal leading-[20px] text-[var(--text-secondary)]
-          opacity-80 transition-colors group-hover/sec:text-[var(--text-bright)]
+          opacity-80 transition-colors group-hover/sec:text-[var(--text-primary)]
           group-hover/sec:opacity-100"
       >
         {name}
@@ -89,7 +89,7 @@ export function SectionHeader({
           size={16}
           className="relative top-[2px] shrink-0 text-[var(--text-secondary)] opacity-0
             transition-[opacity,color,transform] duration-200 ease-out
-            group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
+            group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-primary)]"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
         />
       ) : null}

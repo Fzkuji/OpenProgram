@@ -13,12 +13,18 @@
  */
 
 export type RecentsStatus = "active" | "archived" | "all";
-/** How the list is sectioned:
- *  - none    → date buckets when sorted by recency, else a flat list
- *  - state   → Working (a task is running) / Completed
- *  - project → by the conversation's project path (backend-fed) */
-export type RecentsGroupBy = "none" | "state" | "project";
-export type RecentsSort = "recency" | "title";
+/** How the list is sectioned (UI labels in parens):
+ *  - none    → date buckets — "Date" (the default)
+ *  - state   → Working (a task is running) / Completed — "State"
+ *  - project → by the conversation's project path (backend-fed) — "Project"
+ *  - flat    → one flat run, no headers — "None"
+ *  ("none" keeps its value for back-compat with saved prefs; its label is
+ *  "Date". "flat" is the true no-grouping option, shown last.) */
+export type RecentsGroupBy = "none" | "state" | "project" | "flat";
+/** Order of rows: recency (last activity), created (creation time),
+ *  title (alphabetical). recency/created both key off created_at until
+ *  the backend tracks a separate last-activity timestamp. */
+export type RecentsSort = "recency" | "created" | "title";
 /** Time window on the conversation's last activity (created_at /
  *  updated_at). "all" = no window. */
 export type RecentsActivity = "all" | "1d" | "7d" | "30d";

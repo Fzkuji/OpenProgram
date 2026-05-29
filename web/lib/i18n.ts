@@ -143,14 +143,16 @@ const DICT = {
   "sidebar.activity_30d": { en: "Past 30 days", zh: "近 30 天" },
   "sidebar.filter_all": { en: "All", zh: "全部" },
   "sidebar.group_by": { en: "Group by", zh: "分组方式" },
+  "sidebar.group_date": { en: "Date", zh: "日期" },
   "sidebar.group_none": { en: "None", zh: "无" },
   "sidebar.group_state": { en: "State", zh: "状态" },
   "sidebar.group_project": { en: "Project", zh: "项目" },
   "sidebar.working": { en: "Working", zh: "进行中" },
   "sidebar.completed": { en: "Completed", zh: "已完成" },
   "sidebar.sort_by": { en: "Sort by", zh: "排序方式" },
+  "sidebar.sort_title": { en: "Alphabetically", zh: "按字母顺序" },
+  "sidebar.sort_created": { en: "Created time", zh: "创建时间" },
   "sidebar.sort_recency": { en: "Recency", zh: "最近" },
-  "sidebar.sort_title": { en: "Title", zh: "标题" },
 
   // User footer menu
   "user.local_instance": { en: "Local instance", zh: "本地实例" },
