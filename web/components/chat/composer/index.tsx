@@ -294,6 +294,21 @@ export function Composer() {
     toggleTools,
     toggleWebSearch,
   } = useToolsToggles();
+  // Per-turn "Fast" speed tier → sent as service_tier:"priority". A
+  // plain on/off toggle (like Web Search), persisted in localStorage
+  // so a refresh keeps the choice — mirrors the thinking pill. The
+  // backend forwards it to the provider request body and no-ops for
+  // providers that don't read service_tier, so it's safe to offer
+  // regardless of the selected model.
+  const [fastEnabled, setFastEnabled] = useState(false);
+  useEffect(() => {
+    try { setFastEnabled(localStorage.getItem("serviceTierFast") === "1"); } catch { /* ignore */ }
+  }, []);
+  const toggleFast = () => setFastEnabled((v) => {
+    const next = !v;
+    try { localStorage.setItem("serviceTierFast", next ? "1" : "0"); } catch { /* ignore */ }
+    return next;
+  });
   // Slash-menu state lives in its own hook (./use-slash-menu).
   // fn-form field state (values, workdir, error highlight, closing
   // flag) is owned by `./use-fn-form-state`; it also runs the
@@ -481,6 +496,7 @@ export function Composer() {
       thinking,
       toolsEnabled,
       webSearchEnabled,
+      serviceTier: fastEnabled ? "priority" : undefined,
     });
     if (!handled) {
       // chat.js hasn't loaded yet (shouldn't happen in steady state).
@@ -493,6 +509,7 @@ export function Composer() {
         thinking_effort: thinking,
         tools: toolsEnabled,
         web_search: webSearchEnabled,
+        ...(fastEnabled ? { service_tier: "priority" } : {}),
       });
       if (!ok) return;
     }
@@ -860,7 +877,7 @@ export function Composer() {
 
   /* ---- Render -------------------------------------------------------- */
 
-  const anyToolActive = toolsEnabled || webSearchEnabled;
+  const anyToolActive = toolsEnabled || webSearchEnabled || fastEnabled;
 
   return (
     <div className={styles.inputArea}>
@@ -1015,6 +1032,13 @@ export function Composer() {
                   onRemove={toggleWebSearch}
                 />
               )}
+              {fastEnabled && (
+                <ToolChip
+                  icon={<span aria-hidden style={{ fontSize: 14 }}>⚡</span>}
+                  label={text("Fast", "高速")}
+                  onRemove={toggleFast}
+                />
+              )}
             </div>
 
             {plusMenuOpen && plusMenuPos && typeof document !== "undefined"
@@ -1044,6 +1068,13 @@ export function Composer() {
                       icon={<WebSearchIcon />}
                       label={text("Web Search", "网页搜索")}
                       title={text("Give the agent web search this turn", "本轮允许 Agent 使用网页搜索")}
+                    />
+                    <PlusMenuItem
+                      active={fastEnabled}
+                      onClick={toggleFast}
+                      icon={<span aria-hidden style={{ fontSize: 14 }}>⚡</span>}
+                      label={text("Fast", "高速")}
+                      title={text("Run this turn on the provider's priority/fast tier (service_tier=priority). Ignored by providers that don't support it.", "本轮使用 provider 的高速/优先级通道（service_tier=priority），不支持的 provider 会忽略")}
                     />
                     <PlusMenuItem
                       active={pendingImages.length > 0 || pendingDocs.length > 0}

@@ -35,6 +35,10 @@ interface SendMessageBridgeArgs {
   thinking: string;
   toolsEnabled: boolean;
   webSearchEnabled: boolean;
+  /** Per-turn speed tier — "priority" (Fast) or undefined (provider
+   *  default). Sent as ``service_tier`` so the backend forwards it to
+   *  the provider request body. */
+  serviceTier?: string;
   attachments?: ChatAttachment[];
 }
 
@@ -62,6 +66,7 @@ export function sendChatMessage({
   thinking,
   toolsEnabled,
   webSearchEnabled,
+  serviceTier,
   attachments,
 }: SendMessageBridgeArgs): boolean {
   const w = window as unknown as SendWindow;
@@ -87,6 +92,9 @@ export function sendChatMessage({
     tools: toolsEnabled,
     web_search: webSearchEnabled,
   };
+  if (serviceTier) {
+    payload.service_tier = serviceTier;
+  }
   if (attachments && attachments.length > 0) {
     // Backend (ws_actions/chat.py) reads ``attachments`` and dispatcher
     // (TurnRequest.attachments) folds them into the user message as
