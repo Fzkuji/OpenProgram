@@ -36,6 +36,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConvMenu } from "./conv-menu";
 import { RecentsFilter } from "./recents-filter";
@@ -369,9 +370,11 @@ export function SessionsList() {
   // layout — no separate "Recents" bar). When the list is flat (title
   // sort → one header-less section) or empty, a thin right-aligned row
   // carries it instead so it's always reachable.
-  // Date buckets (groupBy "none") are plain separators; State / Project
-  // sections are collapsible.
-  const collapsible = view.groupBy !== "none";
+  // Every labelled section is collapsible — date buckets (Today /
+  // Yesterday / …) just as much as State / Project — each with the
+  // small right-side ⌄ toggle. (A flat title-sort run has no header,
+  // so nothing to collapse there.)
+  const collapsible = true;
   const firstHasHeader = sections.length > 0 && sections[0].label !== "";
   const body = (
     <>
@@ -385,7 +388,9 @@ export function SessionsList() {
           // Flat run (title sort, no grouping) — no header.
           <div key={sec.key}>{sec.items.map(renderRow)}</div>
         ) : (
-          <div key={sec.key}>
+          // group/sec → hovering anywhere in the section reveals its
+          // collapse chevron (hidden otherwise).
+          <div key={sec.key} className="group/sec">
             <GroupHeader
               name={sec.label}
               collapsible={collapsible}
@@ -550,11 +555,10 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
 
 /** Section label (Today / Working / a project …) in the SAME plain,
  *  normal-weight muted style as the old "Recents" label — no weird
- *  uppercase / letter-spacing. ``collapsible`` sections (State /
- *  Project) get a small ⌄ toggle to the right of the label and fold
- *  on click; date buckets pass ``collapsible={false}`` and render as
- *  quiet, non-interactive separators. The first section also hosts
- *  the filter button, far-right. */
+ *  uppercase / letter-spacing. Every section is collapsible: a small
+ *  ⌄ toggle sits to the right of the label (rotates to › when folded)
+ *  and the header folds on click — date buckets included. The first
+ *  section also hosts the filter button, far-right. */
 function GroupHeader({
   name,
   collapsible,
@@ -579,15 +583,16 @@ function GroupHeader({
     >
       <span className="truncate">{name}</span>
       {collapsible ? (
-        <svg
-          width="11" height="11" viewBox="0 0 16 16" fill="none"
-          stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
-          strokeLinejoin="round"
-          className="shrink-0 transition-transform duration-150"
+        // Library icon (lucide), to match the rest of the app's icons.
+        // Hidden until the section area is hovered (group-hover/sec),
+        // and brightens to white only on direct hover of the chevron.
+        <ChevronDown
+          size={13}
+          className="shrink-0 text-[var(--text-muted)] opacity-0
+            transition-[opacity,transform,color] duration-150
+            group-hover/sec:opacity-100 hover:!text-[var(--text-bright)]"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
-        >
-          <path d="M4 6l4 4 4-4" />
-        </svg>
+        />
       ) : null}
       {actions ? (
         <span
