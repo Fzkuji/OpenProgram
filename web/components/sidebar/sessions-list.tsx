@@ -121,6 +121,17 @@ interface LegacyConv {
   /** Project path the conversation lives under. Backend-fed (the cwd
    *  where an OpenProgram project was activated); absent until then. */
   project?: string;
+  /** Lifecycle status driving the leading dot, Claude-Code-style:
+   *   - "needs_input" → amber dot (the agent is waiting on the user)
+   *   - "done"        → completed; pairs with `unread` for the blue dot
+   *   - else          → idle (hollow ring)
+   *  A live running task (see `runningTasks`) overrides this with the
+   *  animated working dots. Backend-fed — absent until the server emits
+   *  it, in which case rows fall back to working / idle. */
+  status?: "needs_input" | "done" | "idle";
+  /** A finished result the user hasn't opened yet → blue dot. Cleared
+   *  when the conversation is viewed. Backend-fed. */
+  unread?: boolean;
 }
 
 const CHANNEL_BRAND: Record<string, string> = {
@@ -571,39 +582,42 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
 
 /* ---- leading status marker ------------------------------------- */
 
-/** The dot to the left of a conversation title, mirroring Claude:
- *   - pinned  → an amber pin
- *   - working → three pulsing dots (a task is running)
- *   - idle    → a hollow ring
+type MarkerState = "working" | "needs_input" | "unread" | "idle";
+
+/** The dot to the left of a conversation title, mirroring Claude Code's
+ *  status markers (colours sampled from claude.ai/code):
+ *   - pinned       → an amber pin (our own addition, takes priority)
+ *   - working      → three pulsing gray dots (a task is running)
+ *   - needs_input  → a filled amber dot (#ffd014 — awaiting the user)
+ *   - unread       → a filled blue dot (#5aa6f2 — finished, not yet seen)
+ *   - idle         → a hollow gray ring (done & seen / nothing pending)
  *  Fixed 14px slot so titles stay aligned regardless of state. */
 function StatusMarker({
   pinned,
-  working,
-  pinnedLabel,
-  workingLabel,
+  state,
+  labels,
 }: {
   pinned: boolean;
-  working: boolean;
-  pinnedLabel: string;
-  workingLabel: string;
+  state: MarkerState;
+  labels: { pinned: string; working: string; needsInput: string; unread: string };
 }) {
   if (pinned) {
     return (
       <svg
         className="shrink-0 text-[var(--accent-orange)]"
         width="12" height="12" viewBox="0 0 16 16" fill="currentColor"
-        aria-label={pinnedLabel}
+        aria-label={labels.pinned}
       >
         <path d="M9.5 1.5a1 1 0 0 0-1.7.7l.1 3.2-2.4 2.4a1 1 0 0 0-.3.7v.5l2.6-.0 0 4 .8 1.3.8-1.3 0-4 2.6.0v-.5a1 1 0 0 0-.3-.7L9.5 5.4l.1-3.2a1 1 0 0 0-.1-.7z" />
       </svg>
     );
   }
-  if (working) {
+  if (state === "working") {
     return (
       <span
         className="flex w-[14px] shrink-0 items-center justify-center gap-[2px]"
-        aria-label={workingLabel}
-        title={workingLabel}
+        aria-label={labels.working}
+        title={labels.working}
       >
         {[0, 1, 2].map((i) => (
           <span
@@ -615,9 +629,30 @@ function StatusMarker({
       </span>
     );
   }
+  if (state === "needs_input") {
+    // Awaiting the user → amber filled dot.
+    return (
+      <span
+        className="block size-[7px] shrink-0 rounded-full bg-[#ffd014]"
+        aria-label={labels.needsInput}
+        title={labels.needsInput}
+      />
+    );
+  }
+  if (state === "unread") {
+    // Finished, not yet opened → blue filled dot.
+    return (
+      <span
+        className="block size-[7px] shrink-0 rounded-full bg-[#5aa6f2]"
+        aria-label={labels.unread}
+        title={labels.unread}
+      />
+    );
+  }
+  // idle / done & seen → hollow ring.
   return (
     <span
-      className="block size-[7px] shrink-0 rounded-full border border-[var(--text-muted)]"
+      className="block size-[7px] shrink-0 rounded-full border border-[var(--text-secondary)] opacity-50"
       aria-hidden="true"
     />
   );
@@ -716,13 +751,27 @@ function ConvItem({
         }}
         title={running ? `${label} (${t("sidebar.running")})` : label}
       >
-        {/* Leading status marker (Claude-style): pinned → pin,
-            else a running task → animated dots, else an idle ring. */}
+        {/* Leading status marker (Claude-Code-style). Priority: pinned →
+            live running task → backend status (needs_input / unread) →
+            idle. status/unread are backend-fed; until the server sends
+            them, rows simply show working or idle. */}
         <StatusMarker
           pinned={!!conv.pinned}
-          working={running}
-          pinnedLabel={t("sidebar.pinned")}
-          workingLabel={t("sidebar.running")}
+          state={
+            running
+              ? "working"
+              : conv.status === "needs_input"
+                ? "needs_input"
+                : conv.unread
+                  ? "unread"
+                  : "idle"
+          }
+          labels={{
+            pinned: t("sidebar.pinned"),
+            working: t("sidebar.running"),
+            needsInput: t("sidebar.needs_input"),
+            unread: t("sidebar.unread"),
+          }}
         />
 
         {renaming ? (
