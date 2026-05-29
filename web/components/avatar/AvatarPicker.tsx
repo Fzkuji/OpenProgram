@@ -54,15 +54,30 @@ export function sourceOf(cfg: AvatarConfig | undefined): AvatarSource {
  *  drives the variant grid below, not the style tiles. */
 const STYLE_PICKER_SEED = "Sample";
 
-/** Pre-baked variant seeds shown as a grid for the currently-selected
+/** Initial variant seeds shown as a grid for the currently-selected
  *  DiceBear style. 12 stable strings give the user "browse and pick"
  *  semantics without the dice-roll feel of the old Random button.
  *  Strings are intentionally short + memorable so initials-style users
- *  get readable two-letter chips when this style is active. */
-const VARIANT_SEEDS = [
+ *  get readable two-letter chips when this style is active.
+ *
+ *  This is the FIRST batch only — the Regenerate (↻) button next to
+ *  the variant grid swaps in a fresh batch of random seeds. Keeping
+ *  the first batch a fixed constant (not random) means SSR and the
+ *  initial client render produce identical markup; randomisation only
+ *  happens in a user-triggered click handler, never during render. */
+const INITIAL_VARIANT_SEEDS = [
   "Atlas", "Bento", "Cobalt", "Drift", "Ember", "Fjord",
   "Gleam", "Halo",  "Indigo", "Juno",  "Klein", "Lumen",
 ];
+
+/** Build a fresh batch of N random seed strings for the Regenerate
+ *  button. Short base36 chunks — readable and collision-free enough
+ *  for a 12-item grid. */
+function _randomVariantSeeds(n: number): string[] {
+  return Array.from({ length: n }, () =>
+    Math.random().toString(36).slice(2, 9),
+  );
+}
 
 export interface AvatarPickerProps {
   /** Current avatar config. ``undefined`` is treated as the default
@@ -90,6 +105,11 @@ export function AvatarPicker({
 }: AvatarPickerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // The set of seeds the variant grid currently offers. Starts as the
+  // fixed first batch; the ↻ button replaces it with random seeds.
+  const [variantSeeds, setVariantSeeds] = useState<string[]>(
+    INITIAL_VARIANT_SEEDS,
+  );
 
   const source = sourceOf(value);
   const isDicebear = source !== "letter" && source !== "upload";
@@ -212,16 +232,36 @@ export function AvatarPicker({
         </button>
       </div>
 
-      {/* Variant grid — when a DiceBear style is active, show 12
-          pre-baked seeds rendered IN THAT STYLE. The user clicks the
-          one they like; that seed becomes their avatar. Replaces the
-          old "Random + free-text seed input" combo with a
-          browse-and-pick UX so users don't have to dice-roll. */}
+      {/* Variant grid — when a DiceBear style is active, show a batch
+          of seeds rendered IN THAT STYLE. The user clicks the one
+          they like; that seed becomes their avatar. The ↻ button to
+          the right of the caption swaps in a fresh batch of random
+          seeds, so "browse and pick" can keep going until something
+          clicks — without the dice-roll-into-the-void feel of the
+          old single Random button. */}
       {isDicebear && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Pick a variant — each renders the same style with a
-            different seed.
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              maxWidth: 520,
+            }}
+          >
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              Pick a variant — each renders the same style with a
+              different seed.
+            </span>
+            <button
+              type="button"
+              onClick={() => setVariantSeeds(_randomVariantSeeds(12))}
+              title="Generate a fresh batch of variants"
+              style={_smallBtn}
+            >
+              ↻ Regenerate
+            </button>
           </div>
           <div
             style={{
@@ -231,7 +271,7 @@ export function AvatarPicker({
               maxWidth: 520,
             }}
           >
-            {VARIANT_SEEDS.map((seed) => {
+            {variantSeeds.map((seed) => {
               const selected = (value?.seed ?? name) === seed;
               return (
                 <button
