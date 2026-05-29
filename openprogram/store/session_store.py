@@ -259,6 +259,16 @@ class SessionStore:
         # they decide WHERE the repo lives (home vs inside a project).
         project_id = other_fields.pop("project_id", None)
         project_path = other_fields.pop("project_path", None)
+        # The per-session ``work_dir`` (set by the user via the picker
+        # at the top of the chat, stored on the conversation meta) IS
+        # the project directory. If the caller didn't pass an explicit
+        # ``project_path``, treat ``work_dir`` as the project to bind.
+        # NB: we ``get`` (not ``pop``) work_dir — it stays on the meta
+        # so ``resolve_work_dir`` keeps reading it for agent file ops.
+        if not project_path:
+            _wd = other_fields.get("work_dir")
+            if isinstance(_wd, str) and _wd.strip():
+                project_path = _wd.strip()
 
         # ── Resolve the project + decide the session's home on disk ──
         # Every session belongs to a project (entity layer, half 2 —
