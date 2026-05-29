@@ -63,6 +63,57 @@ function _initialFor(name: string): string {
   return "?";
 }
 
+/** FNV-1a 32-bit hash → short base36 string. Used to derive a stable,
+ *  per-(style, seed) prefix for namespacing SVG element ids. Stable
+ *  (not random) so server and client render the same markup — a
+ *  random prefix would trip React's hydration check. */
+function _shortHash(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * Namespace every ``id="…"`` declaration in an SVG string (and the
+ * ``url(#…)`` / ``href="#…"`` references that point at them) with a
+ * unique prefix.
+ *
+ * DiceBear's complex styles (avataaars, fun-emoji, bottts) define
+ * internal ``<clipPath>`` / ``<mask>`` / ``<linearGradient>`` elements
+ * with short ids and reference them via ``url(#id)``. When several of
+ * these SVGs are inlined into the SAME document, those ids collide:
+ * the browser resolves ``url(#id)`` to the FIRST element with that id
+ * in document order, so every avatar after the first gets clipped /
+ * masked by the wrong definition and renders broken. Prefixing the
+ * ids per render makes each SVG self-contained.
+ *
+ * Delimiter-anchored replacements (closing quote / paren) mean a short
+ * id like ``a`` won't accidentally rewrite ``ab`` — ``url(#a)`` only
+ * matches when ``)`` immediately follows.
+ */
+function _namespaceSvgIds(svg: string, prefix: string): string {
+  const ids = new Set<string>();
+  const idRe = /\bid="([^"]+)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = idRe.exec(svg)) !== null) ids.add(m[1]);
+  let out = svg;
+  for (const id of ids) {
+    const safe = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const next = `${prefix}-${id}`;
+    out = out
+      .replace(new RegExp(`id="${safe}"`, "g"), `id="${next}"`)
+      .replace(new RegExp(`url\\(#${safe}\\)`, "g"), `url(#${next})`)
+      .replace(
+        new RegExp(`(href|xlink:href)="#${safe}"`, "g"),
+        `$1="#${next}"`,
+      );
+  }
+  return out;
+}
+
 export function Avatar({
   size = 36,
   name,
@@ -129,7 +180,7 @@ export function Avatar({
       // <path>/<rect> nodes survives — the buggy first pass that
       // used a global string replace blanked everything because it
       // ate the first child element's own width attribute.
-      return raw.replace(
+      const sized = raw.replace(
         /<svg\b([^>]*)>/,
         (_match, attrs: string) => {
           const cleaned = attrs
@@ -138,6 +189,14 @@ export function Avatar({
           return `<svg${cleaned} style="width:100%;height:100%;display:block" preserveAspectRatio="xMidYMid meet">`;
         },
       );
+      // Namespace internal ids so multiple inlined avatars on the
+      // same page don't share clipPath / mask / gradient ids (which
+      // would make every avatar after the first render broken — the
+      // browser resolves url(#id) to the first match in the doc).
+      // Prefix is a stable hash of (style, seed) so each tile on the
+      // settings page gets a distinct namespace, and SSR / client
+      // produce identical markup.
+      return _namespaceSvgIds(sized, "av" + _shortHash(style + "|" + seed));
     } catch {
       return null;
     }
