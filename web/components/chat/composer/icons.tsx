@@ -1,60 +1,39 @@
 /**
- * Inline SVG icons used by the Composer's tools / plus menu. Kept here
- * so the main component file isn't full of path data.
+ * Composer tool / plus-menu icons.
+ *
+ * Functional (line / stroke) icons come from **lucide-react** — the
+ * project's standard line-icon set (used across ~11 other components).
+ * Sourcing them from one library guarantees the toolbar reads as a
+ * single visual family (matched grid, stroke weight, corner radius)
+ * instead of the hand-rolled SVGs that drifted out of sync (the
+ * colourful ⚡ emoji being the worst offender). Per project rule, we
+ * do not hand-author icon SVGs.
+ *
+ * Send / Stop stay local: they're the send-button glyphs, filled and
+ * coloured by CSS rather than stroked, so they're not part of the
+ * line-icon family.
  */
 "use client";
 
-export function PlusIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 20 20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-    >
-      <line x1="10" y1="4" x2="10" y2="16" />
-      <line x1="4" y1="10" x2="16" y2="10" />
-    </svg>
-  );
+import { Globe, Plus, Wrench, Zap } from "lucide-react";
+
+// Thin wrappers preserve the existing ``{ size }`` prop API so call
+// sites don't change. strokeWidth 1.75 matches the prior toolbar
+// weight; lucide's default is 2.
+export function PlusIcon({ size = 16 }: { size?: number }) {
+  return <Plus size={size} strokeWidth={1.75} />;
 }
 
 export function ToolsIcon({ size = 20 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-    </svg>
-  );
+  return <Wrench size={size} strokeWidth={1.75} />;
 }
 
 export function WebSearchIcon({ size = 20 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="2" y1="12" x2="22" y2="12" />
-      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-    </svg>
-  );
+  return <Globe size={size} strokeWidth={1.75} />;
+}
+
+export function FastIcon({ size = 20 }: { size?: number }) {
+  return <Zap size={size} strokeWidth={1.75} />;
 }
 
 export function SendIcon() {
