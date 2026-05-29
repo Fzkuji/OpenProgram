@@ -153,7 +153,7 @@ export function ConvMenu({
 // Idle-neutral row; hover reveals a subtle bg. Danger variant goes red
 // on hover, matching the app's accent-on-hover philosophy.
 const _itemCls =
-  "flex items-center gap-3 px-3 h-8 text-[13px] text-[var(--text-primary)]" +
+  "flex items-center gap-3 px-2.5 h-[26px] text-[12px] text-[var(--text-primary)]" +
   " cursor-pointer transition-colors hover:bg-[var(--bg-hover)]";
 
 function MenuItem({
@@ -200,7 +200,7 @@ function SubItem({
       type="button"
       onClick={onClick}
       className={
-        "flex items-center px-3 h-7 text-[12px] cursor-pointer transition-colors" +
+        "flex items-center px-2.5 h-[24px] text-[12px] cursor-pointer transition-colors" +
         " hover:bg-[var(--bg-hover)] " +
         (accent ? "text-[var(--accent-orange)]" : "text-[var(--text-secondary)]")
       }

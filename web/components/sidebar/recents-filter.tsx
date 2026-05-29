@@ -176,7 +176,7 @@ function Row<T extends string>({
   return (
     <DM.Sub>
       <DM.SubTrigger
-        className="flex items-center gap-3 rounded-[7px] px-2.5 h-[34px] text-[13px]
+        className="flex items-center gap-3 rounded-[6px] px-2 h-[26px] text-[12px]
           outline-none cursor-pointer select-none transition-colors
           data-[state=open]:bg-[var(--bg-hover)]
           data-[highlighted]:bg-[var(--bg-hover)]"
@@ -197,7 +197,7 @@ function Row<T extends string>({
               <DM.Item
                 key={val}
                 onSelect={() => onPick(val)}
-                className="flex items-center gap-3 rounded-[7px] px-2.5 h-[34px] text-[13px]
+                className="flex items-center gap-3 rounded-[6px] px-2 h-[26px] text-[12px]
                   outline-none cursor-pointer select-none transition-colors
                   data-[highlighted]:bg-[var(--bg-hover)]"
               >
