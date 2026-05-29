@@ -9,11 +9,28 @@
  * into folders; favourites toggle; per-function emoji icon override
  * (right-click → Change Icon…); search; sort; grid/list view toggle.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from "react";
 import { useRouter } from "next/navigation";
 import styles from "./functions-page.module.css";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
+import {
+  type AnimatedNavIconHandle,
+  FileTextIcon,
+  FolderOpenIcon,
+  FolderPlusIcon,
+  FoldersIcon,
+  HeartIcon,
+} from "@/components/animated-icons";
 import { CustomSelect } from "./custom-select";
 import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
 import { IconPicker, DEFAULT_ICON } from "./icon-picker";
@@ -335,19 +352,19 @@ export function FunctionsPage() {
     {
       id: "__all__",
       name: text("All Functions", "全部函数"),
-      icon: "📋",
+      icon: <FileTextIcon size={16} />,
       count: functions.length,
     },
     {
       id: "__favorites__",
       name: text("Favorites", "收藏"),
-      icon: "★",
+      icon: <HeartIcon size={16} />,
       count: liveCount(meta.favorites),
     },
     {
       id: "__uncategorized__",
       name: text("Uncategorized", "未分类"),
-      icon: "📂",
+      icon: <FolderOpenIcon size={16} />,
       count: getFunctionsInFolder("__uncategorized__").length,
     },
   ];
@@ -398,22 +415,18 @@ export function FunctionsPage() {
             onContextMenu={sidebarCtx}
           >
             {builtinFolders.map((f) => (
-              <div
+              <FolderNavRow
                 key={f.id}
-                className={cls(
-                  styles.folderItem,
-                  folder === f.id && styles.active,
-                  dragOver === f.id && styles.dragOver,
-                )}
+                icon={f.icon}
+                name={f.name}
+                count={f.count}
+                active={folder === f.id}
+                dragOver={dragOver === f.id}
                 onClick={() => setFolder(f.id)}
                 onDragOver={(e) => onFolderDragOver(e, f.id)}
                 onDragLeave={onFolderDragLeave}
                 onDrop={(e) => onFolderDrop(e, f.id)}
-              >
-                <span className={styles.folderIcon}>{f.icon}</span>
-                <span className={styles.folderName}>{f.name}</span>
-                <span className={styles.folderCount}>{f.count}</span>
-              </div>
+              />
             ))}
             <div className={styles.folderSep} />
             {userFolders.map((name) => {
@@ -426,7 +439,7 @@ export function FunctionsPage() {
                       folder === name && styles.active,
                     )}
                   >
-                    <span className={styles.folderIcon}>📁</span>
+                    <span className={styles.folderIcon}><FoldersIcon size={16} /></span>
                     <RenameInput
                       initial={name}
                       onCommit={(n) => {
@@ -440,23 +453,19 @@ export function FunctionsPage() {
               }
               const count = liveCount(meta.folders[name]);
               return (
-                <div
+                <FolderNavRow
                   key={name}
-                  className={cls(
-                    styles.folderItem,
-                    folder === name && styles.active,
-                    dragOver === name && styles.dragOver,
-                  )}
+                  icon={<FoldersIcon size={16} />}
+                  name={name}
+                  count={count}
+                  active={folder === name}
+                  dragOver={dragOver === name}
                   onClick={() => setFolder(name)}
                   onDragOver={(e) => onFolderDragOver(e, name)}
                   onDragLeave={onFolderDragLeave}
                   onDrop={(e) => onFolderDrop(e, name)}
                   onContextMenu={(e) => folderCtx(e, name)}
-                >
-                  <span className={styles.folderIcon}>📁</span>
-                  <span className={styles.folderName}>{name}</span>
-                  <span className={styles.folderCount}>{count}</span>
-                </div>
+                />
               );
             })}
             {creatingFolder && (
@@ -478,7 +487,7 @@ export function FunctionsPage() {
               onClick={() => setCreatingFolder(true)}
               title={text("Create a new folder", "新建文件夹")}
             >
-              <span className={styles.folderIcon}>+</span>
+              <span className={styles.folderIcon}><FolderPlusIcon size={16} /></span>
               <span className={styles.folderName}>{text("New folder", "新建文件夹")}</span>
             </div>
           </div>
@@ -577,4 +586,56 @@ function RenameInput({
 
 function cls(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
+}
+
+/** One folder-nav row. The animated icon is driven from the whole row's
+ *  hover (controlled mode) via a cloned ref, like the sidebar / chats nav. */
+function FolderNavRow({
+  icon,
+  name,
+  count,
+  active,
+  dragOver,
+  onClick,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onContextMenu,
+}: {
+  icon: ReactElement;
+  name: string;
+  count: number;
+  active: boolean;
+  dragOver?: boolean;
+  onClick: () => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}) {
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
+  return (
+    <div
+      className={cls(
+        styles.folderItem,
+        active && styles.active,
+        dragOver && styles.dragOver,
+      )}
+      onClick={onClick}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onContextMenu={onContextMenu}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+    >
+      <span className={styles.folderIcon}>
+        {isValidElement(icon)
+          ? cloneElement(icon as ReactElement, { ref: iconRef } as Record<string, unknown>)
+          : icon}
+      </span>
+      <span className={styles.folderName}>{name}</span>
+      <span className={styles.folderCount}>{count}</span>
+    </div>
+  );
 }

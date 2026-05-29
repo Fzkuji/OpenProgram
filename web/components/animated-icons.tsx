@@ -2997,3 +2997,219 @@ export const BoxesIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>
   },
 );
 BoxesIcon.displayName = "BoxesIcon";
+
+// ─── heart (Functions page — Favorites nav) ─────────────────────────
+export const HeartIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <motion.svg
+          animate={controls}
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          transition={{ duration: 0.45, repeat: 2 }}
+          variants={{
+            normal: { scale: 1 },
+            animate: { scale: [1, 1.08, 1] },
+          }}
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+        </motion.svg>
+      </div>
+    );
+  },
+);
+HeartIcon.displayName = "HeartIcon";
+
+// ─── folders (Functions page — user folder nav) ─────────────────────
+export const FoldersIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={controls}
+            d="M20 17a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3.9a2 2 0 0 1-1.69-.9l-.81-1.2a2 2 0 0 0-1.67-.9H8a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2Z"
+            transition={{ type: "spring", stiffness: 250, damping: 25 }}
+            variants={{
+              normal: { translateX: 0, translateY: 0 },
+              animate: { translateX: -2, translateY: 2 },
+            }}
+          />
+          <motion.path
+            animate={controls}
+            d="M2 8v11a2 2 0 0 0 2 2h14"
+            transition={{ type: "spring", stiffness: 250, damping: 25 }}
+            variants={{
+              normal: { translateX: 0, translateY: 0, opacity: 1, scale: 1 },
+              animate: { translateX: 2, translateY: -2, opacity: 0, scale: 0.9 },
+            }}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+FoldersIcon.displayName = "FoldersIcon";
+
+// ─── folder-plus (Functions page — New folder nav) ──────────────────
+const FOLDER_PLUS_VARIANTS: Variants = {
+  normal: { pathLength: 1, opacity: 1 },
+  animate: (custom: number) => ({
+    pathLength: [0, 1],
+    opacity: [0, 1],
+    transition: {
+      duration: 0.4,
+      ease: "easeInOut",
+      delay: custom * 0.1,
+      opacity: { delay: custom * 0.1 },
+    },
+  }),
+};
+
+export const FolderPlusIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+          <motion.path
+            animate={controls}
+            custom={1}
+            d="M12 10v6"
+            initial="normal"
+            variants={FOLDER_PLUS_VARIANTS}
+          />
+          <motion.path
+            animate={controls}
+            custom={0}
+            d="M9 13h6"
+            initial="normal"
+            variants={FOLDER_PLUS_VARIANTS}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+FolderPlusIcon.displayName = "FolderPlusIcon";

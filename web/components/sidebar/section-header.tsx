@@ -63,7 +63,7 @@ export function SectionHeader({
         // Vertical rhythm for the sidebar section headers: 16px above
         // the label (section break) and 5px below it before the first
         // row. (Claude uses ~16 / 8; tuned a touch tighter below.)
-        "flex select-none items-center gap-1 px-[8px] pt-[16px] pb-[5px]" +
+        "group/hdr flex select-none items-center gap-1 px-[8px] pt-[16px] pb-[5px]" +
         (className ? " " + className : "")
       }
     >
@@ -83,8 +83,8 @@ export function SectionHeader({
             when the section is hovered. */}
         <span
           className="truncate text-[14px] font-normal leading-[20px] text-[var(--text-secondary)]
-            opacity-80 transition-colors group-hover/sec:text-[var(--text-primary)]
-            group-hover/sec:opacity-100"
+            opacity-80 transition-colors group-hover/hdr:text-[var(--text-primary)]
+            group-hover/hdr:opacity-100"
         >
           {name}
         </span>
@@ -98,7 +98,7 @@ export function SectionHeader({
             size={16}
             className="relative top-[2px] shrink-0 text-[var(--text-secondary)] opacity-0
               transition-[opacity,color,transform] duration-200 ease-out
-              group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-primary)]"
+              group-hover/hdr:opacity-100 group-hover/hdr:text-[var(--text-primary)]"
             style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
           />
         ) : null}
