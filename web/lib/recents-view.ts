@@ -15,15 +15,28 @@
 export type RecentsStatus = "active" | "archived" | "all";
 export type RecentsGroupBy = "none" | "group";
 export type RecentsSort = "recency" | "title";
+/** Time window on the conversation's last activity (created_at /
+ *  updated_at). "all" = no window. */
+export type RecentsActivity = "all" | "1d" | "7d" | "30d";
 
 export interface RecentsView {
   status: RecentsStatus;
+  /** Project filter. ``"all"`` = no filter. Stored as a project id /
+   *  name; the backend that introduces projects fills the option list
+   *  + applies the filter — the UI is wired and ready. */
+  project: string;
+  /** Environment filter. Same "wired, backend-later" shape as project. */
+  environment: string;
+  lastActivity: RecentsActivity;
   groupBy: RecentsGroupBy;
   sort: RecentsSort;
 }
 
 export const DEFAULT_RECENTS_VIEW: RecentsView = {
   status: "active",
+  project: "all",
+  environment: "all",
+  lastActivity: "all",
   groupBy: "none",
   sort: "recency",
 };
@@ -41,6 +54,9 @@ function _read(): RecentsView {
     const p = JSON.parse(raw) as Partial<RecentsView>;
     return {
       status: p.status || DEFAULT_RECENTS_VIEW.status,
+      project: p.project || DEFAULT_RECENTS_VIEW.project,
+      environment: p.environment || DEFAULT_RECENTS_VIEW.environment,
+      lastActivity: p.lastActivity || DEFAULT_RECENTS_VIEW.lastActivity,
       groupBy: p.groupBy || DEFAULT_RECENTS_VIEW.groupBy,
       sort: p.sort || DEFAULT_RECENTS_VIEW.sort,
     };

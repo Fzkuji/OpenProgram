@@ -286,6 +286,17 @@ export function SessionsList() {
     let arr = convArr;
     if (view.status === "active") arr = arr.filter((c) => !c.archived);
     else if (view.status === "archived") arr = arr.filter((c) => !!c.archived);
+    // Last-activity window (uses created_at; swap to updated_at when the
+    // backend tracks it). "all" = no window.
+    if (view.lastActivity !== "all") {
+      const days = view.lastActivity === "1d" ? 1 : view.lastActivity === "7d" ? 7 : 30;
+      const cutoff = nowTs - days * 86400;
+      arr = arr.filter((c) => (c.created_at || 0) >= cutoff);
+    }
+    // NOTE: project / environment filters are UI-only for now — the
+    // menu writes the pref but there's no per-conversation project /
+    // environment field yet. Wire the filter here once the backend
+    // supplies those fields.
     const cmp = (a: LegacyConv, b: LegacyConv) => {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       if (view.sort === "title") {
@@ -569,10 +580,11 @@ function ConvItem({
               hover:bg-[var(--bg-selected)] hover:text-text-bright"
             data-state={menuOpen ? "open" : "closed"}
           >
+            {/* Vertical ⋮ (matches Claude's row menu trigger). */}
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <circle cx="3" cy="8" r="1.4" />
+              <circle cx="8" cy="3" r="1.4" />
               <circle cx="8" cy="8" r="1.4" />
-              <circle cx="13" cy="8" r="1.4" />
+              <circle cx="8" cy="13" r="1.4" />
             </svg>
           </button>
         </PopoverAnchor>

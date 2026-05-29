@@ -3,20 +3,24 @@
 /**
  * RecentsFilter — the sliders-icon dropdown on the "Recents" header.
  *
- * Replicates Claude.ai/code's filter menu shape: a **cascading** menu
- * where each row shows its current value + a ▸ chevron and opens a
- * flyout sub-menu to the right (Status → Active / Archived / All …),
- * rather than a flat list. Built on Radix `DropdownMenu` (Root /
- * Sub / SubTrigger / SubContent / Item) — the primitive designed for
- * exactly this nested-menu pattern (matches Claude's own
- * `role="menuitem" aria-haspopup="menu"` structure).
+ * Replicates Claude.ai/code's filter menu: a CASCADING menu where each
+ * row shows its current value + a ▸ chevron and opens a flyout
+ * sub-menu to the right. Built on Radix `DropdownMenu`
+ * (Root / Sub / SubTrigger / SubContent / Item) — the same nested-menu
+ * primitive Claude uses (`role="menuitem" aria-haspopup="menu"`).
  *
- * Rows: Status · Group by · Sort by. (Claude also shows Project /
- * Environment / Last activity — omitted here because OpenProgram has
- * no backing data for them; adding dead rows was explicitly avoided.)
+ * Rows mirror Claude exactly:
+ *   Status · Project · Environment · Last activity
+ *   ──────────────── (separator)
+ *   Group by · Sort by
  *
- * Reads + writes per-browser view prefs via `useRecentsView` /
- * `setRecentsView` (lib/recents-view.ts) — pure view state.
+ * Status / Last activity are applied by the sidebar today; Project /
+ * Environment are wired to the view-pref store but have a single "All"
+ * option until a backend supplies the lists (the UI is complete and
+ * ready — the filtering hook just needs real data).
+ *
+ * View prefs persist per-browser via `useRecentsView` / `setRecentsView`
+ * (lib/recents-view.ts).
  */
 
 import { useState } from "react";
@@ -26,24 +30,38 @@ import { useTranslation } from "@/lib/i18n";
 import {
   useRecentsView,
   setRecentsView,
+  DEFAULT_RECENTS_VIEW,
   type RecentsStatus,
   type RecentsGroupBy,
   type RecentsSort,
+  type RecentsActivity,
 } from "@/lib/recents-view";
 
-const contentCls =
-  "z-50 min-w-[150px] rounded-md border border-[var(--border)] bg-[var(--bg-tertiary)]" +
-  " p-1 text-[var(--text-primary)] shadow-[var(--shadow-popover)]" +
+// Shared menu-surface chrome: rounded card, hairline border, popover
+// shadow, theme-tertiary fill. Used by both the root menu and every
+// flyout so they read as one consistent system.
+const surface =
+  "z-50 min-w-[168px] overflow-hidden rounded-[10px] border border-[var(--border)]" +
+  " bg-[var(--bg-tertiary)] p-1 text-[var(--text-primary)]" +
+  " shadow-[var(--shadow-popover)]" +
   " data-[state=open]:animate-in data-[state=closed]:animate-out" +
-  " data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0";
+  " data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" +
+  " data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95";
 
 export function RecentsFilter() {
   const { t } = useTranslation();
   const view = useRecentsView();
   const [open, setOpen] = useState(false);
 
+  // Any non-default selection lights the trigger so an active filter
+  // is visible without opening the menu.
   const active =
-    view.status !== "active" || view.groupBy !== "none" || view.sort !== "recency";
+    view.status !== DEFAULT_RECENTS_VIEW.status ||
+    view.project !== DEFAULT_RECENTS_VIEW.project ||
+    view.environment !== DEFAULT_RECENTS_VIEW.environment ||
+    view.lastActivity !== DEFAULT_RECENTS_VIEW.lastActivity ||
+    view.groupBy !== DEFAULT_RECENTS_VIEW.groupBy ||
+    view.sort !== DEFAULT_RECENTS_VIEW.sort;
 
   return (
     <DM.Root open={open} onOpenChange={setOpen}>
@@ -75,7 +93,7 @@ export function RecentsFilter() {
         <DM.Content
           align="end"
           sideOffset={6}
-          className={contentCls}
+          className={surface}
           onClick={(e) => e.stopPropagation()}
         >
           <Row<RecentsStatus>
@@ -87,6 +105,29 @@ export function RecentsFilter() {
               ["all", t("sidebar.status_all")],
             ]}
             onPick={(status) => setRecentsView({ status })}
+          />
+          <Row<string>
+            label={t("sidebar.project")}
+            value={view.project}
+            options={[["all", t("sidebar.filter_all")]]}
+            onPick={(project) => setRecentsView({ project })}
+          />
+          <Row<string>
+            label={t("sidebar.environment")}
+            value={view.environment}
+            options={[["all", t("sidebar.filter_all")]]}
+            onPick={(environment) => setRecentsView({ environment })}
+          />
+          <Row<RecentsActivity>
+            label={t("sidebar.last_activity")}
+            value={view.lastActivity}
+            options={[
+              ["all", t("sidebar.activity_all")],
+              ["1d", t("sidebar.activity_1d")],
+              ["7d", t("sidebar.activity_7d")],
+              ["30d", t("sidebar.activity_30d")],
+            ]}
+            onPick={(lastActivity) => setRecentsView({ lastActivity })}
           />
 
           <DM.Separator className="my-1 h-px bg-[var(--border)]" />
@@ -115,8 +156,11 @@ export function RecentsFilter() {
   );
 }
 
-/** One cascading row: ``label  <currentValue> ▸`` that opens a flyout
- *  of options with a checkmark on the selected one. */
+/** One cascading row: ``label   <currentValue> ›`` that opens a flyout
+ *  of options with an amber check on the selected one. A single-option
+ *  row (Project / Environment until backed) still opens — the flyout
+ *  just shows the one choice, keeping the layout consistent and ready
+ *  for more options later. */
 function Row<T extends string>({
   label,
   value,
@@ -132,39 +176,40 @@ function Row<T extends string>({
   return (
     <DM.Sub>
       <DM.SubTrigger
-        className="flex items-center gap-3 rounded-[5px] px-2 h-8 text-[13px] outline-none
-          cursor-pointer select-none data-[state=open]:bg-[var(--bg-hover)]
+        className="flex items-center gap-3 rounded-[7px] px-2.5 h-[34px] text-[13px]
+          outline-none cursor-pointer select-none transition-colors
+          data-[state=open]:bg-[var(--bg-hover)]
           data-[highlighted]:bg-[var(--bg-hover)]"
       >
-        <span className="flex-1 text-left">{label}</span>
+        <span className="flex-1 text-left font-medium">{label}</span>
         <span className="text-[var(--text-muted)]">{current}</span>
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-          stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
-          strokeLinejoin="round" className="text-[var(--text-muted)]">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
+          stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+          strokeLinejoin="round" className="text-[var(--text-muted)] shrink-0">
           <path d="M6 4l4 4-4 4" />
         </svg>
       </DM.SubTrigger>
       <DM.Portal>
-        <DM.SubContent className={contentCls} sideOffset={2} alignOffset={-4}>
+        <DM.SubContent className={surface} sideOffset={4} alignOffset={-5}>
           {options.map(([val, optLabel]) => {
             const selected = val === value;
             return (
               <DM.Item
                 key={val}
                 onSelect={() => onPick(val)}
-                className="flex items-center gap-2 rounded-[5px] px-2 h-8 text-[13px]
-                  outline-none cursor-pointer select-none
+                className="flex items-center gap-3 rounded-[7px] px-2.5 h-[34px] text-[13px]
+                  outline-none cursor-pointer select-none transition-colors
                   data-[highlighted]:bg-[var(--bg-hover)]"
               >
                 <span className="flex-1 text-left">{optLabel}</span>
                 {selected ? (
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
                     stroke="var(--accent-orange)" strokeWidth="2" strokeLinecap="round"
-                    strokeLinejoin="round">
+                    strokeLinejoin="round" className="shrink-0">
                     <path d="M3 8.5l3.5 3.5L13 5" />
                   </svg>
                 ) : (
-                  <span className="w-[13px]" />
+                  <span className="w-[14px] shrink-0" />
                 )}
               </DM.Item>
             );
