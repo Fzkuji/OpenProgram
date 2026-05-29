@@ -74,12 +74,21 @@ export function SectionHeader({
       {collapsible ? (
         // Animated chevron from the shared icon set (pqoqubbw / framer-
         // motion). Hidden until the section is hovered, bounces on
-        // hover, brightens to white with the label, bottom-aligned to
-        // the text line, rotates to › when collapsed.
+        // hover, brightens to white with the label, rotates to › when
+        // collapsed.
+        //
+        // Position: the row is `items-center`, so the chevron is centred
+        // on the LABEL — consistently, regardless of the row's line
+        // height (the first section also carries the 22px filter button,
+        // which would otherwise stretch the line and drop a `self-end`
+        // chevron lower there than on the other sections). A fixed
+        // `top-[3px]` nudges it down to sit just under the text baseline
+        // ("靠下"), identical on every section. `top`/`relative` don't
+        // touch `transform`, so the rotate + bounce animation are intact.
         <ChevronDownIcon
           ref={chevronRef}
           size={16}
-          className="self-end shrink-0 text-[var(--text-secondary)] opacity-0
+          className="relative top-[3px] shrink-0 text-[var(--text-secondary)] opacity-0
             transition-[opacity,color] duration-150
             group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
