@@ -20,6 +20,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
+import { Check } from "lucide-react";
 
 export function AgentSelector({
   kind,
@@ -98,7 +99,7 @@ export function AgentSelector({
                       {fmtCtx(m.context)}
                     </span>
                   ) : null}
-                  {active ? <span className={CHECK}>✓</span> : null}
+                  {active ? <Check size={14} className={CHECK} /> : null}
                 </button>
               );
             })}

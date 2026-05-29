@@ -289,6 +289,9 @@ export function Composer() {
     setMenuOpen: setThinkingMenuOpen,
     set: setThinking,
   } = useThinkingEffort();
+  // The effort picker only appears once a chat model is actually
+  // selected at the top; with no model picked it stays hidden.
+  const chatModel = useSessionStore((s) => s.agentSettings?.chat?.model);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const {
     tools: toolsEnabled,
@@ -1098,17 +1101,22 @@ export function Composer() {
                 )
               : null}
 
-            <ThinkingEffortPill
-              ref={thinkingTriggerRef}
-              expanded={thinkingMenuOpen}
-              onToggle={() => {
-                setThinkingMenuOpen((v) => !v);
-                setPlusMenuOpen(false);
-              }}
-              options={thinkingOptions}
-              value={thinking}
-              onChange={setThinking}
-            />
+            {/* Effort picker only shows when a chat model is selected at
+                the top; hidden otherwise. The `thinking` value still flows
+                to submit (uses the model default). */}
+            {chatModel ? (
+              <ThinkingEffortPill
+                ref={thinkingTriggerRef}
+                expanded={thinkingMenuOpen}
+                onToggle={() => {
+                  setThinkingMenuOpen((v) => !v);
+                  setPlusMenuOpen(false);
+                }}
+                options={thinkingOptions}
+                value={thinking}
+                onChange={setThinking}
+              />
+            ) : null}
           </div>
           <div className={styles.inputBottomRight}>
             <ContextBadge />
