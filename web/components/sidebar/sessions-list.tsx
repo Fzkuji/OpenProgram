@@ -604,8 +604,8 @@ function GroupHeader({
         // text height, rotates to › when collapsed.
         <ChevronDownIcon
           ref={chevronRef}
-          size={14}
-          className="shrink-0 text-[var(--text-secondary)] opacity-0
+          size={13}
+          className="mt-[1px] shrink-0 text-[var(--text-secondary)] opacity-0
             transition-[opacity,color] duration-150
             group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
