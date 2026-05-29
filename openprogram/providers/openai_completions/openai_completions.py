@@ -247,6 +247,13 @@ async def stream_simple(
         effort_map = {"minimal": "low", "low": "low", "medium": "medium", "high": "high", "xhigh": "high"}
         params["reasoning_effort"] = effort_map.get(opts.reasoning, "medium")
 
+    # Per-request speed / priority tier ("priority" = the Fast mode,
+    # "flex" = cheaper-slower). The Responses path already forwards
+    # this; mirror it here so Chat Completions honours the same knob.
+    service_tier = opts.get("service_tier")
+    if service_tier:
+        params["service_tier"] = service_tier
+
     partial = _make_empty_assistant(model)
     content_blocks: list[Any] = []
     text_index = -1

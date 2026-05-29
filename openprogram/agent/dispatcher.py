@@ -97,6 +97,12 @@ class TurnRequest:
     # NOT re-write it. Used by webui where the WS handler appends
     # the user msg before kicking off the agent thread.
     user_already_persisted: bool = False
+    # Per-turn speed / priority tier ("priority" = Fast, "flex" =
+    # cheaper-slower, None = provider default). Set by the composer's
+    # speed pill; flows to ``SimpleStreamOptions.service_tier`` and on
+    # to the provider request body. Falls back to the session's stored
+    # value when the caller doesn't pin one for this turn.
+    service_tier: Optional[str] = None
     # Multimodal attachments to include in the user message. Each
     # entry is ``{"type": "image", "data": <base64>, "media_type":
     # "image/png"}`` (or jpeg/webp/gif). The dispatcher attaches
@@ -1764,6 +1770,14 @@ def _run_loop_blocking(
             if req.thinking_effort is not None
             else agent_profile.get("thinking_effort"),
         )),
+        # Per-turn speed tier → SimpleStreamOptions.service_tier →
+        # provider request body. Per-turn value wins; else the agent
+        # profile's stored default; else None (provider default).
+        service_tier=(
+            req.service_tier
+            if req.service_tier is not None
+            else agent_profile.get("service_tier")
+        ),
     )
 
     # Async drain that forwards each AgentEvent → on_event envelope.

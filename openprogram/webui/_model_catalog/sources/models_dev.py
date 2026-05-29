@@ -136,6 +136,27 @@ def _normalise(raw: dict[str, Any]) -> dict[str, Any]:
         out["cost_tiers"] = cost["tiers"]
     if cost.get("context_over_200k"):
         out["cost_context_over_200k"] = cost["context_over_200k"]
+
+    # Speed / priority modes (``experimental.modes`` — e.g. OpenAI's
+    # "fast" = service_tier:priority). Normalised into a small list the
+    # composer's speed pill consumes: ``[{id, service_tier, cost}]``.
+    # When a model has none, the pill simply doesn't render for it.
+    modes = (raw.get("experimental") or {}).get("modes") or {}
+    speed_modes: list[dict[str, Any]] = []
+    if isinstance(modes, dict):
+        for mode_id, spec in modes.items():
+            if not isinstance(spec, dict):
+                continue
+            body = ((spec.get("provider") or {}).get("body") or {})
+            tier = body.get("service_tier")
+            entry: dict[str, Any] = {"id": mode_id}
+            if tier:
+                entry["service_tier"] = tier
+            if isinstance(spec.get("cost"), dict):
+                entry["cost"] = spec["cost"]
+            speed_modes.append(entry)
+    if speed_modes:
+        out["speed_modes"] = speed_modes
     return out
 
 

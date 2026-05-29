@@ -395,6 +395,7 @@ async def _stream_assistant_response(
         headers=config.headers,
         max_retry_delay_ms=config.max_retry_delay_ms,
         metadata=config.metadata,
+        service_tier=config.service_tier,
     )
 
     partial_message: AssistantMessage | None = None

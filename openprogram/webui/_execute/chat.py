@@ -27,6 +27,7 @@ def run_query(
     effective_permission: str,
     agent_id: str,
     attachments: list | None,
+    service_tier: str | None = None,
 ) -> None:
     """Run the chat-query branch. Returns None; results are broadcast via WS."""
     from openprogram.webui import server as _s
@@ -259,6 +260,7 @@ def run_query(
         permission_mode=effective_permission,
         tools_override=resolved_tools_override,
         thinking_effort=effective_thinking,
+        service_tier=service_tier,
         user_msg_id=msg_id,
         user_already_persisted=True,
         model_override=_model_override,

@@ -23,6 +23,11 @@ async def handle_chat(ws, cmd: dict):
     tools_flag = cmd.get("tools")
     web_search_flag = bool(cmd.get("web_search"))
     permission_mode = cmd.get("permission_mode") or None
+    # Per-turn speed / priority tier from the composer's speed pill
+    # ("priority" = Fast, "flex" = cheaper-slower). Rides the message
+    # payload each turn (client remembers via localStorage like the
+    # thinking pill) — no server-side persistence / DB column needed.
+    service_tier = cmd.get("service_tier") or None
     # "Web Search" plus-menu toggle: layer ``web_search`` on top of
     # whatever the Tools toggle resolves to. Three useful states:
     #   * tools=False, web_search=False → tools_override=[]  (no tools)
@@ -252,6 +257,7 @@ async def handle_chat(ws, cmd: dict):
                     "thinking_effort": run_cfg.thinking_effort,
                     "tools_flag": tools_flag,
                     "permission_mode": run_cfg.permission_mode,
+                    "service_tier": service_tier,
                     "attachments": attachments},
             daemon=True,
         ).start()

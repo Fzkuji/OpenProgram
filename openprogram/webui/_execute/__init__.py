@@ -518,6 +518,7 @@ def execute_in_context(
     exec_thinking_effort: str = None,
     tools_flag=None,
     permission_mode: str = None,
+    service_tier: str = None,
     attachments: list = None,
 ) -> None:
     """Execute a chat query or function call within the conversation's DAG.
@@ -581,6 +582,7 @@ def execute_in_context(
                     run_cfg=run_cfg,
                     effective_thinking=effective_thinking,
                     effective_permission=effective_permission,
+                    service_tier=service_tier,
                     agent_id=_agent_id,
                     attachments=attachments,
                 )

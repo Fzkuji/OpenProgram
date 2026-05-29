@@ -113,6 +113,12 @@ class StreamOptions(BaseModel):
     headers: dict[str, str] | None = None
     max_retry_delay_ms: int | None = 60000
     metadata: dict[str, Any] | None = None
+    # Per-request speed / priority tier. Maps to the provider's own
+    # service-tier knob: OpenAI ``service_tier`` ("priority" = the
+    # "Fast" mode, "flex" = cheaper-slower); Anthropic ``service_tier``
+    # ("priority"/"standard_only"). ``None`` = the provider default.
+    # Read by the request builders via ``opts.get("service_tier")``.
+    service_tier: str | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 
