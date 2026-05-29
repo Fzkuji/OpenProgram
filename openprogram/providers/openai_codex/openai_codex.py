@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -282,7 +283,7 @@ def _build_request_body(
 
     tools = getattr(context, "tools", None)
     if tools:
-        body["tools"] = convert_responses_tools(tools)
+        body["tools"] = convert_responses_tools(tools, model.api, model.id)
         body["tool_choice"] = "auto"
         body["parallel_tool_calls"] = True
 
