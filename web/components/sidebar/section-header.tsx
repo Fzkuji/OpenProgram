@@ -61,12 +61,10 @@ export function SectionHeader({
       onMouseEnter={() => chevronRef.current?.startAnimation()}
       onMouseLeave={() => chevronRef.current?.stopAnimation()}
       className={
-        // Vertical rhythm tuned to Claude's sidebar section headers:
-        // ~16px above the label (section break) and 8px below it before
-        // the first row (Claude: padding-bottom 8 + margin-top 4; our
-        // 12px label sits in an 18px line box, so the box paddings are a
-        // touch smaller than the visible gaps).
-        "flex select-none items-center gap-1 px-[8px] pt-[16px] pb-[8px]" +
+        // Vertical rhythm for the sidebar section headers: 16px above
+        // the label (section break) and 6px below it before the first
+        // row. (Claude uses ~16 / 8; tuned a touch tighter below.)
+        "flex select-none items-center gap-1 px-[8px] pt-[16px] pb-[6px]" +
         (collapsible ? " cursor-pointer" : "") +
         (className ? " " + className : "")
       }
