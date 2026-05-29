@@ -17,8 +17,12 @@
 
 import * as shapes from "@dicebear/shapes";
 import * as avataaars from "@dicebear/avataaars";
+import * as micah from "@dicebear/micah";
+import * as openPeeps from "@dicebear/open-peeps";
 import * as funEmoji from "@dicebear/fun-emoji";
 import * as bottts from "@dicebear/bottts";
+import * as pixelArt from "@dicebear/pixel-art";
+import * as identicon from "@dicebear/identicon";
 import * as initials from "@dicebear/initials";
 
 import type { AvatarStyle } from "./types";
@@ -28,23 +32,34 @@ import type { AvatarStyle } from "./types";
  *
  *  Earlier bundles shipped notionists / lorelei here too, but those
  *  styles draw their characters into only a fraction of the viewBox
- *  and rendered as visually blank tiles at the 40-px picker size.
- *  Avataaars and Fun Emoji both fill their viewBox cleanly so they
- *  read correctly at every size we use. */
+ *  and rendered as visually blank tiles at the 40-px picker size. The
+ *  styles kept here all fill their viewBox cleanly so they read
+ *  correctly at every size we use. Keys are camelCase even where the
+ *  npm package is hyphenated (open-peeps → ``openPeeps``). */
 export const STYLES = {
   shapes,
   avataaars,
+  micah,
+  openPeeps,
   funEmoji,
   bottts,
+  pixelArt,
+  identicon,
   initials,
 } as const;
 
 /** UI metadata for the style picker. Order is the order tiles render
- *  in. ``Shapes`` is first because it's the default for new profiles. */
+ *  in — characters first, then geometric / fun, with the minimal
+ *  Initials last. ``Shapes`` is first because it's the default for
+ *  new profiles. */
 export const AVATAR_STYLES: { id: AvatarStyle; label: string; hint: string }[] = [
-  { id: "shapes",    label: "Shapes",    hint: "Abstract geometric (default)" },
-  { id: "avataaars", label: "Avataaars", hint: "Sketch-style portrait characters" },
-  { id: "funEmoji",  label: "Fun Emoji", hint: "Simple emoji-like faces" },
-  { id: "bottts",    label: "Bottts",    hint: "Robot avatars" },
-  { id: "initials",  label: "Initials",  hint: "Letter on coloured chip" },
+  { id: "shapes",    label: "Shapes",     hint: "Abstract geometric (default)" },
+  { id: "avataaars", label: "Avataaars",  hint: "Sketch-style portrait characters" },
+  { id: "micah",     label: "Micah",      hint: "Flat illustrated portraits" },
+  { id: "openPeeps", label: "Open Peeps", hint: "Hand-drawn people" },
+  { id: "funEmoji",  label: "Fun Emoji",  hint: "Simple emoji-like faces" },
+  { id: "bottts",    label: "Bottts",     hint: "Robot avatars" },
+  { id: "pixelArt",  label: "Pixel Art",  hint: "8-bit retro characters" },
+  { id: "identicon", label: "Identicon",  hint: "GitHub-style geometric hash" },
+  { id: "initials",  label: "Initials",   hint: "Letter on coloured chip" },
 ];
