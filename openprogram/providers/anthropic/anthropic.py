@@ -66,6 +66,26 @@ _BETA_FINE_GRAINED = "fine-grained-tool-streaming-2025-05-14"
 _BETA_INTERLEAVED = "interleaved-thinking-2025-05-14"
 _BETA_OAUTH = "oauth-2025-04-20"
 _BETA_CLAUDE_CODE = "claude-code-20250219"
+# Strict tool use (grammar-constrained tool inputs). Requires this beta
+# header + a recent model (Sonnet 4.5+ / Opus 4.1+ / Haiku 4.5+);
+# enables the SAME schema subset as OpenAI strict mode.
+_BETA_STRUCTURED_OUTPUTS = "structured-outputs-2025-11-13"
+
+
+def _anthropic_strict_on(model: "Model", is_oauth: bool) -> bool:
+    """Whether to use Anthropic strict tool use for this request.
+
+    Gated three ways: the global ``OPENPROGRAM_STRICT_TOOLS`` toggle +
+    model version (Sonnet 4.5+/Opus 4.1+/Haiku 4.5+) — both via the
+    unified ``_schema.wants_strict_flag`` — AND *not* the Claude Code
+    OAuth path. OAuth requests impersonate the Claude Code CLI with its
+    own header set; we don't layer the structured-outputs beta on top
+    of that stealth path. Direct API-key requests get strict.
+    """
+    if is_oauth:
+        return False
+    from openprogram.providers._schema import wants_strict_flag
+    return wants_strict_flag(getattr(model, "api", None), getattr(model, "id", None))
 
 # Claude Code version for OAuth stealth mode
 _CLAUDE_CODE_VERSION = "2.1.62"
@@ -209,6 +229,10 @@ def _build_client(
     beta_features = [_BETA_FINE_GRAINED]
     if needs_interleaved_beta:
         beta_features.append(_BETA_INTERLEAVED)
+    # Strict tool use needs its own beta header. Only the regular
+    # API-key path (not Claude Code OAuth) and recent models qualify.
+    if _anthropic_strict_on(model, is_oauth):
+        beta_features.append(_BETA_STRUCTURED_OUTPUTS)
 
     # SDK-level retry budget: Anthropic SDK retries 429/5xx/transport
     # errors with its own exponential backoff. Default is 2; we raise
@@ -374,18 +398,38 @@ def _build_messages(
     return result
 
 
-def _build_tools(context: Context, is_oauth: bool = False) -> list[dict[str, Any]] | None:
-    """Convert Context tools to Anthropic API format, with Claude Code name normalization."""
+def _build_tools(
+    context: Context,
+    is_oauth: bool = False,
+    model: "Model | None" = None,
+    strict: bool = False,
+) -> list[dict[str, Any]] | None:
+    """Convert Context tools to Anthropic API format, with Claude Code
+    name normalization.
+
+    Schema goes through the unified ``_schema`` dialect layer: when
+    ``strict`` is on (recent model + beta header set by the caller) it
+    resolves to the ``openai_strict`` shape Anthropic strict tool use
+    requires (additionalProperties:false + all-required), and each tool
+    gets ``strict: true``. Otherwise it's passthrough — current
+    behavior, unchanged.
+    """
     if not context.tools:
         return None
+    from openprogram.providers._schema import normalize_for
+    api = getattr(model, "api", None)
+    mid = getattr(model, "id", None)
     tools = []
     for tool in context.tools:
         name = _to_claude_code_name(tool.name) if is_oauth else tool.name
-        tools.append({
+        entry: dict[str, Any] = {
             "name": name,
             "description": tool.description,
-            "input_schema": tool.parameters,
-        })
+            "input_schema": normalize_for(api, tool.parameters, mid),
+        }
+        if strict:
+            entry["strict"] = True
+        tools.append(entry)
     return tools
 
 
@@ -471,7 +515,10 @@ async def stream_simple(
     )
 
     messages = _build_messages(transformed_context, is_oauth=is_oauth, cache_control=cache_control)
-    tools = _build_tools(transformed_context, is_oauth=is_oauth)
+    tools = _build_tools(
+        transformed_context, is_oauth=is_oauth, model=model,
+        strict=_anthropic_strict_on(model, is_oauth),
+    )
     system = _build_system(transformed_context, is_oauth=is_oauth, cache_control=cache_control)
 
     max_tokens = opts.max_tokens or (model.max_tokens // 3 if model.max_tokens else 4096)

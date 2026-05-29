@@ -116,10 +116,16 @@ def _build_config(
 
     tools: list[Any] | None = None
     if context.tools:
+        # The genai SDK's ``parameters=`` kwarg is Gemini's OpenAPI-3.0
+        # subset slot (``parameters_json_schema=`` is the separate
+        # fuller-mode kwarg). It rejects ``additionalProperties`` /
+        # ``anyOf`` / ``$schema`` / … — so run through the
+        # ``gemini_openapi`` dialect, which strips all of them. (Was
+        # only popping ``$schema`` here, under-cleaning everything else.)
+        from openprogram.providers._schema import normalize
         func_decls = []
         for tool in context.tools:
-            params = dict(tool.parameters)
-            params.pop("$schema", None)
+            params = normalize(tool.parameters, "gemini_openapi")
             func_decls.append(
                 gtypes.FunctionDeclaration(
                     name=tool.name,

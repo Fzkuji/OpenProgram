@@ -200,7 +200,7 @@ def _build_params(
 
     tools = getattr(context, "tools", None)
     if tools:
-        params["tools"] = convert_responses_tools(tools)
+        params["tools"] = convert_responses_tools(tools, model.api, model.id)
 
     reasoning_effort = opts.get("reasoning_effort")
     reasoning_summary = opts.get("reasoning_summary")

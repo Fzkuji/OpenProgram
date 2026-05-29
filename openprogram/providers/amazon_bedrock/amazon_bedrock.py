@@ -162,6 +162,7 @@ def stream_bedrock(
             tool_config = _convert_tool_config_bedrock(
                 getattr(context, "tools", None),
                 opts.get("tool_choice"),
+                model,
             )
             add_fields = _build_additional_model_request_fields(model, opts)
 
@@ -409,15 +410,23 @@ def _create_image_block_bedrock(mime_type: str, data: str) -> dict[str, Any]:
 def _convert_tool_config_bedrock(
     tools: list | None,
     tool_choice: Any,
+    model: "Model | None" = None,
 ) -> dict[str, Any] | None:
     if not tools or tool_choice == "none":
         return None
+    # Route through the unified dialect layer for a uniform call site.
+    # Bedrock resolves to passthrough today (it's not in the strict
+    # family); when Bedrock-hosted Claude strict is wanted, it's a
+    # one-line change in ``_schema.dialect_for`` rather than here.
+    from openprogram.providers._schema import normalize_for
+    api = getattr(model, "api", None)
+    mid = getattr(model, "id", None)
     bedrock_tools = [
         {
             "toolSpec": {
                 "name": t.name,
                 "description": t.description,
-                "inputSchema": {"json": t.parameters},
+                "inputSchema": {"json": normalize_for(api, t.parameters, mid)},
             }
         }
         for t in tools

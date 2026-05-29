@@ -202,7 +202,7 @@ def _build_params(
 
     tools = getattr(context, "tools", None)
     if tools:
-        params["tools"] = convert_responses_tools(tools)
+        params["tools"] = convert_responses_tools(tools, model.api, model.id)
 
     service_tier = opts.get("service_tier")
     if service_tier:

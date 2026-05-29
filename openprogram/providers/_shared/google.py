@@ -222,17 +222,28 @@ def convert_tools(
     tools: "list[Tool]",
     use_parameters: bool = False,
 ) -> list[dict[str, Any]] | None:
-    """Convert tools to Gemini function declarations format."""
+    """Convert tools to Gemini function declarations format.
+
+    Two schema slots, picked by ``use_parameters``:
+      * ``parameters`` — Gemini's OpenAPI-3.0 subset. REJECTS
+        ``additionalProperties`` / ``anyOf`` / ``$schema`` / … so the
+        schema MUST run through the ``gemini_openapi`` dialect first
+        (was raw-passed before → latent 400s).
+      * ``parametersJsonSchema`` — the fuller JSON-Schema mode; standard
+        schema is accepted, so ``passthrough`` (deep-copy only).
+    """
     if not tools:
         return None
+    from openprogram.providers._schema import normalize
     key = "parameters" if use_parameters else "parametersJsonSchema"
+    dialect = "gemini_openapi" if use_parameters else "passthrough"
     return [
         {
             "functionDeclarations": [
                 {
                     "name": t.name,
                     "description": t.description,
-                    key: t.parameters,
+                    key: normalize(t.parameters, dialect),
                 }
                 for t in tools
             ]

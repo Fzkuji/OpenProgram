@@ -141,24 +141,24 @@ def _build_messages(context: Context, model: Model) -> list[dict[str, Any]]:
     return result
 
 
-def _build_tools(context: Context) -> list[dict[str, Any]] | None:
+def _build_tools(context: Context, model: Model) -> list[dict[str, Any]] | None:
     if not context.tools:
         return None
-    # Tool-schema normalization lives in ``providers._schema`` — the one
-    # place that knows which APIs use OpenAI strict mode and how to fit
-    # a canonical schema to it (additionalProperties=false, all-required
-    # + nullable, unsupported-keyword stripping). This module is the
-    # Chat Completions path, so its API is always strict-family.
-    from openprogram.providers._schema import api_wants_strict, normalize_parameters
-    api = "openai-completions"
-    use_strict = api_wants_strict(api)
+    # Schema dialect + strict flag are decided by the unified
+    # ``providers._schema`` layer, keyed on (api, model). Chat
+    # Completions is always strict-family, so this resolves to the
+    # openai_strict dialect + strict:true when the env toggle is on.
+    from openprogram.providers._schema import normalize_for, wants_strict_flag
+    api = model.api
+    mid = model.id
+    use_strict = wants_strict_flag(api, mid)
     return [
         {
             "type": "function",
             "function": {
                 "name": tool.name,
                 "description": tool.description,
-                "parameters": normalize_parameters(api, tool.parameters),
+                "parameters": normalize_for(api, tool.parameters, mid),
                 "strict": use_strict,
             },
         }
@@ -222,7 +222,7 @@ async def stream_simple(
     )
 
     messages = _build_messages(transformed_context, model)
-    tools = _build_tools(transformed_context)
+    tools = _build_tools(transformed_context, model)
 
     params: dict[str, Any] = {
         "model": model.id,

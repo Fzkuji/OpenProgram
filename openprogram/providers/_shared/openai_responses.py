@@ -222,36 +222,29 @@ def convert_responses_messages(
 
 def convert_responses_tools(
     tools: "list[Tool]",
-    strict: bool | None = None,
+    api: str | None = "openai-responses",
+    model_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Convert tools to OpenAI Responses API function format.
 
-    Schema normalization is delegated to ``providers._schema`` — the
-    single home for "fit a canonical tool schema to an API's dialect".
-    ``strict=None`` (the default for Codex / Responses callers) defers
-    to that module's global default + ``OPENPROGRAM_STRICT_TOOLS``
-    toggle; passing an explicit bool overrides per call (escape hatch
-    for a tool whose schema can't be strict-fitted — none today).
+    Schema dialect + the ``"strict"`` flag are both decided by the
+    unified ``providers._schema`` layer keyed on ``(api, model_id)`` —
+    the SAME path the Chat Completions builder uses, so the two no
+    longer drift (previously this defaulted strict off ``strict_tools_enabled``
+    while completions gated on ``api_wants_strict``). Callers thread
+    their ``model.api`` / ``model.id``; the api default keeps old
+    call-by-position working.
     """
-    from openprogram.providers._schema import (
-        fixup_for_strict,
-        strict_tools_enabled,
-    )
+    from openprogram.providers._schema import normalize_for, wants_strict_flag
 
-    if strict is None:
-        strict = strict_tools_enabled()
-
+    use_strict = wants_strict_flag(api, model_id)
     return [
         {
             "type": "function",
             "name": t.name,
             "description": t.description,
-            "parameters": (
-                fixup_for_strict(t.parameters)
-                if (strict and isinstance(t.parameters, dict))
-                else t.parameters
-            ),
-            "strict": bool(strict),
+            "parameters": normalize_for(api, t.parameters, model_id),
+            "strict": use_strict,
         }
         for t in tools
     ]
