@@ -62,7 +62,6 @@ import { useTranslation } from "@/lib/i18n";
 import { UserMenuFooter } from "../user-menu-footer";
 import { SessionsList } from "./sessions-list";
 import { FavoritesList } from "./favorites-list";
-import { RecentsFilter } from "./recents-filter";
 import {
   sidebarNavActionClass,
   sidebarNavIconClass,
@@ -90,7 +89,6 @@ export function Sidebar() {
 
   const [open, setOpen] = useState<boolean>(true);
   const [favCollapsed, setFavCollapsed] = useState(false);
-  const [convCollapsed, setConvCollapsed] = useState(false);
   // Refresh-button states (matches legacy spin → checkmark → revert).
   const [refreshing, setRefreshing] = useState(false);
   const [refreshDone, setRefreshDone] = useState(false);
@@ -459,12 +457,13 @@ export function Sidebar() {
       )}
 
       {open && (
-        <SidebarSection
+        // No "Recents" wrapper / collapse — the conversation list is a
+        // SINGLE-LEVEL grouped list (date buckets / Working-Completed /
+        // project), so the section headers ARE the top level. The
+        // filter button lives on the first section header inside
+        // SessionsList, right-aligned (Claude's layout).
+        <div
           id="convSection"
-          title={t("sidebar.recents")}
-          collapsed={convCollapsed}
-          onToggle={() => setConvCollapsed((v) => !v)}
-          headerActions={<RecentsFilter />}
           className="flex flex-1 min-h-0 flex-col pt-[16px]"
         >
           <div
@@ -475,7 +474,7 @@ export function Sidebar() {
           >
             <SessionsList />
           </div>
-        </SidebarSection>
+        </div>
       )}
 
       {/* User menu footer — rendered directly here (no portal). The

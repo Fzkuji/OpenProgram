@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { ConvMenu } from "./conv-menu";
+import { RecentsFilter } from "./recents-filter";
 import styles from "./sidebar.module.css";
 
 interface SessionWindow {
@@ -364,9 +365,19 @@ export function SessionsList() {
     dateLocale: locale === "zh" ? "zh-CN" : undefined,
   });
 
+  // The filter button rides on the FIRST section header's right (Claude
+  // layout — no separate "Recents" bar). When the list is flat (title
+  // sort → one header-less section) or empty, a thin right-aligned row
+  // carries it instead so it's always reachable.
+  const firstHasHeader = sections.length > 0 && sections[0].label !== "";
   const body = (
     <>
-      {sections.map((sec) =>
+      {!firstHasHeader ? (
+        <div className="flex h-[24px] items-center justify-end px-[8px]">
+          <RecentsFilter />
+        </div>
+      ) : null}
+      {sections.map((sec, i) =>
         sec.label === "" ? (
           // Flat run (title sort, no grouping) — no header.
           <div key={sec.key}>{sec.items.map(renderRow)}</div>
@@ -377,6 +388,7 @@ export function SessionsList() {
               count={sec.items.length}
               collapsed={collapsedGroups.has(sec.key)}
               onToggle={() => toggleGroupCollapse(sec.key)}
+              actions={i === 0 ? <RecentsFilter /> : undefined}
             />
             {!collapsedGroups.has(sec.key) && sec.items.map(renderRow)}
           </div>
@@ -537,22 +549,33 @@ function GroupHeader({
   count,
   collapsed,
   onToggle,
+  actions,
 }: {
   name: string;
   count: number;
   collapsed: boolean;
   onToggle: () => void;
+  /** Optional right-side control (the filter button on the first
+   *  section). Clicks inside don't toggle the section. */
+  actions?: React.ReactNode;
 }) {
   return (
     <div
       role="button"
       onClick={onToggle}
-      className="flex cursor-pointer select-none items-center gap-1 px-[8px] pt-[8px] pb-[2px]
+      className="group/h flex cursor-pointer select-none items-center gap-1 px-[8px] pt-[8px] pb-[2px]
         text-[11px] uppercase tracking-wide text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
     >
       <span className="w-3 text-center">{collapsed ? "▸" : "▾"}</span>
-      <span className="flex-1 truncate">{name}</span>
+      <span className="truncate">{name}</span>
       <span className="opacity-70">{count}</span>
+      {actions ? (
+        <span className="ml-auto flex items-center" onClick={(e) => e.stopPropagation()}>
+          {actions}
+        </span>
+      ) : (
+        <span className="ml-auto" />
+      )}
     </div>
   );
 }
