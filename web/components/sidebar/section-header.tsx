@@ -84,7 +84,7 @@ export function SectionHeader({
         <ChevronDownIcon
           ref={chevronRef}
           size={16}
-          className="relative top-[-1px] shrink-0 text-[var(--text-secondary)] opacity-0
+          className="relative top-[1px] shrink-0 text-[var(--text-secondary)] opacity-0
             transition-[opacity,color] duration-150
             group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
