@@ -221,7 +221,7 @@ function BranchRowItem({
 }
 
 export function BranchMenu({ onClose }: { onClose: () => void }) {
-  const { t, text } = useTranslation();
+  const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [rows, setRows] = useState<BranchRow[] | null>(null);
 
@@ -241,9 +241,6 @@ export function BranchMenu({ onClose }: { onClose: () => void }) {
 
   return (
     <div className={`${MENU_PANEL} w-auto`}>
-      <div className={GROUP_LABEL}>
-        <span>{t("right.branches")}</span>
-      </div>
       {rows !== null && rows.length === 0 ? (
         <div className={`${GROUP_LABEL} text-[11px]`}>
           <span>{text("No branches yet. Retry or edit a message to fork.", "还没有分支。重试或编辑消息后会创建分支。")}</span>

@@ -5,6 +5,8 @@
  * can each import what they need without a single 783-line file.
  */
 
+import { SquarePenIcon, XIcon } from "@/components/animated-icons";
+
 export interface BranchRow {
   head_msg_id: string;
   name?: string;
@@ -40,17 +42,11 @@ export function wsSend(payload: unknown): void {
   }
 }
 
-export const RENAME_SVG = (
-  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11.5 2.5l2 2L5 13l-3 1 1-3 8.5-8.5z" />
-  </svg>
-);
-export const DEL_SVG = (
-  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-    <line x1="2" y1="2" x2="8" y2="8" />
-    <line x1="8" y1="2" x2="2" y2="8" />
-  </svg>
-);
+// Branch row rename / delete glyphs → animated line icons (pqoqubbw,
+// in components/animated-icons). Self-animate on hover (the action
+// button is icon-sized). edit = square-pen, delete (×) = x.
+export const RENAME_SVG = <SquarePenIcon size={16} />;
+export const DEL_SVG = <XIcon size={16} />;
 
 
 

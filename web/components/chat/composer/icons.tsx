@@ -1,48 +1,92 @@
 /**
  * Composer tool / plus-menu icons.
  *
- * Functional (line / stroke) icons come from **lucide-react** — the
- * project's standard line-icon set (used across ~11 other components).
- * Sourcing them from one library guarantees the toolbar reads as a
- * single visual family (matched grid, stroke weight, corner radius)
- * instead of the hand-rolled SVGs that drifted out of sync (the
- * colourful ⚡ emoji being the worst offender). Per project rule, we
- * do not hand-author icon SVGs.
+ * Tools / Web Search / Fast / Plus are the ANIMATED line glyphs from
+ * pqoqubbw/icons (the app-wide set in ``@/components/animated-icons``),
+ * wrapped as ``forwardRef`` so a parent button / row / chip can drive
+ * the hover animation imperatively (start / stop) — see
+ * ./controls/menu-pieces. The + trigger button is icon-sized, so its
+ * own hover suffices (uncontrolled). Per project rule we never
+ * hand-author icon SVGs.
  *
- * Send / Stop stay local: they're the send-button glyphs, filled and
- * coloured by CSS rather than stroked, so they're not part of the
- * line-icon family.
+ * Send / Stop / Check / ChipClose / Caret stay local: they're the
+ * send-button glyphs + tiny indicators (filled / CSS-coloured, or
+ * micro-glyphs), not part of the animated line-icon family.
  */
 "use client";
 
-import { Globe, Plus, Wrench, Zap } from "lucide-react";
+import { forwardRef, useImperativeHandle } from "react";
+import { motion, useAnimation, type Variants } from "framer-motion";
 
-// Thin wrappers preserve the existing ``{ size }`` prop API so call
-// sites don't change. strokeWidth 1.75 matches the prior toolbar
-// weight; lucide's default is 2.
-export function PlusIcon({ size = 16 }: { size?: number }) {
-  return <Plus size={size} strokeWidth={1.75} />;
-}
+import {
+  type AnimatedNavIconHandle,
+  ChromeIcon,
+  SlidersHorizontalIcon,
+  WrenchIcon,
+  ZapIcon,
+} from "@/components/animated-icons";
 
-export function ToolsIcon({ size = 20 }: { size?: number }) {
-  return <Wrench size={size} strokeWidth={1.75} />;
-}
+// The composer's "+" trigger opens the tools/options menu; it's a
+// sliders-horizontal ("adjust options") glyph rather than a plus.
+export const OptionsIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
+  function OptionsIcon({ size = 16 }, ref) {
+    return <SlidersHorizontalIcon ref={ref} size={size} />;
+  },
+);
 
-export function WebSearchIcon({ size = 20 }: { size?: number }) {
-  return <Globe size={size} strokeWidth={1.75} />;
-}
+export const ToolsIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
+  function ToolsIcon({ size = 20 }, ref) {
+    return <WrenchIcon ref={ref} size={size} />;
+  },
+);
 
-export function FastIcon({ size = 20 }: { size?: number }) {
-  return <Zap size={size} strokeWidth={1.75} />;
-}
+export const WebSearchIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
+  function WebSearchIcon({ size = 20 }, ref) {
+    return <ChromeIcon ref={ref} size={size} />;
+  },
+);
 
-export function SendIcon() {
+export const FastIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
+  function FastIcon({ size = 20 }, ref) {
+    return <ZapIcon ref={ref} size={size} />;
+  },
+);
+
+// Send glyph — claude.ai-style up-arrow (pqoqubbw arrow-up). Driven by
+// the send button's hover via ref (controlled). Rendered as a bare
+// <svg> (no wrapper div) so the existing `.actionBtn svg` sizing still
+// applies; `.sendBtn svg { fill: none }` keeps it stroked, not filled.
+const SEND_ARROW_VARIANTS: Variants = {
+  normal: { d: "m5 12 7-7 7 7", translateY: 0 },
+  animate: { d: "m5 12 7-7 7 7", translateY: [0, 3, 0], transition: { duration: 0.4 } },
+};
+const SEND_SHAFT_VARIANTS: Variants = {
+  normal: { d: "M12 19V5" },
+  animate: { d: ["M12 19V5", "M12 19V10", "M12 19V5"], transition: { duration: 0.4 } },
+};
+
+export const SendIcon = forwardRef<AnimatedNavIconHandle>((_props, ref) => {
+  const controls = useAnimation();
+  useImperativeHandle(ref, () => ({
+    startAnimation: () => controls.start("animate"),
+    stopAnimation: () => controls.start("normal"),
+  }));
   return (
-    <svg viewBox="0 0 24 24">
-      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <motion.path animate={controls} initial="normal" d="m5 12 7-7 7 7" variants={SEND_ARROW_VARIANTS} />
+      <motion.path animate={controls} initial="normal" d="M12 19V5" variants={SEND_SHAFT_VARIANTS} />
     </svg>
   );
-}
+});
+SendIcon.displayName = "SendIcon";
 
 export function StopIcon() {
   return (

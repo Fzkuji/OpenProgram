@@ -418,6 +418,11 @@
   height: 14px;
   fill: currentColor;
 }
+/* Send glyph is a LINE icon (pqoqubbw arrow-up) — keep it stroked, not
+   filled, overriding .actionBtn's fill. (The Stop square stays filled.) */
+.sendBtn svg {
+  fill: none;
+}
 
 .sendBtn {
   background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 14%, transparent);

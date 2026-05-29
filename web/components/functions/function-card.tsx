@@ -1,7 +1,13 @@
 "use client";
 
+import { useRef } from "react";
+
 import styles from "./function-card.module.css";
 import { useTranslation } from "@/lib/i18n";
+import {
+  type AnimatedNavIconHandle,
+  SquarePenIcon,
+} from "@/components/animated-icons";
 
 export interface ProgramSummary {
   name: string;
@@ -34,6 +40,7 @@ export function FunctionCard({
   onChangeIcon: (e: React.MouseEvent) => void;
 }) {
   const { text } = useTranslation();
+  const editIconRef = useRef<AnimatedNavIconHandle>(null);
   const desc = p.description ? p.description.split(".")[0] : "";
   return (
     <div
@@ -50,22 +57,12 @@ export function FunctionCard({
           type="button"
           className={styles.cardIconEditBtn}
           onClick={onChangeIcon}
+          onMouseEnter={() => editIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => editIconRef.current?.stopAnimation?.()}
           title={text("Change icon", "更换图标")}
           aria-label={text("Change icon", "更换图标")}
         >
-          <svg
-            viewBox="0 0 24 24"
-            width="12"
-            height="12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-          </svg>
+          <SquarePenIcon ref={editIconRef} size={12} />
         </button>
       </div>
       <div className={styles.cardInfo}>

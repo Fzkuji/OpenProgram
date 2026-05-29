@@ -632,8 +632,8 @@
 }
 
 .iconBtn {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: var(--bg-tertiary);
@@ -653,8 +653,8 @@
 
 /* ─── Editor: delete + footer + frontmatter + markdown ─── */
 .dangerBtn {
-  width: 26px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: transparent;

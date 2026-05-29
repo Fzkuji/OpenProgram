@@ -28,12 +28,14 @@ import { useTranslation } from "@/lib/i18n";
 import { ContextBadge } from "../context-badge";
 import { FunctionForm, visibleParams } from "./fn-form/fn-form";
 import {
-  PlusIcon,
+  FastIcon,
+  OptionsIcon,
   SendIcon,
   StopIcon,
   ToolsIcon,
   WebSearchIcon,
 } from "./icons";
+import type { AnimatedNavIconHandle } from "@/components/animated-icons";
 import { PlusMenuItem, ToolChip } from "./controls/menu-pieces";
 import { type SlashCommand } from "./slash/slash-commands";
 import { sendChatMessage } from "./legacy-send";
@@ -318,6 +320,8 @@ export function Composer() {
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
+  // Drives the animated send arrow from the whole button's hover.
+  const sendIconRef = useRef<AnimatedNavIconHandle>(null);
   // Refs:
   //  - `plusTriggerRef` / `plusMenuRef`: the plus menu is still portal'd
   //    into `document.body` to escape `.inputWrapper { overflow: hidden }`.
@@ -329,6 +333,7 @@ export function Composer() {
   //    already covers clicks on it — no separate menu ref needed.
   const thinkingTriggerRef = useRef<HTMLDivElement>(null);
   const plusTriggerRef = useRef<HTMLButtonElement>(null);
+  const plusIconRef = useRef<AnimatedNavIconHandle>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const [plusMenuPos, setPlusMenuPos] = useState<
     { left: number; bottom: number } | null
@@ -1010,11 +1015,13 @@ export function Composer() {
                 setPlusMenuOpen((v) => !v);
                 setThinkingMenuOpen(false);
               }}
+              onMouseEnter={() => plusIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => plusIconRef.current?.stopAnimation?.()}
               title={text("Add tools, files, and more", "添加工具、文件等")}
               aria-label={text("More options", "更多选项")}
               type="button"
             >
-              <PlusIcon />
+              <OptionsIcon ref={plusIconRef} />
             </button>
 
             <div className={styles.activeToolChips}>
@@ -1034,7 +1041,7 @@ export function Composer() {
               )}
               {fastEnabled && (
                 <ToolChip
-                  icon={<span aria-hidden style={{ fontSize: 14 }}>⚡</span>}
+                  icon={<FastIcon size={16} />}
                   label={text("Fast", "高速")}
                   onRemove={toggleFast}
                 />
@@ -1072,7 +1079,7 @@ export function Composer() {
                     <PlusMenuItem
                       active={fastEnabled}
                       onClick={toggleFast}
-                      icon={<span aria-hidden style={{ fontSize: 14 }}>⚡</span>}
+                      icon={<FastIcon />}
                       label={text("Fast", "高速")}
                       title={text("Run this turn on the provider's priority/fast tier (service_tier=priority). Ignored by providers that don't support it.", "本轮使用 provider 的高速/优先级通道（service_tier=priority），不支持的 provider 会忽略")}
                     />
@@ -1125,10 +1132,12 @@ export function Composer() {
               ? "true"
               : undefined
           }
+          onMouseEnter={() => sendIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => sendIconRef.current?.stopAnimation?.()}
           title={isRunning ? text("Stop", "停止") : sendTitle}
           type="button"
         >
-          {isRunning ? <StopIcon /> : <SendIcon />}
+          {isRunning ? <StopIcon /> : <SendIcon ref={sendIconRef} />}
         </button>
 
         {/* Close button — wrapper-level so it stays mounted across

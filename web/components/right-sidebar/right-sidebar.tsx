@@ -34,12 +34,20 @@ import { ContextCommitTimeline } from "./context-commit-timeline";
 import { WorktreesPanel } from "./worktrees";
 import {
   sidebarNavIconClass,
-  sidebarNavIconSvgClass,
   sidebarNavItemActiveClass,
   sidebarNavItemClass,
   sidebarNavLabelClass,
   sidebarToggleClass,
 } from "../sidebar/nav-classes";
+// Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
+import {
+  ActivityIcon,
+  AlignLeftIcon,
+  type AnimatedNavIconHandle,
+  GitGraphIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+} from "../animated-icons";
 
 // View IDs that round-trip through the `data-view` attribute. Matches
 // the legacy template exactly: "history" picks `<div data-view="history">`,
@@ -64,6 +72,12 @@ export function RightSidebar() {
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
   const [width, setWidth] = useState<number>(RIGHT_W_DEFAULT);
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+  // Animated nav icons (pqoqubbw/icons), driven from each row's / the
+  // toggle button's hover.
+  const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
+  const historyIconRef = useRef<AnimatedNavIconHandle>(null);
+  const contextIconRef = useRef<AnimatedNavIconHandle>(null);
+  const detailIconRef = useRef<AnimatedNavIconHandle>(null);
 
   const onResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -241,18 +255,27 @@ export function RightSidebar() {
         <button
           className={sidebarToggleClass}
           onClick={onToggleRail}
+          onMouseEnter={() => toggleIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => toggleIconRef.current?.stopAnimation?.()}
           title={t("right.toggle_panel")}
           type="button"
         >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 256 256"
-            fill="currentColor"
-            style={{ transform: "scaleX(-1)" }}
-          >
-            <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H88V56H216V200Z" />
-          </svg>
+          {/* Mirror of the LEFT toggle — same components flipped on X,
+              so the line weight is identical and the chevron points the
+              opposite way. Open → ›, collapsed → ‹. */}
+          {open ? (
+            <PanelLeftCloseIcon
+              ref={toggleIconRef}
+              size={20}
+              style={{ transform: "scaleX(-1)" }}
+            />
+          ) : (
+            <PanelLeftOpenIcon
+              ref={toggleIconRef}
+              size={20}
+              style={{ transform: "scaleX(-1)" }}
+            />
+          )}
         </button>
       </div>
 
@@ -264,12 +287,12 @@ export function RightSidebar() {
           }
           data-view={VIEW_HISTORY}
           onClick={() => onNavClick(VIEW_HISTORY)}
+          onMouseEnter={() => historyIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => historyIconRef.current?.stopAnimation?.()}
           role="button"
         >
           <span className={sidebarNavIconClass}>
-            <svg className={sidebarNavIconSvgClass} viewBox="0 0 256 256" fill="currentColor">
-              <path d="M232,64a32,32,0,1,0-40,31v17a8,8,0,0,1-8,8H96a23.84,23.84,0,0,0-8,1.38V95a32,32,0,1,0-16,0v66a32,32,0,1,0,16,0V144a8,8,0,0,1,8-8h88a24,24,0,0,0,24-24V95A32.06,32.06,0,0,0,232,64ZM64,64A16,16,0,1,1,80,80,16,16,0,0,1,64,64ZM96,192a16,16,0,1,1-16-16A16,16,0,0,1,96,192Z" />
-            </svg>
+            <GitGraphIcon ref={historyIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("right.history")}</span>
         </div>
@@ -280,13 +303,13 @@ export function RightSidebar() {
           }
           data-view={VIEW_CONTEXT}
           onClick={() => onNavClick(VIEW_CONTEXT)}
+          onMouseEnter={() => contextIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => contextIconRef.current?.stopAnimation?.()}
           role="button"
           title={t("right.context_tooltip")}
         >
           <span className={sidebarNavIconClass}>
-            <svg className={sidebarNavIconSvgClass} viewBox="0 0 256 256" fill="currentColor">
-              <path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z" />
-            </svg>
+            <AlignLeftIcon ref={contextIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("right.context")}</span>
         </div>
@@ -297,12 +320,12 @@ export function RightSidebar() {
           }
           data-view={VIEW_DETAIL}
           onClick={() => onNavClick(VIEW_DETAIL)}
+          onMouseEnter={() => detailIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => detailIconRef.current?.stopAnimation?.()}
           role="button"
         >
           <span className={sidebarNavIconClass}>
-            <svg className={sidebarNavIconSvgClass} viewBox="0 0 256 256" fill="currentColor">
-              <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm-8,96H188.64L159,188a8,8,0,0,1-6.95,4h-.46a8,8,0,0,1-6.89-4.84L103,89.92,79,132a8,8,0,0,1-7,4H48a8,8,0,0,1,0-16H67.36L97.05,68a8,8,0,0,1,14.3.82L153,166.08l24-42.05a8,8,0,0,1,6.95-4h24a8,8,0,0,1,0,16Z" />
-            </svg>
+            <ActivityIcon ref={detailIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("right.executions")}</span>
         </div>
