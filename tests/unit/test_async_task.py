@@ -160,6 +160,7 @@ def fake_worker(monkeypatch):
     calls = []
     barrier = threading.Event()  # release worker when set
     cancel_seen = threading.Event()  # set inside fake when ev fires
+    entered = threading.Event()  # set once the worker is INSIDE fake_run
 
     def fake_run(*, session_id, prompt, agent_id, parent_id, label=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
@@ -168,6 +169,12 @@ def fake_worker(monkeypatch):
             "session_id": session_id, "prompt": prompt,
             "agent_id": agent_id, "parent_id": parent_id, "label": label,
         })
+        # Signal "worker is past the pending→running transition and
+        # actually executing fake_run". Tests that want to cancel
+        # mid-run wait on this before calling cancel_task — otherwise
+        # the runner can flip pending→cancelled before the worker
+        # picks up the future and the worker body never runs.
+        entered.set()
         # Wait either for barrier OR for cancel — whichever comes first.
         for _ in range(50):
             if barrier.is_set():
@@ -184,7 +191,7 @@ def fake_worker(monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
     )
-    yield calls, barrier, cancel_seen
+    yield calls, barrier, cancel_seen, entered
     # Cleanup any singleton runner so the next test gets a fresh pool.
     runner_mod.shutdown_runner()
 
@@ -194,7 +201,7 @@ def test_runner_spawn_completes(store_fixture, fake_worker, monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
     )
-    calls, barrier, _ = fake_worker
+    calls, barrier, _, _ = fake_worker
     from openprogram.agent.task import get_runner, TaskStatus
     runner = get_runner()
     tid = runner.spawn_task(
@@ -224,7 +231,7 @@ def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
     monkeypatch.setenv("OPENPROGRAM_TASK_WORKERS", "1")
     import openprogram.agent.task.runner as runner_mod
     runner_mod.shutdown_runner()
-    calls, barrier, _ = fake_worker
+    calls, barrier, _, _ = fake_worker
 
     # Second session for the queued+cancelled task.
     store_fixture.create_session("p2", "main", title="parent2")
@@ -263,15 +270,20 @@ def test_runner_cancel_during_run(store_fixture, fake_worker, monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
     )
-    calls, barrier, cancel_seen = fake_worker
+    calls, barrier, cancel_seen, entered = fake_worker
     from openprogram.agent.task import get_runner, TaskStatus
     runner = get_runner()
     tid = runner.spawn_task(
         session_id="p1", prompt="will be cancelled", agent_id="main",
         parent_msg_id="a1",
     )
+    # Wait until the worker is actually executing fake_run before
+    # cancelling — otherwise cancel_task can flip the task to
+    # cancelled while it's still pending, _run_one's
+    # pending→running transition gets rejected, and fake_run never
+    # gets a chance to observe the cancel signal.
+    assert entered.wait(timeout=2.0), "fake worker never started"
     # Don't release barrier — cancel mid-run.
-    time.sleep(0.05)
     runner.cancel_task(tid)
     final = runner.await_task(tid, timeout=5.0)
     assert final is not None
@@ -288,7 +300,7 @@ def test_runner_pool_backpressure(store_fixture, fake_worker, monkeypatch):
     import openprogram.agent.task.runner as runner_mod
     runner_mod.shutdown_runner()
 
-    calls, barrier, _ = fake_worker
+    calls, barrier, _, _ = fake_worker
     from openprogram.agent.task import get_runner, TaskStatus
     runner = get_runner()
     ids = [
