@@ -73,7 +73,7 @@ export function SectionHeader({
           section labels. Brightens to white together with the chevron
           when the section is hovered. */}
       <span
-        className="truncate text-[12px] font-normal text-[var(--text-secondary)]
+        className="truncate text-[14px] font-normal leading-[20px] text-[var(--text-secondary)]
           opacity-80 transition-colors group-hover/sec:text-[var(--text-bright)]
           group-hover/sec:opacity-100"
       >
