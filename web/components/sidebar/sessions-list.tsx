@@ -36,7 +36,10 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
-import { ChevronDown } from "lucide-react";
+import {
+  ChevronDownIcon,
+  type AnimatedNavIconHandle,
+} from "@/components/animated-icons";
 import { Button } from "@/components/ui/button";
 import { ConvMenu } from "./conv-menu";
 import { RecentsFilter } from "./recents-filter";
@@ -572,25 +575,39 @@ function GroupHeader({
   onToggle: () => void;
   actions?: React.ReactNode;
 }) {
+  // Drive the chevron's bounce from the header hover (controlled mode).
+  const chevronRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
       onClick={collapsible ? onToggle : undefined}
+      onMouseEnter={() => chevronRef.current?.startAnimation()}
+      onMouseLeave={() => chevronRef.current?.stopAnimation()}
       className={
-        "flex select-none items-center gap-1.5 px-[8px] pt-[10px] pb-[2px]" +
-        " text-[13px] font-normal text-[var(--text-muted)]" +
-        (collapsible ? " cursor-pointer hover:text-[var(--text-secondary)]" : "")
+        "flex select-none items-center gap-1 px-[8px] pt-[10px] pb-[2px]" +
+        (collapsible ? " cursor-pointer" : "")
       }
     >
-      <span className="truncate">{name}</span>
+      {/* Label — 12px / 400 / text-secondary @ 80%, matching Claude's
+          section labels. Brightens to white together with the chevron
+          when the section is hovered. */}
+      <span
+        className="truncate text-[12px] font-normal text-[var(--text-secondary)]
+          opacity-80 transition-colors group-hover/sec:text-[var(--text-bright)]
+          group-hover/sec:opacity-100"
+      >
+        {name}
+      </span>
       {collapsible ? (
-        // Library icon (lucide), to match the rest of the app's icons.
-        // Hidden until the section area is hovered (group-hover/sec),
-        // and brightens to white only on direct hover of the chevron.
-        <ChevronDown
-          size={13}
-          className="shrink-0 text-[var(--text-muted)] opacity-0
-            transition-[opacity,transform,color] duration-150
-            group-hover/sec:opacity-100 hover:!text-[var(--text-bright)]"
+        // Animated chevron from the shared icon set (pqoqubbw / framer-
+        // motion). Hidden until the section is hovered, bounces on
+        // hover, brightens to white with the label, centred to the
+        // text height, rotates to › when collapsed.
+        <ChevronDownIcon
+          ref={chevronRef}
+          size={14}
+          className="shrink-0 text-[var(--text-secondary)] opacity-0
+            transition-[opacity,color] duration-150
+            group-hover/sec:opacity-100 group-hover/sec:text-[var(--text-bright)]"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
         />
       ) : null}
