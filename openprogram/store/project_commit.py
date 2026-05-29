@@ -20,9 +20,12 @@ Both are best-effort and fully guarded: a project/git failure must never
 break a chat turn. Ad-hoc (default-project) sessions are no-ops — they
 have no bound directory, their entity memory is the session repo itself.
 
-**On by default**, but safe (rule A): commits happen only when the bound
-folder is already a git repo and the agent actually edited files. We
-never ``git init`` the user's folder. Opt out via
+**On by default.** When the agent edits files in a bound folder, the
+turn-end commit records them. If the folder isn't a git repo yet,
+auto-init turns it into one — safely: a baseline commit of the user's
+pre-existing files first (so agent commits are honest diffs, not a bulk
+"agent added your whole project"), and a refusal if a dep/build dir
+(node_modules, .venv, …) would bloat that first commit. Opt out via
 ``project_auto_commit: false`` in ``~/.openprogram/config.json`` (or env
 ``OPENPROGRAM_PROJECT_AUTOCOMMIT=0``).
 
@@ -48,13 +51,11 @@ def is_enabled() -> bool:
     0/false/no/off) wins; else ``project_auto_commit`` in config.json;
     else **True**.
 
-    Defaulting ON is safe because of rule A: we only ever commit when the
-    bound folder is *already* a git repo (we never create one), and only
-    when the agent actually changed files this turn. So for a non-git
-    folder or a pure-chat turn this is a silent no-op; the user only sees
-    commits when they're working in a real repo and the agent edited it —
-    which is exactly when a git-log record is wanted. Set
-    ``project_auto_commit: false`` (or the env to 0) to opt out.
+    Defaulting ON: when the agent edits a bound folder, the turn-end
+    commit records it; a non-git folder gets auto-init'd (safely, see the
+    module docstring) so it, too, gets a git history. Pure-chat turns and
+    worktree-active turns are silent no-ops. Set ``project_auto_commit:
+    false`` (or the env to 0) to opt out.
     """
     env = os.environ.get("OPENPROGRAM_PROJECT_AUTOCOMMIT", "").strip().lower()
     if env in ("1", "true", "yes", "on"):
@@ -108,10 +109,11 @@ def _has_active_worktree(session_id: str) -> bool:
         return False
 
 
-def _notify_not_a_repo(session_id: str, proj, on_event) -> None:
-    """One-shot UI notice: auto-commit is on, but the bound folder isn't a
-    git repo and we won't create one (rule A). Tells the user how to opt
-    in (`git init`). No-op if no on_event sink."""
+def _notify_autoinit_blocked(session_id: str, proj, blocker: str, on_event) -> None:
+    """One-shot UI notice: auto-commit wanted to git-init this folder but
+    refused because a heavy dependency/build dir (e.g. node_modules) would
+    bloat the first commit. Tells the user to init + .gitignore it
+    themselves. No-op if no on_event sink."""
     if on_event is None:
         return
     try:
@@ -122,11 +124,13 @@ def _notify_not_a_repo(session_id: str, proj, on_event) -> None:
                 "session_id": session_id,
                 "project_id": proj.id,
                 "path": proj.path,
-                "reason": "not_a_git_repo",
+                "reason": "autoinit_blocked",
+                "blocker": blocker,
                 "message": (
-                    "Auto-commit is on but this folder isn't a git repo, "
-                    "so the agent's edits weren't committed. Run `git init` "
-                    "here if you want a git history of agent changes."
+                    f"Auto-commit wanted to start tracking this folder with "
+                    f"git, but found a '{blocker}' directory that would bloat "
+                    f"the first commit. Run `git init` and add a .gitignore "
+                    f"yourself if you want agent changes tracked here."
                 ),
             },
         })
@@ -153,9 +157,20 @@ def snapshot_baseline(session_id: str) -> Optional[set[str]]:
         from openprogram.store.project_store import ProjectGit
         pg = ProjectGit(proj.path)
         if not pg.exists():
-            # Rule A: the folder isn't a git repo and we will NOT create
-            # one. Nothing to baseline; commit_turn_changes will skip.
-            return None
+            # Not a git repo yet. Auto-init MUST happen now, at turn
+            # START, before the agent edits anything — that's the only
+            # moment the tree is "pre-agent", so the baseline commit
+            # captures the user's existing files and nothing of the
+            # agent's. (Doing it at commit time would sweep the agent's
+            # fresh edits into the baseline, leaving its own commit empty.)
+            outcome = pg.auto_init_for_agent()
+            if outcome.startswith("blocked:"):
+                # Heavy dir — couldn't init. Mark baseline as None so the
+                # commit step knows to emit the 'blocked' notice (it
+                # re-checks and won't double-init).
+                return None
+            # Fresh repo, baseline committed → clean tree now.
+            return set()
         return pg.dirty_paths()
     except Exception as e:  # noqa: BLE001
         logger.debug("project baseline snapshot failed for %s: %s", session_id, e)
@@ -187,11 +202,16 @@ def commit_turn_changes(
     try:
         from openprogram.store.project_store import ProjectGit
         pg = ProjectGit(proj.path)
-        # Rule A: never git-init the user's folder. Only commit if it is
-        # ALREADY a git repo; otherwise leave it untouched and tell the
-        # user (once) that they can `git init` to opt in.
+        # Auto-init already happened (if it could) at turn START in
+        # snapshot_baseline — that's the only point the tree was
+        # pre-agent. If the folder is STILL not a repo here, auto-init
+        # was refused (a dep/build dir would bloat the first commit) or
+        # baseline wasn't run. Either way: don't init now (it'd sweep the
+        # agent's edits into the baseline); just warn and leave the edits
+        # in place.
         if not pg.exists():
-            _notify_not_a_repo(session_id, proj, on_event)
+            blocker = pg.autoinit_blocker()
+            _notify_autoinit_blocked(session_id, proj, blocker or "build-artifact", on_event)
             return None
         first_line = (user_text or "").strip().splitlines()
         label = (first_line[0][:60] if first_line else "") or "turn"

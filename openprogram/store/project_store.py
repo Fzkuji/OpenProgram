@@ -194,6 +194,75 @@ class ProjectGit:
         email = self._run("config", "user.email", check=False).strip()
         return bool(name and email)
 
+    # Directories whose presence in a NON-git folder makes auto-init
+    # dangerous: ``git add -A`` would sweep gigabytes of deps/build
+    # output into the very first commit. If any is present we refuse to
+    # auto-init and let the user decide (they can git init + add a
+    # .gitignore themselves).
+    _AUTOINIT_BLOCKERS = (
+        "node_modules", ".venv", "venv", "env", "__pycache__",
+        "target", "build", "dist", ".next", ".gradle", "vendor",
+    )
+
+    def autoinit_blocker(self) -> Optional[str]:
+        """The first heavy dir (node_modules/.venv/…) present that would
+        block auto-init, or None if nothing blocks. Lets the caller name
+        the offender in a warning without re-running init."""
+        for blocker in self._AUTOINIT_BLOCKERS:
+            if (self.path / blocker).exists():
+                return blocker
+        return None
+
+    def auto_init_for_agent(self) -> str:
+        """Initialise a NON-git user folder so agent edits can be
+        committed — safely. Returns one of:
+
+          * ``"ready"``        — repo now exists (we just created it, with
+                                 a baseline commit of the user's existing
+                                 files so the agent's later commits are
+                                 clean diffs, not bulk "add everything").
+          * ``"already"``      — was already a git repo, nothing to do.
+          * ``"blocked:<dir>"``— a heavy dir (node_modules/.venv/…) is
+                                 present; refused, caller should warn.
+
+        Rule A is now "auto-init ON": binding a real folder + the agent
+        editing it will turn the folder into a git repo. The two safety
+        rails: (1) skip if a dep/build dir would bloat the first commit;
+        (2) commit the user's PRE-EXISTING files as a baseline FIRST, so
+        every subsequent agent commit is an honest diff attributable to
+        the agent — never a giant "agent added your whole project".
+        """
+        if self.is_git_repo():
+            return "already"
+        with self._lock:
+            if self.is_git_repo():
+                return "already"
+            self.path.mkdir(parents=True, exist_ok=True)
+            for blocker in self._AUTOINIT_BLOCKERS:
+                if (self.path / blocker).exists():
+                    return f"blocked:{blocker}"
+            self._run("init", "--quiet", "--initial-branch=main")
+            if not self._has_user_identity():
+                self._run("config", "user.email", self.AGENT_EMAIL)
+                self._run("config", "user.name", self.AGENT_NAME)
+            # Make sure our own footprint is ignored BEFORE the baseline
+            # add, so .openprogram/ never enters the user's history.
+            ensure_footprint_ignored(self.path)
+            # Baseline commit of whatever the user already had. Authored
+            # as the user (it's their pre-existing code), not the agent.
+            self._run("add", "-A")
+            staged = self._run("diff", "--cached", "--name-only").strip()
+            if staged:
+                self._run("commit", "-m",
+                          "openprogram: baseline (pre-existing files)",
+                          "--quiet")
+            else:
+                # Empty folder — seed a HEAD so later commits have a parent.
+                self._run("commit", "--allow-empty", "-m",
+                          "openprogram: project init", "--quiet")
+            self._initialized = True
+            return "ready"
+
     # -- agent commits (Strategy A: don't pollute a dirty user tree) --
 
     # Sentinel return: the tree had pre-existing user changes, so we
@@ -433,16 +502,15 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
       in ``projects.json`` keyed by a path-derived id, so the same
       directory always resolves to the same project.
 
-    **Rule A — binding a folder NEVER touches its git.** We do not
-    ``git init`` the user's directory here, and we don't even require it
-    to be a git repo. Whether the agent's edits get committed is a
-    separate, opt-in concern handled at turn end by ``project_commit``,
-    and even then only if the directory is *already* a git repo. So
-    "open this folder as my project" has zero git side-effects — the
-    user stays in full control of whether/when their folder becomes a
-    repo. (The session's OWN entity memory still lives at
-    ``<dir>/.openprogram/sessions/<id>/`` regardless — that's a separate
-    git repo we manage, not the user's.)
+    **Binding a folder does not touch its git.** We don't ``git init``
+    here, and don't require the folder to be a git repo. Git work is
+    deferred to turn end: if auto-commit is on (default) and the agent
+    edits files, ``project_commit`` will auto-init a non-git folder then
+    (safely — baseline commit first, refuse on dep/build dirs). So the
+    mere act of opening a folder has zero git side-effects; a repo only
+    appears once the agent actually changes something. (The session's
+    OWN entity memory lives at ``<dir>/.openprogram/sessions/<id>/``
+    regardless — a separate git repo we manage, not the user's.)
     """
     if path is None:
         return get_default_project()

@@ -117,12 +117,12 @@ def main() -> int:
             bound_dir == expected and (bound_dir / ".git").exists(),
             str(bound_dir),
         )
-        # Rule A: binding a folder must NOT create a .git (we never
-        # git-init the user's dir). But it SHOULD drop the footprint
-        # .gitignore so our .openprogram/ stays invisible to the user's
-        # git if the folder is / becomes a repo.
+        # Binding alone must NOT create a .git — git-init is deferred to
+        # the first auto-commit (turn end), not the bind. But binding
+        # SHOULD drop the footprint .gitignore so our .openprogram/ stays
+        # invisible to the user's git if the folder is / becomes a repo.
         check(
-            "rule A: binding does NOT create .git",
+            "binding alone does NOT create .git (init deferred)",
             not (proj_dir / ".git").exists(),
             str(proj_dir),
         )
@@ -244,29 +244,65 @@ def main() -> int:
         check("env can force auto-commit OFF", PC.is_enabled() is False, "env=0")
         os.environ.pop("OPENPROGRAM_PROJECT_AUTOCOMMIT", None)
 
-        # 7b. RULE A: binding a NON-git folder must create NO .git, and
-        #     commit must skip with a 'not_a_git_repo' notice.
+        # 7b. AUTO-INIT: binding a NON-git folder still creates NO .git at
+        #     bind time (deferred). But when the agent edits it, the
+        #     turn-end commit auto-inits the folder — with a baseline
+        #     commit of pre-existing files FIRST, then the agent's edit on
+        #     top as a clean diff.
         plain_dir = Path(tempfile.mkdtemp(prefix="op_plain_"))
         try:
+            # user already had a file in this (non-git) folder
+            (plain_dir / "preexisting.py").write_text("# user's prior file 旧\n", encoding="utf-8")
             store.create_session("plain1", "main", title="plain", work_dir=str(plain_dir))
             store.append_message("plain1", {"role": "user", "content": "hi", "id": "p1"})
             store.commit_turn("plain1", "turn: hi")
-            git_created = (plain_dir / ".git").exists()
-            check("rule A: binding a non-git folder creates NO .git",
-                  not git_created, f".git exists={git_created}")
-            (plain_dir / "agent_made.py").write_text("# agent\n", encoding="utf-8")
-            evs: list[dict] = []
-            r = PC.commit_turn_changes("plain1", "do work",
-                                       PC.snapshot_baseline("plain1"),
-                                       on_event=evs.append)
-            not_repo_notice = any(
-                (e.get("data") or {}).get("reason") == "not_a_git_repo" for e in evs
-            )
-            check("rule A: non-git folder → skip + not_a_git_repo notice",
-                  r is None and not_repo_notice and not (plain_dir / ".git").exists(),
-                  f"res={r} notice={not_repo_notice}")
+            check("binding a non-git folder creates NO .git (deferred)",
+                  not (plain_dir / ".git").exists(),
+                  f".git exists={(plain_dir / '.git').exists()}")
+
+            base_pre = PC.snapshot_baseline("plain1")   # set() — pre-init
+            (plain_dir / "agent_made.py").write_text("# agent 新\n", encoding="utf-8")
+            sha = PC.commit_turn_changes("plain1", "do work", base_pre)
+            pg_plain = P.ProjectGit(plain_dir)
+            check("auto-init: non-git folder → git-init'd + agent edit committed",
+                  isinstance(sha, str) and (plain_dir / ".git").exists(),
+                  f"sha={sha} git={(plain_dir / '.git').exists()}")
+            # history: baseline commit (user files) THEN agent commit
+            logs = pg_plain.log(limit=5)
+            msgs = [c["message"] for c in logs]
+            baseline_first = any("baseline" in m for m in msgs)
+            agent_on_top = msgs and msgs[0].startswith("[agent ")
+            check("auto-init: baseline commit of pre-existing files, agent on top",
+                  baseline_first and agent_on_top, f"msgs={msgs}")
+            # the agent's commit is a clean diff (only agent_made.py), NOT
+            # bulk-adding preexisting.py
+            agent_files = pg_plain._run("show", "--name-only", "--pretty=format:", "HEAD").split()
+            check("auto-init: agent commit is a clean diff (only its own file)",
+                  agent_files == ["agent_made.py"], f"changed={agent_files}")
         finally:
             _rmtree_retry(plain_dir)
+
+        # 7b2. AUTO-INIT BLOCKED: a heavy dep dir (node_modules) present →
+        #      refuse to auto-init, emit autoinit_blocked notice, no .git.
+        heavy_dir = Path(tempfile.mkdtemp(prefix="op_heavy_"))
+        try:
+            (heavy_dir / "node_modules").mkdir()
+            (heavy_dir / "node_modules" / "junk.js").write_text("//big\n", encoding="utf-8")
+            store.create_session("heavy1", "main", title="heavy", work_dir=str(heavy_dir))
+            store.commit_turn("heavy1", "turn: x")
+            (heavy_dir / "app.py").write_text("# agent edit\n", encoding="utf-8")
+            evs: list[dict] = []
+            r = PC.commit_turn_changes("heavy1", "do work",
+                                       PC.snapshot_baseline("heavy1"),
+                                       on_event=evs.append)
+            blocked_notice = any(
+                (e.get("data") or {}).get("reason") == "autoinit_blocked" for e in evs
+            )
+            check("auto-init blocked by node_modules → skip + notice, no .git",
+                  r is None and blocked_notice and not (heavy_dir / ".git").exists(),
+                  f"res={r} notice={blocked_notice}")
+        finally:
+            _rmtree_retry(heavy_dir)
 
         # 7c. folder that IS a git repo → default-on commits the agent edit.
         proj_dir2 = Path(tempfile.mkdtemp(prefix="op_proj2_"))
