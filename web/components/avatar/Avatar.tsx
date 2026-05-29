@@ -100,7 +100,7 @@ function _namespaceSvgIds(svg: string, prefix: string): string {
   let m: RegExpExecArray | null;
   while ((m = idRe.exec(svg)) !== null) ids.add(m[1]);
   let out = svg;
-  for (const id of ids) {
+  for (const id of Array.from(ids)) {
     const safe = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const next = `${prefix}-${id}`;
     out = out
