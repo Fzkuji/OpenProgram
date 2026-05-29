@@ -131,7 +131,13 @@ class GitSession:
         self._ensure_init()
         role_letter = (role or "x")[0]
         fname = f"{seq:04d}-{role_letter}-{node_id}.json"
-        fpath = self.path / "history" / fname
+        hdir = self.path / "history"
+        # ``_ensure_init`` only creates history/ when it first inits the
+        # repo. If the repo already exists but the subdir is missing
+        # (external deletion, an interrupted run, a partially-removed
+        # tree), re-create it so the write below can't FileNotFoundError.
+        hdir.mkdir(parents=True, exist_ok=True)
+        fpath = hdir / fname
         # Atomic-ish: write to tmp then rename. Avoids partial reads if
         # another thread reads the file mid-write.
         tmp = fpath.with_suffix(".json.tmp")
@@ -145,7 +151,9 @@ class GitSession:
         tree reflects the current LLM view.
         """
         self._ensure_init()
-        fpath = self.path / "context" / name
+        cdir = self.path / "context"
+        cdir.mkdir(parents=True, exist_ok=True)  # survive external deletion
+        fpath = cdir / name
         tmp = fpath.with_suffix(fpath.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
         tmp.replace(fpath)
@@ -261,6 +269,15 @@ class GitSession:
         try:
             cp = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=timeout,
+                # Force UTF-8 decode of git's output. Without this,
+                # ``text=True`` decodes with the locale codec (cp1252 /
+                # gbk on Windows), which crashes the subprocess reader
+                # thread on any non-Latin-1 byte — a CJK commit message,
+                # filename, author, or even an em-dash — leaving
+                # ``stdout=None`` so callers like ``log()`` then blow up
+                # on ``.splitlines()``. git speaks UTF-8 regardless of
+                # platform locale. Mirrors ``project_store._run``.
+                encoding="utf-8", errors="replace",
             )
         except (OSError, subprocess.TimeoutExpired) as e:
             raise GitSessionError(f"git {' '.join(args)} failed: {e}") from e

@@ -170,8 +170,35 @@ class ProjectGit:
                 # commit. Empty so we don't add files to a user dir.
                 self._run("commit", "--allow-empty", "-m",
                           "openprogram: project init", "--quiet")
+            # Make OpenProgram's own footprint invisible to the user's
+            # git. A project-bound session repo lives at
+            # ``<project>/.openprogram/sessions/<id>/`` — i.e. INSIDE the
+            # user's working tree — so without this it shows up as an
+            # untracked dir in ``git status`` and, worse, gets swept into
+            # commits by ``git add -A``. A ``.gitignore`` that ignores
+            # the whole ``.openprogram/`` subtree keeps it out of the
+            # user's repo entirely. Idempotent + applied to pre-existing
+            # repos too (not only freshly-init'd ones).
+            self._ensure_self_ignored()
             self._initialized = True
             return True
+
+    def _ensure_self_ignored(self) -> None:
+        """Write ``<project>/.openprogram/.gitignore`` containing ``*`` so
+        git ignores OpenProgram's entire footprint inside the user's
+        tree. Best-effort; never raises."""
+        try:
+            op_dir = self.path / ".openprogram"
+            op_dir.mkdir(parents=True, exist_ok=True)
+            gi = op_dir / ".gitignore"
+            # ``*`` ignores everything in this dir (incl. the sessions/
+            # repos); ``.gitignore`` itself is ignored too, which is fine
+            # — we re-assert it on every ensure_init.
+            current = gi.read_text(encoding="utf-8") if gi.exists() else ""
+            if current != "*\n":
+                gi.write_text("*\n", encoding="utf-8")
+        except OSError:
+            pass
 
     def _has_user_identity(self) -> bool:
         name = self._run("config", "user.name", check=False).strip()
@@ -180,16 +207,33 @@ class ProjectGit:
 
     # -- agent commits (Strategy A: don't pollute a dirty user tree) --
 
-    def commit_agent_changes(self, message: str) -> Optional[str]:
-        """Commit the agent's file edits — but only if the working tree
-        has no *user* changes we'd be sweeping up.
+    # Sentinel return: the tree had pre-existing user changes, so we
+    # refused to commit (vs. ``None`` = nothing to commit at all).
+    SKIPPED_DIRTY = "skipped-dirty-tree"
 
-        Strategy A from the design doc: if ``git status`` shows changes
-        the agent didn't make (we can't perfectly tell, so we use "is
-        the tree dirty before we touch it?"), we skip and let the UI
-        warn, rather than commit the user's half-finished work under an
-        agent commit. Returns the new commit sha, or None if nothing
-        was committed (clean tree, or skipped).
+    def commit_agent_changes(
+        self, message: str, *, baseline: Optional[set[str]] = None
+    ) -> Optional[str]:
+        """Commit the agent's file edits — but only if the working tree
+        had no *user* changes we'd be sweeping up.
+
+        Strategy A from the design doc (§2.4): we can't perfectly tell
+        which lines the agent vs. the user wrote, so we use a coarse but
+        safe rule — **if the tree was already dirty before the agent's
+        turn, refuse to commit** rather than fold the user's
+        half-finished work into an agent commit. The caller captures the
+        pre-turn dirty set via :meth:`dirty_paths` and passes it as
+        ``baseline``; any path already dirty then is treated as the
+        user's and blocks the commit.
+
+        Returns:
+          * a commit sha          — committed the agent's changes
+          * ``None``              — nothing to commit (clean tree)
+          * :attr:`SKIPPED_DIRTY` — refused: pre-existing user changes
+
+        If ``baseline`` is omitted we fall back to "is the tree dirty at
+        all right now?" — i.e. treat ANY dirt as the user's. That's the
+        conservative default for callers that didn't snapshot a baseline.
 
         The commit carries the agent identity via ``-c`` overrides so
         it's attributable even in the user's own repo with their global
@@ -198,6 +242,19 @@ class ProjectGit:
         if not self.exists():
             return None
         with self._lock:
+            current = self._dirty_paths_locked()
+            if not current:
+                return None  # nothing changed at all
+            # Decide whether the tree carries the user's uncommitted work.
+            #   * no baseline  → conservative: ANY dirt is treated as the
+            #     user's, so refuse.
+            #   * baseline set → the user's work is any baseline path
+            #     that's STILL dirty. If none remain dirty, every change
+            #     present is the agent's and is safe to commit.
+            if baseline is None:
+                return self.SKIPPED_DIRTY
+            if current & set(baseline):
+                return self.SKIPPED_DIRTY
             self._run("add", "-A")
             staged = self._run("diff", "--cached", "--name-only").strip()
             if not staged:
@@ -208,6 +265,24 @@ class ProjectGit:
                 "commit", "-m", message, "--quiet",
             )
             return self._run("rev-parse", "HEAD").strip()
+
+    def dirty_paths(self) -> set[str]:
+        """The set of paths git reports as changed (porcelain). Caller
+        snapshots this BEFORE the agent's turn and passes it back to
+        :meth:`commit_agent_changes` as the ``baseline``."""
+        if not self.exists():
+            return set()
+        with self._lock:
+            return self._dirty_paths_locked()
+
+    def _dirty_paths_locked(self) -> set[str]:
+        out = self._run("status", "--porcelain")
+        paths: set[str] = set()
+        for line in out.splitlines():
+            # porcelain v1: "XY <path>" (XY = 2 status cols, then space)
+            if len(line) > 3:
+                paths.add(line[3:].strip().strip('"'))
+        return paths
 
     def is_dirty(self) -> bool:
         """True if the working tree has uncommitted changes."""
