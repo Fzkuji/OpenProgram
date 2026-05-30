@@ -154,6 +154,10 @@ Opens at `http://localhost:3000`. The full surface: a live **mini-DAG** of the s
 
 The same backend without the browser — same commands, same chat history. Picks the native renderer per OS: **Ink** on macOS / Linux, **Rich** on Windows. Best for staying in the terminal or over SSH. One-shot, no UI: `openprogram --print "…"`.
 
+<p align="center">
+  <img src="docs/images/tui_hero.png" alt="OpenProgram terminal UI on Windows PowerShell — welcome screen listing model, agent, session, and the registered tools / skills / functions / applications" width="820">
+</p>
+
 > Sessions live in `~/.openprogram/` and are shared by both — start in the terminal, pick it up in the browser tab, and vice versa.
 
 ---
