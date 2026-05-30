@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { useAgentProfile } from "@/lib/agent-style";
+import { useUserProfile } from "@/lib/user-profile";
 import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 import {
@@ -31,7 +31,9 @@ export function UserMenuFooter() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const { t } = useTranslation();
-  const profile = useAgentProfile();
+  // The footer is the local account chip → show the User profile
+  // (name + avatar from /settings/general → User), not the agent's.
+  const profile = useUserProfile();
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
