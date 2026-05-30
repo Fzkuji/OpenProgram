@@ -65,6 +65,8 @@ const DICT = {
   "general.version": { en: "Version", zh: "版本" },
   "general.framework": { en: "Framework", zh: "框架" },
   "general.section.agent": { en: "Agent", zh: "Agent" },
+  "general.section.you": { en: "You", zh: "你" },
+  "general.you.name.placeholder": { en: "You", zh: "你" },
   "general.agent.name": { en: "Display name", zh: "显示名称" },
   "general.agent.name.placeholder": { en: "Agent", zh: "Agent" },
   "general.agent.initial": { en: "Avatar initial", zh: "头像字符" },

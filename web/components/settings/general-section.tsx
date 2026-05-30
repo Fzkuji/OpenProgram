@@ -6,10 +6,10 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { useFontPref, FONT_LABELS, fontStack, type FontKey } from "@/lib/font-pref";
 import {
-  DEFAULT_AGENT_PROFILE,
   setAgentProfile,
   useAgentProfile,
 } from "@/lib/agent-style";
+import { setUserProfile, useUserProfile } from "@/lib/user-profile";
 import {
   Avatar,
   AvatarPicker,
@@ -130,34 +130,52 @@ const AGENT_COLORS = [
   "#52c4c4", "#b08be0", "#c79a4a", "#e08a3a", "#6fae6f", "#d05fa0",
 ];
 
-function AgentSection() {
+/** Profile fields shared by the Agent and You sections. */
+interface ProfilePrefs {
+  name: string;
+  initial: string;
+  color: string;
+  avatar?: AvatarConfig;
+}
+
+/** The avatar / name / colour editor body — reused by both the Agent
+ *  and You sections (identical controls, different profile store). */
+function ProfileEditor({
+  profile,
+  onChange,
+  colors,
+  namePlaceholder,
+}: {
+  profile: ProfilePrefs;
+  onChange: (next: ProfilePrefs) => void;
+  colors: string[];
+  namePlaceholder: string;
+}) {
   const { t } = useTranslation();
-  const profile = useAgentProfile();
 
   const source = sourceOf(profile.avatar);
   const isLetterMode = source === "letter";
 
   function updateName(name: string) {
-    setAgentProfile({ ...profile, name: name.slice(0, 32) });
+    onChange({ ...profile, name: name.slice(0, 32) });
   }
   function updateInitial(raw: string) {
     const cleaned = raw.trim();
-    const next = cleaned.length === 0
-      ? DEFAULT_AGENT_PROFILE.initial
-      : Array.from(cleaned)[0]!.toUpperCase();
-    setAgentProfile({ ...profile, initial: next });
+    const next =
+      cleaned.length === 0
+        ? Array.from(profile.name.trim())[0]?.toUpperCase() ?? "?"
+        : Array.from(cleaned)[0]!.toUpperCase();
+    onChange({ ...profile, initial: next });
   }
   function updateColor(color: string) {
-    setAgentProfile({ ...profile, color });
+    onChange({ ...profile, color });
   }
   function updateAvatar(next: AvatarConfig) {
-    setAgentProfile({ ...profile, avatar: next });
+    onChange({ ...profile, avatar: next });
   }
 
   return (
-    <section>
-      <h3 className={styles.sectionTitle}>{t("general.section.agent")}</h3>
-      <div className={styles.card}>
+    <div className={styles.card}>
         <div className={styles.row}>
           <div className={styles.label}>{t("general.agent.preview")}</div>
           <div className={styles.value}>
@@ -181,7 +199,7 @@ function AgentSection() {
               type="text"
               value={profile.name}
               maxLength={32}
-              placeholder={t("general.agent.name.placeholder")}
+              placeholder={namePlaceholder}
               onChange={(e) => updateName(e.target.value)}
               style={{
                 padding: "6px 10px",
@@ -263,7 +281,7 @@ function AgentSection() {
                     maxWidth: 280,
                   }}
                 >
-                  {AGENT_COLORS.map((c) => (
+                  {colors.map((c) => (
                     <button
                       key={c}
                       type="button"
@@ -290,6 +308,37 @@ function AgentSection() {
           </>
         )}
       </div>
+  );
+}
+
+function AgentSection() {
+  const { t } = useTranslation();
+  const profile = useAgentProfile();
+  return (
+    <section>
+      <h3 className={styles.sectionTitle}>{t("general.section.agent")}</h3>
+      <ProfileEditor
+        profile={profile}
+        onChange={setAgentProfile}
+        colors={AGENT_COLORS}
+        namePlaceholder={t("general.agent.name.placeholder")}
+      />
+    </section>
+  );
+}
+
+function UserSection() {
+  const { t } = useTranslation();
+  const profile = useUserProfile();
+  return (
+    <section>
+      <h3 className={styles.sectionTitle}>{t("general.section.you")}</h3>
+      <ProfileEditor
+        profile={profile}
+        onChange={setUserProfile}
+        colors={AGENT_COLORS}
+        namePlaceholder={t("general.you.name.placeholder")}
+      />
     </section>
   );
 }
@@ -374,6 +423,8 @@ export function GeneralSection() {
         </section>
 
         <AgentSection />
+
+        <UserSection />
 
         <section>
           <h3 className={styles.sectionTitle}>{t("general.section.application")}</h3>
