@@ -332,3 +332,53 @@ def _debug_registry_error(name: str, e: Exception) -> None:
         print(f"[registry] failed to load {name}: "
               f"{type(e).__name__}: {e}")
         traceback.print_exc()
+
+
+# ---------------------------------------------------------------------------
+# Rescan — re-run discovery to pick up newly-installed harnesses at runtime
+# ---------------------------------------------------------------------------
+
+
+def _default_agentics_dir() -> Optional[str]:
+    """The live ``functions/agentics/`` directory, or None if it can't be
+    located. Used as :func:`rescan`'s default scan root."""
+    try:
+        from openprogram.functions import agentics as _ag
+        return os.path.dirname(_ag.__file__)
+    except Exception:
+        try:
+            from openprogram.functions._programs import agentics_dir
+            return agentics_dir()
+        except Exception:
+            return None
+
+
+def rescan(agentics_dir: Optional[str] = None) -> dict:
+    """Re-run agentic discovery to pick up harnesses installed since boot.
+
+    This is the single core both the manual "refresh" button and the
+    background watcher call. It re-invokes :func:`load_agentic_modules`,
+    which is idempotent — already-imported modules are skipped by Python's
+    module cache, and a newly-present harness gets imported now, firing
+    its ``@agentic_function`` decorators so they self-register into the
+    shared tool registry. After this returns, the new functions are
+    immediately live for the agent and visible to ``/api/functions``.
+
+    Returns ``{"added": [tool_label, ...], "total": <count>}`` — ``added``
+    lists tools that appeared this pass (the watcher / endpoint only
+    broadcast when it's non-empty).
+
+    Caveat (documented, intentional): only **additions** are reliable.
+    Removing or hot-swapping a harness needs a worker restart — Python's
+    module cache means an unimported / changed module isn't re-evaluated,
+    and tearing down a live registry entry is unsafe. So ``rescan`` never
+    *removes* tools; it only ever adds.
+    """
+    from openprogram.functions._runtime import all_tools
+    scan_dir = agentics_dir or _default_agentics_dir()
+    before = {t.label for t in all_tools()}
+    if scan_dir:
+        load_agentic_modules(scan_dir)
+    after_tools = all_tools()
+    after = {t.label for t in after_tools}
+    return {"added": sorted(after - before), "total": len(after_tools)}

@@ -91,6 +91,22 @@ export function FunctionsPage() {
     return () => ac.abort();
   }, [reload]);
 
+  // Manual "refresh" — ask the backend to re-scan agentics/ for harnesses
+  // installed since boot (clone / `programs install`), then reload the
+  // list. The auto-watcher does this on its own; this button is the
+  // reliable fallback (and instant feedback right after installing).
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshPrograms = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetch("/api/programs/refresh", { method: "POST" });
+    } catch {
+      /* ignore — reload below still reflects current state */
+    }
+    await reload();
+    setRefreshing(false);
+  }, [reload]);
+
   const saveMeta = useCallback(async (next: FunctionsMeta) => {
     setMeta(next);
     try {
@@ -405,6 +421,18 @@ export function FunctionsPage() {
               onClick={() => setView((v) => (v === "grid" ? "list" : "grid"))}
             >
               {view === "grid" ? text("List", "列表") : text("Grid", "网格")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshPrograms}
+              disabled={refreshing}
+              title={text(
+                "Re-scan for newly installed programs",
+                "重新扫描新安装的程序",
+              )}
+            >
+              {refreshing ? text("Refreshing…", "刷新中…") : text("Refresh", "刷新")}
             </Button>
           </div>
         </div>

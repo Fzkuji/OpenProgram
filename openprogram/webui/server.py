@@ -1249,6 +1249,11 @@ def create_app():
     from openprogram.webui.routes import tree as _routes_tree
     _routes_tree.register(app)
 
+    # POST /api/programs/refresh — re-scan agentics/ for newly-installed
+    # programs (manual "refresh" button; same core the watcher uses).
+    from openprogram.webui.routes import programs as _routes_programs
+    _routes_programs.register(app)
+
     # /api/chat, /api/chat/branch, /api/run/{name} — routes.chat
     from openprogram.webui.routes import chat as _routes_chat
     _routes_chat.register(app)

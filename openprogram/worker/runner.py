@@ -236,6 +236,16 @@ def run_foreground() -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"[worker] memory subsystem failed to start: {exc}")
 
+    # Programs watcher — auto-detect agentic harnesses installed at
+    # runtime (clone into agentics/ or `programs install`) so their
+    # functions go live + the UI refreshes without a restart.
+    try:
+        from openprogram.functions.watcher import start_in_worker as _start_programs_watch
+        if _start_programs_watch() is not None:
+            print("[worker] programs watcher running (auto-detect installs)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] programs watcher failed to start: {exc}")
+
     def _on_sigterm(_signum, _frame):
         raise KeyboardInterrupt
 

@@ -143,6 +143,15 @@ export function useWS(): void {
             usePluginsStore.getState().refresh();
           });
           return true;
+        case "programs:changed":
+          // A harness was installed at runtime (cloned into agentics/ or
+          // `programs install`) and the backend re-scanned — refresh the
+          // function catalogue so its new functions show up live, no
+          // reload needed. Same shape as skills/plugins above.
+          import("@/lib/functions-actions").then(({ refreshFunctionsList }) => {
+            refreshFunctionsList();
+          });
+          return true;
         case "running_task":
           handleRunningTask(d);
           return true;
