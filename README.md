@@ -2,7 +2,7 @@
   <img src="docs/images/logo.svg" alt="OpenProgram" width="300">
 </p>
 
-<p align="center"><b>Open-source agent harness — Python controls the flow, the LLM only reasons when asked.</b><br/>Any LLM, any platform, one paradigm.</p>
+<p align="center"><b>Open-source, general-purpose agent harness built on Python.</b><br/>Any LLM, any platform.</p>
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.4.0"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
