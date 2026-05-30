@@ -239,7 +239,7 @@
   box-sizing: border-box;
 }
 .input:focus {
-  border-color: var(--text-secondary);
+  border-color: var(--accent-blue);
 }
 .input::placeholder {
   color: var(--text-muted);
@@ -367,7 +367,7 @@
 }
 .chipCustom:focus {
   background: var(--bg-primary);
-  border-color: var(--text-secondary);
+  border-color: var(--accent-blue);
 }
 
 .noParams {
@@ -425,7 +425,7 @@
   min-width: 0;
 }
 .workdirInput:focus {
-  border-color: var(--text-secondary);
+  border-color: var(--accent-blue);
 }
 .workdirInput::placeholder {
   color: var(--text-muted);

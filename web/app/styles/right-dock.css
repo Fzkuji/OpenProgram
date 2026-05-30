@@ -585,8 +585,9 @@
   font-size: 13px;
   font-family: inherit;
   resize: vertical;
+  transition: border-color 0.15s;
 }
-.branches-merge-modal-input:focus { outline: 1px solid var(--accent-blue, #4f8ef7); }
+.branches-merge-modal-input:focus { outline: none; border-color: var(--accent-blue); }
 .branches-merge-mode {
   display: flex;
   flex-direction: column;
