@@ -32,12 +32,6 @@
 
 **We propose _Agentic Programming_.** An LLM is flexible; code is deterministic. Let the model run everything and you get chaos — unpredictable execution, context explosion, no output guarantees; hard-code everything and you lose the intelligence. A **harness** balances the two, interleaved moment to moment — **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/philosophy/agentic-programming.md))
 
-<p align="center">
-  <img src="docs/images/chat_hero.png" alt="OpenProgram chat UI — agentic function call tree, streaming thinking, and bilingual output side by side with the conversation DAG" width="900">
-</p>
-
-<p align="center"><sub>Chat UI rendering a <code>gui_agent</code> turn — the agentic function's internal plan / step / verify calls show as an inline execution tree, the model's streamed thinking is its own collapsible block, and the right-rail mini-DAG tracks every commit. Same backend powers the TUI.</sub></p>
-
 ## Why OpenProgram
 
 - **Python controls the flow; the LLM only reasons when asked.** The Agentic
