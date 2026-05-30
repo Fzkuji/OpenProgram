@@ -769,10 +769,12 @@ function ConvItem({
           <StatusMarker
             pinned={!!conv.pinned}
             state={
-              running
-                ? "working"
-                : conv.status === "needs_input"
-                  ? "needs_input"
+              // needs_input outranks working: a session waiting on the user
+              // shows amber even while its run is technically still active.
+              conv.status === "needs_input"
+                ? "needs_input"
+                : running
+                  ? "working"
                   : conv.unread
                     ? "unread"
                     : "idle"

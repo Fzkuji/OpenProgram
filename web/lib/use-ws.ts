@@ -334,6 +334,14 @@ export function useWS(): void {
               session_id: w.currentSessionId,
             }),
           );
+          // Re-establish "viewing this conv" focus + clear any unread (blue
+          // status dot) that accrued while the socket was disconnected.
+          socket?.send(
+            JSON.stringify({
+              action: "mark_session_read",
+              session_id: w.currentSessionId,
+            }),
+          );
         }
       };
 

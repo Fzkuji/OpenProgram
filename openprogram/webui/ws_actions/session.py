@@ -210,6 +210,9 @@ async def handle_load_session(ws, cmd: dict):
     """Hydrate a session: linear chain under HEAD + full DAG dump + running-task probe."""
     from openprogram.webui import server as _s
     session_id = cmd.get("session_id")
+    # Record which session this connection is now viewing, so a finishing
+    # background run can tell whether to mark *other* sessions unread.
+    ws._focused_session_id = session_id
     with _s._sessions_lock:
         conv = _s._sessions.get(session_id)
     if conv:
@@ -579,6 +582,12 @@ async def handle_list_sessions(ws, cmd: dict):
                 "pinned": bool(conv.get("pinned")),
                 "archived": bool(conv.get("archived")),
                 "group": conv.get("group") or "",
+                # Status-dot fields (Claude-Code-style). `unread` lights the
+                # blue dot when a background run finished in a conv the user
+                # wasn't viewing; `status` (e.g. "needs_input") is wired for
+                # forward-compat — no live producer yet.
+                "status": conv.get("status") or "",
+                "unread": bool(conv.get("unread")),
             })
     seen_ids = {row["id"] for row in conv_list if row.get("id")}
     try:
@@ -606,6 +615,10 @@ async def handle_list_sessions(ws, cmd: dict):
                             row["archived"] = True
                         if not row.get("group") and srow.get("group"):
                             row["group"] = srow["group"]
+                        if not row.get("status") and srow.get("status"):
+                            row["status"] = srow["status"]
+                        if not row.get("unread") and srow.get("unread"):
+                            row["unread"] = bool(srow["unread"])
                         break
                 continue
             seen_ids.add(sid)
@@ -629,6 +642,8 @@ async def handle_list_sessions(ws, cmd: dict):
                 "pinned": bool(srow.get("pinned")),
                 "archived": bool(srow.get("archived")),
                 "group": srow.get("group") or "",
+                "status": srow.get("status") or "",
+                "unread": bool(srow.get("unread")),
             })
     except Exception:
         pass
@@ -646,8 +661,40 @@ async def handle_list_sessions(ws, cmd: dict):
     }, default=str))
 
 
+async def handle_mark_session_read(ws, cmd: dict):
+    """Mark a conversation as seen + record that this client is viewing it.
+
+    Opening a conversation in the UI is otherwise pure client-side routing,
+    so this is the only signal the server gets that a session was looked at.
+    Clears the ``unread`` flag (blue dot) and remembers
+    ``ws._focused_session_id`` so a later background-run completion knows not
+    to re-mark this session unread for a client that's actively on it.
+    Broadcasts so every open tab clears the dot together.
+    """
+    from openprogram.webui import server as _s
+    from openprogram.agent.session_db import default_db
+
+    sid = cmd.get("session_id") or None
+    ws._focused_session_id = sid
+    if not sid:
+        return
+    with _s._sessions_lock:
+        conv = _s._sessions.get(sid)
+        if conv is not None:
+            conv["unread"] = False
+    try:
+        default_db().update_session(sid, unread=False)
+    except Exception as e:
+        _s._log(f"[mark_session_read] {sid}: {e}")
+    _s._broadcast(json.dumps({
+        "type": "session_updated",
+        "data": {"id": sid, "unread": False},
+    }, default=str))
+
+
 ACTIONS = {
     "delete_session": handle_delete_session,
+    "mark_session_read": handle_mark_session_read,
     "rename_session": handle_rename_session,
     "update_session_flags": handle_update_session_flags,
     "clear_sessions": handle_clear_sessions,

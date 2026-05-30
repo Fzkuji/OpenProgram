@@ -295,6 +295,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // brand-new chat (/chat → sid null) gets its real id later from
       // the `chat_ack` reducer.
       useSessionStore.getState().setCurrentConv(sid);
+      // Tell the backend which conversation we're now viewing, so it clears
+      // this conv's unread (blue) dot and won't re-mark it unread when a
+      // background run here finishes. Opening a conv is otherwise pure
+      // client-side routing — this is the only "seen" signal the server gets.
+      // (On first load the socket may not be open yet; use-ws's onopen
+      // re-sends this for the current conv.)
+      const sock = (window as unknown as { ws?: WebSocket }).ws;
+      if (sock && sock.readyState === WebSocket.OPEN) {
+        sock.send(JSON.stringify({ action: "mark_session_read", session_id: sid }));
+      }
     } catch {
       /* ignore */
     }

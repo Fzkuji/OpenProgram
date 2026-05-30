@@ -278,6 +278,30 @@ def run_query(
         _s._emit_running_task_event(session_id)
         _s._unregister_active_runtime(session_id)
         _s._unregister_cancel_event(session_id)
+        # Status dot: a turn just finished. If no connected client is
+        # currently viewing this session, light its blue "unread" dot so the
+        # background result gets noticed; cleared when the user opens it
+        # (mark_session_read). Best-effort — never break turn teardown.
+        try:
+            import json as _json
+            with _s._ws_lock:
+                _focused = any(
+                    getattr(w, "_focused_session_id", None) == session_id
+                    for w in _s._ws_connections
+                )
+            if not _focused:
+                from openprogram.agent.session_db import default_db as _db_unread
+                with _s._sessions_lock:
+                    _conv = _s._sessions.get(session_id)
+                    if _conv is not None:
+                        _conv["unread"] = True
+                _db_unread().update_session(session_id, unread=True)
+                _s._broadcast(_json.dumps({
+                    "type": "session_updated",
+                    "data": {"id": session_id, "unread": True},
+                }, default=str))
+        except Exception:
+            pass
 
     if turn_result.failed:
         _s._broadcast_chat_response(session_id, msg_id, {
