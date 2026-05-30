@@ -52,6 +52,18 @@ def edit(file_path: str,
     if old_string == new_string:
         return "Error: old_string and new_string are identical — nothing to change"
 
+    # Read-before-edit freshness gate (Claude-Code-style): refuse to edit
+    # a file the agent never read, or one that changed on disk since it
+    # last saw it — so a concurrent user edit is never silently
+    # overwritten. No-op outside a dispatcher turn.
+    try:
+        from openprogram.store import read_tracking as _rt
+        _fresh = _rt.check_fresh(file_path)
+        if _fresh in (_rt.NEVER_READ, _rt.STALE):
+            return _rt.stale_message(file_path, _fresh)
+    except Exception:
+        pass
+
     try:
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             text = f.read()
@@ -76,6 +88,14 @@ def edit(file_path: str,
             f.write(new_text)
     except Exception as e:
         return f"Error writing {file_path}: {type(e).__name__}: {e}"
+
+    # Refresh the baseline to what we just wrote, so the agent can edit
+    # this file again without re-reading.
+    try:
+        from openprogram.store import read_tracking as _rt
+        _rt.mark_seen(file_path)
+    except Exception:
+        pass
 
     replaced = count if replace_all else 1
     msg = f"Edited {file_path} ({replaced} replacement{'s' if replaced != 1 else ''})"
