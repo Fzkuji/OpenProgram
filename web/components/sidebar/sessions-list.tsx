@@ -799,7 +799,7 @@ function ConvItem({
               if (e.key === "Enter") { e.preventDefault(); commitRename(); }
               else if (e.key === "Escape") { e.preventDefault(); setRenaming(false); }
             }}
-            className="flex-1 min-w-0 rounded-[4px] border border-[var(--accent-orange)]
+            className="flex-1 min-w-0 rounded-[var(--ui-button-radius)] border border-[var(--accent-orange)]
               bg-[var(--bg-input)] px-[6px] py-[2px] text-fs-base leading-[18px]
               text-text-bright outline-none"
           />
