@@ -45,7 +45,7 @@ store/
 │    project_commit.py      wires the agent's per-turn edits into the project
 │                           repo at turn end (rules A/B, default-on)
 │
-└─ revert/    ─ ③ REVERT / RECORD HELPERS — undo + concurrency safety
+└─ snapshot/  ─ ③ SNAPSHOT / REVERT HELPERS — undo + concurrency safety
      read_tracking.py       read-before-edit freshness gate: refuse to write
                             a file the agent never read / that changed on
                             disk since (Claude-Code-style)
@@ -61,8 +61,8 @@ store/
 > **Import paths** after the regroup: the canonical forms are
 > `from openprogram.store.session import SessionStore`,
 > `from openprogram.store.project import ProjectGit, resolve_project`,
-> `from openprogram.store.revert import read_tracking` /
-> `from openprogram.store.revert.file_backup import BackupStore`. The old
+> `from openprogram.store.snapshot import read_tracking` /
+> `from openprogram.store.snapshot.file_backup import BackupStore`. The old
 > flat paths (`openprogram.store.session_store`, `…project_commit`, etc.)
 > still resolve via top-level aliases, so existing call sites didn't break.
 

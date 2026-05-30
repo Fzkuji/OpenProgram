@@ -1515,7 +1515,7 @@ def process_user_turn(
     # mtime sort + rmtree of only the excess. Best-effort.
     try:
         from openprogram.store import default_store
-        from openprogram.store.revert.file_backup import gc_evict_old
+        from openprogram.store.snapshot.file_backup import gc_evict_old
         _sdir = default_store()._session_dir(req.session_id)
         gc_evict_old(_sdir)
     except Exception:

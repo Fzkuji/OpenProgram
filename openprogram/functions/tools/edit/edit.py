@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from openprogram.functions._runtime import function
-from openprogram.store.revert.file_backup.helpers import backup_for_current_turn
+from openprogram.store.snapshot.file_backup.helpers import backup_for_current_turn
 from openprogram.worktree.path_resolve import resolve_path
 
 

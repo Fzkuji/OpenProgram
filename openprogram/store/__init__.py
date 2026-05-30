@@ -52,7 +52,7 @@ fully rebuildable from git on demand. See
 from contextvars import ContextVar
 from typing import Optional, TYPE_CHECKING
 
-# Files live in the session/ project/ revert/ sub-packages (group ①②③,
+# Files live in the session/ project/ snapshot/ sub-packages (group ①②③,
 # see README). The top-level package re-exports the historical public
 # surface so ``from openprogram.store import SessionStore`` etc. keep
 # working unchanged after the physical regroup.
@@ -72,7 +72,7 @@ _store: ContextVar[Optional[GraphStoreShim]] = ContextVar(
 
 # Dispatcher installs the current turn's assistant_msg_id here so
 # file-mutating tools can resolve which turn to attribute backups
-# to (see store/revert/file_backup/helpers.py). Default None =
+# to (see store/snapshot/file_backup/helpers.py). Default None =
 # no active turn; backup helper becomes a no-op.
 _current_turn_id: ContextVar[Optional[str]] = ContextVar(
     "_current_turn_id", default=None,
@@ -102,7 +102,7 @@ def __getattr__(name):
     if name == "default_store":
         from .session.session_store import default_store as _ds
         return _ds
-    # Back-compat module aliases after the session/ project/ revert/
+    # Back-compat module aliases after the session/ project/ snapshot/
     # regroup: ``from openprogram.store import project_commit`` (and the
     # other moved modules) keeps resolving to the real submodule in its
     # new sub-package, so callers that used the convenience form don't
@@ -110,7 +110,7 @@ def __getattr__(name):
     _MOVED = {
         "project_store":   "project.project_store",
         "project_commit":  "project.project_commit",
-        "read_tracking":   "revert.read_tracking",
+        "read_tracking":   "snapshot.read_tracking",
         "session_store":   "session.session_store",
         "git_session":     "session.git_session",
         "memory_index":    "session.memory_index",

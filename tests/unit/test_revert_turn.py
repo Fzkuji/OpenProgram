@@ -12,7 +12,7 @@ import pytest
 
 from openprogram.agent._revert import revert_turn
 from openprogram.store.session.session_store import SessionStore
-from openprogram.store.revert.file_backup import BackupStore
+from openprogram.store.snapshot.file_backup import BackupStore
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-"""Unit tests for openprogram.store.revert.file_backup.
+"""Unit tests for openprogram.store.snapshot.file_backup.
 
 Covers the lifecycle: back up a file pre-edit, mutate the file,
 restore the turn, file is back to pre-edit content. Also exercises
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store.revert.file_backup import BackupStore
-from openprogram.store.revert.file_backup.manifest import entries, load
-from openprogram.store.revert.file_backup.paths import turn_manifest_path
+from openprogram.store.snapshot.file_backup import BackupStore
+from openprogram.store.snapshot.file_backup.manifest import entries, load
+from openprogram.store.snapshot.file_backup.paths import turn_manifest_path
 
 
 @pytest.fixture
@@ -147,7 +147,7 @@ def test_restore_missing_backup_is_skipped(session_dir, workdir):
     store.backup_before_edit("turn1", str(a))
 
     # User nukes the backup dir contents but leaves manifest.
-    from openprogram.store.revert.file_backup.paths import turn_backup_dir
+    from openprogram.store.snapshot.file_backup.paths import turn_backup_dir
     bd = turn_backup_dir(session_dir, "turn1")
     for p in bd.iterdir():
         if p.name != "manifest.json":

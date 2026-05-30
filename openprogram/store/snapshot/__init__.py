@@ -13,8 +13,8 @@ Contents:
                          a file the agent never read / that changed on
                          disk since (Claude-Code-style).
 
-``from openprogram.store.revert import read_tracking`` /
-``from openprogram.store.revert.file_backup import BackupStore``.
+``from openprogram.store.snapshot import read_tracking`` /
+``from openprogram.store.snapshot.file_backup import BackupStore``.
 """
 from . import read_tracking
 from .file_backup import BackupStore, gc_evict_old, MAX_TURNS

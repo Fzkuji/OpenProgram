@@ -49,7 +49,7 @@ def revert_turn(session_id: str, assistant_msg_id: str) -> dict[str, Any]:
 
     try:
         from openprogram.store.session.session_store import default_store
-        from openprogram.store.revert.file_backup import BackupStore
+        from openprogram.store.snapshot.file_backup import BackupStore
     except Exception as e:  # noqa: BLE001
         return {
             "session_id": session_id,
