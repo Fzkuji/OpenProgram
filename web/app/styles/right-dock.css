@@ -162,6 +162,11 @@
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+  /* Sit 4px from the row's right edge (row padding is 8px, so pull back
+     4px) — matching the conversation row's ⋮ kebab (`right-[4px]`) and
+     claude.ai's row actions (`right-1`). Keeps every in-row action button
+     at the same 22px box / 16px icon / 5px radius / 4px edge inset. */
+  margin-right: -4px;
 }
 .branch-item:hover .branch-item-actions {
   display: inline-flex;
