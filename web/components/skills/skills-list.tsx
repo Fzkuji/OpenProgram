@@ -300,7 +300,7 @@ export function SkillsList() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder={text("Search skills...", "搜索技能...")}
-          className="flex-1 min-w-0 rounded border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-sm"
+          className="flex-1 min-w-0 rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-secondary)] px-2 py-1 text-sm outline-none transition-colors focus:border-[color:var(--accent-blue)]"
         />
         <button
           onClick={() => setSearchBody((v) => !v)}
