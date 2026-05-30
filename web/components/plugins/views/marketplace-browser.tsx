@@ -124,7 +124,7 @@ export function MarketplaceBrowser() {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder={text("Search plugins...", "搜索插件...")}
-            className="w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] h-[var(--ui-button-h)] pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
+            className="w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] h-[var(--ui-button-h)] pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
           />
         </div>
         <select

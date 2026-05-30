@@ -614,7 +614,7 @@
 }
 
 .searchInput::placeholder {
-  color: var(--text-primary);
+  color: var(--text-muted);
 }
 
 .searchClear {

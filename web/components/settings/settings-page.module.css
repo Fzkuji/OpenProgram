@@ -458,6 +458,9 @@
 .providersSearch input:focus {
   border-color: var(--accent-blue);
 }
+.providersSearch input::placeholder {
+  color: var(--text-muted);
+}
 .providersGroupLabel {
   font-size: 12px;
   font-weight: 600;
