@@ -44,8 +44,17 @@ references/claude-code-leaked/
 references/pi-mono/
 references/opencode/
 
+# In-tree program clones — separate repos installed via
+# `openprogram programs install <name>` into functions/agentics/.
+# They're independent git checkouts, not part of this repo's tree.
+openprogram/functions/agentics/*-Agent-Harness/
+
 # Local OpenProgram runtime state
 .openprogram/
+
+# Detached backend logs from local dev launches
+.backend.log
+.backend.log.err
 
 # Frontend dependency/build artifacts
 web/node_modules/

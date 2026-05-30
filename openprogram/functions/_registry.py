@@ -79,7 +79,24 @@ def load_agentic_modules(agentics_dir: str) -> None:
             _debug_registry_error(mod_name, e)
             continue
 
-    # 2. Auto-discovered external harnesses (symlinks in agentics_dir)
+    # 2. First-party *programs* — the agentic harnesses shipped as
+    #    separate pip-installable packages (gui_harness / research_harness
+    #    / wiki_agent_harness). Importing an installed package fires its
+    #    @agentic_function decorator and self-registers the entry point.
+    #    Absent packages are skipped silently — this is the supported way
+    #    to ship gui_agent / research_agent / wiki_agent, replacing the
+    #    old per-machine symlinks under agentics/. See functions/_programs.py.
+    try:
+        from openprogram.functions._programs import import_installed_programs
+        import_installed_programs()
+    except Exception as e:
+        _debug_registry_error("programs", e)
+
+    # 3. Auto-discovered external harnesses (local-dev symlinks in
+    #    agentics_dir). Still supported for the
+    #    ``<pkg>/agentics/__init__.py`` convention, but no longer the
+    #    primary path — a developer working on a harness locally can just
+    #    ``pip install -e`` their checkout and it registers via (2) above.
     for harness_name, harness_root in _iter_external_harness_dirs(agentics_dir):
         try:
             _import_external_harness(harness_root)

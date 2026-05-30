@@ -9,7 +9,7 @@ SLASH_HELP = [
     ("/tools", "list available tools"),
     ("/skills", "list discovered skills"),
     ("/functions", "list agentic functions (functions/agentics/)"),
-    ("/apps", "list harness apps (functions/agentics/*-Agent-Harness/)"),
+    ("/apps", "list installed programs (gui/research/wiki agents)"),
     ("/mcp [verb]", "manage MCP servers: list (default), show <name>, "
                      "restart <name>, enable <name>, disable <name>, "
                      "rm <name>"),

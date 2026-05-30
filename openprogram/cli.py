@@ -265,6 +265,18 @@ def main():
         help="Program arg as key=value (repeatable)")
     _add_provider_args(p_p_run)
     programs_sub.add_parser("list", help="List all saved programs")
+    # Optional first-party programs (gui / research / wiki agents) ship as
+    # separate pip packages — install them on demand from their repos.
+    programs_sub.add_parser(
+        "available", help="List installable programs (gui/research/wiki)")
+    p_p_inst = programs_sub.add_parser(
+        "install", help="Install a program from its repo (gui/research/wiki/all)")
+    p_p_inst.add_argument("name", help="Program to install: gui | research | wiki | all")
+    p_p_inst.add_argument("--upgrade", "-U", action="store_true",
+        help="Reinstall/upgrade even if already present")
+    p_p_un = programs_sub.add_parser(
+        "uninstall", help="Uninstall a program (gui/research/wiki/all)")
+    p_p_un.add_argument("name", help="Program to uninstall")
 
     # ---- skills -----------------------------------------------------------
     p_skills = sub.add_parser("skills", help="Manage SKILL.md registry")
@@ -749,6 +761,12 @@ def main():
             _cmd_list()
         elif verb == "run":
             _cmd_run(args.name, args.arg, args.provider, args.model)
+        elif verb == "available":
+            _cmd_programs_available()
+        elif verb == "install":
+            _cmd_install(args.name, upgrade=args.upgrade)
+        elif verb == "uninstall":
+            _cmd_uninstall(args.name)
         else:
             p_programs.print_help()
         return
@@ -1168,6 +1186,9 @@ from openprogram._cli_cmds.programs import (  # noqa: E402,F401
     _cmd_configure,
     _cmd_list,
     _cmd_run,
+    _cmd_install,
+    _cmd_uninstall,
+    _cmd_programs_available,
 )
 from openprogram._cli_cmds.skills import (  # noqa: E402,F401
     _cmd_skills_list,

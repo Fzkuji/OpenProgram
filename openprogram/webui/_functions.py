@@ -59,7 +59,47 @@ def _discover_functions() -> list[dict]:
             infos = _extract_all_functions(full_path, "agentic")
             result.extend(infos)
 
+    # First-party *programs* — pip-installed harnesses (gui_harness /
+    # research_harness / wiki_agent_harness). These register into the
+    # @agentic_function registry on import but their source lives in
+    # site-packages, not under agentics/, so the filesystem walk above
+    # misses them. Surface each installed program's entry point by
+    # introspecting the registry and parsing its real source file (so the
+    # editor / welcome screen treat it exactly like a bundled app).
+    result.extend(_discover_program_functions({r["name"] for r in result}))
+
     return result
+
+
+def _discover_program_functions(seen: set[str]) -> list[dict]:
+    """Build function-info dicts for installed first-party programs.
+
+    ``seen`` is the set of names already discovered on disk, so a program
+    that is *also* symlinked locally isn't listed twice.
+    """
+    out: list[dict] = []
+    try:
+        from openprogram.functions._programs import installed_programs
+        from openprogram.agentic_programming.function import _registry
+    except Exception:
+        return out
+    for prog in installed_programs():
+        if prog.function in seen:
+            continue
+        reg = _registry.get(prog.function)
+        if reg is None:
+            continue
+        fn = getattr(reg, "_fn", None) or reg
+        try:
+            src = inspect.getsourcefile(fn)
+        except (TypeError, OSError):
+            src = None
+        if not (src and os.path.isfile(src)):
+            continue
+        info = _extract_function_info(src, prog.function, "app")
+        if info:
+            out.append(info)
+    return out
 
 
 def _extract_input_meta(source: str, func_name: str) -> dict | None:

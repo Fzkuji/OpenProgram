@@ -58,25 +58,20 @@ def _function_inventory() -> tuple[int, list[str]]:
 
 
 def _application_inventory() -> tuple[int, list[str]]:
-    """Return (count, [name, ...]) of harness apps in functions/agentics/.
+    """Return (count, [name, ...]) of installed first-party *programs*.
 
-    Harness apps are subdirectories whose name ends with
-    ``-Agent-Harness`` (typically symlinks to external repos).
+    Programs (gui_agent / research_agent / wiki_agent) ship as separate
+    pip-installable packages rather than in-tree symlinks; list the ones
+    actually installed on this machine. Install more with
+    ``openprogram programs install <name>``. See
+    ``openprogram/functions/_programs.py``.
     """
-    import os
-    import openprogram
-    base = os.path.join(os.path.dirname(openprogram.__file__),
-                        "functions", "agentics")
-    if not os.path.isdir(base):
+    try:
+        from openprogram.functions._programs import installed_programs
+        progs = installed_programs()
+        return len(progs), [p.function for p in progs]
+    except Exception:
         return 0, []
-    names: list[str] = []
-    for entry in sorted(os.listdir(base)):
-        full = os.path.join(base, entry)
-        if entry.startswith("_") or entry.startswith("."):
-            continue
-        if os.path.isdir(full) and entry.endswith("-Agent-Harness"):
-            names.append(entry)
-    return len(names), names
 
 
 def _section_text(label: str, items: list[str], count: int, accent: str,

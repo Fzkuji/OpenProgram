@@ -86,9 +86,13 @@ gemini = [
 # don't break, they just no-op.
 web = []
 visualize = []
-# GUI-Agent-Harness deps (vision + input control).
-# Note: ultralytics pulls in torch (~2GB); opencv-python-headless avoids the
-# system libGL runtime. Add `easyocr` yourself if you need OCR on non-macOS.
+# Runtime deps for the GUI program (gui_agent / gui_harness). The
+# program itself is a separate pip package installed on demand via
+# ``openprogram programs install gui`` (see functions/_programs.py); this
+# extra carries only its heavy native deps so that command can pull them
+# independently of the harness's own (openprogram-pinned) dependency list.
+# Note: ultralytics pulls in torch; opencv-python-headless avoids the
+# system libGL runtime. Add ``easyocr`` yourself if you need OCR.
 gui = [
     "opencv-python-headless>=4.8.0",
     "numpy>=1.24.0",
@@ -97,6 +101,12 @@ gui = [
     "ultralytics>=8.3.0",
     "requests>=2.31.0",
 ]
+# The research / wiki programs only depend on openprogram itself, so
+# their extras carry no additional runtime deps — listed here as explicit
+# (empty) markers so ``pip install "openprogram[research]"`` resolves
+# cleanly and the install story is symmetric across all three programs.
+research = []
+wiki = []
 channels = [
     # WeChat (iLink bot) QR login renders a QR code in the terminal
     # from the server-provided URL. Pure Python, tiny. No Pillow
@@ -157,10 +167,6 @@ Documentation = "https://github.com/Fzkuji/OpenProgram/tree/main/docs"
 
 [tool.setuptools.packages.find]
 include = ["openprogram*"]
-exclude = [
-    "openprogram.programs.applications.GUI-Agent-Harness*",
-    "openprogram.programs.applications.Research-Agent-Harness*",
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
