@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
+import { useUserProfile } from "@/lib/user-profile";
 
 import { MessageActions } from "./message-actions";
 
@@ -115,6 +116,7 @@ function EditBox({
 export function UserBubble({ msg }: { msg: ChatMsg }) {
   const { text } = useTranslation();
   const [editing, setEditing] = useState(false);
+  const profile = useUserProfile();
 
   return (
     <div
@@ -122,20 +124,18 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
       data-msg-id={msg.id}
     >
       <div className="message-header">
-        {/* "You" avatar — a DiceBear glyph seeded by the literal
-            string "you" so the human side of every chat reads as the
-            same identity, separate from any agent's avatar. (When we
-            add per-user account profiles this will switch to a real
-            user id seed; for now there's just one local user per
-            install.) */}
+        {/* "You" avatar + name — from the local user profile
+            (/settings/general → You), the counterpart to the agent
+            profile. Defaults to a DiceBear glyph seeded "you" so it
+            looks identical until the user customises it. */}
         <Avatar
           className="message-avatar user-avatar"
           size={28}
           radius={8}
-          name="You"
-          config={{ kind: "dicebear", style: "shapes", seed: "you" }}
+          name={profile.name}
+          config={profile.avatar}
         />
-        <div className="message-sender">{text("You", "你")}</div>
+        <div className="message-sender">{profile.name || text("You", "你")}</div>
         <MessageActions msg={msg} onEdit={() => setEditing(true)} />
       </div>
       <div className="message-content">
