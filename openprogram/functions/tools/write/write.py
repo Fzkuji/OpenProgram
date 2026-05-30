@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from openprogram.functions._runtime import function
-from openprogram.store.file_backup.helpers import backup_for_current_turn
+from openprogram.store.snapshot.file_backup.helpers import backup_for_current_turn
 from openprogram.worktree.path_resolve import resolve_path
 
 
@@ -39,6 +39,21 @@ def write(file_path: str, content: str) -> str:
     file_path = resolved_path
     if not os.path.isabs(file_path):
         return f"Error: file_path must be absolute, got {file_path!r}"
+
+    # Read-before-edit gate — ONLY for overwriting an EXISTING file
+    # (Claude-Code contract: a Write to a new file needs no prior read,
+    # but overwriting one the agent never read / that changed on disk is
+    # refused so a concurrent user change isn't clobbered). No-op outside
+    # a turn.
+    if os.path.exists(file_path) and not os.path.isdir(file_path):
+        try:
+            from openprogram.store import read_tracking as _rt
+            _fresh = _rt.check_fresh(file_path)
+            if _fresh in (_rt.NEVER_READ, _rt.STALE):
+                return _rt.stale_message(file_path, _fresh)
+        except Exception:
+            pass
+
     parent = os.path.dirname(file_path)
     if parent and not os.path.exists(parent):
         try:
@@ -54,6 +69,15 @@ def write(file_path: str, content: str) -> str:
             f.write(content)
     except Exception as e:
         return f"Error writing {file_path}: {type(e).__name__}: {e}"
+
+    # Baseline the freshly-written content so the agent can edit/rewrite
+    # this file again without re-reading.
+    try:
+        from openprogram.store import read_tracking as _rt
+        _rt.mark_seen(file_path)
+    except Exception:
+        pass
+
     msg = f"Wrote {len(content)} bytes to {file_path}"
     if outside_warning:
         msg = f"{outside_warning}\n{msg}"

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openprogram.store.git_session import GitSession
+from openprogram.store.session.git_session import GitSession
 
 
 def test_workdir_materialized_on_init(tmp_path: Path):

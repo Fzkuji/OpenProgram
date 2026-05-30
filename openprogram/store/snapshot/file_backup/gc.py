@@ -1,9 +1,14 @@
 """GC policy for the file-backup store.
 
 Cap the number of retained turn directories per session. Oldest are
-evicted first. Bound is intentionally generous (100 turns) — the
-backup files are typically hardlinks, so disk cost is low until a
-turn actually modifies a unique file.
+evicted first. Bound is intentionally generous (100 turns).
+
+Note on disk cost: backups are FULL file copies (``shutil.copy2`` in
+``store.py`` — deliberately NOT hardlinks, since the agent's typical
+``open(w)`` truncates the inode in place and a shared hardlink would
+lose the original). So cost is linear in files×turns and this cap is
+what actually bounds it — ``evict_old`` MUST be called (it is, at
+turn end from the dispatcher) or ``file_backups/`` grows without limit.
 """
 from __future__ import annotations
 

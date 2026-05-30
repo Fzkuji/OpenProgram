@@ -42,18 +42,20 @@ import { useRouter, usePathname } from "next/navigation";
 // driven from its row's / button's hover. The toggle swaps by state:
 // panel-left-close (chevron ‹) when open, panel-left-open (›) when
 // collapsed. The other two chrome actions keep their own existing motion
-// and just use the lucide LINE glyph: new-chat = Plus (badge already
-// rotates/scales on hover), refresh = RefreshCw (spins on click).
-import { Plus, RefreshCw } from "lucide-react";
+// and just use the lucide LINE glyph: refresh = RefreshCw (spins on
+// click). New-chat uses the animated PlusIcon (spins 180° on row hover);
+// its circular badge still scales/brightens.
+import { RefreshCw } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
-  BlocksIcon,
+  BoxesIcon,
   BrainIcon,
   GraduationCapIcon,
   LayersIcon,
   MessageCircleIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
+  PlusIcon,
   WorkflowIcon,
 } from "../animated-icons";
 import { useSessionStore } from "@/lib/session-store";
@@ -105,6 +107,7 @@ export function Sidebar() {
   const memoryIconRef = useRef<AnimatedNavIconHandle>(null);
   const chatsIconRef = useRef<AnimatedNavIconHandle>(null);
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
+  const newChatIconRef = useRef<AnimatedNavIconHandle>(null);
 
   const { availableFunctions, programsMeta } = useWindowGlobals();
   const favSet = new Set(programsMeta.favorites || []);
@@ -292,6 +295,8 @@ export function Sidebar() {
           className={sidebarNavItemClass}
           id="navNewChat"
           onClick={newChat}
+          onMouseEnter={() => newChatIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => newChatIconRef.current?.stopAnimation?.()}
           role="button"
         >
           <span
@@ -299,13 +304,13 @@ export function Sidebar() {
               justify-center rounded-full bg-[rgba(151,149,140,0.15)]
               text-nav-color transition-colors duration-150 ease-out
               group-hover:bg-[rgba(151,149,140,0.25)]
-              group-hover:[transform:rotate(-3deg)_scale(1.1)]
+              group-hover:[transform:scale(1.1)]
               group-active:bg-text-primary
-              group-active:[transform:rotate(6deg)_scale(0.98)]
+              group-active:[transform:scale(0.98)]
               [transition:transform_0.3s_cubic-bezier(0.165,0.85,0.45,1),background_0.15s_ease,color_0.15s_ease]
               group-hover:text-nav-color-hover"
           >
-            <Plus size={16} strokeWidth={2} />
+            <PlusIcon ref={newChatIconRef} size={16} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.new_chat")}</span>
         </div>
@@ -327,7 +332,7 @@ export function Sidebar() {
           <span
             className={
               sidebarNavActionClass +
-              " inline-flex size-[24px] items-center justify-center rounded-[var(--ui-list-radius)]" +
+              " inline-flex size-[22px] items-center justify-center rounded-[5px]" +
               " [transition:background_0.15s,color_0.15s,opacity_0.15s]" +
               " hover:bg-bg-hover hover:text-text-bright hover:!opacity-100" +
               " active:bg-bg-tertiary" +
@@ -346,7 +351,7 @@ export function Sidebar() {
             ) : (
               <RefreshCw
                 ref={refreshSvgRef}
-                size={12}
+                size={16}
                 strokeWidth={2}
                 className={refreshing ? "animate-spin-refresh" : ""}
               />
@@ -381,7 +386,7 @@ export function Sidebar() {
           onMouseLeave={() => pluginsIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <BlocksIcon ref={pluginsIconRef} size={20} />
+            <BoxesIcon ref={pluginsIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.plugins")}</span>
         </Link>

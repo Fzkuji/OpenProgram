@@ -132,11 +132,16 @@ export function autoResize(el: HTMLTextAreaElement): void {
 }
 
 export function setWelcomeVisible(show: boolean): void {
+  // Pure write-through to the React store — the NEW framework owns the
+  // welcome layout end-to-end from here. `<WelcomeScreen />` renders (or
+  // unmounts) the `.welcome` node off `welcomeVisible`, and the
+  // stylesheet keys off that node's presence: `.chat-area:has(.welcome)`
+  // locks scroll and `.chat-messages:has(.welcome)` sets the 90px bottom
+  // gap. This bridge deliberately touches NO DOM now: the old imperative
+  // writes (inline `padding-bottom:150px`, the `.welcome-visible` class)
+  // fought the stylesheet and only cleared on hide, which floated the
+  // example row ~60px up and kept it there until a reload.
   W.__sessionStore?.getState().setWelcomeVisible(!!show);
-  const cm = document.getElementById("chatMessages");
-  const ca = document.getElementById("chatArea");
-  if (cm) cm.style.paddingBottom = show ? "150px" : "";
-  if (ca) ca.classList.toggle("welcome-visible", !!show);
 }
 
 export function addSystemMessage(text: string): void {

@@ -13,6 +13,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./chats-page.module.css";
 import { useTranslation, type Locale } from "@/lib/i18n";
+import {
+  type AnimatedNavIconHandle,
+  ClockIcon,
+  MessageCircleIcon,
+} from "@/components/animated-icons";
 
 type SortKey = "recent" | "oldest" | "title";
 type StatusFilter = "all" | "active" | "archived";
@@ -160,21 +165,21 @@ export function ChatsPage() {
 
   const navGroups: Array<{
     label: string;
-    items: Array<{ id: FilterId; name: string; icon: string }>;
+    items: Array<{ id: FilterId; name: string }>;
   }> = [
     {
       label: text("Library", "会话库"),
       items: [
-        { id: "all", name: text("All chats", "全部会话"), icon: "💬" },
+        { id: "all", name: text("All chats", "全部会话") },
       ],
     },
     {
       label: text("By recency", "按时间"),
       items: [
-        { id: "today", name: text("Today", "今天"), icon: "·" },
-        { id: "week", name: text("Last 7 days", "最近 7 天"), icon: "·" },
-        { id: "month", name: text("Last 30 days", "最近 30 天"), icon: "·" },
-        { id: "older", name: text("Older", "更早"), icon: "·" },
+        { id: "today", name: text("Today", "今天") },
+        { id: "week", name: text("Last 7 days", "最近 7 天") },
+        { id: "month", name: text("Last 30 days", "最近 30 天") },
+        { id: "older", name: text("Older", "更早") },
       ],
     },
   ];
@@ -225,18 +230,14 @@ export function ChatsPage() {
               <div key={group.label}>
                 <div className={styles.navGroupLabel}>{group.label}</div>
                 {group.items.map((it) => (
-                  <div
+                  <ChatsNavRow
                     key={it.id}
-                    className={
-                      styles.navItem +
-                      (filter === it.id ? " " + styles.active : "")
-                    }
-                    onClick={() => setFilter(it.id)}
-                  >
-                    <span className={styles.navIcon}>{it.icon}</span>
-                    <span className={styles.navName}>{it.name}</span>
-                    <span className={styles.navCount}>{counts[it.id]}</span>
-                  </div>
+                    id={it.id}
+                    name={it.name}
+                    count={counts[it.id]}
+                    active={filter === it.id}
+                    onSelect={() => setFilter(it.id)}
+                  />
                 ))}
               </div>
             ))}
@@ -245,7 +246,9 @@ export function ChatsPage() {
           <div className={styles.content}>
             {items.length === 0 ? (
               <div className={styles.empty}>
-                <div className={styles.emptyIcon}>💬</div>
+                <div className={styles.emptyIcon}>
+                  <MessageCircleIcon size={40} />
+                </div>
                 <div className={styles.emptyText}>
                   {query
                     ? text("No chats match your search", "没有匹配的会话")
@@ -420,4 +423,38 @@ function formatRelativeTime(ts: number, locale: Locale): string {
   }
   const mo = Math.floor(diff / (86400 * 30));
   return mo === 1 ? "1mo ago" : `${mo}mo ago`;
+}
+
+/** One left-rail filter row. "All chats" shows the chat-bubble glyph; the
+ *  "by recency" buckets share the clock. The animated icon is driven from
+ *  the whole row's hover (controlled mode), like the sidebar nav. */
+function ChatsNavRow({
+  id,
+  name,
+  count,
+  active,
+  onSelect,
+}: {
+  id: FilterId;
+  name: string;
+  count: number;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const Icon = id === "all" ? MessageCircleIcon : ClockIcon;
+  return (
+    <div
+      className={styles.navItem + (active ? " " + styles.active : "")}
+      onClick={onSelect}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+    >
+      <span className={styles.navIcon}>
+        <Icon ref={iconRef} size={16} />
+      </span>
+      <span className={styles.navName}>{name}</span>
+      <span className={styles.navCount}>{count}</span>
+    </div>
+  );
 }

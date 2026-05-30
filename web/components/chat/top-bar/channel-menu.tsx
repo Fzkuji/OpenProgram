@@ -13,6 +13,7 @@
  * <Popover> in `index.tsx`; this component just renders the rows.
  */
 import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -111,13 +112,9 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
 
   return (
     <div className={`${MENU_PANEL} min-w-[300px] max-w-[480px]`}>
-      <div className={GROUP_LABEL}>
-        <span>{text("Conversation channel", "会话渠道")}</span>
-      </div>
-
       <div className={itemCls(!cur.channel)} onClick={() => pick("", "")}>
         <span className="flex-1 truncate">{text("Local", "本地")}</span>
-        {!cur.channel ? <span className={CHECK}>✓</span> : null}
+        {!cur.channel ? <Check size={14} className={CHECK} /> : null}
       </div>
 
       {rows !== null && enabled.length === 0 ? (
@@ -159,7 +156,7 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
                     {meta}
                   </Badge>
                 ) : null}
-                {active ? <span className={CHECK}>✓</span> : null}
+                {active ? <Check size={14} className={CHECK} /> : null}
               </div>
             );
           })}

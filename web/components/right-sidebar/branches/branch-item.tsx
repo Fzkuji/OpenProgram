@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { cloneElement, useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
+import type { AnimatedNavIconHandle } from "@/components/animated-icons";
 
 import {
   DEL_SVG,
@@ -43,6 +44,10 @@ export function BranchItem({
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(branch.name || "");
   const inputRef = useRef<HTMLInputElement>(null);
+  // Animated rename/delete glyphs driven by the WHOLE action button's
+  // hover (24px), not the 13px glyph — same fix as the message actions.
+  const renameIconRef = useRef<AnimatedNavIconHandle>(null);
+  const delIconRef = useRef<AnimatedNavIconHandle>(null);
 
   useEffect(() => {
     if (editing) {
@@ -176,20 +181,24 @@ export function BranchItem({
         <span
           className="branch-item-action branch-item-rename"
           title={t("right.rename_branch")}
+          onMouseEnter={() => renameIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => renameIconRef.current?.stopAnimation?.()}
           onClick={(e) => {
             e.stopPropagation();
             setValue(branch.name || "");
             setEditing(true);
           }}
         >
-          {RENAME_SVG}
+          {cloneElement(RENAME_SVG, { ref: renameIconRef } as Record<string, unknown>)}
         </span>
         <span
           className="branch-item-action branch-item-del"
           title={t("right.delete_branch")}
+          onMouseEnter={() => delIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => delIconRef.current?.stopAnimation?.()}
           onClick={del}
         >
-          {DEL_SVG}
+          {cloneElement(DEL_SVG, { ref: delIconRef } as Record<string, unknown>)}
         </span>
       </span>
     </div>

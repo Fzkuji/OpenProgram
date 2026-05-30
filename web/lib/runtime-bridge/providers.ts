@@ -130,47 +130,30 @@ export async function loadAgentSettings(): Promise<void> {
   }
 }
 
-function escAgentBadge(s: unknown): string {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 export function updateAgentBadges(): void {
+  // The chat / exec agent chips are owned by the React <TopBar>
+  // (components/chat/top-bar/index.tsx → <AgentBadge>). We must NOT write
+  // their DOM here: doing so clobbered React's render via innerHTML and
+  // resurrected the old "Chat: …" / "Exec: …" labels. Instead push the
+  // freshly-fetched settings into the session store so React renders the
+  // icon (+ model when set) itself.
   const as = W._agentSettings || {};
-  const chatBadge = document.getElementById("chatAgentBadge");
-  const execBadge = document.getElementById("execAgentBadge");
-  if (chatBadge && as.chat) {
-    const cp = as.chat.provider || "?";
-    const cm = as.chat.model || "";
-    const detailsParts = [cp];
-    if (cm) detailsParts.push(cm);
-    const sid = as.chat.session_id;
-    if (sid) detailsParts.push(sid.slice(0, 8));
-    const details = ": " + detailsParts.join(" · ");
-    chatBadge.innerHTML =
-      '<span class="badge-short">Chat</span>' +
-      '<span class="badge-details">' +
-      escAgentBadge(details) +
-      "</span>";
-    chatBadge.title = "Chat agent" + details;
-    if (as.chat.locked) chatBadge.classList.add("locked");
-    else chatBadge.classList.remove("locked");
-  }
-  if (execBadge && as.exec) {
-    const ep = as.exec.provider || "?";
-    const em = as.exec.model || "";
-    const execDetailsParts = [ep];
-    if (em) execDetailsParts.push(em);
-    const execDetails = ": " + execDetailsParts.join(" · ");
-    execBadge.innerHTML =
-      '<span class="badge-short">Exec</span>' +
-      '<span class="badge-details">' +
-      escAgentBadge(execDetails) +
-      "</span>";
-    execBadge.title = "Execution agent" + execDetails;
+  try {
+    const store = (
+      W as unknown as {
+        __sessionStore?: {
+          getState: () => {
+            setAgentSettings: (s: { chat?: AgentSide; exec?: AgentSide }) => void;
+          };
+        };
+      }
+    ).__sessionStore;
+    store?.getState().setAgentSettings({
+      chat: as.chat ? { ...as.chat } : undefined,
+      exec: as.exec ? { ...as.exec } : undefined,
+    });
+  } catch {
+    /* ignore */
   }
   try {
     refreshTokenBadge();

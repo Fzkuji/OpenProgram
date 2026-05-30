@@ -16,8 +16,15 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
+import {
+  MENU_PANEL,
+  MENU_SEPARATOR,
+  SHORTCUT,
+  itemCls,
+} from "@/components/chat/top-bar/menu-styles";
 
 export interface ConvMenuConv {
   id: string;
@@ -88,7 +95,7 @@ export function ConvMenu({
       ref={rootRef}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="flex min-w-[200px] flex-col py-1 outline-none"
+      className={`${MENU_PANEL} min-w-[200px] outline-none`}
     >
       <MenuItem label={t("sidebar.rename")} shortcut="R" onClick={() => run(onRename)} />
       <MenuItem
@@ -101,12 +108,12 @@ export function ConvMenu({
           no native submenu flyout). */}
       <button
         type="button"
-        className={_itemCls}
+        className={itemCls(false)}
         onClick={() => setGroupOpen((v) => !v)}
         aria-expanded={groupOpen}
       >
         <span className="flex-1 text-left">{t("sidebar.move_to_group")}</span>
-        <span className="text-[var(--text-muted)]">{groupOpen ? "▾" : "▸"}</span>
+        <span className="flex w-[16px] shrink-0 items-center justify-center text-text-muted">{groupOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
       </button>
       {groupOpen && (
         <div className="flex flex-col border-l border-[var(--border)] ml-3 my-0.5">
@@ -136,7 +143,7 @@ export function ConvMenu({
         onClick={() => run(onToggleArchive)}
       />
 
-      <div className="my-1 h-px bg-[var(--border)]" />
+      <div className={MENU_SEPARATOR} />
 
       <MenuItem
         label={t("sidebar.delete")}
@@ -150,12 +157,10 @@ export function ConvMenu({
 
 /* ---- item primitives ------------------------------------------- */
 
-// Idle-neutral row; hover reveals a subtle bg. Danger variant goes red
-// on hover, matching the app's accent-on-hover philosophy.
-const _itemCls =
-  "flex items-center gap-3 px-2.5 h-[26px] text-[12px] text-[var(--text-primary)]" +
-  " cursor-pointer transition-colors hover:bg-[var(--bg-hover)]";
-
+// MenuItem / SubItem share the canonical `itemCls` from menu-styles, so
+// this context menu is pixel-identical to the topbar pickers. Danger
+// (Delete) and the orange "new group" accent are the only per-item
+// variants; the shortcut hint uses the shared SHORTCUT style.
 function MenuItem({
   label,
   shortcut,
@@ -168,19 +173,10 @@ function MenuItem({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        _itemCls +
-        (danger
-          ? " !text-[var(--accent-red)] hover:!bg-[color-mix(in_srgb,var(--accent-red)_15%,transparent)]"
-          : "")
-      }
-    >
+    <button type="button" onClick={onClick} className={itemCls(false, danger)}>
       <span className="flex-1 text-left">{label}</span>
       {shortcut ? (
-        <span className="text-[11px] text-[var(--text-muted)]">{shortcut}</span>
+        <span className={SHORTCUT + " w-[16px] text-center"}>{shortcut}</span>
       ) : null}
     </button>
   );
@@ -199,11 +195,7 @@ function SubItem({
     <button
       type="button"
       onClick={onClick}
-      className={
-        "flex items-center px-2.5 h-[24px] text-[12px] cursor-pointer transition-colors" +
-        " hover:bg-[var(--bg-hover)] " +
-        (accent ? "text-[var(--accent-orange)]" : "text-[var(--text-secondary)]")
-      }
+      className={itemCls(false) + (accent ? " !text-[var(--accent-orange)]" : "")}
     >
       <span className="flex-1 truncate text-left">{label}</span>
     </button>

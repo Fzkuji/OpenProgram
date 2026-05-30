@@ -71,7 +71,7 @@ def _projects_default_id_safe() -> str:
     resort when project resolution failed but we still want the meta to
     carry a project_id pointer."""
     try:
-        from openprogram.store.project_store import DEFAULT_PROJECT_ID
+        from openprogram.store.project.project_store import DEFAULT_PROJECT_ID
         return DEFAULT_PROJECT_ID
     except Exception:
         return "default"

@@ -60,6 +60,17 @@ def read(file_path: str,
     except Exception as e:
         return f"Error reading {file_path}: {type(e).__name__}: {e}"
 
+    # Record this file's on-disk state as the agent's read-before-edit
+    # baseline (Claude-Code-style): a later edit/write validates against
+    # it so the agent can't clobber a concurrent user change unseen.
+    # Fingerprints the WHOLE file even on a paged read — the contract is
+    # about the file changing on disk, not the page. No-op outside a turn.
+    try:
+        from openprogram.store import read_tracking as _rt
+        _rt.mark_seen(file_path)
+    except Exception:
+        pass
+
     total = len(lines)
     start = max(1, offset) - 1
     end = min(total, start + max(1, limit))

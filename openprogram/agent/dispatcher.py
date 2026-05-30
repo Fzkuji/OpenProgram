@@ -1287,7 +1287,7 @@ def process_user_turn(
         # Update the placeholder row (step 3b) in place — same id,
         # now with final content + tool_calls/blocks.
         try:
-            from openprogram.store._msg_adapter import _msg_to_node as _to_node
+            from openprogram.store.session._msg_adapter import _msg_to_node as _to_node
             from openprogram.store import GraphStoreShim
             _shim = GraphStoreShim(db, req.session_id)
             _node = _to_node(assistant_msg)
@@ -1466,10 +1466,58 @@ def process_user_turn(
     # (config ``project_auto_commit`` / env). Best-effort.
     try:
         from openprogram.store import project_commit as _pc
-        _pc.commit_turn_changes(
+        _commit_sha = _pc.commit_turn_changes(
             req.session_id, req.user_text or "",
             _project_baseline, on_event=on_event,
         )
+        # Record turn → project-commit sha on the assistant node so a
+        # later revert_turn knows which git commit this turn produced
+        # (and in which repo), enabling a git-aware undo on top of the
+        # file-snapshot restore. Only a real sha is stamped — None /
+        # SKIPPED_DIRTY / autoinit-blocked leave no pointer.
+        if isinstance(_commit_sha, str) and len(_commit_sha) >= 7:
+            try:
+                _proj = _pc._project_for(req.session_id)
+                _store2 = default_store()
+                _pair = _store2._open(req.session_id)
+                if _proj is not None and _pair is not None:
+                    _g, _idx = _pair
+                    _n = _idx.nodes_by_id.get(assistant_msg_id)
+                    if _n is not None:
+                        _n.metadata = {
+                            **(_n.metadata or {}),
+                            "project_commit": {
+                                "repo": _proj.path, "sha": _commit_sha,
+                            },
+                        }
+                        # Per-node metadata lives in the node's history
+                        # file (not meta.json) — rewrite it so the stamp
+                        # survives a worker restart, mirroring _revert.py.
+                        import json as _json
+                        _rl = (_n.role or "x")[0]
+                        _fp = _g.path / "history" / f"{_n.seq:04d}-{_rl}-{_n.id}.json"
+                        if _fp.exists():
+                            _tmp = _fp.with_suffix(".json.tmp")
+                            _tmp.write_text(
+                                _json.dumps(_n.to_dict(), ensure_ascii=False, default=str),
+                                encoding="utf-8",
+                            )
+                            _tmp.replace(_fp)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 6.95. Evict old per-turn file-backup snapshots beyond the soft cap.
+    # The snapshots (file_backups/<turn>/) are full copies written before
+    # each edit; without this they grow unbounded. Cap is per-session and
+    # generous (gc.MAX_TURNS); we run it every turn-end since it's a cheap
+    # mtime sort + rmtree of only the excess. Best-effort.
+    try:
+        from openprogram.store import default_store
+        from openprogram.store.snapshot.file_backup import gc_evict_old
+        _sdir = default_store()._session_dir(req.session_id)
+        gc_evict_old(_sdir)
     except Exception:
         pass
 

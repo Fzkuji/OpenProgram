@@ -184,26 +184,84 @@ class ProjectGit:
             return True
 
     def _ensure_self_ignored(self) -> None:
-        """Write ``<project>/.openprogram/.gitignore`` containing ``*`` so
-        git ignores OpenProgram's entire footprint inside the user's
-        tree. Best-effort; never raises."""
-        try:
-            op_dir = self.path / ".openprogram"
-            op_dir.mkdir(parents=True, exist_ok=True)
-            gi = op_dir / ".gitignore"
-            # ``*`` ignores everything in this dir (incl. the sessions/
-            # repos); ``.gitignore`` itself is ignored too, which is fine
-            # — we re-assert it on every ensure_init.
-            current = gi.read_text(encoding="utf-8") if gi.exists() else ""
-            if current != "*\n":
-                gi.write_text("*\n", encoding="utf-8")
-        except OSError:
-            pass
+        """Hide OpenProgram's footprint from the user's git. Delegates to
+        the standalone :func:`ensure_footprint_ignored` so the same logic
+        runs whether or not we ever git-init this folder."""
+        ensure_footprint_ignored(self.path)
 
     def _has_user_identity(self) -> bool:
         name = self._run("config", "user.name", check=False).strip()
         email = self._run("config", "user.email", check=False).strip()
         return bool(name and email)
+
+    # Directories whose presence in a NON-git folder makes auto-init
+    # dangerous: ``git add -A`` would sweep gigabytes of deps/build
+    # output into the very first commit. If any is present we refuse to
+    # auto-init and let the user decide (they can git init + add a
+    # .gitignore themselves).
+    _AUTOINIT_BLOCKERS = (
+        "node_modules", ".venv", "venv", "env", "__pycache__",
+        "target", "build", "dist", ".next", ".gradle", "vendor",
+    )
+
+    def autoinit_blocker(self) -> Optional[str]:
+        """The first heavy dir (node_modules/.venv/…) present that would
+        block auto-init, or None if nothing blocks. Lets the caller name
+        the offender in a warning without re-running init."""
+        for blocker in self._AUTOINIT_BLOCKERS:
+            if (self.path / blocker).exists():
+                return blocker
+        return None
+
+    def auto_init_for_agent(self) -> str:
+        """Initialise a NON-git user folder so agent edits can be
+        committed — safely. Returns one of:
+
+          * ``"ready"``        — repo now exists (we just created it, with
+                                 a baseline commit of the user's existing
+                                 files so the agent's later commits are
+                                 clean diffs, not bulk "add everything").
+          * ``"already"``      — was already a git repo, nothing to do.
+          * ``"blocked:<dir>"``— a heavy dir (node_modules/.venv/…) is
+                                 present; refused, caller should warn.
+
+        Rule A is now "auto-init ON": binding a real folder + the agent
+        editing it will turn the folder into a git repo. The two safety
+        rails: (1) skip if a dep/build dir would bloat the first commit;
+        (2) commit the user's PRE-EXISTING files as a baseline FIRST, so
+        every subsequent agent commit is an honest diff attributable to
+        the agent — never a giant "agent added your whole project".
+        """
+        if self.is_git_repo():
+            return "already"
+        with self._lock:
+            if self.is_git_repo():
+                return "already"
+            self.path.mkdir(parents=True, exist_ok=True)
+            for blocker in self._AUTOINIT_BLOCKERS:
+                if (self.path / blocker).exists():
+                    return f"blocked:{blocker}"
+            self._run("init", "--quiet", "--initial-branch=main")
+            if not self._has_user_identity():
+                self._run("config", "user.email", self.AGENT_EMAIL)
+                self._run("config", "user.name", self.AGENT_NAME)
+            # Make sure our own footprint is ignored BEFORE the baseline
+            # add, so .openprogram/ never enters the user's history.
+            ensure_footprint_ignored(self.path)
+            # Baseline commit of whatever the user already had. Authored
+            # as the user (it's their pre-existing code), not the agent.
+            self._run("add", "-A")
+            staged = self._run("diff", "--cached", "--name-only").strip()
+            if staged:
+                self._run("commit", "-m",
+                          "openprogram: baseline (pre-existing files)",
+                          "--quiet")
+            else:
+                # Empty folder — seed a HEAD so later commits have a parent.
+                self._run("commit", "--allow-empty", "-m",
+                          "openprogram: project init", "--quiet")
+            self._initialized = True
+            return "ready"
 
     # -- agent commits (Strategy A: don't pollute a dirty user tree) --
 
@@ -265,6 +323,88 @@ class ProjectGit:
                 "commit", "-m", message, "--quiet",
             )
             return self._run("rev-parse", "HEAD").strip()
+
+    def revert_agent_commit(self, sha: str) -> dict:
+        """Undo an agent commit, choosing the safest git operation.
+
+        Returns ``{"action": <str>, "ok": bool, "detail": <str>}`` where
+        ``action`` is one of:
+
+          * ``"reset"``   — ``git reset --hard <sha>^``. Used ONLY when
+            it's provably safe: the commit is HEAD, the tree is clean,
+            and the commit hasn't been pushed. Cleanest undo — the commit
+            vanishes as if it never happened.
+          * ``"revert"``  — ``git revert --no-edit <sha>``. The safe
+            fallback: appends an inverse commit, touching nothing else.
+            Used when reset would be unsafe (commit isn't HEAD / tree
+            dirty / already pushed) but the change can still be undone
+            additively.
+          * ``"skipped"`` — couldn't safely undo (e.g. revert hit a
+            conflict). The file-snapshot restore is the caller's
+            fallback; git history is left untouched. ``detail`` explains.
+          * ``"absent"``  — the sha isn't in this repo (already gone, or
+            never landed). No-op.
+
+        Never raises — git failures come back as ``ok=False`` so the
+        caller can surface them and fall back to the snapshot.
+        """
+        if not self.exists():
+            return {"action": "absent", "ok": False, "detail": "not a git repo"}
+        with self._lock:
+            # Is the sha actually in this repo?
+            check = self._run("cat-file", "-t", sha, check=False).strip()
+            if check != "commit":
+                return {"action": "absent", "ok": False,
+                        "detail": f"commit {sha[:8]} not found"}
+
+            head = self._run("rev-parse", "HEAD", check=False).strip()
+            is_head = (head == sha) or (
+                self._run("rev-parse", sha, check=False).strip() == head
+            )
+            tree_clean = not self._run("status", "--porcelain").strip()
+            pushed = bool(
+                self._run("branch", "-r", "--contains", sha, check=False).strip()
+            )
+
+            # Safe-reset path: only when this commit is the tip, nothing
+            # else sits on top, the tree is clean (no user work to lose),
+            # and it was never published.
+            if is_head and tree_clean and not pushed:
+                parent = self._run("rev-parse", f"{sha}^", check=False).strip()
+                if parent and parent != f"{sha}^":
+                    out = self._run("reset", "--hard", parent, check=False)
+                    return {"action": "reset", "ok": True,
+                            "detail": f"reset to {parent[:8]}"}
+                # No parent (initial commit) → reset to the empty tree.
+                self._run("update-ref", "-d", "HEAD", check=False)
+                return {"action": "reset", "ok": True,
+                        "detail": "removed initial commit"}
+
+            # Safe-revert path: additive, never rewrites published history
+            # and never touches the user's other commits.
+            out = self._run(
+                "-c", f"user.name={self.AGENT_NAME}",
+                "-c", f"user.email={self.AGENT_EMAIL}",
+                "revert", "--no-edit", "--no-commit", sha, check=False,
+            )
+            # --no-commit so we can detect conflicts before finalizing.
+            conflicts = self._run("diff", "--name-only", "--diff-filter=U",
+                                   check=False).strip()
+            if conflicts:
+                # Abort — leave the repo exactly as it was; snapshot
+                # restore (caller) handles the files.
+                self._run("revert", "--abort", check=False)
+                self._run("reset", "--hard", "HEAD", check=False)
+                return {"action": "skipped", "ok": False,
+                        "detail": f"revert conflicts: {conflicts.splitlines()[:3]}"}
+            self._run(
+                "-c", f"user.name={self.AGENT_NAME}",
+                "-c", f"user.email={self.AGENT_EMAIL}",
+                "commit", "-m", f"Revert agent commit {sha[:8]}", "--quiet",
+                check=False,
+            )
+            return {"action": "revert", "ok": True,
+                    "detail": f"reverted {sha[:8]}"}
 
     def dirty_paths(self) -> set[str]:
         """The set of paths git reports as changed (porcelain). Caller
@@ -367,6 +507,30 @@ def _project_id_for_path(path: Path) -> str:
     return f"proj_{h}"
 
 
+def ensure_footprint_ignored(project_path: str | Path) -> None:
+    """Write ``<project>/.openprogram/.gitignore`` = ``*`` so the user's
+    git ignores OpenProgram's entire footprint (the session repos we
+    store at ``<project>/.openprogram/sessions/<id>/`` live INSIDE the
+    user's working tree).
+
+    Crucially this is **independent of git-init** (rule A): we never
+    create the user's ``.git``, but we DO need the ``.gitignore`` in
+    place if the folder is — or later becomes — a git repo, otherwise
+    ``.openprogram/`` shows up as untracked and gets swept into commits.
+    Called when a session is relocated into a project dir, and again
+    from ``ProjectGit.ensure_init``. Best-effort; never raises.
+    """
+    try:
+        op_dir = Path(project_path).expanduser() / ".openprogram"
+        op_dir.mkdir(parents=True, exist_ok=True)
+        gi = op_dir / ".gitignore"
+        current = gi.read_text(encoding="utf-8") if gi.exists() else ""
+        if current != "*\n":
+            gi.write_text("*\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def list_projects() -> list[Project]:
     with _reg_lock:
         return [Project.from_dict(d) for d in _read_registry().values()]
@@ -413,28 +577,32 @@ def get_default_project() -> Project:
 
 
 def resolve_project(path: str | Path | None = None, *, name: str | None = None) -> Project:
-    """Resolve (and auto-create) the project for a working directory.
+    """Resolve (and register) the project for a working directory.
 
-    * ``path=None`` → the default project (home-dir catch-all repo).
-    * ``path=<dir>`` → the project bound to that directory. Reuses the
-      directory's existing ``.git`` if present, else ``git init``s it.
-      Registered in ``projects.json`` keyed by a path-derived id, so
-      the same directory always resolves to the same project.
+    * ``path=None`` → the default project (logical label, no repo).
+    * ``path=<dir>`` → the project bound to that directory. Registered
+      in ``projects.json`` keyed by a path-derived id, so the same
+      directory always resolves to the same project.
 
-    Both cases guarantee a git repo exists on return — this is the
-    "automatically create project entity memory" the entity layer
-    promises.
+    **Binding a folder does not touch its git.** We don't ``git init``
+    here, and don't require the folder to be a git repo. Git work is
+    deferred to turn end: if auto-commit is on (default) and the agent
+    edits files, ``project_commit`` will auto-init a non-git folder then
+    (safely — baseline commit first, refuse on dep/build dirs). So the
+    mere act of opening a folder has zero git side-effects; a repo only
+    appears once the agent actually changes something. (The session's
+    OWN entity memory lives at ``<dir>/.openprogram/sessions/<id>/``
+    regardless — a separate git repo we manage, not the user's.)
     """
     if path is None:
         return get_default_project()
 
     p = Path(path).expanduser()
+    # Drop our .gitignore in NOW (rule A: no git-init, but the footprint
+    # must be hidden in case the folder is / becomes a git repo).
+    ensure_footprint_ignored(p)
     pid = _project_id_for_path(p)
     existing = get_project(pid)
-
-    repo = ProjectGit(p)
-    repo.ensure_init()
-
     if existing is not None:
         return existing
 
@@ -485,4 +653,5 @@ __all__ = [
     "resolve_project",
     "bind_session",
     "project_for_session",
+    "ensure_footprint_ignored",
 ]

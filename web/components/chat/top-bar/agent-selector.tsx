@@ -19,6 +19,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useSessionStore } from "@/lib/session-store";
 import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
+import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
+import { Check } from "lucide-react";
 
 export function AgentSelector({
   kind,
@@ -66,34 +68,18 @@ export function AgentSelector({
   }
 
   return (
-    <div
-      className={[
-        "max-h-[60vh] w-[300px] overflow-y-auto",
-        "rounded-[10px] border border-[var(--border)] bg-bg-tertiary",
-        "p-[6px]",
-        "shadow-(--shadow-popover)",
-      ].join(" ")}
-    >
-      <div className="px-[10px] pb-[4px] pt-[6px] text-[12px] font-semibold text-text-muted">
-        {kind === "chat" ? t("agent.chat_agent") : t("agent.execution_agent")}
-      </div>
-
+    <div className={`${MENU_PANEL} w-[300px]`}>
       {(models ?? []).length === 0 ? (
-        <div className="px-[10px] py-[8px] text-[12px] text-text-muted">
+        <div className="px-[8px] py-[6px] text-[12px] text-text-muted">
           {t("agent.no_enabled_models")}{" "}
-          <a
-            href="/settings"
-            className="text-[var(--accent-blue)] no-underline"
-          >
+          <a href="/settings" className="text-[var(--accent-blue)] no-underline">
             {t("agent.enable_models")} →
           </a>
         </div>
       ) : (
         byProvider.map((group) => (
           <div key={group.provider}>
-            <div className="px-[10px] pb-[2px] pt-[8px] text-[11px] uppercase tracking-[0.04em] text-text-muted">
-              {group.provider}
-            </div>
+            <div className={GROUP_LABEL}>{group.provider}</div>
             {group.models!.map((m) => {
               const active =
                 currentProvider === m.provider &&
@@ -104,14 +90,7 @@ export function AgentSelector({
                   key={m.id}
                   type="button"
                   onClick={() => pick(m.provider, m.id)}
-                  className={[
-                    "flex w-full items-center gap-[8px] rounded-[8px]",
-                    "px-[8px] py-[6px] text-left text-[14px]",
-                    "transition-colors duration-75",
-                    active
-                      ? "bg-bg-hover text-text-bright"
-                      : "text-text-primary hover:bg-bg-hover hover:text-text-bright",
-                  ].join(" ")}
+                  className={`${itemCls(active)} w-full text-left`}
                 >
                   <span className="flex-1 truncate">{m.name}</span>
                   <CapIcons caps={m.capabilities} />
@@ -120,11 +99,7 @@ export function AgentSelector({
                       {fmtCtx(m.context)}
                     </span>
                   ) : null}
-                  {active ? (
-                    <span className="shrink-0 text-[var(--accent-blue)]">
-                      ✓
-                    </span>
-                  ) : null}
+                  {active ? <Check size={14} className={CHECK} /> : null}
                 </button>
               );
             })}
@@ -132,11 +107,8 @@ export function AgentSelector({
         ))
       )}
 
-      <div className="px-[10px] pb-[4px] pt-[8px] text-[11px]">
-        <a
-          href="/settings"
-          className="text-[var(--accent-blue)] no-underline"
-        >
+      <div className="px-[8px] pb-[3px] pt-[5px] text-[11px]">
+        <a href="/settings" className="text-[var(--accent-blue)] no-underline">
           {t("agent.manage_models")} →
         </a>
       </div>

@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
+import { PlugZapIcon } from "@/components/animated-icons";
 
 import styles from "./mcp-page.module.css";
 
@@ -135,7 +136,7 @@ export function DetailView({
     <div className="flex w-full flex-col gap-4">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <span className="text-xl">🔌</span>
+        <span className="text-xl"><PlugZapIcon size={20} /></span>
         <span style={{ color: "var(--accent-blue)" }}
               className="font-mono text-lg font-semibold">
           {server.name}

@@ -30,7 +30,7 @@ def _init_repo(path: Path) -> None:
 @pytest.fixture
 def store_fixture(tmp_path, monkeypatch):
     """Isolated SessionStore for task persistence."""
-    from openprogram.store.session_store import SessionStore
+    from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)

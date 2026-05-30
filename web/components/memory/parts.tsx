@@ -4,17 +4,30 @@
  * Memory page subcomponents — tab button, tree group rows,
  * editor panel, loading skeleton, empty state, placeholder.
  */
+import { cloneElement, isValidElement, useRef, type ReactElement } from "react";
+
 import { parseFrontmatter, renderMarkdown } from "./markdown";
 import { formatDate } from "./format";
 import { DocIcon, TypeBadge } from "./icons";
 import { useTranslation } from "@/lib/i18n";
+import { type AnimatedNavIconHandle, XIcon } from "@/components/animated-icons";
 import type { EditorState, WikiPage } from "./types";
 import styles from "./memory-page.module.css";
 
 export function TabButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
+  // Whole-tab hover drives the icon's animation (claude.ai-style): the
+  // button owns the hover target, the icon just listens via its ref.
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
-    <button className={`${styles.tabBtn} ${active ? styles.tabBtnActive : ""}`} onClick={onClick}>
-      {icon}
+    <button
+      className={`${styles.tabBtn} ${active ? styles.tabBtnActive : ""}`}
+      onClick={onClick}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+    >
+      {isValidElement(icon)
+        ? cloneElement(icon as ReactElement, { ref: iconRef } as Record<string, unknown>)
+        : icon}
       {children}
     </button>
   );
@@ -77,6 +90,7 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
   onPreviewClick?: (e: React.MouseEvent) => void;
 }) {
   const { text } = useTranslation();
+  const delIconRef = useRef<AnimatedNavIconHandle>(null);
   const { frontmatter, body } = parseFrontmatter(state.content);
   const lines = state.content.split("\n").length;
   const words = state.content.trim() ? state.content.trim().split(/\s+/).length : 0;
@@ -101,10 +115,14 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
             {state.saving ? text("Saving...", "保存中...") : text("Save", "保存")}
           </button>
           {onDelete && (
-            <button className={styles.dangerBtn} onClick={onDelete} title={text("Delete page", "删除页面")}>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" width="12" height="12" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 4h10M6 4V2.5h4V4M5 4l.5 9.5h5L11 4M6.5 6.5v5M9.5 6.5v5"/>
-              </svg>
+            <button
+              className={styles.dangerBtn}
+              onClick={onDelete}
+              title={text("Delete page", "删除页面")}
+              onMouseEnter={() => delIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => delIconRef.current?.stopAnimation?.()}
+            >
+              <XIcon ref={delIconRef} size={13} />
             </button>
           )}
         </div>

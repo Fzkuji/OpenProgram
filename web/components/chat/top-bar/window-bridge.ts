@@ -67,7 +67,11 @@ function wrapAgentBadges(w: LegacyTopbarGlobals): void {
   if (!w.__origUpdateAgentBadges) {
     w.__origUpdateAgentBadges = w.updateAgentBadges;
     w.updateAgentBadges = function () {
-      try { w.__origUpdateAgentBadges?.(); } catch { /* ignore */ }
+      // Deliberately do NOT call the legacy original. It imperatively
+      // DOM-mutates the #chatAgentBadge / #execAgentBadge elements that
+      // React now owns, which fights React's render and makes the chips
+      // flicker / disappear. The data we need already lives in
+      // `window._agentSettings`, which `pushAgentSettings` reads.
       pushAgentSettings();
     };
   }

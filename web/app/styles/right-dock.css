@@ -173,10 +173,10 @@
   /* 24×24 matches the topbar branch-dropdown's inline-styled
      buttons (see conversations.js: `var BTN = 24`). The CSS
      22×22 you'll find in 05-chat.css is overridden there. */
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: 5px;
   color: var(--text-muted);
   cursor: pointer;
   transition: background 75ms, color 75ms;
@@ -193,8 +193,10 @@
   color: var(--text-bright);
 }
 .branch-item-del:hover {
-  background: var(--accent-red);
-  color: #fff;
+  /* Subtle danger — match the app's delete convention (menu-styles /
+     conv-menu): faint red tint + red icon, not a solid red fill. */
+  background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+  color: var(--accent-red);
 }
 /* When hovering the row, the HEAD badge collides visually with the
    action buttons. Hide the badge during hover so the action icons

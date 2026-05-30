@@ -33,7 +33,7 @@ import os
 from typing import Any
 
 from ..._runtime import function
-from openprogram.store.file_backup.helpers import backup_for_current_turn
+from openprogram.store.snapshot.file_backup.helpers import backup_for_current_turn
 
 
 NAME = "apply_patch"
@@ -113,6 +113,13 @@ def _apply_add(path: str, body: list[str]) -> str:
     backup_for_current_turn(path)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content + ("\n" if not content.endswith("\n") else ""))
+    # Baseline the new file so a later Update in the same session doesn't
+    # trip the "never read" gate (the agent just created it).
+    try:
+        from openprogram.store import read_tracking as _rt
+        _rt.mark_seen(path)
+    except Exception:
+        pass
     return f"Added {path} ({len(body)} lines)"
 
 
@@ -127,6 +134,17 @@ def _apply_delete(path: str) -> str:
 def _apply_update(path: str, body: list[str]) -> str:
     if not os.path.exists(path):
         return f"Error: Update File target not found: {path}"
+
+    # Read-before-edit gate: updating an existing file the agent never
+    # read, or one changed on disk since, is refused (Claude-Code-style)
+    # so a concurrent user change isn't clobbered. No-op outside a turn.
+    try:
+        from openprogram.store import read_tracking as _rt
+        _fresh = _rt.check_fresh(path)
+        if _fresh in (_rt.NEVER_READ, _rt.STALE):
+            return _rt.stale_message(path, _fresh)
+    except Exception:
+        pass
 
     # Split body into hunks on lines starting with "@@". The text after "@@"
     # (context hint) is informational only — we use the +/- lines to locate.
@@ -191,6 +209,11 @@ def _apply_update(path: str, body: list[str]) -> str:
     backup_for_current_turn(path)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
+    try:
+        from openprogram.store import read_tracking as _rt
+        _rt.mark_seen(path)
+    except Exception:
+        pass
     return f"Updated {path} ({applied} hunk{'s' if applied != 1 else ''})"
 
 

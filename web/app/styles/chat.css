@@ -59,46 +59,68 @@
 .runtime-badge {
   display: inline-flex;
   align-items: center;
-  min-width: 0;
-  flex-shrink: 1;
+  /* Chips do NOT shrink: a chip is shown at its full content width or its
+     label is hidden wholesale by the @container thresholds below. Letting
+     it shrink (flex-shrink:1) squeezed labels down to a 0-width / 1-char
+     stub, which is exactly what we're avoiding. */
+  flex-shrink: 0;
+  box-sizing: border-box;
+  /* Uniform fixed height for EVERY topbar chip. Without this, icon-only
+     chips (status / project / exec) render ~4px shorter than text chips
+     (branch / chat) because the text line-box is taller than the 14px
+     icon. Fixed height + border-box makes per-type padding/border height-
+     neutral, so all chips are exactly the same height. */
+  height: 24px;
+  /* Uniform label weight across every chip — without this the branch name
+     and agent model rendered at 400 while status / project sat at 500,
+     which read as a font mismatch. */
+  font-weight: 500;
 }
 .badge-short {
   font-weight: 500;
   flex-shrink: 0;
 }
 .badge-details {
-  margin-left: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
-  flex: 0 1 auto;
-  /* Fluid responsive: grows from 0 at 540cqi container up to a 40ch
-     cap by ~1100cqi. Smooth instead of stage-jumping, so sidebar
-     collapse/expand only nudges truncation a few chars at a time
-     rather than chopping a whole segment off. */
-  max-width: clamp(0px, calc((100cqi - 540px) * 0.5), 40ch);
+  flex-shrink: 0;
+  /* Generous fixed cap: a normal model name shows in full; only a
+     pathologically long id ellipsizes. We never shrink it down to a
+     meaningless stub — instead the whole label is hidden once the bar is
+     too narrow (see the @container thresholds below). */
+  max-width: 32ch;
 }
 
-/* Branch name — same fluid idea (was inline maxWidth: 180 in tsx). */
 .branch-name {
   display: inline-block;
   vertical-align: bottom;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
-  max-width: clamp(0px, calc((100cqi - 540px) * 0.3), 24ch);
+  flex-shrink: 0;
+  max-width: 24ch;
 }
 
-/* Ultra-narrow only: even the short labels collapse to their leading
-   glyph so four chips still fit. Dropdowns still open on click. */
-@container topbar (max-width: 480px) {
-  .badge-short {
-    max-width: 1ch;
-    overflow: hidden;
-    letter-spacing: 0;
-  }
+/* Overflow-driven label collapse. The actual fit is measured in JS
+   (top-bar/index.tsx via ResizeObserver), which sets data-compact on
+   .topbar-left ONLY when the chips would genuinely overflow — never
+   prematurely while there's still room. Labels drop longest-first:
+   level 1 = agent models, 2 = + branch name, 3 = + status/project →
+   a clean row of icons. Full-or-hidden, never a truncated stub. */
+.topbar-left[data-compact="1"] .agent-badge .badge-details,
+.topbar-left[data-compact="2"] .agent-badge .badge-details,
+.topbar-left[data-compact="3"] .agent-badge .badge-details {
+  display: none;
+}
+.topbar-left[data-compact="2"] .branch-badge .branch-name,
+.topbar-left[data-compact="3"] .branch-badge .branch-name {
+  display: none;
+}
+.topbar-left[data-compact="3"] .status-badge .badge-short,
+.topbar-left[data-compact="3"] .project-badge .badge-short,
+.topbar-left[data-compact="3"] .project-badge .project-caret {
+  display: none;
 }
 
 .topbar-right {
@@ -154,8 +176,9 @@
    already, so the default flex-shrink:0 rule above is fine for
    them. */
 .status-badge .badge-short {
-  flex-shrink: 1;
+  flex-shrink: 0;
   min-width: 0;
+  max-width: 24ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -190,6 +213,57 @@
 }
 .branch-badge .branch-icon svg { display: block; }
 
+/* Project chip — the "where am I" anchor, mirrors Claude's composer
+   project pill. Deliberately NEUTRAL (not a loud accent colour) so it
+   reads as the calm context label that the louder green status / orange
+   branch+agent chips hang off. Double-class qualifier beats the green
+   `.runtime-badge` default at L886, same as branch-badge above. */
+.runtime-badge.project-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.runtime-badge.project-badge:hover {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-bright);
+}
+.project-badge .project-icon {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.project-badge .project-icon svg { display: block; }
+.project-badge .project-caret { opacity: 0.6; flex-shrink: 0; }
+/* Let long project names ellipsize rather than push the other chips
+   off-screen (.badge-short is flex-shrink:0 by default). */
+.project-badge .badge-short {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hover tooltips (topbar chips + message actions) — Claude-style:
+   NO border, a solid badge a touch lighter than the surface ("泛白"),
+   crisp text. Geometry / shadow / animation live on the Tailwind
+   classes in components/ui/tooltip.tsx. */
+.hover-tip {
+  background: color-mix(in srgb, var(--text-primary) 14%, var(--bg-secondary));
+  color: var(--text-bright);
+  border: none;
+}
+
 /* The topbar branch dropdown is the React <BranchMenu /> (shadcn
    <Popover> + Tailwind) now — its `.branch-selector` / `.model-dd-*`
    rules were removed. */
@@ -215,7 +289,14 @@
   display: flex;
   flex-direction: column;
 }
-.chat-area.welcome-visible { overflow: hidden; }
+/* Lock scrolling while the welcome panel is up. Driven by the React
+   portal host: `<WelcomeScreen />` renders a child into `#welcome-mount`
+   when visible, so `:has(#welcome-mount > *)` is true exactly then — one
+   source of truth, no imperative `.welcome-visible` class. We key off
+   the mount's stable id, NOT `.welcome`: that class is CSS-Module-hashed
+   (`welcome-screen_welcome__…`), so a literal `.welcome` in this global
+   sheet never matches it. */
+.chat-area:has(#welcome-mount > *) { overflow: hidden; }
 
 
 
@@ -232,15 +313,17 @@
   flex-direction: column;
   gap: 0;
 }
-/* Descendant (not `> .welcome`): the React <WelcomeScreen /> renders
-   inside a `#welcome-mount` host, so `.welcome` is not a direct child
-   of `.chat-messages`. Bottom padding clears the absolutely-anchored
-   composer so the welcome examples row sits just above it. Tuned to
-   the composer's actual occupied height (top/bottom padding +
-   textarea + bottom-row) plus a small visual gap — was 150px which
-   left a noticeable air-gap between the example chips and composer. */
-.chat-messages:has(.welcome) {
-  padding-bottom: 90px;
+/* Bottom padding clears the absolutely-anchored composer so the welcome
+   examples row sits just above it. Keyed off the React portal host
+   `#welcome-mount` HAVING A CHILD (i.e. welcome visible) — NOT
+   `.welcome`, which is CSS-Module-hashed and so untargetable from this
+   global sheet. (That dead `:has(.welcome)` is why the row used to fall
+   through to the 25vh base rule and float ~50px too high once the legacy
+   inline 150px stopped being stamped.) 150px matches the composer's
+   occupied height so the chips land right above it — same position the
+   legacy framework gave. Bump toward ~165px for a larger visible gap. */
+.chat-messages:has(#welcome-mount > *) {
+  padding-bottom: 150px;
 }
 
 .message {
@@ -270,11 +353,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--text-muted);
   cursor: pointer;
   padding: 0;
@@ -321,7 +404,7 @@
   width: 22px; height: 22px;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   color: var(--text-muted);
   cursor: pointer;
   padding: 0;
@@ -337,7 +420,7 @@
   opacity: 0.35;
   cursor: default;
 }
-.message-nav-btn svg { width: 12px; height: 12px; }
+.message-nav-btn svg { width: 16px; height: 16px; }
 .message-nav-label {
   font-variant-numeric: tabular-nums;
   min-width: 34px;
@@ -412,8 +495,8 @@
   filter: brightness(1.08);
 }
 .message-action-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 /* Brief "Copied!" confirmation after Copy click. */
 .message-action-btn.is-copied {
@@ -898,7 +981,6 @@
 }
 .runtime-badge.agent-badge {
   cursor: pointer;
-  font-family: var(--font-mono);
   font-size: 12px;
   /* Blue chip for the model selectors (chat + exec). Distinct from
      the status badge's green ("Local / connected") and the branch

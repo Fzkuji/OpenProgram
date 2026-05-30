@@ -10,7 +10,7 @@
  *    no UI clue — the model picker just "doesn't take", the chat
  *    silently runs the agent default, etc.
  *  - A route handler runs in Node and can read the worker's port
- *    file (``~/.agentic/worker.port``) on every request. We cache the
+ *    file (``<state-dir>/worker.port``) on every request. We cache the
  *    value with a short TTL so the hot path doesn't hammer the disk,
  *    but a port change is picked up within a second.
  *
@@ -49,17 +49,26 @@ function resolveBackendPort(): number {
       return _cachedPort;
     }
   }
-  try {
-    const portFile = path.join(os.homedir(), ".agentic", "worker.port");
-    const raw = fs.readFileSync(portFile, "utf-8").trim();
-    const p = parseInt(raw, 10);
-    if (Number.isFinite(p) && p > 0) {
-      _cachedPort = p;
-      _cachedAt = now;
-      return p;
+  // State dir mirrors openprogram.paths.get_state_dir(): canonical
+  // ~/.openprogram[-<profile>], with legacy ~/.agentic[-<profile>] as a
+  // back-compat fallback.
+  const profile = (process.env.OPENPROGRAM_PROFILE || "").trim();
+  const suffix = profile ? `-${profile}` : "";
+  for (const portFile of [
+    path.join(os.homedir(), `.openprogram${suffix}`, "worker.port"),
+    path.join(os.homedir(), `.agentic${suffix}`, "worker.port"),
+  ]) {
+    try {
+      const raw = fs.readFileSync(portFile, "utf-8").trim();
+      const p = parseInt(raw, 10);
+      if (Number.isFinite(p) && p > 0) {
+        _cachedPort = p;
+        _cachedAt = now;
+        return p;
+      }
+    } catch {
+      /* not present — try next candidate */
     }
-  } catch {
-    /* ignore — fall through to default */
   }
   _cachedPort = 8109;
   _cachedAt = now;

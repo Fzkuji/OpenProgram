@@ -17,6 +17,11 @@ import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
+import {
+  type AnimatedNavIconHandle,
+  SquarePenIcon,
+  XIcon,
+} from "@/components/animated-icons";
 
 interface BranchRow {
   head_msg_id: string;
@@ -38,17 +43,6 @@ function wsSend(payload: unknown): void {
   }
 }
 
-const RENAME_SVG = (
-  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11.5 2.5l2 2L5 13l-3 1 1-3 8.5-8.5z" />
-  </svg>
-);
-const DEL_SVG = (
-  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-    <line x1="2" y1="2" x2="8" y2="8" />
-    <line x1="8" y1="2" x2="2" y2="8" />
-  </svg>
-);
 
 function BranchRowItem({
   branch,
@@ -113,19 +107,18 @@ function BranchRowItem({
     onClose();
   }
 
-  const btnStyle: React.CSSProperties = {
+  // Rename/delete glyphs match the right-rail branches panel exactly:
+  // the shared `.branch-item-action` styling (incl. the subtle red
+  // delete hover) + the animated SquarePen / X icons, driven by each
+  // button's hover.
+  const renameIconRef = useRef<AnimatedNavIconHandle>(null);
+  const delIconRef = useRef<AnimatedNavIconHandle>(null);
+  const actionPos = (right: number): React.CSSProperties => ({
     position: "absolute",
     top: "50%",
     transform: "translateY(-50%)",
-    width: 24,
-    height: 24,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 4,
-    color: "var(--text-muted)",
-    cursor: "pointer",
-  };
+    right,
+  });
 
   return (
     <div
@@ -195,24 +188,28 @@ function BranchRowItem({
       {hovered && !editing ? (
         <>
           <span
-            className="branch-rename"
+            className="branch-item-action branch-item-rename"
             title={t("right.rename_branch")}
-            style={{ ...btnStyle, right: 36 }}
+            style={actionPos(36)}
+            onMouseEnter={() => renameIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => renameIconRef.current?.stopAnimation?.()}
             onClick={(e) => {
               e.stopPropagation();
               setValue(branch.is_named ? branch.name || "" : "");
               setEditing(true);
             }}
           >
-            {RENAME_SVG}
+            <SquarePenIcon ref={renameIconRef} size={13} />
           </span>
           <span
-            className="branch-del"
+            className="branch-item-action branch-item-del"
             title={t("right.delete_branch")}
-            style={{ ...btnStyle, right: 8 }}
+            style={actionPos(8)}
+            onMouseEnter={() => delIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => delIconRef.current?.stopAnimation?.()}
             onClick={del}
           >
-            {DEL_SVG}
+            <XIcon ref={delIconRef} size={13} />
           </span>
         </>
       ) : null}
@@ -221,7 +218,7 @@ function BranchRowItem({
 }
 
 export function BranchMenu({ onClose }: { onClose: () => void }) {
-  const { t, text } = useTranslation();
+  const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [rows, setRows] = useState<BranchRow[] | null>(null);
 
@@ -241,9 +238,6 @@ export function BranchMenu({ onClose }: { onClose: () => void }) {
 
   return (
     <div className={`${MENU_PANEL} w-auto`}>
-      <div className={GROUP_LABEL}>
-        <span>{t("right.branches")}</span>
-      </div>
       {rows !== null && rows.length === 0 ? (
         <div className={`${GROUP_LABEL} text-[11px]`}>
           <span>{text("No branches yet. Retry or edit a message to fork.", "还没有分支。重试或编辑消息后会创建分支。")}</span>

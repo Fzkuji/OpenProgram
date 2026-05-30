@@ -91,19 +91,36 @@ const SVG_PAUSE =
 const SVG_RESUME = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 
 function renderStatusBadge(
-  badge: HTMLElement,
+  _badge: HTMLElement,
   text: string,
   klass: string,
   dotKlass: string,
 ): void {
-  badge.innerHTML =
-    '<span class="' +
-    dotKlass +
-    '" aria-hidden="true"></span>' +
-    '<span class="badge-short">' +
-    escapeHtml(text) +
-    "</span>";
-  badge.className = klass;
+  // #statusBadge is owned by the React <TopBar> (StatusBadge → Laptop
+  // icon). Writing innerHTML here clobbered React's render and made the
+  // icon flicker back to the legacy dot. Push to the session store and
+  // let React render the chip instead.
+  const tone = dotKlass.includes("--ok")
+    ? "ok"
+    : dotKlass.includes("--warn")
+      ? "warn"
+      : dotKlass.includes("--err")
+        ? "err"
+        : "connecting";
+  const paused = klass.includes("paused");
+  const label = text.split(" · ")[0];
+  try {
+    const store = (
+      W as unknown as {
+        __sessionStore?: {
+          getState: () => { setStatusBadge: (s: unknown) => void };
+        };
+      }
+    ).__sessionStore;
+    store?.getState().setStatusBadge({ label, tone, paused, title: text });
+  } catch {
+    /* ignore */
+  }
 }
 
 export function setStatusDotHealth(state: string): void {
@@ -162,14 +179,6 @@ export function updateStatus(status: string, source?: string): void {
       ? "connected · " + source
       : "connected · local worker"
     : "disconnected";
-}
-
-function escapeHtml(s: unknown): string {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 /* ===== Channel / title helpers =================================== */

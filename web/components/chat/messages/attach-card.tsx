@@ -10,12 +10,16 @@
  * session refactor) carry a foreign ``session_id`` and fall back to
  * navigating to that session.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { ChatMsg } from "@/lib/session-store";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import {
+  type AnimatedNavIconHandle,
+  ArrowUpRightIcon,
+} from "@/components/animated-icons";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 
 function wsSend(payload: unknown): void {
@@ -101,6 +105,7 @@ function useFollowupNotice(attachMsgId: string): string | null {
 export function AttachCard({ msg }: { msg: ChatMsg }) {
   useMarkdownReady();
   const { text } = useTranslation();
+  const switchIconRef = useRef<AnimatedNavIconHandle>(null);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const attach = msg.attach || {};
   const followupNotice = useFollowupNotice(msg.id);
@@ -249,16 +254,13 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
             type="button"
             className="attach-card-open"
             onClick={open}
+            onMouseEnter={() => switchIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => switchIconRef.current?.stopAnimation?.()}
             aria-label={sameSession ? text("Switch to this branch", "切换到这个分支") : text("Open peer session", "打开关联会话")}
             title={sameSession ? text("Switch to this branch", "切换到这个分支") : text("Open peer session", "打开关联会话")}
           >
             {sameSession ? text("Switch", "切换") : text("Open", "打开")}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                 aria-hidden="true">
-              <line x1="7" y1="17" x2="17" y2="7" />
-              <polyline points="7 7 17 7 17 17" />
-            </svg>
+            <ArrowUpRightIcon ref={switchIconRef} size={14} />
           </button>
         ) : null}
       </div>

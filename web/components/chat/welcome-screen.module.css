@@ -7,22 +7,33 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* Two INDEPENDENT anchors, NOT one group:
+       - `.top` (logo / title / description) is vertically centered here
+         via `justify-content: center`. The chips leave normal flow
+         (absolute), so they don't drag the centering down.
+       - `.examples` is `position: absolute; bottom: 0`, pinned to the
+         bottom of this box so it hugs the composer.
+     `position: relative` makes this the containing block for that pin.
+     No vertical padding, so `.top` centers cleanly in the visible area
+     (top bar → composer top). */
+  justify-content: center;
+  position: relative;
   color: var(--text-secondary);
-  padding: 40px 40px 0;
+  padding: 0 40px;
 }
 
-/* Top section (logo + title + description) sits at a fixed
-   viewport-relative offset from the top of the welcome area so it
-   stays put even as the wrapper below grows when a function form
-   opens. `flex-shrink: 0` keeps the natural content height; the
-   examples row uses `margin-top: auto` to anchor itself to the bottom
-   of the welcome region (right above the composer). */
+/* Logo + title + description, kept as a tight unit (`flex-shrink: 0`
+   so it never compresses). It used to be pinned at `margin-top: 20vh`
+   while the examples row anchored to the bottom — that split the panel
+   into a high block and a low block with a big void between them. Now
+   the whole welcome group is vertically centered as one unit (see
+   `.welcome { justify-content: center }`), so the description and the
+   example chips read as a single cluster. */
 .top {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  margin-top: 20vh;
   flex-shrink: 0;
 }
 
@@ -112,22 +123,25 @@
   line-height: 1.6;
 }
 
-/* Example-button row — sits just above the composer when the welcome
-   panel is visible. `.top` above grows to fill the rest of the chat
-   area, so this row stays anchored to the bottom of the welcome
-   region (which is directly above the composer wrapper). */
+/* Example-button row — an INDEPENDENT bottom-pinned strip, NOT part of
+   the centered logo group. Absolutely anchored to the bottom of
+   `.welcome`, whose bottom edge sits at the chat area's 150px
+   bottom-padding (`.chat-messages:has(#welcome-mount > *)`) — i.e. right
+   above the composer — so the chips hug the input box regardless of
+   where the logo group centers. `left/right: 0` + `margin: 0 auto`
+   centers the (max-800px) strip horizontally. */
 .examples {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 24px 24px 12px;
+  padding: 12px 24px;
   justify-content: center;
   max-width: 800px;
-  /* `margin-top: auto` anchors this row to the bottom of `.welcome`
-     (i.e. directly above the composer) — without it the row sticks
-     to `.top` and leaves a big gap below. */
-  margin: auto auto 0;
-  flex-shrink: 0;
   opacity: 1;
   transition: opacity 0.18s ease;
 }

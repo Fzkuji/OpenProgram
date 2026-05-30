@@ -7,9 +7,13 @@
  */
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import type { AgenticFunction, FnParam } from "@/lib/session-store";
+import {
+  type AnimatedNavIconHandle,
+  FolderOpenIcon,
+} from "@/components/animated-icons";
 
 import { FieldRow } from "./fn-form-fields";
 import styles from "./fn-form.module.css";
@@ -232,15 +236,18 @@ function WorkdirRow({
   error: boolean;
   noId?: boolean;
 }) {
+  const folderIconRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div className={styles.workdirRow}>
       <button
         type="button"
         className={styles.workdirBtn}
         onClick={onPick}
+        onMouseEnter={() => folderIconRef.current?.startAnimation?.()}
+        onMouseLeave={() => folderIconRef.current?.stopAnimation?.()}
         title="Open folder chooser"
       >
-        <FolderIcon />
+        <FolderOpenIcon ref={folderIconRef} size={15} />
         <span>Working in a folder</span>
       </button>
       <input
@@ -258,19 +265,3 @@ function WorkdirRow({
   );
 }
 
-function FolderIcon() {
-  return (
-    <svg
-      viewBox="0 0 20 20"
-      width="15"
-      height="15"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M3 6a2 2 0 0 1 2-2h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-    </svg>
-  );
-}

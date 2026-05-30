@@ -8,7 +8,7 @@ import pytest
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    from openprogram.store.session_store import SessionStore
+    from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)

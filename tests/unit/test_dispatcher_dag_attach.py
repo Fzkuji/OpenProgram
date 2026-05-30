@@ -8,22 +8,10 @@ session DAG as the chat messages.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
-# Skip on CI hosts (GitHub Actions sets ``CI=true``) — dispatcher's
-# DAG-attach path requires a configured provider in $HOME, and the
-# Linux runners we use have none, so ``create_runtime()`` raises and
-# the GraphStore install is silently skipped. The test still runs on
-# dev machines that have a real provider config; the production path
-# itself is exercised by the integration smoke tests.
-pytestmark = pytest.mark.skipif(
-    os.environ.get("CI", "").lower() in ("true", "1"),
-    reason="Needs a configured provider in $HOME; skip on bare CI runners.",
-)
 
 from openprogram.agent import dispatcher as D
 from openprogram.agent.session_db import SessionDB
@@ -41,21 +29,36 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
                         lambda: db)
     monkeypatch.setattr("openprogram.store.default_store", lambda: db)
 
-    # Pre-attach a GraphStore via the ContextVar BEFORE dispatcher runs.
-    # On hosts without a configured provider (GitHub Actions Linux
-    # runners) dispatcher's ``create_runtime()`` raises and the try-block
-    # falls through to the except branch WITHOUT installing ``_store``,
-    # so the planner's @agentic_function had nowhere to land — only
-    # ``user`` and ``llm`` roles ended up in the graph. Setting
-    # ``_store`` here guarantees the planner code Call lands in our
-    # SessionDB regardless of whether dispatcher's own setup succeeded.
+    # Make the turn provider-independent. The dispatcher's step-3 setup
+    # attaches BOTH the session GraphStore (``_store``) and a Runtime
+    # (``_current_runtime``) inside a SINGLE try-block guarded by
+    # ``create_runtime()``. On hosts without a configured provider (CI
+    # runners, bare dev boxes) ``create_runtime()`` raises and the except
+    # branch installs NEITHER — so the planner @agentic_function has no
+    # store to write into AND no runtime to inherit, leaving only the
+    # ``user`` + ``llm`` rows the dispatcher writes via ``append_message``
+    # directly. Pre-install both ContextVars here so the test exercises
+    # the @agentic_function → DAG path regardless of whether dispatcher's
+    # own provider-gated setup succeeds. When a provider IS configured the
+    # dispatcher overrides these with its own real instances via reset
+    # tokens; the test still passes because the stub overrides the
+    # runtime's ``_call`` to return deterministic text either way.
     from openprogram.store import _store as _store_var, GraphStoreShim
-    _token = _store_var.set(GraphStoreShim(db, "s1"))
+    from openprogram.agentic_programming.function import (
+        _current_runtime as _runtime_var,
+    )
+    _store_token = _store_var.set(GraphStoreShim(db, "s1"))
+    _runtime_token = _runtime_var.set(
+        Runtime(call=lambda content, model="default",
+                response_format=None: "outline")
+    )
     yield db
-    try:
-        _store_var.reset(_token)
-    except Exception:
-        pass
+    for _var, _tok in ((_runtime_var, _runtime_token),
+                       (_store_var, _store_token)):
+        try:
+            _var.reset(_tok)
+        except Exception:
+            pass
 
 
 def _stub_loop(text: str):
@@ -71,12 +74,16 @@ def _stub_loop(text: str):
         def planner(task: str, runtime: Runtime = None):
             return runtime.exec(f"plan: {task}")
 
-        # Need a runtime, but _current_runtime is set by dispatcher.
+        # Grab the active runtime — set by the dispatcher when a provider
+        # is configured, otherwise pre-installed by the tmp_db fixture.
         from openprogram.agentic_programming.function import (
             _current_runtime,
         )
         rt = _current_runtime.get(None)
-        assert rt is not None, "dispatcher should have set _current_runtime"
+        assert rt is not None, (
+            "_current_runtime must be active — installed by the dispatcher "
+            "(provider configured) or by the tmp_db fixture (no provider)"
+        )
         # Override _call so the LLM "call" returns deterministic text
         rt._call = lambda content, model="default", response_format=None: "outline"
         rt._uses_legacy_call = lambda: True  # type: ignore[method-assign]

@@ -14,13 +14,14 @@ from pathlib import Path
 import pytest
 
 # Importing the modules registers the AgentTool in the global registry.
+import openprogram.functions.tools.read.read  # noqa: F401
 import openprogram.functions.tools.write.write  # noqa: F401
 import openprogram.functions.tools.edit.edit  # noqa: F401
 import openprogram.functions.tools.apply_patch.apply_patch  # noqa: F401
 
 from openprogram.functions._runtime import get as get_tool
 from openprogram.store import _store, _current_turn_id, SessionStore, GraphStoreShim
-from openprogram.store.file_backup import BackupStore
+from openprogram.store.snapshot.file_backup import BackupStore
 
 
 SESSION_ID = "op-fb-integ-test"
@@ -61,6 +62,10 @@ def test_write_tool_backs_up_and_restores(turn_ctx, tmp_path):
     target = tmp_path / "hello.txt"
     target.write_text("original")
 
+    # read-before-edit gate: overwriting an existing file requires it to
+    # have been read first (Claude-Code contract). Mirror the real agent
+    # flow.
+    _run_tool("read", {"file_path": str(target)})
     out = _run_tool("write", {"file_path": str(target), "content": "overwritten"})
     assert "Wrote" in out
     assert target.read_text() == "overwritten"
@@ -77,6 +82,8 @@ def test_edit_tool_backs_up_and_restores(turn_ctx, tmp_path):
     target = tmp_path / "code.py"
     target.write_text("foo = 1\nbar = 2\n")
 
+    # read-before-edit gate: editing requires a prior read.
+    _run_tool("read", {"file_path": str(target)})
     out = _run_tool("edit", {
         "file_path": str(target),
         "old_string": "foo = 1",

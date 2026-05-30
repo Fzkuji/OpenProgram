@@ -13,10 +13,26 @@
  * re-request the conversation over the shared WS — the server moves
  * HEAD and `load_session` re-feeds the React store.
  */
-import { useState } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import {
+  type AnimatedNavIconHandle,
+  CheckIcon,
+  CopyIcon,
+  GitBranchIcon,
+  RefreshCwIcon,
+  SquarePenIcon,
+  UndoIcon,
+} from "@/components/animated-icons";
 
 function wsSend(payload: unknown): boolean {
   const w = window as Window & { ws?: WebSocket };
@@ -25,45 +41,17 @@ function wsSend(payload: unknown): boolean {
   return true;
 }
 
+// Tools / action glyphs are the animated line icons (pqoqubbw, in
+// ../../animated-icons). They self-animate on hover (uncontrolled) —
+// the action button is icon-sized so hovering it animates the glyph.
+// chevL/chevR stay static (tiny ‹ › nav carets — not worth animating).
 const SVG = {
-  copy: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  ),
-  check: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  ),
-  retry: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="23 4 23 10 17 10" />
-      <polyline points="1 20 1 14 7 14" />
-      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-    </svg>
-  ),
-  branch: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="6" y1="3" x2="6" y2="15" />
-      <circle cx="18" cy="6" r="3" />
-      <circle cx="6" cy="18" r="3" />
-      <path d="M18 9a9 9 0 0 1-9 9" />
-    </svg>
-  ),
-  pencil: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-    </svg>
-  ),
-  undo: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="9 14 4 9 9 4" />
-      <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
-    </svg>
-  ),
+  copy: <CopyIcon />,
+  check: <CheckIcon />,
+  retry: <RefreshCwIcon />,
+  branch: <GitBranchIcon />,
+  pencil: <SquarePenIcon />,
+  undo: <UndoIcon />,
   chevL: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="15 18 9 12 15 6" />
@@ -95,6 +83,47 @@ function setRunActive(active: boolean): void {
   (
     window as unknown as { setRunActive?: (a: boolean) => void }
   ).setRunActive?.(active);
+}
+
+/**
+ * A message-action button whose animated icon is driven by the WHOLE
+ * button's hover, not the glyph's small hit area. We clone the icon with
+ * a ref and start/stop it from the button's onMouseEnter/Leave — so the
+ * entire 26px button is the hover target and the animation replays
+ * reliably every time. (Uncontrolled self-hover only fired over the
+ * centred 14px glyph and could miss the second hover.)
+ */
+function ActionButton({
+  icon,
+  title,
+  onClick,
+  disabled,
+  extraClass,
+}: {
+  icon: ReactNode;
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  extraClass?: string;
+}) {
+  const ref = useRef<AnimatedNavIconHandle>(null);
+  const node = isValidElement(icon)
+    ? cloneElement(icon as ReactElement, { ref } as Record<string, unknown>)
+    : icon;
+  return (
+    <button
+      type="button"
+      className={"message-action-btn" + (extraClass ? " " + extraClass : "")}
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      onMouseEnter={() => ref.current?.startAnimation?.()}
+      onMouseLeave={() => ref.current?.stopAnimation?.()}
+    >
+      {node}
+    </button>
+  );
 }
 
 export function MessageActions({
@@ -232,59 +261,40 @@ export function MessageActions({
           {ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </span>
       ) : null}
-      <button
-        type="button"
-        className={"message-action-btn" + (copied ? " is-copied" : "")}
+      <ActionButton
+        icon={copied ? SVG.check : SVG.copy}
         title={tr("Copy", "复制")}
-        aria-label={tr("Copy", "复制")}
+        extraClass={copied ? "is-copied" : undefined}
         onClick={copy}
-      >
-        {copied ? SVG.check : SVG.copy}
-      </button>
-      <button
-        type="button"
-        className="message-action-btn"
+      />
+      <ActionButton
+        icon={SVG.retry}
         title={tr("Retry from here", "从这里重试")}
-        aria-label={tr("Retry from here", "从这里重试")}
         disabled={busy}
         onClick={retry}
-      >
-        {SVG.retry}
-      </button>
+      />
       {onEdit ? (
-        <button
-          type="button"
-          className="message-action-btn"
+        <ActionButton
+          icon={SVG.pencil}
           title={tr("Edit message", "编辑消息")}
-          aria-label={tr("Edit message", "编辑消息")}
           onClick={onEdit}
-        >
-          {SVG.pencil}
-        </button>
+        />
       ) : null}
       {msg.role === "assistant" ? (
-        <button
-          type="button"
-          className="message-action-btn"
+        <ActionButton
+          icon={SVG.branch}
           title={tr("Branch into a new conversation", "分支到新会话")}
-          aria-label={tr("Branch into a new conversation", "分支到新会话")}
           disabled={busy}
           onClick={branch}
-        >
-          {SVG.branch}
-        </button>
+        />
       ) : null}
       {msg.role === "assistant" ? (
-        <button
-          type="button"
-          className="message-action-btn"
+        <ActionButton
+          icon={SVG.undo}
           title={tr("Revert file edits from this turn", "撤销这一轮的文件编辑")}
-          aria-label={tr("Revert file edits", "撤销文件编辑")}
           disabled={busy}
           onClick={revertTurn}
-        >
-          {SVG.undo}
-        </button>
+        />
       ) : null}
       {total > 1 ? (
         <div className="message-nav">

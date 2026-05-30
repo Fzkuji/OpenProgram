@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 from openprogram.agent._revert import revert_turn
-from openprogram.store.session_store import SessionStore
-from openprogram.store.file_backup import BackupStore
+from openprogram.store.session.session_store import SessionStore
+from openprogram.store.snapshot.file_backup import BackupStore
 
 
 @pytest.fixture
