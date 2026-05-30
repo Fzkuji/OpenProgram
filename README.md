@@ -34,6 +34,10 @@
 
 ## Why OpenProgram
 
+<p align="center">
+  <img src="docs/images/why-openprogram.png" alt="Why OpenProgram — deterministic flow, run anywhere, automatic DAG context, any LLM / any provider, self-evolving workflows" width="900">
+</p>
+
 - **Deterministic flow, flexible reasoning** — Python drives the control flow; the LLM reasons only when asked.
 - **Run it anywhere** — native on macOS / Linux / Windows, via terminal, browser, or chat (no WSL, no Docker).
 - **Automatic context** — a shared DAG threads context into every call; multi-agent ready.
