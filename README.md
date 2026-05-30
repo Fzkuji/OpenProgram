@@ -42,8 +42,6 @@
 
 ## Quick Start
 
-Requires **Python 3.11+**. macOS / Linux / Windows.
-
 ### 1. Install
 
 ```bash
