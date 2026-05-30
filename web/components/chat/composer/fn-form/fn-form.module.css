@@ -154,6 +154,12 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* Keep the body scrollable but hide the scrollbar chrome — same
+     treatment as `.slashMenu` / `.scroll-overlay` elsewhere in the app. */
+  scrollbar-width: none; /* Firefox */
+}
+.body::-webkit-scrollbar {
+  display: none; /* WebKit / Chromium */
 }
 .field {
   display: flex;

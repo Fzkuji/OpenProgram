@@ -7,13 +7,19 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Center the logo/title/description/chips as ONE group. The chat
-     area's bottom padding (`.chat-messages:has(#welcome-mount > *)`,
-     150px) is excluded from this flex box, so the centered cluster is
-     biased slightly above true center — the classic welcome position. */
+  /* Two INDEPENDENT anchors, NOT one group:
+       - `.top` (logo / title / description) is vertically centered here
+         via `justify-content: center`. The chips leave normal flow
+         (absolute), so they don't drag the centering down.
+       - `.examples` is `position: absolute; bottom: 0`, pinned to the
+         bottom of this box so it hugs the composer.
+     `position: relative` makes this the containing block for that pin.
+     No vertical padding, so `.top` centers cleanly in the visible area
+     (top bar → composer top). */
   justify-content: center;
+  position: relative;
   color: var(--text-secondary);
-  padding: 40px 40px 0;
+  padding: 0 40px;
 }
 
 /* Logo + title + description, kept as a tight unit (`flex-shrink: 0`
@@ -117,20 +123,25 @@
   line-height: 1.6;
 }
 
-/* Example-button row — part of the centered welcome group, sitting
-   ~36px under the description (that's the `padding-top`). No longer
-   `margin-top: auto`-anchored to the bottom of `.welcome`: that shoved
-   it down by the composer and left a large void under the description.
-   `margin: 0 auto` keeps it horizontally centered only. */
+/* Example-button row — an INDEPENDENT bottom-pinned strip, NOT part of
+   the centered logo group. Absolutely anchored to the bottom of
+   `.welcome`, whose bottom edge sits at the chat area's 150px
+   bottom-padding (`.chat-messages:has(#welcome-mount > *)`) — i.e. right
+   above the composer — so the chips hug the input box regardless of
+   where the logo group centers. `left/right: 0` + `margin: 0 auto`
+   centers the (max-800px) strip horizontally. */
 .examples {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 36px 24px 12px;
+  padding: 12px 24px;
   justify-content: center;
   max-width: 800px;
-  margin: 0 auto;
-  flex-shrink: 0;
   opacity: 1;
   transition: opacity 0.18s ease;
 }
