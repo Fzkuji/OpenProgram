@@ -38,22 +38,20 @@
   the control flow (repeatable, guaranteed); the LLM is called only for the
   judgement you can't script. Fewer calls, no runaway context, output you can
   rely on.
-- **Runs natively on every OS — no WSL, no Docker, no VM.** Pure-Python
-  (FastAPI) backend, Next.js / React / TypeScript web UI, and a per-platform
-  terminal UI (Ink on macOS/Linux, Rich on Windows). `pip install
-  openprogram` starts a *native* process everywhere — not "install Linux
-  first," like many agent stacks ask of Windows users.
+- **Runs natively on every OS — TUI, Web, or Remote.** One `pip install`,
+  native on macOS / Linux / Windows (no WSL, no Docker, no VM). Drive it from
+  the terminal, the browser, or a chat app (Telegram / Discord / Slack /
+  WeChat) — same backend, same session, wherever you are.
+- **Automatic, DAG-based context — built for multi-agent.** Every call is a
+  node in a shared DAG, and the runtime threads the right context into each
+  LLM call for you — no manual prompt assembly. The same graph branches,
+  merges, and lets multiple agents work in parallel.
 - **Any LLM, any provider.** Claude, GPT, and Gemini — via API key *or* the
   CLI subscription you already pay for (Claude Code / Codex / Gemini CLI),
   auto-detected in priority order.
-- **One backend, two surfaces.** The terminal UI and the browser UI share the
-  same state — start a session in one, pick it up in the other.
 - **Functions that author functions.** The agent writes, fixes, and evolves
   its own `@agentic_function`s with ordinary file edits, guided by a built-in
   skill — no template hunting.
-- **Your conversation is a git DAG.** Branch, merge, and cherry-pick chats;
-  file-touching branches run in isolated git worktrees, so experiments never
-  clobber your working tree.
 
 ## Quick Start
 
