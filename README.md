@@ -179,9 +179,7 @@ openprogram --resume local_d9a16a6b06
 
 Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or a resumed session shows up in the web / terminal UI too.
 
-> Embedding it in your own Python? `import openprogram`, write `@agentic_function`s, and let Python drive the flow — see [examples/](examples/) and [docs/API.md](docs/API.md).
-
-## Key Features
+## Detailed features
 
 | Feature | One-line summary |
 |---|---|
@@ -270,6 +268,19 @@ each under its own license. Enormous thanks to their authors.
 Individual tool files call out their direct inspirations in file-level
 docstrings where the lineage is more specific.
 
+## Citation
+
+Using OpenProgram in your work, or building on the code? Please cite it — and the license requires that the copyright + permission notice travel with any copy or derivative (see [License](#license)).
+
+```bibtex
+@software{openprogram2026,
+  title  = {OpenProgram: An Open-Source Agentic Workflow Harness},
+  author = {Fzkuji},
+  year   = {2026},
+  url    = {https://github.com/Fzkuji/OpenProgram},
+}
+```
+
 ## License
 
-MIT
+[MIT](LICENSE) © Fzkuji. Free to use, modify, and distribute — provided the copyright and license notice stay attached.
