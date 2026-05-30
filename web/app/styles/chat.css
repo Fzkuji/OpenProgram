@@ -289,7 +289,14 @@
   display: flex;
   flex-direction: column;
 }
-.chat-area.welcome-visible { overflow: hidden; }
+/* Lock scrolling while the welcome panel is up. Driven by the React
+   portal host: `<WelcomeScreen />` renders a child into `#welcome-mount`
+   when visible, so `:has(#welcome-mount > *)` is true exactly then — one
+   source of truth, no imperative `.welcome-visible` class. We key off
+   the mount's stable id, NOT `.welcome`: that class is CSS-Module-hashed
+   (`welcome-screen_welcome__…`), so a literal `.welcome` in this global
+   sheet never matches it. */
+.chat-area:has(#welcome-mount > *) { overflow: hidden; }
 
 
 
@@ -306,15 +313,17 @@
   flex-direction: column;
   gap: 0;
 }
-/* Descendant (not `> .welcome`): the React <WelcomeScreen /> renders
-   inside a `#welcome-mount` host, so `.welcome` is not a direct child
-   of `.chat-messages`. Bottom padding clears the absolutely-anchored
-   composer so the welcome examples row sits just above it. Tuned to
-   the composer's actual occupied height (top/bottom padding +
-   textarea + bottom-row) plus a small visual gap — was 150px which
-   left a noticeable air-gap between the example chips and composer. */
-.chat-messages:has(.welcome) {
-  padding-bottom: 90px;
+/* Bottom padding clears the absolutely-anchored composer so the welcome
+   examples row sits just above it. Keyed off the React portal host
+   `#welcome-mount` HAVING A CHILD (i.e. welcome visible) — NOT
+   `.welcome`, which is CSS-Module-hashed and so untargetable from this
+   global sheet. (That dead `:has(.welcome)` is why the row used to fall
+   through to the 25vh base rule and float ~50px too high once the legacy
+   inline 150px stopped being stamped.) 150px matches the composer's
+   occupied height so the chips land right above it — same position the
+   legacy framework gave. Bump toward ~165px for a larger visible gap. */
+.chat-messages:has(#welcome-mount > *) {
+  padding-bottom: 150px;
 }
 
 .message {

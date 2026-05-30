@@ -7,22 +7,27 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* Center the logo/title/description/chips as ONE group. The chat
+     area's bottom padding (`.chat-messages:has(#welcome-mount > *)`,
+     150px) is excluded from this flex box, so the centered cluster is
+     biased slightly above true center — the classic welcome position. */
+  justify-content: center;
   color: var(--text-secondary);
   padding: 40px 40px 0;
 }
 
-/* Top section (logo + title + description) sits at a fixed
-   viewport-relative offset from the top of the welcome area so it
-   stays put even as the wrapper below grows when a function form
-   opens. `flex-shrink: 0` keeps the natural content height; the
-   examples row uses `margin-top: auto` to anchor itself to the bottom
-   of the welcome region (right above the composer). */
+/* Logo + title + description, kept as a tight unit (`flex-shrink: 0`
+   so it never compresses). It used to be pinned at `margin-top: 20vh`
+   while the examples row anchored to the bottom — that split the panel
+   into a high block and a low block with a big void between them. Now
+   the whole welcome group is vertically centered as one unit (see
+   `.welcome { justify-content: center }`), so the description and the
+   example chips read as a single cluster. */
 .top {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  margin-top: 20vh;
   flex-shrink: 0;
 }
 
@@ -112,21 +117,19 @@
   line-height: 1.6;
 }
 
-/* Example-button row — sits just above the composer when the welcome
-   panel is visible. `.top` above grows to fill the rest of the chat
-   area, so this row stays anchored to the bottom of the welcome
-   region (which is directly above the composer wrapper). */
+/* Example-button row — part of the centered welcome group, sitting
+   ~36px under the description (that's the `padding-top`). No longer
+   `margin-top: auto`-anchored to the bottom of `.welcome`: that shoved
+   it down by the composer and left a large void under the description.
+   `margin: 0 auto` keeps it horizontally centered only. */
 .examples {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 24px 24px 12px;
+  padding: 36px 24px 12px;
   justify-content: center;
   max-width: 800px;
-  /* `margin-top: auto` anchors this row to the bottom of `.welcome`
-     (i.e. directly above the composer) — without it the row sticks
-     to `.top` and leaves a big gap below. */
-  margin: auto auto 0;
+  margin: 0 auto;
   flex-shrink: 0;
   opacity: 1;
   transition: opacity 0.18s ease;
