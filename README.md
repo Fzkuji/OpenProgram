@@ -30,7 +30,7 @@
 > *"The more constraints one imposes, the more one frees oneself."*
 > — **Igor Stravinsky**, *Poetics of Music*
 
-**Built on the Agentic Programming paradigm.** An LLM is *flexible* — it reasons and adapts; code is *deterministic* — it guarantees and repeats. Give the model free rein and you get chaos: unpredictable execution, context explosion, no output guarantees. Script every step and you lose the intelligence. A **harness** is what balances the two — the way a harness directs a powerful animal without caging it — letting you interleave them moment to moment: **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/philosophy/agentic-programming.md))
+**We propose _Agentic Programming_.** An LLM is flexible; code is deterministic. Let the model run everything and you get chaos — unpredictable execution, context explosion, no output guarantees; hard-code everything and you lose the intelligence. A **harness** balances the two, interleaved moment to moment — **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/philosophy/agentic-programming.md))
 
 <p align="center">
   <img src="docs/images/chat_hero.png" alt="OpenProgram chat UI — agentic function call tree, streaming thinking, and bilingual output side by side with the conversation DAG" width="900">
