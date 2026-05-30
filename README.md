@@ -27,10 +27,10 @@
 
 ---
 
-> *"Controlling complexity is the essence of computer programming."*
-> — **Brian Kernighan**, co-author of *The C Programming Language*
+> *"The more constraints one imposes, the more one frees oneself."*
+> — **Igor Stravinsky**, *Poetics of Music*
 
-**Built on the Agentic Programming paradigm.** Today's LLM agent frameworks hand the model the wheel — what to do, when, and how — and inherit the opposite of control: unpredictable execution, context explosion, no output guarantees. OpenProgram keeps that complexity in hand: **Python controls the flow; the LLM reasons only when asked.** ([the full rationale →](docs/philosophy/agentic-programming.md))
+**Built on the Agentic Programming paradigm.** An LLM is *flexible* — it reasons and adapts; code is *deterministic* — it guarantees and repeats. Give the model free rein and you get chaos: unpredictable execution, context explosion, no output guarantees. Script every step and you lose the intelligence. A **harness** is what balances the two — the way a harness directs a powerful animal without caging it — letting you interleave them moment to moment: **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/philosophy/agentic-programming.md))
 
 <p align="center">
   <img src="docs/images/chat_hero.png" alt="OpenProgram chat UI — agentic function call tree, streaming thinking, and bilingual output side by side with the conversation DAG" width="900">
