@@ -21,7 +21,7 @@ import pytest
 
 @pytest.fixture
 def parent_store(tmp_path, monkeypatch):
-    from openprogram.store.session_store import SessionStore
+    from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
 
     s = SessionStore(tmp_path / "sessions-git")

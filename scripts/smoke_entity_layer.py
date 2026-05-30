@@ -80,7 +80,7 @@ def main() -> int:
         _rmtree_retry(state)
         state.mkdir(parents=True, exist_ok=True)
 
-    from openprogram.store.session_store import SessionStore, _default_root
+    from openprogram.store.session.session_store import SessionStore, _default_root
     from openprogram.store import project_store as P
 
     # A scratch dir to act as the user's "real project directory".
@@ -384,7 +384,7 @@ def main() -> int:
             _rmtree_retry(proj_dir3)
 
         # ── 8. snapshot GC actually evicts beyond the cap ──
-        from openprogram.store.file_backup import BackupStore, gc_evict_old
+        from openprogram.store.revert.file_backup import BackupStore, gc_evict_old
         store.create_session("gc1", "main", title="gc")
         gc_dir = store._session_dir("gc1")
         bs = BackupStore(gc_dir)
@@ -393,7 +393,7 @@ def main() -> int:
         tmpf.write_text("x", encoding="utf-8")
         for i in range(5):
             bs.backup_before_edit(f"turn{i}", str(tmpf))
-        from openprogram.store.file_backup.paths import session_backup_root
+        from openprogram.store.revert.file_backup.paths import session_backup_root
         root = session_backup_root(gc_dir)
         before = len([p for p in root.iterdir() if p.is_dir()])
         removed = gc_evict_old(gc_dir, max_turns=2)

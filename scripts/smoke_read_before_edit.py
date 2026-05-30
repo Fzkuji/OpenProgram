@@ -95,7 +95,7 @@ def main() -> int:
 
         # ── B. real tools end-to-end via _store ContextVar ────────
         import asyncio
-        from openprogram.store.session_store import SessionStore
+        from openprogram.store.session.session_store import SessionStore
         from openprogram.store import GraphStoreShim, _store, _current_turn_id
         from openprogram.functions.tools.read.read import read as read_tool
         from openprogram.functions.tools.edit.edit import edit as edit_tool

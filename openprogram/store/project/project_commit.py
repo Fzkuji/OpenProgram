@@ -154,7 +154,7 @@ def snapshot_baseline(session_id: str) -> Optional[set[str]]:
     if _has_active_worktree(session_id):
         return None  # rule B: yield to the worktree, don't touch real dir
     try:
-        from openprogram.store.project_store import ProjectGit
+        from openprogram.store.project.project_store import ProjectGit
         pg = ProjectGit(proj.path)
         if not pg.exists():
             # Not a git repo yet. Auto-init MUST happen now, at turn
@@ -200,7 +200,7 @@ def commit_turn_changes(
     if _has_active_worktree(session_id):
         return None  # rule B: the worktree owns the edits this turn
     try:
-        from openprogram.store.project_store import ProjectGit
+        from openprogram.store.project.project_store import ProjectGit
         pg = ProjectGit(proj.path)
         # Auto-init already happened (if it could) at turn START in
         # snapshot_baseline — that's the only point the tree was

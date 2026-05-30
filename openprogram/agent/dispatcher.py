@@ -1287,7 +1287,7 @@ def process_user_turn(
         # Update the placeholder row (step 3b) in place — same id,
         # now with final content + tool_calls/blocks.
         try:
-            from openprogram.store._msg_adapter import _msg_to_node as _to_node
+            from openprogram.store.session._msg_adapter import _msg_to_node as _to_node
             from openprogram.store import GraphStoreShim
             _shim = GraphStoreShim(db, req.session_id)
             _node = _to_node(assistant_msg)
@@ -1515,7 +1515,7 @@ def process_user_turn(
     # mtime sort + rmtree of only the excess. Best-effort.
     try:
         from openprogram.store import default_store
-        from openprogram.store.file_backup import gc_evict_old
+        from openprogram.store.revert.file_backup import gc_evict_old
         _sdir = default_store()._session_dir(req.session_id)
         gc_evict_old(_sdir)
     except Exception:

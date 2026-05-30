@@ -16,8 +16,8 @@ import json
 
 
 def _list_paths(session_id: str, assistant_msg_id: str) -> dict:
-    from openprogram.store.session_store import default_store
-    from openprogram.store.file_backup import BackupStore
+    from openprogram.store.session.session_store import default_store
+    from openprogram.store.revert.file_backup import BackupStore
 
     store = default_store()
     pair = store._open(session_id)

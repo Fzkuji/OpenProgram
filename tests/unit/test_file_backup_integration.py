@@ -21,7 +21,7 @@ import openprogram.functions.tools.apply_patch.apply_patch  # noqa: F401
 
 from openprogram.functions._runtime import get as get_tool
 from openprogram.store import _store, _current_turn_id, SessionStore, GraphStoreShim
-from openprogram.store.file_backup import BackupStore
+from openprogram.store.revert.file_backup import BackupStore
 
 
 SESSION_ID = "op-fb-integ-test"

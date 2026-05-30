@@ -48,8 +48,8 @@ def revert_turn(session_id: str, assistant_msg_id: str) -> dict[str, Any]:
         }
 
     try:
-        from openprogram.store.session_store import default_store
-        from openprogram.store.file_backup import BackupStore
+        from openprogram.store.session.session_store import default_store
+        from openprogram.store.revert.file_backup import BackupStore
     except Exception as e:  # noqa: BLE001
         return {
             "session_id": session_id,
@@ -87,7 +87,7 @@ def revert_turn(session_id: str, assistant_msg_id: str) -> dict[str, Any]:
     pc_meta = (node_for_meta.metadata or {}).get("project_commit") if node_for_meta else None
     if isinstance(pc_meta, dict) and pc_meta.get("sha") and pc_meta.get("repo"):
         try:
-            from openprogram.store.project_store import ProjectGit
+            from openprogram.store.project.project_store import ProjectGit
             git_undo = ProjectGit(pc_meta["repo"]).revert_agent_commit(pc_meta["sha"])
         except Exception as e:  # noqa: BLE001
             git_undo = {"action": "error", "ok": False, "detail": f"{type(e).__name__}: {e}"}

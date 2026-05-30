@@ -33,7 +33,7 @@ import os
 from typing import Any
 
 from ..._runtime import function
-from openprogram.store.file_backup.helpers import backup_for_current_turn
+from openprogram.store.revert.file_backup.helpers import backup_for_current_turn
 
 
 NAME = "apply_patch"

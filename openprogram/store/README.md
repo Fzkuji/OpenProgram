@@ -15,44 +15,56 @@ caches over git.
 
 ## The three groups
 
-The 10 files here fall into three concerns. Knowing which group a file
-belongs to is the fastest way to navigate:
+The files are split into three sub-packages by concern. Each sub-package
+re-exports its public names, and the top-level `store/__init__.py`
+re-exports the historical surface — so `from openprogram.store import
+SessionStore` and `from openprogram.store import project_commit` keep
+working unchanged.
 
 ```
 store/
-├─ ① SESSION STORAGE ─ one git repo per conversation
-│    session_store.py     SessionStore: the 22-method public API (CRUD,
-│                         branches, messages) over per-session git repos
-│    git_session.py       GitSession: thin wrapper over the `git` CLI for
-│                         one session repo (init / write / commit / log /
-│                         checkout). UTF-8 forced so CJK commits work.
-│    memory_index.py      SessionMemoryIndex: in-memory DAG index, rebuilt
-│                         from git on cache miss
-│    graphstore_shim.py   back-compat shim emulating the old GraphStore API
-│    _msg_adapter.py      message-dict ⇄ Call-node translation
-│    search.py            cross-session message search (ripgrep over the
-│                         history/*.json tree)
+├─ __init__.py            top-level re-exports + the per-turn ContextVars
 │
-├─ ② PROJECT ENTITY LAYER + AUTO-COMMIT ─ the user's working dir as git
-│    project_store.py     Project + ProjectGit. A project = a real working
-│                         directory. ProjectGit does safe auto-init,
-│                         agent-attributed commits (Strategy A), and the
-│                         reset/revert-of-a-commit primitive.
-│    project_commit.py    wires the agent's per-turn edits into the project
-│                         repo at turn end (rules A/B, default-on)
+├─ session/   ─ ① SESSION STORAGE — one git repo per conversation
+│    session_store.py       SessionStore: the 22-method public API (CRUD,
+│                           branches, messages) over per-session git repos
+│    git_session.py         GitSession: thin wrapper over the `git` CLI for
+│                           one session repo (init / write / commit / log /
+│                           checkout). UTF-8 forced so CJK commits work.
+│    memory_index.py        SessionMemoryIndex: in-memory DAG index, rebuilt
+│                           from git on cache miss
+│    graphstore_shim.py     back-compat shim emulating the old GraphStore API
+│    _msg_adapter.py        message-dict ⇄ Call-node translation
+│    search.py              cross-session message search (ripgrep)
 │
-└─ ③ REVERT / RECORD HELPERS ─ undo + concurrency safety
-     file_backup/         per-turn file snapshots — the "Ctrl+Z" layer
-       store.py             BackupStore: backup_before_edit / restore_turn
-       manifest.py          per-turn manifest (path → backup, pre_existing)
-       paths.py             layout + backup-name hashing
-       gc.py                evict_old: cap retained turn-dirs (called at
-                            turn end by the dispatcher)
-       helpers.py           backup_for_current_turn — one-line tool hook
-     read_tracking.py     read-before-edit freshness gate: refuse to write
-                          a file the agent never read / that changed on
-                          disk since (Claude-Code-style)
+├─ project/   ─ ② PROJECT ENTITY LAYER + AUTO-COMMIT — user's working dir as git
+│    project_store.py       Project + ProjectGit. A project = a real working
+│                           directory. ProjectGit does safe auto-init,
+│                           agent-attributed commits (Strategy A), and the
+│                           reset/revert-of-a-commit primitive.
+│    project_commit.py      wires the agent's per-turn edits into the project
+│                           repo at turn end (rules A/B, default-on)
+│
+└─ revert/    ─ ③ REVERT / RECORD HELPERS — undo + concurrency safety
+     read_tracking.py       read-before-edit freshness gate: refuse to write
+                            a file the agent never read / that changed on
+                            disk since (Claude-Code-style)
+     file_backup/           per-turn file snapshots — the "Ctrl+Z" layer
+       store.py               BackupStore: backup_before_edit / restore_turn
+       manifest.py            per-turn manifest (path → backup, pre_existing)
+       paths.py               layout + backup-name hashing
+       gc.py                  evict_old: cap retained turn-dirs (called at
+                              turn end by the dispatcher)
+       helpers.py             backup_for_current_turn — one-line tool hook
 ```
+
+> **Import paths** after the regroup: the canonical forms are
+> `from openprogram.store.session import SessionStore`,
+> `from openprogram.store.project import ProjectGit, resolve_project`,
+> `from openprogram.store.revert import read_tracking` /
+> `from openprogram.store.revert.file_backup import BackupStore`. The old
+> flat paths (`openprogram.store.session_store`, `…project_commit`, etc.)
+> still resolve via top-level aliases, so existing call sites didn't break.
 
 Designs: [`git-as-entity-memory.md`](../../docs/design/git-as-entity-memory.md)
 (why git), [`memory-v2.md`](../../docs/design/memory-v2.md) (entity layer),

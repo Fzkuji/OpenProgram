@@ -52,9 +52,11 @@ fully rebuildable from git on demand. See
 from contextvars import ContextVar
 from typing import Optional, TYPE_CHECKING
 
-from .git_session import GitSession
-from .memory_index import SessionMemoryIndex
-from .graphstore_shim import GraphStoreShim
+# Files live in the session/ project/ revert/ sub-packages (group ①②③,
+# see README). The top-level package re-exports the historical public
+# surface so ``from openprogram.store import SessionStore`` etc. keep
+# working unchanged after the physical regroup.
+from .session import GitSession, SessionMemoryIndex, GraphStoreShim
 
 if TYPE_CHECKING:
     pass
@@ -70,7 +72,7 @@ _store: ContextVar[Optional[GraphStoreShim]] = ContextVar(
 
 # Dispatcher installs the current turn's assistant_msg_id here so
 # file-mutating tools can resolve which turn to attribute backups
-# to (see openprogram/store/file_backup/helpers.py). Default None =
+# to (see store/revert/file_backup/helpers.py). Default None =
 # no active turn; backup helper becomes a no-op.
 _current_turn_id: ContextVar[Optional[str]] = ContextVar(
     "_current_turn_id", default=None,
@@ -95,9 +97,28 @@ def __getattr__(name):
     # Lazy: SessionStore + default_store are pulled in only when
     # actually referenced (most call sites use default_store()).
     if name == "SessionStore":
-        from .session_store import SessionStore as _S
+        from .session.session_store import SessionStore as _S
         return _S
     if name == "default_store":
-        from .session_store import default_store as _ds
+        from .session.session_store import default_store as _ds
         return _ds
+    # Back-compat module aliases after the session/ project/ revert/
+    # regroup: ``from openprogram.store import project_commit`` (and the
+    # other moved modules) keeps resolving to the real submodule in its
+    # new sub-package, so callers that used the convenience form don't
+    # all need rewriting. These are plain submodule re-exports, not magic.
+    _MOVED = {
+        "project_store":   "project.project_store",
+        "project_commit":  "project.project_commit",
+        "read_tracking":   "revert.read_tracking",
+        "session_store":   "session.session_store",
+        "git_session":     "session.git_session",
+        "memory_index":    "session.memory_index",
+        "graphstore_shim": "session.graphstore_shim",
+        "search":          "session.search",
+    }
+    target = _MOVED.get(name)
+    if target:
+        import importlib
+        return importlib.import_module(f"{__name__}.{target}")
     raise AttributeError(name)

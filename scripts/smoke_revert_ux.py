@@ -51,7 +51,7 @@ def main() -> int:
         _rmtree_retry(state)
     print(f"# state dir = {state}")
 
-    from openprogram.store.project_store import ProjectGit
+    from openprogram.store.project.project_store import ProjectGit
 
     # ── A1. clean reset path ──────────────────────────────────────
     d1 = Path(tempfile.mkdtemp(prefix="op_revux1_"))
@@ -120,7 +120,7 @@ def main() -> int:
         _rmtree_retry(d3)
 
     # ── B. revert_turn end-to-end with a project commit ───────────
-    from openprogram.store.session_store import SessionStore
+    from openprogram.store.session.session_store import SessionStore
     from openprogram.store import project_commit as PC
     from openprogram.agent._revert import revert_turn
 
