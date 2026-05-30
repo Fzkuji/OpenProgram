@@ -446,7 +446,7 @@
 }
 .providersSearch input {
   width: 100%;
-  height: 32px;
+  height: var(--ui-button-h);
   padding: 0 12px;
   background: var(--bg-input);
   border: 1px solid var(--border);

@@ -61,9 +61,10 @@
 .search {
   flex: 1;
   max-width: 320px;
+  height: var(--ui-button-h);
   padding: 6px 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--ui-button-radius);
   background: var(--bg-input);
   color: var(--text-primary);
   font-size: 14px;
