@@ -120,6 +120,144 @@ def _cmd_list():
     for name, desc in sorted(entries):
         print(f"  {name:24s}  {desc}")
 
+    # Also surface the optional first-party *programs* (gui / research /
+    # wiki agents) and whether each is installed on this machine.
+    _print_programs_status()
+
+
+# ---------------------------------------------------------------------------
+# Programs (optional pip-installable agentic harnesses)
+# ---------------------------------------------------------------------------
+
+def _print_programs_status() -> None:
+    """Print the install status of every catalogued program."""
+    from openprogram.functions._programs import KNOWN_PROGRAMS
+
+    print(f"\nPrograms ({len(KNOWN_PROGRAMS)}):\n")
+    for p in KNOWN_PROGRAMS:
+        if p.is_installed():
+            status = "installed"
+        elif not p.public:
+            status = "not yet published"
+        else:
+            status = f"available — openprogram programs install {p.extra}"
+        print(f"  {p.function:24s}  [{status}]")
+        print(f"  {'':24s}  {p.summary}")
+
+
+def _cmd_programs_available() -> None:
+    """List installable programs with one-line install instructions."""
+    _print_programs_status()
+
+
+def _resolve_programs(name: str):
+    """Resolve a program selector ('gui'/'research'/'wiki'/'all') to a list."""
+    from openprogram.functions._programs import KNOWN_PROGRAMS, get_program
+
+    if name in ("all", "*"):
+        return list(KNOWN_PROGRAMS)
+    prog = get_program(name)
+    return [prog] if prog else []
+
+
+def _cmd_install(name: str, *, upgrade: bool = False) -> None:
+    """Install one (or all) program(s) by cloning into functions/agentics/.
+
+    Each program is ``git clone``-d into
+    ``openprogram/functions/agentics/<Repo-Name>/`` as a real, editable
+    directory (no symlinks, no site-packages). Heavy programs (gui) also
+    pull their native deps from the matching ``openprogram[<extra>]``
+    group. The clone is git-ignored by the parent repo, so it stays an
+    independent checkout you can ``git pull`` / edit in place.
+    """
+    import subprocess
+    from openprogram.functions._programs import agentics_dir
+
+    progs = _resolve_programs(name)
+    if not progs:
+        from openprogram.functions._programs import KNOWN_PROGRAMS
+        opts = ", ".join(p.extra for p in KNOWN_PROGRAMS) + ", all"
+        print(f"Unknown program: {name!r}. Choices: {opts}")
+        sys.exit(1)
+
+    base = agentics_dir()
+    if not base or not os.path.isdir(base):
+        print(f"Cannot locate functions/agentics directory ({base!r}).")
+        sys.exit(1)
+
+    for prog in progs:
+        if not prog.public:
+            print(f"[skip] {prog.function}: {prog.repo} is not published yet. "
+                  f"Skipping.")
+            continue
+
+        dest = prog.clone_dir(base)
+        already = os.path.isdir(os.path.join(dest, ".git"))
+
+        if already and not upgrade:
+            print(f"[ok] {prog.function}: already cloned at {dest} "
+                  f"(re-run with --upgrade to pull latest).")
+        else:
+            if prog.heavy:
+                print(f"\n[install] {prog.function} -> {dest}\n  heavy: also "
+                      f"pulls large deps (torch via ultralytics). May take a while.")
+            else:
+                print(f"\n[install] {prog.function} -> {dest}")
+
+            if already and upgrade:
+                rc = subprocess.call(["git", "-C", dest, "pull", "--ff-only"])
+            else:
+                rc = subprocess.call([
+                    "git", "clone", "--depth", "1", "--branch", prog.branch,
+                    prog.git_url(), dest,
+                ])
+            if rc != 0:
+                print(f"[x] {prog.function}: git clone/pull failed (exit {rc}).")
+                continue
+
+        # Heavy programs need their native deps from our extra.
+        if prog.heavy:
+            dep_cmd = [sys.executable, "-m", "pip", "install"]
+            if upgrade:
+                dep_cmd.append("--upgrade")
+            dep_cmd.append(f"openprogram[{prog.extra}]")
+            rc = subprocess.call(dep_cmd)
+            if rc != 0:
+                print(f"[!] {prog.function}: cloned but deps "
+                      f"(openprogram[{prog.extra}]) failed (exit {rc}). "
+                      f"It may not run until deps are present.")
+                continue
+
+        # Confirm the package imports (registers the function).
+        if prog.in_tree_pkg_dir(base):
+            print(f"[ok] {prog.function} installed at {dest}. "
+                  f"It will appear on next launch.")
+        else:
+            print(f"[!] {prog.function}: cloned but package '{prog.package}' "
+                  f"not found under {dest} — check the repo layout.")
+
+
+def _cmd_uninstall(name: str) -> None:
+    """Uninstall one (or all) program(s) — remove the in-tree clone."""
+    import shutil
+    from openprogram.functions._programs import agentics_dir
+
+    progs = _resolve_programs(name)
+    if not progs:
+        print(f"Unknown program: {name!r}")
+        sys.exit(1)
+    base = agentics_dir()
+    for prog in progs:
+        dest = prog.clone_dir(base)
+        if not (dest and os.path.isdir(dest)):
+            print(f"[skip] {prog.function}: not installed.")
+            continue
+        try:
+            shutil.rmtree(dest)
+            print(f"[ok] {prog.function} removed ({dest}).")
+        except OSError as e:
+            print(f"[x] {prog.function}: could not remove {dest}: {e}")
+
 
 def _cmd_run(name, arg_list, provider=None, model=None):
     """Run an existing function."""
