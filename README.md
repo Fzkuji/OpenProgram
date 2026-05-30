@@ -89,7 +89,7 @@ Ask the agent itself — it has a skill for this. Open chat and type something l
 
 Three sibling agent harnesses ship as separate repos. They're **OpenProgram programs** — they run *inside* this install, so OpenProgram (step 1 above) must be present first; you don't install them on their own. Add one by name — `openprogram programs install research` (or `gui` / `wiki`) — which clones it as a **real directory** under `openprogram/functions/agentics/` and pip-installs that harness's own declared deps (OpenProgram carries none of them); auto-discovery registers its functions on the next worker restart, or hit Refresh on the Functions page. No symlinks, so it's identical on Windows. Full procedure (and how to add **any** third-party harness) in [docs/installing-harnesses.md](docs/installing-harnesses.md).
 
-> The GUI harness installs + registers on every OS, but its screen-capture / input backends currently target macOS / Linux — running `gui_agent` on Windows isn't supported yet.
+> The GUI harness installs + registers on every OS. Its core action layer — screen capture, mouse/keyboard input, window control — now runs on macOS, Windows, and Linux (Pillow + pynput + Win32/`wmctrl`); the advanced Apple Vision / Accessibility perception is macOS-tuned (Windows/Linux fall back to YOLO detection + EasyOCR).
 
 | Harness | What it does | Track record |
 |---|---|---|
@@ -104,11 +104,10 @@ Three sibling agent harnesses ship as separate repos. They're **OpenProgram prog
 | `[anthropic]` / `[openai]` / `[gemini]` | Provider SDKs |
 | `[browser]` | Playwright (~150 MB) |
 | `[browser-stealth]` | Cloudflare-bypassing browsers |
-| `[gui]` | Vision/control deps for GUI harness (~2 GB) |
 | `[channels]` | Discord / Slack / WeChat bots |
 | `[all]` | Everything except `[browser-stealth]` |
 
-Post-install steps (`playwright install`, `patchright install chromium`, `camoufox fetch`, etc.) and per-extra notes live in [docs/install.md](docs/install.md).
+Post-install steps (`playwright install`, `patchright install chromium`, `camoufox fetch`, etc.) and per-extra notes live in [docs/install.md](docs/install.md). The harness suite (GUI / Research / Wiki) is **not** an extra — each harness declares its own third-party deps and installs via `openprogram programs install <name>` (see *Add the harness suite* above), so OpenProgram carries none of them.
 
 ## Troubleshooting
 
