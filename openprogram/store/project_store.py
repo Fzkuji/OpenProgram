@@ -324,6 +324,88 @@ class ProjectGit:
             )
             return self._run("rev-parse", "HEAD").strip()
 
+    def revert_agent_commit(self, sha: str) -> dict:
+        """Undo an agent commit, choosing the safest git operation.
+
+        Returns ``{"action": <str>, "ok": bool, "detail": <str>}`` where
+        ``action`` is one of:
+
+          * ``"reset"``   — ``git reset --hard <sha>^``. Used ONLY when
+            it's provably safe: the commit is HEAD, the tree is clean,
+            and the commit hasn't been pushed. Cleanest undo — the commit
+            vanishes as if it never happened.
+          * ``"revert"``  — ``git revert --no-edit <sha>``. The safe
+            fallback: appends an inverse commit, touching nothing else.
+            Used when reset would be unsafe (commit isn't HEAD / tree
+            dirty / already pushed) but the change can still be undone
+            additively.
+          * ``"skipped"`` — couldn't safely undo (e.g. revert hit a
+            conflict). The file-snapshot restore is the caller's
+            fallback; git history is left untouched. ``detail`` explains.
+          * ``"absent"``  — the sha isn't in this repo (already gone, or
+            never landed). No-op.
+
+        Never raises — git failures come back as ``ok=False`` so the
+        caller can surface them and fall back to the snapshot.
+        """
+        if not self.exists():
+            return {"action": "absent", "ok": False, "detail": "not a git repo"}
+        with self._lock:
+            # Is the sha actually in this repo?
+            check = self._run("cat-file", "-t", sha, check=False).strip()
+            if check != "commit":
+                return {"action": "absent", "ok": False,
+                        "detail": f"commit {sha[:8]} not found"}
+
+            head = self._run("rev-parse", "HEAD", check=False).strip()
+            is_head = (head == sha) or (
+                self._run("rev-parse", sha, check=False).strip() == head
+            )
+            tree_clean = not self._run("status", "--porcelain").strip()
+            pushed = bool(
+                self._run("branch", "-r", "--contains", sha, check=False).strip()
+            )
+
+            # Safe-reset path: only when this commit is the tip, nothing
+            # else sits on top, the tree is clean (no user work to lose),
+            # and it was never published.
+            if is_head and tree_clean and not pushed:
+                parent = self._run("rev-parse", f"{sha}^", check=False).strip()
+                if parent and parent != f"{sha}^":
+                    out = self._run("reset", "--hard", parent, check=False)
+                    return {"action": "reset", "ok": True,
+                            "detail": f"reset to {parent[:8]}"}
+                # No parent (initial commit) → reset to the empty tree.
+                self._run("update-ref", "-d", "HEAD", check=False)
+                return {"action": "reset", "ok": True,
+                        "detail": "removed initial commit"}
+
+            # Safe-revert path: additive, never rewrites published history
+            # and never touches the user's other commits.
+            out = self._run(
+                "-c", f"user.name={self.AGENT_NAME}",
+                "-c", f"user.email={self.AGENT_EMAIL}",
+                "revert", "--no-edit", "--no-commit", sha, check=False,
+            )
+            # --no-commit so we can detect conflicts before finalizing.
+            conflicts = self._run("diff", "--name-only", "--diff-filter=U",
+                                   check=False).strip()
+            if conflicts:
+                # Abort — leave the repo exactly as it was; snapshot
+                # restore (caller) handles the files.
+                self._run("revert", "--abort", check=False)
+                self._run("reset", "--hard", "HEAD", check=False)
+                return {"action": "skipped", "ok": False,
+                        "detail": f"revert conflicts: {conflicts.splitlines()[:3]}"}
+            self._run(
+                "-c", f"user.name={self.AGENT_NAME}",
+                "-c", f"user.email={self.AGENT_EMAIL}",
+                "commit", "-m", f"Revert agent commit {sha[:8]}", "--quiet",
+                check=False,
+            )
+            return {"action": "revert", "ok": True,
+                    "detail": f"reverted {sha[:8]}"}
+
     def dirty_paths(self) -> set[str]:
         """The set of paths git reports as changed (porcelain). Caller
         snapshots this BEFORE the agent's turn and passes it back to

@@ -72,17 +72,49 @@ def revert_turn(session_id: str, assistant_msg_id: str) -> dict[str, Any]:
     git, idx = pair
     session_dir = git.path if hasattr(git, "path") else store._session_dir(session_id)
 
+    # ── git-aware undo (if this turn produced a project commit) ──
+    # When auto-commit landed a real git commit for this turn, undo it in
+    # git too — choosing the safest op (clean reset if it's the tip and
+    # unpushed, else an additive revert). This keeps the project's git
+    # history consistent with the file state instead of leaving a
+    # "phantom" commit whose changes the snapshot just rolled back.
+    # Done BEFORE the snapshot restore: a successful git reset/revert
+    # already sets the correct file state, and in the revert case the
+    # snapshot must NOT then re-clobber the user's other commits — so we
+    # only fall back to the snapshot when git couldn't do it.
+    git_undo: dict[str, Any] | None = None
+    node_for_meta = idx.nodes_by_id.get(assistant_msg_id)
+    pc_meta = (node_for_meta.metadata or {}).get("project_commit") if node_for_meta else None
+    if isinstance(pc_meta, dict) and pc_meta.get("sha") and pc_meta.get("repo"):
+        try:
+            from openprogram.store.project_store import ProjectGit
+            git_undo = ProjectGit(pc_meta["repo"]).revert_agent_commit(pc_meta["sha"])
+        except Exception as e:  # noqa: BLE001
+            git_undo = {"action": "error", "ok": False, "detail": f"{type(e).__name__}: {e}"}
+
+    # ── file-snapshot restore ──
+    # The always-available fallback (works even for gitignored files and
+    # non-git folders). We run it unless git ALREADY restored the exact
+    # file state: a clean ``reset`` makes the snapshot redundant, and an
+    # additive ``revert`` produced the correct merged state that the
+    # snapshot would wrongly overwrite. For skipped/absent/error git
+    # outcomes, the snapshot is what actually does the revert.
+    git_did_files = bool(git_undo and git_undo.get("ok")
+                         and git_undo.get("action") in ("reset", "revert"))
     backup = BackupStore(session_dir)
-    try:
-        restored = backup.restore_turn(assistant_msg_id)
-    except Exception as e:  # noqa: BLE001
-        return {
-            "session_id": session_id,
-            "assistant_msg_id": assistant_msg_id,
-            "restored_paths": [],
-            "metadata_stamped": False,
-            "error": f"restore failed: {type(e).__name__}: {e}",
-        }
+    restored: list[str] = []
+    if not git_did_files:
+        try:
+            restored = backup.restore_turn(assistant_msg_id)
+        except Exception as e:  # noqa: BLE001
+            return {
+                "session_id": session_id,
+                "assistant_msg_id": assistant_msg_id,
+                "restored_paths": [],
+                "metadata_stamped": False,
+                "git_undo": git_undo,
+                "error": f"restore failed: {type(e).__name__}: {e}",
+            }
 
     # Stamp the assistant node's metadata so the UI can show
     # "reverted" without re-querying the file backup manifest.
@@ -123,4 +155,5 @@ def revert_turn(session_id: str, assistant_msg_id: str) -> dict[str, Any]:
         "assistant_msg_id": assistant_msg_id,
         "restored_paths": list(restored),
         "metadata_stamped": metadata_stamped,
+        "git_undo": git_undo,
     }
