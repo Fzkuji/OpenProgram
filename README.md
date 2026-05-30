@@ -2,7 +2,10 @@
   <img src="docs/images/logo.svg" alt="OpenProgram" width="300">
 </p>
 
-<p align="center"><b>Open-source, general-purpose Agent Harness — build your Workflows in Python.</b><br/>Any LLM, any platform.</p>
+<p align="center">
+  <b>Open-Source, General-Purpose Agent Harness — Build Your Workflows in Python.</b><br/>
+  Any LLM · Any Platform
+</p>
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.4.0"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
