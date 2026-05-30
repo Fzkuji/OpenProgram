@@ -162,42 +162,24 @@ The same backend without the browser — same commands, same chat history. Picks
 
 ---
 
-## Python client
+## CLI use
 
-Beyond the chat UIs, OpenProgram is a Python library — `import openprogram` and build your own agentic programs. Python drives the flow; the LLM is called only where you ask for it.
+Beyond the chat UIs, the `openprogram` command runs headless — script it, pipe it, automate it.
 
-```python
-from openprogram import agentic_function
-from openprogram.providers.registry import create_runtime
+```bash
+# One-shot: send a prompt, print the answer, exit (redirect or pipe it)
+openprogram --print "summarise CHANGELOG.md" > summary.md
 
-runtime = create_runtime()          # auto-detects your provider (API key or CLI)
+# Run a specific agentic function with key=value args
+openprogram programs run research --arg topic="state-space models"
 
-@agentic_function
-def key_concepts(topic):
-    "List the most important concepts in a topic."        # docstring = the prompt
-    return runtime.exec(content=[{"type": "text",
-        "text": f"List the 3 key concepts in {topic}, numbered 1-3."}])
-
-@agentic_function
-def lesson(topic):
-    "Identify the concepts, then write a takeaway."
-    concepts = key_concepts(topic=topic)                  # nested call — context auto-tracked
-    return runtime.exec(content=[{"type": "text",
-        "text": "Write a 2-sentence takeaway connecting the concepts above."}])
-
-print(lesson(topic="how neural networks learn"))
-print(lesson.context.tree())        # the execution tree, tracked for you
+# Resume an earlier session by id
+openprogram --resume local_d9a16a6b06
 ```
 
-Every `@agentic_function` call becomes a node in the session DAG, and the runtime threads the right context into each nested call automatically — no manual prompt assembly.
+Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or a resumed session shows up in the web / terminal UI too.
 
-| Import | What it does |
-|---|---|
-| `from openprogram import agentic_function` | Decorator — records each call as a DAG node |
-| `…providers.registry import create_runtime` | Build a runtime by auto-detection or explicit provider |
-| `…functions.agentics.deep_work import deep_work` | Built-in autonomous plan → execute → evaluate loop |
-
-Full API: [docs/API.md](docs/API.md) · per-topic notes under [docs/api/](docs/api/) · runnable demos in [examples/](examples/).
+> Embedding it in your own Python? `import openprogram`, write `@agentic_function`s, and let Python drive the flow — see [examples/](examples/) and [docs/API.md](docs/API.md).
 
 ## Key Features
 
