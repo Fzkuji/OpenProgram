@@ -1,7 +1,21 @@
-"""Git-backed session storage. Replaces the old SQLite ``DagSessionDB`` +
-``GraphStore`` layer. Everything that used to live in
-``openprogram/context/session_db.py`` and ``openprogram/context/storage.py``
-moves here.
+"""Git-backed storage: session memory, the project entity layer, and the
+file revert/record machinery. See ``README.md`` in this directory for the
+full map; this docstring covers the original session-storage core.
+
+The directory holds three groups (README has the details):
+
+  1. **Session storage** — one git repo per conversation. The original
+     job of this package: ``session_store`` / ``git_session`` /
+     ``memory_index`` / ``graphstore_shim`` / ``_msg_adapter`` /
+     ``search``. Replaces the old SQLite ``DagSessionDB`` + ``GraphStore``.
+  2. **Project entity layer + auto-commit** — ``project_store`` (the
+     user's working dir as a git-backed Project, with safe auto-init and
+     a reset/revert-of-a-commit primitive) and ``project_commit`` (wires
+     the agent's per-turn edits into that repo). See
+     ``docs/design/memory-v2.md`` and ``docs/design/revert-layers.md``.
+  3. **Revert / record helpers** — ``file_backup/`` (per-turn file
+     snapshots = the "undo" layer) and ``read_tracking`` (read-before-
+     edit concurrency guard). See ``docs/design/revert-layers.md``.
 
 Public surface (re-exported for legacy import paths):
 

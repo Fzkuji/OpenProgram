@@ -29,6 +29,7 @@ relies on.
 ## Files in this directory
 
 - **`_helpers.py`** — Small helpers shared by tool `execute` implementations
+- **`_programs.py`** — First-party *programs*
 - **`_providers.py`** — Shared provider-registry scaffolding for tools with pluggable backends
 - **`_registry.py`** — Explicit + auto-discovered registry of @agentic_function modules
 - **`_runtime.py`** — @function decorator + runtime layer
