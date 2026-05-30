@@ -32,8 +32,6 @@
 
 **We propose _Agentic Programming_.** An LLM is flexible; code is deterministic. Let the model run everything and you get chaos — unpredictable execution, context explosion, no output guarantees; hard-code everything and you lose the intelligence. A **harness** balances the two, interleaved moment to moment — **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/philosophy/agentic-programming.md))
 
-## Why OpenProgram
-
 <p align="center">
   <img src="docs/images/why-openprogram.png" alt="Why OpenProgram — deterministic flow, run anywhere, automatic DAG context, any LLM / any provider, self-evolving workflows" width="900">
 </p>
