@@ -450,7 +450,7 @@
   padding: 0 12px;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   color: var(--text-primary);
   font-size: 14px;
   outline: none;
@@ -728,7 +728,7 @@
   padding: 0 10px;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   color: var(--text-primary);
   font-size: 14px;
   outline: none;

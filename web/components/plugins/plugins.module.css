@@ -249,7 +249,7 @@
   padding: 8px 10px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   color: var(--text-primary);
   font-size: 13px;
   box-sizing: border-box;
@@ -281,7 +281,7 @@
   padding: 6px 10px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   color: var(--text-primary);
   font-size: 13px;
 }

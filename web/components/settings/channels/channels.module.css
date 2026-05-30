@@ -332,7 +332,7 @@
 .formInput {
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   padding: 8px 12px;
   font-size: 13px;
   color: var(--text-primary);

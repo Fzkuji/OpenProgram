@@ -124,13 +124,13 @@ export function MarketplaceBrowser() {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder={text("Search plugins...", "搜索插件...")}
-            className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20"
+            className="w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] py-2 pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
           />
         </div>
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}
-          className="shrink-0 rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none"
+          className="shrink-0 rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
         >
           <option value="default">{text("Sort: default", "排序：默认")}</option>
           <option value="name">{text("Name", "名称")}</option>
@@ -180,7 +180,7 @@ export function MarketplaceBrowser() {
           <select
             value={selectedId}
             onChange={(e) => setSelectedId(e.target.value)}
-            className="rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] outline-none"
+            className="rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
           >
             <option value="">{text("- Select a marketplace -", "- 选择 Marketplace -")}</option>
             {marketplaces.map((m) => (
