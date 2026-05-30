@@ -32,6 +32,30 @@
 
 <p align="center"><sub>Chat UI rendering a <code>gui_agent</code> turn — the agentic function's internal plan / step / verify calls show as an inline execution tree, the model's streamed thinking is its own collapsible block, and the right-rail mini-DAG tracks every commit. Same backend powers the TUI.</sub></p>
 
+## Runs natively on every OS — no WSL, no Docker, no VM
+
+Cross-platform here is the architecture, not a footnote. Many agent stacks
+still tell Windows users to spin up **WSL2, a Docker container, or a Linux
+VM** before anything runs. OpenProgram doesn't — `pip install openprogram`
+launches a *native* process on whatever OS you're on.
+
+- **Backend — pure Python (FastAPI).** One `pip install`, no containers,
+  identical on macOS / Linux / Windows. Subprocess and file I/O are UTF-8
+  and `os.path`-based throughout, so CJK output and non-ASCII paths don't
+  choke a Windows console.
+- **Web UI — Next.js / React / TypeScript.** Runs in any browser on any
+  OS — the same mini-DAG, branch / merge, and multi-agent surface
+  everywhere.
+- **Terminal UI — picks the native surface per platform.** Ink (Node,
+  full-screen) on macOS / Linux; Rich (Python, scroll-in-place) on Windows,
+  where Ink's raw-input mode isn't supported. Same backend, same history,
+  same commands.
+- **No symlinks.** Optional harnesses install as real cloned directories
+  (`openprogram programs install <name>`) — no Windows admin / developer-mode
+  hurdle, no per-machine absolute paths.
+
+One command, every OS — and the *native* one, not "install Linux first."
+
 ## Quick Start
 
 Requires **Python 3.11+**. macOS / Linux / Windows.
@@ -75,7 +99,7 @@ openprogram web                                     # start the browser UI
 openprogram --print "summarise this file"           # one-shot, no UI
 ```
 
-Both surfaces share the same backend (`~/.agentic/`), so a session started in the terminal shows up in the browser tab and vice versa. The web UI gets the richer surface (mini-DAG, branch / merge / attach, multi-agent, file attachments); the terminal UI is the same backend without the chrome.
+Both surfaces share the same backend (`~/.openprogram/`), so a session started in the terminal shows up in the browser tab and vice versa. The web UI gets the richer surface (mini-DAG, branch / merge / attach, multi-agent, file attachments); the terminal UI is the same backend without the chrome.
 
 The terminal UI picks the right implementation per-platform automatically: **macOS / Linux** → Ink (Node-based, full-screen alt-screen); **Windows** → Rich (Python-based, scrolls in place — Ink's raw input mode doesn't work in Windows consoles). Same backend, same commands, same chat history.
 
@@ -85,7 +109,7 @@ Ask the agent itself — it has a skill for this. Open chat and type something l
 
 ### 4. Add the harness suite (optional)
 
-Three sibling agent harnesses ship as separate repos. Symlink them under `openprogram/functions/agentics/` and the auto-discovery picks them up on the next worker restart — full clone + symlink commands and the heavy `[gui]` extras path in [docs/GETTING_STARTED.md#external-harnesses](docs/GETTING_STARTED.md).
+Three sibling agent harnesses ship as separate repos. Install one by name — `openprogram programs install research` (or `gui` / `wiki`) — which clones it as a **real directory** under `openprogram/functions/agentics/`; auto-discovery registers its functions on the next worker restart. No symlinks, so it's identical on Windows. Full procedure (and how to add **any** third-party harness) in [docs/installing-harnesses.md](docs/installing-harnesses.md).
 
 | Harness | What it does | Track record |
 |---|---|---|
@@ -184,7 +208,7 @@ MCP is the *transport*. Agentic Programming is the *execution model*. They're or
 | **Deep work** | `deep_work(task, level)` runs an autonomous plan → execute → evaluate → revise loop until the output meets the chosen quality bar. State persists to disk. |
 | **Functions that author functions** | New / fixed `@agentic_function`s are written by the agent itself via ordinary file-editing tools, guided by the `agentic-programming` skill. No dedicated `create()` / `fix()` calls. |
 | **Conversation as a git DAG** | Sessions are commits + branches + merges + cherry-picks, with the right sidebar exposing the operations. File-touching branches run in isolated git worktrees. |
-| **Layered memory** | Six stores under `~/.agentic/memory/` (journal / wiki / sleep / scheduler / recall_counts / store), each for a different timescale. The agent picks the layer. |
+| **Layered memory** | Six stores under `~/.openprogram/memory/` (journal / wiki / sleep / scheduler / recall_counts / store), each for a different timescale. The agent picks the layer. |
 | **Mini-DAG execution view** | The right rail draws every node + edge of the active session, scrolls with the chat, and offers a d3-hierarchy layout for fan-out-heavy traces. |
 | **Multi-agent + multi-channel** | Every row tagged with its producer agent; channel layer wires external transports (Discord today, more coming). |
 
@@ -257,9 +281,9 @@ openprogram/
 │       ├── deep_work/               #     autonomous plan-execute-evaluate loop
 │       ├── extract_pdf_figures/     #     PDF figure extraction
 │       ├── …                        #     other agentics …
-│       ├── GUI-Agent-Harness/       #     GUI agent (separate repo, symlink)
-│       ├── Research-Agent-Harness/  #     Research agent (separate repo, symlink)
-│       └── Wiki-Agent-Harness/      #     Wiki agent (separate repo, symlink)
+│       ├── GUI-Agent-Harness/       #     GUI agent (separate repo, cloned in)
+│       ├── Research-Agent-Harness/  #     Research agent (separate repo, cloned in)
+│       └── Wiki-Agent-Harness/      #     Wiki agent (separate repo, cloned in)
 └── webui/                           # `openprogram web` — browser UI
 skills/                              # SKILL.md files for agent integration
 examples/                            # runnable demos
