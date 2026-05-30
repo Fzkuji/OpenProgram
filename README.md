@@ -51,7 +51,7 @@ pip install openprogram                             # TUI + web UI in one wheel
 openprogram setup                                   # interactive provider wizard
 ```
 
-`openprogram setup` adopts credentials from any CLI you've already logged into (Claude Code, Codex, Gemini CLI) and offers to enter API keys for the rest. When it exits, the worker is already running — web UI on `http://localhost:3000`, FastAPI backend on `:8109`.
+`setup` adopts any CLI you're already logged into (Claude Code / Codex / Gemini) and prompts for API keys otherwise. On exit the worker is live — web UI on `:3000`, API on `:8109`.
 
 <details>
 <summary><b>Prefer to skip the wizard?</b></summary>
@@ -71,31 +71,32 @@ Check with `openprogram providers`. Priority: **Claude Code → Codex → Gemini
 ### 2. Chat — pick a surface
 
 ```bash
-openprogram                                         # default: terminal UI
-openprogram tui                                     # same thing, explicit verb
-openprogram web                                     # start the browser UI
+openprogram                                         # terminal UI (default)
+openprogram web                                     # browser UI
 openprogram --print "summarise this file"           # one-shot, no UI
 ```
 
-Both surfaces share the same backend (`~/.openprogram/`), so a session started in the terminal shows up in the browser tab and vice versa. The web UI gets the richer surface (mini-DAG, branch / merge / attach, multi-agent, file attachments); the terminal UI is the same backend without the chrome.
-
-The terminal UI picks the right implementation per-platform automatically: **macOS / Linux** → Ink (Node-based, full-screen alt-screen); **Windows** → Rich (Python-based, scrolls in place — Ink's raw input mode doesn't work in Windows consoles). Same backend, same commands, same chat history.
+One backend (`~/.openprogram/`) behind both — a terminal session shows up in the browser and vice versa. The web UI adds the mini-DAG, branch / merge, multi-agent, and attachments; the terminal UI auto-picks Ink (macOS/Linux) or Rich (Windows).
 
 ### 3. Write your own functions
 
-Ask the agent itself — it has a skill for this. Open chat and type something like *"create an @agentic_function that summarises a PDF"*; the bundled [`agentic-programming` skill](skills/agentic-programming/SKILL.md) walks the agent through location, decorator, smoke test, validation. No template hunting.
+Just ask the agent in chat — *"create an @agentic_function that summarises a PDF"* — and the bundled [`agentic-programming` skill](skills/agentic-programming/SKILL.md) handles location, decorator, smoke test, and validation.
 
 ### 4. Add the harness suite (optional)
 
-Three sibling agent harnesses ship as separate repos. They're **OpenProgram programs** — they run *inside* this install, so OpenProgram (step 1 above) must be present first; you don't install them on their own. Add one by name — `openprogram programs install research` (or `gui` / `wiki`) — which clones it as a **real directory** under `openprogram/functions/agentics/` and pip-installs that harness's own declared deps (OpenProgram carries none of them); auto-discovery registers its functions on the next worker restart, or hit Refresh on the Functions page. No symlinks, so it's identical on Windows. Full procedure (and how to add **any** third-party harness) in [docs/installing-harnesses.md](docs/installing-harnesses.md).
+Three sibling harnesses run as **OpenProgram programs** (inside this install). Add one by name:
 
-> The GUI harness installs + registers on every OS. Its core action layer — screen capture, mouse/keyboard input, window control — now runs on macOS, Windows, and Linux (Pillow + pynput + Win32/`wmctrl`); the advanced Apple Vision / Accessibility perception is macOS-tuned (Windows/Linux fall back to YOLO detection + EasyOCR).
+```bash
+openprogram programs install research    # or: gui / wiki
+```
+
+It clones into `functions/agentics/`, pip-installs that harness's own deps, and auto-registers on the next worker restart (or hit **Refresh** on the Functions page). No symlinks — identical on Windows. Any third-party harness works the same: [docs/installing-harnesses.md](docs/installing-harnesses.md).
 
 | Harness | What it does | Track record |
 |---|---|---|
-| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Observe → plan → click → verify, drives desktop apps and OSWorld VMs by vision. | **OSWorld Multi-Apps 79.8%** (72.6 / 91 evaluated tasks) |
-| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Literature survey → idea → experiments → paper draft → cross-model review. | Topic → submission-ready draft in one run |
-| [Wiki&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Wiki-Agent-Harness) | Ingests notes / docs / chats into an Obsidian-compatible vault with `[[wikilinks]]`. | Obsidian-compatible vault output |
+| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Observe → plan → click → verify by vision; drives desktop apps & OSWorld VMs. Runs on macOS / Windows / Linux (perception macOS-tuned). | **OSWorld Multi-Apps 79.8%** (72.6 / 91) |
+| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Literature survey → idea → experiments → paper draft → cross-model review. | Topic → submission-ready draft |
+| [Wiki&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Wiki-Agent-Harness) | Ingests notes / docs / chats into an Obsidian-compatible vault with `[[wikilinks]]`. | Obsidian vault output |
 
 ## Optional extras
 
@@ -107,7 +108,7 @@ Three sibling agent harnesses ship as separate repos. They're **OpenProgram prog
 | `[channels]` | Discord / Slack / WeChat bots |
 | `[all]` | Everything except `[browser-stealth]` |
 
-Post-install steps (`playwright install`, `patchright install chromium`, `camoufox fetch`, etc.) and per-extra notes live in [docs/install.md](docs/install.md). The harness suite (GUI / Research / Wiki) is **not** an extra — each harness declares its own third-party deps and installs via `openprogram programs install <name>` (see *Add the harness suite* above), so OpenProgram carries none of them.
+Post-install steps and per-extra notes: [docs/install.md](docs/install.md). The harness suite (GUI / Research / Wiki) is **not** an extra — install those via `openprogram programs install <name>` (step 4).
 
 ## Troubleshooting
 
