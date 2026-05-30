@@ -173,7 +173,7 @@
   font-size: 14px;
   font-weight: 400;
   color: var(--nav-color);
-  border-radius: 8px;
+  border-radius: var(--ui-list-radius);
   transition: background 75ms, color 75ms;
   white-space: nowrap;
 }

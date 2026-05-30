@@ -149,7 +149,7 @@
   max-height: 32px;
   box-sizing: border-box;
   line-height: 20px;
-  border-radius: 6px;
+  border-radius: var(--ui-list-radius);
   font-size: 14px;
   color: var(--text-primary);
   text-decoration: none;

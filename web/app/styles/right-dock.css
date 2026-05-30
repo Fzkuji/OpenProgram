@@ -116,7 +116,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border-radius: 6px;
+  border-radius: var(--ui-list-radius);
 }
 .branch-item:hover { background: var(--bg-hover); }
 .branch-item.active {

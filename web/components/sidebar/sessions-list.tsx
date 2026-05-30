@@ -416,11 +416,11 @@ export function SessionsList() {
       {sections.map((sec, i) =>
         sec.label === "" ? (
           // Flat run (title sort, no grouping) — no header.
-          <div key={sec.key}>{sec.items.map(renderRow)}</div>
+          <div key={sec.key} className="flex flex-col gap-px">{sec.items.map(renderRow)}</div>
         ) : (
           // group/sec → hovering anywhere in the section reveals its
           // collapse chevron (hidden otherwise).
-          <div key={sec.key} className="group/sec">
+          <div key={sec.key} className="group/sec flex flex-col gap-px">
             <SectionHeader
               name={sec.label}
               collapsible={collapsible}

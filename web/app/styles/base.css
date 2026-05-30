@@ -24,7 +24,10 @@
        rounder so the pill silhouette is unmistakeable against
        the surrounding text. */
   --ui-list-h: 32px;
-  --ui-list-radius: 6px;
+  /* 9px matches claude.ai's sidebar rows (`!rounded-[9px]`). With the 1px
+     row gap, a softer corner reads as rounded separation instead of a
+     sharp thin seam between adjacent pills. */
+  --ui-list-radius: 9px;
   /* Button height intentionally a touch SHORTER than list height —
      a pill on the panel surface should not visually outweigh the
      sidebar rows it sits next to. The slightly larger radius
