@@ -38,16 +38,20 @@ Adds Patchright and Camoufox alongside Playwright. Picks one of
 them automatically when the site under `browser` sets
 Cloudflare turnstile.
 
-## `[gui]` — Vision / control deps for the GUI harness
+## GUI harness — vision / control deps
+
+The GUI harness's heavy deps are NOT an OpenProgram extra — the harness
+declares its own. Install the harness + its deps in one step:
 
 ```bash
-pip install "openprogram[gui]"
+openprogram programs install gui
 ```
 
-Adds the ~2 GB stack the [GUI Agent Harness](https://github.com/Fzkuji/GUI-Agent-Harness)
-expects: vision encoders, OCR, screen-capture and input
-drivers. Install this only when you actually plan to run
-`gui_agent`; the base install is intentionally light.
+That clones the [GUI Agent Harness](https://github.com/Fzkuji/GUI-Agent-Harness)
+into `functions/agentics/` and `pip install`s the ~2 GB stack it
+declares: vision encoders, OCR, screen-capture and input drivers.
+Do this only when you actually plan to run `gui_agent`; the base
+install is intentionally light.
 
 ## `[channels]` — Discord / Slack / WeChat bots
 

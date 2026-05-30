@@ -215,17 +215,28 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
                 print(f"[x] {prog.function}: git clone/pull failed (exit {rc}).")
                 continue
 
-        # Heavy programs need their native deps from our extra.
-        if prog.heavy:
+        # Install the harness's OWN declared dependencies — the harness
+        # is self-describing (its pyproject.toml / setup.py lists what it
+        # needs). OpenProgram does NOT carry per-harness deps; each
+        # harness owns its dependency list. So we ``pip install`` the
+        # clone itself, which resolves whatever it declares (cv2, torch,
+        # … for GUI; nothing extra for the light ones).
+        has_pyproject = os.path.isfile(os.path.join(dest, "pyproject.toml")) \
+            or os.path.isfile(os.path.join(dest, "setup.py"))
+        if has_pyproject:
             dep_cmd = [sys.executable, "-m", "pip", "install"]
             if upgrade:
                 dep_cmd.append("--upgrade")
-            dep_cmd.append(f"openprogram[{prog.extra}]")
+            # Non-editable: deps land in site-packages, the harness code
+            # still runs from the in-tree clone (which is on sys.path via
+            # the registry loader). ``--no-deps`` is NOT passed — we want
+            # the harness's declared deps.
+            dep_cmd.append(dest)
             rc = subprocess.call(dep_cmd)
             if rc != 0:
-                print(f"[!] {prog.function}: cloned but deps "
-                      f"(openprogram[{prog.extra}]) failed (exit {rc}). "
-                      f"It may not run until deps are present.")
+                print(f"[!] {prog.function}: cloned but installing its "
+                      f"dependencies failed (exit {rc}). It may not run "
+                      f"until they're present — see the harness README.")
                 continue
 
         # Confirm the package imports (registers the function).

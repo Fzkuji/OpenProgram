@@ -123,8 +123,9 @@ does the clone-into-`<AGENTICS>` for you, pinned and dependency-aware:
 
 ```bash
 openprogram programs install research      # research_agent — light
-openprogram programs install gui           # gui_agent — heavy: also
-                                           #   pip-installs openprogram[gui]
+openprogram programs install gui           # gui_agent — heavy: clones it
+                                           #   then pip-installs the
+                                           #   harness's own deps
                                            #   (torch via ultralytics, opencv)
 openprogram programs install all
 openprogram programs uninstall <name>

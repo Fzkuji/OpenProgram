@@ -87,14 +87,19 @@ class Program:
         package: The importable package name inside the repo (``import
             <package>``). Its ``__init__`` imports the entry point so the
             decorator self-registers on import.
-        extra: The ``openprogram[<extra>]`` group carrying this program's
-            heavy runtime deps (only populated for ``heavy`` programs).
+        extra: Short selector name used on the CLI (``openprogram
+            programs install <extra>`` → ``gui`` / ``research`` / ``wiki``).
+            Just a handle — it does NOT map to an ``openprogram[...]``
+            extra anymore; a harness's runtime deps live in the harness's
+            own pyproject and are installed from the clone (see
+            ``_cli_cmds/programs.py``).
         repo: HTTPS repo URL (also the ``git clone`` source).
         summary: One-line description for menus / install prompts.
-        heavy: True when the program needs large / native deps (the GUI
-            harness pulls torch via ultralytics + OpenCV). Used to warn
-            before install and to keep it out of any "auto-install the
-            light ones" default.
+        heavy: True when the program pulls large / native deps (the GUI
+            harness pulls torch via ultralytics + OpenCV — declared in
+            ITS pyproject, not ours). Used only to warn before install
+            and to keep it out of any "auto-install the light ones"
+            default.
         public: False while the repo is not yet published. Kept in the
             catalogue so the program loads the moment it's present, but
             omitted from auto-install / git specs so a clone never fails

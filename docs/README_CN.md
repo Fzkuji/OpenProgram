@@ -50,11 +50,18 @@ OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：
 
 ```bash
 pip install openprogram                   # 核心包
-pip install "openprogram[all]"            # 完整：providers + Web UI + GUI harness
+pip install "openprogram[all]"            # 完整：providers + Web UI + 渠道/浏览器工具
 # 或按需安装：
 pip install "openprogram[openai]"         #   仅 OpenAI SDK（或 [anthropic]、[gemini]）
 pip install "openprogram[web]"            #   仅 Web UI
-pip install "openprogram[gui]"            #   GUI-Agent-Harness 依赖（opencv/torch/ultralytics，~2GB）
+```
+
+GUI / Research / Wiki 这几个 harness **不是** OpenProgram 的 extra——
+各自仓库声明自己的依赖。装好 OpenProgram 后用：
+
+```bash
+openprogram programs install gui          # 克隆 GUI-Agent-Harness 并装它自己的依赖
+openprogram programs install research
 ```
 
 ```python
