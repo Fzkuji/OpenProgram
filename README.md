@@ -138,45 +138,19 @@ openprogram --resume <session-id>    # pick up a previous chat
 
 ---
 
-## Why Agentic Programming?
+## How to use
 
-<p align="center">
-  <img src="docs/images/the_idea.png" alt="Python controls flow, LLM reasons" width="800">
-</p>
+Two ways to interact day-to-day — same backend, same sessions, switch freely.
 
-| Principle | How |
-|-----------|-----|
-| **Deterministic flow** | Python controls `if/else/for/while`. Execution is guaranteed, not suggested. |
-| **Minimal LLM calls** | Call the LLM only when reasoning is needed. 2 calls, not 10. |
-| **Prompt in code** | The per-call prompt lives in the function body (`runtime.exec(content=...)`), not in scattered prompt files. |
-| **Self-evolving** | Agents author, fix and improve functions directly — guided by the `agentic-programming` skill. |
+### Web UI — `openprogram web`
 
-<details>
-<summary><strong>The problem with current frameworks</strong></summary>
+Opens at `http://localhost:3000`. The full surface: a live **mini-DAG** of the session on the right rail, **branch / merge / attach** on any node, **multi-agent** rows tagged by producer, and drag-and-drop **file attachments**. Best when you want to *see and steer* the execution tree, or for longer, branching work.
 
-<p align="center">
-  <img src="docs/images/the_problem.png" alt="LLM as Scheduler" width="800">
-</p>
+### Terminal UI — `openprogram`
 
-Current LLM agent frameworks place the LLM as the central scheduler. This creates three fundamental problems:
+The same backend without the browser — same commands, same chat history. Picks the native renderer per OS: **Ink** on macOS / Linux, **Rich** on Windows. Best for staying in the terminal or over SSH. One-shot, no UI: `openprogram --print "…"`.
 
-- **Unpredictable execution** — the LLM may skip, repeat, or invent steps regardless of defined workflows
-- **Context explosion** — each tool-call round-trip accumulates history
-- **No output guarantees** — the LLM interprets instructions rather than executing them
-
-The core issue: **the LLM controls the flow, but nothing enforces it.** Skills, prompts, and system messages are suggestions, not guarantees.
-
-</details>
-
-|  | Tool-Calling / MCP | Agentic Programming |
-|--|---------------------|---------------------|
-| **Who schedules?** | LLM decides | Python decides |
-| **Functions contain** | Code only | Code + LLM reasoning |
-| **Context** | Flat conversation | Structured tree |
-| **Prompt** | Hidden in agent config | Docstring = prompt |
-| **Self-improvement** | Not built-in | `create` → `fix` → evolve |
-
-MCP is the *transport*. Agentic Programming is the *execution model*. They're orthogonal.
+> Sessions live in `~/.openprogram/` and are shared by both — start in the terminal, pick it up in the browser tab, and vice versa.
 
 ---
 
@@ -194,41 +168,42 @@ MCP is the *transport*. Agentic Programming is the *execution model*. They're or
 
 The detailed tour of each one — code samples, design rationale, where to look in the codebase — lives in [**docs/features.md**](docs/features.md).
 
-## API Reference
+## Use it as a client (Python)
 
-### Core
+Past the chat UIs, OpenProgram is a library: `import openprogram` and build your own agentic programs. Python drives the flow; the LLM is called only where you ask for it.
+
+```python
+from openprogram import agentic_function
+from openprogram.providers.registry import create_runtime
+
+runtime = create_runtime()          # auto-detects your provider (API key or CLI)
+
+@agentic_function
+def key_concepts(topic):
+    "List the most important concepts in a topic."        # docstring = the prompt
+    return runtime.exec(content=[{"type": "text",
+        "text": f"List the 3 key concepts in {topic}, numbered 1-3."}])
+
+@agentic_function
+def lesson(topic):
+    "Identify the concepts, then write a takeaway."
+    concepts = key_concepts(topic=topic)                  # nested call — context auto-tracked
+    return runtime.exec(content=[{"type": "text",
+        "text": "Write a 2-sentence takeaway connecting the concepts above."}])
+
+print(lesson(topic="how neural networks learn"))
+print(lesson.context.tree())        # the execution tree, tracked for you
+```
+
+Every `@agentic_function` call becomes a node in the session DAG, and the runtime threads the right context into each nested call automatically — no manual prompt assembly.
 
 | Import | What it does |
-|--------|-------------|
-| `from openprogram import agentic_function` | Decorator. Records each call as a node in the session DAG |
-| `from openprogram.agentic_programming.runtime import Runtime` | LLM runtime. `exec()` calls the LLM with DAG-derived context |
-| `from openprogram.providers.registry import create_runtime` | Create a Runtime with auto-detection or explicit provider (`create_runtime()` checks API keys and CLIs in priority order) |
+|---|---|
+| `from openprogram import agentic_function` | Decorator — records each call as a DAG node |
+| `…providers.registry import create_runtime` | Build a runtime by auto-detection or explicit provider |
+| `…functions.agentics.deep_work import deep_work` | Built-in autonomous plan → execute → evaluate loop |
 
-### Authoring functions
-
-There are no `create()` / `fix()` meta-functions — writing, editing and
-validating `@agentic_function`s is done directly with ordinary
-file-editing tools, guided by the **`agentic-programming` skill**
-(`skills/agentic-programming/SKILL.md`). That skill is the complete spec:
-file layout, the decorator's metadata, the docstring vs `content` split,
-and a rule-based validation checklist.
-
-### Built-in Functions
-
-| Import | What it does |
-|--------|-------------|
-| `from openprogram.functions.agentics.deep_work import deep_work` | Autonomous plan-execute-evaluate loop with quality levels |
-| `from openprogram.functions.agentics.ask_user import ask_user` | Ask the user a clarifying question and block until an answer arrives |
-
-### Providers
-
-Six built-in providers: Anthropic, OpenAI, Gemini (API), Claude Code, Codex, Gemini (CLI). All CLI providers maintain **session continuity** across calls. See [Provider docs](docs/api/providers.md) for details.
-
-### API Docs by Topic
-
-- [agentic_function](docs/api/agentic_function.md) — decorator behavior, DAG node recording, the docstring / `content` split
-- [Runtime](docs/api/runtime.md) — `exec()`, retries, response formats, provider wiring
-- [Providers](docs/api/providers.md) — built-in runtimes, detection order, CLI vs API tradeoffs
+Full API: [docs/API.md](docs/API.md) · per-topic notes under [docs/api/](docs/api/) · runnable demos in [examples/](examples/).
 
 ## Integration
 
