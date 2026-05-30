@@ -26,8 +26,8 @@ export interface UserProfilePrefs {
 }
 
 export const DEFAULT_USER_PROFILE: UserProfilePrefs = {
-  name: "You",
-  initial: "Y",
+  name: "User",
+  initial: "U",
   color: "#4f8ef7",
   // Matches the avatar the user bubble showed before this was
   // configurable, so nothing changes until the user customises it.
