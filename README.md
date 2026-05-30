@@ -162,9 +162,9 @@ The same backend without the browser — same commands, same chat history. Picks
 
 ---
 
-## Use it as a client (Python)
+## Python client
 
-Past the chat UIs, OpenProgram is a library: `import openprogram` and build your own agentic programs. Python drives the flow; the LLM is called only where you ask for it.
+Beyond the chat UIs, OpenProgram is a Python library — `import openprogram` and build your own agentic programs. Python drives the flow; the LLM is called only where you ask for it.
 
 ```python
 from openprogram import agentic_function
