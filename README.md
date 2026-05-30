@@ -32,29 +32,29 @@
 
 <p align="center"><sub>Chat UI rendering a <code>gui_agent</code> turn — the agentic function's internal plan / step / verify calls show as an inline execution tree, the model's streamed thinking is its own collapsible block, and the right-rail mini-DAG tracks every commit. Same backend powers the TUI.</sub></p>
 
-## Runs natively on every OS — no WSL, no Docker, no VM
+## Why OpenProgram
 
-Cross-platform here is the architecture, not a footnote. Many agent stacks
-still tell Windows users to spin up **WSL2, a Docker container, or a Linux
-VM** before anything runs. OpenProgram doesn't — `pip install openprogram`
-launches a *native* process on whatever OS you're on.
-
-- **Backend — pure Python (FastAPI).** One `pip install`, no containers,
-  identical on macOS / Linux / Windows. Subprocess and file I/O are UTF-8
-  and `os.path`-based throughout, so CJK output and non-ASCII paths don't
-  choke a Windows console.
-- **Web UI — Next.js / React / TypeScript.** Runs in any browser on any
-  OS — the same mini-DAG, branch / merge, and multi-agent surface
-  everywhere.
-- **Terminal UI — picks the native surface per platform.** Ink (Node,
-  full-screen) on macOS / Linux; Rich (Python, scroll-in-place) on Windows,
-  where Ink's raw-input mode isn't supported. Same backend, same history,
-  same commands.
-- **No symlinks.** Optional harnesses install as real cloned directories
-  (`openprogram programs install <name>`) — no Windows admin / developer-mode
-  hurdle, no per-machine absolute paths.
-
-One command, every OS — and the *native* one, not "install Linux first."
+- **Python controls the flow; the LLM only reasons when asked.** The Agentic
+  Programming paradigm makes execution *deterministic* — your `if/else/for`
+  decides what happens, and the model is called only when judgement is
+  needed. Fewer LLM calls, no context explosion, output you can rely on.
+  ([the idea](docs/philosophy/agentic-programming.md))
+- **Runs natively on every OS — no WSL, no Docker, no VM.** Pure-Python
+  (FastAPI) backend, Next.js / React / TypeScript web UI, and a per-platform
+  terminal UI (Ink on macOS/Linux, Rich on Windows). `pip install
+  openprogram` starts a *native* process everywhere — not "install Linux
+  first," like many agent stacks ask of Windows users.
+- **Any LLM, any provider.** Claude, GPT, and Gemini — via API key *or* the
+  CLI subscription you already pay for (Claude Code / Codex / Gemini CLI),
+  auto-detected in priority order.
+- **One backend, two surfaces.** The terminal UI and the browser UI share the
+  same state — start a session in one, pick it up in the other.
+- **Functions that author functions.** The agent writes, fixes, and evolves
+  its own `@agentic_function`s with ordinary file edits, guided by a built-in
+  skill — no template hunting.
+- **Your conversation is a git DAG.** Branch, merge, and cherry-pick chats;
+  file-touching branches run in isolated git worktrees, so experiments never
+  clobber your working tree.
 
 ## Quick Start
 
