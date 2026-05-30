@@ -54,23 +54,17 @@ openprogram setup                                   # interactive provider wizar
 `openprogram setup` adopts credentials from any CLI you've already logged into (Claude Code, Codex, Gemini CLI) and offers to enter API keys for the rest. When it exits, the worker is already running — web UI on `http://localhost:3000`, FastAPI backend on `:8109`.
 
 <details>
-<summary><b>Prefer to skip the wizard? Set one env var.</b></summary>
+<summary><b>Prefer to skip the wizard?</b></summary>
+
+Set a key instead — or log into a CLI provider (`claude` / `codex` / `gemini`) and `openprogram setup` adopts it:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...                 # Claude
-export OPENAI_API_KEY=sk-...                        # GPT
-export GOOGLE_API_KEY=...                           # Gemini
+export ANTHROPIC_API_KEY=sk-ant-...    # Claude
+export OPENAI_API_KEY=sk-...           # GPT
+export GOOGLE_API_KEY=...              # Gemini
 ```
 
-Or wire up a CLI provider (no API key, rides your existing subscription):
-
-```bash
-npm i -g @anthropic-ai/claude-code && claude login
-npm i -g @openai/codex && codex auth
-npm i -g @google/gemini-cli && gemini auth login
-```
-
-Check detection with `openprogram providers`. Auto-priority: **Claude Code → Codex → Gemini CLI → Anthropic API → OpenAI API → Gemini API**.
+Check with `openprogram providers`. Priority: **Claude Code → Codex → Gemini CLI → Anthropic → OpenAI → Gemini**.
 
 </details>
 
