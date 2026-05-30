@@ -34,11 +34,10 @@
 
 ## Why OpenProgram
 
-- **Python controls the flow; the LLM only reasons when asked.** The Agentic
-  Programming paradigm makes execution *deterministic* — your `if/else/for`
-  decides what happens, and the model is called only when judgement is
-  needed. Fewer LLM calls, no context explosion, output you can rely on.
-  ([the idea](docs/philosophy/agentic-programming.md))
+- **Deterministic flow, flexible reasoning — you set the mix.** Python drives
+  the control flow (repeatable, guaranteed); the LLM is called only for the
+  judgement you can't script. Fewer calls, no runaway context, output you can
+  rely on.
 - **Runs natively on every OS — no WSL, no Docker, no VM.** Pure-Python
   (FastAPI) backend, Next.js / React / TypeScript web UI, and a per-platform
   terminal UI (Ink on macOS/Linux, Rich on Windows). `pip install
