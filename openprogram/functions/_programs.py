@@ -252,12 +252,20 @@ def import_installed_programs() -> list[str]:
         if not prog.is_installed():
             continue
         try:
-            importlib.import_module(prog.package)
+            # Import the harness's ``agentics`` sub-package — that's the
+            # registration contract (it exposes AGENTIC_FUNCTIONS, whose
+            # @agentic_function decorators fire on import and self-register).
+            # Importing the bare top-level package is NOT enough: the
+            # decorators live under ``<package>/agentics/``, which a parent
+            # __init__ doesn't pull in (and shouldn't — top-level packages
+            # are kept dep-light / lazy). Same contract the auto-discovery
+            # path uses, so first-party and third-party register identically.
+            importlib.import_module(f"{prog.package}.agentics")
             registered.append(prog.function)
         except Exception as e:  # noqa: BLE001 — never let one break import
             if os.environ.get("OPENPROGRAM_DEBUG_REGISTRY"):
                 import traceback
-                print(f"[programs] failed to import {prog.package}: "
+                print(f"[programs] failed to import {prog.package}.agentics: "
                       f"{type(e).__name__}: {e}")
                 traceback.print_exc()
     return registered
