@@ -818,7 +818,7 @@ function ConvItem({
               setMenuOpen((v) => !v);
             }}
             aria-label={t("sidebar.filter")}
-            className="absolute right-[4px] top-1/2 flex size-[22px] -translate-y-1/2
+            className="absolute right-[5px] top-1/2 flex size-[22px] -translate-y-1/2
               items-center justify-center rounded-[5px] text-text-muted
               opacity-0 pointer-events-none transition-opacity duration-150 ease-out
               group-hover:opacity-100 group-hover:pointer-events-auto
