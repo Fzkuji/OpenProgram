@@ -27,7 +27,10 @@
 
 ---
 
-> **Built on the Agentic Programming paradigm.** Current LLM agent frameworks let the LLM control everything — what to do, when, and how. The result? Unpredictable execution, context explosion, and no output guarantees. OpenProgram flips this: **Python controls the flow, LLM only reasons when asked.** See [philosophy](docs/philosophy/agentic-programming.md) for the full rationale.
+> *"Controlling complexity is the essence of computer programming."*
+> — **Brian Kernighan**, co-author of *The C Programming Language*
+
+**Built on the Agentic Programming paradigm.** Today's LLM agent frameworks hand the model the wheel — what to do, when, and how — and inherit the opposite of control: unpredictable execution, context explosion, no output guarantees. OpenProgram keeps that complexity in hand: **Python controls the flow; the LLM reasons only when asked.** ([the full rationale →](docs/philosophy/agentic-programming.md))
 
 <p align="center">
   <img src="docs/images/chat_hero.png" alt="OpenProgram chat UI — agentic function call tree, streaming thinking, and bilingual output side by side with the conversation DAG" width="900">
