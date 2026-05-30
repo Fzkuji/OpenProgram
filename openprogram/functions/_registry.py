@@ -111,26 +111,51 @@ def load_agentic_modules(agentics_dir: str) -> None:
 
 
 def _iter_external_harness_dirs(agentics_dir: str) -> Iterator[tuple[str, str]]:
-    """Yield ``(symlink_name, real_target_path)`` for every symlink under
-    ``agentics_dir`` that points at a directory we treat as a harness.
+    """Yield ``(name, real_path)`` for every entry under ``agentics_dir``
+    that we treat as an external harness — i.e. a third-party agentic
+    program dropped in here, whether as a **real directory** (the normal
+    case: ``git clone`` into ``agentics/<name>/``) or a symlink (the
+    local-dev case: ``ln -s`` your checkout).
 
-    A directory with a hyphenated name (``Wiki-Agent-Harness``) is the
-    canonical case — Python can't import it directly so the standard
-    AGENTIC_MODULES loop ignores it, but the auto-discovery loop here
-    picks it up via its inner Python package.
+    Accepting real directories is what makes "install a third-party
+    harness = clone it into agentics/, done" work without symlinks
+    (symlinks need admin/developer mode on Windows). A hyphenated name
+    like ``Wiki-Agent-Harness`` is the canonical shape — Python can't
+    import it directly, so the AGENTIC_MODULES loop ignores it, but this
+    loop picks it up via its inner Python package (see
+    :func:`_find_python_package`).
+
+    Skips: dotfiles, the ``_NOT_A_HARNESS`` set (internal private dirs),
+    plain ``.py`` files (single-module agentics, loaded elsewhere), and
+    the official first-party programs — those are loaded explicitly by
+    ``_programs.import_installed_programs`` (step 2 of
+    :func:`load_agentic_modules`), so re-discovering their clone dirs
+    here would import them a second time.
     """
     if not os.path.isdir(agentics_dir):
         return
+    skip = set(_NOT_A_HARNESS) | _official_program_dir_names()
     for name in sorted(os.listdir(agentics_dir)):
-        if name in _NOT_A_HARNESS or name.startswith("."):
+        if name in skip or name.startswith("."):
             continue
         path = os.path.join(agentics_dir, name)
-        if not os.path.islink(path):
-            continue
+        # Real directory OR symlink-to-directory; skip plain files.
         target = os.path.realpath(path)
         if not os.path.isdir(target):
             continue
         yield name, target
+
+
+def _official_program_dir_names() -> set[str]:
+    """Clone-dir names of the first-party programs (GUI-Agent-Harness …),
+    which ``_programs`` already imports — so auto-discovery skips them to
+    avoid a double import. Best-effort: empty set if the catalogue can't
+    be read."""
+    try:
+        from openprogram.functions._programs import KNOWN_PROGRAMS
+        return {p.repo_dir_name for p in KNOWN_PROGRAMS}
+    except Exception:
+        return set()
 
 
 def _find_python_package(harness_root: str) -> Optional[str]:

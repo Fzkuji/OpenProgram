@@ -38,6 +38,12 @@ Install / remove with::
 
 The clone directories are git-ignored by the parent repo (see
 ``.gitignore``) — they remain independent checkouts of their own repos.
+
+Installing a THIRD-PARTY harness (any repo, not just these three) works
+the same way without a registry edit: clone it into ``agentics/`` and it
+auto-registers, as long as it satisfies the package contract. Full
+procedure (the canonical install flow, written to be agent-executable):
+``docs/installing-harnesses.md``.
 """
 
 from __future__ import annotations
