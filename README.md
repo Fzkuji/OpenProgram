@@ -34,24 +34,11 @@
 
 ## Why OpenProgram
 
-- **Deterministic flow, flexible reasoning — you set the mix.** Python drives
-  the control flow (repeatable, guaranteed); the LLM is called only for the
-  judgement you can't script. Fewer calls, no runaway context, output you can
-  rely on.
-- **Runs natively on every OS — TUI, Web, or Remote.** One `pip install`,
-  native on macOS / Linux / Windows (no WSL, no Docker, no VM). Drive it from
-  the terminal, the browser, or a chat app (Telegram / Discord / Slack /
-  WeChat) — same backend, same session, wherever you are.
-- **Automatic, DAG-based context — built for multi-agent.** Every call is a
-  node in a shared DAG, and the runtime threads the right context into each
-  LLM call for you — no manual prompt assembly. The same graph branches,
-  merges, and lets multiple agents work in parallel.
-- **Any LLM, any provider.** Claude, GPT, and Gemini — via API key *or* the
-  CLI subscription you already pay for (Claude Code / Codex / Gemini CLI),
-  auto-detected in priority order.
-- **Functions that author functions.** The agent writes, fixes, and evolves
-  its own `@agentic_function`s with ordinary file edits, guided by a built-in
-  skill — no template hunting.
+- **Deterministic flow, flexible reasoning** — Python drives the control flow; the LLM reasons only when asked.
+- **Run it anywhere** — native on macOS / Linux / Windows, via terminal, browser, or chat (no WSL, no Docker).
+- **Automatic context** — a shared DAG threads context into every call; multi-agent ready.
+- **Any LLM, any provider** — API key, or the CLI subscription you already pay for.
+- **Functions that author functions** — the agent writes, fixes, and evolves its own tools.
 
 ## Quick Start
 
