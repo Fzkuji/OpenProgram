@@ -135,7 +135,7 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
           name={profile.name}
           config={profile.avatar}
         />
-        <div className="message-sender">{profile.name || text("You", "你")}</div>
+        <div className="message-sender">{profile.name || text("User", "用户")}</div>
         <MessageActions msg={msg} onEdit={() => setEditing(true)} />
       </div>
       <div className="message-content">
