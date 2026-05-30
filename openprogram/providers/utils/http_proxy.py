@@ -32,8 +32,15 @@ def get_proxies() -> dict[str, str] | None:
 
 
 def make_httpx_client(**kwargs) -> "httpx.AsyncClient":
-    """Create an httpx.AsyncClient with proxy settings applied."""
+    """Create an httpx.AsyncClient with proxy settings applied.
+
+    NOTE: httpx 0.28 removed the ``proxies=`` mapping kwarg; the supported
+    form is a single ``proxy=`` URL. Passing ``proxies=`` raises
+    ``TypeError`` on 0.28+, so we use ``proxy=`` here. For the fully
+    hardened client (keepalive / IPv4 / timeouts) prefer
+    :func:`openprogram.providers.utils.http_client.build_async_client`.
+    """
     proxy = get_proxy_url()
     if proxy:
-        kwargs.setdefault("proxies", get_proxies())
+        kwargs.setdefault("proxy", proxy)
     return httpx.AsyncClient(**kwargs)

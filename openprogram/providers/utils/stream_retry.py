@@ -54,6 +54,13 @@ PROVIDER_STREAM_MAX_ATTEMPTS: int = int(
 _BACKOFF_BASE_S: float = float(
     os.environ.get("OPENPROGRAM_PROVIDER_STREAM_BACKOFF_S", "1.0"),
 )
+# Cap on the *exponential* component so a large attempt budget can't
+# produce a multi-minute sleep. Mirrors OpenClaw (maxDelayMs 30s) and
+# OpenCode (MAX_DELAY_MS 10s). A server-supplied Retry-After larger than
+# this is still honored (we never sleep *less* than the server asked).
+_BACKOFF_MAX_S: float = float(
+    os.environ.get("OPENPROGRAM_PROVIDER_STREAM_BACKOFF_MAX_S", "30.0"),
+)
 
 
 # Exception class names we treat as "transport hiccup": when the
@@ -169,7 +176,9 @@ def stream_backoff_seconds(
     would let a quarter of retries fire before the server-specified
     deadline, defeating the backpressure.
     """
-    base = _BACKOFF_BASE_S * (2 ** attempt)
+    # Exponential component, capped (a server Retry-After larger than the
+    # cap is still honored below — we never sleep less than asked).
+    base = min(_BACKOFF_BASE_S * (2 ** attempt), _BACKOFF_MAX_S)
     if retry_after_s and retry_after_s > 0:
         floor = max(base, retry_after_s)
         return floor * random.uniform(1.0, 1.25)
@@ -177,25 +186,14 @@ def stream_backoff_seconds(
 
 
 def read_retry_after(headers: Any) -> Optional[float]:
-    """Extract numeric ``Retry-After`` from httpx-style headers.
+    """Extract ``Retry-After`` seconds from httpx-style headers.
 
-    Honors only the seconds form (e.g. ``Retry-After: 5``); HTTP-date
-    form returns ``None`` (we fall back to the exponential base).
-    ``headers=None`` is OK.
+    Delegates to :func:`openprogram.providers.utils.errors.parse_retry_after`,
+    which handles the ``retry-after-ms`` (millisecond), integer-seconds, and
+    HTTP-date forms. ``headers=None`` is OK.
     """
-    if headers is None:
-        return None
-    try:
-        v = headers.get("Retry-After") or headers.get("retry-after")
-    except AttributeError:
-        return None
-    if not v:
-        return None
-    try:
-        s = float(v)
-        return s if s > 0 else None
-    except (TypeError, ValueError):
-        return None
+    from openprogram.providers.utils.errors import parse_retry_after
+    return parse_retry_after(headers)
 
 
 async def retry_stream(

@@ -24,6 +24,8 @@ from openprogram.providers._shared.openai_responses import (
 from openprogram.providers._shared.validate_modalities import validate_input_modalities
 from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers.utils.event_stream import EventStream
+from openprogram.providers.utils.http_client import get_shared_async_client
+from openprogram.providers.utils.rate_limit import parse_rate_limit
 from openprogram.providers.utils.stream_retry import (
     PROVIDER_STREAM_MAX_ATTEMPTS,
     ProviderStreamError,
@@ -42,6 +44,34 @@ _CODEX_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-codex", "opencode"})
 # CodexStreamError name still works. New code should use
 # ProviderStreamError from utils.stream_retry directly.
 CodexStreamError = ProviderStreamError
+
+
+def _recover_partial_enabled() -> bool:
+    """Partial-response recovery toggle (default on)."""
+    return os.environ.get("OPENPROGRAM_PARTIAL_RECOVERY", "1").strip().lower() \
+        not in ("0", "false", "no", "off")
+
+
+def _is_permanent_failure(exc: Exception) -> bool:
+    """True for failures that should hard-fail even when partial content
+    already streamed: auth / authorization / invalid request / context
+    overflow / content policy. Everything else (transport, rate-limit,
+    provider-internal, timeout, unknown) is treated as a transient
+    mid-stream break that's safe to salvage — the request was clearly
+    accepted, since content came back."""
+    from openprogram.providers.utils.errors import classify_error, ErrorReason
+    reason, _ = classify_error(
+        exc,
+        http_status=getattr(exc, "http_status", None),
+        error_text=getattr(exc, "error_text", "") or "",
+    )
+    return reason in (
+        ErrorReason.AUTHENTICATION,
+        ErrorReason.AUTHORIZATION,
+        ErrorReason.INVALID_REQUEST,
+        ErrorReason.CONTEXT_LENGTH,
+        ErrorReason.CONTENT_POLICY,
+    )
 
 
 def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
@@ -178,31 +208,54 @@ def stream_openai_codex_responses(
             # we can't rewind that, so ``is_committed_fn`` flips to
             # True and ``retry_stream`` stops retrying.
             async def _attempt() -> None:
-                async with httpx.AsyncClient(timeout=HTTPX_TRANSPORT_TIMEOUT_S) as client:
-                    async with client.stream(
-                        "POST",
-                        f"{base_url.rstrip('/')}/codex/responses",
-                        headers=headers,
-                        content=json.dumps(request_body),
-                    ) as response:
-                        if response.status_code not in (200, 201):
-                            error_text_bytes = await response.aread()
-                            try:
-                                err_text = error_text_bytes.decode()
-                            except Exception:
-                                err_text = repr(error_text_bytes)
-                            raise ProviderStreamError(
-                                f"HTTP {response.status_code}: {err_text}",
-                                http_status=response.status_code,
-                                retry_after_s=read_retry_after(response.headers),
-                                error_text=err_text,
-                                retryable=is_retryable_status(response.status_code, err_text)
-                                          and not output.content,
-                                provider=model.provider,
-                            )
+                # Decoupled timeouts: bound connect/write/pool, but let the
+                # SSE idle/total parser govern the streaming body read (the
+                # read value here is only a backstop above SSE_IDLE_TIMEOUT_S).
+                # A single ``timeout=`` float would cap the read low and fire
+                # before the idle budget whenever a proxy/VPN buffers the SSE
+                # stream — the main source of spurious mid-stream timeouts.
+                # Hardened, REUSED client from the shared builder: decoupled +
+                # generous timeouts, TCP keepalive (fast dead-VPN detection),
+                # optional force-IPv4 (broken-IPv6 VPNs), and proxy. The
+                # streaming body read is governed by the two-budget SSE parser
+                # below, not a tight httpx read. It's shared (keep-alive reuse
+                # across turns), so we never close it here.
+                client = get_shared_async_client("openai-codex")
+                async with client.stream(
+                    "POST",
+                    f"{base_url.rstrip('/')}/codex/responses",
+                    headers=headers,
+                    content=json.dumps(request_body),
+                ) as response:
+                    if response.status_code not in (200, 201):
+                        error_text_bytes = await response.aread()
+                        try:
+                            err_text = error_text_bytes.decode()
+                        except Exception:
+                            err_text = repr(error_text_bytes)
+                        raise ProviderStreamError(
+                            f"HTTP {response.status_code}: {err_text}",
+                            http_status=response.status_code,
+                            retry_after_s=read_retry_after(response.headers),
+                            error_text=err_text,
+                            retryable=is_retryable_status(response.status_code, err_text)
+                                      and not output.content,
+                            provider=model.provider,
+                        )
 
-                        sse_events = _parse_sse_stream(response)
-                        await process_responses_stream(sse_events, output, ev_stream, model)
+                    # Rate-limit telemetry (no-op if the backend omits the
+                    # headers). Warn when a bucket is exhausted / nearly so.
+                    rl = parse_rate_limit(response.headers)
+                    if rl.present and (rl.is_throttled or rl.is_low):
+                        print(
+                            f"[{model.api} rate-limit] requests "
+                            f"{rl.remaining_requests}/{rl.limit_requests} · tokens "
+                            f"{rl.remaining_tokens}/{rl.limit_tokens}",
+                            file=sys.stderr, flush=True,
+                        )
+
+                    sse_events = _parse_sse_stream(response)
+                    await process_responses_stream(sse_events, output, ev_stream, model)
 
                 if output.stop_reason in ("aborted", "error"):
                     raise ProviderStreamError(
@@ -227,15 +280,37 @@ def stream_openai_codex_responses(
             for b in output.content:
                 if isinstance(b, dict):
                     b.pop("index", None)
+            # Partial-response recovery (hermes pattern). A transient
+            # mid-stream break AFTER real content already streamed (common
+            # over a flaky proxy/VPN) shouldn't discard the work: finalize
+            # the partial turn with a non-error stop_reason so the turn
+            # COMPLETES (partial output preserved + visible) instead of
+            # erroring out. Only when (a) content streamed, (b) it wasn't a
+            # user abort, and (c) the failure isn't a PERMANENT kind
+            # (auth/invalid/context/policy). Toggle: OPENPROGRAM_PARTIAL_RECOVERY=0.
+            if (
+                output.content
+                and output.stop_reason != "aborted"
+                and _recover_partial_enabled()
+                and not _is_permanent_failure(exc)
+            ):
+                output.stop_reason = "length"  # incomplete/truncated, NOT "error"
+                output.error_message = None
+                print(
+                    f"[{model.api}] mid-stream break after {len(output.content)} "
+                    f"block(s) — recovered partial ({type(exc).__name__}); turn "
+                    f"completes instead of erroring.",
+                    file=sys.stderr, flush=True,
+                )
+                ev_stream.push({"type": "done", "reason": output.stop_reason, "message": output})
+                ev_stream.end(output)
+                return
             output.stop_reason = "error"
             output.error_message = str(exc)
-            # Use ev_stream.fail() so the consumer's `async for`
-            # raises this exception instead of seeing a normal
-            # stream end. The previous push-error + end pattern
-            # left the stream looking "successful" to agent_loop,
-            # which then auto-retried — that's why a single SSE
-            # idle timeout sent the worker into a busy-loop with
-            # no progress in SessionDB.
+            # ev_stream.fail() makes the consumer's `async for` raise this
+            # exception rather than see a normal end. (The old push-error +
+            # end pattern looked "successful" to agent_loop, which then
+            # auto-retried — a single idle timeout could busy-loop.)
             ev_stream.fail(exc)
 
     asyncio.ensure_future(_run())
@@ -306,16 +381,19 @@ def _build_request_body(
     return body
 
 
-# SSE idle / total timeouts — overridable via env so deployments with
-# long reasoning models (xhigh thinking can spend 2-3 min in pure
-# reasoning with no data event) can extend the idle budget without
-# editing source. Defaults match codex CLI behaviour.
-SSE_IDLE_TIMEOUT_S = float(os.environ.get("OPENPROGRAM_SSE_IDLE_TIMEOUT_S", "300"))
-SSE_TOTAL_TIMEOUT_S = float(os.environ.get("OPENPROGRAM_SSE_TOTAL_TIMEOUT_S", "1800"))
-# httpx request-level transport timeout. Distinct from the SSE-layer
-# idle / total budgets above: this one bounds the initial connect +
-# headers, not the body stream.
-HTTPX_TRANSPORT_TIMEOUT_S = float(os.environ.get("OPENPROGRAM_HTTPX_TIMEOUT_S", "120"))
+# Streaming timeout budgets — single source of truth in
+# ``providers.utils.timeouts`` (see docs/design/llm-fault-tolerance.md).
+# The two-budget SSE parser below enforces them:
+#   * SSE_IDLE_TIMEOUT_S       — "no bytes at all" (any line resets) ≈ OpenClaw 30-min bodyTimeout
+#   * SSE_DATA_STALL_TIMEOUT_S — "no real data" (our extra ping-flood guard)
+#   * SSE_TOTAL_TIMEOUT_S      — runaway backstop
+# Connection timeouts + TCP keepalive + force-IPv4 + proxy now live in the
+# shared client builder (``get_shared_async_client``), not here.
+from openprogram.providers.utils.timeouts import (  # noqa: E402
+    STREAM_IDLE_TIMEOUT_S as SSE_IDLE_TIMEOUT_S,
+    STREAM_DATA_STALL_TIMEOUT_S as SSE_DATA_STALL_TIMEOUT_S,
+    STREAM_TOTAL_TIMEOUT_S as SSE_TOTAL_TIMEOUT_S,
+)
 
 
 class StreamIdleTimeout(Exception):
@@ -344,28 +422,39 @@ async def _parse_sse_stream(response: Any):
     import asyncio
     import time as _time
     deadline = _time.monotonic() + SSE_TOTAL_TIMEOUT_S
-    last_data_at = _time.monotonic()
+    _start = _time.monotonic()
+    last_activity_at = _start  # ANY line (pings incl.) — OpenClaw bodyTimeout style
+    last_data_at = _start      # real data events only — our progress guard
     line_iter = response.aiter_lines().__aiter__()
     while True:
         now = _time.monotonic()
         if now >= deadline:
             raise StreamTotalTimeout(
                 f"SSE total budget {SSE_TOTAL_TIMEOUT_S}s exceeded")
-        idle_left = SSE_IDLE_TIMEOUT_S - (now - last_data_at)
+        # Two independent budgets, whichever trips first:
+        #   * no bytes AT ALL for SSE_IDLE_TIMEOUT_S      → dead connection
+        #   * no real data for SSE_DATA_STALL_TIMEOUT_S   → stuck / ping-flood
+        idle_left = SSE_IDLE_TIMEOUT_S - (now - last_activity_at)
+        stall_left = SSE_DATA_STALL_TIMEOUT_S - (now - last_data_at)
         if idle_left <= 0:
             raise StreamIdleTimeout(
-                f"no SSE data event for {SSE_IDLE_TIMEOUT_S}s")
-        # Wait for the next raw line. We bound by whichever limit
-        # fires sooner so we never block past the idle threshold.
-        wait = min(idle_left, deadline - now)
+                f"no SSE bytes for {SSE_IDLE_TIMEOUT_S}s")
+        if stall_left <= 0:
+            raise StreamIdleTimeout(
+                f"no SSE data event for {SSE_DATA_STALL_TIMEOUT_S}s")
+        # Block only until the soonest budget could trip; on timeout we
+        # loop and the checks above raise the right, specific error.
+        wait = min(idle_left, stall_left, deadline - now)
         try:
             line = await asyncio.wait_for(line_iter.__anext__(), timeout=wait)
         except asyncio.TimeoutError:
-            # No bytes at all — that's both no-line and no-data.
-            raise StreamIdleTimeout(
-                f"no SSE bytes for {SSE_IDLE_TIMEOUT_S}s")
+            continue
         except StopAsyncIteration:
             return
+        # Any received line is connection activity (mirrors OpenClaw
+        # resetting bodyTimeout on any byte). Real data additionally
+        # refreshes the progress guard below, where the event is parsed.
+        last_activity_at = _time.monotonic()
         if line.startswith("data: "):
             data = line[6:]
             if data == "[DONE]":

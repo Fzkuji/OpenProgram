@@ -28,6 +28,7 @@ from openprogram.providers._shared.google import (
 from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers._shared.validate_modalities import validate_input_modalities
 from openprogram.providers.utils.event_stream import EventStream
+from openprogram.providers.utils.http_client import build_async_client
 from openprogram.providers.utils.sanitize_unicode import sanitize_surrogates
 
 if TYPE_CHECKING:
@@ -144,7 +145,11 @@ def stream_google_gemini_cli(
             while retry_count <= _MAX_RETRIES:
                 base_url = endpoints[min(endpoint_index, len(endpoints) - 1)]
                 endpoint_url = f"{base_url.rstrip('/')}/v1internal:streamGenerateContent?alt=sse"
-                async with httpx.AsyncClient(timeout=120.0) as client:
+                # Hardened client: decoupled + generous timeouts (was a single
+                # timeout=120.0 float that capped the streaming read at 120s and
+                # false-positived over a proxy/VPN), TCP keepalive, force-IPv4,
+                # proxy — all from the shared builder.
+                async with build_async_client() as client:
                     async with client.stream(
                         "POST",
                         endpoint_url,

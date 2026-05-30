@@ -248,34 +248,73 @@ def classify_error(
         return ErrorReason.RATE_LIMIT, True
     if any(k in msg for k in _TRANSIENT_KEYWORDS):
         return ErrorReason.TRANSPORT, True
+    # Wrapped transport errors: ProviderStreamError("RemoteProtocolError: …")
+    # carries the original exception NAME in its message (not its type), so
+    # the type check above misses it. Scan the message for a known transport
+    # name so a wrapped mid-stream hiccup still reads as retryable transport.
+    if any(t.lower() in msg for t in _TRANSPORT_EXC_NAMES):
+        return ErrorReason.TRANSPORT, True
 
     return ErrorReason.UNKNOWN, False
+
+
+def _retry_after_date_seconds(value: str) -> Optional[float]:
+    """Seconds until an HTTP-date ``Retry-After`` (RFC 7231), or None.
+
+    e.g. ``Retry-After: Wed, 21 Oct 2025 07:28:00 GMT`` → seconds from now.
+    Past dates / unparseable values return None.
+    """
+    try:
+        from email.utils import parsedate_to_datetime
+        from datetime import datetime, timezone
+        dt = parsedate_to_datetime(value)
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta = (dt - datetime.now(timezone.utc)).total_seconds()
+        return delta if delta > 0 else None
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def parse_retry_after(headers: Any | None, error_text: str = "") -> Optional[float]:
     """Extract ``Retry-After`` seconds from response headers.
 
-    Handles both numeric form (``Retry-After: 5``) and HTTP-date form
-    (returns None for date form — we don't compute "until that time").
+    Handles all three forms providers use (matching OpenClaw / OpenCode):
 
-    ``headers`` accepts anything dict-like or httpx.Headers; ``None``
-    is OK. ``error_text`` is reserved for future body-pattern parsing.
+      * ``retry-after-ms: 1500`` — millisecond form (preferred when present)
+      * ``Retry-After: 5`` — integer seconds
+      * ``Retry-After: <HTTP-date>`` — absolute time → seconds-from-now
+
+    ``headers`` accepts anything dict-like or httpx.Headers; ``None`` is OK.
+    ``error_text`` is reserved for future body-pattern parsing.
     """
     if headers is None:
         return None
     try:
+        ms = headers.get("retry-after-ms") or headers.get("Retry-After-Ms")
         v = headers.get("Retry-After") or headers.get("retry-after")
     except AttributeError:
         return None
+    # Millisecond form first — most precise.
+    if ms:
+        try:
+            s = float(ms) / 1000.0
+            if s > 0:
+                return s
+        except (TypeError, ValueError):
+            pass
     if not v:
         return None
+    # Integer-seconds form.
     try:
         s = float(v)
         return s if s > 0 else None
     except (TypeError, ValueError):
-        # HTTP-date form — skip rather than parse; the exponential
-        # backoff base is a reasonable fallback.
-        return None
+        pass
+    # HTTP-date form.
+    return _retry_after_date_seconds(v)
 
 
 def had_image(content: Any) -> bool:
