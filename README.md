@@ -40,7 +40,7 @@
 - **Run it anywhere** — native on macOS / Linux / Windows, via terminal, browser, or chat (no WSL, no Docker).
 - **Automatic context** — a shared DAG threads context into every call; multi-agent ready.
 - **Any LLM, any provider** — API key, or the CLI subscription you already pay for.
-- **Functions that author functions** — the agent writes, fixes, and evolves its own tools.
+- **Self-evolving workflows** — the agent builds, runs, and improves its own workflows and tools.
 
 ## Quick Start
 
