@@ -115,7 +115,9 @@ Ask the agent itself — it has a skill for this. Open chat and type something l
 
 ### 4. Add the harness suite (optional)
 
-Three sibling agent harnesses ship as separate repos. Install one by name — `openprogram programs install research` (or `gui` / `wiki`) — which clones it as a **real directory** under `openprogram/functions/agentics/`; auto-discovery registers its functions on the next worker restart. No symlinks, so it's identical on Windows. Full procedure (and how to add **any** third-party harness) in [docs/installing-harnesses.md](docs/installing-harnesses.md).
+Three sibling agent harnesses ship as separate repos. They're **OpenProgram programs** — they run *inside* this install, so OpenProgram (step 1 above) must be present first; you don't install them on their own. Add one by name — `openprogram programs install research` (or `gui` / `wiki`) — which clones it as a **real directory** under `openprogram/functions/agentics/` and pip-installs that harness's own declared deps (OpenProgram carries none of them); auto-discovery registers its functions on the next worker restart, or hit Refresh on the Functions page. No symlinks, so it's identical on Windows. Full procedure (and how to add **any** third-party harness) in [docs/installing-harnesses.md](docs/installing-harnesses.md).
+
+> The GUI harness installs + registers on every OS, but its screen-capture / input backends currently target macOS / Linux — running `gui_agent` on Windows isn't supported yet.
 
 | Harness | What it does | Track record |
 |---|---|---|
