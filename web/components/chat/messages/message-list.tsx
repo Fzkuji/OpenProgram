@@ -22,9 +22,7 @@ import {
   type ChatMsg,
 } from "@/lib/session-store";
 
-import { agentInitial, useAgentProfile } from "@/lib/agent-style";
 import { useTranslation } from "@/lib/i18n";
-import { Avatar } from "@/components/avatar";
 
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
@@ -135,37 +133,21 @@ function useChatAreaStick(newTurnSeed: number) {
  *  hidden by ``MessageList``.
  */
 function PendingReplyIndicator() {
-  const profile = useAgentProfile();
   const { text } = useTranslation();
   return (
     <div className="message assistant pending-standalone">
-      {/* Single row: avatar + name + breathing dot + "thinking…" all
-          inline. Earlier this was a full bubble (header row, then a
-          separate body row below the avatar) which (a) pushed the
-          indicator under the avatar and (b) repeated the agent name
-          ("Agent" in the header AND "Agent is thinking"). Keeping it on
-          the header row removes both — the name shows once, the status
-          sits next to it. */}
-      <div className="message-header">
-        <Avatar
-          className="message-avatar bot-avatar"
-          size={28}
-          radius={8}
-          name={profile.name}
-          config={
-            profile.avatar ?? {
-              kind: "dicebear",
-              style: "shapes",
-              seed: profile.name,
-            }
-          }
-        />
-        <div className="message-sender">{profile.name}</div>
-        <span
-          className="indicator-dot pulse-scale"
-          aria-hidden="true"
-          style={{ marginLeft: 8 }}
-        />
+      {/* No avatar / name here. The transient "thinking…" state doesn't
+          need to repeat the agent identity — the real assistant bubble
+          that replaces this (on the first delta) carries the avatar +
+          name. Just a breathing dot + label, indented to the SAME
+          content column as message text (avatar 28px + 8px gap = 36px),
+          so it lines up with the reply that lands underneath it instead
+          of sitting at the avatar's edge. */}
+      <div
+        className="pending-body"
+        style={{ paddingLeft: 36 }}
+      >
+        <span className="indicator-dot pulse-scale" aria-hidden="true" />
         <span className="pending-label">{text("thinking…", "思考中…")}</span>
       </div>
     </div>
