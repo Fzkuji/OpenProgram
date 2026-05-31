@@ -1,11 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
 
 import styles from "../settings-page.module.css";
+
+/** Imperative handle so the parent can "click Check" programmatically
+ *  (e.g. auto-run after an API key is saved) and await the result. */
+export interface ConnectivityHandle {
+  run: () => Promise<boolean>;
+}
 
 
 /** Classify a backend ``test_provider`` error string into a short
@@ -72,12 +78,13 @@ function summarizeError(raw: string | undefined): { short: string; tooltip: stri
  *  shows ✓ + latency or ✗ + an inline error summary. The full raw
  *  upstream response stays on the hover tooltip for paste-into-bug-
  *  report cases. */
-export function Connectivity({ providerId }: { providerId: string }) {
+export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string }>(
+  function Connectivity({ providerId }, ref) {
   const { text } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ kind: "ok" | "err"; text: string; title?: string } | null>(null);
 
-  async function test() {
+  async function test(): Promise<boolean> {
     setBusy(true);
     setResult({ kind: "ok", text: "…" });
     try {
@@ -93,16 +100,21 @@ export function Connectivity({ providerId }: { providerId: string }) {
           text: `✓ ${d.latency_ms || 0} ms`,
           title: d.model ? text(`Tested with ${d.model}`, `已使用 ${d.model} 测试`) : undefined,
         });
-      } else {
-        const { short, tooltip } = summarizeError(d.error);
-        setResult({ kind: "err", text: short, title: tooltip });
+        return true;
       }
+      const { short, tooltip } = summarizeError(d.error);
+      setResult({ kind: "err", text: short, title: tooltip });
+      return false;
     } catch (e) {
       setResult({ kind: "err", text: "✗", title: (e as Error).message });
+      return false;
     } finally {
       setBusy(false);
     }
   }
+
+  // Expose "click Check" to the parent so it can auto-run on key save.
+  useImperativeHandle(ref, () => ({ run: test }), [providerId]);
 
   return (
     <div className={styles.detailSection}>
@@ -122,10 +134,10 @@ export function Connectivity({ providerId }: { providerId: string }) {
             {result.text}
           </span>
         )}
-        <Button size="sm" onClick={test} disabled={busy}>
+        <Button size="sm" onClick={() => { void test(); }} disabled={busy}>
           {text("Check", "检查")}
         </Button>
       </div>
     </div>
   );
-}
+});

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Switch } from "@/components/ui/switch";
 
@@ -8,13 +8,12 @@ import { ProviderIcon } from "../provider-icon";
 
 import { ApiKey } from "./api-key";
 import { BaseUrl } from "./base-url";
-import { Connectivity } from "./connectivity";
+import { Connectivity, type ConnectivityHandle } from "./connectivity";
 import { ModelList } from "./model-list";
 import { CliInfo, SetupHint } from "./setup-hint";
 import styles from "../settings-page.module.css";
 import type { Model, Provider } from "./types";
 import { useTranslation } from "@/lib/i18n";
-import { showToast } from "@/lib/toast";
 
 /** Right-pane detail view for one selected provider. Header + enable
  *  toggle, then a stack of sections: setup hint (optional), API key
@@ -39,6 +38,7 @@ export function Detail({
 
   const [models, setModels] = useState<Model[]>([]);
   const [modelSearch, setModelSearch] = useState("");
+  const connectivityRef = useRef<ConnectivityHandle>(null);
 
   const reloadModels = useCallback(async () => {
     if (provider.kind === "cli") {
@@ -60,61 +60,23 @@ export function Detail({
     reloadModels();
   }, [reloadModels]);
 
-  // After a NEW key is saved: auto connectivity-check, and on success
-  // auto-fetch the model list — so the user doesn't have to click Check
-  // then Fetch by hand. Progress / result surface as top toasts.
+  // After a NEW key is saved: auto-run the connectivity check (its
+  // inline ✓/✗ result shows in the Connectivity row, exactly as if the
+  // user clicked "Check") and, on success, fetch the model list and
+  // refresh it in place. No toasts — the result lives in the panel.
   const autoCheckAndFetch = useCallback(async () => {
-    const pid = encodeURIComponent(provider.id);
-    showToast(text("Checking connectivity…", "正在检查连接…"));
+    const ok = await connectivityRef.current?.run();
+    if (!ok) return;
     try {
-      const cr = await fetch(`/api/providers/${pid}/test`, {
+      await fetch(`/api/providers/${encodeURIComponent(provider.id)}/fetch-models`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
-      const cd = await cr.json();
-      if (!cd.ok) {
-        showToast(
-          text("Connectivity check failed: ", "连接检查失败：") +
-            (cd.error || "unknown"),
-          { tone: "error", duration: 6000 },
-        );
-        return;
-      }
-    } catch (e) {
-      showToast(
-        text("Connectivity check failed: ", "连接检查失败：") + (e as Error).message,
-        { tone: "error", duration: 6000 },
-      );
-      return;
-    }
-    showToast(text("Connected — fetching models…", "连接成功 — 正在获取模型…"));
-    try {
-      const fr = await fetch(`/api/providers/${pid}/fetch-models`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      const fd = await fr.json();
-      if (fd.error) {
-        showToast(
-          text("Fetch models failed: ", "获取模型失败：") + fd.error,
-          { tone: "error", duration: 6000 },
-        );
-        return;
-      }
-      showToast(
-        text(`Connected — fetched ${fd.fetched ?? 0} models`, `连接成功 — 已获取 ${fd.fetched ?? 0} 个模型`),
-      );
-      reloadModels();
-      onChanged();
-    } catch (e) {
-      showToast(
-        text("Fetch models failed: ", "获取模型失败：") + (e as Error).message,
-        { tone: "error", duration: 6000 },
-      );
-    }
-  }, [provider.id, reloadModels, onChanged, text]);
+    } catch { /* ignore — list just won't refresh */ }
+    reloadModels();
+    onChanged();
+  }, [provider.id, reloadModels, onChanged]);
 
   return (
     <>
@@ -154,7 +116,9 @@ export function Detail({
           ChatGPT subscription flow has no in-UI way to verify the OAuth
           token survived restart. Backend already handles the auth
           lookup. */}
-      {provider.kind === "api" && <Connectivity providerId={provider.id} />}
+      {provider.kind === "api" && (
+        <Connectivity ref={connectivityRef} providerId={provider.id} />
+      )}
 
       {provider.kind === "cli" ? (
         <CliInfo provider={provider} />
