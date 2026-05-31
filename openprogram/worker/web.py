@@ -212,11 +212,12 @@ def _patch_manifest_ports(wd: Path, backend_port: int) -> bool:
 def _ensure_built(wd: Path, *, backend_port: int) -> bool:
     """Make sure ``web/.next/`` has a complete production build.
 
-    Cross-platform npm invocation: passes the resolved ``npm`` path
-    (``npm.cmd`` on Windows) rather than the bare name, because
-    Python's ``subprocess`` without ``shell=True`` doesn't auto-resolve
-    .cmd / .bat extensions on Windows and a bare ``"npm"`` raises
-    ``FileNotFoundError [WinError 2]``.
+    Cross-platform npm invocation: ``npm`` is a ``.cmd`` shim on Windows
+    and CreateProcess (subprocess with shell=False) cannot exec a
+    ``.cmd`` even by absolute path — it raises WinError 193. So every
+    npm call is wrapped in ``_compat.node_tool_cmd``, which routes the
+    shim through ``cmd.exe /c`` on Windows and is a transparent
+    pass-through on POSIX.
 
     The "is it built?" check now looks for ``.next/BUILD_ID`` (which
     Next.js writes only on a clean build completion), not just the
@@ -229,16 +230,16 @@ def _ensure_built(wd: Path, *, backend_port: int) -> bool:
     next_dir = wd / ".next"
     build_id = next_dir / "BUILD_ID"
 
-    npm_path = shutil.which("npm")
-    if npm_path is None:
+    if shutil.which("npm") is None:
         print("[worker] web: npm not found in PATH; can't build frontend")
         return False
+    from openprogram._compat import node_tool_cmd
 
     if not build_id.exists():
         node_modules = wd / "node_modules"
         if not node_modules.exists():
             print("[worker] web: installing npm deps (first run, may take a while)…")
-            r = subprocess.run([npm_path, "install", "--silent"], cwd=str(wd))
+            r = subprocess.run(node_tool_cmd(["npm", "install", "--silent"]), cwd=str(wd))
             if r.returncode != 0:
                 print("[worker] web: npm install failed")
                 return False
@@ -251,7 +252,7 @@ def _ensure_built(wd: Path, *, backend_port: int) -> bool:
             print("[worker] web: building production bundle (first run only)…")
         build_env = dict(os.environ)
         build_env["OPENPROGRAM_BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
-        r = subprocess.run([npm_path, "run", "build"], cwd=str(wd), env=build_env)
+        r = subprocess.run(node_tool_cmd(["npm", "run", "build"]), cwd=str(wd), env=build_env)
         if r.returncode != 0:
             print("[worker] web: build failed")
             return False
@@ -289,6 +290,7 @@ def start_web_frontend(
     env["PORT"] = str(port)
     env["OPENPROGRAM_PARENT_PID"] = str(os.getpid())
 
+    from openprogram._compat import node_tool_cmd
     watcher = wd / "scripts" / "with-parent-watch.mjs"
     cmd = (
         ["node", str(watcher)]
@@ -298,7 +300,7 @@ def start_web_frontend(
 
     try:
         proc = subprocess.Popen(
-            cmd,
+            node_tool_cmd(cmd),
             cwd=str(wd),
             env=env,
             stdout=sys.stdout,

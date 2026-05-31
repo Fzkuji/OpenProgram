@@ -23,7 +23,9 @@ The shape is forward-compat — we can upgrade without breaking consumers.)
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -50,7 +52,7 @@ class GhCliSource:
     def _resolve_path(self) -> Path:
         if self.override_path:
             return Path(self.override_path).expanduser()
-        return Path.home() / ".config" / "gh" / "hosts.yml"
+        return _gh_config_dir() / "hosts.yml"
 
     def try_import(self, profile_root: Path) -> list[Credential]:
         path = self._resolve_path()
@@ -118,6 +120,33 @@ class GhCliSource:
                 target=cred.credential_id,
             ),
         ]
+
+
+def _gh_config_dir() -> Path:
+    """Locate ``gh``'s config dir the same way the ``gh`` CLI does.
+
+    Precedence matches ``gh``'s own resolution (cli/go-gh ``ConfigDir``):
+      1. ``$GH_CONFIG_DIR`` if set (explicit override)
+      2. ``$XDG_CONFIG_HOME/gh`` if ``XDG_CONFIG_HOME`` is set
+      3. platform default — ``%AppData%\\GitHub CLI`` on Windows,
+         else ``~/.config/gh``
+
+    The old hard-coded ``~/.config/gh`` only matched the POSIX default,
+    so on Windows ``gh`` credentials at ``%AppData%\\GitHub CLI`` were
+    never discovered.
+    """
+    env = os.environ.get("GH_CONFIG_DIR")
+    if env:
+        return Path(env).expanduser()
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg).expanduser() / "gh"
+    if sys.platform.startswith("win"):
+        appdata = os.environ.get("AppData")
+        if appdata:
+            return Path(appdata) / "GitHub CLI"
+        return Path.home() / "AppData" / "Roaming" / "GitHub CLI"
+    return Path.home() / ".config" / "gh"
 
 
 _HOST_LINE = re.compile(r"^([^\s#][^:]*):\s*$")

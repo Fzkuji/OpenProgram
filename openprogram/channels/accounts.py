@@ -178,10 +178,8 @@ def create(channel: str, account_id: str = DEFAULT_ACCOUNT_ID,
         cred_path = account_credentials_path(channel, account_id)
         if not cred_path.exists():
             cred_path.write_text("{}\n", encoding="utf-8")
-            try:
-                os.chmod(cred_path, 0o600)
-            except OSError:
-                pass
+            from openprogram._compat import restrict_to_user
+            restrict_to_user(cred_path)
         return acct
 
 
@@ -212,10 +210,8 @@ def save_credentials(channel: str, account_id: str,
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(json.dumps(creds, indent=2), encoding="utf-8")
         os.replace(tmp, path)
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
+        from openprogram._compat import restrict_to_user
+        restrict_to_user(path)
 
 
 def update_credentials(channel: str, account_id: str,

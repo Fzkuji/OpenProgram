@@ -31,7 +31,7 @@ DEFAULT_PORT = 9222
 
 
 def chrome_binary() -> Optional[str]:
-    """Best-effort Chrome path lookup."""
+    """Best-effort Chrome (or Chromium / Edge) path lookup, cross-platform."""
     candidates = [
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
@@ -40,10 +40,36 @@ def chrome_binary() -> Optional[str]:
         "/usr/bin/chromium",
         "/usr/bin/chromium-browser",
     ]
+    if sys.platform.startswith("win"):
+        # Chrome's per-machine installs live under Program Files; a
+        # per-user install lands in %LOCALAPPDATA%. Edge is Chromium-based
+        # and honours the same --remote-debugging-port flag, so it's a
+        # last-resort fallback that ships on every Windows box.
+        bases = [
+            os.environ.get("PROGRAMFILES", r"C:\Program Files"),
+            os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
+            os.environ.get("LOCALAPPDATA", os.path.expanduser(r"~\AppData\Local")),
+        ]
+        for base in bases:
+            if not base:
+                continue
+            candidates += [
+                os.path.join(base, "Google", "Chrome", "Application", "chrome.exe"),
+                os.path.join(base, "Google", "Chrome Beta", "Application", "chrome.exe"),
+                os.path.join(base, "Chromium", "Application", "chrome.exe"),
+                os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
+            ]
     for p in candidates:
-        if os.path.isfile(p) and os.access(p, os.X_OK):
+        # Windows has no X_OK notion for .exe; existence is enough there.
+        if os.path.isfile(p) and (sys.platform.startswith("win") or os.access(p, os.X_OK)):
             return p
-    return shutil.which("google-chrome") or shutil.which("chromium") or None
+    win_extra = shutil.which("chrome") or shutil.which("msedge") if sys.platform.startswith("win") else None
+    return (
+        shutil.which("google-chrome")
+        or shutil.which("chromium")
+        or win_extra
+        or None
+    )
 
 
 def real_user_data_dir() -> str:
@@ -119,7 +145,7 @@ def ensure_sidecar_profile() -> bool:
         "SingletonLock", "SingletonSocket",
     ]
     rsync = shutil.which("rsync")
-    if rsync:
+    if rsync and sys.platform != "win32":
         cmd = [rsync, "-a", "--delete"]
         for ex in excludes:
             cmd.extend(["--exclude", ex])
@@ -128,15 +154,36 @@ def ensure_sidecar_profile() -> bool:
         (sidecar / "Default").mkdir(parents=True, exist_ok=True)
         subprocess.run(cmd, check=False)
     else:
-        subprocess.run(
-            ["cp", "-R", str(src_default), str(sidecar / "Default")],
-            check=False,
+        # No rsync (always the case on Windows, where the POSIX ``cp``
+        # this used to shell out to doesn't exist) — fall back to a pure
+        # Python ``shutil.copytree``. Its ``ignore`` callback matches
+        # basenames, so the same cache dirs are expressed as name
+        # patterns (``Service Worker/CacheStorage`` → the ``CacheStorage``
+        # / ``ScriptCache`` subdir names; ``Singleton*`` covers the
+        # lock/cookie/socket trio).
+        copytree_ignore = shutil.ignore_patterns(
+            "Cache", "Code Cache", "GPUCache", "GraphiteDawnCache",
+            "GrShaderCache", "CacheStorage", "ScriptCache",
+            "DawnGraphiteCache", "Application Cache", "ShaderCache",
+            "Crashpad", "Crash Reports",
+            "*-journal", "lockfile", "Singleton*",
         )
+        try:
+            shutil.copytree(
+                src_default, sidecar / "Default",
+                ignore=copytree_ignore,
+                dirs_exist_ok=True,
+                ignore_dangling_symlinks=True,
+            )
+        except (OSError, shutil.Error):
+            # A Chrome file locked by a running instance can make
+            # copytree raise partway; whatever copied is still usable.
+            pass
     if src_local_state.exists():
-        subprocess.run(
-            ["cp", str(src_local_state), str(sidecar / "Local State")],
-            check=False,
-        )
+        try:
+            shutil.copy2(src_local_state, sidecar / "Local State")
+        except OSError:
+            pass
     return True
 
 

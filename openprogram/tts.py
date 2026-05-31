@@ -12,8 +12,9 @@ Usage:
 
 Playback: writes the generated audio to a temp .mp3 and invokes a
 platform-appropriate player (``afplay`` on macOS, ``mpg123`` / ``ffplay``
-elsewhere). Runs in a background thread so the REPL doesn't block
-while audio plays.
+elsewhere, and a headless WPF ``MediaPlayer`` via PowerShell on Windows
+when no CLI player is on PATH). Runs in a background thread so the REPL
+doesn't block while audio plays.
 """
 from __future__ import annotations
 
@@ -50,30 +51,58 @@ def _api_key(env_name: str) -> str | None:
         return None
 
 
-def _find_player() -> list[str] | None:
-    """Return argv prefix for a non-blocking mp3 player, or None."""
+def _player_argv(path: str) -> list[str] | None:
+    """Full argv for a non-blocking mp3 player given the file, or None.
+
+    CLI players are tried first on every OS — they're present via
+    brew / apt (afplay, mpg123, ffplay, mpv) or choco / scoop on
+    Windows. When none are on PATH, Windows falls back to a headless
+    WPF ``MediaPlayer`` driven by PowerShell (no extra install, plays
+    mp3 with no visible window), so Windows isn't silently muted.
+    """
     for cmd in ("afplay", "mpg123", "ffplay", "mpv"):
-        path = shutil.which(cmd)
-        if not path:
+        p = shutil.which(cmd)
+        if not p:
             continue
         if cmd == "ffplay":
-            return [path, "-nodisp", "-autoexit", "-loglevel", "quiet"]
+            return [p, "-nodisp", "-autoexit", "-loglevel", "quiet", path]
         if cmd == "mpg123":
-            return [path, "-q"]
+            return [p, "-q", path]
         if cmd == "mpv":
-            return [path, "--no-terminal"]
-        return [path]  # afplay
+            return [p, "--no-terminal", path]
+        return [p, path]  # afplay
+    if sys.platform == "win32":
+        ps = shutil.which("powershell") or shutil.which("pwsh")
+        if ps:
+            # WPF MediaPlayer plays mp3 headless. Double single-quotes so
+            # an apostrophe in the temp path can't break out of the
+            # PowerShell string literal. We block in this background
+            # thread for the clip's natural duration so the process
+            # isn't reaped mid-playback.
+            uri = path.replace("'", "''")
+            script = (
+                "Add-Type -AssemblyName presentationCore;"
+                "$mp=New-Object System.Windows.Media.MediaPlayer;"
+                f"$mp.Open([uri]::new('{uri}'));$mp.Play();"
+                "while(-not $mp.NaturalDuration.HasTimeSpan)"
+                "{Start-Sleep -Milliseconds 50};"
+                "Start-Sleep -Seconds $mp.NaturalDuration.TimeSpan.TotalSeconds"
+            )
+            return [ps, "-NoProfile", "-ExecutionPolicy", "Bypass",
+                    "-Command", script]
     return None
 
 
 def _play_file(path: str) -> None:
-    argv = _find_player()
+    argv = _player_argv(path)
     if argv is None:
-        print(f"[tts] no mp3 player found (install afplay/mpg123/ffplay); "
-              f"audio written to {path}")
+        hint = ("install ffplay/mpv (or run in Windows PowerShell)"
+                if sys.platform == "win32"
+                else "install afplay/mpg123/ffplay")
+        print(f"[tts] no mp3 player found ({hint}); audio written to {path}")
         return
     try:
-        subprocess.Popen(argv + [path],
+        subprocess.Popen(argv,
                          stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL)
     except Exception as e:

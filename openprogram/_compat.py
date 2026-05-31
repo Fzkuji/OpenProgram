@@ -199,6 +199,47 @@ def node_tool_cmd(argv: list[str]) -> list[str]:
     return [resolved, *rest]
 
 
+def restrict_to_user(path) -> None:
+    """Lock a credential file down to the current user only — cross-platform.
+
+    POSIX: ``chmod 0o600`` (owner read/write, nothing for group/other) —
+    identical to the bare ``os.chmod(path, 0o600)`` call sites this
+    replaces.
+
+    Windows: the POSIX mode bits are meaningless to NTFS — ``os.chmod``
+    there only toggles the read-only attribute, so a ``0o600`` is a
+    near-no-op and the file keeps whatever ACL it inherited. Files under
+    ``%USERPROFILE%`` already inherit a user-private ACL (so the practical
+    exposure is small), but for defence-in-depth we additionally strip
+    inheritance and grant full control to only the current user + SYSTEM
+    via ``icacls``. SYSTEM is kept so backup / AV / indexing still work.
+
+    Best-effort throughout: any failure (no ``icacls``, odd account name,
+    timeout) leaves the inherited — already user-scoped — ACL in place,
+    which is safe. Never raises.
+    """
+    p = _os.fspath(path)
+    try:
+        _os.chmod(p, 0o600)
+    except OSError:
+        pass
+    if _sys.platform != "win32":
+        return
+    user = _os.environ.get("USERNAME") or _os.environ.get("USER")
+    if not user:
+        return
+    try:
+        _subprocess.run(
+            ["icacls", p, "/inheritance:r",
+             "/grant:r", f"{user}:F", "/grant:r", "SYSTEM:F"],
+            stdout=_subprocess.DEVNULL,
+            stderr=_subprocess.DEVNULL,
+            timeout=10,
+        )
+    except (OSError, ValueError, _subprocess.SubprocessError):
+        pass
+
+
 _PROMPT_TOOLKIT_USABLE_CACHE: bool | None = None
 
 
@@ -246,4 +287,5 @@ __all__ = [
     "kill_process_tree",
     "node_tool_cmd",
     "prompt_toolkit_usable",
+    "restrict_to_user",
 ]

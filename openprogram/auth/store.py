@@ -383,6 +383,10 @@ class AuthStore:
             finally:
                 os.close(fd)
             os.replace(tmp, path)
+            # POSIX got 0o600 from the O_CREAT mode above; on Windows that
+            # mode is a near-no-op, so harden the final file's ACL too.
+            from openprogram._compat import restrict_to_user
+            restrict_to_user(path)
             # Record observed fstat so we don't treat our own write as a
             # cross-process change on the next read.
             st = path.stat()

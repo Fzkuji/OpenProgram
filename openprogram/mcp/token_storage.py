@@ -129,6 +129,10 @@ class FileTokenStorage(TokenStorage):
                 pass
             raise
         os.replace(tmp, self._path)
+        # 0o600 on POSIX comes from the O_CREAT mode above; on Windows it
+        # is a near-no-op, so harden the bearer-token file's ACL too.
+        from openprogram._compat import restrict_to_user
+        restrict_to_user(self._path)
 
 
 def _sanitize(name: str) -> str:

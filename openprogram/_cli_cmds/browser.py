@@ -91,18 +91,19 @@ def _cmd_browser_install(target: str) -> int:
             if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
                 rc = 1
         elif t == "agent":
-            npm_path = shutil.which("npm")
-            if not npm_path:
+            if not shutil.which("npm"):
                 print("npm not found — install Node.js first.")
                 rc = 1
                 continue
-            # Pass the resolved path (e.g. ``C:\Program Files\nodejs\npm.CMD``
-            # on Windows) rather than the bare name. Windows' subprocess
-            # without ``shell=True`` can't execute ``.cmd``/``.bat`` shims
-            # by bare name — would raise ``FileNotFoundError [WinError 2]``.
-            r1 = subprocess.run([npm_path, "install", "-g", "agent-browser"])
+            # npm / agent-browser ship as ``.cmd`` shims on Windows, and
+            # CreateProcess (subprocess with shell=False) can't exec a
+            # ``.cmd`` even by absolute path — it raises WinError 193.
+            # ``node_tool_cmd`` routes those through ``cmd.exe /c`` on
+            # Windows and is a transparent pass-through on POSIX.
+            from openprogram._compat import node_tool_cmd
+            r1 = subprocess.run(node_tool_cmd(["npm", "install", "-g", "agent-browser"]))
             ab_path = shutil.which("agent-browser")
-            r2 = subprocess.run([ab_path, "install"]) if ab_path else r1
+            r2 = subprocess.run(node_tool_cmd(["agent-browser", "install"])) if ab_path else r1
             if r1.returncode or (hasattr(r2, "returncode") and r2.returncode):
                 rc = 1
         else:

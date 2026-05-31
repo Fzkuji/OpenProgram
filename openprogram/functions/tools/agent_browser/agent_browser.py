@@ -177,6 +177,11 @@ def _run(
     binary = _resolve_binary()
     backend = sess.get("backend") or []
     cmd = _build_cmd(binary, backend, command, args)
+    # npx / agent-browser are ``.cmd`` shims on Windows; CreateProcess
+    # can't exec a ``.cmd`` even by absolute path (WinError 193).
+    # node_tool_cmd routes it through cmd.exe there, pass-through on POSIX.
+    from openprogram._compat import node_tool_cmd
+    cmd = node_tool_cmd(cmd)
     try:
         out = subprocess.run(
             cmd,
