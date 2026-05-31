@@ -802,3 +802,20 @@
    layout, no extra border. The visual divider between the form
    fields and the bottom row lives on the body itself
    (`.body { border-bottom }` in fn-form.module.css). */
+
+/* "Select a model first" hint — shown in the bottom-left controls slot
+   (where the effort pill normally lives) when no chat model is picked.
+   Muted/warning tone so it reads as guidance, not an error. */
+.noModelHint {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--accent-yellow, #d4a017);
+  opacity: 0.9;
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+}

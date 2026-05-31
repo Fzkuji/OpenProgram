@@ -153,7 +153,14 @@ function PendingReplyIndicator() {
         />
         <div className="message-sender">{profile.name}</div>
       </div>
-      <div className="chat-stream-body pending-body">
+      {/* Only ``pending-body`` here — NOT ``chat-stream-body``. The
+          latter is ``display:flex; flex-direction:column`` and, being
+          later in the stylesheet, wins the ``display`` cascade, so
+          ``pending-body``'s ``align-items:center`` ends up centering
+          the dot + label HORIZONTALLY. The in-bubble TypingIndicator
+          uses ``pending-body`` alone and renders left-aligned; match
+          it so the standalone "is thinking…" row isn't centered. */}
+      <div className="pending-body">
         <span className="indicator-dot pulse-scale" aria-hidden="true" />
         <span className="pending-label">{`${profile.name} is thinking…`}</span>
       </div>

@@ -1116,6 +1116,20 @@ export function Composer() {
                 value={thinking}
                 onChange={setThinking}
               />
+            ) : !fnFormActive ? (
+              // No chat model selected: surface a hint instead of nothing.
+              // Sending with no model can't be routed (the worker has no
+              // provider/model bound), so the turn would silently do
+              // nothing — tell the user to pick one in the top bar.
+              <span
+                className={styles.noModelHint}
+                title={text(
+                  "Pick a model in the top bar before sending.",
+                  "发送前请先在顶部选择一个模型。",
+                )}
+              >
+                {text("⚠ Select a model first", "⚠ 请先选择模型")}
+              </span>
             ) : null}
           </div>
           <div className={styles.inputBottomRight}>

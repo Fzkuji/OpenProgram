@@ -40,7 +40,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   useMarkdownReady();
   // Subscribed so the avatar/name pick up edits made in
   // /settings/general → Agent without a reload.
-  useAgentProfile();
+  const profile = useAgentProfile();
   const { text } = useTranslation();
   const streaming =
     msg.status === "streaming" ||
@@ -130,11 +130,24 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
           radius={8}
           name={sender}
           title={msg.agentId || ""}
-          config={{
-            kind: "dicebear",
-            style: "shapes",
-            seed: sender,
-          }}
+          config={
+            // Default profile (no agent_id / "main"): honour the user's
+            // configured avatar so the glyph doesn't change when the
+            // streaming bubble replaces the standalone pending indicator
+            // (which uses ``profile.avatar``). Named agents keep their
+            // deterministic shapes avatar seeded on the display name.
+            !msg.agentId || msg.agentId === "main"
+              ? (profile.avatar ?? {
+                  kind: "dicebear",
+                  style: "shapes",
+                  seed: profile.name,
+                })
+              : {
+                  kind: "dicebear",
+                  style: "shapes",
+                  seed: sender,
+                }
+          }
         />
         <div className="message-sender">{sender}</div>
         {!streaming ? <MessageActions msg={msg} /> : null}
