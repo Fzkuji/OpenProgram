@@ -314,10 +314,16 @@ export function Composer() {
   const promptNeedModel = useCallback(() => {
     showToast(
       text(
-        "No model configured — enable one in Settings before sending.",
-        "还没配置模型 — 发送前请先在设置中启用一个模型。",
+        "No model configured — enable one before sending.",
+        "还没配置模型 — 发送前请先启用一个模型。",
       ),
-      "warn",
+      {
+        tone: "warn",
+        link: {
+          label: text("Open Providers →", "去配置 Provider →"),
+          href: "/settings/providers",
+        },
+      },
     );
   }, [text]);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);

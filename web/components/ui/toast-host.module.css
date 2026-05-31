@@ -28,6 +28,21 @@
   animation: toastIn 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.link {
+  /* The host is pointer-events:none; re-enable just the link so the
+     toast doesn't block clicks underneath but the link is clickable. */
+  pointer-events: auto;
+  flex-shrink: 0;
+  color: var(--accent-blue, #6aa3ff);
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
 /* Tones — a subtle left tint; text stays readable on the dark chip. */
 .warn {
   border-color: var(--accent-yellow, #d4a017);

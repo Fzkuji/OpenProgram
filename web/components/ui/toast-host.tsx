@@ -11,13 +11,14 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { TOAST_EVENT, type ToastDetail, type ToastTone } from "@/lib/toast";
+import { TOAST_EVENT, type ToastDetail, type ToastLink, type ToastTone } from "@/lib/toast";
 import styles from "./toast-host.module.css";
 
 interface Item {
   id: number;
   message: string;
   tone: ToastTone;
+  link?: ToastLink;
 }
 
 let _seq = 0;
@@ -34,7 +35,10 @@ export function ToastHost() {
       const d = (e as CustomEvent<ToastDetail>).detail;
       if (!d || !d.message) return;
       const id = ++_seq;
-      setItems((cur) => [...cur, { id, message: d.message, tone: d.tone ?? "info" }]);
+      setItems((cur) => [
+        ...cur,
+        { id, message: d.message, tone: d.tone ?? "info", link: d.link },
+      ]);
       timers.current[id] = setTimeout(() => {
         setItems((cur) => cur.filter((x) => x.id !== id));
         delete timers.current[id];
@@ -47,6 +51,14 @@ export function ToastHost() {
       Object.values(snapshot).forEach(clearTimeout);
     };
   }, []);
+
+  function dismiss(id: number) {
+    setItems((cur) => cur.filter((x) => x.id !== id));
+    if (timers.current[id]) {
+      clearTimeout(timers.current[id]);
+      delete timers.current[id];
+    }
+  }
 
   if (!mounted || items.length === 0) return null;
 
@@ -61,7 +73,19 @@ export function ToastHost() {
             (it.tone === "error" ? " " + styles.error : "")
           }
         >
-          {it.message}
+          <span>{it.message}</span>
+          {it.link ? (
+            // `pointer-events: auto` (the host is none) so only the link
+            // is clickable. A plain anchor — full nav to the settings
+            // route is fine and matches the rest of the app.
+            <a
+              href={it.link.href}
+              className={styles.link}
+              onClick={() => dismiss(it.id)}
+            >
+              {it.link.label}
+            </a>
+          ) : null}
         </div>
       ))}
     </div>,
