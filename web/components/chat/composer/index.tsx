@@ -757,7 +757,7 @@ export function Composer() {
       const isBool = p.type === "bool" || p.type === "boolean";
       const isInt = p.type === "int";
       const isFloat = p.type === "float" || p.type === "number";
-      let v = (fnForm.values[p.name] ?? "").trim();
+      let v = String(fnForm.values[p.name] ?? "").trim();
       if (!v && isBool) v = "False";
       if (!v && !p.required) continue;
       if (!v && p.required) {
@@ -858,7 +858,7 @@ export function Composer() {
     }
     for (const p of visibleParams(fn)) {
       if (!p.required) continue;
-      const v = (fnForm.values[p.name] ?? "").trim();
+      const v = String(fnForm.values[p.name] ?? "").trim();
       if (!v) out.push(p.name);
     }
     return out;

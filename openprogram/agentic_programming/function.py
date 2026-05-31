@@ -834,6 +834,32 @@ _PY_TO_JSON_TYPE = {
 }
 
 
+def _coerce_enum(values: list, json_type) -> list:
+    """Coerce enum values to a JSON scalar type so type/enum agree.
+
+    ``json_type`` is the schema ``type`` string ("integer"/"number"/
+    "boolean"/"string"/...). Values that can't be coerced are left as-is
+    (so a genuinely bad option surfaces rather than being silently
+    dropped). Non-scalar / unknown types pass through unchanged.
+    """
+    def one(v):
+        try:
+            if json_type == "integer":
+                return int(v)
+            if json_type == "number":
+                return float(v)
+            if json_type == "boolean":
+                if isinstance(v, bool):
+                    return v
+                return str(v).strip().lower() in ("true", "1", "yes")
+            if json_type == "string":
+                return str(v)
+        except (TypeError, ValueError):
+            return v
+        return v
+    return [one(v) for v in values]
+
+
 def _type_to_json_schema(ann) -> dict:
     """Map a Python type annotation to a JSON Schema fragment."""
     import typing
@@ -887,7 +913,15 @@ def _build_agentic_tool_spec(fn: Callable, input_meta: dict) -> dict:
             schema["description"] = f"e.g. {meta['placeholder']}"
         options = meta.get("options")
         if options:
-            schema["enum"] = list(options)
+            # Coerce enum values to match the param's declared JSON type.
+            # UI ``options`` are often authored as display strings
+            # (e.g. ["5","10","15"]) for a param annotated ``int`` — that
+            # produces {"type":"integer","enum":["5",...]}, a type/enum
+            # contradiction OpenAI strict-mode tool validation rejects
+            # (HTTP 400), which breaks EVERY chat turn (all tool schemas
+            # ship together). Normalise so the enum always agrees with
+            # the type, regardless of how the harness wrote its options.
+            schema["enum"] = _coerce_enum(list(options), schema.get("type"))
 
         properties[name] = schema
         if param.default is inspect.Parameter.empty:
