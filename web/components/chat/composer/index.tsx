@@ -292,6 +292,13 @@ export function Composer() {
   // The effort picker only appears once a chat model is actually
   // selected at the top; with no model picked it stays hidden.
   const chatModel = useSessionStore((s) => s.agentSettings?.chat?.model);
+  // ``providerInfo`` is the SAME signal the top-bar model badge shows
+  // (set from the ``provider_info`` WS message). ``agentSettings.chat
+  // .model`` above comes from legacy providers.js and is often empty
+  // even when a model IS active — so the "select a model" hint must key
+  // off providerInfo, not chatModel, or it shows a false warning mid-run.
+  const providerInfo = useSessionStore((s) => s.providerInfo);
+  const hasModel = !!(providerInfo && providerInfo.model);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const {
     tools: toolsEnabled,
@@ -1116,11 +1123,12 @@ export function Composer() {
                 value={thinking}
                 onChange={setThinking}
               />
-            ) : !fnFormActive ? (
-              // No chat model selected: surface a hint instead of nothing.
-              // Sending with no model can't be routed (the worker has no
-              // provider/model bound), so the turn would silently do
-              // nothing — tell the user to pick one in the top bar.
+            ) : !fnFormActive && !hasModel && !isRunning ? (
+              // No model bound (providerInfo empty) and not mid-run:
+              // surface a hint instead of nothing. Sending with no model
+              // can't be routed, so the turn would silently do nothing —
+              // tell the user to pick one in the top bar. Gated on
+              // ``!isRunning`` so it never shows while a turn is active.
               <span
                 className={styles.noModelHint}
                 title={text(
