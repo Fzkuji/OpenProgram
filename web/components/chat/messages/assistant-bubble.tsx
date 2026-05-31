@@ -25,11 +25,17 @@ import { ThinkingBlock } from "./thinking-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
 
-function TypingIndicator({ name }: { name: string }) {
+function TypingIndicator() {
+  // No name here — the bubble header already shows the agent name, so
+  // "<name> is thinking" repeated it. Just the breathing dot + label,
+  // sitting in the same content column as the answer text that replaces
+  // it (``pending-body`` lives inside ``chat-stream-body`` alongside
+  // ``chat-text``), so there's no horizontal jump when the reply lands.
+  const { text } = useTranslation();
   return (
     <div className="pending-body">
       <span className="indicator-dot pulse-scale" aria-hidden="true" />
-      <span className="pending-label">{`${name} is thinking…`}</span>
+      <span className="pending-label">{text("thinking…", "思考中…")}</span>
     </div>
   );
 }
@@ -212,7 +218,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               // tail the body with the breathing pulse. Bottom of the
               // bubble, aligned to the chat-text column.
               if (streaming && !hasContent) {
-                rendered.push(<TypingIndicator key="typing_tail" name={sender} />);
+                rendered.push(<TypingIndicator key="typing_tail" />);
               }
               return rendered;
             })()
@@ -252,7 +258,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
                 />
               ) : null}
-              {streaming && !hasContent ? <TypingIndicator name={sender} /> : null}
+              {streaming && !hasContent ? <TypingIndicator /> : null}
             </>
           )}
           {!streaming && msg.id ? (
