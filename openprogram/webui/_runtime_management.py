@@ -524,7 +524,16 @@ def _resolve_session_provider_model(conv: dict | None) -> tuple[str | None, str 
       2. The conversation's agent's configured model (agent.json
          ``model.provider`` / ``model.id``).
       3. Global ``_chat_provider`` fallback when no agent / no model.
+
+    All three are short-circuited when the user has NOTHING enabled in
+    Settings: disabling every provider must mean "no chat runs", even for
+    a conversation whose agent pins a model whose credentials still
+    happen to be present. Otherwise a send after "disable all" silently
+    executes on the pinned default — the exact surprise the user hit.
     """
+    if not _enabled_model_keys():
+        return None, None
+
     if conv:
         if conv.get("provider_override"):
             return conv["provider_override"], conv.get("model_override") or _chat_model

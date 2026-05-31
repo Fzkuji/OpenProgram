@@ -21,8 +21,10 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
+import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";
@@ -299,6 +301,24 @@ export function Composer() {
   // off providerInfo, not chatModel, or it shows a false warning mid-run.
   const providerInfo = useSessionStore((s) => s.providerInfo);
   const hasModel = !!(providerInfo && providerInfo.model);
+  // Authoritative "is there a model to run at all" signal — the SAME
+  // enabled-models list the top-bar picker reads. ``providerInfo.model``
+  // is NOT enough: it reflects whatever model the last runtime used
+  // (often an agent-pinned default), so it stays truthy even after the
+  // user disables every provider — and a send would then silently run
+  // on that pinned model. Keying off the enabled list means "picker is
+  // empty" ⇒ "send is blocked", matching what the user sees up top.
+  const { data: enabledModels } = useQuery({
+    queryKey: ["models-enabled"],
+    queryFn: api.listEnabledModels,
+  });
+  const noEnabledModels = (enabledModels ?? []).length === 0;
+  // Block a send/run when nothing is enabled and surface the reason at
+  // the TOP (the agent badge opens its "No enabled models → Settings"
+  // popover) instead of silently routing the turn to a pinned model.
+  const promptNeedModel = useCallback(() => {
+    window.dispatchEvent(new Event("openprogram:need-model"));
+  }, []);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const {
     tools: toolsEnabled,
@@ -448,6 +468,13 @@ export function Composer() {
     if (!trimmed && pendingImages.length === 0 && pendingDocs.length === 0) {
       return;
     }
+    // No enabled model → don't send. Routing a turn with nothing
+    // enabled would silently run on a pinned default (the user disabled
+    // everything on purpose). Point them at the top-bar picker instead.
+    if (noEnabledModels) {
+      promptNeedModel();
+      return;
+    }
     // Block submit while any attachment is still being decoded — the
     // placeholder chips have empty ``attachment.data`` / null
     // ``content``, which would deliver broken payloads. The user
@@ -540,14 +567,17 @@ export function Composer() {
     currentSessionId,
     input,
     isRunning,
+    noEnabledModels,
     pendingDocs,
     pendingImages,
+    promptNeedModel,
     send,
     setInput,
     slash,
     thinking,
     toolsEnabled,
     webSearchEnabled,
+    fastEnabled,
   ]);
 
   function stop() {
@@ -747,6 +777,13 @@ export function Composer() {
 
   const submitFnForm = useCallback(() => {
     if (!fnFormFunction || isRunning) return;
+    // Same gate as chat: a function run needs a model to dispatch
+    // against. With nothing enabled, prompt for one instead of letting
+    // the agent run on a pinned default.
+    if (noEnabledModels) {
+      promptNeedModel();
+      return;
+    }
     const fn = fnFormFunction;
     const workdirMode = fn.workdir_mode ?? "optional";
     const wd = fnForm.workdir.trim();
@@ -842,6 +879,8 @@ export function Composer() {
     fnForm,
     handleFnFormClose,
     isRunning,
+    noEnabledModels,
+    promptNeedModel,
     router,
     setCurrentConv,
   ]);
@@ -1111,7 +1150,7 @@ export function Composer() {
             {/* Effort picker only shows when a chat model is selected at
                 the top; hidden otherwise. The `thinking` value still flows
                 to submit (uses the model default). */}
-            {chatModel ? (
+            {chatModel && !noEnabledModels ? (
               <ThinkingEffortPill
                 ref={thinkingTriggerRef}
                 expanded={thinkingMenuOpen}
@@ -1123,21 +1162,25 @@ export function Composer() {
                 value={thinking}
                 onChange={setThinking}
               />
-            ) : !fnFormActive && !hasModel && !isRunning ? (
-              // No model bound (providerInfo empty) and not mid-run:
-              // surface a hint instead of nothing. Sending with no model
-              // can't be routed, so the turn would silently do nothing —
-              // tell the user to pick one in the top bar. Gated on
+            ) : !fnFormActive && noEnabledModels && !isRunning ? (
+              // Nothing enabled and not mid-run: surface a hint instead
+              // of nothing. Sending with no enabled model is blocked
+              // (submit/submitFnForm bail + open the top picker), so tell
+              // the user up front. Clicking it opens the picker too.
+              // Keyed on the enabled-models list (not providerInfo) so it
+              // reliably shows after every provider is disabled. Gated on
               // ``!isRunning`` so it never shows while a turn is active.
-              <span
+              <button
+                type="button"
                 className={styles.noModelHint}
+                onClick={promptNeedModel}
                 title={text(
-                  "Pick a model in the top bar before sending.",
-                  "发送前请先在顶部选择一个模型。",
+                  "No model enabled — enable one in Settings before sending.",
+                  "未启用任何模型 — 发送前请先在设置中启用一个。",
                 )}
               >
-                {text("⚠ Select a model first", "⚠ 请先选择模型")}
-              </span>
+                {text("⚠ No model selected", "⚠ 未选择模型")}
+              </button>
             ) : null}
           </div>
           <div className={styles.inputBottomRight}>

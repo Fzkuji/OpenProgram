@@ -15,8 +15,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
+import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import {
   type AnimatedNavIconHandle,
@@ -317,6 +319,15 @@ function AgentBadge({
   const [open, setOpen] = useState(false);
   const { t } = useTranslation();
 
+  // Enabled-models list drives the "no model" warning + auto-open. Only
+  // the chat badge owns the model selection the composer routes through,
+  // so only it warns / pops on a send-with-no-model attempt.
+  const { data: enabledModels } = useQuery({
+    queryKey: ["models-enabled"],
+    queryFn: api.listEnabledModels,
+  });
+  const noModel = kind === "chat" && (enabledModels ?? []).length === 0;
+
   // A `topbar-close-menus` event (fired by another top-bar dropdown)
   // closes this menu, so only one is ever open.
   useEffect(() => {
@@ -324,6 +335,21 @@ function AgentBadge({
     window.addEventListener("topbar-close-menus", close);
     return () => window.removeEventListener("topbar-close-menus", close);
   }, []);
+
+  // The composer fires `openprogram:need-model` when the user tries to
+  // send / run with nothing enabled — pop this (chat) badge's picker so
+  // the "No enabled models → Settings" hint appears right at the top,
+  // where the user expects to fix it.
+  useEffect(() => {
+    if (kind !== "chat") return;
+    const onNeed = () => {
+      if (locked) return;
+      window.dispatchEvent(new Event("topbar-close-menus"));
+      setOpen(true);
+    };
+    window.addEventListener("openprogram:need-model", onNeed);
+    return () => window.removeEventListener("openprogram:need-model", onNeed);
+  }, [kind, locked]);
 
   function onOpenChange(next: boolean) {
     if (locked) return;
@@ -348,7 +374,9 @@ function AgentBadge({
         <PopoverTrigger asChild>
           <span
             id={id}
-            className={"runtime-badge agent-badge" + (locked ? " locked" : "")}
+            className={
+              "runtime-badge agent-badge relative" + (locked ? " locked" : "")
+            }
             onMouseEnter={() => iconRef.current?.startAnimation?.()}
             onMouseLeave={() => iconRef.current?.stopAnimation?.()}
           >
@@ -359,6 +387,17 @@ function AgentBadge({
               aria-hidden="true"
             />
             {label ? <span className="badge-details">{label}</span> : null}
+            {/* No enabled model → amber dot so the empty chip reads as
+                "needs attention", not "loading". Click opens the picker
+                (the empty-state links to Settings). */}
+            {noModel ? (
+              <span
+                className="absolute -right-[2px] -top-[2px] size-[7px] rounded-full
+                  bg-[var(--accent-orange,#e0a13a)] ring-1 ring-[var(--bg-secondary)]"
+                aria-label={t("agent.no_enabled_models")}
+                title={t("agent.no_enabled_models")}
+              />
+            ) : null}
           </span>
         </PopoverTrigger>
       </HoverTip>

@@ -195,6 +195,24 @@ def register(app):
                 },
             )
 
+        # No enabled model → refuse. An agentic function still needs a
+        # model to dispatch its agent loop against; with everything
+        # disabled the run would fall back to a pinned / auto-detected
+        # default the user explicitly turned off. Reject so the UI can
+        # prompt for a model instead of silently executing (the exact
+        # surprise of "I disabled everything yet gui_agent still ran").
+        if not _s._runtime_management._enabled_model_keys():
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": (
+                        "No model enabled. Enable a model in "
+                        "Settings → Providers before running a function."
+                    ),
+                    "code": "no_model",
+                },
+            )
+
         body = body or {}
         session_id = body.get("session_id") or body.get("_session_id")
         if isinstance(body.get("kwargs"), dict):
