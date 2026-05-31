@@ -196,6 +196,9 @@ interface SessionRow {
   status?: "needs_input" | "done" | "idle" | null;
   /** Finished result not yet opened → blue dot. */
   unread?: boolean;
+  /** Project NAME this conversation belongs to (home-folder name for
+   *  ad-hoc chats) — drives the sidebar's "group by project" view. */
+  project?: string | null;
 }
 
 export function handleSessionsList(data: SessionRow[]): void {
@@ -225,6 +228,7 @@ export function handleSessionsList(data: SessionRow[]): void {
           group: c.group || "",
           status: c.status || undefined,
           unread: !!c.unread,
+          project: c.project || "",
         };
       } else {
         convs[c.id].has_session = c.has_session;
@@ -242,6 +246,7 @@ export function handleSessionsList(data: SessionRow[]): void {
         if ("group" in c) convs[c.id].group = c.group || "";
         if ("status" in c) convs[c.id].status = c.status || undefined;
         if ("unread" in c) convs[c.id].unread = !!c.unread;
+        if ("project" in c) convs[c.id].project = c.project || "";
         // session_loaded 早到时 conv 没 created_at, 这里 sessions_list
         // 后到要补上, 不然 sidebar 排序拿不到时间戳, 新会话沉底.
         if (c.created_at != null && convs[c.id].created_at == null) {

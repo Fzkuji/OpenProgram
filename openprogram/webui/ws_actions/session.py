@@ -549,10 +549,33 @@ async def handle_search_messages(ws, cmd: dict):
     }, default=str))
 
 
+def _project_name_map() -> tuple[dict[str, str], str]:
+    """``(session_id → project name, default/home name)``.
+
+    Lets the sidebar group conversations by project with the home
+    folder as the catch-all — every conversation gets a project name, so
+    "group by project" never produces an "Ungrouped" bucket. Reads the
+    registry once (not per-conversation).
+    """
+    try:
+        from openprogram.store import project_store as _ps
+        default_name = _ps.get_default_project().name or "Home"
+        m: dict[str, str] = {}
+        for p in _ps.list_projects():
+            if p.is_default:
+                continue
+            for sid in (p.session_ids or []):
+                m[sid] = p.name
+        return m, default_name
+    except Exception:
+        return {}, ""
+
+
 async def handle_list_sessions(ws, cmd: dict):
     """List webui's in-memory sessions + per-agent sessions on disk."""
     from openprogram.webui import server as _s
     conv_list: list[dict] = []
+    _proj_map, _default_proj = _project_name_map()
     with _s._sessions_lock:
         for cid, conv in _s._sessions.items():
             runtime = conv.get("runtime")
@@ -588,6 +611,9 @@ async def handle_list_sessions(ws, cmd: dict):
                 # forward-compat — no live producer yet.
                 "status": conv.get("status") or "",
                 "unread": bool(conv.get("unread")),
+                # Project NAME for sidebar grouping; the home-folder name
+                # is the catch-all so there's never an "Ungrouped" bucket.
+                "project": _proj_map.get(cid, _default_proj),
             })
     seen_ids = {row["id"] for row in conv_list if row.get("id")}
     try:
@@ -644,6 +670,7 @@ async def handle_list_sessions(ws, cmd: dict):
                 "group": srow.get("group") or "",
                 "status": srow.get("status") or "",
                 "unread": bool(srow.get("unread")),
+                "project": _proj_map.get(sid, _default_proj),
             })
     except Exception:
         pass

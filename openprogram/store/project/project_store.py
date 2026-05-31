@@ -553,24 +553,34 @@ def _upsert(project: Project) -> Project:
 def get_default_project() -> Project:
     """The catch-all project for ad-hoc chats with no bound directory.
 
-    This is a **pure logical label** — it does NOT get its own git
-    repo. An ad-hoc conversation produces no project files (its file
-    edits, if any, land in the session's own ``workdir/``), so a
-    "default project repo" would always be empty. Such sessions just
-    carry ``project_id="default"`` for grouping / scope, and their
-    entity memory IS the session repo, stored at the home root
-    ``<state>/sessions/<id>/``.
+    Presented as the user's **home folder, by name** (e.g. ``fzkuji``):
+    ad-hoc chats "live" under home, so grouping the sidebar by project
+    shows them under the home-folder name instead of a separate
+    "Ungrouped" / "Default" bucket.
 
-    A real git repo is created only when a session binds to an actual
-    working directory — see :func:`resolve_project` with a path.
+    It still gets **no git repo of its own** — the ``is_default`` flag
+    short-circuits every project-git path (``project_commit`` no-ops on
+    it), so setting ``path`` to the real home directory never ``git
+    init``s the user's home. An ad-hoc conversation's entity memory is
+    the session repo at ``<state>/sessions/<id>/``; a real project repo
+    appears only when a session binds an actual working directory (see
+    :func:`resolve_project`).
     """
+    home = Path.home()
+    home_name = home.name or "Home"
     existing = get_project(DEFAULT_PROJECT_ID)
     if existing is not None:
+        # Backfill older records that used the placeholder "Default"
+        # label / empty path so the catch-all reads as the home folder.
+        if (existing.name or "") in ("", "Default") or not existing.path:
+            existing.name = home_name
+            existing.path = str(home)
+            _upsert(existing)
         return existing
     proj = Project(
         id=DEFAULT_PROJECT_ID,
-        name="Default",
-        path="",            # no backing repo — logical label only
+        name=home_name,
+        path=str(home),     # display/scope only — is_default guards git
         is_default=True,
     )
     return _upsert(proj)

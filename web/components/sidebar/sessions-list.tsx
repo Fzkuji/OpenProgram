@@ -118,8 +118,10 @@ interface LegacyConv {
   pinned?: boolean;
   archived?: boolean;
   group?: string;
-  /** Project path the conversation lives under. Backend-fed (the cwd
-   *  where an OpenProgram project was activated); absent until then. */
+  /** Project NAME this conversation belongs to. Backend-fed: a bound
+   *  project's folder name, or the home-folder name as the catch-all for
+   *  ad-hoc chats — so "group by project" always has a bucket (never
+   *  "Ungrouped"). */
   project?: string;
   /** Lifecycle status driving the leading dot, Claude-Code-style:
    *   - "needs_input" → amber dot (the agent is waiting on the user)
