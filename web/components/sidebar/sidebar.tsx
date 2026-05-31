@@ -454,7 +454,12 @@ export function Sidebar() {
           // headers below — those sit inside #convList's px-[8px] AND
           // their own SectionHeader px-[8px] (8+8). Without it the fav
           // header was 8px too far left of "Today" / "Yesterday".
-          className="shrink-0 px-[8px] pt-[16px]"
+          // No pt here: the SectionHeader's own pt-[15px] is the single
+          // group separator. An extra pt-[16px] used to STACK on it, so
+          // major groups (Favorites / Recents) sat ~16px lower than the
+          // date sub-buckets — visibly inconsistent + too much empty
+          // space above the section.
+          className="shrink-0 px-[8px]"
         >
           <div
             id="favList"
@@ -475,7 +480,7 @@ export function Sidebar() {
         // SessionsList, right-aligned (Claude's layout).
         <div
           id="convSection"
-          className="flex flex-1 min-h-0 flex-col pt-[16px]"
+          className="flex flex-1 min-h-0 flex-col"
         >
           <div
             id="convList"
