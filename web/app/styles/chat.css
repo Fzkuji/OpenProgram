@@ -155,7 +155,11 @@
   border: 1px solid rgba(152, 195, 121, 0.22);
   cursor: pointer;
 }
-.status-badge:hover {
+/* `[data-state="open"]` keeps the trigger lit while its popover is open
+   (radix stamps data-state on the trigger), so the chip reads as "active"
+   the whole time the menu is showing — not just on hover. */
+.status-badge:hover,
+.status-badge[data-state="open"] {
   background: rgba(152, 195, 121, 0.18);
 }
 /* Initial / probing state — yellow until the worker has actually
@@ -166,7 +170,8 @@
   color: var(--accent-yellow);
   border-color: rgba(198, 144, 38, 0.22);
 }
-.status-badge.connecting:hover {
+.status-badge.connecting:hover,
+.status-badge.connecting[data-state="open"] {
   background: rgba(198, 144, 38, 0.18);
 }
 /* Status badge carries a source name (potentially long, e.g.
@@ -203,7 +208,8 @@
   align-items: center;
   gap: 4px;
 }
-.runtime-badge.branch-badge:hover {
+.runtime-badge.branch-badge:hover,
+.runtime-badge.branch-badge[data-state="open"] {
   background: rgba(209, 154, 102, 0.18);
 }
 .branch-badge .branch-icon {
@@ -231,7 +237,8 @@
   gap: 4px;
   min-width: 0;
 }
-.runtime-badge.project-badge:hover {
+.runtime-badge.project-badge:hover,
+.runtime-badge.project-badge[data-state="open"] {
   background: color-mix(in srgb, var(--text-primary) 12%, transparent);
   color: var(--text-bright);
 }
@@ -993,7 +1000,8 @@
   color: var(--accent-orange);
   border-color: color-mix(in srgb, var(--accent-orange) 25%, transparent);
 }
-.runtime-badge.agent-badge:hover {
+.runtime-badge.agent-badge:hover,
+.runtime-badge.agent-badge[data-state="open"] {
   background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
   border-color: color-mix(in srgb, var(--accent-orange) 35%, transparent);
 }

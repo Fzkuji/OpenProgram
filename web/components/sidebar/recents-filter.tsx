@@ -111,7 +111,13 @@ export function RecentsFilter() {
           className={
             "flex size-[24px] items-center justify-center rounded-[6px]" +
             " transition-colors hover:bg-[var(--bg-hover)] outline-none " +
-            (active ? "text-[var(--text-secondary)]" : "text-[var(--text-muted)]")
+            // Stay lit while the menu is open — driven off the component's
+            // own `open` state (reliable base utilities) rather than a
+            // data-[state] Tailwind variant, which didn't generate here.
+            (open ? "bg-[var(--bg-hover)] " : "") +
+            (open || active
+              ? "text-[var(--text-secondary)]"
+              : "text-[var(--text-muted)]")
           }
         >
           <GalleryVerticalEndIcon ref={filterIconRef} size={18} />
