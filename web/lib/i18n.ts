@@ -140,6 +140,7 @@ const DICT = {
   "sidebar.status_archived": { en: "Archived", zh: "已归档" },
   "sidebar.status_all": { en: "All", zh: "全部" },
   "sidebar.project": { en: "Project", zh: "项目" },
+  "sidebar.all_projects": { en: "All projects", zh: "全部项目" },
   "sidebar.environment": { en: "Environment", zh: "环境" },
   "sidebar.last_activity": { en: "Last activity", zh: "最近活动" },
   "sidebar.activity_all": { en: "All", zh: "全部" },

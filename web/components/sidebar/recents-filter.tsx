@@ -23,12 +23,13 @@
  * (lib/recents-view.ts).
  */
 
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronRight } from "lucide-react";
 
 import { MENU_PANEL, itemCls } from "@/components/chat/top-bar/menu-styles";
 import { useTranslation } from "@/lib/i18n";
+import { useWindowGlobals } from "./use-window-globals";
 import {
   type AnimatedNavIconHandle,
   GalleryVerticalEndIcon,
@@ -67,6 +68,25 @@ export function RecentsFilter() {
   const view = useRecentsView();
   const [open, setOpen] = useState(false);
   const filterIconRef = useRef<AnimatedNavIconHandle>(null);
+
+  // Project options come from the conversations themselves — every conv
+  // carries a project name (the home-folder name for ad-hoc chats), so
+  // the flyout lists "All projects" + each distinct folder the user has
+  // chats under, instead of a lone meaningless "All".
+  const { conversations } = useWindowGlobals();
+  const projectOptions = useMemo<[string, string][]>(() => {
+    const names = new Set<string>();
+    for (const c of Object.values(conversations || {})) {
+      const p = (c as { project?: string }).project;
+      if (p) names.add(p);
+    }
+    return [
+      ["all", t("sidebar.all_projects")],
+      ...Array.from(names)
+        .sort((a, b) => a.localeCompare(b))
+        .map((n) => [n, n] as [string, string]),
+    ];
+  }, [conversations, t]);
 
   // Any non-default selection lights the trigger so an active filter
   // is visible without opening the menu.
@@ -118,7 +138,7 @@ export function RecentsFilter() {
           <Row<string>
             label={t("sidebar.project")}
             value={view.project}
-            options={[["all", t("sidebar.filter_all")]]}
+            options={projectOptions}
             onPick={(project) => setRecentsView({ project })}
           />
           <Row<string>

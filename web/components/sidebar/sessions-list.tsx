@@ -327,10 +327,13 @@ export function SessionsList() {
       const cutoff = nowTs - days * 86400;
       arr = arr.filter((c) => (c.created_at || 0) >= cutoff);
     }
-    // NOTE: project / environment filters are UI-only for now — the
-    // menu writes the pref but there's no per-conversation project /
-    // environment field yet. Wire the filter here once the backend
-    // supplies those fields.
+    // Project filter — each conv carries a project NAME (home-folder
+    // name for ad-hoc chats), so "All projects" shows everything and a
+    // specific pick narrows to that folder's chats. (Environment is
+    // still UI-only — no per-conversation environment field yet.)
+    if (view.project && view.project !== "all") {
+      arr = arr.filter((c) => c.project === view.project);
+    }
     const cmp = (a: LegacyConv, b: LegacyConv) => {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       if (view.sort === "title") {

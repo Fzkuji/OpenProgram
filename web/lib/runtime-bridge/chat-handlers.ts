@@ -103,7 +103,22 @@ export function wsHandleChatAck(data: ChatAckData): void {
     }
     const convs = W.conversations || (W.conversations = {});
     if (!convs[sid]) {
-      convs[sid] = { id: sid, title: "New conversation", messages: [] };
+      // Seed a preview + created_at from the just-sent user text so the
+      // row shows in the sidebar IMMEDIATELY (on run start), not after
+      // the turn finishes. Without a preview, isEmptyPlaceholder() filters
+      // a "New conversation"-titled row out until the backend re-lists it
+      // with a preview at turn end — which read as "the chat only appears
+      // after it's done".
+      const pending =
+        (W as unknown as { __pendingUserText?: string }).__pendingUserText || "";
+      const preview = pending.trim().replace(/\s+/g, " ").slice(0, 80);
+      convs[sid] = {
+        id: sid,
+        title: "New conversation",
+        messages: [],
+        preview: preview || null,
+        created_at: Date.now() / 1000,
+      };
     }
     W.renderSessions?.();
     W.loadAgentSettings?.();
