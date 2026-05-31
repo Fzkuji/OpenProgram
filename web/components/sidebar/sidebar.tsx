@@ -449,12 +449,17 @@ export function Sidebar() {
           title={t("sidebar.favorite_functions")}
           collapsed={favCollapsed}
           onToggle={() => setFavCollapsed((v) => !v)}
-          className="shrink-0 pt-[16px]"
+          // px-[8px] on the SECTION (not just the list) so the header
+          // label lands at the same 16px indent as the Recents section
+          // headers below — those sit inside #convList's px-[8px] AND
+          // their own SectionHeader px-[8px] (8+8). Without it the fav
+          // header was 8px too far left of "Today" / "Yesterday".
+          className="shrink-0 px-[8px] pt-[16px]"
         >
           <div
             id="favList"
             className="flex flex-col gap-px max-h-[131px] overflow-y-auto
-              overflow-x-hidden px-[8px] [scrollbar-width:none]
+              overflow-x-hidden [scrollbar-width:none]
               [&::-webkit-scrollbar]:hidden"
           >
             <FavoritesList />

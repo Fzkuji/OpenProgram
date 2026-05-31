@@ -192,6 +192,20 @@ def register(app):
                 if rt and getattr(rt, "model", None):
                     chat_model = rt.model
 
+        # Suppress a STALE default: the chat/exec globals are stamped once
+        # at startup from auto-detect, so after the user disables every
+        # provider in Settings they'd otherwise keep advertising the old
+        # (e.g. gpt) model in the top bar. Gate on the user-enabled set —
+        # the same source the model picker reads — so "picker empty" and
+        # "top bar shows no model" stay in lockstep.
+        _rm = _s._runtime_management
+        if not _rm._default_is_enabled(chat_provider, chat_model):
+            chat_provider, chat_model = None, None
+        exec_provider = _rm._exec_provider
+        exec_model = _rm._exec_model
+        if not _rm._default_is_enabled(exec_provider, exec_model):
+            exec_provider, exec_model = None, None
+
         return JSONResponse(content={
             "chat": {
                 "provider": chat_provider,
@@ -201,11 +215,10 @@ def register(app):
                 "thinking": _s._get_thinking_config_for_model(chat_provider, chat_model),
             },
             "exec": {
-                "provider": _s._runtime_management._exec_provider,
-                "model": _s._runtime_management._exec_model,
+                "provider": exec_provider,
+                "model": exec_model,
                 "thinking": _s._get_thinking_config_for_model(
-                    _s._runtime_management._exec_provider,
-                    _s._runtime_management._exec_model,
+                    exec_provider, exec_model,
                 ),
             },
             "available": _s._runtime_management._available_providers,

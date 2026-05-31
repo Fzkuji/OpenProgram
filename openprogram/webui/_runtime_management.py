@@ -501,7 +501,8 @@ def _get_session_runtime(session_id: str, msg_id: str = None):
 
     if not provider:
         raise RuntimeError(
-            "No provider available. Install a CLI (codex/claude/gemini) or set an API key."
+            "No model available. Enable a model in Settings → Providers "
+            "(or install a CLI such as codex/claude/gemini, or set an API key)."
         )
 
     rt = _create_runtime_for_visualizer(provider, model=model)
@@ -541,7 +542,56 @@ def _resolve_session_provider_model(conv: dict | None) -> tuple[str | None, str 
                 if ap:
                     return ap, am or None
 
-    return _chat_provider, _chat_model
+    # Final fallback = the global auto-detected default. Gate it on the
+    # user-enabled set: the globals are stamped ONCE at startup, so after
+    # the user disables every provider in Settings they'd otherwise keep
+    # the conversation pinned to the old (e.g. gpt) default and silently
+    # send through it. When nothing is enabled, return no default so the
+    # send path raises a clear "enable a model" error instead.
+    if _default_is_enabled(_chat_provider, _chat_model):
+        return _chat_provider, _chat_model
+    return None, None
+
+
+def _enabled_model_keys() -> set[tuple[str, str]]:
+    """Set of ``(provider_id, model_id)`` for every model the user has
+    enabled in Settings. Empty when all providers are disabled.
+
+    This is the SAME source the chat model picker reads
+    (``list_enabled_models``), so "the picker is empty" and "the top bar
+    shows no default" stay in lockstep.
+    """
+    try:
+        from openprogram.webui._model_catalog.listing import list_enabled_models
+        keys: set[tuple[str, str]] = set()
+        for m in list_enabled_models():
+            pid, mid = m.get("provider"), m.get("id")
+            if pid and mid:
+                keys.add((pid, mid))
+        return keys
+    except Exception:
+        return set()
+
+
+def _default_is_enabled(provider: str | None, model: str | None) -> bool:
+    """True when ``(provider, model)`` is among the user-enabled models.
+
+    Used to suppress a STALE global default: the chat/exec provider+model
+    globals are set once at startup from auto-detect, so after the user
+    disables every provider the top bar must show no model and the send
+    path must not fall back to it.
+    """
+    if not provider:
+        return False
+    keys = _enabled_model_keys()
+    if not keys:
+        return False
+    if model:
+        bare = model.split(":", 1)[1] if ":" in model else model
+        return (provider, model) in keys or (provider, bare) in keys
+    # Provider set but no specific model → enabled iff the provider has
+    # at least one enabled model.
+    return any(p == provider for (p, _m) in keys)
 
 
 def _get_exec_runtime(no_tools: bool = False):

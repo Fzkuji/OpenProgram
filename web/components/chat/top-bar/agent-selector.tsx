@@ -72,7 +72,11 @@ export function AgentSelector({
       {(models ?? []).length === 0 ? (
         <div className="px-[8px] py-[6px] text-[12px] text-text-muted">
           {t("agent.no_enabled_models")}{" "}
-          <a href="/settings" className="text-[var(--accent-blue)] no-underline">
+          <a
+            href="/settings"
+            onClick={onClose}
+            className="text-[var(--accent-blue)] no-underline"
+          >
             {t("agent.enable_models")} →
           </a>
         </div>
@@ -106,12 +110,6 @@ export function AgentSelector({
           </div>
         ))
       )}
-
-      <div className="px-[8px] pb-[3px] pt-[5px] text-[11px]">
-        <a href="/settings" className="text-[var(--accent-blue)] no-underline">
-          {t("agent.manage_models")} →
-        </a>
-      </div>
     </div>
   );
 }

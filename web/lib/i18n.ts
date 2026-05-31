@@ -171,7 +171,6 @@ const DICT = {
   "agent.execution_agent": { en: "Execution Agent", zh: "执行 Agent" },
   "agent.no_enabled_models": { en: "No enabled models", zh: "没有启用的模型" },
   "agent.enable_models": { en: "enable some in Settings", zh: "去设置中启用模型" },
-  "agent.manage_models": { en: "Manage models in Settings", zh: "在设置中管理模型" },
   "agent.switch_failed": { en: "Agent switch failed: ", zh: "Agent 切换失败：" },
 
   // Right sidebar panels
