@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
+import { ToastHost } from "./ui/toast-host";
 import { Composer } from "./chat/composer";
 import { TopBar } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
@@ -433,6 +434,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {welcomeMount && createPortal(<WelcomeScreen />, welcomeMount)}
       {topbarMount && createPortal(<TopBar />, topbarMount)}
       {messagesMount && createPortal(<MessageList />, messagesMount)}
+      {/* App-wide transient toasts — mounted at the shell so they show on
+         every route (chat AND settings), not just where the TopBar is. */}
+      <ToastHost />
     </div>
   );
 }

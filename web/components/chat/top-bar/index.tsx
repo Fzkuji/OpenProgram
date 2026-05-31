@@ -33,7 +33,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { HoverTip } from "@/components/ui/tooltip";
-import { ToastHost } from "@/components/ui/toast-host";
 
 import { AgentSelector } from "./agent-selector";
 import { BranchMenu } from "./branch-menu";
@@ -137,10 +136,6 @@ export function TopBar() {
       </div>
 
       <div className={`topbar-right ${styles.right}`} />
-
-      {/* App-wide transient toasts (e.g. "no model configured" on a
-          blocked send) render here so they appear at the top. */}
-      <ToastHost />
     </div>
   );
 }

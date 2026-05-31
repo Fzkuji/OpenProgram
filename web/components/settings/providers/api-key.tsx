@@ -16,10 +16,14 @@ export function ApiKey({
   envVar,
   configured,
   onChanged,
+  onSaved,
 }: {
   envVar: string;
   configured: boolean;
   onChanged: () => void;
+  /** Called after a NEW key is actually saved (not on a no-op Save of an
+   *  unedited masked field). Lets the parent auto check + fetch models. */
+  onSaved?: () => void;
 }) {
   const { text } = useTranslation();
   const [value, setValue] = useState("");
@@ -88,7 +92,18 @@ export function ApiKey({
 
   async function save() {
     const v = value.trim();
-    if (!v || v.indexOf("...") >= 0) return;
+    // Only save a genuinely user-entered key. When the field is showing
+    // the server's masked preview ("••••") or the revealed real key and
+    // the user clicked Save WITHOUT editing, ``value`` is that preview —
+    // NOT a new key. Saving it would overwrite the real key with the
+    // mask (the "•" bullets aren't even ASCII, which then blows up the
+    // fetch with a UnicodeEncodeError). So bail unless we're in an edit.
+    if (state === "masked" || state === "revealed") return;
+    // Defensive content guards: never persist a masked/elided value even
+    // if the state machine somehow disagrees.
+    if (!v || v.indexOf("...") >= 0 || v.includes("•") || /[^\x20-\x7e]/.test(v)) {
+      return;
+    }
     try {
       const r = await fetch("/api/config", {
         method: "POST",
@@ -101,6 +116,7 @@ export function ApiKey({
         if (inputRef.current) inputRef.current.placeholder = text(`${envVar} (saved)`, `${envVar}（已保存）`);
         onChanged();
         loadPreview();
+        onSaved?.();
       }
     } catch { /* ignore */ }
   }

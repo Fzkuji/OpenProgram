@@ -61,6 +61,21 @@ def register(app):
         for key, val in body["api_keys"].items():
             val = val.strip()
             if val:
+                # Reject a masked / garbled value. API keys are printable
+                # ASCII tokens; the UI's masked preview is "••••"
+                # (U+2022 bullets). Saving those overwrites the real key
+                # with non-ASCII junk, which then crashes outbound
+                # requests with a UnicodeEncodeError ("'ascii' codec…").
+                # Refuse rather than persist garbage.
+                if any(ord(ch) < 0x20 or ord(ch) > 0x7e for ch in val):
+                    return JSONResponse(
+                        content={"error": (
+                            f"{key}: the value has invalid characters — it "
+                            "looks like the masked placeholder, not a real "
+                            "key. Re-type the key and Save."
+                        )},
+                        status_code=400,
+                    )
                 config["api_keys"][key] = val
                 os.environ[key] = val
             else:

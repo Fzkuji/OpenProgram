@@ -14,6 +14,7 @@ import { CliInfo, SetupHint } from "./setup-hint";
 import styles from "../settings-page.module.css";
 import type { Model, Provider } from "./types";
 import { useTranslation } from "@/lib/i18n";
+import { showToast } from "@/lib/toast";
 
 /** Right-pane detail view for one selected provider. Header + enable
  *  toggle, then a stack of sections: setup hint (optional), API key
@@ -59,6 +60,62 @@ export function Detail({
     reloadModels();
   }, [reloadModels]);
 
+  // After a NEW key is saved: auto connectivity-check, and on success
+  // auto-fetch the model list — so the user doesn't have to click Check
+  // then Fetch by hand. Progress / result surface as top toasts.
+  const autoCheckAndFetch = useCallback(async () => {
+    const pid = encodeURIComponent(provider.id);
+    showToast(text("Checking connectivity…", "正在检查连接…"));
+    try {
+      const cr = await fetch(`/api/providers/${pid}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const cd = await cr.json();
+      if (!cd.ok) {
+        showToast(
+          text("Connectivity check failed: ", "连接检查失败：") +
+            (cd.error || "unknown"),
+          { tone: "error", duration: 6000 },
+        );
+        return;
+      }
+    } catch (e) {
+      showToast(
+        text("Connectivity check failed: ", "连接检查失败：") + (e as Error).message,
+        { tone: "error", duration: 6000 },
+      );
+      return;
+    }
+    showToast(text("Connected — fetching models…", "连接成功 — 正在获取模型…"));
+    try {
+      const fr = await fetch(`/api/providers/${pid}/fetch-models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const fd = await fr.json();
+      if (fd.error) {
+        showToast(
+          text("Fetch models failed: ", "获取模型失败：") + fd.error,
+          { tone: "error", duration: 6000 },
+        );
+        return;
+      }
+      showToast(
+        text(`Connected — fetched ${fd.fetched ?? 0} models`, `连接成功 — 已获取 ${fd.fetched ?? 0} 个模型`),
+      );
+      reloadModels();
+      onChanged();
+    } catch (e) {
+      showToast(
+        text("Fetch models failed: ", "获取模型失败：") + (e as Error).message,
+        { tone: "error", duration: 6000 },
+      );
+    }
+  }, [provider.id, reloadModels, onChanged, text]);
+
   return (
     <>
       <div className={styles.detailHeader}>
@@ -81,7 +138,12 @@ export function Detail({
       )}
 
       {provider.api_key_env && (
-        <ApiKey envVar={provider.api_key_env} configured={!!provider.configured} onChanged={onChanged} />
+        <ApiKey
+          envVar={provider.api_key_env}
+          configured={!!provider.configured}
+          onChanged={onChanged}
+          onSaved={autoCheckAndFetch}
+        />
       )}
       {provider.api_key_env && (
         <BaseUrl provider={provider} onChanged={onChanged} />
