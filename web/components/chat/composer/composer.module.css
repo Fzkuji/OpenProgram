@@ -806,28 +806,3 @@
 /* "Select a model first" hint — shown in the bottom-left controls slot
    (where the effort pill normally lives) when no chat model is picked.
    Muted/warning tone so it reads as guidance, not an error. */
-.noModelHint {
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 8px;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--accent-yellow, #d4a017);
-  opacity: 0.9;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  /* Reset native <button> chrome — it's a text hint that happens to be
-     clickable (opens the top-bar model picker). */
-  border: 0;
-  background: transparent;
-  border-radius: 6px;
-  font-family: inherit;
-  transition: opacity 0.15s ease, background 0.15s ease;
-}
-
-.noModelHint:hover {
-  opacity: 1;
-  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
-}

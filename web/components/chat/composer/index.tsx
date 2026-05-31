@@ -25,6 +25,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
 import { api } from "@/lib/api";
+import { showToast } from "@/lib/toast";
 import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";
@@ -294,13 +295,6 @@ export function Composer() {
   // The effort picker only appears once a chat model is actually
   // selected at the top; with no model picked it stays hidden.
   const chatModel = useSessionStore((s) => s.agentSettings?.chat?.model);
-  // ``providerInfo`` is the SAME signal the top-bar model badge shows
-  // (set from the ``provider_info`` WS message). ``agentSettings.chat
-  // .model`` above comes from legacy providers.js and is often empty
-  // even when a model IS active — so the "select a model" hint must key
-  // off providerInfo, not chatModel, or it shows a false warning mid-run.
-  const providerInfo = useSessionStore((s) => s.providerInfo);
-  const hasModel = !!(providerInfo && providerInfo.model);
   // Authoritative "is there a model to run at all" signal — the SAME
   // enabled-models list the top-bar picker reads. ``providerInfo.model``
   // is NOT enough: it reflects whatever model the last runtime used
@@ -313,12 +307,19 @@ export function Composer() {
     queryFn: api.listEnabledModels,
   });
   const noEnabledModels = (enabledModels ?? []).length === 0;
-  // Block a send/run when nothing is enabled and surface the reason at
-  // the TOP (the agent badge opens its "No enabled models → Settings"
-  // popover) instead of silently routing the turn to a pinned model.
+  // Block a send/run when nothing is enabled and explain why with a
+  // transient top toast — only fired on the send/run ATTEMPT, never a
+  // persistent badge/hint — instead of silently routing the turn to a
+  // pinned default.
   const promptNeedModel = useCallback(() => {
-    window.dispatchEvent(new Event("openprogram:need-model"));
-  }, []);
+    showToast(
+      text(
+        "No model configured — enable one in Settings before sending.",
+        "还没配置模型 — 发送前请先在设置中启用一个模型。",
+      ),
+      "warn",
+    );
+  }, [text]);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const {
     tools: toolsEnabled,
@@ -1150,6 +1151,10 @@ export function Composer() {
             {/* Effort picker only shows when a chat model is selected at
                 the top; hidden otherwise. The `thinking` value still flows
                 to submit (uses the model default). */}
+            {/* Effort picker only when a chat model is selected. No
+                persistent "no model" indicator here by design — a
+                blocked send/run fires a transient top toast instead
+                (see ``promptNeedModel``). */}
             {chatModel && !noEnabledModels ? (
               <ThinkingEffortPill
                 ref={thinkingTriggerRef}
@@ -1162,25 +1167,6 @@ export function Composer() {
                 value={thinking}
                 onChange={setThinking}
               />
-            ) : !fnFormActive && noEnabledModels && !isRunning ? (
-              // Nothing enabled and not mid-run: surface a hint instead
-              // of nothing. Sending with no enabled model is blocked
-              // (submit/submitFnForm bail + open the top picker), so tell
-              // the user up front. Clicking it opens the picker too.
-              // Keyed on the enabled-models list (not providerInfo) so it
-              // reliably shows after every provider is disabled. Gated on
-              // ``!isRunning`` so it never shows while a turn is active.
-              <button
-                type="button"
-                className={styles.noModelHint}
-                onClick={promptNeedModel}
-                title={text(
-                  "No model enabled — enable one in Settings before sending.",
-                  "未启用任何模型 — 发送前请先在设置中启用一个。",
-                )}
-              >
-                {text("⚠ No model selected", "⚠ 未选择模型")}
-              </button>
             ) : null}
           </div>
           <div className={styles.inputBottomRight}>
