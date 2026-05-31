@@ -23,6 +23,7 @@ server set survives worker restarts.
 """
 from __future__ import annotations
 
+import tempfile
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -404,7 +405,9 @@ def register(app: FastAPI) -> None:
                     "name": "filesystem",
                     "description": "Read/write files in a sandboxed root directory.",
                     "type": "local",
-                    "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                    # tempfile.gettempdir() → %TEMP% on Windows, /tmp on
+                    # POSIX (literal "/tmp" doesn't exist on Windows).
+                    "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", tempfile.gettempdir()],
                 },
                 {
                     "name": "git",

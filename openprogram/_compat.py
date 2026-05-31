@@ -166,6 +166,39 @@ except ImportError:  # Windows
                 _time.sleep(_RETRY_INTERVAL)
 
 
+def node_tool_cmd(argv: list[str]) -> list[str]:
+    """Make a node-ecosystem command (``npm`` / ``npx`` / ``agent-browser``
+    / any project ``.cmd`` bin) runnable via ``subprocess(..., shell=False)``
+    on every OS.
+
+    The Windows problem: npm/npx/etc. ship as ``*.cmd`` batch shims, and
+    ``CreateProcess`` (what ``subprocess`` uses when ``shell=False``)
+    cannot execute a ``.cmd``/``.bat`` even by absolute path — it raises
+    ``OSError [WinError 193] "%1 is not a valid Win32 application"``.
+    Resolving the bare name with ``shutil.which`` alone is NOT enough.
+
+    So on Windows we resolve ``argv[0]`` and, if it's a ``.cmd``/``.bat``,
+    route it through ``cmd.exe /c``; a real ``.exe`` (e.g. ``node``) is
+    passed through untouched. On POSIX the argv is returned unchanged
+    (with a best-effort ``shutil.which`` resolve of ``argv[0]``), so the
+    behaviour on macOS/Linux is identical to ``subprocess`` with the bare
+    name.
+
+    Pass the result straight to ``subprocess.run/Popen(..., shell=False)``.
+    """
+    import shutil
+    if not argv:
+        return argv
+    exe, rest = argv[0], list(argv[1:])
+    resolved = shutil.which(exe) or exe
+    if _sys.platform != "win32":
+        return [resolved, *rest]
+    if resolved.lower().endswith((".cmd", ".bat")):
+        comspec = _os.environ.get("COMSPEC", "cmd.exe")
+        return [comspec, "/c", resolved, *rest]
+    return [resolved, *rest]
+
+
 _PROMPT_TOOLKIT_USABLE_CACHE: bool | None = None
 
 
@@ -211,5 +244,6 @@ __all__ = [
     "LOCK_UN",
     "flock",
     "kill_process_tree",
+    "node_tool_cmd",
     "prompt_toolkit_usable",
 ]

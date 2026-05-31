@@ -57,8 +57,10 @@ def _install_npm(spec: str) -> dict[str, Any]:
     pj = Path(prefix) / "package.json"
     if not pj.exists():
         pj.write_text(json.dumps({"name": "openprogram-plugins", "private": True}), encoding="utf-8")
-    cmd = ["npm", "install", "--prefix", prefix, spec]
-    ok, log = _run(cmd)
+    # node_tool_cmd routes npm.cmd through cmd.exe on Windows (a .cmd
+    # shim can't be exec'd by CreateProcess with shell=False).
+    from openprogram._compat import node_tool_cmd
+    ok, log = _run(node_tool_cmd(["npm", "install", "--prefix", prefix, spec]))
     return {"success": ok, "log": log}
 
 
@@ -123,7 +125,8 @@ def uninstall(name: str) -> dict[str, Any]:
     if src == "npm":
         if not shutil.which("npm"):
             return {"success": False, "log": "npm not found"}
-        ok, log = _run(["npm", "uninstall", "--prefix", str(paths.npm_root()), name])
+        from openprogram._compat import node_tool_cmd
+        ok, log = _run(node_tool_cmd(["npm", "uninstall", "--prefix", str(paths.npm_root()), name]))
         return {"success": ok, "log": log}
     if src == "path":
         d = Path(p.manifest.root)

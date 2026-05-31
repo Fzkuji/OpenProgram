@@ -110,11 +110,13 @@ class FileTokenStorage(TokenStorage):
             pass
         # ``os.O_NOFOLLOW`` blocks symlink attacks against the temp
         # path. mode=0o600 sets owner-only read/write at creation time.
-        fd = os.open(
-            tmp,
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-            0o600,
-        )
+        # O_NOFOLLOW is POSIX-only — it doesn't exist on Windows CPython,
+        # so reference it via getattr(..., 0) or this whole write crashes
+        # with AttributeError before the file is even opened (breaking
+        # every OAuth MCP token write on Windows).
+        _open_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        _open_flags |= getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp, _open_flags, 0o600)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)

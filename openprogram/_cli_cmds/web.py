@@ -70,8 +70,7 @@ def _start_frontend() -> subprocess.Popen | None:
         return None
 
     import shutil
-    npm = shutil.which("npm")
-    if not npm:
+    if not shutil.which("npm"):
         print("npm not found on PATH — start the frontend manually: "
               "cd web && npm run dev")
         return None
@@ -85,7 +84,10 @@ def _start_frontend() -> subprocess.Popen | None:
     else:
         kwargs["start_new_session"] = True
 
-    proc = subprocess.Popen([npm, "run", "dev"], **kwargs)
+    # node_tool_cmd routes npm.cmd through cmd.exe on Windows — a bare /
+    # resolved .cmd can't be exec'd by CreateProcess (WinError 193).
+    from openprogram._compat import node_tool_cmd
+    proc = subprocess.Popen(node_tool_cmd(["npm", "run", "dev"]), **kwargs)
     print(f"Starting frontend (npm run dev) at http://localhost:{_FRONTEND_PORT} …")
     return proc
 

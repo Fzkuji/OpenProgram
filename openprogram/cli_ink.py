@@ -20,6 +20,8 @@ import sys
 import time
 from pathlib import Path
 
+from openprogram._compat import node_tool_cmd
+
 
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -119,7 +121,7 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
             "  → npm install\n"
         )
         rc = subprocess.run(
-            [npm, "install", "--no-audit", "--no-fund", "--loglevel=error"],
+            node_tool_cmd([npm, "install", "--no-audit", "--no-fund", "--loglevel=error"]),
             cwd=str(cli_dir),
             stdout=stdout_target,
             stderr=stderr_target,
@@ -135,7 +137,7 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
 
     _tty_write("  → npm run build\n")
     rc = subprocess.run(
-        [npm, "run", "build"],
+        node_tool_cmd([npm, "run", "build"]),
         cwd=str(cli_dir),
         stdout=stdout_target,
         stderr=stderr_target,

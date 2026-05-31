@@ -294,7 +294,10 @@ def _atomic_write(path: str, data: dict) -> None:
     dirpath = os.path.dirname(path)
     fd, tmp = tempfile.mkstemp(dir=dirpath, prefix=".claude_models.", suffix=".json.tmp")
     try:
-        with os.fdopen(fd, "w") as f:
+        # encoding="utf-8": ensure_ascii=False can emit non-Latin-1 chars
+        # (CJK, em-dash) in model labels; without this Windows uses cp1252
+        # and corrupts / raises on the registry that's read back as utf-8.
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.write("\n")
         os.replace(tmp, path)
