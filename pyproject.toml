@@ -8,7 +8,7 @@ version = "0.4.0"
 description = "The Open Source Agent Harness Framework. Any LLM. Any platform. Agentic Programming Paradigm."
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {text = "AGPL-3.0-or-later"}
 authors = [
     {name = "Fzkuji"},
 ]
@@ -17,7 +17,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",

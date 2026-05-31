@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.4.0"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
-  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
   <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
@@ -266,11 +266,13 @@ each under its own license. Enormous thanks to their authors.
   providers call the raw HTTP APIs to keep SDK dependencies optional.
 
 Individual tool files call out their direct inspirations in file-level
-docstrings where the lineage is more specific.
+docstrings where the lineage is more specific. These MIT-licensed components
+keep their original MIT terms; the combined work is distributed under
+AGPL-3.0.
 
 ## Citation
 
-Using OpenProgram in your work, or building on the code? Please cite it — and the license requires that the copyright + permission notice travel with any copy or derivative (see [License](#license)).
+Using OpenProgram in your work, or building on the code? Please cite it — and under the AGPL, any derivative you **distribute or run as a network service** must itself be open-sourced under the AGPL, with attribution preserved (see [License](#license)).
 
 ```bibtex
 @software{openprogram2026,
@@ -283,4 +285,4 @@ Using OpenProgram in your work, or building on the code? Please cite it — and 
 
 ## License
 
-[MIT](LICENSE) © Fzkuji. Free to use, modify, and distribute — provided the copyright and license notice stay attached.
+[AGPL-3.0](LICENSE) © 2026 Fzkuji. Free to use, study, modify, and share — but any derivative you distribute **or run as a network service** must also be released under the AGPL, with attribution preserved.

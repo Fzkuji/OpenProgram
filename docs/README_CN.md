@@ -5,7 +5,7 @@
 <p align="center">开源 Agent Harness 框架。支持任意 LLM 和平台。Agentic Programming 范式。</p>
 
 <p align="center">
-  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Fzkuji/OpenProgram?style=flat-square"></a>
@@ -279,4 +279,4 @@ tests/                               # pytest 测试套件
 
 ## 许可证
 
-MIT
+[AGPL-3.0](../LICENSE) © 2026 Fzkuji。可自由使用、研究、修改、分发——但任何**分发或作为联网服务运行**的衍生作品也必须以 AGPL 开源,并保留署名。
