@@ -459,7 +459,10 @@ export function Sidebar() {
           // major groups (Favorites / Recents) sat ~16px lower than the
           // date sub-buckets — visibly inconsistent + too much empty
           // space above the section.
-          className="shrink-0 px-[8px]"
+          // pb-[5px]: a small extra gap BELOW Favorites so the function
+          // area reads as a distinct block from the conversation groups
+          // that follow (only present when there are favourites).
+          className="shrink-0 px-[8px] pb-[5px]"
         >
           <div
             id="favList"
