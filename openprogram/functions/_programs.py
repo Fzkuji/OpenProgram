@@ -184,10 +184,7 @@ KNOWN_PROGRAMS: list[Program] = [
         repo=f"{_GH}/Wiki-Agent-Harness",
         summary="Personal wiki agent — ingest sessions and organise a knowledge vault.",
         heavy=False,
-        # NOTE: repo not yet public (404). Catalogued so it loads once
-        # cloned in, but excluded from auto-install so nothing fails
-        # trying to clone it.
-        public=False,
+        public=True,
     ),
 ]
 
