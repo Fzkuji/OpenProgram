@@ -23,6 +23,7 @@ import {
 } from "@/lib/session-store";
 
 import { agentInitial, useAgentProfile } from "@/lib/agent-style";
+import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 
 import { AssistantBubble } from "./assistant-bubble";
@@ -135,8 +136,16 @@ function useChatAreaStick(newTurnSeed: number) {
  */
 function PendingReplyIndicator() {
   const profile = useAgentProfile();
+  const { text } = useTranslation();
   return (
     <div className="message assistant pending-standalone">
+      {/* Single row: avatar + name + breathing dot + "thinking…" all
+          inline. Earlier this was a full bubble (header row, then a
+          separate body row below the avatar) which (a) pushed the
+          indicator under the avatar and (b) repeated the agent name
+          ("Agent" in the header AND "Agent is thinking"). Keeping it on
+          the header row removes both — the name shows once, the status
+          sits next to it. */}
       <div className="message-header">
         <Avatar
           className="message-avatar bot-avatar"
@@ -152,17 +161,12 @@ function PendingReplyIndicator() {
           }
         />
         <div className="message-sender">{profile.name}</div>
-      </div>
-      {/* Only ``pending-body`` here — NOT ``chat-stream-body``. The
-          latter is ``display:flex; flex-direction:column`` and, being
-          later in the stylesheet, wins the ``display`` cascade, so
-          ``pending-body``'s ``align-items:center`` ends up centering
-          the dot + label HORIZONTALLY. The in-bubble TypingIndicator
-          uses ``pending-body`` alone and renders left-aligned; match
-          it so the standalone "is thinking…" row isn't centered. */}
-      <div className="pending-body">
-        <span className="indicator-dot pulse-scale" aria-hidden="true" />
-        <span className="pending-label">{`${profile.name} is thinking…`}</span>
+        <span
+          className="indicator-dot pulse-scale"
+          aria-hidden="true"
+          style={{ marginLeft: 8 }}
+        />
+        <span className="pending-label">{text("thinking…", "思考中…")}</span>
       </div>
     </div>
   );
