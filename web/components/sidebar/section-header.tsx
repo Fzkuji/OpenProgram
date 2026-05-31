@@ -90,13 +90,14 @@ export function SectionHeader({
         </span>
         {collapsible ? (
           // Shared animated chevron. Centred on the label (items-center)
-          // with a 1px upward nudge so it sits level with the text's
+          // with a 1px downward nudge so it sits level with the text's
           // cap-band, hidden until section hover, brightens with the label,
-          // rotates to › when collapsed.
+          // rotates to › when collapsed. (Used to be 2px, which read a
+          // touch low next to the 14px label.)
           <ChevronDownIcon
             ref={chevronRef}
             size={16}
-            className="relative top-[2px] shrink-0 text-[var(--text-secondary)] opacity-0
+            className="relative top-[1px] shrink-0 text-[var(--text-secondary)] opacity-0
               transition-[opacity,color,transform] duration-200 ease-out
               group-hover/hdr:opacity-100 group-hover/hdr:text-[var(--text-primary)]"
             style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
