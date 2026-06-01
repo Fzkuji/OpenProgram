@@ -87,13 +87,22 @@
   <p class="sub">OpenProgram · 设计文档</p>
   <h1>报错与超时机制（现状梳理）</h1>
   <p class="small">范围：一次 <code>runtime.exec()</code> 从发起到失败/超时的完整路径——重试、退避、连接/流超时、错误分类、外层 watchdog。
-  目的：<b>先把现状写清楚再优化</b>。优化项在文末单列，标注为「未实施」。配套：<code>docs/design/llm-fault-tolerance.md</code>（跨框架对比）、<code>error-retry.md</code>。</p>
+  目的：<b>先把现状写清楚再优化</b>。优化项在文末（§8）单列并标注实现状态与对应 commit。配套：<code>docs/design/llm-fault-tolerance.md</code>（跨框架对比）、<code>error-retry.md</code>。</p>
 
   <div class="lead">
     <p style="margin-top:0"><b>一句话结论。</b> provider 层的连接/流超时基础设施是<span class="pill p-ok">成熟的</span>——mid-stream stall（连上后不再吐 token）已被 SSE idle/data-stall/total 预算主动限住。真正会导致「卡很久没有新行」的是
     <span class="pill p-bad">三层重试循环相乘</span> +
     <span class="pill p-bad">deadline 不穿透</span> +
     <span class="pill p-bad">外层 watchdog 被 except 吞掉</span>。三者叠加，一次持续的 <code>ConnectError</code> 能跑数百秒到上千秒。</p>
+  </div>
+
+  <div class="callout co-ok" style="margin-top:16px">
+    <b>实现状态 — 已落地（2026-06-01）。</b> §8 的 #1–#4（框架）与 #5（GUI harness）已实施并通过验证；#6 评估后暂缓（见该节）。下文 §2–§7 描述的是<u>修复前</u>的机制（保留以解释问题根因）；§5/§6 标了「已修复」，§8 标了每项状态与对应符号 / env。
+    <div style="margin-top:10px;font-family:var(--mono);font-size:12px;line-height:1.8">
+      <span class="pill p-ok">框架</span> OpenProgram <code>4e64ac95</code> — deadline 穿透 + <code>ExecInterrupt</code> + 不跨层重试 + <code>OPENPROGRAM_EXEC_TIMEOUT_S</code><br>
+      <span class="pill p-ok">harness</span> GUI-Agent-Harness <code>74bfd06</code> — <code>SampleTimeoutError(ExecInterrupt)</code> + <code>--exec-timeout-s</code> + 按 <code>LLMError.reason</code> 分类 + auth 中止 + <code>reraise_if_fatal</code><br>
+      <span class="small">文档更新提交于本仓后续 commit；上面两个是<b>实现</b> commit。行号仍为撰写时快照。</span>
+    </div>
   </div>
 
   <!-- ============================================================= -->
@@ -241,6 +250,8 @@ _deadline = start + timeout_s   <span class="cmt"># timeout_s=None ⇒ _deadline
 
   <div class="callout co-bad"><b>双层重复重试（设计味道）。</b> <code>ConnectError</code> 在内层已经被判 <code>retryable=True</code> 并重试满 3 次、抛出 <code>ProviderStreamError(retryable=True)</code>；交到 exec 后，<code>_is_permanent_error</code> 不命中 → exec <b>又</b>用全新的 6× 预算重试同一个传输错误。<u>同一个传输错误被两层各自重试</u>，这才是把 ~90s 的问题放大成 600s+ 的根本。</div>
 
+  <div class="callout co-ok"><b>已修复 <code>4e64ac95</code>。</b> exec 把单一 deadline 穿透进 <code>stream_retry</code>（每 attempt 前 + 退避前都检查），且 <code>stream_retry</code> 耗尽预算时给异常打 <code>transport_exhausted</code> 标志，exec 见到就<u>不再用新预算重试</u> —— 18 次（3×6）塌回内层 3 次。<code>_parse_sse_stream</code> 的 SSE 等待也 clamp 到 <code>min(budget, 剩余 deadline)</code>，单条流不再越过预算。</div>
+
   <!-- ============================================================= -->
   <h2><span class="n">6</span> watchdog 被吞掉的时序</h2>
   <p>ScreenSpot 用 <code>signal.alarm</code> 想在 sample 总预算到点时硬停，但它抛的异常正好撞进上面两层的 <code>except Exception</code>。</p>
@@ -253,6 +264,8 @@ _deadline = start + timeout_s   <span class="cmt"># timeout_s=None ⇒ _deadline
     <div class="row bad"><div class="ix">6</div><div class="bd"><code>signal.alarm</code> 是一次性的，已消耗；外层 <code>finally: alarm(0)</code> 要等 run_one() 返回才执行——但它正卡着。<b>此后没有任何硬保护，继续跑。</b></div></div>
   </div>
   <div class="callout co-warn"><b>web / worker 语境更糟。</b> 当存在运行中的 event loop 时，<code>_run_async</code> 把 <code>asyncio.run</code> offload 到<b>线程池 worker 线程</b>（runtime.py:1260）。Python 只向主线程投递信号，所以 <code>signal.alarm</code> 在这种语境里<u>根本落不到</u>正在跑的 <code>_call</code> 上——软 watchdog 完全无效。</div>
+
+  <div class="callout co-ok"><b>已修复 框架 <code>4e64ac95</code> + harness <code>74bfd06</code>。</b> <code>SampleTimeoutError</code> 改继承 <code>ExecInterrupt(BaseException)</code>，两层 <code>except Exception</code> 都吞不住它 —— 它穿过 OpenProgram 重试层、由 <code>run_one()</code> 在 sample 边界接住记 <code>sample_timeout</code>（步骤 4/5 不再发生）。worker 线程语境里信号本就落不到，改由 <code>--exec-timeout-s</code> → <code>OPENPROGRAM_EXEC_TIMEOUT_S</code> 的 call-level deadline 兜底（不依赖信号），且 <code>_run_async</code> 现在把 deadline contextvar 带进 worker 线程。</div>
 
   <!-- ============================================================= -->
   <h2><span class="n">7</span> 错误分类与 retryable 判定</h2>
@@ -283,17 +296,17 @@ _deadline = start + timeout_s   <span class="cmt"># timeout_s=None ⇒ _deadline
   <p class="small">注意：<code>override_reason=TIMEOUT</code> 的 deadline 命中一律 <code>retryable=False</code>（<span class="cite">runtime.py:170–176</span>）；其余「预算耗尽但类型本可重试」保持 <code>retryable=True</code>，含义是「换个新预算可再试」，不是「立刻重试」。</p>
 
   <!-- ============================================================= -->
-  <h2><span class="n">8</span> 待优化项（未实施）</h2>
-  <p class="small">下列均<b>尚未改动代码</b>，按价值排序。两条线并行、职责不同：框架侧 1–4 让<u>任何</u>调用方（channels worker、web turn、benchmark）都不被嵌套重试拖死；benchmark 侧 5 负责 sample-level 总预算与计分隔离。子进程不替代框架修复，框架修复也不免除 runner 的 watchdog。</p>
+  <h2><span class="n">8</span> 优化项（实现状态）</h2>
+  <p class="small">两条线并行、职责不同：框架侧 #1–#4 让<u>任何</u>调用方（channels worker、web turn、benchmark）都不被嵌套重试拖死；harness 侧 #5 负责 sample-level 计分与可靠 watchdog。子进程不替代框架修复，框架修复也不免除 runner 的 watchdog。<b>#1–#4 已在框架 <code>4e64ac95</code> 落地，#5 在 harness <code>74bfd06</code> 落地（子进程隔离暂缓）；#6 暂缓。</b></p>
   <table>
-    <thead><tr><th class="c">#</th><th>修复点</th><th>为什么</th><th class="c">价值</th></tr></thead>
+    <thead><tr><th class="c">#</th><th>修复点</th><th>为什么</th><th class="c">价值</th><th>状态</th></tr></thead>
     <tbody>
-      <tr><td class="c">1</td><td>把单一 deadline 从 <code>exec</code> 穿透到 <code>_call</code> → codex <code>_run</code> → <code>stream_retry</code>（SSE wait 取 <code>min(budget, 剩余)</code>）</td><td>现在 <code>exec(timeout_s)</code> 只管中层、且要调用方传；内层 stream_retry + SSE 预算都不知道它。穿透后才是真 end-to-end，溢出 ≤ 一次 connect。</td><td class="c"><span class="pill p-bad">最高</span></td></tr>
-      <tr><td class="c">2</td><td>传输层错误不跨层重复重试</td><td>stream_retry 已耗尽 3 次的 <code>ProviderStreamError</code> 到 exec 又被重试 6 次 = 18 次。exec 应识别「provider 自己的传输预算已耗尽」，几乎不再重试，或两层统一。</td><td class="c"><span class="pill p-bad">高</span></td></tr>
-      <tr><td class="c">3</td><td>引入 <code>ExecInterrupt(BaseException)</code> 硬中断契约</td><td><code>exec</code>(:780) 与 <code>stream_retry</code>(:238) <b>都</b>有 <code>except Exception</code>；<code>BaseException</code> 同时穿透两层，外部 watchdog 一抛即退、不被任一层吞。benchmark 把 <code>SampleTimeoutError</code> 改继承它即可一行修复。</td><td class="c"><span class="pill p-bad">高</span></td></tr>
-      <tr><td class="c">4</td><td><code>exec(timeout_s)</code> 给默认值 / 入口必传</td><td>现默认 <code>None</code>=无界。dispatcher / worker / benchmark 任一未 arm 的调用方都裸奔。</td><td class="c"><span class="pill p-warn">中</span></td></tr>
-      <tr><td class="c">5</td><td>ScreenSpot：sample 子进程隔离 + 按 <code>LLMError.reason</code> 计分</td><td>sample-level 总预算只有 runner 知道；parent 到点直接 kill child，是最硬的边界。auth 直接停 run、timeout 单列、传输失败单列，不污染 wrong_format。</td><td class="c"><span class="pill p-warn">benchmark 侧</span></td></tr>
-      <tr><td class="c">6</td><td>同步 <code>_call</code> 线程 future 硬上限（兜底）</td><td>仅防「单次 <code>_call</code> 真无限挂」。SSE 预算已限住 stall，故降级为 belt-and-suspenders。<b>前提：配 read-timeout + 隔离 session/store + 限 timed-out worker 数</b>，否则只是把前台卡住变成后台线程泄漏。</td><td class="c"><span class="pill p-ok">兜底</span></td></tr>
+      <tr><td class="c">1</td><td>把单一 deadline 从 <code>exec</code> 穿透到 <code>_call</code> → codex <code>_run</code> → <code>stream_retry</code>（SSE wait 取 <code>min(budget, 剩余)</code>）</td><td>现在 <code>exec(timeout_s)</code> 只管中层、且要调用方传；内层 stream_retry + SSE 预算都不知道它。穿透后才是真 end-to-end，溢出 ≤ 一次 connect。</td><td class="c"><span class="pill p-bad">最高</span></td><td><span class="pill p-ok">已实施 <code>4e64ac95</code></span><br><span class="small">新 <code>providers/utils/deadline.py</code>（ContextVar）；exec/async_exec set+reset；stream_retry & codex 读取</span></td></tr>
+      <tr><td class="c">2</td><td>传输层错误不跨层重复重试</td><td>stream_retry 已耗尽 3 次的 <code>ProviderStreamError</code> 到 exec 又被重试 6 次 = 18 次。exec 应识别「provider 自己的传输预算已耗尽」，几乎不再重试。</td><td class="c"><span class="pill p-bad">高</span></td><td><span class="pill p-ok">已实施 <code>4e64ac95</code></span><br><span class="small"><code>stream_retry</code> 打 <code>transport_exhausted</code> 标志；exec 见到即不再重试（reason 仍诚实 TRANSPORT/retryable）</span></td></tr>
+      <tr><td class="c">3</td><td>引入 <code>ExecInterrupt(BaseException)</code> 硬中断契约</td><td><code>exec</code> 与 <code>stream_retry</code> <b>都</b>有 <code>except Exception</code>；<code>BaseException</code> 同时穿透两层，外部 watchdog 一抛即退。</td><td class="c"><span class="pill p-bad">高</span></td><td><span class="pill p-ok">已实施 <code>4e64ac95</code></span><br><span class="small"><code>errors.ExecInterrupt</code>；两层显式 <code>except ExecInterrupt: raise</code></span></td></tr>
+      <tr><td class="c">4</td><td><code>exec(timeout_s)</code> 给默认值 / 入口必传</td><td>现默认 <code>None</code>=无界。dispatcher / worker / benchmark 任一未 arm 的调用方都裸奔。</td><td class="c"><span class="pill p-warn">中</span></td><td><span class="pill p-ok">已实施 <code>4e64ac95</code></span><br><span class="small"><code>OPENPROGRAM_EXEC_TIMEOUT_S</code> 进程级默认；默认 0=无界（opt-in，不改既有行为）</span></td></tr>
+      <tr><td class="c">5</td><td>ScreenSpot：可靠 watchdog + 按 <code>LLMError.reason</code> 计分（+ 子进程隔离）</td><td>sample-level 总预算只有 runner 知道。auth 直接停 run、timeout 单列、传输失败单列，不污染 wrong_format。</td><td class="c"><span class="pill p-warn">harness 侧</span></td><td><span class="pill p-warn">部分 <code>74bfd06</code></span><br><span class="small"><code>SampleTimeoutError(ExecInterrupt)</code>、<code>--exec-timeout-s</code>、reason 分类 + <code>provider_auth</code>、auth 中止 run、<code>reraise_if_fatal</code> 已做；<b>子进程硬隔离暂缓</b>（watchdog 已可靠 + 有 call-level deadline，优先级降低）</span></td></tr>
+      <tr><td class="c">6</td><td>同步 <code>_call</code> 线程 future 硬上限（兜底）</td><td>仅防「单次 <code>_call</code> 真无限挂」。SSE 预算已限住 stall，故降级为 belt-and-suspenders。</td><td class="c"><span class="pill p-ok">兜底</span></td><td><span class="pill p-bad">暂缓</span><br><span class="small">副作用见下；#1 已让 stall/connect 有界，单独 _call 无限挂的窗口已很小</span></td></tr>
     </tbody>
   </table>
   <div class="callout co-warn"><b>关于线程 future 兜底的副作用（#6）。</b> Python 不能安全 kill 线程：超时后 caller 返回，但那个 <code>_call</code> 线程仍在后台跑，<u>直到 socket 自己报错才回收</u>；其间它可能仍去 append model-call node / 写 store/DAG，造成状态污染。所以 #6 只能当兜底，且必须依赖 #1 的 read-timeout 让泄漏窗口有界。理想路径是推动 provider 暴露 async，exec 主走 <code>asyncio.wait_for</code>（能真正取消到 await 点，无泄漏线程），同步线程方案仅作无 async 路径时的退路。</div>
