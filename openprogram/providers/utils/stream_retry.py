@@ -45,6 +45,9 @@ import random
 import re
 from typing import Any, Awaitable, Callable, Optional
 
+from openprogram.providers.utils.errors import ExecInterrupt
+from openprogram.providers.utils.deadline import expired as _dl_expired, remaining as _dl_remaining
+
 
 # Env-tunable so heavy-reasoning deployments can extend the per-stream
 # retry budget without code changes.
@@ -226,11 +229,34 @@ async def retry_stream(
     caller is expected to wrap this via ``ev_stream.fail(exc)`` so
     ``runtime.exec()`` sees it.
     """
+    def _mark_exhausted(exc: BaseException) -> BaseException:
+        # Tell runtime.exec this transport error already burned the
+        # provider's OWN retry budget, so exec must not re-retry it with a
+        # fresh max_retries budget — that's the max_attempts × max_retries
+        # multiplication. See docs/design/error-and-timeout-mechanism.html §5.
+        try:
+            exc.transport_exhausted = True  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        return exc
+
     last_exc: Optional[BaseException] = None
     for attempt in range(max_attempts):
+        # Caller's end-to-end deadline (published by runtime.exec). Don't
+        # even start another attempt past it — the inner loop being blind
+        # to the outer budget is the core defect this closes.
+        if _dl_expired():
+            if last_exc is None:
+                last_exc = ProviderStreamError(
+                    f"deadline exceeded before {label} attempt {attempt + 1}",
+                    retryable=False, provider=provider,
+                )
+            raise _mark_exhausted(last_exc)
         try:
             await attempt_fn()
             return
+        except ExecInterrupt:
+            raise  # caller hard-stop — never retry, never swallow
         except ProviderStreamError as exc:
             last_exc = exc
             if exc.provider is None and provider is not None:
@@ -251,10 +277,20 @@ async def retry_stream(
         last_attempt = attempt >= max_attempts - 1
         if not retryable or last_attempt:
             assert last_exc is not None
+            # Budget exhausted on a retryable transport error → flag it so
+            # exec doesn't multiply the retries.
+            if retryable and last_attempt:
+                _mark_exhausted(last_exc)
             raise last_exc
 
         retry_after = getattr(last_exc, "retry_after_s", None)
         sleep_s = stream_backoff_seconds(attempt, retry_after)
+        # Don't sleep past the caller's deadline — if the backoff alone
+        # would cross it, give up now (flagged exhausted) instead of
+        # burning the remaining budget on a sleep we can't use.
+        rem = _dl_remaining()
+        if rem is not None and rem <= sleep_s:
+            raise _mark_exhausted(last_exc)
         print(
             f"[{label} stream retry] attempt {attempt + 1}/{max_attempts - 1} "
             f"after {sleep_s:.1f}s — {last_exc}",

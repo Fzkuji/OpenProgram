@@ -28,6 +28,32 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 
+class ExecInterrupt(BaseException):
+    """Hard-stop signal that bypasses every ``except Exception`` retry layer.
+
+    Both ``runtime.exec`` (and ``async_exec``) and
+    ``stream_retry.retry_stream`` wrap their per-attempt body in
+    ``except Exception`` so a transport hiccup becomes a retry. That is
+    exactly what must NOT happen to a caller's hard stop — a sample-level
+    watchdog, a turn cancel, a deadline kill. ``TimeoutError`` /
+    ``RuntimeError`` subclass ``Exception`` and get swallowed; a
+    ``BaseException`` does not.
+
+    So a caller that needs to abort an in-flight ``exec()`` / stream
+    *now* — regardless of how many retry layers are between it and the
+    network — raises this (e.g. from a ``signal`` handler or an
+    ``asyncio`` cancel shim). It propagates cleanly out of both nested
+    loops because neither ``except Exception`` catches it, and the loops
+    additionally re-raise it explicitly for self-documentation.
+
+    Contract: only the OUTERMOST owner of a call (the dispatcher, the
+    benchmark runner) should raise this; provider/transport code never
+    does. Sits beside ``KeyboardInterrupt`` / ``SystemExit`` /
+    ``asyncio.CancelledError`` in the "not an error, a control signal"
+    category.
+    """
+
+
 class ErrorReason(str, enum.Enum):
     """Categorical reason for an LLM call failure.
 
@@ -376,6 +402,7 @@ class RetryInfo:
 
 __all__ = [
     "ErrorReason",
+    "ExecInterrupt",
     "LLMError",
     "RetryInfo",
     "classify_error",

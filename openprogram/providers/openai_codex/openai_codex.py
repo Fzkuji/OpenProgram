@@ -394,6 +394,9 @@ from openprogram.providers.utils.timeouts import (  # noqa: E402
     STREAM_DATA_STALL_TIMEOUT_S as SSE_DATA_STALL_TIMEOUT_S,
     STREAM_TOTAL_TIMEOUT_S as SSE_TOTAL_TIMEOUT_S,
 )
+# Caller's end-to-end deadline (published by runtime.exec). The SSE wait
+# below clamps to it so a single stream read can't block past the budget.
+from openprogram.providers.utils.deadline import remaining as _dl_remaining  # noqa: E402
 
 
 class StreamIdleTimeout(Exception):
@@ -445,6 +448,15 @@ async def _parse_sse_stream(response: Any):
         # Block only until the soonest budget could trip; on timeout we
         # loop and the checks above raise the right, specific error.
         wait = min(idle_left, stall_left, deadline - now)
+        # Also never block past the caller's exec() deadline — keeps the
+        # mid-stream overrun to one wait granularity instead of the full
+        # 15/30-min SSE budget. <=0 means the deadline already passed.
+        _rem = _dl_remaining()
+        if _rem is not None:
+            if _rem <= 0:
+                raise StreamTotalTimeout(
+                    "caller deadline (exec timeout_s) exceeded mid-stream")
+            wait = min(wait, _rem)
         try:
             line = await asyncio.wait_for(line_iter.__anext__(), timeout=wait)
         except asyncio.TimeoutError:

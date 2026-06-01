@@ -71,6 +71,26 @@ def _default_max_retries() -> int:
     return max(1, v)
 
 
+def _default_exec_timeout_s() -> Optional[float]:
+    """Process-wide fallback wall-clock budget for ``exec()`` /
+    ``async_exec()`` when the caller passes ``timeout_s=None``.
+
+    Default ``0`` ⇒ ``None`` ⇒ the historical unbounded behaviour, so
+    existing callers are unaffected. Set ``OPENPROGRAM_EXEC_TIMEOUT_S`` to
+    a positive number to arm a deadline on EVERY exec from one place — the
+    cheapest way to stop an un-armed caller (a benchmark that forgot to
+    pass ``timeout_s``, a worker turn) from running an unbounded nested
+    retry storm. A deliberately non-arming default: a too-tight blanket
+    timeout would false-positive on legitimately long reasoning turns, so
+    the value is left to the deployment rather than hard-coded here.
+    """
+    try:
+        v = float(os.environ.get("OPENPROGRAM_EXEC_TIMEOUT_S", "0") or 0)
+    except ValueError:
+        return None
+    return v if v > 0 else None
+
+
 def _retry_sleep_seconds(attempt: int, retry_after_s: Optional[float] = None) -> float:
     """Exponential backoff + jitter, honoring a server-supplied
     ``Retry-After`` hint as a lower bound.
@@ -744,7 +764,16 @@ class Runtime:
         )
         reply = None
         _exec_start = time.monotonic()
+        if not (timeout_s and timeout_s > 0):
+            timeout_s = _default_exec_timeout_s()
         _deadline = _exec_start + timeout_s if (timeout_s and timeout_s > 0) else None
+        # Publish the deadline so the provider's INNER stream-retry loop and
+        # the SSE parser honour the SAME wall-clock budget — otherwise the
+        # nested loops multiply (max_attempts × max_retries) with nobody
+        # capping the total. See docs/design/error-and-timeout-mechanism.html.
+        from openprogram.providers.utils.errors import ExecInterrupt
+        from openprogram.providers.utils import deadline as _dl
+        _deadline_token = _dl.set_deadline(_deadline)
         try:
             errors: list[str] = []
             for attempt in range(self.max_retries):
@@ -775,20 +804,32 @@ class Runtime:
                         content_text=content_text,
                     )
                     break
+                except ExecInterrupt:
+                    raise  # caller hard-stop — bypass the retry layer
                 except (TypeError, NotImplementedError):
                     raise  # Programming errors — don't retry
                 except Exception as e:
                     errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
                     permanent = _is_permanent_error(e)
+                    # The provider already exhausted its OWN transport-retry
+                    # budget on this error — don't let exec re-retry it with a
+                    # fresh max_retries budget (that's the 3×6 multiplication).
+                    transport_done = bool(getattr(e, "transport_exhausted", False))
                     elapsed = time.monotonic() - _exec_start
-                    if permanent or attempt == self.max_retries - 1:
+                    # If the _call itself ran us past the deadline (e.g. the
+                    # inner loop gave up exactly at the budget), surface it as
+                    # TIMEOUT rather than the incidental transport cause.
+                    timed_out = _deadline is not None and time.monotonic() >= _deadline
+                    if permanent or transport_done or timed_out or attempt == self.max_retries - 1:
+                        from openprogram.providers.utils.errors import ErrorReason as _ER
                         raise _build_llm_error(
                             cause=e, attempts=attempt + 1,
                             elapsed_s=elapsed,
                             content=content, model=use_model,
                             provider=getattr(self, "provider", None),
                             history=errors,
-                            permanent=permanent,
+                            permanent=permanent or timed_out,
+                            override_reason=_ER.TIMEOUT if timed_out else None,
                         ) from e
                     # Honor server-supplied Retry-After when the
                     # underlying provider attached it to the exception.
@@ -817,6 +858,7 @@ class Runtime:
                     )
                     time.sleep(sleep_s)
         finally:
+            _dl.reset_deadline(_deadline_token)
             if tools_token is not None:
                 _current_tools.reset(tools_token)
             if policy_token is not None:
@@ -914,8 +956,16 @@ class Runtime:
         # --- Call the LLM (with retry) ---
         errors: list[str] = []
         _exec_start = time.monotonic()
+        if not (timeout_s and timeout_s > 0):
+            timeout_s = _default_exec_timeout_s()
         _deadline = _exec_start + timeout_s if (timeout_s and timeout_s > 0) else None
-        for attempt in range(self.max_retries):
+        # Same end-to-end deadline publish as exec() — the inner stream-retry
+        # loop and SSE parser read it. See error-and-timeout-mechanism.html.
+        from openprogram.providers.utils.errors import ExecInterrupt
+        from openprogram.providers.utils import deadline as _dl
+        _deadline_token = _dl.set_deadline(_deadline)
+        try:
+          for attempt in range(self.max_retries):
             # Pre-attempt deadline check (see exec() for the rationale).
             if _deadline is not None and time.monotonic() >= _deadline:
                 from openprogram.providers.utils.errors import ErrorReason as _ER
@@ -941,20 +991,28 @@ class Runtime:
                     content_text=content_text,
                 )
                 return reply
+            except ExecInterrupt:
+                raise  # caller hard-stop — bypass the retry layer
             except (TypeError, NotImplementedError):
                 raise
             except Exception as e:
                 errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
                 permanent = _is_permanent_error(e)
+                # Don't re-retry a transport error the provider already
+                # exhausted its own budget on (the 3×6 multiplication).
+                transport_done = bool(getattr(e, "transport_exhausted", False))
                 elapsed = time.monotonic() - _exec_start
-                if permanent or attempt == self.max_retries - 1:
+                timed_out = _deadline is not None and time.monotonic() >= _deadline
+                if permanent or transport_done or timed_out or attempt == self.max_retries - 1:
+                    from openprogram.providers.utils.errors import ErrorReason as _ER
                     raise _build_llm_error(
                         cause=e, attempts=attempt + 1,
                         elapsed_s=elapsed,
                         content=content, model=use_model,
                         provider=getattr(self, "provider", None),
                         history=errors,
-                        permanent=permanent,
+                        permanent=permanent or timed_out,
+                        override_reason=_ER.TIMEOUT if timed_out else None,
                     ) from e
                 retry_after_s = getattr(e, "retry_after_s", None)
                 sleep_s = _retry_sleep_seconds(attempt, retry_after_s)
@@ -977,6 +1035,8 @@ class Runtime:
                     elapsed_s=elapsed, retry_after_s=retry_after_s,
                 )
                 await asyncio.sleep(sleep_s)
+        finally:
+            _dl.reset_deadline(_deadline_token)
 
     def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """
@@ -1257,8 +1317,13 @@ def _run_async(coro):
     except RuntimeError:
         return asyncio.run(coro)
     import concurrent.futures
+    # Carry the caller's ContextVars (the published exec deadline, the
+    # active tool policy, …) into the worker thread — a bare pool.submit
+    # runs the callable in a fresh, empty context and would drop them, so
+    # the inner stream-retry loop would never see the deadline.
+    ctx = contextvars.copy_context()
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
+        return pool.submit(ctx.run, asyncio.run, coro).result()
 
 
 def _guess_mime(path: str) -> str:
