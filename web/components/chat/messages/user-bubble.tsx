@@ -17,6 +17,7 @@ import { Avatar } from "@/components/avatar";
 import { useUserProfile } from "@/lib/user-profile";
 
 import { MessageActions } from "./message-actions";
+import { UserAttachments, parseUserAttachments } from "./user-attachments";
 
 function EditBox({
   msg,
@@ -118,6 +119,11 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
   const [editing, setEditing] = useState(false);
   const profile = useUserProfile();
 
+  // Pull attachment markers out of the prose so they render as chips
+  // (Claude-Code style) instead of raw "[attached: …]" / inlined <file>
+  // text. msg.content itself is untouched — this is display-only.
+  const { attachments, text: cleanText } = parseUserAttachments(msg.content);
+
   return (
     <div
       className={"message user" + (editing ? " is-editing" : "")}
@@ -142,7 +148,10 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
         {editing ? (
           <EditBox msg={msg} onDone={() => setEditing(false)} />
         ) : (
-          msg.content
+          <>
+            <UserAttachments items={attachments} />
+            {cleanText}
+          </>
         )}
       </div>
     </div>

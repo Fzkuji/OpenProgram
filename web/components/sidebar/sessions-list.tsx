@@ -37,6 +37,7 @@ import {
   PopoverContent,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { parseUserAttachments } from "@/components/chat/messages/user-attachments";
 import { ConvMenu } from "./conv-menu";
 import { RecentsFilter } from "./recents-filter";
 import { SectionHeader } from "./section-header";
@@ -161,8 +162,14 @@ function isPlaceholderTitle(t: string): boolean {
 }
 
 function displayTitle(c: LegacyConv): string {
-  const t = (c.title || "").trim();
-  if (isPlaceholderTitle(t)) return "";
+  const raw = (c.title || "").trim();
+  if (isPlaceholderTitle(raw)) return "";
+  // The title often is the first user message verbatim, including the
+  // composer's "[attached: …]" / inlined <file> markers. Strip them so
+  // the recents row reads as prose (or the filename when only attached),
+  // not raw attachment text — before truncating to 30 chars.
+  const parsed = parseUserAttachments(raw);
+  const t = parsed.text.trim() || parsed.attachments[0]?.filename || raw;
   return t.length > 30 ? t.slice(0, 30) + "…" : t;
 }
 
@@ -170,7 +177,13 @@ function labelFor(c: LegacyConv, untitled: string): string {
   const prefix = channelPrefix(c.channel, c.account_id);
   let real = displayTitle(c);
   if (!real && c.preview) {
-    const pv = String(c.preview).trim();
+    // Strip "[attached: …]" / inlined <file> markers the composer baked
+    // into the message so the recents preview reads as the user's prose
+    // (or the filename when they only attached), not raw attachment text.
+    const parsed = parseUserAttachments(String(c.preview));
+    let pv = parsed.text.trim();
+    if (!pv && parsed.attachments.length > 0) pv = parsed.attachments[0].filename;
+    pv = pv || String(c.preview).trim();
     real = pv.length > 30 ? pv.slice(0, 30) + "…" : pv;
   }
   if (prefix && real) return prefix + ": " + real;
