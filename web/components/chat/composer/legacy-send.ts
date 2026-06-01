@@ -24,7 +24,11 @@
  *  WS payload matches what ``TurnRequest.attachments`` expects on the
  *  Python side (see ``openprogram/agent/dispatcher.py``). */
 export interface ChatAttachment {
-  type: "image";
+  /** "image" → inlined as an ImageContent block for the model;
+   *  "document" → saved to the session workdir by the backend so the
+   *  agent's file tools can read it (the path is injected into the
+   *  message text). */
+  type: "image" | "document";
   data: string;
   media_type: string;
   filename?: string;

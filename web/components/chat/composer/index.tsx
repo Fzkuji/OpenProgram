@@ -536,12 +536,25 @@ export function Composer() {
       expanded = prefix ? `${prefix}\n\n${expanded}` : expanded;
     }
     const imagesPayload = pendingImages.map((p) => p.attachment);
+    // Binary docs with captured bytes ride along as ``type:"document"``
+    // attachments; the backend saves them under the session workdir and
+    // injects the saved path into the message text (option A). Text docs
+    // are already inlined as <file> blocks above, so they carry no bytes.
+    const docsPayload = pendingDocs
+      .filter((d) => d.dataB64)
+      .map((d) => ({
+        type: "document" as const,
+        data: d.dataB64 as string,
+        media_type: d.mediaType || "application/octet-stream",
+        filename: d.filename,
+      }));
+    const attachmentsPayload = [...imagesPayload, ...docsPayload];
     // Delegate to legacy `sendMessage` (chat.js) so the user bubble +
     // welcome-hide + assistant placeholder + isRunning flip all fire
     // before the WS payload goes out. Composer is just the trigger.
     const handled = sendChatMessage({
       text: expanded,
-      attachments: imagesPayload.length > 0 ? imagesPayload : undefined,
+      attachments: attachmentsPayload.length > 0 ? attachmentsPayload : undefined,
       thinking,
       toolsEnabled,
       webSearchEnabled,

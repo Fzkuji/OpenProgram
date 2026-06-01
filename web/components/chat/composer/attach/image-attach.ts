@@ -141,6 +141,31 @@ export function readImageFile(file: File | Blob,
   });
 }
 
+/** Upper bound on a binary doc we'll base64-upload so the backend can
+ *  save it to disk for the agent. Bigger than the 5 MiB image cap since
+ *  PDFs/decks are routinely larger; still bounded so a stray huge file
+ *  doesn't blow up the WS frame. */
+export const MAX_DOC_BYTES = 25 * 1024 * 1024;
+
+/** Read a file as raw base64 (no ``data:...;base64,`` prefix), or
+ *  ``null`` if it's over :data:`MAX_DOC_BYTES` or unreadable. Used for
+ *  binary docs (PDF, etc.) that can't be inlined as text — the backend
+ *  decodes this and writes the file under the session workdir so the
+ *  agent's ``pdf`` / ``read`` / ``bash`` tools can open it. */
+export async function readFileAsBase64(file: File): Promise<string | null> {
+  if (file.size > MAX_DOC_BYTES) return null;
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const r = String(reader.result || "");
+      const comma = r.indexOf(",");
+      resolve(comma >= 0 ? r.slice(comma + 1) : null);
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
 /** Read a single dropped file as UTF-8 text if it looks like a
  *  text-y file under :data:`MAX_TEXT_FILE_BYTES`. Returns the content
  *  + filename, or ``null`` for non-text / oversize / read errors. */

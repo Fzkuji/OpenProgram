@@ -25,9 +25,15 @@ export interface PendingDoc {
    *  Empty when the file has no recognizable extension. */
   ext: string;
   /** Decoded text content for text-y files. ``null`` for binaries we
-   *  can't inline — the tile is shown but submit only mentions the
-   *  filename in the outgoing message. */
+   *  can't inline — for those we upload ``dataB64`` instead so the
+   *  backend can save the file to disk for the agent. */
   content: string | null;
+  /** Raw base64 of a binary doc (no data-URL prefix). Set for non-text
+   *  files under the size cap; sent as a ``type:"document"`` attachment
+   *  so the backend persists it under the session workdir. */
+  dataB64?: string | null;
+  /** MIME type of the file, forwarded as the document media_type. */
+  mediaType?: string;
   /** Raw size in bytes — surfaced in the tile's hover title. */
   sizeBytes: number;
   /** True while the file is still being read. Shows a subtle

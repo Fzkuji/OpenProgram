@@ -26,7 +26,14 @@ export interface ParsedAttachment {
 }
 
 const FILE_BLOCK = /<file name="([^"]*)">[\s\S]*?<\/file>/g;
-const ATTACHED_MENTION = /\[attached:\s*([^()]+?)\s*\(([^,]+),\s*([\d.]+)\s*KB\)\]/g;
+// Matches the composer's "[attached: name (ext, N KB)]" and the backend's
+// rewritten form that appends " @ <abs path>" once the file is saved to
+// disk. The path is consumed but not captured — it's for the model, not
+// the chip.
+const ATTACHED_MENTION =
+  /\[attached:\s*([^()]+?)\s*\(([^,]+),\s*([\d.]+)\s*KB\)(?:\s*@\s*[^\]]+)?\]/g;
+// Backend fallback when the frontend sent no mention: "[attached file: name @ path]".
+const ATTACHED_FILE = /\[attached file:\s*([^@\]]+?)\s*@\s*[^\]]+\]/g;
 
 /** Split raw user content into attachment chips + the cleaned prose. */
 export function parseUserAttachments(
@@ -44,7 +51,8 @@ export function parseUserAttachments(
     return "";
   });
 
-  // [attached: NAME (EXT, N KB)] mentions for binary docs.
+  // [attached: NAME (EXT, N KB)] mentions for binary docs (optionally with
+  // a backend-injected " @ <path>").
   text = text.replace(
     ATTACHED_MENTION,
     (_m, name: string, ext: string, kb: string) => {
@@ -56,6 +64,16 @@ export function parseUserAttachments(
       return "";
     },
   );
+
+  // [attached file: NAME @ PATH] — backend fallback with no size/ext.
+  text = text.replace(ATTACHED_FILE, (_m, name: string) => {
+    attachments.push({
+      filename: (name || "").trim() || "file",
+      meta: "",
+      kind: "binary",
+    });
+    return "";
+  });
 
   // The prefix was joined with "\n" and separated from the prose by
   // "\n\n"; after removing the markers, collapse the leftover blank lines.

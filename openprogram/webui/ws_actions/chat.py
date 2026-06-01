@@ -13,6 +13,84 @@ import time
 import uuid
 
 
+def _safe_attach_name(name: str) -> str:
+    """Filesystem-safe basename for a saved attachment."""
+    import os
+    base = os.path.basename((name or "file").strip()) or "file"
+    out = "".join(c if (c.isalnum() or c in "._- ") else "_" for c in base).strip()
+    return out[:120] or "file"
+
+
+def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str:
+    """Save base64 'document' attachments to the session workdir so the
+    agent's own file tools (``pdf`` / ``read`` / ``bash``) can actually
+    reach them, and rewrite the ``[attached: name (ext, KB)]`` mention in
+    ``text`` to embed the saved ABSOLUTE PATH.
+
+    This is the backend half of option A (file on disk + path + a read
+    tool): the browser only sent a metadata mention before, so the model
+    had no path and could only guess (glob the cwd). Now the bytes land
+    in ``<session workdir>/attachments/`` — the agent's cwd — and the
+    model is told exactly where. The web UI's chip parser hides the
+    ``@ <path>`` suffix so the bubble still reads cleanly.
+
+    Best-effort: a save failure leaves that file's mention untouched.
+    """
+    import base64
+    import re
+    from openprogram.agent._workdir import session_workdir_for
+
+    wd = session_workdir_for(session_id)
+    if wd is None:
+        # First-turn race: the git workdir isn't resolvable yet (it's
+        # finalised in the execution thread, after this synchronous
+        # handler). Fall back to the deterministic ad-hoc session workdir
+        # under the state dir — the SAME path apply_default_workdir will
+        # set as the agent's cwd, so the saved file is still reachable.
+        try:
+            from pathlib import Path
+            from openprogram.paths import get_state_dir
+            wd = Path(get_state_dir()) / "sessions" / session_id / "workdir"
+        except Exception:
+            return text
+    adir = wd / "attachments"
+    new_text = text
+    for d in documents:
+        data = d.get("data")
+        name = (d.get("filename") or "file").strip()
+        if not data:
+            continue
+        try:
+            raw = base64.b64decode(data, validate=False)
+        except Exception:
+            continue
+        safe = _safe_attach_name(name)
+        try:
+            adir.mkdir(parents=True, exist_ok=True)
+            dest = adir / safe
+            # Don't clobber an existing different file of the same name.
+            stem, dot, ext = safe.rpartition(".")
+            i = 1
+            while dest.exists():
+                dest = adir / ((f"{stem}-{i}.{ext}") if dot else f"{safe}-{i}")
+                i += 1
+            dest.write_bytes(raw)
+        except OSError:
+            continue
+        # Append " @ <abs path>" inside this file's "[attached: …]"
+        # mention so the model sees the path; fall back to appending a
+        # line when the frontend didn't include a mention.
+        pat = re.compile(r"\[attached:\s*" + re.escape(name) + r"\s*\(([^)\]]*)\)\]")
+        if pat.search(new_text):
+            new_text = pat.sub(
+                lambda m: f"[attached: {name} ({m.group(1)}) @ {dest}]",
+                new_text, count=1,
+            )
+        else:
+            new_text = (new_text + f"\n[attached file: {name} @ {dest}]").strip()
+    return new_text
+
+
 async def handle_chat(ws, cmd: dict):
     from openprogram.webui import server as _s
     text = cmd.get("text", "").strip()
@@ -193,6 +271,17 @@ async def handle_chat(ws, cmd: dict):
     conv["thinking_effort"] = run_cfg.thinking_effort
     conv["permission_mode"] = run_cfg.permission_mode
     msg_id = str(uuid.uuid4())[:8]
+
+    # Persist binary 'document' attachments to the session workdir so the
+    # agent can read them, and embed the saved path into the message text
+    # (option A). Images stay inline and continue to the dispatcher as
+    # ImageContent blocks; documents are NOT passed as content blocks
+    # (providers have no document-block support here).
+    if attachments:
+        _docs = [a for a in attachments if a.get("type") == "document"]
+        if _docs:
+            attachments = [a for a in attachments if a.get("type") != "document"] or None
+            text = _persist_doc_attachments(session_id, _docs, text)
 
     if not conv.get("_titled"):
         conv["title"] = text[:50] + ("..." if len(text) > 50 else "")

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type PendingImage,
   readDroppedTextFile,
+  readFileAsBase64,
   readImageFile,
   ACCEPTED_IMAGE_MIME,
 } from "./image-attach";
@@ -177,6 +178,8 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
         ? f.name.split(".").pop()!.toLowerCase()
         : "",
       content: null,
+      dataB64: null,
+      mediaType: f.type || undefined,
       sizeBytes: f.size,
       loading: true,
     }));
@@ -205,9 +208,18 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
     docPlaceholders.forEach((placeholder, i) => {
       const f = otherFiles[i];
       readDroppedTextFile(f)
-        .then((read) => {
+        .then(async (read) => {
+          if (read) {
+            // Text-y file — inlined as a <file> block; no upload needed.
+            updateDoc(placeholder.id, { content: read.content, loading: false });
+            return;
+          }
+          // Binary doc (PDF, etc.) — capture raw bytes so the backend can
+          // save it under the session workdir for the agent's file tools.
+          const b64 = await readFileAsBase64(f);
           updateDoc(placeholder.id, {
-            content: read ? read.content : null,
+            content: null,
+            dataB64: b64,
             loading: false,
           });
         })
