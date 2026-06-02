@@ -24,13 +24,14 @@ export interface PendingDoc {
   /** Lower-cased extension without the dot — used for the badge.
    *  Empty when the file has no recognizable extension. */
   ext: string;
-  /** Decoded text content for text-y files. ``null`` for binaries we
-   *  can't inline — for those we upload ``dataB64`` instead so the
-   *  backend can save the file to disk for the agent. */
+  /** Decoded text content — used ONLY for the local preview modal,
+   *  never sent to the model (every file is delivered by path, not
+   *  inlined). ``null`` for binaries / oversize / read errors. */
   content: string | null;
-  /** Raw base64 of a binary doc (no data-URL prefix). Set for non-text
-   *  files under the size cap; sent as a ``type:"document"`` attachment
-   *  so the backend persists it under the session workdir. */
+  /** Raw base64 of the file (no data-URL prefix). Set for any file
+   *  under the size cap; sent as a ``type:"document"`` attachment so
+   *  the backend persists it under the session workdir and the message
+   *  references it by path. */
   dataB64?: string | null;
   /** MIME type of the file, forwarded as the document media_type. */
   mediaType?: string;
@@ -377,8 +378,8 @@ function FilePreviewModal({
           {doc.content === null ? (
             <span style={{ color: "var(--text-muted)" }}>
               {text(
-                "Binary file - no inline preview available. The LLM will still know the file is attached via filename and size in the outgoing message.",
-                "二进制文件无法内联预览。发送消息时仍会通过文件名和大小告知模型该文件已附加。",
+                "No text preview for this file. It's saved to the session workdir and referenced by path in the message — the agent opens it on demand with its file tools.",
+                "该文件无文本预览。它会保存到会话工作目录，并在消息中以路径引用——agent 需要时用文件工具按需打开。",
               )}
             </span>
           ) : doc.content || (

@@ -3,18 +3,20 @@
 /**
  * User-message attachment chips.
  *
- * The composer encodes dropped files INTO the outgoing message text so
- * the model still receives them (see composer/index.tsx):
- *   * text-y docs  → ``<file name="x.md">…content…</file>`` blocks
- *   * binary docs  → ``[attached: paper.pdf (pdf, 1531 KB)]`` mentions
+ * Every attached file is referenced in the message by PATH, not inlined:
+ * its bytes are saved to the session workdir (uploads) or used in place
+ * (@-mentions / typed paths), and the message carries a one-line
+ * ``[attachment: paper.pdf (pdf, 1531 KB) @ /abs/path]`` mention. The
+ * agent reads the file on demand with its ``read`` / ``pdf`` tools — the
+ * file body never enters the prompt.
  *
- * Rendering that raw in the bubble shows the user a wall of
- * ``[attached: …]`` / inlined file text mixed into their own prose
- * (what the screenshot reported). Claude Code instead surfaces each
- * attachment as a compact, visually-distinct chip and keeps the user's
- * typed text clean. This module does the same at DISPLAY time only — it
+ * Rendering that mention raw in the bubble shows the user ``[attachment:
+ * …]`` markers (and, for older chats, inlined ``<file>`` bodies) mixed
+ * into their own prose. This module surfaces each attachment as a compact
+ * chip and keeps the typed text clean. It runs at DISPLAY time only — it
  * parses ``msg.content`` into ``{ attachments, text }`` without mutating
- * what was sent to the model.
+ * what was sent to the model. Legacy ``<file>`` / ``[attached:]`` forms
+ * are still recognised so historical messages render cleanly too.
  */
 import { useTranslation } from "@/lib/i18n";
 
@@ -25,15 +27,21 @@ export interface ParsedAttachment {
   kind: "binary" | "file";
 }
 
-const FILE_BLOCK = /<file name="([^"]*)">[\s\S]*?<\/file>/g;
-// Matches the composer's "[attached: name (ext, N KB)]" and the backend's
-// rewritten form that appends " @ <abs path>" once the file is saved to
-// disk. The path is consumed but not captured — it's for the model, not
-// the chip.
+// Legacy whole-file inline blocks — older messages dumped the file body
+// into the prose as <file name="x">…</file> (uploaded text doc) or
+// <file path="x">…</file> (expanded @-mention). The current design never
+// inlines a file body (every file is referenced by path), but these stay
+// so historical chats still render a clean chip instead of a wall of text.
+const FILE_BLOCK = /<file (?:name|path)="([^"]*)">[\s\S]*?<\/file>/g;
+// Current "[attachment: name (type, N KB) @ <abs path>]" mention plus the
+// older "[attached: …]" spelling. The backend appends " @ <abs path>" once
+// the file is saved (uploads); @-mentions carry the path from the frontend.
+// The path is consumed but not captured — it's for the model, not the chip.
 const ATTACHED_MENTION =
-  /\[attached:\s*([^()]+?)\s*\(([^,]+),\s*([\d.]+)\s*KB\)(?:\s*@\s*[^\]]+)?\]/g;
-// Backend fallback when the frontend sent no mention: "[attached file: name @ path]".
-const ATTACHED_FILE = /\[attached file:\s*([^@\]]+?)\s*@\s*[^\]]+\]/g;
+  /\[attach(?:ed|ment):\s*([^()]+?)\s*\(([^,]+),\s*([\d.]+)\s*KB\)(?:\s*@\s*[^\]]+)?\]/g;
+// Fallback mention with no size/ext: "[attachment: name @ path]" (current)
+// or "[attached file: name @ path]" (legacy).
+const ATTACHED_FILE = /\[attach(?:ment|ed file):\s*([^(@\]]+?)\s*@\s*[^\]]+\]/g;
 
 /** Split raw user content into attachment chips + the cleaned prose. */
 export function parseUserAttachments(

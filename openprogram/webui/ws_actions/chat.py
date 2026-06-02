@@ -24,15 +24,20 @@ def _safe_attach_name(name: str) -> str:
 def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str:
     """Save base64 'document' attachments to the session workdir so the
     agent's own file tools (``pdf`` / ``read`` / ``bash``) can actually
-    reach them, and rewrite the ``[attached: name (ext, KB)]`` mention in
-    ``text`` to embed the saved ABSOLUTE PATH.
+    reach them, and rewrite the ``[attachment: name (type, KB)]`` mention
+    in ``text`` to embed the saved ABSOLUTE PATH.
 
-    This is the backend half of option A (file on disk + path + a read
-    tool): the browser only sent a metadata mention before, so the model
-    had no path and could only guess (glob the cwd). Now the bytes land
-    in ``<session workdir>/attachments/`` — the agent's cwd — and the
-    model is told exactly where. The web UI's chip parser hides the
-    ``@ <path>`` suffix so the bubble still reads cleanly.
+    This is the backend half of the uniform "every file is a path"
+    model: a browser upload only carries bytes + a basename (the
+    sandbox hides the source path), so we materialise the bytes ONCE
+    under ``<session workdir>/attachments/`` — the agent's cwd — and
+    tell the model exactly where. The agent reads it on demand; the
+    file body is never inlined into the prompt. The web UI's chip
+    parser hides the ``@ <path>`` suffix so the bubble reads cleanly.
+
+    (Files that already live on disk — ``@``-mentions / typed paths —
+    skip this entirely: the frontend emits the absolute path directly,
+    no copy. See ``at-mention.ts`` / ``/api/file-resolve``.)
 
     Best-effort: a save failure leaves that file's mention untouched.
     """
@@ -77,18 +82,38 @@ def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str
             dest.write_bytes(raw)
         except OSError:
             continue
-        # Append " @ <abs path>" inside this file's "[attached: …]"
+        # Append " @ <abs path>" inside this file's "[attachment: …]"
         # mention so the model sees the path; fall back to appending a
         # line when the frontend didn't include a mention.
-        pat = re.compile(r"\[attached:\s*" + re.escape(name) + r"\s*\(([^)\]]*)\)\]")
+        pat = re.compile(
+            r"\[attachment:\s*" + re.escape(name) + r"\s*\(([^)\]]*)\)\]"
+        )
         if pat.search(new_text):
             new_text = pat.sub(
-                lambda m: f"[attached: {name} ({m.group(1)}) @ {dest}]",
+                lambda m: f"[attachment: {name} ({m.group(1)}) @ {dest}]",
                 new_text, count=1,
             )
         else:
-            new_text = (new_text + f"\n[attached file: {name} @ {dest}]").strip()
+            new_text = (new_text + f"\n[attachment: {name} @ {dest}]").strip()
     return new_text
+
+
+def _title_from_text(text: str) -> str:
+    """Conversation title from the first user message, with attachment
+    markers + legacy inline blocks stripped so a truncated
+    ``[attachment: … @ /long/path]`` never leaks into the sidebar.
+
+    Mirrors the web parser (``user-attachments.tsx``) on the backend so
+    the stored title is already clean — the frontend strips markers for
+    display too, but only when the closing bracket survives; truncating
+    at 50 chars can sever it, so we clean first, then truncate.
+    """
+    import re
+    t = re.sub(r"\[attachment:[^\]]*\]", "", text)
+    t = re.sub(r"\[attached(?: file)?:[^\]]*\]", "", t)
+    t = re.sub(r"<file [^>]*>.*?</file>", "", t, flags=re.S)
+    t = t.strip()
+    return t[:50] + ("..." if len(t) > 50 else "")
 
 
 async def handle_chat(ws, cmd: dict):
@@ -272,11 +297,12 @@ async def handle_chat(ws, cmd: dict):
     conv["permission_mode"] = run_cfg.permission_mode
     msg_id = str(uuid.uuid4())[:8]
 
-    # Persist binary 'document' attachments to the session workdir so the
-    # agent can read them, and embed the saved path into the message text
-    # (option A). Images stay inline and continue to the dispatcher as
-    # ImageContent blocks; documents are NOT passed as content blocks
-    # (providers have no document-block support here).
+    # Persist 'document' attachments to the session workdir so the agent's
+    # file tools can read them, and embed the saved ABSOLUTE PATH into the
+    # message text (every file is referenced by path, never inlined).
+    # Images stay inline and continue to the dispatcher as ImageContent
+    # blocks; documents are NOT passed as content blocks (providers have
+    # no document-block support here).
     if attachments:
         _docs = [a for a in attachments if a.get("type") == "document"]
         if _docs:
@@ -284,7 +310,11 @@ async def handle_chat(ws, cmd: dict):
             text = _persist_doc_attachments(session_id, _docs, text)
 
     if not conv.get("_titled"):
-        conv["title"] = text[:50] + ("..." if len(text) > 50 else "")
+        # Strip attachment markers BEFORE truncating: a title built from
+        # raw text would cut "[attachment: … @ /long/abs/path]" mid-path
+        # at the 50-char limit, severing the closing bracket the chip
+        # parser needs — so the marker leaks into the sidebar title.
+        conv["title"] = _title_from_text(text)
         conv["_titled"] = True
 
     parsed = _s._parse_chat_input(text)

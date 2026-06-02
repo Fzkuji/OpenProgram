@@ -7,13 +7,19 @@
  *     before the caret. Port of ``cli/src/utils/fileCompletions.ts``
  *     so web + tui agree on what counts as an open mention.
  *   * :func:`expandAtMentions` — at submit time, replace each
- *     ``@path/to/file`` token with the file's content inline. The
- *     LLM receives the same shape as if the user had pasted the file
- *     manually, so no backend protocol change is needed.
+ *     ``@path/to/file`` token with a ``[attachment: name (type, KB) @
+ *     <abs path>]`` mention. The file already lives on disk, so it is
+ *     referenced by an ABSOLUTE PATH (resolved via the worker) and the
+ *     agent reads it on demand with its ``read`` / ``pdf`` tools — the
+ *     content is NOT inlined into the prompt. This matches how uploaded
+ *     files are handled (saved to the session workdir, then referenced
+ *     by path) so every attachment, whatever its source, reaches the
+ *     model the same way: as a path, never a wall of inlined text.
  *
- * Search + read both go through the worker's HTTP endpoints
- * (``/api/file-search`` and ``/api/file-read``) — see
- * ``openprogram/webui/routes/file_search.py``.
+ * Search + resolve both go through the worker's HTTP endpoints
+ * (``/api/file-search`` and ``/api/file-resolve``) — see
+ * ``openprogram/webui/routes/file_search.py``. ``file-resolve`` only
+ * stats the file (absolute path + size); it never reads the bytes.
  */
 
 export interface AtToken {
@@ -51,22 +57,30 @@ const SUBMIT_TOKEN_RE = /(^|\s)@([^\s@][^\s@]*)/g;
 
 export interface ExpandResult {
   text: string;
-  /** Paths that were successfully inlined. */
+  /** Paths that were successfully resolved to a mention. */
   expanded: string[];
-  /** Paths that failed to read (kept verbatim in the output). */
+  /** Paths that failed to resolve (kept verbatim in the output). */
   missing: string[];
 }
 
-/** Replace every ``@path`` token in ``text`` with the file's content,
- *  fetched from the worker's ``/api/file-read`` endpoint. Paths that
- *  fail (404 / outside root / network error) are left as the
- *  original ``@path`` token and reported via :attr:`ExpandResult.missing`. */
+/** Lower-cased extension (no dot) for the chip badge, or ``""``. */
+function extOf(name: string): string {
+  return name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+}
+
+/** Replace every ``@path`` token in ``text`` with a path-reference
+ *  ``[attachment: name (type, KB) @ <abs path>]`` mention. The absolute
+ *  path is resolved via the worker's ``/api/file-resolve`` endpoint
+ *  (stat only — the bytes are NOT read). The agent reads the file on
+ *  demand. Paths that fail (404 / outside root / network error) are
+ *  left as the original ``@path`` token and reported via
+ *  :attr:`ExpandResult.missing`. */
 export async function expandAtMentions(
   text: string,
   root: string | null,
 ): Promise<ExpandResult> {
   // Collect unique paths first so the same @path mentioned twice
-  // only triggers one fetch.
+  // only triggers one resolve.
   const seen = new Set<string>();
   SUBMIT_TOKEN_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -76,25 +90,22 @@ export async function expandAtMentions(
   if (seen.size === 0) {
     return { text, expanded: [], missing: [] };
   }
-  const fetched = new Map<string, { ok: true; content: string }
+  const resolved = new Map<string, { ok: true; abs: string; size: number }
                                   | { ok: false }>();
   await Promise.all(
     Array.from(seen).map(async (path) => {
       try {
         const q = new URLSearchParams({ path });
         if (root) q.set("root", root);
-        const r = await fetch(`/api/file-read?${q.toString()}`);
+        const r = await fetch(`/api/file-resolve?${q.toString()}`);
         if (!r.ok) {
-          fetched.set(path, { ok: false });
+          resolved.set(path, { ok: false });
           return;
         }
-        const d = (await r.json()) as {
-          path: string; content: string; truncated?: boolean;
-        };
-        const suffix = d.truncated ? "\n[...truncated...]" : "";
-        fetched.set(path, { ok: true, content: d.content + suffix });
+        const d = (await r.json()) as { path: string; size: number };
+        resolved.set(path, { ok: true, abs: d.path, size: d.size });
       } catch {
-        fetched.set(path, { ok: false });
+        resolved.set(path, { ok: false });
       }
     }),
   );
@@ -103,13 +114,15 @@ export async function expandAtMentions(
   const missing: string[] = [];
   SUBMIT_TOKEN_RE.lastIndex = 0;
   const out = text.replace(SUBMIT_TOKEN_RE, (_full, lead: string, path: string) => {
-    const got = fetched.get(path);
+    const got = resolved.get(path);
     if (got && got.ok) {
       expanded.push(path);
-      // Render as a verbatim file block so the LLM has structure to
-      // anchor on. ``lead`` preserves the leading whitespace / line
-      // break the user typed before the mention.
-      return `${lead}<file path="${path}">\n${got.content}\n</file>`;
+      // Path-reference mention: the agent reads ``got.abs`` on demand.
+      // ``lead`` preserves the whitespace / line break the user typed
+      // before the mention.
+      const base = path.split("/").pop() || path;
+      const kb = Math.max(1, Math.round(got.size / 1024));
+      return `${lead}[attachment: ${base} (${extOf(base) || "file"}, ${kb} KB) @ ${got.abs}]`;
     }
     missing.push(path);
     return `${lead}@${path}`;

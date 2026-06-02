@@ -207,19 +207,17 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
     });
     docPlaceholders.forEach((placeholder, i) => {
       const f = otherFiles[i];
-      readDroppedTextFile(f)
-        .then(async (read) => {
-          if (read) {
-            // Text-y file — inlined as a <file> block; no upload needed.
-            updateDoc(placeholder.id, { content: read.content, loading: false });
-            return;
-          }
-          // Binary doc (PDF, etc.) — capture raw bytes so the backend can
-          // save it under the session workdir for the agent's file tools.
-          const b64 = await readFileAsBase64(f);
+      // EVERY non-image file is delivered to the agent the same way:
+      // its bytes are saved under the session workdir (backend) and the
+      // message references it by PATH — never inlined. So always capture
+      // ``dataB64`` for the upload. We additionally try a text decode,
+      // but ONLY to power the local preview modal (``content``) — that
+      // text is never sent to the model.
+      Promise.all([readFileAsBase64(f), readDroppedTextFile(f)])
+        .then(([b64, textRead]) => {
           updateDoc(placeholder.id, {
-            content: null,
             dataB64: b64,
+            content: textRead ? textRead.content : null,
             loading: false,
           });
         })

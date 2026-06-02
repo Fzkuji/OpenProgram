@@ -515,31 +515,26 @@ export function Composer() {
     } catch {
       /* network blip — fall through with raw text */
     }
-    // Inline attached docs: text-y ones become <file> blocks at the
-    // top of the message; binary ones just announce themselves as a
-    // metadata line so the LLM knows the user dropped something even
-    // if it can't read it.
+    // Attached docs are referenced by PATH, never inlined. Each one's
+    // bytes ride along as a ``type:"document"`` attachment; the backend
+    // saves it under the session workdir and appends " @ <abs path>" to
+    // the mention (see ws_actions/chat.py). We emit the path-less
+    // ``[attachment: …]`` mention here so the optimistic bubble + chip
+    // parser have something to show before the server-side save lands.
+    // (Docs without captured bytes — over the 25 MB cap — are dropped:
+    // there's no way to ship them, and a mention with no backing file
+    // the agent can read would only mislead it.)
     if (pendingDocs.length > 0) {
-      const blocks: string[] = [];
-      const mentions: string[] = [];
-      for (const d of pendingDocs) {
-        if (d.content !== null) {
-          blocks.push(
-            `<file name="${d.filename}">\n${d.content}\n</file>`,
-          );
-        } else {
-          mentions.push(`[attached: ${d.filename} (${d.ext || "binary"}, `
-            + `${Math.max(1, Math.round(d.sizeBytes / 1024))} KB)]`);
-        }
+      const mentions = pendingDocs
+        .filter((d) => d.dataB64)
+        .map((d) =>
+          `[attachment: ${d.filename} (${d.ext || "file"}, `
+          + `${Math.max(1, Math.round(d.sizeBytes / 1024))} KB)]`);
+      if (mentions.length > 0) {
+        expanded = `${mentions.join("\n")}\n\n${expanded}`;
       }
-      const prefix = [...blocks, ...mentions].join("\n");
-      expanded = prefix ? `${prefix}\n\n${expanded}` : expanded;
     }
     const imagesPayload = pendingImages.map((p) => p.attachment);
-    // Binary docs with captured bytes ride along as ``type:"document"``
-    // attachments; the backend saves them under the session workdir and
-    // injects the saved path into the message text (option A). Text docs
-    // are already inlined as <file> blocks above, so they carry no bytes.
     const docsPayload = pendingDocs
       .filter((d) => d.dataB64)
       .map((d) => ({

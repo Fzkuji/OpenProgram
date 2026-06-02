@@ -98,6 +98,34 @@ def register(app) -> None:
             "content": text,
         })
 
+    @app.get("/api/file-resolve")
+    async def file_resolve(path: str, root: str | None = None):
+        """Resolve a (possibly root-relative) path to an ABSOLUTE path +
+        size, WITHOUT reading the content.
+
+        Backs the composer's ``@``-mention path-reference: an attachment
+        is delivered to the agent as a path it reads on demand (never
+        inlined into the prompt). The agent's cwd is the session
+        workdir, not the search root, so the mention must carry an
+        absolute path. Escape-checked exactly like ``/api/file-read`` so
+        a webui port can't be used to stat arbitrary files outside root.
+        """
+        cwd = _resolve_root(root)
+        target = (cwd / path).resolve()
+        try:
+            if not target.is_relative_to(cwd):
+                raise HTTPException(status_code=400,
+                                    detail="path escapes root")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="path escapes root")
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="not a file")
+        try:
+            size = target.stat().st_size
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(content={"path": str(target), "size": size})
+
 
 def _resolve_root(root: str | None) -> Path:
     """Return an absolute, existing directory.
