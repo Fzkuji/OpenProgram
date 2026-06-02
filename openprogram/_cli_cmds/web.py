@@ -116,6 +116,38 @@ def _frontend_is_ours(port: int) -> bool | None:
     return False
 
 
+def _backend_is_ours(port: int) -> bool | None:
+    """Probe ``http://127.0.0.1:port/healthz`` to tell OUR backend from a
+    squatter on the same port.
+
+    Returns True when the port answers with openprogram's health JSON (a
+    running instance — reuse it / point the user at the UI), False when
+    it answers like something else, None when the probe is inconclusive
+    (no/garbled response). Symmetric to ``_frontend_is_ours``: a bare TCP
+    ``connect`` (the old precheck) would mislabel ANY program squatting
+    the backend port as "openprogram already running", and then open a
+    browser at that foreign service.
+    """
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/healthz", timeout=1.0
+        ) as resp:
+            body = resp.read(4096)
+    except Exception:
+        return None
+    try:
+        data = json.loads(body)
+    except Exception:
+        return False
+    # openprogram's /healthz always carries these distinctive keys
+    # (see webui/routes/misc.py).
+    if isinstance(data, dict) and "uptime_seconds" in data and "status" in data:
+        return True
+    return False
+
+
 def _start_frontend(backend_port: int) -> subprocess.Popen | None:
     """Spawn the Next.js dev server on the fixed port :3000, or return None.
 
@@ -246,20 +278,31 @@ def _cmd_web(port, open_browser):
     if open_browser is None:
         open_browser = True
 
-    # Backend port already held? Another ``openprogram web`` is almost
-    # certainly running. Binding again raises a bare errno-48 traceback,
-    # so detect it up front and point the user at the (presumably
-    # already-up) UI instead of crashing.
+    # Backend port already held? Binding again raises a bare errno-48
+    # traceback, so detect it up front — but distinguish OUR backend
+    # already running from an unrelated program squatting the port. A
+    # bare ``connect`` can't tell them apart and would mislabel a
+    # squatter as "already running", then open a browser at it.
     if _port_in_use(port):
-        ui = (f"http://localhost:{_FRONTEND_PORT}"
-              if _port_in_use(_FRONTEND_PORT) else f"http://localhost:{port}")
-        print(f"openprogram web is already running (port {port} in use).")
-        print(f"  Open the UI:  {ui}")
-        print("  Or stop the other instance first:  pkill -f 'openprogram web'")
-        if open_browser:
-            import webbrowser
-            webbrowser.open(ui)
-        return
+        ours = _backend_is_ours(port)
+        if ours is True:
+            ui = (f"http://localhost:{_FRONTEND_PORT}"
+                  if _port_in_use(_FRONTEND_PORT) else f"http://localhost:{port}")
+            print(f"openprogram web is already running (port {port} in use).")
+            print(f"  Open the UI:  {ui}")
+            print("  Or stop the other instance first:  pkill -f 'openprogram web'")
+            if open_browser:
+                import webbrowser
+                webbrowser.open(ui)
+            return
+        # Held by something that is NOT an openprogram backend. The port is
+        # pinned on purpose (a stable UI URL), so refuse with an actionable
+        # message rather than silently drifting to another port or opening
+        # a browser at a foreign service.
+        print(f"Port {port} is in use by another process (not openprogram).")
+        print(f"  Free it (e.g. `lsof -ti:{port} | xargs kill`), or pick a")
+        print("  different backend port:  openprogram setup ui")
+        sys.exit(1)
 
     # Start the backend WITHOUT opening a browser — the real UI is the
     # frontend on :3000, not the backend on :8109 (which has no HTML
