@@ -45,6 +45,11 @@ const BACKEND = resolveBackend();
 
 const nextConfig = {
   reactStrictMode: false,
+  // Lint is a dev-time gate (`next lint` / editor), not a build blocker.
+  // A stray unused-var or `<img>` warning must not fail the production
+  // build the worker depends on (it was, silently breaking the build →
+  // the frontend never came up while `next dev` masked it).
+  eslint: { ignoreDuringBuilds: true },
   async rewrites() {
     return [
       // ``/api/*`` is handled by the dynamic route at

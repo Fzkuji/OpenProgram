@@ -97,7 +97,6 @@ const DICT = {
   "sidebar.toggle": { en: "Toggle sidebar", zh: "切换侧边栏" },
   "sidebar.refresh": { en: "Refresh", zh: "刷新" },
   "sidebar.favorite_functions": { en: "Favorite Functions", zh: "收藏函数" },
-  "sidebar.recents": { en: "Recents", zh: "最近会话" },
   "sidebar.show": { en: "Show", zh: "显示" },
   "sidebar.hide": { en: "Hide", zh: "隐藏" },
   "sidebar.clear_all": { en: "Clear all", zh: "清空全部" },
