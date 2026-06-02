@@ -85,31 +85,76 @@ def _frontend_command(web: Path) -> list[str] | None:
     return None
 
 
-def _start_frontend() -> subprocess.Popen | None:
+def _frontend_is_ours(port: int) -> bool | None:
+    """Probe ``http://127.0.0.1:port/`` to tell OUR frontend from a squatter.
+
+    Returns True when the port answers like a Next.js app (safe to reuse),
+    False when it answers like something else, and None when the probe is
+    inconclusive (no/garbled response within the timeout).
+
+    A bare TCP ``connect`` — the only check the old code did — cannot tell
+    our dev server apart from an unrelated program that happened to grab
+    :3000 first. Reusing a squatter silently desyncs every proxied URL
+    (the UI loads someone else's page, or nothing). openclaw solves the
+    same "is the thing on my fixed port actually mine?" problem with a
+    lock file that verifies the holder's PID *and* command line
+    (``src/infra/gateway-lock.ts``); for a port we don't own outright the
+    HTTP-marker probe is the equivalent identity check.
+    """
+    import urllib.request
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/", method="GET")
+        with urllib.request.urlopen(req, timeout=1.0) as resp:
+            powered = (resp.headers.get("x-powered-by") or "").lower()
+            body = resp.read(4096).decode("utf-8", "replace")
+    except Exception:
+        return None
+    # Next emits ``/_next/`` asset URLs and a ``__next`` mount node in the
+    # served HTML; the dev server also tags ``x-powered-by: Next.js``.
+    if "next" in powered or "/_next/" in body or "__next" in body:
+        return True
+    return False
+
+
+def _start_frontend(backend_port: int) -> subprocess.Popen | None:
     """Spawn the Next.js dev server on the fixed port :3000, or return None.
 
     Robustness over the old ``npm run dev`` spawn:
       * runs the local ``next`` binary directly, so it can't fail with
         ``next: command not found``;
       * pins ``--port`` + ``PORT`` so the URL is deterministic;
+      * points ``OPENPROGRAM_BACKEND_URL`` at the backend port we actually
+        bound, so the ``/ws`` + ``/healthz`` rewrites in ``next.config``
+        never fall back to the stale hard-coded default;
       * augments the child PATH with node + ``node_modules/.bin``;
       * prints an actionable message (instead of failing silently or with
         a traceback) when node / the frontend deps aren't installed.
 
-    Skipped when explicitly disabled, when :3000 is already serving, or
-    when there's no ``web/`` source (a plain wheel install). The child is
-    put in its own process group / job so the whole tree tears down
-    together on exit (see ``_stop_frontend``).
+    Skipped when explicitly disabled, when OUR frontend is already serving
+    :3000, or when there's no ``web/`` source (a plain wheel install). The
+    child is put in its own process group / job so the whole tree tears
+    down together on exit (see ``_stop_frontend``).
     """
     if os.environ.get("OPENPROGRAM_WEB_NO_FRONTEND"):
         return None
     web = _find_web_dir()
     if web is None:
         return None  # no web/ source — backend only
-    # Already serving on the fixed port? Reuse it. Spawning a second dev
-    # server would bump to :3001 and desync every proxied URL.
+    # Something on the fixed port already? Only reuse it when it actually
+    # answers like our frontend — a bare ``connect`` would happily "reuse"
+    # an unrelated program squatting :3000 and desync every proxied URL.
     if _port_in_use(_FRONTEND_PORT):
-        print(f"Frontend already running at http://localhost:{_FRONTEND_PORT}")
+        ours = _frontend_is_ours(_FRONTEND_PORT)
+        if ours is True:
+            print(f"Frontend already running at http://localhost:{_FRONTEND_PORT}")
+            return None
+        # Held, but it doesn't answer like our frontend (False) or doesn't
+        # answer at all (None). Don't spawn a second dev server — Next would
+        # bump to :3001 and the fixed-port URL every proxy assumes breaks.
+        print(f"Port {_FRONTEND_PORT} is held by a process that does not look "
+              f"like the openprogram frontend.\n"
+              f"  Free it (e.g. `lsof -ti:{_FRONTEND_PORT} | xargs kill`) and "
+              f"rerun, or set OPENPROGRAM_WEB_NO_FRONTEND=1 to skip the frontend.")
         return None
 
     import shutil
@@ -131,6 +176,12 @@ def _start_frontend() -> subprocess.Popen | None:
     bin_dir = str(web / "node_modules" / ".bin")
     env["PATH"] = os.pathsep.join([bin_dir, node_dir, env.get("PATH", "")])
     env["PORT"] = str(_FRONTEND_PORT)
+    # Pin the proxy target to the backend port we actually bound. Without
+    # this, next.config's ``/ws`` + ``/healthz`` rewrites fall back to their
+    # hard-coded default and the WebSocket connects to a dead port. ``/api``
+    # is unaffected (its route handler reads ``worker.port`` per request),
+    # but ``/ws`` is resolved once at boot, so it must be correct here.
+    env.setdefault("OPENPROGRAM_BACKEND_URL", f"http://127.0.0.1:{backend_port}")
 
     kwargs: dict = {"cwd": str(web), "env": env}
     if sys.platform == "win32":
@@ -224,7 +275,7 @@ def _cmd_web(port, open_browser):
     except Exception:
         pass
 
-    frontend = _start_frontend()
+    frontend = _start_frontend(port)
     # The UI lives on :3000 when a frontend is (or was already) up;
     # otherwise the backend port is the only thing serving.
     has_frontend = frontend is not None or _port_in_use(_FRONTEND_PORT)
