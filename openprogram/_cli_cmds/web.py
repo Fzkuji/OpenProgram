@@ -38,57 +38,108 @@ def _find_web_dir() -> Path | None:
 
     For an editable install ``openprogram/`` and ``web/`` are siblings
     under the repo root, so ``<pkg>/../web`` resolves it. Returns None
-    when it (or its ``node_modules``) is missing — i.e. a plain wheel
-    install with no frontend source to run.
+    only when there is no ``web/`` source at all (a plain wheel install).
+
+    Note: a missing ``node_modules`` is NOT treated as "no web dir" here
+    — ``_start_frontend`` checks the deps separately so it can print an
+    actionable ``npm install`` hint instead of silently doing nothing.
     """
     try:
         import openprogram
         web = Path(openprogram.__file__).resolve().parent.parent / "web"
     except Exception:
         return None
-    if (web / "package.json").exists() and (web / "node_modules").is_dir():
+    if (web / "package.json").exists():
         return web
     return None
 
 
-def _start_frontend() -> subprocess.Popen | None:
-    """Spawn ``npm run dev`` for the Next.js frontend, or return None.
+def _frontend_command(web: Path) -> list[str] | None:
+    """Command to run the Next.js dev server on the PINNED port.
 
-    Skipped when explicitly disabled, when :3000 is already serving (the
-    user — or a previous run — already has it up), or when there's no
-    runnable ``web/`` source. The child is put in its own process group
-    / job so the whole ``npm → next`` tree can be torn down together on
-    exit (see ``_stop_frontend``).
+    Invokes the project-local ``next`` binary DIRECTLY instead of going
+    through ``npm run dev``. ``npm run`` relies on injecting
+    ``node_modules/.bin`` into a sub-shell's PATH; when the spawning
+    environment is even slightly unusual that injection misfires and the
+    script dies with ``sh: next: command not found`` (the recurring bug).
+    Running ``node node_modules/next/dist/bin/next`` needs nothing on
+    PATH but ``node`` itself, and works identically on Windows (no
+    ``.cmd`` exec quirk).
+
+    ``--port`` is pinned so the dev server can never silently bump to
+    :3001 when :3000 is taken — the URL every ``/api`` + ``/ws`` proxy
+    assumes stays fixed. Returns None when node / the frontend deps
+    aren't installed.
+    """
+    import shutil
+    node = shutil.which("node")
+    next_js = web / "node_modules" / "next" / "dist" / "bin" / "next"
+    next_bin = web / "node_modules" / ".bin" / "next"
+    pinned = ["dev", "--turbo", "--port", str(_FRONTEND_PORT)]
+    if node and next_js.exists():
+        return [node, str(next_js), *pinned]
+    if next_bin.exists():
+        # Fallback: the .bin shim (POSIX). On Windows the next_js branch
+        # above is taken, so this never hits the .cmd-exec problem.
+        return [str(next_bin), *pinned]
+    return None
+
+
+def _start_frontend() -> subprocess.Popen | None:
+    """Spawn the Next.js dev server on the fixed port :3000, or return None.
+
+    Robustness over the old ``npm run dev`` spawn:
+      * runs the local ``next`` binary directly, so it can't fail with
+        ``next: command not found``;
+      * pins ``--port`` + ``PORT`` so the URL is deterministic;
+      * augments the child PATH with node + ``node_modules/.bin``;
+      * prints an actionable message (instead of failing silently or with
+        a traceback) when node / the frontend deps aren't installed.
+
+    Skipped when explicitly disabled, when :3000 is already serving, or
+    when there's no ``web/`` source (a plain wheel install). The child is
+    put in its own process group / job so the whole tree tears down
+    together on exit (see ``_stop_frontend``).
     """
     if os.environ.get("OPENPROGRAM_WEB_NO_FRONTEND"):
         return None
+    web = _find_web_dir()
+    if web is None:
+        return None  # no web/ source — backend only
+    # Already serving on the fixed port? Reuse it. Spawning a second dev
+    # server would bump to :3001 and desync every proxied URL.
     if _port_in_use(_FRONTEND_PORT):
         print(f"Frontend already running at http://localhost:{_FRONTEND_PORT}")
         return None
-    web = _find_web_dir()
-    if web is None:
-        return None
 
     import shutil
-    if not shutil.which("npm"):
-        print("npm not found on PATH — start the frontend manually: "
-              "cd web && npm run dev")
+    if shutil.which("node") is None:
+        print("Frontend not started: Node.js not found on PATH (needs Node 18+).\n"
+              "  Install Node, or start the frontend manually: cd web && npm run dev")
+        return None
+    cmd = _frontend_command(web)
+    if cmd is None:
+        print("Frontend not started: dependencies are not installed.\n"
+              f"  Run:  cd {web} && npm install")
         return None
 
-    # Own process group (POSIX) / new group (Windows) so a Ctrl+C to the
-    # parent doesn't race-signal the child mid-spawn and so the whole
-    # tree is killable on teardown.
-    kwargs: dict = {"cwd": str(web)}
+    # Put node_modules/.bin + node's own dir first on the child's PATH so
+    # next's node shebang and any child binaries resolve regardless of how
+    # the parent process was launched (the env that broke ``npm run dev``).
+    env = dict(os.environ)
+    node_dir = str(Path(shutil.which("node")).parent)
+    bin_dir = str(web / "node_modules" / ".bin")
+    env["PATH"] = os.pathsep.join([bin_dir, node_dir, env.get("PATH", "")])
+    env["PORT"] = str(_FRONTEND_PORT)
+
+    kwargs: dict = {"cwd": str(web), "env": env}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
     else:
         kwargs["start_new_session"] = True
 
-    # node_tool_cmd routes npm.cmd through cmd.exe on Windows — a bare /
-    # resolved .cmd can't be exec'd by CreateProcess (WinError 193).
-    from openprogram._compat import node_tool_cmd
-    proc = subprocess.Popen(node_tool_cmd(["npm", "run", "dev"]), **kwargs)
-    print(f"Starting frontend (npm run dev) at http://localhost:{_FRONTEND_PORT} …")
+    proc = subprocess.Popen(cmd, **kwargs)
+    print(f"Starting frontend on http://localhost:{_FRONTEND_PORT} …")
     return proc
 
 
@@ -143,6 +194,21 @@ def _cmd_web(port, open_browser):
         port = 8109
     if open_browser is None:
         open_browser = True
+
+    # Backend port already held? Another ``openprogram web`` is almost
+    # certainly running. Binding again raises a bare errno-48 traceback,
+    # so detect it up front and point the user at the (presumably
+    # already-up) UI instead of crashing.
+    if _port_in_use(port):
+        ui = (f"http://localhost:{_FRONTEND_PORT}"
+              if _port_in_use(_FRONTEND_PORT) else f"http://localhost:{port}")
+        print(f"openprogram web is already running (port {port} in use).")
+        print(f"  Open the UI:  {ui}")
+        print("  Or stop the other instance first:  pkill -f 'openprogram web'")
+        if open_browser:
+            import webbrowser
+            webbrowser.open(ui)
+        return
 
     # Start the backend WITHOUT opening a browser — the real UI is the
     # frontend on :3000, not the backend on :8109 (which has no HTML
