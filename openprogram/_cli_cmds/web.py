@@ -53,7 +53,7 @@ def _find_web_dir() -> Path | None:
     return None
 
 
-def _frontend_command(web: Path) -> list[str] | None:
+def _frontend_command(web: Path, web_port: int) -> list[str] | None:
     """Command to run the Next.js dev server on the PINNED port.
 
     Invokes the project-local ``next`` binary DIRECTLY instead of going
@@ -74,7 +74,7 @@ def _frontend_command(web: Path) -> list[str] | None:
     node = shutil.which("node")
     next_js = web / "node_modules" / "next" / "dist" / "bin" / "next"
     next_bin = web / "node_modules" / ".bin" / "next"
-    pinned = ["dev", "--turbo", "--port", str(_FRONTEND_PORT)]
+    pinned = ["dev", "--turbo", "--port", str(web_port)]
     if node and next_js.exists():
         return [node, str(next_js), *pinned]
     if next_bin.exists():
@@ -84,7 +84,7 @@ def _frontend_command(web: Path) -> list[str] | None:
     return None
 
 
-def _start_frontend(backend_port: int) -> subprocess.Popen | None:
+def _start_frontend(backend_port: int, web_port: int | None = None) -> subprocess.Popen | None:
     """Spawn the Next.js dev server on the fixed port :18100, or return None.
 
     Robustness over the old ``npm run dev`` spawn:
@@ -105,26 +105,29 @@ def _start_frontend(backend_port: int) -> subprocess.Popen | None:
     """
     if os.environ.get("OPENPROGRAM_WEB_NO_FRONTEND"):
         return None
+    if web_port is None:
+        web_port = _FRONTEND_PORT
     web = _find_web_dir()
     if web is None:
         return None  # no web/ source — backend only
-    # Something on the fixed port already? Only reuse it when it actually
+    # Something on the frontend port already? Only reuse it when it actually
     # answers like our frontend — a bare ``connect`` would happily "reuse"
-    # an unrelated program squatting :18100 and desync every proxied URL.
-    if _port_in_use(_FRONTEND_PORT):
-        ours = _frontend_is_ours(_FRONTEND_PORT)
+    # an unrelated program squatting it and desync every proxied URL.
+    if _port_in_use(web_port):
+        ours = _frontend_is_ours(web_port)
         if ours is True:
-            print(f"Frontend already running at http://localhost:{_FRONTEND_PORT}")
+            print(f"Frontend already running at http://localhost:{web_port}")
             return None
         # Held, but it doesn't answer like our frontend (False) or doesn't
         # answer at all (None). Don't spawn a second dev server — Next would
-        # bump to :18101 and the fixed-port URL every proxy assumes breaks.
-        print(f"Port {_FRONTEND_PORT} is held by a process that does not look "
+        # bump to the next port and the fixed-port URL every proxy assumes
+        # breaks.
+        print(f"Port {web_port} is held by a process that does not look "
               f"like the openprogram frontend.")
-        hint = port_owner_hint(_FRONTEND_PORT)
+        hint = port_owner_hint(web_port)
         if hint:
             print(hint)
-        print(f"  Free it (e.g. `lsof -ti:{_FRONTEND_PORT} | xargs kill`) and "
+        print(f"  Free it (e.g. `lsof -ti:{web_port} | xargs kill`) and "
               f"rerun, or set OPENPROGRAM_WEB_NO_FRONTEND=1 to skip the frontend.")
         return None
 
@@ -133,7 +136,7 @@ def _start_frontend(backend_port: int) -> subprocess.Popen | None:
         print("Frontend not started: Node.js not found on PATH (needs Node 18+).\n"
               "  Install Node, or start the frontend manually: cd web && npm run dev")
         return None
-    cmd = _frontend_command(web)
+    cmd = _frontend_command(web, web_port)
     if cmd is None:
         print("Frontend not started: dependencies are not installed.\n"
               f"  Run:  cd {web} && npm install")
@@ -146,7 +149,7 @@ def _start_frontend(backend_port: int) -> subprocess.Popen | None:
     node_dir = str(Path(shutil.which("node")).parent)
     bin_dir = str(web / "node_modules" / ".bin")
     env["PATH"] = os.pathsep.join([bin_dir, node_dir, env.get("PATH", "")])
-    env["PORT"] = str(_FRONTEND_PORT)
+    env["PORT"] = str(web_port)
     # Pin the proxy target to the backend port we actually bound. Without
     # this, next.config's ``/ws`` + ``/healthz`` rewrites fall back to their
     # hard-coded default and the WebSocket connects to a dead port. ``/api``
@@ -161,7 +164,7 @@ def _start_frontend(backend_port: int) -> subprocess.Popen | None:
         kwargs["start_new_session"] = True
 
     proc = subprocess.Popen(cmd, **kwargs)
-    print(f"Starting frontend on http://localhost:{_FRONTEND_PORT} …")
+    print(f"Starting frontend on http://localhost:{web_port} …")
     return proc
 
 
@@ -188,12 +191,14 @@ def _stop_frontend(proc: subprocess.Popen | None) -> None:
             pass
 
 
-def _cmd_web(port, open_browser):
+def _cmd_web(port, open_browser, web_port=None):
     """Start the web UI (backend + frontend).
 
-    ``port=None`` / ``open_browser=None`` means "use the user's stored
-    UI pref" (written by ``openprogram setup ui``), falling back to
-    the legacy defaults if none set.
+    ``port`` / ``web_port`` / ``open_browser`` = None means "use the
+    user's stored pref" (``openprogram ports`` / ``openprogram setup
+    ui``), falling back to the defaults if none set. Resolution order for
+    each port: explicit arg → env (``OPENPROGRAM_BACKEND_PORT`` /
+    ``OPENPROGRAM_WEB_PORT``) → stored pref → module default.
     """
     try:
         from openprogram.webui import start_web
@@ -217,6 +222,19 @@ def _cmd_web(port, open_browser):
     if open_browser is None:
         open_browser = True
 
+    # Frontend port: explicit --web-port > env > stored pref > default.
+    if web_port is None:
+        env_wp = os.environ.get("OPENPROGRAM_WEB_PORT")
+        if env_wp:
+            web_port = int(env_wp)
+    if web_port is None:
+        try:
+            from openprogram.setup import read_ui_prefs
+            web_port = read_ui_prefs().get("web_port")
+        except Exception:
+            pass
+    web_port = int(web_port) if web_port else _FRONTEND_PORT
+
     # Backend port already held? Binding again raises a bare errno-48
     # traceback, so detect it up front — but distinguish OUR backend
     # already running from an unrelated program squatting the port. A
@@ -225,8 +243,8 @@ def _cmd_web(port, open_browser):
     if _port_in_use(port):
         ours = _backend_is_ours(port)
         if ours is True:
-            ui = (f"http://localhost:{_FRONTEND_PORT}"
-                  if _port_in_use(_FRONTEND_PORT) else f"http://localhost:{port}")
+            ui = (f"http://localhost:{web_port}"
+                  if _port_in_use(web_port) else f"http://localhost:{port}")
             print(f"openprogram web is already running (port {port} in use).")
             print(f"  Open the UI:  {ui}")
             print("  Or stop the other instance first:  pkill -f 'openprogram web'")
@@ -260,15 +278,15 @@ def _cmd_web(port, open_browser):
     except Exception:
         pass
 
-    frontend = _start_frontend(port)
-    # The UI lives on :18100 only when OUR frontend is up — either we just
-    # spawned it, or _start_frontend reused one it confirmed was ours. A
-    # bare _port_in_use(18100) here would ALSO fire when an unrelated
-    # program squats :18100 (the squatter _start_frontend already refused
-    # to reuse), and we'd then open the browser at that foreign service.
-    has_frontend = frontend is not None or _frontend_is_ours(_FRONTEND_PORT) is True
+    frontend = _start_frontend(port, web_port)
+    # The UI lives on the frontend port only when OUR frontend is up —
+    # either we just spawned it, or _start_frontend reused one it confirmed
+    # was ours. A bare _port_in_use(web_port) here would ALSO fire when an
+    # unrelated program squats it (the squatter _start_frontend already
+    # refused to reuse), and we'd then open the browser at that foreign one.
+    has_frontend = frontend is not None or _frontend_is_ours(web_port) is True
     ui_url = (
-        f"http://localhost:{_FRONTEND_PORT}" if has_frontend
+        f"http://localhost:{web_port}" if has_frontend
         else f"http://localhost:{port}"
     )
 

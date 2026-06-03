@@ -434,8 +434,17 @@ def main():
     # ---- web --------------------------------------------------------------
     p_web = sub.add_parser("web", help="Start the Web UI")
     p_web.add_argument("--port", type=int, default=None,
-        help="Port (default: stored UI pref, then 18109)")
+        help="Backend port for this run (default: stored pref, then 18109)")
+    p_web.add_argument("--web-port", type=int, default=None,
+        help="Frontend port for this run (default: stored pref, then 18100)")
     p_web.add_argument("--no-browser", action="store_true", help="Don't open browser")
+
+    p_ports = sub.add_parser("ports",
+        help="Show or set the web UI ports (backend / frontend); takes effect next start")
+    p_ports.add_argument("--backend", type=int, default=None, metavar="PORT",
+        help="Persist the FastAPI backend (API + WebSocket) port. Default 18109.")
+    p_ports.add_argument("--frontend", type=int, default=None, metavar="PORT",
+        help="Persist the Next.js frontend (web UI) port. Default 18100.")
 
     # ---- memory (persistent, machine-wide knowledge) ----------------------
     p_memory = sub.add_parser("memory",
@@ -884,7 +893,34 @@ def main():
         return
 
     if args.command == "web":
-        _cmd_web(args.port, False if args.no_browser else None)
+        _cmd_web(args.port, False if args.no_browser else None,
+                 web_port=getattr(args, "web_port", None))
+        return
+
+    if args.command == "ports":
+        from openprogram.setup import read_ui_prefs, set_ui_ports
+
+        def _valid(p):
+            return p is None or 1 <= p <= 65535
+
+        if not _valid(args.backend) or not _valid(args.frontend):
+            print("Port must be in 1–65535.")
+            return
+        if args.backend is None and args.frontend is None:
+            prefs = read_ui_prefs()
+            print(f"backend  (API + WebSocket):  {prefs['port']}")
+            print(f"frontend (web UI):           {prefs['web_port']}")
+            print()
+            print("Change with:  openprogram ports --backend <port> --frontend <port>")
+            print("Override one run via env:  OPENPROGRAM_BACKEND_PORT / OPENPROGRAM_WEB_PORT")
+            return
+        prefs = set_ui_ports(backend_port=args.backend, web_port=args.frontend)
+        if prefs["port"] == prefs["web_port"]:
+            print(f"Warning: backend and frontend are both {prefs['port']} — they must "
+                  "differ (until the single-port build lands) or the frontend won't start.")
+        print("Saved. Takes effect on the next `openprogram web` / `openprogram worker` start.")
+        print(f"  backend  (API + WebSocket):  {prefs['port']}")
+        print(f"  frontend (web UI):           {prefs['web_port']}")
         return
 
     if args.command == "memory":

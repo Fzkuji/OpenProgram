@@ -147,31 +147,53 @@ def run_skills_section() -> int:
 
 
 def run_ui_section() -> int:
-    """Web UI preferences: port + auto-open browser."""
-    from openprogram.setup import _confirm, _read_config, _text, _write_config
+    """Web UI preferences: backend port + frontend port + auto-open browser."""
+    from openprogram.setup import (
+        DEFAULT_BACKEND_PORT, DEFAULT_WEB_PORT,
+        _confirm, _read_config, _text, _write_config,
+    )
     cfg = _read_config()
     ui = cfg.get("ui", {}) or {}
-    cur_port = int(ui.get("port") or 18109)
+    cur_port = int(ui.get("port") or DEFAULT_BACKEND_PORT)
+    cur_web = int(ui.get("web_port") or DEFAULT_WEB_PORT)
     cur_open = bool(ui.get("open_browser", True))
 
-    port_raw = _text("Web UI port:", default=str(cur_port))
-    if port_raw is None:
-        print("Cancelled.")
+    def _ask_port(label: str, default: int) -> int | None:
+        raw = _text(label, default=str(default))
+        if raw is None:
+            print("Cancelled.")
+            return None
+        try:
+            p = int(raw)
+        except ValueError:
+            print(f"Invalid port: {raw!r}")
+            return None
+        if not 1 <= p <= 65535:
+            print(f"Port out of range (1–65535): {p}")
+            return None
+        return p
+
+    port = _ask_port("Backend port (FastAPI: API + WebSocket):", cur_port)
+    if port is None:
         return 1
-    try:
-        port = int(port_raw)
-    except ValueError:
-        print(f"Invalid port: {port_raw!r}")
+    web_port = _ask_port("Frontend port (Next.js web UI):", cur_web)
+    if web_port is None:
+        return 1
+    if port == web_port:
+        print("Backend and frontend ports must differ (until the single-port "
+              "build lands) or the frontend won't start.")
         return 1
 
     open_browser = _confirm("Open browser automatically on `openprogram web`?",
                             default=cur_open)
     cfg.setdefault("ui", {}).update({
         "port": port,
+        "web_port": web_port,
         "open_browser": open_browser,
     })
     _write_config(cfg)
-    print(f"UI: port={port}, open_browser={open_browser}")
+    print(f"UI: backend={port}, frontend={web_port}, open_browser={open_browser}")
+    print("Takes effect on the next `openprogram web` / `openprogram worker` start.")
     return 0
 
 

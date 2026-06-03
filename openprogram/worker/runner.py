@@ -172,7 +172,16 @@ def run_foreground() -> int:
     import os
     from openprogram.webui import start_web
 
-    fixed_port = int(os.environ.get("OPENPROGRAM_BACKEND_PORT", "18109"))
+    # Backend port: env override → stored UI pref → default 18109.
+    fixed_port = os.environ.get("OPENPROGRAM_BACKEND_PORT")
+    if fixed_port:
+        fixed_port = int(fixed_port)
+    else:
+        try:
+            from openprogram.setup import read_ui_prefs
+            fixed_port = int(read_ui_prefs()["port"])
+        except Exception:
+            fixed_port = 18109
     port = fixed_port
     if not _port_available(port):
         # The fixed port is genuinely held by another live listener

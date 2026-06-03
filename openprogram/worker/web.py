@@ -200,9 +200,19 @@ def start_web_frontend(
     if not _ensure_built(wd, backend_port=backend_port):
         return None
 
-    # Default frontend port is 18100. Override with OPENPROGRAM_WEB_PORT
-    # or `--web-port`.
-    port = int(web_port or os.environ.get("OPENPROGRAM_WEB_PORT", "18100"))
+    # Frontend port: explicit arg → OPENPROGRAM_WEB_PORT env → stored UI
+    # pref → default 18100.
+    if web_port is None:
+        env_wp = os.environ.get("OPENPROGRAM_WEB_PORT")
+        if env_wp:
+            web_port = int(env_wp)
+    if web_port is None:
+        try:
+            from openprogram.setup import read_ui_prefs
+            web_port = read_ui_prefs().get("web_port")
+        except Exception:
+            pass
+    port = int(web_port) if web_port else 18100
     _reclaim_web_port(port)
     env = dict(os.environ)
     env["OPENPROGRAM_BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"

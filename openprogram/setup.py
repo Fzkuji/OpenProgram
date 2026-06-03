@@ -128,13 +128,46 @@ def write_search_default_provider(name: str | None) -> None:
     _write_config(cfg)
 
 
+# Default ports. Uncommon 5-digit values in the registered-port range
+# (< 49152, so they never collide with the OS ephemeral range); the
+# 18xxx block is rarely used by mainstream services. ``port`` is the
+# FastAPI backend (also the single port once the static-SPA migration
+# lands); ``web_port`` is the transitional Next.js frontend.
+DEFAULT_BACKEND_PORT = 18109
+DEFAULT_WEB_PORT = 18100
+
+
 def read_ui_prefs() -> dict[str, Any]:
     cfg = _read_config()
     ui = cfg.get("ui", {}) or {}
     return {
-        "port": int(ui.get("port") or 18109),
+        "port": int(ui.get("port") or DEFAULT_BACKEND_PORT),
+        "web_port": int(ui.get("web_port") or DEFAULT_WEB_PORT),
         "open_browser": bool(ui.get("open_browser", True)),
     }
+
+
+def set_ui_ports(
+    *,
+    backend_port: int | None = None,
+    web_port: int | None = None,
+    open_browser: bool | None = None,
+) -> dict[str, Any]:
+    """Persist UI port prefs to the config. Only the keys passed are
+    changed; the rest keep their stored values. Returns the resulting
+    ``read_ui_prefs()`` dict. Takes effect on the next ``openprogram web``
+    / ``worker`` start — nothing live is rebound here.
+    """
+    cfg = _read_config()
+    ui = cfg.setdefault("ui", {})
+    if backend_port is not None:
+        ui["port"] = int(backend_port)
+    if web_port is not None:
+        ui["web_port"] = int(web_port)
+    if open_browser is not None:
+        ui["open_browser"] = bool(open_browser)
+    _write_config(cfg)
+    return read_ui_prefs()
 
 
 def read_agent_prefs() -> dict[str, Any]:
