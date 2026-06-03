@@ -10,8 +10,8 @@ export interface SlashContext {
   clearCommitted: () => void;
   newSession: () => void;
   exit: () => void;
-  /** Open an interactive picker (model / resume / agent / channel / theme / effort). */
-  openPicker: (kind: 'model' | 'resume' | 'agent' | 'channel' | 'theme' | 'effort') => void;
+  /** Open an interactive picker (model / resume / agent / channel / theme / effort / settings). */
+  openPicker: (kind: 'model' | 'resume' | 'agent' | 'channel' | 'theme' | 'effort' | 'settings') => void;
   /** Apply a theme by name. Returns true on success, false on unknown name. */
   setTheme?: (name: string) => boolean;
   /** Toggle (or set) the "tools-on" flag passed with the next chat turn. */
@@ -598,11 +598,19 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'config': {
+      // Open the in-TUI settings editor. Ask the worker for the current
+      // schema-resolved settings, then show the panel (pickerRouter renders
+      // SettingsPanel from settingsRows; useWsEvents fills it on `settings`).
+      ctx.client.send({ action: 'get_settings' });
+      ctx.openPicker('settings');
+      return true;
+    }
+
     case 'memory':
     case 'mcp':
     case 'doctor':
     case 'logout':
-    case 'config':
     case 'review':
     case 'compact': {
       // Stubs — real implementations live behind ws actions that aren't

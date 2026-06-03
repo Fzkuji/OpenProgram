@@ -32,6 +32,7 @@ import type {
   ThinkingEffort,
 } from './repl/types.js';
 import { ChannelActivityFeed } from '../components/ChannelActivityFeed.js';
+import type { SettingRow } from '../components/SettingsPanel.js';
 import { randomLocalId, renderModel } from './repl/helpers.js';
 import { buildPickerNode } from './repl/pickerRouter.js';
 import { useWsEvents } from './repl/useWsEvents.js';
@@ -82,6 +83,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   >({});
   const [bellEnabled, setBellEnabled] = useState(true);
   const [modelsList, setModelsList] = useState<string[]>([]);
+  const [settingsRows, setSettingsRows] = useState<SettingRow[]>([]);
   const [branchesList, setBranchesList] = useState<BranchRow[]>([]);
   const [pastConversations, setPastConversations] = useState<
     Array<{
@@ -169,6 +171,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setConversationId, setStreaming, setActivity, setCommitted,
     setTokensByConv, setWindowByConv, setTokenStatsByConv,
     setStats, setModel, setAgent, setAgentsList, setModelsList, setBranchesList,
+    setSettingsRows,
     setChannelAccounts, setPastConversations,
     setQrAscii, setQrStatus,
     setPickerKind, setChosenChannel, setChosenAccount,
@@ -388,6 +391,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     pickerKind, pendingAttach,
     chosenChannel, chosenAccount, conversationId,
     modelsList, model, agentsList, channelAccounts, branchesList,
+    settingsRows,
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft,
     thinkingEffort,

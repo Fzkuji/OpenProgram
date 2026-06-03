@@ -47,7 +47,9 @@ export type WsRequest =
       peer?: string;
       conversation_id?: string;
     }
-  | { action: 'detach_session'; channel: string; account_id: string; peer: string };
+  | { action: 'detach_session'; channel: string; account_id: string; peer: string }
+  | { action: 'get_settings' }
+  | { action: 'set_setting'; key: string; value: unknown };
 
 export interface ChatAck {
   type: 'chat_ack';
@@ -292,6 +294,11 @@ export type WsEnvelope =
   | QrLoginEnvelope
   | SearchResultsEnvelope
   | ErrorEnvelope
+  | { type: 'settings'; data: unknown[] }
+  | {
+      type: 'setting_result';
+      data: { key: string; applied?: string; value?: unknown; note?: string; error?: string };
+    }
   | { type: 'pong' };
 
 export type WsListener = (ev: WsEnvelope) => void;

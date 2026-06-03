@@ -22,6 +22,7 @@ import React from 'react';
 import { LineInput } from '../../components/LineInput.js';
 import { Picker, PickerItem } from '../../components/Picker.js';
 import { ThemePicker } from '../../components/ThemePicker.js';
+import { SettingsPanel, SettingRow } from '../../components/SettingsPanel.js';
 import { Turn } from '../../components/Turn.js';
 import { BackendClient } from '../../ws/client.js';
 import { tsToDate } from './helpers.js';
@@ -55,6 +56,7 @@ export interface PickerCtx {
   chosenAccount: string | undefined;
   conversationId: string | undefined;
   modelsList: string[];
+  settingsRows: SettingRow[];
   model: string | undefined;
   agentsList: AgentInfo[];
   channelAccounts: ChannelAccountRow[];
@@ -92,7 +94,7 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     client, colors, pushSystem,
     pickerKind, pendingAttach,
     chosenChannel, chosenAccount, conversationId,
-    modelsList, model, agentsList, channelAccounts,
+    modelsList, settingsRows, model, agentsList, channelAccounts,
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft, thinkingEffort,
     setPickerKind, setPendingAttach,
@@ -101,6 +103,16 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     setContextSearchQuery, setSearchResults, setPromptDraft, setThinkingEffort,
     sessionAliasesRef,
   } = ctx;
+
+  if (pickerKind === 'settings') {
+    return (
+      <SettingsPanel
+        rows={settingsRows}
+        onSet={(key, value) => client.send({ action: 'set_setting', key, value })}
+        onClose={() => setPickerKind(null)}
+      />
+    );
+  }
 
   if (pickerKind === 'model') {
     const items: PickerItem<string>[] = modelsList.map((m) => ({

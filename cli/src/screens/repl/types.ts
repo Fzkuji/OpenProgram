@@ -53,6 +53,7 @@ export type PickerKind =
   | null
   | 'model' | 'resume' | 'agent' | 'channel' | 'channel_account' | 'theme' | 'effort'
   | 'branch'
+  | 'settings'
   | 'context_search' | 'context_search_results'
   | 'register_account_id' | 'register_token'
   | 'channel_action' | 'channel_peer_input' | 'channel_qr_wait'

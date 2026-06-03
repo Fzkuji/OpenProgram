@@ -17,6 +17,7 @@ import { trimHistoryFile } from '../../utils/history.js';
 import { randomLocalId, renderModel } from './helpers.js';
 import { handleChatResponse } from './wsHandlers/handleChatResponse.js';
 import { handleChannelTurn } from './wsHandlers/handleChannelTurn.js';
+import type { SettingRow } from '../../components/SettingsPanel.js';
 import type {
   Activity,
   AgentInfo,
@@ -63,6 +64,7 @@ export interface WsEventsCtx {
   setAgent: React.Dispatch<React.SetStateAction<string | undefined>>;
   setAgentsList: React.Dispatch<React.SetStateAction<AgentInfo[]>>;
   setModelsList: React.Dispatch<React.SetStateAction<string[]>>;
+  setSettingsRows: React.Dispatch<React.SetStateAction<SettingRow[]>>;
   setChannelAccounts: React.Dispatch<React.SetStateAction<ChannelAccountRow[]>>;
   setPastConversations: React.Dispatch<React.SetStateAction<PastConversation[]>>;
   setQrAscii: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -121,6 +123,20 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         const list = ev.data?.models ?? [];
         c.setModelsList(list);
         if (ev.data?.current) c.setModel(ev.data.current);
+      } else if (ev.type === 'settings') {
+        c.setSettingsRows(((ev as { data?: SettingRow[] }).data) ?? []);
+      } else if (ev.type === 'setting_result') {
+        const d = (ev as {
+          data: { key: string; applied?: string; value?: unknown; note?: string; error?: string };
+        }).data;
+        if (d.error) {
+          c.pushSystem(`[settings] ${d.key}: ${d.error}`);
+        } else {
+          c.setSettingsRows((rows) =>
+            rows.map((r) => (r.key === d.key ? { ...r, value: d.value } : r)));
+          const when = d.applied === 'next_start' ? ' — takes effect next start' : '';
+          c.pushSystem(`[settings] ${d.key} saved${when}${d.note ? ` (${d.note})` : ''}`);
+        }
       } else if (ev.type === 'browser_result') {
         const data = (ev as { data: { verb: string; result: string } }).data;
         c.pushSystem(`[browser ${data.verb}] ${data.result}`);
