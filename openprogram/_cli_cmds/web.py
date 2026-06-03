@@ -1,7 +1,7 @@
 """``openprogram web`` handler — start the backend AND the Next.js frontend.
 
 Historically ``openprogram web`` only started the FastAPI backend on
-:18109; the Next.js dev server on :3000 (which serves the actual UI and
+:18109; the Next.js dev server on :18100 (which serves the actual UI and
 proxies ``/api`` + ``/ws`` back to :18109) had to be launched by hand with
 ``cd web && npm run dev``. That split is the source of the recurring
 "only the backend came up / page won't open" confusion, so this command
@@ -9,28 +9,27 @@ now brings up both — the single ``openprogram web`` is the whole UI.
 
 The frontend is auto-started only for a source checkout (the ``web/``
 dir with ``node_modules`` sits next to the package — true for an editable
-install). It is skipped when :3000 is already serving, when ``web/`` /
+install). It is skipped when :18100 is already serving, when ``web/`` /
 ``node_modules`` is absent (a plain ``pip install``), or when
 ``OPENPROGRAM_WEB_NO_FRONTEND`` is set.
 """
 from __future__ import annotations
 
 import os
-import socket
 import subprocess
 import sys
 from pathlib import Path
 
+from openprogram._ports import (
+    backend_is_ours as _backend_is_ours,
+    frontend_is_ours as _frontend_is_ours,
+    port_in_use as _port_in_use,
+    port_owner_hint,
+)
+
 # The Next.js dev server port. Matches every ``/api`` + ``/ws`` proxy
-# note in webui/server.py — the frontend lives on :3000.
-_FRONTEND_PORT = 3000
-
-
-def _port_in_use(port: int) -> bool:
-    """True when something is already listening on ``localhost:port``."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.4)
-        return s.connect_ex(("127.0.0.1", port)) == 0
+# note in webui/server.py — the frontend lives on :18100.
+_FRONTEND_PORT = 18100
 
 
 def _find_web_dir() -> Path | None:
@@ -67,7 +66,7 @@ def _frontend_command(web: Path) -> list[str] | None:
     ``.cmd`` exec quirk).
 
     ``--port`` is pinned so the dev server can never silently bump to
-    :3001 when :3000 is taken — the URL every ``/api`` + ``/ws`` proxy
+    :18101 when :18100 is taken — the URL every ``/api`` + ``/ws`` proxy
     assumes stays fixed. Returns None when node / the frontend deps
     aren't installed.
     """
@@ -85,71 +84,8 @@ def _frontend_command(web: Path) -> list[str] | None:
     return None
 
 
-def _frontend_is_ours(port: int) -> bool | None:
-    """Probe ``http://127.0.0.1:port/`` to tell OUR frontend from a squatter.
-
-    Returns True when the port answers like a Next.js app (safe to reuse),
-    False when it answers like something else, and None when the probe is
-    inconclusive (no/garbled response within the timeout).
-
-    A bare TCP ``connect`` — the only check the old code did — cannot tell
-    our dev server apart from an unrelated program that happened to grab
-    :3000 first. Reusing a squatter silently desyncs every proxied URL
-    (the UI loads someone else's page, or nothing). openclaw solves the
-    same "is the thing on my fixed port actually mine?" problem with a
-    lock file that verifies the holder's PID *and* command line
-    (``src/infra/gateway-lock.ts``); for a port we don't own outright the
-    HTTP-marker probe is the equivalent identity check.
-    """
-    import urllib.request
-    try:
-        req = urllib.request.Request(f"http://127.0.0.1:{port}/", method="GET")
-        with urllib.request.urlopen(req, timeout=1.0) as resp:
-            powered = (resp.headers.get("x-powered-by") or "").lower()
-            body = resp.read(4096).decode("utf-8", "replace")
-    except Exception:
-        return None
-    # Next emits ``/_next/`` asset URLs and a ``__next`` mount node in the
-    # served HTML; the dev server also tags ``x-powered-by: Next.js``.
-    if "next" in powered or "/_next/" in body or "__next" in body:
-        return True
-    return False
-
-
-def _backend_is_ours(port: int) -> bool | None:
-    """Probe ``http://127.0.0.1:port/healthz`` to tell OUR backend from a
-    squatter on the same port.
-
-    Returns True when the port answers with openprogram's health JSON (a
-    running instance — reuse it / point the user at the UI), False when
-    it answers like something else, None when the probe is inconclusive
-    (no/garbled response). Symmetric to ``_frontend_is_ours``: a bare TCP
-    ``connect`` (the old precheck) would mislabel ANY program squatting
-    the backend port as "openprogram already running", and then open a
-    browser at that foreign service.
-    """
-    import json
-    import urllib.request
-    try:
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/healthz", timeout=1.0
-        ) as resp:
-            body = resp.read(4096)
-    except Exception:
-        return None
-    try:
-        data = json.loads(body)
-    except Exception:
-        return False
-    # openprogram's /healthz always carries these distinctive keys
-    # (see webui/routes/misc.py).
-    if isinstance(data, dict) and "uptime_seconds" in data and "status" in data:
-        return True
-    return False
-
-
 def _start_frontend(backend_port: int) -> subprocess.Popen | None:
-    """Spawn the Next.js dev server on the fixed port :3000, or return None.
+    """Spawn the Next.js dev server on the fixed port :18100, or return None.
 
     Robustness over the old ``npm run dev`` spawn:
       * runs the local ``next`` binary directly, so it can't fail with
@@ -163,7 +99,7 @@ def _start_frontend(backend_port: int) -> subprocess.Popen | None:
         a traceback) when node / the frontend deps aren't installed.
 
     Skipped when explicitly disabled, when OUR frontend is already serving
-    :3000, or when there's no ``web/`` source (a plain wheel install). The
+    :18100, or when there's no ``web/`` source (a plain wheel install). The
     child is put in its own process group / job so the whole tree tears
     down together on exit (see ``_stop_frontend``).
     """
@@ -174,7 +110,7 @@ def _start_frontend(backend_port: int) -> subprocess.Popen | None:
         return None  # no web/ source — backend only
     # Something on the fixed port already? Only reuse it when it actually
     # answers like our frontend — a bare ``connect`` would happily "reuse"
-    # an unrelated program squatting :3000 and desync every proxied URL.
+    # an unrelated program squatting :18100 and desync every proxied URL.
     if _port_in_use(_FRONTEND_PORT):
         ours = _frontend_is_ours(_FRONTEND_PORT)
         if ours is True:
@@ -182,10 +118,13 @@ def _start_frontend(backend_port: int) -> subprocess.Popen | None:
             return None
         # Held, but it doesn't answer like our frontend (False) or doesn't
         # answer at all (None). Don't spawn a second dev server — Next would
-        # bump to :3001 and the fixed-port URL every proxy assumes breaks.
+        # bump to :18101 and the fixed-port URL every proxy assumes breaks.
         print(f"Port {_FRONTEND_PORT} is held by a process that does not look "
-              f"like the openprogram frontend.\n"
-              f"  Free it (e.g. `lsof -ti:{_FRONTEND_PORT} | xargs kill`) and "
+              f"like the openprogram frontend.")
+        hint = port_owner_hint(_FRONTEND_PORT)
+        if hint:
+            print(hint)
+        print(f"  Free it (e.g. `lsof -ti:{_FRONTEND_PORT} | xargs kill`) and "
               f"rerun, or set OPENPROGRAM_WEB_NO_FRONTEND=1 to skip the frontend.")
         return None
 
@@ -300,12 +239,15 @@ def _cmd_web(port, open_browser):
         # message rather than silently drifting to another port or opening
         # a browser at a foreign service.
         print(f"Port {port} is in use by another process (not openprogram).")
+        hint = port_owner_hint(port)
+        if hint:
+            print(hint)
         print(f"  Free it (e.g. `lsof -ti:{port} | xargs kill`), or pick a")
         print("  different backend port:  openprogram setup ui")
         sys.exit(1)
 
     # Start the backend WITHOUT opening a browser — the real UI is the
-    # frontend on :3000, not the backend on :18109 (which has no HTML
+    # frontend on :18100, not the backend on :18109 (which has no HTML
     # routes). We open the correct URL ourselves once we know whether a
     # frontend is available.
     thread = start_web(port=port, open_browser=False)
@@ -319,10 +261,10 @@ def _cmd_web(port, open_browser):
         pass
 
     frontend = _start_frontend(port)
-    # The UI lives on :3000 only when OUR frontend is up — either we just
+    # The UI lives on :18100 only when OUR frontend is up — either we just
     # spawned it, or _start_frontend reused one it confirmed was ours. A
-    # bare _port_in_use(3000) here would ALSO fire when an unrelated
-    # program squats :3000 (the squatter _start_frontend already refused
+    # bare _port_in_use(18100) here would ALSO fire when an unrelated
+    # program squats :18100 (the squatter _start_frontend already refused
     # to reuse), and we'd then open the browser at that foreign service.
     has_frontend = frontend is not None or _frontend_is_ours(_FRONTEND_PORT) is True
     ui_url = (
@@ -336,7 +278,7 @@ def _cmd_web(port, open_browser):
         def _open():
             import time
             import webbrowser
-            # Give the frontend a moment to bind :3000 before opening.
+            # Give the frontend a moment to bind :18100 before opening.
             time.sleep(2.0 if frontend is not None else 0.5)
             webbrowser.open(ui_url)
 

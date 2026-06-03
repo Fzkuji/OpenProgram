@@ -29,7 +29,7 @@ echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
 Set one of these env vars before starting the worker:
 
 ```bash
-export OPENPROGRAM_WEB_PORT=8101         # frontend (defaults to 3000)
+export OPENPROGRAM_WEB_PORT=8101         # frontend (defaults to 18100)
 export OPENPROGRAM_BACKEND_PORT=8102     # FastAPI (defaults to 18109)
 ```
 

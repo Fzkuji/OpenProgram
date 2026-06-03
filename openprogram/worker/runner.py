@@ -172,12 +172,24 @@ def run_foreground() -> int:
     import os
     from openprogram.webui import start_web
 
-    port = int(os.environ.get("OPENPROGRAM_BACKEND_PORT", "18109"))
+    fixed_port = int(os.environ.get("OPENPROGRAM_BACKEND_PORT", "18109"))
+    port = fixed_port
     if not _port_available(port):
+        # The fixed port is genuinely held by another live listener
+        # (SO_REUSEADDR already lets us reclaim a TIME_WAIT port, so this
+        # isn't a recent self-restart). Name who holds it before falling
+        # back — a silent drift to a random port hides the real cause and
+        # breaks the fixed-port URL. (openclaw's describePortOwner.)
+        from openprogram._ports import describe_port_owner
+        owner = describe_port_owner(fixed_port)
         port = _find_free_port()
-        print(
-            f"[worker] backend port {os.environ.get('OPENPROGRAM_BACKEND_PORT', '18109')} taken; using free port {port}"
-        )
+        if owner is not None:
+            who = "another openprogram instance" if owner.is_ours else "a foreign process"
+            print(f"[worker] backend port {fixed_port} is held by {who} — {owner.detail}")
+            if not owner.is_ours:
+                print(f"[worker]   free it (`lsof -ti:{fixed_port} | xargs kill`) "
+                      f"or set OPENPROGRAM_BACKEND_PORT to keep the fixed port.")
+        print(f"[worker] falling back to free port {port} (UI URL will track this port).")
     start_web(port=port, open_browser=False)
     write_port_file(port)
     write_pid_file()

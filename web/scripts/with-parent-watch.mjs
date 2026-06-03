@@ -12,8 +12,8 @@ const parentPid = parseInt(process.env.OPENPROGRAM_PARENT_PID || "0", 10);
 // backend lives on the fixed 5-digit port 18109 (uncommon, rarely
 // squatted); the single-port migration folds this frontend into that
 // same port and removes this watcher. The Python worker overrides via
-// PORT; the 8100 fallback only covers a direct ``npm`` invocation.
-const port = process.env.PORT || "8100";
+// PORT; the 18100 fallback only covers a direct ``npm`` invocation.
+const port = process.env.PORT || "18100";
 
 // npm bin shims on Windows are .cmd batch files, not directly executable
 // by Node's child_process.spawn without ``shell: true``. The ``next``

@@ -77,21 +77,10 @@ _DEFAULT_WEBUI_PORT = 18109
 def _probe_tcp_listening(port: int, host: str = "127.0.0.1",
                          timeout_s: float = 0.4) -> bool:
     """Cheap TCP-connect probe. True if something accepted; False on
-    refusal, timeout, or any other socket error.
-    """
-    import socket
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(timeout_s)
-    try:
-        s.connect((host, port))
-        return True
-    except OSError:
-        return False
-    finally:
-        try:
-            s.close()
-        except OSError:
-            pass
+    refusal, timeout, or any other socket error. Thin alias over the
+    shared :func:`openprogram._ports.port_in_use`."""
+    from openprogram._ports import port_in_use
+    return port_in_use(port, host=host, timeout=timeout_s)
 
 
 def find_running_webui() -> tuple[Optional[int], Optional[int], str]:

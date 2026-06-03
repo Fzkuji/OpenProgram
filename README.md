@@ -51,7 +51,7 @@ pip install openprogram                             # TUI + web UI in one wheel
 openprogram setup                                   # interactive provider wizard
 ```
 
-`setup` adopts any CLI you're already logged into (Claude Code / Codex / Gemini) and prompts for API keys otherwise. On exit the worker is live — web UI on `:3000`, API on `:18109`.
+`setup` adopts any CLI you're already logged into (Claude Code / Codex / Gemini) and prompts for API keys otherwise. On exit the worker is live — web UI on `:18100`, API on `:18109`.
 
 <details>
 <summary><b>Prefer to skip the wizard?</b></summary>
@@ -144,7 +144,7 @@ Two ways to interact day-to-day — same backend, same sessions, switch freely.
 
 ### Web UI — `openprogram web`
 
-Opens at `http://localhost:3000`. The full surface: a live **mini-DAG** of the session on the right rail, **branch / merge / attach** on any node, **multi-agent** rows tagged by producer, and drag-and-drop **file attachments**. Best when you want to *see and steer* the execution tree, or for longer, branching work.
+Opens at `http://localhost:18100`. The full surface: a live **mini-DAG** of the session on the right rail, **branch / merge / attach** on any node, **multi-agent** rows tagged by producer, and drag-and-drop **file attachments**. Best when you want to *see and steer* the execution tree, or for longer, branching work.
 
 <p align="center">
   <img src="docs/images/chat_hero.png" alt="OpenProgram web UI — agentic function call tree, streamed thinking, and the conversation DAG on the right rail" width="880">

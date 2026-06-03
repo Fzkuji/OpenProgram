@@ -1140,7 +1140,7 @@ def create_app():
 
     # Frontend is served separately from web/ (Next.js). This process only
     # serves /api/* and /ws. Run `cd web && npm run dev` and point the browser
-    # at http://localhost:3000 — Next will proxy /api/* and /ws back to us.
+    # at http://localhost:18100 — Next will proxy /api/* and /ws back to us.
 
     @app.on_event("startup")
     async def _capture_loop():
@@ -1238,7 +1238,7 @@ def create_app():
     # update it via `tools/scripts/refresh_claude_models.py` (offline)
     # if Anthropic ships a new model family.
 
-    # No HTML routes — frontend lives in web/ (Next.js on :3000).
+    # No HTML routes — frontend lives in web/ (Next.js on :18100).
 
     # WebSocket — use Starlette's raw WebSocketRoute to avoid FastAPI routing issues
     from starlette.routing import WebSocketRoute
