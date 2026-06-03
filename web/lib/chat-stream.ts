@@ -62,6 +62,13 @@ interface ChatResponseData {
    *  assistant reply that called the tool. */
   parent_id?: string;
   status?: string;
+  /** Structured error taxonomy on a `type:"error"` response — lets the
+   *  bubble show a categorized, actionable error (rate-limit retry hint vs
+   *  fatal auth/context) instead of an opaque string. See
+   *  docs/design/providers/error-taxonomy-propagation.md. */
+  reason?: string;
+  retryable?: boolean;
+  retry_after_s?: number;
 }
 
 /** Names of LLM-callable @agentic_function tools. When the LLM invokes
@@ -508,6 +515,11 @@ function finalize(sid: string, rid: string, d: ChatResponseData): void {
         : "done";
 
   const patch: Partial<ChatMsg> = { status, rawType: d.type };
+  if (status === "error") {
+    if (d.reason) patch.errorReason = d.reason;
+    if (typeof d.retryable === "boolean") patch.errorRetryable = d.retryable;
+    if (typeof d.retry_after_s === "number") patch.errorRetryAfterS = d.retry_after_s;
+  }
   if (d.function) patch.function = d.function;
   if (d.display) patch.display = d.display;
   // A `/run` result carries the execution tree, usage and attempt

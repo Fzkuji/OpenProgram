@@ -78,6 +78,13 @@ export interface ChatMsg {
   /** Server response type — "result" / "error". Drives the runtime
    *  block's error styling and the assistant bubble's error branch. */
   rawType?: string;
+  /** Structured error taxonomy (on a failed turn) — categorical reason,
+   *  whether it's retryable, and a server retry hint. Lets the bubble
+   *  render an actionable error. See
+   *  docs/design/providers/error-taxonomy-propagation.md. */
+  errorReason?: string;
+  errorRetryable?: boolean;
+  errorRetryAfterS?: number;
   /** Execution tree captured with a `/run` result, rendered inside the
    *  runtime block. */
   contextTree?: TreeNode;

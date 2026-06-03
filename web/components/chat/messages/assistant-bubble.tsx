@@ -25,6 +25,52 @@ import { ThinkingBlock } from "./thinking-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
 
+/** Categorized, actionable headline for a failed turn, by error reason
+ *  (see docs/design/providers/error-taxonomy-propagation.md). Returns null
+ *  for reasons with no copy better than the raw message. */
+function errorHeadline(
+  msg: ChatMsg,
+  text: (en: string, zh: string) => string,
+): string | null {
+  const after = msg.errorRetryAfterS ? Math.ceil(msg.errorRetryAfterS) : 0;
+  switch (msg.errorReason) {
+    case "rate_limit":
+      return after
+        ? text(`Rate limited — try again in ${after}s.`, `请求过于频繁 —— ${after} 秒后重试。`)
+        : text("Rate limited — try again shortly.", "请求过于频繁 —— 稍后重试。");
+    case "auth":
+      return text(
+        "Your API key was rejected — check it in Settings → Providers.",
+        "API key 被拒 —— 去 设置 → Providers 检查。",
+      );
+    case "authz":
+      return text(
+        "Not authorized — check your plan / access for this model.",
+        "无权限 —— 检查该模型的套餐 / 访问权限。",
+      );
+    case "context":
+      return text(
+        "This conversation is too long — compact it or start a new chat.",
+        "对话太长 —— 压缩或新开对话。",
+      );
+    case "policy":
+      return text(
+        "The provider blocked this request (content policy).",
+        "提供商按内容政策拦截了此请求。",
+      );
+    case "provider":
+    case "transport":
+      return text(
+        "Temporary provider / network error — try again.",
+        "提供商 / 网络临时错误 —— 重试即可。",
+      );
+    case "timeout":
+      return text("The request timed out — try again.", "请求超时 —— 重试。");
+    default:
+      return null; // invalid / unknown → show the raw message only
+  }
+}
+
 function TypingIndicator() {
   // No name here — the bubble header already shows the agent name, so
   // "<name> is thinking" repeated it. Just the breathing dot + label,
@@ -160,7 +206,22 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
       </div>
 
       {msg.status === "error" ? (
-        <div className="error-content">{msg.content || text("Request failed.", "请求失败。")}</div>
+        <div className="error-content">
+          {(() => {
+            const headline = errorHeadline(msg, text);
+            const detail = msg.content || text("Request failed.", "请求失败。");
+            return headline ? (
+              <>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>{headline}</div>
+                <div style={{ opacity: 0.7, fontSize: "0.92em", whiteSpace: "pre-wrap" }}>
+                  {detail}
+                </div>
+              </>
+            ) : (
+              detail
+            );
+          })()}
+        </div>
       ) : (
         <div className="chat-stream-body">
           {msg.blocks && msg.blocks.length > 0 ? (
