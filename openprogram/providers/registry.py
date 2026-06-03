@@ -196,13 +196,16 @@ def check_providers() -> dict:
             "model": default_model,
         }
 
-    for name, env_vars in api_checks.items():
+    # Config-aware availability via the canonical resolver (env > config.json),
+    # so a key saved through the web UI still reads "available" after a worker
+    # restart cleared it from os.environ. The status names here map to the
+    # canonical provider ids ("gemini" status row → "google").
+    from openprogram.providers.env_api_keys import is_configured
+    _canon = {"gemini": "google"}
+    for name in api_checks:
         _, _, default_model = PROVIDERS[name]
-        if isinstance(env_vars, str):
-            env_vars = [env_vars]
-        has_key = any(os.environ.get(v) for v in env_vars)
         results[name] = {
-            "available": has_key,
+            "available": is_configured(_canon.get(name, name)),
             "method": "API",
             "model": default_model,
         }
