@@ -1,5 +1,20 @@
 # OpenProgram CLI / TUI Redesign
 
+> **Status: implemented (2026-06).** The schema (`openprogram/config_schema.py`)
+> is the single source of truth; it renders in all four surfaces — the
+> `openprogram config` CLI, the `setup` wizard (`prompt_schema_group`), the
+> TUI `/config` panel (`cli/src/components/SettingsPanel.tsx`, also reachable
+> via the Ctrl+K command palette), and the web **System** tab
+> (`/settings/system` ← `/api/settings`). Covered config settings: **Ports,
+> Memory, Search, Tools** (per-tool toggles). Model / effort / theme /
+> providers are reached from the panel's action rows, which launch the
+> existing pickers/flows (`/model`, `/effort`, `/theme`, `/login`) rather
+> than duplicating them. The four-way fragmentation this doc set out to fix
+> is closed: a new `SettingSpec` appears in CLI + wizard + TUI + web with no
+> per-surface code. The sections below are the original design; behaviour
+> matches them except keybind editing, which stays deferred (opencode ships
+> none).
+
 Motivation: settings that today live only behind CLI flags (most acutely **ports**) must be editable from a visual, in-app interface. The audit of our own codebase confirms the core problem: settings are fragmented across four surfaces (argparse flags, the questionary `setup` wizard, incomplete web `/settings` pages, and TUI pickers), and the TUI `/config` slash command is a stub that redirects users back to the shell (`cli/src/commands/handler.ts:601-612`). This doc proposes a fix grounded primarily in opencode, secondarily in openclaw.
 
 The non-negotiable design principle, taken from opencode: **opencode has no web-only settings editor.** Its TUI edits live state through `DialogSelect` / `DialogThemeList` dialogs (theme preview-on-move, model/agent/provider pickers). The web dashboard exists but is not the only way to change a setting. Our mistake was building web `/settings` pages and TUI pickers as separate, partial surfaces with no shared backing. We unify them on one schema.
