@@ -59,36 +59,43 @@ def register(app):
 
     @app.post("/api/config")
     async def save_config(body: dict = None):
-        from openprogram.webui import server as _s
+        from openprogram import setup as _setup
         if not body or "api_keys" not in body:
             return JSONResponse(content={"error": "Missing api_keys"}, status_code=400)
-        config = _s._load_config()
-        if "api_keys" not in config:
-            config["api_keys"] = {}
-        for key, val in body["api_keys"].items():
-            val = val.strip()
+        items = {k: (v or "").strip() for k, v in body["api_keys"].items()}
+        # Validate BEFORE mutating: reject a masked / garbled value. API keys are
+        # printable ASCII; the UI's masked preview is "••••" (U+2022 bullets) and
+        # saving those would overwrite the real key with non-ASCII junk that then
+        # crashes outbound requests with a UnicodeEncodeError.
+        for key, val in items.items():
+            if val and any(ord(ch) < 0x20 or ord(ch) > 0x7e for ch in val):
+                return JSONResponse(
+                    content={"error": (
+                        f"{key}: the value has invalid characters — it looks "
+                        "like the masked placeholder, not a real key. Re-type "
+                        "the key and Save."
+                    )},
+                    status_code=400,
+                )
+
+        def _merge_keys(config: dict) -> None:
+            keys = config.setdefault("api_keys", {})
+            for key, val in items.items():
+                if val:
+                    keys[key] = val
+                else:
+                    keys.pop(key, None)
+
+        # Atomic read-modify-write so a concurrent settings save (TUI / CLI)
+        # can't clobber these keys, or vice-versa.
+        _setup.update_config(_merge_keys)
+        # Reflect into the live process env so the running worker resolves the
+        # key immediately.
+        for key, val in items.items():
             if val:
-                # Reject a masked / garbled value. API keys are printable
-                # ASCII tokens; the UI's masked preview is "••••"
-                # (U+2022 bullets). Saving those overwrites the real key
-                # with non-ASCII junk, which then crashes outbound
-                # requests with a UnicodeEncodeError ("'ascii' codec…").
-                # Refuse rather than persist garbage.
-                if any(ord(ch) < 0x20 or ord(ch) > 0x7e for ch in val):
-                    return JSONResponse(
-                        content={"error": (
-                            f"{key}: the value has invalid characters — it "
-                            "looks like the masked placeholder, not a real "
-                            "key. Re-type the key and Save."
-                        )},
-                        status_code=400,
-                    )
-                config["api_keys"][key] = val
                 os.environ[key] = val
             else:
-                config["api_keys"].pop(key, None)
                 os.environ.pop(key, None)
-        _s._save_config(config)
         return JSONResponse(content={"saved": True})
 
     @app.post("/api/config/verify")

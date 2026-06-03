@@ -245,12 +245,14 @@ def set_setting(key: str, value: Any) -> dict:
         if not name:
             return {"error": "invalid tool key"}
         enable = _coerce("toggle", value)
-        cfg = _setup._read_config()
-        tools = cfg.setdefault("tools", {})
-        disabled = set(tools.get("disabled", []) or [])
-        disabled.discard(name) if enable else disabled.add(name)
-        tools["disabled"] = sorted(disabled)
-        _setup._write_config(cfg)
+
+        def _toggle_tool(cfg: dict) -> None:
+            tools = cfg.setdefault("tools", {})
+            disabled = set(tools.get("disabled", []) or [])
+            disabled.discard(name) if enable else disabled.add(name)
+            tools["disabled"] = sorted(disabled)
+
+        _setup.update_config(_toggle_tool)
         return {"applied": APPLY_LIVE, "value": enable}
 
     spec = _BY_KEY.get(key)
@@ -283,9 +285,7 @@ def set_setting(key: str, value: Any) -> dict:
     elif spec.key == "search.default_provider":
         _setup.write_search_default_provider(None if coerced == "auto" else coerced)
     else:
-        cfg = _setup._read_config()
-        _set_at(cfg, spec.path, coerced)
-        _setup._write_config(cfg)
+        _setup.update_config(lambda cfg: _set_at(cfg, spec.path, coerced))
 
     result: dict = {"applied": spec.apply, "value": coerced}
 
