@@ -63,7 +63,14 @@ def _read_config() -> dict[str, Any]:
 def _write_config(cfg: dict[str, Any]) -> None:
     path = get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    data = json.dumps(cfg, indent=2) + "\n"
+    # config.json holds plaintext api_keys — keep it owner-only (0o600), never
+    # world/group-readable. os.open creates a new file tight from the start;
+    # the chmod also tightens a pre-existing 0644 file written before this.
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(data)
+    os.chmod(str(path), 0o600)
 
 
 def read_disabled_tools() -> set[str]:

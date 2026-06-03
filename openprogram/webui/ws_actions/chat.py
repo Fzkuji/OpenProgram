@@ -667,8 +667,6 @@ async def handle_retry_overwrite(ws, cmd: dict):
     }))
 
     parsed = _s._parse_chat_input(text)
-    print(f"[retry] text={text[:200]}")
-    print(f"[retry] parsed={parsed}")
     # The legacy /run retry path was removed when @agentic_function
     # dispatch unified onto dispatcher.dispatch_forced_tool_call.
     # Frontend retry should now call POST /api/function/{name} directly.

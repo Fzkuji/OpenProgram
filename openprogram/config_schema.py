@@ -138,19 +138,20 @@ def _get_at(cfg: dict, path: tuple[str, ...], default: Any) -> Any:
 
 
 def _set_at(cfg: dict, path: tuple[str, ...], value: Any) -> None:
-    node = cfg
-    for k in path[:-1]:
+    # Reject a blocked key ANYWHERE in the path, not only the segment being
+    # traversed — a non-terminal __proto__/constructor/prototype must never
+    # slip through if path construction is ever relaxed.
+    for k in path:
         if k in _BLOCKED_KEYS:
             raise ValueError(f"blocked config key: {k}")
+    node = cfg
+    for k in path[:-1]:
         nxt = node.get(k)
         if not isinstance(nxt, dict):
             nxt = {}
             node[k] = nxt
         node = nxt
-    last = path[-1]
-    if last in _BLOCKED_KEYS:
-        raise ValueError(f"blocked config key: {last}")
-    node[last] = value
+    node[path[-1]] = value
 
 
 # ── public API ────────────────────────────────────────────────────────────────

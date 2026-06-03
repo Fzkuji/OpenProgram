@@ -474,19 +474,22 @@ def _restore_sessions():
 
 
 def _load_config() -> dict:
-    """Load config from ~/.openprogram/config.json."""
-    try:
-        with open(_CONFIG_PATH(), encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    """Load config from ~/.openprogram/config.json.
+
+    Delegates to the single canonical reader in ``openprogram.setup`` so the
+    web and CLI never diverge on read/error-handling policy."""
+    from openprogram import setup as _setup
+    return _setup._read_config()
 
 
 def _save_config(config: dict):
-    """Save config to ~/.openprogram/config.json."""
-    os.makedirs(os.path.dirname(_CONFIG_PATH()), exist_ok=True)
-    with open(_CONFIG_PATH(), "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
+    """Save config to ~/.openprogram/config.json.
+
+    Delegates to the canonical writer in ``openprogram.setup`` so there is one
+    write path — and one place that enforces 0o600 on the secrets-bearing
+    file."""
+    from openprogram import setup as _setup
+    _setup._write_config(config)
 
 
 def _get_api_key(env_var: str) -> str:
@@ -1048,9 +1051,10 @@ async def _websocket_handler(ws):
                 except json.JSONDecodeError:
                     pass
 
-    except Exception as e:
-        import traceback
-        print(f"[ws] connection error: {e}\n{traceback.format_exc()}")
+    except Exception:
+        import logging
+        # structured + carries the traceback; never dumps a raw trace to stdout
+        logging.getLogger("openprogram.webui").exception("[ws] connection error")
     finally:
         with _ws_lock:
             try:
