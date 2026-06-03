@@ -1,0 +1,217 @@
+"""Single source of truth for user-editable settings.
+
+Every surface that views or edits settings — the ``setup`` CLI sections,
+the ``openprogram ports`` command, the TUI settings screen, the web pages
+— renders from the one ``SETTINGS`` list here and writes through
+``set_setting`` instead of poking the config dict directly. Adding a
+setting = one ``SettingSpec``, and it shows up everywhere.
+
+Modelled on openclaw's ``parseConfigPath`` / ``setConfigValueAtPath``
+(dot-path access with a prototype-pollution blocklist) and opencode's
+typed config service. Per-setting ``apply`` says whether a change takes
+effect immediately (``"live"``) or only on the next worker/web start
+(``"next_start"``), so the editor can tell the user the truth instead of
+implying everything is instant.
+
+See ``docs/design/cli-redesign.md``.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Callable, Optional
+
+from openprogram import setup as _setup
+
+# openclaw's isBlockedObjectKey — never let a dot-path write reach these.
+_BLOCKED_KEYS = frozenset({"__proto__", "constructor", "prototype"})
+
+APPLY_LIVE = "live"
+APPLY_NEXT_START = "next_start"
+
+
+@dataclass(frozen=True)
+class SettingSpec:
+    key: str                              # stable id, e.g. "ui.port"
+    path: tuple[str, ...]                 # dot-path into config.json
+    group: str                            # "Ports" | "Memory" | ...
+    label: str
+    widget: str                           # "number" | "toggle" | "enum"
+    apply: str                            # APPLY_LIVE | APPLY_NEXT_START
+    default: Any = None
+    choices: Optional[Callable[[], list[str]]] = None   # enum options, lazy
+    validate: Optional[Callable[[Any], Optional[str]]] = None  # -> error|None
+    help: str = ""
+    secret: bool = False
+
+
+# ── validators / choice providers ─────────────────────────────────────────────
+
+
+def _validate_port(v: Any) -> Optional[str]:
+    try:
+        p = int(v)
+    except (TypeError, ValueError):
+        return "must be a whole number"
+    if not 1 <= p <= 65535:
+        return "must be in 1–65535"
+    return None
+
+
+def _coerce(widget: str, value: Any) -> Any:
+    if widget == "number":
+        return int(value)
+    if widget == "toggle":
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+    return str(value)
+
+
+# ── the registry ──────────────────────────────────────────────────────────────
+
+SETTINGS: list[SettingSpec] = [
+    SettingSpec(
+        key="ui.port", path=("ui", "port"), group="Ports",
+        label="Backend port (API + WebSocket)", widget="number",
+        apply=APPLY_NEXT_START, default=_setup.DEFAULT_BACKEND_PORT,
+        validate=_validate_port,
+        help="FastAPI backend. The server rebinds on the next start.",
+    ),
+    SettingSpec(
+        key="ui.web_port", path=("ui", "web_port"), group="Ports",
+        label="Frontend port (web UI)", widget="number",
+        apply=APPLY_NEXT_START, default=_setup.DEFAULT_WEB_PORT,
+        validate=_validate_port,
+        help="Next.js web UI. Must differ from the backend port.",
+    ),
+    SettingSpec(
+        key="ui.open_browser", path=("ui", "open_browser"), group="Ports",
+        label="Open browser on `openprogram web`", widget="toggle",
+        apply=APPLY_NEXT_START, default=True,
+    ),
+    SettingSpec(
+        key="memory.backend", path=("memory", "backend"), group="Memory",
+        label="Memory backend", widget="enum", apply=APPLY_NEXT_START,
+        default="local", choices=lambda: ["local", "none"],
+        help="`local` = on-disk memory tool; `none` = disabled.",
+    ),
+]
+
+_BY_KEY = {s.key: s for s in SETTINGS}
+
+
+# ── dot-path access (openclaw-style, blocklist-guarded) ───────────────────────
+
+
+def _get_at(cfg: dict, path: tuple[str, ...], default: Any) -> Any:
+    node: Any = cfg
+    for k in path:
+        if not isinstance(node, dict) or k not in node:
+            return default
+        node = node[k]
+    return node if node is not None else default
+
+
+def _set_at(cfg: dict, path: tuple[str, ...], value: Any) -> None:
+    node = cfg
+    for k in path[:-1]:
+        if k in _BLOCKED_KEYS:
+            raise ValueError(f"blocked config key: {k}")
+        nxt = node.get(k)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            node[k] = nxt
+        node = nxt
+    last = path[-1]
+    if last in _BLOCKED_KEYS:
+        raise ValueError(f"blocked config key: {last}")
+    node[last] = value
+
+
+# ── public API ────────────────────────────────────────────────────────────────
+
+
+def get_settings() -> list[dict]:
+    """Resolved current settings for every spec, ready to render.
+
+    Reads the config once; each row carries its value, group, label,
+    widget, apply mode, resolved choices (for enums), and help. Secret
+    values are returned as a bool ``set`` flag, never the value.
+    """
+    cfg = _setup._read_config()
+    rows: list[dict] = []
+    for s in SETTINGS:
+        raw = _get_at(cfg, s.path, s.default)
+        row: dict = {
+            "key": s.key,
+            "group": s.group,
+            "label": s.label,
+            "widget": s.widget,
+            "apply": s.apply,
+            "help": s.help,
+        }
+        if s.secret:
+            row["set"] = bool(raw)
+        else:
+            row["value"] = raw
+        if s.choices is not None:
+            try:
+                row["choices"] = list(s.choices())
+            except Exception:
+                row["choices"] = []
+        rows.append(row)
+    return rows
+
+
+def set_setting(key: str, value: Any) -> dict:
+    """Validate + persist one setting. Returns ``{applied, value[, note]}``
+    on success or ``{error}`` on failure. ``applied`` is ``"live"`` or
+    ``"next_start"``. Routes through the existing typed writer when one
+    exists (``ui.*`` → ``set_ui_ports``), else a guarded dot-path write.
+    """
+    spec = _BY_KEY.get(key)
+    if spec is None:
+        return {"error": f"unknown setting: {key}"}
+
+    # coerce to the widget's type before validation
+    try:
+        coerced = _coerce(spec.widget, value)
+    except (TypeError, ValueError):
+        return {"error": f"invalid value for {spec.label!r}: {value!r}"}
+
+    if spec.validate is not None:
+        err = spec.validate(coerced)
+        if err:
+            return {"error": f"{spec.label}: {err}"}
+
+    if spec.widget == "enum" and spec.choices is not None:
+        opts = list(spec.choices())
+        if coerced not in opts:
+            return {"error": f"{spec.label}: must be one of {', '.join(opts)}"}
+
+    # route to the typed writer that already owns this key, else dot-path
+    if spec.key == "ui.port":
+        _setup.set_ui_ports(backend_port=coerced)
+    elif spec.key == "ui.web_port":
+        _setup.set_ui_ports(web_port=coerced)
+    elif spec.key == "ui.open_browser":
+        _setup.set_ui_ports(open_browser=coerced)
+    else:
+        cfg = _setup._read_config()
+        _set_at(cfg, spec.path, coerced)
+        _setup._write_config(cfg)
+
+    result: dict = {"applied": spec.apply, "value": coerced}
+
+    # surface a port conflict the way `openprogram ports` does, so the
+    # editor can warn "that port is taken by <who>" right after saving.
+    if spec.key in ("ui.port", "ui.web_port"):
+        try:
+            from openprogram._ports import describe_port_owner
+            owner = describe_port_owner(coerced)
+            if owner is not None and not owner.is_ours:
+                result["note"] = f"port {coerced} is currently held by {owner.detail}"
+        except Exception:
+            pass
+
+    return result
