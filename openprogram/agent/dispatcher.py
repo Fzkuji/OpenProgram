@@ -122,6 +122,12 @@ class TurnResult:
     duration_ms: int = 0
     failed: bool = False
     error: Optional[str] = None
+    # Structured error taxonomy for a failed turn, so the webui can show an
+    # actionable error (retryable rate-limit vs fatal auth/context) instead of a
+    # string. See docs/design/providers/error-taxonomy-propagation.md.
+    error_reason: Optional[str] = None
+    error_retryable: Optional[bool] = None
+    error_retry_after_s: Optional[float] = None
     # Per-turn ordered LLM blocks (thinking/text/tool, in emission
     # order). Mirrors what's persisted to ``extra.blocks`` so the
     # webui result-envelope path and the after-refresh DB-rebuilt
@@ -1111,9 +1117,20 @@ def process_user_turn(
             db.update_session(req.session_id, head_id=head_for_next)
         except Exception:
             pass
+        # Classify the failure into the structured taxonomy (an LLMError
+        # carries its own reason; anything else is classified) so the webui can
+        # render a retryable rate-limit differently from a fatal auth/context
+        # failure. See docs/design/providers/error-taxonomy-propagation.md.
+        try:
+            from openprogram.providers.utils.errors import taxonomy_fields
+            _e_reason, _e_retryable, _e_retry_after = taxonomy_fields(e)
+        except Exception:
+            _e_reason = _e_retryable = _e_retry_after = None
         on_event({"type": "chat_response",
                   "data": {"type": "error", "session_id": req.session_id,
-                           "content": err_text}})
+                           "content": err_text, "reason": _e_reason,
+                           "retryable": _e_retryable,
+                           "retry_after_s": _e_retry_after}})
         return TurnResult(
             final_text="",
             user_msg_id=user_msg_id,
@@ -1121,6 +1138,9 @@ def process_user_turn(
                 assistant_msg_id if _placeholder_inserted else ""),
             failed=True,
             error=str(e),
+            error_reason=_e_reason,
+            error_retryable=_e_retryable,
+            error_retry_after_s=_e_retry_after,
             duration_ms=int((time.time() - started_at) * 1000),
         )
     finally:

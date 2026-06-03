@@ -307,6 +307,9 @@ def run_query(
         _s._broadcast_chat_response(session_id, msg_id, {
             "type": "error",
             "content": turn_result.error or "(unknown error)",
+            "reason": turn_result.error_reason,
+            "retryable": turn_result.error_retryable,
+            "retry_after_s": turn_result.error_retry_after_s,
         })
         return
 
