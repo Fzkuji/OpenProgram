@@ -589,10 +589,26 @@
   margin-left: 4px;
   opacity: 1;
 }
+/* Disabled tool: muted circle, no accent, no × — click turns it on.
+   Stays a fixed circle on hover (no width-expand, since there's no ×). */
+.toolChipOff {
+  background: transparent;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+.toolChipOff:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  width: var(--composer-button-size);
+  padding-right: 8px;
+  opacity: 1;
+}
 .toolChip[data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
-  top: calc(100% + 6px);
+  /* These chips sit at the very bottom of the viewport, so a tooltip
+     below them gets clipped off-screen — show it ABOVE instead. */
+  bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
@@ -636,8 +652,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 32px;
-  padding: 6px 8px;
+  min-height: 40px;
+  padding: 9px 10px;
   border-radius: 8px;
   font-size: 14px;
   line-height: 20px;
@@ -649,9 +665,18 @@
 .plusMenuItem:hover {
   background: var(--bg-hover);
 }
+/* Selected = the label + its check turn the accent colour. No full-row
+   colour fill (that read as garish when several rows were on) — just a
+   tinted label + a trailing checkmark, like ChatGPT's menu. Colour var
+   kept exactly as before (renders as the app accent); only the
+   background fill is dropped. */
 .plusMenuItem.active {
   color: var(--accent-blue, #6cb4ff);
-  background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 10%, transparent);
+}
+.plusMenuDivider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 .plusMenuLeft {
   display: inline-flex;

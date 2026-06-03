@@ -20,6 +20,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { Paperclip } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
@@ -525,11 +526,17 @@ export function Composer() {
     // there's no way to ship them, and a mention with no backing file
     // the agent can read would only mislead it.)
     if (pendingDocs.length > 0) {
-      const mentions = pendingDocs
-        .filter((d) => d.dataB64)
-        .map((d) =>
-          `[attachment: ${d.filename} (${d.ext || "file"}, `
-          + `${Math.max(1, Math.round(d.sizeBytes / 1024))} KB)]`);
+      // Emit a mention for EVERY doc so none vanishes silently. Docs with
+      // captured bytes get the normal path-less mention (backend appends
+      // the @path + page/line count). Docs that couldn't be read (over the
+      // size cap → dataB64 null) get an honest "too large" note instead of
+      // being dropped — the chip still shows, the model is told.
+      const mentions = pendingDocs.map((d) => {
+        const meta = `${d.ext || "file"}, ${Math.max(1, Math.round(d.sizeBytes / 1024))} KB`;
+        return d.dataB64
+          ? `[attachment: ${d.filename} (${meta})]`
+          : `[attachment: ${d.filename} (${meta}, too large — not sent)]`;
+      });
       if (mentions.length > 0) {
         expanded = `${mentions.join("\n")}\n\n${expanded}`;
       }
@@ -1089,27 +1096,27 @@ export function Composer() {
             </button>
 
             <div className={styles.activeToolChips}>
-              {toolsEnabled && (
-                <ToolChip
-                  icon={<ToolsIcon size={16} />}
-                  label={text("Tools", "工具")}
-                  onRemove={toggleTools}
-                />
-              )}
-              {webSearchEnabled && (
-                <ToolChip
-                  icon={<WebSearchIcon size={16} />}
-                  label={text("Web Search", "网页搜索")}
-                  onRemove={toggleWebSearch}
-                />
-              )}
-              {fastEnabled && (
-                <ToolChip
-                  icon={<FastIcon size={16} />}
-                  label={text("Fast", "高速")}
-                  onRemove={toggleFast}
-                />
-              )}
+              {/* Always show all three toggles so on/off is visible at a
+                  glance; off ones are muted, click flips. Hover shows the
+                  name (tooltip renders above — they sit at screen bottom). */}
+              <ToolChip
+                icon={<ToolsIcon size={16} />}
+                label={text("Tools", "工具")}
+                on={toolsEnabled}
+                onToggle={toggleTools}
+              />
+              <ToolChip
+                icon={<WebSearchIcon size={16} />}
+                label={text("Web Search", "网页搜索")}
+                on={webSearchEnabled}
+                onToggle={toggleWebSearch}
+              />
+              <ToolChip
+                icon={<FastIcon size={16} />}
+                label={text("Fast", "高速")}
+                on={fastEnabled}
+                onToggle={toggleFast}
+              />
             </div>
 
             {plusMenuOpen && plusMenuPos && typeof document !== "undefined"
@@ -1126,6 +1133,17 @@ export function Composer() {
                       marginBottom: 0,
                     }}
                   >
+                    <PlusMenuItem
+                      active={pendingImages.length > 0 || pendingDocs.length > 0}
+                      onClick={() => {
+                        setPlusMenuOpen(false);
+                        onPickImages();
+                      }}
+                      icon={<Paperclip size={18} strokeWidth={1.8} />}
+                      label={text("Attach file", "添加照片和文件")}
+                      title={text("Attach images, documents, or any file (also paste / drag-drop)", "附加图片、文档或任意文件（也可粘贴 / 拖放）")}
+                    />
+                    <div className={styles.plusMenuDivider} />
                     <PlusMenuItem
                       active={toolsEnabled}
                       onClick={toggleTools}
@@ -1146,16 +1164,6 @@ export function Composer() {
                       icon={<FastIcon />}
                       label={text("Fast", "高速")}
                       title={text("Run this turn on the provider's priority/fast tier (service_tier=priority). Ignored by providers that don't support it.", "本轮使用 provider 的高速/优先级通道（service_tier=priority），不支持的 provider 会忽略")}
-                    />
-                    <PlusMenuItem
-                      active={pendingImages.length > 0 || pendingDocs.length > 0}
-                      onClick={() => {
-                        setPlusMenuOpen(false);
-                        onPickImages();
-                      }}
-                      icon={<span aria-hidden style={{ fontSize: 14 }}>📎</span>}
-                      label={text("Attach file", "附加文件")}
-                      title={text("Attach images, documents, or any file (also paste / drag-drop)", "附加图片、文档或任意文件（也可粘贴 / 拖放）")}
                     />
                   </div>,
                   document.body,

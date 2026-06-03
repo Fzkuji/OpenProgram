@@ -45,27 +45,32 @@ function useHoverDrivenIcon(icon: ReactNode) {
 export function ToolChip({
   icon,
   label,
-  onRemove,
+  on = true,
+  onToggle,
 }: {
   icon: ReactNode;
   label: string;
-  onRemove: () => void;
+  /** Whether the tool is enabled. Off → muted, no × (click turns it on). */
+  on?: boolean;
+  onToggle: () => void;
 }) {
   const { text } = useTranslation();
   const { node, onMouseEnter, onMouseLeave } = useHoverDrivenIcon(icon);
   return (
     <div
-      className={styles.toolChip}
-      onClick={onRemove}
+      className={`${styles.toolChip} ${on ? "" : styles.toolChipOff}`}
+      onClick={onToggle}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       data-tooltip={label}
       title=""
     >
       <span className={styles.toolChipIcon}>{node}</span>
-      <span className={styles.toolChipClose} aria-label={text("Remove", "移除")}>
-        <ChipCloseIcon />
-      </span>
+      {on && (
+        <span className={styles.toolChipClose} aria-label={text("Turn off", "关闭")}>
+          <ChipCloseIcon />
+        </span>
+      )}
     </div>
   );
 }
