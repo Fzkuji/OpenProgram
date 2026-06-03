@@ -1,6 +1,6 @@
 # Error-taxonomy propagation — structured LLM errors up to the UI
 
-Status: **planned** · Owner: providers/agent/webui · Created: 2026-06-04
+Status: **agent boundary + model landed (079e0072)** · webui emit + frontend remain · Owner: providers/agent/webui · Created: 2026-06-04
 
 Optimization-roadmap item: "propagate the structured LLMError taxonomy above the
 provider layer". Builds on the existing taxonomy in
@@ -64,12 +64,17 @@ strings (retry/compact-failure messages) stay plain.
 
 ## 4. Migration
 
-1. Backend: classify at the agent boundary + widen the chat-turn error event
-   with `reason/retryable/retry_after_s`. Independently verifiable by inspecting
-   the WS error payload — induce each class (bad key → authentication, an
-   oversized turn → context_length, a 429 → rate_limit).
-2. Frontend: the error component reads the new fields and renders the
-   categorized copy/affordance; falls back to `content` when absent.
+1a. **(done, 079e0072)** Classify at the agent error boundary —
+   `errors.taxonomy_fields(exc)` + the new `AssistantMessage.error_reason /
+   error_retryable / error_retry_after_s` fields. Unit-tested (LLMError
+   passthrough, generic classified).
+1b. **(remaining)** Widen the chat-turn error event the webui emits with
+   `reason / retryable / retry_after_s` (read off the failed `AssistantMessage`
+   in the chat run → the `{"type":"error", …}` payload). Verifiable by
+   inspecting the WS payload — induce each class (bad key → auth, oversized turn
+   → context_length, 429 → rate_limit).
+2. **(remaining)** Frontend: the error component reads the new fields and renders
+   the categorized copy/affordance; falls back to `content` when absent.
 
 Each step commits separately; the backend is useful on its own (API consumers,
 logs, future channels) even before the frontend lands.
