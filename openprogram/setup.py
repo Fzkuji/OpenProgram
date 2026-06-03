@@ -179,6 +179,41 @@ def read_agent_prefs() -> dict[str, Any]:
     return {"thinking_effort": effort}
 
 
+def prompt_schema_group(group: str) -> int:
+    """Interactively prompt every setting in a config-schema ``group`` and
+    persist each through ``config_schema.set_setting``.
+
+    The wizard renders from the same schema the TUI panel and
+    ``openprogram config`` use, so a new ``SettingSpec`` in this group
+    shows up here automatically — no hand-coded prompt. Returns 0, or 1 if
+    the user cancels. (config_schema is imported lazily: it imports this
+    module, so a top-level import would cycle.)
+    """
+    from openprogram.config_schema import get_settings, set_setting
+    rows = [r for r in get_settings() if r["group"] == group]
+    for r in rows:
+        key, label, widget, cur = r["key"], r["label"], r["widget"], r.get("value")
+        if widget == "toggle":
+            res = _confirm(label, default=bool(cur))
+            if res is None:
+                print("Cancelled.")
+                return 1
+            out = set_setting(key, res)
+        else:
+            choices = r.get("choices")
+            prompt = f"{label} ({'/'.join(choices)})" if choices else label
+            raw = _text(prompt, default=str(cur if cur is not None else ""))
+            if raw is None:
+                print("Cancelled.")
+                return 1
+            out = set_setting(key, raw)
+        if out.get("error"):
+            print(f"  ! {out['error']} — keeping {cur!r}")
+        elif out.get("note"):
+            print(f"  · {out['note']}")
+    return 0
+
+
 # --- UI primitives (questionary w/ input() fallback) ------------------------
 
 def _have_questionary() -> bool:
