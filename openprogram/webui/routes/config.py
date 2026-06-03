@@ -50,6 +50,21 @@ def register(app):
         masked = {k: (v[:8] + "..." if len(v) > 8 else "***") for k, v in keys.items() if v}
         return JSONResponse(content={"api_keys": masked})
 
+    # /api/settings — the schema-driven settings the TUI panel + `openprogram
+    # config` use, mirrored over REST so the web pages render the SAME source.
+    @app.get("/api/settings")
+    async def get_settings_api():
+        from openprogram.config_schema import get_settings
+        return JSONResponse(content={"settings": get_settings()})
+
+    @app.post("/api/settings")
+    async def set_setting_api(body: dict = None):
+        from openprogram.config_schema import set_setting
+        if not body or "key" not in body:
+            return JSONResponse(content={"error": "Missing key"}, status_code=400)
+        res = set_setting(body["key"], body.get("value"))
+        return JSONResponse(content=res, status_code=400 if res.get("error") else 200)
+
     @app.post("/api/config")
     async def save_config(body: dict = None):
         from openprogram.webui import server as _s
