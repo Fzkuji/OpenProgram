@@ -158,17 +158,17 @@ def read_search_default_provider() -> str | None:
 
 def write_search_default_provider(name: str | None) -> None:
     """Persist the user's default web_search backend (or clear it)."""
-    cfg = _read_config()
-    section = dict(cfg.get("search") or {})
-    if name:
-        section["default_provider"] = name
-    else:
-        section.pop("default_provider", None)
-    if section:
-        cfg["search"] = section
-    else:
-        cfg.pop("search", None)
-    _write_config(cfg)
+    def _mut(cfg: dict) -> None:
+        section = dict(cfg.get("search") or {})
+        if name:
+            section["default_provider"] = name
+        else:
+            section.pop("default_provider", None)
+        if section:
+            cfg["search"] = section
+        else:
+            cfg.pop("search", None)
+    update_config(_mut)
 
 
 # Default ports. Uncommon 5-digit values in the registered-port range
@@ -201,15 +201,15 @@ def set_ui_ports(
     ``read_ui_prefs()`` dict. Takes effect on the next ``openprogram web``
     / ``worker`` start — nothing live is rebound here.
     """
-    cfg = _read_config()
-    ui = cfg.setdefault("ui", {})
-    if backend_port is not None:
-        ui["port"] = int(backend_port)
-    if web_port is not None:
-        ui["web_port"] = int(web_port)
-    if open_browser is not None:
-        ui["open_browser"] = bool(open_browser)
-    _write_config(cfg)
+    def _mut(cfg: dict) -> None:
+        ui = cfg.setdefault("ui", {})
+        if backend_port is not None:
+            ui["port"] = int(backend_port)
+        if web_port is not None:
+            ui["web_port"] = int(web_port)
+        if open_browser is not None:
+            ui["open_browser"] = bool(open_browser)
+    update_config(_mut)
     return read_ui_prefs()
 
 
