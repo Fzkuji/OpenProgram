@@ -57,6 +57,19 @@ def _validate_port(v: Any) -> Optional[str]:
     return None
 
 
+def _search_choices() -> list[str]:
+    """``auto`` + every registered web_search provider. Best-effort: an
+    import failure degrades to just ``auto`` rather than breaking the
+    whole settings read."""
+    try:
+        from openprogram.functions.tools.web_search.registry import registry as _wsr
+        import openprogram.functions.tools.web_search.providers  # noqa: F401
+        names = [getattr(p, "name", "") for p in _wsr.all()]
+        return ["auto"] + [n for n in names if n]
+    except Exception:
+        return ["auto"]
+
+
 def _coerce(widget: str, value: Any) -> Any:
     if widget == "number":
         return int(value)
@@ -88,6 +101,12 @@ SETTINGS: list[SettingSpec] = [
         key="ui.open_browser", path=("ui", "open_browser"), group="Ports",
         label="Open browser on `openprogram web`", widget="toggle",
         apply=APPLY_NEXT_START, default=True,
+    ),
+    SettingSpec(
+        key="search.default_provider", path=("search", "default_provider"),
+        group="Search", label="Default web-search provider", widget="enum",
+        apply=APPLY_LIVE, default="auto", choices=_search_choices,
+        help="`auto` picks the highest-priority configured provider.",
     ),
     SettingSpec(
         key="memory.backend", path=("memory", "backend"), group="Memory",
@@ -196,6 +215,8 @@ def set_setting(key: str, value: Any) -> dict:
         _setup.set_ui_ports(web_port=coerced)
     elif spec.key == "ui.open_browser":
         _setup.set_ui_ports(open_browser=coerced)
+    elif spec.key == "search.default_provider":
+        _setup.write_search_default_provider(None if coerced == "auto" else coerced)
     else:
         cfg = _setup._read_config()
         _set_at(cfg, spec.path, coerced)
