@@ -230,29 +230,22 @@ def _resolve_api_key(provider_id: str) -> str | None:
     need their own resolution path (e.g. AuthManager.acquire_sync,
     daemon HEAD probe).
     """
+    # Known providers delegate to the canonical resolver (env > config.json,
+    # all special cases + the historical-name reconciliation live there now —
+    # see docs/design/providers/api-key-resolution-unification.md).
+    from openprogram.providers.env_api_keys import (
+        env_vars_for,
+        resolve_api_key,
+        _config_api_keys,
+    )
+    if env_vars_for(provider_id):
+        return resolve_api_key(provider_id)
+    # Community / models.dev providers not in the canonical table: fall back to
+    # the models.dev env-var name (+ config), the prior behaviour, so a freshly
+    # fetched community provider still resolves out of the box.
     from .providers import _env_var_for
     env = _env_var_for(provider_id)
-    candidates = [env] if env else []
-    # Google's key has shipped under several historical env-var names; the
-    # resolver only knew GOOGLE_GENERATIVE_AI_API_KEY, but configs (and the web
-    # key form) commonly store GOOGLE_API_KEY / GEMINI_API_KEY. Accept any so
-    # validation + fetch don't report a present key as "missing".
-    if provider_id in ("google", "gemini-subscription"):
-        for alt in ("GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY"):
-            if alt not in candidates:
-                candidates.append(alt)
-    if not candidates:
+    if not env:
         return None
     import os
-    cfg_keys: dict | None = None
-    for name in candidates:
-        val = os.environ.get(name)
-        if val:
-            return val
-        if cfg_keys is None:
-            # Fall back to ~/.openprogram/config.json api_keys
-            from openprogram.webui.server import _load_config
-            cfg_keys = _load_config().get("api_keys", {})
-        if cfg_keys.get(name):
-            return cfg_keys[name]
-    return None
+    return os.environ.get(env) or _config_api_keys().get(env) or None
