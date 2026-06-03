@@ -284,6 +284,18 @@ def classify_error(
     return ErrorReason.UNKNOWN, False
 
 
+def taxonomy_fields(exc: BaseException) -> tuple[str | None, bool | None, float | None]:
+    """``(reason_value, retryable, retry_after_s)`` for an exception — exactly
+    what ``AssistantMessage.error_reason / error_retryable / error_retry_after_s``
+    carry. An :class:`LLMError` already holds them; anything else is classified.
+    See docs/design/providers/error-taxonomy-propagation.md.
+    """
+    if isinstance(exc, LLMError):
+        return exc.reason.value, exc.retryable, exc.retry_after_s
+    reason, retryable = classify_error(exc)
+    return reason.value, retryable, None
+
+
 def _retry_after_date_seconds(value: str) -> Optional[float]:
     """Seconds until an HTTP-date ``Retry-After`` (RFC 7231), or None.
 

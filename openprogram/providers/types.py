@@ -232,6 +232,13 @@ class AssistantMessage(BaseModel):
     usage: Usage = Field(default_factory=Usage)
     stop_reason: StopReason = "stop"
     error_message: str | None = None
+    # Structured error taxonomy (populated when stop_reason == "error"), so
+    # surfaces above the provider layer can tell a retryable rate-limit from a
+    # fatal auth/context failure instead of just a string. See
+    # docs/design/providers/error-taxonomy-propagation.md.
+    error_reason: str | None = None         # ErrorReason value, e.g. "rate_limit"
+    error_retryable: bool | None = None
+    error_retry_after_s: float | None = None
     timestamp: int  # Unix ms
 
 

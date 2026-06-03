@@ -466,6 +466,16 @@ class Agent:
                 import sys as _sys
                 _tb.print_exc(file=_sys.stderr)
             err_text = f"{type(err).__name__}: {err}" if str(err) else type(err).__name__
+            # Structured taxonomy so surfaces above the provider layer can tell
+            # a retryable rate-limit from a fatal auth/context failure instead of
+            # just a string. See docs/design/providers/error-taxonomy-propagation.md.
+            err_reason = err_retryable = err_retry_after_s = None
+            if not is_aborted:
+                try:
+                    from openprogram.providers.utils.errors import taxonomy_fields
+                    err_reason, err_retryable, err_retry_after_s = taxonomy_fields(err)
+                except Exception:
+                    pass
             error_msg = AssistantMessage(
                 role="assistant",
                 content=[TextContent(type="text", text="")],
@@ -475,6 +485,9 @@ class Agent:
                 usage=Usage(),
                 stop_reason="aborted" if is_aborted else "error",
                 error_message=err_text,
+                error_reason=err_reason,
+                error_retryable=err_retryable,
+                error_retry_after_s=err_retry_after_s,
                 timestamp=int(time.time() * 1000),
             )
             self.append_message(error_msg)
