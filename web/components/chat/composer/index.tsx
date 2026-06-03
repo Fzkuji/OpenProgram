@@ -1139,7 +1139,7 @@ export function Composer() {
                         setPlusMenuOpen(false);
                         onPickImages();
                       }}
-                      icon={<FileTextIcon />}
+                      icon={<FileTextIcon size={20} />}
                       label={text("Attach file", "添加照片和文件")}
                     />
                     <div className={styles.plusMenuDivider} />
