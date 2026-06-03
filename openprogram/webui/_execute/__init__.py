@@ -662,6 +662,14 @@ def execute_in_context(
             return
 
         error_content = f"Error: {e}\n\n{traceback.format_exc()}"
+        # Structured taxonomy so the client can tell a retryable rate-limit from
+        # a fatal auth/context failure (see
+        # docs/design/providers/error-taxonomy-propagation.md).
+        try:
+            from openprogram.providers.utils.errors import taxonomy_fields
+            err_reason, err_retryable, err_retry_after_s = taxonomy_fields(e)
+        except Exception:
+            err_reason = err_retryable = err_retry_after_s = None
         # Plain chat errors (action="query", no function) should be shown as
         # chat messages with a retry button, not as runtime blocks.
         error_display = "runtime" if func_name else "chat"
@@ -673,6 +681,9 @@ def execute_in_context(
                 "type": "error",
                 "id": msg_id + "_reply",
                 "content": error_content,
+                "reason": err_reason,
+                "retryable": err_retryable,
+                "retry_after_s": err_retry_after_s,
                 "function": func_name,
                 "display": error_display,
                 "timestamp": now,
@@ -689,6 +700,9 @@ def execute_in_context(
         _s._broadcast_chat_response(session_id, msg_id, {
             "type": "error",
             "content": error_content,
+            "reason": err_reason,
+            "retryable": err_retryable,
+            "retry_after_s": err_retry_after_s,
             "function": func_name,
             "display": error_display,
             "retry_query": query if not func_name else None,
