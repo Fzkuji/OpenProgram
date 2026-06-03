@@ -12,7 +12,7 @@ interface Row {
   key: string;
   group: string;
   label: string;
-  widget: "number" | "toggle" | "enum";
+  widget: "number" | "toggle" | "enum" | "status";
   apply: "live" | "next_start";
   help?: string;
   value?: unknown;
@@ -121,6 +121,14 @@ export function SystemSettings() {
 }
 
 function Control({ row, onSave }: { row: Row; onSave: (k: string, v: unknown) => void }) {
+  if (row.widget === "status") {
+    const ok = !!row.value;
+    return (
+      <span style={{ fontSize: 13, color: ok ? "#10b981" : "var(--text-dim)" }}>
+        {ok ? "✓ configured" : "✗ not configured"}
+      </span>
+    );
+  }
   if (row.widget === "toggle") {
     return (
       <input

@@ -180,6 +180,27 @@ def get_settings() -> list[dict]:
                 row["choices"] = []
         rows.append(row)
 
+    # Providers are read-only status rows (✓ configured / ✗ not) with an
+    # action — selecting one runs ``/login``. check_providers() is cheap
+    # (~1ms; env + which checks). The web already has a full Providers tab;
+    # this is the at-a-glance status for the TUI/CLI.
+    try:
+        from openprogram.providers.registry import check_providers
+        for name, st in check_providers().items():
+            ok = bool(st.get("available"))
+            rows.append({
+                "key": f"providers.{name}",
+                "group": "Providers",
+                "label": name,
+                "widget": "status",
+                "apply": APPLY_LIVE,
+                "help": f"{st.get('method', '')} · {'configured' if ok else 'not configured'}",
+                "value": ok,
+                "action": "/login",
+            })
+    except Exception:
+        pass
+
     # Tools are dynamic — one live toggle per registered tool, ``on`` when
     # the user hasn't disabled it. Keyed ``tools.disabled.<name>`` so
     # set_setting can flip membership of ``tools.disabled``.
@@ -207,6 +228,10 @@ def set_setting(key: str, value: Any) -> dict:
     ``"next_start"``. Routes through the existing typed writer when one
     exists (``ui.*`` → ``set_ui_ports``), else a guarded dot-path write.
     """
+    # Provider status rows are read-only (configure via /login or the web).
+    if key.startswith("providers."):
+        return {"error": "provider status is read-only — use /login or the Providers page"}
+
     # Dynamic per-tool toggles: ``on`` = enabled = not in tools.disabled.
     if key.startswith("tools.disabled."):
         name = key[len("tools.disabled."):]

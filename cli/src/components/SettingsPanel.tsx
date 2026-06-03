@@ -8,12 +8,14 @@ export interface SettingRow {
   key: string;
   group: string;
   label: string;
-  widget: 'number' | 'toggle' | 'enum';
+  widget: 'number' | 'toggle' | 'enum' | 'status';
   apply: 'live' | 'next_start';
   help?: string;
   value?: unknown;
   choices?: string[];
   set?: boolean;
+  /** For read-only `status` rows: the slash command to run on enter. */
+  action?: string;
 }
 
 /** A row that, instead of editing a value, launches an existing flow
@@ -128,6 +130,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (curAction) {
       if (key.return) { onClose(); onRun?.(curAction.command); return; }
     } else if (curSetting) {
+      if (curSetting.widget === 'status' && key.return) {
+        onClose(); onRun?.(curSetting.action ?? '/login'); return;
+      }
       if (curSetting.widget === 'toggle' && (key.return || input === ' ')) {
         onSet(curSetting.key, !curSetting.value); return;
       }
@@ -154,6 +159,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const renderValue = (row: SettingRow, selected: boolean): React.ReactNode => {
     if (editKey === row.key) return <Text color={colors.primary}>{buffer}▌</Text>;
+    if (row.widget === 'status') {
+      const ok = !!row.value;
+      return <Text color={ok ? colors.success : colors.muted}>{ok ? '✓ set' : '✗ not set'}</Text>;
+    }
     if (row.widget === 'toggle') {
       const on = !!row.value;
       return <Text color={on ? colors.success : colors.muted}>{on ? 'on' : 'off'}</Text>;
@@ -167,6 +176,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const footer = editKey !== null
     ? 'type digits · enter save · esc cancel'
     : curAction ? '↑↓ · enter open · type filter · esc'
+    : curSetting?.widget === 'status' ? '↑↓ · enter configure · type filter · esc'
     : curSetting?.widget === 'toggle' ? '↑↓ · space toggle · type filter · esc'
     : curSetting?.widget === 'enum' ? '↑↓ · ←→ change · type filter · esc'
     : '↑↓ · enter edit · type filter · esc';
