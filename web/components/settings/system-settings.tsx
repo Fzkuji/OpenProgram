@@ -9,6 +9,7 @@
  */
 import { useEffect, useState, type CSSProperties } from "react";
 
+import { Switch } from "@/components/ui/switch";
 import styles from "./settings-page.module.css";
 
 interface Row {
@@ -30,11 +31,6 @@ interface Row {
 // no settings pages) and the CLI — this is purely which groups the web
 // chooses to render. Ports is the one genuinely-homeless setting.
 const WEB_GROUPS = ["Ports"];
-// CLI-only settings that make no sense in the web UI. `ui.open_browser`
-// controls whether `openprogram web` pops a browser at launch — pointless
-// to a user who's already looking at the web UI. It stays in the schema
-// for the CLI / TUI.
-const WEB_HIDE_KEYS = ["ui.open_browser"];
 
 const inputStyle: CSSProperties = {
   padding: "6px 10px",
@@ -55,13 +51,7 @@ export function SystemSettings() {
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
-      .then((d) =>
-        setRows(
-          (d.settings || []).filter(
-            (r: Row) => WEB_GROUPS.includes(r.group) && !WEB_HIDE_KEYS.includes(r.key),
-          ),
-        ),
-      )
+      .then((d) => setRows((d.settings || []).filter((r: Row) => WEB_GROUPS.includes(r.group))))
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, []);
@@ -168,11 +158,9 @@ function Control({ row, onSave }: { row: Row; onSave: (k: string, v: unknown) =>
   }
   if (row.widget === "toggle") {
     return (
-      <input
-        type="checkbox"
+      <Switch
         checked={!!row.value}
-        onChange={(e) => onSave(row.key, e.target.checked)}
-        style={{ width: 16, height: 16, accentColor: "var(--accent-primary, #d97757)" }}
+        onCheckedChange={(v) => onSave(row.key, v)}
       />
     );
   }

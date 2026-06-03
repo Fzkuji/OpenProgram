@@ -85,17 +85,28 @@ def _coerce(widget: str, value: Any) -> Any:
 SETTINGS: list[SettingSpec] = [
     SettingSpec(
         key="ui.port", path=("ui", "port"), group="Ports",
-        label="Backend port (API + WebSocket)", widget="number",
+        label="Backend port", widget="number",
         apply=APPLY_NEXT_START, default=_setup.DEFAULT_BACKEND_PORT,
         validate=_validate_port,
-        help="FastAPI backend. The server rebinds on the next start.",
+        help="The port the API + WebSocket backend (FastAPI worker) listens "
+             "on. The web UI and TUI both talk to it here. Rebinds on the "
+             "next start.",
     ),
     SettingSpec(
         key="ui.web_port", path=("ui", "web_port"), group="Ports",
-        label="Frontend port (web UI)", widget="number",
+        label="Frontend port", widget="number",
         apply=APPLY_NEXT_START, default=_setup.DEFAULT_WEB_PORT,
         validate=_validate_port,
-        help="Next.js web UI. Must differ from the backend port.",
+        help="The port the web UI itself is served on — the address you open "
+             "in the browser. Must differ from the backend port.",
+    ),
+    SettingSpec(
+        key="ui.open_browser", path=("ui", "open_browser"), group="Ports",
+        label="Auto-open browser", widget="toggle",
+        apply=APPLY_NEXT_START, default=True,
+        help="When you run `openprogram web`, also pop open a browser window "
+             "pointed at the UI. Turn off to start the server only and open "
+             "the address yourself (e.g. on a headless server).",
     ),
     SettingSpec(
         key="search.default_provider", path=("search", "default_provider"),
@@ -266,6 +277,8 @@ def set_setting(key: str, value: Any) -> dict:
         _setup.set_ui_ports(backend_port=coerced)
     elif spec.key == "ui.web_port":
         _setup.set_ui_ports(web_port=coerced)
+    elif spec.key == "ui.open_browser":
+        _setup.set_ui_ports(open_browser=coerced)
     elif spec.key == "search.default_provider":
         _setup.write_search_default_provider(None if coerced == "auto" else coerced)
     else:
