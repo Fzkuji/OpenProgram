@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from openprogram.paths import get_config_path
 
@@ -71,6 +72,41 @@ def _write_config(cfg: dict[str, Any]) -> None:
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(data)
     os.chmod(str(path), 0o600)
+
+
+# In-process lock for the read-modify-write critical section. Cross-process
+# safety comes from the file lock acquired inside ``update_config``.
+_config_write_lock = threading.Lock()
+
+
+def update_config(mutator: Callable[[dict], Any]) -> dict:
+    """Atomic read-modify-write of config.json.
+
+    Holds an in-process lock (the worker's threads) AND a cross-process file
+    lock (``config.json.lock`` — the worker vs the ``openprogram config`` /
+    ``openprogram setup`` processes), reads the current config, applies
+    ``mutator(cfg)`` in place, writes it back (0o600) and returns it.
+
+    This is the ONLY correct way to change *part* of the config — a bare
+    ``_read_config()`` … ``_write_config()`` pair races (the later write
+    clobbers a concurrent one). ``_read_config`` / ``_write_config`` remain for
+    read-only and full-replace.
+    """
+    lock_path = str(get_config_path()) + ".lock"
+    with _config_write_lock:
+        try:
+            from filelock import FileLock
+            file_lock: Any = FileLock(lock_path, timeout=10)
+        except Exception:
+            # filelock unavailable → in-process lock only (still correct for the
+            # single-worker case; cross-process writes are rare).
+            import contextlib
+            file_lock = contextlib.nullcontext()
+        with file_lock:
+            cfg = _read_config()
+            mutator(cfg)
+            _write_config(cfg)
+            return cfg
 
 
 def read_disabled_tools() -> set[str]:
