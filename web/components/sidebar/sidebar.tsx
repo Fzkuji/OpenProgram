@@ -336,7 +336,7 @@ export function Sidebar() {
           boxShadow: navScrolled ? "inset 0 1px 0 0 var(--border)" : undefined,
         }}
       >
-        <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
+        <div className="flex flex-col gap-px shrink-0 px-[8px] pt-px">
         <Link
           href="/functions"
           className={
