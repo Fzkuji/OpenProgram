@@ -63,6 +63,53 @@ def _is_model_unavailable(status: int, body: str) -> bool:
     return False
 
 
+# An auth-only endpoint lets us answer "is this key valid?" without
+# invoking any model. Every OpenAI-compatible base exposes ``GET /models``
+# (auth-gated on OpenAI / DeepSeek / Groq / …), so that's the default.
+# OpenRouter is the exception — its ``/models`` is *public* (returns 200
+# for any key, even a bogus one), so the credential probe there has to
+# hit ``/key``, which is auth-gated.
+_CREDENTIAL_PROBE_PATHS = {
+    "openrouter": "/key",
+}
+_DEFAULT_CREDENTIAL_PROBE_PATH = "/models"
+
+
+def _credential_check(
+    provider_id: str, base: str, api_key: str, timeout: float
+) -> dict[str, Any] | None:
+    """Validate the key against a model-independent auth endpoint.
+
+    This is the right primitive for "is my key valid?" — it asks the
+    provider directly and never depends on any particular model being up.
+
+    Returns a success dict only on a clean ``200``; on anything else it
+    returns ``None`` to mean "inconclusive — fall back to the inference
+    ping". The ping uses the real chat path and the same Bearer scheme an
+    actual request uses, so it can tell a genuinely bad key (401 there
+    too) from a probe-path quirk (e.g. a provider that wants a different
+    auth header on ``/models``). Short-circuiting only on 200 keeps this
+    strictly additive: a valid key is confirmed without touching a model;
+    everything else degrades to exactly the previous behaviour.
+    """
+    import httpx
+
+    path = _CREDENTIAL_PROBE_PATHS.get(provider_id, _DEFAULT_CREDENTIAL_PROBE_PATH)
+    url = base.rstrip("/") + path
+    t0 = time.time()
+    try:
+        r = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"}, timeout=timeout)
+    except httpx.RequestError:
+        return None
+    if r.status_code == 200:
+        return {
+            "ok": True,
+            "latency_ms": int((time.time() - t0) * 1000),
+            "via": f"GET {path}",
+        }
+    return None
+
+
 def test_provider(
     provider_id: str,
     model: str | None = None,
@@ -82,6 +129,18 @@ def test_provider(
     base = _resolve_base_url(provider_id)
     if not base:
         return {"ok": False, "error": "No base URL resolvable"}
+
+    # The default connectivity check answers "is this key valid?" — so do
+    # it the right way: hit a model-independent auth endpoint instead of
+    # gambling on whatever model happens to be enabled. Only when the
+    # caller names a specific model ("can I reach *this* model?") do we
+    # fall through to an inference ping. Codex/OAuth providers (no api_key
+    # resolvable here) keep their dedicated ping path below.
+    explicit_model = model is not None
+    if not explicit_model and api_key and provider_id not in _CODEX_RESPONSES_PROVIDERS:
+        cred = _credential_check(provider_id, base, api_key, timeout)
+        if cred is not None:
+            return cred
 
     if not model:
         # Pick the first enabled or first available model.

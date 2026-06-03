@@ -106,11 +106,15 @@ export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string 
           });
           return true;
         }
-        setResult({
-          kind: "ok",
-          text: `✓ ${d.latency_ms || 0} ms`,
-          title: d.model ? text(`Tested with ${d.model}`, `已使用 ${d.model} 测试`) : undefined,
-        });
+        // ``via`` → confirmed against a model-independent auth endpoint
+        // (e.g. GET /key, GET /models). ``model`` → an inference ping was
+        // used (caller named a specific model). Either way it's a pass.
+        const title = d.via
+          ? text(`Key verified via ${d.via}`, `已通过 ${d.via} 验证 key`)
+          : d.model
+            ? text(`Tested with ${d.model}`, `已使用 ${d.model} 测试`)
+            : undefined;
+        setResult({ kind: "ok", text: `✓ ${d.latency_ms || 0} ms`, title });
         return true;
       }
       const { short, tooltip } = summarizeError(d.error);
@@ -134,7 +138,7 @@ export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string 
       </div>
       <div className={styles.detailRow}>
         <span className={styles.modelCountSummary} style={{ flex: 1 }}>
-          {text("Validates API key + base URL with a tiny PING.", "用小型 PING 验证 API key 和 base URL。")}
+          {text("Checks your API key against the provider's auth endpoint — no model call.", "用提供商的鉴权端点验证 API key —— 不调用任何模型。")}
         </span>
         {result && (
           <span
