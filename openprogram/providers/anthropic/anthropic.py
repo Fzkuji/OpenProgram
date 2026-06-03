@@ -332,17 +332,28 @@ def _build_messages(
                     if isinstance(block, TextContent):
                         text = sanitize_surrogates(block.text)
                         if text.strip():
-                            content_blocks.append({"type": "text", "text": text})
+                            tblock: dict[str, Any] = {"type": "text", "text": text}
+                            if getattr(block, "cache_control", None):
+                                tblock["cache_control"] = block.cache_control
+                            content_blocks.append(tblock)
                     elif isinstance(block, ImageContent):
-                        content_blocks.append({
+                        iblock: dict[str, Any] = {
                             "type": "image",
                             "source": {
                                 "type": "base64",
                                 "media_type": block.mime_type,
                                 "data": block.data,
                             },
-                        })
-                if is_last and cache_control and content_blocks:
+                        }
+                        if getattr(block, "cache_control", None):
+                            iblock["cache_control"] = block.cache_control
+                        content_blocks.append(iblock)
+                # Provider-default breakpoint on the last block of the final
+                # user turn. Only apply it when the caller did not already mark
+                # a breakpoint somewhere in this message, so an explicit
+                # caller-supplied prefix breakpoint is not silently shadowed.
+                caller_marked = any("cache_control" in b for b in content_blocks)
+                if is_last and cache_control and content_blocks and not caller_marked:
                     content_blocks[-1] = {**content_blocks[-1], "cache_control": cache_control}
                 if content_blocks:
                     result.append({"role": "user", "content": content_blocks})
