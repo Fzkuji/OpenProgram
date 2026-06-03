@@ -25,7 +25,7 @@ export function ProviderItem({
       className={styles.providerItem + (active ? " " + styles.active : "")}
       onClick={onSelect}
     >
-      <ProviderIcon id={p.id} size={24} />
+      <ProviderIcon id={p.id} size={20} />
       <span className={styles.providerLabel}>{p.label}</span>
       <span
         className={

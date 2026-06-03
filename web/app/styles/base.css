@@ -219,6 +219,33 @@ button, input, select, textarea, optgroup {
   font-family: inherit;
 }
 
+/* ===== The one list-row standard =====================================
+   Every clickable list row — left sidebar nav (New chat / Functions /
+   Skills / …), the sidebar chat list, the settings tab list, and the
+   settings provider rows — is built from THIS rule, so there is a single
+   design to maintain. Dimensions come from --ui-list-h / --ui-list-radius
+   so a size change happens in one place. Consumers add only their own
+   semantics (icon, label colour, active text). The sidebar's Tailwind
+   strings compose it via the `ui-list-item` class; the settings CSS module
+   pulls it in with `composes: ui-list-item from global`.
+   Flat by design: no border, no shadow; hover + active are a --bg-hover
+   tint only — matching claude.ai's sidebar. */
+.ui-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--ui-list-h);
+  padding: 6px 8px;
+  border-radius: var(--ui-list-radius);
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+  box-shadow: none;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+.ui-list-item:hover { background: var(--bg-hover); }
+.ui-list-item.active { background: var(--bg-hover); }
+
 /* ===== Layout: 3-column ===== */
 .app {
   display: flex;

@@ -163,11 +163,8 @@ export function FavoritesList(): React.ReactElement | null {
             transition={{ type: "spring", stiffness: 600, damping: 40 }}
           >
             <div
-              className="flex h-[var(--ui-list-h)] shrink-0 cursor-grab items-center
-                gap-[12px] overflow-hidden truncate rounded-[var(--ui-list-radius)]
-                px-[8px] py-[6px] text-fs-base text-text-primary
-                transition-colors duration-150 ease-out
-                hover:bg-bg-hover active:cursor-grabbing select-none"
+              className="ui-list-item shrink-0 overflow-hidden truncate text-text-primary
+                !cursor-grab active:!cursor-grabbing select-none"
               onClick={(e) => {
                 if (dragGuard) { e.preventDefault(); e.stopPropagation(); return; }
                 onClick(f.name, cat);

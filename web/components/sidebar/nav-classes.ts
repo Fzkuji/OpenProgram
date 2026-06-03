@@ -39,16 +39,16 @@ export const sidebarToggleClass = [
  * fire when the row is hovered.
  */
 export const sidebarNavItemClass = [
-  // Legacy global class — `.sidebar.collapsed .sidebar-nav-item`
-  // rules in base.css force a 32×32 centered square in collapsed
-  // state. Without this class string the rule misses and the
-  // button renders 31×32 with the icon off-centered to the right.
-  "sidebar-nav-item",
-  "group inline-flex h-[var(--ui-list-h)] w-full shrink-0 cursor-pointer",
-  "items-center gap-[12px] rounded-[var(--ui-list-radius)] px-[8px] py-[6px]",
-  "text-fs-base font-normal text-nav-color no-underline",
-  "transition-colors duration-150 ease-out",
-  "hover:bg-bg-hover hover:text-nav-color-hover",
+  // `ui-list-item` (global, app/styles/base.css) is the single source for
+  // the row box — height, corner, padding, gap, colour-transition, and the
+  // hover --bg-hover tint. Only sidebar-specific bits live here.
+  // `sidebar-nav-item` stays for the legacy `.sidebar.collapsed
+  // .sidebar-nav-item` rules in base.css that force a 32×32 centered square
+  // when collapsed.
+  "ui-list-item sidebar-nav-item",
+  "group w-full shrink-0",
+  "font-normal text-nav-color no-underline",
+  "hover:text-nav-color-hover",
   "active:bg-[rgba(0,0,0,0.15)]",
 ].join(" ");
 

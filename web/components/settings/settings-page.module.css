@@ -60,25 +60,22 @@
      past the viewport bottom. */
   overflow-y: auto;
 }
+/* List-item standard — mirrors the left sidebar rows (see
+   components/sidebar/nav-classes.ts): height --ui-list-h, corner
+   --ui-list-radius, 6/8 padding, 12 gap, colour-transition 150ms,
+   flat (no border/shadow), hover + active both --bg-hover. Every
+   clickable list row in settings follows it. */
 .navItem {
-  padding: 6px 8px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  font-size: 14px;
+  composes: ui-list-item from global;
   color: var(--text-secondary);
-  cursor: pointer;
-  border-radius: var(--ui-list-radius);
-  transition: background 75ms, color 75ms;
   white-space: nowrap;
 }
 .navItem:hover {
-  background: var(--bg-hover);
   color: var(--text-primary);
 }
 .navItem.active {
   color: var(--text-bright);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
 }
 
 .content {
@@ -471,23 +468,14 @@
   padding: 0 8px;
 }
 .providerItem {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.providerItem:hover {
-  background: var(--bg-hover);
+  composes: ui-list-item from global;
 }
 .providerItem.active {
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
 }
 .providerIcon {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -498,7 +486,7 @@
    * frame. */
   background: var(--bg-tertiary);
   border-radius: 6px;
-  padding: 3px;
+  padding: 2px;
   box-sizing: border-box;
 }
 .providerIcon img {
@@ -512,15 +500,15 @@
   background: rgba(255, 255, 255, 0.08);
 }
 .providerIconLetter {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-tertiary);
   color: var(--text-bright);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
 }
 .providerLabel {
@@ -657,9 +645,11 @@
 .modelItem {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 8px;
-  border-radius: 6px;
+  /* 2-line (name + id) toggle row — stays boxed, but its corner matches
+     the list standard so it doesn't read as a third radius. */
+  border-radius: var(--ui-list-radius);
   border: 1px solid var(--border);
   background: var(--bg-input);
 }

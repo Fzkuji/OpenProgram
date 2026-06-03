@@ -715,13 +715,13 @@ function ConvItem({
   const [draft, setDraft] = useState(label);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // `ui-list-item` (global) carries the row box — height, corner, padding,
+  // gap-[12px] (which + the 16px marker slot aligns titles to the nav rows'
+  // icon-slot), colour-transition, and the hover --bg-hover tint. Only the
+  // chat-row extras stay here.
   const base =
-    "group relative flex h-[var(--ui-list-h)] shrink-0 cursor-pointer items-center" +
-    // gap-[12px] + the 16px marker slot = the nav rows' icon-slot + gap,
-    // so conversation titles align to the same left indent as the nav.
-    " gap-[12px] overflow-hidden rounded-[var(--ui-list-radius)] px-[8px] py-[6px]" +
-    " text-fs-base leading-[20px] whitespace-nowrap" +
-    " transition-colors duration-150 ease-out hover:bg-bg-hover";
+    "ui-list-item group relative shrink-0 overflow-hidden" +
+    " leading-[20px] whitespace-nowrap";
   // Selected row: a background highlight marks it; the text steps down
   // from pure white to the warm off-white (--text-primary) so it isn't
   // glaringly bright.
