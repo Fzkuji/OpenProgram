@@ -78,9 +78,17 @@ strings (retry/compact-failure messages) stay plain.
    (e.g. switch the active model to an OpenRouter `:free` model that 503s) is
    needed to confirm the field reaches the broadcast, since the codex probe turn
    succeeded (empty) rather than erroring.
-2. **(remaining)** Frontend: the error component reads the new fields and renders
-   the categorized copy/affordance; falls back to `content` when absent. This
-   slice is also what finally exercises 1b end-to-end.
+2. **(landed, compiles; live render NOT yet captured, e5f95445)** The assistant
+   bubble (`assistant-bubble.tsx`) renders a categorized headline keyed off
+   `errorReason` (rate_limit → retry hint, auth → check-key, context → compact,
+   provider/transport/timeout → temporary) with the raw message below;
+   `ChatResponseData` + `ChatMsg` carry the fields and `finalize()` captures
+   them. Compiles clean; happy-path chat unregressed. **Still unverified:** a
+   live categorized error render — forcing a deterministic provider failure was
+   not achieved this session (codex kept succeeding; the model picker / raw WS /
+   store-injection were each too fiddly). Confirm by hitting a real error
+   (expired key → "auth"; an OpenRouter `:free` model that 503s → "provider"),
+   or by temporarily setting `default_model` to a 503ing model.
 
 Each step commits separately; the backend is useful on its own (API consumers,
 logs, future channels) even before the frontend lands.
