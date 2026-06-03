@@ -345,42 +345,11 @@ def validate_credential(
 
 
 def provider_id_for_env_var(env_var: str) -> str | None:
-    """Best-effort reverse of the env-var → provider mapping, for the save-key
-    verify path which only knows the env var name. Returns ``None`` for non-LLM
-    keys (search providers etc.), which the caller treats as "skip validation"."""
-    aliases = {
-        "OPENAI_API_KEY": "openai",
-        "ANTHROPIC_API_KEY": "anthropic",
-        "ANTHROPIC_OAUTH_TOKEN": "anthropic",
-        "GOOGLE_API_KEY": "google",
-        "GOOGLE_GENERATIVE_AI_API_KEY": "google",
-        "GEMINI_API_KEY": "google",
-        "OPENROUTER_API_KEY": "openrouter",
-        "DEEPSEEK_API_KEY": "deepseek",
-        "XAI_API_KEY": "xai",
-        "GROQ_API_KEY": "groq",
-        "MISTRAL_API_KEY": "mistral",
-        "CEREBRAS_API_KEY": "cerebras",
-        "ZAI_API_KEY": "zai",
-        "HF_TOKEN": "huggingface",
-        "MINIMAX_API_KEY": "minimax",
-        "MINIMAX_CN_API_KEY": "minimax-cn",
-        "MOONSHOT_API_KEY": "kimi-coding",
-        "KIMI_API_KEY": "kimi-coding",
-        "AI_GATEWAY_API_KEY": "vercel-ai-gateway",
-        "AZURE_OPENAI_API_KEY": "azure-openai-responses",
-        "OPENCODE_API_KEY": "opencode",
-    }
-    if env_var in aliases:
-        return aliases[env_var]
-    try:
-        from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
-        for pid, ev in PROVIDER_ENV_VARS.items():
-            if ev == env_var:
-                return pid
-    except Exception:
-        pass
-    return None
+    """Reverse of the env-var → provider mapping, for the save-key verify path
+    which only knows the env var name. Re-exports the canonical reverse map in
+    ``providers.env_api_keys`` (one source of truth for provider ↔ env-var)."""
+    from openprogram.providers.env_api_keys import provider_id_for_env_var as _canon
+    return _canon(env_var)
 
 
 def provider_auth_status(
