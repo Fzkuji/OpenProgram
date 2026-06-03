@@ -7,8 +7,10 @@
 
 import {
   cloneElement,
+  forwardRef,
   isValidElement,
   useRef,
+  type HTMLAttributes,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -42,28 +44,33 @@ function useHoverDrivenIcon(icon: ReactNode) {
   };
 }
 
-export function ToolChip({
-  icon,
-  label,
-  on = true,
-  onToggle,
-}: {
+/** forwardRef + spread props so it can be a <HoverTip> trigger child
+ * (radix Slot passes ref + pointer/focus handlers through). The tooltip
+ * is the HoverTip, NOT a CSS ::after — the chip has `overflow: hidden`
+ * for its round clip, which would crop an ::after bubble. */
+type ToolChipProps = {
   icon: ReactNode;
   label: string;
   /** Whether the tool is enabled. Off → muted, no × (click turns it on). */
   on?: boolean;
   onToggle: () => void;
-}) {
+} & HTMLAttributes<HTMLDivElement>;
+
+export const ToolChip = forwardRef<HTMLDivElement, ToolChipProps>(function ToolChip(
+  { icon, label, on = true, onToggle, ...rest },
+  ref,
+) {
   const { text } = useTranslation();
   const { node, onMouseEnter, onMouseLeave } = useHoverDrivenIcon(icon);
   return (
     <div
+      ref={ref}
+      {...rest}
       className={`${styles.toolChip} ${on ? "" : styles.toolChipOff}`}
       onClick={onToggle}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      data-tooltip={label}
-      title=""
+      aria-label={label}
     >
       <span className={styles.toolChipIcon}>{node}</span>
       {on && (
@@ -73,7 +80,7 @@ export function ToolChip({
       )}
     </div>
   );
-}
+});
 
 export function PlusMenuItem({
   active,

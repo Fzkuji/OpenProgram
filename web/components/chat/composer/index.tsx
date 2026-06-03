@@ -21,6 +21,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { FileTextIcon } from "@/components/animated-icons";
+import { HoverTip } from "@/components/ui/tooltip";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
@@ -1098,25 +1099,32 @@ export function Composer() {
             <div className={styles.activeToolChips}>
               {/* Always show all three toggles so on/off is visible at a
                   glance; off ones are muted, click flips. Hover shows the
-                  name (tooltip renders above — they sit at screen bottom). */}
-              <ToolChip
-                icon={<ToolsIcon size={16} />}
-                label={text("Tools", "工具")}
-                on={toolsEnabled}
-                onToggle={toggleTools}
-              />
-              <ToolChip
-                icon={<WebSearchIcon size={16} />}
-                label={text("Web Search", "网页搜索")}
-                on={webSearchEnabled}
-                onToggle={toggleWebSearch}
-              />
-              <ToolChip
-                icon={<FastIcon size={16} />}
-                label={text("Fast", "高速")}
-                on={fastEnabled}
-                onToggle={toggleFast}
-              />
+                  name via HoverTip (a real top-layer tooltip — a CSS
+                  ::after would be cropped by the chip's overflow:hidden). */}
+              <HoverTip label={text("Tools", "工具")}>
+                <ToolChip
+                  icon={<ToolsIcon size={16} />}
+                  label={text("Tools", "工具")}
+                  on={toolsEnabled}
+                  onToggle={toggleTools}
+                />
+              </HoverTip>
+              <HoverTip label={text("Web Search", "网页搜索")}>
+                <ToolChip
+                  icon={<WebSearchIcon size={16} />}
+                  label={text("Web Search", "网页搜索")}
+                  on={webSearchEnabled}
+                  onToggle={toggleWebSearch}
+                />
+              </HoverTip>
+              <HoverTip label={text("Fast", "高速")}>
+                <ToolChip
+                  icon={<FastIcon size={16} />}
+                  label={text("Fast", "高速")}
+                  on={fastEnabled}
+                  onToggle={toggleFast}
+                />
+              </HoverTip>
             </div>
 
             {plusMenuOpen && plusMenuPos && typeof document !== "undefined"
