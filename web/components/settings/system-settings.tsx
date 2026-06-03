@@ -81,51 +81,67 @@ export function SystemSettings() {
   });
 
   if (!loaded) {
-    return <div style={{ padding: 24, color: "var(--text-muted)" }}>Loading…</div>;
+    return (
+      <div className={styles.page}>
+        <div style={{ padding: 24, color: "var(--text-muted)" }}>Loading…</div>
+      </div>
+    );
   }
 
+  // Same shell as GeneralSection: .page > .pageHeader > .pageBody, then a
+  // <section> per group with its .sectionTitle + a .card wrapping the rows.
   return (
-    <div style={{ padding: "8px 16px", maxWidth: 760 }}>
-      {groups.map((g) => (
-        <div className={styles.section} key={g}>
-          <h3 className={styles.sectionTitle}>{g}</h3>
-          {rows
-            .filter((r) => r.group === g)
-            .map((r) => {
-              const st = status[r.key];
-              return (
-                <div className={`${styles.row} ${styles.rowTop}`} key={r.key}>
-                  <div className={styles.label}>
-                    <div>{r.label}</div>
-                    {r.help ? (
-                      <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
-                        {r.help}
+    <div className={styles.page}>
+      <div className={styles.pageHeader}>
+        <h2 className={styles.pageTitle}>System</h2>
+        <p className={styles.pageMeta}>
+          Settings with no dedicated page. Some take effect on the next start.
+        </p>
+      </div>
+      <div className={styles.pageBody}>
+        {groups.map((g) => (
+          <section key={g}>
+            <h3 className={styles.sectionTitle}>{g}</h3>
+            <div className={styles.card}>
+              {rows
+                .filter((r) => r.group === g)
+                .map((r) => {
+                  const st = status[r.key];
+                  return (
+                    <div className={`${styles.row} ${styles.rowTop}`} key={r.key}>
+                      <div className={styles.label}>
+                        <div>{r.label}</div>
+                        {r.help ? (
+                          <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+                            {r.help}
+                          </div>
+                        ) : null}
+                        {st ? (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              marginTop: 3,
+                              color: st.startsWith("✗") ? "#ef4444" : "#10b981",
+                            }}
+                          >
+                            {st}
+                          </div>
+                        ) : r.apply === "next_start" ? (
+                          <div style={{ fontSize: 12, marginTop: 3, color: "var(--text-muted)" }}>
+                            takes effect next start
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
-                    {st ? (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          marginTop: 3,
-                          color: st.startsWith("✗") ? "#ef4444" : "#10b981",
-                        }}
-                      >
-                        {st}
+                      <div className={styles.value}>
+                        <Control row={r} onSave={save} />
                       </div>
-                    ) : r.apply === "next_start" ? (
-                      <div style={{ fontSize: 12, marginTop: 3, color: "var(--text-muted)" }}>
-                        takes effect next start
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className={styles.value}>
-                    <Control row={r} onSave={save} />
-                  </div>
-                </div>
-              );
-            })}
-        </div>
-      ))}
+                    </div>
+                  );
+                })}
+            </div>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
