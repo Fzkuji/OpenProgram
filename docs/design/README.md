@@ -26,6 +26,7 @@ the entry point before reading individual design documents.
 | Entity memory v2 (session/project git) | [`memory-v2.md`](memory-v2.md) |
 | Revert layers (snapshot / commit / worktree) | [`revert-layers.md`](revert-layers.md) |
 | Web UI ports (architecture, configuration, conflict handling) | [`ports.md`](ports.md) |
+| CLI / TUI redesign (schema-driven settings, visual config panel) | [`cli-redesign.md`](cli-redesign.md) |
 
 ## Supporting notes
 
