@@ -23,6 +23,7 @@ import { LineInput } from '../../components/LineInput.js';
 import { Picker, PickerItem } from '../../components/Picker.js';
 import { ThemePicker } from '../../components/ThemePicker.js';
 import { SettingsPanel, SettingRow } from '../../components/SettingsPanel.js';
+import { SLASH_COMMANDS } from '../../commands/registry.js';
 import { Turn } from '../../components/Turn.js';
 import { BackendClient } from '../../ws/client.js';
 import { tsToDate } from './helpers.js';
@@ -86,6 +87,8 @@ export interface PickerCtx {
   setPromptDraft: React.Dispatch<React.SetStateAction<string | undefined>>;
   setThinkingEffort: React.Dispatch<React.SetStateAction<ThinkingEffort>>;
 
+  /** Run a line as if typed at the prompt (used by the command palette). */
+  onSubmit: (text: string) => void;
   sessionAliasesRef: React.MutableRefObject<SessionAliasRow[]>;
 }
 
@@ -101,6 +104,7 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     setChosenChannel, setChosenAccount, setConversationId, setAgent,
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft, setThinkingEffort,
+    onSubmit,
     sessionAliasesRef,
   } = ctx;
 
@@ -110,6 +114,25 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
         rows={settingsRows}
         onSet={(key, value) => client.send({ action: 'set_setting', key, value })}
         onClose={() => setPickerKind(null)}
+      />
+    );
+  }
+
+  if (pickerKind === 'commands') {
+    const items: PickerItem<string>[] = SLASH_COMMANDS.map((c) => ({
+      label: `/${c.name}`,
+      description: c.description,
+      value: c.name,
+    }));
+    return (
+      <Picker
+        title="Commands"
+        items={items}
+        onSelect={(it) => {
+          setPickerKind(null);
+          onSubmit(`/${it.value}`);
+        }}
+        onCancel={() => setPickerKind(null)}
       />
     );
   }

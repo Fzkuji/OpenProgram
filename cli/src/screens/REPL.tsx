@@ -222,6 +222,12 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       setPermissionMode((m) => (m === 'bypass' ? 'auto' : 'bypass'));
       return;
     }
+    // Ctrl+K — command palette over the slash registry (opencode's
+    // command-palette). Only when nothing else is open / streaming.
+    if (key.ctrl && input === 'k' && !pickerKind && !streaming) {
+      setPickerKind('commands');
+      return;
+    }
     // Esc closes the channel_qr_wait picker (no input form to absorb
     // it). Other pickers handle their own onCancel via Picker/LineInput
     // — this is just for the read-only QR display.
@@ -400,6 +406,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft,
     setThinkingEffort,
+    onSubmit,
     sessionAliasesRef,
   });
 
