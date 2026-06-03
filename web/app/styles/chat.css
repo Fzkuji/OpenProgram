@@ -1925,8 +1925,10 @@
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.55;
-  max-height: 400px;
-  overflow-y: auto;
+  /* No own max-height/overflow: the shared .inline-tree-body already scrolls
+     (max-height 300px, overflow-y auto). A second scroll container here gave
+     the Thinking block two nested scrollbars. Let the body be the single
+     scroll surface, like the runtime / tools cards. */
   padding: 2px 4px;
 }
 
