@@ -314,7 +314,17 @@ export function Sidebar() {
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.new_chat")}</span>
         </div>
+      </div>
 
+      {/* Everything below New chat scrolls together (Claude-style): the
+          nav links + favourites + conversations are one scroll area, so a
+          short window never hides the bottom. Only New chat (above) and the
+          footer (below) stay pinned. */}
+      <div
+        className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
+          [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
         <Link
           href="/functions"
           className={
@@ -462,14 +472,9 @@ export function Sidebar() {
           // pb-[5px]: a small extra gap BELOW Favorites so the function
           // area reads as a distinct block from the conversation groups
           // that follow (only present when there are favourites).
-          className="shrink-0 px-[8px] pb-[5px]"
+          className="px-[8px] pb-[5px]"
         >
-          <div
-            id="favList"
-            className="flex flex-col gap-px max-h-[131px] overflow-y-auto
-              overflow-x-hidden [scrollbar-width:none]
-              [&::-webkit-scrollbar]:hidden"
-          >
+          <div id="favList" className="flex flex-col gap-px">
             <FavoritesList />
           </div>
         </SidebarSection>
@@ -481,20 +486,13 @@ export function Sidebar() {
         // project), so the section headers ARE the top level. The
         // filter button lives on the first section header inside
         // SessionsList, right-aligned (Claude's layout).
-        <div
-          id="convSection"
-          className="flex flex-1 min-h-0 flex-col"
-        >
-          <div
-            id="convList"
-            className="flex flex-1 min-h-0 flex-col gap-px overflow-x-hidden
-              overflow-y-auto px-[8px] [scrollbar-width:none]
-              [&::-webkit-scrollbar]:hidden"
-          >
+        <div id="convSection" className="flex flex-col">
+          <div id="convList" className="flex flex-col gap-px px-[8px]">
             <SessionsList />
           </div>
         </div>
       )}
+      </div>
 
       {/* User menu footer — rendered directly here (no portal). The
          AppShell's `#userMenuFooterMount` portal logic is now a no-op
