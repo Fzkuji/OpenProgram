@@ -264,11 +264,22 @@ def _is_configured(provider_id: str) -> bool:
                 return True
         except (urllib.error.URLError, ConnectionError, OSError):
             return False
+    # Key-based providers (incl. the Bedrock/Vertex cloud-credential chains):
+    # the canonical is_configured — env > config.json key, or a satisfied cloud
+    # chain. See docs/design/providers/api-key-resolution-unification.md.
+    from openprogram.providers.env_api_keys import (
+        env_vars_for,
+        is_configured,
+        _config_api_keys,
+    )
+    if env_vars_for(provider_id) or provider_id in ("amazon-bedrock", "google-vertex"):
+        return is_configured(provider_id)
+    # Community / models.dev provider with a single env-var name we don't have
+    # in the canonical table: check it (env > config), as before.
     env = _env_var_for(provider_id)
     if env is None:
-        # Either an OAuth / no-key provider, or one we don't have a
-        # standard env var for. Conservatively say "configured" so
-        # the UI doesn't show a red dot the user can't act on.
+        # OAuth / no-key / unknown — conservatively "configured" so the UI
+        # doesn't show a red dot the user can't act on.
         return True
-    from openprogram.webui.server import _get_api_key  # re-use helper
-    return bool(_get_api_key(env))
+    import os
+    return bool(os.environ.get(env) or _config_api_keys().get(env))
