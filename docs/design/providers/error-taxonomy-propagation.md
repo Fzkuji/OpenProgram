@@ -68,16 +68,24 @@ strings (retry/compact-failure messages) stay plain.
    `errors.taxonomy_fields(exc)` + the new `AssistantMessage.error_reason /
    error_retryable / error_retry_after_s` fields. Unit-tested (LLMError
    passthrough, generic classified).
-1b. **(landed, NOT yet forced end-to-end, 5efc95ab)** The webui chat-turn
-   exception handler (`_execute/__init__.py`, the `action="query"` error path)
-   classifies the caught exception via `taxonomy_fields` and adds
-   `reason / retryable / retry_after_s` to the persisted error message + the
-   `{"type":"error", …}` broadcast. **Caveat to confirm:** chats route through
-   the agentic/DAG runtime, so the live chat-error surfacing may have additional
-   emit points — this covers the plain-query except; a forced provider failure
-   (e.g. switch the active model to an OpenRouter `:free` model that 503s) is
-   needed to confirm the field reaches the broadcast, since the codex probe turn
-   succeeded (empty) rather than erroring.
+1b. **(landed across all three emit points; live render NOT yet captured)** A
+   chat failure is caught at three layers, all now classified via
+   `taxonomy_fields` and emitting `reason / retryable / retry_after_s`:
+   - `agent.py` (the `Agent` class boundary, 079e0072) — used by the Agent run.
+   - `_execute/__init__.py` outer except (5efc95ab) — the action-level error.
+   - **`dispatcher.py` (5c17b848) — the REAL common path.** The webui chat turn
+     runs via the dispatcher's `_run_loop_blocking`, whose failure is caught in
+     the dispatcher's own except; the reason flows through `TurnResult`
+     (`error_reason/error_retryable/error_retry_after_s`) into both the in-run
+     dispatcher error event and the post-run `chat.py` broadcast.
+   **Still unverified:** a live categorized render. Forcing a deterministic
+   provider error is blocked by the frontend using its OWN selected model
+   (codex) over the agent default, and codex being intermittent (sometimes 401,
+   sometimes succeeds). The agent-model swap does not change what the frontend
+   sends. Confirm with a real, repeatable provider failure on the selected
+   model. Note: the persisted error node only carries the string (not the
+   reason) — only the live broadcast does; rendering a categorized error on
+   reload would need the DB node to carry the taxonomy too (future).
 2. **(landed, compiles; live render NOT yet captured, e5f95445)** The assistant
    bubble (`assistant-bubble.tsx`) renders a categorized headline keyed off
    `errorReason` (rate_limit → retry hint, auth → check-key, context → compact,
