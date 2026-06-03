@@ -145,7 +145,7 @@ export function readImageFile(file: File | Blob,
  *  save it to disk for the agent. Bigger than the 5 MiB image cap since
  *  PDFs/decks are routinely larger; still bounded so a stray huge file
  *  doesn't blow up the WS frame. */
-export const MAX_DOC_BYTES = 25 * 1024 * 1024;
+export const MAX_DOC_BYTES = 32 * 1024 * 1024;
 
 /** Read a file as raw base64 (no ``data:...;base64,`` prefix), or
  *  ``null`` if it's over :data:`MAX_DOC_BYTES` or unreadable. Used for

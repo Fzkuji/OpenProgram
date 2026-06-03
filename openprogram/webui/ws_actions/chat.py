@@ -21,6 +21,128 @@ def _safe_attach_name(name: str) -> str:
     return out[:120] or "file"
 
 
+# Hard per-file / per-turn caps. Browser uploads are also frontend-capped
+# (image-attach.ts MAX_DOC_BYTES), so these mainly defend non-browser
+# sources (future remote channels) and bound the git-workdir blob bloat
+# (attachments are committed, so an oversized blob is permanent history).
+MAX_ATTACH_MB = 32
+MAX_ATTACH_BYTES = MAX_ATTACH_MB * 1024 * 1024
+MAX_TURN_ATTACH_BYTES = 64 * 1024 * 1024
+# Bytes of head text delivered once, on the turn a file is attached, as a
+# first-look preview. The agent pages the rest with its bounded read/pdf
+# tools — so prompt cost stays O(1) per file regardless of file size.
+PREVIEW_CAP = 4096
+
+
+def _decoded_kind(raw: bytes, name: str) -> str:
+    """Classify saved bytes as 'pdf' | 'text' | 'binary' for preview/count."""
+    import os
+    ext = os.path.splitext(name)[1].lower()
+    if ext == ".pdf" or raw[:5] == b"%PDF-":
+        return "pdf"
+    head = raw[:8192]
+    if b"\x00" in head:
+        return "binary"
+    try:
+        head.decode("utf-8")
+        return "text"
+    except UnicodeDecodeError:
+        return "binary"
+
+
+def _pdf_count_and_preview(raw: bytes):
+    """``("<N> pages", head_preview)`` for a PDF, or ``(None, None)``.
+
+    Page-1 text + a capped per-page first-line outline so the model can
+    jump to the relevant page range instead of scanning. Any failure
+    (corrupt / encrypted / pypdf missing / slow) degrades to a count-less,
+    preview-less mention — the small-file fast path never regresses.
+    """
+    try:
+        import io
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(raw))
+        pages = len(reader.pages)
+    except Exception:
+        return (None, None)
+    parts: list[str] = []
+    try:
+        first = (reader.pages[0].extract_text() or "").strip()
+        if first:
+            parts.append(first[: PREVIEW_CAP // 2])
+    except Exception:
+        pass
+    outline: list[str] = []
+    for i, pg in enumerate(reader.pages[:50]):
+        try:
+            lines = [ln for ln in (pg.extract_text() or "").splitlines() if ln.strip()]
+            head_line = lines[0].strip()[:80] if lines else ""
+        except Exception:
+            head_line = ""
+        outline.append(f"  p{i + 1}: {head_line}")
+    if pages > 50:
+        outline.append(f"  …({pages - 50} more pages)")
+    if outline:
+        parts.append("[page outline]\n" + "\n".join(outline))
+    preview = ("\n\n".join(parts))[:PREVIEW_CAP] if parts else None
+    return (f"{pages} pages", preview)
+
+
+def _count_and_preview(raw: bytes, kind: str):
+    """``(count_str, preview_text)`` for the head preview, per file kind.
+
+    text -> ``('<N> lines', <=PREVIEW_CAP head)``; pdf -> page count +
+    outline; binary -> ``(None, None)`` (no text preview — the agent uses
+    ``bash`` on the path).
+    """
+    if kind == "text":
+        total = raw.count(b"\n") + (1 if raw and not raw.endswith(b"\n") else 0)
+        truncated = len(raw) > PREVIEW_CAP
+        head = raw[:PREVIEW_CAP].decode("utf-8", errors="replace")
+        if truncated:
+            head = head + "\n…[truncated — read the path for the rest]"
+        return (f"{total} lines", head)
+    if kind == "pdf":
+        return _pdf_count_and_preview(raw)
+    return (None, None)
+
+
+def _inject_mention(text: str, name: str, dest, count, oversize: bool) -> str:
+    """Rewrite this file's path-less ``[attachment: name (meta)]`` mention
+    to embed the saved absolute path + (page/line) count — or mark it
+    oversize. The count goes INSIDE the captured parens group so the
+    single-token invariant holds and the chip / title strip regexes keep
+    matching.
+    """
+    import re
+    pat = re.compile(r"\[attachment:\s*" + re.escape(name) + r"\s*\(([^)\]]*)\)\]")
+    if oversize:
+        if pat.search(text):
+            return pat.sub(
+                lambda m: (f"[attachment: {name} ({m.group(1)}, "
+                           f"too large >{MAX_ATTACH_MB}MB, not stored)]"),
+                text, count=1,
+            )
+        return (text + f"\n[attachment: {name} "
+                       f"(too large >{MAX_ATTACH_MB}MB, not stored)]").strip()
+    suffix = f", {count}" if count else ""
+    if pat.search(text):
+        return pat.sub(
+            lambda m: f"[attachment: {name} ({m.group(1)}{suffix}) @ {dest}]",
+            text, count=1,
+        )
+    extra = f" ({count})" if count else ""
+    return (text + f"\n[attachment: {name}{extra} @ {dest}]").strip()
+
+
+def _preview_block(abs_path: str, preview: str, count_str, kind: str) -> str:
+    """A passive head-preview content part. The chip parser strips it from
+    the bubble; the model reads it as a first look at constant cost."""
+    shows = count_str or ""
+    return (f'<attachment-preview path="{abs_path}" kind="{kind}" shows="{shows}">\n'
+            f'{preview}\n</attachment-preview>')
+
+
 def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str:
     """Save base64 'document' attachments to the session workdir so the
     agent's own file tools (``pdf`` / ``read`` / ``bash``) can actually
@@ -42,7 +164,8 @@ def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str
     Best-effort: a save failure leaves that file's mention untouched.
     """
     import base64
-    import re
+    import hashlib
+    import json
     from openprogram.agent._workdir import session_workdir_for
 
     wd = session_workdir_for(session_id)
@@ -59,7 +182,26 @@ def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str
         except Exception:
             return text
     adir = wd / "attachments"
+    # Within-session content-dedup index {sha256: stored relname}. Lets a
+    # re-dropped identical file (or a turn retry) reuse the existing copy
+    # instead of writing spec-1.pdf, spec-2.pdf … Best-effort: a missing /
+    # corrupt index only risks a duplicate write, never a wrong mapping
+    # (reuse is verified by re-hashing the candidate first).
+    index_path = adir / ".opdedup.json"
+    dedup: dict = {}
+    try:
+        if index_path.exists():
+            loaded = json.loads(index_path.read_text())
+            if isinstance(loaded, dict):
+                dedup = loaded
+    except Exception:
+        dedup = {}
+
     new_text = text
+    previews: list[str] = []
+    turn_bytes = 0
+    index_dirty = False
+
     for d in documents:
         data = d.get("data")
         name = (d.get("filename") or "file").strip()
@@ -69,32 +211,66 @@ def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str
             raw = base64.b64decode(data, validate=False)
         except Exception:
             continue
-        safe = _safe_attach_name(name)
-        try:
-            adir.mkdir(parents=True, exist_ok=True)
-            dest = adir / safe
-            # Don't clobber an existing different file of the same name.
-            stem, dot, ext = safe.rpartition(".")
-            i = 1
-            while dest.exists():
-                dest = adir / ((f"{stem}-{i}.{ext}") if dot else f"{safe}-{i}")
-                i += 1
-            dest.write_bytes(raw)
-        except OSError:
+        if not raw:
             continue
-        # Append " @ <abs path>" inside this file's "[attachment: …]"
-        # mention so the model sees the path; fall back to appending a
-        # line when the frontend didn't include a mention.
-        pat = re.compile(
-            r"\[attachment:\s*" + re.escape(name) + r"\s*\(([^)\]]*)\)\]"
-        )
-        if pat.search(new_text):
-            new_text = pat.sub(
-                lambda m: f"[attachment: {name} ({m.group(1)}) @ {dest}]",
-                new_text, count=1,
-            )
-        else:
-            new_text = (new_text + f"\n[attachment: {name} @ {dest}]").strip()
+        # Oversize (per-file + per-turn aggregate): tell the model it was
+        # dropped rather than hand it a path to a file that isn't there.
+        if len(raw) > MAX_ATTACH_BYTES or (turn_bytes + len(raw)) > MAX_TURN_ATTACH_BYTES:
+            new_text = _inject_mention(new_text, name, None, None, oversize=True)
+            continue
+
+        sha = hashlib.sha256(raw).hexdigest()
+        dest = None
+        # Reuse an identical file already saved this session.
+        prior = dedup.get(sha)
+        if prior:
+            cand = adir / prior
+            try:
+                if cand.is_file() and hashlib.sha256(cand.read_bytes()).hexdigest() == sha:
+                    dest = cand
+            except OSError:
+                dest = None
+        if dest is None:
+            safe = _safe_attach_name(name)
+            try:
+                adir.mkdir(parents=True, exist_ok=True)
+                dest = adir / safe
+                stem, dot, ext = safe.rpartition(".")
+                i = 1
+                while dest.exists():
+                    # Same name AND same bytes already on disk -> reuse it
+                    # (index was missing/stale); else bump to name-N.
+                    try:
+                        if hashlib.sha256(dest.read_bytes()).hexdigest() == sha:
+                            break
+                    except OSError:
+                        pass
+                    dest = adir / ((f"{stem}-{i}.{ext}") if dot else f"{safe}-{i}")
+                    i += 1
+                if not dest.exists():
+                    dest.write_bytes(raw)
+                    turn_bytes += len(raw)
+            except OSError:
+                continue
+            dedup[sha] = dest.name
+            index_dirty = True
+
+        kind = _decoded_kind(raw, name)
+        count_str, preview = _count_and_preview(raw, kind)
+        new_text = _inject_mention(new_text, name, dest, count_str, oversize=False)
+        if preview:
+            previews.append(_preview_block(str(dest), preview, count_str, kind))
+
+    if index_dirty:
+        try:
+            index_path.write_text(json.dumps(dedup))
+        except OSError:
+            pass
+    # Append the one-time head previews after the prose. They are bounded
+    # (<=PREVIEW_CAP each, this turn only) and stripped from the bubble by
+    # the chip parser, so the user sees a chip while the model gets a look.
+    if previews:
+        new_text = (new_text + "\n\n" + "\n".join(previews)).strip()
     return new_text
 
 
@@ -109,7 +285,8 @@ def _title_from_text(text: str) -> str:
     at 50 chars can sever it, so we clean first, then truncate.
     """
     import re
-    t = re.sub(r"\[attachment:[^\]]*\]", "", text)
+    t = re.sub(r"<attachment-preview[^>]*>.*?</attachment-preview>", "", text, flags=re.S)
+    t = re.sub(r"\[attachment:[^\]]*\]", "", t)
     t = re.sub(r"\[attached(?: file)?:[^\]]*\]", "", t)
     t = re.sub(r"<file [^>]*>.*?</file>", "", t, flags=re.S)
     t = t.strip()

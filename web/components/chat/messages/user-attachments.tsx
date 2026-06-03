@@ -33,12 +33,19 @@ export interface ParsedAttachment {
 // inlines a file body (every file is referenced by path), but these stay
 // so historical chats still render a clean chip instead of a wall of text.
 const FILE_BLOCK = /<file (?:name|path)="([^"]*)">[\s\S]*?<\/file>/g;
-// Current "[attachment: name (type, N KB) @ <abs path>]" mention plus the
-// older "[attached: …]" spelling. The backend appends " @ <abs path>" once
-// the file is saved (uploads); @-mentions carry the path from the frontend.
-// The path is consumed but not captured — it's for the model, not the chip.
+// The backend's one-time head preview: <attachment-preview …>…</…>. It's
+// for the MODEL (a first look at the file); the user sees a chip, so strip
+// the whole block from the bubble. Stripped BEFORE the mention scan so any
+// "[attachment:" inside previewed file content can't spawn a false chip.
+const PREVIEW_BLOCK = /<attachment-preview[^>]*>[\s\S]*?<\/attachment-preview>/g;
+// Current "[attachment: name (type, N KB[, <count>]) @ <abs path>]" mention
+// plus the older "[attached: …]" spelling. The backend appends " @ <abs
+// path>" once the file is saved (uploads); @-mentions carry the path from
+// the frontend. The optional 4th group is the page/line count (e.g.
+// "500 pages", "4210 lines") or an oversize note ("too large …"). The path
+// is consumed but not captured — it's for the model, not the chip.
 const ATTACHED_MENTION =
-  /\[attach(?:ed|ment):\s*([^()]+?)\s*\(([^,]+),\s*([\d.]+)\s*KB\)(?:\s*@\s*[^\]]+)?\]/g;
+  /\[attach(?:ed|ment):\s*([^()]+?)\s*\(([^,)]+),\s*([\d.]+)\s*KB(?:,\s*([^)]+))?\)(?:\s*@\s*[^\]]+)?\]/g;
 // Fallback mention with no size/ext: "[attachment: name @ path]" (current)
 // or "[attached file: name @ path]" (legacy).
 const ATTACHED_FILE = /\[attach(?:ment|ed file):\s*([^(@\]]+?)\s*@\s*[^\]]+\]/g;
@@ -51,6 +58,11 @@ export function parseUserAttachments(
   const attachments: ParsedAttachment[] = [];
   let text = content;
 
+  // Strip the model-only head preview first so its file content can't be
+  // mistaken for prose or spawn a false chip. It produces no chip itself —
+  // the chip comes from the matching [attachment:] mention.
+  text = text.replace(PREVIEW_BLOCK, "");
+
   // <file …> blocks come first in the composer's prefix. Strip the
   // (potentially huge) inlined content from the display — the user typed
   // a short prompt, not the file body.
@@ -59,14 +71,16 @@ export function parseUserAttachments(
     return "";
   });
 
-  // [attached: NAME (EXT, N KB)] mentions for binary docs (optionally with
-  // a backend-injected " @ <path>").
+  // [attachment: NAME (EXT, N KB[, COUNT])] mentions (optionally with a
+  // backend-injected " @ <path>"). COUNT is the page/line scope badge or an
+  // oversize note.
   text = text.replace(
     ATTACHED_MENTION,
-    (_m, name: string, ext: string, kb: string) => {
+    (_m, name: string, ext: string, kb: string, count?: string) => {
+      const scope = (count || "").trim();
       attachments.push({
         filename: (name || "").trim() || "file",
-        meta: `${(ext || "").trim()} · ${kb} KB`,
+        meta: `${(ext || "").trim()} · ${kb} KB` + (scope ? ` · ${scope}` : ""),
         kind: "binary",
       });
       return "";
