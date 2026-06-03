@@ -180,9 +180,13 @@ function Control({ row, onSave }: { row: Row; onSave: (k: string, v: unknown) =>
       </select>
     );
   }
+  // Plain text + numeric input mode — a port number is typed, not nudged
+  // one at a time, so no <input type="number"> spinner arrows. The backend
+  // validates the range and reports out-of-range inline.
   return (
     <input
-      type="number"
+      type="text"
+      inputMode="numeric"
       defaultValue={String(row.value ?? "")}
       style={inputStyle}
       onBlur={(e) => {
