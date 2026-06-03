@@ -319,9 +319,12 @@ def _cmd_web(port, open_browser):
         pass
 
     frontend = _start_frontend(port)
-    # The UI lives on :3000 when a frontend is (or was already) up;
-    # otherwise the backend port is the only thing serving.
-    has_frontend = frontend is not None or _port_in_use(_FRONTEND_PORT)
+    # The UI lives on :3000 only when OUR frontend is up — either we just
+    # spawned it, or _start_frontend reused one it confirmed was ours. A
+    # bare _port_in_use(3000) here would ALSO fire when an unrelated
+    # program squats :3000 (the squatter _start_frontend already refused
+    # to reuse), and we'd then open the browser at that foreign service.
+    has_frontend = frontend is not None or _frontend_is_ours(_FRONTEND_PORT) is True
     ui_url = (
         f"http://localhost:{_FRONTEND_PORT}" if has_frontend
         else f"http://localhost:{port}"
