@@ -32,63 +32,21 @@ PROVIDER_ENV_VARS: dict[str, str] = {
 
 
 def get_env_api_key(provider: str) -> str | None:
-    """Resolve an API key from environment variables for the given provider."""
-    
-    # GitHub Copilot: check multiple tokens with priority
-    if provider == "github-copilot":
-        return (
-            os.environ.get("COPILOT_GITHUB_TOKEN")
-            or os.environ.get("GH_TOKEN")
-            or os.environ.get("GITHUB_TOKEN")
-        )
-    
-    # Anthropic: ANTHROPIC_OAUTH_TOKEN takes precedence over ANTHROPIC_API_KEY
-    if provider == "anthropic":
-        return os.environ.get("ANTHROPIC_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
-    
-    # Amazon Bedrock: multiple credential sources
+    """Resolve a provider's API key — the runtime path.
+
+    Delegates to the canonical :func:`resolve_api_key` (env > config.json), so a
+    key saved through the web UI is found at runtime even after a worker restart
+    cleared it from ``os.environ`` — the restart bug. Anthropic OAuth>key and
+    the GitHub-Copilot token sources are handled by the canonical resolver's
+    env-var table. Bedrock/Vertex keep the ``"<authenticated>"`` cloud-credential
+    sentinel for back-compat with their runtime adapters (those migrate to
+    :func:`is_configured` separately).
+    """
     if provider == "amazon-bedrock":
-        if (
-            os.environ.get("AWS_PROFILE")
-            or (os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))
-            or os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
-            or os.environ.get("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")
-            or os.environ.get("AWS_CONTAINER_CREDENTIALS_FULL_URI")
-            or os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE")
-        ):
-            return "<authenticated>"
-        return None
-    
-    # Google Vertex AI: ADC (Application Default Credentials).
-    # Either a real GOOGLE_APPLICATION_CREDENTIALS file path, or the
-    # default ADC json at ~/.config/gcloud/application_default_credentials.json.
-    # Both also need a project (GOOGLE_CLOUD_PROJECT or GCLOUD_PROJECT) and
-    # a location (GOOGLE_CLOUD_LOCATION).
+        return "<authenticated>" if _bedrock_chain_ok() else None
     if provider == "google-vertex":
-        project = (
-            os.environ.get("GOOGLE_CLOUD_PROJECT")
-            or os.environ.get("GCLOUD_PROJECT")
-        )
-        location = os.environ.get("GOOGLE_CLOUD_LOCATION")
-        if not project or not location:
-            return None
-        explicit = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if explicit and Path(explicit).is_file():
-            return "<authenticated>"
-        default_adc = (
-            Path.home() / ".config" / "gcloud"
-            / "application_default_credentials.json"
-        )
-        if default_adc.is_file():
-            return "<authenticated>"
-        return None
-
-    # Standard lookup
-    env_var = PROVIDER_ENV_VARS.get(provider)
-    if env_var:
-        return os.environ.get(env_var)
-
-    return None
+        return "<authenticated>" if _vertex_adc_ok() else None
+    return resolve_api_key(provider)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -120,3 +120,25 @@ def test_is_configured_vertex_needs_project_location_and_adc(env, tmp_path):
 ])
 def test_provider_id_for_env_var(env_var, pid):
     assert ek.provider_id_for_env_var(env_var) == pid
+
+
+# ── get_env_api_key (runtime path) now delegates to the canonical resolver ────
+
+def test_get_env_api_key_restart_bug_config_fallback(env):
+    # Post-restart: the key is gone from env but still in config.json. The
+    # runtime resolver must now find it (the bug this unification fixes).
+    env.setattr(ek, "_config_api_keys", lambda: {"DEEPSEEK_API_KEY": "cfgkey"})
+    assert ek.get_env_api_key("deepseek") == "cfgkey"
+
+
+def test_get_env_api_key_anthropic_oauth_precedence(env):
+    env.setenv("ANTHROPIC_API_KEY", "k")
+    env.setenv("ANTHROPIC_OAUTH_TOKEN", "oauth")
+    assert ek.get_env_api_key("anthropic") == "oauth"
+
+
+def test_get_env_api_key_bedrock_sentinel_preserved(env):
+    assert ek.get_env_api_key("amazon-bedrock") is None
+    env.setenv("AWS_ACCESS_KEY_ID", "x")
+    env.setenv("AWS_SECRET_ACCESS_KEY", "y")
+    assert ek.get_env_api_key("amazon-bedrock") == "<authenticated>"
