@@ -1,3 +1,4 @@
+import { jsonFetch } from "./fetch-client";
 import type {
   Provider,
   Model,
@@ -43,18 +44,6 @@ function mapModel(m: RawModel, provider: string): Model {
     context: m.context_window,
     custom: m.custom,
   };
-}
-
-async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-  });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    throw new Error(`HTTP ${r.status}: ${text.slice(0, 300)}`);
-  }
-  return r.json() as Promise<T>;
 }
 
 export const api = {

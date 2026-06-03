@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { jsonFetch } from "./fetch-client";
+
 export interface PluginRow {
   name: string;
   version: string;
@@ -47,27 +49,6 @@ interface PluginsState {
   fetchBuiltinPlugins: () => Promise<Array<Record<string, unknown>>>;
 }
 
-async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-  });
-  const text = await r.text();
-  let data: unknown;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { error: text };
-  }
-  if (!r.ok) {
-    const err = (data as { error?: string }).error || `HTTP ${r.status}`;
-    const code = (data as { code?: string }).code;
-    const e = new Error(err) as Error & { code?: string };
-    if (code) e.code = code;
-    throw e;
-  }
-  return data as T;
-}
 
 export const usePluginsStore = create<PluginsState>((set, get) => ({
   plugins: [],

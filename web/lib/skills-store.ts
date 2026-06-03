@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { jsonFetch as jsonReq } from "./fetch-client";
+
 export interface Skill {
   name: string;
   description: string;
@@ -93,17 +95,6 @@ function encodePath(name: string): string {
   return name.split("/").map(encodeURIComponent).join("/");
 }
 
-async function jsonReq<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-  });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    throw new Error(`HTTP ${r.status}: ${text.slice(0, 300)}`);
-  }
-  return r.json() as Promise<T>;
-}
 
 export const useSkills = create<SkillsState>((set, get) => ({
   skills: [],
