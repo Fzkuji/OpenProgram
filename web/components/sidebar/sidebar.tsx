@@ -92,6 +92,9 @@ export function Sidebar() {
 
   const [open, setOpen] = useState<boolean>(true);
   const [favCollapsed, setFavCollapsed] = useState(false);
+  // True once the scroll area below New chat has scrolled — drives the
+  // Claude-style divider line under the pinned header.
+  const [navScrolled, setNavScrolled] = useState(false);
   // Refresh-button states (matches legacy spin → checkmark → revert).
   const [refreshing, setRefreshing] = useState(false);
   const [refreshDone, setRefreshDone] = useState(false);
@@ -323,6 +326,15 @@ export function Sidebar() {
       <div
         className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
           [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onScroll={(e) => {
+          const s = e.currentTarget.scrollTop > 0;
+          setNavScrolled((prev) => (prev === s ? prev : s));
+        }}
+        style={{
+          // A 1px divider at the top edge once scrolled (Claude-style) —
+          // inset box-shadow so it never shifts the layout.
+          boxShadow: navScrolled ? "inset 0 1px 0 0 var(--border)" : undefined,
+        }}
       >
         <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
         <Link
