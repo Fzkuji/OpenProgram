@@ -1,6 +1,6 @@
 # Config write safety — atomic `update_config`
 
-Status: **planned** · Owner: core/config · Created: 2026-06-04
+Status: **web-facing writes landed (steps 1–3)** · step 4 residual · Owner: core/config · Created: 2026-06-04
 
 Optimization-roadmap item #5. Follows the config-IO consolidation that made the
 webui delegate to `setup._read_config`/`_write_config` and enforce 0o600.
@@ -60,16 +60,20 @@ def update_config(mutator: Callable[[dict], None]) -> dict:
 
 ## 3. Migration
 
-1. **(this step)** Add `update_config` to `setup.py` + a unit test (two
+1. **(done, 935685c4)** Add `update_config` to `setup.py` + a unit test (two
    "concurrent" mutators serialise; result reflects both).
-2. Migrate the two web-facing racers — `config_schema.set_setting` (both the
-   `_set_at` branch and the `tools.disabled` branch) and
-   `routes/config.py:save_config` (the api_keys merge) — to `update_config`.
-3. Migrate `setup.py`'s own `set_ui_ports` / `write_search_default_provider` and
-   the `_setup_sections/*` wizard writers.
-4. Have `storage.py`'s providers-section writes go through `update_config` too
-   (keeping behaviour) so the providers writes are cross-process safe, then drop
-   the now-redundant private `_cache_lock` read-modify-write wrapping.
+2. **(done, 1c21d43d)** Migrate the two web-facing racers —
+   `config_schema.set_setting` (both the `_set_at` branch and the
+   `tools.disabled` branch) and `routes/config.py:save_config` (the api_keys
+   merge) — to `update_config`.
+3. **(done, 0cc67aed)** Migrate `setup.py`'s own `set_ui_ports` /
+   `write_search_default_provider` to `update_config`. (The web-facing config
+   write paths are now all atomic.)
+4. **(residual)** Migrate the `_setup_sections/*` `openprogram setup` wizard
+   writers, and route `storage.py`'s providers-section writes through
+   `update_config` so they're cross-process safe (they're in-process safe today
+   via the private `_cache_lock`; the gap is a concurrent CLI/wizard write). Both
+   are CLI-side / lower-likelihood than the web racers closed above.
 
 Each step: restart worker, `/healthz`, save a setting + an api key from the web,
 confirm both persist (no clobber), tests green.
