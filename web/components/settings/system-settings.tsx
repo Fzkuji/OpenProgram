@@ -20,6 +20,14 @@ interface Row {
   set?: boolean;
 }
 
+// On the web, only show settings that have NO dedicated page. Providers,
+// Search, Memory, and Tools already have their own surfaces (the Providers
+// / Search tabs, the /memory page), so re-listing them here would just
+// duplicate them. The schema still feeds all of them on the TUI (which has
+// no settings pages) and the CLI — this is purely which groups the web
+// chooses to render. Ports is the one genuinely-homeless setting.
+const WEB_GROUPS = ["Ports"];
+
 export function SystemSettings() {
   const [rows, setRows] = useState<Row[]>([]);
   const [status, setStatus] = useState<Record<string, string>>({});
@@ -28,7 +36,7 @@ export function SystemSettings() {
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
-      .then((d) => setRows(d.settings || []))
+      .then((d) => setRows((d.settings || []).filter((r: Row) => WEB_GROUPS.includes(r.group))))
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, []);
