@@ -16,45 +16,70 @@ export interface SettingRow {
   set?: boolean;
 }
 
+/** A row that, instead of editing a value, launches an existing flow
+ * (a dedicated picker or a login flow) by running a slash command. */
+export interface ActionRow {
+  label: string;
+  command: string; // e.g. "/model", "/theme", "/login"
+  hint?: string;
+}
+
 export interface SettingsPanelProps {
   rows: SettingRow[];
+  /** Rows that delegate to an existing picker/flow (model, theme, …). */
+  actions?: ActionRow[];
   /** Persist one setting over the worker WS (action `set_setting`). */
   onSet: (key: string, value: unknown) => void;
+  /** Run a slash command (for action rows). */
+  onRun?: (command: string) => void;
   onClose: () => void;
 }
 
 /**
- * In-app settings editor for the TUI — the visual counterpart to the
- * `openprogram ports` / `setup` CLI. Rows are schema-driven (one
- * `SettingSpec` server-side becomes one row here), grouped by section.
- * Editing happens inline: toggles flip, enums cycle with ←/→, numbers
- * open a digit buffer on enter. Every change is sent to the worker via
- * `onSet`; the panel is otherwise stateless about values (the parent
- * re-renders `rows` from the `setting_result` the server echoes back).
+ * In-app settings hub for the TUI — the visual counterpart to the
+ * `openprogram config` / `setup` CLI. Schema-driven config settings edit
+ * inline (toggles flip, enums cycle with ←/→, numbers open a digit buffer
+ * on enter); "action" rows delegate to the existing dedicated pickers /
+ * flows (model, theme, effort, providers, channels) by running their
+ * slash command. Values are owned by the parent: the panel sends `onSet`
+ * and re-renders `rows` from the server's `setting_result`.
  */
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ rows, onSet, onClose }) => {
+export const SettingsPanel: React.FC<SettingsPanelProps> = ({
+  rows, actions = [], onSet, onRun, onClose,
+}) => {
   const colors = useColors();
   const width = usePanelWidth();
   const [index, setIndex] = useState(0);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [buffer, setBuffer] = useState('');
 
-  const n = rows.length;
-  const cur = rows[Math.min(index, Math.max(0, n - 1))];
+  // Navigable items: every setting, then every action.
+  const total = rows.length + actions.length;
+  const at = Math.min(index, Math.max(0, total - 1));
+  const curSetting = at < rows.length ? rows[at] : undefined;
+  const curAction = at >= rows.length ? actions[at - rows.length] : undefined;
 
-  // Rows in declared order, with a header emitted whenever the group changes.
+  // Display lines: settings grouped by group, then an Actions section.
   const lines = useMemo(() => {
-    const out: Array<{ kind: 'header'; group: string } | { kind: 'row'; row: SettingRow; i: number }> = [];
+    type Line =
+      | { kind: 'header'; label: string }
+      | { kind: 'setting'; row: SettingRow; i: number }
+      | { kind: 'action'; row: ActionRow; i: number };
+    const out: Line[] = [];
     let last = '';
     rows.forEach((row, i) => {
       if (row.group !== last) {
-        out.push({ kind: 'header', group: row.group });
+        out.push({ kind: 'header', label: row.group });
         last = row.group;
       }
-      out.push({ kind: 'row', row, i });
+      out.push({ kind: 'setting', row, i });
     });
+    if (actions.length) {
+      out.push({ kind: 'header', label: 'More' });
+      actions.forEach((row, j) => out.push({ kind: 'action', row, i: rows.length + j }));
+    }
     return out;
-  }, [rows]);
+  }, [rows, actions]);
 
   const commitNumber = () => {
     if (editKey === null) return;
@@ -65,7 +90,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ rows, onSet, onClo
   };
 
   useInput((input, key) => {
-    // Number edit mode owns all keys until enter/esc.
     if (editKey !== null) {
       if (key.return) return commitNumber();
       if (key.escape) { setEditKey(null); setBuffer(''); return; }
@@ -75,35 +99,35 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ rows, onSet, onClo
     }
 
     if (key.escape) return onClose();
-    if (key.upArrow) { setIndex((i) => (i - 1 + n) % n); return; }
-    if (key.downArrow) { setIndex((i) => (i + 1) % n); return; }
-    if (!cur) return;
+    if (key.upArrow) { setIndex((i) => (i - 1 + total) % total); return; }
+    if (key.downArrow) { setIndex((i) => (i + 1) % total); return; }
 
-    if (cur.widget === 'toggle' && (key.return || input === ' ')) {
-      onSet(cur.key, !cur.value);
+    if (curAction) {
+      if (key.return) { onClose(); onRun?.(curAction.command); }
       return;
     }
-    if (cur.widget === 'enum' && (key.leftArrow || key.rightArrow)) {
-      const opts = cur.choices ?? [];
+    if (!curSetting) return;
+    if (curSetting.widget === 'toggle' && (key.return || input === ' ')) {
+      onSet(curSetting.key, !curSetting.value);
+      return;
+    }
+    if (curSetting.widget === 'enum' && (key.leftArrow || key.rightArrow)) {
+      const opts = curSetting.choices ?? [];
       if (!opts.length) return;
-      const at = Math.max(0, opts.indexOf(String(cur.value)));
-      const next = key.rightArrow
-        ? (at + 1) % opts.length
-        : (at - 1 + opts.length) % opts.length;
-      onSet(cur.key, opts[next]);
+      const cur = Math.max(0, opts.indexOf(String(curSetting.value)));
+      const next = key.rightArrow ? (cur + 1) % opts.length : (cur - 1 + opts.length) % opts.length;
+      onSet(curSetting.key, opts[next]);
       return;
     }
-    if (cur.widget === 'number' && key.return) {
-      setEditKey(cur.key);
-      setBuffer(String(cur.value ?? ''));
+    if (curSetting.widget === 'number' && key.return) {
+      setEditKey(curSetting.key);
+      setBuffer(String(curSetting.value ?? ''));
       return;
     }
   });
 
   const renderValue = (row: SettingRow, selected: boolean): React.ReactNode => {
-    if (editKey === row.key) {
-      return <Text color={colors.primary}>{buffer}▌</Text>;
-    }
+    if (editKey === row.key) return <Text color={colors.primary}>{buffer}▌</Text>;
     if (row.widget === 'toggle') {
       const on = !!row.value;
       return <Text color={on ? colors.success : colors.muted}>{on ? 'on' : 'off'}</Text>;
@@ -116,9 +140,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ rows, onSet, onClo
 
   const footer = editKey !== null
     ? 'type digits · enter save · esc cancel'
-    : cur?.widget === 'toggle' ? '↑↓ move · space toggle · esc close'
-    : cur?.widget === 'enum' ? '↑↓ move · ←→ change · esc close'
+    : curAction ? '↑↓ move · enter open · esc close'
+    : curSetting?.widget === 'toggle' ? '↑↓ move · space toggle · esc close'
+    : curSetting?.widget === 'enum' ? '↑↓ move · ←→ change · esc close'
     : '↑↓ move · enter edit · esc close';
+
+  const labelW = Math.max(20, Math.floor(width * 0.42));
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={colors.primary}
@@ -132,17 +159,30 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ rows, onSet, onClo
         {lines.map((ln, li) => {
           if (ln.kind === 'header') {
             return (
-              <Box key={`h-${ln.group}-${li}`} marginTop={li === 0 ? 0 : 1}>
-                <Text bold color={colors.border}>{ln.group}</Text>
+              <Box key={`h-${ln.label}-${li}`} marginTop={li === 0 ? 0 : 1}>
+                <Text bold color={colors.border}>{ln.label}</Text>
               </Box>
             );
           }
-          const selected = ln.i === index;
+          const selected = ln.i === at;
+          if (ln.kind === 'action') {
+            return (
+              <Box key={`a-${ln.row.command}`}>
+                <Text color={selected ? colors.primary : colors.border}>{selected ? '▌ ' : '  '}</Text>
+                <Box width={labelW}>
+                  <Text color={selected ? colors.primary : colors.text} bold={selected} wrap="truncate-end">
+                    {ln.row.label}
+                  </Text>
+                </Box>
+                <Text color={colors.muted}>{ln.row.hint ?? ln.row.command} ›</Text>
+              </Box>
+            );
+          }
           const next = ln.row.apply === 'next_start';
           return (
             <Box key={ln.row.key}>
               <Text color={selected ? colors.primary : colors.border}>{selected ? '▌ ' : '  '}</Text>
-              <Box width={Math.max(20, Math.floor(width * 0.42))}>
+              <Box width={labelW}>
                 <Text color={selected ? colors.primary : colors.text} bold={selected} wrap="truncate-end">
                   {ln.row.label}
                 </Text>
@@ -156,9 +196,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ rows, onSet, onClo
         })}
       </Box>
 
-      {cur?.help ? (
+      {curSetting?.help ? (
         <Box marginTop={1}>
-          <Text color={colors.muted} wrap="truncate-end">{cur.help}</Text>
+          <Text color={colors.muted} wrap="truncate-end">{curSetting.help}</Text>
         </Box>
       ) : null}
     </Box>

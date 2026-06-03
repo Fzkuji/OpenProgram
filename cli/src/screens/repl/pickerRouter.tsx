@@ -112,7 +112,14 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     return (
       <SettingsPanel
         rows={settingsRows}
+        actions={[
+          { label: 'Model', command: '/model', hint: 'switch model' },
+          { label: 'Thinking effort', command: '/effort', hint: 'off … xhigh' },
+          { label: 'Theme', command: '/theme', hint: 'live preview' },
+          { label: 'Providers / API keys', command: '/login', hint: 'sign in' },
+        ]}
         onSet={(key, value) => client.send({ action: 'set_setting', key, value })}
+        onRun={(cmd) => onSubmit(cmd)}
         onClose={() => setPickerKind(null)}
       />
     );
