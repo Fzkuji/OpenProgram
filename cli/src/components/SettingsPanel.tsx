@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Box, Text, useInput } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
-import { usePanelWidth } from '../utils/useTerminalWidth.js';
+import { usePanelWidth, useTerminalHeight } from '../utils/useTerminalWidth.js';
 
 /** One resolved setting, matching `openprogram.config_schema.get_settings()`. */
 export interface SettingRow {
@@ -40,46 +40,64 @@ export interface SettingsPanelProps {
  * `openprogram config` / `setup` CLI. Schema-driven config settings edit
  * inline (toggles flip, enums cycle with ←/→, numbers open a digit buffer
  * on enter); "action" rows delegate to the existing dedicated pickers /
- * flows (model, theme, effort, providers, channels) by running their
- * slash command. Values are owned by the parent: the panel sends `onSet`
- * and re-renders `rows` from the server's `setting_result`.
+ * flows by running their slash command. Type to filter (handy for the long
+ * Tools list); the view scroll-windows so it never overflows the terminal.
+ * Values are owned by the parent: the panel sends `onSet` and re-renders
+ * `rows` from the server's `setting_result`.
  */
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   rows, actions = [], onSet, onRun, onClose,
 }) => {
   const colors = useColors();
   const width = usePanelWidth();
+  const height = useTerminalHeight();
   const [index, setIndex] = useState(0);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [buffer, setBuffer] = useState('');
+  const [filter, setFilter] = useState('');
 
-  // Navigable items: every setting, then every action.
-  const total = rows.length + actions.length;
-  const at = Math.min(index, Math.max(0, total - 1));
-  const curSetting = at < rows.length ? rows[at] : undefined;
-  const curAction = at >= rows.length ? actions[at - rows.length] : undefined;
+  // Filter by label (and group). Settings + actions both filterable.
+  const fl = filter.toLowerCase();
+  const hit = (label: string, group?: string) =>
+    !fl || label.toLowerCase().includes(fl) || (group ?? '').toLowerCase().includes(fl);
+  const vSettings = rows.filter((r) => hit(r.label, r.group));
+  const vActions = actions.filter((a) => hit(a.label));
 
-  // Display lines: settings grouped by group, then an Actions section.
-  const lines = useMemo(() => {
-    type Line =
-      | { kind: 'header'; label: string }
-      | { kind: 'setting'; row: SettingRow; i: number }
-      | { kind: 'action'; row: ActionRow; i: number };
-    const out: Line[] = [];
-    let last = '';
-    rows.forEach((row, i) => {
-      if (row.group !== last) {
-        out.push({ kind: 'header', label: row.group });
-        last = row.group;
-      }
-      out.push({ kind: 'setting', row, i });
-    });
-    if (actions.length) {
-      out.push({ kind: 'header', label: 'More' });
-      actions.forEach((row, j) => out.push({ kind: 'action', row, i: rows.length + j }));
-    }
-    return out;
-  }, [rows, actions]);
+  const total = vSettings.length + vActions.length;
+  const at = total ? Math.min(index, total - 1) : 0;
+  const curSetting = at < vSettings.length ? vSettings[at] : undefined;
+  const curAction = at >= vSettings.length ? vActions[at - vSettings.length] : undefined;
+
+  // Display lines: settings grouped, then a "More" actions section. Each
+  // setting/action carries its nav index `i` (position in the filtered list).
+  type Line =
+    | { kind: 'header'; label: string }
+    | { kind: 'setting'; row: SettingRow; i: number }
+    | { kind: 'action'; row: ActionRow; i: number };
+  const lines: Line[] = [];
+  let last = '';
+  vSettings.forEach((row, i) => {
+    if (row.group !== last) { lines.push({ kind: 'header', label: row.group }); last = row.group; }
+    lines.push({ kind: 'setting', row, i });
+  });
+  if (vActions.length) {
+    lines.push({ kind: 'header', label: 'More' });
+    vActions.forEach((row, j) => lines.push({ kind: 'action', row, i: vSettings.length + j }));
+  }
+
+  // Scroll window: keep the selected row visible without overflowing.
+  const maxVisible = Math.max(6, (height || 24) - 10);
+  const selLine = lines.findIndex((l) => l.kind !== 'header' && l.i === at);
+  let start = 0;
+  if (lines.length > maxVisible) {
+    start = Math.min(
+      Math.max(0, selLine - Math.floor(maxVisible / 2)),
+      lines.length - maxVisible,
+    );
+  }
+  const windowed = lines.slice(start, start + maxVisible);
+  const moreAbove = start;
+  const moreBelow = lines.length - (start + maxVisible);
 
   const commitNumber = () => {
     if (editKey === null) return;
@@ -98,31 +116,39 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       return;
     }
 
-    if (key.escape) return onClose();
-    if (key.upArrow) { setIndex((i) => (i - 1 + total) % total); return; }
-    if (key.downArrow) { setIndex((i) => (i + 1) % total); return; }
+    if (key.escape) {
+      if (filter) { setFilter(''); setIndex(0); return; }
+      return onClose();
+    }
+    if (total) {
+      if (key.upArrow) { setIndex((i) => (Math.min(i, total - 1) - 1 + total) % total); return; }
+      if (key.downArrow) { setIndex((i) => (Math.min(i, total - 1) + 1) % total); return; }
+    }
 
     if (curAction) {
-      if (key.return) { onClose(); onRun?.(curAction.command); }
-      return;
+      if (key.return) { onClose(); onRun?.(curAction.command); return; }
+    } else if (curSetting) {
+      if (curSetting.widget === 'toggle' && (key.return || input === ' ')) {
+        onSet(curSetting.key, !curSetting.value); return;
+      }
+      if (curSetting.widget === 'enum' && (key.leftArrow || key.rightArrow)) {
+        const opts = curSetting.choices ?? [];
+        if (opts.length) {
+          const c = Math.max(0, opts.indexOf(String(curSetting.value)));
+          const n = key.rightArrow ? (c + 1) % opts.length : (c - 1 + opts.length) % opts.length;
+          onSet(curSetting.key, opts[n]);
+        }
+        return;
+      }
+      if (curSetting.widget === 'number' && key.return) {
+        setEditKey(curSetting.key); setBuffer(String(curSetting.value ?? '')); return;
+      }
     }
-    if (!curSetting) return;
-    if (curSetting.widget === 'toggle' && (key.return || input === ' ')) {
-      onSet(curSetting.key, !curSetting.value);
-      return;
-    }
-    if (curSetting.widget === 'enum' && (key.leftArrow || key.rightArrow)) {
-      const opts = curSetting.choices ?? [];
-      if (!opts.length) return;
-      const cur = Math.max(0, opts.indexOf(String(curSetting.value)));
-      const next = key.rightArrow ? (cur + 1) % opts.length : (cur - 1 + opts.length) % opts.length;
-      onSet(curSetting.key, opts[next]);
-      return;
-    }
-    if (curSetting.widget === 'number' && key.return) {
-      setEditKey(curSetting.key);
-      setBuffer(String(curSetting.value ?? ''));
-      return;
+
+    // Type-to-filter (space is reserved for toggling).
+    if (key.backspace || key.delete) { setFilter((f) => f.slice(0, -1)); setIndex(0); return; }
+    if (input && input.length === 1 && !key.ctrl && !key.meta && /[\w.\-]/.test(input)) {
+      setFilter((f) => f + input); setIndex(0);
     }
   });
 
@@ -140,10 +166,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const footer = editKey !== null
     ? 'type digits · enter save · esc cancel'
-    : curAction ? '↑↓ move · enter open · esc close'
-    : curSetting?.widget === 'toggle' ? '↑↓ move · space toggle · esc close'
-    : curSetting?.widget === 'enum' ? '↑↓ move · ←→ change · esc close'
-    : '↑↓ move · enter edit · esc close';
+    : curAction ? '↑↓ · enter open · type filter · esc'
+    : curSetting?.widget === 'toggle' ? '↑↓ · space toggle · type filter · esc'
+    : curSetting?.widget === 'enum' ? '↑↓ · ←→ change · type filter · esc'
+    : '↑↓ · enter edit · type filter · esc';
 
   const labelW = Math.max(20, Math.floor(width * 0.42));
 
@@ -151,15 +177,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     <Box flexDirection="column" borderStyle="round" borderColor={colors.primary}
          paddingX={1} marginBottom={1} width={width}>
       <Box justifyContent="space-between">
-        <Text bold color={colors.primary}>Settings</Text>
+        <Text bold color={colors.primary}>
+          Settings{filter ? <Text color={colors.text}> /{filter}</Text> : null}
+        </Text>
         <Text color={colors.muted}>{footer}</Text>
       </Box>
 
       <Box marginTop={1} flexDirection="column">
-        {lines.map((ln, li) => {
+        {moreAbove > 0 ? <Text color={colors.muted}>  ↑ {moreAbove} more</Text> : null}
+        {total === 0 ? <Text color={colors.muted}>  no settings match “{filter}”</Text> : null}
+        {windowed.map((ln, li) => {
           if (ln.kind === 'header') {
             return (
-              <Box key={`h-${ln.label}-${li}`} marginTop={li === 0 ? 0 : 1}>
+              <Box key={`h-${ln.label}-${li}`} marginTop={li === 0 || moreAbove > 0 ? 0 : 1}>
                 <Text bold color={colors.border}>{ln.label}</Text>
               </Box>
             );
@@ -194,6 +224,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </Box>
           );
         })}
+        {moreBelow > 0 ? <Text color={colors.muted}>  ↓ {moreBelow} more</Text> : null}
       </Box>
 
       {curSetting?.help ? (
