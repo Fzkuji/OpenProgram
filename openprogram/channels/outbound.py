@@ -20,7 +20,7 @@
   ``error_kind`` / ``retryable``. 给"我要在 UI 上告诉用户为什么发
   失败"的调用方用.
 
-设计背景见 ``docs/design/channel-audit.md`` 第 5.F 节.
+设计背景见 ``docs/design/channels/channel-audit.md`` 第 5.F 节.
 """
 from __future__ import annotations
 

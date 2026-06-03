@@ -1,6 +1,6 @@
 """Streaming / resumable in-progress state — central manager.
 
-See ``docs/design/streaming-resume.md`` for the full design.
+See ``docs/design/runtime/streaming-resume.md`` for the full design.
 
 Any backend code path that's going to produce a long-running message
 (LLM streaming reply, tool call, agentic function execution, task

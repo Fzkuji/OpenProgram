@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenProgram · 附件处理设计</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1d2130; --ink:#e7e9ee; --muted:#9aa3b2;
+    --line:#2a2f3d; --accent:#6ea8fe; --accent2:#8b9cf0;
+    --ok:#3ddc97; --okbg:#10241c; --warn:#ffce6b; --warnbg:#2a2310; --bad:#ff6b6b; --badbg:#2a1414;
+    --mono:'SF Mono',ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 28px 96px}
+  h1{font-size:30px;letter-spacing:.2px;margin:0 0 6px}
+  h2{font-size:21px;margin:46px 0 14px;padding-top:14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  h2 .n{font:600 13px/1 var(--mono);color:#0f1117;background:var(--accent);border-radius:6px;padding:6px 8px}
+  h3{font-size:16px;margin:26px 0 10px;color:#cfd5e1}
+  p{margin:10px 0}
+  .sub{color:var(--muted);margin:0 0 4px}
+  code,.mono{font-family:var(--mono);font-size:.9em}
+  code{background:#0b0d13;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#d7def0}
+  .cite{color:var(--accent);font-family:var(--mono);font-size:.82em;white-space:nowrap}
+  a{color:var(--accent)}
+  .grid{display:grid;gap:14px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:760px){.g3,.g2{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h4{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .card .role{font-size:12.5px;color:var(--muted)}
+  .lead{background:linear-gradient(180deg,#191d2a,#141722);border:1px solid var(--line);
+    border-left:4px solid var(--accent);border-radius:12px;padding:18px 20px;margin:18px 0 4px}
+  .pill{display:inline-block;font:600 11px/1 var(--mono);padding:5px 8px;border-radius:999px;border:1px solid}
+  .p-ok{color:var(--ok);background:var(--okbg);border-color:#1f5c44}
+  .p-warn{color:var(--warn);background:var(--warnbg);border-color:#5c4a1f}
+  .p-bad{color:var(--bad);background:var(--badbg);border-color:#5c2424}
+  .p-mut{color:var(--muted);background:#141722;border-color:var(--line)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600;color:#cfd5e1}
+  tr:nth-child(even) td{background:#13161f}
+  td.c,th.c{text-align:center;white-space:nowrap}
+  .stack{display:flex;flex-direction:column;gap:0;margin:14px 0}
+  .layer{position:relative;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 26px;background:var(--panel)}
+  .layer:last-child{margin-bottom:0}
+  .layer::after{content:"▼";position:absolute;left:50%;bottom:-23px;transform:translateX(-50%);color:#454c5e;font-size:14px}
+  .layer:last-child::after{content:""}
+  .layer .t{font:600 14px/1.3 var(--mono);color:#cfe0ff}
+  .layer .d{font-size:13px;color:var(--muted);margin-top:4px}
+  .layer.ok{border-color:#1f5c44}.layer.warn{border-color:#5c4a1f}.layer.bad{border-color:#5c2424}
+  pre{background:#0b0d13;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;
+    font-family:var(--mono);font-size:12.5px;line-height:1.55;color:#d7def0;margin:12px 0}
+  .banner{background:linear-gradient(180deg,#10241c,#0e1c17);border:1px solid #1f5c44;border-radius:12px;padding:16px 20px;margin:18px 0}
+  .banner .pill{margin-right:8px}
+  ul{margin:10px 0;padding-left:22px}li{margin:4px 0}
+  .tag{font:600 11px/1 var(--mono);padding:4px 7px;border-radius:6px;border:1px solid var(--line);background:#0b0d13;color:#9fb6e6}
+  .muted{color:var(--muted)}
+  .kbd{font-family:var(--mono);font-size:.85em;color:#cfe0ff}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>附件处理设计</h1>
+  <p class="sub">OpenProgram Web 聊天 · 综合 Claude Code / opencode / openclaw 三家做法 + 自身约束</p>
+
+  <div class="banner">
+    <div style="margin-bottom:8px">
+      <span class="pill p-ok">P0 已实现（本会话）</span>
+      <span class="pill p-warn">待浏览器验证 + 提交</span>
+      <span class="pill p-mut">基线 c29ef3dd</span>
+    </div>
+    <div class="muted" style="font-size:13.5px">
+      路径统一引用方案已提交于 <code>c29ef3dd</code>。本文是其演进：P0（首部预览 + 页/行数 + sha256 去重 + 32MB 超限保护）
+      已写完并通过后端单元测试；P1（provider 原生 document block）/ P2（远程渠道）为接缝/推迟项。
+    </div>
+  </div>
+
+  <div class="lead">
+    <strong>一句话原则</strong>：<em>materialize once to a path; deliver the best block the active model accepts plus a small head preview; let the agent page the rest with its bounded tools.</em><br>
+    <span class="muted" style="font-size:13.5px">附件字节最多落盘一次，用一个绝对路径标识；内容<strong>怎么</strong>到模型，每轮按 <code>(文件类型 × 模型声明的模态)</code> 重算，逐级降级。<strong>每个文件 prompt 成本 O(1)，与大小无关</strong>；同一次上传 codex 现在能用、换 Claude/Gemini 自动升级，前端零改动。</span>
+  </div>
+
+  <h2><span class="n">1</span> 三层判断</h2>
+  <div class="grid g3">
+    <div class="card"><h4>① 是不是图片？</h4><div class="role">是 → vision block（模型直接看像素）。图片永不落盘。</div></div>
+    <div class="card"><h4>② 有没有现成路径？</h4><div class="role">上传/远程＝没有 → 落盘到 workdir；<code>@</code>提及/打路径＝有 → 原地引用，零复制。</div></div>
+    <div class="card"><h4>③ 能力叠加层</h4><div class="role">只有模型声明支持 <code>document</code> 时，才把 PDF 升级成原生 document block（P1）。</div></div>
+  </div>
+
+  <h2><span class="n">2</span> 决策矩阵（权威）</h2>
+  <p class="sub">DELIVER 基于默认 <code>codex/gpt-5.5</code>（<code>model.input=["text","image"]</code>，无 document）。某行只有当模型声明对应模态时才翻转。</p>
+  <table>
+    <tr><th>来源</th><th>文件类型</th><th class="c">落盘</th><th>DELIVER（现在, codex/gpt-5.5）</th><th>READ 路径</th></tr>
+    <tr><td>upload</td><td>image</td><td class="c">否</td><td>ImageContent block（像素）</td><td>模型 vision 原生</td></tr>
+    <tr><td>upload</td><td>text/code</td><td class="c">是</td><td>[attachment:..@/abs] + ≤4KB 首部预览</td><td>read 2000行/200KB 分页</td></tr>
+    <tr><td>upload</td><td>pdf</td><td class="c">是</td><td>[attachment:..(P页)@/abs] + 第1页+大纲</td><td>pdf 80KB/页窗口</td></tr>
+    <tr><td>upload</td><td>其它二进制</td><td class="c">是</td><td>[attachment:..@/abs] 仅提及</td><td>bash file/strings/xxd</td></tr>
+    <tr><td>@-mention</td><td>image</td><td class="c">否</td><td>ImageContent block</td><td>模型 vision 原生</td></tr>
+    <tr><td>@-mention</td><td>text/pdf</td><td class="c">否</td><td>[attachment:..@/abs] + 首部（file-resolve）</td><td>read/pdf 分页</td></tr>
+    <tr><td>打路径</td><td>任意</td><td class="c">＝@</td><td colspan="2" class="muted">file-resolve 把裸路径按对应类型同等处理</td></tr>
+    <tr><td>远程渠道</td><td>image</td><td class="c">是</td><td>ImageContent（从落盘字节重读）</td><td>模型 vision 原生</td></tr>
+    <tr><td>远程渠道</td><td>text/pdf</td><td class="c">是</td><td>[attachment:..@/abs] + 首部预览</td><td>read/pdf 分页</td></tr>
+  </table>
+  <p class="sub"><strong>轴的纪律</strong>：<code>来源</code>轴只决定字节<strong>落在哪</strong>；<code>(文件类型 × 能力)</code> 是<strong>唯一</strong>决定 DELIVER 的东西。</p>
+
+  <h2><span class="n">3</span> 能力自适应：降级链</h2>
+  <p class="sub">一个纯函数 <code>choose_delivery(类型, 大小, 模型)</code> 就是全部决策；每一级降级都保持同一个稳定身份——落盘的绝对路径。</p>
+  <div class="stack">
+    <div class="layer ok"><div class="t">native_image / native_document</div><div class="d">模型声明支持 → 原生 content block（图片像素 / 整 PDF base64）。document 需 size ≤ 10MB 且 provider 页数上限。</div></div>
+    <div class="layer warn"><div class="t">path_preview</div><div class="d">不支持 document 或超 10MB → 落盘 + 路径提及 + ≤4KB 首部预览（首轮一次）。<strong>codex/gpt-5.5 的 PDF 走这级。</strong></div></div>
+    <div class="layer"><div class="t">path_only</div><div class="d">二进制无安全文本 → 仅路径提及，agent 用 bash 读。</div></div>
+  </div>
+  <p class="sub">误判永远是<strong>安全</strong>的：落到工具抽取，不会丢数据。<code>"document"</code> 暂当 “pdf-capable” 处理，docx/xlsx 一律 path_preview/path_only。</p>
+
+  <h2><span class="n">4</span> 大文件保证：O(1) prompt 成本</h2>
+  <div class="lead">后端塞进 prompt 的<strong>只可能</strong>是：(a) 一个 image block，(b) ≤4KB 首部预览（仅首轮），(c) 一条约 90 字节路径提及，或 (d) 受“模型能力 + size≤10MB”双门控的原生 doc block。其它一切只通过 agent 自己的<strong>有界分页工具</strong>逐页进上下文。</div>
+  <p>十个 30MB PDF 一起拖：那一轮约 <code>10×(90B + 4KB) ≈ 41KB</code>，之后为零——<strong>与大小无关</strong>。500 页 PDF 在 codex 上：落盘一次，提及带 “500 pages”，预览＝第1页 + 每页首行大纲（截到 ~50 条后 “…(450 more pages)”），8MB 本体永不进上下文；agent 靠大纲 <code>pdf(offset=N, limit=20)</code> 直接跳页。</p>
+  <p class="sub">实测上限（源码核验）：<code>pdf</code> 80KB 字符/次按页分页；<code>read</code> 2000 行/次、结果上限 200KB；<code>file_search</code> 的 256KB 只喂预览、永不喂交付。</p>
+
+  <h2><span class="n">5</span> 这轮挖出的 bug</h2>
+  <div class="grid g3">
+    <div class="card"><h4><span class="pill p-ok">已修</span> dedup 双拷</h4><div class="role">重拖同一文件 → 旧 <code>-N</code> 循环无字节比较 → 多存一份。修法：sha256 会话内去重（<code>.opdedup.json</code>，复用前校验）。</div></div>
+    <div class="card"><h4><span class="pill p-warn">归 P1</span> 图片静默丢弃</h4><div class="role">本以为是 bug；实查 <code>validate_input_modalities</code> 在 HTTP 前会 <em>raise</em>，不是静默。属优雅降级增强（存盘 + image_analyze 提示），不咬默认模型。</div></div>
+    <div class="card"><h4><span class="pill p-mut">伪问题</span> symlink 逃逸</h4><div class="role">两个 proposer 担心根内符号链接指向根外——<code>.resolve()</code> 已解析符号链接、<code>is_relative_to</code> 已拒。现有代码无此洞。</div></div>
+  </div>
+
+  <h2><span class="n">6</span> 存储 / 去重 / 安全</h2>
+  <div class="grid g2">
+    <div class="card"><h4>落盘位置</h4><div class="role">per-session <code>workdir/attachments/</code>——就是 agent 的 cwd、每轮 git 提交、可重放。比 openclaw 全局 + TTL 更适合 agentic。只有无路径来源（上传/远程）落盘；<code>@</code>/打路径原地引用零复制。</div></div>
+    <div class="card"><h4>命名 + 去重</h4><div class="role"><code>_safe_attach_name</code>：basename + 非安全字符替 <code>_</code> + 120 上限，人类可读。sha256 仅作会话内去重索引，不做文件名。不同字节同名 → <code>-N</code>。</div></div>
+    <div class="card"><h4>超限</h4><div class="role">硬上限 32MB/文件、64MB/轮，落盘前检查；超限不存、提及改 “too large — not stored”，<strong>告诉模型</strong>，不给死路径。前端 25→32MB 对齐，超限不再静默丢、显示错误 chip。</div></div>
+    <div class="card"><h4>逃逸 + GC</h4><div class="role">上传/远程无源路径（沙箱）+ basename 清洗 → 结构上无法逃逸；<code>@</code>/打路径走 file-resolve 的 <code>resolve()+is_relative_to</code> → 越界 400。GC 会话级懒回收（删会话 = rm -rf workdir）。</div></div>
+  </div>
+
+  <h2><span class="n">7</span> 显示层</h2>
+  <ul>
+    <li><strong>chip + scope 徽章</strong>：解析 <code>[attachment: name (type, KB[, P pages|L lines]) @ /abs]</code>，徽章显示 “500 pages” / “200K lines”；<code>@/abs</code> 显示时剥掉。</li>
+    <li><strong>剥首部预览</strong>：<code>&lt;attachment-preview&gt;</code> 片段是给模型的，气泡里整块剥掉——用户看到 chip，不是 4KB 首部。在扫提及<em>之前</em>剥，防止预览里的文件内容生成假 chip。</li>
+    <li><strong>乐观气泡时序</strong>：前端永远不知道落盘后的绝对路径（后端追加），所以乐观 chip 用客户端数据渲染、对账键 = 客户端 sha8；提及对“无路径（在途）/有路径（改写后）”两形式都渲染同一个 chip。</li>
+    <li><strong>预览弹窗</strong>：本地完整解码、永不发送——人滚完整文件，模型只看 4KB 首部。</li>
+    <li><strong>侧边栏标题</strong>：<code>_title_from_text</code> 在 50 字截断前剥提及 + 预览块，防止截断的长路径泄漏。</li>
+  </ul>
+
+  <h2><span class="n">8</span> 分阶段计划</h2>
+  <div class="grid g3">
+    <div class="card">
+      <h4><span class="pill p-ok">P0</span> 现在（codex 端到端）</h4>
+      <div class="role">
+        <code>_persist</code>：32MB 上限 + “too large”；sha256 去重；页/行数注入括号组；一次性 <code>&lt;attachment-preview&gt;</code>（≤4KB 首部，二进制无预览）。<br>
+        前端：scope 徽章 + 剥预览 + 超限诚实 chip + 25→32MB 对齐。<br>
+        <code>_title_from_text</code> 扩剥预览。
+        <div style="margin-top:8px"><span class="tag">价值</span> 中小文档免费首部预览；大文件 O(1)；超限被告知；去重修双拷。</div>
+      </div>
+    </div>
+    <div class="card">
+      <h4><span class="pill p-warn">P1</span> 推迟（需 doc-capable 模型）</h4>
+      <div class="role">各 provider 原生 document block 构建器（Anthropic document / Gemini inline_data）+ <code>NATIVE_DOC_INLINE_CAP</code> 守卫；<code>chat.py:307</code> 的“进 dispatcher 前剥文档”按能力条件化；<code>types.py</code> + <code>validate_modalities</code> 加 <code>"document"</code>。接缝在 P0 就位，到时零前端改动。</div>
+    </div>
+    <div class="card">
+      <h4><span class="pill p-mut">P2</span> 推迟（需远程渠道）</h4>
+      <div class="role">openclaw 式入站 staging + 2 分钟 TTL + claim-check + <code>media://</code> + discord/wechat 适配器，把入站字节接进同一 <code>_persist</code>。保存+提及+预览的表示已能容纳“只有字节”的来源。</div>
+    </div>
+  </div>
+
+  <h2><span class="n">9</span> 待定（不阻塞 P0）</h2>
+  <p>两个可调常量，都有默认、都是单一旋钮：<code>PREVIEW_CAP=4KB</code>、<code>MAX_ATTACH_BYTES=32MB</code>。唯一长期产品问题：大二进制永久累积在 per-session git 历史（“workdir = 自包含已提交状态”不变式的代价）是否可接受——现在有意保留这个不变式，不是 P0 待决项。</p>
+
+  <p class="sub" style="margin-top:40px">完整 markdown 版：<code>docs/design/attachment-handling.md</code> · 报错超时设计：<code>docs/design/error-and-timeout-mechanism.html</code></p>
+
+</div>
+</body>
+</html>

@@ -1,6 +1,6 @@
 """WorktreeManager — the process-wide owner of git worktree lifecycle.
 
-Implements ``docs/design/agent-worktree.md`` Part 4 step 2:
+Implements ``docs/design/runtime/agent-worktree.md`` Part 4 step 2:
 
   * :meth:`create_worktree` — ``git worktree add`` + persist
   * :meth:`merge_worktree` — ``git merge`` (ff-only / squash / no-ff)

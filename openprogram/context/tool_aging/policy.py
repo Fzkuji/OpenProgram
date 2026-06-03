@@ -2,7 +2,7 @@
 
 Defaults integrate the techniques surveyed across Claude Code,
 OpenCode, Hermes, and OpenClaw. See
-``docs/design/cross-turn-tool-context.md`` for the rationale of
+``docs/design/context/cross-turn-tool-context.md`` for the rationale of
 each number.
 """
 from __future__ import annotations

@@ -276,5 +276,5 @@ When writing a new `@agentic_function`:
 - `openprogram/agentic_programming/function.py` — `@agentic_function` decorator implementation
 - `openprogram/agentic_programming/decision.py` — options-menu rendering, reply parsing, and the next-step decision primitive (`decision.make`, `render_options`, `parse_args`, `DecisionError`)
 - `docs/design/function/agentic_function.md` — decorator usage guide
-- `docs/design/function-calling-unification.md` — function/tool calling framework
-- `docs/design/tool-calling.md` — per-turn native tool-use loop mechanics
+- `docs/design/function/function-calling-unification.md` — function/tool calling framework
+- `docs/design/function/tool-calling.md` — per-turn native tool-use loop mechanics

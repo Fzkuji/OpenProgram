@@ -5,7 +5,7 @@ stored on it. Those live in the runner's parallel maps so the row
 serialises cleanly to ``tasks.json`` and can be round-tripped through
 crash recovery.
 
-State transitions per ``docs/design/async-task-lifecycle.md`` D2:
+State transitions per ``docs/design/runtime/async-task-lifecycle.md`` D2:
 
   pending → queued → running → completed
                             ↘ cancelled

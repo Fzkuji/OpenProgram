@@ -75,7 +75,7 @@ from .types import (
 def build_parser(sub: "argparse._SubParsersAction") -> None:
     """Register credential-management verbs directly on the parent.
 
-    Per docs/design/cli-naming.md, commands have the shape
+    Per docs/design/cli/cli-naming.md, commands have the shape
     ``<noun> [<noun> ...] <verb>``. This function is called with the
     ``providers`` subparser as its parent, so the verbs land as
     ``providers login``, ``providers list``, etc. ``profiles`` is the
@@ -150,7 +150,7 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     p_aliases.add_argument("--json", action="store_true", help="Output JSON")
 
     # profiles (plural noun, per CLI naming convention — see
-    # docs/design/cli-naming.md). Verbs follow: list/create/delete.
+    # docs/design/cli/cli-naming.md). Verbs follow: list/create/delete.
     p_profiles = auth_sub.add_parser("profiles", help="Profile management")
     prof_sub = p_profiles.add_subparsers(dest="profiles_cmd", metavar="verb")
     prof_sub.add_parser("list", help="List profiles")

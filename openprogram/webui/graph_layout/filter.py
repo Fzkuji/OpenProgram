@@ -23,7 +23,7 @@ def _is_task_followup_user(node: dict) -> bool:
     has a user_msg to react to — chat hides it (display=runtime) and
     the DAG shouldn't paint it either.
 
-    See docs/design/dag-node-model.md (the "合成桥不是合法节点" rule).
+    See docs/design/runtime/dag-node-model.md (the "合成桥不是合法节点" rule).
     """
     return (
         node.get("source") == "task_followup"

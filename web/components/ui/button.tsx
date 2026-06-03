@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 // Buttons live on the panel surface and use the ``button`` size set
-// from docs/design/surface-system.md: ONE height (--ui-button-h,
+// from docs/design/ui/surface-system.md: ONE height (--ui-button-h,
 // 36px), ONE radius (--ui-button-radius, 10px). No sm / lg ladder —
 // every Button rendered anywhere is the same height + same corners.
 // (The previous default/sm/lg/icon ladder is gone; ``size="icon"``
@@ -24,7 +24,7 @@ const buttonVariants = cva(
         // Coloured-text default; the brand colour only fills on hover.
         // No border — borders compete with the surface lift between
         // deep / panel layers and add visual noise to dense rows.
-        // See docs/design/surface-system.md.
+        // See docs/design/ui/surface-system.md.
         default:
           "bg-background text-primary hover:bg-primary hover:text-primary-foreground",
         // Same mirror for destructive: red text default, red fill on hover.

@@ -1,7 +1,7 @@
 """Project entity memory — the second half of the entity layer.
 
 The entity (实体) tier of OpenProgram memory has two kinds of
-git-backed stores (see ``docs/design/memory-v2.md`` §2):
+git-backed stores (see ``docs/design/memory/memory-v2.md`` §2):
 
   * **Session-Git** (already built, ``git_session.py``) — one repo per
     conversation, every turn a commit.

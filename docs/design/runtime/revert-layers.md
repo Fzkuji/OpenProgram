@@ -1,8 +1,8 @@
 # 三层回退/记录机制 — 快照 / Project-Git / Worktree 的组合设计
 
 > 状态: **已实现** (2026-05)。统一规划 agent 改文件后的**回退**与**记录**。
-> 关联: [`agent-worktree.md`](agent-worktree.md)、[`memory-v2.md`](memory-v2.md)
-> (实体层)、[`git-as-entity-memory.md`](git-as-entity-memory.md)。
+> 关联: [`agent-worktree.md`](agent-worktree.md)、[`memory-v2.md`](../memory/memory-v2.md)
+> (实体层)、[`git-as-entity-memory.md`](../memory/git-as-entity-memory.md)。
 > 代码: `store/file_backup/`、`store/project_commit.py`、`store/project_store.py`、
 > `store/read_tracking.py`、`agent/_revert.py`、`worktree/`。
 

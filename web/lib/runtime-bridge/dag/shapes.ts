@@ -2,7 +2,7 @@
  * History DAG renderer — SVG primitives + per-node shape / colour helpers.
  *
  * Pure functions, no module-level state. Shapes encode the node kind
- * defined in ``docs/design/dag-node-model.md`` (3 kinds × function class
+ * defined in ``docs/design/runtime/dag-node-model.md`` (3 kinds × function class
  * → 6 visual shapes).
  *
  * Moved from ``../history/shapes.ts``; see ``./README.md``.

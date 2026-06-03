@@ -233,7 +233,7 @@ async def retry_stream(
         # Tell runtime.exec this transport error already burned the
         # provider's OWN retry budget, so exec must not re-retry it with a
         # fresh max_retries budget — that's the max_attempts × max_retries
-        # multiplication. See docs/design/error-and-timeout-mechanism.html §5.
+        # multiplication. See docs/design/providers/error-and-timeout-mechanism.html §5.
         try:
             exc.transport_exhausted = True  # type: ignore[attr-defined]
         except Exception:

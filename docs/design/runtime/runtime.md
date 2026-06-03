@@ -1,6 +1,6 @@
 # Runtime — 设计理由
 
-API 用法见 [`../api/runtime.md`](../api/runtime.md)。本文档只讲**为什么**
+API 用法见 [`../api/runtime.md`](../../api/runtime.md)。本文档只讲**为什么**
 Runtime 长成这样、哪些备选方案被否决、哪些权衡是有意识做的。
 
 ## 1 runtime = 1 session

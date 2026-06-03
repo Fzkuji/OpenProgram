@@ -1,6 +1,6 @@
 """Skills module — five-source skill loader, remote discovery, watcher, tool.
 
-See ``docs/design/skills-and-plugins.md`` section 2 for the design.
+See ``docs/design/integrations/skills-and-plugins.md`` section 2 for the design.
 """
 from __future__ import annotations
 

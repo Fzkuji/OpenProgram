@@ -2,7 +2,7 @@
 
 设计目标：把 OpenProgram 现在散落在 CLI 写死表、Web composer 写死表、`/api/plugins/commands`、MCP prompts、skills 这几条互不相通的"指令源"，合并成一份**统一的 slash 命令登记表**，五个层级、一份格式、一套渲染、一个 UI。
 
-参照实现见 `docs/design/slash-commands-references.md`。本文档凡是写"照搬 X"的地方，意思是直接复用那个项目的设计选择。
+参照实现见 `docs/design/cli/slash-commands-references.md`。本文档凡是写"照搬 X"的地方，意思是直接复用那个项目的设计选择。
 
 ---
 
@@ -353,4 +353,4 @@ L4 / L5 用户写的，不自动更新。
 
 L0（builtin）跟随 OpenProgram 版本。
 
-`docs/design/slash-commands-references.md` 周期性重扫五家参考项目的实现，发现新设计后回到本文档 §2/§3 增补字段，不破坏既有 frontmatter（额外字段进 extras）。
+`docs/design/cli/slash-commands-references.md` 周期性重扫五家参考项目的实现，发现新设计后回到本文档 §2/§3 增补字段，不破坏既有 frontmatter（额外字段进 extras）。

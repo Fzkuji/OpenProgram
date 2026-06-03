@@ -12,7 +12,7 @@ just block on stdin if the caller is an external agent. Instead:
 
 Session directory layout (under ``<state>/sessions/`` via
 get_sessions_dir(); NOTE: this tree is currently shared with the
-conversation-memory SessionStore — see docs/design/memory-v2.md §0.5
+conversation-memory SessionStore — see docs/design/memory/memory-v2.md §0.5
 "已知待修". These ask_user IPC dirs are keyed by a transient uuid):
     ~/.openprogram/sessions/<id>/
         meta.json       — {"question": "...", "pid": 12345, "status": "waiting"}

@@ -15,7 +15,7 @@ Public surface:
 
 The worktree directory is **never** placed inside ``~/.openprogram/sessions/``
 — that subtree belongs to OpenProgram's own conversation-memory git
-repositories. See ``docs/design/agent-worktree.md`` Part 1 D4.
+repositories. See ``docs/design/runtime/agent-worktree.md`` Part 1 D4.
 """
 from .context import (
     current_worktree_path,

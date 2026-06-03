@@ -10,7 +10,7 @@ This directory documents how functions are authored and exposed in OpenProgram.
 | `@agentic_function` usage patterns | [`agentic_function.md`](agentic_function.md) |
 | Plain Python helper functions | [`pure_python.md`](pure_python.md) |
 | Python-decided subfunction order | [`function_calling/code_call.md`](function_calling/code_call.md) |
-| LLM-decided function selection | [`../function-calling-unification.md`](../function-calling-unification.md) — current source; loop details are in [`../tool-calling.md`](../tool-calling.md) |
+| LLM-decided function selection | [`../function-calling-unification.md`](function-calling-unification.md) — current source; loop details are in [`../tool-calling.md`](tool-calling.md) |
 
 ## Current rules
 

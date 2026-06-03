@@ -597,7 +597,7 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
         # Look up the source branch's current ContextCommit id so the
         # generator can expand the attach pointer into a copy of that
         # commit's items on the next turn (see
-        # docs/design/context-attach-merge.md, scenario B). Missing /
+        # docs/design/context/context-attach-merge.md, scenario B). Missing /
         # absent → legacy single-item fallback path in the generator.
         source_commit_id = None
         try:

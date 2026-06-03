@@ -5,7 +5,7 @@
  * settings tabs (same .section/.row/.label/.value from settings-page.module
  * .css). Renders the SAME settings the TUI panel and `openprogram config`
  * edit, fetched from /api/settings (backed by openprogram.config_schema).
- * One SettingSpec server-side → one row here. See docs/design/cli-redesign.md.
+ * One SettingSpec server-side → one row here. See docs/design/cli/cli-redesign.md.
  */
 import { useEffect, useState, type CSSProperties } from "react";
 

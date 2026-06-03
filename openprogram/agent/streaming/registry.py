@@ -1,7 +1,7 @@
 """StreamingRegistry + StreamingMsg.
 
 Skeleton implementation — wire it into the actual write paths in
-follow-up phases (see ``docs/design/streaming-resume.md``).
+follow-up phases (see ``docs/design/runtime/streaming-resume.md``).
 
 The registry is process-global, accessed via :func:`get_registry`.
 Each running message gets a :class:`StreamingMsg` handle that knows

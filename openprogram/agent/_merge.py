@@ -124,7 +124,7 @@ def _build_prompt(
     label list + any user-supplied merge instruction + base-peer
     framing.
 
-    Per the design (docs/design/context-attach-merge.md scenario D),
+    Per the design (docs/design/context/context-attach-merge.md scenario D),
     this avoids paying for the peers' text twice (once embedded as
     attached items, once embedded inline in the prompt body).
     """
@@ -282,7 +282,7 @@ def process_merge_turn(
         base_idx = base_peer
 
     # Pre-merge attach injection (D1/D7 of scenario D, see
-    # docs/design/context-attach-merge.md). Instead of bundling peer
+    # docs/design/context/context-attach-merge.md). Instead of bundling peer
     # final-texts into the prompt, write one attach pointer per peer
     # on the target session. The next process_user_turn call will pick
     # them up through ensure_latest_commit → generator, which expands

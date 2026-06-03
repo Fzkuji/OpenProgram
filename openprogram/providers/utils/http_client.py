@@ -3,7 +3,7 @@
 Centralises the connection-layer hardening every HTTP provider should
 get, instead of each one calling ``httpx.AsyncClient(timeout=...)`` with
 ad-hoc (often too-tight) settings. Ports the connection ideas from the
-reference frameworks (see ``docs/design/llm-fault-tolerance.md``):
+reference frameworks (see ``docs/design/providers/llm-fault-tolerance.md``):
 
   * **Decoupled, generous timeouts** — via :mod:`.timeouts` (connect
     bounded, body read generous). No more single-float ``timeout=120``

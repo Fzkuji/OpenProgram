@@ -382,7 +382,7 @@ def _build_request_body(
 
 
 # Streaming timeout budgets — single source of truth in
-# ``providers.utils.timeouts`` (see docs/design/llm-fault-tolerance.md).
+# ``providers.utils.timeouts`` (see docs/design/providers/llm-fault-tolerance.md).
 # The two-budget SSE parser below enforces them:
 #   * SSE_IDLE_TIMEOUT_S       — "no bytes at all" (any line resets) ≈ OpenClaw 30-min bodyTimeout
 #   * SSE_DATA_STALL_TIMEOUT_S — "no real data" (our extra ping-flood guard)

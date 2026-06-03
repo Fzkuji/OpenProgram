@@ -272,7 +272,7 @@ class SessionStore:
 
         # ── Resolve the project + decide the session's home on disk ──
         # Every session belongs to a project (entity layer, half 2 —
-        # docs/design/memory-v2.md §2):
+        # docs/design/memory/memory-v2.md §2):
         #   * caller passed ``project_path`` (a real dir) → that dir is
         #     the project; the session repo lives INSIDE it at
         #     ``<dir>/.openprogram/sessions/<id>/`` and we record the

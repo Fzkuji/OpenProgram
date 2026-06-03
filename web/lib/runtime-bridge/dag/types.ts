@@ -3,7 +3,7 @@
  *
  * Moved from ``web/lib/runtime-bridge/history/types.ts`` as part of the
  * DAG module reorganisation. See ``./README.md`` for the full module
- * layout and ``docs/design/dag-node-model.md`` for the node-field
+ * layout and ``docs/design/runtime/dag-node-model.md`` for the node-field
  * semantics (function, role, _tier, _depth, _lane).
  */
 

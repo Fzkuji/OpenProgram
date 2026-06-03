@@ -4,7 +4,7 @@
 
 ## Overview
 
-See ``docs/design/contextgit.md`` for the full design. TL;DR:
+See ``docs/design/context/contextgit.md`` for the full design. TL;DR:
 
 - Every conversation is a DAG of "commits" (user messages, assistant
   replies, function runs). Each commit has a ``parent_id``; siblings

@@ -1,6 +1,6 @@
 """Attach pointer → ContextCommit expansion + cross-turn dedup.
 
-Verifies the behaviour added in docs/design/context-attach-merge.md
+Verifies the behaviour added in docs/design/context/context-attach-merge.md
 scenarios B / C:
 
 * When an attach pointer node carries ``source_commit_id``, the

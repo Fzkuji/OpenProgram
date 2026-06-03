@@ -13,7 +13,7 @@ effect immediately (``"live"``) or only on the next worker/web start
 (``"next_start"``), so the editor can tell the user the truth instead of
 implying everything is instant.
 
-See ``docs/design/cli-redesign.md``.
+See ``docs/design/cli/cli-redesign.md``.
 """
 from __future__ import annotations
 

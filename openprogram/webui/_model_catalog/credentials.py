@@ -12,7 +12,7 @@ closed-enum ``status`` so every surface (save-key verify, the connectivity
 button, the CLI/TUI status rows) renders the same distinctions: key rejected vs
 key-fine-no-balance vs key-fine-that-model-is-down.
 
-See ``docs/design/credential-validation-unification.md``.
+See ``docs/design/providers/credential-validation-unification.md``.
 """
 from __future__ import annotations
 

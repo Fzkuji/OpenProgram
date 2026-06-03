@@ -4,7 +4,7 @@ Tests the parts that don't require a real LLM. The runner submits a
 fake ``run_agent_turn`` so the worker exercises real cancel + status
 flows but stops in milliseconds.
 
-Scenarios covered (per docs/design/async-task-lifecycle.md D13):
+Scenarios covered (per docs/design/runtime/async-task-lifecycle.md D13):
 
   * state machine transitions: legal + illegal edges
   * persistence + round-trip via tasks.json

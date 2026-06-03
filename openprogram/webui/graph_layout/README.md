@@ -4,7 +4,7 @@ Backend layout for the History panel. Each chat session's nodes are
 annotated with `_depth` (row), `_lane` (column), `_tier` (call-stack
 depth) so the frontend renderer doesn't have to re-derive topology.
 
-> **Semantic spec**: see `docs/design/dag-node-model.md` for what a
+> **Semantic spec**: see `docs/design/runtime/dag-node-model.md` for what a
 > node / edge *represents* (3 node kinds, 3 edge kinds, where
 > attach / merge / spawn nodes attach). This file describes the
 > pipeline that turns that model into `_lane` / `_depth` / `_tier`.
@@ -35,7 +35,7 @@ Two parent edges, mutually exclusive per node:
 * **`caller`** — sub-call edge (assistant → tool → sub-llm). Sub-calls
   inherit caller's lane + tier offset; **never** a branch tip.
 
-See `docs/design/dag-edge-split.md` for the schema rationale.
+See `docs/design/runtime/dag-edge-split.md` for the schema rationale.
 
 ## Adaptive reflow
 

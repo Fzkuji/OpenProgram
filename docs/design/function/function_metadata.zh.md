@@ -278,5 +278,5 @@ WebUI 表单按以下规则渲染每个参数（在 `web/components/programs/pro
 - `openprogram/agentic_programming/function.py` — `@agentic_function` 装饰器实现
 - `openprogram/agentic_programming/decision.py` — 选项菜单渲染、回复解析,以及下一步决策原语(`decision.make`、`render_options`、`parse_args`、`DecisionError`)
 - `docs/design/function/agentic_function.md` — 装饰器使用指南
-- `docs/design/function-calling-unification.md` — function/tool calling 框架
-- `docs/design/tool-calling.md` — 单轮原生 tool-use 循环机制
+- `docs/design/function/function-calling-unification.md` — function/tool calling 框架
+- `docs/design/function/tool-calling.md` — 单轮原生 tool-use 循环机制

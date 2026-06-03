@@ -8,7 +8,7 @@ project-bound session, inside the project's ``.openprogram/sessions/``).
 
 The public method surface used by ``dispatcher``, channels, and the
 WebUI is preserved by ``SessionStore`` — same 22 methods, same
-semantics. See ``docs/design/git-as-entity-memory.md``.
+semantics. See ``docs/design/memory/git-as-entity-memory.md``.
 """
 from __future__ import annotations
 

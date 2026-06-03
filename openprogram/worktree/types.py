@@ -1,6 +1,6 @@
 """Worktree entity + state machine.
 
-State transitions per ``docs/design/agent-worktree.md`` D3:
+State transitions per ``docs/design/runtime/agent-worktree.md`` D3:
 
     create
        |

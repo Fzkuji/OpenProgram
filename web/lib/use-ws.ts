@@ -162,7 +162,7 @@ export function useWS(): void {
           return true;
         case "task_status": {
           // Async task lifecycle broadcast (see
-          // docs/design/async-task-lifecycle.md D9). Dispatch a
+          // docs/design/runtime/async-task-lifecycle.md D9). Dispatch a
           // window event so any panel listening (BranchesPanel,
           // TasksPanel) can update without prop-drilling. The
           // existing session_reload broadcast picks up DAG/attach

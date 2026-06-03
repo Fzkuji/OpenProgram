@@ -23,7 +23,7 @@ def compute_tier(by_id: dict[str, dict]) -> dict[str, int]:
         # Branch-referencing function_calls (attach / merge) live on
         # the caller's branch as sequence-level nodes — same tier as
         # the caller, not bumped by +1 like a sub-call. See
-        # docs/design/dag-node-model.md.
+        # docs/design/runtime/dag-node-model.md.
         if m.get("function") in ("attach", "merge"):
             ca = caller_of(by_id, m)
             if ca:

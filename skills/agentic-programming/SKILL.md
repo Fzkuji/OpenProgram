@@ -40,7 +40,7 @@ That's it. Every step is something you do with your normal tools.
 | Editing an existing function | The file you found it in (don't move it). |
 | User's project / non-framework function | Wherever fits their layout (ask if unclear). |
 
-Directory + filename convention: lowercase snake_case folder matching the function name (e.g. `analyze_sentiment/__init__.py` contains `def analyze_sentiment`). The folder layout (one directory per agentic function, code in `__init__.py`) replaced the old flat `<name>.py` layout in the function-calling unification — see ``docs/design/function-calling-unification.md``. Single-file helpers inside the same logical agentic can sit next to ``__init__.py`` (e.g. ``analyze_sentiment/_prompt.py``) without polluting the top-level namespace.
+Directory + filename convention: lowercase snake_case folder matching the function name (e.g. `analyze_sentiment/__init__.py` contains `def analyze_sentiment`). The folder layout (one directory per agentic function, code in `__init__.py`) replaced the old flat `<name>.py` layout in the function-calling unification — see ``docs/design/function/function-calling-unification.md``. Single-file helpers inside the same logical agentic can sit next to ``__init__.py`` (e.g. ``analyze_sentiment/_prompt.py``) without polluting the top-level namespace.
 
 ### 1.1. External harness convention — `AGENTIC_FUNCTIONS`
 
@@ -76,7 +76,7 @@ To wire a new external harness in: `ln -s /path/to/Your-Harness openprogram/func
 | Deterministic helper (parsing / math / file munging / API wrapper) | plain function, no decorator, no `runtime` parameter | wherever it's used; if shared, `agentics/_utils/`-style |
 | **Framework-level deterministic LLM tool** (bash / read / web_search / etc.) | `@function` (different decorator!) | `openprogram/functions/tools/<name>/` |
 
-**This skill is about `@agentic_function`.** The `@function` decorator is a different mechanism for framework-level leaf tools and is out of scope here — see ``docs/design/function-calling-unification.md`` if you need it. Both decorators ultimately produce ``AgentTool`` entries in the same shared registry, but they target different kinds of work: `@function` for deterministic Python tools called by the LLM, `@agentic_function` for higher-order functions whose body itself drives an LLM round.
+**This skill is about `@agentic_function`.** The `@function` decorator is a different mechanism for framework-level leaf tools and is out of scope here — see ``docs/design/function/function-calling-unification.md`` if you need it. Both decorators ultimately produce ``AgentTool`` entries in the same shared registry, but they target different kinds of work: `@function` for deterministic Python tools called by the LLM, `@agentic_function` for higher-order functions whose body itself drives an LLM round.
 
 Don't decorate a function just to "make it discoverable"; `@agentic_function` implies an LLM call inside the body.
 

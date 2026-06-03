@@ -14,7 +14,7 @@ own module. Globals like ``_sessions`` aren't moved out of
 server.py because doing so would touch every other site that uses them,
 and this refactor is scoped to the ContextGit surface.
 
-See docs/design/contextgit.md for semantics (retry = fork with same
+See docs/design/context/contextgit.md for semantics (retry = fork with same
 content, edit = fork with new content, checkout = pure HEAD move).
 """
 from __future__ import annotations

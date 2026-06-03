@@ -11,7 +11,7 @@ Single-source design doc for how OpenProgram controls which extensions (tools, s
 | [implementation.md](./implementation.md) | touching the code — file paths, helper module, gate sites |
 | [future-work.md](./future-work.md) | explicitly noted as "not built and not on the roadmap unless someone asks" |
 
-For the broader skills+plugins design (catalogues, discovery, hot reload, etc.) see [`../skills-and-plugins.md`](../skills-and-plugins.md). This folder is the **gating** subset only.
+For the broader skills+plugins design (catalogues, discovery, hot reload, etc.) see [`../skills-and-plugins.md`](../integrations/skills-and-plugins.md). This folder is the **gating** subset only.
 
 ---
 
@@ -151,5 +151,5 @@ Default workflow: **install skills globally, configure no gates, let the LLM pic
 - [reference-comparison.md](./reference-comparison.md) — how the three reference implementations compare
 - [implementation.md](./implementation.md) — code paths and helper module
 - [future-work.md](./future-work.md) — items intentionally not built
-- [../function-calling-unification.md](../function-calling-unification.md) — broader 6-layer gating doc for the function-calling subsystem (Layers 2/3/5 are what this folder formalises for *all* extensions, not just tools)
-- [../skills-and-plugins.md](../skills-and-plugins.md) — original skills + plugins design doc (covers catalogues, discovery, hot reload — not gating)
+- [../function-calling-unification.md](../function/function-calling-unification.md) — broader 6-layer gating doc for the function-calling subsystem (Layers 2/3/5 are what this folder formalises for *all* extensions, not just tools)
+- [../skills-and-plugins.md](../integrations/skills-and-plugins.md) — original skills + plugins design doc (covers catalogues, discovery, hot reload — not gating)

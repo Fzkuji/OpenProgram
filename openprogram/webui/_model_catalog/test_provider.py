@@ -11,7 +11,7 @@ error?}`` dict the React ``Connectivity`` component reads.
 The one exception is **Codex / ChatGPT-subscription**, which has no auth-only
 listing endpoint (the ChatGPT backend CF-blocks ``/chat/completions`` and 403s
 on listing), so it keeps its dedicated streaming ``/codex/responses`` ping
-below. See ``docs/design/credential-validation-unification.md``.
+below. See ``docs/design/providers/credential-validation-unification.md``.
 """
 from __future__ import annotations
 

@@ -13,7 +13,7 @@ Sources merged into one registry (low → high priority; later wins):
   L4 user      — ~/.openprogram/commands/**/*.md
   L5 project   — <cwd>/.openprogram/commands/**/*.md
 
-See ``docs/design/slash-commands.md`` for the full design.
+See ``docs/design/cli/slash-commands.md`` for the full design.
 
 ## Files in this directory
 

@@ -12,10 +12,10 @@ The directory holds three groups (README has the details):
      user's working dir as a git-backed Project, with safe auto-init and
      a reset/revert-of-a-commit primitive) and ``project_commit`` (wires
      the agent's per-turn edits into that repo). See
-     ``docs/design/memory-v2.md`` and ``docs/design/revert-layers.md``.
+     ``docs/design/memory/memory-v2.md`` and ``docs/design/runtime/revert-layers.md``.
   3. **Revert / record helpers** — ``file_backup/`` (per-turn file
      snapshots = the "undo" layer) and ``read_tracking`` (read-before-
-     edit concurrency guard). See ``docs/design/revert-layers.md``.
+     edit concurrency guard). See ``docs/design/runtime/revert-layers.md``.
 
 Public surface (re-exported for legacy import paths):
 
@@ -47,7 +47,7 @@ agent_id, head_id, ...).
 
 Git is the source of truth. The in-memory index is a query cache,
 fully rebuildable from git on demand. See
-``docs/design/git-as-entity-memory.md`` for the rationale.
+``docs/design/memory/git-as-entity-memory.md`` for the rationale.
 """
 from contextvars import ContextVar
 from typing import Optional, TYPE_CHECKING

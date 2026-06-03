@@ -3,7 +3,7 @@
 本文档记录 `gui_agent` 在当前 `expose` / `render_range` 默认语义下的上下文是怎么流动的，以及每个 `@agentic_function` 上的装饰器参数为什么这么设。
 
 参考：
-- 装饰器语义：[`function/function_metadata.md`](function/function_metadata.md)
+- 装饰器语义：[`function/function_metadata.md`](../function/function_metadata.md)
 - compute_reads 实现：`openprogram/context/nodes.py`
 - 代码：`openprogram/functions/agentics/GUI-Agent-Harness/gui_harness/`
 

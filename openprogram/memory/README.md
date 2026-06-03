@@ -2,9 +2,9 @@
 
 Persistent, machine-wide memory for OpenProgram agents.
 
-**Design docs:** [`docs/design/memory.md`](../../docs/design/memory.md) (v1,
+**Design docs:** [`docs/design/memory/memory.md`](../../docs/design/memory/memory.md) (v1,
 what this directory implements today) and
-[`docs/design/memory-v2.md`](../../docs/design/memory-v2.md) (the target
+[`docs/design/memory/memory-v2.md`](../../docs/design/memory/memory-v2.md) (the target
 two-tier entity/virtual design — Phase 0+1 done, Phase 2+ pending).
 Read those first — this README is a navigation aid for working in the
 directory, not a substitute.

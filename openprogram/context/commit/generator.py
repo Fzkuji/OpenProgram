@@ -190,7 +190,7 @@ def _build_items_from_node(
     # ``is_base`` (set by merge prompt prep) tells the generator to
     # lock the attached items so summarize/aging can't drop the base
     # branch's content out of the merge prompt — see scenario D in
-    # docs/design/context-attach-merge.md.
+    # docs/design/context/context-attach-merge.md.
     is_base = bool(attach.get("is_base"))
 
     # Fallback path: no source commit recorded OR can't load it OR the

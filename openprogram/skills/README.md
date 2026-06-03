@@ -4,7 +4,7 @@
 
 ## Overview
 
-See ``docs/design/skills-and-plugins.md`` section 2 for the design.
+See ``docs/design/integrations/skills-and-plugins.md`` section 2 for the design.
 
 ## Files in this directory
 

@@ -2,7 +2,7 @@
 
 This is the **v1** memory layer (the linear ``journal → wiki → core``
 chain described below). The *target* architecture is the two-tier
-entity/virtual design in ``docs/design/memory-v2.md``: the git-backed
+entity/virtual design in ``docs/design/memory/memory-v2.md``: the git-backed
 entity layer (Session-Git + Project-Git, in ``openprogram/store/``) is
 already built (Phase 0+1), but the v2 virtual layer (timeline +
 knowledge graph with provenance) is not yet — so v1 is what actually

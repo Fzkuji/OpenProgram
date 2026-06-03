@@ -1,6 +1,6 @@
 """Async task lifecycle — explicit Task entity, worker pool, cancel.
 
-See ``docs/design/async-task-lifecycle.md`` for the full design.
+See ``docs/design/runtime/async-task-lifecycle.md`` for the full design.
 
 Public surface:
 

@@ -53,7 +53,7 @@ of this reorganisation was zero behaviour change, so the giant
 
 ## Node kinds and shapes
 
-See `docs/design/dag-node-model.md` for the full schema. Quick
+See `docs/design/runtime/dag-node-model.md` for the full schema. Quick
 reference:
 
 | node kind                      | role            | function field   | shape          |

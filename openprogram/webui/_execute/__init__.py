@@ -162,7 +162,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             pass
         # Pin the source branch's ContextCommit so the generator can
         # expand its items into the next turn's commit (see
-        # docs/design/context-attach-merge.md scenario B). Absent =
+        # docs/design/context/context-attach-merge.md scenario B). Absent =
         # generator falls back to the single-item legacy path.
         source_commit_id = None
         if result.head_id:

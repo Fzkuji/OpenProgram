@@ -134,7 +134,7 @@ the actual start path.
 ## Single-port future
 
 The two-port split is transitional. The planned migration (see
-[`attachment-handling.md`](attachment-handling.md) sibling work and the
+[`attachment-handling.md`](../ui/attachment-handling.md) sibling work and the
 project's single-port notes) static-exports the Next.js SPA and serves it
 from the FastAPI backend, collapsing to **one** port (`18109`) that serves
 both UI and API. At that point the frontend port, its separate launcher,

@@ -66,9 +66,9 @@ store/
 > flat paths (`openprogram.store.session_store`, `…project_commit`, etc.)
 > still resolve via top-level aliases, so existing call sites didn't break.
 
-Designs: [`git-as-entity-memory.md`](../../docs/design/git-as-entity-memory.md)
-(why git), [`memory-v2.md`](../../docs/design/memory-v2.md) (entity layer),
-[`revert-layers.md`](../../docs/design/revert-layers.md) (snapshot / commit
+Designs: [`git-as-entity-memory.md`](../../docs/design/memory/git-as-entity-memory.md)
+(why git), [`memory-v2.md`](../../docs/design/memory/memory-v2.md) (entity layer),
+[`revert-layers.md`](../../docs/design/runtime/revert-layers.md) (snapshot / commit
 / worktree / read-before-edit — how they combine).
 
 ## ① Session storage — on-disk layout

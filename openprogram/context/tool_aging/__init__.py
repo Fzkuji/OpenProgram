@@ -6,7 +6,7 @@ the same history list, in place, with each assistant carrying its
 own ``tool_calls`` (full for the tail window, aged stubs for older
 turns; single oversize results middle-truncated regardless).
 
-See ``docs/design/cross-turn-tool-context.md`` for the design.
+See ``docs/design/context/cross-turn-tool-context.md`` for the design.
 """
 from __future__ import annotations
 

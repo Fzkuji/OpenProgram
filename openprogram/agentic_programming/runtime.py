@@ -770,7 +770,7 @@ class Runtime:
         # Publish the deadline so the provider's INNER stream-retry loop and
         # the SSE parser honour the SAME wall-clock budget — otherwise the
         # nested loops multiply (max_attempts × max_retries) with nobody
-        # capping the total. See docs/design/error-and-timeout-mechanism.html.
+        # capping the total. See docs/design/providers/error-and-timeout-mechanism.html.
         from openprogram.providers.utils.errors import ExecInterrupt
         from openprogram.providers.utils import deadline as _dl
         _deadline_token = _dl.set_deadline(_deadline)

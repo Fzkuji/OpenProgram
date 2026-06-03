@@ -7,13 +7,13 @@
 后续清理：已确认当前实现口径以 git-backed ContextCommit 为准。`context-commit-chain.md` 已按当前实现重写；旧口径文档和重复 HTML 已删除。本文件保留清理前的审查记录，旧文档行号只用于追溯当时的判断。
 
 审查范围：
-- `docs/design/dag-node-model.md`
-- `docs/design/dag-edge-split.md`
+- `docs/design/runtime/dag-node-model.md`
+- `docs/design/runtime/dag-edge-split.md`
 - `docs/design/dag-as-memory-unified.md`
-- `docs/design/context-commit-chain.md`
+- `docs/design/context/context-commit-chain.md`
 - `docs/design/context-snapshot-chain.md`
-- `docs/design/context-attach-merge.md`
-- `docs/design/streaming-resume.md`
+- `docs/design/context/context-attach-merge.md`
+- `docs/design/runtime/streaming-resume.md`
 - 对应实现：`openprogram/context/`, `openprogram/store/`, `openprogram/agent/`, `openprogram/webui/`, `web/components/right-sidebar/`, `web/lib/runtime-bridge/`
 
 ## 1. Context 设计文档之间存在互斥口径
@@ -23,7 +23,7 @@
 设计文档中存在三套不同口径：
 - `docs/design/dag-as-memory-unified.md:7-30`：会话记忆应由 DAG 本身加 annotation 表达，context view 运行时计算，不持久化。
 - `docs/design/context-snapshot-chain.md:1-23`、`docs/design/context-snapshot-chain.md:51-68`：会话记忆由 DAG + Context Snapshot Chain 表达，并设计 `context_snapshots` 表。
-- `docs/design/context-commit-chain.md:1-23`、`docs/design/context-commit-chain.md:51-68`：会话记忆由 DAG + Context Commit Chain 表达，并设计 `context_commits` 表。
+- `docs/design/context/context-commit-chain.md:1-23`、`docs/design/context/context-commit-chain.md:51-68`：会话记忆由 DAG + Context Commit Chain 表达，并设计 `context_commits` 表。
 
 当前实现使用的是 ContextCommit 路径：
 - `openprogram/context/engine.py:214-243` 调用 commit chain 生成 LLM 输入。
@@ -59,10 +59,10 @@
 差异性质：功能方向一致，但存储实现不同。
 
 设计要求：
-- `docs/design/context-commit-chain.md:51-68` 设计 `context_commits` SQL 表。
-- `docs/design/context-commit-chain.md:261-288` 设计 `context_blobs` 表和应用层 hash dedup。
-- `docs/design/context-commit-chain.md:307-318` 设计 `context/commit.py`、`context/blob_store.py`、`context/views.py`。
-- `docs/design/context-commit-chain.md:335-343` 把同份 rendered 只存一次作为不变式。
+- `docs/design/context/context-commit-chain.md:51-68` 设计 `context_commits` SQL 表。
+- `docs/design/context/context-commit-chain.md:261-288` 设计 `context_blobs` 表和应用层 hash dedup。
+- `docs/design/context/context-commit-chain.md:307-318` 设计 `context/commit.py`、`context/blob_store.py`、`context/views.py`。
+- `docs/design/context/context-commit-chain.md:335-343` 把同份 rendered 只存一次作为不变式。
 
 当前实现：
 - `openprogram/context/commit/store.py:1-15` 明确改为 git-backed，每个 ContextCommit 是一个 JSON 文件。
@@ -77,8 +77,8 @@
 差异性质：实现扩展了文档没有描述的保留机制。
 
 设计要求：
-- `docs/design/context-commit-chain.md:106-107` 写明没有用户 pin 机制。
-- `docs/design/context-commit-chain.md:342` 把“没有强制保留机制”列为不变式。
+- `docs/design/context/context-commit-chain.md:106-107` 写明没有用户 pin 机制。
+- `docs/design/context/context-commit-chain.md:342` 把“没有强制保留机制”列为不变式。
 
 当前实现：
 - `openprogram/context/commit/types.py:56-60` 增加了 `is_anchor` 和 `anchor_for_summary`。
@@ -92,9 +92,9 @@
 差异性质：概念上已有拆分，数据结构和文档字段名不一致。
 
 设计要求：
-- `docs/design/dag-edge-split.md:25-33` 要求 schema 层拆成 `conv_pred` 和 `caller`，且互斥。
-- `docs/design/dag-edge-split.md:116-124` 要求增加 `conv_pred` 和 `caller` 字段。
-- `docs/design/dag-edge-split.md:126-136` 要求写入时只写其中一条，并废弃隐藏的 `metadata.called_by`。
+- `docs/design/runtime/dag-edge-split.md:25-33` 要求 schema 层拆成 `conv_pred` 和 `caller`，且互斥。
+- `docs/design/runtime/dag-edge-split.md:116-124` 要求增加 `conv_pred` 和 `caller` 字段。
+- `docs/design/runtime/dag-edge-split.md:126-136` 要求写入时只写其中一条，并废弃隐藏的 `metadata.called_by`。
 
 当前实现：
 - `openprogram/context/nodes.py:50-98` 的 `Call` dataclass 只有 `called_by` 和 `metadata`，没有 `conv_pred` 字段。
@@ -111,7 +111,7 @@
 差异性质：文档要求删除的旧聚合路径仍存在。
 
 设计要求：
-- `docs/design/dag-edge-split.md:138-147` 要求删除 `aggregate_tool_messages`，让前端按 caller 关系渲染 tool 节点。
+- `docs/design/runtime/dag-edge-split.md:138-147` 要求删除 `aggregate_tool_messages`，让前端按 caller 关系渲染 tool 节点。
 
 当前实现：
 - `openprogram/webui/persistence.py:172` 仍定义 `aggregate_tool_messages()`。
@@ -125,10 +125,10 @@
 差异性质：视觉和 layout 大体对齐；点击行为可能和“正式节点”口径不一致。
 
 设计要求：
-- `docs/design/dag-node-model.md:18-20` 合成 followup user message 不渲染、不画 DAG。
-- `docs/design/dag-node-model.md:28-37` `task` / `attach` / `merge` 都是 branch operation，使用 `square_outline`。
-- `docs/design/dag-node-model.md:43-68` sequence / call / reference 三类边分开。
-- `docs/design/dag-node-model.md:133-144` 要求跳过 `task_followup` user，并让 `attach` / `merge` 作为正式节点进 sequence。
+- `docs/design/runtime/dag-node-model.md:18-20` 合成 followup user message 不渲染、不画 DAG。
+- `docs/design/runtime/dag-node-model.md:28-37` `task` / `attach` / `merge` 都是 branch operation，使用 `square_outline`。
+- `docs/design/runtime/dag-node-model.md:43-68` sequence / call / reference 三类边分开。
+- `docs/design/runtime/dag-node-model.md:133-144` 要求跳过 `task_followup` user，并让 `attach` / `merge` 作为正式节点进 sequence。
 
 当前实现对齐部分：
 - `openprogram/webui/graph_layout/filter.py:20-31` 识别 `source == "task_followup" && role == "user"`。
@@ -150,8 +150,8 @@
 差异性质：attach reference edge 已实现，merge reference edge 没有完整数据来源。
 
 设计要求：
-- `docs/design/dag-node-model.md:104-118` 描述 `merge` 和 `attach` 同构，DAG 层应有 `function_call(merge, ref=B_tip)`，通过 reference edge 指向被合并 branch tip。
-- `docs/design/dag-node-model.md:130` 写明 merge 的 reference edge 来源是 `ContextCommit.parent_ids[1:]`。
+- `docs/design/runtime/dag-node-model.md:104-118` 描述 `merge` 和 `attach` 同构，DAG 层应有 `function_call(merge, ref=B_tip)`，通过 reference edge 指向被合并 branch tip。
+- `docs/design/runtime/dag-node-model.md:130` 写明 merge 的 reference edge 来源是 `ContextCommit.parent_ids[1:]`。
 
 当前实现：
 - `web/lib/runtime-bridge/history-graph.ts:754-759` 前端确实尝试对 `attach` 和 `merge` 都读取 `node.attach_ref` 并画 reference edge。
@@ -169,8 +169,8 @@
 差异性质：失败路径不符合设计。
 
 设计要求：
-- `docs/design/context-attach-merge.md:197-209` 要求 merge 前临时注入 attach pointer，merge 失败要回滚 attach pointer，避免留下中间状态。
-- `docs/design/context-attach-merge.md:206` 明确写了失败要回滚 attach pointer。
+- `docs/design/context/context-attach-merge.md:197-209` 要求 merge 前临时注入 attach pointer，merge 失败要回滚 attach pointer，避免留下中间状态。
+- `docs/design/context/context-attach-merge.md:206` 明确写了失败要回滚 attach pointer。
 
 当前实现：
 - `openprogram/agent/_merge.py:295-320` 在 target session 上先写入多个 `function="attach"` pointer。
@@ -184,7 +184,7 @@
 差异性质：可追溯字段缺失。
 
 设计要求：
-- `docs/design/context-attach-merge.md:208` 要求 merge 的 assistant reply 节点 metadata 增加 `merged_from: [peer_session_id_or_head, ...]`。
+- `docs/design/context/context-attach-merge.md:208` 要求 merge 的 assistant reply 节点 metadata 增加 `merged_from: [peer_session_id_or_head, ...]`。
 
 当前实现：
 - `openprogram/agent/_merge.py:373-386` 只保存新的 `ContextCommit`，summary 中包含 peer label。
@@ -198,7 +198,7 @@
 差异性质：字段语义相近，但 schema 名称不一致。
 
 设计要求：
-- `docs/design/context-attach-merge.md:151` 要求 attach metadata 含 `source_session_id` / `source_head_id` / `source_commit_id` / `label` / `manual`。
+- `docs/design/context/context-attach-merge.md:151` 要求 attach metadata 含 `source_session_id` / `source_head_id` / `source_commit_id` / `label` / `manual`。
 
 当前实现：
 - `openprogram/webui/ws_actions/branch.py:625-640` 写入的是 `attach.session_id`、`attach.head_id`、`attach.label`、`attach.manual`、`attach.source_commit_id`。
@@ -211,7 +211,7 @@
 差异性质：fallback 功能存在，但文案和 marker 结构不完全符合设计。
 
 设计要求：
-- `docs/design/context-attach-merge.md:162-163` 要求 attached item 有 open / close marker；source commit 不可用时 fallback，并在 marker 里标注 source unavailable。
+- `docs/design/context/context-attach-merge.md:162-163` 要求 attached item 有 open / close marker；source commit 不可用时 fallback，并在 marker 里标注 source unavailable。
 
 当前实现：
 - `openprogram/context/commit/generator.py:220-236` 在 source commit 不存在时返回单条 user-role item，`reason="attached_legacy"`。
@@ -224,10 +224,10 @@
 差异性质：这些项与设计基本一致，列出是为了区分已完成项和未完成项。
 
 设计要求：
-- `docs/design/context-attach-merge.md:151-163` attach pointer 展开 source commit items，按 `attached_from` dedup。
-- `docs/design/context-attach-merge.md:157` summary 不能跨 attach block 边界。
-- `docs/design/context-attach-merge.md:203` merge 的 base peer 优先保留 full。
-- `docs/design/context-attach-merge.md:207` merge 写 multi-parent ContextCommit。
+- `docs/design/context/context-attach-merge.md:151-163` attach pointer 展开 source commit items，按 `attached_from` dedup。
+- `docs/design/context/context-attach-merge.md:157` summary 不能跨 attach block 边界。
+- `docs/design/context/context-attach-merge.md:203` merge 的 base peer 优先保留 full。
+- `docs/design/context/context-attach-merge.md:207` merge 写 multi-parent ContextCommit。
 
 当前实现：
 - `openprogram/context/commit/types.py:62-67` `ContextItem` 已有 `attached_from`。
@@ -245,11 +245,11 @@
 差异性质：已有 placeholder 和部分轮询持久化，但没有实现文档中的统一 streaming registry 和 msg 级订阅。
 
 设计要求：
-- `docs/design/streaming-resume.md:15-18` 任何运行中产物都要第一时间持久化 placeholder，并在增量更新时落盘和推送 WS。
-- `docs/design/streaming-resume.md:23-39` 统一 status schema：`pending` / `running` / `done` / `error` / `aborted`。
-- `docs/design/streaming-resume.md:40-53` 运行中消息约 250ms 节流持久化。
-- `docs/design/streaming-resume.md:55-84` 新增 `subscribe_msg` / `unsubscribe_msg`，通过 `msg_update` 推送。
-- `docs/design/streaming-resume.md:107-114` worker 启动时把 stale `running` 改成 `aborted`。
+- `docs/design/runtime/streaming-resume.md:15-18` 任何运行中产物都要第一时间持久化 placeholder，并在增量更新时落盘和推送 WS。
+- `docs/design/runtime/streaming-resume.md:23-39` 统一 status schema：`pending` / `running` / `done` / `error` / `aborted`。
+- `docs/design/runtime/streaming-resume.md:40-53` 运行中消息约 250ms 节流持久化。
+- `docs/design/runtime/streaming-resume.md:55-84` 新增 `subscribe_msg` / `unsubscribe_msg`，通过 `msg_update` 推送。
+- `docs/design/runtime/streaming-resume.md:107-114` worker 启动时把 stale `running` 改成 `aborted`。
 
 当前实现：
 - `openprogram/agent/_turn_lifecycle.py:52-78` assistant turn 开始时会写 `status="running"` placeholder。
@@ -270,7 +270,7 @@
 差异性质：前端有 status 字段，但没有文档中的订阅流程。
 
 设计要求：
-- `docs/design/streaming-resume.md:86-106` 前端 `load_session` 后扫描 `status === "running"` 的消息，发送 `subscribe_msg`，收到 `msg_update` 后 patch 对应 ChatMsg。
+- `docs/design/runtime/streaming-resume.md:86-106` 前端 `load_session` 后扫描 `status === "running"` 的消息，发送 `subscribe_msg`，收到 `msg_update` 后 patch 对应 ChatMsg。
 
 当前实现：
 - `web/lib/session-store.ts:55-75` ChatMsg 类型中有 `status`、`function`、`display`、`source` 等字段。
@@ -300,8 +300,8 @@
 差异性质：不是直接错误，但文档中的简化 SQL 与当前实现不一致。
 
 设计要求：
-- `docs/design/dag-edge-split.md:101-114` 定义 branch tip 为 `caller IS NULL` 且没有 `conv_pred` 后继。
-- `docs/design/dag-edge-split.md:138-147` 认为读取路径可以自然统一，不再需要启发式处理。
+- `docs/design/runtime/dag-edge-split.md:101-114` 定义 branch tip 为 `caller IS NULL` 且没有 `conv_pred` 后继。
+- `docs/design/runtime/dag-edge-split.md:138-147` 认为读取路径可以自然统一，不再需要启发式处理。
 
 当前实现：
 - `openprogram/store/session_store.py:378-504` 的 `list_branches()` 包含 main lane 检测、跳过 `agent_spawn`、跳过 attach pointer、扫描 merge commit 的 `parent_ids`、过滤 `merged_heads`、手动补入 main tip 等逻辑。
@@ -313,7 +313,7 @@
 差异性质：不是实现 bug，但会影响后续判断哪份设计是权威来源。
 
 观察：
-- `docs/design/context-snapshot-chain.md` 和 `docs/design/context-commit-chain.md` 同时存在。
+- `docs/design/context-snapshot-chain.md` 和 `docs/design/context/context-commit-chain.md` 同时存在。
 - `docs/design/dag-as-memory-unified.md` 与 `context-commit-chain.md` 对 context view 是否持久化的要求相反。
 - `openprogram/webui/ws_actions/snapshots.py` 和 `web/components/right-sidebar/snapshot-timeline.tsx` 仍保留 snapshot 命名路径，但当前 UI 与 engine 使用 commit 命名路径。
 
