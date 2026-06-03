@@ -179,6 +179,25 @@ def get_settings() -> list[dict]:
             except Exception:
                 row["choices"] = []
         rows.append(row)
+
+    # Tools are dynamic — one live toggle per registered tool, ``on`` when
+    # the user hasn't disabled it. Keyed ``tools.disabled.<name>`` so
+    # set_setting can flip membership of ``tools.disabled``.
+    try:
+        from openprogram.functions import list_registered_agent_tools
+        disabled = set((cfg.get("tools", {}) or {}).get("disabled", []) or [])
+        for name in sorted(list_registered_agent_tools()):
+            rows.append({
+                "key": f"tools.disabled.{name}",
+                "group": "Tools",
+                "label": name,
+                "widget": "toggle",
+                "apply": APPLY_LIVE,
+                "help": "",
+                "value": name not in disabled,
+            })
+    except Exception:
+        pass
     return rows
 
 
@@ -188,6 +207,20 @@ def set_setting(key: str, value: Any) -> dict:
     ``"next_start"``. Routes through the existing typed writer when one
     exists (``ui.*`` → ``set_ui_ports``), else a guarded dot-path write.
     """
+    # Dynamic per-tool toggles: ``on`` = enabled = not in tools.disabled.
+    if key.startswith("tools.disabled."):
+        name = key[len("tools.disabled."):]
+        if not name:
+            return {"error": "invalid tool key"}
+        enable = _coerce("toggle", value)
+        cfg = _setup._read_config()
+        tools = cfg.setdefault("tools", {})
+        disabled = set(tools.get("disabled", []) or [])
+        disabled.discard(name) if enable else disabled.add(name)
+        tools["disabled"] = sorted(disabled)
+        _setup._write_config(cfg)
+        return {"applied": APPLY_LIVE, "value": enable}
+
     spec = _BY_KEY.get(key)
     if spec is None:
         return {"error": f"unknown setting: {key}"}
