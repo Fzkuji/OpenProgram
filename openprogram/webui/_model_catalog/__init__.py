@@ -66,6 +66,11 @@ from .toggle import (
 # Public RPC entry points ------------------------------------------
 from .fetchers import fetch_models_remote
 from .test_provider import test_provider
+from .credentials import (
+    validate_credential,
+    provider_auth_status,
+    provider_id_for_env_var,
+)
 
 # Private symbols still imported by name from other modules --------
 # (``_runtime_management``, ``_model_tools``, ``setup_sections``).
@@ -103,6 +108,9 @@ __all__ = [
     # Public RPC
     "fetch_models_remote",
     "test_provider",
+    "validate_credential",
+    "provider_auth_status",
+    "provider_id_for_env_var",
     # Re-exported privates (used by other modules)
     "_is_configured",
     "_read_providers_cfg",

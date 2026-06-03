@@ -232,12 +232,27 @@ def _resolve_api_key(provider_id: str) -> str | None:
     """
     from .providers import _env_var_for
     env = _env_var_for(provider_id)
-    if env:
-        import os
-        val = os.environ.get(env)
+    candidates = [env] if env else []
+    # Google's key has shipped under several historical env-var names; the
+    # resolver only knew GOOGLE_GENERATIVE_AI_API_KEY, but configs (and the web
+    # key form) commonly store GOOGLE_API_KEY / GEMINI_API_KEY. Accept any so
+    # validation + fetch don't report a present key as "missing".
+    if provider_id in ("google", "gemini-subscription"):
+        for alt in ("GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY"):
+            if alt not in candidates:
+                candidates.append(alt)
+    if not candidates:
+        return None
+    import os
+    cfg_keys: dict | None = None
+    for name in candidates:
+        val = os.environ.get(name)
         if val:
             return val
-        # Fall back to ~/.openprogram/config.json api_keys
-        from openprogram.webui.server import _load_config
-        return _load_config().get("api_keys", {}).get(env) or None
+        if cfg_keys is None:
+            # Fall back to ~/.openprogram/config.json api_keys
+            from openprogram.webui.server import _load_config
+            cfg_keys = _load_config().get("api_keys", {})
+        if cfg_keys.get(name):
+            return cfg_keys[name]
     return None

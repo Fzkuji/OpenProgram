@@ -211,6 +211,27 @@ def register(app):
         model = (body or {}).get("model")
         return JSONResponse(content=_mc.test_provider(name, model=model))
 
+    @app.post("/api/providers/{name}/validate")
+    async def api_validate_provider(name: str, body: dict = None):
+        # Unified credential validator — model-independent unless {model} given.
+        # Returns the rich CredentialResult shape (status / kind / via / detail);
+        # /test stays as the legacy-shaped alias the React component reads.
+        from openprogram.webui import _model_catalog as _mc
+        model = (body or {}).get("model")
+        return JSONResponse(
+            content=_mc.validate_credential(name, model=model, use_cache=False).to_dict()
+        )
+
+    @app.get("/api/providers/auth-status")
+    async def api_provider_auth_status(refresh: bool = False, names: str | None = None):
+        # Batch credential status (mirrors OpenClaw models.authStatus). Pass
+        # ?names=a,b,c to scope it; ?refresh=true bypasses the 60s cache.
+        from openprogram.webui import _model_catalog as _mc
+        ids = [n for n in (names or "").split(",") if n] or None
+        return JSONResponse(
+            content={"providers": _mc.provider_auth_status(provider_ids=ids, refresh=refresh)}
+        )
+
     @app.delete("/api/providers/{name}/models/{model_id:path}")
     async def api_delete_custom_model(name: str, model_id: str):
         from openprogram.webui import _model_catalog as _mc

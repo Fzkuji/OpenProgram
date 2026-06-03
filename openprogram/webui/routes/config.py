@@ -7,36 +7,28 @@ from fastapi.responses import JSONResponse
 
 
 def _validate_api_key(env_var: str, value: str) -> str | None:
-    """Lightweight API-key test call. Returns error string or None on success."""
+    """Validate one API key. Returns an error string, or ``None`` on success
+    (or when the key isn't an LLM provider key we know how to probe).
+
+    Thin shim over the unified validator: map the env var to a provider id and
+    run the model-independent auth probe. This replaces the old per-provider
+    branches that (a) only covered OpenAI/Anthropic/Google and silently no-op'd
+    ~17 others, and (b) spent a real completion to validate. Now every
+    OpenAI-compatible / OpenRouter / Anthropic / Google key is checked without
+    invoking a model. See docs/design/credential-validation-unification.md.
+    """
     try:
-        if env_var == "OPENAI_API_KEY":
-            import openai
-            client = openai.OpenAI(api_key=value)
-            client.models.list()
-            return None
-        elif env_var == "ANTHROPIC_API_KEY":
-            import anthropic
-            client = anthropic.Anthropic(api_key=value)
-            client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=1,
-                messages=[{"role": "user", "content": "hi"}],
-            )
-            return None
-        elif env_var in ("GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"):
-            import google.generativeai as genai
-            genai.configure(api_key=value)
-            for m in ("gemini-2.5-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"):
-                try:
-                    model = genai.GenerativeModel(m)
-                    model.generate_content("hi", generation_config={"max_output_tokens": 1})
-                    return None
-                except Exception:
-                    continue
-            list(genai.list_models())
-            return None
-        else:
-            return None  # Unknown key type — skip validation
+        from openprogram.webui._model_catalog import (
+            provider_id_for_env_var,
+            validate_credential,
+        )
+        pid = provider_id_for_env_var(env_var)
+        if pid is None:
+            return None  # not an LLM provider key (search keys, etc.) — skip
+        r = validate_credential(pid, api_key=value, use_cache=False)
+        # `unknown` (offline / ambiguous) must not block a save — only a
+        # definitively rejected credential is an error here.
+        return r.detail if r.status == "invalid_credential" else None
     except Exception as e:
         return str(e)
 
