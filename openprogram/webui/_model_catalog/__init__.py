@@ -69,6 +69,7 @@ from .test_provider import test_provider
 from .credentials import (
     validate_credential,
     provider_auth_status,
+    provider_auth_status_async,
     provider_id_for_env_var,
 )
 
@@ -110,6 +111,7 @@ __all__ = [
     "test_provider",
     "validate_credential",
     "provider_auth_status",
+    "provider_auth_status_async",
     "provider_id_for_env_var",
     # Re-exported privates (used by other modules)
     "_is_configured",

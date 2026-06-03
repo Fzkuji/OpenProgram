@@ -205,14 +205,17 @@ def register(app):
         from openprogram.webui import _model_catalog as _mc
         return JSONResponse(content=_mc.fetch_models_remote(name))
 
+    # Single-provider probes are sync (one blocking network call). Declared
+    # `def` (not `async def`) so FastAPI runs them in its threadpool instead of
+    # blocking the event loop for the ~1s probe.
     @app.post("/api/providers/{name}/test")
-    async def api_test_provider(name: str, body: dict = None):
+    def api_test_provider(name: str, body: dict = None):
         from openprogram.webui import _model_catalog as _mc
         model = (body or {}).get("model")
         return JSONResponse(content=_mc.test_provider(name, model=model))
 
     @app.post("/api/providers/{name}/validate")
-    async def api_validate_provider(name: str, body: dict = None):
+    def api_validate_provider(name: str, body: dict = None):
         # Unified credential validator — model-independent unless {model} given.
         # Returns the rich CredentialResult shape (status / kind / via / detail);
         # /test stays as the legacy-shaped alias the React component reads.
@@ -225,12 +228,13 @@ def register(app):
     @app.get("/api/providers/auth-status")
     async def api_provider_auth_status(refresh: bool = False, names: str | None = None):
         # Batch credential status (mirrors OpenClaw models.authStatus). Pass
-        # ?names=a,b,c to scope it; ?refresh=true bypasses the 60s cache.
+        # ?names=a,b,c to scope it; ?refresh=true bypasses the 60s cache. The
+        # async variant probes every provider concurrently in worker threads so
+        # the event loop isn't blocked on a sequential chain of network calls.
         from openprogram.webui import _model_catalog as _mc
         ids = [n for n in (names or "").split(",") if n] or None
-        return JSONResponse(
-            content={"providers": _mc.provider_auth_status(provider_ids=ids, refresh=refresh)}
-        )
+        providers = await _mc.provider_auth_status_async(provider_ids=ids, refresh=refresh)
+        return JSONResponse(content={"providers": providers})
 
     @app.delete("/api/providers/{name}/models/{model_id:path}")
     async def api_delete_custom_model(name: str, model_id: str):

@@ -399,3 +399,33 @@ def provider_auth_status(
     for pid in provider_ids:
         out[pid] = validate_credential(pid, use_cache=not refresh).to_dict()
     return out
+
+
+async def provider_auth_status_async(
+    provider_ids: list[str] | None = None, refresh: bool = False,
+) -> dict[str, dict]:
+    """Async, concurrent variant of :func:`provider_auth_status`.
+
+    Each per-provider probe (a synchronous network call) runs in a worker
+    thread via ``asyncio.to_thread`` and they are awaited together with
+    ``asyncio.gather`` — so the event loop is never blocked on a sequential
+    chain of probes, and the batch's wall-clock is the slowest single probe
+    instead of their sum. ``validate_credential`` itself stays synchronous for
+    its many sync callers (the save-key verify path, the single-provider
+    routes); only the batch is parallelised. The 60s cache still applies.
+    """
+    import asyncio
+
+    if provider_ids is None:
+        try:
+            from openprogram.providers.registry import check_providers
+            provider_ids = list(check_providers().keys())
+        except Exception:
+            provider_ids = []
+
+    async def _one(pid: str) -> tuple[str, dict]:
+        res = await asyncio.to_thread(validate_credential, pid, use_cache=not refresh)
+        return pid, res.to_dict()
+
+    pairs = await asyncio.gather(*[_one(p) for p in provider_ids])
+    return dict(pairs)
