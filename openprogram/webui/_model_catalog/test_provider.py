@@ -36,6 +36,33 @@ from typing import Any
 _CODEX_RESPONSES_PROVIDERS = frozenset({"openai-codex"})
 
 
+# HTTP statuses where the request demonstrably *authenticated and routed*
+# but the chosen model/endpoint is transiently unavailable — a rate limit
+# (429) or a dead upstream (5xx). You cannot reach these without a valid
+# credential (a bad key short-circuits at 401), so they prove the key
+# works; only that one model is down right now.
+_MODEL_DOWN_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+def _is_model_unavailable(status: int, body: str) -> bool:
+    """True when a non-200 means "model/endpoint unavailable", not "bad key".
+
+    The connectivity probe pings whatever model happens to be first in
+    ``enabled_models``. If that model is a flaky free endpoint, the ping
+    can 429/503 (or 404 with OpenRouter's data-policy "no endpoints"
+    message) even though the api_key is perfectly valid. Treating those
+    as a key failure brands the whole provider broken — the bug this
+    guards against. Auth/credit failures (401/402/403) and genuine bad
+    requests stay hard failures.
+    """
+    if status in _MODEL_DOWN_STATUSES:
+        return True
+    if status == 404:
+        low = (body or "").lower()
+        return "no endpoints" in low or "data policy" in low or "guardrail" in low
+    return False
+
+
 def test_provider(
     provider_id: str,
     model: str | None = None,
@@ -146,13 +173,23 @@ def test_provider(
 
         r = httpx.post(url, headers=headers, json=body, timeout=timeout)
         latency_ms = int((time.time() - t0) * 1000)
-        if r.status_code != 200:
+        if r.status_code == 200:
+            return {"ok": True, "latency_ms": latency_ms, "model": model}
+        detail = f"HTTP {r.status_code}: {r.text[:200]}"
+        # A flaky test model (rate-limited / dead upstream / data-policy
+        # blocked) still proves the key authenticated — report key-valid
+        # with a note instead of failing the whole provider.
+        if _is_model_unavailable(r.status_code, r.text):
             return {
-                "ok": False,
-                "error": f"HTTP {r.status_code}: {r.text[:200]}",
+                "ok": True,
                 "latency_ms": latency_ms,
+                "model": model,
+                "note": (
+                    f"Key authenticated. Model {model} is unavailable right "
+                    f"now ({detail})."
+                ),
             }
-        return {"ok": True, "latency_ms": latency_ms, "model": model}
+        return {"ok": False, "error": detail, "latency_ms": latency_ms}
     except httpx.RequestError as e:
         return {"ok": False, "error": f"Request failed: {e}"}
     except Exception as e:

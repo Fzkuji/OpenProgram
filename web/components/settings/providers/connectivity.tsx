@@ -95,6 +95,17 @@ export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string 
       });
       const d = await r.json();
       if (d.ok) {
+        // ``note`` present → the key authenticated but the model pinged is
+        // temporarily unavailable (rate-limited / dead upstream / data
+        // policy). Still a pass — the credential works — but say so.
+        if (d.note) {
+          setResult({
+            kind: "ok",
+            text: text("✓ key valid · model unavailable", "✓ key 有效 · 模型暂不可用"),
+            title: d.note,
+          });
+          return true;
+        }
         setResult({
           kind: "ok",
           text: `✓ ${d.latency_ms || 0} ms`,
