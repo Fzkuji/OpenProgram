@@ -8,7 +8,7 @@ import { detectAutoTheme } from './theme/autoTheme.js';
 import { setCachedSystemTheme } from './theme/systemTheme.js';
 
 function parseArgs(argv: string[]): { ws: string; demo: boolean } {
-  let ws = process.env.OPENPROGRAM_WS ?? 'ws://127.0.0.1:8765/ws';
+  let ws = process.env.OPENPROGRAM_WS ?? 'ws://127.0.0.1:18109/ws';
   let demo = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--ws' && argv[i + 1]) {
