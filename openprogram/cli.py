@@ -446,6 +446,17 @@ def main():
     p_ports.add_argument("--frontend", type=int, default=None, metavar="PORT",
         help="Persist the Next.js frontend (web UI) port. Default 18100.")
 
+    # ---- config (scriptable settings: the same schema the TUI edits) ------
+    p_config = sub.add_parser("config",
+        help="View or change settings (`config list` / `config get KEY` / `config set KEY VALUE`)")
+    config_sub = p_config.add_subparsers(dest="config_verb", metavar="verb")
+    config_sub.add_parser("list", help="List every setting with its value, group, and apply mode")
+    p_cget = config_sub.add_parser("get", help="Print one setting's current value")
+    p_cget.add_argument("key", help="Setting id, e.g. ui.port (see `config list`)")
+    p_cset = config_sub.add_parser("set", help="Change one setting; some take effect on next start")
+    p_cset.add_argument("key", help="Setting id, e.g. ui.port")
+    p_cset.add_argument("value", help="New value")
+
     # ---- memory (persistent, machine-wide knowledge) ----------------------
     p_memory = sub.add_parser("memory",
         help="Inspect / manage persistent memory (journal + wiki + core).")
@@ -922,6 +933,43 @@ def main():
         print(f"  backend  (API + WebSocket):  {prefs['port']}")
         print(f"  frontend (web UI):           {prefs['web_port']}")
         return
+
+    if args.command == "config":
+        from openprogram.config_schema import get_settings, set_setting
+        verb = getattr(args, "config_verb", None)
+        rows = get_settings()
+        by_key = {r["key"]: r for r in rows}
+
+        if verb in (None, "list"):
+            group = None
+            for r in rows:
+                if r["group"] != group:
+                    group = r["group"]
+                    print(f"\n{group}")
+                val = "(set)" if r.get("set") else r.get("value")
+                tag = "  · next start" if r["apply"] == "next_start" else ""
+                print(f"  {r['key']:24} {str(val):>10}{tag}")
+            print("\nChange with:  openprogram config set <key> <value>")
+            return
+
+        if verb == "get":
+            r = by_key.get(args.key)
+            if r is None:
+                print(f"unknown setting: {args.key}  (see `openprogram config list`)")
+                sys.exit(1)
+            print("(set)" if r.get("set") else r.get("value"))
+            return
+
+        if verb == "set":
+            res = set_setting(args.key, args.value)
+            if res.get("error"):
+                print(f"error: {res['error']}")
+                sys.exit(1)
+            when = " (takes effect next start)" if res.get("applied") == "next_start" else ""
+            print(f"{args.key} = {res.get('value')}{when}")
+            if res.get("note"):
+                print(f"  note: {res['note']}")
+            return
 
     if args.command == "memory":
         verb = getattr(args, "memory_verb", None)
