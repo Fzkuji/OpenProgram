@@ -612,9 +612,13 @@
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
+  /* Match the top-bar HoverTip exactly (.hover-tip in app/styles/chat.css):
+     a borderless solid badge a touch lighter than the surface, crisp
+     bright text — not the bordered default that read as "off". */
+  background: color-mix(in srgb, var(--text-primary) 14%, var(--bg-secondary));
+  color: var(--text-bright);
+  border: none;
+  box-shadow: var(--shadow-popover);
   padding: 4px 8px;
   border-radius: 6px;
   font-size: 12px;
@@ -652,8 +656,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 40px;
-  padding: 9px 10px;
+  min-height: 32px;
+  padding: 6px 8px;
   border-radius: 8px;
   font-size: 14px;
   line-height: 20px;

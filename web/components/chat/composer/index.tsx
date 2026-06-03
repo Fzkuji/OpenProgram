@@ -20,7 +20,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Paperclip } from "lucide-react";
+import { FileTextIcon } from "@/components/animated-icons";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
@@ -1139,9 +1139,8 @@ export function Composer() {
                         setPlusMenuOpen(false);
                         onPickImages();
                       }}
-                      icon={<Paperclip size={18} strokeWidth={1.8} />}
+                      icon={<FileTextIcon />}
                       label={text("Attach file", "添加照片和文件")}
-                      title={text("Attach images, documents, or any file (also paste / drag-drop)", "附加图片、文档或任意文件（也可粘贴 / 拖放）")}
                     />
                     <div className={styles.plusMenuDivider} />
                     <PlusMenuItem
@@ -1149,21 +1148,18 @@ export function Composer() {
                       onClick={toggleTools}
                       icon={<ToolsIcon />}
                       label={text("Tools", "工具")}
-                      title={text("Shell, read/write/edit, grep/glob, list, patch, todo", "Shell、读写编辑、grep/glob、列表、patch、todo")}
                     />
                     <PlusMenuItem
                       active={webSearchEnabled}
                       onClick={toggleWebSearch}
                       icon={<WebSearchIcon />}
                       label={text("Web Search", "网页搜索")}
-                      title={text("Give the agent web search this turn", "本轮允许 Agent 使用网页搜索")}
                     />
                     <PlusMenuItem
                       active={fastEnabled}
                       onClick={toggleFast}
                       icon={<FastIcon />}
                       label={text("Fast", "高速")}
-                      title={text("Run this turn on the provider's priority/fast tier (service_tier=priority). Ignored by providers that don't support it.", "本轮使用 provider 的高速/优先级通道（service_tier=priority），不支持的 provider 会忽略")}
                     />
                   </div>,
                   document.body,
