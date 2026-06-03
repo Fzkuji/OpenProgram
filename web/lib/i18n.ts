@@ -83,6 +83,7 @@ const DICT = {
   "settings.tab.search": { en: "Web Search", zh: "网页搜索" },
   "settings.tab.channels": { en: "Channels", zh: "消息渠道" },
   "settings.tab.general": { en: "General", zh: "通用" },
+  "settings.tab.system": { en: "System", zh: "系统" },
 
   // Left sidebar nav (AppShell)
   "nav.new_chat": { en: "New chat", zh: "新会话" },

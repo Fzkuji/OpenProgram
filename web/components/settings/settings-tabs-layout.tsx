@@ -7,7 +7,7 @@ import styles from "./settings-page.module.css";
 import { prefetchSettings } from "@/lib/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 
-export type SettingsTab = "providers" | "search" | "channels" | "general";
+export type SettingsTab = "providers" | "search" | "channels" | "general" | "system";
 
 /**
  * Shell for the Settings tabs — topbar, sticky nav column, content
@@ -39,6 +39,7 @@ export function SettingsTabsLayout({
     if (pathname.startsWith("/settings/search")) return "search";
     if (pathname.startsWith("/settings/channels")) return "channels";
     if (pathname.startsWith("/settings/general")) return "general";
+    if (pathname.startsWith("/settings/system")) return "system";
     return "providers";
   })();
 
@@ -89,6 +90,15 @@ export function SettingsTabsLayout({
               }
             >
               {t("settings.tab.general")}
+            </Link>
+            <Link
+              href="/settings/system"
+              className={
+                styles.navItem +
+                (active === "system" ? " " + styles.active : "")
+              }
+            >
+              {t("settings.tab.system")}
             </Link>
           </div>
           <div className={styles.content}>{children}</div>
