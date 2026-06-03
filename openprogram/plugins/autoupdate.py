@@ -116,7 +116,7 @@ def _scan() -> None:
     for p in list_plugins():
         if not p.enabled or not p.loaded:
             continue
-        src = getattr(p, "source", "") or ""
+        src = p.manifest.source_kind or ""
         current = p.manifest.version or "0.0.0"
         latest: str | None = None
         try:

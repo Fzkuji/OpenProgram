@@ -25,7 +25,7 @@ def _run(cmd: list[str], cwd: str | None = None) -> tuple[bool, str]:
         return False, f"exec error: {e}"
 
 
-def install(source: str, spec: str, ref: str | None = None) -> dict[str, Any]:
+def install(source: str, spec: str, ref: str | None = None, upgrade: bool = False) -> dict[str, Any]:
     source = (source or "").lower().strip()
     spec = (spec or "").strip()
     if not spec:
@@ -33,7 +33,7 @@ def install(source: str, spec: str, ref: str | None = None) -> dict[str, Any]:
 
     if source == "pip":
         # spec 可以是包名、版本约束、或 git+url
-        return _install_pip(spec)
+        return _install_pip(spec, upgrade=upgrade)
     if source == "npm":
         return _install_npm(spec)
     if source == "git":
@@ -43,8 +43,11 @@ def install(source: str, spec: str, ref: str | None = None) -> dict[str, Any]:
     return {"success": False, "log": f"unknown source: {source}"}
 
 
-def _install_pip(spec: str) -> dict[str, Any]:
-    cmd = [sys.executable, "-m", "pip", "install", spec]
+def _install_pip(spec: str, upgrade: bool = False) -> dict[str, Any]:
+    cmd = [sys.executable, "-m", "pip", "install"]
+    if upgrade:
+        cmd.append("--upgrade")
+    cmd.append(spec)
     ok, log = _run(cmd)
     return {"success": ok, "log": log}
 

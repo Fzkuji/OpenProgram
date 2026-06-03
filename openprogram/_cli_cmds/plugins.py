@@ -8,11 +8,13 @@ known marketplaces.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 
 
 def _cmd_plugins_list(as_json: bool = False) -> int:
     from openprogram.plugins.loader import list_plugins
+    from openprogram.plugins import trust as _trust
 
     plugins = list_plugins()
     if as_json:
@@ -22,8 +24,8 @@ def _cmd_plugins_list(as_json: bool = False) -> int:
             "version": p.manifest.version,
             "enabled": p.enabled,
             "loaded": p.loaded,
-            "trust": getattr(p, "trust", None),
-            "source": p.source,
+            "trust": _trust.get_trust(p.name),
+            "source": p.manifest.source_kind,
             "error": p.error,
         } for p in plugins], indent=2))
         return 0
@@ -63,7 +65,8 @@ def _cmd_plugins_search(query: str) -> int:
     any_hits = False
     for m in markets:
         try:
-            entries = fetch_index(m["id"])
+            # fetch_index is async; the CLI has no running loop, so drive it.
+            entries = asyncio.run(fetch_index(m["id"]))
         except Exception as e:
             print(f"  [{m['name']}] fetch failed: {e}", file=sys.stderr)
             continue
@@ -132,13 +135,13 @@ def _cmd_plugins_update(all_flag: bool, name: str | None) -> int:
 
     updated = 0
     for p in targets:
-        src = getattr(p, "source", "") or ""
+        src = p.manifest.source_kind or ""
         # We only know how to re-pull pip and npm sources idempotently.
         if src not in ("pip", "npm"):
             print(f"  skipped {p.name}: source {src!r} cannot be auto-updated")
             continue
         try:
-            r = install(src, p.name)
+            r = install(src, p.name, upgrade=True)
             if r.get("success"):
                 print(f"  updated {p.name}")
                 updated += 1

@@ -195,7 +195,18 @@ def rescan(cwd: Path | None = None) -> dict[str, Plugin]:
 
 # ---------- 加载 ----------
 
-_HOST_VERSION = "0.1.0"  # TODO: 从 openprogram.__version__ 读
+def _host_version() -> str:
+    """真实 host 版本，用于 plugin compatibility 门控。
+
+    openprogram 没有模块级 ``__version__``，但安装后 dist metadata 有；
+    读不到时退回 ``0.0.0`` 让 compatibility 检查保守通过。"""
+    try:
+        return md.version("openprogram")
+    except Exception:
+        return "0.0.0"
+
+
+_HOST_VERSION = _host_version()
 
 
 def _import_entrypoints(plugin: Plugin) -> Plugin:
