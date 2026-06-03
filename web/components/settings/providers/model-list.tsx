@@ -52,7 +52,7 @@ export function ModelList({
 }) {
   const { text } = useTranslation();
   const enabledCount = models.filter((m) => m.enabled).length;
-  const filtered = !search
+  const matched = !search
     ? models
     : models.filter((m) => {
         const q = search.toLowerCase();
@@ -61,6 +61,11 @@ export function ModelList({
           (m.id || "").toLowerCase().includes(q)
         );
       });
+  // Float the enabled models to the top so the handful you actually use
+  // aren't buried in a 394-row alphabetical list. Stable sort (Number
+  // false=0 / true=1, reversed) keeps the catalog's existing order
+  // within each group, so only the enabled/disabled split moves rows.
+  const filtered = [...matched].sort((a, b) => Number(b.enabled) - Number(a.enabled));
 
   async function toggle(modelId: string, enabled: boolean) {
     try {
