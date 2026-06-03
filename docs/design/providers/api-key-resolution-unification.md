@@ -111,10 +111,11 @@ Status: steps 1–5 **landed** (commits f4fec73d, 9d4d55dc, 62e78e3c, d3ce990d,
 3. **(done)** `get_env_api_key` (runtime) delegates to `resolve_api_key` — gains
    the config.json fallback (the restart-bug fix); Bedrock/Vertex keep the
    sentinel for their adapters.
-4. **(partial)** `_model_catalog/providers.py:_is_configured` key-branch
-   delegates to the canonical `is_configured`. **Still using `_get_api_key`:**
-   `providers/registry.py:check_providers`, the `server.py` provider table, and
-   `routes/providers.py:45` — left for a later pass (they work; just duplicative).
+4. **(done)** `_model_catalog/providers.py:_is_configured` key-branch and
+   `providers/registry.py:check_providers` (the latter was env-only — same
+   restart bug, now config-aware) delegate to the canonical `is_configured`.
+   The `server.py` provider table + `routes/providers.py:45` keep `_get_api_key`
+   — already env+config aware (duplicative, not buggy), left as-is.
 5. **(done)** `credentials.provider_id_for_env_var` re-exports the canonical.
 6. **(deferred)** Collapse the legacy flat maps. *Not a safe mechanical change:*
    `_env_var_for`/`_ENV_API_KEYS` is the **display-primary** name (anthropic →
