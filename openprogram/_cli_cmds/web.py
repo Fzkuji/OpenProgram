@@ -1,8 +1,8 @@
 """``openprogram web`` handler — start the backend AND the Next.js frontend.
 
 Historically ``openprogram web`` only started the FastAPI backend on
-:8109; the Next.js dev server on :3000 (which serves the actual UI and
-proxies ``/api`` + ``/ws`` back to :8109) had to be launched by hand with
+:18109; the Next.js dev server on :3000 (which serves the actual UI and
+proxies ``/api`` + ``/ws`` back to :18109) had to be launched by hand with
 ``cd web && npm run dev``. That split is the source of the recurring
 "only the backend came up / page won't open" confusion, so this command
 now brings up both — the single ``openprogram web`` is the whole UI.
@@ -274,7 +274,7 @@ def _cmd_web(port, open_browser):
         except Exception:
             pass
     if port is None:
-        port = 8109
+        port = 18109
     if open_browser is None:
         open_browser = True
 
@@ -305,7 +305,7 @@ def _cmd_web(port, open_browser):
         sys.exit(1)
 
     # Start the backend WITHOUT opening a browser — the real UI is the
-    # frontend on :3000, not the backend on :8109 (which has no HTML
+    # frontend on :3000, not the backend on :18109 (which has no HTML
     # routes). We open the correct URL ourselves once we know whether a
     # frontend is available.
     thread = start_web(port=port, open_browser=False)

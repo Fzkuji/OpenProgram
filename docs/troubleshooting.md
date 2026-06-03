@@ -30,7 +30,7 @@ Set one of these env vars before starting the worker:
 
 ```bash
 export OPENPROGRAM_WEB_PORT=8101         # frontend (defaults to 3000)
-export OPENPROGRAM_BACKEND_PORT=8102     # FastAPI (defaults to 8109)
+export OPENPROGRAM_BACKEND_PORT=8102     # FastAPI (defaults to 18109)
 ```
 
 Or persist the preference: `openprogram config ui`.

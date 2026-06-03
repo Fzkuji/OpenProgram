@@ -170,8 +170,8 @@ def _probe_default_agent() -> Finding:
 
 
 def _probe_worker_port() -> Finding:
-    """Backend port 8109 — listening, free, or held by someone unrelated?"""
-    port = 8109
+    """Backend port 18109 — listening, free, or held by someone unrelated?"""
+    port = 18109
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(0.4)
     try:

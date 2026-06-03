@@ -51,7 +51,7 @@ pip install openprogram                             # TUI + web UI in one wheel
 openprogram setup                                   # interactive provider wizard
 ```
 
-`setup` adopts any CLI you're already logged into (Claude Code / Codex / Gemini) and prompts for API keys otherwise. On exit the worker is live — web UI on `:3000`, API on `:8109`.
+`setup` adopts any CLI you're already logged into (Claude Code / Codex / Gemini) and prompts for API keys otherwise. On exit the worker is live — web UI on `:3000`, API on `:18109`.
 
 <details>
 <summary><b>Prefer to skip the wizard?</b></summary>

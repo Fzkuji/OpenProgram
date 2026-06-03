@@ -48,7 +48,7 @@ def read_worker_port() -> Optional[int]:
     can't be parsed. Verifies liveness so a stale port file from a
     crashed prior worker doesn't get handed out.
 
-    Also falls back to a TCP probe of the default port (8109) so a
+    Also falls back to a TCP probe of the default port (18109) so a
     foreground ``openprogram web`` — which doesn't write the
     lock/pid/port files — is still discoverable by
     HTTP-client commands like ``openprogram mcp list``. Returns the
@@ -71,7 +71,7 @@ def read_worker_port() -> Optional[int]:
     return None
 
 
-_DEFAULT_WEBUI_PORT = 8109
+_DEFAULT_WEBUI_PORT = 18109
 
 
 def _probe_tcp_listening(port: int, host: str = "127.0.0.1",
@@ -101,7 +101,7 @@ def find_running_webui() -> tuple[Optional[int], Optional[int], str]:
 
     - ``(port, pid, "managed")`` — ``worker.lock`` + ``worker.pid`` say
       a worker is alive; this is the well-supported path.
-    - ``(8109, None, "unmanaged")`` — no lock/pid, but a process is
+    - ``(18109, None, "unmanaged")`` — no lock/pid, but a process is
       listening on the conventional default port. Almost always a
       foreground ``openprogram web``. The PID isn't resolved
       cross-platform-cheaply, so callers that just want to talk

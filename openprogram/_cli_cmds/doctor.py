@@ -133,11 +133,11 @@ def _check_backend_port() -> tuple[bool, str, str]:
     import socket
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        s.connect(("127.0.0.1", 8109))
+        s.connect(("127.0.0.1", 18109))
         s.close()
-        return True, "worker on :8109", "reachable"
+        return True, "worker on :18109", "reachable"
     except OSError:
-        return False, "worker on :8109", "not running — `openprogram worker run`"
+        return False, "worker on :18109", "not running — `openprogram worker run`"
 
 
 def _human(n: int) -> str:

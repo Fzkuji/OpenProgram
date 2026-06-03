@@ -108,7 +108,7 @@ pip install "openprogram[web]"
 openprogram web
 ```
 
-访问 `http://localhost:3000`。Next.js 前端运行在 3000，FastAPI 后端默认运行在 8109。支持明暗主题（Settings → General）。
+访问 `http://localhost:3000`。Next.js 前端运行在 3000，FastAPI 后端默认运行在 18109。支持明暗主题（Settings → General）。
 
 ---
 

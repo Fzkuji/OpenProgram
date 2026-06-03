@@ -8,9 +8,11 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
 const parentPid = parseInt(process.env.OPENPROGRAM_PARENT_PID || "0", 10);
-// Default frontend port 8100 pairs with the backend on 8109 — both
-// live in the rarely-squatted 8100-8109 block. The Python worker
-// overrides via PORT; this fallback handles direct npm invocations.
+// Transitional: this is the standalone Next.js dev/start port. The
+// backend lives on the fixed 5-digit port 18109 (uncommon, rarely
+// squatted); the single-port migration folds this frontend into that
+// same port and removes this watcher. The Python worker overrides via
+// PORT; the 8100 fallback only covers a direct ``npm`` invocation.
 const port = process.env.PORT || "8100";
 
 // npm bin shims on Windows are .cmd batch files, not directly executable

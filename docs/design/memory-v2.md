@@ -274,7 +274,7 @@ OpenProgram 记忆 — 项目: OpenProgram, 最后整理 2026-05-29
 [图谱 · 当前项目相关]
 · OpenProgram 在 C:\Users\fzkuji\OpenProgram (python)
 · cp1252-bug ──fixed-by──► commit 73bfc05               ↪ session:local_13d5
-· worker ──listens-on──► :8109
+· worker ──listens-on──► :18109
 
 需要细节: memory_open_session(<id>) / memory_git_log(<project>) / memory_timeline(<entity>)
 ═══════════════════════════════════════════════

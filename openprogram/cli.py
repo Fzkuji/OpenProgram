@@ -434,7 +434,7 @@ def main():
     # ---- web --------------------------------------------------------------
     p_web = sub.add_parser("web", help="Start the Web UI")
     p_web.add_argument("--port", type=int, default=None,
-        help="Port (default: stored UI pref, then 8109)")
+        help="Port (default: stored UI pref, then 18109)")
     p_web.add_argument("--no-browser", action="store_true", help="Don't open browser")
 
     # ---- memory (persistent, machine-wide knowledge) ----------------------

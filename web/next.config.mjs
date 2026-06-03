@@ -6,7 +6,7 @@ import os from "node:os";
 /**
  * Resolve the backend URL once at config load.
  *
- * Order: explicit env var → <state-dir>/worker.port → default 8109.
+ * Order: explicit env var → <state-dir>/worker.port → default 18109.
  *
  * The state dir mirrors ``openprogram.paths.get_state_dir()``: the
  * canonical ``~/.openprogram`` (or ``~/.openprogram-<profile>`` when
@@ -14,7 +14,7 @@ import os from "node:os";
  * checked only as a back-compat fallback. (Before the state-dir
  * unification this read ``~/.agentic`` and defaulted to 8765, which
  * left ``/ws`` proxying to a dead port once the worker moved to
- * ``~/.openprogram`` + the 8109 default.)
+ * ``~/.openprogram`` + the 18109 default.)
  */
 function resolveBackend() {
   if (process.env.OPENPROGRAM_BACKEND_URL) {
@@ -37,8 +37,8 @@ function resolveBackend() {
       /* not present — try next candidate */
     }
   }
-  // Worker's own default port (openprogram.webui defaults to 8109).
-  return "http://127.0.0.1:8109";
+  // Worker's own default port (openprogram.webui defaults to 18109).
+  return "http://127.0.0.1:18109";
 }
 
 const BACKEND = resolveBackend();

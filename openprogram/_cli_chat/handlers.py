@@ -86,7 +86,7 @@ def _handle_slash(cmd: str, console, rt,
         return False
 
     if verb == "web":
-        port = 8109
+        port = 18109
         if args:
             try:
                 port = int(args[0])
