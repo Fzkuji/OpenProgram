@@ -1,6 +1,6 @@
 # API-key / credential resolution unification
 
-Status: **planned** · Owner: providers · Created: 2026-06-04
+Status: **core landed (steps 1–5)** · step 6 deferred (see §4) · Owner: providers · Created: 2026-06-04
 
 Part of the 2026-06 optimization roadmap (audit item #3 — the root cause of the
 provider-config fragmentation theme). Follows [credential-validation-unification](credential-validation-unification.md):
@@ -99,29 +99,36 @@ per-stream hot path.
 
 ## 4. Migration (each step independently committable + verifiable)
 
-1. **Add the canonical functions** (`env_vars_for`, `resolve_api_key`,
+Status: steps 1–5 **landed** (commits f4fec73d, 9d4d55dc, 62e78e3c, d3ce990d,
+5c4d6aa6). Step 6 **deferred** — see the note after the list.
+
+1. **(done)** Add the canonical functions (`env_vars_for`, `resolve_api_key`,
    `is_configured`, `provider_id_for_env_var`) to `env_api_keys.py` with the
-   merged env-var table + mtime-cached config read. No callers changed yet. Add
-   `tests/unit/test_api_key_resolution.py` (per-provider precedence, config
-   fallback, cloud-cred is_configured, reverse map, sentinel gone).
-2. **storage._resolve_api_key → delegate** to `resolve_api_key`. Verify the
-   webui (validate / fetch / test) still resolves every configured provider.
-3. **get_env_api_key → delegate** to `resolve_api_key` (runtime gains the
-   config.json fallback — the restart-bug fix). Verify via the repro: save a key
-   through the web, restart the worker, confirm the runtime resolves it from
-   config.json.
-4. **Migrate is_configured callers** — `providers/registry.py:check_providers`,
-   `_model_catalog/providers.py:_is_configured`, `server.py` provider table,
-   `routes/providers.py:45` — to the canonical `is_configured(provider_id)`.
-   Keep their cheap presence semantics; drop the `_get_api_key(env)` duplication.
-5. **Move `provider_id_for_env_var`** to env_api_keys; `credentials.py`
-   re-exports for back-compat.
-6. **Collapse the maps** — `_env_var_for` returns `env_vars_for(pid)[0]` (the
-   display/primary name); `_ENV_API_KEYS` / `PROVIDER_ENV_VARS` become derived
-   from (or thin views of) the one table, then deprecated.
+   merged env-var table + mtime-cached config read. No callers changed. Added
+   `tests/unit/test_api_key_resolution.py`.
+2. **(done)** `storage._resolve_api_key` delegates to `resolve_api_key` (known
+   providers); community/models.dev providers keep the env-var fallback.
+3. **(done)** `get_env_api_key` (runtime) delegates to `resolve_api_key` — gains
+   the config.json fallback (the restart-bug fix); Bedrock/Vertex keep the
+   sentinel for their adapters.
+4. **(partial)** `_model_catalog/providers.py:_is_configured` key-branch
+   delegates to the canonical `is_configured`. **Still using `_get_api_key`:**
+   `providers/registry.py:check_providers`, the `server.py` provider table, and
+   `routes/providers.py:45` — left for a later pass (they work; just duplicative).
+5. **(done)** `credentials.provider_id_for_env_var` re-exports the canonical.
+6. **(deferred)** Collapse the legacy flat maps. *Not a safe mechanical change:*
+   `_env_var_for`/`_ENV_API_KEYS` is the **display-primary** name (anthropic →
+   `ANTHROPIC_API_KEY` for the key form), which is a different concept from
+   `env_vars_for`'s **resolution-precedence** list (anthropic → OAuth first), so
+   `_env_var_for` is *not* `env_vars_for(pid)[0]`. And the flat `PROVIDER_ENV_VARS`
+   is still consumed by `auth/cli.py` + `auth/interactive.py` as the
+   "providers-with-an-env-key" list whose membership **intentionally excludes**
+   anthropic/copilot (former special cases) — deriving it from the canonical
+   table would change that list's membership and the auth-CLI login flow. Closing
+   this needs the auth-CLI semantics reconciled first; tracked as future work.
 
 Back-compat: `get_env_api_key`, `_resolve_api_key`, `_env_var_for` keep their
-names as thin wrappers so the ~30 call sites don't churn in one commit.
+names as thin wrappers so the ~30 call sites don't churn.
 
 ## 5. Verification
 
