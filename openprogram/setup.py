@@ -143,7 +143,6 @@ def read_ui_prefs() -> dict[str, Any]:
     return {
         "port": int(ui.get("port") or DEFAULT_BACKEND_PORT),
         "web_port": int(ui.get("web_port") or DEFAULT_WEB_PORT),
-        "open_browser": bool(ui.get("open_browser", True)),
     }
 
 

@@ -207,18 +207,17 @@ def _cmd_web(port, open_browser, web_port=None):
         print("Install with: pip install openprogram[web]")
         sys.exit(1)
 
-    if port is None or open_browser is None:
+    if port is None:
         try:
             from openprogram.setup import read_ui_prefs
-            prefs = read_ui_prefs()
-            if port is None:
-                port = prefs["port"]
-            if open_browser is None:
-                open_browser = prefs["open_browser"]
+            port = read_ui_prefs()["port"]
         except Exception:
             pass
     if port is None:
         port = 18109
+    # `openprogram web` exists to show the web UI, so it always opens the
+    # browser. The only opt-out is the one-shot `--no-browser` flag (which
+    # passes open_browser=False); there is deliberately no persisted toggle.
     if open_browser is None:
         open_browser = True
 

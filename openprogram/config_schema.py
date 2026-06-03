@@ -98,11 +98,6 @@ SETTINGS: list[SettingSpec] = [
         help="Next.js web UI. Must differ from the backend port.",
     ),
     SettingSpec(
-        key="ui.open_browser", path=("ui", "open_browser"), group="Ports",
-        label="Open browser on `openprogram web`", widget="toggle",
-        apply=APPLY_NEXT_START, default=True,
-    ),
-    SettingSpec(
         key="search.default_provider", path=("search", "default_provider"),
         group="Search", label="Default web-search provider", widget="enum",
         apply=APPLY_LIVE, default="auto", choices=_search_choices,
@@ -271,8 +266,6 @@ def set_setting(key: str, value: Any) -> dict:
         _setup.set_ui_ports(backend_port=coerced)
     elif spec.key == "ui.web_port":
         _setup.set_ui_ports(web_port=coerced)
-    elif spec.key == "ui.open_browser":
-        _setup.set_ui_ports(open_browser=coerced)
     elif spec.key == "search.default_provider":
         _setup.write_search_default_provider(None if coerced == "auto" else coerced)
     else:
