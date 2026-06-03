@@ -68,13 +68,19 @@ strings (retry/compact-failure messages) stay plain.
    `errors.taxonomy_fields(exc)` + the new `AssistantMessage.error_reason /
    error_retryable / error_retry_after_s` fields. Unit-tested (LLMError
    passthrough, generic classified).
-1b. **(remaining)** Widen the chat-turn error event the webui emits with
-   `reason / retryable / retry_after_s` (read off the failed `AssistantMessage`
-   in the chat run → the `{"type":"error", …}` payload). Verifiable by
-   inspecting the WS payload — induce each class (bad key → auth, oversized turn
-   → context_length, 429 → rate_limit).
+1b. **(landed, NOT yet forced end-to-end, 5efc95ab)** The webui chat-turn
+   exception handler (`_execute/__init__.py`, the `action="query"` error path)
+   classifies the caught exception via `taxonomy_fields` and adds
+   `reason / retryable / retry_after_s` to the persisted error message + the
+   `{"type":"error", …}` broadcast. **Caveat to confirm:** chats route through
+   the agentic/DAG runtime, so the live chat-error surfacing may have additional
+   emit points — this covers the plain-query except; a forced provider failure
+   (e.g. switch the active model to an OpenRouter `:free` model that 503s) is
+   needed to confirm the field reaches the broadcast, since the codex probe turn
+   succeeded (empty) rather than erroring.
 2. **(remaining)** Frontend: the error component reads the new fields and renders
-   the categorized copy/affordance; falls back to `content` when absent.
+   the categorized copy/affordance; falls back to `content` when absent. This
+   slice is also what finally exercises 1b end-to-end.
 
 Each step commits separately; the backend is useful on its own (API consumers,
 logs, future channels) even before the frontend lands.
