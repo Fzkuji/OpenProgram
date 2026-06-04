@@ -105,6 +105,31 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
                         help="Filter to one profile (default: all)")
     p_list.add_argument("--json", action="store_true", help="Output JSON")
 
+    # available — browse/search the full provider catalogue
+    p_avail = auth_sub.add_parser(
+        "available",
+        aliases=["search", "catalog"],
+        help="List every LLM provider you can configure (the full "
+             "catalogue, incl. community ones); optional QUERY filters it.",
+        description=(
+            "Show all providers OpenProgram knows about — the built-in "
+            "ones plus the community catalogue (models.dev). This is the "
+            "list you pick an id from for `openprogram providers login "
+            "<id>`. Pass a QUERY to filter by id or label (case-"
+            "insensitive substring), e.g. `providers available minimax`."
+        ),
+    )
+    p_avail.add_argument(
+        "query", nargs="?", default=None,
+        help="Filter to providers whose id or label contains this text.",
+    )
+    p_avail.add_argument(
+        "--json", action="store_true",
+        help="Output JSON (for scripts / agents).")
+    p_avail.add_argument(
+        "--configured", action="store_true",
+        help="Only show providers that already have a key / credential.")
+
     # discover
     p_disc = auth_sub.add_parser("discover", help="Scan external sources")
     p_disc.add_argument("--json", action="store_true", help="Output JSON")
@@ -176,6 +201,10 @@ def dispatch(args: argparse.Namespace) -> int:
         return _cmd_login(_resolve_alias(args.provider), args.profile, args.method)
     if cmd == "list":
         return _cmd_list(args.profile, args.json)
+    if cmd in ("available", "search", "catalog"):
+        return _cmd_available(
+            args.query, args.json, getattr(args, "configured", False),
+        )
     if cmd == "discover":
         return _cmd_discover(args.json)
     if cmd == "adopt":
@@ -202,8 +231,9 @@ def dispatch(args: argparse.Namespace) -> int:
         return _dispatch_profiles(args)
     # No subcommand — print the help hint.
     print("Usage: openprogram providers <verb>\n"
-          "Verbs: login, logout, list, status, discover, adopt, "
-          "doctor, setup, aliases, profiles",
+          "Verbs: available (list/search the catalogue), login, logout, "
+          "list (configured pools), status, discover, adopt, doctor, "
+          "setup, aliases, profiles",
           file=sys.stderr)
     return 2
 
@@ -574,6 +604,86 @@ def _login_import_from_cli(provider: str, profile: str) -> Credential:
             )
         return creds[0]
     raise AuthConfigError(f"no import-from-CLI adapter for {provider!r}")
+
+
+# ---------------------------------------------------------------------------
+# available — browse / search the provider catalogue
+# ---------------------------------------------------------------------------
+
+def _cmd_available(
+    query: Optional[str], as_json: bool, configured_only: bool = False,
+) -> int:
+    """List every provider OpenProgram can configure (built-in + the
+    models.dev community catalogue), optionally filtered by a search term.
+    The ``PROVIDER`` id column is exactly what you pass to
+    ``openprogram providers login <id>``."""
+    try:
+        from openprogram.webui._model_catalog import list_providers
+        rows = list(list_providers() or [])
+    except Exception as e:  # noqa: BLE001
+        print(f"Could not load the provider catalogue: {e}", file=sys.stderr)
+        return 1
+
+    q = (query or "").strip().lower()
+    if q:
+        rows = [
+            r for r in rows
+            if q in (r.get("id") or "").lower()
+            or q in (r.get("label") or "").lower()
+        ]
+    if configured_only:
+        rows = [r for r in rows if r.get("configured")]
+    # Configured providers first, then alphabetical by id.
+    rows.sort(key=lambda r: (not r.get("configured"), (r.get("id") or "")))
+
+    if as_json:
+        slim = [{
+            "id": r.get("id"),
+            "label": r.get("label"),
+            "configured": bool(r.get("configured")),
+            "enabled": bool(r.get("enabled")),
+            "api_key_env": r.get("api_key_env"),
+            "model_count": r.get("model_count"),
+            "supports_fetch": bool(r.get("supports_fetch")),
+        } for r in rows]
+        print(json.dumps(slim, indent=2, ensure_ascii=False))
+        return 0
+
+    if not rows:
+        print("No providers match that search." if q else "No providers found.")
+        return 0
+
+    def _col(key: str, cap: int, header: str) -> int:
+        return max(
+            min(cap, max((len(str(r.get(key) or "")) for r in rows), default=0)),
+            len(header),
+        )
+    id_w = _col("id", 30, "PROVIDER")
+    lbl_w = _col("label", 28, "LABEL")
+    env_w = _col("api_key_env", 26, "KEY ENV")
+
+    def _fit(s: str, w: int) -> str:
+        # Truncate over-wide values so columns stay aligned.
+        s = s or ""
+        return s if len(s) <= w else s[: w - 1] + "…"
+
+    print(f"{'PROVIDER':<{id_w}}  {'LABEL':<{lbl_w}}  "
+          f"{'KEY ENV':<{env_w}}  MODELS  CFG")
+    for r in rows:
+        mc = r.get("model_count")
+        print(
+            f"{_fit(r.get('id'), id_w):<{id_w}}  "
+            f"{_fit(r.get('label'), lbl_w):<{lbl_w}}  "
+            f"{_fit(r.get('api_key_env') or '—', env_w):<{env_w}}  "
+            f"{(str(mc) if mc is not None else '—'):>6}  "
+            f"{'✓' if r.get('configured') else '·'}"
+        )
+    print(
+        f"\n{len(rows)} provider(s)"
+        + (f" matching {query!r}" if q else "")
+        + ".  Configure one with:  openprogram providers login <PROVIDER>"
+    )
+    return 0
 
 
 # ---------------------------------------------------------------------------
