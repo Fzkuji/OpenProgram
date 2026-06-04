@@ -9,6 +9,7 @@ import {
   cloneElement,
   forwardRef,
   isValidElement,
+  useLayoutEffect,
   useRef,
   type HTMLAttributes,
   type ReactElement,
@@ -96,24 +97,28 @@ export function PlusMenuItem({
   title?: string;
 }) {
   const { node, onMouseEnter, onMouseLeave } = useHoverDrivenIcon(icon);
-  // Drive the ✓ draw-in animation from the row's hover too, so the check
-  // animates in lockstep with the left icon (claude.ai-style: the whole
-  // row is the hover target) instead of only self-animating when you
-  // hover the tiny glyph directly. The animated CheckIcon flips to
-  // "controlled" once a ref is attached, so the row is its single driver.
+  // The ✓ plays its draw-in animation exactly once — at the moment the
+  // item becomes checked (active: false → true). It does NOT animate on
+  // hover: attaching a ref puts the CheckIcon in "controlled" mode, so it
+  // no longer self-animates on its own hover, and we never drive it from
+  // the row's mouse handlers. Re-opening the menu on an already-checked
+  // item does not replay it (prevActive starts equal to active on mount,
+  // so the false→true edge isn't seen). useLayoutEffect fires before
+  // paint, so the path starts hidden instead of flashing fully-drawn.
   const checkRef = useRef<AnimatedNavIconHandle>(null);
+  const prevActive = useRef(active);
+  useLayoutEffect(() => {
+    if (active && !prevActive.current) {
+      checkRef.current?.startAnimation?.();
+    }
+    prevActive.current = active;
+  }, [active]);
   return (
     <div
       className={`${styles.plusMenuItem} ${active ? styles.active : ""}`}
       onClick={onClick}
-      onMouseEnter={() => {
-        onMouseEnter();
-        checkRef.current?.startAnimation?.();
-      }}
-      onMouseLeave={() => {
-        onMouseLeave();
-        checkRef.current?.stopAnimation?.();
-      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       title={title}
     >
       <div className={styles.plusMenuLeft}>
