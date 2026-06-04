@@ -1,6 +1,22 @@
 # Splitting `agent/dispatcher.py` into a responsibility-scoped package
 
-Status: **in progress** · dead-code removed (1fab7479) · step 0 package · step 1 types.py · step 2 titles.py + forced_tool.py · Owner: agent/runtime · Created: 2026-06-04
+Status: **in progress** · dead-code removed (1fab7479) · step 0 package · step 1 types.py · step 2 titles.py + forced_tool.py · step 3a runtime_attach.py (`_wrap_agentic_runtime_block`) · Owner: agent/runtime · Created: 2026-06-04
+
+> **Test seam note (discovered during step 3).** The dispatcher unit tests
+> monkeypatch `D._resolve_model` / `D._load_agent_profile` / `D._run_loop_blocking`
+> on the **package** object, and capture `orig = D._run_loop_blocking` to run
+> the real loop with a fake `stream_fn`. A function's internal helper lookups
+> resolve in *its own* module globals, so moving `_run_loop_blocking` to
+> `loop.py` would make its `_resolve_model` call miss the `D.*` patch and break
+> ~40 tests. Therefore: functions that internally call the test-patched helpers
+> (`_run_loop_blocking`) stay put for now; in-function **phases** (persist /
+> finalize) extract cleanly by passing the already-resolved model/profile as
+> explicit args (the dispatcher resolves them once, under the patch, and hands
+> them down), so the extracted module never calls a patched helper. Standalone
+> functions that touch none of the patched helpers (`_wrap_agentic_runtime_block`)
+> move freely. The eventual `loop.py` move needs either a patch-stable helper
+> seam (access via `_model_tools.<fn>` at call time) or updated test patch
+> targets — tracked as its own step, not folded into a code-motion commit.
 
 Roadmap item under the no-1000-line-files rule and the "hierarchical code
 structure — module dirs by responsibility" convention. `dispatcher.py` is the
