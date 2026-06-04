@@ -172,6 +172,15 @@ def _ensure_utf8_stdio() -> None:
             pass
 
 
+def _need_subcommand(parser) -> None:
+    """A container verb was run with no subcommand: print its help (the
+    subcommand list) and exit non-zero — the gh/opencode demandCommand
+    UX, applied uniformly so a bare ``openprogram <verb>`` never silently
+    does nothing or exits 0."""
+    parser.print_help()
+    sys.exit(2)
+
+
 def main():
     _ensure_utf8_stdio()
     parser = argparse.ArgumentParser(
@@ -758,8 +767,7 @@ def main():
             sys.exit(_cmd_logs_path(args.name))
         if verb == "tail":
             sys.exit(_cmd_logs_tail(args.name, args.lines, args.follow))
-        p_logs.print_help()
-        sys.exit(2)
+        _need_subcommand(p_logs)
 
     if args.command == "completion":
         from openprogram._cli_cmds.completion import _cmd_completion
@@ -788,7 +796,7 @@ def main():
         elif verb == "uninstall":
             _cmd_uninstall(args.name)
         else:
-            p_programs.print_help()
+            _need_subcommand(p_programs)
         return
 
     if args.command == "skills":
@@ -809,7 +817,7 @@ def main():
         elif verb == "remove":
             sys.exit(_cmd_skills_remove(args.name))
         else:
-            p_skills.print_help()
+            _need_subcommand(p_skills)
         return
 
     if args.command == "doctor":
@@ -838,7 +846,7 @@ def main():
         elif verb == "disable":
             sys.exit(_cmd_plugins_disable(args.name))
         else:
-            p_plugins.print_help()
+            _need_subcommand(p_plugins)
         return
 
     if args.command == "sessions":
@@ -900,7 +908,7 @@ def main():
                       f"{peer_str[:27]:28} {r['agent_id']:12} "
                       f"{r['session_id']}")
         else:
-            p_sessions.print_help()
+            _need_subcommand(p_sessions)
         return
 
     if args.command == "web":
@@ -1049,8 +1057,7 @@ def main():
                 t.add(str(_mstore.root()), arcname="memory")
             print(f"exported to {out}")
             sys.exit(0)
-        p_memory.print_help()
-        sys.exit(2)
+        _need_subcommand(p_memory)
 
     if args.command == "update":
         from openprogram.updater import (
@@ -1104,8 +1111,7 @@ def main():
         if verb == "uninstall":
             from openprogram.worker import services as _services
             sys.exit(_services.uninstall())
-        p_worker.print_help()
-        sys.exit(2)
+        _need_subcommand(p_worker)
 
     if args.command == "channels":
         verb = getattr(args, "channels_verb", None)
@@ -1132,7 +1138,7 @@ def main():
         if verb == "bindings":
             _dispatch_bindings_verb(args, p_chb)
             return
-        p_channels.print_help()
+        _need_subcommand(p_channels)
         return
 
     if args.command == "mcp":
@@ -1159,8 +1165,7 @@ def main():
         if verb == "test":
             sys.exit(_cmd_mcp_test(args.name, args.command,
                                     env=args.env, timeout=args.timeout))
-        p_mcp.print_help()
-        sys.exit(2)
+        _need_subcommand(p_mcp)
 
     if args.command == "browser":
         verb = getattr(args, "browser_verb", None)
@@ -1176,8 +1181,7 @@ def main():
             sys.exit(_cmd_browser_list())
         if verb == "rm":
             sys.exit(_cmd_browser_rm(args.name))
-        p_browser.print_help()
-        sys.exit(2)
+        _need_subcommand(p_browser)
 
     if args.command == "agents":
         _dispatch_agents_verb(args, p_agents)
@@ -1208,8 +1212,7 @@ def main():
                 base_peer=getattr(args, "base", None),
                 as_json=as_json,
             ))
-        p_subagent.print_help()
-        sys.exit(2)
+        _need_subcommand(p_subagent)
 
     if args.command == "cron-worker":
         _cmd_cron_worker(args.once, args.list)

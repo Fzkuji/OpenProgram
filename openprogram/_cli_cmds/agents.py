@@ -69,4 +69,7 @@ def _dispatch_agents_verb(args, parser) -> None:
         _A.set_default(args.id)
         print(f"Default agent is now {args.id!r}")
         return
+    # No subcommand — show the verb list + exit non-zero (uniform with
+    # every other container verb; see cli._need_subcommand).
     parser.print_help()
+    sys.exit(2)
