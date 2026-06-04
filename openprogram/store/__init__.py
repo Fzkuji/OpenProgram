@@ -58,6 +58,16 @@ from typing import Optional, TYPE_CHECKING
 # surface so ``from openprogram.store import SessionStore`` etc. keep
 # working unchanged after the physical regroup.
 from .session import GitSession, SessionMemoryIndex, GraphStoreShim
+# Provenance read-layer — the LLM-free seam memory maps from
+# (docs/design/memory/entity-session-cache.md §5).
+from .session import (
+    Provenance,
+    iter_nodes_since,
+    node_provenance,
+    session_commits,
+    project_commits,
+    session_project_id,
+)
 
 if TYPE_CHECKING:
     pass
@@ -91,6 +101,12 @@ __all__ = [
     "default_store",
     "_store",
     "_current_turn_id",
+    "Provenance",
+    "iter_nodes_since",
+    "node_provenance",
+    "session_commits",
+    "project_commits",
+    "session_project_id",
 ]
 
 

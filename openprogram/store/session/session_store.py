@@ -912,6 +912,24 @@ class SessionStore:
             "model": last_model or model_id,
         }
 
+    def session_commits(self, session_id: str, *, limit: int = 100) -> list:
+        """The session repo's per-turn git commits, newest first.
+
+        Each successful turn is one commit (``commit_turn``), so this is
+        the entity layer's time axis — the turn boundaries with their sha
+        + timestamp + message. Returns ``GitSession.CommitInfo`` records.
+
+        Exposed because the per-turn commits were being *written* but had
+        no reader (``GitSession.log`` was only ever called by itself): the
+        memory provenance layer and the UI timeline both want to walk a
+        session's turns. Empty list if the session doesn't exist yet.
+        """
+        pair = self._open(session_id)
+        if pair is None:
+            return []
+        git, _idx = pair
+        return git.log(limit=limit)
+
     def get_nodes(self, session_id: str) -> list[Call]:
         """Raw Call objects for a session, sorted by seq.
 

@@ -20,6 +20,16 @@ Importable straight from this sub-package, e.g.
 from .git_session import GitSession
 from .memory_index import SessionMemoryIndex
 from .graphstore_shim import GraphStoreShim
+# Provenance read-layer — the LLM-free seam memory maps from (cheap to
+# import: only pulls in context.nodes, already loaded by memory_index).
+from .provenance import (
+    Provenance,
+    iter_nodes_since,
+    node_provenance,
+    session_commits,
+    project_commits,
+    session_project_id,
+)
 
 
 def __getattr__(name):
@@ -40,4 +50,10 @@ __all__ = [
     "GraphStoreShim",
     "SessionStore",
     "default_store",
+    "Provenance",
+    "iter_nodes_since",
+    "node_provenance",
+    "session_commits",
+    "project_commits",
+    "session_project_id",
 ]
