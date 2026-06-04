@@ -75,7 +75,10 @@ export function ClaudeAccounts() {
 
   async function startAdd() {
     const name = newName.trim();
-    if (!name) return;
+    if (!name) {
+      setMsg(text("Enter an account name first.", "先输入一个账号名。"));
+      return;
+    }
     setBusy(true);
     setMsg("");
     try {
@@ -119,6 +122,12 @@ export function ClaudeAccounts() {
         load();
       } else {
         setMsg(d.error || text("That code didn't work — try again.", "code 无效，请重试。"));
+        // Session gone (e.g. backend restarted) — reset to the start so the
+        // user can re-add instead of being stuck on a dead paste-code step.
+        if (typeof d.error === "string" && d.error.includes("no pending")) {
+          setPending(null);
+          setCode("");
+        }
       }
     } catch {
       setMsg(text("Could not finish the login.", "完成登录失败。"));
@@ -190,7 +199,7 @@ export function ClaudeAccounts() {
             onChange={(e) => setNewName(e.target.value)}
             disabled={busy || notReady}
           />
-          <Button size="sm" onClick={startAdd} disabled={busy || notReady || !newName.trim()}>
+          <Button size="sm" onClick={startAdd} disabled={busy || notReady}>
             {busy ? text("Opening…", "打开中…") : text("Add account", "添加账号")}
           </Button>
         </div>
