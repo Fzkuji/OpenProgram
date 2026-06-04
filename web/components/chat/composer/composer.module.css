@@ -597,7 +597,12 @@
   opacity: 0.8;
 }
 .toolChipOff:hover {
-  background: var(--bg-hover);
+  /* No filled circle on hover. The ON state of these chips is itself a
+     filled tinted circle, so a gray fill here read as "enabled" — the
+     off Tools chip looked lit up the moment you hovered it. Hover now
+     just brightens the icon to signal it's clickable; the chip stays a
+     transparent circle (no × to expand for, so width/padding pinned). */
+  background: transparent;
   color: var(--text-secondary);
   width: var(--composer-button-size);
   padding-right: 8px;
