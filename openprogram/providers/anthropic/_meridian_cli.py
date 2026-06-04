@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,14 @@ import sys
 
 _DEFAULT_PROXY_URL = "http://localhost:3456"
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_OAUTH_URL_RE = re.compile(r"https://\S*oauth\S*")
+
+# In-flight web logins: session id -> {proc, name}. The proxy's account login
+# is an interactive OAuth (prints a URL, then waits on stdin for the code the
+# user pastes back). The CLI gets that for free via an inherited terminal; the
+# web flow drives it in two steps — start_add() launches it and returns the
+# URL, submit_login_code() feeds the pasted code to the live process's stdin.
+_PENDING_LOGINS: dict[str, dict] = {}
 
 
 def build_parser(accounts_sub: "argparse._SubParsersAction") -> None:
@@ -165,22 +174,116 @@ def accounts_summary() -> dict:
     }
 
 
-def add_account_async(name: str) -> dict:
-    """Kick off a browser login for ``name`` without blocking (for the web
-    button). Returns immediately; the UI polls :func:`accounts_summary`
-    until the account appears. CLI ``add`` uses the inherited-stdio path
-    instead so the terminal shows the prompts."""
+def start_add(name: str) -> dict:
+    """Begin a web account login: launch the proxy's OAuth, read the URL it
+    prints, and keep the process alive waiting for the pasted code.
+
+    Returns ``{session, url, name}``. The UI opens ``url`` for the user to
+    sign in; the page hands back a code which the UI submits via
+    :func:`submit_login_code`. (The CLI doesn't need this two-step dance —
+    it inherits a terminal, so the user pastes the code straight in.)
+    """
     name = (name or "").strip()
     if not name:
-        return {"started": False, "error": "an account name is required"}
+        return {"error": "an account name is required"}
     binp = _proxy_bin()
     if not binp:
-        return {"started": False, "error": "backend not installed"}
-    subprocess.Popen(
+        return {"error": "backend not installed"}
+    try:
+        import pty
+    except ImportError:  # Windows
+        return {"error": "interactive login isn't supported here — run "
+                         "`openprogram providers claude-code accounts add "
+                         f"{name}` in a terminal instead."}
+    import select
+    import time as _time
+
+    # A PTY makes the backend line-buffer (so its OAuth URL arrives promptly)
+    # and lets us write the pasted code back as if typed at a prompt.
+    # Put a no-op `open`/`xdg-open` first on PATH so the backend doesn't block
+    # trying to launch a browser on a headless worker (no GUI session) — it
+    # prints the login URL regardless, and the frontend opens it. Without
+    # this the worker hangs on the browser launch and the URL never arrives.
+    import tempfile
+    shim = tempfile.mkdtemp(prefix="op-noopen-")
+    for _c in ("open", "xdg-open"):
+        _p = os.path.join(shim, _c)
+        with open(_p, "w") as _f:
+            _f.write("#!/bin/sh\nexit 0\n")
+        os.chmod(_p, 0o755)
+    # Strip inherited Claude credentials so the backend can't decide it's
+    # "already authenticated" (e.g. off the worker's ANTHROPIC_API_KEY) and
+    # skip the login — `add` needs a fresh browser OAuth for the NEW account.
+    _strip = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY",
+              "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
+    env = {k: v for k, v in os.environ.items() if k not in _strip}
+    env["PATH"] = shim + os.pathsep + env.get("PATH", "")
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(
         [binp, "profile", "add", name],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdin=slave, stdout=slave, stderr=slave, close_fds=True, env=env,
     )
-    return {"started": True, "name": name}
+    os.close(slave)
+    url, buf, end, answered = None, "", _time.time() + 30, False
+    while _time.time() < end:
+        r, _w, _e = select.select([master], [], [], 1.0)
+        if master not in r:
+            continue
+        try:
+            data = os.read(master, 4096).decode("utf-8", "replace")
+        except OSError:
+            break
+        if not data:
+            break
+        buf += data
+        clean = _ANSI.sub("", buf)
+        # The backend may first offer to import the terminal's existing login
+        # ("Import as profile X? [Y/n]"). Decline — `add` means a NEW account
+        # via browser OAuth, not re-adding whoever the terminal is logged into.
+        if not answered and ("import as profile" in clean.lower() or "[y/n]" in clean.lower()):
+            try:
+                os.write(master, b"n\n")
+            except OSError:
+                pass
+            answered = True
+        m = _OAUTH_URL_RE.search(clean)
+        if m:
+            url = m.group(0).rstrip(".")
+            break
+    if not url:
+        try:
+            proc.kill()
+            os.close(master)
+        except Exception:
+            pass
+        return {"error": "could not start the login (no URL from backend)"}
+    session = secrets.token_hex(8)
+    _PENDING_LOGINS[session] = {"proc": proc, "master": master, "name": name}
+    return {"session": session, "url": url, "name": name}
+
+
+def submit_login_code(session: str, code: str) -> dict:
+    """Finish a web login: write the pasted ``code`` to the PTY the login
+    process is waiting on, then collect the result."""
+    entry = _PENDING_LOGINS.pop(session, None)
+    if not entry:
+        return {"ok": False, "error": "no pending login (it may have timed out)"}
+    proc, master = entry["proc"], entry["master"]
+    try:
+        os.write(master, ((code or "").strip() + "\n").encode())
+        rc = proc.wait(timeout=45)
+    except Exception as e:  # noqa: BLE001
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return {"ok": False, "error": f"login did not complete: {e}"}
+    finally:
+        try:
+            os.close(master)
+        except Exception:
+            pass
+    return {"ok": rc == 0, "name": entry["name"]}
 
 
 def remove_account(name: str) -> dict:
@@ -338,5 +441,6 @@ def _cmd_status() -> int:
 
 __all__ = [
     "build_parser", "dispatch",
-    "accounts_summary", "add_account_async", "remove_account", "activate_account",
+    "accounts_summary", "start_add", "submit_login_code",
+    "remove_account", "activate_account",
 ]

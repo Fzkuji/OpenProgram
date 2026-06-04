@@ -217,10 +217,19 @@ def register(app):
 
     @app.post("/api/providers/claude-code/accounts/add")
     def api_cc_accounts_add(body: dict = None):
-        # Opens a browser login on the worker host and returns immediately;
-        # the UI polls GET .../accounts until the new account shows up.
+        # Starts the OAuth login and returns {session, url}. The proxy's login
+        # is interactive (prints a URL, waits for the code the user pastes
+        # back), so the UI opens `url`, then posts the code to .../add/code.
         from openprogram.providers.anthropic import _meridian_cli as _acc
-        return JSONResponse(content=_acc.add_account_async((body or {}).get("name", "")))
+        return JSONResponse(content=_acc.start_add((body or {}).get("name", "")))
+
+    @app.post("/api/providers/claude-code/accounts/add/code")
+    def api_cc_accounts_add_code(body: dict = None):
+        from openprogram.providers.anthropic import _meridian_cli as _acc
+        b = body or {}
+        return JSONResponse(
+            content=_acc.submit_login_code(b.get("session", ""), b.get("code", ""))
+        )
 
     @app.post("/api/providers/claude-code/accounts/remove")
     def api_cc_accounts_remove(body: dict = None):

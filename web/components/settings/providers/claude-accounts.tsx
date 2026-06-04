@@ -12,7 +12,10 @@ import styles from "../settings-page.module.css";
  *  Add (browser login), activate (which one OpenProgram uses), and remove
  *  accounts — all independent of the terminal `claude auth login` you chat
  *  on. The underlying proxy is never named here; users see "Claude account".
- *  Backed by /api/providers/claude-code/accounts{,/add,/remove,/use}. */
+ *
+ *  Add is a two-step OAuth: POST .../add returns a login URL (we open it);
+ *  the page hands back a code the user pastes, which we POST to .../add/code.
+ *  Backed by /api/providers/claude-code/accounts{,/add,/add/code,/remove,/use}. */
 
 interface Account {
   name: string;
@@ -24,13 +27,20 @@ interface AccountsState {
   active: string | null;
   accounts: Account[];
 }
+interface Pending {
+  session: string;
+  name: string;
+  url: string;
+}
 
 export function ClaudeAccounts() {
   const { text } = useTranslation();
   const [state, setState] = useState<AccountsState | null>(null);
   const [newName, setNewName] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [code, setCode] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -63,43 +73,63 @@ export function ClaudeAccounts() {
     load();
   }
 
-  async function add() {
+  async function startAdd() {
     const name = newName.trim();
     if (!name) return;
-    setAdding(true);
-    setMsg(text(
-      "A browser window is opening — sign in with the account to add…",
-      "正在打开浏览器 — 用你要添加的账号登录…",
-    ));
-    await fetch("/api/providers/claude-code/accounts/add", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    // Poll until the account shows up (login finished) or we give up.
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      try {
-        const rr = await fetch("/api/providers/claude-code/accounts");
-        const s = (await rr.json()) as AccountsState;
-        if ((s.accounts || []).some((a) => a.name === name)) {
-          setState(s);
-          setNewName("");
-          setMsg(text("Added.", "已添加。"));
-          setAdding(false);
-          return;
-        }
-      } catch {
-        /* keep polling */
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await fetch("/api/providers/claude-code/accounts/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const d = await r.json();
+      if (d.error) {
+        setMsg(d.error);
+      } else {
+        if (d.url) window.open(d.url, "_blank", "noopener");
+        setPending({ session: d.session, name: d.name, url: d.url });
+        setMsg(text(
+          "A login page opened — sign in with the account you want to add, then copy the code it shows and paste it below.",
+          "已打开登录页 — 用你要添加的账号登录，然后把页面给出的 code 复制粘贴到下面。",
+        ));
       }
+    } catch {
+      setMsg(text("Could not start the login.", "启动登录失败。"));
     }
-    setMsg(text(
-      "Timed out waiting for the login. If you finished it, the account "
-        + "will appear on the next refresh.",
-      "等待登录超时。如果你已经登录完成，刷新后账号就会出现。",
-    ));
-    setAdding(false);
-    load();
+    setBusy(false);
+  }
+
+  async function submitCode() {
+    if (!pending) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/providers/claude-code/accounts/add/code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session: pending.session, code }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        setMsg(text("Account added.", "账号已添加。"));
+        setPending(null);
+        setCode("");
+        setNewName("");
+        load();
+      } else {
+        setMsg(d.error || text("That code didn't work — try again.", "code 无效，请重试。"));
+      }
+    } catch {
+      setMsg(text("Could not finish the login.", "完成登录失败。"));
+    }
+    setBusy(false);
+  }
+
+  function cancelAdd() {
+    setPending(null);
+    setCode("");
+    setMsg("");
   }
 
   if (!state) return null;
@@ -129,7 +159,7 @@ export function ClaudeAccounts() {
       {accounts.map((a) => (
         <div key={a.name} className={styles.detailRow} style={{ alignItems: "center" }}>
           <span style={{ flex: 1, fontFamily: "monospace" }}>
-            {a.name === state.active ? "→ " : "  "}
+            {a.name === state.active ? "→ " : "  "}
             {a.name}
             {a.email ? <span style={{ opacity: 0.55 }}>{"  " + a.email}</span> : null}
           </span>
@@ -144,32 +174,61 @@ export function ClaudeAccounts() {
         </div>
       ))}
 
-      {accounts.length === 0 && !notReady && (
+      {accounts.length === 0 && !notReady && !pending && (
         <div style={{ fontSize: "0.8rem", opacity: 0.6, marginBottom: "0.4rem" }}>
           {text("No accounts yet.", "还没有账号。")}
         </div>
       )}
 
-      <div className={styles.detailRow}>
-        <Input
-          className="flex-1 font-mono"
-          placeholder={text("new account name, e.g. experiment", "新账号名，如 experiment")}
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          disabled={adding || notReady}
-        />
-        <Button size="sm" onClick={add} disabled={adding || notReady || !newName.trim()}>
-          {adding ? text("Adding…", "添加中…") : text("Add account", "添加账号")}
-        </Button>
-      </div>
+      {/* Step 1: name + start. Step 2 (pending): paste the code. */}
+      {!pending ? (
+        <div className={styles.detailRow}>
+          <Input
+            className="flex-1 font-mono"
+            placeholder={text("new account name, e.g. experiment", "新账号名，如 experiment")}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            disabled={busy || notReady}
+          />
+          <Button size="sm" onClick={startAdd} disabled={busy || notReady || !newName.trim()}>
+            {busy ? text("Opening…", "打开中…") : text("Add account", "添加账号")}
+          </Button>
+        </div>
+      ) : (
+        <div className={styles.detailRow} style={{ flexWrap: "wrap", gap: "0.4rem" }}>
+          <Input
+            className="flex-1 font-mono"
+            placeholder={text("paste the code from the login page", "粘贴登录页给出的 code")}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            disabled={busy}
+          />
+          <Button size="sm" onClick={submitCode} disabled={busy || !code.trim()}>
+            {busy ? text("Finishing…", "完成中…") : text("Finish", "完成")}
+          </Button>
+          <Button size="sm" onClick={cancelAdd} disabled={busy}>
+            {text("Cancel", "取消")}
+          </Button>
+          {pending.url && (
+            <a
+              href={pending.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: "0.75rem", opacity: 0.7, width: "100%" }}
+            >
+              {text("Login page didn't open? Click here.", "登录页没打开？点这里。")}
+            </a>
+          )}
+        </div>
+      )}
 
       {msg && (
-        <div style={{ fontSize: "0.75rem", opacity: 0.7, marginTop: "0.3rem" }}>{msg}</div>
+        <div style={{ fontSize: "0.75rem", opacity: 0.75, marginTop: "0.3rem" }}>{msg}</div>
       )}
       <div style={{ fontSize: "0.72rem", opacity: 0.55, marginTop: "0.4rem", lineHeight: 1.5 }}>
         {text(
-          "Add a Claude account (opens a browser login), activate the one OpenProgram should run on, or remove one. Independent of the terminal Claude Code login you chat on.",
-          "添加 Claude 账号（弹浏览器登录）、激活 OpenProgram 要用的那个、或删除。与你聊天用的终端 Claude Code 登录无关。",
+          "Add a Claude account (a browser login — sign in, paste the code it gives you), activate the one OpenProgram should run on, or remove one. Independent of the terminal Claude Code login you chat on.",
+          "添加 Claude 账号（浏览器登录 — 登录后把页面给的 code 粘回来）、激活 OpenProgram 要用的那个、或删除。与你聊天用的终端 Claude Code 登录无关。",
         )}
       </div>
     </div>
