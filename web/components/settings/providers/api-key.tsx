@@ -144,7 +144,34 @@ export function ApiKey({
           title={text("Show/hide", "显示/隐藏")}
           onClick={toggleVisibility}
         >
-          {showText ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+          {/* Crossfade + scale between the open eye (masked → "reveal")
+              and the slashed eye (revealed → "hide"). Both icons are
+              stacked; toggling animates opacity/scale so the swap morphs
+              instead of snapping. */}
+          <span style={{ position: "relative", display: "inline-block", width: 16, height: 16 }}>
+            <Eye
+              size={16}
+              strokeWidth={1.8}
+              style={{
+                position: "absolute",
+                inset: 0,
+                transition: "opacity 180ms ease, transform 180ms ease",
+                opacity: showText ? 0 : 1,
+                transform: showText ? "scale(0.5)" : "scale(1)",
+              }}
+            />
+            <EyeOff
+              size={16}
+              strokeWidth={1.8}
+              style={{
+                position: "absolute",
+                inset: 0,
+                transition: "opacity 180ms ease, transform 180ms ease",
+                opacity: showText ? 1 : 0,
+                transform: showText ? "scale(1)" : "scale(0.5)",
+              }}
+            />
+          </span>
         </button>
         <Button size="sm" onClick={save}>
           {text("Save", "保存")}
