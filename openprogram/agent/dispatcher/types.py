@@ -1,8 +1,9 @@
-"""Turn-dispatch type definitions — aliases, the parent sentinel, and the
-TurnRequest / TurnResult dataclasses.
+"""Turn-dispatch type definitions — aliases, the parent sentinel, the
+TurnRequest / TurnResult dataclasses, and the no-op ``EventCallback``
+default (``_noop``).
 
-Extracted from dispatcher/__init__.py (dispatcher-split step 1). These have
-no behavior and depend only on the stdlib, so they live in a leaf module
+Extracted from dispatcher/__init__.py (dispatcher-split step 1). These
+depend only on the stdlib, so they live in a leaf module
 that everything else (and external callers) can import without pulling in
 the heavy agent-loop / provider chain. ``__init__`` re-exports every name
 here, so ``dispatcher.TurnRequest`` and
@@ -17,6 +18,15 @@ from typing import Any, Callable, Literal, Optional
 
 PermissionMode = Literal["ask", "auto", "bypass"]
 EventCallback = Callable[[dict], None]
+
+
+def _noop(_: dict) -> None:
+    """The canonical no-op ``EventCallback``. Used as the default event
+    sink across the dispatcher package (``on_event = on_event or _noop``)
+    so every entry point can be called without a callback. Lives here
+    next to ``EventCallback`` so titles/forced_tool/__init__ share one
+    definition instead of three copies."""
+    pass
 
 
 # Sentinel: "caller did not specify parent_id, dispatcher should pick"

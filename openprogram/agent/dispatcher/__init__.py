@@ -38,7 +38,20 @@ from openprogram.agent.dispatcher.types import (
     TurnRequest,
     TurnResult,
     _InheritParent,
+    _noop,
 )
+
+# Leaf helpers extracted into sibling modules (dispatcher-split step 2),
+# re-exported so ``dispatcher.<name>`` and every external import resolve
+# unchanged:
+#   titles.py      — _default_title / _maybe_auto_title / trigger_compaction
+#   forced_tool.py — dispatch_forced_tool_call (webui/routes/chat.py imports it)
+from openprogram.agent.dispatcher.titles import (
+    _default_title,
+    _maybe_auto_title,
+    trigger_compaction,
+)
+from openprogram.agent.dispatcher.forced_tool import dispatch_forced_tool_call
 
 # Lifecycle helpers (placeholder insert / status flip / error fold) —
 # see openprogram/agent/_turn_lifecycle.py for the per-turn DB
@@ -374,139 +387,6 @@ def _wrap_agentic_runtime_block(
         except Exception:
             pass
     return wrapped
-
-
-# ---------------------------------------------------------------------------
-# Forced tool-call dispatch (UI-triggered @agentic_function run)
-# ---------------------------------------------------------------------------
-
-def dispatch_forced_tool_call(
-    session_id: str,
-    anchor_msg_id: str,
-    tool_name: str,
-    tool_input: dict | None,
-    work_dir: Optional[str] = None,
-    *,
-    agent_id: str = "main",
-    source: str = "web",
-    on_event: Optional[EventCallback] = None,
-) -> dict:
-    """Run a single @agentic_function without invoking the LLM.
-
-    Shares the exact same wrapper / placeholder / finalize plumbing as
-    an LLM-issued tool call (see ``_wrap_agentic_runtime_block``).
-    Used by the Functions panel / fn-form / former ``/run`` UI path,
-    so all @agentic_function invocations land on one execution path.
-
-    Caller is responsible for having already persisted the user-side
-    command message under ``anchor_msg_id`` — this function only adds
-    the runtime-block row + the DAG subtree.
-    """
-    on_event = on_event or _noop
-
-    # Look up the tool by name from the global catalog.
-    try:
-        from openprogram.functions import agent_tools as _agent_tools
-        tools = _agent_tools(names=[tool_name]) or []
-    except Exception as e:  # noqa: BLE001
-        raise ValueError(f"failed to resolve tool {tool_name!r}: {e}") from e
-    tool = next((t for t in tools if t.name == tool_name), None)
-    if tool is None:
-        raise ValueError(f"tool not found: {tool_name!r}")
-    if not getattr(tool, "_is_agentic", False):
-        raise ValueError(
-            f"tool {tool_name!r} is not an @agentic_function — only "
-            "agentic tools can be forced via this path"
-        )
-
-    # New path: forked subprocess so handle_stop can SIGKILL the
-    # entire process group in milliseconds. The child re-installs the
-    # session ContextVars and re-wraps the tool with
-    # _wrap_agentic_runtime_block; events are bridged back via an
-    # mp.Queue so WS clients see the same envelopes as before.
-    from openprogram.agent.process_runner import run_agentic_in_subprocess
-    from openprogram.webui._pause_stop import (
-        set_current_session_id as _set_cid,
-        reset_current_session_id as _reset_cid,
-        clear_cancel as _clear_cancel,
-    )
-    _cid_token = _set_cid(session_id)
-    try:
-        out = run_agentic_in_subprocess(
-            tool_name=tool_name,
-            kwargs=dict(tool_input or {}),
-            session_id=session_id,
-            anchor_msg_id=anchor_msg_id,
-            work_dir=work_dir,
-            on_event=on_event,
-        )
-    finally:
-        try:
-            _reset_cid(_cid_token)
-        except Exception:
-            pass
-        try:
-            _clear_cancel(session_id)
-        except Exception:
-            pass
-        # Subprocess wrote every nested Call directly to the per-session
-        # git history via its OWN SessionStore. Parent worker's cached
-        # SessionMemoryIndex never observed those writes — drop the
-        # cache so handle_load_session / build_branches_payload read
-        # the on-disk truth instead of the pre-subprocess snapshot
-        # (which contains only the user msg + runtime placeholder).
-        try:
-            from openprogram.agent.session_db import default_db as _ddb
-            _ddb().invalidate_cache(session_id)
-        except Exception:
-            pass
-        # fn-form / direct-run is a standalone call — the user msg +
-        # runtime placeholder ARE the main branch. Without advancing
-        # head_id to the placeholder, HEAD stays pinned to the user
-        # msg and the conv reads as ``detached`` (HEAD ≠ conv tip).
-        # LLM-called path advances head_id in process_user_turn step
-        # 6; the forced path was missing the equivalent step.
-        _rt_id = (out or {}).get("runtime_msg_id")
-        if _rt_id:
-            try:
-                from openprogram.agent.session_db import default_db as _ddb
-                _ddb().update_session(session_id, head_id=_rt_id)
-            except Exception:
-                pass
-
-    if out.get("killed"):
-        # If the subprocess was SIGKILLed before it could finalize the
-        # runtime-block, patch the placeholder so the UI doesn't show
-        # a stuck spinner. handle_stop also patches running rows, so
-        # this is a belt-and-suspenders cleanup.
-        try:
-            from openprogram.agent.session_db import default_db as _ddb
-            from openprogram.store import GraphStoreShim as _GS
-            _db = _ddb()
-            _shim = _GS(_db, session_id)
-            for _m in (_db.get_messages(session_id) or []):
-                if (_m.get("status") or "done") == "running":
-                    _shim.update(
-                        _m["id"],
-                        metadata={
-                            "status": "cancelled",
-                            "last_update_at": time.time(),
-                            "_cancelled_reason": "user_stop",
-                        },
-                    )
-        except Exception:
-            pass
-        return {
-            "runtime_msg_id": None,
-            "ok": False,
-            "killed": True,
-        }
-    if out.get("error"):
-        return {"runtime_msg_id": None, "ok": False, "error": out["error"]}
-    return {
-        "runtime_msg_id": out.get("runtime_msg_id"),
-        "ok": True,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -1347,106 +1227,6 @@ def process_user_turn(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _noop(_: dict) -> None:
-    pass
-
-
-def _default_title(req: TurnRequest) -> str:
-    text = req.user_text.strip().splitlines()[0] if req.user_text else ""
-    return text[:50] + ("…" if len(text) > 50 else "") or "New chat"
-
-
-def _maybe_auto_title(db, session_id: str, session: dict,
-                      user_text: str) -> None:
-    """Stamp a readable session title once, on the first turn that
-    has a non-empty user message. Idempotent — once
-    ``extra_meta._titled`` is True we never touch the title again so
-    user-set titles via /rename win.
-
-    Skips when:
-      - The session was never created (missing row)
-      - User already explicitly titled it
-      - This wasn't a real text turn (e.g. tool-only follow-up)
-    """
-    extra = (session.get("extra_meta") or {})
-    if extra.get("_titled"):
-        return
-    stripped = (user_text or "").strip()
-    if not stripped:
-        return
-    text = stripped.splitlines()[0] if stripped.splitlines() else stripped
-    if not text:
-        return
-    title = text[:50] + ("…" if len(text) > 50 else "")
-    try:
-        db.update_session(session_id, title=title, _titled=True)
-    except Exception:
-        pass
-
-
-def trigger_compaction(session_id: str, agent_id: str = "main",
-                        on_event: Optional[EventCallback] = None,
-                        *,
-                        keep_recent_tokens: Optional[int] = None) -> dict:
-    """User-initiated compaction. Synchronous — the caller is responsible
-    for running this off the request thread if it cares about latency
-    (compaction calls the LLM to generate a summary).
-
-    Pipeline:
-      1. Load active branch from SessionDB.
-      2. Run compact_context to get summary text + recent kept tail.
-      3. Persist a synthetic ``compactionSummary`` row chained off
-         the current head's parent (so it sits at the same fork
-         point as the original first kept message).
-      4. set_head to the new summary row.
-      5. Re-link the kept tail: each kept message gets a new id and
-         parent_id pointing back through the new chain.
-
-    Mirrors Claude Code's compaction model (a real "summary" message
-    in the transcript) but stays SQL-native — no JSONL fork needed.
-    Old pre-summary messages remain in SessionDB but are off the
-    active branch (you can still get_descendants from them for
-    audit).
-
-    Returns ``{"summary": str, "kept_count": int, "summary_id": str}``.
-    """
-    on_event = on_event or _noop
-    from openprogram.agent.session_db import default_db
-    from openprogram.context import resolve_engine_for
-
-    db = default_db()
-    sess = db.get_session(session_id)
-    if sess is None:
-        raise ValueError(f"Unknown conversation {session_id!r}")
-    history = db.get_branch(session_id) or []
-    if len(history) < 4:
-        return {"summary": "", "kept_count": len(history), "summary_id": ""}
-
-    profile = _load_agent_profile(agent_id)
-    model = _resolve_model(profile, None)
-    engine = resolve_engine_for(profile)
-
-    loop = asyncio.new_event_loop()
-    try:
-        result = loop.run_until_complete(
-            engine.compact(
-                agent=profile,
-                session_id=session_id,
-                model=model,
-                on_event=on_event,
-                user_initiated=True,
-                keep_recent_tokens=keep_recent_tokens,
-            )
-        )
-    finally:
-        loop.close()
-
-    return {
-        "summary": result.summary_text or "",
-        "kept_count": result.summarised_count,
-        "summary_id": result.summary_id or "",
-    }
 
 def _run_loop_blocking(
     *,

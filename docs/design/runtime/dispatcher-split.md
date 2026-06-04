@@ -1,6 +1,6 @@
 # Splitting `agent/dispatcher.py` into a responsibility-scoped package
 
-Status: **planned** · dead-code removed (1fab7479) · Owner: agent/runtime · Created: 2026-06-04
+Status: **in progress** · dead-code removed (1fab7479) · step 0 package · step 1 types.py · step 2 titles.py + forced_tool.py · Owner: agent/runtime · Created: 2026-06-04
 
 Roadmap item under the no-1000-line-files rule and the "hierarchical code
 structure — module dirs by responsibility" convention. `dispatcher.py` is the
