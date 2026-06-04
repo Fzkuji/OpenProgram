@@ -34,6 +34,12 @@ def isolated(tmp_path, monkeypatch, capsys):
     set_profile_manager_for_testing(pm)
     # Redirect Codex path so imports don't touch the real file.
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "fake_codex"))
+    # Isolate ~/.openprogram so the config.json api_keys mirror inside
+    # _login_paste_api_key can never clobber the developer's real keys
+    # when a login test runs. get_state_dir() resolves off $HOME.
+    fake_home = tmp_path / "home"
+    fake_home.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME", str(fake_home))
     yield store, pm, tmp_path, capsys
     set_store_for_testing(None)
     set_manager_for_testing(None)
@@ -276,6 +282,68 @@ def test_login_unknown_method(isolated):
     rc = dispatch(_parse(["login", "openai", "--method", "telepathy"]))
     assert rc == 1
     assert "not available" in cap.readouterr().err
+
+
+# ---- login (non-interactive: --api-key / --api-key-stdin / piped stdin) ---
+# These are the paths agents and scripts rely on: no tty, no getpass prompt,
+# no method picker eating the piped key. getpass is patched to fail so a
+# regression that reintroduces the interactive prompt is caught loudly.
+
+def _no_getpass(monkeypatch):
+    monkeypatch.setattr(
+        "getpass.getpass",
+        lambda prompt="": pytest.fail("getpass called in a non-interactive path"),
+    )
+
+
+def test_login_api_key_flag_is_non_interactive(isolated, monkeypatch):
+    store, _, _, _ = isolated
+    _no_getpass(monkeypatch)
+    rc = dispatch(_parse(["login", "openai", "--api-key", "sk-flag-AAA"]))
+    assert rc == 0
+    pool = store.find_pool("openai", "default")
+    assert pool and pool.credentials[0].payload.api_key == "sk-flag-AAA"
+
+
+def test_login_api_key_stdin(isolated, monkeypatch):
+    store, _, _, _ = isolated
+    _no_getpass(monkeypatch)
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-stdin-BBB\n"))
+    rc = dispatch(_parse(["login", "openai", "--api-key-stdin"]))
+    assert rc == 0
+    pool = store.find_pool("openai", "default")
+    assert pool and pool.credentials[0].payload.api_key == "sk-stdin-BBB"
+
+
+def test_login_bare_pipe_reads_stdin_when_no_tty(isolated, monkeypatch):
+    # No flags, no --method: a piped (non-tty) stdin is read as the key
+    # rather than blocking on the picker / getpass. io.StringIO.isatty()
+    # is already False.
+    store, _, _, _ = isolated
+    _no_getpass(monkeypatch)
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-piped-CCC\n"))
+    rc = dispatch(_parse(["login", "openai"]))
+    assert rc == 0
+    pool = store.find_pool("openai", "default")
+    assert pool and pool.credentials[0].payload.api_key == "sk-piped-CCC"
+
+
+def test_login_empty_stdin_fails_clearly(isolated, monkeypatch):
+    _, _, _, cap = isolated
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    rc = dispatch(_parse(["login", "openai", "--api-key-stdin"]))
+    assert rc == 1
+    assert "stdin was empty" in cap.readouterr().err
+
+
+def test_login_oauth_only_headless_fails_clean_not_hang(isolated, monkeypatch):
+    # openai-codex is OAuth-only; with no tty there's nothing to do
+    # headlessly — it must error, not block on /dev/tty.
+    _, _, _, cap = isolated
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    rc = dispatch(_parse(["login", "openai-codex"]))
+    assert rc == 1
+    assert "interactive terminal" in cap.readouterr().err
 
 
 # ---- profile -------------------------------------------------------------

@@ -9,7 +9,10 @@ Subcommands:
 
   * ``openprogram providers login <provider>`` — interactive wizard. Detects
     what's possible for the provider (paste key / device-code / import
-    from another CLI) and drives the right flow.
+    from another CLI) and drives the right flow. For scripts / agents it
+    also takes a fully non-interactive API-key path — ``--api-key <key>``,
+    ``--api-key-stdin``, or simply piping the key on stdin (no tty) — so
+    no getpass prompt or method picker ever blocks an automated caller.
   * ``openprogram providers list`` — tabular view of pools per profile with
     masked secret previews.
   * ``openprogram providers discover`` — non-destructive scan of external
@@ -98,6 +101,16 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     p_login.add_argument("--method", default=None,
                          help="Force a login method (api_key / import_from_cli / device_code). "
                               "If omitted, the wizard auto-selects the best available.")
+    p_login.add_argument("--api-key", default=None, dest="api_key",
+                         help="Supply the API key non-interactively (scripts / "
+                              "agents). Implies --method api_key; skips the "
+                              "prompt. WARNING: visible in shell history and "
+                              "`ps` — prefer --api-key-stdin or an env var.")
+    p_login.add_argument("--api-key-stdin", action="store_true", dest="api_key_stdin",
+                         help="Read the API key from stdin (until EOF), non-"
+                              "interactively. Implies --method api_key. e.g. "
+                              "`printf %%s \"$KEY\" | openprogram providers login "
+                              "minimax-cn --api-key-stdin`.")
 
     # list
     p_list = auth_sub.add_parser("list", help="List pools per profile")
@@ -198,7 +211,11 @@ def dispatch(args: argparse.Namespace) -> int:
     """
     cmd = args.providers_cmd
     if cmd == "login":
-        return _cmd_login(_resolve_alias(args.provider), args.profile, args.method)
+        return _cmd_login(
+            _resolve_alias(args.provider), args.profile, args.method,
+            api_key=getattr(args, "api_key", None),
+            api_key_stdin=getattr(args, "api_key_stdin", False),
+        )
     if cmd == "list":
         return _cmd_list(args.profile, args.json)
     if cmd in ("available", "search", "catalog"):
@@ -304,14 +321,67 @@ def _fmt_duration(ms: int) -> str:
 # login — interactive wizard
 # ---------------------------------------------------------------------------
 
-def _cmd_login(provider: str, profile: str, method: Optional[str]) -> int:
+def _cmd_login(provider: str, profile: str, method: Optional[str], *,
+               api_key: Optional[str] = None,
+               api_key_stdin: bool = False) -> int:
     store = get_store()
     choices = _available_login_methods(provider)
     if not choices:
         print(f"No login method implemented for provider {provider!r}.", file=sys.stderr)
         return 1
+    method_ids = {m for m, _ in choices}
 
-    if method is None:
+    # --- resolve the login method, preferring a fully non-interactive path
+    # so agents / scripts never block on getpass or have a piped key eaten
+    # by the method picker. Precedence:
+    #   1. an explicitly supplied key (--api-key / --api-key-stdin)
+    #   2. an explicit --method
+    #   3. no tty: auto-read stdin as the key if api_key login is possible,
+    #      else fail clearly (don't silently block on a terminal read)
+    #   4. interactive picker (the original UX)
+    supplied_key: Optional[str] = None
+    if api_key_stdin:
+        supplied_key = sys.stdin.read().strip()
+        if not supplied_key:
+            print("--api-key-stdin given but stdin was empty.", file=sys.stderr)
+            return 1
+    elif api_key is not None:
+        supplied_key = api_key.strip()
+        if not supplied_key:
+            print("--api-key was empty — nothing to save.", file=sys.stderr)
+            return 1
+
+    if supplied_key is not None:
+        if "api_key" not in method_ids:
+            print(f"Provider {provider!r} doesn't support api_key login "
+                  f"(methods: {', '.join(sorted(method_ids))}).", file=sys.stderr)
+            return 1
+        chosen = "api_key"
+    elif method is not None:
+        chosen = method
+        if chosen not in method_ids:
+            print(f"Method {chosen!r} not available for {provider}. "
+                  f"Try: {', '.join(sorted(method_ids))}", file=sys.stderr)
+            return 1
+    elif not sys.stdin.isatty():
+        # Non-interactive context, no explicit key/method given. If the
+        # provider takes an API key, read it from stdin so a bare
+        # `printf %s "$KEY" | openprogram providers login <prov>` works.
+        # Otherwise (OAuth-only, e.g. openai-codex) there's nothing we can
+        # do headlessly — say so instead of hanging on /dev/tty.
+        if "api_key" in method_ids:
+            supplied_key = sys.stdin.read().strip()
+            if not supplied_key:
+                print(f"{provider}: no terminal and no key supplied. Pass the "
+                      f"key with `--api-key <key>`, `--api-key-stdin`, or pipe "
+                      f"it on stdin.", file=sys.stderr)
+                return 1
+            chosen = "api_key"
+        else:
+            print(f"{provider}: login needs an interactive terminal "
+                  f"(methods: {', '.join(sorted(method_ids))}).", file=sys.stderr)
+            return 1
+    else:
         # Prefer the arrow-key picker; if questionary isn't installed
         # it returns None and we fall through to the numeric prompt.
         from .interactive import pick_login_method_interactive
@@ -329,15 +399,9 @@ def _cmd_login(provider: str, profile: str, method: Optional[str]) -> int:
             except (EOFError, ValueError, IndexError):
                 print("Aborted.", file=sys.stderr)
                 return 1
-    else:
-        chosen = method
-        if chosen not in {m for m, _ in choices}:
-            print(f"Method {chosen!r} not available for {provider}. "
-                  f"Try: {', '.join(m for m, _ in choices)}", file=sys.stderr)
-            return 1
 
     try:
-        cred = _run_login_method(provider, profile, chosen)
+        cred = _run_login_method(provider, profile, chosen, api_key=supplied_key)
     except KeyboardInterrupt:
         print("\nAborted.", file=sys.stderr)
         return 130
@@ -448,9 +512,10 @@ def _prune_superseded_oauth(store: AuthStore, new_cred: Credential) -> list[str]
     return removed
 
 
-def _run_login_method(provider: str, profile: str, method: str) -> Credential:
+def _run_login_method(provider: str, profile: str, method: str, *,
+                      api_key: Optional[str] = None) -> Credential:
     if method == "api_key":
-        return _login_paste_api_key(provider, profile)
+        return _login_paste_api_key(provider, profile, api_key=api_key)
     if method == "import_from_cli":
         return _login_import_from_cli(provider, profile)
     if method == "pkce_oauth":
@@ -527,8 +592,13 @@ def _login_pkce_oauth(provider: str, profile: str) -> Credential:
     return asyncio.run(method.run(ui))
 
 
-def _login_paste_api_key(provider: str, profile: str) -> Credential:
-    key = getpass.getpass(f"Paste API key for {provider} (hidden): ").strip()
+def _login_paste_api_key(provider: str, profile: str, *,
+                         api_key: Optional[str] = None) -> Credential:
+    # ``api_key`` is the non-interactive path (--api-key / --api-key-stdin /
+    # piped stdin); when it's None we fall back to the hidden terminal
+    # prompt. Either way the key is mirrored into config.json below.
+    key = api_key if api_key is not None else getpass.getpass(
+        f"Paste API key for {provider} (hidden): ").strip()
     if not key:
         raise AuthConfigError("empty API key — nothing to save")
     # Mirror the pasted key into config.json ``api_keys`` (keyed by the
