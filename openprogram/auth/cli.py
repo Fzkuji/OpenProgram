@@ -99,8 +99,9 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     p_login.add_argument("--profile", default=DEFAULT_PROFILE_NAME,
                          help=f"Profile (default: {DEFAULT_PROFILE_NAME})")
     p_login.add_argument("--method", default=None,
-                         help="Force a login method (api_key / import_from_cli / device_code). "
-                              "If omitted, the wizard auto-selects the best available.")
+                         help="Advanced: force a specific login method. Omit it "
+                              "and the right one for the provider is picked "
+                              "automatically.")
     p_login.add_argument("--api-key", default=None, dest="api_key",
                          help="Supply the API key non-interactively (scripts / "
                               "agents). Implies --method api_key; skips the "
@@ -427,7 +428,7 @@ def _cmd_login(provider: str, profile: str, method: Optional[str], *,
             print(f"Login to {provider} (profile: {profile})")
             print("Available methods:")
             for i, (mid, label) in enumerate(choices, 1):
-                print(f"  {i}. {mid:24s} — {label}")
+                print(f"  {i}. {label}")
             try:
                 pick = input(f"Pick a method [1-{len(choices)}] (default 1): ").strip() or "1"
                 chosen = choices[int(pick) - 1][0]
@@ -497,6 +498,9 @@ def _available_login_methods(provider: str) -> list[tuple[str, str]]:
         # clunky "paste your CLI's auth.json" or "paste an api_key"
         # options. The Codex runtime can't even use an api_key.
         return [("pkce_oauth", "Sign in with ChatGPT (opens browser)")]
+    if provider == "github-copilot":
+        # Device-code OAuth — sign in via the browser, no API key to paste.
+        return [("device_code", "Sign in with GitHub (opens browser)")]
 
     choices: list[tuple[str, str]] = []
     if provider == "anthropic":
@@ -555,7 +559,40 @@ def _run_login_method(provider: str, profile: str, method: str, *,
         return _login_import_from_cli(provider, profile)
     if method == "pkce_oauth":
         return _login_pkce_oauth(provider, profile)
+    if method == "device_code":
+        return _login_device_code(provider, profile)
     raise AuthConfigError(f"unsupported method: {method!r}")
+
+
+def _login_device_code(provider: str, profile: str) -> Credential:
+    """Device-code OAuth (currently GitHub Copilot): open the verification
+    URL, the user enters the shown code, then we poll for the token."""
+    if provider != "github-copilot":
+        raise AuthConfigError(f"no device-code login for {provider!r}")
+    from openprogram.providers.utils.oauth.github_copilot import login_github_copilot
+    from openprogram.providers.utils.oauth.types import (
+        OAuthAuthInfo, OAuthLoginCallbacks,
+    )
+    from openprogram.providers.github_copilot.auth_adapter import (
+        import_oauth_credential,
+    )
+
+    def _on_auth(info: OAuthAuthInfo) -> None:
+        instr = getattr(info, "instructions", "") or ""
+        print(f"\nOpen {info.url} in your browser. {instr}\n", flush=True)
+        try:
+            import webbrowser
+            webbrowser.open(info.url)
+        except Exception:
+            pass
+
+    cb = OAuthLoginCallbacks(on_auth=_on_auth,
+                             on_progress=lambda m: print(m, flush=True))
+    creds = asyncio.run(login_github_copilot(cb))
+    return import_oauth_credential(
+        creds.access, getattr(creds, "refresh", "") or "",
+        profile_id=profile, expires_at_ms=getattr(creds, "expires", 0) or 0,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1514,6 +1551,7 @@ def _run_setup() -> int:
         ("anthropic",    "Anthropic (Claude)"),
         ("gemini-subscription", "Google Gemini via CLI"),
         ("github-copilot", "GitHub Copilot"),
+        ("qwen",         "Qwen Code (Alibaba)"),
         ("openai",       "OpenAI (raw API key)"),
     ]
     for prov_id, label in popular:

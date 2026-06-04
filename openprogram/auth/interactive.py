@@ -218,7 +218,7 @@ def pick_login_method_interactive(
 
     return questionary.select(
         f"How do you want to log into {provider}?",
-        choices=[Choice(f"{mid:24s} — {label}", value=mid) for mid, label in choices],
+        choices=[Choice(label, value=mid) for mid, label in choices],
         qmark="›",
     ).unsafe_ask()
 
@@ -319,6 +319,7 @@ def _action_pick_provider_and_login() -> None:
         ("anthropic",         "Anthropic (Claude)"),
         ("gemini-subscription", "Google Gemini via CLI"),
         ("github-copilot",    "GitHub Copilot"),
+        ("qwen",              "Qwen Code (Alibaba)"),
         ("openai",            "OpenAI (raw API key)"),
         ("openrouter",        "OpenRouter"),
         ("google",            "Google Gemini (direct)"),
