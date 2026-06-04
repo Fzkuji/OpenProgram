@@ -148,14 +148,14 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
 
     # logout
     p_logout = auth_sub.add_parser("logout", help="Remove credentials for a provider")
-    p_logout.add_argument("provider")
-    p_logout.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
+    p_logout.add_argument("provider", help="Provider id to log out of")
+    p_logout.add_argument("--profile", default=DEFAULT_PROFILE_NAME, help="Profile to remove credentials from")
     p_logout.add_argument("--yes", action="store_true", help="Skip confirmation")
 
     # status
     p_status = auth_sub.add_parser("status", help="Check a provider's current credential")
-    p_status.add_argument("provider")
-    p_status.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
+    p_status.add_argument("provider", help="Provider id to check")
+    p_status.add_argument("--profile", default=DEFAULT_PROFILE_NAME, help="Profile to check")
 
     # doctor — diagnostic report over every pool
     p_doctor = auth_sub.add_parser(
@@ -180,11 +180,11 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     prof_sub = p_profiles.add_subparsers(dest="profiles_cmd", metavar="verb")
     prof_sub.add_parser("list", help="List profiles")
     pc = prof_sub.add_parser("create", help="Create a profile")
-    pc.add_argument("name")
-    pc.add_argument("--display-name", default="")
-    pc.add_argument("--description", default="")
+    pc.add_argument("name", help="New profile name")
+    pc.add_argument("--display-name", default="", help="Human-readable label for the profile")
+    pc.add_argument("--description", default="", help="Optional description for the profile")
     pd = prof_sub.add_parser("delete", help="Delete a profile")
-    pd.add_argument("name")
+    pd.add_argument("name", help="Profile name to delete")
     pd.add_argument("--yes", action="store_true", help="Skip confirmation")
 
 

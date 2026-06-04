@@ -295,7 +295,7 @@ def main():
         help="Override search dir (repeatable). Default: ~/.openprogram/skills + repo skills/")
     p_sk_list.add_argument("--json", action="store_true", help="Emit JSON")
     p_sk_doc = skills_sub.add_parser("doctor", help="Scan skill dirs for problems")
-    p_sk_doc.add_argument("--dir", "-d", action="append", default=None)
+    p_sk_doc.add_argument("--dir", "-d", action="append", default=None, help="Skill directory to scan (repeatable; default: standard dirs)")
     p_sk_inst = skills_sub.add_parser("install",
         help="Install a skill from ClawHub or a discovery source")
     p_sk_inst.add_argument("spec", nargs="?", default=None,
@@ -309,8 +309,8 @@ def main():
     p_sk_search = skills_sub.add_parser("search",
         help="Search for skills in a discovery source (default: ClawHub)")
     p_sk_search.add_argument("query", help="Query string")
-    p_sk_search.add_argument("--source", "-s", default=None)
-    p_sk_search.add_argument("--limit", "-n", type=int, default=20)
+    p_sk_search.add_argument("--source", "-s", default=None, help="Limit the search to one skill source/registry")
+    p_sk_search.add_argument("--limit", "-n", type=int, default=20, help="Maximum results to show (default: 20)")
 
     p_sk_update = skills_sub.add_parser("update",
         help="Re-pull outdated skills (compare local SKILL.md hash against upstream)")
@@ -330,22 +330,22 @@ def main():
     p_pl_list.add_argument("--json", action="store_true", help="Emit JSON")
     p_pl_srch = plugins_sub.add_parser("search",
         help="Search configured marketplaces for plugins matching <query>")
-    p_pl_srch.add_argument("query")
+    p_pl_srch.add_argument("query", help="Search text to match plugin names/descriptions")
     p_pl_inst = plugins_sub.add_parser("install",
         help="Install a plugin from pip / npm / git / path")
-    p_pl_inst.add_argument("source", choices=["pip", "npm", "git", "path"])
+    p_pl_inst.add_argument("source", choices=["pip", "npm", "git", "path"], help="Where to install the plugin from")
     p_pl_inst.add_argument("spec", help="Package name / URL / absolute path")
     p_pl_inst.add_argument("--ref", help="Git ref (branch/tag/sha) for source=git")
     p_pl_un = plugins_sub.add_parser("uninstall", help="Remove an installed plugin")
-    p_pl_un.add_argument("name")
+    p_pl_un.add_argument("name", help="Plugin name to uninstall")
     p_pl_up = plugins_sub.add_parser("update",
         help="Re-install (upgrade) plugins from pip/npm")
     p_pl_up.add_argument("name", nargs="?", help="Plugin name (omit when --all)")
-    p_pl_up.add_argument("--all", action="store_true")
+    p_pl_up.add_argument("--all", action="store_true", help="Update every installed plugin")
     p_pl_en = plugins_sub.add_parser("enable", help="Enable an installed plugin")
-    p_pl_en.add_argument("name")
+    p_pl_en.add_argument("name", help="Plugin name to enable")
     p_pl_dis = plugins_sub.add_parser("disable", help="Disable a loaded plugin")
-    p_pl_dis.add_argument("name")
+    p_pl_dis.add_argument("name", help="Plugin name to disable")
 
     # ---- doctor -----------------------------------------------------------
     p_doctor = sub.add_parser("doctor",
@@ -359,29 +359,29 @@ def main():
     sessions_sub = p_sessions.add_subparsers(dest="sessions_verb", metavar="verb")
     sessions_sub.add_parser("list", help="List every session across every agent")
     p_ss_res = sessions_sub.add_parser("resume", help="Answer a waiting session")
-    p_ss_res.add_argument("session_id")
-    p_ss_res.add_argument("answer")
+    p_ss_res.add_argument("session_id", help="Session id of the waiting session to answer")
+    p_ss_res.add_argument("answer", help="Text to send back as the user's reply")
     p_ss_att = sessions_sub.add_parser("attach",
         help="Route a channel user's messages into this session.")
     p_ss_att.add_argument("session_id",
         help="Existing session id (e.g. local_abc123def0)")
-    p_ss_att.add_argument("--channel", required=True,
+    p_ss_att.add_argument("--channel", required=True, help="Channel id (e.g. discord, slack, wechat)",
         choices=["wechat", "telegram", "discord", "slack"])
     p_ss_att.add_argument("--account", default="default",
         help="Account id (default: 'default')")
     p_ss_att.add_argument("--peer", required=True,
         help="External peer id — WeChat openid / Telegram chat_id / "
              "<channel_id>_<user_id> for Discord/Slack")
-    p_ss_att.add_argument("--peer-kind", default="direct",
+    p_ss_att.add_argument("--peer-kind", default="direct", help="Peer kind: direct | group (default: direct)",
         choices=["direct", "group", "channel"])
     p_ss_det = sessions_sub.add_parser("detach",
         help="Remove the alias for a channel peer (peer returns to "
              "default scope-based routing)")
-    p_ss_det.add_argument("--channel", required=True,
+    p_ss_det.add_argument("--channel", required=True, help="Channel id the binding is on",
         choices=["wechat", "telegram", "discord", "slack"])
-    p_ss_det.add_argument("--account", default="default")
-    p_ss_det.add_argument("--peer", required=True)
-    p_ss_det.add_argument("--peer-kind", default="direct",
+    p_ss_det.add_argument("--account", default="default", help="Channel account id (default: default)")
+    p_ss_det.add_argument("--peer", required=True, help="Peer id (user/chat) to detach")
+    p_ss_det.add_argument("--peer-kind", default="direct", help="Peer kind: direct | group (default: direct)",
         choices=["direct", "group", "channel"])
     sessions_sub.add_parser("aliases",
         help="List every session↔channel-peer alias")
@@ -474,15 +474,15 @@ def main():
         help="Show paths, counts, last sleep timestamp.")
     p_mr = memory_sub.add_parser("recall",
         help="Search wiki + recent journal and print raw snippets.")
-    p_mr.add_argument("query", nargs="+")
+    p_mr.add_argument("query", nargs="+", help="Words to recall memories for")
     p_mr.add_argument("--days", type=int, default=30,
         help="Limit journal search to last N days (default 30).")
     p_ms = memory_sub.add_parser("show",
         help="Print a wiki page (slug or 'kind/slug').")
-    p_ms.add_argument("path")
+    p_ms.add_argument("path", help="Wiki page path or name to print")
     p_med = memory_sub.add_parser("edit",
         help="Open a wiki page in $EDITOR.")
-    p_med.add_argument("path")
+    p_med.add_argument("path", help="Wiki page path or name to open in $EDITOR")
     p_msleep = memory_sub.add_parser("sleep",
         help="Run a sleep sweep now (light → deep → REM).")
     p_msleep.add_argument("--phase", choices=["light", "deep", "rem"],
@@ -546,18 +546,18 @@ def main():
     p_chacct_sub.add_parser("list", help="List every channel account")
     p_chacct_add = p_chacct_sub.add_parser("add",
         help="Create a new channel account and prompt for credentials")
-    p_chacct_add.add_argument("channel",
+    p_chacct_add.add_argument("channel", help="Channel id (telegram, discord, slack, wechat)",
         choices=["wechat", "telegram", "discord", "slack"])
     p_chacct_add.add_argument("--id", default="default",
         help="Account id (default: 'default')")
     p_chacct_rm = p_chacct_sub.add_parser("rm",
         help="Delete a channel account (also drops its bindings)")
-    p_chacct_rm.add_argument("channel",
+    p_chacct_rm.add_argument("channel", help="Channel id the account belongs to",
         choices=["wechat", "telegram", "discord", "slack"])
-    p_chacct_rm.add_argument("account_id")
+    p_chacct_rm.add_argument("account_id", help="Account id to remove")
     p_chacct_login = p_chacct_sub.add_parser("login",
         help="Re-run the login flow for an account (e.g. WeChat QR)")
-    p_chacct_login.add_argument("channel",
+    p_chacct_login.add_argument("channel", help="Channel id to log into",
         choices=["wechat", "telegram", "discord", "slack"])
     p_chacct_login.add_argument("--id", default="default",
         help="Account id (default: 'default')")
@@ -570,18 +570,18 @@ def main():
     p_chb_add = p_chb_sub.add_parser("add",
         help="Add a binding: inbound messages matching (channel, account, "
              "optional peer) go to the given agent")
-    p_chb_add.add_argument("agent_id")
-    p_chb_add.add_argument("--channel", required=True,
+    p_chb_add.add_argument("agent_id", help="Agent that matching inbound messages route to")
+    p_chb_add.add_argument("--channel", required=True, help="Channel id this binding matches",
         choices=["wechat", "telegram", "discord", "slack"])
     p_chb_add.add_argument("--account", default=None,
         help="Account id (omit for channel-wide)")
     p_chb_add.add_argument("--peer", default=None,
         help="Specific peer id (user_id / chat_id) — omit for broad rule")
-    p_chb_add.add_argument("--peer-kind", default="direct",
+    p_chb_add.add_argument("--peer-kind", default="direct", help="Peer kind: direct | group (default: direct)",
         choices=["direct", "group", "channel"])
     p_chb_rm = p_chb_sub.add_parser("rm",
         help="Remove a binding by its id (see `bindings list`)")
-    p_chb_rm.add_argument("binding_id")
+    p_chb_rm.add_argument("binding_id", help="Binding id to remove (see `channels bindings list`)")
 
     # ---- mcp -------------------------------------------------------------
     p_mcp = sub.add_parser("mcp",
@@ -592,7 +592,7 @@ def main():
     p_mcp_sub = p_mcp.add_subparsers(dest="mcp_verb", metavar="verb")
     p_mcp_sub.add_parser("list", help="List every configured MCP server with state")
     p_mcp_show = p_mcp_sub.add_parser("show", help="Show one server's tools + full schemas")
-    p_mcp_show.add_argument("name")
+    p_mcp_show.add_argument("name", help="MCP server name to show")
     p_mcp_add = p_mcp_sub.add_parser("add",
         help="Add a new MCP server (stdio command). Persists to "
              "mcp_servers.json and spawns immediately.")
@@ -607,23 +607,23 @@ def main():
     p_mcp_add.add_argument("--disabled", action="store_true",
         help="Create the entry but don't start it")
     p_mcp_rm = p_mcp_sub.add_parser("rm", help="Remove a server (stop + delete config)")
-    p_mcp_rm.add_argument("name")
+    p_mcp_rm.add_argument("name", help="MCP server name to remove")
     p_mcp_rs = p_mcp_sub.add_parser("restart", help="Stop + respawn one server")
-    p_mcp_rs.add_argument("name")
+    p_mcp_rs.add_argument("name", help="MCP server name to restart")
     p_mcp_en = p_mcp_sub.add_parser("enable", help="Enable + spawn")
-    p_mcp_en.add_argument("name")
+    p_mcp_en.add_argument("name", help="MCP server name to enable")
     p_mcp_dis = p_mcp_sub.add_parser("disable", help="Stop + mark disabled (config kept)")
-    p_mcp_dis.add_argument("name")
+    p_mcp_dis.add_argument("name", help="MCP server name to disable")
     p_mcp_sub.add_parser("edit",
         help="Open mcp_servers.json in $EDITOR for raw editing")
     p_mcp_test = p_mcp_sub.add_parser("test",
         help="Spawn an ad-hoc config and verify the server starts + "
              "returns a tool list. Doesn't write disk.")
-    p_mcp_test.add_argument("name")
-    p_mcp_test.add_argument("command", nargs="+")
-    p_mcp_test.add_argument("--env", action="append", default=None,
+    p_mcp_test.add_argument("name", help="Name to label this MCP server under")
+    p_mcp_test.add_argument("command", nargs="+", help="Command and args that launch the MCP server")
+    p_mcp_test.add_argument("--env", action="append", default=None, help="Extra env var as KEY=VALUE (repeatable)",
         metavar="KEY=VALUE")
-    p_mcp_test.add_argument("--timeout", type=float, default=30.0)
+    p_mcp_test.add_argument("--timeout", type=float, default=30.0, help="Startup timeout in seconds (default: 30)")
 
     # ---- browser ---------------------------------------------------------
     p_browser = sub.add_parser("browser",
@@ -674,13 +674,13 @@ def main():
         help="Mark this agent as the default")
     p_ag_rm = p_agents_sub.add_parser("rm",
         help="Delete an agent and all its sessions")
-    p_ag_rm.add_argument("id")
+    p_ag_rm.add_argument("id", help="Agent id to remove")
     p_ag_show = p_agents_sub.add_parser("show",
         help="Print one agent's full record")
-    p_ag_show.add_argument("id")
+    p_ag_show.add_argument("id", help="Agent id to show (config + channel bindings)")
     p_ag_def = p_agents_sub.add_parser("set-default",
         help="Mark an agent as the default")
-    p_ag_def.add_argument("id")
+    p_ag_def.add_argument("id", help="Agent id to make the default")
 
     # ---- cron-worker ------------------------------------------------------
     p_cron = sub.add_parser("cron-worker",
