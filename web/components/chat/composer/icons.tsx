@@ -96,14 +96,6 @@ export function StopIcon() {
   );
 }
 
-export function CheckIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-      <path d="M15.188 5.11a.5.5 0 0 1 .752.626l-.056.084-7.5 9a.5.5 0 0 1-.738.033l-3.5-3.5-.064-.078a.501.501 0 0 1 .693-.693l.078.064 3.113 3.113 7.15-8.58z" />
-    </svg>
-  );
-}
-
 export function ChipCloseIcon() {
   return (
     <svg

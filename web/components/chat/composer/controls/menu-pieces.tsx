@@ -16,8 +16,8 @@ import {
 } from "react";
 
 import styles from "../composer.module.css";
-import { CheckIcon, ChipCloseIcon } from "../icons";
-import type { AnimatedNavIconHandle } from "@/components/animated-icons";
+import { ChipCloseIcon } from "../icons";
+import { CheckIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
 
 /**
@@ -96,19 +96,33 @@ export function PlusMenuItem({
   title?: string;
 }) {
   const { node, onMouseEnter, onMouseLeave } = useHoverDrivenIcon(icon);
+  // Drive the ✓ draw-in animation from the row's hover too, so the check
+  // animates in lockstep with the left icon (claude.ai-style: the whole
+  // row is the hover target) instead of only self-animating when you
+  // hover the tiny glyph directly. The animated CheckIcon flips to
+  // "controlled" once a ref is attached, so the row is its single driver.
+  const checkRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
       className={`${styles.plusMenuItem} ${active ? styles.active : ""}`}
       onClick={onClick}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      onMouseEnter={() => {
+        onMouseEnter();
+        checkRef.current?.startAnimation?.();
+      }}
+      onMouseLeave={() => {
+        onMouseLeave();
+        checkRef.current?.stopAnimation?.();
+      }}
       title={title}
     >
       <div className={styles.plusMenuLeft}>
         <span className={styles.plusMenuIcon}>{node}</span>
         <span className={styles.plusMenuLabel}>{label}</span>
       </div>
-      <div className={styles.plusMenuRight}>{active && <CheckIcon />}</div>
+      <div className={styles.plusMenuRight}>
+        {active && <CheckIcon ref={checkRef} size={18} />}
+      </div>
     </div>
   );
 }
