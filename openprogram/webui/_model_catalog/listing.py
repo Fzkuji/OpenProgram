@@ -283,6 +283,7 @@ def list_enabled_models() -> list[dict[str, Any]]:
     # walking only get_providers() silently dropped their enabled models
     # from the chat picker — the second (custom_models) pass below emits
     # them once the pid is in the loop.
+    from openprogram.auth.aliases import resolve as _canonical_provider
     static_pids = list(get_providers())
     static_set = set(static_pids)
     community_pids = [
@@ -290,6 +291,13 @@ def list_enabled_models() -> list[dict[str, Any]]:
         if pid not in static_set
         and pc.get("enabled")
         and (pc.get("enabled_models"))
+        # Skip a legacy ALIAS of a real provider (e.g. a stale
+        # ``chatgpt-subscription`` config entry that resolves to
+        # ``openai-codex``). Its canonical id already represents it, and
+        # the settings provider list only shows the canonical one — so
+        # surfacing the alias here put a phantom duplicate in the chat
+        # picker that the user couldn't find or manage in settings.
+        and _canonical_provider(pid) == pid
     ]
     for pid in [*static_pids, *community_pids]:
         pcfg = cfg.get(pid, {})

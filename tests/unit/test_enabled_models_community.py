@@ -49,6 +49,22 @@ def test_community_only_enabled_model_is_surfaced(stub_catalog):
     assert row["context_window"] == 200000
 
 
+def test_legacy_alias_provider_not_surfaced(monkeypatch, stub_catalog):
+    # A stale config entry under a legacy alias id (chatgpt-subscription
+    # resolves to openai-codex) must NOT surface as its own provider — the
+    # canonical id already represents it, and the settings list only shows
+    # the canonical one. It was a phantom duplicate in the chat picker.
+    monkeypatch.setattr(st, "_read_providers_cfg", lambda: {
+        "chatgpt-subscription": {
+            "enabled": True,
+            "enabled_models": ["gpt-5.5"],
+            "custom_models": [{"id": "gpt-5.5"}],
+        },
+    })
+    out = listing.list_enabled_models()
+    assert all(m["provider"] != "chatgpt-subscription" for m in out)
+
+
 def test_disabled_community_provider_not_surfaced(monkeypatch, stub_catalog):
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {
         "foo-coding-plan": {
