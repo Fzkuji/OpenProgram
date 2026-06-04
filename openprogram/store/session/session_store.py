@@ -21,8 +21,10 @@ called_by routing, ...) stay identical to the SQLite era.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional
 
@@ -99,6 +101,30 @@ def _node_caller(payload_or_call) -> Optional[str]:
     return payload_or_call.get("called_by") or None
 
 
+# ── Cache bound ───────────────────────────────────────────────────
+# The in-memory ``SessionMemoryIndex`` cache is pure (rebuildable from
+# git), so it can be size-capped without losing data: an evicted session
+# is transparently rebuilt from disk on next access. Without a cap the
+# cache only grows — a single ``list_sessions`` (followed by per-session
+# stats like ``count_recent_nodes``) loads every session that ever
+# existed and pins them in RAM for the worker's lifetime. The cap is an
+# LRU bound: the most-recently-opened session is always at the MRU end,
+# so an in-flight turn (just touched) is never the one evicted, and idle
+# sessions fall off the LRU end. Generous by default — this is a memory-
+# leak backstop, not a hot-path constraint.
+_DEFAULT_CACHE_CAP = 256
+
+
+def _resolve_cache_cap() -> int:
+    raw = (os.environ.get("OPENPROGRAM_SESSION_CACHE_CAP") or "").strip()
+    if not raw:
+        return _DEFAULT_CACHE_CAP
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return _DEFAULT_CACHE_CAP
+
+
 # ── SessionStore ──────────────────────────────────────────────────
 
 
@@ -114,11 +140,19 @@ class SessionStore:
     SQLite file.
     """
 
-    def __init__(self, root_path: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        root_path: Optional[Path] = None,
+        *,
+        cache_cap: Optional[int] = None,
+    ) -> None:
         self.root_path = Path(root_path).expanduser() if root_path else _default_root()
         self.root_path.mkdir(parents=True, exist_ok=True)
-        # Cache: session_id → (GitSession, SessionMemoryIndex). Lazy.
-        self._sessions: dict[str, tuple[GitSession, SessionMemoryIndex]] = {}
+        # Cache: session_id → (GitSession, SessionMemoryIndex). Lazy,
+        # LRU-ordered (OrderedDict: insertion/access order = recency), and
+        # size-capped at ``_cache_cap`` — see the _DEFAULT_CACHE_CAP note.
+        self._sessions: "OrderedDict[str, tuple[GitSession, SessionMemoryIndex]]" = OrderedDict()
+        self._cache_cap = cache_cap if cache_cap is not None else _resolve_cache_cap()
         self._lock = threading.Lock()
         # Location index: session_id → absolute repo path, for sessions
         # that live OUTSIDE the home root (i.e. inside a bound project's
@@ -186,6 +220,9 @@ class SessionStore:
         with self._lock:
             cached = self._sessions.get(session_id)
             if cached:
+                # Mark as most-recently-used so the LRU eviction below
+                # never drops a session that's actively being read.
+                self._sessions.move_to_end(session_id)
                 return cached
             sdir = self._session_dir(session_id)
             if not sdir.exists() and not create_if_missing:
@@ -199,7 +236,16 @@ class SessionStore:
                     _node_conv_predecessor,
                     _node_caller,
                 )
+            # New key lands at the MRU (end) of the OrderedDict.
             self._sessions[session_id] = (git, idx)
+            # Evict least-recently-used entries beyond the cap. The
+            # just-inserted session is at the MRU end, so popitem(last=
+            # False) (oldest) never evicts it as long as cap >= 1. An
+            # evicted index rebuilds losslessly from git on next access;
+            # an in-flight turn keeps its own (git, idx) reference and is
+            # unaffected by being dropped from this dict.
+            while len(self._sessions) > self._cache_cap:
+                self._sessions.popitem(last=False)
             return git, idx
 
     def _persist_meta(self, git: GitSession, idx: SessionMemoryIndex) -> None:
