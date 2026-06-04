@@ -277,7 +277,21 @@ def list_enabled_models() -> list[dict[str, Any]]:
 
     cfg = _read_providers_cfg()
     out: list[dict[str, Any]] = []
-    for pid in get_providers():
+    # Iterate static-registry providers PLUS any community-only provider
+    # (no models_generated row, e.g. minimax-cn-coding-plan) the user has
+    # enabled with enabled_models. Those live entirely in custom_models;
+    # walking only get_providers() silently dropped their enabled models
+    # from the chat picker — the second (custom_models) pass below emits
+    # them once the pid is in the loop.
+    static_pids = list(get_providers())
+    static_set = set(static_pids)
+    community_pids = [
+        pid for pid, pc in cfg.items()
+        if pid not in static_set
+        and pc.get("enabled")
+        and (pc.get("enabled_models"))
+    ]
+    for pid in [*static_pids, *community_pids]:
         pcfg = cfg.get(pid, {})
         if not pcfg.get("enabled"):
             continue
