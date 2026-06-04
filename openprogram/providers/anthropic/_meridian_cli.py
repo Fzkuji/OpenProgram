@@ -148,6 +148,65 @@ def _parse_accounts() -> list[dict]:
     return accounts
 
 
+def accounts_summary() -> dict:
+    """Structured Claude-account state for the REST / UI layer.
+
+    CLI verbs and the web/TUI all read through this one shape. Never
+    includes raw backend text, so no proxy/tool name leaks to the UI.
+    """
+    ready, url = _backend_ready()
+    binp = _proxy_bin()
+    return {
+        "installed": bool(binp),
+        "ready": ready,
+        "backend_url": url,
+        "active": _active_account(),
+        "accounts": _parse_accounts() if binp else [],
+    }
+
+
+def add_account_async(name: str) -> dict:
+    """Kick off a browser login for ``name`` without blocking (for the web
+    button). Returns immediately; the UI polls :func:`accounts_summary`
+    until the account appears. CLI ``add`` uses the inherited-stdio path
+    instead so the terminal shows the prompts."""
+    name = (name or "").strip()
+    if not name:
+        return {"started": False, "error": "an account name is required"}
+    binp = _proxy_bin()
+    if not binp:
+        return {"started": False, "error": "backend not installed"}
+    subprocess.Popen(
+        [binp, "profile", "add", name],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return {"started": True, "name": name}
+
+
+def remove_account(name: str) -> dict:
+    """Remove an account; clear the active pin if it pointed there."""
+    name = (name or "").strip()
+    if not name:
+        return {"removed": False, "error": "an account name is required"}
+    if not _proxy_bin():
+        return {"removed": False, "error": "backend not installed"}
+    rc, _out = _run_proxy(["profile", "remove", name])
+    cleared = False
+    if rc == 0 and _active_account() == name:
+        from openprogram.webui._model_catalog.storage import set_provider_config
+        set_provider_config("claude-code", {"meridian_profile": ""})
+        cleared = True
+    return {"removed": rc == 0, "name": name, "cleared_active": cleared}
+
+
+def activate_account(name: str) -> dict:
+    """Set ``name`` as the account claude-code runs on (empty = unset)."""
+    from openprogram.webui._model_catalog.storage import set_provider_config
+    name = (name or "").strip()
+    set_provider_config("claude-code", {"meridian_profile": name})
+    return {"active": name}
+
+
 def _print_install_hint() -> None:
     binp = _proxy_bin()
     print("\n  Backend not ready. One-time setup of the local Claude proxy")
@@ -277,4 +336,7 @@ def _cmd_status() -> int:
     return 0
 
 
-__all__ = ["build_parser", "dispatch"]
+__all__ = [
+    "build_parser", "dispatch",
+    "accounts_summary", "add_account_async", "remove_account", "activate_account",
+]

@@ -205,6 +205,33 @@ def register(app):
         from openprogram.webui import _model_catalog as _mc
         return JSONResponse(content=_mc.fetch_models_remote(name))
 
+    # ---- claude-code Claude-account management ----------------------------
+    # Lets the web/TUI add / remove / list / activate the Claude accounts the
+    # claude-code provider can run on. The underlying proxy (Meridian) is an
+    # internal detail — these endpoints speak "Claude account" only. Sync
+    # `def` so the blocking subprocess calls run in FastAPI's threadpool.
+    @app.get("/api/providers/claude-code/accounts")
+    def api_cc_accounts():
+        from openprogram.providers.anthropic import _meridian_cli as _acc
+        return JSONResponse(content=_acc.accounts_summary())
+
+    @app.post("/api/providers/claude-code/accounts/add")
+    def api_cc_accounts_add(body: dict = None):
+        # Opens a browser login on the worker host and returns immediately;
+        # the UI polls GET .../accounts until the new account shows up.
+        from openprogram.providers.anthropic import _meridian_cli as _acc
+        return JSONResponse(content=_acc.add_account_async((body or {}).get("name", "")))
+
+    @app.post("/api/providers/claude-code/accounts/remove")
+    def api_cc_accounts_remove(body: dict = None):
+        from openprogram.providers.anthropic import _meridian_cli as _acc
+        return JSONResponse(content=_acc.remove_account((body or {}).get("name", "")))
+
+    @app.post("/api/providers/claude-code/accounts/use")
+    def api_cc_accounts_use(body: dict = None):
+        from openprogram.providers.anthropic import _meridian_cli as _acc
+        return JSONResponse(content=_acc.activate_account((body or {}).get("name", "")))
+
     # Single-provider probes are sync (one blocking network call). Declared
     # `def` (not `async def`) so FastAPI runs them in its threadpool instead of
     # blocking the event loop for the ~1s probe.

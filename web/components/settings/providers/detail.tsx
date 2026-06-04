@@ -9,7 +9,7 @@ import { ProviderIcon } from "../provider-icon";
 
 import { ApiKey } from "./api-key";
 import { BaseUrl } from "./base-url";
-import { MeridianProfile } from "./meridian-profile";
+import { ClaudeAccounts } from "./claude-accounts";
 import { Connectivity, type ConnectivityHandle } from "./connectivity";
 import { ModelList } from "./model-list";
 import { CliInfo, SetupHint } from "./setup-hint";
@@ -131,7 +131,12 @@ export function Detail({
         <SetupHint hint={provider.setup_hint} configured={!!provider.configured} />
       )}
 
-      {provider.api_key_env && (
+      {/* claude-code has no API key — it runs on a Claude subscription via
+          the local proxy (see Claude accounts below). Hide the key + base-url
+          inputs that would otherwise show because claude-code shares the
+          ANTHROPIC_API_KEY env name with the `anthropic` provider; pasting a
+          key here does nothing (its Setup says "no API key to paste here"). */}
+      {provider.api_key_env && provider.id !== "claude-code" && (
         <ApiKey
           envVar={provider.api_key_env}
           configured={!!provider.configured}
@@ -139,14 +144,12 @@ export function Detail({
           onSaved={autoCheckAndFetch}
         />
       )}
-      {provider.api_key_env && (
+      {provider.api_key_env && provider.id !== "claude-code" && (
         <BaseUrl provider={provider} onChanged={onChanged} />
       )}
-      {/* claude-code: pin which Meridian account (profile) this provider
-          uses, decoupled from the terminal `claude auth login`. */}
-      {provider.id === "claude-code" && (
-        <MeridianProfile provider={provider} onChanged={onChanged} />
-      )}
+      {/* claude-code: manage the Claude accounts this provider runs on
+          (add / activate / remove), decoupled from the terminal login. */}
+      {provider.id === "claude-code" && <ClaudeAccounts />}
       {/* Connectivity check applies to every HTTP provider, not just
           api-key ones. OAuth providers (openai-codex, gemini-subscription,
           github-copilot, …) need this control too — without it the
