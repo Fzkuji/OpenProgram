@@ -48,6 +48,21 @@ def build_parser(meridian_sub: "argparse._SubParsersAction") -> None:
     meridian_sub.add_parser(
         "list", help="List the Claude accounts (profiles) Meridian knows.",
     )
+    p_add = meridian_sub.add_parser(
+        "add",
+        help="Add a Claude account as a Meridian profile — opens a browser "
+             "login. Sign in with the account you want for this profile.",
+        description=(
+            "Wraps Meridian's account login so you never run `meridian` "
+            "directly. Opens a browser; sign in with whichever Claude "
+            "account this profile should use (switch accounts in the browser "
+            "first if a different one is signed in). The terminal "
+            "`claude auth login` / your chat account is not affected."
+        ),
+    )
+    p_add.add_argument(
+        "profile_name", help="Name for the new profile, e.g. experiment.",
+    )
     p_use = meridian_sub.add_parser(
         "use",
         help="Pin OpenProgram's claude-code traffic to a Meridian profile "
@@ -67,13 +82,15 @@ def dispatch(args: argparse.Namespace) -> int:
         return _cmd_status()
     if verb == "list":
         return _cmd_list()
+    if verb == "add":
+        return _cmd_add(args.profile_name)
     if verb == "use":
         return _cmd_use(args.profile_name)
     if verb == "clear":
         return _cmd_clear()
     print(
         "Usage: openprogram providers meridian <verb>\n"
-        "Verbs: status, list, use <name>, clear",
+        "Verbs: status, list, add <name>, use <name>, clear",
         file=sys.stderr,
     )
     return 2
@@ -118,6 +135,36 @@ def _proxy_alive() -> tuple[bool, str]:
 # verbs
 # ---------------------------------------------------------------------------
 
+def _cmd_add(name: str) -> int:
+    name = (name or "").strip()
+    if not name:
+        print("A profile name is required: openprogram providers meridian add "
+              "<name>", file=sys.stderr)
+        return 2
+    binp = _meridian_bin()
+    if not binp:
+        print("meridian is not installed (npm install -g @rynfar/meridian).",
+              file=sys.stderr)
+        return 1
+    print(f"Adding Meridian profile {name!r} — a browser window will open.")
+    print("Sign in with the Claude account you want THIS profile to use; if a "
+          "different\none is already signed in, switch it in the browser first "
+          "(claude.ai → sign\nout → sign in). Your terminal chat account is not "
+          "affected.\n")
+    # Inherit stdio so Meridian prints its prompts and opens the browser. The
+    # whole point of this wrapper is that login is driven through OpenProgram —
+    # the user never runs `meridian` directly.
+    try:
+        rc = subprocess.run([binp, "profile", "add", name]).returncode
+    except Exception as e:  # noqa: BLE001
+        print(f"meridian profile add failed: {e}", file=sys.stderr)
+        return 1
+    if rc == 0:
+        print(f"\n✓ Added profile {name!r}. Pin OpenProgram's claude-code to it:")
+        print(f"  openprogram providers meridian use {name}")
+    return rc
+
+
 def _cmd_use(name: str) -> int:
     name = (name or "").strip()
     if not name:
@@ -133,8 +180,8 @@ def _cmd_use(name: str) -> int:
     # Gentle nudge if the named profile isn't among Meridian's known ones.
     rc, out = _run_meridian(["profile", "list"])
     if rc == 0 and name not in out:
-        print(f"  Note: {name!r} isn't in `meridian profile list` yet — add it "
-              f"with `meridian profile add {name}` (browser login).")
+        print(f"  Note: {name!r} isn't a Meridian profile yet — add it with "
+              f"`openprogram providers meridian add {name}` (browser login).")
     return 0
 
 
@@ -175,9 +222,9 @@ def _cmd_status() -> int:
         for line in out.rstrip().splitlines():
             print(f"  {line}")
 
-    print("\nAdd an account (browser login, you do this):")
-    print("  meridian profile add <name>")
-    print("Pin OpenProgram to it (agent can run this):")
+    print("\nAdd an account (opens a browser login):")
+    print("  openprogram providers meridian add <name>")
+    print("Pin OpenProgram to it:")
     print("  openprogram providers meridian use <name>")
     return 0
 
