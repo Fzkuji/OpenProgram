@@ -71,10 +71,9 @@ dependencies = [
     # third-party anthropic-wire providers like minimax / kimi / vercel),
     # OpenAI (openai — used by openai AND every openai-compatible
     # provider), and Google. "Any LLM" is the product pitch, so these
-    # ship with the core package instead of being [anthropic]/[openai]/
-    # [gemini] extras — otherwise picking a provider in the UI works but
-    # the first turn raises ``No module named 'anthropic'``. The legacy
-    # extras stay as no-op markers below for back-compat.
+    # ship with the core package — installed by default, no separate
+    # extra. Otherwise picking a provider in the UI works but the first
+    # turn raises ``No module named 'anthropic'``.
     "anthropic>=0.30.0",
     "openai>=1.30.0",
     "google-genai>=1.0.0",
@@ -99,14 +98,11 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
 ]
-# Back-compat no-op markers. The LLM SDKs (anthropic / openai /
-# google-genai) and the web stack moved into the base `dependencies`
-# above, so these extras now install nothing extra — kept so existing
-# `pip install "openprogram[anthropic]"` / `[web]` / `[visualize]` lines
-# in the wild keep resolving instead of erroring on an unknown extra.
-anthropic = []
-openai = []
-gemini = []
+# The LLM SDKs (anthropic / openai / google-genai) and the web stack are
+# in the base `dependencies` above — installed by default, no separate
+# provider extra. ``web`` / ``visualize`` stay as no-op markers because
+# old install lines referenced them; there is intentionally no
+# ``[anthropic]`` / ``[openai]`` / ``[gemini]`` extra.
 web = []
 visualize = []
 # Runtime deps for the GUI program (gui_agent / gui_harness). The

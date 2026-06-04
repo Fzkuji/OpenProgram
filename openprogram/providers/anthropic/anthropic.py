@@ -17,14 +17,14 @@ import re
 import time
 from typing import Any, AsyncGenerator
 
-# The ``anthropic`` Python SDK is an optional extra (``openprogram[anthropic]``)
-# — importing this module must succeed without it so the provider
-# *catalog* (which side-effect-imports this package) stays usable in
-# environments that haven't installed the SDK yet. Any actual streaming
-# call below re-checks ``_anthropic`` and raises a clear error.
+# The ``anthropic`` SDK is a base dependency (installed by default). This
+# guarded import only stays defensive: importing this module must succeed
+# even in a stripped env so the provider *catalog* (which side-effect-
+# imports this package) stays usable. Any actual streaming call below
+# re-checks ``_anthropic`` and raises a clear error.
 try:
     import anthropic as _anthropic
-except ImportError:  # pragma: no cover — SDK is an optional extra
+except ImportError:  # pragma: no cover — base dep, normally present
     _anthropic = None  # type: ignore[assignment]
 
 from ..types import (
@@ -216,8 +216,9 @@ def _build_client(
     if _anthropic is None:
         raise ImportError(
             "The 'anthropic' Python SDK is required to use the Anthropic "
-            "provider. Install it with `pip install anthropic` (or, when "
-            "installing OpenProgram, `pip install 'openprogram[anthropic]'`)."
+            "provider. It ships as a base dependency, so this usually means "
+            "a broken env — reinstall with `pip install -U openprogram` "
+            "(or `pip install anthropic`)."
         )
     is_oauth = _is_oauth_token(api_key)
     base_url = getattr(model, "base_url", None) or getattr(model, "baseUrl", None)

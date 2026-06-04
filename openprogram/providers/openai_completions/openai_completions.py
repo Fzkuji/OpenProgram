@@ -7,13 +7,13 @@ import json
 import time
 from typing import Any, AsyncGenerator
 
-# The ``openai`` Python SDK is an optional extra (``openprogram[openai]``)
-# — importing this module must succeed without it so the provider
-# *catalog* stays usable in environments that haven't installed the SDK
-# yet. Functions below re-check ``_openai`` and raise a clear error.
+# The ``openai`` SDK is a base dependency (installed by default). This
+# guarded import only stays defensive so importing this module succeeds
+# even in a stripped env and the provider *catalog* stays usable.
+# Functions below re-check ``_openai`` and raise a clear error.
 try:
     import openai as _openai
-except ImportError:  # pragma: no cover — SDK is an optional extra
+except ImportError:  # pragma: no cover — base dep, normally present
     _openai = None  # type: ignore[assignment]
 
 from ..types import (
@@ -188,9 +188,9 @@ async def stream_simple(
     if _openai is None:
         raise ImportError(
             "The 'openai' Python SDK is required to use the OpenAI "
-            "(Chat Completions) provider. Install it with `pip install "
-            "openai` (or, when installing OpenProgram, "
-            "`pip install 'openprogram[openai]'`)."
+            "(Chat Completions) provider. It ships as a base dependency, so "
+            "this usually means a broken env — reinstall with "
+            "`pip install -U openprogram` (or `pip install openai`)."
         )
     opts = options or SimpleStreamOptions()
 

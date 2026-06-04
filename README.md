@@ -100,9 +100,11 @@ It clones into `functions/agentics/`, pip-installs that harness's own deps, and 
 
 ## Optional extras
 
+The provider SDKs (`anthropic`, `openai`, `google-genai`) are installed
+by default — no extra needed. The extras below are opt-in tools.
+
 | Extra | Adds |
 |---|---|
-| `[anthropic]` / `[openai]` / `[gemini]` | Provider SDKs |
 | `[browser]` | Playwright (~150 MB) |
 | `[browser-stealth]` | Cloudflare-bypassing browsers |
 | `[channels]` | Discord / Slack / WeChat bots |

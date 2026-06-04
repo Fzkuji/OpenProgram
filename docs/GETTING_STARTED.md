@@ -98,7 +98,7 @@ runtime = ClaudeCodeRuntime(model="haiku")
 
 **Setup:**
 ```bash
-pip install -e ".[anthropic]"
+pip install -e .          # anthropic SDK is included by default
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
@@ -120,7 +120,7 @@ runtime = AnthropicRuntime(
 
 **Setup:**
 ```bash
-pip install -e ".[openai]"
+pip install -e .          # openai SDK is included by default
 export OPENAI_API_KEY="sk-..."
 ```
 
@@ -142,7 +142,7 @@ runtime = OpenAIRuntime(
 
 **Setup:**
 ```bash
-pip install -e ".[gemini]"
+pip install -e .          # google-genai SDK is included by default
 export GOOGLE_API_KEY="..."
 ```
 
@@ -377,7 +377,7 @@ runtime = ClaudeCodeRuntime(model="haiku")
 
 **配置：**
 ```bash
-pip install -e ".[anthropic]"
+pip install -e .          # anthropic SDK is included by default
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
@@ -399,7 +399,7 @@ runtime = AnthropicRuntime(
 
 **配置：**
 ```bash
-pip install -e ".[openai]"
+pip install -e .          # openai SDK is included by default
 export OPENAI_API_KEY="sk-..."
 ```
 
@@ -421,7 +421,7 @@ runtime = OpenAIRuntime(
 
 **配置：**
 ```bash
-pip install -e ".[gemini]"
+pip install -e .          # google-genai SDK is included by default
 export GOOGLE_API_KEY="..."
 ```
 

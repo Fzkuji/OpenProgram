@@ -49,12 +49,11 @@ OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：
 安装包后直接编码：
 
 ```bash
-pip install openprogram                   # 核心包
-pip install "openprogram[all]"            # 完整：providers + Web UI + 渠道/浏览器工具
-# 或按需安装：
-pip install "openprogram[openai]"         #   仅 OpenAI SDK（或 [anthropic]、[gemini]）
-pip install "openprogram[web]"            #   仅 Web UI
+pip install openprogram                   # 核心包：已含三个 provider SDK + Web UI
+pip install "openprogram[all]"            # 再加渠道（Discord/Slack/微信）+ 浏览器工具
 ```
+
+provider SDK（anthropic / openai / google-genai）默认就装好了，不用单独装。
 
 GUI / Research / Wiki 这几个 harness **不是** OpenProgram 的 extra——
 各自仓库声明自己的依赖。装好 OpenProgram 后用：

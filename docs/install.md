@@ -5,15 +5,10 @@ each one pulls in and any post-install command it needs.
 
 ## Provider SDKs
 
-```bash
-pip install "openprogram[anthropic]"    # Anthropic Claude SDK
-pip install "openprogram[openai]"       # OpenAI / Codex SDK
-pip install "openprogram[gemini]"       # Google GenAI SDK
-```
-
-No post-install. Required only if you call the API directly —
-the CLI-based providers (Claude Code / Codex / Gemini CLI) work
-without these.
+Installed by default — there is no separate provider extra. `pip install
+openprogram` already pulls the three wire SDKs (`anthropic`, `openai`,
+`google-genai`) that every provider routes through, so any provider you
+pick works out of the box. No post-install.
 
 ## `[browser]` — Playwright
 
