@@ -154,6 +154,10 @@ class TextContent(BaseModel):
     type: Literal["text"] = "text"
     text: str
     text_signature: str | None = None
+    # Optional caller-supplied prompt-cache breakpoint, passed through to
+    # providers that support explicit caching (Anthropic). ``None`` means the
+    # provider's default behaviour is unchanged.
+    cache_control: dict | None = None
 
 
 class TextSignatureV1(BaseModel):
@@ -174,6 +178,10 @@ class ImageContent(BaseModel):
     type: Literal["image"] = "image"
     data: str  # base64 encoded
     mime_type: str  # e.g. "image/jpeg"
+    # Optional caller-supplied prompt-cache breakpoint, passed through to
+    # providers that support explicit caching (Anthropic). ``None`` means the
+    # provider's default behaviour is unchanged.
+    cache_control: dict | None = None
 
 
 class VideoContent(BaseModel):

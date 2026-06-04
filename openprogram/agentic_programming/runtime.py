@@ -1386,10 +1386,12 @@ def _build_pi_context(content: list[dict]):
             continue
 
         if btype == "text":
-            parts.append(TextContent(type="text", text=block["text"]))
+            parts.append(TextContent(type="text", text=block["text"],
+                                     cache_control=block.get("cache_control")))
         elif btype == "image":
             data, mime = _load_media(block, _media_defaults["image"])
-            parts.append(ImageContent(type="image", data=data, mime_type=mime))
+            parts.append(ImageContent(type="image", data=data, mime_type=mime,
+                                       cache_control=block.get("cache_control")))
         elif btype == "video":
             data, mime = _load_media(block, _media_defaults["video"])
             parts.append(VideoContent(type="video", data=data, mime_type=mime))
