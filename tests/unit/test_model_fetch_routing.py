@@ -36,6 +36,22 @@ def test_default_api_matches_models_generated(pid):
     assert P._default_api_for(pid) == "anthropic-messages"
 
 
+@pytest.mark.parametrize("pid,host", [
+    ("minimax-coding-plan", "https://api.minimax.io/anthropic"),
+    ("minimax-cn-coding-plan", "https://api.minimaxi.com/anthropic"),
+])
+def test_coding_plan_wired_as_anthropic_with_canonical_base(pid, host):
+    # The community-only Token-Plan rows must be classified Anthropic-wire
+    # (so credential probe + fetch + chat all use /v1/models, /v1/messages)
+    # and pinned to a base WITHOUT the models.dev trailing /v1 that would
+    # otherwise double under our api layer.
+    from openprogram.webui._model_catalog.credentials import _kind_for
+    assert P._default_api_for(pid) == "anthropic-messages"
+    assert _kind_for(pid) == "anthropic_compat"
+    assert P._default_base_override(pid) == host
+    assert not host.endswith("/v1")
+
+
 # ── dispatcher routing ────────────────────────────────────────────────────────
 
 def test_fetch_dispatch_routes_anthropic_wire_to_anthropic_fetcher(monkeypatch):

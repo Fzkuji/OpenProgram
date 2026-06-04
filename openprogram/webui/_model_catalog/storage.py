@@ -205,13 +205,20 @@ def _resolve_base_url(provider_id: str) -> str | None:
     pcfg = cfg.get(provider_id, {})
     if pcfg.get("base_url"):
         return pcfg["base_url"].rstrip("/")
+    # Canonical override for providers whose community-catalogue base uses
+    # a convention our API layer doesn't expect (e.g. MiniMax Token Plan's
+    # trailing /v1). Beats the registry/community fallbacks but yields to
+    # an explicit user config above.
+    from .providers import _default_base_override, _default_base_url_for
+    override = _default_base_override(provider_id)
+    if override:
+        return override.rstrip("/")
     # Static registry baked-in base URL.
     from openprogram.providers import get_models
     ms = get_models(provider_id)
     if ms and ms[0].base_url:
         return ms[0].base_url.rstrip("/")
     # Community catalogue.
-    from .providers import _default_base_url_for
     md_base = _default_base_url_for(provider_id)
     if md_base:
         return md_base.rstrip("/")

@@ -158,6 +158,11 @@ _PROVIDER_DEFAULT_API: dict[str, str] = {
     # models_generated's api='anthropic-messages' so fetched rows run.
     "minimax": "anthropic-messages",
     "minimax-cn": "anthropic-messages",
+    # The "Token Plan" coding-plan variants are models.dev community
+    # entries (no static registry row), so without this they'd default to
+    # openai-completions — same Anthropic-wire mismatch as the base API.
+    "minimax-coding-plan": "anthropic-messages",
+    "minimax-cn-coding-plan": "anthropic-messages",
     "vercel-ai-gateway": "openai-completions",
     "opencode": "openai-completions",
     "github-copilot": "openai-completions",
@@ -165,6 +170,25 @@ _PROVIDER_DEFAULT_API: dict[str, str] = {
     "zai": "openai-completions",
     "deepseek": "openai-completions",
 }
+
+
+# Canonical base URL override, consulted by storage._resolve_base_url
+# AFTER a user's explicit config but BEFORE the static-registry /
+# models.dev fallbacks. Needed when the community catalogue ships a base
+# in a convention our API layer doesn't expect. MiniMax's "Token Plan"
+# rows arrive from models.dev as ``…/anthropic/v1``, but the
+# anthropic-messages layer treats the base as ``…/anthropic`` and appends
+# ``/v1/messages`` / ``/v1/models`` itself — left as-is they'd double the
+# ``/v1``. Pin them to the same base the static minimax/minimax-cn rows
+# use so credential, fetch, and chat all resolve one consistent host.
+_PROVIDER_DEFAULT_BASE: dict[str, str] = {
+    "minimax-coding-plan": "https://api.minimax.io/anthropic",
+    "minimax-cn-coding-plan": "https://api.minimaxi.com/anthropic",
+}
+
+
+def _default_base_override(provider_id: str) -> str | None:
+    return _PROVIDER_DEFAULT_BASE.get(provider_id)
 
 
 def _prettify(provider_id: str) -> str:
