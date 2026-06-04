@@ -221,6 +221,41 @@ def check_providers() -> dict:
     return results
 
 
+def _api_routed_runtime(provider: str, model: str = None, **kwargs):
+    """Build a Runtime for a provider that has no dedicated Runtime class
+    (i.e. not in ``PROVIDERS``) but IS supported via its model's ``api``
+    through the api_registry — every openai-/anthropic-compatible
+    provider. The base ``Runtime("<provider>:<model>")`` resolves the
+    model's wire api + base_url and streams via the registered api
+    provider, the same path the chat dispatcher uses."""
+    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.providers.models import get_model
+    from openprogram.providers.models_generated import MODELS
+
+    if not model:
+        cands = [m for m in MODELS.values() if m.provider == provider]
+        if cands:
+            model = cands[0].id
+    if not model:
+        raise ValueError(
+            f"Provider {provider!r} has no registered models — pass an "
+            f"explicit model, or run `openprogram providers available "
+            f"{provider}` / fetch its models first."
+        )
+    # Community / fetched models live in the user's config, not the static
+    # registry — register so the model's api + base_url resolve here too
+    # (mirrors the chat path's resolve_model).
+    if get_model(provider, model) is None:
+        try:
+            from openprogram.webui._runtime_management import (
+                _register_custom_model_in_registry,
+            )
+            _register_custom_model_in_registry(provider, model)
+        except Exception:
+            pass
+    return Runtime(model=f"{provider}:{model}", **kwargs)
+
+
 def create_runtime(provider: str = None, model: str = None, **kwargs):
     """Create a Runtime instance with auto-detection or explicit provider.
 
@@ -239,10 +274,16 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
 
     if provider and provider != "auto":
         if provider not in PROVIDERS:
-            available = ", ".join(sorted(PROVIDERS.keys()) + ["auto"])
-            raise ValueError(
-                f"Unknown provider: {provider!r}. Available: {available}"
-            )
+            # ``PROVIDERS`` is NOT the list of supported providers — it
+            # only holds the 6 backends that need a bespoke Runtime class
+            # (OAuth / CLI delegation: claude-code, openai-codex,
+            # gemini-cli, anthropic, openai, gemini). Every other provider
+            # — deepseek, groq, openrouter, minimax, kimi, the whole
+            # models.dev catalogue — is supported through its model's
+            # ``api`` + the api_registry, exactly how the chat dispatcher
+            # streams them. Route those through the base Runtime instead
+            # of failing, so create_runtime() matches chat coverage.
+            return _api_routed_runtime(provider, model, **kwargs)
         class_name, module_path, default_model = PROVIDERS[provider]
     else:
         detected, detected_model = detect_provider()
