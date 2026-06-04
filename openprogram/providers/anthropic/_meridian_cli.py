@@ -72,6 +72,17 @@ def build_parser(accounts_sub: "argparse._SubParsersAction") -> None:
     p_use.add_argument("name", help="Account label to activate.")
 
     accounts_sub.add_parser(
+        "deactivate",
+        help="Deactivate — leave no account active (claude-code has none to run on).",
+    )
+
+    p_rename = accounts_sub.add_parser(
+        "rename", help="Rename a saved Claude account.",
+    )
+    p_rename.add_argument("old", help="Current account label.")
+    p_rename.add_argument("new", help="New label.")
+
+    accounts_sub.add_parser(
         "status",
         help="Show backend readiness, the active account, and all accounts.",
     )
@@ -87,11 +98,16 @@ def dispatch(args: argparse.Namespace) -> int:
         return _cmd_list()
     if verb in ("use", "activate"):
         return _cmd_use(args.name)
+    if verb == "deactivate":
+        return _cmd_deactivate()
+    if verb == "rename":
+        return _cmd_rename(args.old, args.new)
     if verb == "status":
         return _cmd_status()
     print(
         "Usage: openprogram providers claude-code accounts <verb>\n"
-        "Verbs: add <name>, remove <name>, list, use <name>, status",
+        "Verbs: add <name>, remove <name>, list, use <name>, deactivate, "
+        "rename <old> <new>, status",
         file=sys.stderr,
     )
     return 2
@@ -157,6 +173,51 @@ def _parse_accounts() -> list[dict]:
     return accounts
 
 
+def _email_for(name: str) -> str:
+    for a in _parse_accounts():
+        if a["name"] == name:
+            return a.get("email", "")
+    return ""
+
+
+def _rename_profile(old: str, new: str) -> bool:
+    """Rename a profile (its id + on-disk config dir). The proxy picks up
+    profiles.json automatically, so no restart. Returns success; refuses to
+    clobber an existing name."""
+    import json
+
+    old, new = (old or "").strip(), (new or "").strip()
+    if not old or not new or old == new:
+        return False
+    pj = os.path.expanduser("~/.config/meridian/profiles.json")
+    pdir = os.path.expanduser("~/.config/meridian/profiles")
+    try:
+        with open(pj) as f:
+            data = json.load(f)
+    except Exception:
+        return False
+    if any(p.get("id") == new for p in data):
+        return False
+    for p in data:
+        if p.get("id") == old:
+            old_dir = os.path.join(pdir, old)
+            new_dir = os.path.join(pdir, new)
+            try:
+                if os.path.isdir(old_dir):
+                    os.rename(old_dir, new_dir)
+            except OSError:
+                return False
+            p["id"] = new
+            p["claudeConfigDir"] = new_dir
+            try:
+                with open(pj, "w") as f:
+                    json.dump(data, f, indent=2)
+            except Exception:
+                return False
+            return True
+    return False
+
+
 def accounts_summary() -> dict:
     """Structured Claude-account state for the REST / UI layer.
 
@@ -187,9 +248,10 @@ def start_add(name: str) -> dict:
     if not binp:
         return {"error": "backend not installed"}
     name = (name or "").strip()
+    auto_named = not name
     if not name:
         # Don't force the user to invent a name up front — auto-name to the
-        # next free account-N. The email shows in the list to tell them apart.
+        # next free account-N; we rename it to the account's email after login.
         existing = {a["name"] for a in _parse_accounts()}
         i = 1
         while f"account-{i}" in existing:
@@ -264,7 +326,9 @@ def start_add(name: str) -> dict:
             pass
         return {"error": "could not start the login (no URL from backend)"}
     session = secrets.token_hex(8)
-    _PENDING_LOGINS[session] = {"proc": proc, "master": master, "name": name}
+    _PENDING_LOGINS[session] = {
+        "proc": proc, "master": master, "name": name, "auto": auto_named,
+    }
     return {"session": session, "url": url, "name": name}
 
 
@@ -289,7 +353,16 @@ def submit_login_code(session: str, code: str) -> dict:
             os.close(master)
         except Exception:
             pass
-    return {"ok": rc == 0, "name": entry["name"]}
+    if rc != 0:
+        return {"ok": False, "error": "login did not complete"}
+    name = entry["name"]
+    # An auto-named account (account-N) is renamed to the account's email so
+    # the list is readable. User-chosen labels are left as they are.
+    if entry.get("auto"):
+        email = _email_for(name)
+        if email and _rename_profile(name, email):
+            name = email
+    return {"ok": True, "name": name}
 
 
 def remove_account(name: str) -> dict:
@@ -309,11 +382,28 @@ def remove_account(name: str) -> dict:
 
 
 def activate_account(name: str) -> dict:
-    """Set ``name`` as the account claude-code runs on (empty = unset)."""
+    """Set ``name`` as the account claude-code runs on. Empty deactivates —
+    no account is active, so claude-code has nothing to run on until one is
+    activated again."""
     from openprogram.webui._model_catalog.storage import set_provider_config
     name = (name or "").strip()
     set_provider_config("claude-code", {"meridian_profile": name})
     return {"active": name}
+
+
+def rename_account(old: str, new: str) -> dict:
+    """Rename a saved account; if it was the active one, keep it active under
+    the new name."""
+    old, new = (old or "").strip(), (new or "").strip()
+    if not new:
+        return {"ok": False, "error": "a new name is required"}
+    was_active = _active_account() == old
+    if not _rename_profile(old, new):
+        return {"ok": False, "error": "couldn't rename — name already taken or not found"}
+    if was_active:
+        from openprogram.webui._model_catalog.storage import set_provider_config
+        set_provider_config("claude-code", {"meridian_profile": new})
+    return {"ok": True, "name": new}
 
 
 def _print_install_hint() -> None:
@@ -418,6 +508,22 @@ def _cmd_use(name: str) -> int:
     return 0
 
 
+def _cmd_deactivate() -> int:
+    activate_account("")
+    print("✓ Deactivated. No Claude account is active — claude-code has none "
+          "to run on until you activate one.")
+    return 0
+
+
+def _cmd_rename(old: str, new: str) -> int:
+    r = rename_account(old, new)
+    if r.get("ok"):
+        print(f"✓ Renamed {old!r} → {r['name']!r}.")
+        return 0
+    print(r.get("error", "rename failed"), file=sys.stderr)
+    return 1
+
+
 def _cmd_status() -> int:
     binp = _proxy_bin()
     ready, url = _backend_ready()
@@ -448,5 +554,5 @@ def _cmd_status() -> int:
 __all__ = [
     "build_parser", "dispatch",
     "accounts_summary", "start_add", "submit_login_code",
-    "remove_account", "activate_account",
+    "remove_account", "activate_account", "rename_account",
 ]

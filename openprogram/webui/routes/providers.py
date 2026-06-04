@@ -238,8 +238,15 @@ def register(app):
 
     @app.post("/api/providers/claude-code/accounts/use")
     def api_cc_accounts_use(body: dict = None):
+        # Empty name deactivates (no active account).
         from openprogram.providers.anthropic import _meridian_cli as _acc
         return JSONResponse(content=_acc.activate_account((body or {}).get("name", "")))
+
+    @app.post("/api/providers/claude-code/accounts/rename")
+    def api_cc_accounts_rename(body: dict = None):
+        from openprogram.providers.anthropic import _meridian_cli as _acc
+        b = body or {}
+        return JSONResponse(content=_acc.rename_account(b.get("old", ""), b.get("new", "")))
 
     # Single-provider probes are sync (one blocking network call). Declared
     # `def` (not `async def`) so FastAPI runs them in its threadpool instead of

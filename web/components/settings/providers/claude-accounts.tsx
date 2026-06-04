@@ -9,13 +9,12 @@ import { useTranslation } from "@/lib/i18n";
 import styles from "../settings-page.module.css";
 
 /** claude-code only: manage the Claude accounts the provider can run on.
- *  Add (browser login), activate (which one OpenProgram uses), and remove
- *  accounts — all independent of the terminal `claude auth login` you chat
+ *  Add (browser login, name optional → auto-named to the account email),
+ *  activate / deactivate (which one OpenProgram uses — or none), rename,
+ *  and remove. All independent of the terminal `claude auth login` you chat
  *  on. The underlying proxy is never named here; users see "Claude account".
- *
  *  Add is a two-step OAuth: POST .../add returns a login URL (we open it);
- *  the page hands back a code the user pastes, which we POST to .../add/code.
- *  Backed by /api/providers/claude-code/accounts{,/add,/add/code,/remove,/use}. */
+ *  the user signs in and pastes the code, which goes to .../add/code. */
 
 interface Account {
   name: string;
@@ -33,6 +32,8 @@ interface Pending {
   url: string;
 }
 
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
 export function ClaudeAccounts() {
   const { text } = useTranslation();
   const [state, setState] = useState<AccountsState | null>(null);
@@ -41,6 +42,8 @@ export function ClaudeAccounts() {
   const [msg, setMsg] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [code, setCode] = useState("");
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -55,10 +58,10 @@ export function ClaudeAccounts() {
     load();
   }, [load]);
 
-  async function activate(name: string) {
+  async function setActive(name: string) {
     await fetch("/api/providers/claude-code/accounts/use", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: JSON_HEADERS,
       body: JSON.stringify({ name }),
     });
     load();
@@ -67,22 +70,43 @@ export function ClaudeAccounts() {
   async function remove(name: string) {
     await fetch("/api/providers/claude-code/accounts/remove", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: JSON_HEADERS,
       body: JSON.stringify({ name }),
     });
     load();
   }
 
+  async function doRename(old: string) {
+    const nv = renameValue.trim();
+    if (!nv || nv === old) {
+      setRenaming(null);
+      return;
+    }
+    const r = await fetch("/api/providers/claude-code/accounts/rename", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ old, new: nv }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      setRenaming(null);
+      setRenameValue("");
+      load();
+    } else {
+      setMsg(d.error || text("Rename failed.", "改名失败。"));
+    }
+  }
+
   async function startAdd() {
-    // Name is optional — blank lets the backend auto-name (account-N); the
-    // email shows in the list to tell accounts apart.
+    // Name is optional — blank lets the backend auto-name (account-N), then
+    // rename it to the account's email after login.
     const name = newName.trim();
     setBusy(true);
     setMsg("");
     try {
       const r = await fetch("/api/providers/claude-code/accounts/add", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: JSON_HEADERS,
         body: JSON.stringify({ name }),
       });
       const d = await r.json();
@@ -108,7 +132,7 @@ export function ClaudeAccounts() {
     try {
       const r = await fetch("/api/providers/claude-code/accounts/add/code", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: JSON_HEADERS,
         body: JSON.stringify({ session: pending.session, code }),
       });
       const d = await r.json();
@@ -120,8 +144,6 @@ export function ClaudeAccounts() {
         load();
       } else {
         setMsg(d.error || text("That code didn't work — try again.", "code 无效，请重试。"));
-        // Session gone (e.g. backend restarted) — reset to the start so the
-        // user can re-add instead of being stuck on a dead paste-code step.
         if (typeof d.error === "string" && d.error.includes("no pending")) {
           setPending(null);
           setCode("");
@@ -164,20 +186,53 @@ export function ClaudeAccounts() {
       )}
 
       {accounts.map((a) => (
-        <div key={a.name} className={styles.detailRow} style={{ alignItems: "center" }}>
-          <span style={{ flex: 1, fontFamily: "monospace" }}>
-            {a.name === state.active ? "→ " : "  "}
-            {a.name}
-            {a.email ? <span style={{ opacity: 0.55 }}>{"  " + a.email}</span> : null}
-          </span>
-          {a.name !== state.active && (
-            <Button size="sm" onClick={() => activate(a.name)}>
-              {text("Activate", "激活")}
-            </Button>
+        <div
+          key={a.name}
+          className={styles.detailRow}
+          style={{ alignItems: "center", flexWrap: "wrap", gap: "0.4rem" }}
+        >
+          {renaming === a.name ? (
+            <>
+              <Input
+                className="flex-1 font-mono"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+              />
+              <Button size="sm" onClick={() => doRename(a.name)}>{text("Save", "保存")}</Button>
+              <Button size="sm" onClick={() => setRenaming(null)}>{text("Cancel", "取消")}</Button>
+            </>
+          ) : (
+            <>
+              <span style={{ flex: 1, fontFamily: "monospace", minWidth: "8rem" }}>
+                {a.name === state.active ? "→ " : "  "}
+                {a.name}
+                {a.email && a.email !== a.name ? (
+                  <span style={{ opacity: 0.55 }}>{"  " + a.email}</span>
+                ) : null}
+              </span>
+              {a.name === state.active ? (
+                <Button size="sm" onClick={() => setActive("")}>
+                  {text("Deactivate", "取消激活")}
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => setActive(a.name)}>
+                  {text("Activate", "激活")}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={() => {
+                  setRenaming(a.name);
+                  setRenameValue(a.name);
+                }}
+              >
+                {text("Rename", "改名")}
+              </Button>
+              <Button size="sm" onClick={() => remove(a.name)}>
+                {text("Remove", "删除")}
+              </Button>
+            </>
           )}
-          <Button size="sm" onClick={() => remove(a.name)}>
-            {text("Remove", "删除")}
-          </Button>
         </div>
       ))}
 
@@ -187,7 +242,7 @@ export function ClaudeAccounts() {
         </div>
       )}
 
-      {/* Step 1: name + start. Step 2 (pending): paste the code. */}
+      {/* Step 1: optional name + start. Step 2 (pending): paste the code. */}
       {!pending ? (
         <div className={styles.detailRow}>
           <Input
@@ -234,8 +289,8 @@ export function ClaudeAccounts() {
       )}
       <div style={{ fontSize: "0.72rem", opacity: 0.55, marginTop: "0.4rem", lineHeight: 1.5 }}>
         {text(
-          "Add a Claude account (a browser login — sign in, paste the code it gives you), activate the one OpenProgram should run on, or remove one. Independent of the terminal Claude Code login you chat on.",
-          "添加 Claude 账号（浏览器登录 — 登录后把页面给的 code 粘回来）、激活 OpenProgram 要用的那个、或删除。与你聊天用的终端 Claude Code 登录无关。",
+          "Add an account (browser login; the name is optional, it's auto-set to the account email). Activate the one OpenProgram runs on — or deactivate to leave none active. Rename or remove any. Independent of the terminal Claude Code login you chat on.",
+          "添加账号（浏览器登录；名字可选，默认用账号 email）。激活 OpenProgram 要用的那个 —— 或取消激活让它没有激活账号。可改名、删除任意账号。与你聊天用的终端 Claude Code 登录无关。",
         )}
       </div>
     </div>
