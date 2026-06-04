@@ -31,6 +31,9 @@ from openprogram.webui._model_catalog import storage as st
     ("deepseek", "openai_bearer"),
     ("openai", "openai_bearer"),
     ("groq", "openai_bearer"),
+    # Third-party Anthropic-wire provider: probed Anthropic-style against
+    # its own base_url, not as openai_bearer (which 404s on its host).
+    ("minimax-cn", "anthropic_compat"),
 ])
 def test_kind_for(pid, kind):
     assert cr._kind_for(pid) == kind
@@ -125,6 +128,42 @@ def test_validate_layer1_openai_bearer(monkeypatch, stub_base, result, expected_
     assert r.kind == "openai_bearer"
     if expected_status == cr.VALID:
         assert r.ok and r.via == "GET /models"
+
+
+def test_validate_anthropic_compat_probes_own_host_v1_models(monkeypatch):
+    # minimax-cn (api='anthropic-messages') must probe its OWN base_url with
+    # the Anthropic GET /v1/models + x-api-key, NOT the openai_bearer
+    # GET /models (which 404s on api.minimaxi.com/anthropic and would brand
+    # a valid key invalid_credential).
+    monkeypatch.setattr(
+        st, "_resolve_base_url", lambda pid: "https://api.minimaxi.com/anthropic",
+    )
+    seen = {}
+
+    def fake(url, *, headers=None, params=None, timeout=15.0):
+        seen["url"] = url
+        seen["headers"] = headers or {}
+        return (200, '{"data":[{"id":"MiniMax-M2.5"}]}', 11)
+
+    monkeypatch.setattr(cr, "_http_get", fake)
+    r = cr.validate_credential("minimax-cn", api_key="k", use_cache=False)
+    assert r.status == cr.VALID and r.ok and r.kind == "anthropic_compat"
+    assert r.via == "GET /v1/models"
+    assert seen["url"] == "https://api.minimaxi.com/anthropic/v1/models"
+    assert seen["headers"].get("x-api-key") == "k"
+    assert "anthropic-version" in seen["headers"]
+
+
+def test_validate_anthropic_compat_rejects_bad_key(monkeypatch):
+    monkeypatch.setattr(
+        st, "_resolve_base_url", lambda pid: "https://api.minimaxi.com/anthropic",
+    )
+    monkeypatch.setattr(
+        cr, "_http_get",
+        lambda url, **kw: (401, '{"error":{"message":"invalid api key"}}', 9),
+    )
+    r = cr.validate_credential("minimax-cn", api_key="bad", use_cache=False)
+    assert r.status == cr.INVALID_CREDENTIAL and not r.ok
 
 
 def test_validate_openrouter_uses_key_endpoint_and_balance(monkeypatch, stub_base):

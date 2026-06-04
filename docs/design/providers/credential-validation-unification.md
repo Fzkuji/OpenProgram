@@ -102,7 +102,7 @@ class CredentialResult:
     status: Literal["valid", "invalid_credential", "valid_no_balance",
                     "valid_model_unavailable", "missing", "not_applicable", "unknown"]
     ok: bool          # status in {valid, valid_no_balance, valid_model_unavailable}
-    kind: str         # probe that ran: openai_bearer | openrouter_key | anthropic_native | google_query | oauth | cloud | none
+    kind: str         # probe that ran: openai_bearer | openrouter_key | anthropic_native | anthropic_compat | google_query | oauth | cloud | none
     via: str | None   # "GET /models", "GET /key", "AuthManager", "POST /chat/completions(model)"
     http_status: int | None
     latency_ms: int | None
@@ -139,9 +139,10 @@ error.
 
 | KIND | Providers | Layer-1 probe |
 | --- | --- | --- |
-| `openai_bearer` | openai, deepseek, groq, cerebras, mistral, huggingface, kimi-coding, minimax(-cn), vercel-ai-gateway, xai, zai, opencode-api | `GET {base}/models`, `Authorization: Bearer` |
+| `openai_bearer` | openai, deepseek, groq, cerebras, mistral, huggingface, kimi-coding, vercel-ai-gateway, xai, zai, opencode-api | `GET {base}/models`, `Authorization: Bearer` |
 | `openrouter_key` | openrouter | `GET {base}/key` (`/models` is **public** there) — body also exposes balance |
 | `anthropic_native` | anthropic | `GET https://api.anthropic.com/v1/models`, `x-api-key` + `anthropic-version: 2023-06-01` (Bearer is ignored) |
+| `anthropic_compat` | minimax, minimax-cn (any registry provider with `api='anthropic-messages'` that isn't native `anthropic`) | `GET {base}/v1/models`, `x-api-key` + `anthropic-version` — same probe as native but against the provider's OWN base_url (e.g. `https://api.minimaxi.com/anthropic`). The `openai_bearer` `GET {base}/models` 404s on these hosts and would brand a good key `invalid_credential`. |
 | `google_query` | google | `GET https://generativelanguage.googleapis.com/v1beta/models?key=…&pageSize=1` |
 | `oauth` | openai-codex, gemini-subscription, github-copilot, claude-code, opencode | `AuthManager.acquire_sync(pid).status` (`fresh`→valid, `needs_reauth`→invalid); no network beyond an optional token refresh |
 | `cloud` | amazon-bedrock, google-vertex, azure-openai-responses | `not_applicable` for the generic probe (SigV4 / ADC / deployment-keyed) until a native list-call is added |
@@ -224,6 +225,20 @@ no key→`missing`.
 Declare its probe KIND in `credentials.py::_kind_for` (default `openai_bearer`
 needs nothing). That single line wires it into save-verify, the connectivity
 button, status rows, and the CLI/TUI at once.
+
+**Anthropic-wire third parties** (MiniMax & friends) are auto-detected:
+`_kind_for` returns `anthropic_compat` for any provider whose registry `api`
+is `anthropic-messages` (and isn't native `anthropic`). Keep this consistent
+across three places or the provider half-works:
+- `_kind_for` → `anthropic_compat` (credential probe hits `{base}/v1/models`);
+- `_model_catalog/providers.py::_PROVIDER_DEFAULT_API` must stamp
+  `anthropic-messages` (so fetched/custom rows route to the right stream fn,
+  not `POST /chat/completions`) — matching `models_generated`;
+- `_model_catalog/fetchers` routes `anthropic-messages` providers to the
+  base_url-aware `_fetch_anthropic` (the OpenAI-compat `GET {base}/models`
+  404s on a `/anthropic` host).
+A drift guard test (`test_model_fetch_routing.py`) pins the api stamp to
+`models_generated`.
 
 ## 13. Open questions
 

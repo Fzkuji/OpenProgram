@@ -89,6 +89,21 @@ _CLOUD_PROVIDERS = frozenset({
 })
 
 
+def _provider_api(provider_id: str) -> str | None:
+    """The wire API a provider speaks (``anthropic-messages`` /
+    ``openai-completions`` / …), read from the model registry. Used to
+    pick the right auth probe for providers that aren't hardcoded above.
+    Returns None if the provider has no models registered."""
+    try:
+        from openprogram.providers.models_generated import MODELS
+        for m in MODELS.values():
+            if m.provider == provider_id:
+                return m.api
+    except Exception:
+        return None
+    return None
+
+
 def _kind_for(provider_id: str) -> str:
     if provider_id == "openrouter":
         return "openrouter_key"
@@ -100,6 +115,13 @@ def _kind_for(provider_id: str) -> str:
         return "oauth"
     if provider_id in _CLOUD_PROVIDERS:
         return "cloud"
+    # Third-party providers that speak the Anthropic Messages wire format
+    # (e.g. minimax-cn at api.minimaxi.com/anthropic) need an Anthropic-
+    # style probe against THEIR OWN base_url — x-api-key + GET /v1/models,
+    # not the OpenAI-shaped GET /models + POST /chat/completions, which
+    # 404s on those hosts and would brand a perfectly good key as invalid.
+    if _provider_api(provider_id) == "anthropic-messages":
+        return "anthropic_compat"
     return "openai_bearer"
 
 
@@ -201,6 +223,15 @@ def _layer1_probe(provider_id: str, kind: str, api_key: str, base: str | None,
         return _interpret(provider_id, kind, res, via="GET /key", balance_body=True)
     if kind == "anthropic_native":
         res = _http_get("https://api.anthropic.com/v1/models",
+                        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                        timeout=timeout)
+        return _interpret(provider_id, kind, res, via="GET /v1/models")
+    if kind == "anthropic_compat":
+        # Same Anthropic-style probe, but against the provider's own host
+        # (base already resolved by validate_credential). MiniMax & friends
+        # expose Anthropic's GET /v1/models, so this proves the key without
+        # an inference call.
+        res = _http_get(base.rstrip("/") + "/v1/models",
                         headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
                         timeout=timeout)
         return _interpret(provider_id, kind, res, via="GET /v1/models")
@@ -329,7 +360,7 @@ def validate_credential(
             return hit
 
     base = None
-    if kind in ("openai_bearer", "openrouter_key"):
+    if kind in ("openai_bearer", "openrouter_key", "anthropic_compat"):
         from .storage import _resolve_base_url
         base = _resolve_base_url(provider_id)
         if not base:

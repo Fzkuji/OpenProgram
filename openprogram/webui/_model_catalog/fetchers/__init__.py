@@ -61,11 +61,18 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     """
     from openprogram.providers.thinking_catalog import derive_thinking_fields
 
-    from ..providers import _FETCH_MODELS_PROVIDERS, _label
+    from ..providers import _FETCH_MODELS_PROVIDERS, _default_api_for, _label
     from ..sources import enrich as _enrich_from_community
     from ..storage import replace_fetched_models
 
     fetcher = _FETCHERS.get(provider_id)
+    # Providers that speak the Anthropic Messages wire format (minimax,
+    # minimax-cn, …) expose Anthropic's GET /v1/models with x-api-key —
+    # the OpenAI-compatible GET /models 404s on their /anthropic host.
+    # Route them to the (now base_url-aware) Anthropic fetcher before the
+    # OpenAI-compat fallback.
+    if fetcher is None and _default_api_for(provider_id) == "anthropic-messages":
+        fetcher = _fetch_anthropic
     if fetcher is None and provider_id in _FETCH_MODELS_PROVIDERS:
         fetcher = _fetch_openai_compat
     if fetcher is None:

@@ -142,8 +142,13 @@ _PROVIDER_DEFAULT_API: dict[str, str] = {
     "mistral": "openai-completions",
     "huggingface": "openai-completions",
     "kimi-coding": "openai-completions",
-    "minimax": "openai-completions",
-    "minimax-cn": "openai-completions",
+    # MiniMax ships its API in Anthropic Messages wire format (base_url
+    # ends in /anthropic; see models_generated). Stamping fetched/custom
+    # rows openai-completions sent chat to POST /chat/completions, which
+    # 404s on api.minimax(i).com/anthropic — keep this in lockstep with
+    # models_generated's api='anthropic-messages' so fetched rows run.
+    "minimax": "anthropic-messages",
+    "minimax-cn": "anthropic-messages",
     "vercel-ai-gateway": "openai-completions",
     "opencode": "openai-completions",
     "github-copilot": "openai-completions",
