@@ -42,8 +42,17 @@ _PROVIDER_LABELS: dict[str, str] = {
     "groq": "Groq",
     "cerebras": "Cerebras",
     "mistral": "Mistral",
-    "minimax": "MiniMax",
+    # MiniMax ships two regions (minimax.io = International, minimaxi.com
+    # = China) × two billing modes (pay-as-you-go API vs the "Token Plan"
+    # coding-plan subscription). Label by region word, not the bare domain
+    # — "International" / "CN" reads at a glance where ".io" vs ".com"
+    # doesn't. (The two -coding-plan ids come from models.dev; their
+    # labels apply via _label() now that the community tier routes through
+    # the override map too.)
+    "minimax": "MiniMax (International)",
     "minimax-cn": "MiniMax (CN)",
+    "minimax-coding-plan": "MiniMax Token Plan (International)",
+    "minimax-cn-coding-plan": "MiniMax Token Plan (CN)",
     "huggingface": "HuggingFace",
     "github-copilot": "GitHub Copilot",
     "kimi-coding": "Kimi Coding",

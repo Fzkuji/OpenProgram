@@ -129,7 +129,11 @@ def list_providers() -> list[dict[str, Any]]:
         custom_ids = {c.get("id") for c in custom if c.get("id")}
         result.append({
             "id": pid,
-            "label": md_prov.get("label") or pid,
+            # Route through _label so manual overrides (_PROVIDER_LABELS)
+            # win for community-tier providers too — e.g. relabel the
+            # MiniMax Token-Plan rows by region word instead of bare
+            # domain. Falls back to the models.dev label, then the id.
+            "label": _label(pid),
             "kind": "api",
             "enabled": bool(pcfg.get("enabled", False)),
             "configured": _is_configured(pid),
