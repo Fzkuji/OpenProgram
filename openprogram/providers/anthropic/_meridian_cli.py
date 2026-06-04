@@ -439,9 +439,17 @@ def submit_login_code(session: str, code: str) -> dict:
         return {"ok": False, "error": "login did not complete"}
     name = entry["name"]
     # An auto-named account (account-N) is renamed to the account's email so
-    # the list is readable. User-chosen labels are left as they are.
+    # the list is readable. User-chosen labels are left as they are. The
+    # email metadata can lag the OAuth completion by a beat, so retry a few
+    # times before falling back to the auto name.
     if entry.get("auto"):
-        email = _email_for(name)
+        import time as _t
+        email = ""
+        for _ in range(4):
+            email = _email_for(name)
+            if email:
+                break
+            _t.sleep(0.7)
         if email and _rename_profile(name, email):
             name = email
     return {"ok": True, "name": name}
