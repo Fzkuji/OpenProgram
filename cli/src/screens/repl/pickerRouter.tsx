@@ -29,6 +29,8 @@ import { BackendClient } from '../../ws/client.js';
 import { tsToDate } from './helpers.js';
 import { buildChannelPicker } from './pickers/channel.js';
 import { buildRegisterPicker } from './pickers/register.js';
+import { buildClaudeAccountsPicker } from './pickers/claudeAccounts.js';
+import type { ClaudeAccountsState, AddStarted } from '../../utils/claudeAccounts.js';
 import type { ColorTheme } from '../../theme/themes.js';
 import type {
   AgentInfo,
@@ -71,6 +73,11 @@ export interface PickerCtx {
   searchBaseDraft: string;
   thinkingEffort: ThinkingEffort;
 
+  /** claude-code account panel state (the in-TUI Claude-account manager). */
+  claudeAccounts: ClaudeAccountsState;
+  claudeSelected: string | null;
+  claudePendingAdd: AddStarted | null;
+
   setPickerKind: React.Dispatch<React.SetStateAction<PickerKind>>;
   setPendingAttach: React.Dispatch<React.SetStateAction<PendingAttach | null>>;
   setChosenChannel: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -86,6 +93,9 @@ export interface PickerCtx {
   setSearchResults: React.Dispatch<React.SetStateAction<SearchResultRow[]>>;
   setPromptDraft: React.Dispatch<React.SetStateAction<string | undefined>>;
   setThinkingEffort: React.Dispatch<React.SetStateAction<ThinkingEffort>>;
+  setClaudeAccounts: React.Dispatch<React.SetStateAction<ClaudeAccountsState>>;
+  setClaudeSelected: React.Dispatch<React.SetStateAction<string | null>>;
+  setClaudePendingAdd: React.Dispatch<React.SetStateAction<AddStarted | null>>;
 
   /** Run a line as if typed at the prompt (used by the command palette). */
   onSubmit: (text: string) => void;
@@ -116,6 +126,7 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
           { label: 'Model', command: '/model', hint: 'switch model' },
           { label: 'Thinking effort', command: '/effort', hint: 'off … xhigh' },
           { label: 'Theme', command: '/theme', hint: 'live preview' },
+          { label: 'Claude accounts', command: '/login', hint: 'add · switch · rename · remove' },
         ]}
         onSet={(key, value) => client.send({ action: 'set_setting', key, value })}
         onRun={(cmd) => onSubmit(cmd)}
@@ -248,6 +259,15 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     pickerKind === 'register_token'
   ) {
     return buildRegisterPicker(ctx, pickerKind);
+  }
+
+  if (
+    pickerKind === 'claude_accounts' ||
+    pickerKind === 'claude_account_action' ||
+    pickerKind === 'claude_account_add_code' ||
+    pickerKind === 'claude_account_rename'
+  ) {
+    return buildClaudeAccountsPicker(ctx, pickerKind);
   }
 
   if (pickerKind === 'context_search') {

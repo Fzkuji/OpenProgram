@@ -58,7 +58,9 @@ export type PickerKind =
   | 'context_search' | 'context_search_results'
   | 'register_account_id' | 'register_token'
   | 'channel_action' | 'channel_peer_input' | 'channel_qr_wait'
-  | 'channel_overwrite_confirm';
+  | 'channel_overwrite_confirm'
+  | 'claude_accounts' | 'claude_account_action'
+  | 'claude_account_add_code' | 'claude_account_rename';
 
 /** One branch as returned by ws `list_branches`. */
 export interface BranchRow {

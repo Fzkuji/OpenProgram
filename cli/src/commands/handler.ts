@@ -12,6 +12,9 @@ export interface SlashContext {
   exit: () => void;
   /** Open an interactive picker (model / resume / agent / channel / theme / effort / settings). */
   openPicker: (kind: 'model' | 'resume' | 'agent' | 'channel' | 'theme' | 'effort' | 'settings') => void;
+  /** Open the in-TUI Claude-account panel (claude-code provider): add /
+   *  activate / deactivate / rename / remove, all without leaving the TUI. */
+  openClaudeAccounts: () => void;
   /** Apply a theme by name. Returns true on success, false on unknown name. */
   setTheme?: (name: string) => boolean;
   /** Toggle (or set) the "tools-on" flag passed with the next chat turn. */
@@ -535,35 +538,34 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     }
 
     case 'login': {
-      const channel = args[0];
-      if (channel === 'wechat') {
-        ctx.pushSystem(
-          'WeChat login (QR scan via your phone):\n' +
-          '  1. In another terminal, run:\n' +
-          '       openprogram channels accounts login wechat default\n' +
-          '  2. Scan the printed QR with your phone\'s WeChat app.\n' +
-          '  3. The channel worker auto-starts after login. Incoming\n' +
-          '     messages from your contacts will route to the default\n' +
-          '     agent (or per /attach binding).\n' +
-          '  4. Bind a specific contact to this session with:\n' +
-          '       /attach wechat default <wxid>',
-        );
+      const target = (args[0] ?? '').toLowerCase();
+      // Claude subscription accounts — full in-TUI management (add via
+      // browser login, activate / deactivate / rename / remove). No raw
+      // commands: this opens the same panel the web Settings page has.
+      if (!target || target === 'claude' || target === 'claude-code' || target === 'accounts') {
+        ctx.openClaudeAccounts();
         return true;
       }
-      if (channel === 'telegram' || channel === 'discord' || channel === 'slack') {
-        ctx.pushSystem(
-          `${channel} login uses a bot token. In another terminal, run:\n` +
-          `  openprogram channels accounts add ${channel} default\n` +
-          'and paste the token when prompted.\n' +
-          'Then use /attach ' + channel + ' default <peer_id> to route a peer here.',
-        );
+      // Chat channels have their own guided picker (account → QR / token).
+      if (['wechat', 'telegram', 'discord', 'slack'].includes(target)) {
+        ctx.openPicker('channel');
         return true;
       }
+      // Other providers (OAuth / API key) have their full sign-in UI on the
+      // web Providers page — open it with /web rather than surfacing shell
+      // commands here.
       ctx.pushSystem(
-        'Channel login: /login <wechat|telegram|discord|slack>.\n' +
-        'For provider auth (Anthropic / Codex / Gemini): run\n' +
-        '  openprogram providers login <name> from the shell.',
+        `To sign in to ${target}, open Settings → Providers in the web UI ` +
+        `(type /web) and use the ${target} card. /login on its own opens ` +
+        `the Claude account panel.`,
       );
+      return true;
+    }
+
+    case 'logout': {
+      // For claude-code, "log out" = deactivate / remove an account, which
+      // the in-TUI panel does. Open it rather than printing a shell command.
+      ctx.openClaudeAccounts();
       return true;
     }
 
@@ -610,7 +612,6 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     case 'memory':
     case 'mcp':
     case 'doctor':
-    case 'logout':
     case 'review':
     case 'compact': {
       // Stubs — real implementations live behind ws actions that aren't

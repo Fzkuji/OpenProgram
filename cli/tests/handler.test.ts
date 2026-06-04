@@ -8,6 +8,7 @@ const makeCtx = (overrides: Partial<SlashContext> = {}): SlashContext => ({
   newSession: vi.fn(),
   exit: vi.fn(),
   openPicker: vi.fn(),
+  openClaudeAccounts: vi.fn(),
   toggleTools: vi.fn(),
   toggleBell: vi.fn(() => true),
   showWelcome: vi.fn(),
@@ -56,6 +57,31 @@ describe('handleSlash', () => {
     const ctx = makeCtx({ client: { send } as never });
     handleSlash('/agent worker', ctx);
     expect(send).toHaveBeenCalledWith({ action: 'set_default_agent', id: 'worker' });
+  });
+
+  it('/login (no arg) opens the Claude accounts panel', () => {
+    const ctx = makeCtx();
+    handleSlash('/login', ctx);
+    expect(ctx.openClaudeAccounts).toHaveBeenCalled();
+  });
+
+  it('/login claude opens the Claude accounts panel', () => {
+    const ctx = makeCtx();
+    handleSlash('/login claude', ctx);
+    expect(ctx.openClaudeAccounts).toHaveBeenCalled();
+  });
+
+  it('/login wechat opens the channel picker (not a raw command)', () => {
+    const ctx = makeCtx();
+    handleSlash('/login wechat', ctx);
+    expect(ctx.openPicker).toHaveBeenCalledWith('channel');
+    expect(ctx.openClaudeAccounts).not.toHaveBeenCalled();
+  });
+
+  it('/logout opens the Claude accounts panel', () => {
+    const ctx = makeCtx();
+    handleSlash('/logout', ctx);
+    expect(ctx.openClaudeAccounts).toHaveBeenCalled();
   });
 
   it('/resume opens resume picker', () => {

@@ -36,6 +36,8 @@ import type { SettingRow } from '../components/SettingsPanel.js';
 import { randomLocalId, renderModel } from './repl/helpers.js';
 import { buildPickerNode } from './repl/pickerRouter.js';
 import { useWsEvents } from './repl/useWsEvents.js';
+import { fetchAccounts } from '../utils/claudeAccounts.js';
+import type { ClaudeAccountsState, AddStarted } from '../utils/claudeAccounts.js';
 
 export type { REPLProps } from './repl/types.js';
 
@@ -107,6 +109,14 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     Array<{ channel?: string; account_id?: string; configured?: boolean }>
   >([]);
   const [chosenChannel, setChosenChannel] = useState<string | undefined>(undefined);
+  // Claude-account panel state (the in-TUI claude-code account manager):
+  // the fetched list, the account picked for the action menu, and the
+  // in-flight add (login URL + session) awaiting a pasted code.
+  const [claudeAccounts, setClaudeAccounts] = useState<ClaudeAccountsState>({
+    installed: false, ready: false, active: null, accounts: [],
+  });
+  const [claudeSelected, setClaudeSelected] = useState<string | null>(null);
+  const [claudePendingAdd, setClaudePendingAdd] = useState<AddStarted | null>(null);
   // Channel-binding scratch state — held while the user walks
   // through the channel→account→action→peer picker chain.
   const [chosenAccount, setChosenAccount] = useState<string | undefined>(undefined);
@@ -267,6 +277,18 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         },
         exit: () => app.exit(),
         openPicker: (kind) => setPickerKind(kind),
+        openClaudeAccounts: () => {
+          // Prefetch the list so the panel paints populated; open it even
+          // if the fetch fails (Add still works and triggers auto-install).
+          void fetchAccounts()
+            .then((s) => setClaudeAccounts(s))
+            .catch(() => { /* paint empty; Add will install + refresh */ })
+            .finally(() => {
+              setClaudeSelected(null);
+              setClaudePendingAdd(null);
+              setPickerKind('claude_accounts');
+            });
+        },
         toggleTools: () => setToolsOn((on) => !on),
         currentThinkingEffort: thinkingEffort,
         setThinkingEffort,
@@ -401,11 +423,13 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft,
     thinkingEffort,
+    claudeAccounts, claudeSelected, claudePendingAdd,
     setPickerKind, setPendingAttach,
     setChosenChannel, setChosenAccount, setConversationId, setAgent,
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft,
     setThinkingEffort,
+    setClaudeAccounts, setClaudeSelected, setClaudePendingAdd,
     onSubmit,
     sessionAliasesRef,
   });
