@@ -251,7 +251,7 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
     try:
         from openprogram.webui._model_catalog import (
             _read_providers_cfg,
-            _PROVIDER_DEFAULT_API,
+            _default_api_for,
         )
         from openprogram.providers.models_generated import MODELS
         from openprogram.providers.types import Model, ModelCost
@@ -266,7 +266,7 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
     if not raw:
         return False
 
-    api = raw.get("api") or _PROVIDER_DEFAULT_API.get(provider) or "openai-completions"
+    api = raw.get("api") or _default_api_for(provider) or "openai-completions"
     inputs: list[str] = list(raw.get("input_modalities") or ["text"])
     # Cost is optional — only stamp the fields the row actually has,
     # default 0.0 for missing keys so ModelCost validates.
@@ -276,10 +276,15 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
         cache_read=float(raw.get("cache_read_cost", 0) or 0),
         cache_write=float(raw.get("cache_write_cost", 0) or 0),
     )
-    base_url = cfg_pcfg.get("base_url") or ""
-    if not base_url:
-        from ._model_catalog.providers import _default_base_url_for
-        base_url = _default_base_url_for(provider) or ""
+    # Resolve through the catalog's _resolve_base_url (user config →
+    # static registry → models.dev) so the row gets the SAME normalised
+    # base the rest of the pipeline uses — crucially the Anthropic-wire
+    # /v1 strip. Reading models.dev raw here gave Anthropic providers a
+    # ``…/anthropic/v1`` base, which the anthropic-messages layer then
+    # doubled into ``…/v1/v1/messages`` → 404, so the model registered but
+    # was unusable.
+    from ._model_catalog import _resolve_base_url
+    base_url = _resolve_base_url(provider) or ""
 
     try:
         m = Model(

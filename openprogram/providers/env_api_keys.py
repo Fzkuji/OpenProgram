@@ -103,10 +103,26 @@ def env_vars_for(provider_id: str) -> list[str]:
     """Accepted env-var names for ``provider_id``, in precedence order.
 
     Single source of truth, replacing ``PROVIDER_ENV_VARS`` /
-    ``_model_catalog.providers._ENV_API_KEYS`` / the inline maps. Unknown
-    providers return ``[]`` (community/models.dev names stay the webui layer's
-    concern for now)."""
-    return list(_PROVIDER_ENV_VARS.get(provider_id, []))
+    ``_model_catalog.providers._ENV_API_KEYS`` / the inline maps.
+
+    A provider not in the static map above is a community / models.dev
+    one (e.g. ``minimax-cn-coding-plan``). Its env-var name lives in the
+    models.dev catalogue — the same name the settings UI shows as "API
+    key env: …" and stores the saved key under. Fall back to it so that
+    key resolves at RUNTIME too, not just in the UI; without this the
+    model registers + lists fine but every turn fails auth. Lazy +
+    guarded so this lower layer stays import-free at load time."""
+    names = list(_PROVIDER_ENV_VARS.get(provider_id, []))
+    if names:
+        return names
+    try:
+        from openprogram.webui._model_catalog.providers import _env_var_for
+        ev = _env_var_for(provider_id)
+        if ev:
+            return [ev]
+    except Exception:
+        pass
+    return []
 
 
 # Config-read cache keyed by file mtime — keeps resolve_api_key off the
