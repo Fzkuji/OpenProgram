@@ -126,69 +126,22 @@ _ENV_API_KEYS: dict[str, str | None] = {
 }
 
 
-# Which registered API id each provider's models route through. The
-# entries here must match strings registered in
-# ``providers/register.py::register_builtins``. Used to stamp fetched /
-# custom rows with a working ``api`` so the chat dispatcher can find a
-# stream function for them — without this the fetch flow silently
-# produces ``api: "custom"`` rows that the model picker happily lists
-# but the chat path can't run, since the api registry has no "custom"
-# entry. Fetched ``claude-sonnet-4-6`` looked usable in the UI but
-# silently dropped out of ``/api/models/enabled`` for exactly this
-# reason.
-_PROVIDER_DEFAULT_API: dict[str, str] = {
-    "anthropic": "anthropic-messages",
-    "claude-code": "openai-completions",  # Meridian proxy speaks OpenAI Chat Completions
-    "openai": "openai-completions",
-    "openai-codex": "openai-codex",
-    "google": "google-generative-ai",
-    "gemini-subscription": "gemini-subscription",
-    "amazon-bedrock": "bedrock-converse-stream",
-    "azure-openai-responses": "azure-openai-responses",
-    "openrouter": "openai-completions",
-    "groq": "openai-completions",
-    "cerebras": "openai-completions",
-    "mistral": "openai-completions",
-    "huggingface": "openai-completions",
-    "kimi-coding": "openai-completions",
-    # MiniMax ships its API in Anthropic Messages wire format (base_url
-    # ends in /anthropic; see models_generated). Stamping fetched/custom
-    # rows openai-completions sent chat to POST /chat/completions, which
-    # 404s on api.minimax(i).com/anthropic — keep this in lockstep with
-    # models_generated's api='anthropic-messages' so fetched rows run.
-    "minimax": "anthropic-messages",
-    "minimax-cn": "anthropic-messages",
-    # The "Token Plan" coding-plan variants are models.dev community
-    # entries (no static registry row), so without this they'd default to
-    # openai-completions — same Anthropic-wire mismatch as the base API.
-    "minimax-coding-plan": "anthropic-messages",
-    "minimax-cn-coding-plan": "anthropic-messages",
-    "vercel-ai-gateway": "openai-completions",
-    "opencode": "openai-completions",
-    "github-copilot": "openai-completions",
-    "xai": "openai-completions",
-    "zai": "openai-completions",
-    "deepseek": "openai-completions",
-}
-
-
-# Canonical base URL override, consulted by storage._resolve_base_url
-# AFTER a user's explicit config but BEFORE the static-registry /
-# models.dev fallbacks. Needed when the community catalogue ships a base
-# in a convention our API layer doesn't expect. MiniMax's "Token Plan"
-# rows arrive from models.dev as ``…/anthropic/v1``, but the
-# anthropic-messages layer treats the base as ``…/anthropic`` and appends
-# ``/v1/messages`` / ``/v1/models`` itself — left as-is they'd double the
-# ``/v1``. Pin them to the same base the static minimax/minimax-cn rows
-# use so credential, fetch, and chat all resolve one consistent host.
-_PROVIDER_DEFAULT_BASE: dict[str, str] = {
-    "minimax-coding-plan": "https://api.minimax.io/anthropic",
-    "minimax-cn-coding-plan": "https://api.minimaxi.com/anthropic",
-}
-
-
-def _default_base_override(provider_id: str) -> str | None:
-    return _PROVIDER_DEFAULT_BASE.get(provider_id)
+# Manual override for the ``api`` (wire / stream-function id) a
+# provider's fetched/custom models route through. **Normally empty.**
+# ``_default_api_for`` derives the api from the provider's own static
+# models (``models_generated``), which always WINS for a single-api
+# provider — so a fetched row matches the static catalogue and a stale
+# entry here can't re-introduce drift. This table is therefore consulted
+# ONLY when derivation is impossible:
+#   * a multi-api provider (models_generated lists several wires) that
+#     needs a deliberate default routing choice; or
+#   * a community provider with no static row AND no ``…/anthropic``
+#     base for the heuristic to catch.
+# To fix a single-api provider that's mislabelled, fix ``models_generated``
+# (regenerate) — an entry here would be ignored. Values must match a
+# string registered in ``providers/register.py::register_builtins`` (a
+# "custom" stamp has no stream function and drops the model from chat).
+_PROVIDER_DEFAULT_API: dict[str, str] = {}
 
 
 def _prettify(provider_id: str) -> str:
@@ -237,14 +190,46 @@ def _env_var_for(provider_id: str) -> str | None:
     return md.get("env_var")
 
 
+def _static_apis_for(provider_id: str) -> set[str]:
+    """The set of wire ``api`` ids the provider's OWN static-registry
+    models declare (``{}`` for a community-only provider)."""
+    try:
+        from openprogram.providers.models_generated import MODELS
+        return {m.api for m in MODELS.values() if m.provider == provider_id}
+    except Exception:
+        return set()
+
+
 def _default_api_for(provider_id: str) -> str | None:
-    """Registered ``api`` id this provider's models dispatch through.
-    Only the manual table is consulted today — models.dev exposes
-    ``npm`` (the SDK) but not "which of *our* registered API stream
-    functions handles this provider", which is OpenProgram-internal.
-    Returns ``None`` when unmapped; callers default to
+    """Registered ``api`` id a provider's fetched/custom models dispatch
+    through. **Derived**, not hand-maintained per provider, so a fetched
+    row always routes the same way as that provider's static rows and
+    can't drift:
+
+      1. The provider's OWN static models' wire api, when unambiguous —
+         the source of truth (``models_generated``). This means a fetched
+         model is stamped the SAME ``api`` as the static catalogue, so it
+         can't route worse than the rows that already work.
+      2. A manual override (``_PROVIDER_DEFAULT_API``) — kept only for
+         the irreducible cases: multi-api providers that need a routing
+         choice, or community providers with no static row.
+      3. Community heuristic: an Anthropic-compatible endpoint
+         conventionally lives at ``…/anthropic[/v1]``. Detect it from the
+         community base so a NEW Anthropic-wire provider works with zero
+         code — the same gap that silently broke MiniMax's Token-Plan
+         rows.
+
+    Returns ``None`` when nothing matches; callers default to
     ``"openai-completions"`` for unknown OpenAI-compatible providers."""
-    return _PROVIDER_DEFAULT_API.get(provider_id)
+    apis = _static_apis_for(provider_id)
+    if len(apis) == 1:
+        return next(iter(apis))
+    if provider_id in _PROVIDER_DEFAULT_API:
+        return _PROVIDER_DEFAULT_API[provider_id]
+    base = (_default_base_url_for(provider_id) or "").rstrip("/")
+    if base.endswith("/anthropic") or base.endswith("/anthropic/v1"):
+        return "anthropic-messages"
+    return None
 
 
 def _default_base_url_for(provider_id: str) -> str | None:

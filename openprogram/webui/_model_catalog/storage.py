@@ -203,26 +203,31 @@ def _resolve_base_url(provider_id: str) -> str | None:
     """
     cfg = _read_providers_cfg()
     pcfg = cfg.get(provider_id, {})
+    from .providers import _default_api_for, _default_base_url_for
+    base = None
     if pcfg.get("base_url"):
-        return pcfg["base_url"].rstrip("/")
-    # Canonical override for providers whose community-catalogue base uses
-    # a convention our API layer doesn't expect (e.g. MiniMax Token Plan's
-    # trailing /v1). Beats the registry/community fallbacks but yields to
-    # an explicit user config above.
-    from .providers import _default_base_override, _default_base_url_for
-    override = _default_base_override(provider_id)
-    if override:
-        return override.rstrip("/")
-    # Static registry baked-in base URL.
-    from openprogram.providers import get_models
-    ms = get_models(provider_id)
-    if ms and ms[0].base_url:
-        return ms[0].base_url.rstrip("/")
-    # Community catalogue.
-    md_base = _default_base_url_for(provider_id)
-    if md_base:
-        return md_base.rstrip("/")
-    return None
+        base = pcfg["base_url"]
+    else:
+        # Static registry baked-in base URL.
+        from openprogram.providers import get_models
+        ms = get_models(provider_id)
+        if ms and ms[0].base_url:
+            base = ms[0].base_url
+        else:
+            # Community catalogue.
+            base = _default_base_url_for(provider_id)
+    if not base:
+        return None
+    base = base.rstrip("/")
+    # Anthropic-wire normalisation: the anthropic-messages layer appends
+    # /v1/messages and /v1/models itself, so the base must NOT carry its
+    # own /v1. models.dev ships some Anthropic endpoints as
+    # ``…/anthropic/v1`` — strip the trailing /v1 so the path doesn't
+    # double (a general rule replacing the old per-provider base override;
+    # scoped to anthropic-messages so it never touches an OpenAI ``…/v1``).
+    if base.endswith("/v1") and _default_api_for(provider_id) == "anthropic-messages":
+        base = base[: -len("/v1")].rstrip("/")
+    return base
 
 
 def _resolve_api_key(provider_id: str) -> str | None:

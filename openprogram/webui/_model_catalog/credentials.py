@@ -91,20 +91,12 @@ _CLOUD_PROVIDERS = frozenset({
 
 def _provider_api(provider_id: str) -> str | None:
     """The wire API a provider speaks (``anthropic-messages`` /
-    ``openai-completions`` / …). Used to pick the right auth probe for
-    providers that aren't hardcoded above.
+    ``openai-completions`` / …), used to pick the right auth probe.
 
-    Source order: the static model registry first, then the catalog's
-    per-provider default-api map — so a community-only provider with no
-    static row (e.g. ``minimax-cn-coding-plan``) is still classified by
-    its declared wire format. Returns None when neither knows it."""
-    try:
-        from openprogram.providers.models_generated import MODELS
-        for m in MODELS.values():
-            if m.provider == provider_id:
-                return m.api
-    except Exception:
-        pass
+    Delegates to the one derivation (``providers._default_api_for``):
+    the provider's own static-model wire, else an override, else the
+    ``…/anthropic`` community heuristic — so credential, fetch, and chat
+    all classify a provider identically and can't disagree."""
     try:
         from .providers import _default_api_for
         return _default_api_for(provider_id)

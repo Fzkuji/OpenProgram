@@ -36,20 +36,36 @@ def test_default_api_matches_models_generated(pid):
     assert P._default_api_for(pid) == "anthropic-messages"
 
 
-@pytest.mark.parametrize("pid,host", [
-    ("minimax-coding-plan", "https://api.minimax.io/anthropic"),
-    ("minimax-cn-coding-plan", "https://api.minimaxi.com/anthropic"),
+@pytest.mark.parametrize("md_base,canonical", [
+    ("https://api.minimaxi.com/anthropic/v1", "https://api.minimaxi.com/anthropic"),
+    ("https://api.minimax.io/anthropic/v1", "https://api.minimax.io/anthropic"),
+    ("https://foo.example/anthropic", "https://foo.example/anthropic"),
 ])
-def test_coding_plan_wired_as_anthropic_with_canonical_base(pid, host):
-    # The community-only Token-Plan rows must be classified Anthropic-wire
-    # (so credential probe + fetch + chat all use /v1/models, /v1/messages)
-    # and pinned to a base WITHOUT the models.dev trailing /v1 that would
-    # otherwise double under our api layer.
+def test_community_anthropic_wire_derived_and_base_normalized(monkeypatch, md_base, canonical):
+    # A community-only provider (no static row) whose models.dev base is an
+    # …/anthropic endpoint must be auto-classified Anthropic-wire and have
+    # any trailing /v1 stripped — no per-provider table entry. This is the
+    # general mechanism that replaced the MiniMax-specific override.
+    pid = "some-community-plan"
+    from openprogram.webui._model_catalog import providers as cat
+    from openprogram.webui._model_catalog import storage as st
     from openprogram.webui._model_catalog.credentials import _kind_for
-    assert P._default_api_for(pid) == "anthropic-messages"
+    import openprogram.providers as PR
+
+    monkeypatch.setattr(cat, "_default_base_url_for", lambda p: md_base)
+    monkeypatch.setattr(st, "_read_providers_cfg", lambda: {})
+    monkeypatch.setattr(PR, "get_models", lambda p=None: [])
+
+    assert cat._default_api_for(pid) == "anthropic-messages"  # via /anthropic heuristic
     assert _kind_for(pid) == "anthropic_compat"
-    assert P._default_base_override(pid) == host
-    assert not host.endswith("/v1")
+    assert st._resolve_base_url(pid) == canonical             # trailing /v1 stripped
+
+
+def test_provider_default_api_table_is_empty_by_default():
+    # Everything derives — the manual override table must stay empty so no
+    # one re-introduces per-provider drift. (Add entries only to override a
+    # models_generated mislabel; if you do, document why here.)
+    assert P._PROVIDER_DEFAULT_API == {}
 
 
 # ── dispatcher routing ────────────────────────────────────────────────────────

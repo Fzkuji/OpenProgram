@@ -192,7 +192,7 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
     from openprogram.providers import get_models
     from openprogram.providers.thinking_catalog import derive_thinking_fields
 
-    from .providers import _PROVIDER_DEFAULT_API
+    from .providers import _default_api_for
     from .storage import _read_providers_cfg
 
     cfg = _read_providers_cfg()
@@ -212,12 +212,12 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
         seen.add(m.id)
         out.append(_model_to_dict(m, m.id in enabled_ids))
 
-    # Default API to dispatch through for this provider — see
-    # ``providers._PROVIDER_DEFAULT_API`` for the rationale. Falls
-    # back to ``"custom"`` (the legacy unrouteable sentinel) for
-    # providers not in the map so we don't silently mis-route an
-    # unknown one.
-    default_api = _PROVIDER_DEFAULT_API.get(provider_id, "custom")
+    # Default API to dispatch through for this provider — derived from
+    # the provider's static models (see ``providers._default_api_for``).
+    # Falls back to ``openai-completions`` (the common wire) rather than
+    # the legacy unrouteable ``"custom"`` sentinel, so an unmapped
+    # provider's fetched rows still run.
+    default_api = _default_api_for(provider_id) or "openai-completions"
     for raw in pcfg.get("custom_models", []):
         mid = raw.get("id") or ""
         if not mid or mid in seen:
@@ -272,7 +272,7 @@ def list_enabled_models() -> list[dict[str, Any]]:
     from openprogram.providers import get_providers, get_models
     from openprogram.providers.thinking_catalog import derive_thinking_fields
 
-    from .providers import _PROVIDER_DEFAULT_API, _is_configured, _label
+    from .providers import _default_api_for, _is_configured, _label
     from .storage import _read_providers_cfg
 
     cfg = _read_providers_cfg()
@@ -322,7 +322,7 @@ def list_enabled_models() -> list[dict[str, Any]]:
         # Now the second pass: custom_models that the registry doesn't
         # know about. Build a minimal ``Model``-shaped dict that the
         # chat dispatcher accepts via ``api: <default_api>``.
-        default_api = _PROVIDER_DEFAULT_API.get(pid, "custom")
+        default_api = _default_api_for(pid) or "openai-completions"
         for raw in (pcfg.get("custom_models") or []):
             mid = raw.get("id") or ""
             if not mid or mid not in enabled_ids or mid in emitted_ids:

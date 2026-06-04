@@ -26,12 +26,22 @@ Layout::
         github_copilot.py
         google.py
 
-Adding a new provider:
+Adding a new provider: usually NOTHING. The credential kind, fetch
+fetcher, chat api-stamp, and base convention are all DERIVED from the
+provider's wire ``api`` (``providers._default_api_for`` reads it from the
+static ``models_generated`` rows, or detects an Anthropic ``…/anthropic``
+endpoint for community providers). A provider that's in ``models_generated``
+or whose models.dev base reveals its wire needs no per-provider code.
 
-  1. Append to ``providers._PROVIDER_LABELS`` and (if it speaks
-     OpenAI-compatible /v1/models) ``providers._FETCH_MODELS_PROVIDERS``.
+The optional touch-points, only when something can't be derived:
+
+  1. Append to ``providers._PROVIDER_LABELS`` to pin a display name, and
+     to ``providers._FETCH_MODELS_PROVIDERS`` only for an OpenAI-compatible
+     /v1/models lister not already covered.
   2. Map its env var in ``providers._ENV_API_KEYS``.
-  3. Map its default API id in ``providers._PROVIDER_DEFAULT_API``.
+  3. Add to ``providers._PROVIDER_DEFAULT_API`` ONLY to correct a
+     ``models_generated`` mislabel or pin a multi-api provider's route —
+     it is normally empty.
   4. (Optional) Add a ``setup_hints._SETUP_HINTS`` entry for
      non-paste-a-key flows.
   5. (Optional) Add a dedicated fetcher under ``fetchers/`` and
@@ -86,6 +96,7 @@ from .providers import (
     _FETCH_MODELS_PROVIDERS,
     _PROVIDER_DEFAULT_API,
     _PROVIDER_LABELS,
+    _default_api_for,
     _label,
     _prettify,
 )
