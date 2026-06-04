@@ -6,6 +6,7 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`async-task-lifecycle.md`](async-task-lifecycle.md)
 - [`dag-edge-split.md`](dag-edge-split.md)
 - [`dag-node-model.md`](dag-node-model.md)
+- [`dispatcher-split.md`](dispatcher-split.md) — break `agent/dispatcher.py` into a responsibility-scoped package (no-1000-line rule)
 - [`multi-agent-revert-todo.md`](multi-agent-revert-todo.md)
 - [`next-step-decision.md`](next-step-decision.md)
 - [`revert-layers.md`](revert-layers.md)
