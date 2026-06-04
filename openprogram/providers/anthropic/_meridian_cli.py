@@ -196,6 +196,27 @@ def ensure_backend(install: bool = True, start: bool = True) -> dict:
     return {"ready": False, "error": "backend started but isn't responding yet"}
 
 
+def _reap_stale_logins(ttl: float = 300.0) -> None:
+    """Kill + drop any in-flight web login the user abandoned (started the
+    OAuth but never submitted the code), so the child process and PTY fd
+    don't leak. Called at the start of each new login."""
+    import time as _t
+    now = _t.time()
+    for sid in list(_PENDING_LOGINS):
+        e = _PENDING_LOGINS.get(sid)
+        if not e or now - e.get("started_at", now) <= ttl:
+            continue
+        try:
+            e["proc"].kill()
+        except Exception:
+            pass
+        try:
+            os.close(e["master"])
+        except Exception:
+            pass
+        _PENDING_LOGINS.pop(sid, None)
+
+
 def _parse_accounts() -> list[dict]:
     """Parse the proxy's profile listing into ``[{name, email}]``.
 
@@ -305,6 +326,7 @@ def start_add(name: str) -> dict:
     eb = ensure_backend()
     if not eb.get("ready"):
         return {"error": eb.get("error", "backend not ready")}
+    _reap_stale_logins()
     binp = _proxy_bin()
     name = (name or "").strip()
     auto_named = not name
@@ -387,6 +409,7 @@ def start_add(name: str) -> dict:
     session = secrets.token_hex(8)
     _PENDING_LOGINS[session] = {
         "proc": proc, "master": master, "name": name, "auto": auto_named,
+        "started_at": _time.time(),
     }
     return {"session": session, "url": url, "name": name}
 

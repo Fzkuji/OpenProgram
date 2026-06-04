@@ -48,7 +48,12 @@ from ..types import (
 class ClaudeCodeSource:
     """Reads ``~/.claude/.credentials.json`` and adopts it read-only."""
 
-    provider_id: str = "anthropic-claude-code"
+    # The same delegated Claude Code credential as
+    # anthropic/auth_adapter.import_from_claude_code, so it belongs in the
+    # SAME pool ('anthropic') — not a separate 'anthropic-claude-code' id that
+    # nothing (PROVIDERS / aliases / runtime) actually reads, which left
+    # discover/adopt creds orphaned in a pool no provider used.
+    provider_id: str = "anthropic"
     profile_id: str = "default"
     override_path: str = ""
 

@@ -179,8 +179,8 @@ export function ClaudeAccounts() {
       {notReady && (
         <div style={{ fontSize: "0.8rem", opacity: 0.7, marginBottom: "0.5rem" }}>
           {text(
-            "Backend not ready — follow the setup steps above first.",
-            "后端未就绪 — 先按上方的安装步骤装好。",
+            "The backend sets itself up the first time you add an account — just click Add account.",
+            "第一次添加账号时后端会自动装好 — 直接点“添加账号”即可。",
           )}
         </div>
       )}
@@ -250,9 +250,9 @@ export function ClaudeAccounts() {
             placeholder={text("optional label — leave blank to auto-name", "可选标签 — 留空自动命名")}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            disabled={busy || notReady}
+            disabled={busy}
           />
-          <Button size="sm" onClick={startAdd} disabled={busy || notReady}>
+          <Button size="sm" onClick={startAdd} disabled={busy}>
             {busy ? text("Opening…", "打开中…") : text("Add account", "添加账号")}
           </Button>
         </div>
