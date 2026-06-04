@@ -74,11 +74,9 @@ export function ClaudeAccounts() {
   }
 
   async function startAdd() {
+    // Name is optional — blank lets the backend auto-name (account-N); the
+    // email shows in the list to tell accounts apart.
     const name = newName.trim();
-    if (!name) {
-      setMsg(text("Enter an account name first.", "先输入一个账号名。"));
-      return;
-    }
     setBusy(true);
     setMsg("");
     try {
@@ -194,7 +192,7 @@ export function ClaudeAccounts() {
         <div className={styles.detailRow}>
           <Input
             className="flex-1 font-mono"
-            placeholder={text("new account name, e.g. experiment", "新账号名，如 experiment")}
+            placeholder={text("optional label — leave blank to auto-name", "可选标签 — 留空自动命名")}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             disabled={busy || notReady}

@@ -183,12 +183,18 @@ def start_add(name: str) -> dict:
     :func:`submit_login_code`. (The CLI doesn't need this two-step dance —
     it inherits a terminal, so the user pastes the code straight in.)
     """
-    name = (name or "").strip()
-    if not name:
-        return {"error": "an account name is required"}
     binp = _proxy_bin()
     if not binp:
         return {"error": "backend not installed"}
+    name = (name or "").strip()
+    if not name:
+        # Don't force the user to invent a name up front — auto-name to the
+        # next free account-N. The email shows in the list to tell them apart.
+        existing = {a["name"] for a in _parse_accounts()}
+        i = 1
+        while f"account-{i}" in existing:
+            i += 1
+        name = f"account-{i}"
     try:
         import pty
     except ImportError:  # Windows
