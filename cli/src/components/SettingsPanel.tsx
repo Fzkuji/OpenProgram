@@ -8,7 +8,7 @@ export interface SettingRow {
   key: string;
   group: string;
   label: string;
-  widget: 'number' | 'toggle' | 'enum' | 'status';
+  widget: 'number' | 'text' | 'toggle' | 'enum' | 'status';
   apply: 'live' | 'next_start';
   help?: string;
   value?: unknown;
@@ -101,20 +101,28 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const moreAbove = start;
   const moreBelow = lines.length - (start + maxVisible);
 
-  const commitNumber = () => {
+  const commitEdit = () => {
     if (editKey === null) return;
     const v = buffer.trim();
-    if (v.length) onSet(editKey, v);
+    // number: ignore an empty buffer (keep the old value). text: allow
+    // empty so a field can be cleared (e.g. unpin the Meridian profile).
+    const isNumber = curSetting?.widget === 'number';
+    if (v.length || !isNumber) onSet(editKey, v);
     setEditKey(null);
     setBuffer('');
   };
 
   useInput((input, key) => {
     if (editKey !== null) {
-      if (key.return) return commitNumber();
+      if (key.return) return commitEdit();
       if (key.escape) { setEditKey(null); setBuffer(''); return; }
       if (key.backspace || key.delete) { setBuffer((b) => b.slice(0, -1)); return; }
-      if (/^[0-9]$/.test(input)) setBuffer((b) => (b + input).slice(0, 5));
+      if (curSetting?.widget === 'number') {
+        if (/^[0-9]$/.test(input)) setBuffer((b) => (b + input).slice(0, 5));
+      } else if (input && input.length === 1 && !key.ctrl && !key.meta) {
+        // text: accept any printable character, modest length cap.
+        setBuffer((b) => (b + input).slice(0, 120));
+      }
       return;
     }
 
@@ -145,7 +153,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         }
         return;
       }
-      if (curSetting.widget === 'number' && key.return) {
+      if ((curSetting.widget === 'number' || curSetting.widget === 'text') && key.return) {
         setEditKey(curSetting.key); setBuffer(String(curSetting.value ?? '')); return;
       }
     }
@@ -174,7 +182,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const footer = editKey !== null
-    ? 'type digits · enter save · esc cancel'
+    ? (curSetting?.widget === 'number'
+        ? 'type digits · enter save · esc cancel'
+        : 'type · enter save · esc cancel')
     : curAction ? '↑↓ · enter open · type filter · esc'
     : curSetting?.widget === 'status' ? '↑↓ · enter configure · type filter · esc'
     : curSetting?.widget === 'toggle' ? '↑↓ · space toggle · type filter · esc'

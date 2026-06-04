@@ -120,6 +120,16 @@ SETTINGS: list[SettingSpec] = [
         default="local", choices=lambda: ["local", "none"],
         help="`local` = on-disk memory tool; `none` = disabled.",
     ),
+    SettingSpec(
+        key="claude_code.meridian_profile",
+        path=("providers", "claude-code", "meridian_profile"),
+        group="Claude Code", label="Meridian account (profile)",
+        widget="text", apply=APPLY_LIVE, default="",
+        help="Pin claude-code's Claude account to a fixed Meridian profile, "
+             "independent of the terminal `claude auth login`. Empty = follow "
+             "Meridian's default. Add accounts with `meridian profile add "
+             "<name>` (browser login), then set the name here.",
+    ),
 ]
 
 _BY_KEY = {s.key: s for s in SETTINGS}
