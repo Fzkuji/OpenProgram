@@ -186,6 +186,20 @@ def main():
     parser = argparse.ArgumentParser(
         prog="openprogram",
         description="OpenProgram — build, run, and chat with agentic programs.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "common commands:\n"
+            "  openprogram                       open the chat (terminal UI)\n"
+            "  openprogram web                   open the browser UI\n"
+            "  openprogram setup                 first-run setup wizard\n"
+            "  openprogram providers available   list/search every provider you can use\n"
+            "  openprogram providers login <id>  add a provider key (then auto-fetches models)\n"
+            "  openprogram config list           show settings (config get/set to change)\n"
+            "  openprogram doctor                health checks\n"
+            "\n"
+            "Run `openprogram <verb> -h` for a command's own help "
+            "(e.g. `openprogram providers -h`)."
+        ),
     )
     # Top-level options for bare ``openprogram`` (chat mode). All other
     # modes are subcommands — see ``openprogram web``, ``openprogram
