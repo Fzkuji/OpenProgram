@@ -15,6 +15,7 @@
  *   - api-key.tsx (exported for /settings/search), base-url.tsx,
  *     connectivity.tsx, model-list.tsx
  */
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Detail } from "./detail";
@@ -31,6 +32,7 @@ export type { Provider, Model } from "./types";
 
 export function ProvidersSection() {
   const { t, text } = useTranslation();
+  const queryClient = useQueryClient();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -88,6 +90,11 @@ export function ProvidersSection() {
     }
     invalidate("/api/providers/list");
     reload(true);
+    // Disabling/enabling a provider changes which models the chat picker
+    // may show — drop the React-Query cache the composer + model badge
+    // read so a disabled provider's models vanish from the top menu
+    // without a page reload (the backend already excludes them).
+    queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
   }
 
   return (

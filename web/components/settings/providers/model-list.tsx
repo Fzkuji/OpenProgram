@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   Brain,
@@ -51,6 +52,7 @@ export function ModelList({
   onReload: () => void;
 }) {
   const { text } = useTranslation();
+  const queryClient = useQueryClient();
   const enabledCount = models.filter((m) => m.enabled).length;
   const matched = !search
     ? models
@@ -79,6 +81,7 @@ export function ModelList({
       );
     } catch { /* ignore */ }
     onReload();
+    queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
   }
 
   async function bulkToggle(enabled: boolean) {
@@ -96,6 +99,7 @@ export function ModelList({
       ),
     );
     onReload();
+    queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
   }
 
   const [fetchStatus, setFetchStatus] = useState<string | null>(null);
