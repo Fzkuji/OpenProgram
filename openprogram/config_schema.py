@@ -121,14 +121,14 @@ SETTINGS: list[SettingSpec] = [
         help="`local` = on-disk memory tool; `none` = disabled.",
     ),
     SettingSpec(
-        key="claude_code.meridian_profile",
+        key="claude_code.account",
         path=("providers", "claude-code", "meridian_profile"),
-        group="Claude Code", label="Meridian account (profile)",
+        group="Claude Code", label="Active Claude account",
         widget="text", apply=APPLY_LIVE, default="",
-        help="Pin claude-code's Claude account to a fixed Meridian profile, "
-             "independent of the terminal `claude auth login`. Empty = follow "
-             "Meridian's default. Add accounts with `meridian profile add "
-             "<name>` (browser login), then set the name here.",
+        help="Which saved Claude account claude-code runs on, independent of "
+             "the terminal `claude auth login`. Empty = follow the terminal "
+             "login. Manage accounts with `openprogram providers claude-code "
+             "accounts add/list/use`.",
     ),
 ]
 

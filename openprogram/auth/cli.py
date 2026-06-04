@@ -200,25 +200,30 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     pd.add_argument("name", help="Profile name to delete")
     pd.add_argument("--yes", action="store_true", help="Skip confirmation")
 
-    # meridian (the claude-code proxy account/profile the provider is pinned
-    # to). Nested noun like `profiles`; verbs live in the claude-code module.
-    p_meridian = auth_sub.add_parser(
-        "meridian",
-        help="Manage which Meridian account (profile) claude-code uses",
+    # claude-code provider config. Today this is Claude-account management
+    # (`providers claude-code accounts <verb>`). Nested nouns per
+    # docs/design/cli/cli-naming.md. The underlying proxy (Meridian) is an
+    # internal detail and is never named in the user-facing surface here.
+    p_cc = auth_sub.add_parser(
+        "claude-code",
+        help="claude-code provider config (manage its Claude accounts)",
+    )
+    cc_sub = p_cc.add_subparsers(dest="claude_code_cmd", metavar="noun")
+    p_accounts = cc_sub.add_parser(
+        "accounts",
+        help="Add / remove / list / activate the Claude accounts claude-code uses",
         description=(
-            "claude-code reaches Claude through a local Meridian proxy that "
-            "can hold several Claude subscriptions as named profiles. These "
-            "verbs pin OpenProgram's claude-code to one of them — decoupling "
-            "it from the terminal `claude auth login`. Adding an account "
-            "(browser login) is done with Meridian's own "
-            "`meridian profile add <name>`."
+            "Manage the Claude accounts OpenProgram's claude-code provider can "
+            "use, and pick which one is active: add an account (browser "
+            "login), remove one, list them, or activate one. Independent of "
+            "the terminal `claude auth login` you chat on."
         ),
     )
-    mer_sub = p_meridian.add_subparsers(dest="meridian_cmd", metavar="verb")
+    accounts_sub = p_accounts.add_subparsers(dest="accounts_cmd", metavar="verb")
     from openprogram.providers.anthropic._meridian_cli import (
-        build_parser as _meridian_build_parser,
+        build_parser as _accounts_build_parser,
     )
-    _meridian_build_parser(mer_sub)
+    _accounts_build_parser(accounts_sub)
 
 
 def dispatch(args: argparse.Namespace) -> int:
@@ -266,16 +271,21 @@ def dispatch(args: argparse.Namespace) -> int:
         return _cmd_aliases(args.json)
     if cmd == "profiles":
         return _dispatch_profiles(args)
-    if cmd == "meridian":
-        from openprogram.providers.anthropic._meridian_cli import (
-            dispatch as _meridian_dispatch,
-        )
-        return _meridian_dispatch(args)
+    if cmd == "claude-code":
+        if getattr(args, "claude_code_cmd", None) == "accounts":
+            from openprogram.providers.anthropic._meridian_cli import (
+                dispatch as _accounts_dispatch,
+            )
+            return _accounts_dispatch(args)
+        print("Usage: openprogram providers claude-code accounts <verb>\n"
+              "Verbs: add <name>, remove <name>, list, use <name>, status",
+              file=sys.stderr)
+        return 2
     # No subcommand — print the help hint.
     print("Usage: openprogram providers <verb>\n"
           "Verbs: available (list/search the catalogue), login, logout, "
           "list (configured pools), status, discover, adopt, doctor, "
-          "setup, aliases, profiles, meridian (claude-code account)",
+          "setup, aliases, profiles, claude-code (account management)",
           file=sys.stderr)
     return 2
 

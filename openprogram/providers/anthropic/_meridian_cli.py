@@ -1,126 +1,119 @@
-"""CLI for the Meridian account (profile) that OpenProgram's ``claude-code``
-provider is pinned to.
+"""CLI for managing the Claude accounts OpenProgram's ``claude-code``
+provider can use, and which one is active.
 
-Background: ``claude-code`` reaches Claude through a local Meridian proxy,
-which can hold several Claude subscriptions as named *profiles*. Pinning a
-profile decouples OpenProgram's Claude account from whatever the terminal
-``claude auth login`` last logged in (see
-docs/design/claude-code-meridian-profile.md).
+Registered as ``openprogram providers claude-code accounts <verb>``:
 
-Division of labour:
+  * ``add <name>``    — add a Claude account (opens a browser login)
+  * ``remove <name>`` — remove a saved account
+  * ``list``          — list accounts and which one is active
+  * ``use <name>``    — activate an account (claude-code runs on it)
+  * ``status``        — backend readiness + active account + accounts
 
-  * Meridian owns **login** — adding an account is a browser OAuth flow run
-    by Meridian's own CLI (``meridian profile add <name>``). A human does
-    that step.
-  * OpenProgram owns the **binding** — which existing profile its
-    claude-code traffic uses. That's pure config, so it's fully
-    command-line drivable here (``use`` / ``clear``) and inspectable
-    (``status`` / ``list``). An agent can run everything except the
-    browser login.
-
-Verbs (registered as ``openprogram providers meridian <verb>``):
-
-  * ``status``         — is Meridian installed / running, what is OpenProgram
-                         pinned to, what profiles exist.
-  * ``list``           — the profiles Meridian knows (passthrough).
-  * ``use <name>``     — pin OpenProgram's claude-code to that profile.
-  * ``clear``          — unpin (follow Meridian's default / keychain login).
+Implementation note: the accounts live in a local Claude proxy (Meridian)
+that holds each subscription as a named profile; ``claude-code`` requests
+carry an ``x-meridian-profile`` header naming the active one. That proxy
+is an INTERNAL detail — nothing user-facing here says "meridian"; users
+only ever see "Claude account". The one exception is the one-time backend
+install hint in ``status`` (the proxy ships as an npm package, so its name
+is unavoidable there). See docs/design/claude-code-meridian-profile.md.
 """
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
 
 
 _DEFAULT_PROXY_URL = "http://localhost:3456"
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
-def build_parser(meridian_sub: "argparse._SubParsersAction") -> None:
-    """Register the meridian verbs on the ``providers meridian`` subparser."""
-    meridian_sub.add_parser(
-        "status",
-        help="Show Meridian install/run state, the pinned profile, and "
-             "available profiles.",
-    )
-    meridian_sub.add_parser(
-        "list", help="List the Claude accounts (profiles) Meridian knows.",
-    )
-    p_add = meridian_sub.add_parser(
+def build_parser(accounts_sub: "argparse._SubParsersAction") -> None:
+    """Register account verbs on ``providers claude-code accounts``."""
+    p_add = accounts_sub.add_parser(
         "add",
-        help="Add a Claude account as a Meridian profile — opens a browser "
-             "login. Sign in with the account you want for this profile.",
+        help="Add a Claude account (opens a browser login — sign in with the "
+             "account you want to add).",
         description=(
-            "Wraps Meridian's account login so you never run `meridian` "
-            "directly. Opens a browser; sign in with whichever Claude "
-            "account this profile should use (switch accounts in the browser "
-            "first if a different one is signed in). The terminal "
-            "`claude auth login` / your chat account is not affected."
+            "Opens a browser login and saves the account under <name>. Sign "
+            "in with whichever Claude account you want to add (switch accounts "
+            "in the browser first if a different one is signed in). Your "
+            "terminal chat account is not affected — you drive everything "
+            "through OpenProgram, there's no other tool to run."
         ),
     )
-    p_add.add_argument(
-        "profile_name", help="Name for the new profile, e.g. experiment.",
+    p_add.add_argument("name", help="A label for the account, e.g. experiment.")
+
+    p_remove = accounts_sub.add_parser(
+        "remove", aliases=["rm"], help="Remove a saved Claude account.",
     )
-    p_use = meridian_sub.add_parser(
-        "use",
-        help="Pin OpenProgram's claude-code traffic to a Meridian profile "
-             "(decouples it from the terminal `claude auth login`).",
+    p_remove.add_argument("name", help="Account label to remove.")
+
+    accounts_sub.add_parser(
+        "list", help="List saved Claude accounts and which one is active.",
     )
-    p_use.add_argument("profile_name", help="Meridian profile name to pin to.")
-    meridian_sub.add_parser(
-        "clear",
-        help="Unpin — claude-code follows Meridian's default/active profile "
-             "(or the keychain login) again.",
+
+    p_use = accounts_sub.add_parser(
+        "use", aliases=["activate"],
+        help="Activate an account — claude-code runs OpenProgram on it.",
+    )
+    p_use.add_argument("name", help="Account label to activate.")
+
+    accounts_sub.add_parser(
+        "status",
+        help="Show backend readiness, the active account, and all accounts.",
     )
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    verb = getattr(args, "meridian_cmd", None)
-    if verb == "status":
-        return _cmd_status()
+    verb = getattr(args, "accounts_cmd", None)
+    if verb == "add":
+        return _cmd_add(args.name)
+    if verb in ("remove", "rm"):
+        return _cmd_remove(args.name)
     if verb == "list":
         return _cmd_list()
-    if verb == "add":
-        return _cmd_add(args.profile_name)
-    if verb == "use":
-        return _cmd_use(args.profile_name)
-    if verb == "clear":
-        return _cmd_clear()
+    if verb in ("use", "activate"):
+        return _cmd_use(args.name)
+    if verb == "status":
+        return _cmd_status()
     print(
-        "Usage: openprogram providers meridian <verb>\n"
-        "Verbs: status, list, add <name>, use <name>, clear",
+        "Usage: openprogram providers claude-code accounts <verb>\n"
+        "Verbs: add <name>, remove <name>, list, use <name>, status",
         file=sys.stderr,
     )
     return 2
 
 
 # ---------------------------------------------------------------------------
-# helpers
+# backend helpers (the local proxy = Meridian; kept internal)
 # ---------------------------------------------------------------------------
 
-def _meridian_bin() -> str | None:
+def _proxy_bin() -> str | None:
     return shutil.which("meridian")
 
 
-def _run_meridian(args: list[str]) -> tuple[int, str]:
-    binp = _meridian_bin()
+def _run_proxy(args: list[str]) -> tuple[int, str]:
+    binp = _proxy_bin()
     if not binp:
-        return 127, "meridian is not installed (npm install -g @rynfar/meridian)"
+        return 127, "backend not installed"
     try:
         p = subprocess.run([binp, *args], capture_output=True, text=True, timeout=30)
     except Exception as e:  # noqa: BLE001
-        return 1, f"failed to run meridian: {e}"
+        return 1, f"backend error: {e}"
     return p.returncode, (p.stdout + p.stderr)
 
 
-def _current_pin() -> str | None:
+def _active_account() -> str | None:
+    """The account name claude-code is currently pinned to (or None)."""
     from ._claude_max_proxy_registry import meridian_profile
     return meridian_profile()
 
 
-def _proxy_alive() -> tuple[bool, str]:
+def _backend_ready() -> tuple[bool, str]:
     url = os.environ.get("CLAUDE_MAX_PROXY_URL") or _DEFAULT_PROXY_URL
     try:
         import urllib.request
@@ -131,6 +124,40 @@ def _proxy_alive() -> tuple[bool, str]:
         return False, url
 
 
+def _parse_accounts() -> list[dict]:
+    """Parse the proxy's profile listing into ``[{name, email}]``.
+
+    We don't pass the raw backend output through — it mentions the
+    underlying tool. Instead we pull out the account label + email and
+    re-render them under Claude-account wording.
+    """
+    rc, out = _run_proxy(["profile", "list"])
+    accounts: list[dict] = []
+    for line in out.splitlines():
+        s = _ANSI.sub("", line).strip()
+        if not s or s.endswith(":") or s.startswith("Config") or "no restart" in s:
+            continue
+        if "No profiles" in s or "Add one" in s:
+            continue
+        parts = s.split()
+        if not parts:
+            continue
+        name = parts[0]
+        email = next((p for p in parts if "@" in p), "")
+        accounts.append({"name": name, "email": email})
+    return accounts
+
+
+def _print_install_hint() -> None:
+    binp = _proxy_bin()
+    print("\n  Backend not ready. One-time setup of the local Claude proxy")
+    print("  that serves your accounts:")
+    if not binp:
+        print("    npm install -g @rynfar/meridian")
+    print("    meridian        # keep this running while you use Claude here")
+    print("  (Or set it up from the app: Settings → LLM Providers → Claude Code.)")
+
+
 # ---------------------------------------------------------------------------
 # verbs
 # ---------------------------------------------------------------------------
@@ -138,94 +165,115 @@ def _proxy_alive() -> tuple[bool, str]:
 def _cmd_add(name: str) -> int:
     name = (name or "").strip()
     if not name:
-        print("A profile name is required: openprogram providers meridian add "
-              "<name>", file=sys.stderr)
+        print("An account label is required: openprogram providers claude-code "
+              "accounts add <name>", file=sys.stderr)
         return 2
-    binp = _meridian_bin()
-    if not binp:
-        print("meridian is not installed (npm install -g @rynfar/meridian).",
-              file=sys.stderr)
+    if not _proxy_bin():
+        _print_install_hint()
         return 1
-    print(f"Adding Meridian profile {name!r} — a browser window will open.")
-    print("Sign in with the Claude account you want THIS profile to use; if a "
-          "different\none is already signed in, switch it in the browser first "
-          "(claude.ai → sign\nout → sign in). Your terminal chat account is not "
-          "affected.\n")
-    # Inherit stdio so Meridian prints its prompts and opens the browser. The
-    # whole point of this wrapper is that login is driven through OpenProgram —
-    # the user never runs `meridian` directly.
+    print(f"Adding Claude account {name!r} — a browser window will open.")
+    print("Sign in with the Claude account you want to add; if a different one "
+          "is\nalready signed in, switch it in the browser first (claude.ai → "
+          "sign out →\nsign in). Your terminal chat account is not affected.\n")
+    # Inherit stdio so the login prompts + browser open work. Internally this
+    # is the proxy's profile-add; the user only ever sees Claude-account wording.
     try:
-        rc = subprocess.run([binp, "profile", "add", name]).returncode
+        rc = subprocess.run([_proxy_bin(), "profile", "add", name]).returncode
     except Exception as e:  # noqa: BLE001
-        print(f"meridian profile add failed: {e}", file=sys.stderr)
+        print(f"Adding the account failed: {e}", file=sys.stderr)
         return 1
     if rc == 0:
-        print(f"\n✓ Added profile {name!r}. Pin OpenProgram's claude-code to it:")
-        print(f"  openprogram providers meridian use {name}")
+        print(f"\n✓ Added Claude account {name!r}. Activate it for OpenProgram:")
+        print(f"  openprogram providers claude-code accounts use {name}")
     return rc
+
+
+def _cmd_remove(name: str) -> int:
+    name = (name or "").strip()
+    if not name:
+        print("An account label is required: openprogram providers claude-code "
+              "accounts remove <name>", file=sys.stderr)
+        return 2
+    if not _proxy_bin():
+        _print_install_hint()
+        return 1
+    rc, out = _run_proxy(["profile", "remove", name])
+    # Surface a cleaned line, not the raw backend output.
+    msg = _ANSI.sub("", out).strip().splitlines()
+    print(f"✓ Removed Claude account {name!r}." if rc == 0
+          else (msg[0] if msg else f"Could not remove {name!r}."))
+    if rc == 0 and _active_account() == name:
+        # It was the active one — clear the pin so we don't point at a gone account.
+        from openprogram.webui._model_catalog.storage import set_provider_config
+        set_provider_config("claude-code", {"meridian_profile": ""})
+        print("  (It was active — OpenProgram is now unset; activate another "
+              "with `accounts use <name>`.)")
+    return rc
+
+
+def _cmd_list() -> int:
+    if not _proxy_bin():
+        _print_install_hint()
+        return 1
+    accounts = _parse_accounts()
+    active = _active_account()
+    if not accounts:
+        print("No Claude accounts yet. Add one:")
+        print("  openprogram providers claude-code accounts add <name>")
+        return 0
+    print("Claude accounts (→ = active for OpenProgram):")
+    for a in accounts:
+        mark = "→" if a["name"] == active else " "
+        print(f"  {mark} {a['name']:18s} {a.get('email', '')}")
+    if active and active not in {a["name"] for a in accounts}:
+        print(f"\n  Active account {active!r} isn't in the list — add it with "
+              f"`accounts add {active}`.")
+    return 0
 
 
 def _cmd_use(name: str) -> int:
     name = (name or "").strip()
     if not name:
-        print("A profile name is required: openprogram providers meridian use <name>",
-              file=sys.stderr)
+        print("An account label is required: openprogram providers claude-code "
+              "accounts use <name>", file=sys.stderr)
         return 2
     from openprogram.webui._model_catalog.storage import set_provider_config
 
     set_provider_config("claude-code", {"meridian_profile": name})
-    print(f"✓ OpenProgram's claude-code is now pinned to Meridian profile {name!r}.")
-    print("  Takes effect on the next request — no restart. The terminal "
-          "Claude Code login is unaffected.")
-    # Gentle nudge if the named profile isn't among Meridian's known ones.
-    rc, out = _run_meridian(["profile", "list"])
-    if rc == 0 and name not in out:
-        print(f"  Note: {name!r} isn't a Meridian profile yet — add it with "
-              f"`openprogram providers meridian add {name}` (browser login).")
+    print(f"✓ OpenProgram now runs claude-code on the Claude account {name!r}.")
+    print("  Takes effect on the next request — no restart. Your terminal chat "
+          "account is unaffected.")
+    accounts = {a["name"] for a in _parse_accounts()} if _proxy_bin() else set()
+    if accounts and name not in accounts:
+        print(f"  Note: {name!r} isn't added yet — add it with "
+              f"`openprogram providers claude-code accounts add {name}`.")
     return 0
-
-
-def _cmd_clear() -> int:
-    from openprogram.webui._model_catalog.storage import set_provider_config
-
-    set_provider_config("claude-code", {"meridian_profile": ""})
-    print("✓ Unpinned. claude-code now follows Meridian's default/active "
-          "profile (or the keychain `claude auth login`).")
-    return 0
-
-
-def _cmd_list() -> int:
-    rc, out = _run_meridian(["profile", "list"])
-    print(out.rstrip())
-    cur = _current_pin()
-    print(
-        f"\nOpenProgram is pinned to: {cur!r}" if cur
-        else "\nOpenProgram is not pinned (claude-code follows Meridian's default)."
-    )
-    return 0 if rc == 0 else rc
 
 
 def _cmd_status() -> int:
-    binp = _meridian_bin()
-    alive, url = _proxy_alive()
-    cur = _current_pin()
+    binp = _proxy_bin()
+    ready, url = _backend_ready()
+    active = _active_account()
 
-    print("Meridian (claude-code proxy) status")
-    print(f"  installed : {binp or 'NO — npm install -g @rynfar/meridian'}")
-    print(f"  running   : {'yes (' + url + ')' if alive else 'NO — start it with: meridian'}")
-    print(f"  pinned to : {cur!r}" if cur
-          else "  pinned to : (none — follows Meridian default / keychain login)")
+    print("claude-code — Claude accounts")
+    print(f"  backend   : {'ready (' + url + ')' if ready else 'not ready'}")
+    print(f"  active    : {active!r}" if active
+          else "  active    : (none — claude-code follows your terminal login)")
 
     if binp:
-        rc, out = _run_meridian(["profile", "list"])
-        print("\nMeridian profiles:")
-        for line in out.rstrip().splitlines():
-            print(f"  {line}")
-
-    print("\nAdd an account (opens a browser login):")
-    print("  openprogram providers meridian add <name>")
-    print("Pin OpenProgram to it:")
-    print("  openprogram providers meridian use <name>")
+        accounts = _parse_accounts()
+        print("\n  accounts:")
+        if accounts:
+            for a in accounts:
+                mark = "→" if a["name"] == active else " "
+                print(f"    {mark} {a['name']:18s} {a.get('email', '')}")
+        else:
+            print("    (none yet)")
+    if not binp or not ready:
+        _print_install_hint()
+    else:
+        print("\n  Add an account:     openprogram providers claude-code accounts add <name>")
+        print("  Activate one:       openprogram providers claude-code accounts use <name>")
     return 0
 
 
