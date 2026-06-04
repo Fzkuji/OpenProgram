@@ -1,5 +1,6 @@
 "use client";
 
+import { Eye, EyeOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -143,7 +144,7 @@ export function ApiKey({
           title={text("Show/hide", "显示/隐藏")}
           onClick={toggleVisibility}
         >
-          {showText ? "🙈" : "👁"}
+          {showText ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
         </button>
         <Button size="sm" onClick={save}>
           {text("Save", "保存")}

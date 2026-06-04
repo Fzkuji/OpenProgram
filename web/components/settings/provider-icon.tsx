@@ -32,7 +32,6 @@
 import { useEffect, useState } from "react";
 import styles from "./settings-page.module.css";
 import { LOBE_ICONS } from "./lobe-icons";
-import { MinimaxGlyph } from "./minimax-glyph";
 
 const LOBEHUB_CDN = "https://unpkg.com/@lobehub/icons-static-svg@1.90.0/icons/";
 const MODELS_DEV_CDN = "https://models.dev/logos/";
@@ -127,24 +126,6 @@ export function ProviderIcon({ id, size = 24 }: { id: string; size?: number }) {
       cancelled = true;
     };
   }, [tier, id]);
-
-  // MiniMax: its LobeHub color variant is a pink→orange gradient
-  // app-icon (skeuomorphic). Render the mono waveform inline instead so
-  // `currentColor` follows the theme — a flat glyph that stays visible on
-  // both dark and light, matching the rest of the list. Covers all
-  // minimax ids (they share slug "minimax"). Placed after the hooks so it
-  // never short-circuits a hook call.
-  if (match?.slug === "minimax") {
-    return (
-      <div
-        className={styles.providerIcon}
-        style={{ width: size, height: size, color: "var(--text-primary)" }}
-        title={id}
-      >
-        <MinimaxGlyph />
-      </div>
-    );
-  }
 
   if (tier === 3) {
     return (
