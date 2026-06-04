@@ -200,6 +200,26 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     pd.add_argument("name", help="Profile name to delete")
     pd.add_argument("--yes", action="store_true", help="Skip confirmation")
 
+    # meridian (the claude-code proxy account/profile the provider is pinned
+    # to). Nested noun like `profiles`; verbs live in the claude-code module.
+    p_meridian = auth_sub.add_parser(
+        "meridian",
+        help="Manage which Meridian account (profile) claude-code uses",
+        description=(
+            "claude-code reaches Claude through a local Meridian proxy that "
+            "can hold several Claude subscriptions as named profiles. These "
+            "verbs pin OpenProgram's claude-code to one of them — decoupling "
+            "it from the terminal `claude auth login`. Adding an account "
+            "(browser login) is done with Meridian's own "
+            "`meridian profile add <name>`."
+        ),
+    )
+    mer_sub = p_meridian.add_subparsers(dest="meridian_cmd", metavar="verb")
+    from openprogram.providers.anthropic._meridian_cli import (
+        build_parser as _meridian_build_parser,
+    )
+    _meridian_build_parser(mer_sub)
+
 
 def dispatch(args: argparse.Namespace) -> int:
     """Run the selected credential-management verb.
@@ -246,11 +266,16 @@ def dispatch(args: argparse.Namespace) -> int:
         return _cmd_aliases(args.json)
     if cmd == "profiles":
         return _dispatch_profiles(args)
+    if cmd == "meridian":
+        from openprogram.providers.anthropic._meridian_cli import (
+            dispatch as _meridian_dispatch,
+        )
+        return _meridian_dispatch(args)
     # No subcommand — print the help hint.
     print("Usage: openprogram providers <verb>\n"
           "Verbs: available (list/search the catalogue), login, logout, "
           "list (configured pools), status, discover, adopt, doctor, "
-          "setup, aliases, profiles",
+          "setup, aliases, profiles, meridian (claude-code account)",
           file=sys.stderr)
     return 2
 
