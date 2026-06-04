@@ -338,6 +338,19 @@ def _cmd_login(provider: str, profile: str, method: Optional[str]) -> int:
     if saved_provider != provider:
         print(f"\n  Note: routed to {saved_provider!r} (not {provider!r}) "
               f"because that's where this credential shape belongs.")
+    # Auto-fetch the provider's live model list right after login, so its
+    # catalog (incl. real image/video modalities that the static registry
+    # underreports — e.g. MiniMax) is correct without a separate "Fetch
+    # models" step. Mirrors the web UI's save-key → fetch. Best-effort and
+    # only meaningful for providers that expose a /v1/models listing;
+    # OAuth / static-only providers just no-op silently.
+    try:
+        from openprogram.webui._model_catalog import fetch_models_remote
+        res = fetch_models_remote(saved_provider)
+        if isinstance(res, dict) and res.get("fetched"):
+            print(f"  ↻ fetched {res['fetched']} models for {saved_provider}")
+    except Exception:
+        pass
     return 0
 
 
@@ -488,6 +501,26 @@ def _login_paste_api_key(provider: str, profile: str) -> Credential:
     key = getpass.getpass(f"Paste API key for {provider} (hidden): ").strip()
     if not key:
         raise AuthConfigError("empty API key — nothing to save")
+    # Mirror the pasted key into config.json ``api_keys`` (keyed by the
+    # provider's env-var name) alongside the auth store. The web UI catalog,
+    # credential validation, and the model-list fetch all resolve keys via
+    # env > config.json (NOT the auth store) — so without this a CLI-pasted
+    # key leaves the provider showing "not configured" in the UI and blocks
+    # the auto-fetch in _cmd_login. Best-effort. Community providers fall
+    # back to the models.dev env-var name.
+    try:
+        from openprogram.providers.env_api_keys import env_vars_for
+        env = (env_vars_for(provider) or [None])[0]
+        if not env:
+            from openprogram.webui._model_catalog.providers import _env_var_for
+            env = _env_var_for(provider)
+        if env:
+            from openprogram.setup import _read_config, _write_config
+            cfg = _read_config()
+            cfg.setdefault("api_keys", {})[env] = key
+            _write_config(cfg)
+    except Exception:
+        pass
     return Credential(
         provider_id=provider,
         profile_id=profile,
