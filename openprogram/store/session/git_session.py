@@ -5,7 +5,9 @@ repo at ``<root>/<session_id>/``. This class owns:
 
   * lazy-init (no repo on disk yet → create on first commit)
   * append a file under ``history/`` (sequential, no overwrite)
-  * write/overwrite files under ``context/`` (turn-end ContextCommit of LLM view)
+  * read files under ``context/`` (``read_context_file`` — the per-turn
+    ContextCommit files under ``context/commits/`` are written directly
+    by ``context.commit.store.save_commit``, not through this class)
   * commit (one per turn — same threading.Lock per session)
   * log / checkout / branch (used by UI rewind + retry)
 
@@ -141,20 +143,6 @@ class GitSession:
         # Atomic-ish: write to tmp then rename. Avoids partial reads if
         # another thread reads the file mid-write.
         tmp = fpath.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
-        tmp.replace(fpath)
-        return fpath
-
-    def write_context_file(self, name: str, payload: Any) -> Path:
-        """Overwrite a file under ``context/`` (e.g. ``messages.json``,
-        ``commit.json``). Each turn rewrites these so the working
-        tree reflects the current LLM view.
-        """
-        self._ensure_init()
-        cdir = self.path / "context"
-        cdir.mkdir(parents=True, exist_ok=True)  # survive external deletion
-        fpath = cdir / name
-        tmp = fpath.with_suffix(fpath.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
         tmp.replace(fpath)
         return fpath

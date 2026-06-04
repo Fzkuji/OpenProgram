@@ -83,7 +83,7 @@ Every session is its own git repo at `~/.openprogram/sessions/<id>/`
 ├── .git/                          one commit per turn
 ├── meta.json                      title / agent_id / project_id / head_id / branches
 ├── history/NNNN-{u|a|t|s}-<id>.json   append-only DAG nodes (user/llm/code)
-├── context/                       mutable LLM view (messages.json + commits/<id>.json)
+├── context/commits/<id>.json      per-turn ContextCommit (immutable LLM view)
 ├── workdir/                       per-session scratch workspace
 └── file_backups/<turn>/           ③ pre-edit file snapshots (see below)
 ```

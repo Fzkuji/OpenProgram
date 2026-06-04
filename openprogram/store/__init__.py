@@ -37,10 +37,11 @@ dirs:
                ``NNNN-{u|a|t|s|...}-<id>.json`` where NNNN is the
                4-digit zero-padded seq. Never modified after write.
 
-    context/   mutable LLM view. ``messages.json`` carries the current
-               assembled message list (compact / aging rewrites it);
-               ``commits/<id>.json`` carries per-commit ContextItem
-               lists, written one file per turn (immutable).
+    context/   the LLM view. ``commits/<id>.json`` carries per-commit
+               ContextItem lists, written one immutable file per turn
+               by ``context.commit.store.save_commit``. There is no
+               ``messages.json`` mirror — every read looks the commit up
+               by id / DAG ancestry, not via a shared mutable file.
 
 Plus ``meta.json`` at the repo root for session-level fields (title,
 agent_id, head_id, ...).
