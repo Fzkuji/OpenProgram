@@ -50,6 +50,14 @@
 
 **关键缺口 (Phase 2 的核心)**: 实体层 (git) 已建好,但虚拟层目前**仍是 v1 的 journal/wiki/core,而且还没真正读实体层** —— `memory/wiki/ingest.py` 喂给 LLM 的是 `get_branch()` 渲染出来的对话文本,不是 session-git 的 `Call` DAG;project-git 的 commit 历史更是从未被读取。所以"实体→虚拟"这一跳还没打通,实体层对记忆质量的贡献目前 ≈ 0。
 
+> **2026-06 进展**: Phase 2 的前置读层已落地 (Unit D, commit e48af986)。
+> `openprogram/store/session/provenance.py` 给出了 `Provenance` dataclass +
+> 不带 LLM 的读原语 (`iter_nodes_since` 增量游标 / `node_provenance` 坐标 /
+> `session_commits` / `project_commits`),memory 可 `from openprogram.store import
+> Provenance, iter_nodes_since`。Phase 2 剩下的是 Stage 2 抽取器 (吃 `Call` DAG →
+> 时间轴事件 + 图实体) 和把 `session_watcher` / `wiki/ingest` 从 `get_branch` 文本
+> 切到这个读层。详见 [`entity-session-cache.md`](entity-session-cache.md) §5–§6。
+
 **§0 概览图里的"默认项目"** 已从最初设计的"兜底 git 仓"简化为**纯逻辑标签**(见 §2.5),图与正文以 §2.5 为准。
 
 **已知待修 (非本文档范围, 代码层)**: `sessions-git → sessions` 改名后,记忆实体层的 `<state>/sessions/` 与 `agentic_programming` 的 ask_user IPC 目录 (`paths.get_sessions_dir()` 同样指向 `<state>/sessions/`) 撞了同一个目录,需要给其中一个换名 (如 ask_user 改用 `<state>/followups/`)。
@@ -361,8 +369,10 @@ v1 管道读的是"已经抽过的对话文本"。v2 **直接读 session-git 里
 剩余 ~2-3 周。每个 phase 独立可验证。
 
 **Phase 2 建议的落地顺序** (先证明管道, 再砸钱调最贵的 Stage 2):
-1. 先定 `Provenance` dataclass + timeline/graph 的 JSONL schema + 一个不带 LLM 的薄读写层;
-2. 把提炼触发器接到**读 session-git DAG (+ project-git log)**, 而不是 `get_branch()` 文本——先把"实体→虚拟"管子接通;
+1. ~~先定 `Provenance` dataclass + 一个不带 LLM 的薄读写层~~ ✅ 已落地
+   (`store/session/provenance.py`, commit e48af986)。剩 timeline/graph 的 JSONL schema;
+2. 把提炼触发器接到**读 session-git DAG (+ project-git log)**, 而不是 `get_branch()` 文本——
+   现在用 `iter_nodes_since` / `session_commits` / `project_commits` 接, 先把"实体→虚拟"管子接通;
 3. 先写**规则版抽取器** (pattern match) 跑通端到端、带上真 provenance, 再换 LLM 版;
 4. 加导航工具, 召回才能真正缩成"只注入虚拟"。
 

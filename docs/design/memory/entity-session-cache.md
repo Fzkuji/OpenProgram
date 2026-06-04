@@ -1,6 +1,7 @@
 # 实体会话缓存 — 完备性审计 + memory 映射就绪度
 
-> 状态: 审计 (2026-06-04) · Owner: store/session + memory
+> 状态: 审计 (2026-06-04) · 缺口 #2/#3/#4 已修 (Unit B/C/D, 见 §6) ·
+> Owner: store/session + memory
 > 关联: [`memory-v2.md`](memory-v2.md) (实体/虚拟两级总设计) ·
 > [`git-as-entity-memory.md`](git-as-entity-memory.md) (为什么用 git) ·
 > [`store/README.md`](../../../openprogram/store/README.md) (存储层导航)
@@ -212,16 +213,19 @@ provenance"这件事放在 store/session 侧,任何 memory 后端 (builtin / mem
 映射同一个稳定接口,而不是各自去理解 git 布局。实体层负责"暴露可映射的坐标",memory
 负责"映射成什么形状"。
 
-## 6. 本轮处置 (小步、各自验证)
+## 6. 本轮处置 (小步、各自验证) — 已落地
 
-| Unit | 缺口 | 动作 | 验证 |
-|---|---|---|---|
-| B | #4 | 删 `write_context_file`;修 store/__init__ + README 的 messages.json 说法 | py_compile + import + dispatcher 测试 + healthz |
-| C | #3 | SessionStore 缓存加 LRU 上限 (move-to-end + evict) | 测试 + healthz |
-| D | #2 | 落 `Provenance` + 读原语薄层 (`store/session/provenance.py`) | 单测 + healthz |
+| Unit | 缺口 | 动作 | commit | 验证 |
+|---|---|---|---|---|
+| B | #4 | 删 `write_context_file`;修 store/__init__ + README 的 messages.json 说法 | ef6a4d39 | 49/3 测试 + healthz=55 |
+| C | #3 | SessionStore 缓存加 LRU 上限 (OrderedDict move-to-end + evict, 默认 256) | 63087e32 | 56/3 测试 (含 5 个新 LRU 测试) + healthz=55 |
+| D | #2 | 落 `Provenance` + 读原语薄层 (`store/session/provenance.py`);新增 `SessionStore.session_commits` | e48af986 | 70/3 测试 (含 10 个新 provenance 测试) + healthz=55 |
 
-缺口 1 (映射读 DAG) = memory-v2 Phase 2,工作量 5-7 天,是独立大改,不在本轮;本轮 Unit D
-把它的前置接口铺好。
+缺口 1 (映射读 DAG) = memory-v2 Phase 2,工作量 5-7 天,是独立大改,不在本轮;Unit D
+已把它的前置读接口铺好 —— Phase 2 的 ingest 现在可以 `iter_nodes_since` 拿增量新节点、
+`node_provenance` 给每条挂坐标、`session_commits` / `project_commits` 读 turn 边界,而不必
+自己去理解 git 布局。剩下的就是写那个吃 `Call` DAG、产时间轴事件 + 图实体的 LLM 抽取器
+(Stage 2),以及把 `session_watcher` / `wiki/ingest` 从 `get_branch` 文本切到这个读层。
 
 ### 6.1 LRU 驱逐安全性论证 (Unit C)
 
