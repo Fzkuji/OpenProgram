@@ -1,32 +1,54 @@
-# OpenProgram — one-shot install of everything you might need.
+# OpenProgram — flat dependency list.
 #
-# Recommended: install via extras instead of this file, e.g.
-#     pip install -e ".[all]"            # providers + web UI + GUI harness
-#     pip install -e ".[web,anthropic]"  # minimal: web UI + Anthropic SDK only
+# Preferred install is the package itself, which already carries
+# everything in the "Core" + "LLM SDKs" + "module-load" sections below:
+#     pip install -e .          # or:  pip install openprogram
 #
-# This file exists for users who prefer a flat requirements list.
-# Keep it in sync with the [project.optional-dependencies] table in pyproject.toml.
+# This file mirrors the base `dependencies` in pyproject.toml for users
+# who want a plain `pip install -r requirements.txt`. Keep it in sync
+# with pyproject's [project.dependencies].
 
-# --- LLM providers ---
+# --- Core (always needed) ---
+questionary>=2.0.0
+textual>=0.80
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+websockets>=12.0
+semble>=0.2.0
+aiohttp>=3.9.0
+mcp>=1.0.0
+
+# --- LLM provider SDKs ---
+# Every provider's transport routes through just these three wire SDKs:
+# Anthropic Messages (also minimax / kimi / vercel and other
+# anthropic-wire providers), OpenAI (also every openai-compatible
+# provider), and Google. Without them the UI lists a provider fine but
+# the first chat turn raises `No module named 'anthropic'`.
 anthropic>=0.30.0
 openai>=1.30.0
 google-genai>=1.0.0
 
-# --- Web UI (openprogram.webui) ---
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
-websockets>=12.0
+# --- Imported at module load (unguarded; a base install MUST have them) ---
+typer>=0.12.0       # `openprogram providers` CLI
+PyYAML>=6.0         # skill / command frontmatter
+requests>=2.31.0    # channel transport + misc HTTP
+httpx>=0.27.0       # MCP client + provider SDK HTTP layer
+pydantic>=2.0       # agent types + FastAPI models
 
-# --- GUI-Agent-Harness (vision + input control) ---
-# Note: ultralytics pulls torch (~2GB). If you don't need the GUI agent,
-# comment out this block or use the web-only extras above.
-opencv-python-headless>=4.8.0
-numpy>=1.24.0
-Pillow>=10.0.0
-pynput>=1.7.0
-ultralytics>=8.3.0
-requests>=2.31.0
+# --- Optional: chat-platform channels ---
+# qrcode>=7.0
+# discord.py>=2.3.0
+# slack_sdk>=3.27.0
 
-# --- Optional: OCR for GUI harness on non-macOS platforms ---
-# macOS uses Apple Vision natively and does not need easyocr.
-# easyocr>=1.7.0
+# --- Optional: browser automation tool (then run `playwright install chromium`) ---
+# playwright>=1.45.0
+
+# --- Optional: GUI-Agent harness (vision + input control) ---
+# Normally installed via `openprogram programs install gui_agent`, which
+# pulls the harness's own deps. Uncomment to install standalone.
+# NOTE: ultralytics pulls torch (~2GB).
+# opencv-python-headless>=4.8.0
+# numpy>=1.24.0
+# Pillow>=10.0.0
+# pynput>=1.7.0
+# ultralytics>=8.3.0
