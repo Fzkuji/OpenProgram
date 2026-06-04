@@ -61,6 +61,13 @@ async def stream_simple(
     if not opts.api_key:
         opts = opts.model_copy(update={"api_key": get_env_api_key(model.provider)})
 
+    # NOTE: the claude-code Meridian-profile header (x-meridian-profile) is
+    # injected one layer down, in openai_completions.stream_simple — that's
+    # the single chokepoint EVERY claude-code request passes through. This
+    # wrapper is bypassed by some callers (e.g. memory/llm_bridge.py calls
+    # the raw api-provider directly), so injecting here would miss them.
+    # See docs/design/claude-code-meridian-profile.md.
+
     provider = get_api_provider(model.api)
     if provider is None:
         raise ValueError(f"No stream function registered for API: {model.api!r}")

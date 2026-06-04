@@ -36,6 +36,75 @@ def _proxy_base_url() -> str:
     return base
 
 
+def meridian_profile() -> str | None:
+    """The Meridian profile OpenProgram's claude-code traffic is pinned to.
+
+    Meridian (the local Claude proxy) can hold several Claude accounts as
+    named profiles and routes each request to the one named by an
+    ``x-meridian-profile`` header — its highest-priority profile selector,
+    overriding both the keychain's current ``claude auth login`` session
+    and Meridian's own active/default profile. Pinning one here is what
+    decouples OpenProgram's Claude account from the terminal Claude Code
+    login (see docs/design/claude-code-meridian-profile.md).
+
+    Resolution order:
+      1. ``config.providers.claude-code.meridian_profile`` — set manually
+         in config.json today; a WebUI control to write it is P1 (planned).
+         Read per request so a change takes effect live.
+      2. env ``CLAUDE_MAX_PROXY_PROFILE`` (alias ``MERIDIAN_PROFILE``).
+      3. ``None`` — no header; Meridian falls back to its active/default
+         profile or the keychain login (unchanged legacy behaviour).
+
+    No validation that the named profile actually exists in Meridian —
+    that needs a Meridian profiles API we don't have. A bad name makes
+    Meridian either error (surfaced as a normal API error) or silently use
+    its default; the WebUI picker (P1) will constrain the value to known
+    profiles so this can't happen via the UI.
+    """
+    try:
+        from openprogram.setup import _read_config
+
+        pcfg = (_read_config().get("providers") or {}).get("claude-code") or {}
+        # str() guards a hand-edited non-string value (e.g. a bare number)
+        # from raising inside .strip() and being swallowed below.
+        val = str(pcfg.get("meridian_profile") or "").strip()
+        if val:
+            return val
+    except Exception:
+        # config unreadable (fresh install, race) — fall through to env.
+        pass
+    val = (
+        os.environ.get("CLAUDE_MAX_PROXY_PROFILE")
+        or os.environ.get("MERIDIAN_PROFILE")
+        or ""
+    ).strip()
+    return val or None
+
+
+def inject_profile_header(model, headers: dict | None) -> dict:
+    """Return ``headers`` plus the pinned ``x-meridian-profile`` for
+    claude-code, if one is configured and the caller didn't set it.
+
+    Called from ``openai_completions.stream_simple`` — the single layer
+    every claude-code request passes through (the ``providers/stream.py``
+    wrapper is bypassed by some callers, e.g. memory summarization). The
+    gate on ``provider == "claude-code"`` plus the fact that only
+    ``api == "openai-completions"`` models reach openai_completions means a
+    CLI-api claude-code model (different wire) never gets a meaningless
+    header. A caller-supplied ``x-meridian-profile`` wins (it's more
+    specific than the global config binding). Always returns a fresh dict.
+    """
+    out = dict(headers or {})
+    if (
+        getattr(model, "provider", None) == "claude-code"
+        and "x-meridian-profile" not in out
+    ):
+        profile = meridian_profile()
+        if profile:
+            out["x-meridian-profile"] = profile
+    return out
+
+
 # Only three model ids the ``claude-max-api`` proxy actually
 # recognises (verified against ``GET /v1/models`` on v1.0.0). Anything
 # else the proxy silently downgrades to ``claude-haiku-4``, so we
