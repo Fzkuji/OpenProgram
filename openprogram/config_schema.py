@@ -70,6 +70,21 @@ def _search_choices() -> list[str]:
         return ["auto"]
 
 
+def _claude_account_choices() -> list[str]:
+    """``''`` (follow terminal login) + each saved Claude account, so the
+    TUI/settings constrain the active account to real ones (same as the web
+    panel) instead of accepting a free-text name that may not exist."""
+    try:
+        from openprogram.providers.anthropic._meridian_cli import (
+            _parse_accounts, _proxy_bin,
+        )
+        if not _proxy_bin():
+            return [""]
+        return [""] + [a["name"] for a in _parse_accounts()]
+    except Exception:
+        return [""]
+
+
 def _coerce(widget: str, value: Any) -> Any:
     if widget == "number":
         return int(value)
@@ -124,11 +139,12 @@ SETTINGS: list[SettingSpec] = [
         key="claude_code.account",
         path=("providers", "claude-code", "meridian_profile"),
         group="Claude Code", label="Active Claude account",
-        widget="text", apply=APPLY_LIVE, default="",
+        widget="enum", apply=APPLY_LIVE, default="",
+        choices=_claude_account_choices,
         help="Which saved Claude account claude-code runs on, independent of "
              "the terminal `claude auth login`. Empty = follow the terminal "
-             "login. Manage accounts with `openprogram providers claude-code "
-             "accounts add/list/use`.",
+             "login. Add accounts with `openprogram providers claude-code "
+             "accounts add`.",
     ),
 ]
 

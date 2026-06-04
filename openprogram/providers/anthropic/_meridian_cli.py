@@ -220,6 +220,16 @@ def _parse_accounts() -> list[dict]:
     return accounts
 
 
+def _meridian_config_dir() -> str:
+    """The proxy's config dir, resolved per platform. It's a node tool, so
+    mac + linux use XDG-style ~/.config/meridian; Windows uses %APPDATA%."""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "meridian")
+    xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(xdg, "meridian")
+
+
 def _email_for(name: str) -> str:
     for a in _parse_accounts():
         if a["name"] == name:
@@ -236,8 +246,9 @@ def _rename_profile(old: str, new: str) -> bool:
     old, new = (old or "").strip(), (new or "").strip()
     if not old or not new or old == new:
         return False
-    pj = os.path.expanduser("~/.config/meridian/profiles.json")
-    pdir = os.path.expanduser("~/.config/meridian/profiles")
+    cfg = _meridian_config_dir()
+    pj = os.path.join(cfg, "profiles.json")
+    pdir = os.path.join(cfg, "profiles")
     try:
         with open(pj) as f:
             data = json.load(f)

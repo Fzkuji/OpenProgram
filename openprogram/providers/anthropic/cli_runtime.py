@@ -95,7 +95,7 @@ class ClaudeCodeRuntime(Runtime):
             raise FileNotFoundError(
                 "Claude Code CLI not found. Install and log in:\n"
                 "  npm install -g @anthropic-ai/claude-code\n"
-                "  claude login"
+                "  claude auth login"
             )
         self.cli_path = resolved_cli
 
