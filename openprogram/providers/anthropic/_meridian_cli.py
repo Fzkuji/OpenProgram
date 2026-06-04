@@ -149,6 +149,53 @@ def _backend_ready() -> tuple[bool, str]:
         return False, url
 
 
+def ensure_backend(install: bool = True, start: bool = True) -> dict:
+    """Make sure the local Claude proxy is installed AND running — the user
+    never installs or starts it by hand. Installs it via npm if missing
+    (one-time, same pattern as the agent-browser tool) and spawns it in the
+    background if not running. Returns ``{ready, installed_now?, started?,
+    error?}``."""
+    binp = _proxy_bin()
+    if not binp and install:
+        npm = shutil.which("npm")
+        if not npm:
+            return {"ready": False,
+                    "error": "Node.js / npm is required to set up the Claude "
+                             "backend — install Node, then try again."}
+        from openprogram._compat import node_tool_cmd
+        try:
+            subprocess.run(
+                node_tool_cmd(["npm", "install", "-g", "@rynfar/meridian",
+                               "--ignore-scripts"]),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:  # noqa: BLE001
+            return {"ready": False, "error": f"backend install failed: {e}"}
+        binp = _proxy_bin()
+    if not binp:
+        return {"ready": False, "error": "backend not installed"}
+
+    if _backend_ready()[0]:
+        return {"ready": True}
+    if not start:
+        return {"ready": False, "error": "backend not running"}
+    # Spawn detached so it outlives this request (and the worker); it's a
+    # plain HTTP daemon on 3456. The user doesn't manage its lifecycle.
+    try:
+        subprocess.Popen(
+            [binp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, start_new_session=True,
+        )
+    except Exception as e:  # noqa: BLE001
+        return {"ready": False, "error": f"backend start failed: {e}"}
+    import time as _time
+    for _ in range(12):
+        _time.sleep(1)
+        if _backend_ready()[0]:
+            return {"ready": True, "started": True}
+    return {"ready": False, "error": "backend started but isn't responding yet"}
+
+
 def _parse_accounts() -> list[dict]:
     """Parse the proxy's profile listing into ``[{name, email}]``.
 
@@ -244,9 +291,10 @@ def start_add(name: str) -> dict:
     :func:`submit_login_code`. (The CLI doesn't need this two-step dance —
     it inherits a terminal, so the user pastes the code straight in.)
     """
+    eb = ensure_backend()
+    if not eb.get("ready"):
+        return {"error": eb.get("error", "backend not ready")}
     binp = _proxy_bin()
-    if not binp:
-        return {"error": "backend not installed"}
     name = (name or "").strip()
     auto_named = not name
     if not name:
@@ -407,13 +455,9 @@ def rename_account(old: str, new: str) -> dict:
 
 
 def _print_install_hint() -> None:
-    binp = _proxy_bin()
-    print("\n  Backend not ready. One-time setup of the local Claude proxy")
-    print("  that serves your accounts:")
-    if not binp:
-        print("    npm install -g @rynfar/meridian")
-    print("    meridian        # keep this running while you use Claude here")
-    print("  (Or set it up from the app: Settings → LLM Providers → Claude Code.)")
+    print("\n  The Claude backend isn't ready yet. It installs and starts "
+          "automatically\n  the first time you add an account — just run:")
+    print("    openprogram providers claude-code accounts add")
 
 
 # ---------------------------------------------------------------------------
@@ -422,28 +466,41 @@ def _print_install_hint() -> None:
 
 def _cmd_add(name: str) -> int:
     name = (name or "").strip()
-    if not name:
-        print("An account label is required: openprogram providers claude-code "
-              "accounts add <name>", file=sys.stderr)
-        return 2
-    if not _proxy_bin():
-        _print_install_hint()
+    print("Preparing the Claude backend…")
+    eb = ensure_backend()
+    if not eb.get("ready"):
+        print(eb.get("error", "backend not ready"), file=sys.stderr)
         return 1
-    print(f"Adding Claude account {name!r} — a browser window will open.")
-    print("Sign in with the Claude account you want to add; if a different one "
-          "is\nalready signed in, switch it in the browser first (claude.ai → "
-          "sign out →\nsign in). Your terminal chat account is not affected.\n")
-    # Inherit stdio so the login prompts + browser open work. Internally this
-    # is the proxy's profile-add; the user only ever sees Claude-account wording.
+    auto_named = not name
+    if not name:
+        existing = {a["name"] for a in _parse_accounts()}
+        i = 1
+        while f"account-{i}" in existing:
+            i += 1
+        name = f"account-{i}"
+    print("A browser window will open — sign in with the account you want to "
+          "add.\nYour terminal chat account is not affected.\n")
+    # Strip inherited Claude credentials so it does a real browser OAuth (not
+    # "already authenticated" off ANTHROPIC_API_KEY). Inherit stdio so the
+    # import-prompt + paste-code steps work in the terminal.
+    _strip = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY",
+              "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
+    env = {k: v for k, v in os.environ.items() if k not in _strip}
     try:
-        rc = subprocess.run([_proxy_bin(), "profile", "add", name]).returncode
+        rc = subprocess.run([_proxy_bin(), "profile", "add", name], env=env).returncode
     except Exception as e:  # noqa: BLE001
         print(f"Adding the account failed: {e}", file=sys.stderr)
         return 1
-    if rc == 0:
-        print(f"\n✓ Added Claude account {name!r}. Activate it for OpenProgram:")
-        print(f"  openprogram providers claude-code accounts use {name}")
-    return rc
+    if rc != 0:
+        return rc
+    final = name
+    if auto_named:
+        email = _email_for(name)
+        if email and _rename_profile(name, email):
+            final = email
+    print(f"\n✓ Added Claude account {final!r}. Activate it for OpenProgram:")
+    print(f"  openprogram providers claude-code accounts use {final}")
+    return 0
 
 
 def _cmd_remove(name: str) -> int:
@@ -552,7 +609,7 @@ def _cmd_status() -> int:
 
 
 __all__ = [
-    "build_parser", "dispatch",
+    "build_parser", "dispatch", "ensure_backend",
     "accounts_summary", "start_add", "submit_login_code",
     "remove_account", "activate_account", "rename_account",
 ]
