@@ -23,6 +23,13 @@ export interface Provider {
    * setup isn't an API key.
    */
   setup_hint?: string;
+  /**
+   * claude-code only: the Meridian account (profile) this provider's
+   * traffic is pinned to, decoupling it from the terminal
+   * `claude auth login`. Empty = follow Meridian's default / keychain
+   * login. See docs/design/claude-code-meridian-profile.md.
+   */
+  meridian_profile?: string;
 }
 
 export interface Model {

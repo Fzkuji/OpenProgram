@@ -9,6 +9,7 @@ import { ProviderIcon } from "../provider-icon";
 
 import { ApiKey } from "./api-key";
 import { BaseUrl } from "./base-url";
+import { MeridianProfile } from "./meridian-profile";
 import { Connectivity, type ConnectivityHandle } from "./connectivity";
 import { ModelList } from "./model-list";
 import { CliInfo, SetupHint } from "./setup-hint";
@@ -140,6 +141,11 @@ export function Detail({
       )}
       {provider.api_key_env && (
         <BaseUrl provider={provider} onChanged={onChanged} />
+      )}
+      {/* claude-code: pin which Meridian account (profile) this provider
+          uses, decoupled from the terminal `claude auth login`. */}
+      {provider.id === "claude-code" && (
+        <MeridianProfile provider={provider} onChanged={onChanged} />
       )}
       {/* Connectivity check applies to every HTTP provider, not just
           api-key ones. OAuth providers (openai-codex, gemini-subscription,
