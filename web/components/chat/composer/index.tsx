@@ -1097,34 +1097,43 @@ export function Composer() {
             </button>
 
             <div className={styles.activeToolChips}>
-              {/* Always show all three toggles so on/off is visible at a
-                  glance; off ones are muted, click flips. Hover shows the
-                  name via HoverTip (a real top-layer tooltip — a CSS
-                  ::after would be cropped by the chip's overflow:hidden). */}
-              <HoverTip label={text("Tools", "工具")}>
-                <ToolChip
-                  icon={<ToolsIcon size={16} />}
-                  label={text("Tools", "工具")}
-                  on={toolsEnabled}
-                  onToggle={toggleTools}
-                />
-              </HoverTip>
-              <HoverTip label={text("Web Search", "网页搜索")}>
-                <ToolChip
-                  icon={<WebSearchIcon size={16} />}
-                  label={text("Web Search", "网页搜索")}
-                  on={webSearchEnabled}
-                  onToggle={toggleWebSearch}
-                />
-              </HoverTip>
-              <HoverTip label={text("Fast", "高速")}>
-                <ToolChip
-                  icon={<FastIcon size={16} />}
-                  label={text("Fast", "高速")}
-                  on={fastEnabled}
-                  onToggle={toggleFast}
-                />
-              </HoverTip>
+              {/* Only ENABLED tools show as a chip here. The off ones are
+                  not rendered at all — they live in the + menu and are
+                  turned on from there. An active chip shows its × on hover
+                  to switch it back off. (The container is :empty →
+                  display:none, so all-off shows nothing.) HoverTip is a
+                  real top-layer tooltip; a CSS ::after would be cropped by
+                  the chip's overflow:hidden. */}
+              {toolsEnabled && (
+                <HoverTip label={text("Tools", "工具")}>
+                  <ToolChip
+                    icon={<ToolsIcon size={16} />}
+                    label={text("Tools", "工具")}
+                    on
+                    onToggle={toggleTools}
+                  />
+                </HoverTip>
+              )}
+              {webSearchEnabled && (
+                <HoverTip label={text("Web Search", "网页搜索")}>
+                  <ToolChip
+                    icon={<WebSearchIcon size={16} />}
+                    label={text("Web Search", "网页搜索")}
+                    on
+                    onToggle={toggleWebSearch}
+                  />
+                </HoverTip>
+              )}
+              {fastEnabled && (
+                <HoverTip label={text("Fast", "高速")}>
+                  <ToolChip
+                    icon={<FastIcon size={16} />}
+                    label={text("Fast", "高速")}
+                    on
+                    onToggle={toggleFast}
+                  />
+                </HoverTip>
+              )}
             </div>
 
             {plusMenuOpen && plusMenuPos && typeof document !== "undefined"
