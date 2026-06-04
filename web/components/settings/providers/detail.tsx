@@ -34,9 +34,14 @@ export function Detail({
   const subtitle =
     provider.kind === "cli"
       ? text(`CLI runtime - binary: ${provider.cli_binary || "?"}`, `CLI 运行时 - binary：${provider.cli_binary || "?"}`)
-      : provider.api_key_env
-        ? `API key env: ${provider.api_key_env}`
-        : text("Subscription required", "需要订阅");
+      : provider.id === "claude-code"
+        // Runs on a Claude subscription via the local backend — it has no
+        // user-facing API key, so don't surface the ANTHROPIC_API_KEY env var
+        // (which it carries only as an internal detail) as if you must set it.
+        ? text("Runs on your Claude subscription — no API key", "用你的 Claude 订阅 — 无需 API key")
+        : provider.api_key_env
+          ? `API key env: ${provider.api_key_env}`
+          : text("Subscription required", "需要订阅");
 
   const [models, setModels] = useState<Model[]>([]);
   const [modelSearch, setModelSearch] = useState("");
