@@ -331,10 +331,19 @@ def _action_pick_provider_and_login() -> None:
     profile = _pick_profile(pm, default=DEFAULT_PROFILE_NAME) or DEFAULT_PROFILE_NAME
 
     existing = {p.provider_id for p in store.list_pools() if p.profile_id == profile}
+    popular_ids = {pid for pid, _ in popular}
     choices = []
     for prov_id, label in popular:
         tag = "✓ " if prov_id in existing else "  "
         choices.append(Choice(f"{tag}{prov_id:22s} — {label}", value=prov_id))
+    # Surface any already-configured provider that isn't in the popular
+    # list (e.g. a community provider added earlier) so it's re-selectable.
+    for prov_id in sorted(existing - popular_ids):
+        choices.append(Choice(f"✓ {prov_id:22s} — (configured)", value=prov_id))
+    # Escape hatch: configure ANY provider by id — the popular list is a
+    # shortcut, not the full set. Matches the web UI, which lists every
+    # provider (incl. community ones like minimax-cn / deepseek / kimi).
+    choices.append(Choice("  Other — enter a provider id…", value="__other__"))
     choices.append(Choice("← Back", value="__back__"))
 
     provider = questionary.select(
@@ -347,6 +356,16 @@ def _action_pick_provider_and_login() -> None:
     # Use a sentinel value and match on it here.
     if provider is None or provider == "__back__":
         return
+    if provider == "__other__":
+        typed = questionary.text(
+            "Provider id (see the web UI's LLM Providers list, "
+            "e.g. minimax-cn, deepseek):",
+            qmark="›",
+        ).unsafe_ask()
+        if not typed or not typed.strip():
+            return
+        from .aliases import resolve as _canonical
+        provider = _canonical(typed.strip())
 
     methods = _available_login_methods(provider)
     if not methods:
