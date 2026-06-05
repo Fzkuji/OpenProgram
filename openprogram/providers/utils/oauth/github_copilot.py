@@ -66,8 +66,10 @@ async def login_github_copilot(callbacks: OAuthLoginCallbacks) -> OAuthCredentia
         if callbacks.on_progress:
             callbacks.on_progress(f"Visit {verification_url} and enter code: {user_code}")
 
-        # Step 2: Poll for access token
-        while True:
+        # Step 2: Poll for access token, bounded by the device code's lifetime
+        # so a never-approved (or misbehaving) flow can't spin forever.
+        deadline = time.time() + float(device_data.get("expires_in", 900) or 900)
+        while time.time() < deadline:
             await asyncio.sleep(interval)
             poll_resp = await client.post(
                 _ACCESS_TOKEN_URL,
@@ -97,6 +99,12 @@ async def login_github_copilot(callbacks: OAuthLoginCallbacks) -> OAuthCredentia
                 continue
             elif error in ("access_denied", "expired_token"):
                 raise RuntimeError(f"GitHub login failed: {error}")
+            else:
+                # Unrecognized error / malformed body — don't busy-loop forever.
+                raise RuntimeError(f"GitHub login failed: {error or poll_data}")
+        raise TimeoutError(
+            "GitHub device-code login timed out — the code expired before approval."
+        )
 
 
 async def refresh_github_copilot_token(credentials: OAuthCredentials) -> OAuthCredentials:

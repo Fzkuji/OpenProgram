@@ -1488,7 +1488,6 @@ def _run_setup() -> int:
         ("anthropic",    "Anthropic (Claude)"),
         ("gemini-subscription", "Google Gemini via CLI"),
         ("github-copilot", "GitHub Copilot"),
-        ("qwen",         "Qwen Code (Alibaba)"),
         ("openai",       "OpenAI (raw API key)"),
     ]
     for prov_id, label in popular:

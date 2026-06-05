@@ -79,13 +79,21 @@ async def _run_device_code(provider: str, profile: str, ui: LoginUi) -> Credenti
     # has no blocking prompt) and keep references so they aren't GC'd.
     pending: list[asyncio.Task] = []
 
+    def _spawn(coro) -> None:
+        # Fire-and-forget UI update, but retrieve any exception so a failing ui
+        # method surfaces instead of becoming a swallowed unretrieved-task
+        # warning (and keep a reference so it isn't GC'd mid-flight).
+        t = asyncio.ensure_future(coro)
+        t.add_done_callback(lambda f: f.cancelled() or f.exception())
+        pending.append(t)
+
     def _on_auth(info) -> None:
-        pending.append(asyncio.ensure_future(ui.open_url(info.url)))
+        _spawn(ui.open_url(info.url))
         msg = getattr(info, "instructions", "") or f"Open {info.url} to sign in"
-        pending.append(asyncio.ensure_future(ui.show_progress(msg)))
+        _spawn(ui.show_progress(msg))
 
     def _on_progress(m: str) -> None:
-        pending.append(asyncio.ensure_future(ui.show_progress(m)))
+        _spawn(ui.show_progress(m))
 
     creds = await login_github_copilot(
         OAuthLoginCallbacks(on_auth=_on_auth, on_progress=_on_progress)

@@ -9,15 +9,20 @@ same flow the CLI runs in the terminal, now reachable from the browser, so every
 provider's native login works from every surface instead of "go use the other
 one".
 
-Shape (mirrors the proven claude-code accounts start/submit pattern, but generic
-over any provider/method):
-
+Shape:
   POST /api/providers/{name}/login/start   {method?, profile?, api_key?}
       -> {session, method}; spawns the login coroutine in the background.
   GET  /api/providers/{name}/login/poll?session=&cursor=
       -> {events[], cursor, waiting, prompt, done, ok, error, name}
   POST /api/providers/{name}/login/submit  {session, value}
       -> {ok}; resolves the driver's pending prompt with `value`.
+
+`poll` is an idempotent read: it never destroys the session, so a final or
+concurrent poll always reads the sticky terminal {done, ok, name} instead of
+404-ing and clobbering a just-succeeded login. Sessions are cleaned by `_reap`
+(run on every start AND every poll): done sessions after a short grace, and
+abandoned ones after a TTL — and an abandoned prompt self-terminates because the
+prompt wait is bounded by `asyncio.wait_for`.
 """
 from __future__ import annotations
 
@@ -29,7 +34,8 @@ from fastapi.responses import JSONResponse
 
 # session_id -> _LoginSession
 _SESSIONS: dict[str, "_LoginSession"] = {}
-_SESSION_TTL = 600.0  # abandoned sessions are reaped after 10 min
+_SESSION_TTL = 600.0   # abandoned (never-finished) sessions reaped after 10 min
+_DONE_GRACE = 60.0     # finished sessions kept this long so late polls read them
 
 
 class _LoginSession:
@@ -42,6 +48,7 @@ class _LoginSession:
         self.name: str | None = None        # saved profile id on success
         self.task: asyncio.Task | None = None
         self.started_at: float = time.time()
+        self.done_at: float | None = None
 
 
 class _RemoteLoginUi:
@@ -66,18 +73,27 @@ class _RemoteLoginUi:
         self._s.pending = {"message": message, "secret": secret, "future": fut}
         self._s.events.append({"type": "prompt", "message": message, "secret": secret})
         try:
-            return await fut
+            # Bound the wait so an abandoned prompt (tab closed, never submitted)
+            # self-terminates instead of awaiting a future that never resolves.
+            return await asyncio.wait_for(fut, timeout=_SESSION_TTL)
         finally:
             self._s.pending = None
 
 
 def _reap() -> None:
-    """Kill + drop sessions the user started but abandoned (no submit), so the
-    coroutine awaiting a prompt future doesn't leak."""
+    """Drop finished sessions after a grace window and abandoned ones after the
+    TTL (cancelling their still-running task). Idempotent; called on every
+    start and poll so cleanup never depends on a later request arriving."""
     now = time.time()
     for sid in list(_SESSIONS):
         s = _SESSIONS.get(sid)
-        if not s or (not s.done and now - s.started_at <= _SESSION_TTL):
+        if not s:
+            continue
+        expired = (
+            (s.done and now - (s.done_at or s.started_at) > _DONE_GRACE)
+            or (not s.done and now - s.started_at > _SESSION_TTL)
+        )
+        if not expired:
             continue
         if s.task and not s.task.done():
             s.task.cancel()
@@ -85,9 +101,25 @@ def _reap() -> None:
 
 
 def register(app):
+    @app.get("/api/providers/{name}/login/methods")
+    async def login_methods_list(name: str):
+        from openprogram.auth.login_methods import login_methods
+        methods = login_methods(name)
+        return JSONResponse(content={
+            "methods": [{"id": mid, "label": label} for mid, label in methods],
+            "default": methods[0][0] if methods else None,
+        })
+
     @app.post("/api/providers/{name}/login/start")
     async def login_start(name: str, body: dict = None):
         _reap()
+        # Resolve aliases (e.g. "codex" -> "openai-codex") so the driver gets a
+        # canonical id, mirroring the CLI. Best-effort.
+        try:
+            from openprogram.auth.aliases import resolve as _resolve
+            name = _resolve(name) or name
+        except Exception:
+            pass
         b = body or {}
         profile = (b.get("profile") or "default").strip() or "default"
         api_key = b.get("api_key")
@@ -113,16 +145,20 @@ def register(app):
                 sess.error = f"{e.__class__.__name__}: {e}"
             finally:
                 sess.done = True
+                sess.done_at = time.time()
 
         sess.task = asyncio.create_task(_drive())
         return JSONResponse(content={"session": sid, "method": method})
 
     @app.get("/api/providers/{name}/login/poll")
     async def login_poll(name: str, session: str = "", cursor: int = 0):
+        _reap()
         sess = _SESSIONS.get(session)
         if not sess:
             return JSONResponse(content={"error": "no such login session"}, status_code=404)
-        out = {
+        # Idempotent read — never pop here; `done` is sticky and a final/
+        # concurrent poll must still read the terminal result. _reap cleans up.
+        return JSONResponse(content={
             "events": sess.events[cursor:],
             "cursor": len(sess.events),
             "waiting": bool(sess.pending),
@@ -134,10 +170,7 @@ def register(app):
             "ok": sess.ok,
             "error": sess.error,
             "name": sess.name,
-        }
-        if sess.done:
-            _SESSIONS.pop(session, None)
-        return JSONResponse(content=out)
+        })
 
     @app.post("/api/providers/{name}/login/submit")
     async def login_submit(name: str, body: dict = None):
@@ -146,6 +179,17 @@ def register(app):
         if not sess or not sess.pending:
             return JSONResponse(content={"error": "no pending prompt"}, status_code=409)
         fut = sess.pending["future"]
-        if not fut.done():
+        accepted = not fut.done()
+        if accepted:
             fut.set_result(str(b.get("value", "")))
+        # Report whether the value was actually taken (vs a redundant/late submit).
+        return JSONResponse(content={"ok": accepted})
+
+    @app.post("/api/providers/{name}/login/cancel")
+    async def login_cancel(name: str, body: dict = None):
+        b = body or {}
+        sid = (b.get("session") or "").strip()
+        sess = _SESSIONS.pop(sid, None)
+        if sess and sess.task and not sess.task.done():
+            sess.task.cancel()
         return JSONResponse(content={"ok": True})

@@ -319,7 +319,6 @@ def _action_pick_provider_and_login() -> None:
         ("anthropic",         "Anthropic (Claude)"),
         ("gemini-subscription", "Google Gemini via CLI"),
         ("github-copilot",    "GitHub Copilot"),
-        ("qwen",              "Qwen Code (Alibaba)"),
         ("openai",            "OpenAI (raw API key)"),
         ("openrouter",        "OpenRouter"),
         ("google",            "Google Gemini (direct)"),

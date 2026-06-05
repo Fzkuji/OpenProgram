@@ -68,6 +68,7 @@ def list_providers() -> list[dict[str, Any]]:
     than getting overwritten by models.dev's ``openai`` row).
     """
     from openprogram.providers import get_providers, get_models
+    from openprogram.auth.login_methods import login_methods as _login_methods
 
     from .providers import (
         _CLI_PROVIDERS,
@@ -119,8 +120,7 @@ def list_providers() -> list[dict[str, Any]]:
         # can drive — excluding plain api_key, which the ApiKey field already
         # handles. Empty for key-only providers, so the UI only renders a
         # "Sign in" panel where there's a real native flow. Single source of
-        # truth: openprogram/auth/login_methods.py.
-        from openprogram.auth.login_methods import login_methods as _login_methods
+        # truth: openprogram/auth/login_methods.py (import hoisted above).
         native = [
             {"id": mid, "label": label}
             for mid, label in _login_methods(pid)
