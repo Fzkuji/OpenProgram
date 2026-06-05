@@ -130,14 +130,16 @@ or an API-key paste — instead of bouncing you to the browser. claude-code keep
 its Claude-subscription (Meridian) backend behind the exact same panel, so it's
 just one instance of the generic surface.
 
-**Key rotation** kicks in when an account holds more than one API key. The call
-path picks a key per request, and on a `429` (rate limit) cools that key down and
-rotates to the next; a `402` cools it for longer (billing), a `5xx` briefly. The
-web's *Keys & rotation* panel (on api-key providers) shows each key's health
-(valid / cooling / error), lets you add or drop keys, pick a strategy
-(`fill_first` / `round_robin` / `random` / `least_used`), and clear cooldowns with
-*Retry now*. Pool keys take precedence over the single env-var key when present;
-with no extra keys nothing changes. Design + status:
+**Key rotation** is how api-key providers do "more than one": on an api-key
+provider the web shows the keys as **one list** — paste a key (it's validated
+first) and it joins the list; the **top key is the default** and the rest take
+over automatically when it's rate-limited; reorder with ↑ / ↓, see each key's
+health (valid / cooling / error), and pick a strategy when you have several
+(`use in order` / `spread evenly` / `random` / `least used`). Under the hood the
+call path picks a key per request and, on a `429`, cools that key down and
+rotates to the next (`402` longer for billing, `5xx` briefly). A key you'd
+already set the old way (env var / config) is migrated into the list so nothing
+is lost. Design + status:
 [`design/unified-account-management.md`](design/unified-account-management.md).
 
 ## Multi-agent + multi-channel (where this is going)
