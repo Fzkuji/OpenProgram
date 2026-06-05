@@ -42,6 +42,8 @@
 - **Any LLM, any provider** — API key, or the CLI subscription you already pay for.
 - **Self-evolving workflows** — the agent builds, runs, and improves its own workflows and tools.
 
+![Why Agentic Workflows Matter — same agent, same task, different reliability: Skills let the LLM decide the next step (and skip critical checks), while an agentic workflow has code orchestrate and enforce validation gates.](docs/images/why-agentic-workflows-matter.png)
+
 ## Quick Start
 
 ### 1. Install
