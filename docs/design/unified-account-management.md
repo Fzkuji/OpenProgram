@@ -76,19 +76,29 @@ the real use case; OAuth multi-account is handled by multiple *profiles*.)
 
 ## Phased plan
 
-- **P-A — active-profile infrastructure** (makes multi-account switching real).
-  `get/set_active_profile(provider)` in the store/config; `acquire`/`resolver`
-  default to it; chat/execute enters `auth_scope`. Verifiable: set active to a
-  second profile, confirm requests resolve its credential. Smallest load-bearing
-  change; nothing user-visible breaks (default stays "default").
-- **P-B — generic accounts surface + unified UI.** `/api/providers/{id}/accounts/*`
-  (with a claude-code adapter so its Meridian flow stays); `<ProviderAccounts>`
-  (web) + Ink picker (TUI) reused everywhere; `detail.tsx` + TUI `/login` switch
-  to it. claude-code becomes one instance of the generic panel.
+- **P-A — active-profile infrastructure** ✅ DONE (commits 836a4a9b, d8454d6a).
+  `auth/active.py` (`get/set_active_profile(provider)` + `get_active_pin`);
+  `acquire`/`resolver` default to it; CLI `providers use <provider> [profile]`
+  + `← active` marker in `providers list`. Default stays `"default"`, fully
+  backward compatible.
+- **P-B — generic accounts surface + unified UI** ✅ DONE (commits 45cac805,
+  4c98adcc, bedb3439).
+  - Backend: `routes/accounts.py` serves `/api/providers/{id}/accounts/*`
+    (list/use/rename/remove from the AuthStore; add hands the UI the login
+    methods). claude-code keeps its literal Meridian routes (registered first
+    so they shadow `{provider}`); both report `add_mode` (`code_paste` vs
+    `login`).
+  - Web: one `<ProviderAccounts>` (generalized from `claude-accounts.tsx`)
+    rendered for claude-code + login-only providers; `<ProviderLogin>` gained
+    `profileId`/`bare` so it's the embedded "add account" step.
+  - TUI: one generic picker (`providerAccounts.tsx`) + an in-TUI login flow
+    (`providerLoginFlow.tsx`) driving the shared `/login/*`; `/login <provider>`
+    opens it for ANY provider (no more punting to web).
 - **P-C — rotation/failover wiring + switches.** Runtimes call
   `report_failure`/`report_success` (makes cooldown/rotation/fallback live);
   `PATCH pool` / `clear_cooldown` / `health` endpoints; pool CLI verbs; web/TUI
   strategy dropdown + fallback toggle + health badges + "add another key".
+  ← NEXT.
 
 ## Backend (claude-code stays on Meridian)
 
