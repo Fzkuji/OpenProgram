@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from .active import get_active_profile
 from .context import (
     get_active_profile_id,
     get_credential_override,
@@ -51,11 +52,12 @@ def resolve_api_key_sync(
 ) -> Optional[str]:
     """Return a bearer string for the provider, or None if no path yields one.
 
-    ``profile_id`` defaults to the current :mod:`auth.context` scope.
-    Explicit override is useful for scripts that want a specific profile
-    regardless of ambient context.
+    ``profile_id`` defaults to the provider's active profile
+    (:func:`auth.active.get_active_profile` — its pinned account, else the
+    ambient scope, else ``"default"``). Explicit override is useful for scripts
+    that want a specific profile regardless of the active selection.
     """
-    profile = profile_id or get_active_profile_id()
+    profile = profile_id or get_active_profile(provider_id)
 
     # Layer 1 — scope-injected override (tests, DI).
     override = get_credential_override(provider_id)

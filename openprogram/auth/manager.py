@@ -187,7 +187,7 @@ class AuthManager:
 
     # -- acquire (async) -----------------------------------------------------
 
-    def acquire_sync(self, provider_id: str, profile_id: str = "default") -> Credential:
+    def acquire_sync(self, provider_id: str, profile_id: Optional[str] = None) -> Credential:
         """Sync wrapper around :meth:`acquire`.
 
         Three cases:
@@ -229,8 +229,13 @@ class AuthManager:
             raise box["err"]
         return box["cred"]
 
-    async def acquire(self, provider_id: str, profile_id: str = "default") -> Credential:
+    async def acquire(self, provider_id: str, profile_id: Optional[str] = None) -> Credential:
         """Return a usable credential for ``(provider, profile)``.
+
+        When ``profile_id`` is None the provider's ACTIVE profile is used
+        (:func:`auth.active.get_active_profile` — its pinned account, else the
+        ambient ``auth_scope``, else ``"default"``), so a request runs on
+        whichever account the user activated for that provider.
 
         Side effects:
           * may refresh an OAuth credential if its access token is
@@ -242,6 +247,9 @@ class AuthManager:
         back, to keep the hot path cheap. Cooldown updates happen via
         :meth:`report_failure`.
         """
+        if profile_id is None:
+            from .active import get_active_profile
+            profile_id = get_active_profile(provider_id)
         return await self._acquire_recursive(provider_id, profile_id, visited=set())
 
     async def _acquire_recursive(
