@@ -78,11 +78,12 @@ function ActiveToggle({ active, onActivate, onDeactivate }: { active: boolean; o
 }
 
 function AccountRow({
-  provider, account, multi, onChanged, refresh, onCommit,
+  provider, account, multi, rotation, onChanged, refresh, onCommit,
 }: {
   provider: string;
   account: Account;
   multi: boolean;
+  rotation: boolean;
   onChanged?: () => void;
   refresh: () => void;
   onCommit: () => void;
@@ -211,8 +212,13 @@ function AccountRow({
       {/* Validate — text button, every row */}
       <Button size="sm" className={styles.acctCellBtn} onClick={validate}>{text("Validate", "验证")}</Button>
 
-      {/* active toggle (state / hover-action, fixed width) */}
-      <ActiveToggle active={account.is_active} onActivate={activate} onDeactivate={deactivate} />
+      {/* When rotation is ON every account is used (the pool rotates across
+          them all), so a single-active pin is meaningless — show a static
+          "In rotation" instead of the mutually-exclusive Activate toggle.
+          Rotation OFF → pick one active (or none). */}
+      {rotation
+        ? <span className={styles.inRotation}>{text("In rotation", "轮询中")}</span>
+        : <ActiveToggle active={account.is_active} onActivate={activate} onDeactivate={deactivate} />}
 
       {/* Remove */}
       <Button size="sm" className={styles.acctCellBtn} onClick={remove}>{text("Remove", "删除")}</Button>
@@ -351,7 +357,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
         className="flex flex-col gap-[2px] m-0 p-0 list-none">
         {items.map((a) => (
           <AccountRow key={a.id} provider={pid} account={a} multi={multi}
-            onChanged={onChanged} refresh={load} onCommit={commitOrder} />
+            rotation={state.rotation} onChanged={onChanged} refresh={load} onCommit={commitOrder} />
         ))}
       </Reorder.Group>
 
