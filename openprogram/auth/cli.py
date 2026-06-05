@@ -535,50 +535,23 @@ def _prune_superseded_oauth(store: AuthStore, new_cred: Credential) -> list[str]
 
 def _run_login_method(provider: str, profile: str, method: str, *,
                       api_key: Optional[str] = None) -> Credential:
-    if method == "api_key":
-        return _login_paste_api_key(provider, profile, api_key=api_key)
-    if method == "import_from_cli":
-        return _login_import_from_cli(provider, profile)
+    """Drive a login from the terminal via the shared surface-agnostic driver
+    (``openprogram/auth/login_driver.py``) so the CLI, web and TUI all run the
+    same flow. The only CLI-specific bit is the multi-line OAuth note below."""
     if method == "pkce_oauth":
-        return _login_pkce_oauth(provider, profile)
-    if method == "device_code":
-        return _login_device_code(provider, profile)
-    raise AuthConfigError(f"unsupported method: {method!r}")
-
-
-def _login_device_code(provider: str, profile: str) -> Credential:
-    """Device-code OAuth (currently GitHub Copilot): open the verification
-    URL, the user enters the shown code, then we poll for the token."""
-    if provider != "github-copilot":
-        raise AuthConfigError(f"no device-code login for {provider!r}")
-    from openprogram.providers.utils.oauth.github_copilot import login_github_copilot
-    from openprogram.providers.utils.oauth.types import (
-        OAuthAuthInfo, OAuthLoginCallbacks,
-    )
-    from openprogram.providers.github_copilot.auth_adapter import (
-        import_oauth_credential,
-    )
-
-    def _on_auth(info: OAuthAuthInfo) -> None:
-        instr = getattr(info, "instructions", "") or ""
-        print(f"\nOpen {info.url} in your browser. {instr}\n", flush=True)
-        try:
-            import webbrowser
-            webbrowser.open(info.url)
-        except Exception:
-            pass
-
-    cb = OAuthLoginCallbacks(on_auth=_on_auth,
-                             on_progress=lambda m: print(m, flush=True))
-    creds = asyncio.run(login_github_copilot(cb))
-    return import_oauth_credential(
-        creds.access, getattr(creds, "refresh", "") or "",
-        profile_id=profile, expires_at_ms=getattr(creds, "expires", 0) or 0,
-    )
+        title, body = _LOGIN_NOTES.get(provider, ("", []))
+        if body:
+            from .tui import print_note
+            print_note(title, body)
+    from openprogram.auth.login_driver import run_login
+    ui = _TerminalLoginUi()
+    return asyncio.run(run_login(provider, profile, method, ui, api_key=api_key))
 
 
 # ---------------------------------------------------------------------------
-# Terminal LoginUi — threads PKCE's async flow through stdout/stdin.
+# Terminal LoginUi — threads the async login flow through stdout/stdin.
+# (The actual login logic lives in openprogram/auth/login_driver.py; this is
+# just the CLI's LoginUi implementation that driver runs against.)
 # ---------------------------------------------------------------------------
 
 class _TerminalLoginUi:
@@ -626,24 +599,6 @@ _LOGIN_NOTES: dict[str, tuple[str, list[str]]] = {
 }
 
 
-def _login_pkce_oauth(provider: str, profile: str) -> Credential:
-    """Run a PKCE OAuth flow for `provider`, blocking the CLI until done."""
-    from openprogram.auth.methods.pkce_oauth import PkceLoginMethod
-    from .tui import print_note
-
-    if provider == "openai-codex":
-        from openprogram.providers.openai_codex import auth_adapter
-        config = auth_adapter.build_pkce_config()
-    else:
-        raise AuthConfigError(f"no PKCE config registered for {provider!r}")
-
-    title, body = _LOGIN_NOTES.get(provider, (f"{provider} OAuth", []))
-    if body:
-        print_note(title, body)
-
-    method = PkceLoginMethod(provider_id=provider, config=config, profile_id=profile)
-    ui = _TerminalLoginUi()
-    return asyncio.run(method.run(ui))
 
 
 def _login_paste_api_key(provider: str, profile: str, *,
