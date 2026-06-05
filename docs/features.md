@@ -130,14 +130,15 @@ or an API-key paste — instead of bouncing you to the browser. claude-code keep
 its Claude-subscription (Meridian) backend behind the exact same panel, so it's
 just one instance of the generic surface.
 
-**Key rotation** is how api-key providers do "more than one": on an api-key
-provider the web shows the keys as **one list** — paste a key (it's validated
-first) and it joins the list; the **top key is the default** and the rest take
-over automatically when it's rate-limited; reorder with ↑ / ↓, see each key's
-health (valid / cooling / error), and pick a strategy when you have several
-(`use in order` / `spread evenly` / `random` / `least used`). Under the hood the
-call path picks a key per request and, on a `429`, cools that key down and
-rotates to the next (`402` longer for billing, `5xx` briefly). A key you'd
+**api-key providers** get the same multi-credential model as a list of keys:
+paste a key (it's validated first) and it joins the list, **name** each one, and
+pick which is **active** (the one that's used) with *Use*. That's the same
+"several credentials, switch between them" idea OAuth providers have for
+accounts — just keys instead of logins. **Rotation is an optional toggle**, off
+by default: leave it off and only the active key is called; turn it on and a
+rate-limited key cools down while the next takes over (`429` → cooldown + rotate,
+`402` longer for billing, `5xx` briefly), with a strategy picker (`in order` /
+`spread evenly` / `random` / `least used`) and ↑ / ↓ priority. A key you'd
 already set the old way (env var / config) is migrated into the list so nothing
 is lost. Design + status:
 [`design/unified-account-management.md`](design/unified-account-management.md).
