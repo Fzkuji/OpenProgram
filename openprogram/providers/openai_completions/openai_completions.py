@@ -216,8 +216,21 @@ async def stream_simple(
     import os as _os
     sdk_max_retries = int(_os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
 
+    # Per-request credential from an AuthStore pool — enables multi-key rotation
+    # + cooldown for providers whose keys live in the pool. No-op (returns None)
+    # for env-key / OAuth / claude-code providers, which keep using opts.api_key.
+    # The call outcome is reported against this credential below (see the report_*
+    # calls), so a 429 cools it down and the next request rotates to another key.
+    from ...auth import usage as _auth_usage
+    _pooled = _auth_usage.acquire_pooled(model.provider)
+    _cred_profile: str | None = None
+    _cred_id: str | None = None
+    _client_api_key = opts.api_key
+    if _pooled:
+        _client_api_key, _cred_profile, _cred_id = _pooled
+
     client = _openai.AsyncOpenAI(
-        api_key=opts.api_key or None,
+        api_key=_client_api_key or None,
         base_url=base_url,
         default_headers=extra_headers or None,
         max_retries=sdk_max_retries,
@@ -441,9 +454,19 @@ async def stream_simple(
         if stop_reason in ("error", "aborted"):
             yield EventError(type="error", reason=stop_reason, error=final)
         else:
+            # Clean completion — clear any transient cooldown state on the key.
+            if _cred_id:
+                _auth_usage.report_success(model.provider, _cred_profile, _cred_id)
             yield EventDone(type="done", reason=stop_reason, message=final)
 
     except _openai.APIError as e:
+        # Cool this key down (429 → rate_limit, 402 → billing, 401/403 →
+        # needs_reauth, 5xx → server_error) so the next request rotates.
+        if _cred_id:
+            _auth_usage.report_failure(
+                model.provider, _cred_profile, _cred_id,
+                getattr(e, "status_code", None), str(e),
+            )
         error_msg = AssistantMessage(
             role="assistant",
             content=[TextContent(type="text", text="")],
@@ -457,6 +480,10 @@ async def stream_simple(
         )
         yield EventError(type="error", reason="error", error=error_msg)
     except Exception as e:
+        # Non-API error (connection/timeout/etc.) — cool down briefly so a flaky
+        # key/endpoint rotates rather than being hammered.
+        if _cred_id:
+            _auth_usage.report_failure(model.provider, _cred_profile, _cred_id, None, str(e))
         error_msg = AssistantMessage(
             role="assistant",
             content=content_blocks or [TextContent(type="text", text="")],
