@@ -10,7 +10,7 @@ import { useTranslation } from "@/lib/i18n";
 import styles from "../settings-page.module.css";
 
 /** Single API-key input — mask / reveal / save against /api/config. Used by
- *  web-search providers (Tavily / Exa / …). LLM providers use <ProviderKeys>
+ *  web-search providers (Tavily / Exa / …). LLM providers use <AccountManager>
  *  instead, which manages one-or-many keys as a list. */
 export function ApiKey({
   envVar,

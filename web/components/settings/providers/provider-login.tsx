@@ -14,8 +14,8 @@ import type { Provider } from "./types";
  *  /api/providers/{id}/login/{start,poll,submit,cancel}: start kicks off the
  *  flow, then we poll for events (open a URL, show a device code, progress, or
  *  a prompt we must answer) until done, then refresh status. Same flow the CLI
- *  runs, and the same flow <ProviderAccounts> embeds (with profileId) as its
- *  "add account" step; plain api_key keeps the ApiKey field.
+ *  runs, and the same flow <AccountManager> embeds (with profileId) as its
+ *  "add account" step for login providers.
  *
  *  Polling is a SELF-RESCHEDULING setTimeout (never setInterval) so only one
  *  poll is ever in flight — no overlapping reads, no cursor rewind, no late
@@ -37,11 +37,11 @@ export function ProviderLogin({
   provider: Provider;
   onChanged?: () => void;
   /** Target account (profile) the new credential lands in. Omitted ⇒ the
-   *  worker's "default" profile. <ProviderAccounts> passes the account name so
+   *  worker's "default" profile. <AccountManager> passes the account name so
    *  "add account" writes a NEW account instead of overwriting the default. */
   profileId?: string;
   /** Drop the bordered "Sign in" section wrapper — used when embedded as the
-   *  add-account step inside <ProviderAccounts>, which supplies its own frame. */
+   *  add-account step inside <AccountManager>, which supplies its own frame. */
   bare?: boolean;
 }) {
   const { text } = useTranslation();

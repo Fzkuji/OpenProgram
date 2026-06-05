@@ -7,10 +7,8 @@ import { Switch } from "@/components/ui/switch";
 
 import { ProviderIcon } from "../provider-icon";
 
+import { AccountManager } from "./account-manager";
 import { BaseUrl } from "./base-url";
-import { ProviderAccounts } from "./provider-accounts";
-import { ProviderKeys } from "./provider-keys";
-import { ProviderLogin } from "./provider-login";
 import { Connectivity, type ConnectivityHandle } from "./connectivity";
 import { ModelList } from "./model-list";
 import { CliInfo, SetupHint } from "./setup-hint";
@@ -137,44 +135,19 @@ export function Detail({
         <SetupHint hint={provider.setup_hint} configured={!!provider.configured} />
       )}
 
-      {/* claude-code has no API key — it runs on a Claude subscription via
-          the local proxy (see Claude accounts below). Hide the key + base-url
-          inputs that would otherwise show because claude-code shares the
-          ANTHROPIC_API_KEY env name with the `anthropic` provider; pasting a
-          key here does nothing (its Setup says "no API key to paste here"). */}
-      {/* One "API key" section = the provider's key(s) as a single list (the
-          credential pool). One key behaves like a single key; add more and they
-          rotate on rate limits, top = default. Replaces the old single-field +
-          separate rotation-pool split. */}
-      {provider.api_key_env && provider.id !== "claude-code" && (
-        <ProviderKeys
-          providerId={provider.id}
-          envVar={provider.api_key_env}
-          onChanged={autoCheckAndFetch}
-        />
+      {/* ONE management panel for every provider's credentials (P-D). An account
+          is a named, switchable credential — a KEY for api-key providers, a
+          SIGN-IN for login providers, a Claude subscription for claude-code.
+          Same UI everywhere; only "add" + the identity label differ inside.
+          See account-manager.tsx. */}
+      {(provider.id === "claude-code" ||
+        !!provider.api_key_env ||
+        (provider.login_methods?.length ?? 0) > 0) && (
+        <AccountManager provider={provider} onChanged={autoCheckAndFetch} />
       )}
       {provider.api_key_env && provider.id !== "claude-code" && (
         <BaseUrl provider={provider} onChanged={onChanged} />
       )}
-      {/* Unified multi-account panel (list / add / activate / rename / remove).
-          claude-code (Meridian-backed, code-paste add) and the login-only
-          providers (OAuth / device-code / import-from-CLI, no API key field —
-          openai-codex, github-copilot, gemini-subscription) manage accounts
-          here; the panel hits /api/providers/{id}/accounts/* and picks its add
-          sub-flow from the backend's add_mode. See provider-accounts.tsx. */}
-      {(provider.id === "claude-code" ||
-        ((provider.login_methods?.length ?? 0) > 0 && !provider.api_key_env)) && (
-        <ProviderAccounts provider={provider} />
-      )}
-      {/* Providers with BOTH an API key field AND a native login method
-          (e.g. anthropic: import-from-CLI or paste a key) keep the simple
-          single-account "Sign in" panel alongside the ApiKey field above —
-          their multi-key story is pool rotation, not separate accounts. */}
-      {provider.id !== "claude-code" &&
-        (provider.login_methods?.length ?? 0) > 0 &&
-        !!provider.api_key_env && (
-          <ProviderLogin provider={provider} onChanged={onChanged} />
-        )}
       {/* Connectivity check applies to every HTTP provider, not just
           api-key ones. OAuth providers (openai-codex, gemini-subscription,
           github-copilot, …) need this control too — without it the
