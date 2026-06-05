@@ -485,32 +485,14 @@ def _cmd_login(provider: str, profile: str, method: Optional[str], *,
 
 
 def _available_login_methods(provider: str) -> list[tuple[str, str]]:
-    """Enumerate login methods the CLI can drive for ``provider``.
+    """Login methods the CLI can drive for ``provider`` (first = default).
 
-    The ordering matters — the first entry is what ``--method`` defaults
-    to if the user just hits Enter. For providers with a real OAuth
-    flow we offer ONLY that flow (matches OpenClaw / Codex CLI UX —
-    one button, opens a browser). API-key paste / import-from-cli are
-    kept as the default for providers where OAuth isn't available.
+    Delegates to the shared registry in ``openprogram/auth/login_methods.py``
+    so the CLI, web and TUI all offer the SAME set instead of each keeping its
+    own map.
     """
-    if provider == "openai-codex":
-        # Codex has a first-class OAuth flow; no reason to show the
-        # clunky "paste your CLI's auth.json" or "paste an api_key"
-        # options. The Codex runtime can't even use an api_key.
-        return [("pkce_oauth", "Sign in with ChatGPT (opens browser)")]
-    if provider == "github-copilot":
-        # Device-code OAuth — sign in via the browser, no API key to paste.
-        return [("device_code", "Sign in with GitHub (opens browser)")]
-
-    choices: list[tuple[str, str]] = []
-    if provider == "anthropic":
-        choices.append(("import_from_cli", "Import from Claude Code's ~/.claude/.credentials.json"))
-    if provider == "gemini-subscription":
-        choices.append(("import_from_cli", "Import from ~/.gemini/oauth_creds.json"))
-    if provider == "qwen":
-        choices.append(("import_from_cli", "Import from ~/.qwen/oauth_creds.json"))
-    choices.append(("api_key", "Paste a static API key"))
-    return choices
+    from openprogram.auth.login_methods import login_methods
+    return login_methods(provider)
 
 
 def _prune_superseded_oauth(store: AuthStore, new_cred: Credential) -> list[str]:
