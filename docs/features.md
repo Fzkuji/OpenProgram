@@ -109,6 +109,37 @@ layout is available behind a toggle for fan-out-heavy traces;
 see [`design/mini-dag.md`](design/mini-dag.md) when adding new
 node kinds.
 
+## Multi-account + key rotation
+
+One provider, several accounts — and several keys per account — managed the same
+way from every surface. An **account is a profile**: an independent set of
+credentials for a provider.
+
+```bash
+openprogram providers login openai --profile work      # add a second account
+openprogram providers login openai --profile personal
+openprogram providers use openai work                  # run openai on "work"
+openprogram providers use openai                        # back to the default account
+openprogram providers list                              # the active one is marked
+```
+
+The same panel lives in the **web** (Settings → Providers) and the **TUI**
+(`/login <provider>`): list / add / activate / rename / remove. `/login` in the
+terminal completes the whole sign-in there — OAuth, device-code, import-from-CLI,
+or an API-key paste — instead of bouncing you to the browser. claude-code keeps
+its Claude-subscription (Meridian) backend behind the exact same panel, so it's
+just one instance of the generic surface.
+
+**Key rotation** kicks in when an account holds more than one API key. The call
+path picks a key per request, and on a `429` (rate limit) cools that key down and
+rotates to the next; a `402` cools it for longer (billing), a `5xx` briefly. The
+web's *Keys & rotation* panel (on api-key providers) shows each key's health
+(valid / cooling / error), lets you add or drop keys, pick a strategy
+(`fill_first` / `round_robin` / `random` / `least_used`), and clear cooldowns with
+*Retry now*. Pool keys take precedence over the single env-var key when present;
+with no extra keys nothing changes. Design + status:
+[`design/unified-account-management.md`](design/unified-account-management.md).
+
 ## Multi-agent + multi-channel (where this is going)
 
 The dispatcher already supports multiple `agent_id`s per

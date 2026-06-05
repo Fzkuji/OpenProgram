@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — Unified account management + key rotation
+- **One way to manage accounts across CLI / web / TUI.** Every provider now has the same account surface — list / add / activate / rename / remove multiple accounts (each account is a profile), backed by `/api/providers/{id}/accounts/*`. claude-code stays Meridian-backed behind the same routes, so it's just one instance of the generic panel; one `<ProviderAccounts>` (web) and one Ink picker (TUI) drive every provider. `/login <provider>` in the TUI now completes OAuth / device-code / import-from-CLI / API-key sign-in **in the terminal** instead of sending you to the web UI.
+- **Per-provider active account** (`auth/active.py`; CLI `openprogram providers use <provider> [profile]`) — run "openai on the work account, anthropic on personal" at the same time. The request path defaults to each provider's active profile; nothing changes until you activate a non-default one (fully backward compatible).
+- **Automatic key rotation + cooldown** (`auth/usage.py`) — the provider call path now acquires a key from the pool per request and reports the outcome: a 429 cools that key down and the next request rotates to another (the rotation/cooldown/fallback machinery in `auth/pool.py` was previously dead — zero callers). Gated: a no-op unless a provider actually has a multi-key pool, so env-key / OAuth / claude-code setups are byte-for-byte unchanged.
+- **"Keys & rotation" controls** (web `pool-controls.tsx` + REST `/accounts/{name}/{keys,strategy,retry}`) — add / remove keys, per-key health badge (valid / cooling / error), pick a rotation strategy (`fill_first` / `round_robin` / `random` / `least_used`), and "Retry now" to clear cooldowns. Pool keys take precedence over the single env key when present.
+- Design + status: [`docs/design/unified-account-management.md`](docs/design/unified-account-management.md).
+
 ## [0.4.0] - 2026-05-28
 
 ### Added — Design system foundation

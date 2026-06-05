@@ -68,6 +68,8 @@ export GOOGLE_API_KEY=...              # Gemini
 
 Check with `openprogram providers`. Priority: **Claude Code → Codex → Gemini CLI → Anthropic → OpenAI → Gemini**.
 
+**Multiple accounts per provider** are first-class: add several (each is a named profile), pick which one a provider runs on with `openprogram providers use <provider> [profile]`, and manage them from the same panel in the CLI, web (Settings → Providers), or TUI (`/login <provider>`). Add **multiple API keys** to one account and OpenProgram rotates across them — a rate-limited key cools down and the next takes over automatically. See [docs/features.md](docs/features.md#multi-account--key-rotation).
+
 </details>
 
 ### 2. Chat — pick a surface
@@ -136,6 +138,8 @@ openprogram logs list                # all log files with size + age
 openprogram logs tail worker -f      # follow worker.log
 openprogram completion bash          # autocomplete: bash | zsh | powershell
 openprogram secrets list             # same as `providers list` (openclaw-style alias)
+openprogram providers use <prov> [profile]  # pick which account a provider runs on
+openprogram providers login <prov> --profile work  # add a second account
 openprogram worker status            # is the backend up? on what port?
 openprogram --resume <session-id>    # pick up a previous chat
 ```
