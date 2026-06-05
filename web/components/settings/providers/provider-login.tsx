@@ -33,6 +33,7 @@ export function ProviderLogin({
   onChanged,
   profileId,
   bare = false,
+  leadingInput,
 }: {
   provider: Provider;
   onChanged?: () => void;
@@ -43,6 +44,10 @@ export function ProviderLogin({
   /** Drop the bordered "Sign in" section wrapper — used when embedded as the
    *  add-account step inside <AccountManager>, which supplies its own frame. */
   bare?: boolean;
+  /** Rendered to the LEFT of the sign-in button(s) on the same row (e.g. a name
+   *  input), so login add lines up with the api-key / code-paste add rows
+   *  (button on the right). */
+  leadingInput?: React.ReactNode;
 }) {
   const { text } = useTranslation();
   const methods = provider.login_methods ?? [];
@@ -196,11 +201,14 @@ export function ProviderLogin({
     <>
       {!session ? (
         <div className={styles.detailRow} style={{ flexWrap: "wrap", gap: "0.4rem" }}>
-          {methods.map((m) => (
-            <Button key={m.id} size="sm" onClick={() => start(m.id)} disabled={busy}>
-              {busy ? text("Opening…", "打开中…") : m.label}
-            </Button>
-          ))}
+          {leadingInput}
+          <div style={{ display: "flex", gap: "0.4rem", marginLeft: "auto", flexWrap: "wrap" }}>
+            {methods.map((m) => (
+              <Button key={m.id} size="sm" onClick={() => start(m.id)} disabled={busy}>
+                {busy ? text("Opening…", "打开中…") : m.label}
+              </Button>
+            ))}
+          </div>
         </div>
       ) : (
         <div>

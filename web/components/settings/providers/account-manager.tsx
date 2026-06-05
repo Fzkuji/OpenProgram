@@ -110,12 +110,19 @@ function AccountRow({
     else setVres({ status: "invalid_credential", detail: d.error });
   }
   function cancelEdit() { setKeyMode("masked"); setKeyVal(account.identity); }
-  async function validate() {
-    setBusy(true); setVres({ status: "checking" });
-    const d = await fetch(`${base}/${encodeURIComponent(account.id)}/validate`, { method: "POST" }).then((r) => r.json());
-    setBusy(false);
-    setVres(d.ok ? { status: d.status, detail: d.detail } : { status: "unknown", detail: d.error });
-  }
+  const validate = useCallback(async () => {
+    setVres({ status: "checking" });
+    try {
+      const d = await fetch(`${base}/${encodeURIComponent(account.id)}/validate`, { method: "POST" }).then((r) => r.json());
+      setVres(d.ok ? { status: d.status, detail: d.detail } : { status: "unknown", detail: d.error });
+    } catch {
+      setVres({ status: "unknown" });
+    }
+  }, [base, account.id]);
+
+  // The badge is a LIVE check, not the stored status: validate this account when
+  // it appears (kind-aware — api-key probe / oauth token check, no model call).
+  useEffect(() => { void validate(); }, [validate]);
   async function use() {
     await fetch(`${base}/use`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: account.id }) });
     refresh();
@@ -126,7 +133,9 @@ function AccountRow({
   }
 
   const editing = keyMode === "editing";
-  const status = vres?.status || account.status || "";
+  // LIVE status only (never the stored cred.status) — "checking" until the
+  // validate that fires on mount returns.
+  const status = vres?.status ?? "checking";
 
   return (
     <div className={styles.detailRow} style={{ flexWrap: "wrap" }}>
@@ -311,7 +320,16 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
         </div>
       )}
       {state.add_mode === "login" && (
-        <ProviderLogin provider={provider} profileId={newName.trim() || undefined} bare onChanged={() => { setNewName(""); load(); }} />
+        <ProviderLogin
+          provider={provider}
+          profileId={newName.trim() || undefined}
+          bare
+          leadingInput={
+            <Input className="flex-1 font-mono" placeholder={text("name (optional)", "名称（可选）")}
+              value={newName} onChange={(e) => setNewName(e.target.value)} />
+          }
+          onChanged={() => { setNewName(""); load(); }}
+        />
       )}
       {state.add_mode === "code_paste" && (
         !pending ? (

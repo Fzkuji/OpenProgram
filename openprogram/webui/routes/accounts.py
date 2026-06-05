@@ -58,6 +58,39 @@ def _api_key_of(cred) -> str:
     return getattr(getattr(cred, "payload", None), "api_key", "") or ""
 
 
+def _validate_account(provider: str, name: str) -> dict:
+    """LIVE, kind-aware validation of ONE account (profile) — what "does it
+    actually work" means per credential type, with NO model call:
+      * api_key      → auth-probe the key against the provider's endpoint.
+      * oauth/device → refresh + check THIS profile's token (the OAuth login
+                       is what works; a model being unavailable is NOT an auth
+                       failure, so we never do a model ping here).
+    Returns {status, detail?, via?} (status: valid / invalid_credential /
+    needs_reauth / unknown / missing)."""
+    from openprogram.auth.store import get_store
+    cred = _primary_cred(get_store().find_pool(provider, name))
+    if cred is None:
+        return {"status": "missing", "detail": "no credential on this account"}
+    kind = getattr(cred, "kind", "")
+    if kind == "api_key":
+        from openprogram.webui._model_catalog.credentials import validate_credential
+        try:
+            return validate_credential(provider, api_key=_api_key_of(cred), use_cache=False).to_dict()
+        except Exception as e:
+            return {"status": "unknown", "detail": str(e)}
+    if kind in ("oauth", "device_code"):
+        from openprogram.auth.manager import get_manager
+        from openprogram.auth.resolver import _extract_token
+        try:
+            tok = _extract_token(get_manager().acquire_sync(provider, name))
+            if tok:
+                return {"status": "valid", "via": "AuthManager", "detail": "Signed in (token valid)."}
+            return {"status": "needs_reauth", "detail": "no usable token — sign in again."}
+        except Exception as e:
+            return {"status": "needs_reauth", "detail": str(e)}
+    return {"status": getattr(cred, "status", "unknown")}
+
+
 def _account_record(pool, active_profile: str) -> dict:
     """One ACCOUNT = one profile (holding one credential). Reports a uniform
     shape for every provider: the account's id/name (the profile), its identity
@@ -313,36 +346,19 @@ def register(app):
 
     @app.post("/api/providers/{provider}/accounts/{name}/validate")
     def api_account_validate(provider: str, name: str):
-        """Validate ONE account's key against the provider's auth endpoint."""
-        from openprogram.auth.store import get_store
-        from openprogram.webui._model_catalog.credentials import validate_credential
-        cred = _primary_cred(get_store().find_pool(provider, name))
-        key = _api_key_of(cred) if cred else ""
-        if not key:
-            return JSONResponse(content={"ok": False, "error": "no API key on this account"})
-        try:
-            return JSONResponse(content={"ok": True, **validate_credential(provider, api_key=key, use_cache=False).to_dict()})
-        except Exception as e:
-            return JSONResponse(content={"ok": False, "error": str(e)})
+        """LIVE-validate ONE account (kind-aware, no model call)."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": True, "status": "valid", "detail": "managed by the local backend"})
+        return JSONResponse(content={"ok": True, **_validate_account(provider, name)})
 
     @app.post("/api/providers/{provider}/accounts/validate-all")
     def api_accounts_validate_all(provider: str):
-        """Validate every api-key account's key; returns [{id, status, ...}]."""
+        """Live-validate every account; returns [{id, status, ...}]."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": True, "results": []})
         from openprogram.auth.store import get_store
-        from openprogram.webui._model_catalog.credentials import validate_credential
-        out = []
-        for p in get_store().list_pools():
-            if p.provider_id != provider:
-                continue
-            cred = _primary_cred(p)
-            key = _api_key_of(cred) if cred else ""
-            if not key:
-                out.append({"id": p.profile_id, "status": "missing"})
-                continue
-            try:
-                out.append({"id": p.profile_id, **validate_credential(provider, api_key=key, use_cache=False).to_dict()})
-            except Exception as e:
-                out.append({"id": p.profile_id, "status": "unknown", "detail": str(e)})
+        out = [{"id": p.profile_id, **_validate_account(provider, p.profile_id)}
+               for p in get_store().list_pools() if p.provider_id == provider]
         return JSONResponse(content={"ok": True, "results": out})
 
     @app.post("/api/providers/{provider}/accounts/rotation")

@@ -14,67 +14,7 @@ export interface ConnectivityHandle {
 }
 
 
-/** Classify a backend ``test_provider`` error string into a short
- *  human-readable summary the connectivity check can show inline.
- *
- *  The raw ``error`` field shape is ``HTTP <code>: <upstream body>``
- *  (mirroring ``test_provider`` in ``webui/_model_catalog.py``). The
- *  upstream body is usually JSON; the most actionable signal is the
- *  HTTP status (401 → bad key, 402 → no balance, 429 → rate limit,
- *  403 → CF block, …). We surface a short tag + the upstream's own
- *  ``message`` field when present, so the user doesn't have to hover
- *  over a generic "✗ failed" to learn that DeepSeek wants them to
- *  top up. The full untouched error stays available as a tooltip. */
-function summarizeError(raw: string | undefined): { short: string; tooltip: string } {
-  const tooltip = raw || "Unknown error";
-  if (!raw) return { short: "✗ failed", tooltip };
-
-  // Pull out the status code if the upstream wrapper formatted as "HTTP <n>: ...".
-  const m = raw.match(/^HTTP (\d+):\s*([\s\S]*)$/);
-  const code = m ? Number(m[1]) : NaN;
-  const body = m ? m[2] : raw;
-
-  // Best-effort JSON parse: most providers return {"error":{"message":"...","type":"..."}}.
-  let upstreamMsg = "";
-  try {
-    const j = JSON.parse(body);
-    upstreamMsg =
-      j?.error?.message ||
-      j?.message ||
-      j?.error_message ||
-      "";
-  } catch {
-    // Body isn't JSON — leave upstreamMsg empty; raw stays in tooltip.
-  }
-
-  const tag = (() => {
-    switch (code) {
-      case 401:
-      case 403:
-        return "✗ auth";
-      case 402:
-        return "✗ no balance";
-      case 404:
-        return "✗ not found";
-      case 408:
-      case 504:
-        return "✗ timeout";
-      case 429:
-        return "✗ rate limited";
-      case 500:
-      case 502:
-      case 503:
-        return "✗ upstream";
-      default:
-        return code ? `✗ HTTP ${code}` : "✗ failed";
-    }
-  })();
-
-  const short = upstreamMsg ? `${tag}: ${upstreamMsg}` : tag;
-  return { short, tooltip };
-}
-
-/** Connectivity-check button — POSTs to /api/providers/<id>/test and
+/** Connectivity-check button — POSTs to /api/providers/<id>/validate and
  *  shows ✓ + latency or ✗ + an inline error summary. The full raw
  *  upstream response stays on the hover tooltip for paste-into-bug-
  *  report cases. */
@@ -88,37 +28,29 @@ export const Connectivity = forwardRef<ConnectivityHandle, { providerId: string 
     setBusy(true);
     setResult({ kind: "ok", text: "…" });
     try {
-      const r = await fetch(`/api/providers/${encodeURIComponent(providerId)}/test`, {
+      // Auth-only, kind-aware check (NO model call — matches the label below):
+      // api-key → probe the key; OAuth (Codex / Copilot) → check the token.
+      // This is why a working ChatGPT-Codex login reads ✓ even though a model
+      // ping would 400 on an unsupported model — that's a model issue, not auth.
+      const r = await fetch(`/api/providers/${encodeURIComponent(providerId)}/validate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
       const d = await r.json();
-      if (d.ok) {
-        // ``note`` present → the key authenticated but the model pinged is
-        // temporarily unavailable (rate-limited / dead upstream / data
-        // policy). Still a pass — the credential works — but say so.
-        if (d.note) {
-          setResult({
-            kind: "ok",
-            text: text("✓ key valid · model unavailable", "✓ key 有效 · 模型暂不可用"),
-            title: d.note,
-          });
-          return true;
-        }
-        // ``via`` → confirmed against a model-independent auth endpoint
-        // (e.g. GET /key, GET /models). ``model`` → an inference ping was
-        // used (caller named a specific model). Either way it's a pass.
-        const title = d.via
-          ? text(`Key verified via ${d.via}`, `已通过 ${d.via} 验证 key`)
-          : d.model
-            ? text(`Tested with ${d.model}`, `已使用 ${d.model} 测试`)
-            : undefined;
-        setResult({ kind: "ok", text: `✓ ${d.latency_ms || 0} ms`, title });
+      const status: string = d.status || (d.ok ? "valid" : "unknown");
+      // valid / valid_no_balance / valid_model_unavailable all mean the
+      // credential authenticates — a pass.
+      if (d.ok || status.startsWith("valid")) {
+        const title = d.detail || (d.via ? text(`verified via ${d.via}`, `已通过 ${d.via} 验证`) : undefined);
+        setResult({ kind: "ok", text: d.latency_ms ? `✓ ${d.latency_ms} ms` : text("✓ valid", "✓ 有效"), title });
         return true;
       }
-      const { short, tooltip } = summarizeError(d.error);
-      setResult({ kind: "err", text: short, title: tooltip });
+      const tag = status === "invalid_credential" ? text("✗ invalid key", "✗ key 无效")
+        : status === "needs_reauth" ? text("✗ sign in again", "✗ 需重新登录")
+        : status === "missing" ? text("✗ not set", "✗ 未设置")
+        : `✗ ${status}`;
+      setResult({ kind: "err", text: tag, title: d.detail || status });
       return false;
     } catch (e) {
       setResult({ kind: "err", text: "✗", title: (e as Error).message });
