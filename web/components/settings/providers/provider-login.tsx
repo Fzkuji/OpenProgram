@@ -14,8 +14,8 @@ import type { Provider } from "./types";
  *  /api/providers/{id}/login/{start,poll,submit,cancel}: start kicks off the
  *  flow, then we poll for events (open a URL, show a device code, progress, or
  *  a prompt we must answer) until done, then refresh status. Same flow the CLI
- *  runs; claude-code keeps its own ClaudeAccounts panel, plain api_key keeps the
- *  ApiKey field.
+ *  runs, and the same flow <ProviderAccounts> embeds (with profileId) as its
+ *  "add account" step; plain api_key keeps the ApiKey field.
  *
  *  Polling is a SELF-RESCHEDULING setTimeout (never setInterval) so only one
  *  poll is ever in flight — no overlapping reads, no cursor rewind, no late
@@ -31,9 +31,18 @@ interface Prompt {
 export function ProviderLogin({
   provider,
   onChanged,
+  profileId,
+  bare = false,
 }: {
   provider: Provider;
   onChanged?: () => void;
+  /** Target account (profile) the new credential lands in. Omitted ⇒ the
+   *  worker's "default" profile. <ProviderAccounts> passes the account name so
+   *  "add account" writes a NEW account instead of overwriting the default. */
+  profileId?: string;
+  /** Drop the bordered "Sign in" section wrapper — used when embedded as the
+   *  add-account step inside <ProviderAccounts>, which supplies its own frame. */
+  bare?: boolean;
 }) {
   const { text } = useTranslation();
   const methods = provider.login_methods ?? [];
@@ -84,7 +93,7 @@ export function ProviderLogin({
       const r = await fetch(`/api/providers/${provider.id}/login/start`, {
         method: "POST",
         headers: JSON_HEADERS,
-        body: JSON.stringify({ method }),
+        body: JSON.stringify(profileId ? { method, profile: profileId } : { method }),
       });
       const d = await r.json();
       if (d.error || !d.session) {
@@ -183,12 +192,8 @@ export function ProviderLogin({
     clearLocal("");
   }
 
-  return (
-    <div className={styles.detailSection}>
-      <div className={styles.detailSectionTitle}>
-        <span>{text("Sign in", "登录")}</span>
-      </div>
-
+  const body = (
+    <>
       {!session ? (
         <div className={styles.detailRow} style={{ flexWrap: "wrap", gap: "0.4rem" }}>
           {methods.map((m) => (
@@ -225,6 +230,16 @@ export function ProviderLogin({
       {msg && (
         <div style={{ fontSize: "0.75rem", opacity: 0.75, marginTop: "0.3rem" }}>{msg}</div>
       )}
+    </>
+  );
+
+  if (bare) return body;
+  return (
+    <div className={styles.detailSection}>
+      <div className={styles.detailSectionTitle}>
+        <span>{text("Sign in", "登录")}</span>
+      </div>
+      {body}
     </div>
   );
 }

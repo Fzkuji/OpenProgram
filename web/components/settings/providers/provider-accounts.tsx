@@ -6,25 +6,43 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/lib/i18n";
 
+import { ProviderLogin } from "./provider-login";
 import styles from "../settings-page.module.css";
+import type { Provider } from "./types";
 
-/** claude-code only: manage the Claude accounts the provider can run on.
- *  Add (browser login, name optional → auto-named to the account email),
- *  activate / deactivate (which one OpenProgram uses — or none), rename,
- *  and remove. All independent of the terminal `claude auth login` you chat
- *  on. The underlying proxy is never named here; users see "Claude account".
- *  Add is a two-step OAuth: POST .../add returns a login URL (we open it);
- *  the user signs in and pastes the code, which goes to .../add/code. */
+/** Manage the multiple accounts a provider can run on: list, add, activate /
+ *  deactivate (which one the framework uses — or none), rename, remove. One
+ *  component for EVERY provider — it hits /api/providers/{id}/accounts/* and
+ *  branches only on the backend-declared `add_mode`:
+ *
+ *    - "code_paste"  claude-code's interactive OAuth (POST .../add returns a
+ *                    login URL we open; the user pastes the code to .../add/code).
+ *    - "login"       every other provider — the add step is the shared
+ *                    <ProviderLogin> flow targeting the new account's profile,
+ *                    so OAuth / device-code / import-from-CLI all work here too.
+ *
+ *  Accounts are profiles: each is an independent credential set. The active one
+ *  is what requests use when no profile is pinned. For claude-code this stays
+ *  decoupled from the terminal `claude auth login` you chat on. */
 
 interface Account {
   name: string;
   email?: string;
+  kind?: string;
+  status?: string;
+  count?: number;
+}
+interface LoginMethod {
+  id: string;
+  label: string;
 }
 interface AccountsState {
   installed: boolean;
   ready: boolean;
   active: string | null;
   accounts: Account[];
+  add_mode?: "code_paste" | "login";
+  login_methods?: LoginMethod[];
 }
 interface Pending {
   session: string;
@@ -34,32 +52,35 @@ interface Pending {
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
-export function ClaudeAccounts() {
+export function ProviderAccounts({ provider }: { provider: Provider }) {
   const { text } = useTranslation();
+  const pid = provider.id;
+  const base = `/api/providers/${encodeURIComponent(pid)}/accounts`;
+
   const [state, setState] = useState<AccountsState | null>(null);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [pending, setPending] = useState<Pending | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null); // code_paste only
   const [code, setCode] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch("/api/providers/claude-code/accounts");
+      const r = await fetch(base);
       setState((await r.json()) as AccountsState);
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [base]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   async function setActive(name: string) {
-    await fetch("/api/providers/claude-code/accounts/use", {
+    await fetch(`${base}/use`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify({ name }),
@@ -68,7 +89,7 @@ export function ClaudeAccounts() {
   }
 
   async function remove(name: string) {
-    await fetch("/api/providers/claude-code/accounts/remove", {
+    await fetch(`${base}/remove`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify({ name }),
@@ -82,7 +103,7 @@ export function ClaudeAccounts() {
       setRenaming(null);
       return;
     }
-    const r = await fetch("/api/providers/claude-code/accounts/rename", {
+    const r = await fetch(`${base}/rename`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify({ old, new: nv }),
@@ -97,14 +118,13 @@ export function ClaudeAccounts() {
     }
   }
 
+  // ---- code_paste add (claude-code) -------------------------------------
   async function startAdd() {
-    // Name is optional — blank lets the backend auto-name (account-N), then
-    // rename it to the account's email after login.
     const name = newName.trim();
     setBusy(true);
     setMsg("");
     try {
-      const r = await fetch("/api/providers/claude-code/accounts/add", {
+      const r = await fetch(`${base}/add`, {
         method: "POST",
         headers: JSON_HEADERS,
         body: JSON.stringify({ name }),
@@ -130,7 +150,7 @@ export function ClaudeAccounts() {
     if (!pending) return;
     setBusy(true);
     try {
-      const r = await fetch("/api/providers/claude-code/accounts/add/code", {
+      const r = await fetch(`${base}/add/code`, {
         method: "POST",
         headers: JSON_HEADERS,
         body: JSON.stringify({ session: pending.session, code }),
@@ -164,11 +184,12 @@ export function ClaudeAccounts() {
   if (!state) return null;
   const notReady = !state.installed || !state.ready;
   const accounts = state.accounts || [];
+  const codePaste = state.add_mode === "code_paste";
 
   return (
     <div className={styles.detailSection}>
       <div className={styles.detailSectionTitle}>
-        <span>{text("Claude accounts", "Claude 账号")}</span>
+        <span>{text(`${provider.label} accounts`, `${provider.label} 账号`)}</span>
         <span className={styles.modelCountSummary}>
           {state.active
             ? text(`active: ${state.active}`, `激活：${state.active}`)
@@ -176,7 +197,7 @@ export function ClaudeAccounts() {
         </span>
       </div>
 
-      {notReady && (
+      {notReady && codePaste && (
         <div style={{ fontSize: "0.8rem", opacity: 0.7, marginBottom: "0.5rem" }}>
           {text(
             "The backend sets itself up the first time you add an account — just click Add account.",
@@ -208,6 +229,9 @@ export function ClaudeAccounts() {
                 {a.name}
                 {a.email && a.email !== a.name ? (
                   <span style={{ opacity: 0.55 }}>{"  " + a.email}</span>
+                ) : null}
+                {a.count && a.count > 1 ? (
+                  <span style={{ opacity: 0.45 }}>{`  (${a.count} keys)`}</span>
                 ) : null}
               </span>
               {a.name === state.active ? (
@@ -242,45 +266,70 @@ export function ClaudeAccounts() {
         </div>
       )}
 
-      {/* Step 1: optional name + start. Step 2 (pending): paste the code. */}
-      {!pending ? (
-        <div className={styles.detailRow}>
-          <Input
-            className="flex-1 font-mono"
-            placeholder={text("optional label — leave blank to auto-name", "可选标签 — 留空自动命名")}
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            disabled={busy}
-          />
-          <Button size="sm" onClick={startAdd} disabled={busy}>
-            {busy ? text("Opening…", "打开中…") : text("Add account", "添加账号")}
-          </Button>
-        </div>
+      {/* Add account: code-paste (claude-code) vs the shared login flow. */}
+      {codePaste ? (
+        !pending ? (
+          <div className={styles.detailRow}>
+            <Input
+              className="flex-1 font-mono"
+              placeholder={text("optional label — leave blank to auto-name", "可选标签 — 留空自动命名")}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              disabled={busy}
+            />
+            <Button size="sm" onClick={startAdd} disabled={busy}>
+              {busy ? text("Opening…", "打开中…") : text("Add account", "添加账号")}
+            </Button>
+          </div>
+        ) : (
+          <div className={styles.detailRow} style={{ flexWrap: "wrap", gap: "0.4rem" }}>
+            <Input
+              className="flex-1 font-mono"
+              placeholder={text("paste the code from the login page", "粘贴登录页给出的 code")}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              disabled={busy}
+            />
+            <Button size="sm" onClick={submitCode} disabled={busy || !code.trim()}>
+              {busy ? text("Finishing…", "完成中…") : text("Finish", "完成")}
+            </Button>
+            <Button size="sm" onClick={cancelAdd} disabled={busy}>
+              {text("Cancel", "取消")}
+            </Button>
+            {pending.url && (
+              <a
+                href={pending.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: "0.75rem", opacity: 0.7, width: "100%" }}
+              >
+                {text("Login page didn't open? Click here.", "登录页没打开？点这里。")}
+              </a>
+            )}
+          </div>
+        )
       ) : (
-        <div className={styles.detailRow} style={{ flexWrap: "wrap", gap: "0.4rem" }}>
-          <Input
-            className="flex-1 font-mono"
-            placeholder={text("paste the code from the login page", "粘贴登录页给出的 code")}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            disabled={busy}
+        <div>
+          <div className={styles.detailRow}>
+            <Input
+              className="flex-1 font-mono"
+              placeholder={text(
+                "account name (e.g. work) — blank fills the default account",
+                "账号名（如 work）— 留空填入默认账号",
+              )}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+          </div>
+          <ProviderLogin
+            provider={provider}
+            profileId={newName.trim() || "default"}
+            bare
+            onChanged={() => {
+              setNewName("");
+              load();
+            }}
           />
-          <Button size="sm" onClick={submitCode} disabled={busy || !code.trim()}>
-            {busy ? text("Finishing…", "完成中…") : text("Finish", "完成")}
-          </Button>
-          <Button size="sm" onClick={cancelAdd} disabled={busy}>
-            {text("Cancel", "取消")}
-          </Button>
-          {pending.url && (
-            <a
-              href={pending.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ fontSize: "0.75rem", opacity: 0.7, width: "100%" }}
-            >
-              {text("Login page didn't open? Click here.", "登录页没打开？点这里。")}
-            </a>
-          )}
         </div>
       )}
 
@@ -288,10 +337,15 @@ export function ClaudeAccounts() {
         <div style={{ fontSize: "0.75rem", opacity: 0.75, marginTop: "0.3rem" }}>{msg}</div>
       )}
       <div style={{ fontSize: "0.72rem", opacity: 0.55, marginTop: "0.4rem", lineHeight: 1.5 }}>
-        {text(
-          "Add an account (browser login; the name is optional, it's auto-set to the account email). Activate the one OpenProgram runs on — or deactivate to leave none active. Rename or remove any. Independent of the terminal Claude Code login you chat on.",
-          "添加账号（浏览器登录；名字可选，默认用账号 email）。激活 OpenProgram 要用的那个 —— 或取消激活让它没有激活账号。可改名、删除任意账号。与你聊天用的终端 Claude Code 登录无关。",
-        )}
+        {codePaste
+          ? text(
+              "Add an account (browser login; the name is optional, it's auto-set to the account email). Activate the one the framework runs on — or deactivate to leave none active. Rename or remove any. Independent of the terminal Claude Code login you chat on.",
+              "添加账号（浏览器登录；名字可选，默认用账号 email）。激活框架要用的那个 —— 或取消激活让它没有激活账号。可改名、删除任意账号。与你聊天用的终端 Claude Code 登录无关。",
+            )
+          : text(
+              "Each account is a separate sign-in. Name it, then sign in to add it. Activate the one this provider runs on — or deactivate to fall back to the default account. Rename or remove any.",
+              "每个账号是一次独立登录。先起名，再登录即可添加。激活这个 Provider 要用的那个 —— 或取消激活回退到默认账号。可改名、删除任意账号。",
+            )}
       </div>
     </div>
   );

@@ -9,7 +9,7 @@ import { ProviderIcon } from "../provider-icon";
 
 import { ApiKey } from "./api-key";
 import { BaseUrl } from "./base-url";
-import { ClaudeAccounts } from "./claude-accounts";
+import { ProviderAccounts } from "./provider-accounts";
 import { ProviderLogin } from "./provider-login";
 import { Connectivity, type ConnectivityHandle } from "./connectivity";
 import { ModelList } from "./model-list";
@@ -153,15 +153,23 @@ export function Detail({
       {provider.api_key_env && provider.id !== "claude-code" && (
         <BaseUrl provider={provider} onChanged={onChanged} />
       )}
-      {/* claude-code: manage the Claude accounts this provider runs on
-          (add / activate / remove), decoupled from the terminal login. */}
-      {provider.id === "claude-code" && <ClaudeAccounts />}
-      {/* Generic native login (OAuth / device-code / import-from-CLI) for any
-          provider that ships a non-key login method. claude-code keeps its own
-          ClaudeAccounts panel above; everything else uses the unified
-          /api/providers/{id}/login/{start,poll,submit} flow. */}
+      {/* Unified multi-account panel (list / add / activate / rename / remove).
+          claude-code (Meridian-backed, code-paste add) and the login-only
+          providers (OAuth / device-code / import-from-CLI, no API key field —
+          openai-codex, github-copilot, gemini-subscription) manage accounts
+          here; the panel hits /api/providers/{id}/accounts/* and picks its add
+          sub-flow from the backend's add_mode. See provider-accounts.tsx. */}
+      {(provider.id === "claude-code" ||
+        ((provider.login_methods?.length ?? 0) > 0 && !provider.api_key_env)) && (
+        <ProviderAccounts provider={provider} />
+      )}
+      {/* Providers with BOTH an API key field AND a native login method
+          (e.g. anthropic: import-from-CLI or paste a key) keep the simple
+          single-account "Sign in" panel alongside the ApiKey field above —
+          their multi-key story is pool rotation, not separate accounts. */}
       {provider.id !== "claude-code" &&
-        (provider.login_methods?.length ?? 0) > 0 && (
+        (provider.login_methods?.length ?? 0) > 0 &&
+        !!provider.api_key_env && (
           <ProviderLogin provider={provider} onChanged={onChanged} />
         )}
       {/* Connectivity check applies to every HTTP provider, not just
