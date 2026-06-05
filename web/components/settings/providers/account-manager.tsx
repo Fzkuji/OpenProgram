@@ -1,7 +1,8 @@
 "use client";
 
+import { Reorder, useDragControls } from "framer-motion";
 import { Eye, EyeOff, GripVertical, Pencil, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,31 +60,35 @@ function ActiveToggle({ active, onActivate, onDeactivate }: { active: boolean; o
   const label = active
     ? (hover ? text("Deactivate", "取消激活") : text("Activated", "已激活"))
     : (hover ? text("Activate", "激活") : text("Deactivated", "未激活"));
+  // Green is reserved for the ON state only. "Deactivate" is a turning-OFF
+  // action and a negative word, so it must NOT be green — show it neutral
+  // grey on hover. "Activate" inherits the button's brand colour (undefined
+  // → the default orange) as a call-to-action; "Deactivated" sits muted.
+  const color = active
+    ? (hover ? "var(--text-secondary)" : "var(--accent-green)")
+    : (hover ? undefined : "var(--text-muted)");
   return (
     <Button size="sm" className={styles.acctCellBtn}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       onClick={active ? onDeactivate : onActivate}
-      style={{ color: active
-        ? "var(--accent-green)"               /* on: green, both at rest and hover */
-        : (hover ? "var(--text-primary)"      /* off + hover "Activate": brand call-to-action */
-                 : "var(--text-muted)") }}>   {/* off at rest "Deactivated": muted */}
+      style={{ color }}>
       {label}
     </Button>
   );
 }
 
 function AccountRow({
-  provider, account, multi, onChanged, refresh, onDragStart, onDrop,
+  provider, account, multi, onChanged, refresh, onCommit,
 }: {
   provider: string;
   account: Account;
   multi: boolean;
   onChanged?: () => void;
   refresh: () => void;
-  onDragStart: (id: string) => void;
-  onDrop: (id: string) => void;
+  onCommit: () => void;
 }) {
   const { text } = useTranslation();
+  const controls = useDragControls();
   const base = `/api/providers/${encodeURIComponent(provider)}/accounts`;
 
   const [renaming, setRenaming] = useState(false);
@@ -150,13 +155,15 @@ function AccountRow({
   const status = vres?.status ?? "checking";
 
   return (
-    <div className={styles.acctRow}
-      onDragOver={(e) => { e.preventDefault(); }}
-      onDrop={() => onDrop(account.id)}>
-      {/* drag handle (only with ≥2 accounts) */}
-      <span className={styles.dragHandle} draggable={multi}
-        onDragStart={() => onDragStart(account.id)}
-        style={{ visibility: multi ? "visible" : "hidden" }}>
+    <Reorder.Item value={account} dragListener={false} dragControls={controls}
+      className={styles.acctRow} onDragEnd={onCommit}
+      whileDrag={{ backgroundColor: "var(--bg-hover)", borderRadius: 8, boxShadow: "var(--shadow)", zIndex: 5 }}
+      transition={{ type: "spring", stiffness: 600, damping: 40 }}>
+      {/* drag handle (only with ≥2 accounts) — press it to pick the row up;
+          dragListener is off so the row's buttons/inputs stay clickable */}
+      <span className={styles.dragHandle}
+        onPointerDown={(e) => { if (multi) controls.start(e); }}
+        style={{ visibility: multi ? "visible" : "hidden", touchAction: "none" }}>
         <GripVertical size={14} />
       </span>
 
@@ -170,9 +177,10 @@ function AccountRow({
         ) : (
           <span className={styles.acctName}>
             <span className={styles.acctNameText}>{account.name}</span>
-            <button className={`${styles.iconBtn} ${styles.hoverShow}`} title={text("Rename", "重命名")}
-              onClick={() => { setRenameVal(account.name); setRenaming(true); }} style={{ height: 18, width: 18, flexShrink: 0 }}>
-              <Pencil size={11} />
+            {/* same icon-button as the key eye/cancel: .iconBtn 28px, 15px glyph */}
+            <button className={styles.iconBtn} title={text("Rename", "重命名")}
+              onClick={() => { setRenameVal(account.name); setRenaming(true); }} style={{ flexShrink: 0 }}>
+              <Pencil size={15} />
             </button>
           </span>
         )}
@@ -208,7 +216,7 @@ function AccountRow({
 
       {/* Remove */}
       <Button size="sm" className={styles.acctCellBtn} onClick={remove}>{text("Remove", "删除")}</Button>
-    </div>
+    </Reorder.Item>
   );
 }
 
@@ -222,7 +230,12 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [dragId, setDragId] = useState<string | null>(null);
+  // Local drag order (account ids). Driven by framer Reorder for instant,
+  // FLIP-animated reordering; persisted to /reorder on drag end. orderRef
+  // mirrors it so the drag-end commit reads the freshest order (state may
+  // not have flushed by the time onDragEnd fires).
+  const [order, setOrder] = useState<string[]>([]);
+  const orderRef = useRef<string[]>([]);
   const [pending, setPending] = useState<{ session: string; url?: string } | null>(null);
   const [code, setCode] = useState("");
 
@@ -244,15 +257,29 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
 
   useEffect(() => { load(); }, [load]);
 
-  async function reorder(targetId: string) {
-    if (!state || !dragId || dragId === targetId) { setDragId(null); return; }
-    const ids = state.accounts.map((a) => a.id);
-    const from = ids.indexOf(dragId), to = ids.indexOf(targetId);
-    if (from < 0 || to < 0) { setDragId(null); return; }
-    ids.splice(to, 0, ids.splice(from, 1)[0]);
-    setDragId(null);
+  // Mirror the server account order into local order, but only when the SET
+  // of accounts changes (add / remove). A pure reorder leaves the set equal,
+  // so we keep the local order we already applied — no fight with the drag.
+  useEffect(() => {
+    const ids = (state?.accounts || []).map((a) => a.id);
+    setOrder((prev) => {
+      const sameSet = prev.length === ids.length
+        && prev.every((id) => ids.includes(id)) && ids.every((id) => prev.includes(id));
+      const next = sameSet ? prev : ids;
+      orderRef.current = next;
+      return next;
+    });
+  }, [state?.accounts]);
+
+  function onReorder(next: Account[]) {
+    const ids = next.map((a) => a.id);
+    orderRef.current = ids;
+    setOrder(ids);
+  }
+  async function commitOrder() {
+    const ids = orderRef.current;
+    if (ids.length < 2) return;
     await fetch(`${base}/reorder`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ order: ids }) });
-    await load();
   }
 
   async function addKey() {
@@ -291,6 +318,11 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
   if (!state) return null;
   const accounts = state.accounts || [];
   const multi = accounts.length > 1;
+  // Render in local drag order; fall back to server order until the order
+  // state has synced (or if it ever drifts out of sync with the account set).
+  const byId = new Map(accounts.map((a) => [a.id, a] as const));
+  const ordered = order.map((id) => byId.get(id)).filter(Boolean) as Account[];
+  const items = ordered.length === accounts.length ? ordered : accounts;
 
   return (
     <div className={styles.detailSection}>
@@ -305,7 +337,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
           <span style={{ fontSize: "0.82rem", flex: 1 }}>{text("Rotate across accounts automatically", "在多个账号之间自动轮询")}</span>
           {state.rotation && (
             <select value={state.strategy} onChange={(e) => setStrategy(e.target.value)}
-              style={{ background: "var(--bg-input)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 8px", fontSize: "0.78rem" }}>
+              style={{ height: "var(--ui-button-h)", background: "var(--bg-input)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: "var(--ui-button-radius)", padding: "0 12px", fontSize: "0.875rem", cursor: "pointer" }}>
               <option value="fill_first">{text("in order (failover)", "按顺序（容错）")}</option>
               <option value="round_robin">{text("spread evenly", "均匀轮询")}</option>
               <option value="random">{text("random", "随机")}</option>
@@ -315,11 +347,13 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
         </div>
       )}
 
-      {accounts.map((a) => (
-        <AccountRow key={a.id} provider={pid} account={a} multi={multi}
-          onChanged={onChanged} refresh={load}
-          onDragStart={setDragId} onDrop={reorder} />
-      ))}
+      <Reorder.Group axis="y" values={items} onReorder={onReorder}
+        className="flex flex-col gap-[10px] m-0 p-0 list-none">
+        {items.map((a) => (
+          <AccountRow key={a.id} provider={pid} account={a} multi={multi}
+            onChanged={onChanged} refresh={load} onCommit={commitOrder} />
+        ))}
+      </Reorder.Group>
 
       {/* add */}
       {state.add_mode === "api_key" && (
