@@ -212,11 +212,29 @@ def register(app):
     # `def` so the blocking subprocess calls run in FastAPI's threadpool.
     @app.get("/api/providers/claude-code/accounts")
     def api_cc_accounts():
-        # add_mode tells the unified <ProviderAccounts> UI how "add account"
-        # works here — claude-code uses the interactive code-paste pair below,
-        # every generic provider uses the shared /login/* flow ("login").
+        # Normalize the Meridian summary ({name,email}) into the SAME unified
+        # account shape every other provider uses ({id,name,identity,is_active,
+        # kind,can_reveal}), so the one <AccountManager> renders claude-code
+        # identically — Activate/Deactivate work, the active one is marked.
         from openprogram.providers.anthropic import _meridian_cli as _acc
-        return JSONResponse(content={**_acc.accounts_summary(), "add_mode": "code_paste"})
+        s = _acc.accounts_summary()
+        active = s.get("active")
+        accounts = [{
+            "id": a.get("name", ""),
+            "name": a.get("name", ""),
+            "identity": a.get("email", "") or a.get("name", ""),
+            "email": a.get("email", ""),
+            "kind": "oauth",
+            "status": "valid",
+            "is_active": a.get("name") == active,
+            "can_reveal": False,
+            "cooling": False,
+        } for a in s.get("accounts", [])]
+        return JSONResponse(content={
+            **s, "accounts": accounts, "active": active or "",
+            "pinned": active or "",  # Meridian's active IS the explicit pin
+            "add_mode": "code_paste", "rotation": False,
+        })
 
     @app.post("/api/providers/claude-code/accounts/add")
     def api_cc_accounts_add(body: dict = None):
@@ -236,20 +254,25 @@ def register(app):
 
     @app.post("/api/providers/claude-code/accounts/remove")
     def api_cc_accounts_remove(body: dict = None):
+        # The unified UI sends {id}; accept {name} too for back-compat.
+        b = body or {}
         from openprogram.providers.anthropic import _meridian_cli as _acc
-        return JSONResponse(content=_acc.remove_account((body or {}).get("name", "")))
+        return JSONResponse(content=_acc.remove_account(b.get("id", b.get("name", ""))))
 
     @app.post("/api/providers/claude-code/accounts/use")
     def api_cc_accounts_use(body: dict = None):
-        # Empty name deactivates (no active account).
+        # Activate the named account; empty id/name deactivates (clears the pin).
+        # The unified UI sends {id}; accept {name} too for back-compat.
+        b = body or {}
         from openprogram.providers.anthropic import _meridian_cli as _acc
-        return JSONResponse(content=_acc.activate_account((body or {}).get("name", "")))
+        return JSONResponse(content=_acc.activate_account(b.get("id", b.get("name", ""))))
 
     @app.post("/api/providers/claude-code/accounts/rename")
     def api_cc_accounts_rename(body: dict = None):
+        # Unified UI sends {id, name}; accept {old, new} for back-compat.
         from openprogram.providers.anthropic import _meridian_cli as _acc
         b = body or {}
-        return JSONResponse(content=_acc.rename_account(b.get("old", ""), b.get("new", "")))
+        return JSONResponse(content=_acc.rename_account(b.get("id", b.get("old", "")), b.get("name", b.get("new", ""))))
 
     # Single-provider probes are sync (one blocking network call). Declared
     # `def` (not `async def`) so FastAPI runs them in its threadpool instead of

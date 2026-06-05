@@ -36,6 +36,7 @@ interface Account {
 interface State {
   accounts: Account[];
   active: string;
+  pinned?: string;   // explicit pin ("" ⇒ the active one is the implicit default)
   rotation: boolean;
   strategy: string;
   strategies: string[];
@@ -57,10 +58,11 @@ function badgeStyle(status: string, cooling?: boolean): React.CSSProperties {
 /** One account row — name (hover ✎ rename), the key (reveal/edit/update for
  *  api-key) or email, status, validate, Use/active, remove. */
 function AccountRow({
-  provider, account, onChanged, refresh,
+  provider, account, pinned, onChanged, refresh,
 }: {
   provider: string;
   account: Account;
+  pinned: string;
   onChanged?: () => void;
   refresh: () => void;
 }) {
@@ -123,8 +125,14 @@ function AccountRow({
   // The badge is a LIVE check, not the stored status: validate this account when
   // it appears (kind-aware — api-key probe / oauth token check, no model call).
   useEffect(() => { void validate(); }, [validate]);
-  async function use() {
+  async function activate() {
     await fetch(`${base}/use`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: account.id }) });
+    refresh();
+  }
+  async function deactivate() {
+    // Clear the pin → fall back to the default account (claude-code: run on the
+    // terminal login, not a pinned Claude profile).
+    await fetch(`${base}/use`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: "" }) });
     refresh();
   }
   async function remove() {
@@ -178,7 +186,9 @@ function AccountRow({
           )}
         </>
       ) : (
-        <span style={{ flex: 1, fontFamily: "monospace", fontSize: "0.8rem", opacity: 0.85, minWidth: "8rem" }}>{account.identity}</span>
+        <span style={{ flex: 1, fontFamily: "monospace", fontSize: "0.8rem", opacity: account.identity ? 0.85 : 0.5, minWidth: "8rem" }}>
+          {account.identity || text("signed in", "已登录")}
+        </span>
       )}
 
       {status && status !== "checking" && (
@@ -189,9 +199,17 @@ function AccountRow({
       {status === "checking" && <span style={{ fontSize: "0.7rem", opacity: 0.6 }}>{text("checking…", "验证中…")}</span>}
 
       {account.is_active ? (
-        <span style={{ fontSize: "0.72rem", color: "var(--text-primary)", padding: "0 4px" }}>{text("in use", "使用中")}</span>
+        <>
+          <span style={{ fontSize: "0.72rem", color: "#56c06a", padding: "0 2px" }}>{text("active", "当前")}</span>
+          {/* Deactivate only when this account is an explicit pin to a NON-default
+              account — clearing it falls back to the default. The default account
+              (or an implicit-default active) has nothing to fall back to. */}
+          {pinned === account.id && account.id !== "default" && (
+            <Button size="sm" onClick={deactivate}>{text("Deactivate", "取消")}</Button>
+          )}
+        </>
       ) : (
-        <Button size="sm" onClick={use}>{text("Use", "使用")}</Button>
+        <Button size="sm" onClick={activate}>{text("Activate", "激活")}</Button>
       )}
       <Button size="sm" onClick={remove}>{text("Remove", "删除")}</Button>
     </div>
@@ -304,7 +322,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
       )}
 
       {accounts.map((a) => (
-        <AccountRow key={a.id} provider={pid} account={a} onChanged={onChanged} refresh={load} />
+        <AccountRow key={a.id} provider={pid} account={a} pinned={state.pinned || ""} onChanged={onChanged} refresh={load} />
       ))}
 
       {/* add */}

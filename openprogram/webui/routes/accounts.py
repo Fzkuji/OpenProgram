@@ -131,12 +131,13 @@ def _generic_summary(provider: str) -> dict:
     effective active account, the rotation toggle + strategy, and how "add"
     works (paste a key vs sign in)."""
     from openprogram.auth.store import get_store
-    from openprogram.auth.active import get_active_profile
+    from openprogram.auth.active import get_active_profile, get_active_pin
     from openprogram.auth.rotation import get_rotation, STRATEGIES
     from openprogram.auth.login_methods import login_methods, default_method
 
     store = get_store()
     active = get_active_profile(provider)  # effective: pin, else "default"
+    pinned = get_active_pin(provider)      # explicit pin only ("" ⇒ implicit default)
     pools = [p for p in store.list_pools() if p.provider_id == provider]
     pools.sort(key=lambda p: (p.profile_id != "default", p.profile_id))
     accounts = [_account_record(p, active) for p in pools]
@@ -147,6 +148,7 @@ def _generic_summary(provider: str) -> dict:
         "installed": True,
         "ready": True,
         "active": active,
+        "pinned": pinned,
         "accounts": accounts,
         "rotation": rot["enabled"],
         "strategy": rot["strategy"],
