@@ -21,15 +21,20 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // Coloured-text default; the brand colour only fills on hover.
-        // No border — borders compete with the surface lift between
-        // deep / panel layers and add visual noise to dense rows.
-        // See docs/design/ui/surface-system.md.
+        // A button reads as a button at rest: a subtle raised surface
+        // (one layer lighter than the panel it sits on) with brand-
+        // coloured text. Hover only LIFTS the surface one more step —
+        // the text colour never flips. The old design filled the whole
+        // button with the brand colour on hover and inverted the text to
+        // black; that full inversion was too loud in dense rows, so it's
+        // gone. No border — the surface lift alone separates the button
+        // from the panel. See docs/design/ui/surface-system.md.
         default:
-          "bg-background text-primary hover:bg-primary hover:text-primary-foreground",
-        // Same mirror for destructive: red text default, red fill on hover.
+          "bg-secondary text-primary hover:bg-accent",
+        // Same shape for destructive: raised surface + red text, surface
+        // lifts on hover, text stays red (no fill, no inversion).
         destructive:
-          "bg-background text-destructive hover:bg-destructive hover:text-destructive-foreground",
+          "bg-secondary text-destructive hover:bg-accent",
         outline:
           "bg-background hover:bg-accent hover:text-accent-foreground",
         secondary:

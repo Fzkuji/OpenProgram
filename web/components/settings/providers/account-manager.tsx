@@ -63,7 +63,10 @@ function ActiveToggle({ active, onActivate, onDeactivate }: { active: boolean; o
     <Button size="sm" className={styles.acctCellBtn}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       onClick={active ? onDeactivate : onActivate}
-      style={{ color: active ? "var(--accent-green)" : undefined }}>
+      style={{ color: active
+        ? "var(--accent-green)"               /* on: green, both at rest and hover */
+        : (hover ? "var(--text-primary)"      /* off + hover "Activate": brand call-to-action */
+                 : "var(--text-muted)") }}>   {/* off at rest "Deactivated": muted */}
       {label}
     </Button>
   );

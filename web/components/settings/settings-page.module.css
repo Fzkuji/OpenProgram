@@ -635,7 +635,10 @@
    (drag · name · key) flexes. */
 .acctRow {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) 66px 86px 104px 78px;
+  /* drag · content · status · [Validate · active · Remove] — the three
+     action buttons share ONE width so the row reads as an even rail and
+     no single button (the active toggle used to be 104px) bulges out. */
+  grid-template-columns: 16px minmax(0, 1fr) 66px 88px 88px 88px;
   align-items: center;
   gap: 8px;
 }
@@ -675,29 +678,46 @@
   justify-content: center;
 }
 .dragHandle:hover { opacity: 0.9; }
-/* status badge — token colours, fixed cell */
+/* status badge — same pill language as the "DEFAULT" provider badge and
+   the branch "HEAD" badge: tiny bold uppercase text on a tinted ground,
+   the tint carrying the semantic colour (green / yellow / red). It hugs
+   its label and centres in the status cell; an over-long status (e.g.
+   NEEDS_REAUTH) caps at the cell width and ellipsises. */
 .statusBadge {
-  font-size: 12px;
-  padding: 1px 0;
-  border-radius: 6px;
-  text-align: center;
+  justify-self: center;
+  max-width: 100%;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   background: var(--bg-tertiary);
   color: var(--text-muted);
 }
-.statusBadge.valid { color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 14%, transparent); }
-.statusBadge.cooling { color: var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 16%, transparent); }
-.statusBadge.error { color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 14%, transparent); }
+.statusBadge.valid { color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 18%, transparent); }
+.statusBadge.cooling { color: var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 20%, transparent); }
+.statusBadge.error { color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 18%, transparent); }
 .statusChecking {
-  font-size: 12px;
+  justify-self: center;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text-muted);
-  text-align: center;
   white-space: nowrap;
 }
-/* each right-hand control fills its fixed grid cell, so its width is constant */
-.acctCellBtn { width: 100%; }
+/* each right-hand control fills its fixed grid cell, so its width is
+   constant. Compact type + tight padding keeps these row buttons from
+   looking bulky against the dense row. */
+.acctCellBtn {
+  width: 100%;
+  font-size: 12px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
 .detailRow > .input {
   flex: 1;
   width: auto;
