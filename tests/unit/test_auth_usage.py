@@ -87,6 +87,25 @@ def test_rotation_on_fails_over_from_the_active_key(store):
     assert usage.acquire_pooled("fx2")[0] == "KEY-A"          # cooled → fail over
 
 
+def test_pick_account_rotates_and_skips_cooled(store):
+    # Two accounts = two profiles, one credential each.
+    _seed(store, "rp", "default", ["KEY-A"])
+    _seed(store, "rp", "backup", ["KEY-B"])
+    pools = [p for p in store.list_pools() if p.provider_id == "rp"]
+    # round-robin alternates across the accounts
+    picks = [usage._pick_account("rp", pools, "round_robin").profile_id for _ in range(4)]
+    assert set(picks) == {"default", "backup"}
+    assert picks[0] != picks[1]
+    # cool the default account's credential → it's skipped
+    import time
+    pool = store.find_pool("rp", "default")
+    pool.credentials[0].cooldown_until_ms = int(time.time() * 1000) + 60_000
+    store.put_pool(pool)
+    pools = [p for p in store.list_pools() if p.provider_id == "rp"]
+    chosen = usage._pick_account("rp", pools, "fill_first")
+    assert chosen.profile_id == "backup"
+
+
 def test_report_success_is_safe_noop_without_credential(store):
     # empty credential id must not raise (the non-pool provider path)
     usage.report_success("rot", "default", "")

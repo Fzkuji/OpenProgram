@@ -46,72 +46,80 @@ def _cooling(cred) -> bool:
     return bool(until and until > _now_ms())
 
 
-def _account_record(pool) -> dict:
-    """One account row from a credential pool: name + best-effort identity +
-    health, mirroring claude-code's ``{name, email}`` (plus ``kind/status/count``
-    + the pool's rotation ``strategy`` and how many keys are currently cooling
-    down). Never includes the secret itself."""
-    creds = list(pool.credentials)
-    first = creds[0] if creds else None
-    email = ""
-    for c in creds:
-        meta = getattr(c, "metadata", None) or {}
-        email = meta.get("email") or meta.get("account") or ""
-        if email:
-            break
+def _masked(raw: str) -> str:
+    return (raw[:6] + "…" + raw[-4:]) if len(raw) > 12 else (("•" * len(raw)) if raw else "")
+
+
+def _primary_cred(pool):
+    return pool.credentials[0] if (pool and pool.credentials) else None
+
+
+def _api_key_of(cred) -> str:
+    return getattr(getattr(cred, "payload", None), "api_key", "") or ""
+
+
+def _account_record(pool, active_profile: str) -> dict:
+    """One ACCOUNT = one profile (holding one credential). Reports a uniform
+    shape for every provider: the account's id/name (the profile), its identity
+    (a masked key for api-key accounts, an email for OAuth ones), health, whether
+    it's the active one, and whether its key can be revealed. Never includes the
+    secret itself."""
+    cred = _primary_cred(pool)
+    meta = (getattr(cred, "metadata", None) or {}) if cred else {}
+    email = meta.get("email") or meta.get("account") or ""
+    kind = getattr(cred, "kind", "") if cred else ""
+    identity = _masked(_api_key_of(cred)) if kind == "api_key" else email
     return {
+        "id": pool.profile_id,
         "name": pool.profile_id,
+        "identity": identity,
         "email": email,
-        "kind": getattr(first, "kind", "") if first else "",
-        "status": getattr(first, "status", "") if first else "empty",
-        "count": len(creds),
-        "strategy": getattr(pool, "strategy", "fill_first"),
-        "cooling": sum(1 for c in creds if _cooling(c)),
+        "kind": kind,
+        "status": getattr(cred, "status", "") if cred else "empty",
+        "is_active": pool.profile_id == active_profile,
+        "can_reveal": kind == "api_key",
+        "cooling": _cooling(cred) if cred else False,
     }
 
 
-def _key_view(cred, active_id: str = "") -> dict:
-    """One credential ("key") within an account, masked, with its user-given
-    name, its health (for a per-key badge), and whether it's the active/pinned
-    one. Never includes the secret itself."""
-    payload = getattr(cred, "payload", None)
-    raw = getattr(payload, "api_key", "") or getattr(payload, "access_token", "") or ""
-    masked = (raw[:6] + "…" + raw[-4:]) if len(raw) > 12 else (("•" * len(raw)) if raw else "")
-    meta = getattr(cred, "metadata", None) or {}
-    return {
-        "credential_id": cred.credential_id,
-        "name": meta.get("label") or meta.get("name") or "",
-        "kind": cred.kind,
-        "status": cred.status,
-        "masked": masked,
-        "is_active": cred.credential_id == active_id,
-        "cooling": _cooling(cred),
-        "cooldown_until_ms": getattr(cred, "cooldown_until_ms", 0) or 0,
-        "use_count": getattr(cred, "use_count", 0) or 0,
-        "last_error": getattr(cred, "last_error", None),
-        "source": getattr(cred, "source", ""),
-    }
+def _api_key_env(provider: str) -> str:
+    """The provider's API-key env var, or '' — used to decide add_mode
+    (api_key paste vs sign-in) + which accounts can paste/reveal a key."""
+    try:
+        from openprogram.providers.env_api_keys import _PROVIDER_ENV_VARS
+        names = _PROVIDER_ENV_VARS.get(provider) or []
+        return names[0] if names else ""
+    except Exception:
+        return ""
 
 
 def _generic_summary(provider: str) -> dict:
-    """Account state for a non-claude-code provider, shaped like
-    :func:`_meridian_cli.accounts_summary` so the UI doesn't branch."""
+    """Unified account state: accounts = profiles (one credential each), the
+    effective active account, the rotation toggle + strategy, and how "add"
+    works (paste a key vs sign in)."""
     from openprogram.auth.store import get_store
-    from openprogram.auth.active import get_active_pin
+    from openprogram.auth.active import get_active_profile
+    from openprogram.auth.rotation import get_rotation, STRATEGIES
     from openprogram.auth.login_methods import login_methods, default_method
 
     store = get_store()
+    active = get_active_profile(provider)  # effective: pin, else "default"
     pools = [p for p in store.list_pools() if p.provider_id == provider]
-    # default first, then the rest alphabetically — stable, predictable order.
     pools.sort(key=lambda p: (p.profile_id != "default", p.profile_id))
-    accounts = [_account_record(p) for p in pools]
+    accounts = [_account_record(p, active) for p in pools]
+    rot = get_rotation(provider)
+    has_key = bool(_api_key_env(provider))
     methods = [{"id": mid, "label": label} for mid, label in login_methods(provider)]
     return {
         "installed": True,
         "ready": True,
-        "active": get_active_pin(provider),  # "" ⇒ the default profile is in effect
+        "active": active,
         "accounts": accounts,
-        "add_mode": "login",
+        "rotation": rot["enabled"],
+        "strategy": rot["strategy"],
+        "strategies": list(STRATEGIES),
+        # api-key providers paste a key into a new account; the rest sign in.
+        "add_mode": "api_key" if has_key else "login",
         "login_methods": methods,
         "default_method": default_method(provider),
     }
@@ -129,23 +137,26 @@ def register(app):
 
     @app.post("/api/providers/{provider}/accounts/use")
     def api_accounts_use(provider: str, body: dict = None):
-        """Activate an account (empty name clears the pin → back to default)."""
+        """Make an account active (the one requests run on). Empty ⇒ default."""
+        b = body or {}
+        name = b.get("id", b.get("name", ""))
         if provider == "claude-code":
             from openprogram.providers.anthropic import _meridian_cli as _acc
-            return JSONResponse(content=_acc.activate_account((body or {}).get("name", "")))
-        from openprogram.auth.active import set_active_profile, get_active_pin
-        name = (body or {}).get("name", "")
+            return JSONResponse(content=_acc.activate_account(name))
+        from openprogram.auth.active import set_active_profile, get_active_profile
         set_active_profile(provider, name)
-        return JSONResponse(content={"active": get_active_pin(provider)})
+        return JSONResponse(content={"active": get_active_profile(provider)})
 
     @app.post("/api/providers/{provider}/accounts/remove")
     def api_accounts_remove(provider: str, body: dict = None):
+        b = body or {}
+        name = b.get("id", b.get("name", ""))
         if provider == "claude-code":
             from openprogram.providers.anthropic import _meridian_cli as _acc
-            return JSONResponse(content=_acc.remove_account((body or {}).get("name", "")))
+            return JSONResponse(content=_acc.remove_account(name))
         from openprogram.auth.store import get_store
         from openprogram.auth.active import get_active_pin, set_active_profile
-        name = (body or {}).get("name", "").strip()
+        name = (name or "").strip()
         cleared = False
         if name:
             get_store().delete_pool(provider, name)
@@ -157,17 +168,16 @@ def register(app):
 
     @app.post("/api/providers/{provider}/accounts/rename")
     def api_accounts_rename(provider: str, body: dict = None):
+        b = body or {}
         if provider == "claude-code":
             from openprogram.providers.anthropic import _meridian_cli as _acc
-            b = body or {}
-            return JSONResponse(content=_acc.rename_account(b.get("old", ""), b.get("new", "")))
+            return JSONResponse(content=_acc.rename_account(b.get("id", b.get("old", "")), b.get("name", b.get("new", ""))))
         from openprogram.auth.store import get_store
         from openprogram.auth.active import get_active_pin, set_active_profile
         from openprogram.auth.types import CredentialPool
 
-        b = body or {}
-        old = (b.get("old") or "").strip()
-        new = (b.get("new") or "").strip()
+        old = (b.get("id", b.get("old", "")) or "").strip()
+        new = (b.get("name", b.get("new", "")) or "").strip()
         if not old or not new:
             return JSONResponse(content={"ok": False, "error": "both old and new names are required"})
         if new == old:
@@ -210,219 +220,155 @@ def register(app):
             "default_method": default_method(provider),
         })
 
-    # ---- pool controls (rotation / cooldown / keys) -----------------------
-    # An account is one pool; these steer how its multiple keys rotate and let
-    # the user add / drop / un-cool individual keys. claude-code (Meridian, no
-    # AuthStore pool) doesn't apply — guarded below.
+    # ---- per-account key ops (api-key accounts) ---------------------------
+    # An account is a profile holding one credential. For api-key accounts the
+    # key can be added / revealed / updated / validated; rotation is a per-
+    # provider toggle across accounts. claude-code (Meridian) is guarded.
 
-    @app.get("/api/providers/{provider}/accounts/{name}/keys")
-    def api_account_keys(provider: str, name: str):
-        """The keys inside one account, masked, each with name + health + whether
-        it's the active one. Plus the pool mode: ``rotation`` on/off
-        (``strategy != "fixed"``), the rotating ``strategy``, and ``active`` (the
-        pinned key used when rotation is off)."""
+    @app.post("/api/providers/{provider}/accounts/keys")
+    def api_accounts_add_key(provider: str, body: dict = None):
+        """Add a new api-key ACCOUNT: create the profile <name> with the key.
+        validate:true auth-probes first and rejects an invalid key. Blank name
+        auto-picks 'default' (or key-N)."""
         if provider == "claude-code":
-            return JSONResponse(content={"keys": [], "rotation": False, "active": "",
-                                         "strategy": "fixed", "strategies": []})
-        from openprogram.auth.store import get_store
-        store = get_store()
-        pool = store.find_pool(provider, name)
-        # Normalize a legacy pool (made before names/active/rotation existed:
-        # empty active_credential_id) to the new model's default — rotation OFF,
-        # pinned to the first key. One-time + idempotent (active is then set).
-        if pool and pool.credentials and not getattr(pool, "active_credential_id", ""):
-            pool.active_credential_id = pool.credentials[0].credential_id
-            pool.strategy = "fixed"
-            store.put_pool(pool)
-        strategy = getattr(pool, "strategy", "fixed") if pool else "fixed"
-        active = getattr(pool, "active_credential_id", "") if pool else ""
-        keys = [_key_view(c, active) for c in (pool.credentials if pool else [])]
-        return JSONResponse(content={
-            "keys": keys,
-            "rotation": strategy != "fixed",
-            "active": active,
-            "strategy": strategy if strategy != "fixed" else "fill_first",
-            "strategies": list(_STRATEGIES),
-        })
-
-    @app.post("/api/providers/{provider}/accounts/{name}/rotation")
-    def api_account_rotation(provider: str, name: str, body: dict = None):
-        """Toggle automatic rotation. Off ⇒ strategy ``fixed`` (only the active
-        key is used). On ⇒ a rotating strategy (the one passed, or ``fill_first``;
-        a 429 then cools a key down and the next takes over)."""
-        if provider == "claude-code":
-            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+            return JSONResponse(content={"ok": False, "error": "claude-code signs in; it has no API key"})
         b = body or {}
-        enabled = bool(b.get("enabled"))
-        want = b.get("strategy") if b.get("strategy") in _STRATEGIES else "fill_first"
+        key = (b.get("api_key") or "").strip()
+        if not key:
+            return JSONResponse(content={"ok": False, "error": "api_key is required"})
+        if any(ord(ch) < 0x20 or ord(ch) > 0x7e for ch in key):
+            return JSONResponse(content={"ok": False, "error": "the value has invalid characters \u2014 re-type the key"})
+        validation = None
+        if b.get("validate"):
+            try:
+                from openprogram.webui._model_catalog.credentials import validate_credential, INVALID_CREDENTIAL
+                res = validate_credential(provider, api_key=key, use_cache=False)
+                validation = res.to_dict()
+                if res.status == INVALID_CREDENTIAL:
+                    return JSONResponse(content={"ok": False, "error": f"{provider} rejected that key (invalid credential).", "validation": validation})
+            except Exception:
+                pass
         from openprogram.auth.store import get_store
+        from openprogram.auth.active import get_active_pin, set_active_profile
+        from openprogram.auth.types import Credential, ApiKeyPayload
         store = get_store()
-        pool = store.find_pool(provider, name)
-        if pool is None:
-            return JSONResponse(content={"ok": False, "error": f"account '{name}' not found"})
-        pool.strategy = want if enabled else "fixed"
-        store.put_pool(pool)
-        return JSONResponse(content={"ok": True, "rotation": enabled, "strategy": pool.strategy})
+        existing = {p.profile_id for p in store.list_pools() if p.provider_id == provider}
+        name = (b.get("name") or "").strip()
+        if not name:
+            name = "default" if "default" not in existing else f"key-{len(existing) + 1}"
+        cur = store.find_pool(provider, name)
+        if cur is not None and cur.credentials:
+            return JSONResponse(content={"ok": False, "error": f"account '{name}' already exists \u2014 pick another name"})
+        store.add_credential(Credential(
+            provider_id=provider, profile_id=name, kind="api_key",
+            payload=ApiKeyPayload(api_key=key), source="webui_add",
+        ))
+        if not existing and not get_active_pin(provider):
+            set_active_profile(provider, name)   # first account becomes active
+        return JSONResponse(content={"ok": True, "name": name, "validation": validation})
 
-    @app.post("/api/providers/{provider}/accounts/{name}/keys/{credential_id}/use")
-    def api_account_use_key(provider: str, name: str, credential_id: str):
-        """Pin which key is the active/default one (used as-is when rotation is
-        off; tried first when it's on)."""
+    @app.get("/api/providers/{provider}/accounts/{name}/reveal")
+    def api_account_reveal(provider: str, name: str):
+        """The full API key of one api-key account (to copy / check)."""
         if provider == "claude-code":
-            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+            return JSONResponse(content={"ok": False, "error": "no API key"})
         from openprogram.auth.store import get_store
-        store = get_store()
-        pool = store.find_pool(provider, name)
-        if pool is None or not any(c.credential_id == credential_id for c in pool.credentials):
-            return JSONResponse(content={"ok": False, "error": "key not found"})
-        pool.active_credential_id = credential_id
-        store.put_pool(pool)
-        return JSONResponse(content={"ok": True, "active": credential_id})
+        cred = _primary_cred(get_store().find_pool(provider, name))
+        if cred is None or cred.kind != "api_key":
+            return JSONResponse(content={"ok": False, "error": "no API key on this account"})
+        return JSONResponse(content={"ok": True, "value": _api_key_of(cred)})
 
-    @app.post("/api/providers/{provider}/accounts/{name}/keys/{credential_id}/name")
-    def api_account_name_key(provider: str, name: str, credential_id: str, body: dict = None):
-        """Give a key a human name (stored in its metadata; shown in the list)."""
+    @app.post("/api/providers/{provider}/accounts/{name}/update")
+    def api_account_update(provider: str, name: str, body: dict = None):
+        """Replace an api-key account's key with a new one (validated first)."""
         if provider == "claude-code":
-            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
-        label = ((body or {}).get("name") or "").strip()
+            return JSONResponse(content={"ok": False, "error": "no API key"})
+        b = body or {}
+        key = (b.get("api_key") or "").strip()
+        if not key or any(ord(ch) < 0x20 or ord(ch) > 0x7e for ch in key):
+            return JSONResponse(content={"ok": False, "error": "a valid API key is required"})
+        validation = None
+        if b.get("validate", True):
+            try:
+                from openprogram.webui._model_catalog.credentials import validate_credential, INVALID_CREDENTIAL
+                res = validate_credential(provider, api_key=key, use_cache=False)
+                validation = res.to_dict()
+                if res.status == INVALID_CREDENTIAL:
+                    return JSONResponse(content={"ok": False, "error": f"{provider} rejected that key.", "validation": validation})
+            except Exception:
+                pass
         from openprogram.auth.store import get_store
+        from openprogram.auth.types import ApiKeyPayload
         store = get_store()
         pool = store.find_pool(provider, name)
-        cred = next((c for c in (pool.credentials if pool else []) if c.credential_id == credential_id), None)
-        if cred is None:
-            return JSONResponse(content={"ok": False, "error": "key not found"})
-        meta = dict(getattr(cred, "metadata", None) or {})
-        if label:
-            meta["label"] = label
-        else:
-            meta.pop("label", None)
-        cred.metadata = meta
+        cred = _primary_cred(pool)
+        if cred is None or cred.kind != "api_key":
+            return JSONResponse(content={"ok": False, "error": "no API key on this account"})
+        cred.payload = ApiKeyPayload(api_key=key)
+        cred.status = "valid"
+        cred.cooldown_until_ms = 0
+        cred.last_error = None
         store.put_pool(pool)
-        return JSONResponse(content={"ok": True, "name": label})
+        return JSONResponse(content={"ok": True, "validation": validation})
 
-    @app.post("/api/providers/{provider}/accounts/{name}/strategy")
-    def api_account_strategy(provider: str, name: str, body: dict = None):
-        """Set the account's rotation strategy (fill_first / round_robin /
-        random / least_used)."""
-        if provider == "claude-code":
-            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
-        strategy = (body or {}).get("strategy", "")
-        if strategy not in _STRATEGIES:
-            return JSONResponse(content={"ok": False, "error": f"unknown strategy '{strategy}'"})
+    @app.post("/api/providers/{provider}/accounts/{name}/validate")
+    def api_account_validate(provider: str, name: str):
+        """Validate ONE account's key against the provider's auth endpoint."""
         from openprogram.auth.store import get_store
-        store = get_store()
-        pool = store.find_pool(provider, name)
-        if pool is None:
-            return JSONResponse(content={"ok": False, "error": f"account '{name}' not found"})
-        pool.strategy = strategy
-        store.put_pool(pool)
-        return JSONResponse(content={"ok": True, "strategy": strategy})
+        from openprogram.webui._model_catalog.credentials import validate_credential
+        cred = _primary_cred(get_store().find_pool(provider, name))
+        key = _api_key_of(cred) if cred else ""
+        if not key:
+            return JSONResponse(content={"ok": False, "error": "no API key on this account"})
+        try:
+            return JSONResponse(content={"ok": True, **validate_credential(provider, api_key=key, use_cache=False).to_dict()})
+        except Exception as e:
+            return JSONResponse(content={"ok": False, "error": str(e)})
+
+    @app.post("/api/providers/{provider}/accounts/validate-all")
+    def api_accounts_validate_all(provider: str):
+        """Validate every api-key account's key; returns [{id, status, ...}]."""
+        from openprogram.auth.store import get_store
+        from openprogram.webui._model_catalog.credentials import validate_credential
+        out = []
+        for p in get_store().list_pools():
+            if p.provider_id != provider:
+                continue
+            cred = _primary_cred(p)
+            key = _api_key_of(cred) if cred else ""
+            if not key:
+                out.append({"id": p.profile_id, "status": "missing"})
+                continue
+            try:
+                out.append({"id": p.profile_id, **validate_credential(provider, api_key=key, use_cache=False).to_dict()})
+            except Exception as e:
+                out.append({"id": p.profile_id, "status": "unknown", "detail": str(e)})
+        return JSONResponse(content={"ok": True, "results": out})
+
+    @app.post("/api/providers/{provider}/accounts/rotation")
+    def api_accounts_rotation(provider: str, body: dict = None):
+        """Toggle automatic rotation across this provider's accounts. Off \u21d2 use
+        the active account only; On \u21d2 a 429 cools an account down and the next
+        takes over (fill_first / round_robin / random / least_used)."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": False, "error": "claude-code doesn't rotate accounts"})
+        from openprogram.auth.rotation import set_rotation
+        b = body or {}
+        res = set_rotation(provider, enabled=bool(b.get("enabled")), strategy=(b.get("strategy") or ""))
+        return JSONResponse(content={"ok": True, **res})
 
     @app.post("/api/providers/{provider}/accounts/{name}/retry")
     def api_account_retry(provider: str, name: str):
-        """"Retry now" — clear the cooldown on every key in the account so a
-        rate-limited / cooled-down key is eligible again immediately."""
+        """Clear an account's cooldown so a rate-limited account is usable now."""
         if provider == "claude-code":
-            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+            return JSONResponse(content={"ok": False, "error": "n/a"})
         from openprogram.auth.store import get_store
         from openprogram.auth import pool as _pool
         store = get_store()
         pool = store.find_pool(provider, name)
         if pool is None:
-            return JSONResponse(content={"ok": False, "error": f"account '{name}' not found"})
-        cleared = 0
+            return JSONResponse(content={"ok": False, "error": "account not found"})
         for c in pool.credentials:
-            if _cooling(c) or getattr(c, "status", "") in ("rate_limited", "billing_blocked"):
-                cleared += 1
             _pool.clear_cooldown(c)
         store.put_pool(pool)
-        return JSONResponse(content={"ok": True, "cleared": cleared})
-
-    @app.post("/api/providers/{provider}/accounts/{name}/keys")
-    def api_account_add_key(provider: str, name: str, body: dict = None):
-        """Add an API key to the account's pool. With ``validate: true`` the key
-        is auth-probed first and rejected if the provider says it's invalid
-        (other probe outcomes — valid / no-balance / unknown — still add). Returns
-        the masked view of the new key + the validation result."""
-        if provider == "claude-code":
-            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
-        b = body or {}
-        key = b.get("api_key", "").strip()
-        if not key:
-            return JSONResponse(content={"ok": False, "error": "api_key is required"})
-        if any(ord(ch) < 0x20 or ord(ch) > 0x7e for ch in key):
-            return JSONResponse(content={"ok": False, "error": "the value has invalid characters — re-type the key"})
-        validation = None
-        if b.get("validate"):
-            try:
-                from openprogram.webui._model_catalog.credentials import (
-                    validate_credential, INVALID_CREDENTIAL,
-                )
-                res = validate_credential(provider, api_key=key, use_cache=False)
-                validation = res.to_dict()
-                if res.status == INVALID_CREDENTIAL:
-                    return JSONResponse(content={
-                        "ok": False,
-                        "error": f"{provider} rejected that key (invalid credential).",
-                        "validation": validation,
-                    })
-            except Exception:
-                pass  # probe is best-effort; never block an add on a flaky network
-        label = (b.get("name") or "").strip()
-        from openprogram.auth.store import get_store
-        from openprogram.auth.types import Credential, ApiKeyPayload
-        store = get_store()
-        was_empty = store.find_pool(provider, name) is None or not store.find_pool(provider, name).credentials
-        cred = Credential(
-            provider_id=provider, profile_id=name, kind="api_key",
-            payload=ApiKeyPayload(api_key=key), source="webui_pool_add",
-            metadata={"label": label} if label else {},
-        )
-        pool = store.add_credential(cred)
-        if was_empty:
-            # First key: pin it active and start with rotation OFF — a single
-            # fixed key is the simple default; rotation is opt-in.
-            pool.active_credential_id = cred.credential_id
-            pool.strategy = "fixed"
-            store.put_pool(pool)
-        active = getattr(pool, "active_credential_id", "")
-        return JSONResponse(content={"ok": True, "key": _key_view(cred, active), "validation": validation})
-
-    @app.post("/api/providers/{provider}/accounts/{name}/keys/reorder")
-    def api_account_reorder_keys(provider: str, name: str, body: dict = None):
-        """Reorder the keys in an account. Order is priority for the default
-        ``fill_first`` strategy: the first key is the default (used until it cools
-        down, then the next). Unmentioned keys keep their relative order at the
-        end. Body: ``{order: [credential_id, …]}``."""
-        if provider == "claude-code":
-            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
-        order = (body or {}).get("order") or []
-        from openprogram.auth.store import get_store
-        store = get_store()
-        pool = store.find_pool(provider, name)
-        if pool is None:
-            return JSONResponse(content={"ok": False, "error": f"account '{name}' not found"})
-        by_id = {c.credential_id: c for c in pool.credentials}
-        ranked = [by_id[i] for i in order if i in by_id]
-        ranked += [c for c in pool.credentials if c.credential_id not in set(order)]
-        pool.credentials = ranked
-        pool._rr_cursor = 0  # reset rotation cursor after a manual reorder
-        store.put_pool(pool)
-        return JSONResponse(content={"ok": True, "order": [c.credential_id for c in pool.credentials]})
-
-    @app.delete("/api/providers/{provider}/accounts/{name}/keys/{credential_id}")
-    def api_account_remove_key(provider: str, name: str, credential_id: str):
-        """Drop one key from the account's pool (leaves the pool/account if other
-        keys remain; use the account ``remove`` to delete the whole account)."""
-        if provider == "claude-code":
-            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
-        from openprogram.auth.store import get_store
-        store = get_store()
-        store.remove_credential(provider, name, credential_id)
-        # If we removed the pinned key, re-pin the first remaining one so the
-        # account still has a definite active key.
-        pool = store.find_pool(provider, name)
-        if pool and pool.active_credential_id == credential_id:
-            pool.active_credential_id = pool.credentials[0].credential_id if pool.credentials else ""
-            store.put_pool(pool)
-        return JSONResponse(content={"ok": True, "removed": credential_id})
+        return JSONResponse(content={"ok": True})

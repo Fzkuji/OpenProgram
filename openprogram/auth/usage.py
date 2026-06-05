@@ -31,28 +31,88 @@ def acquire_pooled(
     has no AuthStore pool (the caller then falls back to its own key resolution,
     e.g. ``opts.api_key`` / an env var / a Meridian token).
 
-    The profile is the provider's active one (``auth/active.py``) unless given.
-    Selection honours the pool strategy + cooldown skip (``auth/pool.py``), so a
-    cooled-down credential is invisible here and the next healthy one is used.
+    Normally the provider's ACTIVE account (profile, ``auth/active.py``) is used.
+    When rotation is ON for the provider (``auth/rotation.py``), a request instead
+    rotates across ALL the provider's accounts (profiles) by the chosen strategy,
+    skipping ones whose credential is cooling down — so a 429 on one account fails
+    over to the next. ``profile_id`` (explicit) always pins one account, bypassing
+    rotation.
     """
     from .store import get_store
     from .active import get_active_profile
     from .manager import get_manager
     from .types import AuthError, AuthConfigError
-
-    prof = profile_id or get_active_profile(provider_id)
-    pool = get_store().find_pool(provider_id, prof)
-    if pool is None or not pool.credentials:
-        return None
-    try:
-        cred = get_manager().acquire_sync(provider_id, prof)
-    except (AuthError, AuthConfigError):
-        return None
     from .resolver import _extract_token
-    token = _extract_token(cred)
-    if not token:
+
+    store = get_store()
+    mgr = get_manager()
+
+    def _resolve(prof: str) -> Optional[Tuple[str, str, str]]:
+        pool = store.find_pool(provider_id, prof)
+        if pool is None or not pool.credentials:
+            return None
+        try:
+            cred = mgr.acquire_sync(provider_id, prof)
+        except (AuthError, AuthConfigError):
+            return None
+        token = _extract_token(cred)
+        return (token, cred.profile_id, cred.credential_id) if token else None
+
+    # Explicit profile pins one account (no rotation).
+    if profile_id is not None:
+        return _resolve(profile_id)
+
+    from .rotation import get_rotation
+    rot = get_rotation(provider_id)
+    if rot["enabled"]:
+        pools = [p for p in store.list_pools()
+                 if p.provider_id == provider_id and p.credentials]
+        chosen = _pick_account(provider_id, pools, rot["strategy"])
+        if chosen is not None:
+            got = _resolve(chosen.profile_id)
+            if got is not None:
+                return got
+        # fall through to the active account if rotation found nothing usable
+
+    return _resolve(get_active_profile(provider_id))
+
+
+# Round-robin cursor per provider for account rotation (process-lifetime; a
+# manual reorder/restart resets it — fine for spreading load across accounts).
+_RR_ACCOUNT_CURSOR: dict = {}
+
+
+def _account_healthy(pool, now_ms: int) -> bool:
+    """An account is healthy if its (primary) credential isn't cooling/disabled."""
+    c = pool.credentials[0] if pool.credentials else None
+    if c is None:
+        return False
+    if getattr(c, "status", "") in ("revoked", "needs_reauth"):
+        return False
+    until = getattr(c, "cooldown_until_ms", 0) or 0
+    return not (until and until > now_ms)
+
+
+def _pick_account(provider_id: str, pools: list, strategy: str):
+    """Pick one account (pool) to use this request, by ``strategy``, preferring
+    healthy ones. ``pools`` is non-empty for the rotating path."""
+    if not pools:
         return None
-    return (token, cred.profile_id, cred.credential_id)
+    import time as _t
+    now = int(_t.time() * 1000)
+    pools = sorted(pools, key=lambda p: (p.profile_id != "default", p.profile_id))
+    healthy = [p for p in pools if _account_healthy(p, now)]
+    candidates = healthy or pools  # all cooling → use one anyway (better than nothing)
+    if strategy == "round_robin":
+        i = _RR_ACCOUNT_CURSOR.get(provider_id, 0) % len(candidates)
+        _RR_ACCOUNT_CURSOR[provider_id] = i + 1
+        return candidates[i]
+    if strategy == "random":
+        import random
+        return random.choice(candidates)
+    if strategy == "least_used":
+        return min(candidates, key=lambda p: getattr(p.credentials[0], "use_count", 0) or 0)
+    return candidates[0]  # fill_first
 
 
 def classify_failure(status: Optional[int], error_text: str = "") -> str:
