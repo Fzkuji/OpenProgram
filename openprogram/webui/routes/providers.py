@@ -212,8 +212,11 @@ def register(app):
     # `def` so the blocking subprocess calls run in FastAPI's threadpool.
     @app.get("/api/providers/claude-code/accounts")
     def api_cc_accounts():
+        # add_mode tells the unified <ProviderAccounts> UI how "add account"
+        # works here — claude-code uses the interactive code-paste pair below,
+        # every generic provider uses the shared /login/* flow ("login").
         from openprogram.providers.anthropic import _meridian_cli as _acc
-        return JSONResponse(content=_acc.accounts_summary())
+        return JSONResponse(content={**_acc.accounts_summary(), "add_mode": "code_paste"})
 
     @app.post("/api/providers/claude-code/accounts/add")
     def api_cc_accounts_add(body: dict = None):

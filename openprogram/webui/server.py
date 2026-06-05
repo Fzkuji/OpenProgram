@@ -1293,6 +1293,12 @@ def create_app():
     from openprogram.webui.routes import provider_login as _routes_provider_login
     _routes_provider_login.register(app)
 
+    # Generic per-provider account management (/api/providers/{id}/accounts/*).
+    # Registered AFTER providers.py so its literal /claude-code/accounts routes
+    # match first; this module serves every other provider from the AuthStore.
+    from openprogram.webui.routes import accounts as _routes_accounts
+    _routes_accounts.register(app)
+
     # /api/config GET/POST registered from routes.config
     from openprogram.webui.routes import config as _routes_config
     _routes_config.register(app)
