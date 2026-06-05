@@ -7,9 +7,9 @@ import { Switch } from "@/components/ui/switch";
 
 import { ProviderIcon } from "../provider-icon";
 
-import { ApiKey } from "./api-key";
 import { BaseUrl } from "./base-url";
 import { ProviderAccounts } from "./provider-accounts";
+import { ProviderKeys } from "./provider-keys";
 import { ProviderLogin } from "./provider-login";
 import { Connectivity, type ConnectivityHandle } from "./connectivity";
 import { ModelList } from "./model-list";
@@ -142,17 +142,15 @@ export function Detail({
           inputs that would otherwise show because claude-code shares the
           ANTHROPIC_API_KEY env name with the `anthropic` provider; pasting a
           key here does nothing (its Setup says "no API key to paste here"). */}
-      {/* One "API key" section: the key + an optional, collapsed "extra keys
-          for rotation" block nested inside it (api-key providers only). The two
-          used to be separate top-level sections, which read as two competing
-          places for the same thing. */}
+      {/* One "API key" section = the provider's key(s) as a single list (the
+          credential pool). One key behaves like a single key; add more and they
+          rotate on rate limits, top = default. Replaces the old single-field +
+          separate rotation-pool split. */}
       {provider.api_key_env && provider.id !== "claude-code" && (
-        <ApiKey
-          envVar={provider.api_key_env}
+        <ProviderKeys
           providerId={provider.id}
-          configured={!!provider.configured}
-          onChanged={onChanged}
-          onSaved={autoCheckAndFetch}
+          envVar={provider.api_key_env}
+          onChanged={autoCheckAndFetch}
         />
       )}
       {provider.api_key_env && provider.id !== "claude-code" && (

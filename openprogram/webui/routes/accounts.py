@@ -266,13 +266,34 @@ def register(app):
 
     @app.post("/api/providers/{provider}/accounts/{name}/keys")
     def api_account_add_key(provider: str, name: str, body: dict = None):
-        """Add another API key to the account's pool (the multi-key rotation
-        case). Returns the masked view of the new key."""
+        """Add an API key to the account's pool. With ``validate: true`` the key
+        is auth-probed first and rejected if the provider says it's invalid
+        (other probe outcomes — valid / no-balance / unknown — still add). Returns
+        the masked view of the new key + the validation result."""
         if provider == "claude-code":
             return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
-        key = (body or {}).get("api_key", "").strip()
+        b = body or {}
+        key = b.get("api_key", "").strip()
         if not key:
             return JSONResponse(content={"ok": False, "error": "api_key is required"})
+        if any(ord(ch) < 0x20 or ord(ch) > 0x7e for ch in key):
+            return JSONResponse(content={"ok": False, "error": "the value has invalid characters — re-type the key"})
+        validation = None
+        if b.get("validate"):
+            try:
+                from openprogram.webui._model_catalog.credentials import (
+                    validate_credential, INVALID_CREDENTIAL,
+                )
+                res = validate_credential(provider, api_key=key, use_cache=False)
+                validation = res.to_dict()
+                if res.status == INVALID_CREDENTIAL:
+                    return JSONResponse(content={
+                        "ok": False,
+                        "error": f"{provider} rejected that key (invalid credential).",
+                        "validation": validation,
+                    })
+            except Exception:
+                pass  # probe is best-effort; never block an add on a flaky network
         from openprogram.auth.store import get_store
         from openprogram.auth.types import Credential, ApiKeyPayload
         cred = Credential(
@@ -280,7 +301,29 @@ def register(app):
             payload=ApiKeyPayload(api_key=key), source="webui_pool_add",
         )
         get_store().add_credential(cred)
-        return JSONResponse(content={"ok": True, "key": _key_view(cred)})
+        return JSONResponse(content={"ok": True, "key": _key_view(cred), "validation": validation})
+
+    @app.post("/api/providers/{provider}/accounts/{name}/keys/reorder")
+    def api_account_reorder_keys(provider: str, name: str, body: dict = None):
+        """Reorder the keys in an account. Order is priority for the default
+        ``fill_first`` strategy: the first key is the default (used until it cools
+        down, then the next). Unmentioned keys keep their relative order at the
+        end. Body: ``{order: [credential_id, …]}``."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+        order = (body or {}).get("order") or []
+        from openprogram.auth.store import get_store
+        store = get_store()
+        pool = store.find_pool(provider, name)
+        if pool is None:
+            return JSONResponse(content={"ok": False, "error": f"account '{name}' not found"})
+        by_id = {c.credential_id: c for c in pool.credentials}
+        ranked = [by_id[i] for i in order if i in by_id]
+        ranked += [c for c in pool.credentials if c.credential_id not in set(order)]
+        pool.credentials = ranked
+        pool._rr_cursor = 0  # reset rotation cursor after a manual reorder
+        store.put_pool(pool)
+        return JSONResponse(content={"ok": True, "order": [c.credential_id for c in pool.credentials]})
 
     @app.delete("/api/providers/{provider}/accounts/{name}/keys/{credential_id}")
     def api_account_remove_key(provider: str, name: str, credential_id: str):
