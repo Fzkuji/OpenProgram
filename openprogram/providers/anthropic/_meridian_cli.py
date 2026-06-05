@@ -406,12 +406,50 @@ def start_add(name: str) -> dict:
         except Exception:
             pass
         return {"error": "could not start the login (no URL from backend)"}
+    # The proxy's paste-code flow wants the FULL string the callback page shows
+    # — "<code>#<state>", not the bare ?code= param (which it rejects as
+    # "Invalid code"). Stash the state from the login URL so submit can rebuild
+    # the full string when the caller only has the bare code.
+    import urllib.parse as _urlparse
+    state = _urlparse.parse_qs(_urlparse.urlparse(url).query).get("state", [""])[0]
     session = secrets.token_hex(8)
     _PENDING_LOGINS[session] = {
         "proc": proc, "master": master, "name": name, "auto": auto_named,
-        "started_at": _time.time(),
+        "state": state, "started_at": _time.time(),
     }
     return {"session": session, "url": url, "name": name}
+
+
+def _sync_keychain_to_profile(name: str) -> bool:
+    """macOS: claude-code's OAuth stores the token in the login keychain
+    (global, service ``Claude Code-credentials``), not in the per-profile
+    ``CLAUDE_CONFIG_DIR``. The proxy isolates accounts by reading each
+    profile's ``.credentials.json``, so a freshly-added account has no token
+    file and reports "token expired". Copy the just-written keychain token
+    into the profile's ``.credentials.json`` so the account works. No-op off
+    macOS (there claude-code already writes a credentials file)."""
+    import sys
+    if sys.platform != "darwin":
+        return False
+    try:
+        out = subprocess.run(
+            ["security", "find-generic-password",
+             "-s", "Claude Code-credentials", "-w"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode != 0 or not out.stdout.strip():
+            return False
+        import json
+        json.loads(out.stdout)  # validate it's the oauth payload before writing
+        pdir = os.path.join(_meridian_config_dir(), "profiles", name)
+        os.makedirs(pdir, exist_ok=True)
+        cred = os.path.join(pdir, ".credentials.json")
+        with open(cred, "w") as f:
+            f.write(out.stdout)
+        os.chmod(cred, 0o600)
+        return True
+    except Exception:
+        return False
 
 
 def submit_login_code(session: str, code: str) -> dict:
@@ -421,9 +459,21 @@ def submit_login_code(session: str, code: str) -> dict:
     if not entry:
         return {"ok": False, "error": "no pending login (it may have timed out)"}
     proc, master = entry["proc"], entry["master"]
+    # The callback page shows "<code>#<state>" and the proxy needs that whole
+    # string — a bare code (just the ?code= query param) is rejected as
+    # "Invalid code". If the caller passed only the code, rebuild it from the
+    # stashed state so both "code" and "code#state" inputs work.
+    full_code = (code or "").strip()
+    state = entry.get("state", "")
+    if state and "#" not in full_code:
+        full_code = f"{full_code}#{state}"
     try:
-        os.write(master, ((code or "").strip() + "\n").encode())
-        rc = proc.wait(timeout=45)
+        os.write(master, (full_code + "\n").encode())
+        # Exchanging the code for tokens hits claude.com; on slow or proxied
+        # networks that round-trip can take well over a minute. The OAuth code
+        # is single-use, so a premature timeout+kill wastes it and forces a
+        # fresh browser login — give it generous time before giving up.
+        rc = proc.wait(timeout=240)
     except Exception as e:  # noqa: BLE001
         try:
             proc.kill()
@@ -438,6 +488,13 @@ def submit_login_code(session: str, code: str) -> dict:
     if rc != 0:
         return {"ok": False, "error": "login did not complete"}
     name = entry["name"]
+    # macOS: claude-code's OAuth writes the token to the login keychain, but the
+    # proxy reads each account's token from its profile's .credentials.json —
+    # so without this the brand-new account reports "token expired". Mirror the
+    # just-written keychain token into the profile file (no-op off macOS, where
+    # the token is already a file). Done before any rename so the file moves
+    # with the profile dir.
+    _sync_keychain_to_profile(name)
     # An auto-named account (account-N) is renamed to the account's email so
     # the list is readable. User-chosen labels are left as they are. The
     # email metadata can lag the OAuth completion by a beat, so retry a few
