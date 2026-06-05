@@ -367,45 +367,68 @@ def start_add(name: str) -> dict:
               "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
     env = {k: v for k, v in os.environ.items() if k not in _strip}
     env["PATH"] = shim + os.pathsep + env.get("PATH", "")
-    master, slave = pty.openpty()
-    proc = subprocess.Popen(
-        [binp, "profile", "add", name],
-        stdin=slave, stdout=slave, stderr=slave, close_fds=True, env=env,
-    )
-    os.close(slave)
-    url, buf, end, answered = None, "", _time.time() + 30, False
-    while _time.time() < end:
-        r, _w, _e = select.select([master], [], [], 1.0)
-        if master not in r:
-            continue
-        try:
-            data = os.read(master, 4096).decode("utf-8", "replace")
-        except OSError:
-            break
-        if not data:
-            break
-        buf += data
-        clean = _ANSI.sub("", buf)
-        # The backend may first offer to import the terminal's existing login
-        # ("Import as profile X? [Y/n]"). Decline — `add` means a NEW account
-        # via browser OAuth, not re-adding whoever the terminal is logged into.
-        if not answered and ("import as profile" in clean.lower() or "[y/n]" in clean.lower()):
+    def _spawn_and_read_url():
+        """Spawn ``profile add`` under a PTY and read until the OAuth URL
+        appears (or 30s elapse). Returns ``(proc, master, url|None)``."""
+        master, slave = pty.openpty()
+        proc = subprocess.Popen(
+            [binp, "profile", "add", name],
+            stdin=slave, stdout=slave, stderr=slave, close_fds=True, env=env,
+        )
+        os.close(slave)
+        url, buf, end, answered = None, "", _time.time() + 30, False
+        while _time.time() < end:
+            r, _w, _e = select.select([master], [], [], 1.0)
+            if master not in r:
+                continue
             try:
-                os.write(master, b"n\n")
+                data = os.read(master, 4096).decode("utf-8", "replace")
             except OSError:
-                pass
-            answered = True
-        m = _OAUTH_URL_RE.search(clean)
-        if m:
-            url = m.group(0).rstrip(".")
-            break
+                break
+            if not data:
+                break
+            buf += data
+            clean = _ANSI.sub("", buf)
+            # The backend may first offer to import the terminal's existing
+            # login ("Import as profile X? [Y/n]"). Decline — `add` means a NEW
+            # account via browser OAuth, not re-adding the terminal's login.
+            if not answered and ("import as profile" in clean.lower() or "[y/n]" in clean.lower()):
+                try:
+                    os.write(master, b"n\n")
+                except OSError:
+                    pass
+                answered = True
+            m = _OAUTH_URL_RE.search(clean)
+            if m:
+                url = m.group(0).rstrip(".")
+                break
+        return proc, master, url, _ANSI.sub("", buf)
+
+    proc, master, url, last_out = _spawn_and_read_url()
     if not url:
         try:
             proc.kill()
             os.close(master)
         except Exception:
             pass
-        return {"error": "could not start the login (no URL from backend)"}
+        # macOS: claude-code reads the login keychain (global service
+        # "Claude Code-credentials", NOT isolated by CLAUDE_CONFIG_DIR). If any
+        # Claude login is already present the proxy reports "already
+        # authenticated" and skips the browser OAuth — so a *different* account
+        # can't be added until the existing one is signed out. Drop the
+        # duplicate profile the proxy made and tell the user how to proceed.
+        if "already authenticated" in last_out.lower():
+            try:
+                _run_proxy(["profile", "remove", name])
+            except Exception:
+                pass
+            return {"error": (
+                "A Claude login already exists on this machine, so the browser "
+                "sign-in was skipped and a new account couldn't be added. To "
+                "add a different account, sign the existing one out first "
+                "(run `claude logout` in a terminal), then try again."
+            )}
+        return {"error": "the backend didn't return a sign-in URL — try again."}
     # The proxy's paste-code flow wants the FULL string the callback page shows
     # — "<code>#<state>", not the bare ?code= param (which it rejects as
     # "Invalid code"). Stash the state from the login URL so submit can rebuild
