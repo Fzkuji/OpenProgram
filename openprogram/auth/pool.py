@@ -123,6 +123,29 @@ def pick(pool: CredentialPool, *, now_ms: Optional[int] = None) -> Credential:
     cooled-down or disabled.
     """
     now = now_ms if now_ms is not None else int(time.time() * 1000)
+
+    if not pool.credentials:
+        raise AuthPoolExhaustedError(
+            "pool has no credentials",
+            provider_id=pool.provider_id, profile_id=pool.profile_id,
+        )
+
+    strategy = pool.strategy
+
+    # "fixed" = rotation OFF: always the pinned credential (or the first), even
+    # if it's cooling down — the user explicitly fixed this one. No failover; to
+    # get failover they switch a rotating strategy on.
+    if strategy == "fixed":
+        idx = next(
+            (i for i, c in enumerate(pool.credentials)
+             if c.credential_id == pool.active_credential_id),
+            0,
+        )
+        picked = pool.credentials[idx]
+        picked.use_count += 1
+        picked.last_used_at_ms = now
+        return picked
+
     healthy = _healthy_indices(pool, now)
     if not healthy:
         raise AuthPoolExhaustedError(
@@ -131,9 +154,15 @@ def pick(pool: CredentialPool, *, now_ms: Optional[int] = None) -> Credential:
             profile_id=pool.profile_id,
         )
 
-    strategy = pool.strategy
     if strategy == "fill_first":
-        idx = healthy[0]
+        # The pinned credential is the default/first try; fall through the rest
+        # by list order when it's cooled down.
+        pinned = next(
+            (i for i in healthy
+             if pool.credentials[i].credential_id == pool.active_credential_id),
+            None,
+        )
+        idx = pinned if pinned is not None else healthy[0]
     elif strategy == "round_robin":
         # Advance cursor past unhealthy entries; wrap around; if every
         # healthy slot was already visited in this cycle, just pick the

@@ -58,6 +58,35 @@ def test_report_failure_cools_down_and_rotates(store):
     assert usage.acquire_pooled("rot") is None
 
 
+def test_fixed_uses_active_key_and_does_not_failover(store):
+    _seed(store, "fx", "default", ["KEY-A", "KEY-B"])
+    pool = store.find_pool("fx", "default")
+    ids = [c.credential_id for c in pool.credentials]
+    # rotation OFF: pin KEY-B as the active key
+    pool.strategy = "fixed"
+    pool.active_credential_id = ids[1]
+    store.put_pool(pool)
+    tok, _, cid = usage.acquire_pooled("fx")
+    assert tok == "KEY-B"
+    assert cid == ids[1]
+    # cooling the pinned key changes nothing — "fixed" means fixed (no failover)
+    usage.report_failure("fx", "default", ids[1], status=429)
+    tok2, _, _ = usage.acquire_pooled("fx")
+    assert tok2 == "KEY-B"
+
+
+def test_rotation_on_fails_over_from_the_active_key(store):
+    _seed(store, "fx2", "default", ["KEY-A", "KEY-B"])
+    pool = store.find_pool("fx2", "default")
+    ids = [c.credential_id for c in pool.credentials]
+    pool.strategy = "fill_first"
+    pool.active_credential_id = ids[1]  # KEY-B is the default/first try
+    store.put_pool(pool)
+    assert usage.acquire_pooled("fx2")[0] == "KEY-B"          # active tried first
+    usage.report_failure("fx2", "default", ids[1], status=429)
+    assert usage.acquire_pooled("fx2")[0] == "KEY-A"          # cooled → fail over
+
+
 def test_report_success_is_safe_noop_without_credential(store):
     # empty credential id must not raise (the non-pool provider path)
     usage.report_success("rot", "default", "")

@@ -70,17 +70,21 @@ def _account_record(pool) -> dict:
     }
 
 
-def _key_view(cred) -> dict:
-    """One credential ("key") within an account, masked, with its health so the
-    UI can show a per-key badge (cooling / needs-reauth / ok)."""
+def _key_view(cred, active_id: str = "") -> dict:
+    """One credential ("key") within an account, masked, with its user-given
+    name, its health (for a per-key badge), and whether it's the active/pinned
+    one. Never includes the secret itself."""
     payload = getattr(cred, "payload", None)
     raw = getattr(payload, "api_key", "") or getattr(payload, "access_token", "") or ""
     masked = (raw[:6] + "…" + raw[-4:]) if len(raw) > 12 else (("•" * len(raw)) if raw else "")
+    meta = getattr(cred, "metadata", None) or {}
     return {
         "credential_id": cred.credential_id,
+        "name": meta.get("label") or meta.get("name") or "",
         "kind": cred.kind,
         "status": cred.status,
         "masked": masked,
+        "is_active": cred.credential_id == active_id,
         "cooling": _cooling(cred),
         "cooldown_until_ms": getattr(cred, "cooldown_until_ms", 0) or 0,
         "use_count": getattr(cred, "use_count", 0) or 0,
@@ -213,18 +217,88 @@ def register(app):
 
     @app.get("/api/providers/{provider}/accounts/{name}/keys")
     def api_account_keys(provider: str, name: str):
-        """The credentials ("keys") inside one account, masked, with per-key
-        health + the pool's rotation strategy."""
+        """The keys inside one account, masked, each with name + health + whether
+        it's the active one. Plus the pool mode: ``rotation`` on/off
+        (``strategy != "fixed"``), the rotating ``strategy``, and ``active`` (the
+        pinned key used when rotation is off)."""
         if provider == "claude-code":
-            return JSONResponse(content={"keys": [], "strategy": "", "strategies": []})
+            return JSONResponse(content={"keys": [], "rotation": False, "active": "",
+                                         "strategy": "fixed", "strategies": []})
         from openprogram.auth.store import get_store
-        pool = get_store().find_pool(provider, name)
-        keys = [_key_view(c) for c in (pool.credentials if pool else [])]
+        store = get_store()
+        pool = store.find_pool(provider, name)
+        # Normalize a legacy pool (made before names/active/rotation existed:
+        # empty active_credential_id) to the new model's default — rotation OFF,
+        # pinned to the first key. One-time + idempotent (active is then set).
+        if pool and pool.credentials and not getattr(pool, "active_credential_id", ""):
+            pool.active_credential_id = pool.credentials[0].credential_id
+            pool.strategy = "fixed"
+            store.put_pool(pool)
+        strategy = getattr(pool, "strategy", "fixed") if pool else "fixed"
+        active = getattr(pool, "active_credential_id", "") if pool else ""
+        keys = [_key_view(c, active) for c in (pool.credentials if pool else [])]
         return JSONResponse(content={
             "keys": keys,
-            "strategy": getattr(pool, "strategy", "fill_first") if pool else "fill_first",
+            "rotation": strategy != "fixed",
+            "active": active,
+            "strategy": strategy if strategy != "fixed" else "fill_first",
             "strategies": list(_STRATEGIES),
         })
+
+    @app.post("/api/providers/{provider}/accounts/{name}/rotation")
+    def api_account_rotation(provider: str, name: str, body: dict = None):
+        """Toggle automatic rotation. Off ⇒ strategy ``fixed`` (only the active
+        key is used). On ⇒ a rotating strategy (the one passed, or ``fill_first``;
+        a 429 then cools a key down and the next takes over)."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+        b = body or {}
+        enabled = bool(b.get("enabled"))
+        want = b.get("strategy") if b.get("strategy") in _STRATEGIES else "fill_first"
+        from openprogram.auth.store import get_store
+        store = get_store()
+        pool = store.find_pool(provider, name)
+        if pool is None:
+            return JSONResponse(content={"ok": False, "error": f"account '{name}' not found"})
+        pool.strategy = want if enabled else "fixed"
+        store.put_pool(pool)
+        return JSONResponse(content={"ok": True, "rotation": enabled, "strategy": pool.strategy})
+
+    @app.post("/api/providers/{provider}/accounts/{name}/keys/{credential_id}/use")
+    def api_account_use_key(provider: str, name: str, credential_id: str):
+        """Pin which key is the active/default one (used as-is when rotation is
+        off; tried first when it's on)."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+        from openprogram.auth.store import get_store
+        store = get_store()
+        pool = store.find_pool(provider, name)
+        if pool is None or not any(c.credential_id == credential_id for c in pool.credentials):
+            return JSONResponse(content={"ok": False, "error": "key not found"})
+        pool.active_credential_id = credential_id
+        store.put_pool(pool)
+        return JSONResponse(content={"ok": True, "active": credential_id})
+
+    @app.post("/api/providers/{provider}/accounts/{name}/keys/{credential_id}/name")
+    def api_account_name_key(provider: str, name: str, credential_id: str, body: dict = None):
+        """Give a key a human name (stored in its metadata; shown in the list)."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+        label = ((body or {}).get("name") or "").strip()
+        from openprogram.auth.store import get_store
+        store = get_store()
+        pool = store.find_pool(provider, name)
+        cred = next((c for c in (pool.credentials if pool else []) if c.credential_id == credential_id), None)
+        if cred is None:
+            return JSONResponse(content={"ok": False, "error": "key not found"})
+        meta = dict(getattr(cred, "metadata", None) or {})
+        if label:
+            meta["label"] = label
+        else:
+            meta.pop("label", None)
+        cred.metadata = meta
+        store.put_pool(pool)
+        return JSONResponse(content={"ok": True, "name": label})
 
     @app.post("/api/providers/{provider}/accounts/{name}/strategy")
     def api_account_strategy(provider: str, name: str, body: dict = None):
@@ -294,14 +368,25 @@ def register(app):
                     })
             except Exception:
                 pass  # probe is best-effort; never block an add on a flaky network
+        label = (b.get("name") or "").strip()
         from openprogram.auth.store import get_store
         from openprogram.auth.types import Credential, ApiKeyPayload
+        store = get_store()
+        was_empty = store.find_pool(provider, name) is None or not store.find_pool(provider, name).credentials
         cred = Credential(
             provider_id=provider, profile_id=name, kind="api_key",
             payload=ApiKeyPayload(api_key=key), source="webui_pool_add",
+            metadata={"label": label} if label else {},
         )
-        get_store().add_credential(cred)
-        return JSONResponse(content={"ok": True, "key": _key_view(cred), "validation": validation})
+        pool = store.add_credential(cred)
+        if was_empty:
+            # First key: pin it active and start with rotation OFF — a single
+            # fixed key is the simple default; rotation is opt-in.
+            pool.active_credential_id = cred.credential_id
+            pool.strategy = "fixed"
+            store.put_pool(pool)
+        active = getattr(pool, "active_credential_id", "")
+        return JSONResponse(content={"ok": True, "key": _key_view(cred, active), "validation": validation})
 
     @app.post("/api/providers/{provider}/accounts/{name}/keys/reorder")
     def api_account_reorder_keys(provider: str, name: str, body: dict = None):
@@ -332,5 +417,12 @@ def register(app):
         if provider == "claude-code":
             return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
         from openprogram.auth.store import get_store
-        get_store().remove_credential(provider, name, credential_id)
+        store = get_store()
+        store.remove_credential(provider, name, credential_id)
+        # If we removed the pinned key, re-pin the first remaining one so the
+        # account still has a definite active key.
+        pool = store.find_pool(provider, name)
+        if pool and pool.active_credential_id == credential_id:
+            pool.active_credential_id = pool.credentials[0].credential_id if pool.credentials else ""
+            store.put_pool(pool)
         return JSONResponse(content={"ok": True, "removed": credential_id})

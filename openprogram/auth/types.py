@@ -332,7 +332,10 @@ def _payload_from_dict(kind: CredentialKind, d: dict) -> CredentialPayload:
 # Pool — multiple credentials per provider with rotation
 # ---------------------------------------------------------------------------
 
-PoolStrategy = Literal["fill_first", "round_robin", "random", "least_used"]
+# "fixed" = rotation OFF: always use the pinned credential
+# (``active_credential_id``), ignoring cooldown — the user's explicit single
+# choice. The other four rotate across healthy credentials.
+PoolStrategy = Literal["fixed", "fill_first", "round_robin", "random", "least_used"]
 
 
 @dataclass
@@ -363,6 +366,10 @@ class CredentialPool:
     # Strategy-private state. Kept on the pool rather than in a closure so
     # restart can rehydrate round-robin cursor etc. if ever needed.
     _rr_cursor: int = 0
+    # Which credential the "fixed" strategy uses (the user's pinned single
+    # choice), and the one a rotating strategy treats as the default/first.
+    # Empty ⇒ the first credential.
+    active_credential_id: str = ""
     # Pool-level cascade: if every member is cooled-down / broken, the
     # manager falls back to these provider+profile pairs in order before
     # giving up. Each entry is a (provider_id, profile_id) tuple.
@@ -375,6 +382,7 @@ class CredentialPool:
             "strategy": self.strategy,
             "credentials": [c.to_dict() for c in self.credentials],
             "_rr_cursor": self._rr_cursor,
+            "active_credential_id": self.active_credential_id,
             "fallback_chain": [list(t) for t in self.fallback_chain],
         }
 
@@ -386,6 +394,7 @@ class CredentialPool:
             strategy=d.get("strategy", "fill_first"),
             credentials=[Credential.from_dict(c) for c in (d.get("credentials") or [])],
             _rr_cursor=d.get("_rr_cursor", 0),
+            active_credential_id=d.get("active_credential_id", ""),
             fallback_chain=[tuple(t) for t in (d.get("fallback_chain") or [])],
         )
 
