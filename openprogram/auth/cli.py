@@ -171,6 +171,12 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     p_status.add_argument("provider", help="Provider id to check")
     p_status.add_argument("--profile", default=DEFAULT_PROFILE_NAME, help="Profile to check")
 
+    # use — pick which account (profile) a provider runs on
+    p_use = auth_sub.add_parser("use", help="Set which account (profile) a provider runs on")
+    p_use.add_argument("provider", help="Provider id")
+    p_use.add_argument("profile", nargs="?", default="",
+                       help="Profile to activate; omit to clear back to the default")
+
     # doctor — diagnostic report over every pool
     p_doctor = auth_sub.add_parser(
         "doctor", help="Diagnose credentials (expiry, refresh, cooldown, conflicts)",
@@ -244,6 +250,8 @@ def dispatch(args: argparse.Namespace) -> int:
         )
     if cmd == "list":
         return _cmd_list(args.profile, args.json)
+    if cmd == "use":
+        return _cmd_use(_resolve_alias(args.provider), args.profile)
     if cmd in ("available", "search", "catalog"):
         return _cmd_available(
             args.query, args.json, getattr(args, "configured", False),
@@ -769,6 +777,20 @@ def _cmd_available(
 # list
 # ---------------------------------------------------------------------------
 
+def _cmd_use(provider: str, profile: str) -> int:
+    """Set which account (profile) a provider runs on. Empty profile clears the
+    pin (back to the default). This is what makes a second logged-in account
+    actually take effect at request time."""
+    from openprogram.auth.active import set_active_profile, get_active_pin
+    set_active_profile(provider, profile)
+    pin = get_active_pin(provider)
+    if pin:
+        print(f"✓ {provider} now runs on account '{pin}'.")
+    else:
+        print(f"✓ {provider} cleared — runs on the default account.")
+    return 0
+
+
 def _cmd_list(profile_filter: Optional[str], as_json: bool) -> int:
     store = get_store()
     pm = get_profile_manager()
@@ -804,12 +826,17 @@ def _cmd_list(profile_filter: Optional[str], as_json: bool) -> int:
         print("  openprogram providers login <prov>    # add one manually")
         return 0
 
+    from openprogram.auth.active import get_active_pin
     print(f"{'provider':28s}  {'profile':16s}  credential")
     for p in pools:
+        # Mark the profile this provider is pinned to run on (→ active); an
+        # unpinned provider runs on 'default'.
+        active = get_active_pin(p.provider_id)
+        marker = " ← active" if active and active == p.profile_id else ""
         for c in p.credentials:
             ro = " [read-only]" if c.read_only else ""
             print(f"{p.provider_id:28s}  {p.profile_id:16s}  "
-                  f"{c.credential_id} — {_payload_summary(c)}{ro}")
+                  f"{c.credential_id} — {_payload_summary(c)}{ro}{marker}")
     return 0
 
 
