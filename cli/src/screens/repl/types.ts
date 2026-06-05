@@ -59,8 +59,8 @@ export type PickerKind =
   | 'register_account_id' | 'register_token'
   | 'channel_action' | 'channel_peer_input' | 'channel_qr_wait'
   | 'channel_overwrite_confirm'
-  | 'claude_accounts' | 'claude_account_action'
-  | 'claude_account_add_code' | 'claude_account_rename';
+  | 'acct_list' | 'acct_action' | 'acct_rename' | 'acct_add_code'
+  | 'acct_login_name' | 'acct_login_method' | 'acct_login';
 
 /** One branch as returned by ws `list_branches`. */
 export interface BranchRow {

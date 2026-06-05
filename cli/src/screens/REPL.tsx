@@ -36,8 +36,8 @@ import type { SettingRow } from '../components/SettingsPanel.js';
 import { randomLocalId, renderModel } from './repl/helpers.js';
 import { buildPickerNode } from './repl/pickerRouter.js';
 import { useWsEvents } from './repl/useWsEvents.js';
-import { fetchAccounts } from '../utils/claudeAccounts.js';
-import type { ClaudeAccountsState, AddStarted } from '../utils/claudeAccounts.js';
+import { makeAccountsClient } from '../utils/providerAccounts.js';
+import type { AccountsState, AddStarted } from '../utils/providerAccounts.js';
 
 export type { REPLProps } from './repl/types.js';
 
@@ -109,14 +109,17 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     Array<{ channel?: string; account_id?: string; configured?: boolean }>
   >([]);
   const [chosenChannel, setChosenChannel] = useState<string | undefined>(undefined);
-  // Claude-account panel state (the in-TUI claude-code account manager):
-  // the fetched list, the account picked for the action menu, and the
-  // in-flight add (login URL + session) awaiting a pasted code.
-  const [claudeAccounts, setClaudeAccounts] = useState<ClaudeAccountsState>({
+  // Per-provider account panel state (the in-TUI account manager): which
+  // provider it manages, the fetched list, the account picked for the action
+  // menu, the in-flight code-paste add (login URL + session awaiting a code),
+  // and the in-flight login-mode add (new account name + chosen method).
+  const [accountsProviderId, setAccountsProviderId] = useState<string>('claude-code');
+  const [accountsState, setAccountsState] = useState<AccountsState>({
     installed: false, ready: false, active: null, accounts: [],
   });
-  const [claudeSelected, setClaudeSelected] = useState<string | null>(null);
-  const [claudePendingAdd, setClaudePendingAdd] = useState<AddStarted | null>(null);
+  const [accountSelected, setAccountSelected] = useState<string | null>(null);
+  const [accountPendingAdd, setAccountPendingAdd] = useState<AddStarted | null>(null);
+  const [accountLogin, setAccountLogin] = useState<{ name: string; method: string } | null>(null);
   // Channel-binding scratch state — held while the user walks
   // through the channel→account→action→peer picker chain.
   const [chosenAccount, setChosenAccount] = useState<string | undefined>(undefined);
@@ -263,6 +266,21 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     });
     if (text.startsWith('/')) {
       if (text.trim().startsWith('/search')) setSearchBaseDraft('');
+      // Open the in-TUI account manager for a provider: prefetch the list so the
+      // panel paints populated; open it even if the fetch fails (Add still works
+      // and triggers auto-install for claude-code).
+      const openAccountsPanel = (providerId: string) => {
+        setAccountsProviderId(providerId);
+        void makeAccountsClient(providerId).fetchAccounts()
+          .then((s) => setAccountsState(s))
+          .catch(() => { /* paint empty; Add will install + refresh */ })
+          .finally(() => {
+            setAccountSelected(null);
+            setAccountPendingAdd(null);
+            setAccountLogin(null);
+            setPickerKind('acct_list');
+          });
+      };
       const handled = handleSlash(text, {
         client,
         pushSystem,
@@ -277,18 +295,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         },
         exit: () => app.exit(),
         openPicker: (kind) => setPickerKind(kind),
-        openClaudeAccounts: () => {
-          // Prefetch the list so the panel paints populated; open it even
-          // if the fetch fails (Add still works and triggers auto-install).
-          void fetchAccounts()
-            .then((s) => setClaudeAccounts(s))
-            .catch(() => { /* paint empty; Add will install + refresh */ })
-            .finally(() => {
-              setClaudeSelected(null);
-              setClaudePendingAdd(null);
-              setPickerKind('claude_accounts');
-            });
-        },
+        openProviderAccounts: openAccountsPanel,
+        openClaudeAccounts: () => openAccountsPanel('claude-code'),
         toggleTools: () => setToolsOn((on) => !on),
         currentThinkingEffort: thinkingEffort,
         setThinkingEffort,
@@ -423,13 +431,14 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft,
     thinkingEffort,
-    claudeAccounts, claudeSelected, claudePendingAdd,
+    accountsProviderId, accountsState, accountSelected, accountPendingAdd, accountLogin,
     setPickerKind, setPendingAttach,
     setChosenChannel, setChosenAccount, setConversationId, setAgent,
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft,
     setThinkingEffort,
-    setClaudeAccounts, setClaudeSelected, setClaudePendingAdd,
+    setAccountsProviderId, setAccountsState, setAccountSelected,
+    setAccountPendingAdd, setAccountLogin,
     onSubmit,
     sessionAliasesRef,
   });

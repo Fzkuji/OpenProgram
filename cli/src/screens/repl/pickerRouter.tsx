@@ -29,8 +29,8 @@ import { BackendClient } from '../../ws/client.js';
 import { tsToDate } from './helpers.js';
 import { buildChannelPicker } from './pickers/channel.js';
 import { buildRegisterPicker } from './pickers/register.js';
-import { buildClaudeAccountsPicker } from './pickers/claudeAccounts.js';
-import type { ClaudeAccountsState, AddStarted } from '../../utils/claudeAccounts.js';
+import { buildProviderAccountsPicker, type AccountKind } from './pickers/providerAccounts.js';
+import type { AccountsState, AddStarted } from '../../utils/providerAccounts.js';
 import type { ColorTheme } from '../../theme/themes.js';
 import type {
   AgentInfo,
@@ -73,10 +73,15 @@ export interface PickerCtx {
   searchBaseDraft: string;
   thinkingEffort: ThinkingEffort;
 
-  /** claude-code account panel state (the in-TUI Claude-account manager). */
-  claudeAccounts: ClaudeAccountsState;
-  claudeSelected: string | null;
-  claudePendingAdd: AddStarted | null;
+  /** Per-provider account panel state (the in-TUI account manager). The
+   *  provider it currently manages, the fetched list, the account picked for the
+   *  action menu, the in-flight code-paste add, and the in-flight login-mode add
+   *  (the new account's name + chosen sign-in method). */
+  accountsProviderId: string;
+  accountsState: AccountsState;
+  accountSelected: string | null;
+  accountPendingAdd: AddStarted | null;
+  accountLogin: { name: string; method: string } | null;
 
   setPickerKind: React.Dispatch<React.SetStateAction<PickerKind>>;
   setPendingAttach: React.Dispatch<React.SetStateAction<PendingAttach | null>>;
@@ -93,9 +98,11 @@ export interface PickerCtx {
   setSearchResults: React.Dispatch<React.SetStateAction<SearchResultRow[]>>;
   setPromptDraft: React.Dispatch<React.SetStateAction<string | undefined>>;
   setThinkingEffort: React.Dispatch<React.SetStateAction<ThinkingEffort>>;
-  setClaudeAccounts: React.Dispatch<React.SetStateAction<ClaudeAccountsState>>;
-  setClaudeSelected: React.Dispatch<React.SetStateAction<string | null>>;
-  setClaudePendingAdd: React.Dispatch<React.SetStateAction<AddStarted | null>>;
+  setAccountsProviderId: React.Dispatch<React.SetStateAction<string>>;
+  setAccountsState: React.Dispatch<React.SetStateAction<AccountsState>>;
+  setAccountSelected: React.Dispatch<React.SetStateAction<string | null>>;
+  setAccountPendingAdd: React.Dispatch<React.SetStateAction<AddStarted | null>>;
+  setAccountLogin: React.Dispatch<React.SetStateAction<{ name: string; method: string } | null>>;
 
   /** Run a line as if typed at the prompt (used by the command palette). */
   onSubmit: (text: string) => void;
@@ -262,12 +269,15 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
   }
 
   if (
-    pickerKind === 'claude_accounts' ||
-    pickerKind === 'claude_account_action' ||
-    pickerKind === 'claude_account_add_code' ||
-    pickerKind === 'claude_account_rename'
+    pickerKind === 'acct_list' ||
+    pickerKind === 'acct_action' ||
+    pickerKind === 'acct_rename' ||
+    pickerKind === 'acct_add_code' ||
+    pickerKind === 'acct_login_name' ||
+    pickerKind === 'acct_login_method' ||
+    pickerKind === 'acct_login'
   ) {
-    return buildClaudeAccountsPicker(ctx, pickerKind);
+    return buildProviderAccountsPicker(ctx, pickerKind as AccountKind);
   }
 
   if (pickerKind === 'context_search') {

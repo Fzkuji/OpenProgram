@@ -15,6 +15,9 @@ export interface SlashContext {
   /** Open the in-TUI Claude-account panel (claude-code provider): add /
    *  activate / deactivate / rename / remove, all without leaving the TUI. */
   openClaudeAccounts: () => void;
+  /** Open the in-TUI account panel for ANY provider (same ops, generic over
+   *  provider id) — the unified manager behind `/login <provider>`. */
+  openProviderAccounts: (providerId: string) => void;
   /** Apply a theme by name. Returns true on success, false on unknown name. */
   setTheme?: (name: string) => boolean;
   /** Toggle (or set) the "tools-on" flag passed with the next chat turn. */
@@ -551,14 +554,11 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         ctx.openPicker('channel');
         return true;
       }
-      // Other providers (OAuth / API key) have their full sign-in UI on the
-      // web Providers page — open it with /web rather than surfacing shell
-      // commands here.
-      ctx.pushSystem(
-        `To sign in to ${target}, open Settings → Providers in the web UI ` +
-        `(type /web) and use the ${target} card. /login on its own opens ` +
-        `the Claude account panel.`,
-      );
+      // Any other target is a provider id — open the same in-TUI account panel
+      // generically (list / add / activate / rename / remove). Add runs the
+      // shared login flow (OAuth / device-code / import-from-CLI / API key)
+      // right here, no punting to the web UI.
+      ctx.openProviderAccounts(target);
       return true;
     }
 
