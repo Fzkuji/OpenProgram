@@ -109,12 +109,14 @@ def _oauth_email(cred) -> str:
     return ""
 
 
-def _account_record(pool, pinned: str) -> dict:
+def _account_record(pool, pinned: str, disabled: set = frozenset()) -> dict:
     """One ACCOUNT = one profile (holding one credential). Uniform shape for every
     provider. api-key: name = the profile label, the editable key is the
     `identity` (shown in the key column). login: name = the account EMAIL (no
     separate identity column — the email IS the identity). `is_active` is the
-    EXPLICIT pin, so "no account active" is representable. Never the secret."""
+    EXPLICIT pin (single-active, rotation OFF), so "no account active" is
+    representable. `enabled` is the INDEPENDENT rotation on/off (rotation ON),
+    so several accounts can be on at once. Never the secret."""
     cred = _primary_cred(pool)
     kind = getattr(cred, "kind", "") if cred else ""
     profile = pool.profile_id
@@ -136,6 +138,7 @@ def _account_record(pool, pinned: str) -> dict:
         "kind": kind,
         "status": getattr(cred, "status", "") if cred else "empty",
         "is_active": profile == pinned,
+        "enabled": profile not in disabled,
         "can_reveal": kind == "api_key",
         "cooling": _cooling(cred) if cred else False,
     }
@@ -160,15 +163,17 @@ def _generic_summary(provider: str) -> dict:
     from openprogram.auth.active import get_active_profile, get_active_pin
     from openprogram.auth.rotation import get_rotation, STRATEGIES
     from openprogram.auth.order import sort_key
+    from openprogram.auth.enabled import get_disabled
     from openprogram.auth.login_methods import login_methods, default_method
 
     store = get_store()
     active = get_active_profile(provider)  # effective: pin, else "default"
     pinned = get_active_pin(provider)      # explicit pin only ("" ⇒ none active)
+    disabled = get_disabled(provider)      # accounts turned OFF for rotation
     pools = [p for p in store.list_pools() if p.provider_id == provider]
     _k = sort_key(provider)                # honour the user's drag order
     pools.sort(key=lambda p: _k(p.profile_id))
-    accounts = [_account_record(p, pinned) for p in pools]
+    accounts = [_account_record(p, pinned, disabled) for p in pools]
     rot = get_rotation(provider)
     has_key = bool(_api_key_env(provider))
     methods = [{"id": mid, "label": label} for mid, label in login_methods(provider)]
@@ -411,6 +416,17 @@ def register(app):
         order = (body or {}).get("order") or []
         set_order(provider, order)
         return JSONResponse(content={"ok": True, "order": [str(x) for x in order]})
+
+    @app.post("/api/providers/{provider}/accounts/enabled")
+    def api_accounts_set_enabled(provider: str, body: dict = None):
+        """Turn ONE account on / off for rotation — independent per account, so
+        several can be on at once (unlike the single-active pin). Body:
+        ``{id: account_id, enabled: bool}``."""
+        from openprogram.auth.enabled import set_enabled, get_disabled
+        b = body or {}
+        name = b.get("id", b.get("name")) or ""
+        set_enabled(provider, str(name), bool(b.get("enabled", True)))
+        return JSONResponse(content={"ok": True, "disabled": sorted(get_disabled(provider))})
 
     @app.post("/api/providers/{provider}/accounts/{name}/retry")
     def api_account_retry(provider: str, name: str):

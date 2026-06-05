@@ -720,15 +720,6 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
-/* Rotation ON: every account is in the pool, so the active column shows a
-   static "In rotation" instead of the single-active toggle. Green like the
-   "Activated" state, centred in the same fixed cell, non-interactive. */
-.inRotation {
-  justify-self: center;
-  font-size: 12px;
-  color: var(--accent-green);
-  white-space: nowrap;
-}
 /* each right-hand control fills its fixed grid cell, so its width is
    constant. Compact type + tight padding keeps these row buttons from
    looking bulky against the dense row. */

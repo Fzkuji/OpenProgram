@@ -29,7 +29,8 @@ interface Account {
   email?: string;
   kind?: string;
   status?: string;
-  is_active: boolean;
+  is_active: boolean;     // single-active pin (rotation OFF)
+  enabled?: boolean;      // independent on/off for rotation (rotation ON); default true
   can_reveal?: boolean;
   cooling?: boolean;
 }
@@ -147,6 +148,11 @@ function AccountRow({
     await fetch(`${base}/use`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: "" }) });
     refresh();
   }
+  // Rotation ON: independent per-account on/off (several can be on at once).
+  async function setEnabled(enabled: boolean) {
+    await fetch(`${base}/enabled`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: account.id, enabled }) });
+    refresh();
+  }
   async function remove() {
     await fetch(`${base}/remove`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: account.id }) });
     refresh(); onChanged?.();
@@ -212,12 +218,12 @@ function AccountRow({
       {/* Validate — text button, every row */}
       <Button size="sm" className={styles.acctCellBtn} onClick={validate}>{text("Validate", "验证")}</Button>
 
-      {/* When rotation is ON every account is used (the pool rotates across
-          them all), so a single-active pin is meaningless — show a static
-          "In rotation" instead of the mutually-exclusive Activate toggle.
-          Rotation OFF → pick one active (or none). */}
+      {/* Rotation ON → each account is independently in / out of the rotation
+          (several can be on at once; turning one off just excludes it).
+          Rotation OFF → single-active pin (Activate one, or none). Same toggle
+          UI, different wiring. */}
       {rotation
-        ? <span className={styles.inRotation}>{text("In rotation", "轮询中")}</span>
+        ? <ActiveToggle active={account.enabled ?? true} onActivate={() => setEnabled(true)} onDeactivate={() => setEnabled(false)} />
         : <ActiveToggle active={account.is_active} onActivate={activate} onDeactivate={deactivate} />}
 
       {/* Remove */}
@@ -396,7 +402,9 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
       <div style={{ fontSize: "0.72rem", opacity: 0.55, marginTop: "0.2rem", lineHeight: 1.5 }}>
         {state.add_mode === "api_key"
           ? (multi
-              ? text("Drag ⠿ to set rotation order. Each key is an account — Activate to use it, the eye reveals / edits it, Validate checks it.", "拖 ⠿ 调轮询顺序。每个 key 是一个账号 —— Activate 切换使用,眼睛查看/编辑,Validate 验证。")
+              ? (state.rotation
+                  ? text("Rotation on — every account on is used in turn (drag ⠿ to set priority). Turn any account off to drop it from the rotation; the others keep going.", "已开启轮询 —— 所有「已激活」的账号轮流使用(拖 ⠿ 调优先级)。把某个账号停用即可踢出轮询,其余照常。")
+                  : text("Drag ⠿ to set rotation order. Each key is an account — Activate one to use it, the eye reveals / edits it, Validate checks it.", "拖 ⠿ 调轮询顺序。每个 key 是一个账号 —— Activate 选一个使用,眼睛查看/编辑,Validate 验证。"))
               : text("Add more keys as accounts to switch between them or rotate on rate limits. The eye reveals / edits the key.", "添加多个 key 作为账号即可切换或限流时轮询。眼睛可查看/编辑 key。"))
           : text("Each account is a separate sign-in. Activate to switch which the framework runs on.", "每个账号是一次独立登录。Activate 切换框架跑哪个。")}
       </div>

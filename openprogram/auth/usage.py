@@ -67,6 +67,13 @@ def acquire_pooled(
     if rot["enabled"]:
         pools = [p for p in store.list_pools()
                  if p.provider_id == provider_id and p.credentials]
+        # Drop accounts the user turned OFF for rotation. If that leaves
+        # nothing (every account disabled), ignore the exclusions rather than
+        # break the request.
+        from .enabled import get_disabled
+        disabled = get_disabled(provider_id)
+        kept = [p for p in pools if p.profile_id not in disabled]
+        pools = kept or pools
         chosen = _pick_account(provider_id, pools, rot["strategy"])
         if chosen is not None:
             got = _resolve(chosen.profile_id)
