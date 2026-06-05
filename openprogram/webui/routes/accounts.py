@@ -28,13 +28,29 @@ Sync ``def`` handlers so the blocking store I/O runs in FastAPI's threadpool.
 """
 from __future__ import annotations
 
+import time
+
 from fastapi.responses import JSONResponse
+
+# The pool rotation strategies a user can pick (auth/types.py PoolStrategy).
+_STRATEGIES = ("fill_first", "round_robin", "random", "least_used")
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _cooling(cred) -> bool:
+    """True if this credential is in a cooldown window right now."""
+    until = getattr(cred, "cooldown_until_ms", 0) or 0
+    return bool(until and until > _now_ms())
 
 
 def _account_record(pool) -> dict:
     """One account row from a credential pool: name + best-effort identity +
     health, mirroring claude-code's ``{name, email}`` (plus ``kind/status/count``
-    the richer UIs can show). Never includes the secret itself."""
+    + the pool's rotation ``strategy`` and how many keys are currently cooling
+    down). Never includes the secret itself."""
     creds = list(pool.credentials)
     first = creds[0] if creds else None
     email = ""
@@ -49,6 +65,27 @@ def _account_record(pool) -> dict:
         "kind": getattr(first, "kind", "") if first else "",
         "status": getattr(first, "status", "") if first else "empty",
         "count": len(creds),
+        "strategy": getattr(pool, "strategy", "fill_first"),
+        "cooling": sum(1 for c in creds if _cooling(c)),
+    }
+
+
+def _key_view(cred) -> dict:
+    """One credential ("key") within an account, masked, with its health so the
+    UI can show a per-key badge (cooling / needs-reauth / ok)."""
+    payload = getattr(cred, "payload", None)
+    raw = getattr(payload, "api_key", "") or getattr(payload, "access_token", "") or ""
+    masked = (raw[:6] + "…" + raw[-4:]) if len(raw) > 12 else (("•" * len(raw)) if raw else "")
+    return {
+        "credential_id": cred.credential_id,
+        "kind": cred.kind,
+        "status": cred.status,
+        "masked": masked,
+        "cooling": _cooling(cred),
+        "cooldown_until_ms": getattr(cred, "cooldown_until_ms", 0) or 0,
+        "use_count": getattr(cred, "use_count", 0) or 0,
+        "last_error": getattr(cred, "last_error", None),
+        "source": getattr(cred, "source", ""),
     }
 
 
@@ -168,3 +205,89 @@ def register(app):
             "login_methods": methods,
             "default_method": default_method(provider),
         })
+
+    # ---- pool controls (rotation / cooldown / keys) -----------------------
+    # An account is one pool; these steer how its multiple keys rotate and let
+    # the user add / drop / un-cool individual keys. claude-code (Meridian, no
+    # AuthStore pool) doesn't apply — guarded below.
+
+    @app.get("/api/providers/{provider}/accounts/{name}/keys")
+    def api_account_keys(provider: str, name: str):
+        """The credentials ("keys") inside one account, masked, with per-key
+        health + the pool's rotation strategy."""
+        if provider == "claude-code":
+            return JSONResponse(content={"keys": [], "strategy": "", "strategies": []})
+        from openprogram.auth.store import get_store
+        pool = get_store().find_pool(provider, name)
+        keys = [_key_view(c) for c in (pool.credentials if pool else [])]
+        return JSONResponse(content={
+            "keys": keys,
+            "strategy": getattr(pool, "strategy", "fill_first") if pool else "fill_first",
+            "strategies": list(_STRATEGIES),
+        })
+
+    @app.post("/api/providers/{provider}/accounts/{name}/strategy")
+    def api_account_strategy(provider: str, name: str, body: dict = None):
+        """Set the account's rotation strategy (fill_first / round_robin /
+        random / least_used)."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+        strategy = (body or {}).get("strategy", "")
+        if strategy not in _STRATEGIES:
+            return JSONResponse(content={"ok": False, "error": f"unknown strategy '{strategy}'"})
+        from openprogram.auth.store import get_store
+        store = get_store()
+        pool = store.find_pool(provider, name)
+        if pool is None:
+            return JSONResponse(content={"ok": False, "error": f"account '{name}' not found"})
+        pool.strategy = strategy
+        store.put_pool(pool)
+        return JSONResponse(content={"ok": True, "strategy": strategy})
+
+    @app.post("/api/providers/{provider}/accounts/{name}/retry")
+    def api_account_retry(provider: str, name: str):
+        """"Retry now" — clear the cooldown on every key in the account so a
+        rate-limited / cooled-down key is eligible again immediately."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+        from openprogram.auth.store import get_store
+        from openprogram.auth import pool as _pool
+        store = get_store()
+        pool = store.find_pool(provider, name)
+        if pool is None:
+            return JSONResponse(content={"ok": False, "error": f"account '{name}' not found"})
+        cleared = 0
+        for c in pool.credentials:
+            if _cooling(c) or getattr(c, "status", "") in ("rate_limited", "billing_blocked"):
+                cleared += 1
+            _pool.clear_cooldown(c)
+        store.put_pool(pool)
+        return JSONResponse(content={"ok": True, "cleared": cleared})
+
+    @app.post("/api/providers/{provider}/accounts/{name}/keys")
+    def api_account_add_key(provider: str, name: str, body: dict = None):
+        """Add another API key to the account's pool (the multi-key rotation
+        case). Returns the masked view of the new key."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+        key = (body or {}).get("api_key", "").strip()
+        if not key:
+            return JSONResponse(content={"ok": False, "error": "api_key is required"})
+        from openprogram.auth.store import get_store
+        from openprogram.auth.types import Credential, ApiKeyPayload
+        cred = Credential(
+            provider_id=provider, profile_id=name, kind="api_key",
+            payload=ApiKeyPayload(api_key=key), source="webui_pool_add",
+        )
+        get_store().add_credential(cred)
+        return JSONResponse(content={"ok": True, "key": _key_view(cred)})
+
+    @app.delete("/api/providers/{provider}/accounts/{name}/keys/{credential_id}")
+    def api_account_remove_key(provider: str, name: str, credential_id: str):
+        """Drop one key from the account's pool (leaves the pool/account if other
+        keys remain; use the account ``remove`` to delete the whole account)."""
+        if provider == "claude-code":
+            return JSONResponse(content={"ok": False, "error": "claude-code has no key pool"})
+        from openprogram.auth.store import get_store
+        get_store().remove_credential(provider, name, credential_id)
+        return JSONResponse(content={"ok": True, "removed": credential_id})
