@@ -115,6 +115,19 @@ def list_providers() -> list[dict[str, Any]]:
         hint = _setup_hint(pid)
         if hint:
             entry["setup_hint"] = hint
+        # Native login methods (OAuth / device-code / import-from-CLI) the web
+        # can drive — excluding plain api_key, which the ApiKey field already
+        # handles. Empty for key-only providers, so the UI only renders a
+        # "Sign in" panel where there's a real native flow. Single source of
+        # truth: openprogram/auth/login_methods.py.
+        from openprogram.auth.login_methods import login_methods as _login_methods
+        native = [
+            {"id": mid, "label": label}
+            for mid, label in _login_methods(pid)
+            if mid != "api_key"
+        ]
+        if native:
+            entry["login_methods"] = native
         result.append(entry)
 
     # Tier 2: community-catalogue providers we don't have a static

@@ -30,6 +30,14 @@ export interface Provider {
    * login. See docs/design/claude-code-meridian-profile.md.
    */
   meridian_profile?: string;
+  /**
+   * Native login methods (OAuth / device-code / import-from-CLI) the web can
+   * drive for this provider, excluding plain api_key (the ApiKey field handles
+   * that). Present only for providers with a real native flow; absent/empty for
+   * key-only providers. Drives the <ProviderLogin/> "Sign in" panel. Source of
+   * truth: openprogram/auth/login_methods.py.
+   */
+  login_methods?: { id: string; label: string }[];
 }
 
 export interface Model {

@@ -10,6 +10,7 @@ import { ProviderIcon } from "../provider-icon";
 import { ApiKey } from "./api-key";
 import { BaseUrl } from "./base-url";
 import { ClaudeAccounts } from "./claude-accounts";
+import { ProviderLogin } from "./provider-login";
 import { Connectivity, type ConnectivityHandle } from "./connectivity";
 import { ModelList } from "./model-list";
 import { CliInfo, SetupHint } from "./setup-hint";
@@ -155,6 +156,14 @@ export function Detail({
       {/* claude-code: manage the Claude accounts this provider runs on
           (add / activate / remove), decoupled from the terminal login. */}
       {provider.id === "claude-code" && <ClaudeAccounts />}
+      {/* Generic native login (OAuth / device-code / import-from-CLI) for any
+          provider that ships a non-key login method. claude-code keeps its own
+          ClaudeAccounts panel above; everything else uses the unified
+          /api/providers/{id}/login/{start,poll,submit} flow. */}
+      {provider.id !== "claude-code" &&
+        (provider.login_methods?.length ?? 0) > 0 && (
+          <ProviderLogin provider={provider} onChanged={onChanged} />
+        )}
       {/* Connectivity check applies to every HTTP provider, not just
           api-key ones. OAuth providers (openai-codex, gemini-subscription,
           github-copilot, …) need this control too — without it the
