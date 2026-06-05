@@ -36,6 +36,7 @@ export type AccountKind =
 
 const ADD = '__add__';
 const DEACTIVATE = '__deactivate__';
+const ROTATE = '__rotate__';
 
 export function buildProviderAccountsPicker(
   ctx: PickerCtx,
@@ -77,6 +78,13 @@ export function buildProviderAccountsPicker(
         label: `${tag}${a.name}${email}${keys}`,
         description: a.name === active ? 'active' : undefined,
         value: `acct:${a.name}`,
+      });
+    }
+    if (!codePaste && state.accounts.length > 1) {
+      items.push({
+        label: `⟳ Rotation: ${state.rotation ? 'on' : 'off'}`,
+        description: state.rotation ? `rotating across accounts (${state.strategy ?? 'fill_first'})` : 'use the active account only',
+        value: ROTATE,
       });
     }
     items.push({
@@ -133,6 +141,14 @@ export function buildProviderAccountsPicker(
             })();
             return;
           }
+          if (it.value === ROTATE) {
+            void (async () => {
+              await client.setRotation(!state.rotation, state.strategy);
+              await refresh();
+              pushSystem(`Rotation ${!state.rotation ? 'on' : 'off'} for ${provider}.`);
+            })();
+            return;
+          }
           const name = it.value.slice('acct:'.length);
           setAccountSelected(name);
           setPickerKind('acct_action');
@@ -149,6 +165,8 @@ export function buildProviderAccountsPicker(
       isActive
         ? { label: 'Deactivate', description: 'fall back to the default account', value: 'deactivate' }
         : { label: 'Activate', description: 'run this provider on this account', value: 'activate' },
+      { label: 'Validate', description: 'check this account against the provider', value: 'validate' },
+      ...(codePaste ? [] : [{ label: 'Reveal key', description: 'print the full API key', value: 'reveal' }]),
       { label: 'Rename', value: 'rename' },
       { label: 'Remove', value: 'remove' },
       { label: '← Back', value: 'back' },
@@ -164,6 +182,21 @@ export function buildProviderAccountsPicker(
           }
           if (it.value === 'back') {
             setPickerKind('acct_list');
+            return;
+          }
+          if (it.value === 'validate') {
+            pushSystem(`Validating "${sel}"…`);
+            void (async () => {
+              const r = await client.validateAccount(sel);
+              pushSystem(r.ok ? `"${sel}": ${r.status}${r.detail ? ` — ${r.detail}` : ''}` : `Validate failed: ${r.error ?? 'unknown'}`);
+            })();
+            return;
+          }
+          if (it.value === 'reveal') {
+            void (async () => {
+              const r = await client.revealKey(sel);
+              pushSystem(r.ok ? `"${sel}" key:\n${r.value}` : (r.error ?? 'no key on this account'));
+            })();
             return;
           }
           void (async () => {

@@ -32,8 +32,10 @@ export interface AccountsState {
   ready: boolean;
   active: string | null;
   accounts: AccountInfo[];
-  add_mode?: 'code_paste' | 'login';
+  add_mode?: 'code_paste' | 'login' | 'api_key';
   login_methods?: LoginMethod[];
+  rotation?: boolean;
+  strategy?: string;
 }
 
 /** Result of starting a code-paste add (the OAuth login URL + a session). */
@@ -86,6 +88,9 @@ export interface AccountsClient {
   useAccount(name: string): Promise<{ ok?: boolean; error?: string; active?: string }>;
   removeAccount(name: string): Promise<{ ok?: boolean; error?: string; removed?: boolean }>;
   renameAccount(oldName: string, newName: string): Promise<{ ok?: boolean; error?: string; name?: string }>;
+  validateAccount(name: string): Promise<{ ok?: boolean; status?: string; detail?: string; error?: string }>;
+  revealKey(name: string): Promise<{ ok?: boolean; value?: string; error?: string }>;
+  setRotation(enabled: boolean, strategy?: string): Promise<{ ok?: boolean; enabled?: boolean; strategy?: string }>;
 }
 
 /** Build a client bound to one provider id. */
@@ -99,6 +104,9 @@ export function makeAccountsClient(providerId: string): AccountsClient {
     useAccount: (name) => postTo(`${base}/use`, { name }),
     removeAccount: (name) => postTo(`${base}/remove`, { name }),
     renameAccount: (oldName, newName) => postTo(`${base}/rename`, { old: oldName, new: newName }),
+    validateAccount: (name) => postTo(`${base}/${encodeURIComponent(name)}/validate`, {}),
+    revealKey: (name) => getJson(`${base}/${encodeURIComponent(name)}/reveal`),
+    setRotation: (enabled, strategy) => postTo(`${base}/rotation`, { enabled, strategy }),
   };
 }
 
