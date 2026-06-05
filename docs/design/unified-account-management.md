@@ -160,3 +160,28 @@ the standalone `<ProviderLogin>` collapse into it.
 
 (Future, optional: lift accounts to profiles for api-key too + rotate across
 profiles, so the backend is uniform as well, not just the UI.)
+
+### P-E — one backend model: account = profile (forced by the OAuth constraint)
+
+The UI unification (P-D) put one component over two *different* backend models
+(api-key = many credentials in one pool; login = one credential per profile).
+The user is right that's not real unification. The deciding constraint:
+`_prune_superseded_oauth` — OAuth refresh-token rotation means **at most one
+OAuth credential can live in a pool**, so OAuth multi-account *must* be separate
+profiles. Therefore the only model that covers every provider is **account =
+profile** (each profile holds one credential). login, claude-code (Meridian
+profiles) and P-A's `set_active_profile` already use it; api-key keys move onto
+it too — each named key is a profile.
+
+- **Switch** the active account = `set_active_profile` (P-A), everywhere.
+- **Rotation** = a per-provider toggle that rotates across the provider's
+  profiles (cool a profile's credential on 429, skip it, move on); off ⇒ use the
+  active profile only. Lives in `auth/usage.acquire_pooled` + a per-provider
+  rotation setting, so the hot `manager.acquire` path is untouched.
+- **Per-account ops** on the profile's credential: reveal (show the full key),
+  update (replace it), validate (probe just this one) + validate-all.
+- api-key **add** = create a profile + add the key; login add = the shared login
+  flow with `profile=<name>` (already). claude-code = Meridian (adapter).
+
+Web + TUI then render this one model; the api-key creds-in-pool surface
+(`…/accounts/default/keys*`, pool `active_credential_id`/`fixed`) is retired.
