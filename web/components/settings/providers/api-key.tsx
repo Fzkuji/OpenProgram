@@ -7,17 +7,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/lib/i18n";
 
+import { PoolControls } from "./pool-controls";
 import styles from "../settings-page.module.css";
 
 /** API-key input — mask / reveal / save against /api/config.
  *
- *  Exported because search-providers-section.tsx reuses the same
- *  widget for its own provider keys. */
+ *  For LLM providers (pass ``providerId``) the section also hosts a nested,
+ *  collapsed "extra keys for rotation" block, so a provider's keys live in one
+ *  place instead of two competing sections. Omit ``providerId`` (web-search
+ *  providers reuse this widget) to render just the single-key field.
+ *
+ *  Exported because search-providers-section.tsx reuses the same widget. */
 export function ApiKey({
   envVar,
   configured,
   onChanged,
   onSaved,
+  providerId,
 }: {
   envVar: string;
   configured: boolean;
@@ -25,6 +31,8 @@ export function ApiKey({
   /** Called after a NEW key is actually saved (not on a no-op Save of an
    *  unedited masked field). Lets the parent auto check + fetch models. */
   onSaved?: () => void;
+  /** LLM provider id — when set, render the nested rotation-keys block. */
+  providerId?: string;
 }) {
   const { text } = useTranslation();
   const [value, setValue] = useState("");
@@ -177,6 +185,9 @@ export function ApiKey({
           {text("Save", "保存")}
         </Button>
       </div>
+      {/* Extra keys for rotation live inside this same section (LLM providers
+          only), so all of a provider's keys are in one place. */}
+      {providerId && <PoolControls providerId={providerId} />}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -8,13 +9,15 @@ import { useTranslation } from "@/lib/i18n";
 
 import styles from "../settings-page.module.css";
 
-/** Multi-key rotation controls for one account (profile) of a provider. Lists
- *  the keys in the pool with per-key health, lets you add / remove keys, pick a
- *  rotation strategy, and clear cooldowns ("retry now"). When the pool has keys
- *  they take precedence over the single env key, and a 429 on one rotates to the
- *  next (auth/usage.py + auth/pool.py). Hits /api/providers/{id}/accounts/{name}/
- *  {keys,strategy,retry}. Renders compactly: with no extra keys it's just an
- *  invitation to add one. */
+/** Extra API keys for ONE account (profile) that rotate automatically: a
+ *  rate-limited key cools down and the next takes over. Rendered *nested* inside
+ *  the API-key section (not as a competing top-level section), collapsed by
+ *  default until there's something to show. Hits
+ *  /api/providers/{id}/accounts/{name}/{keys,strategy,retry}.
+ *
+ *  These keys live in the credential pool and, when present, are what requests
+ *  rotate across. The single key field above is the one-key case; add keys here
+ *  for rate-limit headroom. */
 
 interface Key {
   credential_id: string;
@@ -43,6 +46,7 @@ export function PoolControls({
   const base = `/api/providers/${encodeURIComponent(providerId)}/accounts/${encodeURIComponent(profile)}`;
 
   const [state, setState] = useState<KeysState | null>(null);
+  const [open, setOpen] = useState(false);
   const [newKey, setNewKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -50,7 +54,10 @@ export function PoolControls({
   const load = useCallback(async () => {
     try {
       const r = await fetch(`${base}/keys`);
-      setState((await r.json()) as KeysState);
+      const d = (await r.json()) as KeysState;
+      setState(d);
+      // Auto-open when there are already extra keys to show.
+      if ((d.keys?.length ?? 0) > 0) setOpen(true);
     } catch {
       /* ignore */
     }
@@ -99,36 +106,42 @@ export function PoolControls({
 
   if (!state) return null;
   const keys = state.keys || [];
+  const count = keys.length;
 
   return (
-    <div className={styles.detailSection}>
-      <div className={styles.detailSectionTitle}>
-        <span>{text("Keys & rotation", "密钥与轮询")}</span>
-        {keys.length > 1 && (
-          <span className={styles.modelCountSummary}>
-            {text(`${keys.length} keys`, `${keys.length} 个密钥`)}
-          </span>
+    <div style={{ marginTop: 4, borderTop: "1px solid var(--border, #2a2a2a)", paddingTop: 10 }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "flex", alignItems: "center", gap: 6, background: "none", border: "none",
+          padding: 0, cursor: "pointer", color: "var(--text-muted, #999)", fontSize: "0.82rem",
+        }}
+      >
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span>{text("Extra keys for rotation", "用于轮询的备用密钥")}</span>
+        {count > 0 && (
+          <span style={{ fontSize: "0.72rem", opacity: 0.7 }}>{text(`· ${count}`, `· ${count}`)}</span>
         )}
-      </div>
+      </button>
 
-      {keys.length === 0 ? (
-        <div style={{ fontSize: "0.8rem", opacity: 0.6, marginBottom: "0.4rem" }}>
-          {text(
-            "Add extra API keys to rotate across them — a rate-limited key cools down and the next one takes over automatically.",
-            "添加多个 API key 即可在它们之间轮询 —— 某个 key 被限流会自动冷却并切到下一个。",
-          )}
-        </div>
-      ) : (
-        <>
-          {keys.length > 1 && (
-            <div className={styles.detailRow} style={{ alignItems: "center", gap: "0.5rem" }}>
-              <span style={{ fontSize: "0.8rem", opacity: 0.7 }}>{text("Strategy", "策略")}</span>
+      {open && (
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: "0.75rem", opacity: 0.6, lineHeight: 1.5 }}>
+            {text(
+              "Add more API keys to rotate across them — a rate-limited key cools down and the next takes over automatically. With one key this does nothing.",
+              "添加多个 API key 即可在它们之间自动轮询 —— 某个 key 被限流会自动冷却并切到下一个；只有一个 key 时不起作用。",
+            )}
+          </div>
+
+          {count > 1 && (
+            <div className={styles.detailRow} style={{ gap: 10 }}>
+              <span style={{ fontSize: "0.78rem", opacity: 0.7 }}>{text("Strategy", "策略")}</span>
               <select
                 value={state.strategy}
                 onChange={(e) => setStrategy(e.target.value)}
                 style={{
                   background: "var(--input-bg, #1a1a1a)", color: "var(--text, #ddd)",
-                  border: "1px solid var(--border, #333)", borderRadius: 6, padding: "2px 6px", fontSize: "0.8rem",
+                  border: "1px solid var(--border, #333)", borderRadius: 6, padding: "3px 8px", fontSize: "0.78rem",
                 }}
               >
                 {(state.strategies || []).map((s) => (
@@ -138,43 +151,41 @@ export function PoolControls({
               <Button size="sm" onClick={retry}>{text("Retry now", "立即重试")}</Button>
             </div>
           )}
+
           {keys.map((k) => (
-            <div key={k.credential_id} className={styles.detailRow} style={{ alignItems: "center", gap: "0.4rem" }}>
+            <div key={k.credential_id} className={styles.detailRow} style={{ gap: 10 }}>
               <span style={{ flex: 1, fontFamily: "monospace", fontSize: "0.8rem" }}>{k.masked || k.credential_id}</span>
               <span
                 title={k.last_error || k.status}
                 style={{
-                  fontSize: "0.7rem", padding: "1px 6px", borderRadius: 8,
+                  fontSize: "0.7rem", padding: "1px 7px", borderRadius: 8, whiteSpace: "nowrap",
                   background: k.cooling ? "rgba(220,140,40,0.18)" : k.status === "valid" ? "rgba(60,180,90,0.16)" : "rgba(220,70,70,0.16)",
                   color: k.cooling ? "#e0a040" : k.status === "valid" ? "#56c06a" : "#e06a6a",
                 }}
               >
                 {k.cooling ? text("cooling", "冷却中") : k.status}
               </span>
-              {k.use_count > 0 && (
-                <span style={{ fontSize: "0.7rem", opacity: 0.45 }}>{text(`${k.use_count} uses`, `${k.use_count} 次`)}</span>
-              )}
               <Button size="sm" onClick={() => removeKey(k.credential_id)}>{text("Remove", "删除")}</Button>
             </div>
           ))}
-        </>
+
+          <div className={styles.detailRow} style={{ gap: 10 }}>
+            <Input
+              className="flex-1 font-mono"
+              type="password"
+              placeholder={text("add another API key for rotation", "再加一个用于轮询的 API key")}
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value)}
+              disabled={busy}
+            />
+            <Button size="sm" onClick={addKey} disabled={busy || !newKey.trim()}>
+              {busy ? text("Adding…", "添加中…") : text("Add key", "添加密钥")}
+            </Button>
+          </div>
+
+          {msg && <div style={{ fontSize: "0.75rem", opacity: 0.75 }}>{msg}</div>}
+        </div>
       )}
-
-      <div className={styles.detailRow}>
-        <Input
-          className="flex-1 font-mono"
-          type="password"
-          placeholder={text("add another API key for rotation", "再加一个用于轮询的 API key")}
-          value={newKey}
-          onChange={(e) => setNewKey(e.target.value)}
-          disabled={busy}
-        />
-        <Button size="sm" onClick={addKey} disabled={busy || !newKey.trim()}>
-          {busy ? text("Adding…", "添加中…") : text("Add key", "添加密钥")}
-        </Button>
-      </div>
-
-      {msg && <div style={{ fontSize: "0.75rem", opacity: 0.75, marginTop: "0.3rem" }}>{msg}</div>}
     </div>
   );
 }

@@ -9,7 +9,6 @@ import { ProviderIcon } from "../provider-icon";
 
 import { ApiKey } from "./api-key";
 import { BaseUrl } from "./base-url";
-import { PoolControls } from "./pool-controls";
 import { ProviderAccounts } from "./provider-accounts";
 import { ProviderLogin } from "./provider-login";
 import { Connectivity, type ConnectivityHandle } from "./connectivity";
@@ -143,9 +142,14 @@ export function Detail({
           inputs that would otherwise show because claude-code shares the
           ANTHROPIC_API_KEY env name with the `anthropic` provider; pasting a
           key here does nothing (its Setup says "no API key to paste here"). */}
+      {/* One "API key" section: the key + an optional, collapsed "extra keys
+          for rotation" block nested inside it (api-key providers only). The two
+          used to be separate top-level sections, which read as two competing
+          places for the same thing. */}
       {provider.api_key_env && provider.id !== "claude-code" && (
         <ApiKey
           envVar={provider.api_key_env}
+          providerId={provider.id}
           configured={!!provider.configured}
           onChanged={onChanged}
           onSaved={autoCheckAndFetch}
@@ -153,12 +157,6 @@ export function Detail({
       )}
       {provider.api_key_env && provider.id !== "claude-code" && (
         <BaseUrl provider={provider} onChanged={onChanged} />
-      )}
-      {/* Multi-key rotation for plain api-key providers: a pool of keys (on top
-          of the single env key above) that rotates on rate limits. Pool keys
-          take precedence over the env key when present. */}
-      {provider.api_key_env && provider.id !== "claude-code" && (
-        <PoolControls providerId={provider.id} />
       )}
       {/* Unified multi-account panel (list / add / activate / rename / remove).
           claude-code (Meridian-backed, code-paste add) and the login-only
