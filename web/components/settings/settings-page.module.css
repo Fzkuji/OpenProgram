@@ -618,6 +618,15 @@
   gap: 10px;
   align-items: center;
 }
+/* A control that only appears when its row is hovered (e.g. the rename pencil),
+   so rows stay clean until you reach for it. */
+.detailRow .hoverShow {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.detailRow:hover .hoverShow {
+  opacity: 0.7;
+}
 .detailRow > .input {
   flex: 1;
   width: auto;
