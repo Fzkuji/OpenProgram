@@ -128,3 +128,35 @@ is "whatever works".)
   opt-in. The working yzhang6294 claude-code account is untouched (still Meridian).
 - P-A ships behind the existing behavior (active defaults to "default"); P-C's
   switches are inert until a strategy other than fill_first is chosen.
+
+## P-D — one management component for every provider (UI unification)
+
+**Problem (user):** api-key providers and login providers showed *different*
+panels (`<ProviderKeys>` vs `<ProviderAccounts>`) — different layout, labels,
+interactions. That difference was incidental (two components I wrote
+separately), not necessary. The only things that genuinely differ per provider
+are **how you add** (paste a key / sign in / paste a code) and **what an
+identity looks like** (a masked key / an email).
+
+**Model.** Every provider has **accounts** = named, switchable credentials:
+- api-key provider → an account is a **key** (id = credential_id, identity =
+  masked key).
+- login provider (codex / copilot / gemini-sub) → an account is a **sign-in**
+  (id = profile_id, identity = email).
+- claude-code → an account is a **Claude subscription** (Meridian profile).
+
+Uniform operations everywhere: **rename**, **Use** (switch the active one),
+**remove**, and an optional **rotation toggle** (off by default; on = rate-limit
+failover across the accounts, where the backend supports it). Only **add**
+branches: paste-key (+validate) / the shared sign-in flow / code-paste.
+
+**Shape.** One React `<AccountManager driver={…}>` renders the list + rotation
+toggle + the add area; a thin **driver** per backend supplies the data and the
+use/rename/remove/rotation calls, wrapping the existing endpoints (api-key →
+`…/accounts/default/keys*`; login/claude-code → `…/accounts*`). No backend
+rearchitect — claude-code stays on Meridian. `detail.tsx` renders exactly one
+`<AccountManager>` for every provider; `<ProviderKeys>` / `<ProviderAccounts>` /
+the standalone `<ProviderLogin>` collapse into it.
+
+(Future, optional: lift accounts to profiles for api-key too + rotate across
+profiles, so the backend is uniform as well, not just the UI.)
