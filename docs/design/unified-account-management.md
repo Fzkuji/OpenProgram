@@ -94,11 +94,23 @@ the real use case; OAuth multi-account is handled by multiple *profiles*.)
   - TUI: one generic picker (`providerAccounts.tsx`) + an in-TUI login flow
     (`providerLoginFlow.tsx`) driving the shared `/login/*`; `/login <provider>`
     opens it for ANY provider (no more punting to web).
-- **P-C — rotation/failover wiring + switches.** Runtimes call
-  `report_failure`/`report_success` (makes cooldown/rotation/fallback live);
-  `PATCH pool` / `clear_cooldown` / `health` endpoints; pool CLI verbs; web/TUI
-  strategy dropdown + fallback toggle + health badges + "add another key".
-  ← NEXT.
+- **P-C — rotation/failover wiring + switches** ✅ DONE (commits e0b04aa0,
+  ac9b7f53, adbbf8af).
+  - P-C1 wiring (`auth/usage.py` + `openai_completions.stream_simple`): the call
+    path acquires per-request from the pool and reports the outcome
+    (`report_failure`/`report_success`), so a 429 cools a key down and the outer
+    retry rotates to the next. Gated — no-op unless the provider has a real
+    AuthStore pool, so env-key / OAuth / claude-code are byte-for-byte unchanged.
+  - P-C2 control surface (`routes/accounts.py`): `GET …/{name}/keys` (masked +
+    per-key health + strategy), `POST …/{name}/strategy`, `…/{name}/retry`
+    ("clear cooldowns"), `POST/DELETE …/{name}/keys` (add/remove a key); the
+    account record gained `strategy` + `cooling`.
+  - P-C3 web (`pool-controls.tsx`): a "Keys & rotation" panel on api-key
+    providers — per-key health badges, strategy dropdown, "Retry now", add/remove.
+
+  Remaining (secondary, not blocking the mandate): a `fallback_chain` toggle in
+  the UI; TUI pool controls (web + REST + CLI-via-REST already cover it); native
+  `providers pool …` CLI verbs.
 
 ## Backend (claude-code stays on Meridian)
 
