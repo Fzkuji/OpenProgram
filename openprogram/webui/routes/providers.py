@@ -221,9 +221,11 @@ def register(app):
         active = s.get("active")
         accounts = [{
             "id": a.get("name", ""),
-            "name": a.get("name", ""),
-            "identity": a.get("email", "") or a.get("name", ""),
-            "email": a.get("email", ""),
+            # Meridian renames the account to the email after login, so name IS
+            # the email; no separate identity column (matches OAuth rows).
+            "name": a.get("email", "") or a.get("name", ""),
+            "identity": "",
+            "email": a.get("email", "") or a.get("name", ""),
             "kind": "oauth",
             "status": "valid",
             "is_active": a.get("name") == active,

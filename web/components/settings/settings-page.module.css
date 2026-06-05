@@ -627,6 +627,77 @@
 .detailRow:hover .hoverShow {
   opacity: 0.7;
 }
+
+/* ── Account row — ONE fixed-column grid for every provider type ───────────
+   The right-hand controls (status · Validate · active · Remove) sit in
+   fixed-width columns so they stay aligned and NEVER reflow when a button's
+   label changes (Activate ⇄ Activated ⇄ Deactivate). The left content area
+   (drag · name · key) flexes. */
+.acctRow {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 66px 86px 104px 78px;
+  align-items: center;
+  gap: 8px;
+}
+.acctContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.acctName {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 5rem;
+  flex-shrink: 0;
+}
+.acctNameText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.acctKey {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dragHandle {
+  color: var(--text-muted);
+  cursor: grab;
+  opacity: 0.45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dragHandle:hover { opacity: 0.9; }
+/* status badge — token colours, fixed cell */
+.statusBadge {
+  font-size: 12px;
+  padding: 1px 0;
+  border-radius: 6px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+.statusBadge.valid { color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 14%, transparent); }
+.statusBadge.cooling { color: var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 16%, transparent); }
+.statusBadge.error { color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 14%, transparent); }
+.statusChecking {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+}
+/* each right-hand control fills its fixed grid cell, so its width is constant */
+.acctCellBtn { width: 100%; }
 .detailRow > .input {
   flex: 1;
   width: auto;

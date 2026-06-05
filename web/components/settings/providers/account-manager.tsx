@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Eye, EyeOff, Pencil, X } from "lucide-react";
+import { Eye, EyeOff, GripVertical, Pencil, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -13,19 +13,18 @@ import styles from "../settings-page.module.css";
 import type { Provider } from "./types";
 
 /** ONE management panel for every provider's accounts. An *account* is a profile
- *  holding one credential — a KEY for api-key providers (identity = the key), a
- *  SIGN-IN for login providers (identity = email), a Claude subscription for
- *  claude-code. Uniform everywhere: rename (hover ✎), Use (switch the active
- *  one), validate, remove, and a rotation toggle. For api-key accounts the key
- *  can be revealed, edited and updated in place. Only the ADD step branches
- *  (paste a key / sign in / paste a code). Backed by /api/providers/{id}/
- *  accounts/* (the one profile-based surface). See docs/design/
- *  unified-account-management.md (P-E). */
+ *  holding one credential. EVERY provider uses the exact same fixed-column row;
+ *  only the left content differs — api-key shows an editable KEY, login/claude
+ *  show the account EMAIL. Right-hand controls (status · Validate · active ·
+ *  Remove) are fixed-width so they never reflow. The active control is a single
+ *  toggle: it shows the STATE by default and the ACTION on hover, and "none
+ *  active" is allowed. A drag handle (≥2 accounts) sets the rotation priority.
+ *  See docs/design/unified-account-management.md / the plan file. */
 
 interface Account {
   id: string;
-  name: string;
-  identity: string;     // masked key, or email
+  name: string;        // label (api-key) or email (login)
+  identity: string;    // masked key (api-key); "" for login
   email?: string;
   kind?: string;
   status?: string;
@@ -36,7 +35,7 @@ interface Account {
 interface State {
   accounts: Account[];
   active: string;
-  pinned?: string;   // explicit pin ("" ⇒ the active one is the implicit default)
+  pinned?: string;
   rotation: boolean;
   strategy: string;
   strategies: string[];
@@ -46,40 +45,63 @@ interface State {
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const NON_ASCII = /[^\x20-\x7e]/;
 
-function badgeStyle(status: string, cooling?: boolean): React.CSSProperties {
-  const ok = status === "valid";
-  return {
-    fontSize: "0.7rem", padding: "1px 7px", borderRadius: 8, whiteSpace: "nowrap",
-    background: cooling ? "rgba(220,140,40,0.18)" : ok ? "rgba(60,180,90,0.16)" : "rgba(160,160,160,0.16)",
-    color: cooling ? "#e0a040" : ok ? "#56c06a" : "#bbb",
-  };
+function statusClass(status: string, cooling?: boolean): string {
+  if (cooling) return `${styles.statusBadge} ${styles.cooling}`;
+  if (status === "valid" || status.startsWith("valid")) return `${styles.statusBadge} ${styles.valid}`;
+  if (status === "invalid_credential" || status === "needs_reauth") return `${styles.statusBadge} ${styles.error}`;
+  return styles.statusBadge;
 }
 
-/** One account row — name (hover ✎ rename), the key (reveal/edit/update for
- *  api-key) or email, status, validate, Use/active, remove. */
+/** Active control: shows STATE by default, ACTION on hover. Fixed width. */
+function ActiveToggle({ active, onActivate, onDeactivate }: { active: boolean; onActivate: () => void; onDeactivate: () => void }) {
+  const { text } = useTranslation();
+  const [hover, setHover] = useState(false);
+  const label = active
+    ? (hover ? text("Deactivate", "取消激活") : text("Activated", "已激活"))
+    : (hover ? text("Activate", "激活") : text("Deactivated", "未激活"));
+  return (
+    <Button size="sm" className={styles.acctCellBtn}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      onClick={active ? onDeactivate : onActivate}
+      style={{ color: active ? "var(--accent-green)" : undefined }}>
+      {label}
+    </Button>
+  );
+}
+
 function AccountRow({
-  provider, account, pinned, onChanged, refresh,
+  provider, account, multi, onChanged, refresh, onDragStart, onDrop,
 }: {
   provider: string;
   account: Account;
-  pinned: string;
+  multi: boolean;
   onChanged?: () => void;
   refresh: () => void;
+  onDragStart: (id: string) => void;
+  onDrop: (id: string) => void;
 }) {
   const { text } = useTranslation();
   const base = `/api/providers/${encodeURIComponent(provider)}/accounts`;
 
   const [renaming, setRenaming] = useState(false);
   const [renameVal, setRenameVal] = useState(account.name);
-  // key field state: masked → revealed → editing (mirrors the classic widget)
   const [keyMode, setKeyMode] = useState<"masked" | "revealed" | "editing">("masked");
   const [keyVal, setKeyVal] = useState(account.identity);
   const [vres, setVres] = useState<{ status: string; detail?: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (keyMode === "masked") setKeyVal(account.identity);
-  }, [account.identity, keyMode]);
+  useEffect(() => { if (keyMode === "masked") setKeyVal(account.identity); }, [account.identity, keyMode]);
+
+  const validate = useCallback(async () => {
+    setVres({ status: "checking" });
+    try {
+      const d = await fetch(`${base}/${encodeURIComponent(account.id)}/validate`, { method: "POST" }).then((r) => r.json());
+      setVres(d.ok ? { status: d.status, detail: d.detail } : { status: "unknown", detail: d.error });
+    } catch { setVres({ status: "unknown" }); }
+  }, [base, account.id]);
+
+  // badge is a LIVE check on mount (kind-aware), never the stored status
+  useEffect(() => { void validate(); }, [validate]);
 
   async function doRename() {
     const nv = renameVal.trim();
@@ -95,8 +117,6 @@ function AccountRow({
     if (d.ok) { setKeyVal(d.value); setKeyMode("revealed"); }
   }
   function onKeyInput(v: string) {
-    // First edit while masked/revealed clears to a fresh entry (no leaking the
-    // old key into the new one); subsequent keystrokes type normally.
     if (keyMode !== "editing") { setKeyMode("editing"); setKeyVal(""); return; }
     setKeyVal(v);
   }
@@ -104,34 +124,17 @@ function AccountRow({
     const v = keyVal.trim();
     if (!v || NON_ASCII.test(v)) return;
     setBusy(true);
-    const d = await fetch(`${base}/${encodeURIComponent(account.id)}/update`, {
-      method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ api_key: v, validate: true }),
-    }).then((r) => r.json());
+    const d = await fetch(`${base}/${encodeURIComponent(account.id)}/update`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ api_key: v, validate: true }) }).then((r) => r.json());
     setBusy(false);
-    if (d.ok) { setKeyMode("masked"); setVres(d.validation || null); refresh(); onChanged?.(); }
+    if (d.ok) { setKeyMode("masked"); await refresh(); onChanged?.(); void validate(); }
     else setVres({ status: "invalid_credential", detail: d.error });
   }
   function cancelEdit() { setKeyMode("masked"); setKeyVal(account.identity); }
-  const validate = useCallback(async () => {
-    setVres({ status: "checking" });
-    try {
-      const d = await fetch(`${base}/${encodeURIComponent(account.id)}/validate`, { method: "POST" }).then((r) => r.json());
-      setVres(d.ok ? { status: d.status, detail: d.detail } : { status: "unknown", detail: d.error });
-    } catch {
-      setVres({ status: "unknown" });
-    }
-  }, [base, account.id]);
-
-  // The badge is a LIVE check, not the stored status: validate this account when
-  // it appears (kind-aware — api-key probe / oauth token check, no model call).
-  useEffect(() => { void validate(); }, [validate]);
   async function activate() {
     await fetch(`${base}/use`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: account.id }) });
     refresh();
   }
   async function deactivate() {
-    // Clear the pin → fall back to the default account (claude-code: run on the
-    // terminal login, not a pinned Claude profile).
     await fetch(`${base}/use`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: "" }) });
     refresh();
   }
@@ -141,77 +144,67 @@ function AccountRow({
   }
 
   const editing = keyMode === "editing";
-  // LIVE status only (never the stored cred.status) — "checking" until the
-  // validate that fires on mount returns.
   const status = vres?.status ?? "checking";
 
   return (
-    <div className={styles.detailRow} style={{ flexWrap: "wrap" }}>
-      {/* name + hover ✎ */}
-      {renaming ? (
-        <Input className="font-mono" style={{ width: "8rem" }} autoFocus value={renameVal}
-          onChange={(e) => setRenameVal(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenaming(false); }}
-          onBlur={doRename} />
-      ) : (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, width: "8rem", minWidth: "8rem" }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.85rem" }}>{account.name}</span>
-          <button className={`${styles.iconBtn} ${styles.hoverShow}`} title={text("Rename", "重命名")}
-            onClick={() => { setRenameVal(account.name); setRenaming(true); }} style={{ height: 18, width: 18, flexShrink: 0 }}>
-            <Pencil size={11} />
-          </button>
-        </span>
-      )}
+    <div className={styles.acctRow}
+      onDragOver={(e) => { e.preventDefault(); }}
+      onDrop={() => onDrop(account.id)}>
+      {/* drag handle (only with ≥2 accounts) */}
+      <span className={styles.dragHandle} draggable={multi}
+        onDragStart={() => onDragStart(account.id)}
+        style={{ visibility: multi ? "visible" : "hidden" }}>
+        <GripVertical size={14} />
+      </span>
 
-      {/* identity: an editable key (api-key) or the email (login) */}
-      {account.can_reveal ? (
-        <>
-          <Input className="flex-1 font-mono" style={{ minWidth: "10rem" }}
-            type={keyMode === "masked" ? "text" : "text"}
-            value={keyVal}
-            placeholder={text("paste a new key to replace", "粘贴新 key 替换")}
-            onChange={(e) => onKeyInput(e.target.value)} disabled={busy} />
-          <button className={styles.iconBtn} title={text("Show/hide", "显示/隐藏")} onClick={reveal} style={{ height: 26, width: 26 }}>
-            {keyMode === "revealed" ? <EyeOff size={15} /> : <Eye size={15} />}
-          </button>
-          {editing ? (
-            <>
-              <Button size="sm" onClick={update} disabled={busy || !keyVal.trim()}>{text("Update", "更新")}</Button>
-              <button className={styles.iconBtn} title={text("Cancel", "取消")} onClick={cancelEdit} style={{ height: 26, width: 26 }}><X size={14} /></button>
-            </>
-          ) : (
-            <button className={styles.iconBtn} title={text("Validate this key", "验证这个 key")} onClick={validate} disabled={busy} style={{ height: 26, width: 26 }}>
-              <Check size={15} />
+      {/* content: name (+✎) and, for api-key, the editable key */}
+      <div className={styles.acctContent}>
+        {renaming ? (
+          <Input className="font-mono" style={{ width: "9rem" }} autoFocus value={renameVal}
+            onChange={(e) => setRenameVal(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenaming(false); }}
+            onBlur={doRename} />
+        ) : (
+          <span className={styles.acctName}>
+            <span className={styles.acctNameText}>{account.name}</span>
+            <button className={`${styles.iconBtn} ${styles.hoverShow}`} title={text("Rename", "重命名")}
+              onClick={() => { setRenameVal(account.name); setRenaming(true); }} style={{ height: 18, width: 18, flexShrink: 0 }}>
+              <Pencil size={11} />
             </button>
-          )}
-        </>
-      ) : (
-        <span style={{ flex: 1, fontFamily: "monospace", fontSize: "0.8rem", opacity: account.identity ? 0.85 : 0.5, minWidth: "8rem" }}>
-          {account.identity || text("signed in", "已登录")}
-        </span>
-      )}
+          </span>
+        )}
 
-      {status && status !== "checking" && (
-        <span title={vres?.detail || status} style={badgeStyle(status, account.cooling)}>
-          {account.cooling ? text("cooling", "冷却中") : status}
-        </span>
-      )}
-      {status === "checking" && <span style={{ fontSize: "0.7rem", opacity: 0.6 }}>{text("checking…", "验证中…")}</span>}
+        {account.can_reveal && !renaming && (
+          <span className={styles.acctKey}>
+            <Input className="flex-1 font-mono" value={keyVal}
+              placeholder={text("paste a new key to replace", "粘贴新 key 替换")}
+              onChange={(e) => onKeyInput(e.target.value)} disabled={busy} />
+            <button className={styles.iconBtn} title={text("Show / hide", "显示 / 隐藏")} onClick={reveal}>
+              {keyMode === "revealed" ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+            {editing && (
+              <>
+                <Button size="sm" onClick={update} disabled={busy || !keyVal.trim()}>{text("Update", "更新")}</Button>
+                <button className={styles.iconBtn} title={text("Cancel", "取消")} onClick={cancelEdit}><X size={14} /></button>
+              </>
+            )}
+          </span>
+        )}
+      </div>
 
-      {account.is_active ? (
-        <>
-          <span style={{ fontSize: "0.72rem", color: "#56c06a", padding: "0 2px" }}>{text("active", "当前")}</span>
-          {/* Deactivate only when this account is an explicit pin to a NON-default
-              account — clearing it falls back to the default. The default account
-              (or an implicit-default active) has nothing to fall back to. */}
-          {pinned === account.id && account.id !== "default" && (
-            <Button size="sm" onClick={deactivate}>{text("Deactivate", "取消")}</Button>
-          )}
-        </>
-      ) : (
-        <Button size="sm" onClick={activate}>{text("Activate", "激活")}</Button>
-      )}
-      <Button size="sm" onClick={remove}>{text("Remove", "删除")}</Button>
+      {/* status (live) */}
+      {status === "checking"
+        ? <span className={styles.statusChecking}>{text("checking…", "验证中")}</span>
+        : <span className={statusClass(status, account.cooling)} title={vres?.detail || status}>{account.cooling ? text("cooling", "冷却中") : status}</span>}
+
+      {/* Validate — text button, every row */}
+      <Button size="sm" className={styles.acctCellBtn} onClick={validate}>{text("Validate", "验证")}</Button>
+
+      {/* active toggle (state / hover-action, fixed width) */}
+      <ActiveToggle active={account.is_active} onActivate={activate} onDeactivate={deactivate} />
+
+      {/* Remove */}
+      <Button size="sm" className={styles.acctCellBtn} onClick={remove}>{text("Remove", "删除")}</Button>
     </div>
   );
 }
@@ -226,14 +219,13 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  // code_paste add (claude-code)
+  const [dragId, setDragId] = useState<string | null>(null);
   const [pending, setPending] = useState<{ session: string; url?: string } | null>(null);
   const [code, setCode] = useState("");
 
   const load = useCallback(async () => {
     try {
       let d = (await fetch(base).then((r) => r.json())) as State;
-      // migrate a key set the old way (env var / config) into the list
       if ((d.accounts?.length ?? 0) === 0 && d.add_mode === "api_key" && provider.api_key_env) {
         try {
           const cfg = await fetch(`/api/config/key/${encodeURIComponent(provider.api_key_env)}?reveal=1`).then((r) => r.json());
@@ -248,6 +240,17 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
   }, [base, provider.api_key_env]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function reorder(targetId: string) {
+    if (!state || !dragId || dragId === targetId) { setDragId(null); return; }
+    const ids = state.accounts.map((a) => a.id);
+    const from = ids.indexOf(dragId), to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) { setDragId(null); return; }
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    setDragId(null);
+    await fetch(`${base}/reorder`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ order: ids }) });
+    await load();
+  }
 
   async function addKey() {
     const key = newKey.trim();
@@ -266,13 +269,6 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
     await fetch(`${base}/rotation`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ enabled: true, strategy }) });
     await load();
   }
-  async function validateAll() {
-    setMsg(text("Validating all…", "正在验证全部…"));
-    await fetch(`${base}/validate-all`, { method: "POST" });
-    setMsg("");
-    await load();
-  }
-  // code_paste add
   async function startCodeAdd() {
     setBusy(true); setMsg("");
     const d = await fetch(`${base}/add`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: newName.trim() }) }).then((r) => r.json());
@@ -292,26 +288,21 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
   if (!state) return null;
   const accounts = state.accounts || [];
   const multi = accounts.length > 1;
-  const anyKeys = accounts.some((a) => a.can_reveal);
 
   return (
     <div className={styles.detailSection}>
       <div className={styles.detailSectionTitle}>
         <span>{state.add_mode === "api_key" ? text("API keys", "API 密钥") : text(`${provider.label} accounts`, `${provider.label} 账号`)}</span>
-        <span className={styles.modelCountSummary}>
-          {accounts.length === 0 ? text("Not set", "未设置")
-            : state.active ? text(`active: ${state.active}`, `当前：${state.active}`) : text(`${accounts.length}`, `${accounts.length}`)}
-        </span>
       </div>
 
-      {/* rotation toggle (>1 account) */}
+      {/* rotation toggle (≥2 accounts) */}
       {multi && state.add_mode !== "code_paste" && (
         <div className={styles.detailRow} style={{ alignItems: "center" }}>
           <Switch checked={state.rotation} onCheckedChange={toggleRotation} />
           <span style={{ fontSize: "0.82rem", flex: 1 }}>{text("Rotate across accounts automatically", "在多个账号之间自动轮询")}</span>
           {state.rotation && (
             <select value={state.strategy} onChange={(e) => setStrategy(e.target.value)}
-              style={{ background: "var(--input-bg, #1a1a1a)", color: "var(--text, #ddd)", border: "1px solid var(--border, #333)", borderRadius: 6, padding: "3px 8px", fontSize: "0.78rem" }}>
+              style={{ background: "var(--bg-input)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 8px", fontSize: "0.78rem" }}>
               <option value="fill_first">{text("in order (failover)", "按顺序（容错）")}</option>
               <option value="round_robin">{text("spread evenly", "均匀轮询")}</option>
               <option value="random">{text("random", "随机")}</option>
@@ -322,14 +313,16 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
       )}
 
       {accounts.map((a) => (
-        <AccountRow key={a.id} provider={pid} account={a} pinned={state.pinned || ""} onChanged={onChanged} refresh={load} />
+        <AccountRow key={a.id} provider={pid} account={a} multi={multi}
+          onChanged={onChanged} refresh={load}
+          onDragStart={setDragId} onDrop={reorder} />
       ))}
 
       {/* add */}
       {state.add_mode === "api_key" && (
         <div className={styles.detailRow}>
           {accounts.length > 0 && (
-            <Input className="font-mono" style={{ width: "8rem" }} placeholder={text("name (optional)", "名称（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy} />
+            <Input className="font-mono" style={{ width: "8rem" }} placeholder={text("name (optional)", "名字（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy} />
           )}
           <Input className="flex-1 font-mono" type="password"
             placeholder={accounts.length === 0 ? text("paste your API key", "粘贴你的 API key") : text("add another account (paste a key)", "添加账号（粘贴一个 key）")}
@@ -338,16 +331,9 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
         </div>
       )}
       {state.add_mode === "login" && (
-        <ProviderLogin
-          provider={provider}
-          profileId={newName.trim() || undefined}
-          bare
-          leadingInput={
-            <Input className="flex-1 font-mono" placeholder={text("name (optional)", "名称（可选）")}
-              value={newName} onChange={(e) => setNewName(e.target.value)} />
-          }
-          onChanged={() => { setNewName(""); load(); }}
-        />
+        <ProviderLogin provider={provider} profileId={newName.trim() || undefined} bare
+          leadingInput={<Input className="flex-1 font-mono" placeholder={text("name (optional)", "名字（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} />}
+          onChanged={() => { setNewName(""); load(); }} />
       )}
       {state.add_mode === "code_paste" && (
         !pending ? (
@@ -364,17 +350,12 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
         )
       )}
 
-      <div className={styles.detailRow} style={{ marginTop: 2 }}>
-        <span style={{ flex: 1, fontSize: "0.72rem", opacity: 0.55, lineHeight: 1.5 }}>
-          {state.add_mode === "api_key"
-            ? (multi
-                ? text("Each key is an account — name it, Use to switch, ✎ to rename, the eye to reveal/edit. Turn on rotation to fail over on rate limits.", "每个 key 是一个账号 —— 起名、点“使用”切换、✎ 改名、眼睛查看/编辑。打开轮询可在限流时自动切换。")
-                : text("Add more keys as accounts to switch between them or rotate on rate limits. The eye reveals or edits the key.", "添加多个 key 作为账号即可切换或限流时轮询。眼睛可查看/编辑 key。"))
-            : text("Each account is a separate sign-in. Use to switch which the framework runs on.", "每个账号是一次独立登录。点“使用”切换框架跑哪个。")}
-        </span>
-        {anyKeys && multi && (
-          <Button size="sm" onClick={validateAll}>{text("Validate all", "验证全部")}</Button>
-        )}
+      <div style={{ fontSize: "0.72rem", opacity: 0.55, marginTop: "0.2rem", lineHeight: 1.5 }}>
+        {state.add_mode === "api_key"
+          ? (multi
+              ? text("Drag ⠿ to set rotation order. Each key is an account — Activate to use it, the eye reveals / edits it, Validate checks it.", "拖 ⠿ 调轮询顺序。每个 key 是一个账号 —— Activate 切换使用,眼睛查看/编辑,Validate 验证。")
+              : text("Add more keys as accounts to switch between them or rotate on rate limits. The eye reveals / edits the key.", "添加多个 key 作为账号即可切换或限流时轮询。眼睛可查看/编辑 key。"))
+          : text("Each account is a separate sign-in. Activate to switch which the framework runs on.", "每个账号是一次独立登录。Activate 切换框架跑哪个。")}
       </div>
 
       {msg && <div style={{ fontSize: "0.75rem", opacity: 0.75, marginTop: "0.2rem" }}>{msg}</div>}

@@ -100,7 +100,9 @@ def _pick_account(provider_id: str, pools: list, strategy: str):
         return None
     import time as _t
     now = int(_t.time() * 1000)
-    pools = sorted(pools, key=lambda p: (p.profile_id != "default", p.profile_id))
+    from .order import sort_key
+    _k = sort_key(provider_id)             # the user's drag order is the priority
+    pools = sorted(pools, key=lambda p: _k(p.profile_id))
     healthy = [p for p in pools if _account_healthy(p, now)]
     candidates = healthy or pools  # all cooling → use one anyway (better than nothing)
     if strategy == "round_robin":

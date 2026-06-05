@@ -91,25 +91,51 @@ def _validate_account(provider: str, name: str) -> dict:
     return {"status": getattr(cred, "status", "unknown")}
 
 
-def _account_record(pool, active_profile: str) -> dict:
-    """One ACCOUNT = one profile (holding one credential). Reports a uniform
-    shape for every provider: the account's id/name (the profile), its identity
-    (a masked key for api-key accounts, an email for OAuth ones), health, whether
-    it's the active one, and whether its key can be revealed. Never includes the
-    secret itself."""
-    cred = _primary_cred(pool)
+def _oauth_email(cred) -> str:
+    """Best email for a login account: metadata first, else decode the OIDC
+    id_token (codex / gemini carry one with an `email` claim) so EXISTING
+    accounts show the email with no re-login."""
     meta = (getattr(cred, "metadata", None) or {}) if cred else {}
     email = meta.get("email") or meta.get("account") or ""
+    if email:
+        return email
+    idt = getattr(getattr(cred, "payload", None), "id_token", "") or ""
+    if idt:
+        try:
+            from openprogram.providers.openai_codex.auth_adapter import _decode_jwt_payload
+            return (_decode_jwt_payload(idt) or {}).get("email", "") or ""
+        except Exception:
+            pass
+    return ""
+
+
+def _account_record(pool, pinned: str) -> dict:
+    """One ACCOUNT = one profile (holding one credential). Uniform shape for every
+    provider. api-key: name = the profile label, the editable key is the
+    `identity` (shown in the key column). login: name = the account EMAIL (no
+    separate identity column — the email IS the identity). `is_active` is the
+    EXPLICIT pin, so "no account active" is representable. Never the secret."""
+    cred = _primary_cred(pool)
     kind = getattr(cred, "kind", "") if cred else ""
-    identity = _masked(_api_key_of(cred)) if kind == "api_key" else email
+    profile = pool.profile_id
+    if kind == "api_key":
+        name = profile
+        identity = _masked(_api_key_of(cred))
+        email = ""
+    else:
+        email = _oauth_email(cred)
+        # Show the email as the name for an un-renamed account; a custom rename
+        # (profile != "default") wins. No separate identity column.
+        name = email if (email and profile == "default") else profile
+        identity = ""
     return {
-        "id": pool.profile_id,
-        "name": pool.profile_id,
+        "id": profile,
+        "name": name,
         "identity": identity,
         "email": email,
         "kind": kind,
         "status": getattr(cred, "status", "") if cred else "empty",
-        "is_active": pool.profile_id == active_profile,
+        "is_active": profile == pinned,
         "can_reveal": kind == "api_key",
         "cooling": _cooling(cred) if cred else False,
     }
@@ -133,14 +159,16 @@ def _generic_summary(provider: str) -> dict:
     from openprogram.auth.store import get_store
     from openprogram.auth.active import get_active_profile, get_active_pin
     from openprogram.auth.rotation import get_rotation, STRATEGIES
+    from openprogram.auth.order import sort_key
     from openprogram.auth.login_methods import login_methods, default_method
 
     store = get_store()
     active = get_active_profile(provider)  # effective: pin, else "default"
-    pinned = get_active_pin(provider)      # explicit pin only ("" ⇒ implicit default)
+    pinned = get_active_pin(provider)      # explicit pin only ("" ⇒ none active)
     pools = [p for p in store.list_pools() if p.provider_id == provider]
-    pools.sort(key=lambda p: (p.profile_id != "default", p.profile_id))
-    accounts = [_account_record(p, active) for p in pools]
+    _k = sort_key(provider)                # honour the user's drag order
+    pools.sort(key=lambda p: _k(p.profile_id))
+    accounts = [_account_record(p, pinned) for p in pools]
     rot = get_rotation(provider)
     has_key = bool(_api_key_env(provider))
     methods = [{"id": mid, "label": label} for mid, label in login_methods(provider)]
@@ -374,6 +402,15 @@ def register(app):
         b = body or {}
         res = set_rotation(provider, enabled=bool(b.get("enabled")), strategy=(b.get("strategy") or ""))
         return JSONResponse(content={"ok": True, **res})
+
+    @app.post("/api/providers/{provider}/accounts/reorder")
+    def api_accounts_reorder(provider: str, body: dict = None):
+        """Set the account order (drag) — the priority requests try them in when
+        rotation is on. Body: ``{order: [account_id, …]}``."""
+        from openprogram.auth.order import set_order
+        order = (body or {}).get("order") or []
+        set_order(provider, order)
+        return JSONResponse(content={"ok": True, "order": [str(x) for x in order]})
 
     @app.post("/api/providers/{provider}/accounts/{name}/retry")
     def api_account_retry(provider: str, name: str):
