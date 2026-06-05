@@ -96,3 +96,17 @@ async def _run_device_code(provider: str, profile: str, ui: LoginUi) -> Credenti
         profile_id=profile,
         expires_at_ms=getattr(creds, "expires", 0) or 0,
     )
+
+
+def persist(cred: Credential) -> list[str]:
+    """Save a freshly-obtained credential to the store and retire superseded
+    OAuth siblings — exactly what the CLI does after a login. Returns the pruned
+    credential_ids. Shared so web and TUI store logins identically to the CLI."""
+    from .store import get_store
+    from .cli import _prune_superseded_oauth
+    store = get_store()
+    store.add_credential(cred)
+    try:
+        return _prune_superseded_oauth(store, cred)
+    except Exception:
+        return []

@@ -1290,6 +1290,9 @@ def create_app():
     from openprogram.webui.routes import providers as _routes_providers
     _routes_providers.register(app)
 
+    from openprogram.webui.routes import provider_login as _routes_provider_login
+    _routes_provider_login.register(app)
+
     # /api/config GET/POST registered from routes.config
     from openprogram.webui.routes import config as _routes_config
     _routes_config.register(app)
