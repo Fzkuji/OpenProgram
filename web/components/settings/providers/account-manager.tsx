@@ -348,7 +348,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
       )}
 
       <Reorder.Group axis="y" values={items} onReorder={onReorder}
-        className="flex flex-col gap-[10px] m-0 p-0 list-none">
+        className="flex flex-col gap-[2px] m-0 p-0 list-none">
         {items.map((a) => (
           <AccountRow key={a.id} provider={pid} account={a} multi={multi}
             onChanged={onChanged} refresh={load} onCommit={commitOrder} />

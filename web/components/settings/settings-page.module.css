@@ -641,7 +641,18 @@
   grid-template-columns: 16px minmax(0, 1fr) 66px 88px 88px 88px;
   align-items: center;
   gap: 8px;
+  /* Vertical padding only: the picked-up row's grey background (whileDrag)
+     reads as ONE rounded block that's a touch taller than the controls, so
+     it encloses the whole row instead of hugging the text. No horizontal
+     padding / margin, so the block's left+right edges line up with the rest
+     of the panel's content (the add-key row, the API-base input, the section
+     title) — same side margin as everything else, not jutting out. */
+  padding: 5px 0;
+  /* A drag must not turn into a text selection of the name / key / labels. */
+  user-select: none;
 }
+/* …but the key field is still a real input you can select inside. */
+.acctRow input { user-select: text; }
 .acctContent {
   display: flex;
   align-items: center;
