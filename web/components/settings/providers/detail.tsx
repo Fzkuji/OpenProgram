@@ -9,6 +9,7 @@ import { ProviderIcon } from "../provider-icon";
 
 import { ApiKey } from "./api-key";
 import { BaseUrl } from "./base-url";
+import { PoolControls } from "./pool-controls";
 import { ProviderAccounts } from "./provider-accounts";
 import { ProviderLogin } from "./provider-login";
 import { Connectivity, type ConnectivityHandle } from "./connectivity";
@@ -152,6 +153,12 @@ export function Detail({
       )}
       {provider.api_key_env && provider.id !== "claude-code" && (
         <BaseUrl provider={provider} onChanged={onChanged} />
+      )}
+      {/* Multi-key rotation for plain api-key providers: a pool of keys (on top
+          of the single env key above) that rotates on rate limits. Pool keys
+          take precedence over the env key when present. */}
+      {provider.api_key_env && provider.id !== "claude-code" && (
+        <PoolControls providerId={provider.id} />
       )}
       {/* Unified multi-account panel (list / add / activate / rename / remove).
           claude-code (Meridian-backed, code-paste add) and the login-only
