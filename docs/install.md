@@ -18,10 +18,10 @@ A program dropped into `functions/agentics/` is **auto-registered** at launch
 list with no extra wiring. Install order is therefore always: **OpenProgram
 first, then the program(s).**
 
-> ⚠️ `pip install openprogram` installs only the Python package — it does **not**
+> ⚠️ Installing just the Python package is **not** the whole job — it doesn't
 > build the web UI (needs `npm`), fetch the GUI agent's model weight, or warm the
-> OCR models. **The install script below is the source of truth** — it does the
-> whole job. Treat plain `pip install` as "part of the install", not all of it.
+> OCR models. **The install script below is the source of truth** — it does
+> everything.
 
 ---
 

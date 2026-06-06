@@ -67,8 +67,8 @@ before raising an issue.
 
 ## `python -m openprogram._meta agentics_dir` returns nothing
 
-The package isn't installed in the active Python. Either
-`pip install openprogram` or activate the venv where it is
+The package isn't installed in the active Python. Either run the installer
+(clone OpenProgram + `./scripts/install.sh`) or activate the venv where it is
 installed.
 
 ## CI says "tests pass" but Mac runs differently

@@ -147,9 +147,10 @@ openprogram` — the core stays light and the heavy program is opt-in.
 
 ## Platform notes
 
-- **Base install is one step, every OS:** `pip install openprogram`, then
-  the `openprogram` command works. Harnesses are the only thing installed
-  separately, and only when wanted.
+- **Base install is one command, every OS:** clone OpenProgram and run
+  `./scripts/install.sh` (Windows: `.\scripts\install.ps1`). `research` / `wiki`
+  are the only things installed separately, and only when wanted (the GUI agent
+  installs by default).
 - **No symlinks needed** — cloning a real directory into `<AGENTICS>` is
   the supported path, so there's no Windows admin/developer-mode hurdle.
 - **A harness can still be platform-specific in its own code** (e.g. a

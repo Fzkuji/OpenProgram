@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed — installer & first-run UX
+- The installer sets up the **GUI agent by default** (no `--gui` flag); pass `--no-gui` / `-NoGui` to skip it (host-only, e.g. research/wiki without the ~2 GB torch stack).
+- PyTorch defaults to the **CPU build** (no flag); `--cuda` takes **your own** CUDA tag (e.g. `cu124`) instead of being presented as pinned to `cu121`.
+- A bare **`openprogram` first run auto-launches the setup wizard** when no provider is configured, then opens the chat — no separate `openprogram setup` step. Skipped for `--print` / `--resume` and when already configured.
+- Onboarding docs (README / GETTING_STARTED / README_CN / install.md, EN + 中文) lead with the one-command installer; dropped `pip install openprogram` from the onboarding paths.
+
 ## [0.5.0] - 2026-06-07
 
 ### Added — One-command install (all platforms)
