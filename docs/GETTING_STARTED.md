@@ -10,13 +10,16 @@
 
 ### Step 1: Install
 
+The one-command installer sets up everything — Python package + web UI + terminal UI, and (with `--gui`) the GUI agent plus its model weight and OCR:
+
 ```bash
-pip install openprogram                             # core (~10 MB, pure Python)
-# or, from source:
-git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram && pip install -e .
+git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
+./scripts/install.sh --gui        # macOS/Linux   ·   Windows:  .\scripts\install.ps1 -Gui
 ```
 
-Requires Python ≥ 3.11. Heavy features (web UI, browser, GUI harness) are opt-in — see [README → Optional extras](../README.md#optional-extras).
+Requires Python ≥ 3.11, Node ≥ 20, git. Full dependency matrix and flags: [docs/install.md](install.md).
+
+> Just the Python core (TUI / API)? `pip install openprogram` works — but it won't build the web UI (needs `npm`) or fetch the GUI agent's weight/OCR.
 
 ### Step 2: Connect a provider
 
@@ -306,14 +309,16 @@ def my_function(param):
 
 ### 第 1 步：安装
 
-```bash
-# 克隆仓库
-git clone https://github.com/Fzkuji/OpenProgram.git
-cd OpenProgram
+一条命令装齐——Python 包 + 网页 UI + 终端 UI，加 `--gui` 还会装上 GUI agent 及其模型权重/OCR：
 
-# 安装（核心零依赖）
-pip install -e .
+```bash
+git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
+./scripts/install.sh --gui        # macOS/Linux   ·   Windows:  .\scripts\install.ps1 -Gui
 ```
+
+需要 Python ≥ 3.11、Node ≥ 20、git。完整依赖矩阵与参数见 [docs/install.md](install.md)。
+
+> 只要 Python 核心（终端 / API）？`pip install openprogram` 即可——但不会构建网页 UI，也不会下载 GUI 权重/OCR。
 
 ### 第 2 步：写你的第一个 Agentic Function
 

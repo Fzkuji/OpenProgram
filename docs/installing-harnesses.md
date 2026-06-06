@@ -136,6 +136,15 @@ openprogram programs install <name> --upgrade   # git pull the clone
 and is the reason these aren't bundled into the base `pip install
 openprogram` — the core stays light and the heavy program is opt-in.
 
+> **GUI agent — one extra step.** Beyond its pip deps, `gui_agent` needs a
+> YOLO detector weight + OCR models that aren't on PyPI. After
+> `openprogram programs install gui`, run the harness's own installer to
+> fetch them (it skips the host since you already have it):
+> `openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --no-host`
+> (Windows: `…\scripts\install.ps1 -NoHost`). Or just use the top-level
+> `./scripts/install.sh --gui`, which does all of it. See the
+> [GUI install guide](../openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md).
+
 ## Platform notes
 
 - **Base install is one step, every OS:** `pip install openprogram`, then

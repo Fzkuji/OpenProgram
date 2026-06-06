@@ -48,14 +48,29 @@
 
 ### 1. Install
 
+Clone the repo wherever you want OpenProgram to live, then run the one-command installer. It sets up **everything** — the Python package, the web UI, the terminal UI, and (with `--gui`) the GUI agent plus its model weight and OCR.
+
+**macOS / Linux**
 ```bash
-pip install openprogram                             # TUI + web UI in one wheel
-openprogram setup                                   # interactive provider wizard
+git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
+./scripts/install.sh --gui          # omit --gui for host only · --cuda cu121 for an NVIDIA GPU
 ```
 
-`setup` adopts any CLI you're already logged into (Claude Code / Codex / Gemini) and prompts for API keys otherwise. On exit the worker is live — web UI on `:18100`, API on `:18109`.
+**Windows (PowerShell)**
+```powershell
+git clone https://github.com/Fzkuji/OpenProgram; cd OpenProgram
+.\scripts\install.ps1 -Gui          # omit -Gui for host only · -Cuda cu121 for an NVIDIA GPU
+```
 
-> `pip install` is only **part** of the install — it doesn't build the web UI (needs `npm`) or set up the GUI agent's weights/OCR. **For a complete, one-command setup, install from source** (the script is the source of truth): clone this repo and run `./scripts/install.sh --gui` (macOS/Linux) or `.\scripts\install.ps1 -Gui` (Windows). It installs the host + web UI + the GUI program (into `functions/agentics/`, auto-registered). Full matrix and flags: **[docs/install.md](docs/install.md)**.
+Then connect a provider — the worker comes up with the web UI on `:18100`, API on `:18109`:
+
+```bash
+openprogram setup                   # wizard: adopts a logged-in CLI (Claude Code / Codex / Gemini), or takes an API key
+```
+
+Full dependency matrix, flags, and per-OS notes: **[docs/install.md](docs/install.md)**.
+
+> **Just the Python core?** `pip install openprogram` is enough for the **TUI / API**, but it does **not** build the web UI (needs `npm`) or fetch the GUI agent's weight + OCR models. Use the installer above for the complete setup.
 
 <details>
 <summary><b>Prefer to skip the wizard?</b></summary>
@@ -90,15 +105,15 @@ Just ask the agent in chat — *"create an @agentic_function that summarises a P
 
 ### 4. Add the harness suite (optional)
 
-Three sibling harnesses run as **OpenProgram programs** (inside this install). Add one by name:
+Three sibling harnesses run as **OpenProgram programs** — they install *into* your OpenProgram checkout and are auto-discovered. (If you ran `./scripts/install.sh --gui` in step 1, the **GUI agent is already installed** — this section is for adding `research` / `wiki`, or for a host you got via `pip`.)
 
 ```bash
 openprogram programs install research    # or: gui / wiki
 ```
 
-It clones into `functions/agentics/`, pip-installs that harness's own deps, and auto-registers on the next worker restart (or hit **Refresh** on the Functions page). No symlinks — identical on Windows. Any third-party harness works the same: [docs/installing-harnesses.md](docs/installing-harnesses.md).
+Each harness clones into **`openprogram/functions/agentics/<Harness-Name>/`** (inside your OpenProgram install), pip-installs its own deps, and **auto-registers** on the next worker restart (or hit **Refresh** on the Functions page) — so it appears in the web UI with no extra wiring. Identical on every OS. Details: [docs/installing-harnesses.md](docs/installing-harnesses.md).
 
-> The **GUI** agent also needs a YOLO detector weight + OCR models (not pulled by `pip`). The one-command source install `./scripts/install.sh --gui` sets these up for you; to do it on an existing install, run the harness's own [`scripts/install.*`](functions/agentics/GUI-Agent-Harness/scripts) — see [its install guide](functions/agentics/GUI-Agent-Harness/docs/install.md).
+> The **GUI** agent additionally needs a YOLO detector weight + OCR models that `pip` can't fetch. `./scripts/install.sh --gui` sets them up; on a `programs install`-ed host, finish them by running the harness's own installer — see **[the GUI install guide](openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md)**.
 
 | Harness | What it does | Track record |
 |---|---|---|
