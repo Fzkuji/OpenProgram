@@ -64,46 +64,23 @@ git clone https://github.com/Fzkuji/OpenProgram; cd OpenProgram
 
 That's it. NVIDIA GPU? add `--cuda cu124` (use your own CUDA tag). Don't want the GUI agent? add `--no-gui`.
 
-Then just start it — **the first run walks you through provider setup**, then opens the chat (web UI on `:18100`, API on `:18109`):
+Then just start it — **the first run walks you through provider setup**, then opens the chat. Three surfaces share one backend (`~/.openprogram/`), so a terminal session shows up in the browser and vice versa:
 
 ```bash
-openprogram
+openprogram                                # terminal UI — first run = guided setup, then chat
+openprogram web                            # browser UI  -> http://localhost:18100
+openprogram --print "summarise this file"  # one-shot, no UI
 ```
+
+The web UI adds the mini-DAG, branch / merge, multi-agent, and attachments; the terminal UI auto-picks Ink (macOS/Linux) or Rich (Windows).
 
 Full dependency matrix, flags, and per-OS notes: **[docs/install.md](docs/install.md)**.
 
-<details>
-<summary><b>Prefer to skip the wizard?</b></summary>
-
-Set a key instead — or log into a CLI provider (`claude` / `codex` / `gemini`) and `openprogram setup` adopts it:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...    # Claude
-export OPENAI_API_KEY=sk-...           # GPT
-export GOOGLE_API_KEY=...              # Gemini
-```
-
-Check with `openprogram providers`. Priority: **Claude Code → Codex → Gemini CLI → Anthropic → OpenAI → Gemini**.
-
-**Multiple accounts per provider** are first-class: add several (each is a named profile), pick which one a provider runs on with `openprogram providers use <provider> [profile]`, and manage them from the same panel in the CLI, web (Settings → Providers), or TUI (`/login <provider>`). Add **multiple API keys** to one account and OpenProgram rotates across them — a rate-limited key cools down and the next takes over automatically. See [docs/features.md](docs/features.md#multi-account--key-rotation).
-
-</details>
-
-### 2. Chat — pick a surface
-
-```bash
-openprogram                                         # terminal UI (default)
-openprogram web                                     # browser UI
-openprogram --print "summarise this file"           # one-shot, no UI
-```
-
-One backend (`~/.openprogram/`) behind both — a terminal session shows up in the browser and vice versa. The web UI adds the mini-DAG, branch / merge, multi-agent, and attachments; the terminal UI auto-picks Ink (macOS/Linux) or Rich (Windows).
-
-### 3. Write your own functions
+### 2. Write your own functions
 
 Just ask the agent in chat — *"create an @agentic_function that summarises a PDF"* — and the bundled [`agentic-programming` skill](skills/agentic-programming/SKILL.md) handles location, decorator, smoke test, and validation.
 
-### 4. Add the harness suite (optional)
+### 3. Add the harness suite (optional)
 
 Three sibling harnesses run as **OpenProgram programs** — they install *into* your OpenProgram checkout and are auto-discovered. (The installer in step 1 already set up the **GUI agent** by default — this section is for adding `research` / `wiki`, or for a host where you skipped it with `--no-gui`.)
 
