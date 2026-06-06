@@ -10,26 +10,20 @@
 
 ### Step 1: Install
 
-The one-command installer sets up everything — Python package + web UI + terminal UI, and (with `--gui`) the GUI agent plus its model weight and OCR:
+The one-command installer sets up everything — Python package + web UI + terminal UI + the GUI agent (with its model weight and OCR):
 
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
-./scripts/install.sh --gui        # macOS/Linux   ·   Windows:  .\scripts\install.ps1 -Gui
+./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-Requires Python ≥ 3.11, Node ≥ 20, git. Full dependency matrix and flags: [docs/install.md](install.md).
-
-> Just the Python core (TUI / API)? `pip install openprogram` works — but it won't build the web UI (needs `npm`) or fetch the GUI agent's weight/OCR.
+Requires Python ≥ 3.11, Node ≥ 20, git. NVIDIA GPU? add `--cuda cu124` (your own CUDA tag). Host only (skip the GUI agent)? add `--no-gui`. Full dependency matrix and flags: [docs/install.md](install.md).
 
 ### Step 2: Connect a provider
 
-The interactive wizard imports credentials from any CLI you've already logged into (Claude Code / Codex / Gemini CLI) and asks for missing API keys:
+No separate command needed — **the first time you run `openprogram`, it walks you through provider setup** (importing credentials from a logged-in Claude Code / Codex / Gemini CLI, or asking for an API key), then opens the chat. Re-run it any time with `openprogram setup`.
 
-```bash
-openprogram setup
-```
-
-Or set one of these manually and skip the wizard:
+Or set a key manually and skip the wizard:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...                 # Claude
@@ -309,16 +303,14 @@ def my_function(param):
 
 ### 第 1 步：安装
 
-一条命令装齐——Python 包 + 网页 UI + 终端 UI，加 `--gui` 还会装上 GUI agent 及其模型权重/OCR：
+一条命令装齐——Python 包 + 网页 UI + 终端 UI + GUI agent（含模型权重/OCR）：
 
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
-./scripts/install.sh --gui        # macOS/Linux   ·   Windows:  .\scripts\install.ps1 -Gui
+./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-需要 Python ≥ 3.11、Node ≥ 20、git。完整依赖矩阵与参数见 [docs/install.md](install.md)。
-
-> 只要 Python 核心（终端 / API）？`pip install openprogram` 即可——但不会构建网页 UI，也不会下载 GUI 权重/OCR。
+需要 Python ≥ 3.11、Node ≥ 20、git。有 N 卡？加 `--cuda cu124`（填你自己的 CUDA 版本）。只要 host、不装 GUI？加 `--no-gui`。完整依赖矩阵与参数见 [docs/install.md](install.md)。
 
 ### 第 2 步：写你的第一个 Agentic Function
 

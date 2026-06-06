@@ -48,24 +48,21 @@ OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：
 
 安装包后直接编码：
 
-完整一键安装（推荐——含网页 UI 构建，加 `--gui` 还会装 GUI agent 及其权重/OCR）：
+完整一键安装（含网页 UI 构建 + GUI agent 及其权重/OCR）：
 
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
-./scripts/install.sh --gui        # macOS/Linux   ·   Windows:  .\scripts\install.ps1 -Gui
+./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-只要 Python 核心（终端 / API）也可以 `pip install openprogram`——但**不会**构建网页 UI（需要 `npm`），也不下载 GUI 权重/OCR。provider SDK（anthropic / openai / google-genai）默认已装好。
+有 N 卡？加 `--cuda cu124`（填你自己的 CUDA 版本）。只要 host、不装 GUI？加 `--no-gui`。provider SDK（anthropic / openai / google-genai）默认已装好。
 
-GUI / Research / Wiki 作为 **OpenProgram 程序** 安装进
-`openprogram/functions/agentics/<Harness>/` 并**自动注册**（装好后即出现在网页 UI）：
+Research / Wiki 作为 **OpenProgram 程序** 安装进
+`openprogram/functions/agentics/<Harness>/` 并**自动注册**（装好后即出现在网页 UI；GUI agent 上面已默认装好）：
 
 ```bash
-openprogram programs install gui          # 克隆 GUI-Agent-Harness 并装其依赖
-openprogram programs install research
+openprogram programs install research      # 或 wiki
 ```
-
-> GUI agent 还需要 YOLO 检测权重 + OCR 模型（不在 PyPI 上）。上面的 `./scripts/install.sh --gui` 会一并装好；在已有 host 上则运行 harness 自带安装器补齐。详见 [GUI 安装指南](../openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md)。
 
 ```python
 from openprogram import agentic_function

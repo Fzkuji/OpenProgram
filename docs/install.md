@@ -27,28 +27,29 @@ first, then the program(s).**
 
 ## One command (recommended)
 
-Clone the host wherever you want it to live, then run the installer. `--gui`
-also installs the GUI agent program into `functions/agentics/` and finishes its
-setup (PyTorch, YOLO weight, OCR).
+Clone the host wherever you want it to live, then run the installer. By default
+it installs **everything**, including the GUI agent program into
+`functions/agentics/` (PyTorch, YOLO weight, OCR). Add `--no-gui` to skip it.
 
 **macOS / Linux**
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram
 cd OpenProgram
-./scripts/install.sh --gui            # drop --gui for host only; --cuda cu121 for NVIDIA
+./scripts/install.sh                  # NVIDIA GPU: --cuda cu124 (your tag) · host only: --no-gui
 ```
 
 **Windows (PowerShell)**
 ```powershell
 git clone https://github.com/Fzkuji/OpenProgram
 cd OpenProgram
-.\scripts\install.ps1 -Gui            # drop -Gui for host only; -Cuda cu121 for NVIDIA
+.\scripts\install.ps1                 # NVIDIA GPU: -Cuda cu124 (your tag) · host only: -NoGui
 ```
 
-Then pick a provider and launch — `gui_agent` appears in the UI automatically:
+Then just start it — the **first run walks you through provider setup**, then
+opens the chat (`gui_agent` appears in the UI automatically):
 ```bash
-openprogram providers login openai-codex     # or: export ANTHROPIC_API_KEY=sk-ant-...
-openprogram web                               # -> http://localhost:18100
+openprogram                                   # first run = guided provider setup, then chat
+openprogram web                               # or the browser UI -> http://localhost:18100
 ```
 
 The installer is **idempotent** — re-run it any time to repair or update.
@@ -64,7 +65,7 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | 3 | **OpenProgram** editable install (`pip install -e .`) | The host + base deps. |
 | 4 | **Web UI** — `npm install` in `web/` | Next.js frontend on **:18100**, backend on **:18109**. |
 | 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. |
-| 6 | `--gui` / `-Gui`: install the **GUI program** into `functions/agentics/` | Clones the harness in-tree (editable, auto-registers) and runs its asset setup → PyTorch + YOLO weight + EasyOCR. Delegates to the harness's own [installer](../openprogram/functions/agentics/GUI-Agent-Harness/scripts). |
+| 6 | **GUI program** (default; `--no-gui`/`-NoGui` to skip) into `functions/agentics/` | Clones the harness in-tree (editable, auto-registers) and runs its asset setup → PyTorch + YOLO weight + EasyOCR. Delegates to the harness's own [installer](../openprogram/functions/agentics/GUI-Agent-Harness/scripts). |
 | 7 | Optional extras behind flags | See [Optional extras](#optional-extras). |
 
 ---
@@ -73,8 +74,8 @@ The installer is **idempotent** — re-run it any time to repair or update.
 
 | Goal | `install.sh` (POSIX) | `install.ps1` (Windows) |
 |------|----------------------|--------------------------|
-| Also install the GUI agent | `--gui` | `-Gui` |
-| CUDA build of PyTorch | `--cuda cu121` | `-Cuda cu121` |
+| Skip the GUI agent (host only) | `--no-gui` | `-NoGui` |
+| CUDA build of PyTorch (use your own tag) | `--cuda cu124` | `-Cuda cu124` |
 | Force CPU torch (default) | `--cpu` | *(default)* |
 | Target a specific interpreter | `--python /path/python` | `-Python C:\path\python.exe` |
 | Pre-build the web bundle (`next build`) | `--build-web` | `-BuildWeb` |
@@ -90,9 +91,9 @@ The installer is **idempotent** — re-run it any time to repair or update.
 
 Programs always land in `functions/agentics/<Repo>/` and auto-register. Two ways:
 
-**a) With the installer (recommended for source checkouts):** `./scripts/install.sh --gui`
+**a) With the installer (recommended for source checkouts):** `./scripts/install.sh`
 clones the GUI harness in-tree **editable** (you can edit/commit it) and finishes
-its setup. This is the developer-friendly path.
+its setup — it's installed by default. This is the developer-friendly path.
 
 **b) On an existing host (end-user):** the built-in command clones + installs +
 registers any catalogued program:
@@ -167,7 +168,7 @@ Everything beyond `pip`. The installer handles every "auto" row.
 | provider credential | any chat turn | `openprogram providers login` / env key | all | manual |
 | Playwright / patchright / camoufox / agent-browser | browser tools | flags above | all | flag |
 
-### GUI-Agent-Harness program (`--gui`)
+### GUI-Agent-Harness program (installed by default; `--no-gui` to skip)
 
 | Item | Required for | How | Platform | Auto? |
 |------|--------------|-----|----------|-------|
@@ -195,7 +196,7 @@ macOS without Xcode CLT — Apple Vision is just faster. Full GUI specifics:
   Stop the running `openprogram web` / worker first, then re-run.
 - **`gui_agent` doesn't appear in the UI.** Restart the worker (or Refresh the
   Functions page). Confirm it's registered: `openprogram programs available`.
-- **NVIDIA GPU unused.** Default torch is the CPU build — re-run with `--cuda cu121`.
+- **NVIDIA GPU unused.** Default torch is the CPU build — re-run with `--cuda <your-tag>` (e.g. `cu124`).
 - **GPA weight didn't download** (offline): `hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector`.
 
 ---

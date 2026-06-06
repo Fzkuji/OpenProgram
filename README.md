@@ -48,29 +48,29 @@
 
 ### 1. Install
 
-Clone the repo wherever you want OpenProgram to live, then run the one-command installer. It sets up **everything** — the Python package, the web UI, the terminal UI, and (with `--gui`) the GUI agent plus its model weight and OCR.
+Clone the repo wherever you want OpenProgram to live, then run the one-command installer. It sets up **everything** — the Python package, the web UI, the terminal UI, and the GUI agent (with its model weight + OCR).
 
 **macOS / Linux**
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
-./scripts/install.sh --gui          # omit --gui for host only · --cuda cu121 for an NVIDIA GPU
+./scripts/install.sh
 ```
 
 **Windows (PowerShell)**
 ```powershell
 git clone https://github.com/Fzkuji/OpenProgram; cd OpenProgram
-.\scripts\install.ps1 -Gui          # omit -Gui for host only · -Cuda cu121 for an NVIDIA GPU
+.\scripts\install.ps1
 ```
 
-Then connect a provider — the worker comes up with the web UI on `:18100`, API on `:18109`:
+That's it. NVIDIA GPU? add `--cuda cu124` (use your own CUDA tag). Don't want the GUI agent? add `--no-gui`.
+
+Then just start it — **the first run walks you through provider setup**, then opens the chat (web UI on `:18100`, API on `:18109`):
 
 ```bash
-openprogram setup                   # wizard: adopts a logged-in CLI (Claude Code / Codex / Gemini), or takes an API key
+openprogram
 ```
 
 Full dependency matrix, flags, and per-OS notes: **[docs/install.md](docs/install.md)**.
-
-> **Just the Python core?** `pip install openprogram` is enough for the **TUI / API**, but it does **not** build the web UI (needs `npm`) or fetch the GUI agent's weight + OCR models. Use the installer above for the complete setup.
 
 <details>
 <summary><b>Prefer to skip the wizard?</b></summary>
@@ -105,7 +105,7 @@ Just ask the agent in chat — *"create an @agentic_function that summarises a P
 
 ### 4. Add the harness suite (optional)
 
-Three sibling harnesses run as **OpenProgram programs** — they install *into* your OpenProgram checkout and are auto-discovered. (If you ran `./scripts/install.sh --gui` in step 1, the **GUI agent is already installed** — this section is for adding `research` / `wiki`, or for a host you got via `pip`.)
+Three sibling harnesses run as **OpenProgram programs** — they install *into* your OpenProgram checkout and are auto-discovered. (The installer in step 1 already set up the **GUI agent** by default — this section is for adding `research` / `wiki`, or for a host where you skipped it with `--no-gui`.)
 
 ```bash
 openprogram programs install research    # or: gui / wiki
@@ -113,7 +113,7 @@ openprogram programs install research    # or: gui / wiki
 
 Each harness clones into **`openprogram/functions/agentics/<Harness-Name>/`** (inside your OpenProgram install), pip-installs its own deps, and **auto-registers** on the next worker restart (or hit **Refresh** on the Functions page) — so it appears in the web UI with no extra wiring. Identical on every OS. Details: [docs/installing-harnesses.md](docs/installing-harnesses.md).
 
-> The **GUI** agent additionally needs a YOLO detector weight + OCR models that `pip` can't fetch. `./scripts/install.sh --gui` sets them up; on a `programs install`-ed host, finish them by running the harness's own installer — see **[the GUI install guide](openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md)**.
+> The **GUI** agent additionally needs a YOLO detector weight + OCR models that `pip` can't fetch. The step-1 installer sets them up by default; on a `programs install`-ed host, finish them by running the harness's own installer — see **[the GUI install guide](openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md)**.
 
 | Harness | What it does | Track record |
 |---|---|---|

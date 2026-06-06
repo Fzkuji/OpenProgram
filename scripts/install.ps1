@@ -2,29 +2,33 @@
 =============================================================================
  OpenProgram - one-command installer (Windows / PowerShell)
 -----------------------------------------------------------------------------
- Brings up the WHOLE stack so `openprogram web` just works, with nothing left
- to install by hand:
+ Brings up the WHOLE stack so `openprogram` just works, with nothing left to
+ install by hand. Installs the GUI agent BY DEFAULT (the common case):
    1. Verify (or winget-install) the system toolchain: Python 3.11+, Node 20+, git
    2. Python env (uses an active venv/conda, else creates .\.venv)
    3. OpenProgram (editable) + its deps
    4. Web UI deps:  web\  -> npm install   (Next.js frontend on :18100)
       (Windows uses the Rich REPL, not the Ink TUI, so cli\ is not built)
-   5. -Gui  -> clone (if needed) + fully install the GUI-Agent-Harness
-              (torch, YOLO weight, EasyOCR) via its installer
+   5. GUI agent (default) -> clone (if needed) + fully install GUI-Agent-Harness
+              (torch, YOLO weight, EasyOCR). Skip with -NoGui.
    6. Optional extras behind switches: -Browser -Stealth -AgentBrowser -Channels
+
+ PyTorch is the CPU build by default (works everywhere, no flag). Pass -Cuda
+ ONLY if you have an NVIDIA GPU, with YOUR CUDA tag (e.g. cu121 / cu124).
 
  Re-runnable: every step is idempotent.
 
  Usage:
-   .\scripts\install.ps1                  # host only
-   .\scripts\install.ps1 -Gui             # host + GUI agent (CPU torch)
-   .\scripts\install.ps1 -Gui -Cuda cu121
+   .\scripts\install.ps1                  # full install incl. GUI agent (CPU torch)
+   .\scripts\install.ps1 -NoGui           # host only, skip the GUI agent
+   .\scripts\install.ps1 -Cuda cu124      # NVIDIA GPU - use your own CUDA tag
    .\scripts\install.ps1 -Browser         # + Playwright browser tool
 =============================================================================
 #>
 [CmdletBinding()]
 param(
-  [switch]$Gui,
+  [switch]$NoGui,                 # GUI installs by default; pass -NoGui to skip
+  [switch]$Gui,                   # accepted but redundant (GUI is the default)
   [string]$Cuda = "cpu",
   [string]$Python = "",
   [switch]$BuildWeb,
@@ -104,7 +108,7 @@ function Install-Web {
 
 # ---- 5. GUI harness (delegates to the harness's own installer) --------------
 function Install-Gui {
-  if (-not $Gui) { return }
+  if ($NoGui) { return }
   if (-not (Test-Path $HarnessDir)) {
     Step "cloning GUI-Agent-Harness into $HarnessRel"
     git clone --depth 1 $HarnessRepo $HarnessDir
@@ -137,12 +141,12 @@ function Install-Extras {
 }
 
 # ---- run --------------------------------------------------------------------
-Step "OpenProgram setup  (os=Windows, gui=$Gui, torch=$Cuda)"
+Step "OpenProgram setup  (os=Windows, gui=$(-not $NoGui), torch=$Cuda)"
 Install-Web
 Install-Gui
 Install-Extras
 
 Write-Host "`nOpenProgram ready." -ForegroundColor Green
-Write-Host "  Provider:  openprogram providers login openai-codex   (or set ANTHROPIC_API_KEY / OPENAI_API_KEY)"
-Write-Host "  Web UI:    openprogram web      ->  http://localhost:18100"
-if ($Gui) { Write-Host "  GUI agent: gui-agent --work-dir C:\temp\gui --app firefox `"Open Firefox`"" }
+Write-Host "  Start:     openprogram           # first run walks you through provider setup, then opens the chat"
+Write-Host "  Web UI:    openprogram web        # -> http://localhost:18100"
+if (-not $NoGui) { Write-Host "  GUI agent: gui-agent --work-dir C:\temp\gui --app firefox `"Open Firefox`"" }

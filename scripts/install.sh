@@ -2,23 +2,26 @@
 # =============================================================================
 # OpenProgram — one-command installer (macOS / Linux)
 # -----------------------------------------------------------------------------
-# Brings up the WHOLE stack so `openprogram web` / `openprogram` just work,
-# with nothing left to install by hand:
+# Brings up the WHOLE stack so `openprogram` just works, with nothing left to
+# install by hand. Installs the GUI agent BY DEFAULT (the common case):
 #   1. Verify (or install) the system toolchain: Python 3.11+, Node 20+, git
 #   2. Python env (uses an active venv/conda, else creates ./.venv)
 #   3. OpenProgram (editable) + its deps
 #   4. Web UI deps:  web/  -> npm install   (Next.js frontend on :18100)
 #   5. TUI deps:     cli/  -> npm install && npm run build  (Ink TUI; POSIX)
-#   6. --gui  -> clone (if needed) + fully install the GUI-Agent-Harness
-#               (torch, YOLO weight, EasyOCR, platform tools) via its installer
+#   6. GUI agent (default) -> clone (if needed) + fully install GUI-Agent-Harness
+#               (torch, YOLO weight, EasyOCR, platform tools). Skip with --no-gui.
 #   7. Optional extras behind flags: --browser --stealth --agent-browser --channels
+#
+# PyTorch is the CPU build by default (works everywhere, no flag needed). Pass
+# --cuda ONLY if you have an NVIDIA GPU, with YOUR CUDA tag (e.g. cu121 / cu124).
 #
 # Re-runnable: every step is idempotent.
 #
 # Usage:
-#   ./scripts/install.sh                 # host only
-#   ./scripts/install.sh --gui           # host + GUI agent (CPU torch)
-#   ./scripts/install.sh --gui --cuda cu121
+#   ./scripts/install.sh                 # full install incl. GUI agent (CPU torch)
+#   ./scripts/install.sh --no-gui        # host only, skip the GUI agent
+#   ./scripts/install.sh --cuda cu124    # NVIDIA GPU — use your own CUDA tag
 #   ./scripts/install.sh --browser       # + Playwright browser tool
 # =============================================================================
 set -euo pipefail
@@ -37,12 +40,13 @@ HARNESS_REPO="https://github.com/Fzkuji/GUI-Agent-Harness"
 OS="$(uname -s)"
 
 # ---- args -------------------------------------------------------------------
-WITH_GUI=0; TORCH_VARIANT="cpu"; PYTHON_BIN=""; BUILD_WEB=0
+WITH_GUI=1; TORCH_VARIANT="cpu"; PYTHON_BIN=""; BUILD_WEB=0   # GUI on by default
 WITH_BROWSER=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0; WITH_CHANNELS=0; NO_TUI=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --gui) WITH_GUI=1; shift ;;
-    --cuda) TORCH_VARIANT="${2:?--cuda needs cuXXX}"; shift 2 ;;
+    --gui) WITH_GUI=1; shift ;;                 # GUI is the default; kept for explicitness
+    --no-gui) WITH_GUI=0; shift ;;              # host only — skip the GUI agent
+    --cuda) TORCH_VARIANT="${2:?--cuda needs your CUDA tag, e.g. cu121 or cu124}"; shift 2 ;;
     --cpu) TORCH_VARIANT="cpu"; shift ;;
     --python) PYTHON_BIN="${2:?--python needs a path}"; shift 2 ;;
     --build-web) BUILD_WEB=1; shift ;;
@@ -51,7 +55,7 @@ while [ $# -gt 0 ]; do
     --agent-browser) WITH_AGENT_BROWSER=1; shift ;;
     --channels) WITH_CHANNELS=1; shift ;;
     --no-tui) NO_TUI=1; shift ;;
-    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
+    -h|--help) sed -n '/^# Usage:/,/^# ==/p' "$0"; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
 done
@@ -170,6 +174,6 @@ install_extras
 
 # ---- done --------------------------------------------------------------------
 printf "\n${c_green}OpenProgram ready.${c_reset}\n"
-printf "  Provider:  openprogram providers login openai-codex   (or set ANTHROPIC_API_KEY / OPENAI_API_KEY)\n"
-printf "  Web UI:    openprogram web      ->  http://localhost:18100\n"
+printf "  Start:     openprogram           # first run walks you through provider setup, then opens the chat\n"
+printf "  Web UI:    openprogram web        # -> http://localhost:18100\n"
 [ "$WITH_GUI" = "1" ] && printf "  GUI agent: gui-agent --work-dir /tmp/gui --app firefox \"Open Firefox\"\n" || true

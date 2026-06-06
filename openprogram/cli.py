@@ -181,6 +181,20 @@ def _need_subcommand(parser) -> None:
     sys.exit(2)
 
 
+def _needs_first_run_setup() -> bool:
+    """True when no LLM provider is configured yet.
+
+    Lets a bare ``openprogram`` first run open the setup wizard automatically
+    instead of dropping the user into an unconfigured chat — the same
+    "configured?" test the doctor uses (an auth pool with ≥1 credential).
+    """
+    try:
+        from openprogram.auth.store import get_store
+        return not any(p.credentials for p in get_store().list_pools())
+    except Exception:
+        return False  # never block startup on a detection hiccup
+
+
 def main():
     _ensure_utf8_stdio()
     parser = argparse.ArgumentParser(
@@ -792,6 +806,16 @@ def main():
             _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
                           tui=tui_enabled)
             return
+        # First-run onboarding: a brand-new user just types `openprogram`, not
+        # `openprogram setup`. If nothing is configured yet, run the setup
+        # wizard automatically, then open the chat — no separate command needed.
+        if not args.resume and _needs_first_run_setup():
+            try:
+                from openprogram import setup as _sw
+                _sw.run_full_setup()
+            except KeyboardInterrupt:
+                print("\nSetup cancelled. Run `openprogram setup` any time.")
+                return
         _cmd_cli_chat(oneshot=None, resume=args.resume,
                       tui=tui_enabled)
         return
