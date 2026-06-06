@@ -22,13 +22,10 @@ import {
   _highlightMode,
   _lastGraph,
   _lastHeadId,
-  getLayoutMode,
   setContextSet,
   setHighlightMode,
   setLastGraph,
   setLastSignature,
-  setLayoutMode,
-  type LayoutMode,
 } from "./store/globals";
 
 // Install the document-level click + dblclick listeners exactly once,
@@ -96,25 +93,6 @@ export function setHistoryHighlightMode(mode: HighlightMode): void {
   _recomputeVisibility();
 }
 
-export function setHistoryLayoutMode(mode: LayoutMode): void {
-  if (mode !== "legacy" && mode !== "d3") return;
-  if (getLayoutMode() === mode) return;
-  setLayoutMode(mode);
-  try {
-    window.localStorage.setItem("dag_layout_mode", mode);
-  } catch {
-    /* ignore */
-  }
-  // Force a re-render: clear the signature cache so render() doesn't
-  // short-circuit on no-data-change.
-  setLastSignature(null);
-  if (_lastGraph) render(_lastGraph, _lastHeadId);
-}
-
-export function getHistoryLayoutMode(): LayoutMode {
-  return getLayoutMode();
-}
-
 /* ===== window bridges ============================================ */
 
 HGW.renderHistoryGraph = renderHistoryGraph;
@@ -124,5 +102,3 @@ HGW.refreshHistoryContextRange = refreshHistoryContextRange;
 HGW.recomputeHistoryVisibility = recomputeHistoryVisibility;
 HGW.setHistoryHighlightMode = setHistoryHighlightMode;
 HGW.getHistoryHighlightMode = getHistoryHighlightMode;
-HGW.setHistoryLayoutMode = setHistoryLayoutMode;
-HGW.getHistoryLayoutMode = getHistoryLayoutMode;

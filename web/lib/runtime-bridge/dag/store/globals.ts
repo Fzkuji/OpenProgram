@@ -27,27 +27,6 @@ export function setContextSet(v: Record<string, boolean> | null): void {
 export let _highlightMode: HighlightMode = "viewport";
 export function setHighlightMode(v: HighlightMode): void { _highlightMode = v; }
 
-// Layout engine selector — "legacy" uses the hand-rolled
-// lane/tier/depth pipeline; "d3" runs d3-hierarchy's Reingold-Tilford
-// tree layout on function-call subtrees so deep+wide agentic calls
-// no longer overlap. Persisted to localStorage so the choice survives
-// reload. Default "legacy" until the d3 path is validated everywhere.
-export type LayoutMode = "legacy" | "d3";
-export let _layoutMode: LayoutMode = "legacy";
-export function setLayoutMode(v: LayoutMode): void { _layoutMode = v; }
-export function getLayoutMode(): LayoutMode { return _layoutMode; }
-
-// Eager read from localStorage so the initial render picks up the
-// last choice. SSR-safe (no window in node).
-if (typeof window !== "undefined") {
-  try {
-    const saved = window.localStorage.getItem("dag_layout_mode");
-    if (saved === "d3" || saved === "legacy") _layoutMode = saved;
-  } catch {
-    /* ignore */
-  }
-}
-
 // ── visibility / ancestry / internal sets ─────────────────────────
 export let _visibleIds: Record<string, boolean> = Object.create(null);
 export function setVisibleIds(v: Record<string, boolean>): void {

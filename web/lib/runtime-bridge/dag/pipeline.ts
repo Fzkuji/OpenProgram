@@ -55,7 +55,6 @@ import { _mergeRuns } from "./passes/merge-runs";
 import { _collapseRuntimePlaceholders } from "./passes/collapse-runtime-placeholders";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
 import { _applyCollapse } from "./passes/apply-collapse";
-import { _applyD3TreeLayout } from "./passes/d3-tree-layout";
 import { _buildTree } from "./layout/build-tree";
 import { _assignDepth } from "./layout/depth";
 import { _assignLanes, _headAncestors } from "./layout/assign-lanes";
@@ -73,7 +72,6 @@ import {
   _lastGraph,
   _lastHeadId,
   _lastSignature,
-  _layoutMode,
   setCurrentHead,
   setHeadAncestorSet,
   setInternalOwner,
@@ -134,23 +132,6 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const cinfo = _applyCollapse(graph);
   graph = cinfo.visible;
-
-  // d3-tree layout mode: re-position function-call subtrees via
-  // d3-hierarchy's Reingold-Tilford layout so siblings spread to
-  // accommodate their own subtree widths (no overlap on complex
-  // agentic call trees). Trunk (user/reply chain) stays on its
-  // legacy lane=0 column. Mode flip is reactive — toggling at
-  // runtime re-renders with the new positions.
-  if (_layoutMode === "d3") {
-    _applyD3TreeLayout(graph);
-  } else {
-    // Clear any d3 coords from a previous run when switching back
-    // to legacy, so ``pos()`` falls through to the lane/tier formula.
-    graph.forEach((n) => {
-      if ("_x" in n) delete (n as { _x?: number })._x;
-      if ("_y" in n) delete (n as { _y?: number })._y;
-    });
-  }
 
   const sig = _signature(graph, headId);
   if (sig === _lastSignature && _currentHead === headId) return;
@@ -247,26 +228,18 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     ? COL_W * 0.7 + Math.max(0, maxTier - 1) * COL_W * 0.5 + NODE_R * 2
     : 0;
   const panelW = (body && body.clientWidth) || 240;
-  // In d3 layout mode the effective node positions live in ``_x`` /
-  // ``_y`` and can extend past (or before) what the legacy lane/tier
-  // formula projects. Scan the actual coords so the SVG canvas is
-  // sized to fit every node and the viewBox can shift if d3 produced
-  // a negative x (the left half of a symmetric subtree spread).
+  // Scan the resolved coords so the SVG canvas is sized to fit every
+  // node. The trunk sits at the smallest lane/tier (leftmost) and
+  // sub-calls/branches only ever extend right + down, so this just
+  // finds the rightmost / lowest node.
   let minX = 0;
   let maxX = 0;
   let maxYpx = 0;
   Object.keys(tree.byId).forEach((id) => {
     const n = tree.byId[id];
-    let x: number;
-    let y: number;
-    if (typeof n._x === "number" && typeof n._y === "number") {
-      x = n._x;
-      y = n._y;
-    } else {
-      const t = typeof n._tier === "number" ? n._tier : 0;
-      x = PAD_X + (n._lane || 0) * COL_W + t * COL_W;
-      y = PAD_Y + (n._depth || 0) * ROW_H;
-    }
+    const t = typeof n._tier === "number" ? n._tier : 0;
+    const x = PAD_X + (n._lane || 0) * COL_W + t * COL_W;
+    const y = PAD_Y + (n._depth || 0) * ROW_H;
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
     if (y > maxYpx) maxYpx = y;
@@ -286,9 +259,6 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const svg = _svg("svg", {
     class: "history-svg",
-    // viewBox starts at ``left`` (negative if d3 produced left-side
-    // children) so off-origin geometry stays inside the visible
-    // canvas without re-translating every node.
     viewBox: `${left} 0 ${Math.max(width, 40)} ${Math.max(height, 40)}`,
     width: Math.max(width, 40),
     height: Math.max(height, 40),
@@ -300,13 +270,11 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   svg.appendChild(nodeG);
 
   function pos(n: GNode): { x: number; y: number } {
-    // d3-tree layout (if active) writes absolute pixel positions to
-    // ``_x`` / ``_y`` for function-call subtree nodes. Trunk nodes
-    // keep the legacy lane/tier/depth formula. Either way the
-    // ``pos()`` API returns one resolved (x, y) per node.
-    if (typeof n._x === "number" && typeof n._y === "number") {
-      return { x: n._x, y: n._y };
-    }
+    // Lane = which branch (trunk = 0, leftmost); tier = sub-call
+    // nesting depth. Both only ever grow rightward, so the trunk
+    // stays pinned to the left and function-call / branch subtrees
+    // fan out to the right. ``_depth`` (the row) increases downward
+    // with call order — higher = called earlier.
     const tier = typeof n._tier === "number" ? n._tier : 0;
     const tierOff = tier * COL_W;
     return {
