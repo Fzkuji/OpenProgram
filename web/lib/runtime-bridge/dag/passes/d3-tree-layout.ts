@@ -31,6 +31,17 @@
  * Each function-call subtree node gets ``_x`` / ``_y`` (absolute
  * pixel positions). The pipeline's ``pos()`` prefers these when set,
  * falling back to ``lane * COL_W + tier * COL_W`` for trunk nodes.
+ *
+ * Crucially the two axes carry different information and are computed
+ * from different sources:
+ *   * ``_x`` (horizontal) = d3's Reingold-Tilford packing — spreads
+ *     sibling subtrees so a busy call tree doesn't overlap.
+ *   * ``_y`` (vertical) = the backend order-depth (``_depth``), NOT
+ *     d3's tree level. d3 alone would put every sibling on one level
+ *     (same y) and the call ORDER would vanish — the 1st and 2nd
+ *     sub-call of a node would sit side by side as if simultaneous.
+ *     Keeping ``_depth`` (where the k-th sub-call = caller.depth+1+k)
+ *     makes the vertical axis read as time: higher = called earlier.
  */
 
 import { hierarchy, tree as d3Tree } from "d3-hierarchy";
@@ -97,17 +108,22 @@ export function _applyD3TreeLayout(graph: GNode[]): void {
     // for tree layers. Mini-DAG already uses COL_W/ROW_H so reuse.
     d3Tree<NodeWithChildren>().nodeSize([COL_W, ROW_H])(root3);
 
-    // Anchor the subtree at the legacy position of its root. d3
+    // Anchor the subtree HORIZONTALLY at its root's column. d3
     // returns x relative to the layout's own origin; translate so
-    // root3.x maps to root.legacy_x.
+    // root3.x maps to the root's legacy x.
     const rootX = root._x ?? PAD_X;
-    const rootY = root._y ?? PAD_Y;
     const offsetX = rootX - (root3.x ?? 0);
-    const offsetY = rootY - (root3.y ?? 0);
     root3.each((d3node) => {
       const n = d3node.data.node;
+      // X = d3's Reingold-Tilford packing — spreads sibling subtrees
+      // so nothing overlaps on complex call trees.
       n._x = (d3node.x ?? 0) + offsetX;
-      n._y = (d3node.y ?? 0) + offsetY;
+      // Y = the backend order-depth row (set in the snapshot above),
+      // NOT d3's tree level. d3 lays every sibling on one level →
+      // same y, which erases call order: the k-th sub-call would sit
+      // BESIDE the (k-1)-th instead of below it. ``_depth`` already
+      // encodes "k-th sub-call = caller.depth + 1 + k", so keeping it
+      // makes the vertical axis read as time — higher = called first.
     });
   });
 }
