@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openprogram"
-version = "0.4.0"
+version = "0.5.0"
 description = "The Open Source Agent Harness Framework. Any LLM. Any platform. Agentic Programming Paradigm."
 readme = "README.md"
 requires-python = ">=3.11"
