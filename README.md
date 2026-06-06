@@ -55,6 +55,8 @@ openprogram setup                                   # interactive provider wizar
 
 `setup` adopts any CLI you're already logged into (Claude Code / Codex / Gemini) and prompts for API keys otherwise. On exit the worker is live — web UI on `:18100`, API on `:18109`.
 
+> `pip install` is only **part** of the install — it doesn't build the web UI (needs `npm`) or set up the GUI agent's weights/OCR. **For a complete, one-command setup, install from source** (the script is the source of truth): clone this repo and run `./scripts/install.sh --gui` (macOS/Linux) or `.\scripts\install.ps1 -Gui` (Windows). It installs the host + web UI + the GUI program (into `functions/agentics/`, auto-registered). Full matrix and flags: **[docs/install.md](docs/install.md)**.
+
 <details>
 <summary><b>Prefer to skip the wizard?</b></summary>
 
@@ -95,6 +97,8 @@ openprogram programs install research    # or: gui / wiki
 ```
 
 It clones into `functions/agentics/`, pip-installs that harness's own deps, and auto-registers on the next worker restart (or hit **Refresh** on the Functions page). No symlinks — identical on Windows. Any third-party harness works the same: [docs/installing-harnesses.md](docs/installing-harnesses.md).
+
+> The **GUI** agent also needs a YOLO detector weight + OCR models (not pulled by `pip`). The one-command source install `./scripts/install.sh --gui` sets these up for you; to do it on an existing install, run the harness's own [`scripts/install.*`](functions/agentics/GUI-Agent-Harness/scripts) — see [its install guide](functions/agentics/GUI-Agent-Harness/docs/install.md).
 
 | Harness | What it does | Track record |
 |---|---|---|

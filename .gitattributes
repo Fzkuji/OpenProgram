@@ -1,0 +1,5 @@
+# Keep shell scripts LF so they run on macOS/Linux regardless of core.autocrlf.
+# A CRLF shebang breaks bash ("bad interpreter: /usr/bin/env bash^M").
+*.sh text eol=lf
+# PowerShell scripts are Windows-only.
+*.ps1 text eol=crlf
