@@ -849,7 +849,10 @@ def main():
         # The explicit `openprogram tui` / `openprogram chat` (here) and
         # `openprogram web` (its own subcommand) skip the prompt and launch directly.
         if args.command is None and not args.resume and _choose_surface() == "web":
-            from openprogram._cli_cmds.web import _cmd_web
+            # _cmd_web is imported at module scope (bottom of this file); a
+            # local `import` here would make it a function-local for all of
+            # main(), shadowing that global and breaking the `web` subcommand
+            # branch with UnboundLocalError.
             _cmd_web(None, None)
             return
         _cmd_cli_chat(oneshot=None, resume=args.resume,
