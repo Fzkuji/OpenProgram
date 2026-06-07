@@ -48,20 +48,21 @@ OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：
 
 安装包后直接编码：
 
-完整一键安装（含网页 UI 构建 + GUI agent 及其权重/OCR）：
+一键安装 host（网页 UI + 终端 UI + 浏览器/渠道）：
 
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-PyTorch 自动识别显卡（N 卡→CUDA，否则 CPU；`--cpu` / `--cuda cu124` 可强制）。只要 host、不装 GUI？加 `--no-gui`。provider SDK（anthropic / openai / google-genai）默认已装好。
+默认只装 host；加 `--gui` 同时装 GUI agent（它的 PyTorch 自动识别显卡——N 卡→CUDA，否则 CPU；`--cpu` / `--cuda cu124` 可强制）。provider SDK（anthropic / openai / google-genai）默认已装好。
 
-Research / Wiki 作为 **OpenProgram 程序** 安装进
-`openprogram/functions/agentics/<Harness>/` 并**自动注册**（装好后即出现在网页 UI；GUI agent 上面已默认装好）：
+harness 作为 **OpenProgram 程序** 装进 `openprogram/functions/agentics/<Harness>/`
+并**自动注册**。通用做法（你自己写的也一样）是克隆进那个目录再跑它的安装脚本；
+纯 Python 的 Research / Wiki 另有一行快捷命令：
 
 ```bash
-openprogram programs install research      # 或 wiki
+openprogram programs install research      # 或 wiki（GUI agent 见其 README，需跑自带安装脚本）
 ```
 
 ```python

@@ -141,9 +141,11 @@ openprogram` — the core stays light and the heavy program is opt-in.
 > `openprogram programs install gui`, run the harness's own installer to
 > fetch them (it skips the host since you already have it):
 > `openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --no-host`
-> (Windows: `…\scripts\install.ps1 -NoHost`). Or just use the top-level
-> `./scripts/install.sh`, which installs the GUI agent by default. See the
-> [GUI install guide](../openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md).
+> (Windows: `…\scripts\install.ps1 -NoHost`). Because that asset step is
+> required anyway, the cleaner path for the GUI agent is to clone it in and run
+> its own installer directly (or pass `--gui` to the top-level
+> `./scripts/install.sh`). See the
+> [GUI install guide](../openprogram/functions/agentics/GUI-Agent-Harness#1-install).
 
 ## Platform notes
 

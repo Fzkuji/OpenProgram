@@ -2,35 +2,36 @@
 =============================================================================
  OpenProgram - one-command installer (Windows / PowerShell)
 -----------------------------------------------------------------------------
- Brings up the WHOLE stack so `openprogram` just works, with nothing left to
- install by hand. Installs the GUI agent BY DEFAULT (the common case):
+ Brings up the OpenProgram HOST so `openprogram` just works:
    1. Verify (or winget-install) the system toolchain: Python 3.11+, Node 20+, git
    2. Python env (uses an active venv/conda, else creates .\.venv)
    3. OpenProgram (editable) + its deps
    4. Web UI deps:  web\  -> npm install   (Next.js frontend on :18100)
       (Windows uses the Rich REPL, not the Ink TUI, so cli\ is not built)
-   5. GUI agent (default) -> clone (if needed) + fully install GUI-Agent-Harness
-              (torch, YOLO weight, EasyOCR). Skip with -NoGui.
-   6. Browser tool + channels installed by DEFAULT; -Stealth / -AgentBrowser are
+   5. Browser tool + channels installed by DEFAULT; -Stealth / -AgentBrowser are
       heavier opt-ins (-Minimal skips the default extras)
 
- PyTorch is auto-selected: an NVIDIA GPU (nvidia-smi) gets the matching CUDA
- build, otherwise CPU. Force it with -Cpu or -Cuda cuXXX (e.g. cu124).
+ The GUI agent is NOT installed here - it is a separate program, added like any
+ other harness (clone into openprogram\functions\agentics\ and run its own
+ installer). Pass -Gui to also install it as a convenience.
+
+ PyTorch (only relevant with -Gui) is auto-selected: an NVIDIA GPU (nvidia-smi)
+ gets the matching CUDA build, otherwise CPU. Force it with -Cpu or -Cuda cuXXX.
 
  Re-runnable: every step is idempotent.
 
  Usage:
-   .\scripts\install.ps1                  # full install incl. GUI agent (auto GPU/CPU torch)
-   .\scripts\install.ps1 -NoGui           # host only, skip the GUI agent
-   .\scripts\install.ps1 -Cpu             # force CPU torch (skip GPU auto-detect)
-   .\scripts\install.ps1 -Cuda cu124      # force a specific CUDA tag
+   .\scripts\install.ps1                  # host only (web + browser/channels)
+   .\scripts\install.ps1 -Gui             # also install the GUI agent (auto GPU/CPU torch)
+   .\scripts\install.ps1 -Cpu             # force CPU torch (with -Gui)
+   .\scripts\install.ps1 -Cuda cu124      # force a specific CUDA tag (with -Gui)
    .\scripts\install.ps1 -Browser         # + Playwright browser tool
 =============================================================================
 #>
 [CmdletBinding()]
 param(
-  [switch]$NoGui,                 # GUI installs by default; pass -NoGui to skip
-  [switch]$Gui,                   # accepted but redundant (GUI is the default)
+  [switch]$Gui,                   # opt-in: also install the GUI agent
+  [switch]$NoGui,                 # default already (host only); kept for back-compat
   [string]$Cuda = "auto",         # auto-detect GPU; "cpu" or "cuXXX" to force
   [switch]$Cpu,                   # force the CPU torch build
   [string]$Python = "",
@@ -113,7 +114,7 @@ function Install-Web {
 
 # ---- 5. GUI harness (delegates to the harness's own installer) --------------
 function Install-Gui {
-  if ($NoGui) { return }
+  if (-not $Gui -or $NoGui) { return }
   if (-not (Test-Path $HarnessDir)) {
     Step "cloning GUI-Agent-Harness into $HarnessRel"
     git clone --depth 1 $HarnessRepo $HarnessDir
@@ -156,7 +157,7 @@ function Install-Extras {
 }
 
 # ---- run --------------------------------------------------------------------
-Step "OpenProgram setup  (os=Windows, gui=$(-not $NoGui), torch=$Cuda)"
+Step "OpenProgram setup  (os=Windows, gui=$($Gui -and -not $NoGui), torch=$Cuda)"
 Install-Web
 Install-Gui
 Install-DefaultExtras
@@ -165,4 +166,5 @@ Install-Extras
 Write-Host "`nOpenProgram ready." -ForegroundColor Green
 Write-Host "  Start:     openprogram           # first run walks you through provider setup, then opens the chat"
 Write-Host "  Web UI:    openprogram web        # -> http://localhost:18100"
-if (-not $NoGui) { Write-Host "  GUI agent: gui-agent --work-dir C:\temp\gui --app firefox `"Open Firefox`"" }
+if ($Gui -and -not $NoGui) { Write-Host "  GUI agent: gui-agent --work-dir C:\temp\gui --app firefox `"Open Firefox`"" }
+else { Write-Host "  Add a harness: clone it into openprogram\functions\agentics\ and run its installer"; Write-Host "                 (GUI agent: https://github.com/Fzkuji/GUI-Agent-Harness)" }

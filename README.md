@@ -60,7 +60,7 @@ git clone https://github.com/Fzkuji/OpenProgram; cd OpenProgram
 .\scripts\install.ps1
 ```
 
-One command installs everything and auto-detects your GPU. Flags and per-OS notes: **[docs/install.md](docs/install.md)**.
+One command installs the OpenProgram host — web UI, terminal UI, and the browser tool + chat channels. Agent harnesses (GUI, research, …) are added separately, in step 3. Flags and per-OS notes: **[docs/install.md](docs/install.md)**.
 
 ### 2. Run
 
@@ -72,11 +72,11 @@ First run sets up your provider, then asks which surface to open. Skip the promp
 
 ### 3. Add a harness
 
-Sibling harnesses install the same way — `openprogram programs install <name>` — and auto-register on the next worker restart.
+Harnesses are programs under `openprogram/functions/agentics/`. Anything cloned into that folder auto-registers on the next worker restart — that's the universal way any program (including your own) plugs into OpenProgram. Pure-Python harnesses also have a one-line shortcut, `openprogram programs install <name>`, which clones them there for you.
 
 | Harness | Install | What it does |
 |---|---|---|
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` | Drives desktop apps & OSWorld VMs by vision. |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | clone into `functions/agentics/` + run its installer — **[guide](https://github.com/Fzkuji/GUI-Agent-Harness#1-install)** (native deps: PyTorch, detector, OCR) | Drives desktop apps & OSWorld VMs by vision. |
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | Literature survey → experiments → paper draft. |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
 

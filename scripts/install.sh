@@ -2,28 +2,29 @@
 # =============================================================================
 # OpenProgram — one-command installer (macOS / Linux)
 # -----------------------------------------------------------------------------
-# Brings up the WHOLE stack so `openprogram` just works, with nothing left to
-# install by hand. Installs the GUI agent BY DEFAULT (the common case):
+# Brings up the OpenProgram HOST so `openprogram` just works:
 #   1. Verify (or install) the system toolchain: Python 3.11+, Node 20+, git
 #   2. Python env (uses an active venv/conda, else creates ./.venv)
 #   3. OpenProgram (editable) + its deps
 #   4. Web UI deps:  web/  -> npm install   (Next.js frontend on :18100)
 #   5. TUI deps:     cli/  -> npm install && npm run build  (Ink TUI; POSIX)
-#   6. GUI agent (default) -> clone (if needed) + fully install GUI-Agent-Harness
-#               (torch, YOLO weight, EasyOCR, platform tools). Skip with --no-gui.
-#   7. Browser tool + channels installed by DEFAULT; --stealth / --agent-browser
+#   6. Browser tool + channels installed by DEFAULT; --stealth / --agent-browser
 #               are heavier opt-ins (--minimal skips the default extras)
 #
-# PyTorch is auto-selected: an NVIDIA GPU (nvidia-smi) gets the matching CUDA
-# build, otherwise CPU. Force it with --cpu or --cuda cuXXX (e.g. cu124).
+# The GUI agent is NOT installed here — it is a separate program, added like any
+# other harness (clone into openprogram/functions/agentics/ and run its own
+# installer). Pass --gui to also install it as a convenience.
+#
+# PyTorch (only relevant with --gui) is auto-selected: an NVIDIA GPU (nvidia-smi)
+# gets the matching CUDA build, otherwise CPU. Force it with --cpu or --cuda cuXXX.
 #
 # Re-runnable: every step is idempotent.
 #
 # Usage:
-#   ./scripts/install.sh                 # full install incl. GUI agent (auto GPU/CPU torch)
-#   ./scripts/install.sh --no-gui        # host only, skip the GUI agent
-#   ./scripts/install.sh --cpu           # force CPU torch (skip GPU auto-detect)
-#   ./scripts/install.sh --cuda cu124    # force a specific CUDA tag
+#   ./scripts/install.sh                 # host only (web + TUI + browser/channels)
+#   ./scripts/install.sh --gui           # also install the GUI agent (auto GPU/CPU torch)
+#   ./scripts/install.sh --cpu           # force CPU torch (with --gui)
+#   ./scripts/install.sh --cuda cu124    # force a specific CUDA tag (with --gui)
 #   ./scripts/install.sh --browser       # + Playwright browser tool
 # =============================================================================
 set -euo pipefail
@@ -42,12 +43,12 @@ HARNESS_REPO="https://github.com/Fzkuji/GUI-Agent-Harness"
 OS="$(uname -s)"
 
 # ---- args -------------------------------------------------------------------
-WITH_GUI=1; TORCH_VARIANT="auto"; PYTHON_BIN=""; BUILD_WEB=0   # GUI on + torch auto-detect by default
+WITH_GUI=0; TORCH_VARIANT="auto"; PYTHON_BIN=""; BUILD_WEB=0   # host only by default; --gui to add the GUI agent
 WITH_BROWSER=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0; WITH_CHANNELS=0; NO_TUI=0; MINIMAL=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --gui) WITH_GUI=1; shift ;;                 # GUI is the default; kept for explicitness
-    --no-gui) WITH_GUI=0; shift ;;              # host only — skip the GUI agent
+    --gui) WITH_GUI=1; shift ;;                 # opt-in: also install the GUI agent
+    --no-gui) WITH_GUI=0; shift ;;              # default already; kept for back-compat
     --cuda) TORCH_VARIANT="${2:?--cuda needs your CUDA tag, e.g. cu121 or cu124}"; shift 2 ;;
     --cpu) TORCH_VARIANT="cpu"; shift ;;
     --python) PYTHON_BIN="${2:?--python needs a path}"; shift 2 ;;
@@ -189,4 +190,9 @@ install_extras
 printf "\n${c_green}OpenProgram ready.${c_reset}\n"
 printf "  Start:     openprogram           # first run walks you through provider setup, then opens the chat\n"
 printf "  Web UI:    openprogram web        # -> http://localhost:18100\n"
-[ "$WITH_GUI" = "1" ] && printf "  GUI agent: gui-agent --work-dir /tmp/gui --app firefox \"Open Firefox\"\n" || true
+if [ "$WITH_GUI" = "1" ]; then
+  printf "  GUI agent: gui-agent --work-dir /tmp/gui --app firefox \"Open Firefox\"\n"
+else
+  printf "  Add a harness: clone it into openprogram/functions/agentics/ and run its installer\n"
+  printf "                 (GUI agent: https://github.com/Fzkuji/GUI-Agent-Harness)\n"
+fi

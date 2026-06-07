@@ -7,9 +7,9 @@
 ```
 OpenProgram  (the host runtime — install this first, anywhere you like)
 └── openprogram/functions/agentics/      ← programs live here, auto-discovered
-    ├── GUI-Agent-Harness/               ← `gui_agent`     (openprogram programs install gui)
-    ├── Research-Agent-Harness/          ← `research_agent`
-    └── Wiki-Agent-Harness/              ← `wiki_agent`
+    ├── GUI-Agent-Harness/               ← `gui_agent`      (clone in + run its installer)
+    ├── Research-Agent-Harness/          ← `research_agent` (openprogram programs install research)
+    └── Wiki-Agent-Harness/              ← `wiki_agent`     (openprogram programs install wiki)
 ```
 
 A program dropped into `functions/agentics/` is **auto-registered** at launch
@@ -27,26 +27,27 @@ first, then the program(s).**
 
 ## One command (recommended)
 
-Clone the host wherever you want it to live, then run the installer. By default
-it installs **everything**, including the GUI agent program into
-`functions/agentics/` (PyTorch, YOLO weight, OCR). Add `--no-gui` to skip it.
+Clone the host wherever you want it to live, then run the installer. It installs
+the **host** — web UI, terminal UI, browser tool + channels. Agent harnesses (GUI,
+research, …) are added separately ([Adding agent programs](#adding-agent-programs)).
+Pass `--gui` / `-Gui` to also install the GUI agent here as a convenience.
 
 **macOS / Linux**
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram
 cd OpenProgram
-./scripts/install.sh                  # auto GPU/CPU torch · force: --cpu / --cuda cu124 · host only: --no-gui
+./scripts/install.sh                  # host only · also GUI: --gui · torch (with --gui): --cpu / --cuda cu124
 ```
 
 **Windows (PowerShell)**
 ```powershell
 git clone https://github.com/Fzkuji/OpenProgram
 cd OpenProgram
-.\scripts\install.ps1                 # auto GPU/CPU torch · force: -Cpu / -Cuda cu124 · host only: -NoGui
+.\scripts\install.ps1                 # host only · also GUI: -Gui · torch (with -Gui): -Cpu / -Cuda cu124
 ```
 
 Then just start it — the **first run walks you through provider setup**, then
-opens the chat (`gui_agent` appears in the UI automatically):
+opens the chat:
 ```bash
 openprogram                                   # first run = guided provider setup, then chat
 openprogram web                               # or the browser UI -> http://localhost:18100
@@ -65,7 +66,7 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | 3 | **OpenProgram** editable install (`pip install -e .`) | The host + base deps. |
 | 4 | **Web UI** — `npm install` in `web/` | Next.js frontend on **:18100**, backend on **:18109**. |
 | 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. |
-| 6 | **GUI program** (default; `--no-gui`/`-NoGui` to skip) into `functions/agentics/` | Clones the harness in-tree (editable, auto-registers) and runs its asset setup → PyTorch + YOLO weight + EasyOCR. Delegates to the harness's own [installer](../openprogram/functions/agentics/GUI-Agent-Harness/scripts). |
+| 6 | **GUI program** (opt-in: `--gui`/`-Gui`) into `functions/agentics/` | Clones the harness in-tree (editable, auto-registers) and runs its asset setup → PyTorch + YOLO weight + EasyOCR. Delegates to the harness's own [installer](../openprogram/functions/agentics/GUI-Agent-Harness/scripts). Default is host-only; add it later by cloning the harness in and running its installer ([Adding agent programs](#adding-agent-programs)). |
 | 7 | **Browser tool + channels** (default; `--minimal`/`-Minimal` to skip) | `pip install -e .[all]` + `playwright install chromium` (~150 MB). Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
 
 ---
@@ -74,7 +75,7 @@ The installer is **idempotent** — re-run it any time to repair or update.
 
 | Goal | `install.sh` (POSIX) | `install.ps1` (Windows) |
 |------|----------------------|--------------------------|
-| Skip the GUI agent (host only) | `--no-gui` | `-NoGui` |
+| Also install the GUI agent (host is default) | `--gui` | `-Gui` |
 | Skip the default browser + channels extras | `--minimal` | `-Minimal` |
 | Force CPU PyTorch (skip GPU auto-detect) | `--cpu` | `-Cpu` |
 | Force a specific CUDA tag | `--cuda cu124` | `-Cuda cu124` |
@@ -88,25 +89,34 @@ The installer is **idempotent** — re-run it any time to repair or update.
 
 ## Adding agent programs
 
-Programs always land in `functions/agentics/<Repo>/` and auto-register. Two ways:
+Programs always land in `functions/agentics/<Repo>/` and auto-register on the next
+start. The **universal** way — works for the catalogued harnesses *and your own* —
+is to clone a repo into that folder and run its installer:
 
-**a) With the installer (recommended for source checkouts):** `./scripts/install.sh`
-clones the GUI harness in-tree **editable** (you can edit/commit it) and finishes
-its setup — it's installed by default. This is the developer-friendly path.
-
-**b) On an existing host (end-user):** the built-in command clones + installs +
-registers any catalogued program:
 ```bash
-openprogram programs install gui          # or: research / wiki / all
+cd openprogram/functions/agentics
+git clone <harness-repo>
+cd <Harness>
+./scripts/install.sh          # if it ships one (Windows: .\scripts\install.ps1)
+```
+
+The **GUI agent** has native deps (PyTorch, detector weight, OCR), so it ships its
+own per-platform installer — use it via the steps above; full guide in its
+[install section](../openprogram/functions/agentics/GUI-Agent-Harness#1-install).
+(Or pass `--gui` / `-Gui` to OpenProgram's installer to do that clone + setup for you.)
+
+For **pure-Python** catalogued harnesses there's a one-line shortcut that clones,
+installs, and registers them for you:
+```bash
+openprogram programs install research     # or: wiki / all
 openprogram programs available            # see install status
 ```
-`programs install` does a **non-editable** install (deps to site-packages, code
-runs in-tree). It does **not** fetch the GUI's YOLO weight or warm OCR — finish
-those with the harness asset step (see its
-[install guide](../openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md)).
+`programs install` does a **non-editable** install (deps to site-packages, code runs
+in-tree); it does **not** fetch native assets like the GUI's YOLO weight or OCR — so
+the GUI agent uses its own installer (above) instead.
 
-After either, restart the worker (or hit **Refresh** on the Functions page) and
-`gui_agent` shows in the web UI. Any third-party harness works the same way:
+After any of these, restart the worker (or hit **Refresh** on the Functions page)
+and the program shows in the web UI. Third-party harnesses work the same way:
 [installing-harnesses.md](installing-harnesses.md).
 
 ---
@@ -173,7 +183,7 @@ Everything beyond `pip`. The installer handles every "auto" row.
 | provider credential | any chat turn | `openprogram providers login` / env key | all | manual |
 | Playwright / patchright / camoufox / agent-browser | browser tools | flags above | all | flag |
 
-### GUI-Agent-Harness program (installed by default; `--no-gui` to skip)
+### GUI-Agent-Harness program (opt-in: `--gui`, or clone it in — see [Adding agent programs](#adding-agent-programs))
 
 | Item | Required for | How | Platform | Auto? |
 |------|--------------|-----|----------|-------|
