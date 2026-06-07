@@ -252,6 +252,20 @@ def _resolve_api_key(provider_id: str) -> str | None:
     need their own resolution path (e.g. AuthManager.acquire_sync,
     daemon HEAD probe).
     """
+    # AuthStore FIRST: the account manager ("Add key" in the web form) saves
+    # credentials into the AuthStore (keyed by provider/profile), NOT into
+    # config.json. The unified ladder reads the active account from there, then
+    # falls back to env > config.json. Without this, the connectivity check and
+    # Fetch-models resolved only env/config and reported "not set" for a key the
+    # per-account validate had already proved VALID. resolve_api_key_sync covers
+    # both AuthStore and the canonical env/config path.
+    try:
+        from openprogram.auth.resolver import resolve_api_key_sync
+        tok = resolve_api_key_sync(provider_id)
+        if tok:
+            return tok
+    except Exception:
+        pass
     # Known providers delegate to the canonical resolver (env > config.json,
     # all special cases + the historical-name reconciliation live there now —
     # see docs/design/providers/api-key-resolution-unification.md).
@@ -261,7 +275,9 @@ def _resolve_api_key(provider_id: str) -> str | None:
         _config_api_keys,
     )
     if env_vars_for(provider_id):
-        return resolve_api_key(provider_id)
+        key = resolve_api_key(provider_id)
+        if key:
+            return key
     # Community / models.dev providers not in the canonical table: fall back to
     # the models.dev env-var name (+ config), the prior behaviour, so a freshly
     # fetched community provider still resolves out of the box.

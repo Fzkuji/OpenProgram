@@ -146,10 +146,17 @@ def _account_record(pool, pinned: str, disabled: set = frozenset()) -> dict:
 
 def _api_key_env(provider: str) -> str:
     """The provider's API-key env var, or '' — used to decide add_mode
-    (api_key paste vs sign-in) + which accounts can paste/reveal a key."""
+    (api_key paste vs sign-in) + which accounts can paste/reveal a key.
+
+    Uses ``env_vars_for`` (canonical static table → models.dev community
+    fallback), NOT the static ``_PROVIDER_ENV_VARS`` alone. A community-tier
+    api-key provider (e.g. ``minimax-cn-coding-plan``) has no static row, so
+    reading the static dict returned '' and misclassified it as a sign-in
+    provider — which hid the key-paste box in the web form. The fallback
+    restores the key field for every models.dev api-key provider."""
     try:
-        from openprogram.providers.env_api_keys import _PROVIDER_ENV_VARS
-        names = _PROVIDER_ENV_VARS.get(provider) or []
+        from openprogram.providers.env_api_keys import env_vars_for
+        names = env_vars_for(provider)
         return names[0] if names else ""
     except Exception:
         return ""

@@ -116,6 +116,11 @@ _ENV_API_KEYS: dict[str, str | None] = {
     "mistral": "MISTRAL_API_KEY",
     "minimax": "MINIMAX_API_KEY",
     "minimax-cn": "MINIMAX_API_KEY",
+    # Token Plan (subscription) shares the region account's key — same as the
+    # plain-API sibling above. Pin here too so the listing's api_key_env /
+    # base resolution don't depend on the models.dev catalogue being reachable.
+    "minimax-coding-plan": "MINIMAX_API_KEY",
+    "minimax-cn-coding-plan": "MINIMAX_API_KEY",
     "huggingface": "HF_TOKEN",
     "github-copilot": None,  # OAuth
     "kimi-coding": "MOONSHOT_API_KEY",

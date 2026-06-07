@@ -85,6 +85,15 @@ _PROVIDER_ENV_VARS: dict[str, list[str]] = {
     "huggingface": ["HF_TOKEN"],
     "minimax": ["MINIMAX_API_KEY"],
     "minimax-cn": ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"],
+    # MiniMax "Token Plan" (the coding-plan subscription) is the SAME account
+    # and SAME API key as the region's pay-as-you-go provider above — MiniMax
+    # has no separate subscription login. Map each Token Plan to its region
+    # sibling's env(s) so: (1) the key resolves at runtime offline too (the
+    # models.dev fallback in env_vars_for returns [] on a cold cache, which
+    # otherwise broke auth), and (2) the web form classifies them as api-key
+    # providers (add_mode) and shows the key field.
+    "minimax-coding-plan": ["MINIMAX_API_KEY"],
+    "minimax-cn-coding-plan": ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"],
     "opencode": ["OPENCODE_API_KEY"],
     "opencode-go": ["OPENCODE_API_KEY"],
     "kimi-coding": ["KIMI_API_KEY", "MOONSHOT_API_KEY"],
