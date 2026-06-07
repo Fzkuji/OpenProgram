@@ -35,14 +35,14 @@ it installs **everything**, including the GUI agent program into
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram
 cd OpenProgram
-./scripts/install.sh                  # NVIDIA GPU: --cuda cu124 (your tag) · host only: --no-gui
+./scripts/install.sh                  # auto GPU/CPU torch · force: --cpu / --cuda cu124 · host only: --no-gui
 ```
 
 **Windows (PowerShell)**
 ```powershell
 git clone https://github.com/Fzkuji/OpenProgram
 cd OpenProgram
-.\scripts\install.ps1                 # NVIDIA GPU: -Cuda cu124 (your tag) · host only: -NoGui
+.\scripts\install.ps1                 # auto GPU/CPU torch · force: -Cpu / -Cuda cu124 · host only: -NoGui
 ```
 
 Then just start it — the **first run walks you through provider setup**, then
@@ -75,7 +75,8 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | Goal | `install.sh` (POSIX) | `install.ps1` (Windows) |
 |------|----------------------|--------------------------|
 | Skip the GUI agent (host only) | `--no-gui` | `-NoGui` |
-| CUDA build of PyTorch (use your own tag) | `--cuda cu124` | `-Cuda cu124` |
+| Force CPU PyTorch (skip GPU auto-detect) | `--cpu` | `-Cpu` |
+| Force a specific CUDA tag | `--cuda cu124` | `-Cuda cu124` |
 | Force CPU torch (default) | `--cpu` | *(default)* |
 | Target a specific interpreter | `--python /path/python` | `-Python C:\path\python.exe` |
 | Pre-build the web bundle (`next build`) | `--build-web` | `-BuildWeb` |
@@ -172,7 +173,7 @@ Everything beyond `pip`. The installer handles every "auto" row.
 
 | Item | Required for | How | Platform | Auto? |
 |------|--------------|-----|----------|-------|
-| PyTorch (+ torchvision) | YOLO / OCR | CPU wheel default; `--cuda cuXXX` | all | **auto** |
+| PyTorch (+ torchvision) | YOLO / OCR | auto-detects NVIDIA GPU → CUDA, else CPU (`--cpu` / `--cuda cuXXX` to force) | all | **auto** |
 | harness Python deps | core | `pip install -e .[ocr]` (ultralytics, opencv, pynput, easyocr) | all | **auto** |
 | **GPA YOLO weight** `model.pt` | element detection | `Salesforce/GPA-GUI-Detector` → `~/GPA-GUI-Detector/model.pt` | all | **auto** |
 | EasyOCR models (en + ch_sim) | text detection | pre-warmed (`~/.EasyOCR/model`, ~300 MB) | Win/Linux | **auto** |
@@ -196,7 +197,7 @@ macOS without Xcode CLT — Apple Vision is just faster. Full GUI specifics:
   Stop the running `openprogram web` / worker first, then re-run.
 - **`gui_agent` doesn't appear in the UI.** Restart the worker (or Refresh the
   Functions page). Confirm it's registered: `openprogram programs available`.
-- **NVIDIA GPU unused.** Default torch is the CPU build — re-run with `--cuda <your-tag>` (e.g. `cu124`).
+- **NVIDIA GPU unused.** The installer auto-detects it; if it picked CPU (no driver at install time, or you passed `--cpu`): `pip uninstall -y torch torchvision`, then re-run the installer.
 - **GPA weight didn't download** (offline): `hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector`.
 
 ---

@@ -17,7 +17,7 @@ git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-Requires Python ≥ 3.11, Node ≥ 20, git. NVIDIA GPU? add `--cuda cu124` (your own CUDA tag). Host only (skip the GUI agent)? add `--no-gui`. Full dependency matrix and flags: [docs/install.md](install.md).
+Requires Python ≥ 3.11, Node ≥ 20, git. PyTorch auto-selects your hardware (NVIDIA GPU → CUDA, else CPU; force with `--cpu` / `--cuda cu124`). Host only (skip the GUI agent)? add `--no-gui`. Full dependency matrix and flags: [docs/install.md](install.md).
 
 ### Step 2: Connect a provider
 
@@ -310,7 +310,7 @@ git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-需要 Python ≥ 3.11、Node ≥ 20、git。有 N 卡？加 `--cuda cu124`（填你自己的 CUDA 版本）。只要 host、不装 GUI？加 `--no-gui`。完整依赖矩阵与参数见 [docs/install.md](install.md)。
+需要 Python ≥ 3.11、Node ≥ 20、git。PyTorch 会自动识别显卡（有 N 卡装 CUDA 版，否则 CPU；可用 `--cpu` / `--cuda cu124` 强制）。只要 host、不装 GUI？加 `--no-gui`。完整依赖矩阵与参数见 [docs/install.md](install.md)。
 
 ### 第 2 步：写你的第一个 Agentic Function
 

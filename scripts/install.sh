@@ -13,15 +13,16 @@
 #               (torch, YOLO weight, EasyOCR, platform tools). Skip with --no-gui.
 #   7. Optional extras behind flags: --browser --stealth --agent-browser --channels
 #
-# PyTorch is the CPU build by default (works everywhere, no flag needed). Pass
-# --cuda ONLY if you have an NVIDIA GPU, with YOUR CUDA tag (e.g. cu121 / cu124).
+# PyTorch is auto-selected: an NVIDIA GPU (nvidia-smi) gets the matching CUDA
+# build, otherwise CPU. Force it with --cpu or --cuda cuXXX (e.g. cu124).
 #
 # Re-runnable: every step is idempotent.
 #
 # Usage:
-#   ./scripts/install.sh                 # full install incl. GUI agent (CPU torch)
+#   ./scripts/install.sh                 # full install incl. GUI agent (auto GPU/CPU torch)
 #   ./scripts/install.sh --no-gui        # host only, skip the GUI agent
-#   ./scripts/install.sh --cuda cu124    # NVIDIA GPU — use your own CUDA tag
+#   ./scripts/install.sh --cpu           # force CPU torch (skip GPU auto-detect)
+#   ./scripts/install.sh --cuda cu124    # force a specific CUDA tag
 #   ./scripts/install.sh --browser       # + Playwright browser tool
 # =============================================================================
 set -euo pipefail
@@ -40,7 +41,7 @@ HARNESS_REPO="https://github.com/Fzkuji/GUI-Agent-Harness"
 OS="$(uname -s)"
 
 # ---- args -------------------------------------------------------------------
-WITH_GUI=1; TORCH_VARIANT="cpu"; PYTHON_BIN=""; BUILD_WEB=0   # GUI on by default
+WITH_GUI=1; TORCH_VARIANT="auto"; PYTHON_BIN=""; BUILD_WEB=0   # GUI on + torch auto-detect by default
 WITH_BROWSER=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0; WITH_CHANNELS=0; NO_TUI=0
 while [ $# -gt 0 ]; do
   case "$1" in

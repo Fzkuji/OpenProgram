@@ -62,7 +62,7 @@ git clone https://github.com/Fzkuji/OpenProgram; cd OpenProgram
 .\scripts\install.ps1
 ```
 
-That's it. NVIDIA GPU? add `--cuda cu124` (use your own CUDA tag). Don't want the GUI agent? add `--no-gui`.
+That's it — it **auto-detects an NVIDIA GPU** and installs the matching CUDA PyTorch (CPU otherwise; force with `--cpu` or `--cuda cu124`). Don't want the GUI agent? add `--no-gui`.
 
 Then just start it — **the first run walks you through provider setup**, then opens the chat. Three surfaces share one backend (`~/.openprogram/`), so a terminal session shows up in the browser and vice versa:
 

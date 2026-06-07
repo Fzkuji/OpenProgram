@@ -55,7 +55,7 @@ git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-有 N 卡？加 `--cuda cu124`（填你自己的 CUDA 版本）。只要 host、不装 GUI？加 `--no-gui`。provider SDK（anthropic / openai / google-genai）默认已装好。
+PyTorch 自动识别显卡（N 卡→CUDA，否则 CPU；`--cpu` / `--cuda cu124` 可强制）。只要 host、不装 GUI？加 `--no-gui`。provider SDK（anthropic / openai / google-genai）默认已装好。
 
 Research / Wiki 作为 **OpenProgram 程序** 安装进
 `openprogram/functions/agentics/<Harness>/` 并**自动注册**（装好后即出现在网页 UI；GUI agent 上面已默认装好）：

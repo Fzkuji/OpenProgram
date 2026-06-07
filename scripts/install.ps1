@@ -13,15 +13,16 @@
               (torch, YOLO weight, EasyOCR). Skip with -NoGui.
    6. Optional extras behind switches: -Browser -Stealth -AgentBrowser -Channels
 
- PyTorch is the CPU build by default (works everywhere, no flag). Pass -Cuda
- ONLY if you have an NVIDIA GPU, with YOUR CUDA tag (e.g. cu121 / cu124).
+ PyTorch is auto-selected: an NVIDIA GPU (nvidia-smi) gets the matching CUDA
+ build, otherwise CPU. Force it with -Cpu or -Cuda cuXXX (e.g. cu124).
 
  Re-runnable: every step is idempotent.
 
  Usage:
-   .\scripts\install.ps1                  # full install incl. GUI agent (CPU torch)
+   .\scripts\install.ps1                  # full install incl. GUI agent (auto GPU/CPU torch)
    .\scripts\install.ps1 -NoGui           # host only, skip the GUI agent
-   .\scripts\install.ps1 -Cuda cu124      # NVIDIA GPU - use your own CUDA tag
+   .\scripts\install.ps1 -Cpu             # force CPU torch (skip GPU auto-detect)
+   .\scripts\install.ps1 -Cuda cu124      # force a specific CUDA tag
    .\scripts\install.ps1 -Browser         # + Playwright browser tool
 =============================================================================
 #>
@@ -29,7 +30,8 @@
 param(
   [switch]$NoGui,                 # GUI installs by default; pass -NoGui to skip
   [switch]$Gui,                   # accepted but redundant (GUI is the default)
-  [string]$Cuda = "cpu",
+  [string]$Cuda = "auto",         # auto-detect GPU; "cpu" or "cuXXX" to force
+  [switch]$Cpu,                   # force the CPU torch build
   [string]$Python = "",
   [switch]$BuildWeb,
   [switch]$Browser,
@@ -41,6 +43,7 @@ param(
 # native exe's stderr line (e.g. pip's harmless "Scripts not on PATH" warning)
 # into a terminating NativeCommandError. We gate on $LASTEXITCODE instead.
 $ErrorActionPreference = "Continue"
+if ($Cpu) { $Cuda = "cpu" }   # -Cpu forces the CPU torch build (passed through to the harness)
 
 function Step($m){ Write-Host "==> $m" -ForegroundColor Cyan }
 function Ok($m){ Write-Host "  ok $m" -ForegroundColor Green }

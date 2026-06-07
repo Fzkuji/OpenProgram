@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed — installer & first-run UX
 - The installer sets up the **GUI agent by default** (no `--gui` flag); pass `--no-gui` / `-NoGui` to skip it (host-only, e.g. research/wiki without the ~2 GB torch stack).
-- PyTorch defaults to the **CPU build** (no flag); `--cuda` takes **your own** CUDA tag (e.g. `cu124`) instead of being presented as pinned to `cu121`.
+- PyTorch is **auto-selected**: the installer detects an NVIDIA GPU (`nvidia-smi`) and the driver's CUDA version, then installs the newest published torch CUDA wheel the driver supports (e.g. RTX 3080 + driver 13.1 → `cu130`); falls back to CPU when there's no GPU. Force with `--cpu` / `-Cpu` or a specific `--cuda cuXXX` / `-Cuda cuXXX`.
 - A bare **`openprogram` first run auto-launches the setup wizard** when no provider is configured, then opens the chat — no separate `openprogram setup` step. Skipped for `--print` / `--resume` and when already configured.
 - Onboarding docs (README / GETTING_STARTED / README_CN / install.md, EN + 中文) lead with the one-command installer; dropped `pip install openprogram` from the onboarding paths.
 
