@@ -66,7 +66,7 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | 4 | **Web UI** — `npm install` in `web/` | Next.js frontend on **:18100**, backend on **:18109**. |
 | 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. |
 | 6 | **GUI program** (default; `--no-gui`/`-NoGui` to skip) into `functions/agentics/` | Clones the harness in-tree (editable, auto-registers) and runs its asset setup → PyTorch + YOLO weight + EasyOCR. Delegates to the harness's own [installer](../openprogram/functions/agentics/GUI-Agent-Harness/scripts). |
-| 7 | Optional extras behind flags | See [Optional extras](#optional-extras). |
+| 7 | **Browser tool + channels** (default; `--minimal`/`-Minimal` to skip) | `pip install -e .[all]` + `playwright install chromium` (~150 MB). Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
 
 ---
 
@@ -75,16 +75,14 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | Goal | `install.sh` (POSIX) | `install.ps1` (Windows) |
 |------|----------------------|--------------------------|
 | Skip the GUI agent (host only) | `--no-gui` | `-NoGui` |
+| Skip the default browser + channels extras | `--minimal` | `-Minimal` |
 | Force CPU PyTorch (skip GPU auto-detect) | `--cpu` | `-Cpu` |
 | Force a specific CUDA tag | `--cuda cu124` | `-Cuda cu124` |
-| Force CPU torch (default) | `--cpu` | *(default)* |
 | Target a specific interpreter | `--python /path/python` | `-Python C:\path\python.exe` |
 | Pre-build the web bundle (`next build`) | `--build-web` | `-BuildWeb` |
 | Skip the Ink TUI build | `--no-tui` | *(n/a)* |
-| Browser tool (Playwright) | `--browser` | `-Browser` |
-| Stealth browser (patchright + camoufox) | `--stealth` | `-Stealth` |
+| Stealth browsers (patchright + camoufox) | `--stealth` | `-Stealth` |
 | `agent-browser` tool | `--agent-browser` | `-AgentBrowser` |
-| Chat channels (Discord/Slack/WeChat) | `--channels` | `-Channels` |
 
 ---
 
@@ -113,17 +111,23 @@ After either, restart the worker (or hit **Refresh** on the Functions page) and
 
 ---
 
-## Optional extras
+## Extras
 
-Off by default (large binaries). Add the flag to enable; the installer runs the
-post-install step for you.
+The **browser tool + chat channels install by default** (the `[all]` extra), and
+the installer fetches the Playwright Chromium binary for you — nothing to opt into.
+Pass `--minimal` / `-Minimal` to skip them (e.g. CI / air-gapped / bandwidth-limited).
+
+| Default extra | Installs | Post-install (automated) | Size |
+|---------------|----------|--------------------------|------|
+| browser (`[browser]`) | `playwright` | `playwright install chromium` | ~150 MB |
+| channels (`[channels]`) | `discord.py`, `slack_sdk`, `qrcode` | *(set tokens in `~/.openprogram/config.json`)* | small |
+
+Heavier, still opt-in (add the flag):
 
 | Flag / extra | Installs | Post-install (automated) | Size |
 |--------------|----------|--------------------------|------|
-| `--browser` · `[browser]` | `playwright` | `playwright install chromium` | ~150 MB |
 | `--stealth` · `[browser-stealth]` | `patchright`, `camoufox` | `patchright install chromium`, `camoufox fetch` | ~350 MB |
 | `--agent-browser` · `[agent-browser]` | global npm `agent-browser` | `agent-browser install` | ~150 MB |
-| `--channels` · `[channels]` | `discord.py`, `slack_sdk`, `qrcode` | *(set tokens in `~/.openprogram/config.json`)* | small |
 
 Provider SDKs (`anthropic`, `openai`, `google-genai`) ship in the base install —
 no extra needed.

@@ -11,7 +11,8 @@
 #   5. TUI deps:     cli/  -> npm install && npm run build  (Ink TUI; POSIX)
 #   6. GUI agent (default) -> clone (if needed) + fully install GUI-Agent-Harness
 #               (torch, YOLO weight, EasyOCR, platform tools). Skip with --no-gui.
-#   7. Optional extras behind flags: --browser --stealth --agent-browser --channels
+#   7. Browser tool + channels installed by DEFAULT; --stealth / --agent-browser
+#               are heavier opt-ins (--minimal skips the default extras)
 #
 # PyTorch is auto-selected: an NVIDIA GPU (nvidia-smi) gets the matching CUDA
 # build, otherwise CPU. Force it with --cpu or --cuda cuXXX (e.g. cu124).
@@ -42,7 +43,7 @@ OS="$(uname -s)"
 
 # ---- args -------------------------------------------------------------------
 WITH_GUI=1; TORCH_VARIANT="auto"; PYTHON_BIN=""; BUILD_WEB=0   # GUI on + torch auto-detect by default
-WITH_BROWSER=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0; WITH_CHANNELS=0; NO_TUI=0
+WITH_BROWSER=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0; WITH_CHANNELS=0; NO_TUI=0; MINIMAL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --gui) WITH_GUI=1; shift ;;                 # GUI is the default; kept for explicitness
@@ -55,6 +56,7 @@ while [ $# -gt 0 ]; do
     --stealth) WITH_STEALTH=1; shift ;;
     --agent-browser) WITH_AGENT_BROWSER=1; shift ;;
     --channels) WITH_CHANNELS=1; shift ;;
+    --minimal) MINIMAL=1; shift ;;              # opt-out: skip the default browser + channels extras
     --no-tui) NO_TUI=1; shift ;;
     -h|--help) sed -n '/^# Usage:/,/^# ==/p' "$0"; exit 0 ;;
     *) die "unknown option: $1" ;;
@@ -144,7 +146,16 @@ install_gui() {
   bash "$HARNESS_DIR/scripts/install.sh" --python "$PY" --cuda "$TORCH_VARIANT" --no-host
 }
 
-# ---- 7. optional extras -----------------------------------------------------
+# ---- 7. default extras: [all] = browser + channels (opt out with --minimal) ----
+install_default_extras() {
+  [ "$MINIMAL" = "1" ] && { warn "skipping default extras (--minimal)"; return 0; }
+  step "installing default extras [all] (browser tool + channels)"
+  PIP install -e "$HOST_ROOT[all]"
+  step "fetching Playwright Chromium (~150MB)"
+  "$PY" -m playwright install chromium || warn "playwright chromium download failed — run '\"$PY\" -m playwright install chromium' later (needs network)"
+}
+
+# ---- 8. heavier opt-in extras: stealth browsers / agent-browser ---------------
 install_extras() {
   if [ "$WITH_BROWSER" = "1" ]; then
     step "installing browser tool (Playwright)"; PIP install -e "$HOST_ROOT[browser]"
@@ -171,6 +182,7 @@ step "OpenProgram setup  (os=$OS, gui=$WITH_GUI, torch=$TORCH_VARIANT)"
 install_web
 install_tui
 install_gui
+install_default_extras
 install_extras
 
 # ---- done --------------------------------------------------------------------

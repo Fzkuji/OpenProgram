@@ -11,7 +11,8 @@
       (Windows uses the Rich REPL, not the Ink TUI, so cli\ is not built)
    5. GUI agent (default) -> clone (if needed) + fully install GUI-Agent-Harness
               (torch, YOLO weight, EasyOCR). Skip with -NoGui.
-   6. Optional extras behind switches: -Browser -Stealth -AgentBrowser -Channels
+   6. Browser tool + channels installed by DEFAULT; -Stealth / -AgentBrowser are
+      heavier opt-ins (-Minimal skips the default extras)
 
  PyTorch is auto-selected: an NVIDIA GPU (nvidia-smi) gets the matching CUDA
  build, otherwise CPU. Force it with -Cpu or -Cuda cuXXX (e.g. cu124).
@@ -37,7 +38,8 @@ param(
   [switch]$Browser,
   [switch]$Stealth,
   [switch]$AgentBrowser,
-  [switch]$Channels
+  [switch]$Channels,
+  [switch]$Minimal                # opt-out: skip the default browser + channels extras
 )
 # NOTE: 'Continue', not 'Stop'. Under 'Stop', Windows PowerShell 5.1 turns a
 # native exe's stderr line (e.g. pip's harmless "Scripts not on PATH" warning)
@@ -123,7 +125,17 @@ function Install-Gui {
   & powershell -NoProfile -ExecutionPolicy Bypass -File $hInstall -Python $PY -Cuda $Cuda -NoHost
 }
 
-# ---- 6. optional extras -----------------------------------------------------
+# ---- 6. default extras: [all] = browser + channels (opt out with -Minimal) ----
+function Install-DefaultExtras {
+  if ($Minimal) { Warn "skipping default extras (-Minimal)"; return }
+  Step "installing default extras [all] (browser tool + channels)"
+  Pip install -e "${HostRoot}[all]"
+  Step "fetching Playwright Chromium (~150MB)"
+  & $PY -m playwright install chromium
+  if ($LASTEXITCODE -ne 0) { Warn "playwright chromium download failed - run '& `"$PY`" -m playwright install chromium' later (needs network)" }
+}
+
+# ---- 7. heavier opt-in extras: stealth browsers / agent-browser ---------------
 function Install-Extras {
   if ($Browser) {
     Step "installing browser tool (Playwright)"; Pip install -e "${HostRoot}[browser]"
@@ -147,6 +159,7 @@ function Install-Extras {
 Step "OpenProgram setup  (os=Windows, gui=$(-not $NoGui), torch=$Cuda)"
 Install-Web
 Install-Gui
+Install-DefaultExtras
 Install-Extras
 
 Write-Host "`nOpenProgram ready." -ForegroundColor Green

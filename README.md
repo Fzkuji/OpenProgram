@@ -48,8 +48,6 @@
 
 ### 1. Install
 
-Clone the repo wherever you want OpenProgram to live, then run the one-command installer. It sets up **everything** — the Python package, the web UI, the terminal UI, and the GUI agent (with its model weight + OCR).
-
 **macOS / Linux**
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
@@ -62,55 +60,26 @@ git clone https://github.com/Fzkuji/OpenProgram; cd OpenProgram
 .\scripts\install.ps1
 ```
 
-That's it — it **auto-detects an NVIDIA GPU** and installs the matching CUDA PyTorch (CPU otherwise; force with `--cpu` or `--cuda cu124`). Don't want the GUI agent? add `--no-gui`.
+One command installs everything and auto-detects your GPU. Flags and per-OS notes: **[docs/install.md](docs/install.md)**.
 
-Then just start it — **the first run walks you through provider setup**, then opens the chat. Three surfaces share one backend (`~/.openprogram/`), so a terminal session shows up in the browser and vice versa:
-
-```bash
-openprogram                                # terminal UI — first run = guided setup, then chat
-openprogram web                            # browser UI  -> http://localhost:18100
-openprogram --print "summarise this file"  # one-shot, no UI
-```
-
-The web UI adds the mini-DAG, branch / merge, multi-agent, and attachments; the terminal UI auto-picks Ink (macOS/Linux) or Rich (Windows).
-
-Full dependency matrix, flags, and per-OS notes: **[docs/install.md](docs/install.md)**.
-
-### 2. Write your own functions
-
-Just ask the agent in chat — *"create an @agentic_function that summarises a PDF"* — and the bundled [`agentic-programming` skill](skills/agentic-programming/SKILL.md) handles location, decorator, smoke test, and validation.
-
-### 3. Add the harness suite (optional)
-
-Three sibling harnesses run as **OpenProgram programs** — they install *into* your OpenProgram checkout and are auto-discovered. (The installer in step 1 already set up the **GUI agent** by default — this section is for adding `research` / `wiki`, or for a host where you skipped it with `--no-gui`.)
+### 2. Run
 
 ```bash
-openprogram programs install research    # or: gui / wiki
+openprogram        # terminal UI — first run walks you through provider setup, then opens the chat
+openprogram web    # browser UI -> http://localhost:18100
 ```
 
-Each harness clones into **`openprogram/functions/agentics/<Harness-Name>/`** (inside your OpenProgram install), pip-installs its own deps, and **auto-registers** on the next worker restart (or hit **Refresh** on the Functions page) — so it appears in the web UI with no extra wiring. Identical on every OS. Details: [docs/installing-harnesses.md](docs/installing-harnesses.md).
+### 3. Add a harness
 
-> The **GUI** agent additionally needs a YOLO detector weight + OCR models that `pip` can't fetch. The step-1 installer sets them up by default; on a `programs install`-ed host, finish them by running the harness's own installer — see **[the GUI install guide](openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md)**.
+Sibling harnesses install the same way — `openprogram programs install <name>` — and auto-register on the next worker restart.
 
-| Harness | What it does | Track record |
+| Harness | Install | What it does |
 |---|---|---|
-| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Observe → plan → click → verify by vision; drives desktop apps & OSWorld VMs. Runs on macOS / Windows / Linux (perception macOS-tuned). | **OSWorld Multi-Apps 79.8%** (72.6 / 91) |
-| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Literature survey → idea → experiments → paper draft → cross-model review. | Topic → submission-ready draft |
-| [Wiki&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Wiki-Agent-Harness) | Ingests notes / docs / chats into an Obsidian-compatible vault with `[[wikilinks]]`. | Obsidian vault output |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` | Drives desktop apps & OSWorld VMs by vision. |
+| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | Literature survey → experiments → paper draft. |
+| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
 
-## Optional extras
-
-The provider SDKs (`anthropic`, `openai`, `google-genai`) are installed
-by default — no extra needed. The extras below are opt-in tools.
-
-| Extra | Adds |
-|---|---|
-| `[browser]` | Playwright (~150 MB) |
-| `[browser-stealth]` | Cloudflare-bypassing browsers |
-| `[channels]` | Discord / Slack / WeChat bots |
-| `[all]` | Everything except `[browser-stealth]` |
-
-Post-install steps and per-extra notes: [docs/install.md](docs/install.md). The harness suite (GUI / Research / Wiki) is **not** an extra — install those via `openprogram programs install <name>` (step 4).
+> Need a workflow of your own? Just ask the agent in chat — the bundled [`agentic-programming` skill](skills/agentic-programming/SKILL.md) handles the rest.
 
 ## Troubleshooting
 
