@@ -65,9 +65,10 @@ One command installs everything and auto-detects your GPU. Flags and per-OS note
 ### 2. Run
 
 ```bash
-openprogram        # terminal UI — first run walks you through provider setup, then opens the chat
-openprogram web    # browser UI -> http://localhost:18100
+openprogram
 ```
+
+First run walks you through provider setup, then opens the chat. Prefer a browser? `openprogram web` → http://localhost:18100.
 
 ### 3. Add a harness
 
