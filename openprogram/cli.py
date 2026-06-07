@@ -195,6 +195,35 @@ def _needs_first_run_setup() -> bool:
         return False  # never block startup on a detection hiccup
 
 
+def _choose_surface() -> str:
+    """Ask whether to open the terminal UI or the web UI; returns 'tui' or 'web'.
+
+    Only for a bare ``openprogram`` (no surface given). ``openprogram tui`` /
+    ``openprogram web`` skip this and launch directly. Non-interactive → 'tui'.
+    """
+    try:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return "tui"
+    except Exception:
+        return "tui"
+    try:
+        import questionary
+        ans = questionary.select(
+            "Start OpenProgram in:",
+            choices=[
+                questionary.Choice("Terminal UI — chat right here", value="tui"),
+                questionary.Choice("Web UI — browser at http://localhost:18100", value="web"),
+            ],
+        ).ask()
+        return ans if ans in ("tui", "web") else "tui"
+    except Exception:
+        try:
+            print("Start OpenProgram in:\n  1) Terminal UI (default)\n  2) Web UI (browser)")
+            return "web" if input("Choice [1]: ").strip() == "2" else "tui"
+        except (EOFError, KeyboardInterrupt):
+            return "tui"
+
+
 def main():
     _ensure_utf8_stdio()
     parser = argparse.ArgumentParser(
@@ -816,6 +845,13 @@ def main():
             except KeyboardInterrupt:
                 print("\nSetup cancelled. Run `openprogram setup` any time.")
                 return
+        # Bare `openprogram` (no surface given) → let the user pick terminal vs web.
+        # The explicit `openprogram tui` / `openprogram chat` (here) and
+        # `openprogram web` (its own subcommand) skip the prompt and launch directly.
+        if args.command is None and not args.resume and _choose_surface() == "web":
+            from openprogram._cli_cmds.web import _cmd_web
+            _cmd_web(None, None)
+            return
         _cmd_cli_chat(oneshot=None, resume=args.resume,
                       tui=tui_enabled)
         return

@@ -68,7 +68,7 @@ One command installs everything and auto-detects your GPU. Flags and per-OS note
 openprogram
 ```
 
-First run walks you through provider setup, then opens the chat. Prefer a browser? `openprogram web` → http://localhost:18100.
+First run sets up your provider, then asks which surface to open. Skip the prompt with `openprogram tui` (terminal) or `openprogram web` (browser → http://localhost:18100).
 
 ### 3. Add a harness
 
