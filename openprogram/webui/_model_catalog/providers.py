@@ -252,24 +252,60 @@ def _doc_url_for(provider_id: str) -> str | None:
     return md.get("doc_url")
 
 
+def _auth_store_has_credential(provider_id: str) -> bool:
+    """True when OpenProgram's own auth store holds a credential for
+    ``provider_id`` (alias-aware).
+
+    Every native login — codex PKCE OAuth, github-copilot device-code,
+    anthropic / gemini-subscription CLI-import — writes a Credential into
+    this store (see ``auth/methods/``), and the store-backed runtimes
+    authenticate from it (``manager.acquire_sync``). So a credential here
+    is the most authoritative "configured" signal there is, independent of
+    whether an env var or external CLI dotfile was also populated.
+    """
+    try:
+        from openprogram.auth.manager import get_manager
+        from openprogram.auth.aliases import resolve as _canon
+        target = _canon(provider_id)
+        store = get_manager().store
+        return any(
+            _canon(p.provider_id) == target and p.credentials
+            for p in store.list_pools()
+        )
+    except Exception:
+        return False
+
+
 def _is_configured(provider_id: str) -> bool:
-    """Is this provider usable (key present, CLI binary found, or local
-    daemon responding).
+    """Is this provider usable (credential in our store, key present, CLI
+    binary found, or local daemon responding).
 
-    Three shapes of detection:
+    Detection tiers, in order:
 
+    * **Auth store** — a credential saved by any native login (the
+      authoritative signal; see :func:`_auth_store_has_credential`).
     * CLI-backed providers — presence of their binary on PATH.
-    * Two special-case providers — ``openai-codex`` (looks for
-      ``~/.codex/auth.json``) and ``claude-code`` (HEAD against the
+    * Two special-case providers — ``openai-codex`` (also accepts the
+      shared ``~/.codex/auth.json``) and ``claude-code`` (HEAD against the
       Meridian / claude-max-api daemon's health endpoint).
     * Everything else — env-var key set, or non-empty
       ``~/.openprogram/config.json :: api_keys.<env_var>`` row.
     """
+    # Authoritative: a credential in OpenProgram's own auth store. This is
+    # where every native login (OAuth / device-code / CLI-import) lands and
+    # what the store-backed runtimes (codex, gemini-subscription,
+    # github-copilot, imported anthropic) read. Without this, a web/CLI
+    # login that never also set an env var / external dotfile was reported
+    # unconfigured and the chat model picker silently dropped its models.
+    if _auth_store_has_credential(provider_id):
+        return True
     # CLI-backed: binary presence decides.
     for cli in _CLI_PROVIDERS:
         if cli["id"] == provider_id:
             return shutil.which(cli["cli_binary"]) is not None
-    # openai-codex: reads ~/.codex/auth.json
+    # openai-codex also counts when the Codex CLI's shared auth file exists
+    # (~/.codex/auth.json) — same OpenAI account, even if we haven't stored
+    # our own credential yet. (The store case is handled above.)
     if provider_id == "openai-codex":
         from pathlib import Path
         return (Path.home() / ".codex" / "auth.json").exists()
