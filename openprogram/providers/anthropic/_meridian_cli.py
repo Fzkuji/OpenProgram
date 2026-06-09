@@ -117,16 +117,66 @@ def dispatch(args: argparse.Namespace) -> int:
 # backend helpers (the local proxy = Meridian; kept internal)
 # ---------------------------------------------------------------------------
 
+_NPM_PREFIX_CACHE: "str | None | bool" = False  # False = not computed yet
+
+
+def _npm_global_prefix() -> "str | None":
+    """npm's global install prefix (cached). ``npm prefix -g`` is authoritative
+    but spawns node, so we cache it for the process and fall back to the
+    platform default (``%APPDATA%\\npm`` on Windows)."""
+    global _NPM_PREFIX_CACHE
+    if _NPM_PREFIX_CACHE is False:
+        prefix = ""
+        try:
+            from openprogram._compat import node_tool_cmd
+            r = subprocess.run(node_tool_cmd(["npm", "prefix", "-g"]),
+                               capture_output=True, text=True, timeout=15)
+            if r.returncode == 0:
+                prefix = (r.stdout or "").strip()
+        except Exception:
+            prefix = ""
+        if not prefix and sys.platform == "win32":
+            appdata = os.environ.get("APPDATA")
+            prefix = os.path.join(appdata, "npm") if appdata else ""
+        _NPM_PREFIX_CACHE = prefix or None
+    return _NPM_PREFIX_CACHE
+
+
+def _npm_bin(name: str) -> str | None:
+    """Locate an npm-installed CLI shim. Prefer PATH, but also look under npm's
+    global bin dir — it isn't always on the worker's PATH (notably
+    ``%APPDATA%\\npm`` on Windows), so a freshly npm-installed tool would
+    otherwise look 'not installed' until a shell restart."""
+    found = shutil.which(name)
+    if found:
+        return found
+    prefix = _npm_global_prefix()
+    if not prefix:
+        return None
+    if sys.platform == "win32":
+        cands = [os.path.join(prefix, f"{name}{ext}") for ext in (".cmd", ".exe", "")]
+    else:
+        cands = [os.path.join(prefix, "bin", name)]
+    return next((c for c in cands if os.path.isfile(c)), None)
+
+
 def _proxy_bin() -> str | None:
-    return shutil.which("meridian")
+    return _npm_bin("meridian")
 
 
 def _run_proxy(args: list[str]) -> tuple[int, str]:
     binp = _proxy_bin()
     if not binp:
         return 127, "backend not installed"
+    from openprogram._compat import node_tool_cmd
     try:
-        p = subprocess.run([binp, *args], capture_output=True, text=True, timeout=30)
+        # node_tool_cmd routes a Windows ``.cmd`` shim through cmd.exe — a bare
+        # subprocess([binp,...]) can't exec a .cmd (WinError 193). Force UTF-8
+        # decoding: the default Windows locale (e.g. gbk) crashes on the smart
+        # quotes / box-drawing chars the backend prints.
+        p = subprocess.run(node_tool_cmd([binp, *args]),
+                           capture_output=True, encoding="utf-8",
+                           errors="replace", timeout=30)
     except Exception as e:  # noqa: BLE001
         return 1, f"backend error: {e}"
     return p.returncode, (p.stdout + p.stderr)
@@ -164,11 +214,19 @@ def ensure_backend(install: bool = True, start: bool = True) -> dict:
                              "backend — install Node, then try again."}
         from openprogram._compat import node_tool_cmd
         try:
+            # Timeout so a wedged npm can't pin the FastAPI threadpool thread
+            # forever (the symptom: "Add account" hangs with no feedback).
             subprocess.run(
                 node_tool_cmd(["npm", "install", "-g", "@rynfar/meridian",
                                "--ignore-scripts"]),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=300,
             )
+        except subprocess.TimeoutExpired:
+            return {"ready": False,
+                    "error": "Setting up the Claude backend timed out — check "
+                             "your network and try again, or install it manually "
+                             "with `npm install -g @rynfar/meridian`."}
         except Exception as e:  # noqa: BLE001
             return {"ready": False, "error": f"backend install failed: {e}"}
         binp = _proxy_bin()
@@ -181,11 +239,21 @@ def ensure_backend(install: bool = True, start: bool = True) -> dict:
         return {"ready": False, "error": "backend not running"}
     # Spawn detached so it outlives this request (and the worker); it's a
     # plain HTTP daemon on 3456. The user doesn't manage its lifecycle.
-    try:
-        subprocess.Popen(
-            [binp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL, start_new_session=True,
+    from openprogram._compat import node_tool_cmd
+    spawn_kwargs: dict = dict(
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+    )
+    if sys.platform == "win32":
+        # start_new_session is a no-op on Windows; use creation flags so the
+        # daemon truly detaches and has no console window.
+        spawn_kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
         )
+    else:
+        spawn_kwargs["start_new_session"] = True
+    try:
+        subprocess.Popen(node_tool_cmd([binp]), **spawn_kwargs)
     except Exception as e:  # noqa: BLE001
         return {"ready": False, "error": f"backend start failed: {e}"}
     import time as _time
@@ -207,11 +275,8 @@ def _reap_stale_logins(ttl: float = 300.0) -> None:
         if not e or now - e.get("started_at", now) <= ttl:
             continue
         try:
-            e["proc"].kill()
-        except Exception:
-            pass
-        try:
-            os.close(e["master"])
+            e["driver"].kill()
+            e["driver"].close()
         except Exception:
             pass
         _PENDING_LOGINS.pop(sid, None)
@@ -305,13 +370,17 @@ def accounts_summary() -> dict:
     """
     ready, url = _backend_ready()
     binp = _proxy_bin()
-    return {
+    summary = {
         "installed": bool(binp),
         "ready": ready,
         "backend_url": url,
         "active": _active_account(),
         "accounts": _parse_accounts() if binp else [],
     }
+    # Capability + install-guidance flags so the UI can prompt the user to
+    # install what's missing and offer both login methods.
+    summary.update(prerequisites())
+    return summary
 
 
 def start_add(name: str) -> dict:
@@ -338,79 +407,71 @@ def start_add(name: str) -> dict:
         while f"account-{i}" in existing:
             i += 1
         name = f"account-{i}"
-    try:
-        import pty
-    except ImportError:  # Windows
-        return {"error": "interactive login isn't supported here — run "
-                         "`openprogram providers claude-code accounts add "
-                         f"{name}` in a terminal instead."}
-    import select
+    from openprogram._compat import (
+        InteractivePty, interactive_pty_available, node_tool_cmd,
+    )
     import time as _time
 
-    # A PTY makes the backend line-buffer (so its OAuth URL arrives promptly)
-    # and lets us write the pasted code back as if typed at a prompt.
-    # Put a no-op `open`/`xdg-open` first on PATH so the backend doesn't block
-    # trying to launch a browser on a headless worker (no GUI session) — it
-    # prints the login URL regardless, and the frontend opens it. Without
-    # this the worker hangs on the browser launch and the URL never arrives.
-    import tempfile
-    shim = tempfile.mkdtemp(prefix="op-noopen-")
-    for _c in ("open", "xdg-open"):
-        _p = os.path.join(shim, _c)
-        with open(_p, "w") as _f:
-            _f.write("#!/bin/sh\nexit 0\n")
-        os.chmod(_p, 0o755)
+    if not interactive_pty_available():
+        # Windows without pywinpty (or an exotic POSIX build): no pseudo-
+        # terminal to drive the interactive browser login. The UI offers the
+        # token-paste method instead; signal that distinctly.
+        return {"error": "BROWSER_LOGIN_UNAVAILABLE",
+                "detail": "Interactive browser sign-in needs a pseudo-terminal "
+                          "that isn't available here. Use the token method: run "
+                          "`claude setup-token` and paste the token."}
+
     # Strip inherited Claude credentials so the backend can't decide it's
     # "already authenticated" (e.g. off the worker's ANTHROPIC_API_KEY) and
     # skip the login — `add` needs a fresh browser OAuth for the NEW account.
     _strip = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY",
               "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
     env = {k: v for k, v in os.environ.items() if k not in _strip}
-    env["PATH"] = shim + os.pathsep + env.get("PATH", "")
+    if sys.platform != "win32":
+        # POSIX headless workers (no GUI session): a no-op `open`/`xdg-open`
+        # first on PATH so the backend doesn't block trying to launch a browser
+        # — it prints the login URL regardless and the frontend opens it.
+        # Windows has no such launcher to shim; `claude` opens the browser via
+        # the OS handler and still prints the URL to the pty.
+        import tempfile
+        shim = tempfile.mkdtemp(prefix="op-noopen-")
+        for _c in ("open", "xdg-open"):
+            _p = os.path.join(shim, _c)
+            with open(_p, "w") as _f:
+                _f.write("#!/bin/sh\nexit 0\n")
+            os.chmod(_p, 0o755)
+        env["PATH"] = shim + os.pathsep + env.get("PATH", "")
+
     def _spawn_and_read_url():
-        """Spawn ``profile add`` under a PTY and read until the OAuth URL
-        appears (or 30s elapse). Returns ``(proc, master, url|None)``."""
-        master, slave = pty.openpty()
-        proc = subprocess.Popen(
-            [binp, "profile", "add", name],
-            stdin=slave, stdout=slave, stderr=slave, close_fds=True, env=env,
-        )
-        os.close(slave)
+        """Spawn ``profile add`` under a pseudo-terminal and read until the
+        OAuth URL appears (or 30s elapse). Returns ``(driver, url|None,
+        cleaned_out)``."""
+        drv = InteractivePty(node_tool_cmd([binp, "profile", "add", name]), env=env)
         url, buf, end, answered = None, "", _time.time() + 30, False
         while _time.time() < end:
-            r, _w, _e = select.select([master], [], [], 1.0)
-            if master not in r:
-                continue
-            try:
-                data = os.read(master, 4096).decode("utf-8", "replace")
-            except OSError:
-                break
+            data = drv.read_nonblocking(1.0)
             if not data:
-                break
+                if not drv.alive:
+                    break
+                continue
             buf += data
             clean = _ANSI.sub("", buf)
             # The backend may first offer to import the terminal's existing
             # login ("Import as profile X? [Y/n]"). Decline — `add` means a NEW
             # account via browser OAuth, not re-adding the terminal's login.
             if not answered and ("import as profile" in clean.lower() or "[y/n]" in clean.lower()):
-                try:
-                    os.write(master, b"n\n")
-                except OSError:
-                    pass
+                drv.write("n\n")
                 answered = True
             m = _OAUTH_URL_RE.search(clean)
             if m:
                 url = m.group(0).rstrip(".")
                 break
-        return proc, master, url, _ANSI.sub("", buf)
+        return drv, url, _ANSI.sub("", buf)
 
-    proc, master, url, last_out = _spawn_and_read_url()
+    drv, url, last_out = _spawn_and_read_url()
     if not url:
-        try:
-            proc.kill()
-            os.close(master)
-        except Exception:
-            pass
+        drv.kill()
+        drv.close()
         # macOS: claude-code reads the login keychain (global service
         # "Claude Code-credentials", NOT isolated by CLAUDE_CONFIG_DIR). If any
         # Claude login is already present the proxy reports "already
@@ -437,7 +498,7 @@ def start_add(name: str) -> dict:
     state = _urlparse.parse_qs(_urlparse.urlparse(url).query).get("state", [""])[0]
     session = secrets.token_hex(8)
     _PENDING_LOGINS[session] = {
-        "proc": proc, "master": master, "name": name, "auto": auto_named,
+        "driver": drv, "name": name, "auto": auto_named,
         "state": state, "started_at": _time.time(),
     }
     return {"session": session, "url": url, "name": name}
@@ -475,64 +536,163 @@ def _sync_keychain_to_profile(name: str) -> bool:
         return False
 
 
-def submit_login_code(session: str, code: str) -> dict:
-    """Finish a web login: write the pasted ``code`` to the PTY the login
-    process is waiting on, then collect the result."""
-    entry = _PENDING_LOGINS.pop(session, None)
-    if not entry:
-        return {"ok": False, "error": "no pending login (it may have timed out)"}
-    proc, master = entry["proc"], entry["master"]
-    # The callback page shows "<code>#<state>" and the proxy needs that whole
-    # string — a bare code (just the ?code= query param) is rejected as
-    # "Invalid code". If the caller passed only the code, rebuild it from the
-    # stashed state so both "code" and "code#state" inputs work.
-    full_code = (code or "").strip()
-    state = entry.get("state", "")
-    if state and "#" not in full_code:
-        full_code = f"{full_code}#{state}"
-    try:
-        os.write(master, (full_code + "\n").encode())
-        # Exchanging the code for tokens hits claude.com; on slow or proxied
-        # networks that round-trip can take well over a minute. The OAuth code
-        # is single-use, so a premature timeout+kill wastes it and forces a
-        # fresh browser login — give it generous time before giving up.
-        rc = proc.wait(timeout=240)
-    except Exception as e:  # noqa: BLE001
-        try:
-            proc.kill()
-        except Exception:
-            pass
-        return {"ok": False, "error": f"login did not complete: {e}"}
-    finally:
-        try:
-            os.close(master)
-        except Exception:
-            pass
-    if rc != 0:
-        return {"ok": False, "error": "login did not complete"}
+def _finalize_added_account(entry: dict) -> str:
+    """Post-completion bookkeeping shared by the paste-code and loopback paths.
+
+    macOS: claude-code's OAuth writes the token to the login keychain, but the
+    proxy reads each account's token from its profile's ``.credentials.json`` —
+    so without this the brand-new account reports "token expired". Mirror the
+    just-written keychain token into the profile file (no-op off macOS, where
+    the token is already a file). Then rename an auto-named ``account-N`` to the
+    account's email so the list is readable (the email metadata can lag the
+    OAuth completion by a beat, so retry a few times)."""
     name = entry["name"]
-    # macOS: claude-code's OAuth writes the token to the login keychain, but the
-    # proxy reads each account's token from its profile's .credentials.json —
-    # so without this the brand-new account reports "token expired". Mirror the
-    # just-written keychain token into the profile file (no-op off macOS, where
-    # the token is already a file). Done before any rename so the file moves
-    # with the profile dir.
     _sync_keychain_to_profile(name)
-    # An auto-named account (account-N) is renamed to the account's email so
-    # the list is readable. User-chosen labels are left as they are. The
-    # email metadata can lag the OAuth completion by a beat, so retry a few
-    # times before falling back to the auto name.
     if entry.get("auto"):
         import time as _t
-        email = ""
         for _ in range(4):
             email = _email_for(name)
             if email:
-                break
+                if _rename_profile(name, email):
+                    return email
+                return name
             _t.sleep(0.7)
-        if email and _rename_profile(name, email):
-            name = email
+    return name
+
+
+def poll_add(session: str) -> dict:
+    """Check an in-flight browser login. The Claude CLI may complete the OAuth
+    on its own via a localhost loopback redirect (the page just says "you're
+    all set up" — no code to paste); in that case the backend process exits and
+    we finalize here. Returns ``{done, ok?, name?, error?}``; ``done=False``
+    means keep waiting (the user hasn't finished, or it's the manual paste-code
+    fallback)."""
+    entry = _PENDING_LOGINS.get(session)
+    if not entry:
+        return {"done": True, "ok": False, "error": "no pending login (it may have timed out)"}
+    drv = entry["driver"]
+    if drv.alive:
+        return {"done": False}
+    # Process exited by itself → loopback completed (or it failed). Finalize.
+    _PENDING_LOGINS.pop(session, None)
+    try:
+        rc = drv.wait(timeout=5)
+    except Exception:  # noqa: BLE001
+        rc = 1
+    finally:
+        drv.close()
+    if rc != 0:
+        return {"done": True, "ok": False, "error": "login didn't complete — try again."}
+    return {"done": True, "ok": True, "name": _finalize_added_account(entry)}
+
+
+def submit_login_code(session: str, code: str) -> dict:
+    """Finish a web login by feeding the pasted ``code`` to the waiting process
+    (the manual fallback when the page shows a code instead of auto-completing).
+    Tolerates a process that already exited on its own (loopback)."""
+    entry = _PENDING_LOGINS.pop(session, None)
+    if not entry:
+        return {"ok": False, "error": "no pending login (it may have timed out)"}
+    drv = entry["driver"]
+    try:
+        if drv.alive:
+            # The callback page shows "<code>#<state>" and the proxy needs that
+            # whole string — a bare code (just the ?code= query param) is
+            # rejected as "Invalid code". Rebuild it from the stashed state when
+            # the caller passed only the code.
+            full_code = (code or "").strip()
+            state = entry.get("state", "")
+            if state and "#" not in full_code:
+                full_code = f"{full_code}#{state}"
+            drv.write(full_code + "\n")
+            # Exchanging the code for tokens hits claude.com; on slow / proxied
+            # networks that can exceed a minute, and the code is single-use, so
+            # give it generous time before giving up.
+            rc = drv.wait(timeout=240)
+        else:
+            # Already completed on its own (loopback) — just collect the result.
+            rc = drv.wait(timeout=5)
+    except Exception as e:  # noqa: BLE001
+        drv.kill()
+        return {"ok": False, "error": f"login did not complete: {e}"}
+    finally:
+        drv.close()
+    if rc != 0:
+        return {"ok": False, "error": "login did not complete"}
+    return {"ok": True, "name": _finalize_added_account(entry)}
+
+
+def add_with_token(name: str, token: str) -> dict:
+    """Add a Claude account from a setup-token — headless and cross-platform.
+
+    The user mints the token out-of-band with ``claude setup-token`` (the
+    Anthropic Claude Code CLI) and pastes it; we register it via
+    ``meridian profile add NAME --oauth-token <token>``, a plain non-interactive
+    subprocess that works identically on every OS (no pseudo-terminal needed).
+
+    Trade-off vs the browser flow: a setup-token carries no refresh token, so
+    the account won't auto-renew (~1y lifetime) and lists without an email."""
+    token = (token or "").strip()
+    if not token:
+        return {"ok": False, "error": "Paste the token from `claude setup-token`."}
+    if not token.startswith("sk-ant-"):
+        return {"ok": False,
+                "error": "That doesn't look like a Claude token — it should "
+                         "start with `sk-ant-`. Run `claude setup-token` to "
+                         "generate one."}
+    eb = ensure_backend()
+    if not eb.get("ready"):
+        return {"ok": False, "error": eb.get("error", "backend not ready")}
+    binp = _proxy_bin()
+    name = (name or "").strip()
+    if not name:
+        existing = {a["name"] for a in _parse_accounts()}
+        i = 1
+        while f"account-{i}" in existing:
+            i += 1
+        name = f"account-{i}"
+    from openprogram._compat import node_tool_cmd
+    # Strip inherited creds so the backend records the pasted token, not an
+    # ambient one off the worker's environment.
+    _strip = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY",
+              "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
+    env = {k: v for k, v in os.environ.items() if k not in _strip}
+    try:
+        p = subprocess.run(
+            node_tool_cmd([binp, "profile", "add", name, "--oauth-token", token]),
+            capture_output=True, encoding="utf-8", errors="replace",
+            timeout=120, env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "The backend took too long to add the account."}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"Could not add the account: {e}"}
+    if p.returncode != 0:
+        lines = [ln for ln in _ANSI.sub("", (p.stderr or "") + (p.stdout or "")).splitlines() if ln.strip()]
+        detail = lines[-1].strip() if lines else "the backend rejected the token."
+        return {"ok": False, "error": f"Could not add the account: {detail}"}
     return {"ok": True, "name": name}
+
+
+def prerequisites() -> dict:
+    """What the UI needs to guide Claude-account setup: which pieces are present
+    and the install command for any that are missing.
+
+    Both login methods ultimately need the Claude Code CLI (``claude``) — it's
+    what performs the Anthropic OAuth (Meridian shells out to it for the browser
+    flow; the token flow needs ``claude setup-token`` to mint the token)."""
+    from openprogram._compat import interactive_pty_available
+    return {
+        "claude_installed": _npm_bin("claude") is not None,
+        "claude_install_cmd": "npm install -g @anthropic-ai/claude-code",
+        "backend_installed": _proxy_bin() is not None,
+        "backend_install_cmd": "npm install -g @rynfar/meridian",
+        # Browser sign-in needs a pseudo-terminal: always on POSIX, needs
+        # pywinpty on Windows. The token paste works anywhere.
+        "browser_login": interactive_pty_available(),
+        "token_login": True,
+        "token_help": "Run `claude setup-token` in a terminal, then paste the token here.",
+    }
 
 
 def remove_account(name: str) -> dict:
@@ -608,8 +768,13 @@ def _cmd_add(name: str) -> int:
     _strip = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY",
               "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
     env = {k: v for k, v in os.environ.items() if k not in _strip}
+    from openprogram._compat import node_tool_cmd
     try:
-        rc = subprocess.run([_proxy_bin(), "profile", "add", name], env=env).returncode
+        # node_tool_cmd so a Windows ``.cmd`` shim runs via cmd.exe (bare argv
+        # of a .cmd raises WinError 193). Inherits this terminal's stdio so the
+        # interactive browser login + code paste work directly.
+        rc = subprocess.run(node_tool_cmd([_proxy_bin(), "profile", "add", name]),
+                            env=env).returncode
     except Exception as e:  # noqa: BLE001
         print(f"Adding the account failed: {e}", file=sys.stderr)
         return 1

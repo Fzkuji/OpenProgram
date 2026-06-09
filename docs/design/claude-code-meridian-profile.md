@@ -135,3 +135,34 @@ config.json 写错类型时在 `.strip()` 抛错被静默吞掉。
 - 端到端(P1/P2 配好 profile 后):从 OpenProgram 实跑一次 claude-code,确认
   Meridian 路由到该 profile 的账号;`claude auth status`(终端)仍是另一个
   账号、不受影响。
+
+## 跨平台账号添加(Windows 支持)
+
+Web 端「添加 Claude 账号」原本只在 POSIX 可用(用 stdlib `pty` 驱动 Meridian
+的交互式 `profile add`)。Windows 没有 `pty`,旧代码直接报错(且更早一步会卡在
+无超时的 `npm install`)。现在两种登录方式都支持,且都先检测并引导安装前置工具。
+
+- **前置检测 / 引导**:`_meridian_cli.prerequisites()` 报告 `claude_installed` /
+  `backend_installed` / `browser_login`(= 是否有可用伪终端)/ `token_login`。
+  两种登录都最终经 **Claude Code CLI** 完成 OAuth(Meridian 内部 `spawnSync`
+  `claude auth login`;token 方式靠 `claude setup-token` 生成 token),所以 UI 在
+  `claude` 缺失时提示 `npm install -g @anthropic-ai/claude-code` 并提供「重新检测」。
+- **浏览器登录(与 mac/Linux 一致)**:`_compat.InteractivePty` 抽象伪终端 ——
+  POSIX 用 `pty`,Windows 用 **ConPTY(`pywinpty`,可选 Windows-only 依赖)**,
+  读 URL / 写 code 的逻辑两端一致(Windows 的 `write()` 把 `\n` 译成 `\r\n`,
+  因为 ConPTY 靠 CR 完成一行)。`pywinpty` 不可用时该方式禁用,回退 token。
+- **Token 粘贴(headless、全平台)**:`add_with_token()` 跑
+  `meridian profile add NAME --oauth-token <token>`,纯非交互子进程,任何系统都行。
+  代价:setup-token 无 refresh token,不自动续期(~1 年),且账号无 email、显示为
+  `account-N`。
+- **其它 Windows 修复**:`_proxy_bin()`/`_npm_bin()` 在 PATH 之外再查 npm 全局前缀
+  (`%APPDATA%\npm`),否则刚 `npm install` 的 backend 找不到;`_run_proxy` /
+  `add_with_token` 用 `encoding="utf-8"` 解码(默认 gbk 会被 backend 的智能引号
+  噎到);Meridian 守护进程用 `CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS` 真正
+  脱离(`start_new_session` 在 Windows 是 no-op);`ensure_backend` 的 npm 安装加
+  300s 超时,前端 fetch 加 AbortController 超时,避免「点了没反应」。
+
+> 无法在本仓库环境端到端验证的部分:真正的浏览器 OAuth 经 Windows ConPTY 驱动
+> `claude`(需装 Claude Code CLI + 真实 Claude Max 登录)。`InteractivePty` 的
+> 读写/超时/收尾已用 dummy 子进程在 Windows 实测;token 路径的子进程接线已用 fake
+> token 实测(Meridian 接受并建 profile,再用时校验)。

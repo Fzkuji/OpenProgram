@@ -42,6 +42,13 @@ interface State {
   strategy: string;
   strategies: string[];
   add_mode: "api_key" | "login" | "code_paste";
+  // claude-code only — install guidance + which login methods this host offers.
+  claude_installed?: boolean;
+  claude_install_cmd?: string;
+  backend_installed?: boolean;
+  backend_install_cmd?: string;
+  browser_login?: boolean;   // interactive sign-in works here (pty available)
+  token_login?: boolean;     // setup-token paste (always available)
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -250,6 +257,10 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
   const orderRef = useRef<string[]>([]);
   const [pending, setPending] = useState<{ session: string; url?: string } | null>(null);
   const [code, setCode] = useState("");
+  // claude-code add: which login method, and the pasted setup-token.
+  const [method, setMethod] = useState<"browser" | "token">("browser");
+  const [token, setToken] = useState("");
+  const pollStop = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -311,20 +322,68 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
     await fetch(`${base}/rotation`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ enabled: true, strategy }) });
     await load();
   }
+  // POST JSON with a hard client timeout so a stuck backend can't freeze the
+  // button forever (the old "Add account does nothing" symptom).
+  async function postJson(url: string, body: unknown, timeoutMs: number): Promise<any> {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      return await fetch(url, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body), signal: ctrl.signal }).then((r) => r.json());
+    } finally { clearTimeout(t); }
+  }
+  // Watch an in-flight browser login: the Claude CLI usually completes the
+  // OAuth itself (localhost loopback — "you're all set up", no code to paste),
+  // so we poll until the backend reports done, falling back to the manual
+  // paste-code box if it keeps waiting.
+  async function pollAdd(session: string) {
+    pollStop.current = false;
+    const deadline = Date.now() + 240000;
+    while (!pollStop.current && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2500));
+      if (pollStop.current) return;
+      let d: any;
+      try { d = await fetch(`${base}/add/poll?session=${encodeURIComponent(session)}`).then((r) => r.json()); }
+      catch { continue; }
+      if (!d.done) continue;
+      if (d.ok) { setMsg(text("Account added.", "账号已添加。")); setPending(null); setCode(""); setNewName(""); await load(); onChanged?.(); }
+      else { setMsg(d.error || text("Login didn't complete — try again.", "登录未完成 —— 请重试。")); setPending(null); setCode(""); }
+      return;
+    }
+  }
   async function startCodeAdd() {
-    setBusy(true); setMsg("");
-    const d = await fetch(`${base}/add`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: newName.trim() }) }).then((r) => r.json());
+    setBusy(true); setMsg(text("Opening the sign-in page…", "正在打开登录页…"));
+    let d: any;
+    try { d = await postJson(`${base}/add`, { name: newName.trim() }, 70000); }
+    catch { setBusy(false); setMsg(text("The backend didn't respond in time — try again.", "后端响应超时 —— 请重试。")); return; }
     setBusy(false);
-    if (d.error) setMsg(d.error);
-    else { if (d.url) window.open(d.url, "_blank", "noopener"); setPending({ session: d.session, url: d.url }); setMsg(text("A login page opened — sign in, then paste the code below.", "已打开登录页 — 登录后把 code 粘到下面。")); }
+    if (d.error === "BROWSER_LOGIN_UNAVAILABLE") { setMethod("token"); setMsg(d.detail || text("Use the Paste token method instead.", "请改用「粘贴 token」方式。")); return; }
+    if (d.error) { setMsg(d.error); return; }
+    if (d.url) window.open(d.url, "_blank", "noopener");
+    setPending({ session: d.session, url: d.url });
+    setMsg(text("Sign in in the browser. If it says you're all set, you're done. (If it shows a code, paste it below.)", "在浏览器里登录。若提示已完成即可，无需操作。（如果页面给了 code，就粘到下面。）"));
+    pollAdd(d.session);  // detect loopback auto-completion
   }
   async function submitCode() {
     if (!pending) return;
-    setBusy(true);
-    const d = await fetch(`${base}/add/code`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ session: pending.session, code }) }).then((r) => r.json());
+    pollStop.current = true;  // manual paste takes over from the loopback poll
+    setBusy(true); setMsg(text("Exchanging the code with Claude — this can take a minute or two…", "正在与 Claude 交换 code —— 可能需要一两分钟…"));
+    let d: any;
+    try { d = await postJson(`${base}/add/code`, { session: pending.session, code }, 250000); }
+    catch { setBusy(false); setMsg(text("Login is taking too long — the code may have expired. Cancel and try again.", "登录耗时过长 —— code 可能已失效。取消后重试。")); return; }
     setBusy(false);
-    if (d.ok) { setMsg(text("Account added.", "账号已添加。")); setPending(null); setCode(""); setNewName(""); await load(); }
+    if (d.ok) { setMsg(text("Account added.", "账号已添加。")); setPending(null); setCode(""); setNewName(""); await load(); onChanged?.(); }
     else { setMsg(d.error || text("That code didn't work.", "code 无效。")); if (typeof d.error === "string" && d.error.includes("no pending")) { setPending(null); setCode(""); } }
+  }
+  async function startTokenAdd() {
+    const t = token.trim();
+    if (!t) { setMsg(text("Paste the token from `claude setup-token`.", "请粘贴 `claude setup-token` 生成的 token。")); return; }
+    setBusy(true); setMsg(text("Adding the account…", "正在添加账号…"));
+    let d: any;
+    try { d = await postJson(`${base}/add/token`, { name: newName.trim(), token: t }, 130000); }
+    catch { setBusy(false); setMsg(text("The backend didn't respond in time — try again.", "后端响应超时 —— 请重试。")); return; }
+    setBusy(false);
+    if (d.ok) { setMsg(text("Account added.", "账号已添加。")); setToken(""); setNewName(""); await load(); onChanged?.(); }
+    else setMsg(d.error || text("Could not add the account.", "添加失败。"));
   }
 
   if (!state) return null;
@@ -385,16 +444,78 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
           onChanged={() => { setNewName(""); load(); }} />
       )}
       {state.add_mode === "code_paste" && (
-        !pending ? (
-          <div className={styles.detailRow}>
-            <Input className="flex-1 font-mono" placeholder={text("optional label — leave blank to auto-name", "可选标签 — 留空自动命名")} value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy} />
-            <Button size="sm" onClick={startCodeAdd} disabled={busy}>{busy ? text("Opening…", "打开中…") : text("Add account", "添加账号")}</Button>
+        (state.claude_installed === false || state.backend_installed === false) ? (
+          /* Guide the user to install the one-time prerequisites first. Both
+             login methods sign in via the Claude Code CLI; the backend (proxy)
+             is what holds the accounts. Gating here also avoids the add button
+             triggering a slow (up to 300s) auto-install that the client would
+             time out on. */
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            <div style={{ fontSize: "0.8rem" }}>
+              {text("Claude accounts need a one-time setup. Run the command(s) below in a terminal:", "Claude 账号需要一次性安装。请在终端运行下面的命令：")}
+            </div>
+            {state.claude_installed === false && (
+              <code style={{ fontSize: "0.75rem", padding: "0.35rem 0.5rem", background: "rgba(127,127,127,0.12)", borderRadius: 6, userSelect: "all", fontFamily: "monospace" }}>
+                {state.claude_install_cmd || "npm install -g @anthropic-ai/claude-code"}
+              </code>
+            )}
+            {state.backend_installed === false && (
+              <code style={{ fontSize: "0.75rem", padding: "0.35rem 0.5rem", background: "rgba(127,127,127,0.12)", borderRadius: 6, userSelect: "all", fontFamily: "monospace" }}>
+                {state.backend_install_cmd || "npm install -g @rynfar/meridian"}
+              </code>
+            )}
+            <div className={styles.detailRow}>
+              <Button size="sm" onClick={() => { setMsg(""); load(); }} disabled={busy}>{text("I've installed it — recheck", "已安装，重新检测")}</Button>
+            </div>
           </div>
         ) : (
-          <div className={styles.detailRow} style={{ flexWrap: "wrap" }}>
-            <Input className="flex-1 font-mono" placeholder={text("paste the code from the login page", "粘贴登录页给出的 code")} value={code} onChange={(e) => setCode(e.target.value)} disabled={busy} />
-            <Button size="sm" onClick={submitCode} disabled={busy || !code.trim()}>{busy ? text("Finishing…", "完成中…") : text("Finish", "完成")}</Button>
-            <Button size="sm" onClick={() => { setPending(null); setCode(""); setMsg(""); }} disabled={busy}>{text("Cancel", "取消")}</Button>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            {/* method picker */}
+            <div className={styles.detailRow} style={{ gap: "0.35rem" }}>
+              {([["browser", text("Browser sign-in", "浏览器登录")], ["token", text("Paste token", "粘贴 token")]] as const).map(([m, label]) => {
+                const disabled = m === "browser" && state.browser_login === false;
+                const active = method === m;
+                return (
+                  <button key={m} type="button" disabled={disabled || busy}
+                    onClick={() => { pollStop.current = true; setMethod(m as "browser" | "token"); setMsg(""); setPending(null); setCode(""); }}
+                    style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem", borderRadius: 6, cursor: disabled ? "not-allowed" : "pointer",
+                      border: active ? "1px solid var(--accent, #6b8afd)" : "1px solid rgba(127,127,127,0.3)",
+                      background: active ? "rgba(107,138,253,0.14)" : "transparent", opacity: disabled ? 0.4 : 1 }}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {method === "browser" ? (
+              state.browser_login === false ? (
+                <div style={{ fontSize: "0.75rem", opacity: 0.7 }}>
+                  {text("Browser sign-in isn't available on this machine — use Paste token.", "此机器不支持浏览器登录 —— 请用「粘贴 token」。")}
+                </div>
+              ) : !pending ? (
+                <div className={styles.detailRow}>
+                  <Input className="flex-1 font-mono" placeholder={text("optional label — leave blank to auto-name", "可选标签 — 留空自动命名")} value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy} />
+                  <Button size="sm" onClick={startCodeAdd} disabled={busy}>{busy ? text("Opening…", "打开中…") : text("Add account", "添加账号")}</Button>
+                </div>
+              ) : (
+                <div className={styles.detailRow} style={{ flexWrap: "wrap" }}>
+                  <Input className="flex-1 font-mono" placeholder={text("paste the code from the login page", "粘贴登录页给出的 code")} value={code} onChange={(e) => setCode(e.target.value)} disabled={busy} />
+                  <Button size="sm" onClick={submitCode} disabled={busy || !code.trim()}>{busy ? text("Finishing…", "完成中…") : text("Finish", "完成")}</Button>
+                  <Button size="sm" onClick={() => { pollStop.current = true; setPending(null); setCode(""); setMsg(""); }} disabled={busy}>{text("Cancel", "取消")}</Button>
+                </div>
+              )
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                <div style={{ fontSize: "0.72rem", opacity: 0.7 }}>
+                  {text("Run", "运行")} <code style={{ fontFamily: "monospace", userSelect: "all" }}>claude setup-token</code> {text("in a terminal, then paste the token it prints:", "（在终端里），把它输出的 token 粘进来：")}
+                </div>
+                <div className={styles.detailRow} style={{ flexWrap: "wrap" }}>
+                  <Input className="font-mono" style={{ width: "8rem" }} placeholder={text("label (optional)", "标签（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy} />
+                  <Input className="flex-1 font-mono" type="password" placeholder={text("paste sk-ant-… token", "粘贴 sk-ant-… token")} value={token} onChange={(e) => setToken(e.target.value)} disabled={busy} />
+                  <Button size="sm" onClick={startTokenAdd} disabled={busy || !token.trim()}>{busy ? text("Adding…", "添加中…") : text("Add account", "添加账号")}</Button>
+                </div>
+              </div>
+            )}
           </div>
         )
       )}

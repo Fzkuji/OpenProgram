@@ -92,6 +92,13 @@ dependencies = [
     "requests>=2.31.0",
     "httpx>=0.27.0",
     "pydantic>=2.0",
+    # Windows ConPTY binding (import name ``winpty``). Drives the interactive
+    # Claude-account browser login through a pseudo-terminal on Windows, where
+    # stdlib ``pty`` doesn't exist (POSIX reuses ``pty``). Windows-only marker;
+    # a no-op install on macOS/Linux. Optional in practice — the claude-code
+    # account flow falls back to the token-paste method when it's unavailable
+    # (see openprogram/_compat.py::InteractivePty).
+    "pywinpty>=2.0; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

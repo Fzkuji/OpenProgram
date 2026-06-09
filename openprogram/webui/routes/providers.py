@@ -236,6 +236,9 @@ def register(app):
             **s, "accounts": accounts, "active": active or "",
             "pinned": active or "",  # Meridian's active IS the explicit pin
             "add_mode": "code_paste", "rotation": False,
+            # claude-code has no rotation; send empty so the shape matches the
+            # unified State the frontend expects.
+            "strategy": "", "strategies": [],
         })
 
     @app.post("/api/providers/claude-code/accounts/add")
@@ -252,6 +255,24 @@ def register(app):
         b = body or {}
         return JSONResponse(
             content=_acc.submit_login_code(b.get("session", ""), b.get("code", ""))
+        )
+
+    @app.get("/api/providers/claude-code/accounts/add/poll")
+    def api_cc_accounts_add_poll(session: str = ""):
+        # The Claude CLI often completes the OAuth itself via a localhost
+        # loopback redirect (no code to paste) — the UI polls this to detect
+        # that and finalize, falling back to the paste-code box otherwise.
+        from openprogram.providers.anthropic import _meridian_cli as _acc
+        return JSONResponse(content=_acc.poll_add(session))
+
+    @app.post("/api/providers/claude-code/accounts/add/token")
+    def api_cc_accounts_add_token(body: dict = None):
+        # Headless / cross-platform add: register a `claude setup-token` the
+        # user pasted. Works anywhere (no pseudo-terminal needed).
+        from openprogram.providers.anthropic import _meridian_cli as _acc
+        b = body or {}
+        return JSONResponse(
+            content=_acc.add_with_token(b.get("name", ""), b.get("token", ""))
         )
 
     @app.post("/api/providers/claude-code/accounts/remove")

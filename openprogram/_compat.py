@@ -240,6 +240,244 @@ def restrict_to_user(path) -> None:
         pass
 
 
+# ---------------------------------------------------------------------------
+# InteractivePty — cross-platform driver for interactive child CLIs
+# ---------------------------------------------------------------------------
+#
+# Some children only behave interactively under a real terminal: they
+# line-buffer output (so a prompt / URL arrives promptly) and read typed input
+# from a tty. The claude-code account login is the canonical case — Meridian
+# shells out to ``claude auth login``, which prints an OAuth URL then waits for
+# a pasted code.
+#
+# POSIX has stdlib ``pty``. Windows has neither ``pty`` nor a way to
+# ``select()`` on a console handle, so we wrap the ConPTY binding ``pywinpty``
+# (import name ``winpty``) and pump its blocking reads through a background
+# thread + queue. ``interactive_pty_available()`` reports whether this host can
+# drive one at all, so callers can fall back (e.g. to a token paste) when it
+# can't.
+
+
+def interactive_pty_available() -> bool:
+    """True when an :class:`InteractivePty` can be spawned on this host."""
+    if _sys.platform == "win32":
+        try:
+            import winpty  # noqa: F401  (pywinpty)
+            return True
+        except Exception:
+            return False
+    try:
+        import pty  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+class InteractivePty:
+    """Spawn ``argv`` under a pseudo-terminal and drive it line by line.
+
+    Unified API over POSIX ``pty`` and Windows ConPTY (``pywinpty``):
+
+      * ``read_nonblocking(timeout)`` → text seen so far, or ``""`` if nothing
+        arrived within ``timeout`` seconds.
+      * ``write(text)`` → send ``text`` as if typed at the prompt.
+      * ``wait(timeout)`` → the child's exit code (raises
+        :class:`subprocess.TimeoutExpired` on timeout).
+      * ``kill()`` / ``close()`` → terminate + release the pty.
+      * ``alive`` → whether the child is still running.
+
+    Raises :class:`RuntimeError` from the constructor when no pty backend
+    exists — guard with :func:`interactive_pty_available` to fall back."""
+
+    def __init__(self, argv, env=None, *, cols: int = 120, rows: int = 40) -> None:
+        self._argv = list(argv)
+        self._closed = False
+        if _sys.platform == "win32":
+            self._init_windows(env, cols, rows)
+        else:
+            self._init_posix(env, cols, rows)
+
+    # -- POSIX (stdlib pty) -----------------------------------------------
+    def _init_posix(self, env, cols, rows) -> None:
+        try:
+            import pty
+        except ImportError as e:  # pragma: no cover - exotic POSIX build
+            raise RuntimeError("pty unavailable on this host") from e
+        self._backend = "posix"
+        self._master, slave = pty.openpty()
+        try:
+            try:
+                import fcntl as _f
+                import struct
+                import termios
+                _f.ioctl(self._master, termios.TIOCSWINSZ,
+                         struct.pack("HHHH", rows, cols, 0, 0))
+            except Exception:
+                pass
+            self._proc = _subprocess.Popen(
+                self._argv, stdin=slave, stdout=slave, stderr=slave,
+                close_fds=True, env=env, start_new_session=True,
+            )
+        except BaseException:
+            # Popen failed (ENOENT / EMFILE / permissions): close both fds so
+            # they don't leak — __init__ is aborting and the half-built object
+            # won't be close()d by the caller.
+            for _fd in (self._master, slave):
+                try:
+                    _os.close(_fd)
+                except OSError:
+                    pass
+            raise
+        _os.close(slave)
+
+    def _posix_read(self, timeout: float) -> str:
+        import select
+        try:
+            r, _w, _e = select.select([self._master], [], [], timeout)
+        except (OSError, ValueError):
+            return ""
+        if self._master not in r:
+            return ""
+        try:
+            data = _os.read(self._master, 4096)
+        except OSError:
+            return ""
+        return data.decode("utf-8", "replace")
+
+    # -- Windows (ConPTY via pywinpty) ------------------------------------
+    def _init_windows(self, env, cols, rows) -> None:
+        try:
+            import winpty
+        except Exception as e:  # ImportError or a binding load failure
+            raise RuntimeError(
+                "pywinpty (winpty) is required to drive an interactive login "
+                "on Windows; install it or use the token paste flow"
+            ) from e
+        import queue as _queue
+        import threading
+        self._backend = "win"
+        self._queue: "_queue.Queue" = _queue.Queue()
+        # pywinpty's PtyProcess.spawn accepts an argv list and an env dict.
+        self._proc = winpty.PtyProcess.spawn(
+            self._argv, env=env, dimensions=(rows, cols),
+        )
+
+        def _pump() -> None:
+            # ConPTY reads block; a daemon thread funnels chunks to the queue
+            # so read_nonblocking() can honour a timeout. read() raises EOF at
+            # child exit.
+            try:
+                while True:
+                    chunk = self._proc.read(4096)
+                    if chunk:
+                        self._queue.put(chunk)
+            except Exception:
+                pass
+            finally:
+                self._queue.put(None)  # EOF sentinel
+
+        self._reader = threading.Thread(target=_pump, daemon=True)
+        self._reader.start()
+
+    def _win_read(self, timeout: float) -> str:
+        import queue as _queue
+        try:
+            chunk = self._queue.get(timeout=timeout)
+        except _queue.Empty:
+            return ""
+        if chunk is None:  # EOF sentinel — child exited
+            return ""
+        buf = [chunk]
+        try:  # drain anything already queued without blocking
+            while True:
+                more = self._queue.get_nowait()
+                if more is None:
+                    break
+                buf.append(more)
+        except _queue.Empty:
+            pass
+        return "".join(buf)
+
+    # -- unified API -------------------------------------------------------
+    def read_nonblocking(self, timeout: float = 1.0) -> str:
+        if self._backend == "win":
+            return self._win_read(timeout)
+        return self._posix_read(timeout)
+
+    def write(self, text: str) -> None:
+        try:
+            if self._backend == "win":
+                # A ConPTY completes a line on CR (the Enter keypress), not a
+                # bare LF — so translate "\n" to "\r\n". Callers can keep
+                # writing "<line>\n" and it works on both platforms. (Normalise
+                # any existing CRLF first to avoid "\r\r\n".)
+                text = text.replace("\r\n", "\n").replace("\n", "\r\n")
+                self._proc.write(text)
+            else:
+                _os.write(self._master, text.encode("utf-8"))
+        except Exception:
+            pass
+
+    @property
+    def alive(self) -> bool:
+        try:
+            if self._backend == "win":
+                return bool(self._proc.isalive())
+            return self._proc.poll() is None
+        except Exception:
+            return False
+
+    def wait(self, timeout: float | None = None) -> int:
+        if self._backend == "win":
+            import time as _t
+            end = None if timeout is None else _t.time() + timeout
+            while self._proc.isalive():
+                if end is not None and _t.time() >= end:
+                    raise _subprocess.TimeoutExpired(self._argv, timeout)
+                _t.sleep(0.1)
+            return int(self._proc.exitstatus or 0)
+        return self._proc.wait(timeout=timeout)
+
+    def kill(self) -> None:
+        # Kill the whole tree, not just the leader. On Windows the spawned
+        # child is `cmd.exe /c meridian.cmd …` (node_tool_cmd wraps the .cmd
+        # shim) which in turn spawns node; on POSIX the backend itself spawns
+        # `claude`. Terminating only the leader would orphan the real OAuth
+        # process. kill_process_tree handles both (taskkill /T on Windows,
+        # killpg on POSIX — the child leads its own session via start_new_session).
+        pid = getattr(getattr(self, "_proc", None), "pid", None)
+        if pid:
+            try:
+                kill_process_tree(pid)
+            except Exception:
+                pass
+        try:
+            if self._backend == "win":
+                self._proc.terminate(force=True)
+            else:
+                self._proc.kill()
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            if self._backend == "win":
+                try:
+                    self._proc.close(force=True)
+                except Exception:
+                    pass
+            else:
+                try:
+                    _os.close(self._master)
+                except OSError:
+                    pass
+        except Exception:
+            pass
+
+
 _PROMPT_TOOLKIT_USABLE_CACHE: bool | None = None
 
 
@@ -283,7 +521,9 @@ __all__ = [
     "LOCK_EX",
     "LOCK_NB",
     "LOCK_UN",
+    "InteractivePty",
     "flock",
+    "interactive_pty_available",
     "kill_process_tree",
     "node_tool_cmd",
     "prompt_toolkit_usable",
