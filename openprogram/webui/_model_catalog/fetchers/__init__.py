@@ -31,7 +31,7 @@ from ._common import _fetch_openai_compat
 from .anthropic import _fetch_anthropic
 from .bedrock import _fetch_bedrock
 from .claude_code import _fetch_claude_code
-from .codex import _fetch_codex_static
+from .codex import _fetch_codex_live
 from .deepseek import _fetch_deepseek
 from .github_copilot import _fetch_github_copilot
 from .google import _fetch_google
@@ -43,7 +43,7 @@ from .google import _fetch_google
 _FETCHERS: dict[str, Any] = {
     "anthropic": _fetch_anthropic,
     "claude-code": _fetch_claude_code,  # local proxy, no API key
-    "openai-codex": _fetch_codex_static,
+    "openai-codex": _fetch_codex_live,
     "google": _fetch_google,
     "amazon-bedrock": _fetch_bedrock,
     "github-copilot": _fetch_github_copilot,

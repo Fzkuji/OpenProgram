@@ -52,13 +52,20 @@ def _display_name_for_codex_model(model_id: str) -> str:
     return (head + " " + tail).strip()
 
 
-def _augment_registry_with_codex_models() -> None:
-    """Inject Codex-route model ids into the provider registry if the
-    generated catalog is missing them. The ChatGPT backend has no public
-    model-listing endpoint, so OpenClaw / pi-ai maintain their lists by
-    hand; we mirror that list here and let the registry carry the rest
-    (name, cost, context window) for whichever ids already exist. New
-    entries get a sensible Codex default."""
+def ensure_codex_model_registered(mid: str) -> None:
+    """Register one Codex model id into the static MODELS registry so the
+    runtime can actually resolve it.
+
+    This matters because the ChatGPT/Codex backend has no list-models endpoint
+    and OpenAICodexRuntime resolves a model id against the static MODELS dict —
+    a codex id that isn't registered raises ``Unknown model`` at dispatch, with
+    no custom-model fallback on this path. So anything we *list* must also be
+    *registered* here. Idempotent; missing fields (cost / context) ride on the
+    template until enrichment fills the listing.
+
+    Used both by the import-time seed (the hand list, for offline / pre-Fetch)
+    and by the live Fetch (``fetchers/codex.py``), which discovers current ids
+    from models.dev and registers each one on demand."""
     from openprogram.providers.models_generated import MODELS
     from openprogram.providers.thinking_catalog import derive_thinking_fields
 
@@ -70,24 +77,34 @@ def _augment_registry_with_codex_models() -> None:
     if template is None:
         return  # registry has no Codex entries at all; nothing to mirror.
 
+    key = f"openai-codex/{mid}"
+    display = _display_name_for_codex_model(mid)
+    model = MODELS.get(key) or template.model_copy(update={"id": mid, "name": display})
+    levels, default, variant = derive_thinking_fields(
+        "openai-codex",
+        mid,
+        True,
+        _codex_supports_xhigh(mid),
+    )
+    MODELS[key] = model.model_copy(update={
+        "id": mid,
+        "name": model.name or display,
+        "reasoning": True,
+        "thinking_levels": levels,
+        "default_thinking_level": default,
+        "thinking_variant": variant,
+    })
+
+
+def _augment_registry_with_codex_models() -> None:
+    """Seed the registry with the known Codex ids at import so they resolve
+    offline and before the first Fetch. The live Fetch supplements this with
+    whatever models.dev currently lists; see ``ensure_codex_model_registered``.
+
+    (``_KNOWN_CODEX_MODELS`` is kept as the offline seed for now; the live
+    Fetch is the authoritative source once it runs.)"""
     for mid in _KNOWN_CODEX_MODELS:
-        key = f"openai-codex/{mid}"
-        display = _display_name_for_codex_model(mid)
-        model = MODELS.get(key) or template.model_copy(update={"id": mid, "name": display})
-        levels, default, variant = derive_thinking_fields(
-            "openai-codex",
-            mid,
-            True,
-            _codex_supports_xhigh(mid),
-        )
-        MODELS[key] = model.model_copy(update={
-            "id": mid,
-            "name": model.name or display,
-            "reasoning": True,
-            "thinking_levels": levels,
-            "default_thinking_level": default,
-            "thinking_variant": variant,
-        })
+        ensure_codex_model_registered(mid)
 
 
 _augment_registry_with_codex_models()
@@ -160,7 +177,7 @@ class OpenAICodexRuntime(Runtime):
 
     def __init__(
         self,
-        model: str = "gpt-5.5-mini",
+        model: str = "gpt-5.5",
         system: str | None = None,
         *,
         profile: Optional[str] = None,
@@ -191,6 +208,15 @@ class OpenAICodexRuntime(Runtime):
         access = cred.payload.access_token
         account_id = _account_id_for(cred)
         self._cached_access_token = access
+
+        # A codex id can reach us from a live Fetch (models.dev) that the
+        # static MODELS seed doesn't carry — e.g. after a restart, when only
+        # _KNOWN_CODEX_MODELS was re-seeded but the user had fetched + enabled a
+        # newer id. Register it on miss so the base Runtime's get_model() can
+        # resolve it instead of raising "Unknown model".
+        from openprogram.providers.models import get_model as _get_model
+        if _get_model("openai-codex", model) is None:
+            ensure_codex_model_registered(model)
 
         super().__init__(model=f"openai-codex:{model}", api_key=access)
 

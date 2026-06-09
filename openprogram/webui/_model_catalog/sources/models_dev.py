@@ -186,6 +186,32 @@ def lookup(provider_id: str, model_id: str) -> dict[str, Any] | None:
     return _normalise(raw) or None
 
 
+def list_models(provider_id: str) -> dict[str, dict[str, Any]]:
+    """Every model the catalogue knows for ``provider_id`` (alias-aware),
+    as ``{model_id: normalised_dict}``.
+
+    Honours the same ``_PROVIDER_ID_ALIASES`` map as :func:`lookup`, so e.g.
+    ``openai-codex`` resolves to the upstream ``openai`` catalogue. Returns
+    ``{}`` on a cache miss / unknown provider. This is the live source a
+    no-list-endpoint provider (Codex) can fetch from instead of shipping a
+    hand-maintained list."""
+    catalogue = _load()
+    if not catalogue:
+        return {}
+    pid = _PROVIDER_ID_ALIASES.get(provider_id, provider_id)
+    provider = catalogue.get(pid)
+    if not isinstance(provider, dict):
+        return {}
+    models = provider.get("models")
+    if not isinstance(models, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for mid, raw in models.items():
+        if isinstance(raw, dict):
+            out[mid] = _normalise(raw)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Provider-level (catalog-wide) accessors
 # ---------------------------------------------------------------------------
