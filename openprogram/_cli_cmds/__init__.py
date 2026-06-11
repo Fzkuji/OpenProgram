@@ -11,7 +11,7 @@ globals, and the public ``main`` entry point. All ``_cmd_<verb>`` and
     agents.py    — agents list/add/rm/show/set-default
     channels.py  — accounts + bindings + login
     web.py       — web UI launcher
-    chat.py      — interactive cli chat + deep_work
+    chat.py      — interactive cli chat
     cron.py      — cron-worker
 
 cli.py re-exports these at module level so external callers

@@ -17,6 +17,22 @@ def register(app):
         from openprogram.webui import server as _s
         return JSONResponse(content=_s._discover_functions())
 
+    @app.get("/api/tools")
+    async def get_tools():
+        """The regular (non-agentic) built-in tools — bash, file edits,
+        web search, … These are fixed framework plumbing: always
+        installed, not user-editable, so the payload is display-only
+        (name + first description line)."""
+        from openprogram.functions import agent_tools
+        out = []
+        for t in agent_tools():
+            if getattr(t, "_is_agentic", False):
+                continue
+            desc = (t.description or "").strip().split("\n")[0]
+            out.append({"name": t.name, "description": desc})
+        out.sort(key=lambda r: r["name"])
+        return JSONResponse(content=out)
+
     @app.get("/api/sessions/{session_id}/branches/tokens")
     async def get_branches_tokens(session_id: str):
         """Lightweight token summary for every branch tip in this session."""

@@ -88,6 +88,7 @@ const DICT = {
   // Left sidebar nav (AppShell)
   "nav.new_chat": { en: "New chat", zh: "新会话" },
   "nav.functions": { en: "Functions", zh: "函数" },
+  "nav.programs": { en: "Programs", zh: "程序" },
   "nav.skills": { en: "Skills", zh: "技能" },
   "nav.plugins": { en: "Plugins", zh: "插件" },
   "nav.mcp": { en: "MCP Servers", zh: "MCP 服务器" },

@@ -37,23 +37,20 @@ from typing import Iterator, Optional
 
 
 AGENTIC_MODULES: list[tuple[str, Optional[str]]] = [
-    # Framework primitives
+    # Framework primitive: ask_user is the in-execution "ask the human"
+    # channel every agentic function can call — infrastructure, not a
+    # user-facing app (the UI lists it under regular tools).
     ("ask_user", None),
-    ("deep_work", None),
     # Domain functions
-    ("word_count", None),
     ("extract_pdf_figures", None),
     ("extract_pdf_tables", None),
-    ("llm_call_example", None),
-    ("test_framework", None),
-    ("test_resume", None),
 ]
 
 
 # Names that should never be treated as external harnesses even if their
 # directory looks like one (e.g. internal package private dirs).
 _NOT_A_HARNESS = {
-    "__pycache__", "_layout", "_pdf_tests", "_utils", "research",
+    "__pycache__", "_layout",
 }
 
 

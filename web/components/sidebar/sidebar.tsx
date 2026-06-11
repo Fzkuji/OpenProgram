@@ -57,6 +57,7 @@ import {
   PanelLeftOpenIcon,
   PlusIcon,
   WorkflowIcon,
+  MonitorIcon,
 } from "../animated-icons";
 import { useSessionStore } from "@/lib/session-store";
 import { refreshFunctionsList } from "@/lib/functions-actions";
@@ -232,6 +233,7 @@ export function Sidebar() {
   const navActive = {
     mcp: pathname.startsWith("/mcp"),
     functions: pathname.startsWith("/functions"),
+    programs: pathname.startsWith("/programs"),
     memory: pathname.startsWith("/memory"),
     chats: pathname.startsWith("/chats"),
     skills: pathname.startsWith("/skills"),
@@ -379,6 +381,20 @@ export function Sidebar() {
               />
             )}
           </span>
+        </Link>
+
+        <Link
+          href="/programs"
+          className={
+            sidebarNavItemClass +
+            (navActive.programs ? " " + sidebarNavItemActiveClass : "")
+          }
+          id="navAgentPrograms"
+        >
+          <span className={sidebarNavIconClass}>
+            <MonitorIcon size={20} />
+          </span>
+          <span className={sidebarNavLabelClass}>{t("nav.programs")}</span>
         </Link>
 
         <Link

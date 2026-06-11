@@ -198,3 +198,51 @@
   font-size: 14px;
 }
 
+
+/* ── Built-in (regular) tools — fixed, display-only ───────────────── */
+.toolsSection {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.toolsHeader {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.toolsHint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.toolsList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 6px 16px;
+}
+.toolRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-subtle, transparent);
+  min-width: 0;
+}
+.toolName {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.toolDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

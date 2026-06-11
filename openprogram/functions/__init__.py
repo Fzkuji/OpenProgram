@@ -156,7 +156,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             # The three harness entry points + the two PDF-extraction
             # utilities. Every other @agentic_function (the composable
             # building blocks like wait / ask_user, the third-party
-            # examples like polish_text / word_count, the internal
+            # bundled examples, the internal
             # stage helpers gui_step / observe / etc.) is registered
             # for Python-direct invocation but NOT whitelisted: the
             # LLM never sees them, only the harness entry points and

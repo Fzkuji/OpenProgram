@@ -1436,7 +1436,6 @@ from openprogram._cli_cmds.channels import (  # noqa: E402,F401
 from openprogram._cli_cmds.web import _cmd_web  # noqa: E402,F401
 from openprogram._cli_cmds.chat import (  # noqa: E402,F401
     _cmd_cli_chat,
-    _cmd_deep_work,
 )
 from openprogram._cli_cmds.cron import _cmd_cron_worker  # noqa: E402,F401
 from openprogram._cli_cmds.mcp import (  # noqa: E402,F401

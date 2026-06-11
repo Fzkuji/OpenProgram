@@ -57,6 +57,7 @@ export function FunctionsPage() {
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
+  const [tools, setTools] = useState<{ name: string; description: string }[]>([]);
   const draggedRef = useRef<string | null>(null);
 
   // Initial data load (functions list + saved meta). ``signal`` is
@@ -66,12 +67,14 @@ export function FunctionsPage() {
   // destroyed component.
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [a, b] = await Promise.all([
+      const [a, b, c] = await Promise.all([
         fetch("/api/functions", { signal }).then((r) => r.json()),
         fetch("/api/programs/meta", { signal }).then((r) => r.json()),
+        fetch("/api/tools", { signal }).then((r) => r.json()).catch(() => []),
       ]);
       if (signal?.aborted) return;
       setFunctions(a as FunctionInfo[]);
+      setTools(Array.isArray(c) ? c : []);
       const m = b as Partial<FunctionsMeta>;
       setMeta({
         favorites: m.favorites ?? [],
@@ -554,6 +557,27 @@ export function FunctionsPage() {
                     }}
                   />
                 ))}
+              </div>
+            )}
+            {tools.length > 0 && folder === "__all__" && !search && (
+              <div className={styles.toolsSection}>
+                <div className={styles.toolsHeader}>
+                  {text("Built-in tools", "内置工具")}
+                  <span className={styles.toolsHint}>
+                    {text(
+                      "Always available to the agent — fixed, not configurable here.",
+                      "Agent 始终可用——固定内置，此处不可配置。",
+                    )}
+                  </span>
+                </div>
+                <div className={styles.toolsList}>
+                  {tools.map((tl) => (
+                    <div key={tl.name} className={styles.toolRow} title={tl.description}>
+                      <span className={styles.toolName}>{tl.name}</span>
+                      <span className={styles.toolDesc}>{tl.description}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

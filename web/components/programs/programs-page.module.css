@@ -1,0 +1,65 @@
+.page {
+  padding: 32px 40px;
+  max-width: 1100px;
+}
+
+.header {
+  margin-bottom: 28px;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin: 0 0 8px;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 640px;
+  line-height: 1.5;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.placeholderCard {
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.placeholderIcon {
+  font-size: 22px;
+  opacity: 0.6;
+}
+
+.placeholderName {
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  color: var(--text);
+}
+
+.placeholderDesc {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.placeholderBadge {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}

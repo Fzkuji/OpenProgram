@@ -54,7 +54,7 @@ SPEC: dict[str, Any] = {
         "properties": {
             "program": {
                 "type": "string",
-                "description": "Name of the program to run (e.g. `deep_work`, `ask_user`, `research`). Required unless list_only=true.",
+                "description": "Name of the program to run (e.g. `research_agent`, `extract_pdf_figures`). Required unless list_only=true.",
             },
             "args": {
                 "type": "object",
