@@ -24,6 +24,17 @@ _VERTEX = [
 _ALL_KEY_NAMES = sorted({n for names in ek._PROVIDER_ENV_VARS.values() for n in names})
 
 
+@pytest.fixture(autouse=True)
+def _no_auth_store(monkeypatch):
+    """These tests pin the env/config layers; blank out the AuthStore step
+    of get_env_api_key so the developer's real ~/.openprogram/auth
+    credentials can't shadow the monkeypatched env vars."""
+    import openprogram.auth.resolver as _resolver
+    monkeypatch.setattr(
+        _resolver, "resolve_store_api_key_sync", lambda *a, **k: None
+    )
+
+
 @pytest.fixture
 def env(monkeypatch):
     """Isolate from the real environment + config: clear every name we touch

@@ -2,8 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from openprogram.auth.aliases import known_aliases, resolve
 from openprogram.providers import env_api_keys
+
+
+@pytest.fixture(autouse=True)
+def _no_auth_store(monkeypatch):
+    """These tests pin the env-var layer; blank out the AuthStore step of
+    get_env_api_key so the developer's real ~/.openprogram/auth
+    credentials can't shadow the monkeypatched env vars."""
+    import openprogram.auth.resolver as _resolver
+    monkeypatch.setattr(
+        _resolver, "resolve_store_api_key_sync", lambda *a, **k: None
+    )
 
 
 def test_resolve_maps_common_aliases_to_canonical_ids() -> None:

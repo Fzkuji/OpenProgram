@@ -91,6 +91,38 @@ def resolve_api_key_sync(
     return legacy or None
 
 
+def resolve_store_api_key_sync(
+    provider_id: str,
+    profile_id: Optional[str] = None,
+) -> Optional[str]:
+    """API-key-shaped credential from the AuthStore only, or None.
+
+    Unlike :func:`resolve_api_key_sync`, OAuth/device tokens are
+    EXCLUDED: those belong to provider-specific transports (claude-code
+    daemon, codex OAuth headers) — handing an access_token to a wire
+    that puts it in ``x-api-key`` just 401s. No env/config fallback
+    either; this is the AuthStore layer for ``get_env_api_key``'s
+    runtime ladder, which does its own env/config step after.
+    """
+    profile = profile_id or get_active_profile(provider_id)
+
+    override = get_credential_override(provider_id)
+    if override is not None:
+        payload = getattr(override, "payload", None)
+        if isinstance(payload, ApiKeyPayload):
+            return payload.api_key or None
+        return None
+
+    try:
+        cred = get_manager().acquire_sync(provider_id, profile)
+    except (AuthConfigError, AuthError, RuntimeError):
+        return None
+    payload = getattr(cred, "payload", None)
+    if isinstance(payload, ApiKeyPayload):
+        return payload.api_key or None
+    return None
+
+
 def _extract_token(cred: Credential) -> Optional[str]:
     """Pull the bearer value out of whichever payload shape we got."""
     payload = cred.payload
@@ -106,4 +138,4 @@ def _extract_token(cred: Credential) -> Optional[str]:
     return None
 
 
-__all__ = ["resolve_api_key_sync"]
+__all__ = ["resolve_api_key_sync", "resolve_store_api_key_sync"]

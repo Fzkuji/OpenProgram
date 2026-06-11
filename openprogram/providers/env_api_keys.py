@@ -34,18 +34,30 @@ PROVIDER_ENV_VARS: dict[str, str] = {
 def get_env_api_key(provider: str) -> str | None:
     """Resolve a provider's API key — the runtime path.
 
-    Delegates to the canonical :func:`resolve_api_key` (env > config.json), so a
-    key saved through the web UI is found at runtime even after a worker restart
-    cleared it from ``os.environ`` — the restart bug. Anthropic OAuth>key and
-    the GitHub-Copilot token sources are handled by the canonical resolver's
-    env-var table. Bedrock/Vertex keep the ``"<authenticated>"`` cloud-credential
-    sentinel for back-compat with their runtime adapters (those migrate to
-    :func:`is_configured` separately).
+    Ladder: AuthStore api-key credential (where the web UI's account
+    manager saves keys) > env vars > config.json ``api_keys``. The
+    AuthStore step takes api-key-shaped credentials ONLY — OAuth tokens
+    are excluded because the wires that call this put the result in
+    ``x-api-key``/``Authorization: Bearer <key>`` headers, and an OAuth
+    access_token there just 401s; OAuth providers have their own
+    transports (claude-code daemon, codex OAuth). Anthropic OAuth>key
+    and the GitHub-Copilot token sources are handled by the canonical
+    resolver's env-var table. Bedrock/Vertex keep the
+    ``"<authenticated>"`` cloud-credential sentinel for back-compat with
+    their runtime adapters (those migrate to :func:`is_configured`
+    separately).
     """
     if provider == "amazon-bedrock":
         return "<authenticated>" if _bedrock_chain_ok() else None
     if provider == "google-vertex":
         return "<authenticated>" if _vertex_adc_ok() else None
+    try:
+        from openprogram.auth.resolver import resolve_store_api_key_sync
+        tok = resolve_store_api_key_sync(provider)
+        if tok:
+            return tok
+    except Exception:
+        pass
     return resolve_api_key(provider)
 
 

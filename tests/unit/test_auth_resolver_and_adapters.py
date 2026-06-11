@@ -65,6 +65,11 @@ def test_resolver_falls_back_to_env(store, monkeypatch):
 def test_resolver_returns_none_when_nothing_matches(store, monkeypatch):
     for var in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"]:
         monkeypatch.delenv(var, raising=False)
+    # Layer 3 falls through to config.json api_keys — blank that out too
+    # so the developer's real ~/.openprogram/config.json can't satisfy
+    # the lookup this test expects to fail.
+    from openprogram.providers import env_api_keys as _ek
+    monkeypatch.setattr(_ek, "_config_api_keys", lambda: {})
     assert resolve_api_key_sync("anthropic") is None
 
 
