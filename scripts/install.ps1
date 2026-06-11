@@ -126,6 +126,18 @@ function Install-Gui {
   & powershell -NoProfile -ExecutionPolicy Bypass -File $hInstall -Python $PY -Cuda $Cuda -NoHost
 }
 
+# ---- 5b. bundled programs: the three agent harnesses ------------------------
+# `openprogram programs install all` git-clones GUI-Agent-Harness,
+# Research-Agent-Harness and Wiki-Agent-Harness into
+# openprogram\functions\agentics\ and pip-installs each one's own
+# declared deps. Idempotent: an existing clone is left alone.
+function Install-Programs {
+  if ($Minimal) { Warn "skipping bundled programs (-Minimal)"; return }
+  Step "installing bundled programs (gui_agent / research_agent / wiki_agent)"
+  & $PY -m openprogram programs install all
+  if ($LASTEXITCODE -ne 0) { Warn "program install failed - re-run later: openprogram programs install all" }
+}
+
 # ---- 6. default extras: [all] = browser + channels (opt out with -Minimal) ----
 function Install-DefaultExtras {
   if ($Minimal) { Warn "skipping default extras (-Minimal)"; return }
@@ -160,11 +172,13 @@ function Install-Extras {
 Step "OpenProgram setup  (os=Windows, gui=$($Gui -and -not $NoGui), torch=$Cuda)"
 Install-Web
 Install-Gui
+Install-Programs
 Install-DefaultExtras
 Install-Extras
 
 Write-Host "`nOpenProgram ready." -ForegroundColor Green
 Write-Host "  Start:     openprogram           # first run walks you through provider setup, then opens the chat"
 Write-Host "  Web UI:    openprogram web        # -> http://localhost:18100"
-if ($Gui -and -not $NoGui) { Write-Host "  GUI agent: gui-agent --work-dir C:\temp\gui --app firefox `"Open Firefox`"" }
+Write-Host "  Programs:  gui_agent / research_agent / wiki_agent installed under openprogram\functions\agentics\"
+Write-Host "             manage with: openprogram programs list | install | uninstall"
 else { Write-Host "  Add a harness: clone it into openprogram\functions\agentics\ and run its installer"; Write-Host "                 (GUI agent: https://github.com/Fzkuji/GUI-Agent-Harness)" }

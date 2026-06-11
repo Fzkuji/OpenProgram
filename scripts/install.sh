@@ -8,21 +8,23 @@
 #   3. OpenProgram (editable) + its deps
 #   4. Web UI deps:  web/  -> npm install   (Next.js frontend on :18100)
 #   5. TUI deps:     cli/  -> npm install && npm run build  (Ink TUI; POSIX)
-#   6. Browser tool + channels installed by DEFAULT; --stealth / --agent-browser
+#   6. Bundled programs installed by DEFAULT: the three agent harnesses
+#      (GUI / Research / Wiki) clone into openprogram/functions/agentics/
+#      via `openprogram programs install all` (--minimal skips them; the
+#      GUI harness pulls torch — large download)
+#   7. Browser tool + channels installed by DEFAULT; --stealth / --agent-browser
 #               are heavier opt-ins (--minimal skips the default extras)
 #
-# The GUI agent is NOT installed here — it is a separate program, added like any
-# other harness (clone into openprogram/functions/agentics/ and run its own
-# installer). Pass --gui to also install it as a convenience.
-#
-# PyTorch (only relevant with --gui) is auto-selected: an NVIDIA GPU (nvidia-smi)
-# gets the matching CUDA build, otherwise CPU. Force it with --cpu or --cuda cuXXX.
+# PyTorch for the GUI harness is auto-selected by pip; pass --gui to run the
+# harness's own installer instead, which picks CUDA vs CPU explicitly
+# (force with --cpu or --cuda cuXXX).
 #
 # Re-runnable: every step is idempotent.
 #
 # Usage:
-#   ./scripts/install.sh                 # host only (web + TUI + browser/channels)
-#   ./scripts/install.sh --gui           # also install the GUI agent (auto GPU/CPU torch)
+#   ./scripts/install.sh                 # full install (web + TUI + 3 programs + browser/channels)
+#   ./scripts/install.sh --minimal       # host only — skip programs + default extras
+#   ./scripts/install.sh --gui           # GUI harness via its own installer (explicit GPU/CPU torch)
 #   ./scripts/install.sh --cpu           # force CPU torch (with --gui)
 #   ./scripts/install.sh --cuda cu124    # force a specific CUDA tag (with --gui)
 #   ./scripts/install.sh --browser       # + Playwright browser tool
@@ -147,6 +149,20 @@ install_gui() {
   bash "$HARNESS_DIR/scripts/install.sh" --python "$PY" --cuda "$TORCH_VARIANT" --no-host
 }
 
+# ---- 6b. bundled programs: the three agent harnesses ------------------------
+# `openprogram programs install all` git-clones GUI-Agent-Harness,
+# Research-Agent-Harness and Wiki-Agent-Harness into
+# openprogram/functions/agentics/ and pip-installs each one's own
+# declared deps. Idempotent: an existing clone is left alone, so the
+# --gui path above (which installs the GUI harness with explicit
+# CUDA/CPU torch) is never overwritten.
+install_programs() {
+  [ "$MINIMAL" = "1" ] && { warn "skipping bundled programs (--minimal)"; return 0; }
+  step "installing bundled programs (gui_agent / research_agent / wiki_agent)"
+  "$PY" -m openprogram programs install all \
+    || warn "program install failed — re-run later: openprogram programs install all"
+}
+
 # ---- 7. default extras: [all] = browser + channels (opt out with --minimal) ----
 install_default_extras() {
   [ "$MINIMAL" = "1" ] && { warn "skipping default extras (--minimal)"; return 0; }
@@ -183,6 +199,7 @@ step "OpenProgram setup  (os=$OS, gui=$WITH_GUI, torch=$TORCH_VARIANT)"
 install_web
 install_tui
 install_gui
+install_programs
 install_default_extras
 install_extras
 
@@ -190,9 +207,5 @@ install_extras
 printf "\n${c_green}OpenProgram ready.${c_reset}\n"
 printf "  Start:     openprogram           # first run walks you through provider setup, then opens the chat\n"
 printf "  Web UI:    openprogram web        # -> http://localhost:18100\n"
-if [ "$WITH_GUI" = "1" ]; then
-  printf "  GUI agent: gui-agent --work-dir /tmp/gui --app firefox \"Open Firefox\"\n"
-else
-  printf "  Add a harness: clone it into openprogram/functions/agentics/ and run its installer\n"
-  printf "                 (GUI agent: https://github.com/Fzkuji/GUI-Agent-Harness)\n"
-fi
+printf "  Programs:  gui_agent / research_agent / wiki_agent installed under openprogram/functions/agentics/\n"
+printf "             manage with: openprogram programs list | install | uninstall\n"
