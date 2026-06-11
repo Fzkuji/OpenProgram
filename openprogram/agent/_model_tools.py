@@ -182,14 +182,17 @@ def _resolve_custom_model(provider: str, model_id: str, get_model):
 def resolve_model(profile: dict, override: Optional[str] = None):
     """Resolve a Model instance from the agent profile or per-turn override.
 
-    Falls back to a stub Model if the profile's identifier doesn't
-    map to anything in the registry — keeps tests / orphaned agents
-    from blowing up at construction time. The actual provider call
-    will fail later if the stub doesn't have a real backend, but the
-    failure surface is then ``[error] ProviderNotFound: ...`` which
-    the dispatcher persists as a system message — recoverable.
+    The user's pick is honoured literally: a ``provider/model`` request
+    resolves ONLY within that provider (static registry, then the
+    provider's config ``custom_models``). If it isn't there — e.g. a
+    fetched model the upstream catalogue has since dropped — this
+    raises ``LLMError(invalid)`` so the turn fails with a clear chat
+    error instead of silently routing through some other provider or a
+    stub default. The only cross-provider walk left is for a BARE model
+    id with no provider (legacy agent.json form) and for the
+    claude-code / claude-max runtime prefixes, whose model rows
+    legitimately live under ``anthropic/``.
     """
-    from openprogram.providers.types import Model
     try:
         from openprogram.providers.models import get_model
     except Exception:
@@ -220,56 +223,60 @@ def resolve_model(profile: dict, override: Optional[str] = None):
             # row, e.g. minimax-cn-coding-plan/MiniMax-M3): resolve it from
             # the provider's config custom_models — derived api + the
             # normalised (Anthropic /v1-stripped) base — so the chat path
-            # routes it correctly even in a FRESH process. Without this it
-            # falls through to the openai stub below and every turn
-            # mis-routes (e.g. to the agent's default codex backend). The
+            # routes it correctly even in a FRESH process. The
             # picker-switch registers the same row, but a subprocess turn
             # or a worker restart resuming a conv wouldn't have run that.
             m = _resolve_custom_model(provider, model_id_only, get_model)
             if m:
                 return m
-            # Legacy provider-prefix form may not match: e.g.
-            # claude-code/claude-sonnet-4-6 is a RUNTIME prefix whose
-            # actual model row lives under anthropic/. Fall through.
-            if provider_hint is None:
-                provider_hint = provider
+            # claude-code / claude-max are RUNTIME prefixes whose model
+            # rows live under anthropic/ — the one legitimate
+            # cross-provider alias. Anything else: the user picked
+            # provider X and X doesn't have this model — fail honestly
+            # below instead of routing through some other provider.
+            if provider in ("claude-code", "claude-max"):
+                m = get_model("anthropic", model_id_only)
+                if m:
+                    return m
+            _raise_model_unavailable(requested)
         else:
+            # Bare model id, no provider (legacy agent.json) — find the
+            # provider that has this exact id. Same model, not a swap.
             model_id_only = requested
+            order = ["openai", "anthropic", "google", "amazon-bedrock",
+                     "cerebras", "claude-code", "github-copilot",
+                     "openai-codex", "gemini-subscription", "openrouter"]
+            if provider_hint and provider_hint not in order:
+                order.insert(0, provider_hint)
+            for provider in order:
+                m = get_model(provider, model_id_only)
+                if m:
+                    return m
+            _raise_model_unavailable(requested)
 
-        order = ["openai", "anthropic", "google", "amazon-bedrock",
-                 "cerebras", "claude-code", "github-copilot",
-                 "openai-codex", "gemini-subscription", "openrouter"]
-        if provider_hint and provider_hint not in order:
-            order.insert(0, provider_hint)
-        for provider in order:
-            m = get_model(provider, model_id_only)
-            if m:
-                return m
+    # No model configured at all (fresh install whose agent.json is
+    # missing/empty and no override). Fail with the same clear error —
+    # the dispatcher surfaces it as a chat error bubble telling the
+    # user to pick a model.
+    _raise_model_unavailable(requested)
 
-    # Registry lookup failed for every (provider, model_id) combo we
-    # tried. Fall through to a stub Model so callers don't have to
-    # null-guard, but use a *real* api id (``openai-completions``) — the
-    # legacy value here was ``"completion"`` which isn't registered in
-    # ``api_registry``, so the moment the dispatcher tried to stream
-    # against this stub it crashed with
-    # ``No stream function registered for API: 'completion'``. Picking
-    # an api that's actually registered means the failure becomes
-    # "OpenAI rejected your model id" — recoverable by switching the
-    # agent's model — rather than a hard ImportError-shaped crash on a
-    # fresh install whose ``agent.json`` happens to be missing.
-    import sys
-    sys.stderr.write(
-        f"[_model_tools.resolve_model] WARN: no registry entry for "
-        f"{requested!r}; falling back to openai-completions stub. "
-        f"Set the agent's model explicitly via Settings → Agents.\n"
-    )
-    return Model(
-        id=requested or "stub",
-        name=requested or "stub",
-        api="openai-completions",
-        provider="openai",
-        base_url="https://api.openai.com/v1",
-    )
+
+def _raise_model_unavailable(requested) -> None:
+    from openprogram.providers.utils.errors import ErrorReason, LLMError
+    if requested:
+        msg = (
+            f"Model {requested!r} is not available. It may have been "
+            "removed from the provider's catalogue or the provider is "
+            "disabled — re-fetch the provider's model list in Settings → "
+            "Providers, or pick another model."
+        )
+    else:
+        msg = (
+            "No model is configured. Pick a model from the model "
+            "selector (or enable one in Settings → Providers) and send "
+            "the message again."
+        )
+    raise LLMError(message=msg, reason=ErrorReason.INVALID_REQUEST, retryable=False)
 
 
 def with_tool_runtime_prompt(system_prompt: str, tools: Optional[list]) -> str:

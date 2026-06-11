@@ -10,8 +10,11 @@ regression can't sneak back in.
 """
 from __future__ import annotations
 
+import pytest
+
 from openprogram.agent.dispatcher import _resolve_model
 from openprogram.providers.models import get_model
+from openprogram.providers.utils.errors import ErrorReason, LLMError
 
 
 def test_dict_model_normalizes_to_string() -> None:
@@ -39,21 +42,30 @@ def test_slash_provider_string_keeps_working() -> None:
     assert m.provider == "openai"
 
 
-def test_missing_model_falls_back_to_stub_string() -> None:
-    """No model field anywhere → stub Model with str id, not None /
-    dict — otherwise pydantic raises before the caller can give the
-    user a useful error."""
-    m = _resolve_model({})
-    assert isinstance(m.id, str)
-    assert m.id == "stub"
+def test_missing_model_raises_clear_error() -> None:
+    """No model configured anywhere → LLMError telling the user to pick
+    one, NOT a stub that silently fires requests at api.openai.com."""
+    with pytest.raises(LLMError) as exc:
+        _resolve_model({})
+    assert exc.value.reason == ErrorReason.INVALID_REQUEST
+    assert "No model is configured" in exc.value.message
 
 
-def test_partial_dict_falls_through_safely() -> None:
-    """``{"id": "x"}`` with no provider should still produce a string
-    id, even if the registered model registry doesn't know it."""
-    m = _resolve_model({"model": {"id": "mystery-model"}})
-    assert isinstance(m.id, str)
-    assert m.id == "mystery-model"
+def test_unknown_model_raises_instead_of_swapping() -> None:
+    """An explicit pick the registry can't satisfy must fail honestly —
+    never route through another provider or a stub default ('I switched
+    to the free model but it answered as GPT')."""
+    with pytest.raises(LLMError) as exc:
+        _resolve_model({"model": {"provider": "openrouter",
+                                  "id": "gone/after-refetch:free"}})
+    assert exc.value.reason == ErrorReason.INVALID_REQUEST
+    assert "openrouter/gone/after-refetch:free" in exc.value.message
+
+
+def test_unknown_bare_id_raises() -> None:
+    """A bare id (no provider) that no provider knows also fails clearly."""
+    with pytest.raises(LLMError):
+        _resolve_model({"model": {"id": "mystery-model"}})
 
 
 def test_codex_55_exposes_full_thinking_levels() -> None:
