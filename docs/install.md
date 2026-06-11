@@ -66,7 +66,7 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | 3 | **OpenProgram** editable install (`pip install -e .`) | The host + base deps. |
 | 4 | **Web UI** — `npm install && npm run build` in `web/` | Next.js frontend on **:18100**, backend on **:18109**. `--minimal` skips the build (the worker builds on first start). |
 | 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. `--minimal` skips. |
-| 6 | **Bundled programs** — `openprogram programs install all` | Clones the GUI / Research / Wiki harnesses into `functions/agentics/` (editable, auto-register) and installs each one's own declared deps. The GUI harness pulls PyTorch (large). `--minimal` skips; for an explicit CUDA/CPU torch run the GUI harness's own installer afterwards. |
+| 6 | **Bundled programs** — `openprogram programs install all` | Clones the GUI / Research / Wiki harnesses into `functions/agentics/` (editable, auto-register) and installs each one's own declared deps. The GUI harness pulls PyTorch — ~300 MB on macOS / GPU-less Linux (the CPU wheel is auto-selected when no NVIDIA GPU is present), ~3 GB only on CUDA boxes. `--minimal` skips; for an explicit CUDA tag run the GUI harness's own installer afterwards. |
 | 7 | **Browser tool + channels** | `pip install -e .[all]` + `playwright install chromium` (~150 MB). `--minimal` skips. Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
 
 ---

@@ -10,8 +10,9 @@
 #   5. TUI:      cli/ -> npm install && npm run build  (Ink TUI; POSIX)
 #   6. Bundled programs — the three agent harnesses (GUI / Research /
 #      Wiki) clone into openprogram/functions/agentics/ via
-#      `openprogram programs install all`. NOTE: the GUI harness pulls
-#      torch — a large download.
+#      `openprogram programs install all`. The GUI harness pulls torch:
+#      ~300 MB on macOS / GPU-less Linux (CPU wheel auto-selected),
+#      ~3 GB only on Linux WITH an NVIDIA GPU (CUDA build).
 #   7. Default extras [all]: browser tool (Playwright + Chromium) + channels
 #
 # `--minimal` skips 4(build)/5/6/7 — a bare host for servers; everything

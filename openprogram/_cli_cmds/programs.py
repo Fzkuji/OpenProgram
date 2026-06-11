@@ -160,6 +160,40 @@ def _resolve_programs(name: str):
     return [prog] if prog else []
 
 
+def _preinstall_cpu_torch_if_no_gpu() -> None:
+    """On a GPU-less Linux box, preinstall the CPU torch wheel.
+
+    PyPI's default Linux ``torch`` wheel bundles the full NVIDIA CUDA
+    stack (~3 GB) — pure waste on a machine with no NVIDIA GPU. Pulling
+    the CPU wheel (~200 MB) from PyTorch's own index FIRST means the
+    harness's ``ultralytics`` dependency resolves against it instead of
+    dragging in the CUDA build. macOS/Windows default wheels are already
+    CUDA-free; a box WITH a GPU (nvidia-smi present) keeps pip's default
+    CUDA wheel; an already-installed torch is never touched.
+    """
+    import importlib.util
+    import shutil
+    import subprocess
+    if sys.platform != "linux":
+        return
+    if shutil.which("nvidia-smi"):
+        return
+    try:
+        if importlib.util.find_spec("torch") is not None:
+            return
+    except (ImportError, ValueError):
+        pass
+    print("[deps] no NVIDIA GPU detected — preinstalling CPU torch "
+          "(~200 MB) instead of the default CUDA build (~3 GB).")
+    rc = subprocess.call([
+        sys.executable, "-m", "pip", "install", "torch", "torchvision",
+        "--index-url", "https://download.pytorch.org/whl/cpu",
+    ])
+    if rc != 0:
+        print("[!] CPU torch preinstall failed — pip will fall back to "
+              "the default (CUDA) wheel.")
+
+
 def _cmd_install(name: str, *, upgrade: bool = False) -> None:
     """Install one (or all) program(s) by cloning into functions/agentics/.
 
@@ -221,6 +255,8 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
         # harness owns its dependency list. So we ``pip install`` the
         # clone itself, which resolves whatever it declares (cv2, torch,
         # … for GUI; nothing extra for the light ones).
+        if prog.heavy:
+            _preinstall_cpu_torch_if_no_gpu()
         has_pyproject = os.path.isfile(os.path.join(dest, "pyproject.toml")) \
             or os.path.isfile(os.path.join(dest, "setup.py"))
         if has_pyproject:
