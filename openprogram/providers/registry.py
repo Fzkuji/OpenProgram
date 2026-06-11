@@ -136,12 +136,15 @@ def detect_provider() -> tuple[str, str]:
     if shutil.which("gemini"):
         return "gemini-cli", "gemini-2.5-flash"
 
-    # 5. API providers (need keys)
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    # 5. API providers (need keys). Resolve through the full runtime
+    # ladder (AuthStore → env → config.json), not a bare env read —
+    # a key pasted in Settings must make its provider detectable too.
+    from openprogram.providers.env_api_keys import get_env_api_key
+    if get_env_api_key("anthropic"):
         return "anthropic", "claude-sonnet-4-6"
-    if os.environ.get("OPENAI_API_KEY"):
+    if get_env_api_key("openai"):
         return "openai", "gpt-4.1"
-    if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY"):
+    if get_env_api_key("google"):
         return "gemini", "gemini-2.5-flash"
 
     raise RuntimeError(

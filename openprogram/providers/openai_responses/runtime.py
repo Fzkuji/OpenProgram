@@ -15,7 +15,6 @@ Usage::
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from openprogram.agentic_programming.runtime import Runtime
@@ -36,11 +35,16 @@ class OpenAIRuntime(Runtime):
         model: str = "gpt-4o",
         max_retries: int = 2,
     ):
-        api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            # Full runtime ladder (AuthStore → env → config.json), NOT a
+            # bare env read — keys pasted in Settings live in the
+            # AuthStore and must work without any env var set.
+            from openprogram.providers.env_api_keys import get_env_api_key
+            api_key = get_env_api_key("openai")
         if not api_key:
             raise ValueError(
-                "OpenAI API key is required. Pass api_key= or set "
-                "OPENAI_API_KEY env var."
+                "OpenAI API key is required. Add one in Settings → "
+                "LLM Providers, pass api_key=, or set OPENAI_API_KEY."
             )
         super().__init__(
             model=f"openai:{model}",

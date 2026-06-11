@@ -16,7 +16,6 @@ Usage::
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from openprogram.agentic_programming.runtime import Runtime
@@ -38,15 +37,19 @@ class GeminiRuntime(Runtime):
         model: str = "gemini-2.5-flash",
         max_retries: int = 2,
     ):
-        api_key = (
-            api_key
-            or os.environ.get("GOOGLE_API_KEY")
-            or os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY")
-        )
+        if not api_key:
+            # Full runtime ladder (AuthStore → env → config.json), NOT a
+            # bare env read — keys pasted in Settings live in the
+            # AuthStore and must work without any env var set. The env
+            # leg covers GEMINI_API_KEY / GOOGLE_API_KEY /
+            # GOOGLE_GENERATIVE_AI_API_KEY.
+            from openprogram.providers.env_api_keys import get_env_api_key
+            api_key = get_env_api_key("google")
         if not api_key:
             raise ValueError(
-                "Google API key is required. Pass api_key= or set "
-                "GOOGLE_API_KEY (or GOOGLE_GENERATIVE_AI_API_KEY) env var."
+                "Google API key is required. Add one in Settings → "
+                "LLM Providers, pass api_key=, or set GEMINI_API_KEY "
+                "(or GOOGLE_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY)."
             )
         super().__init__(
             model=f"google:{model}",
