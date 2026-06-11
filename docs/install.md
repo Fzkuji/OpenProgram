@@ -27,23 +27,23 @@ first, then the program(s).**
 
 ## One command (recommended)
 
-Clone the host wherever you want it to live, then run the installer. It installs
-the **host** — web UI, terminal UI, browser tool + channels. Agent harnesses (GUI,
-research, …) are added separately ([Adding agent programs](#adding-agent-programs)).
-Pass `--gui` / `-Gui` to also install the GUI agent here as a convenience.
+Clone the host wherever you want it to live, then run the installer. The default
+install brings up **everything**: web UI (built), terminal UI, the three bundled
+agent programs (GUI / Research / Wiki), browser tool + channels. `--minimal`
+installs a bare host instead.
 
 **macOS / Linux**
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram
 cd OpenProgram
-./scripts/install.sh                  # host only · also GUI: --gui · torch (with --gui): --cpu / --cuda cu124
+./scripts/install.sh                  # everything · bare host: --minimal
 ```
 
 **Windows (PowerShell)**
 ```powershell
 git clone https://github.com/Fzkuji/OpenProgram
 cd OpenProgram
-.\scripts\install.ps1                 # host only · also GUI: -Gui · torch (with -Gui): -Cpu / -Cuda cu124
+.\scripts\install.ps1                 # everything · bare host: -Minimal
 ```
 
 Then just start it — the **first run walks you through provider setup**, then
@@ -64,10 +64,10 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | 1 | Verify / install **Python 3.11+, Node 20+, git** | macOS `brew` / Linux `apt`·`dnf`·`pacman` / Windows `winget`. Best-effort. |
 | 2 | **Python env** | Active `venv`/conda if any, else creates `./.venv`. Override: `--python` / `-Python`. This is the "wherever you want" location. |
 | 3 | **OpenProgram** editable install (`pip install -e .`) | The host + base deps. |
-| 4 | **Web UI** — `npm install` in `web/` | Next.js frontend on **:18100**, backend on **:18109**. |
-| 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. |
-| 6 | **GUI program** (opt-in: `--gui`/`-Gui`) into `functions/agentics/` | Clones the harness in-tree (editable, auto-registers) and runs its asset setup → PyTorch + YOLO weight + EasyOCR. Delegates to the harness's own [installer](../openprogram/functions/agentics/GUI-Agent-Harness/scripts). Default is host-only; add it later by cloning the harness in and running its installer ([Adding agent programs](#adding-agent-programs)). |
-| 7 | **Browser tool + channels** (default; `--minimal`/`-Minimal` to skip) | `pip install -e .[all]` + `playwright install chromium` (~150 MB). Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
+| 4 | **Web UI** — `npm install && npm run build` in `web/` | Next.js frontend on **:18100**, backend on **:18109**. `--minimal` skips the build (the worker builds on first start). |
+| 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. `--minimal` skips. |
+| 6 | **Bundled programs** — `openprogram programs install all` | Clones the GUI / Research / Wiki harnesses into `functions/agentics/` (editable, auto-register) and installs each one's own declared deps. The GUI harness pulls PyTorch (large). `--minimal` skips; for an explicit CUDA/CPU torch run the GUI harness's own installer afterwards. |
+| 7 | **Browser tool + channels** | `pip install -e .[all]` + `playwright install chromium` (~150 MB). `--minimal` skips. Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
 
 ---
 
@@ -75,15 +75,13 @@ The installer is **idempotent** — re-run it any time to repair or update.
 
 | Goal | `install.sh` (POSIX) | `install.ps1` (Windows) |
 |------|----------------------|--------------------------|
-| Also install the GUI agent (host is default) | `--gui` | `-Gui` |
-| Skip the default browser + channels extras | `--minimal` | `-Minimal` |
-| Force CPU PyTorch (skip GPU auto-detect) | `--cpu` | `-Cpu` |
-| Force a specific CUDA tag | `--cuda cu124` | `-Cuda cu124` |
+| Bare host (skip web build / TUI / programs / extras) | `--minimal` | `-Minimal` |
 | Target a specific interpreter | `--python /path/python` | `-Python C:\path\python.exe` |
-| Pre-build the web bundle (`next build`) | `--build-web` | `-BuildWeb` |
-| Skip the Ink TUI build | `--no-tui` | *(n/a)* |
 | Stealth browsers (patchright + camoufox) | `--stealth` | `-Stealth` |
 | `agent-browser` tool | `--agent-browser` | `-AgentBrowser` |
+
+Explicit CUDA/CPU PyTorch for the GUI harness: run its own installer after the
+host install — `openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --cuda cu124`.
 
 ---
 
@@ -103,7 +101,7 @@ cd <Harness>
 The **GUI agent** has native deps (PyTorch, detector weight, OCR), so it ships its
 own per-platform installer — use it via the steps above; full guide in its
 [install section](../openprogram/functions/agentics/GUI-Agent-Harness#1-install).
-(Or pass `--gui` / `-Gui` to OpenProgram's installer to do that clone + setup for you.)
+(The default `./scripts/install.sh` already clones it via `openprogram programs install all`; run the harness's own installer afterwards only if you need its asset setup or an explicit CUDA/CPU torch.)
 
 For **pure-Python** catalogued harnesses there's a one-line shortcut that clones,
 installs, and registers them for you:
@@ -180,14 +178,14 @@ Everything beyond `pip`. The installer handles every "auto" row.
 | git | sessions are git repos | pkg mgr | all | install |
 | `web/node_modules` | web UI (:18100) | `npm install` in `web/` | all | **auto** |
 | `cli/` Ink bundle | TUI | `npm install && npm run build` in `cli/` | macOS/Linux | **auto** |
-| provider credential | any chat turn | `openprogram providers login` / env key | all | manual |
+| provider credential | any chat turn | `openprogram providers login` (or settings UI) | all | manual |
 | Playwright / patchright / camoufox / agent-browser | browser tools | flags above | all | flag |
 
-### GUI-Agent-Harness program (opt-in: `--gui`, or clone it in — see [Adding agent programs](#adding-agent-programs))
+### GUI-Agent-Harness program (installed by default — see [Adding agent programs](#adding-agent-programs))
 
 | Item | Required for | How | Platform | Auto? |
 |------|--------------|-----|----------|-------|
-| PyTorch (+ torchvision) | YOLO / OCR | auto-detects NVIDIA GPU → CUDA, else CPU (`--cpu` / `--cuda cuXXX` to force) | all | **auto** |
+| PyTorch (+ torchvision) | YOLO / OCR | pip resolves the default build; the harness's own installer auto-detects NVIDIA GPU → CUDA (`--cpu` / `--cuda cuXXX` to force) | all | **auto** |
 | harness Python deps | core | `pip install -e .[ocr]` (ultralytics, opencv, pynput, easyocr) | all | **auto** |
 | **GPA YOLO weight** `model.pt` | element detection | `Salesforce/GPA-GUI-Detector` → `~/GPA-GUI-Detector/model.pt` | all | **auto** |
 | EasyOCR models (en + ch_sim) | text detection | pre-warmed (`~/.EasyOCR/model`, ~300 MB) | Win/Linux | **auto** |

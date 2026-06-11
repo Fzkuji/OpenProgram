@@ -6,47 +6,42 @@
    1. Verify (or winget-install) the system toolchain: Python 3.11+, Node 20+, git
    2. Python env (uses an active venv/conda, else creates .\.venv)
    3. OpenProgram (editable) + its deps
-   4. Web UI deps:  web\  -> npm install   (Next.js frontend on :18100)
+   4. Web UI:  web\ -> npm install && npm run build  (served on :18100)
       (Windows uses the Rich REPL, not the Ink TUI, so cli\ is not built)
-   5. Browser tool + channels installed by DEFAULT; -Stealth / -AgentBrowser are
-      heavier opt-ins (-Minimal skips the default extras)
+   5. Bundled programs - the three agent harnesses (GUI / Research / Wiki)
+      clone into openprogram\functions\agentics\ via
+      `openprogram programs install all`. NOTE: the GUI harness pulls
+      torch - a large download.
+   6. Default extras [all]: browser tool (Playwright + Chromium) + channels
 
- The GUI agent is NOT installed here - it is a separate program, added like any
- other harness (clone into openprogram\functions\agentics\ and run its own
- installer). Pass -Gui to also install it as a convenience.
+ -Minimal skips 4(build)/5/6 - a bare host for servers; everything it
+ skipped can be added later (openprogram programs install all,
+ pip install -e .[all], cd web; npm run build).
 
- PyTorch (only relevant with -Gui) is auto-selected: an NVIDIA GPU (nvidia-smi)
- gets the matching CUDA build, otherwise CPU. Force it with -Cpu or -Cuda cuXXX.
+ The GUI harness's torch build is whatever pip resolves. For an explicit
+ CUDA/CPU variant run the harness's own installer afterwards:
+   openprogram\functions\agentics\GUI-Agent-Harness\scripts\install.ps1 -Cuda cu124
 
  Re-runnable: every step is idempotent.
 
  Usage:
-   .\scripts\install.ps1                  # host only (web + browser/channels)
-   .\scripts\install.ps1 -Gui             # also install the GUI agent (auto GPU/CPU torch)
-   .\scripts\install.ps1 -Cpu             # force CPU torch (with -Gui)
-   .\scripts\install.ps1 -Cuda cu124      # force a specific CUDA tag (with -Gui)
-   .\scripts\install.ps1 -Browser         # + Playwright browser tool
+   .\scripts\install.ps1                  # full install (everything above)
+   .\scripts\install.ps1 -Minimal         # bare host only
+   .\scripts\install.ps1 -Stealth         # + stealth browsers
+   .\scripts\install.ps1 -AgentBrowser    # + agent-browser (global npm)
 =============================================================================
 #>
 [CmdletBinding()]
 param(
-  [switch]$Gui,                   # opt-in: also install the GUI agent
-  [switch]$NoGui,                 # default already (host only); kept for back-compat
-  [string]$Cuda = "auto",         # auto-detect GPU; "cpu" or "cuXXX" to force
-  [switch]$Cpu,                   # force the CPU torch build
   [string]$Python = "",
-  [switch]$BuildWeb,
-  [switch]$Browser,
   [switch]$Stealth,
   [switch]$AgentBrowser,
-  [switch]$Channels,
-  [switch]$Minimal                # opt-out: skip the default browser + channels extras
+  [switch]$Minimal                # bare host: skip web build / programs / default extras
 )
 # NOTE: 'Continue', not 'Stop'. Under 'Stop', Windows PowerShell 5.1 turns a
 # native exe's stderr line (e.g. pip's harmless "Scripts not on PATH" warning)
 # into a terminating NativeCommandError. We gate on $LASTEXITCODE instead.
 $ErrorActionPreference = "Continue"
-if ($Cpu) { $Cuda = "cpu" }   # -Cpu forces the CPU torch build (passed through to the harness)
 
 function Step($m){ Write-Host "==> $m" -ForegroundColor Cyan }
 function Ok($m){ Write-Host "  ok $m" -ForegroundColor Green }
@@ -55,9 +50,6 @@ function Die($m){ Write-Host "ERROR $m" -ForegroundColor Red; exit 1 }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $HostRoot  = (Resolve-Path "$ScriptDir\..").Path
-$HarnessRel = "openprogram\functions\agentics\GUI-Agent-Harness"
-$HarnessDir = Join-Path $HostRoot $HarnessRel
-$HarnessRepo = "https://github.com/Fzkuji/GUI-Agent-Harness"
 
 # ---- 1. system toolchain (best-effort via winget) ---------------------------
 function Have($name){ return [bool](Get-Command $name -ErrorAction SilentlyContinue) }
@@ -107,26 +99,16 @@ function Install-Web {
   if (-not (Test-Path "$HostRoot\web\package.json")) { Warn "web/ not found - skipping"; return }
   Step "installing web UI deps (web/ - Next.js)"
   Push-Location "$HostRoot\web"
-  try { cmd /c "npm install"; if ($BuildWeb) { Step "building web production bundle"; cmd /c "npm run build" } }
-  finally { Pop-Location }
-  Ok "web UI deps installed (frontend :18100, backend :18109)"
-}
-
-# ---- 5. GUI harness (delegates to the harness's own installer) --------------
-function Install-Gui {
-  if (-not $Gui -or $NoGui) { return }
-  if (-not (Test-Path $HarnessDir)) {
-    Step "cloning GUI-Agent-Harness into $HarnessRel"
-    git clone --depth 1 $HarnessRepo $HarnessDir
-    if ($LASTEXITCODE -ne 0) { Die "git clone of harness failed" }
+  try {
+    cmd /c "npm install"
+    if ($Minimal) { Warn "skipping web production build (-Minimal) - the worker builds it on first start" }
+    else { Step "building web production bundle"; cmd /c "npm run build" }
   }
-  $hInstall = Join-Path $HarnessDir "scripts\install.ps1"
-  if (-not (Test-Path $hInstall)) { Die "harness installer not found at $hInstall" }
-  Step "running GUI-Agent-Harness installer"
-  & powershell -NoProfile -ExecutionPolicy Bypass -File $hInstall -Python $PY -Cuda $Cuda -NoHost
+  finally { Pop-Location }
+  Ok "web UI ready (frontend :18100, backend :18109)"
 }
 
-# ---- 5b. bundled programs: the three agent harnesses ------------------------
+# ---- 5. bundled programs: the three agent harnesses ------------------------
 # `openprogram programs install all` git-clones GUI-Agent-Harness,
 # Research-Agent-Harness and Wiki-Agent-Harness into
 # openprogram\functions\agentics\ and pip-installs each one's own
@@ -150,10 +132,6 @@ function Install-DefaultExtras {
 
 # ---- 7. heavier opt-in extras: stealth browsers / agent-browser ---------------
 function Install-Extras {
-  if ($Browser) {
-    Step "installing browser tool (Playwright)"; Pip install -e "${HostRoot}[browser]"
-    & $PY -m playwright install chromium; if ($LASTEXITCODE -ne 0) { Warn "playwright install chromium failed" }
-  }
   if ($Stealth) {
     Step "installing stealth browser (patchright + camoufox)"; Pip install -e "${HostRoot}[browser-stealth]"
     & $PY -m patchright install chromium 2>$null; & $PY -m camoufox fetch 2>$null
@@ -162,16 +140,11 @@ function Install-Extras {
     Step "installing agent-browser (global npm)"
     if (Have npm) { cmd /c "npm install -g agent-browser"; cmd /c "agent-browser install" } else { Warn "npm missing" }
   }
-  if ($Channels) {
-    Step "installing channel deps (discord / slack / wechat-qr)"; Pip install -e "${HostRoot}[channels]"
-    Warn "channels need tokens - configure in ~/.openprogram/config.json"
-  }
 }
 
 # ---- run --------------------------------------------------------------------
-Step "OpenProgram setup  (os=Windows, gui=$($Gui -and -not $NoGui), torch=$Cuda)"
+Step "OpenProgram setup  (os=Windows, minimal=$Minimal)"
 Install-Web
-Install-Gui
 Install-Programs
 Install-DefaultExtras
 Install-Extras

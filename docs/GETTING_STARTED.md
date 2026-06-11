@@ -17,7 +17,7 @@ git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-Requires Python ≥ 3.11, Node ≥ 20, git. Installs the host by default; add `--gui` to also install the GUI agent (its PyTorch auto-selects your hardware — NVIDIA GPU → CUDA, else CPU; force with `--cpu` / `--cuda cu124`). Full dependency matrix and flags: [docs/install.md](install.md).
+Requires Python ≥ 3.11, Node ≥ 20, git. The default install brings up everything — web UI, TUI, the three bundled agent programs (GUI / Research / Wiki), browser tool + channels; `--minimal` installs a bare host. Full dependency matrix and flags: [docs/install.md](install.md).
 
 ### Step 2: Connect a provider
 
@@ -310,7 +310,7 @@ git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-需要 Python ≥ 3.11、Node ≥ 20、git。默认只装 host；加 `--gui` 同时装 GUI agent（它的 PyTorch 会自动识别显卡——有 N 卡装 CUDA 版，否则 CPU；可用 `--cpu` / `--cuda cu124` 强制）。完整依赖矩阵与参数见 [docs/install.md](install.md)。
+需要 Python ≥ 3.11、Node ≥ 20、git。默认安装包含全部内容——web UI、TUI、三个内置 agent 程序（GUI / Research / Wiki）、浏览器工具和 channels；`--minimal` 只装精简 host。完整依赖矩阵与参数见 [docs/install.md](install.md)。
 
 ### 第 2 步：写你的第一个 Agentic Function
 

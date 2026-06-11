@@ -2,32 +2,34 @@
 # =============================================================================
 # OpenProgram — one-command installer (macOS / Linux)
 # -----------------------------------------------------------------------------
-# Brings up the OpenProgram HOST so `openprogram` just works:
-#   1. Verify (or install) the system toolchain: Python 3.11+, Node 20+, git
+# The default install brings up EVERYTHING `openprogram` ships with:
+#   1. System toolchain: Python 3.11+, Node 20+, git (installed if missing)
 #   2. Python env (uses an active venv/conda, else creates ./.venv)
 #   3. OpenProgram (editable) + its deps
-#   4. Web UI deps:  web/  -> npm install   (Next.js frontend on :18100)
-#   5. TUI deps:     cli/  -> npm install && npm run build  (Ink TUI; POSIX)
-#   6. Bundled programs installed by DEFAULT: the three agent harnesses
-#      (GUI / Research / Wiki) clone into openprogram/functions/agentics/
-#      via `openprogram programs install all` (--minimal skips them; the
-#      GUI harness pulls torch — large download)
-#   7. Browser tool + channels installed by DEFAULT; --stealth / --agent-browser
-#               are heavier opt-ins (--minimal skips the default extras)
+#   4. Web UI:   web/ -> npm install && npm run build  (served on :18100)
+#   5. TUI:      cli/ -> npm install && npm run build  (Ink TUI; POSIX)
+#   6. Bundled programs — the three agent harnesses (GUI / Research /
+#      Wiki) clone into openprogram/functions/agentics/ via
+#      `openprogram programs install all`. NOTE: the GUI harness pulls
+#      torch — a large download.
+#   7. Default extras [all]: browser tool (Playwright + Chromium) + channels
 #
-# PyTorch for the GUI harness is auto-selected by pip; pass --gui to run the
-# harness's own installer instead, which picks CUDA vs CPU explicitly
-# (force with --cpu or --cuda cuXXX).
+# `--minimal` skips 4(build)/5/6/7 — a bare host for servers; everything
+# it skipped can be added later (`openprogram programs install all`,
+# `pip install -e .[all]`, `cd web && npm run build`).
+#
+# The GUI harness's torch build is whatever pip resolves. If you need an
+# explicit CUDA/CPU variant, run the harness's own installer afterwards:
+#   openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --cuda cu124
 #
 # Re-runnable: every step is idempotent.
 #
 # Usage:
-#   ./scripts/install.sh                 # full install (web + TUI + 3 programs + browser/channels)
-#   ./scripts/install.sh --minimal       # host only — skip programs + default extras
-#   ./scripts/install.sh --gui           # GUI harness via its own installer (explicit GPU/CPU torch)
-#   ./scripts/install.sh --cpu           # force CPU torch (with --gui)
-#   ./scripts/install.sh --cuda cu124    # force a specific CUDA tag (with --gui)
-#   ./scripts/install.sh --browser       # + Playwright browser tool
+#   ./scripts/install.sh                   # full install (everything above)
+#   ./scripts/install.sh --minimal         # bare host only
+#   ./scripts/install.sh --python /p/bin/python   # pick the interpreter
+#   ./scripts/install.sh --stealth         # + stealth browsers (patchright/camoufox)
+#   ./scripts/install.sh --agent-browser   # + agent-browser (global npm)
 # =============================================================================
 set -euo pipefail
 
@@ -39,28 +41,16 @@ die()  { printf "${c_red}ERROR${c_reset} %s\n" "$*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOST_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-HARNESS_REL="openprogram/functions/agentics/GUI-Agent-Harness"
-HARNESS_DIR="$HOST_ROOT/$HARNESS_REL"
-HARNESS_REPO="https://github.com/Fzkuji/GUI-Agent-Harness"
 OS="$(uname -s)"
 
 # ---- args -------------------------------------------------------------------
-WITH_GUI=0; TORCH_VARIANT="auto"; PYTHON_BIN=""; BUILD_WEB=0   # host only by default; --gui to add the GUI agent
-WITH_BROWSER=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0; WITH_CHANNELS=0; NO_TUI=0; MINIMAL=0
+PYTHON_BIN=""; MINIMAL=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --gui) WITH_GUI=1; shift ;;                 # opt-in: also install the GUI agent
-    --no-gui) WITH_GUI=0; shift ;;              # default already; kept for back-compat
-    --cuda) TORCH_VARIANT="${2:?--cuda needs your CUDA tag, e.g. cu121 or cu124}"; shift 2 ;;
-    --cpu) TORCH_VARIANT="cpu"; shift ;;
+    --minimal) MINIMAL=1; shift ;;
     --python) PYTHON_BIN="${2:?--python needs a path}"; shift 2 ;;
-    --build-web) BUILD_WEB=1; shift ;;
-    --browser) WITH_BROWSER=1; shift ;;
     --stealth) WITH_STEALTH=1; shift ;;
     --agent-browser) WITH_AGENT_BROWSER=1; shift ;;
-    --channels) WITH_CHANNELS=1; shift ;;
-    --minimal) MINIMAL=1; shift ;;              # opt-out: skip the default browser + channels extras
-    --no-tui) NO_TUI=1; shift ;;
     -h|--help) sed -n '/^# Usage:/,/^# ==/p' "$0"; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
@@ -117,19 +107,24 @@ step "installing OpenProgram (editable) from $HOST_ROOT"
 PIP install -e "$HOST_ROOT"
 ok "openprogram installed"
 
-# ---- 4. web frontend deps ---------------------------------------------------
+# ---- 4. web frontend (deps + production build) -------------------------------
 install_web() {
   command -v npm >/dev/null 2>&1 || { warn "npm missing — skipping web UI deps"; return 0; }
   [ -f "$HOST_ROOT/web/package.json" ] || { warn "web/ not found — skipping"; return 0; }
   step "installing web UI deps (web/ — Next.js)"
   ( cd "$HOST_ROOT/web" && npm install )
-  if [ "$BUILD_WEB" = "1" ]; then step "building web production bundle"; ( cd "$HOST_ROOT/web" && npm run build ); fi
-  ok "web UI deps installed (frontend :18100, backend :18109)"
+  if [ "$MINIMAL" = "1" ]; then
+    warn "skipping web production build (--minimal) — the worker builds it on first start"
+  else
+    step "building web production bundle"
+    ( cd "$HOST_ROOT/web" && npm run build ) || warn "web build failed — the worker retries on first start"
+  fi
+  ok "web UI ready (frontend :18100, backend :18109)"
 }
 
-# ---- 5. Ink TUI deps (POSIX only) -------------------------------------------
+# ---- 5. Ink TUI (deps + build; POSIX only) -----------------------------------
 install_tui() {
-  [ "$NO_TUI" = "1" ] && { warn "skipping TUI build (--no-tui)"; return 0; }
+  [ "$MINIMAL" = "1" ] && { warn "skipping TUI build (--minimal)"; return 0; }
   command -v npm >/dev/null 2>&1 || { warn "npm missing — skipping TUI"; return 0; }
   [ -f "$HOST_ROOT/cli/package.json" ] || return 0
   step "installing + building Ink TUI (cli/)"
@@ -137,25 +132,11 @@ install_tui() {
   ok "TUI built (cli/dist/index.js)"
 }
 
-# ---- 6. GUI harness (delegates to the harness's own installer) --------------
-install_gui() {
-  [ "$WITH_GUI" = "1" ] || return 0
-  if [ ! -d "$HARNESS_DIR" ]; then
-    step "cloning GUI-Agent-Harness into $HARNESS_REL"
-    git clone --depth 1 "$HARNESS_REPO" "$HARNESS_DIR" || die "git clone of harness failed"
-  fi
-  [ -f "$HARNESS_DIR/scripts/install.sh" ] || die "harness installer not found at $HARNESS_DIR/scripts/install.sh"
-  step "running GUI-Agent-Harness installer"
-  bash "$HARNESS_DIR/scripts/install.sh" --python "$PY" --cuda "$TORCH_VARIANT" --no-host
-}
-
-# ---- 6b. bundled programs: the three agent harnesses ------------------------
+# ---- 6. bundled programs: the three agent harnesses --------------------------
 # `openprogram programs install all` git-clones GUI-Agent-Harness,
 # Research-Agent-Harness and Wiki-Agent-Harness into
 # openprogram/functions/agentics/ and pip-installs each one's own
-# declared deps. Idempotent: an existing clone is left alone, so the
-# --gui path above (which installs the GUI harness with explicit
-# CUDA/CPU torch) is never overwritten.
+# declared deps. Idempotent: an existing clone is left alone.
 install_programs() {
   [ "$MINIMAL" = "1" ] && { warn "skipping bundled programs (--minimal)"; return 0; }
   step "installing bundled programs (gui_agent / research_agent / wiki_agent)"
@@ -163,7 +144,7 @@ install_programs() {
     || warn "program install failed — re-run later: openprogram programs install all"
 }
 
-# ---- 7. default extras: [all] = browser + channels (opt out with --minimal) ----
+# ---- 7. default extras: [all] = browser + channels ----------------------------
 install_default_extras() {
   [ "$MINIMAL" = "1" ] && { warn "skipping default extras (--minimal)"; return 0; }
   step "installing default extras [all] (browser tool + channels)"
@@ -174,10 +155,6 @@ install_default_extras() {
 
 # ---- 8. heavier opt-in extras: stealth browsers / agent-browser ---------------
 install_extras() {
-  if [ "$WITH_BROWSER" = "1" ]; then
-    step "installing browser tool (Playwright)"; PIP install -e "$HOST_ROOT[browser]"
-    "$PY" -m playwright install chromium || warn "playwright install chromium failed"
-  fi
   if [ "$WITH_STEALTH" = "1" ]; then
     step "installing stealth browser (patchright + camoufox)"; PIP install -e "$HOST_ROOT[browser-stealth]"
     "$PY" -m patchright install chromium || warn "patchright install chromium failed"
@@ -188,17 +165,12 @@ install_extras() {
     if command -v npm >/dev/null 2>&1; then npm install -g agent-browser && agent-browser install || warn "agent-browser setup failed"
     else warn "npm missing — cannot install agent-browser"; fi
   fi
-  if [ "$WITH_CHANNELS" = "1" ]; then
-    step "installing channel deps (discord / slack / wechat-qr)"; PIP install -e "$HOST_ROOT[channels]"
-    warn "channels need tokens — configure in ~/.openprogram/config.json"
-  fi
 }
 
 # ---- run --------------------------------------------------------------------
-step "OpenProgram setup  (os=$OS, gui=$WITH_GUI, torch=$TORCH_VARIANT)"
+step "OpenProgram setup  (os=$OS, minimal=$MINIMAL)"
 install_web
 install_tui
-install_gui
 install_programs
 install_default_extras
 install_extras
