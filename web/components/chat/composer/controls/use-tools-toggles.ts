@@ -14,11 +14,13 @@ import { useCallback, useEffect, useState } from "react";
 const TOOLS_KEY = "agentic_tools_enabled";
 const WEB_KEY = "agentic_web_search_enabled";
 
-function readPersistedBool(key: string): boolean {
+function readPersistedBool(key: string, fallback = false): boolean {
   try {
-    return localStorage.getItem(key) === "1";
+    const v = localStorage.getItem(key);
+    if (v === null) return fallback;
+    return v === "1";
   } catch {
-    return false;
+    return fallback;
   }
 }
 
@@ -38,11 +40,14 @@ export interface ToolsTogglesHook {
 }
 
 export function useToolsToggles(): ToolsTogglesHook {
-  const [tools, setTools] = useState(false);
+  // Tools default ON: a fresh install that never touched the wrench
+  // toggle used to send `tools: false` on every turn, so new users got
+  // a model with an empty tools array ("I can't access your files").
+  const [tools, setTools] = useState(true);
   const [webSearch, setWebSearch] = useState(false);
 
   useEffect(() => {
-    setTools(readPersistedBool(TOOLS_KEY));
+    setTools(readPersistedBool(TOOLS_KEY, true));
     setWebSearch(readPersistedBool(WEB_KEY));
   }, []);
 
