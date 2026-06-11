@@ -97,8 +97,9 @@ class PoolFailurePolicy:
 # ---------------------------------------------------------------------------
 
 def _is_healthy(cred: Credential, *, now_ms: int) -> bool:
-    """A credential is healthy if no cooldown, not revoked, not needing reauth."""
-    if cred.status in ("revoked", "needs_reauth"):
+    """A credential is healthy if not stopped (revoked / needs_reauth /
+    billing_blocked) and not inside a throttle window."""
+    if cred.status in ("revoked", "needs_reauth", "billing_blocked"):
         return False
     if cred.cooldown_until_ms and cred.cooldown_until_ms > now_ms:
         return False
@@ -245,17 +246,31 @@ def mark_failure(
             detail={"reason": reason, "message": detail},
         )
 
+    if reason == "billing_blocked":
+        # Out of credits — the key is STOPPED, not "cooling": waiting
+        # doesn't bring credits back, the user has to top up. No
+        # countdown; recovery is the next successful call (mark_success)
+        # or a passing Validate (clear_cooldown), either of which
+        # restores "valid".
+        cred.status = "billing_blocked"
+        cred.cooldown_until_ms = 0
+        return AuthEvent(
+            type=AuthEventType.POOL_MEMBER_COOLDOWN,
+            provider_id=cred.provider_id,
+            profile_id=cred.profile_id,
+            credential_id=cred.credential_id,
+            detail={"reason": reason, "message": detail},
+        )
+
     status_for_reason: dict[str, CredentialStatus] = {
         "rate_limit": "rate_limited",
         "rate_limit_long": "rate_limited",
-        "billing_blocked": "billing_blocked",
         "server_error": "valid",     # key itself is fine; just cooling off
         "network_error": "valid",
     }
     cooldown_for_reason: dict[str, int] = {
         "rate_limit": policy.rate_limit_cooldown_ms,
         "rate_limit_long": policy.rate_limit_long_cooldown_ms,
-        "billing_blocked": policy.billing_cooldown_ms,
         "server_error": policy.server_error_cooldown_ms,
         "network_error": policy.network_error_cooldown_ms,
     }

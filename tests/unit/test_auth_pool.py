@@ -114,13 +114,17 @@ def test_rate_limit_sets_cooldown():
     assert ev.detail["reason"] == "rate_limit"
 
 
-def test_billing_sets_longer_cooldown():
+def test_billing_stops_the_key_without_countdown():
+    # Out of credits = stopped, not "cooling": waiting doesn't bring
+    # credits back. No cooldown timestamp; recovery is a passing
+    # Validate or the next successful call.
     p = _pool("a")
     ev = mark_failure(p.credentials[0], "billing_blocked",
                       policy=PoolFailurePolicy(billing_cooldown_ms=3600_000),
                       now_ms=0)
     assert p.credentials[0].status == "billing_blocked"
-    assert p.credentials[0].cooldown_until_ms == 3600_000
+    assert p.credentials[0].cooldown_until_ms == 0
+    assert ev.detail["reason"] == "billing_blocked"
 
 
 def test_revoked_is_permanent():

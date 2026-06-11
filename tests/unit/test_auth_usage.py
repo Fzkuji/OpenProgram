@@ -129,9 +129,17 @@ def test_classify_failure_by_status(status, expected):
     assert usage.classify_failure(status) == expected
 
 
-def test_request_error_does_not_cool_the_credential(monkeypatch):
-    """A 404 (model not found / not free) must NOT touch the pool —
-    cooling the key would punish every other model on it."""
+@pytest.mark.parametrize("status,error_text", [
+    (404, "This model is unavailable for free"),   # request-level 4xx
+    (400, "invalid request"),
+    (500, "internal server error"),                 # upstream outage
+    (503, "service unavailable"),
+    (None, "Connection timeout"),                   # network blip
+])
+def test_non_key_failures_do_not_touch_the_pool(monkeypatch, status, error_text):
+    """Request-level 4xx, upstream 5xx, and network errors say nothing
+    about the credential — they must not cool or stop it. The user sees
+    the provider's message in the chat error bubble instead."""
     called = []
 
     class _FakeManager:
@@ -141,8 +149,8 @@ def test_request_error_does_not_cool_the_credential(monkeypatch):
     monkeypatch.setattr(
         "openprogram.auth.manager.get_manager", lambda: _FakeManager()
     )
-    usage.report_failure("openrouter", "default", "cred-1", status=404,
-                         error_text="This model is unavailable for free")
+    usage.report_failure("openrouter", "default", "cred-1", status=status,
+                         error_text=error_text)
     assert called == []
 
 

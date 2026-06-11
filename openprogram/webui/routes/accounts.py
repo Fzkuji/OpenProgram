@@ -75,9 +75,23 @@ def _validate_account(provider: str, name: str) -> dict:
     if kind == "api_key":
         from openprogram.webui._model_catalog.credentials import validate_credential
         try:
-            return validate_credential(provider, api_key=_api_key_of(cred), use_cache=False).to_dict()
+            result = validate_credential(provider, api_key=_api_key_of(cred), use_cache=False).to_dict()
         except Exception as e:
             return {"status": "unknown", "detail": str(e)}
+        if result.get("status") == "valid" and getattr(cred, "status", "") != "valid":
+            # The probe proves the key works again (e.g. the user topped
+            # up after a billing stop) — restore it so rotation picks it
+            # back up. This closes the top-up → Validate → usable loop.
+            from openprogram.auth.pool import clear_cooldown
+            from openprogram.auth.store import get_store as _gs
+            pool = _gs().find_pool(provider, name)
+            live = _primary_cred(pool)
+            if live is not None:
+                clear_cooldown(live)
+                live.status = "valid"
+                live.last_error = None
+                _gs().put_pool(pool)
+        return result
     if kind in ("oauth", "device_code"):
         from openprogram.auth.manager import get_manager
         from openprogram.auth.resolver import _extract_token
@@ -130,17 +144,23 @@ def _account_record(pool, pinned: str, disabled: set = frozenset()) -> dict:
         # (profile != "default") wins. No separate identity column.
         name = email if (email and profile == "default") else profile
         identity = ""
+    # A rate_limited credential whose throttle window has passed is
+    # usable again — report it as valid instead of a stale state. No
+    # separate "cooling" flag: the status column says everything
+    # (valid / rate_limited / billing_blocked / needs_reauth / revoked).
+    status = getattr(cred, "status", "") if cred else "empty"
+    if status == "rate_limited" and cred and not _cooling(cred):
+        status = "valid"
     return {
         "id": profile,
         "name": name,
         "identity": identity,
         "email": email,
         "kind": kind,
-        "status": getattr(cred, "status", "") if cred else "empty",
+        "status": status,
         "is_active": profile == pinned,
         "enabled": profile not in disabled,
         "can_reveal": kind == "api_key",
-        "cooling": _cooling(cred) if cred else False,
     }
 
 

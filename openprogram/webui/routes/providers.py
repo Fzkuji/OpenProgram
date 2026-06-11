@@ -230,7 +230,6 @@ def register(app):
             "status": "valid",
             "is_active": a.get("name") == active,
             "can_reveal": False,
-            "cooling": False,
         } for a in s.get("accounts", [])]
         return JSONResponse(content={
             **s, "accounts": accounts, "active": active or "",

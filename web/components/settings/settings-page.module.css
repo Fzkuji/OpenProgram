@@ -710,7 +710,7 @@
   color: var(--text-muted);
 }
 .statusBadge.valid { color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 18%, transparent); }
-.statusBadge.cooling { color: var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 20%, transparent); }
+.statusBadge.warn { color: var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 20%, transparent); }
 .statusBadge.error { color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 18%, transparent); }
 .statusChecking {
   justify-self: center;

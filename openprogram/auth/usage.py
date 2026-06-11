@@ -90,11 +90,11 @@ _RR_ACCOUNT_CURSOR: dict = {}
 
 
 def _account_healthy(pool, now_ms: int) -> bool:
-    """An account is healthy if its (primary) credential isn't cooling/disabled."""
+    """An account is healthy if its (primary) credential isn't stopped or throttled."""
     c = pool.credentials[0] if pool.credentials else None
     if c is None:
         return False
-    if getattr(c, "status", "") in ("revoked", "needs_reauth"):
+    if getattr(c, "status", "") in ("revoked", "needs_reauth", "billing_blocked"):
         return False
     until = getattr(c, "cooldown_until_ms", 0) or 0
     return not (until and until > now_ms)
@@ -160,14 +160,18 @@ def report_failure(
     status: Optional[int] = None,
     error_text: str = "",
 ) -> None:
-    """Cool the used credential down per the classified reason. Safe no-op if
-    there's no credential id (the provider wasn't pool-backed)."""
+    """Record a KEY-level failure on the used credential. Safe no-op if
+    there's no credential id (the provider wasn't pool-backed).
+
+    Only failures that say something about the credential itself reach
+    the pool: 429 (throttled), 402 (out of credits), 401/403 (rejected).
+    Request-level 4xx, upstream 5xx, and network errors say nothing
+    about key health — they return without touching it, and the user
+    sees the provider's own message in the chat error bubble."""
     if not credential_id:
         return
     reason = classify_failure(status, error_text)
-    if reason == "request_error":
-        # Request/model-level 4xx — not the key's fault; no cooldown,
-        # no rotation. The error still reaches the user via EventError.
+    if reason in ("request_error", "server_error", "network_error"):
         return
     try:
         from .manager import get_manager

@@ -32,7 +32,6 @@ interface Account {
   is_active: boolean;     // single-active pin (rotation OFF)
   enabled?: boolean;      // independent on/off for rotation (rotation ON); default true
   can_reveal?: boolean;
-  cooling?: boolean;
 }
 interface State {
   accounts: Account[];
@@ -54,11 +53,27 @@ interface State {
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const NON_ASCII = /[^\x20-\x7e]/;
 
-function statusClass(status: string, cooling?: boolean): string {
-  if (cooling) return `${styles.statusBadge} ${styles.cooling}`;
+function statusClass(status: string): string {
   if (status === "valid" || status.startsWith("valid")) return `${styles.statusBadge} ${styles.valid}`;
-  if (status === "invalid_credential" || status === "needs_reauth") return `${styles.statusBadge} ${styles.error}`;
+  if (status === "rate_limited") return `${styles.statusBadge} ${styles.warn}`;
+  if (status === "billing_blocked" || status === "invalid_credential"
+      || status === "needs_reauth" || status === "revoked") {
+    return `${styles.statusBadge} ${styles.error}`;
+  }
   return styles.statusBadge;
+}
+
+/** Literal status text — the key is either usable or stopped for a reason. */
+function statusLabel(status: string, text: (en: string, zh: string) => string): string {
+  switch (status) {
+    case "valid": return text("valid", "有效");
+    case "rate_limited": return text("rate limited", "限流中");
+    case "billing_blocked": return text("out of credits", "欠费停用");
+    case "needs_reauth": return text("needs re-auth", "需重新验证");
+    case "invalid_credential": return text("invalid key", "密钥无效");
+    case "revoked": return text("revoked", "已失效");
+    default: return status;
+  }
 }
 
 /** Active control: shows STATE by default, ACTION on hover. Fixed width. */
@@ -220,7 +235,7 @@ function AccountRow({
       {/* status (live) */}
       {status === "checking"
         ? <span className={styles.statusChecking}>{text("checking…", "验证中")}</span>
-        : <span className={statusClass(status, account.cooling)} title={vres?.detail || status}>{account.cooling ? text("cooling", "冷却中") : status}</span>}
+        : <span className={statusClass(status)} title={vres?.detail || status}>{statusLabel(status, text)}</span>}
 
       {/* Validate — text button, every row */}
       <Button size="sm" className={styles.acctCellBtn} onClick={validate}>{text("Validate", "验证")}</Button>
