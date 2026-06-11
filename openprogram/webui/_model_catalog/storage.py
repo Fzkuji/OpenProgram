@@ -271,12 +271,6 @@ def _resolve_api_key(provider_id: str) -> str | None:
         key = resolve_api_key(provider_id)
         if key:
             return key
-    # Community / models.dev providers not in the canonical table: fall back
-    # to the models.dev env-var name, so a freshly fetched community provider
-    # still resolves out of the box.
-    from .providers import _env_var_for
-    env = _env_var_for(provider_id)
-    if not env:
-        return None
-    import os
-    return os.environ.get(env) or None
+    # Community / models.dev providers: their saved key lives in the
+    # AuthStore too (checked above) — nothing else to consult.
+    return None

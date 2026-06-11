@@ -34,11 +34,8 @@ class AnthropicVisionProvider:
 
     @staticmethod
     def _resolve_key() -> str:
-        return (
-            os.environ.get("ANTHROPIC_API_KEY")
-            or os.environ.get("ANTHROPIC_OAUTH_TOKEN")
-            or ""
-        )
+        from openprogram.providers.env_api_keys import resolve_provider_key
+        return resolve_provider_key("anthropic") or ""
 
     def analyze(
         self,
@@ -49,7 +46,10 @@ class AnthropicVisionProvider:
     ) -> str:
         key = self._resolve_key()
         if not key:
-            raise RuntimeError("ANTHROPIC_API_KEY not set")
+            raise RuntimeError(
+                "No Anthropic API key. Add one in Settings -> Providers or "
+                "run: openprogram auth login anthropic --api-key"
+            )
         mdl = model or DEFAULT_MODEL
 
         content: list[dict] = []

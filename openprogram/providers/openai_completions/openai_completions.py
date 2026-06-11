@@ -230,7 +230,7 @@ async def stream_simple(
 
     # Per-request credential from an AuthStore pool — enables multi-key rotation
     # + cooldown for providers whose keys live in the pool. No-op (returns None)
-    # for env-key / OAuth / claude-code providers, which keep using opts.api_key.
+    # for OAuth / claude-code providers, which keep using opts.api_key.
     # The call outcome is reported against this credential below (see the report_*
     # calls), so a 429 cools it down and the next request rotates to another key.
     from ...auth import usage as _auth_usage
@@ -241,8 +241,32 @@ async def stream_simple(
     if _pooled:
         _client_api_key, _cred_profile, _cred_id = _pooled
 
+    if not _client_api_key:
+        if model.provider == "claude-code":
+            # The local Meridian daemon authenticates via Claude Code's
+            # own OAuth and ignores the key — but the openai SDK requires
+            # a non-empty string.
+            _client_api_key = "claude-code"
+        else:
+            # No key in the AuthStore. Fail here with a precise message —
+            # NEVER hand api_key=None to the SDK, which would silently
+            # fall back to the OPENAI_API_KEY env var (wrong key, wrong
+            # provider, misleading 401s).
+            from ..utils.errors import ErrorReason, LLMError
+            raise LLMError(
+                message=(
+                    f"No API key configured for provider '{model.provider}'. "
+                    f"Add one in Settings → Providers, or run: "
+                    f"openprogram auth login {model.provider} --api-key"
+                ),
+                reason=ErrorReason.AUTHENTICATION,
+                retryable=False,
+                provider=model.provider,
+                model=model.id,
+            )
+
     client = _openai.AsyncOpenAI(
-        api_key=_client_api_key or None,
+        api_key=_client_api_key,
         base_url=base_url,
         default_headers=extra_headers or None,
         max_retries=sdk_max_retries,

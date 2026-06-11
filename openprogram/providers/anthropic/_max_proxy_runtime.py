@@ -78,16 +78,6 @@ def _resolve_base_url() -> str:
     return val.rstrip("/") if val else _DEFAULT_PROXY_URL
 
 
-def _resolve_api_key() -> str:
-    # The proxy ignores the key value (it routes via Claude Code's
-    # OAuth), but the openai SDK still requires a non-empty string.
-    return (
-        os.environ.get("CLAUDE_MAX_PROXY_API_KEY")
-        or os.environ.get("ANTHROPIC_API_KEY")
-        or _PLACEHOLDER_KEY
-    )
-
-
 class ClaudeCodeRuntime(Runtime):
     """Runtime that talks to a local Claude Max HTTP proxy (OpenAI-compatible).
 
@@ -96,24 +86,19 @@ class ClaudeCodeRuntime(Runtime):
     path via ``model="claude-code:<id>"``. The model registry entry carries
     ``api='openai-completions'`` and ``base_url=http://localhost:3456/v1`` so
     the standard ``openai_completions.stream_simple`` picks the right wire
-    format.
-
-    Side effect: this constructor exports ``OPENAI_API_KEY`` if not
-    already set, since the openai SDK reads it from the environment
-    when no api_key is passed through the per-call provider config.
-    The proxy ignores the value, but the SDK still requires one.
+    format. The daemon authenticates via Claude Code's own OAuth — the
+    wire sends a fixed placeholder key (the openai SDK requires a
+    non-empty string, the daemon ignores it).
     """
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[str] = None,  # noqa: ARG002 — daemon ignores keys
         model: str = "claude-sonnet-4",
         max_retries: int = 2,
         base_url: Optional[str] = None,  # noqa: ARG002 — kept for API parity
         **_unused,
     ) -> None:
-        if not os.environ.get("OPENAI_API_KEY"):
-            os.environ["OPENAI_API_KEY"] = api_key or _resolve_api_key()
         # Re-resolve base_url at construction so a freshly-changed env
         # var takes effect for runtimes built after the change. The
         # registry entry uses the *current* env-resolved URL too.

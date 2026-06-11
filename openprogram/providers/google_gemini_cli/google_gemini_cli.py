@@ -97,7 +97,7 @@ def stream_google_gemini_cli(
         except ImportError:
             raise ImportError("httpx is required: pip install httpx")
 
-        from openprogram.providers.env_api_keys import get_env_api_key
+        from openprogram.providers.env_api_keys import resolve_provider_key
 
         output: dict[str, Any] = {
             "role": "assistant",
@@ -115,7 +115,7 @@ def stream_google_gemini_cli(
         }
 
         try:
-            api_key = opts.get("api_key") or get_env_api_key(model.provider) or ""
+            api_key = opts.get("api_key") or resolve_provider_key(model.provider) or ""
 
             # Endpoint selection
             model_base_url = getattr(model, "base_url", None)

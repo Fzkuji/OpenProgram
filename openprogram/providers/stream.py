@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import AsyncGenerator
 
 from .api_registry import get_api_provider
-from .env_api_keys import get_env_api_key
+from .env_api_keys import resolve_provider_key
 from .types import (
     AssistantMessage,
     AssistantMessageEvent,
@@ -57,11 +57,10 @@ async def stream_simple(
     """
     opts = options or SimpleStreamOptions()
 
-    # Auto-resolve API key if not set. get_env_api_key is the full
-    # runtime ladder: AuthStore api-key credential (web UI "Add key")
-    # > env vars > config.json.
+    # Auto-resolve API key if not set. resolve_provider_key reads the
+    # AuthStore (the single key source — no env vars, no config.json).
     if not opts.api_key:
-        opts = opts.model_copy(update={"api_key": get_env_api_key(model.provider)})
+        opts = opts.model_copy(update={"api_key": resolve_provider_key(model.provider)})
 
     # NOTE: the claude-code Meridian-profile header (x-meridian-profile) is
     # injected one layer down, in openai_completions.stream_simple — that's
@@ -109,9 +108,9 @@ async def stream(
     """
     opts = options or StreamOptions()
 
-    # Auto-resolve API key from env if not set (same behavior as stream_simple)
+    # Auto-resolve API key from the AuthStore if not set (same as stream_simple)
     if not opts.api_key:
-        opts = opts.model_copy(update={"api_key": get_env_api_key(model.provider)})
+        opts = opts.model_copy(update={"api_key": resolve_provider_key(model.provider)})
 
     provider = get_api_provider(model.api)
     if provider is None:

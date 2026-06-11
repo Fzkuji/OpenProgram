@@ -110,8 +110,8 @@ def _split(spec: str) -> tuple[str, str] | None:
 def _env_key_for(provider: str) -> bool:
     """Cheap availability probe — provider has an env API key configured."""
     try:
-        from openprogram.providers.env_api_keys import get_env_api_key
-        return bool(get_env_api_key(provider))
+        from openprogram.providers.env_api_keys import resolve_provider_key
+        return bool(resolve_provider_key(provider))
     except Exception:
         return False
 

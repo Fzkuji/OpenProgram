@@ -503,9 +503,23 @@ async def stream_simple(
 
     api_key = opts.api_key or ""
     if not api_key:
-        # Try to get from environment
-        from ..env_api_keys import get_env_api_key
-        api_key = get_env_api_key(model.provider) or ""
+        from ..env_api_keys import resolve_provider_key
+        api_key = resolve_provider_key(model.provider) or ""
+    if not api_key:
+        # No credential anywhere — fail precisely instead of sending an
+        # empty x-api-key header (a misleading upstream 401).
+        from ..utils.errors import ErrorReason, LLMError
+        raise LLMError(
+            message=(
+                f"No API key configured for provider '{model.provider}'. "
+                f"Add one in Settings -> Providers, or run: "
+                f"openprogram auth login {model.provider} --api-key"
+            ),
+            reason=ErrorReason.AUTHENTICATION,
+            retryable=False,
+            provider=model.provider,
+            model=model.id,
+        )
 
     is_oauth = _is_oauth_token(api_key)
     base_url = getattr(model, "base_url", None) or getattr(model, "baseUrl", None)

@@ -39,7 +39,7 @@ export function Detail({
         // (which it carries only as an internal detail) as if you must set it.
         ? text("Runs on your Claude subscription — no API key", "用你的 Claude 订阅 — 无需 API key")
         : provider.api_key_env
-          ? `API key env: ${provider.api_key_env}`
+          ? text("API key provider", "API key 提供商")
           : text("Subscription required", "需要订阅");
 
   const [models, setModels] = useState<Model[]>([]);

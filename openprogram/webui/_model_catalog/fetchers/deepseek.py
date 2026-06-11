@@ -25,11 +25,11 @@ from typing import Any
 
 def _fetch_deepseek(provider_id: str, timeout: float) -> Any:
     import httpx
-    from openprogram.providers.env_api_keys import get_env_api_key
+    from openprogram.providers.env_api_keys import resolve_provider_key
 
     from ..storage import _resolve_api_key, _resolve_base_url
 
-    api_key = _resolve_api_key(provider_id) or get_env_api_key(provider_id)
+    api_key = _resolve_api_key(provider_id) or resolve_provider_key(provider_id)
     if not api_key:
         return {"error": "No API key set (DEEPSEEK_API_KEY)"}
 

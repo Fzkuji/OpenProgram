@@ -65,8 +65,8 @@ def stream_azure_openai_responses(
         }
 
         try:
-            from openprogram.providers.env_api_keys import get_env_api_key
-            api_key = opts.get("api_key") or get_env_api_key(model.provider) or os.environ.get("AZURE_OPENAI_API_KEY", "")
+            from openprogram.providers.env_api_keys import resolve_provider_key
+            api_key = opts.get("api_key") or resolve_provider_key(model.provider) or ""
             if not api_key:
                 raise ValueError("Azure OpenAI API key is required.")
 
@@ -109,8 +109,8 @@ def stream_simple_azure_openai_responses(
     options: "SimpleStreamOptions | None" = None,
 ) -> EventStream:
     """Simple interface for Azure OpenAI Responses API streaming."""
-    from openprogram.providers.env_api_keys import get_env_api_key
-    api_key = (getattr(options, "api_key", None) if options else None) or get_env_api_key(model.provider)
+    from openprogram.providers.env_api_keys import resolve_provider_key
+    api_key = (getattr(options, "api_key", None) if options else None) or resolve_provider_key(model.provider)
     if not api_key:
         raise ValueError(f"No API key for provider: {model.provider}")
 

@@ -36,8 +36,8 @@ class OpenAIRuntime(Runtime):
         max_retries: int = 2,
     ):
         if not api_key:
-            from openprogram.providers.env_api_keys import get_env_api_key
-            api_key = get_env_api_key("openai")
+            from openprogram.providers.env_api_keys import resolve_provider_key
+            api_key = resolve_provider_key("openai")
         if not api_key:
             raise ValueError(
                 "OpenAI API key is required. Add one in Settings → "

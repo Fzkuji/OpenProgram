@@ -61,7 +61,7 @@ from .models import calculate_cost, get_model, get_models, get_providers, models
 from .api_registry import get_api_provider, get_api_providers, register_api_provider, unregister_api_providers, clear_api_providers
 
 # Environment API keys
-from .env_api_keys import get_env_api_key
+from .env_api_keys import resolve_provider_key
 
 # Streaming functions
 from .stream import complete, complete_simple, stream, stream_simple
@@ -100,7 +100,7 @@ __all__ = [
     "AnthropicRuntime", "OpenAIRuntime", "GeminiRuntime", "ClaudeCodeRuntime",
     "OpenAICodexRuntime", "GeminiCLIRuntime",
     # Keys
-    "get_env_api_key",
+    "resolve_provider_key",
     # Streaming
     "stream", "complete", "stream_simple", "complete_simple",
     # Utils

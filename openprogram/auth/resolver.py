@@ -14,9 +14,9 @@ Resolution order:
      refreshed access_token/api_key from the provider pool. If the
      provider isn't registered or the pool is empty, raises
      :class:`AuthConfigError`; we fall through rather than propagate.
-  3. ``env_api_keys.get_env_api_key`` — legacy path that reads
-     ``OPENAI_API_KEY`` etc. Kept because users with unmigrated setups
-     still expect it to work.
+  3. ``env_api_keys.resolve_provider_key`` — covers the Bedrock/Vertex
+     cloud-credential sentinel (those have no bearer key). Env vars are
+     NOT consulted anywhere; provider keys live in the AuthStore only.
 
 Returns ``None`` if every step fails — caller decides whether that
 triggers a "please log in" banner or just proceeds key-less (useful for
@@ -82,13 +82,13 @@ def resolve_api_key_sync(
         # to env-var path so legacy code keeps working.
         pass
 
-    # Layer 3 — legacy env vars.
+    # Layer 3 — the Bedrock/Vertex cloud-credential sentinel (no bearer
+    # key exists for those; "<authenticated>" means the chain is ready).
     try:
-        from openprogram.providers.env_api_keys import get_env_api_key
+        from openprogram.providers.env_api_keys import resolve_provider_key
     except ImportError:
         return None
-    legacy = get_env_api_key(provider_id)
-    return legacy or None
+    return resolve_provider_key(provider_id) or None
 
 
 def resolve_store_api_key_sync(
@@ -100,9 +100,8 @@ def resolve_store_api_key_sync(
     Unlike :func:`resolve_api_key_sync`, OAuth/device tokens are
     EXCLUDED: those belong to provider-specific transports (claude-code
     daemon, codex OAuth headers) — handing an access_token to a wire
-    that puts it in ``x-api-key`` just 401s. No env/config fallback
-    either; this is the AuthStore layer for ``get_env_api_key``'s
-    runtime ladder, which does its own env/config step after.
+    that puts it in ``x-api-key`` just 401s. This is the single key
+    source ``resolve_provider_key`` reads.
     """
     profile = profile_id or get_active_profile(provider_id)
 

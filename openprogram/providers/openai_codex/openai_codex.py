@@ -81,7 +81,7 @@ def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
 
       1. Explicit ``api_key`` passed in opts — caller-supplied,
          always wins.
-      2. The provider's env var (handled by ``get_env_api_key``) —
+      2. The provider's env var (handled by ``resolve_provider_key``) —
          covers users on a bare API key with no OAuth flow.
       3. AuthManager's OAuth credential pool — covers users who ran
          ``codex login`` (or the OpenProgram OAuth wizard) so the
@@ -96,8 +96,8 @@ def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
     if opts_api_key:
         return opts_api_key
 
-    from openprogram.providers.env_api_keys import get_env_api_key
-    env_key = get_env_api_key("openai-codex")
+    from openprogram.providers.env_api_keys import resolve_provider_key
+    env_key = resolve_provider_key("openai-codex")
     if env_key:
         return env_key
 

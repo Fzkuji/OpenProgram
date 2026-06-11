@@ -56,10 +56,11 @@ def test_resolver_uses_store_when_no_override(store, monkeypatch):
     assert resolve_api_key_sync("openai") == "sk-STORE"
 
 
-def test_resolver_falls_back_to_env(store, monkeypatch):
-    # No store pool, no override — env var is the last resort.
+def test_resolver_never_reads_env(store, monkeypatch):
+    # No store pool, no override — and the env var must stay inert:
+    # provider keys live in the AuthStore only.
     monkeypatch.setenv("OPENAI_API_KEY", "sk-ENV")
-    assert resolve_api_key_sync("openai") == "sk-ENV"
+    assert resolve_api_key_sync("openai") is None
 
 
 def test_resolver_returns_none_when_nothing_matches(store, monkeypatch):

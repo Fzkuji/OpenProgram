@@ -1,5 +1,18 @@
 """
-Environment variable API key resolution — mirrors packages/ai/src/env-api-keys.ts
+Provider API-key resolution.
+
+LLM provider credentials live in exactly ONE place: the AuthStore under
+``~/.openprogram`` — written by the settings UI ("add a key") and by the
+CLI (``openprogram auth login <provider> --api-key``). Environment
+variables are NOT consulted; there is no config.json fallback.
+
+The two exceptions are Amazon Bedrock and Google Vertex, whose
+authentication is the cloud SDK's own credential chain (AWS SigV4 /
+GCP ADC) rather than a bearer key.
+
+The env-var NAME tables below are retained purely as display labels /
+identifiers for the UI and models.dev catalogue — they are no longer
+read from ``os.environ``.
 """
 from __future__ import annotations
 
@@ -31,21 +44,18 @@ PROVIDER_ENV_VARS: dict[str, str] = {
 }
 
 
-def get_env_api_key(provider: str) -> str | None:
+def resolve_provider_key(provider: str) -> str | None:
     """Resolve a provider's API key — the runtime path.
 
-    Ladder: AuthStore api-key credential (where the web UI's account
-    manager saves keys) > env vars. The
-    AuthStore step takes api-key-shaped credentials ONLY — OAuth tokens
-    are excluded because the wires that call this put the result in
-    ``x-api-key``/``Authorization: Bearer <key>`` headers, and an OAuth
-    access_token there just 401s; OAuth providers have their own
-    transports (claude-code daemon, codex OAuth). Anthropic OAuth>key
-    and the GitHub-Copilot token sources are handled by the canonical
-    resolver's env-var table. Bedrock/Vertex keep the
-    ``"<authenticated>"`` cloud-credential sentinel for back-compat with
-    their runtime adapters (those migrate to :func:`is_configured`
-    separately).
+    Single source: the AuthStore (settings UI "add a key", or
+    ``openprogram auth login <provider> --api-key``). It takes
+    api-key-shaped credentials ONLY — OAuth tokens are excluded because
+    the wires that call this put the result in ``x-api-key`` /
+    ``Authorization: Bearer <key>`` headers, and an OAuth access_token
+    there just 401s; OAuth providers have their own transports
+    (claude-code daemon, codex OAuth). Bedrock/Vertex return the
+    ``"<authenticated>"`` cloud-credential sentinel when the AWS / GCP
+    SDK credential chain is satisfied — those have no bearer key.
     """
     if provider == "amazon-bedrock":
         return "<authenticated>" if _bedrock_chain_ok() else None
@@ -53,28 +63,19 @@ def get_env_api_key(provider: str) -> str | None:
         return "<authenticated>" if _vertex_adc_ok() else None
     try:
         from openprogram.auth.resolver import resolve_store_api_key_sync
-        tok = resolve_store_api_key_sync(provider)
-        if tok:
-            return tok
+        return resolve_store_api_key_sync(provider)
     except Exception:
-        pass
-    return resolve_api_key(provider)
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Canonical credential resolution (see
-# docs/design/providers/api-key-resolution-unification.md).
+# Env-var NAME tables — display labels / identifiers only.
 #
-# One table of accepted env-var names per provider (precedence order), one
-# resolver (env vars), one is_configured (incl. cloud-cred chains),
-# one reverse map. Every other resolver/map in the codebase becomes a thin
-# wrapper over these. Added additively in step 1 — callers migrate in later
-# steps; the legacy ``PROVIDER_ENV_VARS`` + ``get_env_api_key`` above stay until
-# then.
-#
-# config.json ``api_keys`` is NOT consulted for LLM provider keys anymore —
-# keys pasted in the UI/CLI live in the AuthStore. The config section remains
-# in use only by the web-search / TTS key flows (their own storage).
+# The settings UI shows "API key: DEEPSEEK_API_KEY" style labels and the
+# models.dev catalogue keys community providers by these names. They are
+# NOT read from ``os.environ``: provider keys resolve from the AuthStore
+# exclusively (see resolve_provider_key above). config.json ``api_keys``
+# remains in use only by the web-search / TTS key flows (their own storage).
 # ─────────────────────────────────────────────────────────────────────────────
 
 # provider_id → accepted env-var names, in precedence order. Merges the four
@@ -119,24 +120,19 @@ _PROVIDER_ENV_VARS: dict[str, list[str]] = {
 }
 
 # Providers whose credential is a cloud-credential chain (SigV4 / ADC), not a
-# bearer key — resolve_api_key returns None for them; is_configured carries the
-# answer (the logic that used to mint the "<authenticated>" sentinel).
+# bearer key — resolve_provider_key returns the "<authenticated>" sentinel
+# for them when the chain is satisfied.
 _CLOUD_CRED_PROVIDERS = frozenset({"amazon-bedrock", "google-vertex"})
 
 
 def env_vars_for(provider_id: str) -> list[str]:
-    """Accepted env-var names for ``provider_id``, in precedence order.
-
-    Single source of truth, replacing ``PROVIDER_ENV_VARS`` /
-    ``_model_catalog.providers._ENV_API_KEYS`` / the inline maps.
+    """Key-name labels for ``provider_id`` (display / identifier use only —
+    never read from ``os.environ``).
 
     A provider not in the static map above is a community / models.dev
-    one (e.g. ``minimax-cn-coding-plan``). Its env-var name lives in the
-    models.dev catalogue — the same name the settings UI shows as "API
-    key env: …" and stores the saved key under. Fall back to it so that
-    key resolves at RUNTIME too, not just in the UI; without this the
-    model registers + lists fine but every turn fails auth. Lazy +
-    guarded so this lower layer stays import-free at load time."""
+    one (e.g. ``minimax-cn-coding-plan``); its name lives in the
+    models.dev catalogue. Lazy + guarded so this lower layer stays
+    import-free at load time."""
     names = list(_PROVIDER_ENV_VARS.get(provider_id, []))
     if names:
         return names
@@ -150,22 +146,6 @@ def env_vars_for(provider_id: str) -> list[str]:
     return []
 
 
-def resolve_api_key(provider_id: str) -> str | None:
-    """The real, usable key/token for ``provider_id``, or ``None``.
-
-    Order: each env var in :func:`env_vars_for` (first hit wins).
-    Cloud-credential providers (Bedrock/Vertex) return ``None`` here; their
-    state is :func:`is_configured`, not a key. Never returns a sentinel.
-
-    Keys pasted through the UI/CLI are NOT here — they live in the AuthStore,
-    which :func:`get_env_api_key` consults first."""
-    if provider_id in _CLOUD_CRED_PROVIDERS:
-        return None
-    for name in env_vars_for(provider_id):
-        val = os.environ.get(name)
-        if val:
-            return val
-    return None
 
 
 def _bedrock_chain_ok() -> bool:
@@ -192,17 +172,9 @@ def _vertex_adc_ok() -> bool:
 
 
 def is_configured(provider_id: str) -> bool:
-    """True when the provider has working credentials — a resolvable key OR a
-    satisfied cloud-credential chain (Bedrock AWS chain / Vertex ADC). Replaces
-    the scattered ``bool(_get_api_key(env))`` / ``_is_configured`` presence
-    checks."""
-    if resolve_api_key(provider_id) is not None:
-        return True
-    if provider_id == "amazon-bedrock":
-        return _bedrock_chain_ok()
-    if provider_id == "google-vertex":
-        return _vertex_adc_ok()
-    return False
+    """True when the provider has working credentials — an AuthStore key OR a
+    satisfied cloud-credential chain (Bedrock AWS chain / Vertex ADC)."""
+    return resolve_provider_key(provider_id) is not None
 
 
 def provider_id_for_env_var(env_var: str) -> str | None:

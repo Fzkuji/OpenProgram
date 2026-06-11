@@ -279,19 +279,10 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
 
   const load = useCallback(async () => {
     try {
-      let d = (await fetch(base).then((r) => r.json())) as State;
-      if ((d.accounts?.length ?? 0) === 0 && d.add_mode === "api_key" && provider.api_key_env) {
-        try {
-          const cfg = await fetch(`/api/config/key/${encodeURIComponent(provider.api_key_env)}?reveal=1`).then((r) => r.json());
-          if (cfg.has_value && cfg.value && !NON_ASCII.test(cfg.value)) {
-            await fetch(`${base}/keys`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ api_key: cfg.value, name: "default" }) });
-            d = (await fetch(base).then((r) => r.json())) as State;
-          }
-        } catch { /* ignore */ }
-      }
+      const d = (await fetch(base).then((r) => r.json())) as State;
       setState(d);
     } catch { /* ignore */ }
-  }, [base, provider.api_key_env]);
+  }, [base]);
 
   useEffect(() => { load(); }, [load]);
 

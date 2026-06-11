@@ -333,12 +333,9 @@ def _is_configured(provider_id: str) -> bool:
     from openprogram.providers.env_api_keys import env_vars_for, is_configured
     if env_vars_for(provider_id) or provider_id in ("amazon-bedrock", "google-vertex"):
         return is_configured(provider_id)
-    # Community / models.dev provider with a single env-var name we don't have
-    # in the canonical table: check the env var.
+    # Community / models.dev provider: a saved key would have hit the
+    # AuthStore check at the top. Providers with no key concept at all
+    # (no env-var name in the catalogue) are conservatively "configured"
+    # so the UI doesn't show a red dot the user can't act on.
     env = _env_var_for(provider_id)
-    if env is None:
-        # OAuth / no-key / unknown — conservatively "configured" so the UI
-        # doesn't show a red dot the user can't act on.
-        return True
-    import os
-    return bool(os.environ.get(env))
+    return env is None

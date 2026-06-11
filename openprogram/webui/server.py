@@ -493,10 +493,17 @@ def _save_config(config: dict):
 
 
 def _get_api_key(env_var: str) -> str:
-    """Get API key from the environment. config.json ``api_keys`` no longer
-    holds LLM keys (those live in the AuthStore); any search/TTS keys it
-    holds were injected into the env by ``_apply_config_keys`` below."""
+    """Get a search/TTS key from the environment (injected from
+    config.json ``api_keys`` by ``_apply_config_keys`` below). LLM
+    provider keys do NOT resolve here — use ``_llm_is_configured`` /
+    the AuthStore resolvers."""
     return os.environ.get(env_var) or ""
+
+
+def _llm_is_configured(provider_id: str) -> bool:
+    """AuthStore-backed configured check for an LLM provider."""
+    from openprogram.providers.env_api_keys import is_configured
+    return is_configured(provider_id)
 
 
 def _apply_config_keys():
@@ -552,9 +559,9 @@ def _list_providers() -> list[dict]:
         # (name, label, available_check, env_keys_for_config_or_None_if_CLI)
         ("openai-codex", "OpenAI Codex", _codex_available, None),
         ("gemini-cli", "Gemini CLI", lambda: shutil.which("gemini") is not None, None),
-        ("anthropic", "Anthropic API", lambda: bool(_get_api_key("ANTHROPIC_API_KEY")), ["ANTHROPIC_API_KEY"]),
-        ("openai", "OpenAI API", lambda: bool(_get_api_key("OPENAI_API_KEY")), ["OPENAI_API_KEY"]),
-        ("gemini", "Gemini API", lambda: bool(_get_api_key("GOOGLE_API_KEY") or _get_api_key("GOOGLE_GENERATIVE_AI_API_KEY")), ["GOOGLE_API_KEY"]),
+        ("anthropic", "Anthropic API", lambda: _llm_is_configured("anthropic"), ["ANTHROPIC_API_KEY"]),
+        ("openai", "OpenAI API", lambda: _llm_is_configured("openai"), ["OPENAI_API_KEY"]),
+        ("gemini", "Gemini API", lambda: _llm_is_configured("google"), ["GOOGLE_API_KEY"]),
         ("claude-code", "Claude Code", _proxy_alive, ["CLAUDE_MAX_PROXY_URL"]),
     ]
     for name, label, check, env_keys in checks:

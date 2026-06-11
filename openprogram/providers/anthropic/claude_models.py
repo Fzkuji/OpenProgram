@@ -328,7 +328,7 @@ def is_stale(max_age_hours: float = 24.0) -> bool:
 def _fetch_anthropic_api_models() -> list[dict]:
     """Pull the authoritative model list from the Anthropic API.
 
-    Uses the configured API key (env or AuthStore). Returns []
+    Uses the configured API key (AuthStore). Returns []
     if no key is available — refresh will then probe a hard-coded candidate
     set derived from the current registry.
     """
@@ -337,13 +337,12 @@ def _fetch_anthropic_api_models() -> list[dict]:
     except ImportError:
         return []
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        try:
-            from openprogram.auth.resolver import resolve_store_api_key_sync
-            api_key = resolve_store_api_key_sync("anthropic")
-        except Exception:
-            pass
+    api_key = None
+    try:
+        from openprogram.auth.resolver import resolve_store_api_key_sync
+        api_key = resolve_store_api_key_sync("anthropic")
+    except Exception:
+        pass
     if not api_key:
         return []
 

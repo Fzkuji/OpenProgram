@@ -47,7 +47,7 @@ def stream_openai_responses(
         except ImportError:
             raise ImportError("openai is required: pip install openai")
 
-        from openprogram.providers.env_api_keys import get_env_api_key
+        from openprogram.providers.env_api_keys import resolve_provider_key
 
         output: dict[str, Any] = {
             "role": "assistant",
@@ -65,7 +65,7 @@ def stream_openai_responses(
         }
 
         try:
-            api_key = opts.get("api_key") or get_env_api_key(model.provider) or ""
+            api_key = opts.get("api_key") or resolve_provider_key(model.provider) or ""
             client = _create_client(model, context, api_key, opts.get("headers"))
             params = _build_params(model, context, opts)
 
@@ -115,9 +115,9 @@ def stream_simple_openai_responses(
     options: "SimpleStreamOptions | None" = None,
 ) -> EventStream:
     """Simple interface for OpenAI Responses API streaming."""
-    from openprogram.providers.env_api_keys import get_env_api_key
+    from openprogram.providers.env_api_keys import resolve_provider_key
 
-    api_key = (getattr(options, "api_key", None) if options else None) or get_env_api_key(model.provider)
+    api_key = (getattr(options, "api_key", None) if options else None) or resolve_provider_key(model.provider)
     if not api_key:
         raise ValueError(f"No API key for provider: {model.provider}")
 

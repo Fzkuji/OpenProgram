@@ -80,10 +80,8 @@ def count_tokens_via_anthropic(
 ) -> Optional[dict]:
     """Return ``{"input_tokens": N}`` for the given message list, or None.
 
-    The API key is resolved via, in order:
-      1. ``api_key`` parameter
-      2. ``ANTHROPIC_API_KEY`` env var
-      3. AuthStore api-key credential (Settings → Providers)
+    The API key is resolved via the ``api_key`` parameter, else the
+    AuthStore (Settings -> Providers).
 
     Returns None on any failure — never raises. Caller treats None as
     'we don't know' and leaves the token columns NULL.
@@ -91,7 +89,7 @@ def count_tokens_via_anthropic(
     if httpx is None:
         return None
 
-    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    key = api_key
     if not key:
         try:
             from openprogram.auth.resolver import resolve_store_api_key_sync

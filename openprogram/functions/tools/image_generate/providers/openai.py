@@ -34,7 +34,8 @@ class OpenAIImageProvider:
     ])
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("OPENAI_API_KEY"))
+        from openprogram.providers.env_api_keys import resolve_provider_key
+        return bool(resolve_provider_key("openai"))
 
     def generate(
         self,
@@ -44,9 +45,13 @@ class OpenAIImageProvider:
         size: str = "1024x1024",
         n: int = 1,
     ) -> list[GeneratedImage]:
-        key = os.environ.get("OPENAI_API_KEY", "")
+        from openprogram.providers.env_api_keys import resolve_provider_key
+        key = resolve_provider_key("openai") or ""
         if not key:
-            raise RuntimeError("OPENAI_API_KEY not set")
+            raise RuntimeError(
+                "No OpenAI API key. Add one in Settings -> Providers or run: "
+                "openprogram auth login openai --api-key"
+            )
         mdl = model or DEFAULT_MODEL
         # DALL-E 3 only supports n=1; transparent cap avoids a cryptic
         # server-side 400.

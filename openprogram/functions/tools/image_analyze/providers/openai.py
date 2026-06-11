@@ -27,7 +27,8 @@ class OpenAIVisionProvider:
     ])
 
     def is_available(self) -> bool:
-        return bool(os.environ.get("OPENAI_API_KEY"))
+        from openprogram.providers.env_api_keys import resolve_provider_key
+        return bool(resolve_provider_key("openai"))
 
     def analyze(
         self,
@@ -36,9 +37,13 @@ class OpenAIVisionProvider:
         *,
         model: str | None = None,
     ) -> str:
-        key = os.environ.get("OPENAI_API_KEY", "")
+        from openprogram.providers.env_api_keys import resolve_provider_key
+        key = resolve_provider_key("openai") or ""
         if not key:
-            raise RuntimeError("OPENAI_API_KEY not set")
+            raise RuntimeError(
+                "No OpenAI API key. Add one in Settings -> Providers or run: "
+                "openprogram auth login openai --api-key"
+            )
         mdl = model or DEFAULT_MODEL
 
         content: list[dict] = [{"type": "text", "text": prompt}]

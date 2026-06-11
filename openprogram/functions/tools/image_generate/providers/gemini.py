@@ -39,7 +39,8 @@ class GeminiImagenProvider:
 
     @staticmethod
     def _resolve_key() -> str:
-        return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
+        from openprogram.providers.env_api_keys import resolve_provider_key
+        return resolve_provider_key("google") or ""
 
     def generate(
         self,

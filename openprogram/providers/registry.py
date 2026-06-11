@@ -112,7 +112,7 @@ def detect_provider() -> tuple[str, str]:
       2. Config file (~/.openprogram/config.json → default_provider / default_model)
       3. Caller environment (inside Claude Code? Codex? → use the same)
       4. Available CLI providers (claude → codex → gemini)
-      5. Available API keys (ANTHROPIC_API_KEY → OPENAI_API_KEY → GOOGLE_API_KEY)
+      5. AuthStore API keys (anthropic → openai → google)
 
     Returns:
         (provider_name, default_model) — e.g. ("anthropic", "claude-sonnet-4-6")
@@ -136,15 +136,14 @@ def detect_provider() -> tuple[str, str]:
     if shutil.which("gemini"):
         return "gemini-cli", "gemini-2.5-flash"
 
-    # 5. API providers (need keys). Resolve through the full runtime
-    # ladder (AuthStore → env → config.json), not a bare env read —
-    # a key pasted in Settings must make its provider detectable too.
-    from openprogram.providers.env_api_keys import get_env_api_key
-    if get_env_api_key("anthropic"):
+    # 5. API providers — a key saved in the AuthStore (settings UI or
+    #    ``openprogram auth login <provider> --api-key``).
+    from openprogram.providers.env_api_keys import is_configured
+    if is_configured("anthropic"):
         return "anthropic", "claude-sonnet-4-6"
-    if get_env_api_key("openai"):
+    if is_configured("openai"):
         return "openai", "gpt-4.1"
-    if get_env_api_key("google"):
+    if is_configured("google"):
         return "gemini", "gemini-2.5-flash"
 
     raise RuntimeError(
@@ -154,20 +153,15 @@ def detect_provider() -> tuple[str, str]:
         "    1. Codex CLI:        npm install -g @openai/codex && codex auth\n"
         "    2. Gemini CLI:       npm install -g @google/gemini-cli\n"
         "\n"
-        "  API providers (set environment variable):\n"
-        "    3. Anthropic:  export ANTHROPIC_API_KEY=sk-ant-...\n"
-        "    4. OpenAI:     export OPENAI_API_KEY=sk-...\n"
-        "    5. Gemini:     export GOOGLE_API_KEY=...\n"
-        "                    (or GOOGLE_GENERATIVE_AI_API_KEY=...)\n"
+        "  API providers (paste a key — stored under ~/.openprogram):\n"
+        "    3. Web UI:   Settings -> LLM Providers -> pick one -> add a key\n"
+        "    4. CLI:      openprogram auth login <provider> --api-key\n"
+        "                 (e.g. openprogram auth login deepseek --api-key)\n"
         "\n"
         "  Claude via your Claude subscription (no API key):\n"
-        "    6. Enable the claude-code provider in Settings -> LLM Providers,\n"
+        "    5. Enable the claude-code provider in Settings -> LLM Providers,\n"
         "       then add a Claude account (the backend sets itself up):\n"
         "       openprogram providers claude-code accounts add\n"
-        "\n"
-        "  Or set explicitly:\n"
-        "    export AGENTIC_PROVIDER=openai\n"
-        "    export AGENTIC_MODEL=gpt-5.5\n"
     )
 
 
@@ -200,10 +194,9 @@ def check_providers() -> dict:
             "model": default_model,
         }
 
-    # Config-aware availability via the canonical resolver (env > config.json),
-    # so a key saved through the web UI still reads "available" after a worker
-    # restart cleared it from os.environ. The status names here map to the
-    # canonical provider ids ("gemini" status row → "google").
+    # Availability via the canonical resolver (AuthStore / cloud chain).
+    # The status names here map to the canonical provider ids
+    # ("gemini" status row → "google").
     from openprogram.providers.env_api_keys import is_configured
     _canon = {"gemini": "google"}
     for name in api_checks:
