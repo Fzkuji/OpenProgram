@@ -911,6 +911,34 @@ def _run_loop_blocking(
                     tool_calls.append(_tc)
                 if ev.type == "turn_end":
                     msg = getattr(ev, "message", None)
+                    if getattr(msg, "stop_reason", None) == "error":
+                        # Stream-level provider failure (HTTP 4xx/5xx
+                        # surfaced as an error event, not an exception).
+                        # Without this the turn "succeeds" with empty
+                        # text — a blank assistant bubble. Re-raise as
+                        # LLMError so the dispatcher's exception path
+                        # renders the red error bubble with taxonomy,
+                        # same as a synchronously-raised failure.
+                        from openprogram.providers.utils.errors import (
+                            ErrorReason, LLMError,
+                        )
+                        _reason_val = getattr(msg, "error_reason", None)
+                        try:
+                            _reason = (ErrorReason(_reason_val)
+                                       if _reason_val else ErrorReason.UNKNOWN)
+                        except ValueError:
+                            _reason = ErrorReason.UNKNOWN
+                        raise LLMError(
+                            message=(getattr(msg, "error_message", "") or
+                                     "provider returned an error"),
+                            reason=_reason,
+                            retryable=bool(
+                                getattr(msg, "error_retryable", None) or False),
+                            retry_after_s=getattr(
+                                msg, "error_retry_after_s", None),
+                            provider=getattr(msg, "provider", None),
+                            model=getattr(msg, "model", None),
+                        )
                     text = _extract_text(msg)
                     if text:
                         final_text_parts.append(text)

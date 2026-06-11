@@ -493,3 +493,61 @@ def test_provider_error_persists_as_system_message(
     ]
     assert len(err_events) == 1
     assert "boom" in err_events[0]["data"]["content"].lower()
+
+
+def make_error_stream_fn(error_message: str, *, error_reason: str | None = None):
+    """A stream_fn that fails mid-stream the way a provider 4xx does:
+    EventStart then EventError carrying stop_reason='error'."""
+    from openprogram.providers.types import EventError
+
+    async def _fn(model, context, options) -> AsyncGenerator[AssistantMessageEvent, None]:
+        yield EventStart(partial=_build_partial(""))
+        err = AssistantMessage(
+            content=[TextContent(text="")],
+            api="completion",
+            provider="deepseek",
+            model="stub",
+            usage=Usage(),
+            stop_reason="error",
+            error_message=error_message,
+            error_reason=error_reason,
+            timestamp=int(time.time() * 1000),
+        )
+        yield EventError(reason="error", error=err)
+
+    return _fn
+
+
+def test_real_loop_stream_error_surfaces_to_client(
+    tmp_db: SessionDB, captured, collector,
+) -> None:
+    """A provider error EVENT (HTTP 4xx surfaced in-stream, no exception)
+    must fail the turn and reach the client as an error envelope — not
+    end as a silent success with an empty assistant bubble."""
+    fake_stream = make_error_stream_fn(
+        "Error code: 402 - Insufficient Balance",
+        error_reason="authz",
+    )
+    orig = D._run_loop_blocking
+
+    def _wrapped(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
+        return orig(req=req, history=history, on_event=on_event,
+                    cancel_event=cancel_event, stream_fn=fake_stream)
+
+    with patch.object(D, "_run_loop_blocking", _wrapped):
+        result = D.process_user_turn(
+            D.TurnRequest(session_id="cerr", user_text="hi",
+                          agent_id="main", source="tui"),
+            on_event=collector,
+        )
+
+    assert result.failed is True
+    assert "Insufficient Balance" in (result.error or "")
+    assert result.error_reason == "authz"
+
+    error_envelopes = [
+        e for e in captured
+        if e["type"] == "chat_response" and e["data"].get("type") == "error"
+    ]
+    assert len(error_envelopes) == 1
+    assert "Insufficient Balance" in error_envelopes[0]["data"]["content"]
