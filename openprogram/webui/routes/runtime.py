@@ -262,6 +262,28 @@ def register(app):
                             except Exception: pass
                         conv["runtime"] = new_rt
                         conv["provider_name"] = new_provider
+                # Persist as the default agent's model. The dispatcher
+                # resolves session override → agent.json; the globals
+                # above only feed the legacy visualizer runtime. Without
+                # this write, picking a model on a NOT-YET-CREATED chat
+                # (no session_id → the picker can't set a per-conv
+                # override) changed nothing the dispatcher reads, and
+                # the first message silently ran on the old default —
+                # the "I switched to the free model but it answered as
+                # GPT" bug.
+                try:
+                    from openprogram.agents import manager as _agents
+                    # Strip a "provider:" prefix only when it IS the
+                    # provider — model ids may contain ':' themselves
+                    # (openrouter's "...:free").
+                    bare = new_model
+                    if new_model.startswith(f"{new_provider}:"):
+                        bare = new_model[len(new_provider) + 1:]
+                    _agents.update(_agents.DEFAULT_AGENT_ID, {
+                        "model": {"provider": new_provider, "id": bare},
+                    })
+                except Exception:
+                    pass
                 changed = True
 
         if body and "exec" in body:
