@@ -51,6 +51,22 @@ def dispatch_forced_tool_call(
         raise ValueError(f"failed to resolve tool {tool_name!r}: {e}") from e
     tool = next((t for t in tools if t.name == tool_name), None)
     if tool is None:
+        # The welcome screen advertises the bundled programs whether or
+        # not they are installed — a catalogued-but-missing one gets an
+        # actionable message (the GUI agent is opt-in: it pulls PyTorch).
+        try:
+            from openprogram.functions._programs import get_program
+            prog = get_program(tool_name)
+        except Exception:
+            prog = None
+        if prog is not None and not prog.is_installed():
+            size = (" — it downloads PyTorch (~300 MB; ~3 GB on CUDA)"
+                    if prog.heavy else "")
+            raise ValueError(
+                f"{prog.function} is not installed{size}. Install it with: "
+                f"openprogram programs install {prog.extra}  (or via "
+                f"`openprogram setup` → programs), then restart."
+            )
         raise ValueError(f"tool not found: {tool_name!r}")
     if not getattr(tool, "_is_agentic", False):
         raise ValueError(

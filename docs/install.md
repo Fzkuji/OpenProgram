@@ -28,9 +28,10 @@ first, then the program(s).**
 ## One command (recommended)
 
 Clone the host wherever you want it to live, then run the installer. The default
-install brings up **everything**: web UI (built), terminal UI, the three bundled
-agent programs (GUI / Research / Wiki), browser tool + channels. `--minimal`
-installs a bare host instead.
+install brings up **everything light**: web UI (built), terminal UI, the Research
+and Wiki agent programs, browser tool + channels. The GUI agent is opt-in (it
+downloads PyTorch): `openprogram programs install gui`, or `openprogram setup` →
+programs. `--minimal` installs a bare host instead.
 
 **macOS / Linux**
 ```bash
@@ -66,7 +67,7 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | 3 | **OpenProgram** editable install (`pip install -e .`) | The host + base deps. |
 | 4 | **Web UI** — `npm install && npm run build` in `web/` | Next.js frontend on **:18100**, backend on **:18109**. `--minimal` skips the build (the worker builds on first start). |
 | 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. `--minimal` skips. |
-| 6 | **Bundled programs** — `openprogram programs install all` | Clones the GUI / Research / Wiki harnesses into `functions/agentics/` (editable, auto-register) and installs each one's own declared deps. The GUI harness pulls PyTorch — ~300 MB on macOS / GPU-less Linux (the CPU wheel is auto-selected when no NVIDIA GPU is present), ~3 GB only on CUDA boxes. `--minimal` skips; for an explicit CUDA tag run the GUI harness's own installer afterwards. |
+| 6 | **Bundled programs** — `openprogram programs install research` + `wiki` | Clones the two light harnesses into `functions/agentics/` (editable, auto-register; no deps beyond openprogram). The GUI agent is **opt-in** — `openprogram programs install gui` pulls PyTorch (~300 MB; the CPU wheel is auto-selected on GPU-less Linux, ~3 GB only on CUDA boxes). `--minimal` skips. |
 | 7 | **Browser tool + channels** | `pip install -e .[all]` + `playwright install chromium` (~150 MB). `--minimal` skips. Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
 
 ---

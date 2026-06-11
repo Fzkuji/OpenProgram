@@ -55,7 +55,7 @@ git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-默认安装包含全部内容——web UI、TUI、三个内置 agent 程序（GUI / Research / Wiki）、浏览器工具和 channels；`--minimal` 只装精简 host。provider SDK（anthropic / openai / google-genai）默认已装好。
+默认安装包含全部轻量内容——web UI、TUI、Research / Wiki 两个 agent 程序、浏览器工具和 channels；GUI agent 按需装（`openprogram programs install gui`，需下载 PyTorch）；`--minimal` 只装精简 host。provider SDK（anthropic / openai / google-genai）默认已装好。
 
 harness 作为 **OpenProgram 程序** 装进 `openprogram/functions/agentics/<Harness>/`
 并**自动注册**。通用做法（你自己写的也一样）是克隆进那个目录再跑它的安装脚本；

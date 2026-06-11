@@ -116,6 +116,21 @@ def execute(
     from openprogram.agentic_programming.function import _registry
 
     if program not in _registry:
+        # A catalogued-but-not-installed harness gets an actionable
+        # message (the GUI agent is opt-in — it downloads PyTorch).
+        try:
+            from openprogram.functions._programs import get_program
+            prog = get_program(program)
+        except Exception:
+            prog = None
+        if prog is not None and not prog.is_installed():
+            size = " (downloads PyTorch, ~300 MB; ~3 GB on CUDA)" if prog.heavy else ""
+            return (
+                f"Error: {prog.function} is not installed{size}. "
+                f"Install it with: openprogram programs install {prog.extra} "
+                f"— or via `openprogram setup` → programs. "
+                f"It registers on the next launch."
+            )
         available = ", ".join(sorted(_registry)) or "(none registered)"
         return (
             f"Error: program {program!r} is not registered. "

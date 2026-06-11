@@ -8,10 +8,10 @@
    3. OpenProgram (editable) + its deps
    4. Web UI:  web\ -> npm install && npm run build  (served on :18100)
       (Windows uses the Rich REPL, not the Ink TUI, so cli\ is not built)
-   5. Bundled programs - the three agent harnesses (GUI / Research / Wiki)
-      clone into openprogram\functions\agentics\ via
-      `openprogram programs install all`. NOTE: the GUI harness pulls
-      torch - a large download.
+   5. Bundled programs - the two LIGHT agent harnesses (Research / Wiki;
+      no extra deps) clone into openprogram\functions\agentics\.
+      The GUI agent is NOT installed by default (it pulls PyTorch);
+      add it with: openprogram programs install gui
    6. Default extras [all]: browser tool (Playwright + Chromium) + channels
 
  -Minimal skips 4(build)/5/6 - a bare host for servers; everything it
@@ -115,9 +115,11 @@ function Install-Web {
 # declared deps. Idempotent: an existing clone is left alone.
 function Install-Programs {
   if ($Minimal) { Warn "skipping bundled programs (-Minimal)"; return }
-  Step "installing bundled programs (gui_agent / research_agent / wiki_agent)"
-  & $PY -m openprogram programs install all
-  if ($LASTEXITCODE -ne 0) { Warn "program install failed - re-run later: openprogram programs install all" }
+  Step "installing bundled programs (research_agent / wiki_agent)"
+  & $PY -m openprogram programs install research
+  if ($LASTEXITCODE -ne 0) { Warn "research_agent install failed - re-run later: openprogram programs install research" }
+  & $PY -m openprogram programs install wiki
+  if ($LASTEXITCODE -ne 0) { Warn "wiki_agent install failed - re-run later: openprogram programs install wiki" }
 }
 
 # ---- 6. default extras: [all] = browser + channels (opt out with -Minimal) ----
@@ -152,6 +154,6 @@ Install-Extras
 Write-Host "`nOpenProgram ready." -ForegroundColor Green
 Write-Host "  Start:     openprogram           # first run walks you through provider setup, then opens the chat"
 Write-Host "  Web UI:    openprogram web        # -> http://localhost:18100"
-Write-Host "  Programs:  gui_agent / research_agent / wiki_agent installed under openprogram\functions\agentics\"
-Write-Host "             manage with: openprogram programs list | install | uninstall"
+Write-Host "  Programs:  research_agent / wiki_agent installed; the GUI agent is opt-in"
+Write-Host "             (downloads PyTorch): openprogram programs install gui"
 else { Write-Host "  Add a harness: clone it into openprogram\functions\agentics\ and run its installer"; Write-Host "                 (GUI agent: https://github.com/Fzkuji/GUI-Agent-Harness)" }

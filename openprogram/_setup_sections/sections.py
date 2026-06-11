@@ -146,6 +146,51 @@ def run_skills_section() -> int:
     return 0
 
 
+def run_programs_section() -> int:
+    """Install / uninstall the bundled agent programs (harnesses).
+
+    The three flagship programs live as their own repos and clone into
+    ``functions/agentics/`` on demand. Research / Wiki are light (no
+    extra deps); the GUI agent pulls PyTorch (~300 MB without an NVIDIA
+    GPU, ~3 GB with one) — which is why it is not installed by default
+    and the choice lives here.
+    """
+    from openprogram.setup import _checkbox
+    from openprogram.functions._programs import KNOWN_PROGRAMS
+
+    items = []
+    for prog in KNOWN_PROGRAMS:
+        size = " (downloads PyTorch, ~300 MB; ~3 GB on CUDA)" if prog.heavy else " (light)"
+        label = f"{prog.function}{size} — {prog.summary}"
+        items.append((label, prog.is_installed()))
+    by_label = {label: prog for (label, _), prog in zip(items, KNOWN_PROGRAMS)}
+
+    picked = _checkbox("Bundled agent programs to install:", items)
+    if picked is None:
+        print("Cancelled.")
+        return 1
+
+    from openprogram._cli_cmds.programs import _cmd_install, _cmd_uninstall
+    picked_set = set(picked)
+    rc = 0
+    for label, prog in by_label.items():
+        want = label in picked_set
+        have = prog.is_installed()
+        if want and not have:
+            try:
+                _cmd_install(prog.extra)
+            except SystemExit:
+                rc = 1
+        elif have and not want and prog.in_tree_pkg_dir():
+            # Only uninstall what the installer manages (the in-tree
+            # clone) — never touch a dev `pip install -e` setup.
+            try:
+                _cmd_uninstall(prog.extra)
+            except SystemExit:
+                rc = 1
+    return rc
+
+
 def run_ui_section() -> int:
     """Web UI settings — rendered from the config schema's Ports group, so
     this wizard, the TUI panel, and ``openprogram config`` never drift."""

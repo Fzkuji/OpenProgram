@@ -17,7 +17,7 @@ git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-Requires Python ≥ 3.11, Node ≥ 20, git. The default install brings up everything — web UI, TUI, the three bundled agent programs (GUI / Research / Wiki), browser tool + channels; `--minimal` installs a bare host. Full dependency matrix and flags: [docs/install.md](install.md).
+Requires Python ≥ 3.11, Node ≥ 20, git. The default install brings up everything light — web UI, TUI, the Research / Wiki agent programs, browser tool + channels; the GUI agent is opt-in (`openprogram programs install gui`, downloads PyTorch); `--minimal` installs a bare host. Full dependency matrix and flags: [docs/install.md](install.md).
 
 ### Step 2: Connect a provider
 
@@ -310,7 +310,7 @@ git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-需要 Python ≥ 3.11、Node ≥ 20、git。默认安装包含全部内容——web UI、TUI、三个内置 agent 程序（GUI / Research / Wiki）、浏览器工具和 channels；`--minimal` 只装精简 host。完整依赖矩阵与参数见 [docs/install.md](install.md)。
+需要 Python ≥ 3.11、Node ≥ 20、git。默认安装包含全部轻量内容——web UI、TUI、Research / Wiki 两个 agent 程序、浏览器工具和 channels；GUI agent 按需安装（`openprogram programs install gui`，需下载 PyTorch）；`--minimal` 只装精简 host。完整依赖矩阵与参数见 [docs/install.md](install.md)。
 
 ### 第 2 步：写你的第一个 Agentic Function
 
