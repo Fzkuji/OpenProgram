@@ -137,7 +137,7 @@ def detect_provider() -> tuple[str, str]:
         return "gemini-cli", "gemini-2.5-flash"
 
     # 5. API providers — a key saved in the AuthStore (settings UI or
-    #    ``openprogram auth login <provider> --api-key``).
+    #    ``openprogram providers login <provider> --api-key``).
     from openprogram.providers.env_api_keys import is_configured
     if is_configured("anthropic"):
         return "anthropic", "claude-sonnet-4-6"
@@ -155,8 +155,8 @@ def detect_provider() -> tuple[str, str]:
         "\n"
         "  API providers (paste a key — stored under ~/.openprogram):\n"
         "    3. Web UI:   Settings -> LLM Providers -> pick one -> add a key\n"
-        "    4. CLI:      openprogram auth login <provider> --api-key\n"
-        "                 (e.g. openprogram auth login deepseek --api-key)\n"
+        "    4. CLI:      openprogram providers login <provider> --api-key\n"
+        "                 (e.g. openprogram providers login deepseek --api-key)\n"
         "\n"
         "  Claude via your Claude subscription (no API key):\n"
         "    5. Enable the claude-code provider in Settings -> LLM Providers,\n"

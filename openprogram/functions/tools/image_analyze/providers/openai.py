@@ -42,7 +42,7 @@ class OpenAIVisionProvider:
         if not key:
             raise RuntimeError(
                 "No OpenAI API key. Add one in Settings -> Providers or run: "
-                "openprogram auth login openai --api-key"
+                "openprogram providers login openai --api-key"
             )
         mdl = model or DEFAULT_MODEL
 

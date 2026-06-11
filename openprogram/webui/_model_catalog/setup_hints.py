@@ -119,7 +119,7 @@ _SETUP_HINTS: dict[str, str] = {
         "$ open https://platform.deepseek.com/api_keys\n"
         "\n"
         "Create a key and paste it into the field below (or from a\n"
-        "terminal: `openprogram auth login deepseek --api-key`).\n"
+        "terminal: `openprogram providers login deepseek --api-key`).\n"
         "\n"
         "Two models register out of the box, both V3.2-Exp on a 128K\n"
         "context: `deepseek-chat` and `deepseek-reasoner` (same base, the\n"

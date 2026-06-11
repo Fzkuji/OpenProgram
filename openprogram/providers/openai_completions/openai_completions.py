@@ -257,7 +257,7 @@ async def stream_simple(
                 message=(
                     f"No API key configured for provider '{model.provider}'. "
                     f"Add one in Settings → Providers, or run: "
-                    f"openprogram auth login {model.provider} --api-key"
+                    f"openprogram providers login {model.provider} --api-key"
                 ),
                 reason=ErrorReason.AUTHENTICATION,
                 retryable=False,

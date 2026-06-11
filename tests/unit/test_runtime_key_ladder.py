@@ -2,7 +2,7 @@
 
 AnthropicRuntime / OpenAIRuntime / GeminiRuntime historically did a bare
 ``os.environ.get(...)`` in ``__init__``. Keys live in the AuthStore only
-now (settings UI / `openprogram auth login`), so a "pure Settings" user
+now (settings UI / `openprogram providers login`), so a "pure Settings" user
 must construct these runtimes fine, and env vars must stay inert.
 """
 from __future__ import annotations

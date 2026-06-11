@@ -121,7 +121,7 @@ class ProviderRegistry(Generic[P]):
         raise LookupError(
             f"No {self._kind} provider is available. Add an API key for one "
             f"of the registered providers (Settings -> Providers, or "
-            f"`openprogram auth login <provider> --api-key`): {missing}"
+            f"`openprogram providers login <provider> --api-key`): {missing}"
         )
 
 

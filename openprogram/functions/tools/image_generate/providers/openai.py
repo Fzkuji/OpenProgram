@@ -50,7 +50,7 @@ class OpenAIImageProvider:
         if not key:
             raise RuntimeError(
                 "No OpenAI API key. Add one in Settings -> Providers or run: "
-                "openprogram auth login openai --api-key"
+                "openprogram providers login openai --api-key"
             )
         mdl = model or DEFAULT_MODEL
         # DALL-E 3 only supports n=1; transparent cap avoids a cryptic

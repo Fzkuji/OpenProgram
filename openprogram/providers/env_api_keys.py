@@ -3,7 +3,7 @@ Provider API-key resolution.
 
 LLM provider credentials live in exactly ONE place: the AuthStore under
 ``~/.openprogram`` — written by the settings UI ("add a key") and by the
-CLI (``openprogram auth login <provider> --api-key``). Environment
+CLI (``openprogram providers login <provider> --api-key``). Environment
 variables are NOT consulted; there is no config.json fallback.
 
 The two exceptions are Amazon Bedrock and Google Vertex, whose
@@ -48,7 +48,7 @@ def resolve_provider_key(provider: str) -> str | None:
     """Resolve a provider's API key — the runtime path.
 
     Single source: the AuthStore (settings UI "add a key", or
-    ``openprogram auth login <provider> --api-key``). It takes
+    ``openprogram providers login <provider> --api-key``). It takes
     api-key-shaped credentials ONLY — OAuth tokens are excluded because
     the wires that call this put the result in ``x-api-key`` /
     ``Authorization: Bearer <key>`` headers, and an OAuth access_token

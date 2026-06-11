@@ -2,7 +2,7 @@
 ``openprogram/providers/env_api_keys.py``.
 
 LLM provider keys live in the AuthStore ONLY (settings UI "add a key" /
-``openprogram auth login <provider> --api-key``). Environment variables
+``openprogram providers login <provider> --api-key``). Environment variables
 and config.json are never consulted. The single exception is the
 Bedrock/Vertex cloud-credential chain (AWS SigV4 / GCP ADC) — no bearer
 key exists for those, so a satisfied chain yields the
