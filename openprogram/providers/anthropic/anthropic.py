@@ -590,9 +590,19 @@ async def stream_simple(
     try:
         async with client.messages.stream(**params) as ant_stream:
             async for event in ant_stream:
-                event_type = type(event).__name__
+                # Dispatch on the SSE protocol field, NOT the Python class
+                # name. SDK 0.91 renamed the high-level stop events
+                # (ContentBlockStopEvent → ParsedContentBlockStopEvent), so a
+                # __name__ match silently skipped content_block_stop — the
+                # tool-arg buffer was never parsed back into ToolCall.arguments
+                # and every streamed tool call arrived with arguments={}.
+                # event.type ("message_start", "content_block_stop", ...) is
+                # the wire-format name and stable across SDK versions; the
+                # SDK's convenience events (TextEvent "text", InputJsonEvent
+                # "input_json", ...) keep distinct types so nothing double-fires.
+                event_type = getattr(event, "type", "") or ""
 
-                if event_type == "RawMessageStartEvent":
+                if event_type == "message_start":
                     # Capture initial token counts from message_start
                     usage_data = getattr(event, "message", {})
                     if hasattr(usage_data, "usage"):
@@ -606,7 +616,7 @@ async def stream_simple(
                             )
                         })
 
-                elif event_type == "RawContentBlockStartEvent":
+                elif event_type == "content_block_start":
                     block = event.content_block
                     ant_idx = event.index
                     cb_idx = len(content_blocks)
@@ -652,7 +662,7 @@ async def stream_simple(
                         partial = partial.model_copy(update={"content": list(content_blocks)})
                         yield EventToolCallStart(type="toolcall_start", content_index=cb_idx, partial=partial)
 
-                elif event_type == "RawContentBlockDeltaEvent":
+                elif event_type == "content_block_delta":
                     delta = event.delta
                     ant_idx = event.index
                     cb_idx = block_index_map.get(ant_idx, -1)
@@ -693,7 +703,7 @@ async def stream_simple(
                                 thinking_signature=sig + delta.signature,
                             )
 
-                elif event_type == "ContentBlockStopEvent":
+                elif event_type == "content_block_stop":
                     ant_idx = event.index
                     cb_idx = block_index_map.get(ant_idx, -1)
                     if cb_idx < 0 or cb_idx >= len(content_blocks):
@@ -721,7 +731,7 @@ async def stream_simple(
                             partial=partial,
                         )
 
-                elif event_type == "RawMessageDeltaEvent":
+                elif event_type == "message_delta":
                     delta = getattr(event, "delta", None)
                     if delta:
                         stop_reason_raw = getattr(delta, "stop_reason", None)
