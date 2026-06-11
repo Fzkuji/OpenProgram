@@ -48,8 +48,20 @@ from .._shared.validate_modalities import validate_input_modalities
 
 
 def _uses_developer_role(model: Model) -> bool:
-    """Check if model uses 'developer' role instead of 'system' (reasoning models)."""
-    return bool(getattr(model, "reasoning", False))
+    """Check if model uses 'developer' role instead of 'system'.
+
+    Only OpenAI's own reasoning models take the system prompt as a
+    'developer' message. Third-party OpenAI-compatible endpoints
+    (deepseek, groq, ...) reject unknown roles with a 400
+    (`unknown variant 'developer'`), which killed every turn that had
+    a system prompt — i.e. exactly the turns where tools were enabled,
+    since the tool inventory rides the system prompt.
+    """
+    if not getattr(model, "reasoning", False):
+        return False
+    provider = (getattr(model, "provider", "") or "").lower()
+    base_url = (getattr(model, "base_url", "") or "").lower()
+    return provider == "openai" or "api.openai.com" in base_url
 
 
 def _uses_max_completion_tokens(model: Model) -> bool:
