@@ -76,6 +76,26 @@ etc.) — OpenProgram finds the *one* package that has an `agentics/`
 sub-package and puts the harness root on `sys.path` so the harness's own
 absolute imports (`from <package>.foo import bar`) resolve.
 
+Two hard rules keep a harness installable everywhere:
+
+1. **Never declare `openprogram` as a dependency** (in `pyproject.toml`
+   *or* `requirements.txt`). The harness runs inside an existing
+   OpenProgram install — `openprogram programs install <name>`
+   pip-installs the clone, and a declared `openprogram @ git+…` would
+   make pip re-install the host from git, clobbering the user's local
+   (often editable) install.
+2. **Keep the top-level `<package>/__init__.py` dependency-light.**
+   Discovery imports `<package>.agentics` on every startup, including on
+   machines that haven't installed the harness's optional/heavy deps —
+   a top-level import of cv2/torch/etc. would break the whole registry
+   load. Lazy-import heavy modules inside function bodies (see
+   `gui_harness/__init__.py` for the pattern), and guard the
+   `agentics/__init__.py` entry import with `try/except ImportError`
+   so `AGENTIC_FUNCTIONS = []` on a deps-less machine.
+
+The three first-party harnesses (GUI / Research / Wiki) all follow this
+exact shape — read any of them as a working template for your own.
+
 ## Step-by-step: install a third-party harness
 
 1. **Locate the agentics folder** (the one-liner above). Call it `<AGENTICS>`.
@@ -132,9 +152,10 @@ openprogram programs uninstall <name>
 openprogram programs install <name> --upgrade   # git pull the clone
 ```
 
-`research` / `wiki` carry no extra deps; `gui` is heavy (native ML deps)
-and is the reason these aren't bundled into the base `pip install
-openprogram` — the core stays light and the heavy program is opt-in.
+`research` carries no extra deps and `wiki` only Jinja2 + PyYAML; `gui`
+is heavy (PyTorch — the CPU wheel is auto-selected on GPU-less Linux,
+~300 MB, vs ~3 GB CUDA on NVIDIA boxes). The first-run setup wizard's
+"Agent programs" step offers this same choice interactively.
 
 > **GUI agent — one extra step.** Beyond its pip deps, `gui_agent` needs a
 > YOLO detector weight + OCR models that aren't on PyPI. After

@@ -188,6 +188,7 @@ KNOWN_PROGRAMS: list[Program] = [
         summary="Personal wiki agent — ingest sessions and organise a knowledge vault.",
         heavy=False,
         public=True,
+        size_note="repo < 1 MB; deps: Jinja2 + PyYAML (tiny)",
     ),
 ]
 
