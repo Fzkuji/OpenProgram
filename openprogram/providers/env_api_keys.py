@@ -35,7 +35,7 @@ def get_env_api_key(provider: str) -> str | None:
     """Resolve a provider's API key — the runtime path.
 
     Ladder: AuthStore api-key credential (where the web UI's account
-    manager saves keys) > env vars > config.json ``api_keys``. The
+    manager saves keys) > env vars. The
     AuthStore step takes api-key-shaped credentials ONLY — OAuth tokens
     are excluded because the wires that call this put the result in
     ``x-api-key``/``Authorization: Bearer <key>`` headers, and an OAuth
@@ -66,11 +66,15 @@ def get_env_api_key(provider: str) -> str | None:
 # docs/design/providers/api-key-resolution-unification.md).
 #
 # One table of accepted env-var names per provider (precedence order), one
-# resolver (env → config.json), one is_configured (incl. cloud-cred chains),
+# resolver (env vars), one is_configured (incl. cloud-cred chains),
 # one reverse map. Every other resolver/map in the codebase becomes a thin
 # wrapper over these. Added additively in step 1 — callers migrate in later
 # steps; the legacy ``PROVIDER_ENV_VARS`` + ``get_env_api_key`` above stay until
 # then.
+#
+# config.json ``api_keys`` is NOT consulted for LLM provider keys anymore —
+# keys pasted in the UI/CLI live in the AuthStore. The config section remains
+# in use only by the web-search / TTS key flows (their own storage).
 # ─────────────────────────────────────────────────────────────────────────────
 
 # provider_id → accepted env-var names, in precedence order. Merges the four
@@ -146,54 +150,21 @@ def env_vars_for(provider_id: str) -> list[str]:
     return []
 
 
-# Config-read cache keyed by file mtime — keeps resolve_api_key off the
-# filesystem on the per-stream hot path while still picking up a freshly-saved
-# key without a restart.
-_config_cache: dict = {"mtime": None, "api_keys": {}}
-
-
-def _config_api_keys() -> dict:
-    try:
-        from openprogram.paths import get_config_path
-        path = get_config_path()
-        mtime = path.stat().st_mtime
-    except Exception:
-        return {}
-    if _config_cache["mtime"] != mtime:
-        try:
-            import json
-            data = json.loads(path.read_text(encoding="utf-8"))
-            _config_cache["api_keys"] = (data.get("api_keys") or {})
-        except Exception:
-            _config_cache["api_keys"] = {}
-        _config_cache["mtime"] = mtime
-    return _config_cache["api_keys"]
-
-
-def resolve_api_key(provider_id: str, *, allow_config: bool = True) -> str | None:
+def resolve_api_key(provider_id: str) -> str | None:
     """The real, usable key/token for ``provider_id``, or ``None``.
 
-    Order: each env var in :func:`env_vars_for` (first hit wins), then — when
-    ``allow_config`` — the same names under config.json ``api_keys`` (cached).
+    Order: each env var in :func:`env_vars_for` (first hit wins).
     Cloud-credential providers (Bedrock/Vertex) return ``None`` here; their
     state is :func:`is_configured`, not a key. Never returns a sentinel.
 
-    The config fallback is what fixes the restart bug: a key saved through the
-    web UI lives in config.json but is absent from ``os.environ`` after a worker
-    restart — runtime resolution now finds it regardless."""
+    Keys pasted through the UI/CLI are NOT here — they live in the AuthStore,
+    which :func:`get_env_api_key` consults first."""
     if provider_id in _CLOUD_CRED_PROVIDERS:
         return None
-    names = env_vars_for(provider_id)
-    for name in names:
+    for name in env_vars_for(provider_id):
         val = os.environ.get(name)
         if val:
             return val
-    if allow_config:
-        cfg = _config_api_keys()
-        for name in names:
-            val = cfg.get(name)
-            if val:
-                return val
     return None
 
 

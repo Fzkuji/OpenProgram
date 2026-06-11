@@ -288,8 +288,7 @@ def _is_configured(provider_id: str) -> bool:
     * Two special-case providers — ``openai-codex`` (also accepts the
       shared ``~/.codex/auth.json``) and ``claude-code`` (HEAD against the
       Meridian / claude-max-api daemon's health endpoint).
-    * Everything else — env-var key set, or non-empty
-      ``~/.openprogram/config.json :: api_keys.<env_var>`` row.
+    * Everything else — env-var key set.
     """
     # Authoritative: a credential in OpenProgram's own auth store. This is
     # where every native login (OAuth / device-code / CLI-import) lands and
@@ -329,21 +328,17 @@ def _is_configured(provider_id: str) -> bool:
         except (urllib.error.URLError, ConnectionError, OSError):
             return False
     # Key-based providers (incl. the Bedrock/Vertex cloud-credential chains):
-    # the canonical is_configured — env > config.json key, or a satisfied cloud
+    # the canonical is_configured — env-var key, or a satisfied cloud
     # chain. See docs/design/providers/api-key-resolution-unification.md.
-    from openprogram.providers.env_api_keys import (
-        env_vars_for,
-        is_configured,
-        _config_api_keys,
-    )
+    from openprogram.providers.env_api_keys import env_vars_for, is_configured
     if env_vars_for(provider_id) or provider_id in ("amazon-bedrock", "google-vertex"):
         return is_configured(provider_id)
     # Community / models.dev provider with a single env-var name we don't have
-    # in the canonical table: check it (env > config), as before.
+    # in the canonical table: check the env var.
     env = _env_var_for(provider_id)
     if env is None:
         # OAuth / no-key / unknown — conservatively "configured" so the UI
         # doesn't show a red dot the user can't act on.
         return True
     import os
-    return bool(os.environ.get(env) or _config_api_keys().get(env))
+    return bool(os.environ.get(env))

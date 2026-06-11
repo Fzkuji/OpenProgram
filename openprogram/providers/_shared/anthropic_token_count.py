@@ -83,7 +83,7 @@ def count_tokens_via_anthropic(
     The API key is resolved via, in order:
       1. ``api_key`` parameter
       2. ``ANTHROPIC_API_KEY`` env var
-      3. ``~/.openprogram/config.json`` api_keys.ANTHROPIC_API_KEY
+      3. AuthStore api-key credential (Settings → Providers)
 
     Returns None on any failure — never raises. Caller treats None as
     'we don't know' and leaves the token columns NULL.
@@ -94,11 +94,8 @@ def count_tokens_via_anthropic(
     key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         try:
-            from openprogram.paths import get_config_path
-            cfg_path = get_config_path()
-            if cfg_path.exists():
-                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-                key = (cfg.get("api_keys") or {}).get("ANTHROPIC_API_KEY")
+            from openprogram.auth.resolver import resolve_store_api_key_sync
+            key = resolve_store_api_key_sync("anthropic")
         except Exception:
             key = None
     if not key:

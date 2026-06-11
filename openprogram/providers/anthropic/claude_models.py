@@ -328,7 +328,7 @@ def is_stale(max_age_hours: float = 24.0) -> bool:
 def _fetch_anthropic_api_models() -> list[dict]:
     """Pull the authoritative model list from the Anthropic API.
 
-    Uses the configured API key (env or ~/.openprogram/config.json). Returns []
+    Uses the configured API key (env or AuthStore). Returns []
     if no key is available — refresh will then probe a hard-coded candidate
     set derived from the current registry.
     """
@@ -340,12 +340,8 @@ def _fetch_anthropic_api_models() -> list[dict]:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         try:
-            from openprogram.paths import get_config_path
-            cfg_path = get_config_path()
-            if cfg_path.exists():
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                api_key = cfg.get("api_keys", {}).get("ANTHROPIC_API_KEY")
+            from openprogram.auth.resolver import resolve_store_api_key_sync
+            api_key = resolve_store_api_key_sync("anthropic")
         except Exception:
             pass
     if not api_key:

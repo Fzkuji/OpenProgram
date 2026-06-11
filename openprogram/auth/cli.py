@@ -613,31 +613,12 @@ def _login_paste_api_key(provider: str, profile: str, *,
                          api_key: Optional[str] = None) -> Credential:
     # ``api_key`` is the non-interactive path (--api-key / --api-key-stdin /
     # piped stdin); when it's None we fall back to the hidden terminal
-    # prompt. Either way the key is mirrored into config.json below.
+    # prompt. The AuthStore credential below is the single storage — the
+    # UI catalog, validation, and the runtime ladder all read it first.
     key = api_key if api_key is not None else getpass.getpass(
         f"Paste API key for {provider} (hidden): ").strip()
     if not key:
         raise AuthConfigError("empty API key — nothing to save")
-    # Mirror the pasted key into config.json ``api_keys`` (keyed by the
-    # provider's env-var name) alongside the auth store. The web UI catalog,
-    # credential validation, and the model-list fetch all resolve keys via
-    # env > config.json (NOT the auth store) — so without this a CLI-pasted
-    # key leaves the provider showing "not configured" in the UI and blocks
-    # the auto-fetch in _cmd_login. Best-effort. Community providers fall
-    # back to the models.dev env-var name.
-    try:
-        from openprogram.providers.env_api_keys import env_vars_for
-        env = (env_vars_for(provider) or [None])[0]
-        if not env:
-            from openprogram.webui._model_catalog.providers import _env_var_for
-            env = _env_var_for(provider)
-        if env:
-            from openprogram.setup import _read_config, _write_config
-            cfg = _read_config()
-            cfg.setdefault("api_keys", {})[env] = key
-            _write_config(cfg)
-    except Exception:
-        pass
     return Credential(
         provider_id=provider,
         profile_id=profile,

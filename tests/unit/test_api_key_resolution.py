@@ -2,9 +2,10 @@
 ``openprogram/providers/env_api_keys.py`` (audit #3, step 1).
 
 env_vars_for / resolve_api_key / is_configured / provider_id_for_env_var are the
-single source the runtime + webui will converge on. Pin precedence, the
-config.json fallback (the restart-bug fix), cloud-cred handling, and the
-sentinel removal.
+single source the runtime + webui converge on. Pin precedence, cloud-cred
+handling, and the sentinel removal. LLM keys live in the AuthStore or env
+vars only — config.json ``api_keys`` is no longer consulted (it remains the
+storage for web-search / TTS keys, injected into the env at webui startup).
 """
 from __future__ import annotations
 
@@ -26,7 +27,7 @@ _ALL_KEY_NAMES = sorted({n for names in ek._PROVIDER_ENV_VARS.values() for n in 
 
 @pytest.fixture(autouse=True)
 def _no_auth_store(monkeypatch):
-    """These tests pin the env/config layers; blank out the AuthStore step
+    """These tests pin the env layer; blank out the AuthStore step
     of get_env_api_key so the developer's real ~/.openprogram/auth
     credentials can't shadow the monkeypatched env vars."""
     import openprogram.auth.resolver as _resolver
@@ -37,11 +38,9 @@ def _no_auth_store(monkeypatch):
 
 @pytest.fixture
 def env(monkeypatch):
-    """Isolate from the real environment + config: clear every name we touch
-    and default config.json api_keys to empty."""
+    """Isolate from the real environment: clear every name we touch."""
     for n in _ALL_KEY_NAMES + _AWS + _VERTEX:
         monkeypatch.delenv(n, raising=False)
-    monkeypatch.setattr(ek, "_config_api_keys", lambda: {})
     return monkeypatch
 
 
@@ -72,16 +71,11 @@ def test_resolve_google_accepts_any_historical_name(env):
     assert ek.resolve_api_key("google") == "gemk"
 
 
-def test_resolve_config_fallback(env):
-    env.setattr(ek, "_config_api_keys", lambda: {"DEEPSEEK_API_KEY": "cfgkey"})
-    assert ek.resolve_api_key("deepseek") == "cfgkey"
-    assert ek.resolve_api_key("deepseek", allow_config=False) is None
-
-
-def test_resolve_env_beats_config(env):
-    env.setenv("DEEPSEEK_API_KEY", "envkey")
-    env.setattr(ek, "_config_api_keys", lambda: {"DEEPSEEK_API_KEY": "cfgkey"})
-    assert ek.resolve_api_key("deepseek") == "envkey"
+def test_resolve_no_config_fallback(env):
+    # config.json api_keys is deliberately NOT consulted for LLM keys —
+    # the AuthStore (handled a layer above) and env vars are the only
+    # sources. With neither set, resolution is None.
+    assert ek.resolve_api_key("deepseek") is None
 
 
 def test_resolve_cloud_returns_none_never_sentinel(env):
@@ -133,13 +127,17 @@ def test_provider_id_for_env_var(env_var, pid):
     assert ek.provider_id_for_env_var(env_var) == pid
 
 
-# ── get_env_api_key (runtime path) now delegates to the canonical resolver ────
+# ── get_env_api_key (runtime path) ────────────────────────────────────────────
 
-def test_get_env_api_key_restart_bug_config_fallback(env):
-    # Post-restart: the key is gone from env but still in config.json. The
-    # runtime resolver must now find it (the bug this unification fixes).
-    env.setattr(ek, "_config_api_keys", lambda: {"DEEPSEEK_API_KEY": "cfgkey"})
-    assert ek.get_env_api_key("deepseek") == "cfgkey"
+def test_get_env_api_key_authstore_wins(env, monkeypatch):
+    # The AuthStore (where the settings UI saves pasted keys) is the first
+    # rung of the runtime ladder — it beats the env var.
+    env.setenv("DEEPSEEK_API_KEY", "envkey")
+    import openprogram.auth.resolver as _resolver
+    monkeypatch.setattr(
+        _resolver, "resolve_store_api_key_sync", lambda *a, **k: "storekey"
+    )
+    assert ek.get_env_api_key("deepseek") == "storekey"
 
 
 def test_get_env_api_key_anthropic_oauth_precedence(env):

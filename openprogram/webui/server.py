@@ -493,16 +493,19 @@ def _save_config(config: dict):
 
 
 def _get_api_key(env_var: str) -> str:
-    """Get API key from environment or config file."""
-    val = os.environ.get(env_var)
-    if val:
-        return val
-    config = _load_config()
-    return config.get("api_keys", {}).get(env_var, "")
+    """Get API key from the environment. config.json ``api_keys`` no longer
+    holds LLM keys (those live in the AuthStore); any search/TTS keys it
+    holds were injected into the env by ``_apply_config_keys`` below."""
+    return os.environ.get(env_var) or ""
 
 
 def _apply_config_keys():
-    """Inject config file API keys into environment (if not already set)."""
+    """Inject config file API keys into environment (if not already set).
+
+    This serves the web-search / TTS key flows: their settings UI saves
+    into config.json ``api_keys`` and their runtimes read ``os.environ``
+    (e.g. ``TAVILY_API_KEY``). LLM provider keys do NOT live here — they
+    are stored in the AuthStore and resolved per-request."""
     config = _load_config()
     for env_var, val in config.get("api_keys", {}).items():
         if val and not os.environ.get(env_var):

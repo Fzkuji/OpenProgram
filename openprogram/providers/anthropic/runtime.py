@@ -36,15 +36,12 @@ class AnthropicRuntime(Runtime):
         max_retries: int = 2,
     ):
         if not api_key:
-            # Full runtime ladder (AuthStore → env → config.json), NOT a
-            # bare env read — keys pasted in Settings live in the
-            # AuthStore and must work without any env var set.
             from openprogram.providers.env_api_keys import get_env_api_key
             api_key = get_env_api_key("anthropic")
         if not api_key:
             raise ValueError(
                 "Anthropic API key is required. Add one in Settings → "
-                "LLM Providers, pass api_key=, or set ANTHROPIC_API_KEY."
+                "Providers, pass api_key=, or set ANTHROPIC_API_KEY."
             )
         super().__init__(
             model=f"anthropic:{model}",

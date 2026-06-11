@@ -241,24 +241,21 @@ def _resolve_base_url(provider_id: str) -> str | None:
 
 
 def _resolve_api_key(provider_id: str) -> str | None:
-    """Resolved API key for a provider (env var > config api_keys).
+    """Resolved API key for a provider (AuthStore > env var).
 
     Looks up the provider's standard env var via
     ``providers._env_var_for`` (manual override → models.dev community
-    catalogue) and falls back to the ``api_keys`` section of
-    ``~/.openprogram/config.json``. Returns ``None`` for providers that
+    catalogue). Returns ``None`` for providers that
     have no standard env var (OAuth / daemon providers like
     ``openai-codex``, ``claude-code``, ``github-copilot``) — those
     need their own resolution path (e.g. AuthManager.acquire_sync,
     daemon HEAD probe).
     """
     # AuthStore FIRST: the account manager ("Add key" in the web form) saves
-    # credentials into the AuthStore (keyed by provider/profile), NOT into
-    # config.json. The unified ladder reads the active account from there, then
-    # falls back to env > config.json. Without this, the connectivity check and
-    # Fetch-models resolved only env/config and reported "not set" for a key the
-    # per-account validate had already proved VALID. resolve_api_key_sync covers
-    # both AuthStore and the canonical env/config path.
+    # credentials into the AuthStore (keyed by provider/profile). Without
+    # this, the connectivity check and Fetch-models resolved only env vars
+    # and reported "not set" for a key the per-account validate had already
+    # proved VALID.
     try:
         from openprogram.auth.resolver import resolve_api_key_sync
         tok = resolve_api_key_sync(provider_id)
@@ -266,24 +263,20 @@ def _resolve_api_key(provider_id: str) -> str | None:
             return tok
     except Exception:
         pass
-    # Known providers delegate to the canonical resolver (env > config.json,
-    # all special cases + the historical-name reconciliation live there now —
+    # Known providers delegate to the canonical resolver (env vars; all
+    # special cases + the historical-name reconciliation live there now —
     # see docs/design/providers/api-key-resolution-unification.md).
-    from openprogram.providers.env_api_keys import (
-        env_vars_for,
-        resolve_api_key,
-        _config_api_keys,
-    )
+    from openprogram.providers.env_api_keys import env_vars_for, resolve_api_key
     if env_vars_for(provider_id):
         key = resolve_api_key(provider_id)
         if key:
             return key
-    # Community / models.dev providers not in the canonical table: fall back to
-    # the models.dev env-var name (+ config), the prior behaviour, so a freshly
-    # fetched community provider still resolves out of the box.
+    # Community / models.dev providers not in the canonical table: fall back
+    # to the models.dev env-var name, so a freshly fetched community provider
+    # still resolves out of the box.
     from .providers import _env_var_for
     env = _env_var_for(provider_id)
     if not env:
         return None
     import os
-    return os.environ.get(env) or _config_api_keys().get(env) or None
+    return os.environ.get(env) or None
