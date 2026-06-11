@@ -134,6 +134,11 @@ def classify_failure(status: Optional[int], error_text: str = "") -> str:
         return "billing_blocked"
     if status in (401, 403):
         return "needs_reauth"
+    if status is not None and 400 <= status < 500:
+        # Remaining 4xx (404 model-not-found, 400 bad request, 422 …) are
+        # request/model-level failures — the credential is fine, and cooling
+        # it would punish every other model on this key for one bad request.
+        return "request_error"
     if status is not None and 500 <= status < 600:
         return "server_error"
     t = (error_text or "").lower()
@@ -159,11 +164,16 @@ def report_failure(
     there's no credential id (the provider wasn't pool-backed)."""
     if not credential_id:
         return
+    reason = classify_failure(status, error_text)
+    if reason == "request_error":
+        # Request/model-level 4xx — not the key's fault; no cooldown,
+        # no rotation. The error still reaches the user via EventError.
+        return
     try:
         from .manager import get_manager
         get_manager().report_failure(
             provider_id, profile_id, credential_id,
-            classify_failure(status, error_text),
+            reason,
             detail=(error_text or "")[:200],
         )
     except Exception:

@@ -117,12 +117,33 @@ def test_report_success_is_safe_noop_without_credential(store):
     (402, "billing_blocked"),
     (401, "needs_reauth"),
     (403, "needs_reauth"),
+    # request/model-level 4xx — the key is fine, no cooldown
+    (400, "request_error"),
+    (404, "request_error"),
+    (422, "request_error"),
     (500, "server_error"),
     (503, "server_error"),
     (None, "server_error"),
 ])
 def test_classify_failure_by_status(status, expected):
     assert usage.classify_failure(status) == expected
+
+
+def test_request_error_does_not_cool_the_credential(monkeypatch):
+    """A 404 (model not found / not free) must NOT touch the pool —
+    cooling the key would punish every other model on it."""
+    called = []
+
+    class _FakeManager:
+        def report_failure(self, *a, **k):
+            called.append(a)
+
+    monkeypatch.setattr(
+        "openprogram.auth.manager.get_manager", lambda: _FakeManager()
+    )
+    usage.report_failure("openrouter", "default", "cred-1", status=404,
+                         error_text="This model is unavailable for free")
+    assert called == []
 
 
 @pytest.mark.parametrize("text,expected", [
