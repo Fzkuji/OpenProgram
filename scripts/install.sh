@@ -8,12 +8,12 @@
 #   3. OpenProgram (editable) + its deps
 #   4. Web UI:   web/ -> npm install && npm run build  (served on :18100)
 #   5. TUI:      cli/ -> npm install && npm run build  (Ink TUI; POSIX)
-#   6. Bundled programs — the two LIGHT agent harnesses (Research /
-#      Wiki; no extra deps) clone into openprogram/functions/agentics/.
-#      The GUI agent is NOT installed by default: it pulls PyTorch
-#      (~300 MB CPU wheel, ~3 GB CUDA). Add it when you want it:
-#        openprogram programs install gui     (or: openprogram setup → programs)
-#   7. Default extras [all]: browser tool (Playwright + Chromium) + channels
+#   6. Default extras [all]: browser tool (Playwright + Chromium) + channels
+#
+#   Agentic programs (GUI / Research / Wiki) are NOT installed here — the
+#   first run of `openprogram` opens the setup wizard, whose "Agent
+#   programs" step lets the user pick which to install (sizes shown).
+#   Manual: openprogram programs install <gui|research|wiki|all>
 #
 # `--minimal` skips 4(build)/5/6/7 — a bare host for servers; everything
 # it skipped can be added later (`openprogram programs install all`,
@@ -133,21 +133,6 @@ install_tui() {
   ok "TUI built (cli/dist/index.js)"
 }
 
-# ---- 6. bundled programs: the light agent harnesses ---------------------------
-# Git-clones Research-Agent-Harness and Wiki-Agent-Harness into
-# openprogram/functions/agentics/ (both have no deps beyond openprogram
-# itself). The GUI harness is heavy (PyTorch) and stays opt-in:
-# `openprogram programs install gui` or `openprogram setup` → programs.
-# Idempotent: an existing clone is left alone.
-install_programs() {
-  [ "$MINIMAL" = "1" ] && { warn "skipping bundled programs (--minimal)"; return 0; }
-  step "installing bundled programs (research_agent / wiki_agent)"
-  "$PY" -m openprogram programs install research \
-    || warn "research_agent install failed — re-run later: openprogram programs install research"
-  "$PY" -m openprogram programs install wiki \
-    || warn "wiki_agent install failed — re-run later: openprogram programs install wiki"
-}
-
 # ---- 7. default extras: [all] = browser + channels ----------------------------
 install_default_extras() {
   [ "$MINIMAL" = "1" ] && { warn "skipping default extras (--minimal)"; return 0; }
@@ -175,7 +160,6 @@ install_extras() {
 step "OpenProgram setup  (os=$OS, minimal=$MINIMAL)"
 install_web
 install_tui
-install_programs
 install_default_extras
 install_extras
 
@@ -183,5 +167,5 @@ install_extras
 printf "\n${c_green}OpenProgram ready.${c_reset}\n"
 printf "  Start:     openprogram           # first run walks you through provider setup, then opens the chat\n"
 printf "  Web UI:    openprogram web        # -> http://localhost:18100\n"
-printf "  Programs:  research_agent / wiki_agent installed; the GUI agent is opt-in\n"
-printf "             (downloads PyTorch): openprogram programs install gui\n"
+printf "  Programs:  pick which agentic programs to install in the first-run wizard\n"
+printf "             (or any time: openprogram programs install <gui|research|wiki|all>)\n"

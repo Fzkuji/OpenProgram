@@ -24,7 +24,8 @@ from openprogram._setup_sections.backend import run_backend_section
 
 
 # QuickStart = the things a user MUST answer to have a working chat:
-#   provider login, default model, reasoning effort.
+#   provider login, default model, reasoning effort — plus the agent
+#   programs choice (which harnesses to install; sizes shown inline).
 # Advanced   = detail knobs with sane defaults, plus channel bots which
 #   are an opt-in "let external users talk to my agent" feature.
 _QUICKSTART_SECTIONS = [
@@ -39,6 +40,12 @@ _QUICKSTART_SECTIONS = [
      "How hard should the model think by default? "
      "low = fastest, xhigh = deepest.",
      run_agent_section),
+    ("programs", "Agent programs",
+     "Pick which bundled agentic programs to install (space toggles, "
+     "Enter confirms; none selected = skip). Regular tools — bash, "
+     "file edits, web search … — are always built in; this only "
+     "covers the big agentic ones.",
+     run_programs_section),
 ]
 
 _ADVANCED_EXTRA_SECTIONS = [

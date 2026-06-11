@@ -115,6 +115,7 @@ class Program:
     heavy: bool = False
     public: bool = True
     branch: str = "main"
+    size_note: str = "repo < 1 MB, no extra deps"
 
     @property
     def repo_dir_name(self) -> str:
@@ -167,6 +168,8 @@ KNOWN_PROGRAMS: list[Program] = [
         summary="Autonomous GUI agent — give it a task, it operates the desktop.",
         heavy=True,   # ultralytics -> torch, opencv-python, Pillow, pynput
         public=True,
+        size_note=("downloads PyTorch: ~300 MB (no NVIDIA GPU) / ~3 GB "
+                   "(CUDA); ~1.5 GB on disk"),
     ),
     Program(
         function="research_agent",

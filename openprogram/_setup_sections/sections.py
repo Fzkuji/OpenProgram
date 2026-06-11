@@ -149,20 +149,23 @@ def run_skills_section() -> int:
 def run_programs_section() -> int:
     """Install / uninstall the bundled agent programs (harnesses).
 
-    The three flagship programs live as their own repos and clone into
-    ``functions/agentics/`` on demand. Research / Wiki are light (no
-    extra deps); the GUI agent pulls PyTorch (~300 MB without an NVIDIA
-    GPU, ~3 GB with one) — which is why it is not installed by default
-    and the choice lives here.
+    The bundled agentic programs live as their own repos and clone into
+    ``functions/agentics/`` on demand. Each row shows its download /
+    disk cost; space toggles, Enter confirms, selecting none skips.
+    Regular (non-agentic) tools — bash, file edits, web search … — are
+    always built in and never appear here.
     """
     from openprogram.setup import _checkbox
     from openprogram.functions._programs import KNOWN_PROGRAMS
 
     items = []
     for prog in KNOWN_PROGRAMS:
-        size = " (downloads PyTorch, ~300 MB; ~3 GB on CUDA)" if prog.heavy else " (light)"
-        label = f"{prog.function}{size} — {prog.summary}"
-        items.append((label, prog.is_installed()))
+        label = f"{prog.function} — {prog.summary}  [{prog.size_note}]"
+        # Light programs default to selected (they cost nothing); the
+        # heavy GUI agent defaults to unselected. Already-installed ones
+        # show checked so deselecting offers uninstall.
+        checked = prog.is_installed() or not prog.heavy
+        items.append((label, checked))
     by_label = {label: prog for (label, _), prog in zip(items, KNOWN_PROGRAMS)}
 
     picked = _checkbox("Bundled agent programs to install:", items)

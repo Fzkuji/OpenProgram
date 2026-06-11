@@ -195,11 +195,48 @@ def _needs_first_run_setup() -> bool:
         return False  # never block startup on a detection hiccup
 
 
+def _restore_tui_tty() -> bool:
+    """Point stdout/stderr back at the real terminal; True if it was redirected.
+
+    The module-load redirect (:func:`_maybe_redirect_for_tui`) sends stdio to
+    a log file so Ink starts on a clean terminal. But the bare-``openprogram``
+    path runs INTERACTIVE steps before Ink — the first-run setup wizard and
+    the TUI-vs-web menu. With stdio still pointed at the log those prompts
+    were invisible on POSIX (the terminal just sat there), and ``isatty()``
+    being False skipped the surface menu entirely — macOS went straight to
+    the TUI while Windows (no redirect) asked. Restore the tty for the
+    interactive stretch; call :func:`_re_redirect_tui_log` before launching
+    Ink.
+    """
+    if _TUI_TTY_OUT is None or _TUI_TTY_ERR is None:
+        return False
+    try:
+        os.dup2(_TUI_TTY_OUT, 1)
+        os.dup2(_TUI_TTY_ERR, 2)
+        return True
+    except Exception:
+        return False
+
+
+def _re_redirect_tui_log() -> None:
+    """Re-point stdout/stderr at the ink-startup log (post-prompt, pre-Ink)."""
+    try:
+        from pathlib import Path
+        log_path = Path.home() / ".openprogram" / "logs" / "ink-startup.log"
+        fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+        os.dup2(fd, 1)
+        os.dup2(fd, 2)
+        os.close(fd)
+    except Exception:
+        pass
+
+
 def _choose_surface() -> str:
     """Ask whether to open the terminal UI or the web UI; returns 'tui' or 'web'.
 
     Only for a bare ``openprogram`` (no surface given). ``openprogram tui`` /
     ``openprogram web`` skip this and launch directly. Non-interactive → 'tui'.
+    Caller must have restored the real tty first (:func:`_restore_tui_tty`).
     """
     try:
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -835,6 +872,10 @@ def main():
             _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
                           tui=tui_enabled)
             return
+        # Interactive pre-Ink stretch (first-run wizard + surface menu) needs
+        # the REAL terminal — the module-load redirect already pointed stdio
+        # at the ink-startup log, which made these prompts invisible on POSIX.
+        restored = _restore_tui_tty()
         # First-run onboarding: a brand-new user just types `openprogram`, not
         # `openprogram setup`. If nothing is configured yet, run the setup
         # wizard automatically, then open the chat — no separate command needed.
@@ -855,6 +896,9 @@ def main():
             # branch with UnboundLocalError.
             _cmd_web(None, None)
             return
+        # Ink takes the terminal next — put stray module noise back in the log.
+        if restored:
+            _re_redirect_tui_log()
         _cmd_cli_chat(oneshot=None, resume=args.resume,
                       tui=tui_enabled)
         return
