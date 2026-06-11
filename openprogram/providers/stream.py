@@ -57,9 +57,21 @@ async def stream_simple(
     """
     opts = options or SimpleStreamOptions()
 
-    # Auto-resolve API key from env if not set
+    # Auto-resolve API key if not set. The unified ladder (AuthStore →
+    # env → config.json) matters here: keys added through the web UI's
+    # account manager live in the AuthStore only, so the legacy
+    # env/config resolver alone reports "Missing credentials" for a
+    # provider the UI shows as fully configured.
     if not opts.api_key:
-        opts = opts.model_copy(update={"api_key": get_env_api_key(model.provider)})
+        resolved = None
+        try:
+            from openprogram.auth.resolver import resolve_api_key_sync
+            resolved = resolve_api_key_sync(model.provider)
+        except Exception:
+            pass
+        opts = opts.model_copy(
+            update={"api_key": resolved or get_env_api_key(model.provider)}
+        )
 
     # NOTE: the claude-code Meridian-profile header (x-meridian-profile) is
     # injected one layer down, in openai_completions.stream_simple — that's
