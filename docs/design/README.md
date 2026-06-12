@@ -35,7 +35,7 @@ supporting notes / investigations that should not override it.
 | Doc | Topic |
 |---|---|
 | [`proactive/event-layer.md`](proactive/event-layer.md) | 统一 Event 模型 + 框架定位 + 框架图 + 事件边界与演进（**实施中：步 1·2 已落地**，[可视化](proactive/event-layer.html)） |
-| [`proactive/framework-evolution.md`](proactive/framework-evolution.md) | 框架演进：现状 → 目标 → 五步迁移（步 1·2 ✅，[可视化](proactive/framework-evolution.html)） |
+| [`proactive/framework-evolution.md`](proactive/framework-evolution.md) | 框架演进：现状 → 目标 → 五步迁移（步 1·2·3 ✅，[可视化](proactive/framework-evolution.html)） |
 
 主动性应用（建在底座上）：
 

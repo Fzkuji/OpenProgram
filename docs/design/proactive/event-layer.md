@@ -2,11 +2,11 @@
 
 一条统一的事件流，给整个框架用。proactive 只是它第一个消费者。
 
-> **实现状态（2026-06-13）**：本篇 §1–§5 已落地——`Event`/`make_event`/`emit_safe`/
+> **实现状态（2026-06-13）**：本篇 §1–§5 已全部落地——`Event`/`make_event`/`emit_safe`/
 > `subscribe(types=)`/`get_event_bus()` 在 `openprogram/agent/event_bus.py`，同步问询点在
-> `openprogram/agent/tool_gate.py`（`register_tool_gate`/`decide_tool_gate`）。A 类事件全部
-> 在发（含 `file.changed`），B 类桥接未做。观察方式：`OPENPROGRAM_EVENT_LOG=1` 重启 worker
-> 后读 `/tmp/openprogram-events.jsonl`。
+> `openprogram/agent/tool_gate.py`，B 类桥在 `openprogram/agent/event_bridges.py`（auth）+
+> 各源头 tap。A、B 两类事件都在发。观察方式：`OPENPROGRAM_EVENT_LOG=1` 重启 worker
+> 后读 `/tmp/openprogram-events.jsonl`。剩余：步 4（webui 切订阅者）、步 5（proactive 规则层）。
 
 **为什么要**：框架里"某件事发生了"的信号现在散在六套互不相通的机制里（agent loop 的
 AgentEvent 流、auth 的 `_emit`、context 的 on_event、channels 的 WS 广播、memory 的定时 poll、
@@ -59,10 +59,11 @@ class Event:
 | A | `file.changed` | 文件被改（payload 带 path/op） | write/edit/apply_patch 写成功后 | ✅ 在发 |
 | A | `turn.ended` | 一轮结束 | agent_loop（正常 + error/abort 两处） | ✅ 在发 |
 | A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner 状态漏斗 | ✅ 在发 |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/池耗尽/轮换 | `AuthStore._emit` 桥接 | ⏳ 步 3 |
-| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | `context/engine.py` 桥接 | ⏳ 步 3 |
-| B | `channel.message_inbound` | 外部消息进来 | `channels/_broadcast.py` 桥接 | ⏳ 步 3 |
-| B | `skills.changed`/`plugins.update_available` | 技能改/插件有新版 | webui watcher 桥接 | ⏳ 步 3 |
+| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/池耗尽/轮换 | `event_bridges.py` 订阅 `AuthStore` 翻译 | ✅ 桥已装 |
+| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | `context/engine.py` 源头 tap | ✅ 在发 |
+| B | `channel.message_inbound` | 外部消息进来 | `channels/_conversation.py` 源头 tap | ✅ 在发 |
+| B | `memory.ingest_started`/`.ended` | 空闲会话 wiki ingest 起止 | `memory/session_watcher.py` 源头 tap | ✅ 在发 |
+| B | `skills.changed`/`plugins.update_available` | 技能改/插件有新版 | webui watcher 源头 tap | ✅ 在发（skills 已 live 验证） |
 
 ## 4. 定位：一个进程级单例总线
 
