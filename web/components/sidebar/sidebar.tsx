@@ -57,7 +57,7 @@ import {
   PanelLeftOpenIcon,
   PlusIcon,
   WorkflowIcon,
-  MonitorIcon,
+  MonitorCheckIcon,
 } from "../animated-icons";
 import { useSessionStore } from "@/lib/session-store";
 import { refreshFunctionsList } from "@/lib/functions-actions";
@@ -395,7 +395,7 @@ export function Sidebar() {
           onMouseLeave={() => programsIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <MonitorIcon ref={programsIconRef} size={20} />
+            <MonitorCheckIcon ref={programsIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.programs")}</span>
         </Link>

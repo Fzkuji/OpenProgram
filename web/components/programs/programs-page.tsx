@@ -17,7 +17,7 @@ import { useRef } from "react";
 import styles from "./programs-page.module.css";
 import { useTranslation } from "@/lib/i18n";
 import {
-  MonitorIcon,
+  MonitorCheckIcon,
   type AnimatedNavIconHandle,
 } from "../animated-icons";
 
@@ -42,7 +42,7 @@ export function ProgramsPage() {
           onMouseLeave={() => iconRef.current?.stopAnimation?.()}
         >
           <div className={styles.placeholderIcon}>
-            <MonitorIcon ref={iconRef} size={22} />
+            <MonitorCheckIcon ref={iconRef} size={22} />
           </div>
           <div className={styles.placeholderName}>example_program</div>
           <div className={styles.placeholderDesc}>
