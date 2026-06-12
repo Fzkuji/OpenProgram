@@ -538,6 +538,18 @@ export function FunctionsPage() {
                 </div>
               </div>
             ) : (
+              <>
+                {folder === "__all__" && !search && (
+                  <div className={styles.toolsHeader}>
+                    {text("Agentic functions", "Agentic 函数")}
+                    <span className={styles.toolsHint}>
+                      {text(
+                        "Invoked with @ — create, edit, and organize them here.",
+                        "通过 @ 调用——可在此创建、编辑和整理。",
+                      )}
+                    </span>
+                  </div>
+                )}
               <div className={view === "grid" ? cardGridClass : cardListClass}>
                 {visibleFunctions.map((p) => (
                   <FunctionCard
@@ -558,6 +570,7 @@ export function FunctionsPage() {
                   />
                 ))}
               </div>
+              </>
             )}
             {tools.length > 0 && folder === "__all__" && !search && (
               <div className={styles.toolsSection}>
