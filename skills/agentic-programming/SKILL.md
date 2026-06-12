@@ -259,7 +259,7 @@ Walk through every rule. If any fails, fix it before writing the file.
 | 10 | `content=` is canonically a `list[dict]`. | Eyeball. |
 | 11 | Each item in a `content` list is a dict literal — `content=[text]` (a bare string inside the list) is wrong. Passing a plain string as `content` itself **is** accepted and auto-wrapped into a text block; the list-of-blocks form is canonical. `content=[{"type":"text","text":text}]` is the canonical shape. | Eyeball. |
 | 12 | Each dict has `"type"`: `"text"` (with `"text"`) or `"image"` / `"audio"` / `"file"` (with `"path"`). | Eyeball. |
-| 13 | Allowed kwargs only: `content, response_format, model, tools, toolset, tools_source, tools_allow, tools_deny, tool_choice, parallel_tool_calls, max_iterations, choices`. Note: `tool_choice`, `parallel_tool_calls`, `max_iterations` are accepted but currently not wired — non-default values are silently ignored. | Eyeball. |
+| 13 | Allowed kwargs only: `content, response_format, model, tools, toolset, tools_source, tools_allow, tools_deny, tool_choice, parallel_tool_calls, max_iterations, choices`. `tool_choice` / `parallel_tool_calls` forward to the provider; `max_iterations` caps the tool-loop rounds at `min(50, value)`. | Eyeball. |
 | 14 | **No `system=` kwarg.** System instruction comes from the decorator (`system="..."`) or the docstring, never from a runtime.exec kwarg. | Eyeball. |
 | 15 | The per-call instruction lives inside the `content` text, not only in the docstring (see §4). | Eyeball — the text in content should describe the task. |
 

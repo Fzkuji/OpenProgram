@@ -61,9 +61,9 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 | `model` | `str \| None` | `None` | 覆盖默认模型 |
 | `tools` | `list \| None` | `None` | 本次调用 LLM 可用的工具。设了就跑工具循环直到模型返回纯文本 |
 | `toolset` / `tools_source` / `tools_allow` / `tools_deny` | — | `None` | 工具集与策略过滤 |
-| `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / 强制某工具。**接受但暂未接线**：函数体不读取此参数，非默认值会被静默忽略 |
-| `parallel_tool_calls` | `bool` | `True` | 允许一轮多个工具调用。**接受但暂未接线**：非默认值会被静默忽略 |
-| `max_iterations` | `int` | `20` | 工具循环安全上限。**接受但暂未接线**：实际循环上限是 `agent_loop.py` 的 `MAX_INNER_ITERATIONS = 50` |
+| `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / `{"type":"function","name":"X"}` 强制某工具。透传到 provider（OpenAI / Anthropic / Gemini / Bedrock 各自映射协议形态） |
+| `parallel_tool_calls` | `bool` | `True` | 允许一轮多个工具调用；`False` 透传到支持该开关的 provider |
+| `max_iterations` | `int` | `20` | 工具循环轮数上限（一轮 = 一次模型调用 + 其工具执行）。生效值为 `min(50, max_iterations)`，50 是 `agent_loop.py` 的硬上限 |
 | `choices` | `dict \| list \| None` | `None` | 设了则约束 turn 的**收尾**:模型跑完整 turn 后,最终回复必须从 `choices` 里选一个;`exec` 解析并返回该选择的结果。详见 [next-step-decision](../agentic-programming/choosing-the-next-step/next-step-decision.md) |
 | `timeout_s` | `float \| None` | `None` | 整个 `exec()`（含全部重试）的 wall-clock 时间预算,超时抛 `LLMError`（`reason=timeout`） |
 | `on_retry` | `Callable \| None` | `None` | 每次重试前调用的观测回调,入参 `RetryInfo`;回调内抛出的异常被忽略 |

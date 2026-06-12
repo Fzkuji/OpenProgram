@@ -55,7 +55,7 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 
 **Core principle**: anything expressible in the signature / annotation is not repeated in the decorator; anything expressible in `input=` is not repeated in the docstring.
 
-The decorator also accepts the shared tool-registration / gating kwargs (`name`, `description`, `toolset`, `unsafe_in`, `requires_approval`, `available_if`, `defer`, ...) documented in `docs/design/function/function-calling-unification.md`; `cache` / `cache_ttl` / `timeout` are accepted and stored but currently not wired.
+The decorator also accepts the shared tool-registration / gating kwargs (`name`, `description`, `toolset`, `unsafe_in`, `requires_approval`, `available_if`, `defer`, ...) documented in `docs/design/function/function-calling-unification.md`; `cache` / `cache_ttl` (memoize results on name + args) and `timeout` (hard-kill the body after N seconds, returning an error result) behave as in `@function`.
 
 ### Effective defaults for a bare `@agentic_function`
 

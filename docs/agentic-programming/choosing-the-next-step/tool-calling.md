@@ -38,14 +38,17 @@ Inside an `@agentic_function`, call
 - With `tools` set, `exec` enters the tool loop until the model returns pure
   text (or the loop's hard cap is hit — see [Termination](#termination)).
 
-`exec` also accepts `tool_choice`, `parallel_tool_calls`, and
-`max_iterations`, but **these are accepted but currently not wired** — the
-body never reads them, so any value other than the default is silently
-ignored. Only the defaults describe real behaviour: each round the model
-decides whether and what to call (`tool_choice="auto"`), and it may pick
-several functions in a single round (`parallel_tool_calls=True`). If you
-need a forced, structured decision ending, use `exec(choices=...)` instead
-— see [next-step decision](./next-step-decision.md).
+`tool_choice` controls whether picking is allowed / required per round —
+`"auto"` (default: the model decides), `"required"` (must pick a function),
+`"none"` (text only), or `{"type": "function", "name": "X"}` to force one
+function. It is forwarded to the provider, which maps it onto its own
+protocol shape (OpenAI, Anthropic, Gemini, and Bedrock are covered).
+`parallel_tool_calls=False` forbids several picks in one round where the
+provider supports the knob. `max_iterations` caps the loop's rounds — the
+effective cap is `min(50, max_iterations)` (see
+[Termination](#termination)). For a forced, structured decision *ending*
+(rather than per-round control), `exec(choices=...)` remains the richer
+tool — see [next-step decision](./next-step-decision.md).
 
 ## Loop body: `_run_loop`
 
