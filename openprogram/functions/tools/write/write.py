@@ -78,6 +78,13 @@ def write(file_path: str, content: str) -> str:
     except Exception:
         pass
 
+    # 事件层 tap：写成功才发。懒 import，照 mark_seen 的防循环模式。
+    try:
+        from openprogram.agent.event_bus import emit_safe
+        emit_safe("file.changed", "tool", {"path": file_path, "op": "write"})
+    except Exception:
+        pass
+
     msg = f"Wrote {len(content)} bytes to {file_path}"
     if outside_warning:
         msg = f"{outside_warning}\n{msg}"

@@ -22,7 +22,8 @@ from openprogram.providers.types import (
 from openprogram.providers.utils.event_stream import EventStream
 from openprogram.providers.utils.validation import validate_tool_arguments
 
-from .event_bus import emit_safe
+from .event_bus import emit_safe, get_event_bus, make_event
+from .tool_gate import ToolGateDenied, decide_tool_gate
 from .types import (
     AgentContext,
     AgentEvent,
@@ -513,13 +514,21 @@ async def _execute_tool_calls(
         except Exception:
             pass
 
-        emit_safe("tool.before", "agent",
-                  {"tool": tool_call.name, "args": tool_call.arguments})
+        # 事件层：tool.before 一份事件，观察（异步总线）+ 问询（同步 gate）共用。
+        before_ev = make_event("tool.before", "agent",
+                               {"tool": tool_call.name, "args": tool_call.arguments})
+        try:
+            get_event_bus().emit(before_ev)
+        except Exception:
+            pass
+        gate_denial = decide_tool_gate(before_ev)
 
         result: AgentToolResult
         is_error = False
 
         try:
+            if gate_denial is not None:
+                raise ToolGateDenied(f"Tool call blocked: {gate_denial}")
             if not tool:
                 raise ValueError(f"Tool {tool_call.name} not found")
 

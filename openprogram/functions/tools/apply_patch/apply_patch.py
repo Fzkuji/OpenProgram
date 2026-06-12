@@ -105,6 +105,15 @@ def _parse_sections(patch: str) -> list[tuple[str, str, list[str]]]:
     return sections
 
 
+def _emit_file_changed(path: str, op: str) -> None:
+    # 事件层 tap：改动成功才调。懒 import 防循环依赖。
+    try:
+        from openprogram.agent.event_bus import emit_safe
+        emit_safe("file.changed", "tool", {"path": path, "op": op})
+    except Exception:
+        pass
+
+
 def _apply_add(path: str, body: list[str]) -> str:
     if os.path.exists(path):
         return f"Error: Add File target already exists: {path}"
@@ -120,6 +129,7 @@ def _apply_add(path: str, body: list[str]) -> str:
         _rt.mark_seen(path)
     except Exception:
         pass
+    _emit_file_changed(path, "add")
     return f"Added {path} ({len(body)} lines)"
 
 
@@ -128,6 +138,7 @@ def _apply_delete(path: str) -> str:
         return f"Error: Delete File target not found: {path}"
     backup_for_current_turn(path)
     os.remove(path)
+    _emit_file_changed(path, "delete")
     return f"Deleted {path}"
 
 
@@ -214,6 +225,7 @@ def _apply_update(path: str, body: list[str]) -> str:
         _rt.mark_seen(path)
     except Exception:
         pass
+    _emit_file_changed(path, "update")
     return f"Updated {path} ({applied} hunk{'s' if applied != 1 else ''})"
 
 

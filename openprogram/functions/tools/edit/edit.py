@@ -97,6 +97,13 @@ def edit(file_path: str,
     except Exception:
         pass
 
+    # 事件层 tap：写成功才发。
+    try:
+        from openprogram.agent.event_bus import emit_safe
+        emit_safe("file.changed", "tool", {"path": file_path, "op": "edit"})
+    except Exception:
+        pass
+
     replaced = count if replace_all else 1
     msg = f"Edited {file_path} ({replaced} replacement{'s' if replaced != 1 else ''})"
     if outside_warning:
