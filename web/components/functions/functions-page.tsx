@@ -6,7 +6,7 @@
  * No built-in categories: every entry is "a function". Organisation is
  * entirely user-driven — built-in folders (All / Favorites /
  * Uncategorized) + user folders with rename / delete; drag-and-drop
- * into folders; favourites toggle; per-function emoji icon override
+ * into folders; favourites toggle; per-function flat-icon override
  * (right-click → Change Icon…); search; sort; grid/list view toggle.
  */
 import {
@@ -293,19 +293,19 @@ export function FunctionsPage() {
             stopPropagation: () => {},
           } as unknown as React.MouseEvent),
       },
-      { label: `🎨 ${text("Change icon...", "更换图标...")}`, action: () => setIconPickerFor(name) },
+      { label: text("Change icon...", "更换图标..."), action: () => setIconPickerFor(name) },
       { label: `✎ ${text("Edit...", "编辑...")}`, action: () => editProgram(name) },
       { type: "sep" },
     ];
     for (const f of Object.keys(meta.folders).sort()) {
       items.push({
-        label: text(`📁 Move to ${f}`, `📁 移动到 ${f}`),
+        label: text(`Move to ${f}`, `移动到 ${f}`),
         action: () => moveToFolder(name, f),
       });
     }
     if (getFolderForProgram(name)) {
       items.push({
-        label: `📂 ${text("Remove from folder", "从文件夹中移除")}`,
+        label: text("Remove from folder", "从文件夹中移除"),
         action: () => moveToFolder(name, null),
       });
     }
@@ -323,7 +323,7 @@ export function FunctionsPage() {
         { label: t("sidebar.delete"), action: () => deleteFolder(name) },
         { type: "sep" },
         {
-          label: `📁 ${text("New folder", "新建文件夹")}`,
+          label: text("New folder", "新建文件夹"),
           action: () => setCreatingFolder(true),
         },
       ],
@@ -338,7 +338,7 @@ export function FunctionsPage() {
       y: e.clientY,
       items: [
         {
-          label: `📁 ${text("New folder", "新建文件夹")}`,
+          label: text("New folder", "新建文件夹"),
           action: () => setCreatingFolder(true),
         },
       ],
@@ -353,7 +353,7 @@ export function FunctionsPage() {
       y: e.clientY,
       items: [
         {
-          label: `📁 ${text("New folder", "新建文件夹")}`,
+          label: text("New folder", "新建文件夹"),
           action: () => setCreatingFolder(true),
         },
       ],
@@ -501,7 +501,7 @@ export function FunctionsPage() {
             })}
             {creatingFolder && (
               <div className={cls(styles.folderItem, styles.active)}>
-                <span className={styles.folderIcon}>📁</span>
+                <span className={styles.folderIcon}><FoldersIcon size={16} /></span>
                 <RenameInput
                   initial=""
                   placeholder={text("New folder", "新建文件夹")}
@@ -529,7 +529,7 @@ export function FunctionsPage() {
           >
             {visibleFunctions.length === 0 ? (
               <div className={styles.empty}>
-                <div className={styles.emptyIcon}>📂</div>
+                <div className={styles.emptyIcon}><FolderOpenIcon size={40} /></div>
                 <div className={styles.emptyText}>
                   {search ? text("No matching functions", "没有匹配的函数") : text("This folder is empty", "这个文件夹是空的")}
                 </div>

@@ -6,6 +6,7 @@ import styles from "./function-card.module.css";
 import { useTranslation } from "@/lib/i18n";
 import {
   type AnimatedNavIconHandle,
+  FoldersIcon,
   SquarePenIcon,
   WrenchIcon,
 } from "@/components/animated-icons";
@@ -75,7 +76,12 @@ export function FunctionCard({
         <div className={styles.cardName}>{p.name}</div>
         <div className={styles.cardDesc}>{desc}</div>
         <div className={styles.cardMeta}>
-          {folderName ? `📁 ${folderName} · ` : ""}
+          {folderName ? (
+            <>
+              <FoldersIcon size={11} className={styles.cardMetaIcon} aria-hidden="true" />
+              {` ${folderName} · `}
+            </>
+          ) : null}
           {formatDate(p.mtime)}
         </div>
       </div>

@@ -42,6 +42,9 @@
 .cardIcon svg {
   display: block;
 }
+.cardMetaIcon {
+  vertical-align: -2px;
+}
 .list .cardIcon svg {
   width: 14px;
   height: 14px;
