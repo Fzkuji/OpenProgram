@@ -1,23 +1,25 @@
 /**
  * Effort pill — the trigger IS the picker.
  *
- * Collapsed: a pill that reads `effort: medium ⌄`, sized to its content
- * (compact rows show just the icon; hovering slides out the caret, the
- * same gesture as the neighbouring tool chips' ×). CLICK to expand —
- * hover alone never opens the slider.
+ * Collapsed: a 32px round chip showing just the biceps icon, tinted by
+ * the current effort level. Hovering slides out a right-caret (the same
+ * gesture as the neighbouring tool chips' ×). CLICK to expand — hover
+ * alone never opens the slider.
  *
- * Expanded: the same pill expands to the right and swaps its label for
- * the current value plus an inline slider. Mouse-leave collapses.
+ * Expanded: the same pill expands to the right into the current value
+ * plus an inline slider. Mouse-leave collapses.
  *
  * Layout: the pill is wrapped in a ``position: relative`` host. The
  * visible pill is absolute so expanding it does not resize the row.
+ * All widths (32 collapsed / 48 hovered / 260 expanded) live in
+ * chat.css on `.effort-pill-shell`.
  *
  * Extracted from composer/index.tsx to keep that file under the
  * project's no-1000-line-files rule.
  */
 "use client";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import { Slider } from "@/components/ui/slider";
 import {
@@ -53,14 +55,14 @@ export const ThinkingEffortPill = React.forwardRef<
 
   // Exactly one option → the effort is fixed (e.g. claude-code, where
   // the proxy ignores reasoning_effort and the value is always
-  // "auto"). Show it as a static label — no caret, no expand, no
-  // slider, not clickable. A dropdown with a single choice is not useful.
+  // "auto"). Show the bare icon chip — no caret, no expand, no slider,
+  // not clickable. A dropdown with a single choice is not useful.
   if (options.length === 1) {
     return (
       <div
         ref={ref}
         {...rest}
-        className="effort-pill-fixed inline-flex h-[32px] items-center gap-[5px] rounded-full pl-[14px] pr-[14px] text-[14px] text-text-primary select-none whitespace-nowrap"
+        className="effort-pill-fixed inline-flex h-[32px] w-[32px] items-center justify-center rounded-full text-text-primary select-none"
         style={{ backgroundColor: "var(--effort-off-bg)" }}
       >
         <BicepsFlexedIcon
@@ -68,9 +70,6 @@ export const ThinkingEffortPill = React.forwardRef<
           className="effort-pill-compact-icon text-text-primary"
           aria-hidden="true"
         />
-        <span className="effort-pill-collapsed-label">
-          Effort: {capEffort(options[0].value)}
-        </span>
       </div>
     );
   }
@@ -166,40 +165,12 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // distinct from the half-alpha `--slider-active` track color.
   const activeColorSolid = warmHue;
 
-  // Measure the spacer so the collapsed pill width exactly matches
-  // its content. Hard-coding 132px gave the same chip the same
-  // footprint regardless of label text — `effort: xhigh` left a
-  // ~30px trailing gap. Re-measures whenever the value changes.
-  const spacerRef = useRef<HTMLSpanElement>(null);
   // Effort icons (collapsed chip + slider thumb) are pqoqubbw animated
   // icons, driven from the pill host's hover — same controlled-ref
   // pattern as the sidebar nav rows.
   const effortIconChipRef = useRef<AnimatedNavIconHandle>(null);
   const effortIconThumbRef = useRef<AnimatedNavIconHandle>(null);
   const caretRef = useRef<AnimatedNavIconHandle>(null);
-  const [collapsedWidth, setCollapsedWidth] = useState<number>(120);
-  // `measured` gates the width transition. On first mount the pill
-  // renders at the 120px placeholder (also what SSR ships), then the
-  // layout effect below corrects it to the real measured width. If
-  // the transition were live, that 120 → real correction would
-  // visibly animate on every page load.
-  //
-  // Critically, `measured` must flip to true in a LATER render than
-  // the width correction — if both happen in the same render the
-  // transition class lands at the same moment the width changes and
-  // the browser still animates from the SSR-painted 120px. So:
-  //   useLayoutEffect → correct width (transition still off)
-  //   rAF in useEffect → enable transition one frame later
-  const [measured, setMeasured] = useState(false);
-  useLayoutEffect(() => {
-    if (spacerRef.current) {
-      setCollapsedWidth(spacerRef.current.offsetWidth);
-    }
-  }, [value]);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setMeasured(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
 
   // The thumb biceps flexes for as long as the slider is open. It can't
   // be driven from mouseenter like the chip icon: picking `off` unmounts
@@ -231,38 +202,20 @@ const ThinkingEffortSliderPill = React.forwardRef<
         caretRef.current?.stopAnimation?.();
       }}
     >
-      {/* Invisible spacer reserves the collapsed pill width in the flex
-          layout. It mirrors the collapsed pill content exactly. */}
-      <span
-        ref={spacerRef}
-        aria-hidden="true"
-        // `whitespace-nowrap` + `shrink-0` keep the spacer measuring
-        // its FULL single-line content width even when the parent
-        // flex row would otherwise compress it (which would wrap the
-        // text and make the spacer report a too-narrow offsetWidth.
-        className="effort-pill-spacer invisible inline-flex shrink-0 items-center gap-[5px] pl-[14px] pr-[10px] text-[14px] whitespace-nowrap"
-      >
-        <span>Effort: {capEffort(value)}</span>
-        <ChevronRightIcon size={12} />
-      </span>
-
-      {/* Visible pill. It stays in the bottom row and expands to the right. */}
+      {/* Visible pill. It stays in the bottom row and expands to the
+          right. Widths (32 / 48 hover / 260 expanded) come from
+          chat.css so collapsed always matches the neighbouring round
+          controls. */}
       <div
         data-expanded={expanded ? "true" : undefined}
         className={[
           "effort-pill-shell absolute left-0 top-0 h-[32px] overflow-hidden",
           "rounded-full select-none",
           "text-[14px]",
-          // Width transition is gated on `measured` so the first-mount
-          // 120px → real-width correction doesn't animate (no bounce
-          // on page refresh). Background colour can always transition.
-          measured
-            ? "transition-[width,background-color] duration-[220ms] ease-out"
-            : "transition-[background-color] duration-[220ms] ease-out",
+          "transition-[width,background-color] duration-[220ms] ease-out",
           expanded ? "bg-bg-hover text-text-bright" : "text-text-primary",
         ].join(" ")}
         style={{
-          width: expanded ? 260 : collapsedWidth,
           // Tint the collapsed pill by current effort level (neutral
           // white-grey at `off`, ramps to soft red at `xhigh`). When
           // expanded we hand the bg back to the Tailwind class
@@ -279,7 +232,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
       >
         <div
           className={[
-            "effort-pill-collapsed h-full flex items-center gap-[5px] pl-[14px] pr-[10px] whitespace-nowrap cursor-pointer",
+            "effort-pill-collapsed h-full flex items-center px-[7px] cursor-pointer",
             expanded ? "hidden" : "",
           ].join(" ")}
           onClick={() => setExpanded(true)}
@@ -290,9 +243,6 @@ const ThinkingEffortSliderPill = React.forwardRef<
             className="effort-pill-compact-icon text-[var(--slider-active-solid)]"
             aria-hidden="true"
           />
-          <span className="effort-pill-collapsed-label">
-            Effort: {capEffort(value)}
-          </span>
           <span className="effort-pill-caret text-[var(--slider-active-solid)]">
             <ChevronRightIcon ref={caretRef} size={12} />
           </span>
@@ -302,7 +252,6 @@ const ThinkingEffortSliderPill = React.forwardRef<
             "effort-pill-expanded h-full flex items-center gap-[10px] px-[12px]",
             !expanded ? "hidden" : "",
           ].join(" ")}
-          style={{ width: 260 }}
         >
           <span className="shrink-0 min-w-[56px] text-center text-text-primary">
             {capEffort(value)}
