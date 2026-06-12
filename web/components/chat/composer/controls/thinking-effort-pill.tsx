@@ -122,13 +122,14 @@ const ThinkingEffortSliderPill = React.forwardRef<
     options.findIndex((o) => o.value === value),
   );
   const maxIndex = Math.max(0, options.length - 1);
-  // Effort icon size scales linearly with effort: from 10px at the
-  // `off` end to 18px at `xhigh`. The icon is rendered at the slider
-  // thumb; position and size both encode the current value.
+  // Effort icon size scales linearly with effort: from 14px at the
+  // low end to 22px at `xhigh`. The icon is rendered at the slider
+  // thumb; position and size both encode the current value. `off`
+  // doesn't use it — its thumb is a plain dot, not the biceps.
   const effortIconSize =
     maxIndex > 0
-      ? Math.round(10 + (valueIndex / maxIndex) * 8)
-      : 10;
+      ? Math.round(14 + (valueIndex / maxIndex) * 8)
+      : 14;
   // Warm hue per effort level. NOT the project `--accent-*` tokens —
   // those are deliberately muted/earthy (`--accent-orange` is a
   // brownish #b8651f, `--accent-yellow` reads as dirt-yellow), which
@@ -310,24 +311,24 @@ const ThinkingEffortSliderPill = React.forwardRef<
             }}
             onClick={(e) => e.stopPropagation()}
             thumb={
-              <>
-                {/* Borderless mask in the pill's own bg — hides the track
-                    behind the stroke icon without reading as a ring. */}
+              value === "off" ? (
+                // No effort → no muscle. A plain dot, slightly larger
+                // than the track's tick dots, marks the off position.
                 <span
                   aria-hidden="true"
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover transition-[width,height] duration-150 ease-out"
-                  style={{
-                    width: effortIconSize + 8,
-                    height: effortIconSize + 8,
-                  }}
+                  className="absolute left-1/2 top-1/2 size-[10px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--slider-active-solid)] pointer-events-none"
                 />
+              ) : (
+                // Solid-filled glyph: the fill itself masks the track
+                // behind the thumb (see .effort-pill-thumb-icon), so no
+                // backing disc is needed.
                 <BicepsFlexedIcon
                   ref={effortIconThumbRef}
                   size={effortIconSize}
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active-solid)] pointer-events-none transition-[width,height] duration-150 ease-out"
+                  className="effort-pill-thumb-icon absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active-solid)] pointer-events-none transition-[width,height] duration-150 ease-out"
                   aria-hidden="true"
                 />
-              </>
+              )
             }
             className="flex-1"
           />
