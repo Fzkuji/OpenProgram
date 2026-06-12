@@ -11,3 +11,5 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`revert-layers.md`](revert-layers.md)
 - [`runtime.md`](runtime.md)
 - [`streaming-resume.md`](streaming-resume.md)
+- [`user-input-requests.md`](user-input-requests.md) — pause a running function to ask the user (`runtime.ask`/`confirm`), question registry + WS/REST protocol + subprocess bridge
+- [`user-input-requests-references.md`](user-input-requests-references.md)
