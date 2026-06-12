@@ -44,10 +44,15 @@ references/claude-code-leaked/
 references/pi-mono/
 references/opencode/
 
-# In-tree program clones — separate repos installed via
-# `openprogram programs install <name>` into functions/agentics/.
-# They're independent git checkouts, not part of this repo's tree.
-openprogram/functions/agentics/*-Agent-Harness/
+# In-tree harness installs — independent git checkouts (or dev
+# symlinks) placed into functions/agentics/ by
+# `openprogram programs install <name|git-url>`. Any name is possible
+# for third-party harnesses, so ignore every untracked entry there
+# except new .py files; tracked bundled functions are unaffected
+# (gitignore only hides untracked paths). When adding a NEW bundled
+# function directory, `git add -f` it once.
+openprogram/functions/agentics/*
+!openprogram/functions/agentics/*.py
 
 # Local OpenProgram runtime state
 .openprogram/

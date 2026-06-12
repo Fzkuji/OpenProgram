@@ -17,10 +17,14 @@ openprogram programs install research      # light (no extra deps)
 openprogram programs install gui           # heavy (pulls torch/opencv)
 openprogram programs available             # list + install status
 
-# Any third-party harness — just clone it into the agentics folder:
-git clone <repo-url> "<AGENTICS>/<Harness-Name>"
-pip install -r "<AGENTICS>/<Harness-Name>/requirements.txt"   # if it has one
+# Any third-party harness — same one command, by git source:
+openprogram programs install https://github.com/<owner>/<Harness-Name>
+openprogram programs install <owner>/<Harness-Name>          # GitHub shorthand
 # …restart OpenProgram. Done — its functions self-register.
+
+# (Manual equivalent, e.g. when there's no network access to GitHub:)
+git clone <repo-url> "<AGENTICS>/<Harness-Name>"
+pip install "<AGENTICS>/<Harness-Name>"   # or its requirements.txt
 ```
 
 `<AGENTICS>` is OpenProgram's bundled-functions folder. Find it with:
@@ -97,6 +101,17 @@ The three first-party harnesses (GUI / Research / Wiki) all follow this
 exact shape — read any of them as a working template for your own.
 
 ## Step-by-step: install a third-party harness
+
+0. **The short way** — one command does everything below (clone, deps,
+   contract check):
+
+   ```bash
+   openprogram programs install https://github.com/<owner>/<Harness-Name>
+   ```
+
+   Uninstall by clone-dir name: `openprogram programs uninstall
+   <Harness-Name>`. The manual steps that follow are the equivalent
+   procedure (useful when cloning from a mirror or a local path).
 
 1. **Locate the agentics folder** (the one-liner above). Call it `<AGENTICS>`.
 

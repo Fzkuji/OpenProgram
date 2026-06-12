@@ -130,7 +130,8 @@ def _cmd_list():
 # ---------------------------------------------------------------------------
 
 def _print_programs_status() -> None:
-    """Print the install status of every catalogued program."""
+    """Print the install status of every catalogued program, then any
+    third-party harnesses found in functions/agentics/."""
     from openprogram.functions._programs import KNOWN_PROGRAMS
 
     print(f"\nPrograms ({len(KNOWN_PROGRAMS)}):\n")
@@ -143,6 +144,42 @@ def _print_programs_status() -> None:
             status = f"available — openprogram programs install {p.extra}"
         print(f"  {p.function:24s}  [{status}]")
         print(f"  {'':24s}  {p.summary}")
+
+    third_party = list(_iter_third_party_harnesses())
+    if third_party:
+        print(f"\nThird-party harnesses ({len(third_party)}):\n")
+        for name, pkg in third_party:
+            status = "ok" if pkg else "package contract NOT satisfied"
+            print(f"  {name:24s}  [{status}]"
+                  + (f"  (package: {os.path.basename(pkg)})" if pkg else ""))
+
+
+def _iter_third_party_harnesses():
+    """Yield (dir_name, package_dir_or_None) for every non-first-party
+    harness directory (or dev symlink) under functions/agentics/."""
+    from openprogram.functions._programs import KNOWN_PROGRAMS, agentics_dir
+    from openprogram.functions._registry import (
+        _NOT_A_HARNESS, _find_python_package,
+    )
+
+    base = agentics_dir()
+    if not base or not os.path.isdir(base):
+        return
+    first_party = {p.repo_dir_name for p in KNOWN_PROGRAMS}
+    for name in sorted(os.listdir(base)):
+        if name.startswith(".") or name in _NOT_A_HARNESS or name in first_party:
+            continue
+        path = os.path.join(base, name)
+        target = os.path.realpath(path)
+        if not os.path.isdir(target):
+            continue
+        if not (os.path.isdir(os.path.join(target, ".git"))
+                or os.path.islink(path)):
+            # Bundled single-function dirs (ask_user, ...) are tracked
+            # packages, not harness clones — a harness arrives as a git
+            # clone or a dev symlink.
+            continue
+        yield name, _find_python_package(target)
 
 
 def _cmd_programs_available() -> None:
@@ -194,6 +231,107 @@ def _preinstall_cpu_torch_if_no_gpu() -> None:
               "the default (CUDA) wheel.")
 
 
+def _looks_like_git_ref(name: str) -> bool:
+    """True when the install selector is a git source rather than a
+    first-party program name: a full URL (https/ssh/git/file) or a
+    GitHub ``owner/repo`` shorthand."""
+    if name.startswith(("http://", "https://", "git@", "ssh://", "file://")):
+        return True
+    return name.count("/") == 1 and " " not in name and not name.startswith("/")
+
+
+def _normalize_git_ref(ref: str) -> str:
+    """Expand ``owner/repo`` shorthand to a GitHub HTTPS URL."""
+    if ref.startswith(("http://", "https://", "git@", "ssh://", "file://")):
+        return ref
+    return f"https://github.com/{ref}"
+
+
+def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
+    """Install ANY harness repo by URL — same flow as first-party programs.
+
+    Clone into ``functions/agentics/<Repo-Name>/``, install the repo's
+    own declared deps (its pyproject/setup.py, else requirements.txt),
+    then verify the harness contract (an importable package exposing
+    ``<pkg>/agentics/__init__.py`` — see docs/installing-harnesses.md).
+    The clone auto-registers on next launch via directory discovery; no
+    catalogue edit is needed.
+    """
+    import subprocess
+    from openprogram.functions._programs import agentics_dir
+    from openprogram.functions._registry import _find_python_package
+
+    base = agentics_dir()
+    if not base or not os.path.isdir(base):
+        print(f"Cannot locate functions/agentics directory ({base!r}).")
+        sys.exit(1)
+
+    url = _normalize_git_ref(ref)
+    repo_name = url.rstrip("/").split("/")[-1]
+    if repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+    dest = os.path.join(base, repo_name)
+
+    if os.path.islink(dest):
+        print(f"[skip] {repo_name}: {dest} is a dev symlink — managed by "
+              f"you, not the installer. Remove it first to install a clone.")
+        return
+    already = os.path.isdir(os.path.join(dest, ".git"))
+    if os.path.isdir(dest) and not already:
+        print(f"[x] {repo_name}: {dest} exists but is not a git clone — "
+              f"refusing to touch it.")
+        sys.exit(1)
+
+    if already and not upgrade:
+        print(f"[ok] {repo_name}: already cloned at {dest} "
+              f"(re-run with --upgrade to pull latest).")
+    elif already and upgrade:
+        print(f"\n[upgrade] {repo_name} <- {url}")
+        rc = subprocess.call(["git", "-C", dest, "pull", "--ff-only"])
+        if rc != 0:
+            print(f"[x] {repo_name}: git pull failed (exit {rc}).")
+            sys.exit(1)
+    else:
+        print(f"\n[install] {repo_name} -> {dest}")
+        rc = subprocess.call(
+            ["git", "clone", "--depth", "1", url, dest])
+        if rc != 0:
+            print(f"[x] {repo_name}: git clone failed (exit {rc}).")
+            sys.exit(1)
+
+    # The harness is self-describing: prefer its pyproject/setup.py,
+    # fall back to requirements.txt. (Same rule as first-party — and the
+    # harness must NOT declare openprogram itself; see the contract.)
+    if os.path.isfile(os.path.join(dest, "pyproject.toml")) \
+            or os.path.isfile(os.path.join(dest, "setup.py")):
+        dep_cmd = [sys.executable, "-m", "pip", "install"]
+        if upgrade:
+            dep_cmd.append("--upgrade")
+        dep_cmd.append(dest)
+        if subprocess.call(dep_cmd) != 0:
+            print(f"[!] {repo_name}: cloned but installing its declared "
+                  f"dependencies failed. It may not run until they're "
+                  f"present — see the harness README.")
+    elif os.path.isfile(os.path.join(dest, "requirements.txt")):
+        if subprocess.call([
+            sys.executable, "-m", "pip", "install", "-r",
+            os.path.join(dest, "requirements.txt"),
+        ]) != 0:
+            print(f"[!] {repo_name}: cloned but requirements.txt install "
+                  f"failed — see the harness README.")
+
+    pkg = _find_python_package(dest)
+    if pkg:
+        print(f"[ok] {repo_name} installed at {dest} "
+              f"(package: {os.path.basename(pkg)}). "
+              f"It will register on next launch.")
+    else:
+        print(f"[!] {repo_name}: cloned, but no package with an "
+              f"agentics/__init__.py was found — it will NOT register. "
+              f"The harness contract is described in "
+              f"docs/installing-harnesses.md.")
+
+
 def _cmd_install(name: str, *, upgrade: bool = False) -> None:
     """Install one (or all) program(s) by cloning into functions/agentics/.
 
@@ -203,15 +341,24 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
     pull their native deps from the matching ``openprogram[<extra>]``
     group. The clone is git-ignored by the parent repo, so it stays an
     independent checkout you can ``git pull`` / edit in place.
+
+    Third-party harnesses install the same way by git source:
+    ``openprogram programs install https://github.com/owner/Some-Harness``
+    (or the ``owner/Some-Harness`` shorthand).
     """
     import subprocess
     from openprogram.functions._programs import agentics_dir
+
+    if _looks_like_git_ref(name):
+        _install_third_party(name, upgrade=upgrade)
+        return
 
     progs = _resolve_programs(name)
     if not progs:
         from openprogram.functions._programs import KNOWN_PROGRAMS
         opts = ", ".join(p.extra for p in KNOWN_PROGRAMS) + ", all"
-        print(f"Unknown program: {name!r}. Choices: {opts}")
+        print(f"Unknown program: {name!r}. Choices: {opts}, "
+              f"or a git URL / owner/repo for third-party harnesses.")
         sys.exit(1)
 
     base = agentics_dir()
@@ -285,13 +432,34 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
 
 
 def _cmd_uninstall(name: str) -> None:
-    """Uninstall one (or all) program(s) — remove the in-tree clone."""
+    """Uninstall one (or all) program(s) — remove the in-tree clone.
+
+    Third-party harnesses are addressed by their clone-dir name
+    (``openprogram programs uninstall Some-Harness``)."""
     import shutil
     from openprogram.functions._programs import agentics_dir
 
     progs = _resolve_programs(name)
     if not progs:
-        print(f"Unknown program: {name!r}")
+        # Third-party harness: address by clone-dir name under agentics/.
+        third_party = dict(_iter_third_party_harnesses())
+        if name in third_party:
+            base = agentics_dir()
+            dest = os.path.join(base, name)
+            if os.path.islink(dest):
+                os.unlink(dest)
+                print(f"[ok] {name}: dev symlink removed ({dest}); "
+                      f"the linked checkout itself is untouched.")
+            else:
+                try:
+                    shutil.rmtree(dest)
+                    print(f"[ok] {name} removed ({dest}).")
+                except OSError as e:
+                    print(f"[x] {name}: could not remove {dest}: {e}")
+            return
+        print(f"Unknown program: {name!r}. First-party: gui/research/wiki; "
+              f"third-party harnesses by clone-dir name "
+              f"(see `openprogram programs available`).")
         sys.exit(1)
     base = agentics_dir()
     for prog in progs:

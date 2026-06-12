@@ -23,18 +23,24 @@ code right next to the bundled agentic functions:
     symlinks pointing at the author's ``/Users/.../Documents/...`` which
     were dead on every other machine).
 
-Each repo's top-level ``<package>/__init__`` imports its
-``@agentic_function`` entry point, so simply *importing the package*
-fires the decorator and self-registers the function into the shared
-registry. :func:`import_installed_programs` puts each clone's directory
-on ``sys.path`` and imports it at registry-load time; missing ones are
-skipped silently.
+The registration contract is the ``agentics`` SUB-package, not the
+top-level package: :func:`import_installed_programs` puts each clone's
+directory on ``sys.path`` and imports ``<package>.agentics`` at
+registry-load time — importing it fires the ``@agentic_function``
+decorators, which self-register into the shared registry. The top-level
+``<package>/__init__`` is deliberately NOT the entry point and must stay
+dependency-light: discovery imports it (as the parent) on every startup,
+including on machines without the harness's optional deps. Missing
+programs are skipped silently. (Same contract as third-party harnesses —
+see ``docs/installing-harnesses.md``.)
 
 Install / remove with::
 
     openprogram programs install gui      # git clone into functions/agentics/
     openprogram programs install all
+    openprogram programs install https://github.com/owner/Some-Harness
     openprogram programs uninstall wiki
+    openprogram programs uninstall Some-Harness
 
 The clone directories are git-ignored by the parent repo (see
 ``.gitignore``) — they remain independent checkouts of their own repos.
