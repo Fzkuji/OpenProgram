@@ -23,9 +23,8 @@ import { Slider } from "@/components/ui/slider";
 import {
   type AnimatedNavIconHandle,
   BicepsFlexedIcon,
+  ChevronRightIcon,
 } from "@/components/animated-icons";
-
-import { CaretIcon } from "../icons";
 
 const capEffort = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
@@ -177,6 +176,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // pattern as the sidebar nav rows.
   const effortIconChipRef = useRef<AnimatedNavIconHandle>(null);
   const effortIconThumbRef = useRef<AnimatedNavIconHandle>(null);
+  const caretRef = useRef<AnimatedNavIconHandle>(null);
   const [collapsedWidth, setCollapsedWidth] = useState<number>(120);
   // `measured` gates the width transition. On first mount the pill
   // renders at the 120px placeholder (also what SSR ships), then the
@@ -211,12 +211,14 @@ const ThinkingEffortSliderPill = React.forwardRef<
         onMouseEnter?.(e);
         effortIconChipRef.current?.startAnimation?.();
         effortIconThumbRef.current?.startAnimation?.();
+        caretRef.current?.startAnimation?.();
       }}
       onMouseLeave={(e) => {
         onMouseLeave?.(e);
         setExpanded(false);
         effortIconChipRef.current?.stopAnimation?.();
         effortIconThumbRef.current?.stopAnimation?.();
+        caretRef.current?.stopAnimation?.();
       }}
     >
       {/* Invisible spacer reserves the collapsed pill width in the flex
@@ -231,7 +233,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
         className="effort-pill-spacer invisible inline-flex shrink-0 items-center gap-[5px] pl-[14px] pr-[10px] text-[14px] whitespace-nowrap"
       >
         <span>Effort: {capEffort(value)}</span>
-        <CaretIcon />
+        <ChevronRightIcon size={12} />
       </span>
 
       {/* Visible pill. It stays in the bottom row and expands to the right. */}
@@ -282,7 +284,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
             Effort: {capEffort(value)}
           </span>
           <span className="effort-pill-caret">
-            <CaretIcon />
+            <ChevronRightIcon ref={caretRef} size={12} />
           </span>
         </div>
         <div

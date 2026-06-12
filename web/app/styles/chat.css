@@ -1486,6 +1486,13 @@
   display: none;
 }
 
+/* The animated ChevronRightIcon draws at 24-viewBox / stroke 2; scaled
+   to 12px the line thins to 1px — 3 brings it back to ~1.5px rendered. */
+.effort-pill-caret svg,
+.effort-pill-spacer svg {
+  stroke-width: 3;
+}
+
 /* Narrow composer row → drop the token-usage pill entirely instead of
    letting it clip past the right edge (the previous behavior showed
    half a "5.1k in" pill cut off mid-character). */
@@ -1520,7 +1527,7 @@
   /* Compact collapsed pill mirrors the tool chips: icon pinned left in
      a 32px circle; hovering widens the pill and slides the caret out
      the right edge (the chips do the same with their ×). Click opens
-     the slider. 7 + 18 + 7 = 32 collapsed; 7 + 18 + 4 + 10 + 7 = 46
+     the slider. 7 + 18 + 7 = 32 collapsed; 7 + 18 + 4 + 12 + 7 = 48
      hovered. */
   .effort-pill-collapsed {
     position: relative;
@@ -1560,12 +1567,16 @@
     flex-shrink: 0;
   }
 
+  .effort-pill-caret > div {
+    flex-shrink: 0;
+  }
+
   .effort-pill-shell:not([data-expanded="true"]):hover {
-    width: 46px !important;
+    width: 48px !important;
   }
 
   .effort-pill-shell:not([data-expanded="true"]):hover .effort-pill-caret {
-    width: 10px;
+    width: 12px;
     margin-left: 4px;
     opacity: 1;
   }

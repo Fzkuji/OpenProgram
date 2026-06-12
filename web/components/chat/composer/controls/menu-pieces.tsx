@@ -17,8 +17,11 @@ import {
 } from "react";
 
 import styles from "../composer.module.css";
-import { ChipCloseIcon } from "../icons";
-import { CheckIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
+import {
+  CheckIcon,
+  XIcon,
+  type AnimatedNavIconHandle,
+} from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
 
 /**
@@ -63,20 +66,29 @@ export const ToolChip = forwardRef<HTMLDivElement, ToolChipProps>(function ToolC
 ) {
   const { text } = useTranslation();
   const { node, onMouseEnter, onMouseLeave } = useHoverDrivenIcon(icon);
+  // The × that slides out on hover is the animated XIcon, driven from
+  // the same chip hover as the main glyph.
+  const closeRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
       ref={ref}
       {...rest}
       className={`${styles.toolChip} ${on ? "" : styles.toolChipOff}`}
       onClick={onToggle}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      onMouseEnter={() => {
+        onMouseEnter();
+        closeRef.current?.startAnimation?.();
+      }}
+      onMouseLeave={() => {
+        onMouseLeave();
+        closeRef.current?.stopAnimation?.();
+      }}
       aria-label={label}
     >
       <span className={styles.toolChipIcon}>{node}</span>
       {on && (
         <span className={styles.toolChipClose} aria-label={text("Turn off", "关闭")}>
-          <ChipCloseIcon />
+          <XIcon ref={closeRef} size={12} />
         </span>
       )}
     </div>

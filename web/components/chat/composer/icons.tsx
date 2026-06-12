@@ -9,9 +9,10 @@
  * own hover suffices (uncontrolled). Per project rule we never
  * hand-author icon SVGs.
  *
- * Send / Stop / Check / ChipClose / Caret stay local: they're the
- * send-button glyphs + tiny indicators (filled / CSS-coloured, or
- * micro-glyphs), not part of the animated line-icon family.
+ * Send / Stop stay local: they're the send-button glyphs (filled /
+ * CSS-coloured), not part of the animated line-icon family. The chip ×
+ * and the effort caret use the animated XIcon / ChevronRightIcon
+ * directly from ``@/components/animated-icons``.
  */
 "use client";
 
@@ -96,39 +97,3 @@ export function StopIcon() {
   );
 }
 
-export function ChipCloseIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-    >
-      <line x1="3" y1="3" x2="9" y2="9" />
-      <line x1="9" y1="3" x2="3" y2="9" />
-    </svg>
-  );
-}
-
-export function CaretIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="10"
-      height="10"
-      viewBox="0 0 10 10"
-    >
-      <path
-        d="M2 3.5L5 6.5L8 3.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}

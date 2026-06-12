@@ -589,6 +589,16 @@
   margin-left: 4px;
   opacity: 1;
 }
+/* The animated XIcon draws at 24-viewBox / stroke 2; scaled to 12px the
+   line thins to 1px. 3 brings it back to ~1.5px rendered, matching the
+   weight of the chip's main glyph. The icon's wrapper div must not
+   flex-shrink inside the max-width-animated span. */
+.toolChipClose svg {
+  stroke-width: 3;
+}
+.toolChipClose > div {
+  flex-shrink: 0;
+}
 /* Disabled tool: muted circle, no accent, no × — click turns it on.
    Stays a fixed circle on hover (no width-expand, since there's no ×). */
 .toolChipOff {
