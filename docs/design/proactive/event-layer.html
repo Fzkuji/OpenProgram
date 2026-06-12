@@ -46,8 +46,7 @@ main{margin-left:200px; padding:0 56px 120px}
 .wrap{max-width:1080px; margin:0 auto}
 
 /* ── 通用 ── */
-section{padding-top:84px; opacity:0; transform:translateY(18px); transition:opacity .7s ease, transform .7s ease}
-section.in{opacity:1; transform:none}
+section{padding-top:84px}
 .kicker{font-family:var(--mono); font-size:11px; letter-spacing:.28em; color:var(--cyan); margin-bottom:10px}
 .kicker.v{color:var(--violet)} .kicker.a{color:var(--amber)}
 h2{font-family:var(--serif); font-weight:900; font-size:30px; letter-spacing:.04em; margin-bottom:18px}
@@ -524,8 +523,6 @@ footer a{color:var(--cyan); text-decoration:none}
 </div></main>
 
 <script>
-const io = new IntersectionObserver(es => es.forEach(e => { if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} }), {threshold:.08});
-document.querySelectorAll('section').forEach(s => io.observe(s));
 document.querySelector('header.hero').style.cssText = 'opacity:0;transform:translateY(18px)';
 requestAnimationFrame(()=>{ const h=document.querySelector('header.hero'); h.style.transition='opacity .8s ease, transform .8s ease'; h.style.opacity=1; h.style.transform='none'; });
 </script>

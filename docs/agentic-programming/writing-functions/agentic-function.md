@@ -71,7 +71,7 @@ be passed directly into `tools=[...]`.
 The decorator fields (`expose`, `render_range`, `input`, `no_tools`,
 `system`, `workdir_mode`, …) are documented in **one place**:
 [`function-metadata.md`](function-metadata.md) §3. The API reference at
-[`../api/agentic_function.md`](../api/agentic_function.md) carries
+[`../api/agentic_function.md`](../../api/agentic_function.md) carries
 the same table for quick lookup.
 
 This page covers usage *patterns*; it intentionally does not duplicate

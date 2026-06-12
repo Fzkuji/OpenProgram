@@ -22,12 +22,12 @@ tutorial will not teach you. **Read this before writing functions.**
 | File | Purpose |
 |---|---|
 | [`agentic-programming/README.md`](agentic-programming/README.md) | Guide index + learning path |
-| [`agentic-programming/agentic-function.md`](agentic-programming/agentic-function.md) | `@agentic_function` usage patterns |
-| [`agentic-programming/function-metadata.md`](agentic-programming/function-metadata.md) | Function metadata — source of truth |
-| [`agentic-programming/code-call.md`](agentic-programming/code-call.md) | Fixed-order sub-function pipelines |
-| [`agentic-programming/tool-calling.md`](agentic-programming/tool-calling.md) | Provider-native tool-use loop |
-| [`agentic-programming/next-step-decision.md`](agentic-programming/next-step-decision.md) | `decision.make` / `exec(choices=)` — LLM picks the next step |
-| [`agentic-programming/pure-python.md`](agentic-programming/pure-python.md) | Plain Python helpers (no LLM) |
+| [`agentic-programming/writing-functions/agentic-function.md`](agentic-programming/writing-functions/agentic-function.md) | `@agentic_function` usage patterns |
+| [`agentic-programming/writing-functions/function-metadata.md`](agentic-programming/writing-functions/function-metadata.md) | Function metadata — source of truth |
+| [`agentic-programming/choosing-the-next-step/fixed-order-calls.md`](agentic-programming/choosing-the-next-step/fixed-order-calls.md) | Fixed-order sub-function pipelines |
+| [`agentic-programming/choosing-the-next-step/tool-calling.md`](agentic-programming/choosing-the-next-step/tool-calling.md) | Provider-native tool-use loop |
+| [`agentic-programming/choosing-the-next-step/next-step-decision.md`](agentic-programming/choosing-the-next-step/next-step-decision.md) | `decision.make` / `exec(choices=)` — LLM picks the next step |
+| [`agentic-programming/writing-functions/pure-python.md`](agentic-programming/writing-functions/pure-python.md) | Plain Python helpers (no LLM) |
 
 ## API reference
 

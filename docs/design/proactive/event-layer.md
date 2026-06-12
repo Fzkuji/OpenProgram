@@ -88,29 +88,9 @@ class EventBus:
 
 ## 6. 框架图
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  Worker 进程（单进程，多 daemon 线程）                                      │
-│                                                                            │
-│   事件源 ── emit ──┐                                                        │
-│   agent loop · task runner   (A类)                                         │
-│   auth · context · channels · memory  (B类)                                │
-│                    │                                                        │
-│                    ▼                                                        │
-│        ╔═══════════════════════════════════╗                               │
-│        ║  EventBus（进程级单例）            ║                               │
-│        ║  emit(Event) / subscribe(types=)  ║                               │
-│        ╚═══════════════════════════════════╝                               │
-│            │ 观察(异步)            │ 拦截(同步,仅 tool.before)              │
-│      ┌─────┴─────┐                ▼                                         │
-│      ▼           ▼          tool.before 问询点                             │
-│  webui server  proactive    → 复用 _approval 拦/确认                        │
-│  →转发前端WS   (消费者)                                                     │
-│      │                                                                      │
-└──────┼─────────────────────────────────────────────────────────────────── ┘
-       ▼  WebSocket
-   前端 / TUI
-```
+![事件层架构图](diagrams/event-layer-architecture.svg)
+
+> 交互版（带事件流动画的完整可视化页面）：[`event-layer.html`](event-layer.html)
 
 - 总线是唯一枢纽：源和消费者互不认识，只认总线——这就是"统一"。
 - webui 和 proactive 都只是**消费者**，平级。proactive 不在事件层里面，是它之上的应用——

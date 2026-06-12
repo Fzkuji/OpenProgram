@@ -3,7 +3,7 @@
 This document describes how, within one model call, the LLM "chooses" on
 every round — pick a function to run, or emit text and finish.
 
-> Companion doc: [`function-calling-unification.md`](../design/function/function-calling-unification.md)
+> Companion doc: [`function-calling-unification.md`](../../design/function/function-calling-unification.md)
 > covers the design of the whole function-calling framework — the
 > `@function` / `@agentic_function` decorators, the shared registry, 6-layer
 > gating, deferred loading, etc. This page only covers the loop mechanics of

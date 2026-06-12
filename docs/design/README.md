@@ -133,7 +133,7 @@ Historical audits, demos, and superseded docs live in
   past a couple of files.
 - Each group lists the *current* source first; supporting notes follow.
 - API reference belongs under `docs/api/`; design rationale belongs here.
-- For function-authoring rules, `../agentic-programming/function-metadata.md` is
+- For function-authoring rules, `../agentic-programming/writing-functions/function-metadata.md` is
   the source of truth — shorter files link to it rather than repeating it.
 - The decorator field is `render_range={"callers": N, "subcalls": M}` —
   `callers` caps pre-frame nodes by seq, `subcalls` caps in-frame nodes by seq.
