@@ -1914,6 +1914,86 @@ export const MonitorCheckIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIco
 );
 MonitorCheckIcon.displayName = "MonitorCheckIcon";
 
+// ─── flame (Effort pill — thinking-effort level) ─────────────────────
+// Carried verbatim from pqoqubbw/icons (icons/flame.tsx): the flame
+// outline draws itself on hover.
+const FLAME_VARIANTS: Variants = {
+  normal: {
+    pathLength: 1,
+    opacity: 1,
+    pathOffset: 0,
+  },
+  animate: {
+    opacity: [0, 1],
+    pathLength: [0, 1],
+    transition: {
+      delay: 0.1,
+      duration: 0.4,
+      opacity: { duration: 0.1, delay: 0.1 },
+    },
+  },
+};
+
+export const FlameIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={controls}
+            d="M8.9 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
+            fill="none"
+            initial="normal"
+            variants={FLAME_VARIANTS}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+FlameIcon.displayName = "FlameIcon";
+
 // ─── folder-open (Project chip — working folder) ────────────────────
 // Carried from pqoqubbw/icons (icons/folder-open.tsx): the folder lid
 // wobbles on hover.

@@ -18,7 +18,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Slider } from "@/components/ui/slider";
-import { Flame } from "@phosphor-icons/react/dist/ssr";
+import {
+  type AnimatedNavIconHandle,
+  FlameIcon,
+} from "@/components/animated-icons";
 
 import { CaretIcon } from "../icons";
 
@@ -54,9 +57,8 @@ export const ThinkingEffortPill = React.forwardRef<
         className="effort-pill-fixed inline-flex h-[32px] items-center gap-[5px] rounded-full pl-[14px] pr-[14px] text-[14px] text-text-primary select-none whitespace-nowrap"
         style={{ backgroundColor: "var(--effort-off-bg)" }}
       >
-        <Flame
+        <FlameIcon
           size={18}
-          weight="fill"
           className="effort-pill-compact-icon text-text-primary"
           aria-hidden="true"
         />
@@ -149,6 +151,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // footprint regardless of label text — `effort: xhigh` left a
   // ~30px trailing gap. Re-measures whenever the value changes.
   const spacerRef = useRef<HTMLSpanElement>(null);
+  // Flame icons (collapsed chip + slider thumb) are pqoqubbw animated
+  // icons, driven from the pill host's hover — same controlled-ref
+  // pattern as the sidebar nav rows.
+  const flameChipRef = useRef<AnimatedNavIconHandle>(null);
+  const flameThumbRef = useRef<AnimatedNavIconHandle>(null);
   const [collapsedWidth, setCollapsedWidth] = useState<number>(120);
   // `measured` gates the width transition. On first mount the pill
   // renders at the 120px placeholder (also what SSR ships), then the
@@ -178,8 +185,16 @@ const ThinkingEffortSliderPill = React.forwardRef<
       ref={ref}
       className="effort-pill-host relative inline-flex h-[32px] items-center"
       data-effort-expanded={expanded ? "true" : undefined}
-      onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
+      onMouseEnter={() => {
+        setExpanded(true);
+        flameChipRef.current?.startAnimation?.();
+        flameThumbRef.current?.startAnimation?.();
+      }}
+      onMouseLeave={() => {
+        setExpanded(false);
+        flameChipRef.current?.stopAnimation?.();
+        flameThumbRef.current?.stopAnimation?.();
+      }}
     >
       {/* Invisible spacer reserves the collapsed pill width in the flex
           layout. It mirrors the collapsed pill content exactly. */}
@@ -233,9 +248,9 @@ const ThinkingEffortSliderPill = React.forwardRef<
             expanded ? "hidden" : "",
           ].join(" ")}
         >
-          <Flame
+          <FlameIcon
+            ref={flameChipRef}
             size={18}
-            weight="fill"
             className="effort-pill-compact-icon text-[var(--slider-active-solid)]"
             aria-hidden="true"
           />
@@ -278,9 +293,9 @@ const ThinkingEffortSliderPill = React.forwardRef<
                     height: flameSize + 8,
                   }}
                 />
-                <Flame
+                <FlameIcon
+                  ref={flameThumbRef}
                   size={flameSize}
-                  weight="fill"
                   className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active-solid)] pointer-events-none transition-[width,height] duration-150 ease-out"
                   aria-hidden="true"
                 />
