@@ -3472,3 +3472,474 @@ export const FolderPlusIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconP
   },
 );
 FolderPlusIcon.displayName = "FolderPlusIcon";
+
+// ─── box (function-card icon choice — the default 'package') ─────────
+const BOX_PATH_VARIANTS: Variants = {
+  normal: {
+    opacity: 1,
+    pathLength: 1,
+    transition: {
+      duration: 0.3,
+      opacity: { duration: 0.1 },
+    },
+  },
+  animate: {
+    opacity: [0, 1],
+    pathLength: [0, 1],
+    transition: {
+      duration: 0.4,
+      opacity: { duration: 0.1 },
+    },
+  },
+};
+
+export const BoxIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={controls}
+            d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"
+            initial="normal"
+            variants={BOX_PATH_VARIANTS}
+          />
+          <motion.path
+            animate={controls}
+            d="m3.3 7 8.7 5 8.7-5"
+            initial="normal"
+            variants={BOX_PATH_VARIANTS}
+          />
+          <motion.path
+            animate={controls}
+            d="M12 22V12"
+            initial="normal"
+            variants={BOX_PATH_VARIANTS}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+BoxIcon.displayName = "BoxIcon";
+
+// ─── bot (function-card icon choice) ─────────────────────────────────
+export const BotIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M12 8V4H8" />
+          <rect height="12" rx="2" width="16" x="4" y="8" />
+          <path d="M2 14h2" />
+          <path d="M20 14h2" />
+          <motion.line
+            animate={controls}
+            initial="normal"
+            variants={{
+              normal: { y1: 13, y2: 15 },
+              animate: {
+                y1: [13, 14, 13],
+                y2: [15, 14, 15],
+                transition: {
+                  duration: 0.5,
+                  ease: "easeInOut",
+                  delay: 0.2,
+                },
+              },
+            }}
+            x1={15}
+            x2={15}
+          />
+          <motion.line
+            animate={controls}
+            initial="normal"
+            variants={{
+              normal: { y1: 13, y2: 15 },
+              animate: {
+                y1: [13, 14, 13],
+                y2: [15, 14, 15],
+                transition: {
+                  duration: 0.5,
+                  ease: "easeInOut",
+                  delay: 0.2,
+                },
+              },
+            }}
+            x1={9}
+            x2={9}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+BotIcon.displayName = "BotIcon";
+
+// ─── flame (function-card icon choice) ───────────────────────────────
+const FLAME_PATH_VARIANTS: Variants = {
+  normal: {
+    pathLength: 1,
+    opacity: 1,
+    pathOffset: 0,
+  },
+  animate: {
+    opacity: [0, 1],
+    pathLength: [0, 1],
+    transition: {
+      delay: 0.1,
+      duration: 0.4,
+      opacity: { duration: 0.1, delay: 0.1 },
+    },
+  },
+};
+
+export const FlameIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={controls}
+            d="M8.9 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
+            fill="none"
+            initial="normal"
+            variants={FLAME_PATH_VARIANTS}
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+FlameIcon.displayName = "FlameIcon";
+
+// ─── rocket (function-card icon choice) ──────────────────────────────
+const ROCKET_VARIANTS: Variants = {
+  normal: {
+    x: 0,
+    y: 0,
+  },
+  animate: {
+    x: [0, 0, -3, 2, -2, 1, -1, 0],
+    y: [0, -3, 0, -2, -3, -1, -2, 0],
+    transition: {
+      duration: 6,
+      ease: "easeInOut",
+      repeat: Number.POSITIVE_INFINITY,
+      repeatType: "reverse",
+      times: [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1],
+    },
+  },
+};
+
+const ROCKET_FIRE_VARIANTS: Variants = {
+  normal: {
+    d: "M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z",
+  },
+  animate: {
+    d: [
+      "M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z",
+      "M4.5 16.5c-1.5 1.26-3 5.5-3 5.5s4.74-1 6-2.5c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z",
+      "M4.5 16.5c-1.5 1.26-2.2 4.8-2.2 4.8s3.94-0.3 5.2-1.8c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z",
+      "M4.5 16.5c-1.5 1.26-2.8 5.2-2.8 5.2s4.54-0.7 5.8-2.2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z",
+      "M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z",
+    ],
+    transition: {
+      duration: 2,
+      ease: [0.4, 0, 0.2, 1],
+      repeat: Number.POSITIVE_INFINITY,
+      times: [0, 0.2, 0.5, 0.8, 1],
+    },
+  },
+};
+
+export const RocketIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <motion.svg
+          animate={controls}
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          variants={ROCKET_VARIANTS}
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={controls}
+            d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"
+            variants={ROCKET_FIRE_VARIANTS}
+          />
+          <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+          <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+          <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+        </motion.svg>
+      </div>
+    );
+  },
+);
+RocketIcon.displayName = "RocketIcon";
+
+// ─── chart-column-increasing (function-card icon choice) ─────────────
+const CHART_COLUMN_LINE_VARIANTS: Variants = {
+  visible: { pathLength: 1, opacity: 1 },
+  hidden: { pathLength: 0, opacity: 0 },
+};
+
+export const ChartColumnIncreasingIcon = forwardRef<
+  AnimatedNavIconHandle,
+  AnimatedNavIconProps
+>(({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+  const controls = useAnimation();
+  const isControlledRef = useRef(false);
+
+  useImperativeHandle(ref, () => {
+    isControlledRef.current = true;
+    return {
+      startAnimation: async () => {
+        await controls.start((i) => ({
+          pathLength: 0,
+          opacity: 0,
+          transition: { delay: i * 0.1, duration: 0.3 },
+        }));
+        await controls.start((i) => ({
+          pathLength: 1,
+          opacity: 1,
+          transition: { delay: i * 0.1, duration: 0.3 },
+        }));
+      },
+      stopAnimation: () => controls.start("visible"),
+    };
+  });
+
+  const handleMouseEnter = useCallback(
+    async (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isControlledRef.current) {
+        onMouseEnter?.(e);
+      } else {
+        await controls.start((i) => ({
+          pathLength: 0,
+          opacity: 0,
+          transition: { delay: i * 0.1, duration: 0.3 },
+        }));
+        await controls.start((i) => ({
+          pathLength: 1,
+          opacity: 1,
+          transition: { delay: i * 0.1, duration: 0.3 },
+        }));
+      }
+    },
+    [controls, onMouseEnter],
+  );
+  const handleMouseLeave = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isControlledRef.current) onMouseLeave?.(e);
+      else controls.start("visible");
+    },
+    [controls, onMouseLeave],
+  );
+
+  return (
+    <div
+      className={cn("inline-flex", className)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      {...props}
+    >
+      <svg
+        fill="none"
+        height={size}
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+        viewBox="0 0 24 24"
+        width={size}
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <motion.path
+          animate={controls}
+          custom={1}
+          d="M13 17V9"
+          initial="visible"
+          variants={CHART_COLUMN_LINE_VARIANTS}
+        />
+        <motion.path
+          animate={controls}
+          custom={2}
+          d="M18 17V5"
+          initial="visible"
+          variants={CHART_COLUMN_LINE_VARIANTS}
+        />
+        <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+        <motion.path
+          animate={controls}
+          custom={0}
+          d="M8 17v-3"
+          initial="visible"
+          variants={CHART_COLUMN_LINE_VARIANTS}
+        />
+      </svg>
+    </div>
+  );
+});
+ChartColumnIncreasingIcon.displayName = "ChartColumnIncreasingIcon";

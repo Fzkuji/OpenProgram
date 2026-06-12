@@ -60,8 +60,10 @@
   gap: 6px;
 }
 .btn {
-  font-size: 22px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
   background: var(--bg-tertiary);
   border: 1px solid transparent;
   border-radius: var(--radius);

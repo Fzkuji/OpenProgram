@@ -39,8 +39,12 @@
   border-radius: var(--radius);
   background: var(--bg-primary);
 }
-.cardIconEmoji {
-  line-height: 1;
+.cardIcon svg {
+  display: block;
+}
+.list .cardIcon svg {
+  width: 14px;
+  height: 14px;
 }
 .cardIconEditBtn {
   position: absolute;

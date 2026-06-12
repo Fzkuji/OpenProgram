@@ -7,7 +7,9 @@ import { useTranslation } from "@/lib/i18n";
 import {
   type AnimatedNavIconHandle,
   SquarePenIcon,
+  WrenchIcon,
 } from "@/components/animated-icons";
+import { DEFAULT_ICON, FUNCTION_ICONS, normalizeIcon } from "./icon-picker";
 
 export interface ProgramSummary {
   name: string;
@@ -41,7 +43,9 @@ export function FunctionCard({
 }) {
   const { text } = useTranslation();
   const editIconRef = useRef<AnimatedNavIconHandle>(null);
+  const cardIconRef = useRef<AnimatedNavIconHandle>(null);
   const desc = p.description ? p.description.split(".")[0] : "";
+  const Icon = FUNCTION_ICONS[normalizeIcon(icon)] ?? FUNCTION_ICONS[DEFAULT_ICON];
   return (
     <div
       data-function-card
@@ -50,9 +54,11 @@ export function FunctionCard({
       onDragStart={onDragStart}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      onMouseEnter={() => cardIconRef.current?.startAnimation?.()}
+      onMouseLeave={() => cardIconRef.current?.stopAnimation?.()}
     >
       <div className={styles.cardIcon}>
-        <span className={styles.cardIconEmoji}>{icon}</span>
+        <Icon ref={cardIconRef} size={18} />
         <button
           type="button"
           className={styles.cardIconEditBtn}
@@ -87,10 +93,16 @@ export function FunctionCard({
  *  FunctionCard, minus every interactive affordance: tools are fixed
  *  framework plumbing (no run, no favourite, no icon edit, no drag). */
 export function ToolCard({ name, description }: { name: string; description: string }) {
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
-    <div className={styles.card} style={{ cursor: "default" }}>
+    <div
+      className={styles.card}
+      style={{ cursor: "default" }}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+    >
       <div className={styles.cardIcon}>
-        <span className={styles.cardIconEmoji}>🔧</span>
+        <WrenchIcon ref={iconRef} size={18} />
       </div>
       <div className={styles.cardInfo}>
         <div className={styles.cardName}>{name}</div>

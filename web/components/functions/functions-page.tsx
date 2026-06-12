@@ -33,7 +33,7 @@ import {
 } from "@/components/animated-icons";
 import { CustomSelect } from "./custom-select";
 import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
-import { IconPicker, DEFAULT_ICON } from "./icon-picker";
+import { IconPicker, normalizeIcon } from "./icon-picker";
 import { FunctionCard, ToolCard, cardGridClass, cardListClass } from "./function-card";
 import { useFolderMeta } from "./use-folder-meta";
 import type { FunctionInfo, FunctionsMeta } from "./types";
@@ -555,7 +555,7 @@ export function FunctionsPage() {
                   <FunctionCard
                     key={p.name}
                     p={p}
-                    icon={meta.icons[p.name] || DEFAULT_ICON}
+                    icon={normalizeIcon(meta.icons[p.name])}
                     fav={isFavorite(p.name)}
                     folderName={getFolderForProgram(p.name)}
                     formatDate={formatDate}
@@ -597,7 +597,7 @@ export function FunctionsPage() {
       {iconPickerFor && (
         <IconPicker
           name={iconPickerFor}
-          current={meta.icons[iconPickerFor] || DEFAULT_ICON}
+          current={normalizeIcon(meta.icons[iconPickerFor])}
           onPick={(icon) => applyIcon(iconPickerFor, icon)}
           onClose={() => setIconPickerFor(null)}
         />
