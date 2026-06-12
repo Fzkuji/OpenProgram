@@ -311,9 +311,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
             onClick={(e) => e.stopPropagation()}
             thumb={
               <>
+                {/* Borderless mask in the pill's own bg — hides the track
+                    behind the stroke icon without reading as a ring. */}
                 <span
                   aria-hidden="true"
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover border-[3px] border-[color-mix(in_srgb,var(--text-bright)_40%,transparent)] transition-[width,height] duration-150 ease-out"
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover transition-[width,height] duration-150 ease-out"
                   style={{
                     width: effortIconSize + 8,
                     height: effortIconSize + 8,
