@@ -24,6 +24,7 @@ import traceback
 import uuid
 from typing import Any, Iterable, Optional
 
+from openprogram.agent.event_bus import emit_safe
 from openprogram.agent.session_config import reasoning_from_config, SessionRunConfig
 
 
@@ -239,6 +240,11 @@ def process_user_turn(
             "type": "chat_ack",
             "data": {"session_id": req.session_id, "msg_id": user_msg_id},
         })
+        emit_safe(
+            "user.prompt_submitted", "user",
+            {"msg_id": user_msg_id, "chars": len(req.user_text or "")},
+            {"session": req.session_id},
+        )
         # Broadcast the inbound user message itself so any UI tailing
         # this session (web sidebar transcript, TUI mirror) shows it
         # in real time — without this, channel-sourced messages

@@ -58,6 +58,7 @@ from openprogram.agent.task.store import (
     save_task as _store_save,
     update_task_status as _store_update_status,
 )
+from openprogram.agent.event_bus import emit_safe
 from openprogram.agent.task.types import (
     Task,
     TaskStatus,
@@ -111,6 +112,20 @@ def _broadcast_task_status(task: Task) -> None:
             "completed_at": task.completed_at,
         },
     })
+    # 事件层 tap：状态转移的单一漏斗，RUNNING → subagent.started，
+    # 终止态 → subagent.ended。worker 线程里 ContextVar 不可靠，session 显式给。
+    if task.status == TaskStatus.RUNNING:
+        emit_safe(
+            "subagent.started", "system",
+            {"task_id": task.id, "label": task.label},
+            {"session": task.parent_session_id},
+        )
+    elif is_terminal(task.status):
+        emit_safe(
+            "subagent.ended", "system",
+            {"task_id": task.id, "status": task.status.value, "error": task.error},
+            {"session": task.parent_session_id},
+        )
 
 
 class TaskRunner:
