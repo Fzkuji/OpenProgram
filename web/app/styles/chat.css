@@ -1493,10 +1493,12 @@
   stroke-width: 3;
 }
 
-/* Slider-thumb biceps: solid silhouette. Filling the glyph masks the
-   track behind it, so the thumb needs no backing disc. */
+/* Slider-thumb biceps: coloured outline, interior filled with the
+   expanded pill's own background — the body of the glyph masks the
+   track behind it without turning into a coloured silhouette, and no
+   backing disc is needed. */
 .effort-pill-thumb-icon svg path {
-  fill: currentColor;
+  fill: var(--bg-hover);
 }
 
 /* Narrow composer row → drop the token-usage pill entirely instead of
