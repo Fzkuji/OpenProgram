@@ -3,7 +3,7 @@
 Status: **implemented**. This document describes the function-calling
 framework as it exists today, after the unification refactor. For
 the moment-by-moment loop mechanics (how the LLM picks the next tool
-to run inside one ``runtime.exec`` call), see ``tool-calling.md`` —
+to run inside one ``runtime.exec`` call), see ``docs/agentic-programming/tool-calling.md`` —
 that companion doc is still accurate.
 
 ## What "function calling" means here

@@ -64,7 +64,7 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 | `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / 强制某工具 |
 | `parallel_tool_calls` | `bool` | `True` | 允许一轮多个工具调用 |
 | `max_iterations` | `int` | `20` | 工具循环安全上限 |
-| `choices` | `dict \| list \| None` | `None` | 设了则约束 turn 的**收尾**:模型跑完整 turn 后,最终回复必须从 `choices` 里选一个;`exec` 解析并返回该选择的结果。详见 [next-step-decision](../design/next-step-decision.md) |
+| `choices` | `dict \| list \| None` | `None` | 设了则约束 turn 的**收尾**:模型跑完整 turn 后,最终回复必须从 `choices` 里选一个;`exec` 解析并返回该选择的结果。详见 [next-step-decision](../agentic-programming/next-step-decision.md) |
 
 #### Content block 格式
 

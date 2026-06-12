@@ -14,6 +14,21 @@ This directory is the documentation entry point for OpenProgram.
 | [`README_CN.md`](README_CN.md) | Chinese project overview |
 | [`philosophy/agentic-programming.md`](philosophy/agentic-programming.md) | Agentic Programming rationale |
 
+## Agentic programming guide
+
+OpenProgram's own programming model — the concepts a generic LLM-framework
+tutorial will not teach you. **Read this before writing functions.**
+
+| File | Purpose |
+|---|---|
+| [`agentic-programming/README.md`](agentic-programming/README.md) | Guide index + learning path |
+| [`agentic-programming/agentic-function.md`](agentic-programming/agentic-function.md) | `@agentic_function` usage patterns |
+| [`agentic-programming/function-metadata.md`](agentic-programming/function-metadata.md) | Function metadata — source of truth ([中文](agentic-programming/function-metadata.zh.md)) |
+| [`agentic-programming/code-call.md`](agentic-programming/code-call.md) | Fixed-order sub-function pipelines |
+| [`agentic-programming/tool-calling.md`](agentic-programming/tool-calling.md) | Provider-native tool-use loop |
+| [`agentic-programming/next-step-decision.md`](agentic-programming/next-step-decision.md) | `decision.make` / `exec(choices=)` — LLM picks the next step |
+| [`agentic-programming/pure-python.md`](agentic-programming/pure-python.md) | Plain Python helpers (no LLM) |
+
 ## API reference
 
 | File | Purpose |
@@ -37,7 +52,8 @@ current specs from archived audits and standalone demos.
 
 ## Maintenance rules
 
-- Keep current API facts under `api/`; keep design rationale under `design/`.
+- Keep current API facts under `api/`; keep design rationale under `design/`;
+  keep function-authoring guides under `agentic-programming/`.
 - Prefer linking to a source document instead of repeating the same rules in
   multiple files.
 - If a design note no longer defines current behavior, move it to

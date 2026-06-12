@@ -25,6 +25,21 @@ supporting notes / investigations that should not override it.
 | [`memory/memory.md`](memory/memory.md) | Memory subsystem (v1 background) |
 | [`memory/git-as-entity-memory.md`](memory/git-as-entity-memory.md) | Git-as-entity-memory rationale |
 
+## proactive/ — 主动性层（事件驱动）
+
+入门导读式，从场景讲起。先读 overview + events-and-state 即可建立整体认识。
+
+| Doc | Topic |
+|---|---|
+| [`proactive/overview.md`](proactive/overview.md) | 跟着一个场景走一遍（拦 `rm -rf`），五个核心概念就地讲（当前·设计阶段） |
+| [`proactive/events-and-state.md`](proactive/events-and-state.md) | 地基：事件长啥样、状态怎么从事件累加（fold）出来 |
+| [`proactive/execution-model.md`](proactive/execution-model.md) | 规则（Policy）怎么写；挡路的 / 旁观的两类有何不同 |
+| [`proactive/policies-mvp.md`](proactive/policies-mvp.md) | 三条样板规则，照着写新规则 |
+| [`proactive/invariants.md`](proactive/invariants.md) | 框架自己要守的底线（主要是别绕成死循环） |
+
+> 论文/生产级内容（离线回放验证、对抗安全、评估骨架）已归档在
+> `proactive/_research_archive/`，以后做加固再取回。
+
 ## runtime/ — agent execution, DAG, async, revert
 
 | Doc | Topic |
@@ -35,7 +50,6 @@ supporting notes / investigations that should not override it.
 | [`runtime/streaming-resume.md`](runtime/streaming-resume.md) | Streaming + resume |
 | [`runtime/revert-layers.md`](runtime/revert-layers.md) | Revert layers (commit / worktree) |
 | [`runtime/multi-agent-revert-todo.md`](runtime/multi-agent-revert-todo.md) | Multi-agent revert TODO |
-| [`runtime/next-step-decision.md`](runtime/next-step-decision.md) | Next-step decision loop |
 | [`runtime/dag-node-model.md`](runtime/dag-node-model.md) | DAG node model investigation |
 | [`runtime/dag-edge-split.md`](runtime/dag-edge-split.md) | DAG edge-split investigation |
 
@@ -53,10 +67,10 @@ supporting notes / investigations that should not override it.
 | Doc | Topic |
 |---|---|
 | [`function/function-calling-unification.md`](function/function-calling-unification.md) | Tool/function calling framework (current) |
-| [`function/tool-calling.md`](function/tool-calling.md) | Per-turn tool loop mechanics |
-| [`function/agentic_function.md`](function/agentic_function.md) | Agentic function usage |
-| [`function/function_metadata.md`](function/function_metadata.md) | Function metadata (source of truth) |
-| [`function/pure_python.md`](function/pure_python.md) | Pure-python functions |
+
+> Authoring-facing docs (`@agentic_function` usage, function metadata,
+> tool-calling loop, next-step decision, pure-python helpers) moved to the
+> user guide at [`../agentic-programming/README.md`](../agentic-programming/README.md).
 
 ## cli/ — CLI / TUI, slash commands, ports
 
@@ -110,8 +124,8 @@ Historical audits, demos, and superseded docs live in
   past a couple of files.
 - Each group lists the *current* source first; supporting notes follow.
 - API reference belongs under `docs/api/`; design rationale belongs here.
-- For function-authoring rules, `function/function_metadata.md` is the source of
-  truth — shorter files link to it rather than repeating it.
+- For function-authoring rules, `../agentic-programming/function-metadata.md` is
+  the source of truth — shorter files link to it rather than repeating it.
 - The decorator field is `render_range={"callers": N, "subcalls": M}` —
   `callers` caps pre-frame nodes by seq, `subcalls` caps in-frame nodes by seq.
   Both code and docs use these names exclusively.

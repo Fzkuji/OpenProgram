@@ -2,7 +2,7 @@
 
 本文档描述一次模型调用里,LLM 如何在每一轮"做选择"——是选一个函数去运行,还是输出文本结束。
 
-> 配套文档:[`function-calling-unification.md`](./function-calling-unification.md)
+> 配套文档:[`function-calling-unification.md`](../design/function/function-calling-unification.md)
 > 描述整个 function-calling 框架的设计 —— `@function` / `@agentic_function`
 > 两个装饰器、共享注册表、6 层 gating、deferred loading 等。本文只讲
 > "选下一步" 这一步的循环机制。
