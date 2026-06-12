@@ -18,7 +18,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Slider } from "@/components/ui/slider";
-import { Lightning } from "@phosphor-icons/react/dist/ssr";
+import { Flame } from "@phosphor-icons/react/dist/ssr";
 
 import { CaretIcon } from "../icons";
 
@@ -54,7 +54,7 @@ export const ThinkingEffortPill = React.forwardRef<
         className="effort-pill-fixed inline-flex h-[32px] items-center gap-[5px] rounded-full pl-[14px] pr-[14px] text-[14px] text-text-primary select-none whitespace-nowrap"
         style={{ backgroundColor: "var(--effort-off-bg)" }}
       >
-        <Lightning
+        <Flame
           size={18}
           weight="fill"
           className="effort-pill-compact-icon text-text-primary"
@@ -100,10 +100,10 @@ const ThinkingEffortSliderPill = React.forwardRef<
     options.findIndex((o) => o.value === value),
   );
   const maxIndex = Math.max(0, options.length - 1);
-  // Lightning size scales linearly with effort: from 10px at the
+  // Flame size scales linearly with effort: from 10px at the
   // `off` end to 18px at `xhigh`. The icon is rendered at the slider
   // thumb; position and size both encode the current value.
-  const lightningSize =
+  const flameSize =
     maxIndex > 0
       ? Math.round(10 + (valueIndex / maxIndex) * 8)
       : 10;
@@ -140,7 +140,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // `--slider-active` CSS custom property.
   const activeColor = `color-mix(in srgb, ${warmHue} 72%, transparent)`;
 
-  // Fully-opaque variant for the Lightning icon. It stays visually
+  // Fully-opaque variant for the Flame icon. It stays visually
   // distinct from the half-alpha `--slider-active` track color.
   const activeColorSolid = warmHue;
 
@@ -221,7 +221,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
           // CSS variables inherited by the slider inside:
           //   --slider-active        →  range / ticks / focus ring
           //                              (soft, ~70% alpha)
-          //   --slider-active-solid  →  Lightning bolt thumb
+          //   --slider-active-solid  →  Flame thumb
           //                              (opaque, full-strength hue)
           ["--slider-active" as string]: activeColor,
           ["--slider-active-solid" as string]: activeColorSolid,
@@ -233,7 +233,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
             expanded ? "hidden" : "",
           ].join(" ")}
         >
-          <Lightning
+          <Flame
             size={18}
             weight="fill"
             className="effort-pill-compact-icon text-[var(--slider-active-solid)]"
@@ -274,12 +274,12 @@ const ThinkingEffortSliderPill = React.forwardRef<
                   aria-hidden="true"
                   className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover border-[3px] border-[color-mix(in_srgb,var(--text-bright)_40%,transparent)] transition-[width,height] duration-150 ease-out"
                   style={{
-                    width: lightningSize + 8,
-                    height: lightningSize + 8,
+                    width: flameSize + 8,
+                    height: flameSize + 8,
                   }}
                 />
-                <Lightning
-                  size={lightningSize}
+                <Flame
+                  size={flameSize}
                   weight="fill"
                   className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active-solid)] pointer-events-none transition-[width,height] duration-150 ease-out"
                   aria-hidden="true"
