@@ -1215,6 +1215,13 @@ def create_app():
         try:
             from openprogram.skills.watcher import start_watcher
             def _broadcast_changed():
+                # 事件层 tap（B 类：技能文件变了）。放 _broadcast 之前——
+                # watcher 线程里 _broadcast 可能抛错被上层吞掉，emit 先行。
+                try:
+                    from openprogram.agent.event_bus import emit_safe
+                    emit_safe("skills.changed", "system")
+                except Exception:
+                    pass
                 _broadcast(json.dumps({"type": "skills:changed"}))
             start_watcher(on_change=_broadcast_changed)
         except Exception as e:  # noqa: BLE001
@@ -1233,6 +1240,13 @@ def create_app():
                         "type": "plugins:update_available",
                         "data": payload,
                     }))
+                except Exception:
+                    pass
+                # 事件层 tap（B 类：插件有新版）
+                try:
+                    from openprogram.agent.event_bus import emit_safe
+                    emit_safe("plugins.update_available", "system",
+                              {"count": len(payload or {})})
                 except Exception:
                     pass
             _au.register_callback(_broadcast_updates)

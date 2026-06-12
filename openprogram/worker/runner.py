@@ -257,6 +257,15 @@ def run_foreground() -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"[worker] memory subsystem failed to start: {exc}")
 
+    # 事件层 B 类桥 — auth 的 subscribe/_emit 信号翻译进统一总线
+    # (docs/design/proactive/event-layer.md §3)。
+    try:
+        from openprogram.agent.event_bridges import install_event_bridges
+        if install_event_bridges():
+            print("[worker] event bridges installed (auth → bus)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] event bridges failed to install: {exc}")
+
     # Programs watcher — auto-detect agentic harnesses installed at
     # runtime (clone into agentics/ or `programs install`) so their
     # functions go live + the UI refreshes without a restart.

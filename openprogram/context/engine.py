@@ -402,6 +402,18 @@ class DefaultContextEngine(ContextEngine):
                 "used_previous_summary": result.used_previous_summary,
             }})
 
+        # 事件层 tap（懒 import 防循环）
+        try:
+            from openprogram.agent.event_bus import emit_safe
+            emit_safe("context.compacted", "system",
+                      {"ok": result.ok,
+                       "tokens_before": result.tokens_before,
+                       "tokens_after": result.tokens_after,
+                       "reason": result.reason},
+                      {"session": session_id})
+        except Exception:
+            pass
+
         return result
 
     # ---- Post-turn -----------------------------------------------------
@@ -432,6 +444,14 @@ class DefaultContextEngine(ContextEngine):
                 "budget_pct": pct,
                 "source": commit.source,
             }})
+            # 事件层 tap（懒 import 防循环）
+            try:
+                from openprogram.agent.event_bus import emit_safe
+                emit_safe("context.compaction_recommended", "system",
+                          {"budget_pct": round(pct, 3)},
+                          {"session": session_id})
+            except Exception:
+                pass
 
     # ---- Internals -----------------------------------------------------
 

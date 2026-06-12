@@ -77,6 +77,15 @@ def dispatch_inbound(
     """
     peer = {"kind": peer_kind or "direct", "id": str(peer_id)}
 
+    # 事件层 tap：外部消息进来了（B 类，不属于任何 turn）。懒 import 防循环。
+    try:
+        from openprogram.agent.event_bus import emit_safe
+        emit_safe("channel.message_inbound", "user",
+                  {"channel": channel, "peer_kind": peer["kind"],
+                   "chars": len(user_text or "")})
+    except Exception:
+        pass
+
     # ---- 路由: alias > binding -----------------------------------------
     from openprogram.agents import session_aliases as _aliases
     alias = _aliases.lookup(channel, account_id, peer)

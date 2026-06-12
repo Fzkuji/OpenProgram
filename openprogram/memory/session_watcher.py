@@ -102,7 +102,15 @@ def _scan(idle_minutes: int) -> int:
         if not messages:
             processed[sid] = updated_at
             continue
-        if _process_session(sid, messages):
+        ok = _process_session(sid, messages)
+        # 事件层 tap：空闲会话的 wiki ingest 起止（B 类）。懒 import 防循环。
+        try:
+            from openprogram.agent.event_bus import emit_safe
+            emit_safe("memory.ingest_ended", "system",
+                      {"ok": ok}, {"session": sid})
+        except Exception:
+            pass
+        if ok:
             n_done += 1
             processed[sid] = updated_at
     _save_processed(processed)
@@ -124,6 +132,13 @@ def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
     plugin providers that don't implement ingest; if either step of
     the ingest fails we fall through to it.
     """
+    # 事件层 tap：ingest 开始（B 类）。
+    try:
+        from openprogram.agent.event_bus import emit_safe
+        emit_safe("memory.ingest_started", "system",
+                  {"messages": len(messages)}, {"session": session_id})
+    except Exception:
+        pass
     try:
         from .wiki.ingest import ingest_session, _build_runtime
     except Exception:
