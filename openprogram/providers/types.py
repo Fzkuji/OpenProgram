@@ -119,6 +119,14 @@ class StreamOptions(BaseModel):
     # ("priority"/"standard_only"). ``None`` = the provider default.
     # Read by the request builders via ``opts.get("service_tier")``.
     service_tier: str | None = None
+    # Tool-pick policy for this request: "auto" (provider default) /
+    # "required" (must pick a tool) / "none" (text only) /
+    # {"type": "function", "name": "X"} (force that tool). Each request
+    # builder maps it to its provider's own shape; ``None`` = omit.
+    tool_choice: Any | None = None
+    # False forbids several tool calls in one round where the provider
+    # supports the knob. ``None`` = provider default.
+    parallel_tool_calls: bool | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 

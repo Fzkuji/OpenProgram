@@ -287,6 +287,15 @@ _current_tool_policy: contextvars.ContextVar[Optional[dict]] = contextvars.Conte
     "_current_tool_policy", default=None,
 )
 
+# Agent-loop options for the current exec() call — tool_choice /
+# parallel_tool_calls / max_iterations travel to _call_via_providers'
+# AgentSession the same way the tools list does (the _call() signature
+# subclasses override stays unchanged). Only non-default values are
+# stored; missing keys mean "provider / loop default".
+_current_loop_opts: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
+    "_current_loop_opts", default=None,
+)
+
 
 class Runtime:
     """
@@ -762,6 +771,18 @@ class Runtime:
             _current_tool_policy.set({**(_current_tool_policy.get(None) or {}), **_policy_kwargs})
             if _policy_kwargs else None
         )
+        # Loop options — only non-default values travel ("auto" / True
+        # are the provider defaults, sending them adds nothing).
+        _loop_opts = {}
+        if tool_choice is not None and tool_choice != "auto":
+            _loop_opts["tool_choice"] = tool_choice
+        if parallel_tool_calls is False:
+            _loop_opts["parallel_tool_calls"] = False
+        if max_iterations is not None:
+            _loop_opts["max_iterations"] = max_iterations
+        loop_opts_token = (
+            _current_loop_opts.set(_loop_opts) if _loop_opts else None
+        )
         reply = None
         _exec_start = time.monotonic()
         if not (timeout_s and timeout_s > 0):
@@ -863,6 +884,8 @@ class Runtime:
                 _current_tools.reset(tools_token)
             if policy_token is not None:
                 _current_tool_policy.reset(policy_token)
+            if loop_opts_token is not None:
+                _current_loop_opts.reset(loop_opts_token)
 
         # No choices — the raw reply text is the result.
         if choices is None:
@@ -1153,6 +1176,7 @@ class Runtime:
         if skills_block:
             system_prompt = (system_prompt + skills_block) if system_prompt else skills_block.lstrip("\n")
 
+        loop_opts = _current_loop_opts.get(None) or {}
         session = AgentSession(
             model=self.api_model,
             tools=agent_tools,
@@ -1160,6 +1184,9 @@ class Runtime:
             api_key=self.api_key,
             session_id=self.session_id,
             thinking_level=self.thinking_level,
+            tool_choice=loop_opts.get("tool_choice"),
+            parallel_tool_calls=loop_opts.get("parallel_tool_calls"),
+            max_iterations=loop_opts.get("max_iterations"),
         )
 
         # Forward agent stream events to self.on_stream so callers (the webui

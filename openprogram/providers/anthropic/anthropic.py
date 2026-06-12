@@ -560,6 +560,26 @@ async def stream_simple(
 
     if tools:
         params["tools"] = tools
+        # Caller-set pick policy, mapped to Anthropic's shapes:
+        # "required" → {"type": "any"}; the framework's forced-pick
+        # {"type": "function", "name": X} → {"type": "tool", "name": X};
+        # "auto"/"none" → {"type": <verbatim>}. parallel_tool_calls=False
+        # rides on the tool_choice object as disable_parallel_tool_use.
+        tool_choice = opts.get("tool_choice")
+        anthropic_choice = None
+        if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
+            anthropic_choice = {"type": "tool", "name": tool_choice.get("name")}
+        elif tool_choice == "required":
+            anthropic_choice = {"type": "any"}
+        elif tool_choice in ("auto", "none"):
+            anthropic_choice = {"type": tool_choice}
+        if opts.get("parallel_tool_calls") is False:
+            if anthropic_choice is None:
+                anthropic_choice = {"type": "auto"}
+            if anthropic_choice["type"] != "none":
+                anthropic_choice["disable_parallel_tool_use"] = True
+        if anthropic_choice is not None:
+            params["tool_choice"] = anthropic_choice
 
     # Temperature is incompatible with extended thinking
     if opts.temperature is not None and not opts.reasoning:

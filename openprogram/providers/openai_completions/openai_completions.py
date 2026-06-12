@@ -301,6 +301,21 @@ async def stream_simple(
 
     if tools:
         params["tools"] = tools
+        # Caller-set pick policy. Chat Completions takes "auto" /
+        # "required" / "none" verbatim; the framework's forced-pick
+        # shape {"type": "function", "name": X} maps to the nested
+        # {"function": {"name": X}} form this API expects.
+        tool_choice = opts.get("tool_choice")
+        if tool_choice is not None:
+            if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
+                params["tool_choice"] = {
+                    "type": "function",
+                    "function": {"name": tool_choice.get("name")},
+                }
+            else:
+                params["tool_choice"] = tool_choice
+        if opts.get("parallel_tool_calls") is False:
+            params["parallel_tool_calls"] = False
 
     if opts.reasoning:
         effort_map = {"minimal": "low", "low": "low", "medium": "medium", "high": "high", "xhigh": "high"}

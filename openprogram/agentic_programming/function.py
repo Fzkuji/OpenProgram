@@ -617,6 +617,9 @@ class agentic_function:
             _build_and_register_tool,
             _normalize_result,
             _effective_max_chars,
+            _cache_key,
+            _cache_get,
+            _cache_set,
             DEFAULT_MAX_RESULT_CHARS,
             DEFAULT_HEAD_RATIO,
         )
@@ -639,24 +642,73 @@ class agentic_function:
         )
         persist_full = self.persist_full
         wrapper = self._wrapper
+        use_cache = self.cache
+        cache_ttl = self.cache_ttl
+        exec_timeout = self.timeout
 
         async def _execute(call_id, args, cancel, on_update):
             # Funnel the LLM-passed kwargs through the wrapper (which
             # carries the agentic semantics) then normalise the return
             # value through the same truncation / persist-full path
-            # @function uses.
-            raw = wrapper(**(dict(args or {})))
-            if inspect.iscoroutine(raw):
-                raw = await raw
-            if isinstance(raw, AgentToolResult):
+            # @function uses. cache / timeout mirror @function's
+            # semantics: memoize on (name, args); hard-kill after
+            # ``timeout`` seconds with an is_error result.
+            kwargs = dict(args or {})
+
+            if use_cache:
+                key = _cache_key(name, kwargs)
+                hit = _cache_get(key)
+                if hit is not None:
+                    return hit
+
+            async def _invoke():
+                raw = wrapper(**kwargs)
+                if inspect.iscoroutine(raw):
+                    raw = await raw
                 return raw
-            return _normalize_result(
-                raw,
-                call_id=call_id,
-                max_chars=_effective_max_chars(max_chars),
-                persist_full=persist_full,
-                head_ratio=head_ratio,
-            )
+
+            if exec_timeout is not None:
+                import asyncio
+                import contextvars as _cv
+                try:
+                    if inspect.iscoroutinefunction(wrapper):
+                        raw = await asyncio.wait_for(
+                            _invoke(), timeout=exec_timeout)
+                    else:
+                        # A sync wrapper would block the event loop and
+                        # make wait_for useless — run it in a thread,
+                        # carrying the current Context so the body sees
+                        # the calling task's ContextVars (_store /
+                        # _call_id / _current_runtime).
+                        loop = asyncio.get_running_loop()
+                        ctx = _cv.copy_context()
+                        raw = await asyncio.wait_for(
+                            loop.run_in_executor(
+                                None, lambda: ctx.run(wrapper, **kwargs)),
+                            timeout=exec_timeout,
+                        )
+                except asyncio.TimeoutError:
+                    from openprogram.providers.types import TextContent
+                    return AgentToolResult(content=[TextContent(text=(
+                        f"[error] function {name} timed out after "
+                        f"{exec_timeout}s"
+                    ))])
+            else:
+                raw = await _invoke()
+
+            if isinstance(raw, AgentToolResult):
+                result = raw
+            else:
+                result = _normalize_result(
+                    raw,
+                    call_id=call_id,
+                    max_chars=_effective_max_chars(max_chars),
+                    persist_full=persist_full,
+                    head_ratio=head_ratio,
+                )
+            if use_cache:
+                _cache_set(_cache_key(name, kwargs), result, cache_ttl)
+            return result
 
         self._agent_tool = _build_and_register_tool(
             name=name,

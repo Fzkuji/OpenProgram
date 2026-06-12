@@ -63,6 +63,9 @@ class AgentOptions:
         thinking_budgets: ThinkingBudgets | None = None,
         transport: Transport = "sse",
         max_retry_delay_ms: int | None = None,
+        tool_choice: Any | None = None,
+        parallel_tool_calls: bool | None = None,
+        max_iterations: int | None = None,
     ):
         self.initial_state = initial_state
         self.convert_to_llm = convert_to_llm
@@ -76,6 +79,9 @@ class AgentOptions:
         self.thinking_budgets = thinking_budgets
         self.transport = transport
         self.max_retry_delay_ms = max_retry_delay_ms
+        self.tool_choice = tool_choice
+        self.parallel_tool_calls = parallel_tool_calls
+        self.max_iterations = max_iterations
 
     @classmethod
     def from_dict(cls, opts_dict: dict[str, Any]) -> "AgentOptions":
@@ -125,6 +131,9 @@ class Agent:
         self._thinking_budgets: ThinkingBudgets | None = opts.thinking_budgets
         self._transport: Transport = opts.transport
         self._max_retry_delay_ms: int | None = opts.max_retry_delay_ms
+        self._tool_choice: Any | None = opts.tool_choice
+        self._parallel_tool_calls: bool | None = opts.parallel_tool_calls
+        self._max_iterations: int | None = opts.max_iterations
 
         self._listeners: set[Callable[[AgentEvent], None]] = set()
         self._cancel_event: asyncio.Event | None = None
@@ -387,6 +396,9 @@ class Agent:
             transport=self._transport,
             thinking_budgets=self._thinking_budgets,
             max_retry_delay_ms=self._max_retry_delay_ms,
+            tool_choice=self._tool_choice,
+            parallel_tool_calls=self._parallel_tool_calls,
+            max_iterations=self._max_iterations,
             convert_to_llm=self._convert_to_llm,
             transform_context=self._transform_context,
             get_api_key=self.get_api_key,

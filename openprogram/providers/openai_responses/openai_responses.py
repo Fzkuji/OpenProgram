@@ -202,6 +202,14 @@ def _build_params(
     tools = getattr(context, "tools", None)
     if tools:
         params["tools"] = convert_responses_tools(tools, model.api, model.id)
+        # Caller-set pick policy. The Responses API natively takes
+        # "auto" / "required" / "none" and the forced-pick shape
+        # {"type": "function", "name": X} — pass through verbatim.
+        tool_choice = opts.get("tool_choice")
+        if tool_choice is not None:
+            params["tool_choice"] = tool_choice
+        if opts.get("parallel_tool_calls") is False:
+            params["parallel_tool_calls"] = False
 
     service_tier = opts.get("service_tier")
     if service_tier:

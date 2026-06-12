@@ -60,6 +60,13 @@ class AgentLoopConfig(SimpleStreamOptions):
     """
     model: Model
 
+    # Caller-set cap on inner loop rounds (one round = one model call
+    # plus its tool executions). ``None`` = only the framework's hard
+    # MAX_INNER_ITERATIONS applies; an explicit value is clamped to it.
+    # ``tool_choice`` / ``parallel_tool_calls`` ride in via the
+    # SimpleStreamOptions base and are forwarded to the provider call.
+    max_iterations: int | None = None
+
     # Converts AgentMessage[] to LLM-compatible Message[]
     convert_to_llm: Callable[[list[AgentMessage]], list[Message] | Awaitable[list[Message]]]
 

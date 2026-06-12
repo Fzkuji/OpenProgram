@@ -68,6 +68,9 @@ class AgentSession:
         block_images: bool = False,
         initial_messages: list[AgentMessage] | None = None,
         session_id: str | None = None,
+        tool_choice: Any | None = None,
+        parallel_tool_calls: bool | None = None,
+        max_iterations: int | None = None,
     ) -> None:
         self._retry = retry or DEFAULT_RETRY_SETTINGS
         self._event_bus = event_bus
@@ -92,6 +95,9 @@ class AgentSession:
             convert_to_llm=wrap_convert_to_llm(block_images),
             get_api_key=get_api_key,
             session_id=session_id,
+            tool_choice=tool_choice,
+            parallel_tool_calls=parallel_tool_calls,
+            max_iterations=max_iterations,
         ))
 
         if event_bus is not None:

@@ -219,7 +219,12 @@ async def _run_loop(
     # Hard cap on the inner tool-call loop so a model that keeps asking
     # for "one more tool call" can't churn the runtime forever. 50 is
     # plenty for a real task; anything beyond that is the model spinning.
+    # A caller-set ``config.max_iterations`` (exec's ``max_iterations=``)
+    # tightens the cap — it can never raise it past the hard limit.
     MAX_INNER_ITERATIONS = 50
+    iteration_cap = MAX_INNER_ITERATIONS
+    if config.max_iterations is not None:
+        iteration_cap = max(1, min(MAX_INNER_ITERATIONS, config.max_iterations))
     inner_iterations = 0
 
     while True:
@@ -228,7 +233,7 @@ async def _run_loop(
 
         while has_more_tool_calls or len(pending_messages) > 0:
             inner_iterations += 1
-            if inner_iterations > MAX_INNER_ITERATIONS:
+            if inner_iterations > iteration_cap:
                 # End the stream cleanly with whatever we've got. The
                 # consumer (dispatcher / cli_chat) treats a normal
                 # stream end as a successful turn — no more, no less.
@@ -414,6 +419,8 @@ async def _stream_assistant_response(
         max_retry_delay_ms=config.max_retry_delay_ms,
         metadata=config.metadata,
         service_tier=config.service_tier,
+        tool_choice=config.tool_choice,
+        parallel_tool_calls=config.parallel_tool_calls,
     )
 
     partial_message: AssistantMessage | None = None
