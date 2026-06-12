@@ -7,9 +7,12 @@
 工具失败、文件被改）都记成一条"事件"；你的主动规则不是焊死在某个固定位置，而是"订阅"
 这些事件，事件发生时被唤起、做判断、决定要不要出手。
 
-> 状态：**设计阶段**，还没写代码。本目录讲设计（这层是什么、为什么这么设计）。
-> 怎么接进现有代码、分几步实现，单独写在
+> 状态：**实施中**。五步迁移的步 1（总线 + A 类源 taps）、步 2（file.changed +
+> tool.before 同步问询点）已落地并在真实 turn 验证；步 3（B 类源桥接）、步 4（webui
+> 切订阅者）、步 5（proactive 规则层）未做。各步接线与验收见
 > [`../../plans/proactive-implementation.md`](../../plans/proactive-implementation.md)。
+> 想亲眼看事件流：`OPENPROGRAM_EVENT_LOG=1 openprogram worker restart`，发条消息，
+> 读 `/tmp/openprogram-events.jsonl`。
 
 ## 这层分两块：事件底座 + 主动性应用
 

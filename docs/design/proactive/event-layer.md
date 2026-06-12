@@ -2,6 +2,12 @@
 
 一条统一的事件流，给整个框架用。proactive 只是它第一个消费者。
 
+> **实现状态（2026-06-13）**：本篇 §1–§5 已落地——`Event`/`make_event`/`emit_safe`/
+> `subscribe(types=)`/`get_event_bus()` 在 `openprogram/agent/event_bus.py`，同步问询点在
+> `openprogram/agent/tool_gate.py`（`register_tool_gate`/`decide_tool_gate`）。A 类事件全部
+> 在发（含 `file.changed`），B 类桥接未做。观察方式：`OPENPROGRAM_EVENT_LOG=1` 重启 worker
+> 后读 `/tmp/openprogram-events.jsonl`。
+
 **为什么要**：框架里"某件事发生了"的信号现在散在六套互不相通的机制里（agent loop 的
 AgentEvent 流、auth 的 `_emit`、context 的 on_event、channels 的 WS 广播、memory 的定时 poll、
 store 的纯日志）。想"在某时机做某事"，得先搞清那个时机归哪套、怎么接。这层把它们统一成
@@ -44,19 +50,19 @@ class Event:
 
 ## 3. 事件类型（第一版）
 
-| 类 | type | 何时 | 现有代码来源 |
-|---|---|---|---|
-| A | `user.prompt_submitted` | 用户发消息 | dispatcher 入口 |
-| A | `model.response_started`/`.completed` | 模型开始/说完回复 | AgentEventMessageStart/End |
-| A | `tool.before` | 工具即将执行 | AgentEventToolStart（+ 可截，见 §5） |
-| A | `tool.after` | 工具执行完 | AgentEventToolEnd |
-| A | `file.changed` | 文件被改 | **新增**，挂 `backup_for_current_turn` |
-| A | `turn.ended` | 一轮结束 | AgentEventTurnEnd |
-| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner 广播 |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/池耗尽/轮换 | `AuthStore._emit` |
-| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | `context/engine.py` |
-| B | `channel.message_inbound` | 外部消息进来 | `channels/_broadcast.py` |
-| B | `skills.changed`/`plugins.update_available` | 技能改/插件有新版 | webui watcher |
+| 类 | type | 何时 | 来源（实际接线） | 状态 |
+|---|---|---|---|---|
+| A | `user.prompt_submitted` | 用户发消息 | dispatcher（持久化分支外，webui/channel 两路都发） | ✅ 在发 |
+| A | `model.response_started`/`.completed` | 模型开始/说完回复 | agent_loop 流式 start/done | ✅ 在发 |
+| A | `tool.before` | 工具即将执行 | agent_loop `_execute_tool_calls`（可拦截，见 §5） | ✅ 在发+可拦 |
+| A | `tool.after` | 工具执行完 | agent_loop | ✅ 在发 |
+| A | `file.changed` | 文件被改（payload 带 path/op） | write/edit/apply_patch 写成功后 | ✅ 在发 |
+| A | `turn.ended` | 一轮结束 | agent_loop（正常 + error/abort 两处） | ✅ 在发 |
+| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner 状态漏斗 | ✅ 在发 |
+| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/池耗尽/轮换 | `AuthStore._emit` 桥接 | ⏳ 步 3 |
+| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | `context/engine.py` 桥接 | ⏳ 步 3 |
+| B | `channel.message_inbound` | 外部消息进来 | `channels/_broadcast.py` 桥接 | ⏳ 步 3 |
+| B | `skills.changed`/`plugins.update_available` | 技能改/插件有新版 | webui watcher 桥接 | ⏳ 步 3 |
 
 ## 4. 定位：一个进程级单例总线
 
@@ -82,9 +88,22 @@ class EventBus:
 再慢也不拖慢框架。
 
 **拦截型（仅 `tool.before`，同步）**：工具执行前这个点要能让下游说"别执行"。在工具的单一入口
-`_execute_tool_calls`（`agent_loop.py:466`）的 `tool.execute()` 之前加一个同步问询点，复用现有
-批准机制（`_approval.py`）。要点：必须快（不许调 LLM）；多方表态取最严（拦下 > 确认 > 放行）；
-对 subagent 也生效（独立于 `permission_mode=bypass`，否则危险动作塞进子任务就溜了）。
+`_execute_tool_calls` 的 `tool.execute()` 之前加一个同步问询点。要点：必须快（不许调 LLM）；
+多方表态取最严；对 subagent 也生效（位于 approval 包装之外，`permission_mode=bypass` 关不掉它）。
+
+已落地的 API（`openprogram/agent/tool_gate.py`）：
+
+```python
+from openprogram.agent.tool_gate import register_tool_gate
+
+# gate 函数：拿到 tool.before 事件，返回 None（放行）或 deny 理由字符串
+unregister = register_tool_gate(
+    lambda ev: "危险删除" if "rm -rf" in str(ev.payload.get("args")) else None
+)
+```
+
+deny 理由经现有错误路径作为 error tool result 回给模型；多 gate 的 deny 理由合并；gate 自身
+抛异常按放行处理（fail-open）。"ask（弹确认）"档复用 `_approval.py` 的泛化留到后续步。
 
 ## 6. 框架图
 

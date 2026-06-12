@@ -164,12 +164,12 @@ footer a{color:var(--cyan); text-decoration:none}
   <p class="lead">前三步<span class="hl">全是加法</span>——总线并行于现有路径跑，零行为变化，随时可停可退。只有第四步动旧路径，且有影子比对兜底。</p>
   <div class="steps">
     <div class="step">
-      <div class="t"><b>总线启用 + A 类源接入</b><span class="badge add">纯加法</span></div>
+      <div class="t"><b>总线启用 + A 类源接入</b><span class="badge add">纯加法</span><span class="badge add">✅ 已落地 2026-06-13</span></div>
       <p>升级 EventBus（类型订阅 + 单例），agent loop / task runner / dispatcher 在关键节点并行 emit。旧路径原样跑。</p>
       <div class="ver"><b>验收</b>：订阅总线，打出一个真实 turn 的完整事件序列</div>
     </div>
     <div class="step">
-      <div class="t"><b>补两个洞</b><span class="badge add">纯加法</span></div>
+      <div class="t"><b>补两个洞</b><span class="badge add">纯加法</span><span class="badge add">✅ 已落地 2026-06-13</span></div>
       <p><code>file.changed</code> 事件（挂 backup_for_current_turn）；<code>tool.before</code> 同步问询点（复用 _approval，对 subagent 生效）。</p>
       <div class="ver"><b>验收</b>：改文件能收到事件；测试订阅者能真的拦下指定命令</div>
     </div>
