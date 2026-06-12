@@ -14,7 +14,7 @@ Read in order; each step builds on the previous one.
 |---|---|---|
 | 1 | [`../philosophy/agentic-programming.md`](../philosophy/agentic-programming.md) | Why "agentic programming" — the rationale behind the model |
 | 2 | [`agentic-function.md`](agentic-function.md) | `@agentic_function`: wrap a Python function whose body runs LLM calls via `runtime.exec()`; composition patterns |
-| 3 | [`function-metadata.md`](function-metadata.md) | Parameter descriptions, placeholders, hidden arguments, `render_range` — the source of truth for function metadata ([中文版](function-metadata.zh.md)) |
+| 3 | [`function-metadata.md`](function-metadata.md) | Parameter descriptions, placeholders, hidden arguments, `render_range` — the source of truth for function metadata |
 | 4 | [`pure-python.md`](pure-python.md) | When NOT to use the decorator: plain deterministic helpers |
 
 ## Choosing the next step

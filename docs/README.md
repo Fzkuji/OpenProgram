@@ -23,7 +23,7 @@ tutorial will not teach you. **Read this before writing functions.**
 |---|---|
 | [`agentic-programming/README.md`](agentic-programming/README.md) | Guide index + learning path |
 | [`agentic-programming/agentic-function.md`](agentic-programming/agentic-function.md) | `@agentic_function` usage patterns |
-| [`agentic-programming/function-metadata.md`](agentic-programming/function-metadata.md) | Function metadata — source of truth ([中文](agentic-programming/function-metadata.zh.md)) |
+| [`agentic-programming/function-metadata.md`](agentic-programming/function-metadata.md) | Function metadata — source of truth |
 | [`agentic-programming/code-call.md`](agentic-programming/code-call.md) | Fixed-order sub-function pipelines |
 | [`agentic-programming/tool-calling.md`](agentic-programming/tool-calling.md) | Provider-native tool-use loop |
 | [`agentic-programming/next-step-decision.md`](agentic-programming/next-step-decision.md) | `decision.make` / `exec(choices=)` — LLM picks the next step |

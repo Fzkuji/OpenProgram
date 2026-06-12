@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenProgram · 事件层设计</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a1322; --panel:#101d31; --panel2:#0d1828;
+  --line:rgba(154,178,204,.22); --line-strong:rgba(154,178,204,.45);
+  --text:#d9e5f1; --muted:#8aa0b8; --faint:#5f7a90;
+  --cyan:#56d9e9; --violet:#b79bf5; --amber:#f2b544; --red:#f07a6a;
+  --serif:"Noto Serif SC","Songti SC",serif;
+  --sans:"PingFang SC","Hiragino Sans GB",sans-serif;
+  --mono:"JetBrains Mono","SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--text); font-family:var(--sans);
+  font-size:15.5px; line-height:1.85; letter-spacing:.01em;
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(86,217,233,.06), transparent 60%),
+    radial-gradient(900px 500px at -10% 30%, rgba(183,155,245,.05), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(154,178,204,.045) 0 1px, transparent 1px 56px),
+    repeating-linear-gradient(90deg, rgba(154,178,204,.045) 0 1px, transparent 1px 56px);
+}
+/* ── 左侧导航轨 ── */
+nav{
+  position:fixed; left:0; top:0; bottom:0; width:200px; padding:42px 0 0 30px;
+  border-right:1px solid var(--line); background:rgba(10,19,34,.82); backdrop-filter:blur(6px);
+  z-index:50;
+}
+nav .brand{font-family:var(--mono); font-size:11px; letter-spacing:.22em; color:var(--cyan); margin-bottom:6px}
+nav h1{font-family:var(--serif); font-weight:900; font-size:21px; letter-spacing:.06em; margin-bottom:34px}
+nav a{
+  display:block; padding:7px 0; color:var(--muted); text-decoration:none; font-size:13px;
+  border-left:2px solid transparent; padding-left:14px; margin-left:-16px; transition:all .18s;
+}
+nav a:hover{color:var(--text); border-left-color:var(--cyan)}
+nav a .no{font-family:var(--mono); font-size:10.5px; color:var(--faint); margin-right:8px}
+nav .foot{position:absolute; bottom:26px; left:30px; right:20px; font-size:11px; color:var(--faint); font-family:var(--mono); line-height:1.7}
+main{margin-left:200px; padding:0 56px 120px}
+.wrap{max-width:1080px; margin:0 auto}
+
+/* ── 通用 ── */
+section{padding-top:84px; opacity:0; transform:translateY(18px); transition:opacity .7s ease, transform .7s ease}
+section.in{opacity:1; transform:none}
+.kicker{font-family:var(--mono); font-size:11px; letter-spacing:.28em; color:var(--cyan); margin-bottom:10px}
+.kicker.v{color:var(--violet)} .kicker.a{color:var(--amber)}
+h2{font-family:var(--serif); font-weight:900; font-size:30px; letter-spacing:.04em; margin-bottom:18px}
+p.lead{color:var(--muted); max-width:64ch}
+.hl{color:var(--text); font-weight:600}
+code, .mono{font-family:var(--mono); font-size:.88em; color:var(--cyan)}
+.note{
+  margin-top:18px; padding:14px 18px; border:1px dashed var(--line-strong); border-radius:8px;
+  color:var(--muted); font-size:13.5px; max-width:72ch; background:rgba(16,29,49,.5);
+}
+.note b{color:var(--text)}
+
+/* ── hero ── */
+header.hero{padding:110px 0 0}
+header .sys{font-family:var(--mono); font-size:12px; letter-spacing:.3em; color:var(--muted)}
+header h2.big{font-size:54px; line-height:1.25; margin:14px 0 22px}
+header h2.big em{font-style:normal; color:var(--cyan); position:relative}
+header .sub{font-size:17px; color:var(--muted); max-width:62ch}
+.sixto1{
+  display:flex; align-items:center; gap:22px; margin-top:44px; padding:24px 28px;
+  border:1px solid var(--line); border-radius:12px; background:linear-gradient(180deg, rgba(16,29,49,.85), rgba(13,24,40,.85));
+}
+.sixto1 .six{display:grid; grid-template-columns:repeat(3,auto); gap:8px}
+.sixto1 .six span{
+  font-family:var(--mono); font-size:11px; color:var(--muted); border:1px solid var(--line);
+  border-radius:5px; padding:5px 10px; white-space:nowrap; position:relative;
+}
+.sixto1 .six span::after{content:""; position:absolute; inset:0; border-radius:5px; box-shadow:0 0 0 0 rgba(240,122,106,0)}
+.sixto1 .arr{font-family:var(--mono); color:var(--amber); font-size:20px; flex:none}
+.sixto1 .one{
+  font-family:var(--mono); font-size:13px; color:var(--cyan); border:1px solid rgba(86,217,233,.5);
+  border-radius:8px; padding:16px 22px; white-space:nowrap; box-shadow:0 0 24px rgba(86,217,233,.12), inset 0 0 18px rgba(86,217,233,.05);
+}
+.sixto1 .cap{font-size:12.5px; color:var(--faint); margin-top:10px}
+
+/* ── 架构图 ── */
+.figure{
+  margin-top:28px; border:1px solid var(--line); border-radius:14px; overflow:hidden;
+  background:
+    radial-gradient(700px 360px at 50% 0%, rgba(86,217,233,.05), transparent 70%),
+    repeating-linear-gradient(0deg, rgba(154,178,204,.05) 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(90deg, rgba(154,178,204,.05) 0 1px, transparent 1px 28px),
+    var(--panel2);
+}
+.figure svg{display:block; width:100%; height:auto}
+svg text{font-family:var(--sans)}
+svg .mono{font-family:var(--mono)}
+.box{fill:rgba(16,29,49,.92); stroke:var(--line-strong); stroke-width:1.2; rx:8}
+.box-title{fill:var(--text); font-size:15px; font-weight:600}
+.box-sub{fill:var(--muted); font-size:11.5px}
+.tagA{fill:rgba(86,217,233,.14); stroke:rgba(86,217,233,.6)}
+.tagB{fill:rgba(183,155,245,.14); stroke:rgba(183,155,245,.6)}
+.tag-t{font-size:10px; font-weight:700}
+.busbody{fill:rgba(86,217,233,.05); stroke:var(--cyan); stroke-width:1.6}
+.busglow{fill:none; stroke:rgba(86,217,233,.25); stroke-width:7; filter:blur(4px)}
+.flowA{fill:none; stroke:var(--cyan); stroke-width:1.6; stroke-dasharray:7 9; animation:flow 1.6s linear infinite; opacity:.85}
+.flowB{fill:none; stroke:var(--violet); stroke-width:1.6; stroke-dasharray:7 9; animation:flow 1.9s linear infinite; opacity:.8}
+.flowO{fill:none; stroke:var(--cyan); stroke-width:1.6; stroke-dasharray:7 9; animation:flow 1.5s linear infinite; opacity:.85}
+.flowI{fill:none; stroke:var(--amber); stroke-width:2; stroke-dasharray:4 6; animation:flow .9s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-16}}
+.frame{fill:none; stroke:rgba(154,178,204,.35); stroke-width:1.2; stroke-dasharray:6 8}
+.lbl{fill:var(--muted); font-size:11px}
+.lbl-strong{fill:var(--text); font-size:12px; font-weight:600}
+.amber-t{fill:var(--amber)} .cyan-t{fill:var(--cyan)} .violet-t{fill:var(--violet)}
+.legend{display:flex; gap:30px; padding:14px 24px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); font-family:var(--mono)}
+.legend i{display:inline-block; width:26px; height:0; border-top:2px dashed var(--cyan); vertical-align:middle; margin-right:8px}
+.legend .i2{border-top-color:var(--violet)} .legend .i3{border-top-color:var(--amber)}
+
+/* ── Event 模型卡 ── */
+.model{display:grid; grid-template-columns:1.15fr .85fr; gap:26px; margin-top:30px; align-items:start}
+.struct{border:1px solid var(--line-strong); border-radius:12px; overflow:hidden; background:var(--panel)}
+.struct .hd{padding:12px 20px; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:12px; color:var(--muted); display:flex; justify-content:space-between}
+.struct .hd b{color:var(--cyan); font-weight:600}
+.band{padding:16px 20px; border-bottom:1px solid var(--line)}
+.band:last-child{border-bottom:none}
+.band .bt{font-size:12px; font-family:var(--mono); letter-spacing:.14em; color:var(--faint); margin-bottom:10px}
+.fields{display:flex; flex-wrap:wrap; gap:8px}
+.f{font-family:var(--mono); font-size:12.5px; padding:6px 12px; border-radius:6px; border:1px solid var(--line-strong); color:var(--text)}
+.f small{color:var(--faint); font-size:10.5px; margin-left:7px}
+.f.core{border-color:rgba(86,217,233,.55); background:rgba(86,217,233,.07)}
+.f.pay{border-color:rgba(217,229,241,.4)}
+.band.pocket{background:repeating-linear-gradient(-45deg, rgba(183,155,245,.05) 0 10px, transparent 10px 20px)}
+.f.meta{border-style:dashed; border-color:rgba(183,155,245,.6); background:rgba(183,155,245,.06)}
+.why{display:flex; flex-direction:column; gap:14px}
+.why .w{padding:16px 20px; border-left:2px solid var(--cyan); background:rgba(16,29,49,.6); border-radius:0 10px 10px 0; font-size:13.5px; color:var(--muted)}
+.why .w b{color:var(--text)} .why .w.v{border-left-color:var(--violet)}
+
+/* ── A/B 两卡 ── */
+.ab{display:grid; grid-template-columns:1fr 1fr; gap:26px; margin-top:30px}
+.card{border:1px solid var(--line); border-radius:12px; padding:26px 28px; background:linear-gradient(180deg, rgba(16,29,49,.9), rgba(13,24,40,.9)); position:relative; overflow:hidden}
+.card::before{content:""; position:absolute; top:0; left:0; right:0; height:2px}
+.card.A::before{background:linear-gradient(90deg, var(--cyan), transparent)}
+.card.B::before{background:linear-gradient(90deg, var(--violet), transparent)}
+.card .cls{font-family:var(--mono); font-size:11px; letter-spacing:.2em; margin-bottom:8px}
+.card.A .cls{color:var(--cyan)} .card.B .cls{color:var(--violet)}
+.card h3{font-family:var(--serif); font-size:20px; font-weight:900; margin-bottom:10px}
+.card .when{font-size:13px; color:var(--muted); margin-bottom:14px}
+.exs{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px}
+.exs span{font-size:12px; color:var(--text); border:1px solid var(--line); border-radius:99px; padding:3px 12px}
+.card .pa{font-size:13px; color:var(--muted); border-top:1px dashed var(--line); padding-top:12px}
+.card .pa b{color:var(--amber)}
+
+/* ── 类型表 ── */
+table{width:100%; border-collapse:collapse; margin-top:28px; font-size:13.5px}
+th{font-family:var(--mono); font-size:11px; letter-spacing:.16em; color:var(--faint); text-align:left; font-weight:400; padding:10px 14px; border-bottom:1px solid var(--line-strong)}
+td{padding:11px 14px; border-bottom:1px solid var(--line); color:var(--muted); vertical-align:top}
+td:first-child{width:46px}
+td .b{display:inline-block; font-family:var(--mono); font-size:11px; font-weight:600; width:22px; height:22px; line-height:22px; text-align:center; border-radius:5px}
+.bA{color:var(--cyan); border:1px solid rgba(86,217,233,.5); background:rgba(86,217,233,.08)}
+.bB{color:var(--violet); border:1px solid rgba(183,155,245,.5); background:rgba(183,155,245,.08)}
+td code{color:var(--text); background:rgba(154,178,204,.08); padding:2px 8px; border-radius:5px; font-size:12px}
+td.src{font-family:var(--mono); font-size:11.5px}
+tr:hover td{background:rgba(86,217,233,.025)}
+td .new{color:var(--amber); font-size:10.5px; font-family:var(--mono); margin-left:6px; border:1px solid rgba(242,181,68,.5); border-radius:4px; padding:1px 6px}
+
+/* ── 定位 ── */
+.pos{display:grid; grid-template-columns:1fr 1fr; gap:26px; margin-top:30px; align-items:stretch}
+.code{
+  border:1px solid var(--line); border-radius:12px; background:#0a1626; padding:22px 26px;
+  font-family:var(--mono); font-size:13px; line-height:2; overflow-x:auto; color:var(--muted);
+}
+.code .k{color:var(--violet)} .code .fn{color:var(--cyan)} .code .c{color:#54708c} .code .s{color:var(--amber)}
+.pillars{display:flex; flex-direction:column; gap:14px}
+.pillars .p{display:flex; gap:16px; padding:16px 20px; border:1px solid var(--line); border-radius:10px; background:rgba(16,29,49,.6); font-size:13.5px; color:var(--muted)}
+.pillars .p .n{font-family:var(--mono); color:var(--cyan); font-size:12px; flex:none; padding-top:2px}
+.pillars .p b{color:var(--text)}
+
+/* ── 观察/拦截 ── */
+.dual{display:grid; grid-template-columns:1fr 1fr; gap:26px; margin-top:30px}
+.lane{border:1px solid var(--line); border-radius:12px; padding:26px 28px; background:rgba(16,29,49,.7)}
+.lane.ob{border-top:2px solid var(--cyan)} .lane.it{border-top:2px solid var(--amber)}
+.lane .t{display:flex; align-items:baseline; gap:12px; margin-bottom:6px}
+.lane h3{font-family:var(--serif); font-size:20px; font-weight:900}
+.lane .m{font-family:var(--mono); font-size:11px; color:var(--faint)}
+.lane.ob .m{color:var(--cyan)} .lane.it .m{color:var(--amber)}
+.lane p{font-size:13.5px; color:var(--muted)}
+.lane ul{margin-top:12px; padding-left:0; list-style:none}
+.lane li{font-size:13px; color:var(--muted); padding:6px 0 6px 18px; position:relative}
+.lane li::before{content:"—"; position:absolute; left:0; color:var(--faint)}
+.lane li b{color:var(--text)}
+
+/* ── 原则 ── */
+.rules{display:grid; grid-template-columns:1fr 1fr; gap:26px; margin-top:30px}
+.rule{padding:28px 30px; border-radius:12px; border:1px solid var(--line); background:linear-gradient(180deg, rgba(16,29,49,.9), rgba(13,24,40,.7))}
+.rule .no{font-family:var(--serif); font-size:40px; font-weight:900; color:rgba(86,217,233,.35); line-height:1}
+.rule h3{font-family:var(--serif); font-size:19px; font-weight:900; margin:10px 0 10px}
+.rule p{font-size:13.5px; color:var(--muted)}
+.rule p b{color:var(--text)}
+
+footer{margin-top:90px; padding-top:26px; border-top:1px solid var(--line); display:flex; justify-content:space-between; font-size:12.5px; color:var(--faint); font-family:var(--mono)}
+footer a{color:var(--cyan); text-decoration:none}
+@media (max-width:1100px){ nav{display:none} main{margin-left:0} .model,.ab,.pos,.dual,.rules{grid-template-columns:1fr} header h2.big{font-size:38px} }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="brand">OPENPROGRAM</div>
+  <h1>事件层</h1>
+  <a href="#arch"><span class="no">01</span>架构总览</a>
+  <a href="#model"><span class="no">02</span>Event 模型</a>
+  <a href="#sources"><span class="no">03</span>两类事件源</a>
+  <a href="#types"><span class="no">04</span>事件类型表</a>
+  <a href="#pos"><span class="no">05</span>总线与定位</a>
+  <a href="#lanes"><span class="no">06</span>观察 / 拦截</a>
+  <a href="#rules"><span class="no">07</span>两条原则</a>
+  <div class="foot">design doc · v1<br>docs/design/proactive/</div>
+</nav>
+
+<main><div class="wrap">
+
+<header class="hero">
+  <div class="sys">DESIGN · EVENT LAYER</div>
+  <h2 class="big">一条<em>统一的事件流</em>，<br>给整个框架用。</h2>
+  <p class="sub">框架里"某件事发生了"的信号，现在散在六套互不相通的机制里。这层把它们统一成一条总线：<span class="hl">源往里 emit，消费者从里 subscribe</span>。proactive 只是它的第一个消费者。</p>
+  <div class="sixto1">
+    <div>
+      <div class="six">
+        <span>AgentEvent 流</span><span>auth._emit</span><span>on_event 回调</span>
+        <span>WS 广播</span><span>定时 poll</span><span>纯日志</span>
+      </div>
+      <div class="cap">现状：六套机制，各用各的，想接一个时机得先搞清它归哪套</div>
+    </div>
+    <div class="arr">⟶</div>
+    <div>
+      <div class="one">EventBus&nbsp;·&nbsp;emit / subscribe</div>
+      <div class="cap">统一后：一条总线，一种接法</div>
+    </div>
+  </div>
+</header>
+
+<!-- ════════ 01 架构图 ════════ -->
+<section id="arch">
+  <div class="kicker">01 · ARCHITECTURE</div>
+  <h2>架构总览</h2>
+  <p class="lead">所有组件都在同一个 <span class="hl">worker 进程</span>里（各是 daemon 线程），所以总线就是一个进程级单例。看事件怎么流：</p>
+
+  <div class="figure">
+  <svg viewBox="0 0 1240 660" xmlns="http://www.w3.org/2000/svg">
+    <!-- worker 进程框 -->
+    <rect class="frame" x="18" y="46" width="966" height="592" rx="14"/>
+    <text class="lbl mono" x="36" y="74" style="letter-spacing:.18em">WORKER 进程 · 单进程 · 多 DAEMON 线程</text>
+
+    <!-- ── 事件源标题 ── -->
+    <text class="lbl mono cyan-t" x="48" y="118" style="letter-spacing:.14em">A 类 · AGENT 活动</text>
+    <!-- agent loop -->
+    <g>
+      <rect class="box" x="48" y="132" width="208" height="62" rx="8"/>
+      <rect class="tagA" x="62" y="146" width="22" height="22" rx="5"/><text class="tag-t cyan-t" x="69" y="161">A</text>
+      <text class="box-title" x="96" y="156">agent loop</text>
+      <text class="box-sub" x="96" y="178">模型回复 · 工具前后 · 文件改</text>
+    </g>
+    <!-- task runner -->
+    <g>
+      <rect class="box" x="48" y="208" width="208" height="56" rx="8"/>
+      <rect class="tagA" x="62" y="222" width="22" height="22" rx="5"/><text class="tag-t cyan-t" x="69" y="237">A</text>
+      <text class="box-title" x="96" y="232">task runner</text>
+      <text class="box-sub" x="96" y="252">子任务起止</text>
+    </g>
+
+    <text class="lbl mono violet-t" x="48" y="312" style="letter-spacing:.14em">B 类 · 系统状态</text>
+    <!-- auth -->
+    <g>
+      <rect class="box" x="48" y="326" width="208" height="52" rx="8"/>
+      <rect class="tagB" x="62" y="340" width="22" height="22" rx="5"/><text class="tag-t violet-t" x="69" y="355">B</text>
+      <text class="box-title" x="96" y="348">auth</text>
+      <text class="box-sub" x="96" y="368">凭据限流 / 轮换</text>
+    </g>
+    <!-- context -->
+    <g>
+      <rect class="box" x="48" y="392" width="208" height="52" rx="8"/>
+      <rect class="tagB" x="62" y="406" width="22" height="22" rx="5"/><text class="tag-t violet-t" x="69" y="421">B</text>
+      <text class="box-title" x="96" y="414">context</text>
+      <text class="box-sub" x="96" y="434">压缩阈值 70% / 80%</text>
+    </g>
+    <!-- channels -->
+    <g>
+      <rect class="box" x="48" y="458" width="208" height="52" rx="8"/>
+      <rect class="tagB" x="62" y="472" width="22" height="22" rx="5"/><text class="tag-t violet-t" x="69" y="487">B</text>
+      <text class="box-title" x="96" y="480">channels</text>
+      <text class="box-sub" x="96" y="500">外部消息进来</text>
+    </g>
+    <!-- memory -->
+    <g>
+      <rect class="box" x="48" y="524" width="208" height="52" rx="8"/>
+      <rect class="tagB" x="62" y="538" width="22" height="22" rx="5"/><text class="tag-t violet-t" x="69" y="553">B</text>
+      <text class="box-title" x="96" y="546">memory</text>
+      <text class="box-sub" x="96" y="566">空闲处理起止</text>
+    </g>
+
+    <!-- ── 汇入总线的流线 ── -->
+    <path class="flowA" d="M256 163 C 340 163, 360 240, 432 280"/>
+    <path class="flowA" d="M256 236 C 340 236, 360 270, 432 300"/>
+    <path class="flowB" d="M256 352 C 340 352, 360 330, 432 326"/>
+    <path class="flowB" d="M256 418 C 340 418, 360 370, 432 350"/>
+    <path class="flowB" d="M256 484 C 340 484, 360 410, 432 374"/>
+    <path class="flowB" d="M256 550 C 340 550, 360 450, 432 396"/>
+    <text class="lbl mono" x="318" y="146" style="letter-spacing:.1em">emit(Event)</text>
+
+    <!-- ── EventBus ── -->
+    <g>
+      <rect class="busglow" x="436" y="208" width="200" height="262" rx="16"/>
+      <rect class="busbody" x="436" y="208" width="200" height="262" rx="16"/>
+      <text class="box-title mono cyan-t" x="536" y="262" text-anchor="middle" style="font-size:21px; letter-spacing:.04em">EventBus</text>
+      <text class="box-sub" x="536" y="288" text-anchor="middle">进程级单例</text>
+      <text class="box-sub mono" x="536" y="312" text-anchor="middle" style="fill:#8aa0b8">get_event_bus()</text>
+      <line x1="458" y1="334" x2="614" y2="334" stroke="rgba(154,178,204,.25)"/>
+      <text class="box-sub mono" x="536" y="362" text-anchor="middle">emit(Event)</text>
+      <text class="box-sub mono" x="536" y="386" text-anchor="middle">subscribe(types=…)</text>
+      <text class="box-sub" x="536" y="430" text-anchor="middle" style="fill:#5f7a90">源和消费者互不认识</text>
+      <text class="box-sub" x="536" y="450" text-anchor="middle" style="fill:#5f7a90">只认总线</text>
+    </g>
+
+    <!-- ── 观察型出线 ── -->
+    <text class="lbl mono cyan-t" x="688" y="160" style="letter-spacing:.12em">观察 · 异步 · 不挡 agent</text>
+    <path class="flowO" d="M636 280 C 700 270, 706 212, 756 200"/>
+    <path class="flowO" d="M636 320 C 700 320, 710 330, 756 334"/>
+    <!-- webui -->
+    <g>
+      <rect class="box" x="758" y="172" width="206" height="58" rx="8"/>
+      <text class="box-title" x="776" y="196">webui server</text>
+      <text class="box-sub" x="776" y="216">订阅 → 转发前端 WebSocket</text>
+    </g>
+    <!-- proactive -->
+    <g>
+      <rect class="box" x="758" y="306" width="206" height="58" rx="8" style="stroke:rgba(86,217,233,.55)"/>
+      <text class="box-title" x="776" y="330">proactive</text>
+      <text class="box-sub" x="776" y="350">第一个消费者 · 规则层（另文设计）</text>
+    </g>
+
+    <!-- ── 拦截型 ── -->
+    <text class="lbl mono amber-t" x="660" y="486" style="letter-spacing:.12em">拦截 · 同步 · 仅 tool.before</text>
+    <path class="flowI" d="M636 430 C 690 470, 700 512, 752 528"/>
+    <path class="flowI" d="M752 552 C 700 560, 660 540, 624 470" />
+    <g>
+      <rect class="box" x="756" y="500" width="208" height="74" rx="8" style="stroke:rgba(242,181,68,.6)"/>
+      <text class="box-title" x="774" y="526">tool.before 问询点</text>
+      <text class="box-sub" x="774" y="546">复用 _approval · 拦下 / 确认 / 放行</text>
+      <text class="box-sub" x="774" y="564" style="fill:#5f7a90">对 subagent 同样生效</text>
+    </g>
+
+    <!-- ── 前端（进程外） ── -->
+    <path class="flowO" d="M964 200 C 1010 200, 1020 200, 1046 200"/>
+    <text class="lbl mono" x="986" y="188">WS</text>
+    <g>
+      <rect class="box" x="1048" y="166" width="160" height="66" rx="8" style="stroke-dasharray:4 5"/>
+      <text class="box-title" x="1068" y="194">前端 / TUI</text>
+      <text class="box-sub" x="1068" y="214">浏览器 · 命令行</text>
+    </g>
+    <text class="lbl" x="1048" y="258" style="fill:#5f7a90; font-size:10.5px">（worker 进程之外）</text>
+  </svg>
+  <div class="legend">
+    <span><i></i>A 类事件 · 观察（异步）</span>
+    <span><i class="i2"></i>B 类事件 · 观察（异步）</span>
+    <span><i class="i3"></i>拦截（同步，仅 tool.before）</span>
+  </div>
+  </div>
+</section>
+
+<!-- ════════ 02 Event 模型 ════════ -->
+<section id="model">
+  <div class="kicker">02 · EVENT</div>
+  <h2>Event 模型：核心三样 + 开放口袋</h2>
+  <p class="lead">核心（是什么事 + 内容 + 时间）固定；关联信息放进开放的 metadata 口袋，<span class="hl">不写死成字段</span>。</p>
+
+  <div class="model">
+    <div class="struct">
+      <div class="hd"><span><b>Event</b> · dataclass</span><span>frozen=True · 产生后不可改</span></div>
+      <div class="band">
+        <div class="bt">核心 · 固定</div>
+        <div class="fields">
+          <span class="f core">id<small>唯一编号</small></span>
+          <span class="f core">ts<small>发生时间</small></span>
+          <span class="f core">type<small>是什么事</small></span>
+          <span class="f core">origin<small>user / agent / tool / system / proactive</small></span>
+        </div>
+      </div>
+      <div class="band">
+        <div class="bt">内容</div>
+        <div class="fields">
+          <span class="f pay">payload : dict<small>命令、文件路径、哪个账号被限流……</small></span>
+        </div>
+      </div>
+      <div class="band pocket">
+        <div class="bt">开放口袋 · 需要才塞</div>
+        <div class="fields">
+          <span class="f meta">metadata : dict<small>{"session":…, "turn":…, "lane":…}</small></span>
+        </div>
+      </div>
+    </div>
+    <div class="why">
+      <div class="w"><b>为什么 turn / session 进口袋、不做字段？</b><br>它们不是事件的内在属性，是外加的关联——对一半事件（auth、channel）根本没意义，做成字段就得靠"可空"打补丁。成熟事件系统（DOM / 日志 / MQ / 追踪）都这个形状：核心固定，关联进 labels / headers。</div>
+      <div class="w v"><b>turn 不是这层要建模的东西。</b><br>框架里没有 Turn 对象，它就是 assistant 消息的 id，靠 ContextVar（<code>_current_turn_id</code>）传着。agent 事件 emit 时它有值就顺手塞进口袋；auth / channel 事件 emit 时它是空的，口袋里自然没有 turn。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ 03 两类事件源 ════════ -->
+<section id="sources">
+  <div class="kicker">03 · SOURCES</div>
+  <h2>两类事件源</h2>
+  <p class="lead">容易只盯着 A 类，但 agent loop <span class="hl">之外</span>的 B 类对主动性常常更重要。两类进同一条总线，metadata 口袋天然装得下。</p>
+  <div class="ab">
+    <div class="card A">
+      <div class="cls">CLASS A</div>
+      <h3>agent 活动事件</h3>
+      <div class="when">agent 干活的过程中发生</div>
+      <div class="exs"><span>用户消息</span><span>模型回复</span><span>工具前后</span><span>文件改动</span><span>一轮结束</span><span>子任务起止</span></div>
+      <div class="pa">对 proactive：<b>基础</b>。metadata 通常带 session / turn / lane。</div>
+    </div>
+    <div class="card B">
+      <div class="cls">CLASS B</div>
+      <h3>系统状态事件</h3>
+      <div class="when">全局状态变化——可能没有任何 agent 在跑</div>
+      <div class="exs"><span>凭据被限流</span><span>上下文要溢出</span><span>外部消息进来</span><span>技能变更</span><span>插件有新版</span></div>
+      <div class="pa">对 proactive：<b>往往更有价值</b>——"凭据限流了""要溢出了"是明确的可响应时机。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ 04 类型表 ════════ -->
+<section id="types">
+  <div class="kicker">04 · TYPES</div>
+  <h2>事件类型（第一版）</h2>
+  <p class="lead">精挑的"有消费者想响应"的时机，不是框架所有动作的清单。以后加新类型是纯加法（见 07）。</p>
+  <table>
+    <tr><th></th><th>TYPE</th><th>何时</th><th>现有代码来源</th></tr>
+    <tr><td><span class="b bA">A</span></td><td><code>user.prompt_submitted</code></td><td>用户发消息</td><td class="src">dispatcher 入口</td></tr>
+    <tr><td><span class="b bA">A</span></td><td><code>model.response_started / .completed</code></td><td>模型开始 / 说完回复</td><td class="src">AgentEventMessageStart/End</td></tr>
+    <tr><td><span class="b bA">A</span></td><td><code>tool.before</code></td><td>工具即将执行（可拦截）</td><td class="src">AgentEventToolStart</td></tr>
+    <tr><td><span class="b bA">A</span></td><td><code>tool.after</code></td><td>工具执行完</td><td class="src">AgentEventToolEnd</td></tr>
+    <tr><td><span class="b bA">A</span></td><td><code>file.changed</code><span class="new">新增</span></td><td>文件被改</td><td class="src">挂 backup_for_current_turn</td></tr>
+    <tr><td><span class="b bA">A</span></td><td><code>turn.ended</code></td><td>一轮结束</td><td class="src">AgentEventTurnEnd</td></tr>
+    <tr><td><span class="b bA">A</span></td><td><code>subagent.started / .ended</code></td><td>子任务起止</td><td class="src">TaskRunner 广播</td></tr>
+    <tr><td><span class="b bB">B</span></td><td><code>credential.cooldown / .exhausted / .rotated</code></td><td>凭据限流 / 池耗尽 / 轮换</td><td class="src">AuthStore._emit</td></tr>
+    <tr><td><span class="b bB">B</span></td><td><code>context.compaction_recommended / .compacted</code></td><td>上下文到阈值 / 已压缩</td><td class="src">context/engine.py</td></tr>
+    <tr><td><span class="b bB">B</span></td><td><code>channel.message_inbound</code></td><td>外部消息进来</td><td class="src">channels/_broadcast.py</td></tr>
+    <tr><td><span class="b bB">B</span></td><td><code>skills.changed / plugins.update_available</code></td><td>技能改 / 插件有新版</td><td class="src">webui watcher</td></tr>
+  </table>
+</section>
+
+<!-- ════════ 05 定位 ════════ -->
+<section id="pos">
+  <div class="kicker">05 · PLACEMENT</div>
+  <h2>总线：一个进程级单例</h2>
+  <p class="lead">webui、agent loop、channels、memory、auth、task runner <span class="hl">全在同一个 worker 进程里</span>。总线照框架已有的 <code>get_store()</code> / <code>get_runner()</code> 双检锁先例做单例，复用闲置的 <code>agent/event_bus.py</code>。不需要跨进程桥接。</p>
+  <div class="pos">
+    <div class="code">
+<span class="c"># agent/event_bus.py · 照 AuthStore 先例</span><br>
+<span class="k">def</span> <span class="fn">get_event_bus</span>() -&gt; EventBus: …<br><br>
+<span class="k">class</span> <span class="fn">EventBus</span>:<br>
+&nbsp;&nbsp;<span class="k">def</span> <span class="fn">emit</span>(self, event: Event): …<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="c"># 广播，fire-and-forget，不阻塞调用方</span><br>
+&nbsp;&nbsp;<span class="k">def</span> <span class="fn">subscribe</span>(self, handler, *, types=<span class="s">None</span>): …<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="c"># 按事件类型订阅，只收关心的那几类</span>
+    </div>
+    <div class="pillars">
+      <div class="p"><span class="n">01</span><span><b>同进程所有线程拿同一实例</b>，直接 emit / subscribe——这是调研确认的事实，不是假设。</span></div>
+      <div class="p"><span class="n">02</span><span>跟现有 EventBus 的差别：从按 channel 字符串订阅，改成<b>按事件类型订阅、传统一 Event</b>。</span></div>
+      <div class="p"><span class="n">03</span><span><b>auth 已经把事件做对了</b>（subscribe/_emit，11 种事件）——这层是把它的做法推广到全框架，不是发明。</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ 06 观察/拦截 ════════ -->
+<section id="lanes">
+  <div class="kicker">06 · TWO MODES</div>
+  <h2>观察 vs 拦截</h2>
+  <div class="dual">
+    <div class="lane ob">
+      <div class="t"><h3>观察型</h3><span class="m">默认 · 异步</span></div>
+      <p>emit 出去，订阅者异步收到，事件源不等。</p>
+      <ul>
+        <li><b>所有事件</b>都走这条</li>
+        <li>订阅者再慢也<b>不拖慢框架</b></li>
+      </ul>
+    </div>
+    <div class="lane it">
+      <div class="t"><h3>拦截型</h3><span class="m">仅 tool.before · 同步</span></div>
+      <p>工具执行前，下游可以说"别执行"。挂在工具单一入口 <code>_execute_tool_calls</code> 的 <code>tool.execute()</code> 之前。</p>
+      <ul>
+        <li><b>必须快</b>——不许调 LLM</li>
+        <li>多方表态取最严：<b>拦下 &gt; 确认 &gt; 放行</b>，"确认"复用现有 _approval</li>
+        <li><b>对 subagent 也生效</b>——独立于 permission_mode=bypass，否则危险动作塞进子任务就溜了</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ 07 原则 ════════ -->
+<section id="rules">
+  <div class="kicker">07 · PRINCIPLES</div>
+  <h2>两条要记住的原则</h2>
+  <div class="rules">
+    <div class="rule">
+      <div class="no">壹</div>
+      <h3>有消费者想响应，才是事件</h3>
+      <p>不是所有调用都是事件。类型表是<b>精挑</b>的：工具要执行、凭据被限流——是事件；agent 内部一次列表拼接——不是。事件流变成什么都往里倒的垃圾场，是这类系统最常见的腐烂方式。</p>
+    </div>
+    <div class="rule">
+      <div class="no">贰</div>
+      <h3>演进只加不改</h3>
+      <p>源和消费者互不认识，所以<b>加事件只动 emit 那一处</b>：框架内函数加一行，一类动作在公共入口加一次。加类型、给 payload 加字段都零风险；<b>改老结构才会伤老订阅者</b>——这也是 payload / metadata 用开放 dict 的理由。</p>
+    </div>
+  </div>
+  <div class="note">落地顺序与接线点（file:line）见 <b>docs/plans/proactive-implementation.md</b>：先把 A 类收口成总线并验证完整事件序列 → 补 file.changed 和工具前可截 → 桥进 B 类 → 补并发 lane 区分。</div>
+</section>
+
+<footer>
+  <span>OpenProgram · docs/design/proactive/event-layer</span>
+  <span>md 源文件同目录 · <a href="#arch">回到图</a></span>
+</footer>
+
+</div></main>
+
+<script>
+const io = new IntersectionObserver(es => es.forEach(e => { if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} }), {threshold:.08});
+document.querySelectorAll('section').forEach(s => io.observe(s));
+document.querySelector('header.hero').style.cssText = 'opacity:0;transform:translateY(18px)';
+requestAnimationFrame(()=>{ const h=document.querySelector('header.hero'); h.style.transition='opacity .8s ease, transform .8s ease'; h.style.opacity=1; h.style.transform='none'; });
+</script>
+</body>
+</html>

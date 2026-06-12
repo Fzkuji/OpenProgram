@@ -25,14 +25,23 @@ supporting notes / investigations that should not override it.
 | [`memory/memory.md`](memory/memory.md) | Memory subsystem (v1 background) |
 | [`memory/git-as-entity-memory.md`](memory/git-as-entity-memory.md) | Git-as-entity-memory rationale |
 
-## proactive/ — 主动性层（事件驱动）
+## proactive/ — 事件层 + 主动性（事件驱动）
 
-入门导读式，从场景讲起。先读 overview + events-and-state 即可建立整体认识。
+分两块：**事件底座**（一条统一事件流，给整个框架用）+ **主动性应用**（规则订阅事件流出手）。
+两块解耦，可只做底座。先读 event-layer 建立整体认识。
+
+事件底座：
 
 | Doc | Topic |
 |---|---|
-| [`proactive/overview.md`](proactive/overview.md) | 跟着一个场景走一遍（拦 `rm -rf`），五个核心概念就地讲（当前·设计阶段） |
-| [`proactive/events-and-state.md`](proactive/events-and-state.md) | 地基：事件长啥样、状态怎么从事件累加（fold）出来 |
+| [`proactive/event-layer.md`](proactive/event-layer.md) | 统一 Event 模型 + 框架定位 + 框架图 + 事件边界与演进（当前·设计阶段） |
+
+主动性应用（建在底座上）：
+
+| Doc | Topic |
+|---|---|
+| [`proactive/overview.md`](proactive/overview.md) | 跟着一个场景走一遍（拦 `rm -rf`），规则 / 出手 / 状态等概念就地讲 |
+| [`proactive/events-and-state.md`](proactive/events-and-state.md) | 状态怎么从事件累加（fold）出来——规则能"记住过去"的原理 |
 | [`proactive/execution-model.md`](proactive/execution-model.md) | 规则（Policy）怎么写；挡路的 / 旁观的两类有何不同 |
 | [`proactive/policies-mvp.md`](proactive/policies-mvp.md) | 三条样板规则，照着写新规则 |
 | [`proactive/invariants.md`](proactive/invariants.md) | 框架自己要守的底线（主要是别绕成死循环） |
