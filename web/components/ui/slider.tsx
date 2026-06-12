@@ -70,6 +70,9 @@ const Slider = React.forwardRef<
     {stops && stops > 1
       ? Array.from({ length: stops }).map((_, i) => {
           if (innerTicksOnly && (i === 0 || i === stops - 1)) return null;
+          // No tick under the thumb itself — it would poke out from
+          // behind the thumb's glyph.
+          if (i === currentValue) return null;
           // Selected = the tick's index is BELOW the current thumb
           // position (i.e. the thumb has already passed it on the
           // way right). Selected ticks paint accent-blue and melt

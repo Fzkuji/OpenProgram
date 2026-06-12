@@ -130,22 +130,21 @@ const ThinkingEffortSliderPill = React.forwardRef<
     maxIndex > 0
       ? Math.round(14 + (valueIndex / maxIndex) * 8)
       : 14;
-  // Warm hue per effort level. NOT the project `--accent-*` tokens —
-  // those are deliberately muted/earthy (`--accent-orange` is a
-  // brownish #b8651f, `--accent-yellow` reads as dirt-yellow), which
-  // looked drab in the slider. Plain vivid hex hues, used as-is (no
-  // white mixing). `off` keeps neutral bright-white. Everything
-  // below derives from this single hue so the collapsed tint /
-  // range / bolt all agree.
+  // Warm hue per effort level, interpolated continuously so EVERY level
+  // gets its own colour: hsl hue runs 48° (yellow, lowest) → 0° (red,
+  // highest) across the non-off stops, with saturation/lightness easing
+  // up alongside. Endpoints match the old fixed palette (#fbbf24 …
+  // #ff5c5c). NOT the project `--accent-*` tokens — those are muted /
+  // earthy and looked drab in the slider. `off` keeps neutral
+  // bright-white. Everything below derives from this single hue so the
+  // collapsed tint / range / glyph all agree.
+  const nonOff = options.filter((o) => o.value !== "off");
+  const nonOffIdx = nonOff.findIndex((o) => o.value === value);
+  const heat = nonOff.length > 1 ? nonOffIdx / (nonOff.length - 1) : 1;
   const warmHue =
-    {
-      off: "var(--text-bright)",
-      minimal: "#fbbf24",
-      low: "#fbbf24",
-      medium: "#ff9d2e",
-      high: "#ff9d2e",
-      xhigh: "#ff5c5c",
-    }[value] ?? "var(--text-bright)";
+    value === "off" || nonOffIdx < 0
+      ? "var(--text-bright)"
+      : `hsl(${Math.round(48 - 48 * heat)}, ${Math.round(96 + 4 * heat)}%, ${Math.round(56 + 12 * heat)}%)`;
 
   // Effort-level tint for the COLLAPSED pill — `warmHue` at low
   // opacity so it sits softly on the panel surface. `off` is special:
