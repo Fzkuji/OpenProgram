@@ -202,6 +202,17 @@ const ThinkingEffortSliderPill = React.forwardRef<
     return () => cancelAnimationFrame(id);
   }, []);
 
+  // The thumb biceps flexes for as long as the slider is open. It can't
+  // be driven from mouseenter like the chip icon: picking `off` unmounts
+  // it, and the fresh icon mounted on the next value change would sit
+  // frozen until the next re-hover. Re-keying on [expanded, value]
+  // restarts the loop after every such remount.
+  useEffect(() => {
+    if (expanded && value !== "off") {
+      effortIconThumbRef.current?.startAnimation?.();
+    }
+  }, [expanded, value]);
+
   return (
     <div
       ref={ref}
@@ -211,7 +222,6 @@ const ThinkingEffortSliderPill = React.forwardRef<
       onMouseEnter={(e) => {
         onMouseEnter?.(e);
         effortIconChipRef.current?.startAnimation?.();
-        effortIconThumbRef.current?.startAnimation?.();
         caretRef.current?.startAnimation?.();
       }}
       onMouseLeave={(e) => {
