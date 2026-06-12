@@ -18,7 +18,7 @@ class Runtime(call=None, model="default")
 |------|------|--------|------|
 | `call` | `Callable \| None` | `None` | LLM provider 函数。签名：`fn(content: list[dict], model: str, response_format: dict) -> str`。如果不传，需要子类化并重写 `_call()` |
 | `model` | `str` | `"default"` | 默认模型名称，每次调用可覆盖 |
-| `max_retries` | `int` | `2` | exec() 最大尝试次数（包含首次调用，且必须 >= 1） |
+| `max_retries` | `int \| None` | `None` | exec() 最大尝试次数（包含首次调用，且必须 >= 1）。`None` = 读环境变量 `OPENPROGRAM_MAX_RETRIES`，没设则为 `6` |
 
 ### 属性
 
@@ -36,7 +36,7 @@ class Runtime(call=None, model="default")
 Runtime.exec(content, context=None, response_format=None, model=None,
              tools=None, toolset=None, tools_source=None, tools_allow=None,
              tools_deny=None, tool_choice="auto", parallel_tool_calls=True,
-             max_iterations=20, choices=None) -> Any
+             max_iterations=20, choices=None, timeout_s=None, on_retry=None) -> Any
 ```
 
 调用 LLM,上下文从 session DAG 自动算出。
@@ -61,10 +61,12 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 | `model` | `str \| None` | `None` | 覆盖默认模型 |
 | `tools` | `list \| None` | `None` | 本次调用 LLM 可用的工具。设了就跑工具循环直到模型返回纯文本 |
 | `toolset` / `tools_source` / `tools_allow` / `tools_deny` | — | `None` | 工具集与策略过滤 |
-| `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / 强制某工具 |
-| `parallel_tool_calls` | `bool` | `True` | 允许一轮多个工具调用 |
-| `max_iterations` | `int` | `20` | 工具循环安全上限 |
+| `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / 强制某工具。**接受但暂未接线**：函数体不读取此参数，非默认值会被静默忽略 |
+| `parallel_tool_calls` | `bool` | `True` | 允许一轮多个工具调用。**接受但暂未接线**：非默认值会被静默忽略 |
+| `max_iterations` | `int` | `20` | 工具循环安全上限。**接受但暂未接线**：实际循环上限是 `agent_loop.py` 的 `MAX_INNER_ITERATIONS = 50` |
 | `choices` | `dict \| list \| None` | `None` | 设了则约束 turn 的**收尾**:模型跑完整 turn 后,最终回复必须从 `choices` 里选一个;`exec` 解析并返回该选择的结果。详见 [next-step-decision](../agentic-programming/choosing-the-next-step/next-step-decision.md) |
+| `timeout_s` | `float \| None` | `None` | 整个 `exec()`（含全部重试）的 wall-clock 时间预算,超时抛 `LLMError`（`reason=timeout`） |
+| `on_retry` | `Callable \| None` | `None` | 每次重试前调用的观测回调,入参 `RetryInfo`;回调内抛出的异常被忽略 |
 
 #### Content block 格式
 
@@ -84,6 +86,7 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 - `RuntimeError` — 同一个 `@agentic_function` 内调用了两次
 - `TypeError` — 传入了 async 的 call 函数（应使用 `async_exec()`）
 - `NotImplementedError` — 没有配置 call 函数
+- `LLMError` — 重试耗尽或遇到不可重试错误时抛出,结构化字段含 `reason` / `retryable` / `http_status` / `attempts` 等
 
 ---
 
@@ -203,8 +206,8 @@ def plan(goal):
 ### 配置
 
 ```python
-# 默认：最多尝试 2 次（首次调用 + 失败后再试一次）
-rt = Runtime(call=my_llm, max_retries=2)
+# 默认：max_retries=None → 读环境变量 OPENPROGRAM_MAX_RETRIES,没设则为 6
+rt = Runtime(call=my_llm)
 
 # 不重试（失败即抛异常）
 rt = Runtime(call=my_llm, max_retries=1)
@@ -220,14 +223,14 @@ rt = Runtime(call=my_llm, max_retries=5)
 | API 调用成功 | 返回结果 |
 | API 抛出异常（非 `TypeError` / `NotImplementedError`） | 记录失败 attempt，然后继续重试，直到达到 `max_retries` |
 | `TypeError` 或 `NotImplementedError` | 立即抛出，不重试（通常是 provider 实现或调用方式的问题） |
-| 所有重试均失败 | 抛出 `RuntimeError`，并附上完整 attempt 报告 |
+| 所有重试均失败 | 抛出结构化 `LLMError`（`reason` / `retryable` / `http_status` / `attempts` 等字段），并附上完整 attempt 报告 |
 
 ### 错误报告格式
 
-当所有重试耗尽时,抛出的 `RuntimeError` 包含每次尝试的错误信息:
+当所有重试耗尽时,抛出的 `LLMError` 包含每次尝试的错误信息,结构化字段（`reason` / `retryable` / `http_status` / `attempts` / `elapsed_s` 等）可直接读取:
 
 ```
-RuntimeError: exec() failed after 3 attempts in observe():
+LLMError: exec() failed after 3 attempt(s):
 Attempt 1: ConnectionError: timeout
 Attempt 2: RateLimitError: 429 Too Many Requests
 Attempt 3: ConnectionError: timeout

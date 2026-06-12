@@ -72,12 +72,11 @@ The framework's components (WebUI, catalog menus, provider-native `tools=[...]`)
 | WebUI placeholder | `@agentic_function(input={"x": {"placeholder": "..."}})` | `fn.input_meta["x"]["placeholder"]` |
 | WebUI multiline input | `@agentic_function(input={"x": {"multiline": True}})` | `fn.input_meta["x"]["multiline"]` |
 | Dynamic option source | `@agentic_function(input={"x": {"options_from": "functions"}})` | `fn.input_meta["x"]["options_from"]` |
-| Working-directory picker mode | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")` | `fn.workdir_mode` |
+| Working-directory picker mode | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")` | AST-parsed from the decorator's source text by the WebUI (`openprogram/webui/_functions.py`), so write it as a literal in the decorator call |
 | Auto-injected by the framework | param name in `{"runtime", "exec_runtime", "review_runtime"}` | framework checks signature |
 | System-prompt override | `@agentic_function(system="...")` | `fn.system` |
 | Context-tree visibility | `@agentic_function(expose="io"\|"full"\|"hidden")` | `fn.expose` |
 | Context-tree render range | `@agentic_function(render_range={"callers": ..., "subcalls": ...})` | `fn.render_range` |
-| Tool set policy | `@agentic_function(no_tools=True)` | `fn.no_tools` |
 | Skill trigger keywords | sibling `SKILL.md` frontmatter | skill loader |
 
 Single source of truth: anything expressible in the signature / annotations is not repeated in the decorator; anything expressible in `input=` is not repeated in the docstring.
@@ -105,7 +104,7 @@ from openprogram.agentic_programming.runtime import Runtime
 @agentic_function(input={
     "text": {"description": "Text to analyze."},
 })
-def analyze_sentiment(text: str, runtime: Runtime) -> str:
+def analyze_sentiment(text: str, runtime: Runtime = None) -> str:
     """Classify the sentiment of a text into positive, negative, or neutral."""
     reply = runtime.exec(content=[{"type": "text", "text": (
         f"Classify the sentiment of the following text. Reply with exactly "
@@ -150,7 +149,7 @@ def review_essay(
     max_score: int,
     show_rubric_internals: bool,
     session_id: str,           # filled by Python via context, not LLM
-    runtime: Runtime,          # auto-injected
+    runtime: Runtime = None,   # auto-injected
 ) -> dict:
     """Score an essay against a named rubric and return a structured report."""
     # ... real implementation here ...
@@ -175,7 +174,7 @@ from openprogram.agentic_programming.runtime import Runtime
 
 
 @agentic_function
-def route_message(msg: str, runtime: Runtime) -> dict:
+def route_message(msg: str, runtime: Runtime = None) -> dict:
     """Decide how to handle an incoming message."""
     return decision.make(f"Pick how to handle this message:\n{msg}", {
         "analyze":  analyze_sentiment,        # function option — runs it, returns its result
@@ -185,7 +184,7 @@ def route_message(msg: str, runtime: Runtime) -> dict:
 
 
 @agentic_function
-def handle_ticket(ticket: str, runtime: Runtime) -> dict:
+def handle_ticket(ticket: str, runtime: Runtime = None) -> dict:
     """Investigate a ticket, then decide which workflow to route it to."""
     return runtime.exec(
         f"Handle this ticket:\n{ticket}",
@@ -218,10 +217,10 @@ Walk through every rule. If any fails, fix it before writing the file.
 |---|---|---|
 | 1 | File contains at most one entry function (one `@agentic_function`-decorated `def` at top level). | Eyeball / grep. |
 | 2 | If the function makes any `runtime.exec` call, the entry function must be decorated with `@agentic_function`. | Eyeball. |
-| 3 | If decorated, the signature must include `runtime: Runtime`. | Eyeball signature. |
+| 3 | If decorated, the signature must include `runtime: Runtime` — and give it a default (`runtime: Runtime = None`). A function passed to `exec(tools=[...])` fails at tool dispatch with `TypeError: missing a required argument: 'runtime'` before injection if the parameter has no default; direct Python calls and the `decision`/`choices` path do inject. | Eyeball signature. |
 | 4 | Every parameter has a type annotation; the return has an annotation. | Eyeball signature. |
 | 5 | The function has a docstring whose first paragraph is a one-line summary. | Eyeball. |
-| 6 | No `async def`. | Eyeball. |
+| 6 | `async def` bodies are supported (the decorator wrapper has an async branch), but sync `def` remains the default recommendation: `Runtime.async_exec` exists but lacks `tools=` / `choices=` support. | Eyeball. |
 | 7 | Every `import` / `from ... import` actually resolves in this environment. There is no import sandbox — any installed package works — but prefer the stdlib and `openprogram.*` so the function stays dependency-free and portable. | Read import lines; the §9 smoke test catches anything that doesn't resolve. |
 | 8 | If you pull in a third-party package (not stdlib, not `openprogram.*`), confirm it's already installed and tell the user it's a new dependency. | Check / `pip show <pkg>`. |
 | 9 | Code parses as Python (no syntax error). | Mentally compile; if unsure run `python -c "import ast; ast.parse(open('<path>').read())"`. |
@@ -230,10 +229,10 @@ Walk through every rule. If any fails, fix it before writing the file.
 
 | # | Rule | How to check |
 |---|---|---|
-| 10 | `content=` is a `list[dict]`. | Eyeball. |
-| 11 | Each item in `content` is a dict literal — **never a bare string**. `content=[text]` is wrong; `content=[{"type":"text","text":text}]` is correct. | Eyeball. |
+| 10 | `content=` is canonically a `list[dict]`. | Eyeball. |
+| 11 | Each item in a `content` list is a dict literal — `content=[text]` (a bare string inside the list) is wrong. Passing a plain string as `content` itself **is** accepted and auto-wrapped into a text block; the list-of-blocks form is canonical. `content=[{"type":"text","text":text}]` is the canonical shape. | Eyeball. |
 | 12 | Each dict has `"type"`: `"text"` (with `"text"`) or `"image"` / `"audio"` / `"file"` (with `"path"`). | Eyeball. |
-| 13 | Allowed kwargs only: `content, response_format, model, tools, toolset, tools_source, tools_allow, tools_deny, tool_choice, parallel_tool_calls, max_iterations, choices`. | Eyeball. |
+| 13 | Allowed kwargs only: `content, response_format, model, tools, toolset, tools_source, tools_allow, tools_deny, tool_choice, parallel_tool_calls, max_iterations, choices`. Note: `tool_choice`, `parallel_tool_calls`, `max_iterations` are accepted but currently not wired — non-default values are silently ignored. | Eyeball. |
 | 14 | **No `system=` kwarg.** System instruction comes from the decorator (`system="..."`) or the docstring, never from a runtime.exec kwarg. | Eyeball. |
 | 15 | The per-call instruction lives inside the `content` text, not only in the docstring (see §4). | Eyeball — the text in content should describe the task. |
 
@@ -370,7 +369,7 @@ After the frontmatter, write a short body covering when to use this skill, brief
 If you remember nothing else from this skill, remember these:
 
 1. Decorate with `@agentic_function` only when LLM reasoning is needed.
-2. `runtime: Runtime` in the signature; `runtime.exec(content=[{"type":"text","text":"..."}])` is the call shape.
+2. `runtime: Runtime = None` in the signature; `runtime.exec(content=[{"type":"text","text":"..."}])` is the call shape.
 3. Per-call prompt + data go in `content`. Docstring is documentation, not instruction.
 4. No `system=` kwarg on `runtime.exec`.
 5. Every LLM-visible parameter needs a `description` in `input={...}`.

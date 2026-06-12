@@ -2,7 +2,7 @@
 
 This document defines what metadata a function in this framework must carry — whether or not it calls an LLM — where that metadata lives, and which components consume it.
 
-Scope: every function decorated with `@agentic_function`, plus any plain Python callable passed into `render_options`, `runtime.exec(tools=[...])`, or any other component of the catalog protocol.
+Scope: every function decorated with `@agentic_function`, plus any plain Python callable passed into `render_options` or any other component of the catalog protocol. (`runtime.exec(tools=[...])` does not accept plain callables — entries must be an `@agentic_function`, a `{"spec", "execute"}` dict, or an object with `.spec`/`.execute`; anything else raises `TypeError`.)
 
 ## 1. Why this spec exists
 
@@ -24,9 +24,8 @@ This spec defines a single source-of-truth so every consumer reads metadata by t
 | `render_options(options)` (catalog menu) | function name, when-to-pick description, parameter name / type / description / enum, whether each parameter is system-filled |
 | `parse_args(reply, options, runtime, ...)` (catalog extract + dispatch + retry) | parameter names + types + enum + hidden flag, `runtime`-style auto-inject allowlist |
 | WebUI parameter form | description / placeholder / multiline / options / hidden |
-| `runtime.exec` default system prompt | full docstring |
+| `runtime.exec` rendered context | docstring — carried as `metadata.doc` and prefixed into the rendered context text. The default system prompt comes from `runtime.system` (plus the skills block), not from the docstring. |
 | Context tree rendering | `expose` mode + `render_range` |
-| meta/create / edit / fix / improve | docstring conventions, signature constraints, `input=` metadata |
 | auto-trace / persistence | function identity, argument values, return value, timing |
 
 ## 3. Metadata fields and their canonical locations
@@ -47,15 +46,16 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 | WebUI placeholder | `@agentic_function(input={"x": {"placeholder": "..."}})` | `fn.input_meta["x"]["placeholder"]` |
 | WebUI multiline input | `@agentic_function(input={"x": {"multiline": True}})` | `fn.input_meta["x"]["multiline"]` |
 | Dynamic option source | `@agentic_function(input={"x": {"options_from": "functions"}})` | `fn.input_meta["x"]["options_from"]` |
-| Working-directory picker mode | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")` | `fn.workdir_mode` |
-| Framework-auto-injected parameters | global constant `_AUTO_PARAMS = {"runtime", "exec_runtime", "review_runtime"}` | module level |
+| Working-directory picker mode | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")` — validated by the decorator and stored on the instance | `fn.workdir_mode`. Its consumer is the WebUI, which does not introspect the object — it AST-parses the source text (`openprogram/webui/_functions.py:_extract_workdir_mode`), so the value must be written as a literal in the decorator call |
+| Framework-auto-injected parameters | two constants in two files, both `{"runtime", "exec_runtime", "review_runtime"}`: `_RUNTIME_PARAMS` in `agentic_programming/function.py` (injection + tool-spec filtering) and `_AUTO_PARAMS` in `agentic_programming/decision.py` (menu hiding + dispatch) | module level |
 | Override of `runtime.exec` system prompt | `@agentic_function(system="...")` | `fn.system` |
 | Context-tree expose mode | `@agentic_function(expose="io"\|"llm"\|"full"\|"hidden")` — controls what **callers** see of this function in their DAG render | `fn.expose` |
 | Context-tree render range | `@agentic_function(render_range={"callers": N, "subcalls": M})` — controls how much DAG history **this function's own** `runtime.exec` reads. Both are node-count slices on `seq`: `callers` = most-recent N nodes written **before** this function's frame started (default `None` = uncapped, `0` = wall off all prior context); `subcalls` = most-recent N nodes written **since** this function's frame started (default `-1` = uncapped — the frame sees its own progress; child internals are hidden by *their* `expose` setting, not by subcalls counting; set `N>=0` only to actively cap prompt size in a loop). | `fn.render_range` |
-| Whether runtime gets a tool set | `@agentic_function(no_tools=True)` | `fn.no_tools` |
 | Skill trigger words / agent discovery | sibling `SKILL.md` frontmatter | loaded separately by the skill loader |
 
 **Core principle**: anything expressible in the signature / annotation is not repeated in the decorator; anything expressible in `input=` is not repeated in the docstring.
+
+The decorator also accepts the shared tool-registration / gating kwargs (`name`, `description`, `toolset`, `unsafe_in`, `requires_approval`, `available_if`, `defer`, ...) documented in `docs/design/function/function-calling-unification.md`; `cache` / `cache_ttl` / `timeout` are accepted and stored but currently not wired.
 
 ### Effective defaults for a bare `@agentic_function`
 
@@ -64,7 +64,7 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 | `expose` | `"io"` | Callers see my name + input + output. My internal `runtime.exec` (`llm` Calls) are hidden from them. |
 | `render_range` | `None` → `compute_reads` falls through to `callers=None, subcalls=-1` | Pre-frame history is uncapped. In-frame nodes (the frame's own progress: earlier `runtime.exec` results, returned sub-function io) are also uncapped. Child `@agentic_function` internals stay hidden because the child carries `expose="io"`, not because subcalls trims them. |
 | top-level chat turn | `frame_entry_seq=-1`, no pre-frame | Same code path as any other frame — all nodes are in-frame and visible. No special-casing. |
-| `no_tools` | `False` | The active toolset is injected into `runtime.exec`. |
+| tools | none | `runtime.exec` gets NO tools unless `tools=` / `toolset=` is passed — tools are opt-in. One caveat: a nested `exec` inside a tool body inherits the outer tools via the `_current_tools` contextvar. |
 | `system` | `None` | Use the runtime's existing system prompt as-is. |
 
 Implication: a frame naturally accumulates its own work. Set `subcalls=N` explicitly only to bound prompt size in a long loop. Set `subcalls=0` explicitly to fully wall off in-frame nodes (rare).
@@ -173,26 +173,26 @@ def polish(text: str, style: str, runtime: Runtime) -> str:
     ...
 ```
 
-Legacy functions still work — when `input_meta` provides no description for a parameter, `render_options` and `_build_agentic_tool_spec` fall back to parsing the docstring `Args:` section. Fallback order:
+Legacy functions still run, but the `Args:` section is dead text — **no docstring-`Args:` parser exists anywhere in the framework** (see §10). `_build_agentic_tool_spec` falls back as follows:
 
 ```
 fn.input_meta[name]["description"]
     ↓ not found
-docstring Args section for name (Google-style)
+fn.input_meta[name]["placeholder"]  (rendered as "e.g. {placeholder}")
     ↓ not found
-fn.input_meta[name]["placeholder"]  (prefixed with "e.g.")
-    ↓ not found
-no description; the menu shows only parameter name + type
+no description; only parameter name + type
 ```
+
+`render_options` reads only `description` and `options` from `input_meta`; parameters without them get name + type only.
 
 ## 6. Plain Python callables (undecorated)
 
-`@agentic_function` is not required. Plain callables can also be passed to `render_options` and `runtime.exec(tools=[...])`, but they carry less metadata:
+`@agentic_function` is not required for the decision/catalog path: plain callables can be passed to `render_options` (and as `decision.make` / `choices=` options), but they carry less metadata. They can **not** be passed to `runtime.exec(tools=[...])` — `_adapt_tools` raises `TypeError` for anything that is not an `@agentic_function`, a `{"spec", "execute"}` dict, or an object with `.spec`/`.execute`.
 
 | Field | Decorated | Undecorated |
 |---|---|---|
-| Parameter description | from `input=` | from docstring `Args:` fallback, or empty |
-| Parameter enum | `input={"x": {"options": [...]}}` | none; annotation `Literal["a","b"]` is detected |
+| Parameter description | from `input=` | empty (no docstring fallback exists) |
+| Parameter enum | `input={"x": {"options": [...]}}` | none |
 | Hidden flag | `input={"x": {"hidden": True}}` | only `_AUTO_PARAMS` names (`runtime`, etc.) are auto-hidden |
 | Recorded in context tree | yes | no |
 
@@ -208,11 +208,13 @@ The following parameter names are reserved by convention: if a function's signat
 | `exec_runtime` | The runtime used for execution (multi-runtime setups) |
 | `review_runtime` | The runtime used for review (multi-runtime setups) |
 
-To add a new auto-injected name, edit `_AUTO_PARAMS` in `agentic_programming/function.py`. Do not mark them per-callsite via `input={"x": {"hidden": True}}`.
+These names live in two constants in two files: `_RUNTIME_PARAMS` in `agentic_programming/function.py` (runtime injection + filtering from tool specs) and `_AUTO_PARAMS` in `agentic_programming/decision.py` (hiding from catalog menus + dispatch). To add a new auto-injected name, edit both. Do not mark them per-callsite via `input={"x": {"hidden": True}}`.
 
 ## 8. WebUI rendering behavior
 
-The WebUI form renders each parameter by the following rules (implemented in `web/components/programs/program-run-dialog.tsx`). When authoring `@agentic_function(input={...})`, use this table to predict what kind of input control your function will produce:
+The WebUI does not introspect live Python objects: it AST/regex-parses the source files (`openprogram/webui/_functions.py`). Consequently `input=` must be written as a literal dict in the decorator call to show up in the form — metadata built dynamically (variables, helper calls) is invisible to the WebUI.
+
+The WebUI form renders each parameter by the following rules (implemented in `web/components/chat/composer/fn-form/fn-form.tsx` and `fn-form-fields.tsx`). When authoring `@agentic_function(input={...})`, use this table to predict what kind of input control your function will produce:
 
 | Parameter trait | WebUI control |
 |---|---|
@@ -223,9 +225,9 @@ The WebUI form renders each parameter by the following rules (implemented in `we
 | `options: ["a", "b", ...]` | Clickable chips plus a free-form text input (user can pick a preset OR type a custom value) |
 | `options_from: "functions"` | `<select>` dropdown populated from currently-registered non-builtin / non-meta functions |
 | `hidden: True` | Omitted from the form entirely |
-| Has a Python default and no explicit `placeholder` | placeholder auto-set to `"default: X"` |
+| Has a Python default and no explicit `placeholder` | the raw default value becomes the placeholder ghost text (no `"default: "` prefix); pressing Tab in the empty field promotes it into the actual value; defaults of `None` or starting with `_` are suppressed |
 
-The working-directory picker is rendered separately at the bottom of the form, governed by the top-level `workdir_mode`:
+The working-directory picker is rendered separately above the parameter rows, governed by the top-level `workdir_mode`:
 
 | `workdir_mode` value | Form behavior |
 |---|---|
@@ -233,7 +235,7 @@ The working-directory picker is rendered separately at the bottom of the form, g
 | `"hidden"` | Picker not shown (function doesn't depend on filesystem location) |
 | `"required"` | Picker shown and required; the form blocks submission without a value |
 
-Parameter `description` renders as a small label next to the parameter name; the type annotation and the "required" marker are also shown on the same row.
+Parameter `description` renders as a small label next to the parameter name; the type annotation is shown on the same row, and non-required parameters get an "optional" marker (there is no "required" marker).
 
 ## 9. Out of scope (deferred for future expansion)
 
@@ -241,7 +243,7 @@ The following fields were discussed and are **intentionally not introduced now**
 
 | Field | Intended use | Why deferred |
 |---|---|---|
-| `effects=["fs", "net", "state"]` | Mark function side effects for permission gating / dangerous-op blocking | No permission gateway component exists yet |
+| `effects=["fs", "net", "state"]` | Mark function side effects for permission gating / dangerous-op blocking | A gating surface already exists on the decorator (`requires_approval`, `check_fn`, `unsafe_in`, `available_if`, `defer`); a declarative `effects=` field on top of it remains future work |
 | `permissions=[...]` | Required permission scope before calling | Same as above |
 | `idempotent=True` | Whether the function can be safely retried | No auto-retry component exists |
 | `latency_hint="long"` | Scheduler hint | No scheduler exists |

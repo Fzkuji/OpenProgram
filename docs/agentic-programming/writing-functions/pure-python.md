@@ -61,6 +61,8 @@ def word_count(text: str) -> int:
     return len(text.split())
 ```
 
+The node records the function name, the bound arguments (with `self`/`cls`/`runtime`/`callback` stripped), and the return value, with `expose` fixed to `'io'`. `async def` functions are also supported.
+
 ## Pure Python vs. @agentic_function
 
 | Criterion | Pure Python | @agentic_function |

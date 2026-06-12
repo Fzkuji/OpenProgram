@@ -26,7 +26,7 @@ def f(x: str, runtime) -> str:
 | `expose` | `str` | `"io"` | **朝外**:别人渲染 DAG 时能看到我的什么。`"io"` = 本函数的 input/output 节点对外可见,内部直接的 LLM 调用对外隐藏;`"llm"` = 反过来,只露内部 LLM 交换,藏 input/output;`"full"` = 全可见;`"hidden"` = 根本不写 DAG 节点 |
 | `render_range` | `dict` | `None` | **朝内**:本函数内部 `runtime.exec` 拼 prompt 时,从 DAG 读多少历史节点。形状 `{"callers": N, "subcalls": M}`,两个数字都是 **节点计数(按 `seq` 切片)**:<br>• `callers` — 本函数 frame **启动前**的节点,取最近 N 个(`None` 默认 = 不限,`0` = 全墙)<br>• `subcalls` — 本函数 frame **启动后**已写入的节点,取最近 N 个(`-1` 默认 = 不限,frame 自然看见自己的进度;`N>=0` = 只想截 prompt 时显式设;`0` = 完全墙掉 in-frame)<br>`{"callers":0,"subcalls":0}` = 跟外界和自己 frame 全断绝 |
 | `input` | `dict` | `None` | 每个参数的 UI 元数据(`description` / `placeholder` / `multiline` / `options` / `hidden` 等),WebUI 据此渲染输入表单 |
-| `no_tools` | `bool` | `False` | `True` 时本函数的 `runtime.exec` 默认不带工具集 |
+| `workdir_mode` | `str` | `None` | 工作目录选择器模式:`"optional"` / `"hidden"` / `"required"`,其余值报错。消费方是 WebUI——它通过 AST 解析源码文本读取,所以必须以字面量写在装饰器调用里才生效 |
 | `system` | `str` | `None` | 本函数 LLM 调用的 system prompt(调用期间盖到注入的 runtime 上,调用后恢复) |
 
 函数名、参数名 / 类型 / 默认值、一句话摘要都从函数签名和 docstring 自动读取,不在装饰器里重复(见 SKILL.md §3)。

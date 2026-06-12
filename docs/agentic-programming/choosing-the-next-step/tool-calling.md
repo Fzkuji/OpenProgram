@@ -30,21 +30,22 @@ Inside an `@agentic_function`, call
 - **Tools are opt-in.** With neither `tools=` nor `toolset=` passed, the LLM
   gets `None` for tools — a pure reasoning call where the LLM has no function
   to pick and can only emit text. To let it "pick a function", you must pass
-  `tools=[...]` or `toolset="default"` explicitly.
+  `tools=[...]` or `toolset="default"` explicitly. One caveat: a nested
+  `exec` inside a tool body inherits the outer call's tools (via the
+  `_current_tools` contextvar), so it is not automatically tool-free.
+- To trim the tool menu, `exec` also takes the policy parameters
+  `tools_source`, `tools_allow`, and `tools_deny`.
 - With `tools` set, `exec` enters the tool loop until the model returns pure
-  text, or hits `max_iterations` (default 20).
+  text (or the loop's hard cap is hit — see [Termination](#termination)).
 
-`tool_choice` controls whether picking is allowed / required this round:
-
-```
-"auto" (default)                    the model decides whether and what to call
-"required"                          must pick a function this round; bare text not allowed
-"none"                              must not pick a function; text only
-{"type":"function","name":"X"}      force-pick function X
-```
-
-`parallel_tool_calls` (default `True`) lets the model pick several functions
-in a single round.
+`exec` also accepts `tool_choice`, `parallel_tool_calls`, and
+`max_iterations`, but **these are accepted but currently not wired** — the
+body never reads them, so any value other than the default is silently
+ignored. Only the defaults describe real behaviour: each round the model
+decides whether and what to call (`tool_choice="auto"`), and it may pick
+several functions in a single round (`parallel_tool_calls=True`). If you
+need a forced, structured decision ending, use `exec(choices=...)` instead
+— see [next-step decision](./next-step-decision.md).
 
 ## Loop body: `_run_loop`
 
@@ -106,8 +107,11 @@ model picked no function (pure text)   normal finish; the text is the result
 stop_reason = error / aborted          error / cancel finish
 inner_iterations > 50                  hard cap MAX_INNER_ITERATIONS against idle spinning;
                                        treated as a normal finish, returns what exists
-exec-level max_iterations (default 20) exec's own tool-loop safety cap
 ```
+
+One continuation condition is easy to miss: the inner `while` also runs on
+`pending_messages`, so queued user (steering) messages keep the loop alive
+even after a pure-text reply.
 
 After the inner loop exits, `get_follow_up_messages` may supply follow-up
 messages which become `pending_messages` for another round; otherwise the

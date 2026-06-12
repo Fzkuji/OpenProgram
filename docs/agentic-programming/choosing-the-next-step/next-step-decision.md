@@ -15,9 +15,12 @@ Two entry points share the same option shapes and parsing:
   (reasoning, tool calls), and only the closing move is a decision.
 
 `decision.make` needs a runtime to issue the model call, but the runtime is
-taken automatically from the `_current_runtime` ContextVar set by the
-`@agentic_function` decorator — so inside an agentic function you do not
-pass it; only outside one do you pass `runtime=` explicitly.
+taken automatically from the `_current_runtime` ContextVar. That ContextVar
+is only set when a function on the call chain declares a runtime-class
+parameter (`runtime` / `exec_runtime` / `review_runtime`) — an entry-point
+`@agentic_function` without one makes `decision.make` raise `RuntimeError`.
+So declare `runtime=None` on the function and you do not pass it on; only
+outside an agentic function do you pass `runtime=` explicitly.
 
 ## Versus native tool calls
 
@@ -43,7 +46,7 @@ no `if` written:
 from openprogram.agentic_programming import agentic_function, decision
 
 @agentic_function
-def route_message(msg: str) -> str:
+def route_message(msg: str, runtime=None) -> str:
     return decision.make("Pick one way to handle this message.", {
         "analyze":  analyze_sentiment,        # a function
         "fallback": fallback_reply,           # a function
@@ -70,7 +73,7 @@ decision. Use `exec`'s `choices=` parameter:
 
 ```python
 @agentic_function
-def handle_ticket(ticket: str) -> dict:
+def handle_ticket(ticket: str, runtime=None) -> dict:
     """Read the ticket, look things up, then decide which flow to route to."""
     return runtime.exec(
         f"Handle this ticket: {ticket}",
@@ -93,7 +96,10 @@ its result, a picked value is returned.
 
 `exec` without `choices` returns the raw reply text; with `choices` it
 returns the resolved decision result. `decision.make(prompt, options)` is
-equivalent to an `exec(choices=options)` with no preceding work.
+equivalent to an `exec(choices=options)` with no preceding work — with one
+nuance: only `exec(choices=)` appends the `DECISION_FINISH_INSTRUCTION`;
+`decision.make` sends just your prompt plus the menu, so your own prompt
+must tell the model to pick.
 
 ## Option containers
 
@@ -141,6 +147,13 @@ structured JSON:
 | `field: {subfield: ...}` | a nested object (keys are subfield names) |
 | `field: {"type": T, "description": ..., "options": [...]}` | meta-description with type/description/enum |
 
+Three caveats: a list schema must contain **exactly one** item template —
+`[str, int]` raises `TypeError`; a dict whose keys all fall inside
+`{type, description, options, fields, items}` is parsed as a meta-spec, not
+a nested object (a nested object needs at least one key outside that set);
+and tuples are reserved syntax in handler position — a literal 2-tuple value
+option gets misparsed as `(value, "description")`.
+
 After parsing, `parse_args` **recursively validates** types and nesting
 against the schema; the `Call:` example `render_options` renders also
 carries the nested placeholder shape. This aligns "finite-branch choice"
@@ -186,7 +199,9 @@ parameters are hidden from the LLM. If a parameter declares `options`
 ### 4. Retry on parse failure
 
 If any step raises `_ParseError`, `parse_args` retries (default
-`max_retries=1`, set 0 to disable): it uses `runtime.exec` to send "the
+`max_retries=1`, set 0 to disable; `max_retries` is settable only on
+`decision.make` / `parse_args` — the `exec(choices=)` path is fixed at one
+retry): it uses `runtime.exec` to send "the
 previous reply + the error reason + the re-rendered menu" back to the LLM
 for another pick. The retry is a model call like any other and lands in the
 DAG as usual. When all retries are exhausted → raises `DecisionError`

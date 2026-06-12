@@ -23,6 +23,9 @@ hard-coded in Python.
 ## Example: no exec, pure chaining
 
 ```python
+from openprogram import agentic_function
+from openprogram.agentic_programming import Runtime
+
 @agentic_function
 def research_pipeline(task: str, runtime: Runtime) -> dict:
     """Run the full research pipeline: survey → find gaps → generate ideas.
@@ -104,6 +107,22 @@ gaps = identify_gaps(survey="\n".join(filtered), runtime=runtime)
 
 ## Error handling
 
+The primary mechanism is exception propagation: when a sub-function raises,
+its DAG node is recorded with `status='error'` and the exception re-raises
+into the orchestrator. Catch it there with a plain `try/except`:
+
+```python
+try:
+    survey = survey_topic(topic=task, runtime=runtime)
+except Exception as e:
+    return {"error": f"Survey failed: {e}"}
+
+gaps = identify_gaps(survey=survey, runtime=runtime)
+```
+
+Optionally, if a sub-function reports failure in-band (returning an error
+string instead of raising), check the value:
+
 ```python
 survey = survey_topic(topic=task, runtime=runtime)
 if not survey or "error" in survey.lower():
@@ -114,9 +133,8 @@ gaps = identify_gaps(survey=survey, runtime=runtime)
 
 ## Versus "LLM-selected calls"
 
-| | Fixed-order calls | LLM-selected calls |
+| | Fixed-order calls | [Tool calling](tool-calling.md) / [next-step decision](next-step-decision.md) |
 |---|-----------|-------------|
 | Who decides the call order | Python code | The LLM |
-| How many sub-functions run | Several, all of them | One, chosen |
-| Needs a function registry | No | Yes |
+| How many sub-functions run | Several, all of them | Tool loop: many, across rounds; decision menu: one |
 | Flexibility | Fixed pipeline | Varies with the task |
