@@ -105,6 +105,7 @@ export function Sidebar() {
   // row is the hover target (claude.ai-style). Pilot: functions / skills
   // / mcp only.
   const functionsIconRef = useRef<AnimatedNavIconHandle>(null);
+  const programsIconRef = useRef<AnimatedNavIconHandle>(null);
   const skillsIconRef = useRef<AnimatedNavIconHandle>(null);
   const mcpIconRef = useRef<AnimatedNavIconHandle>(null);
   const pluginsIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -390,9 +391,11 @@ export function Sidebar() {
             (navActive.programs ? " " + sidebarNavItemActiveClass : "")
           }
           id="navAgentPrograms"
+          onMouseEnter={() => programsIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => programsIconRef.current?.stopAnimation?.()}
         >
           <span className={sidebarNavIconClass}>
-            <MonitorIcon size={20} />
+            <MonitorIcon ref={programsIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.programs")}</span>
         </Link>
