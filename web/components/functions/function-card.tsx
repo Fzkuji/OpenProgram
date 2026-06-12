@@ -83,5 +83,22 @@ export function FunctionCard({
   );
 }
 
+/** A built-in (regular) tool — same card anatomy and styling as
+ *  FunctionCard, minus every interactive affordance: tools are fixed
+ *  framework plumbing (no run, no favourite, no icon edit, no drag). */
+export function ToolCard({ name, description }: { name: string; description: string }) {
+  return (
+    <div className={styles.card} style={{ cursor: "default" }}>
+      <div className={styles.cardIcon}>
+        <span className={styles.cardIconEmoji}>🔧</span>
+      </div>
+      <div className={styles.cardInfo}>
+        <div className={styles.cardName}>{name}</div>
+        <div className={styles.cardDesc}>{description}</div>
+      </div>
+    </div>
+  );
+}
+
 export const cardListClass = styles.list;
 export const cardGridClass = styles.grid;

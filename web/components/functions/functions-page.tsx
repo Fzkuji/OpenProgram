@@ -34,7 +34,7 @@ import {
 import { CustomSelect } from "./custom-select";
 import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
 import { IconPicker, DEFAULT_ICON } from "./icon-picker";
-import { FunctionCard, cardGridClass, cardListClass } from "./function-card";
+import { FunctionCard, ToolCard, cardGridClass, cardListClass } from "./function-card";
 import { useFolderMeta } from "./use-folder-meta";
 import type { FunctionInfo, FunctionsMeta } from "./types";
 
@@ -570,12 +570,9 @@ export function FunctionsPage() {
                     )}
                   </span>
                 </div>
-                <div className={styles.toolsList}>
+                <div className={view === "grid" ? cardGridClass : cardListClass}>
                   {tools.map((tl) => (
-                    <div key={tl.name} className={styles.toolRow} title={tl.description}>
-                      <span className={styles.toolName}>{tl.name}</span>
-                      <span className={styles.toolDesc}>{tl.description}</span>
-                    </div>
+                    <ToolCard key={tl.name} name={tl.name} description={tl.description} />
                   ))}
                 </div>
               </div>

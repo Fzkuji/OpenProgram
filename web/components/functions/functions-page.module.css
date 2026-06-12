@@ -200,6 +200,9 @@
 
 
 /* ── Built-in (regular) tools — fixed, display-only ───────────────── */
+/* Cards reuse function-card.module.css wholesale; only the section
+   divider + header live here, on the same design-system variables the
+   rest of the page uses. */
 .toolsSection {
   margin-top: 28px;
   padding-top: 18px;
@@ -208,41 +211,14 @@
 .toolsHeader {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-bright);
-  margin-bottom: 10px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
   display: flex;
   align-items: baseline;
   gap: 10px;
 }
 .toolsHint {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--text-muted);
-}
-.toolsList {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 6px 16px;
-}
-.toolRow {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--bg-subtle, transparent);
-  min-width: 0;
-}
-.toolName {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  color: var(--text);
-  flex-shrink: 0;
-}
-.toolDesc {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
