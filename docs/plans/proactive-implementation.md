@@ -4,7 +4,9 @@
 > 接进现有 OpenProgram 代码**：接线点（file:line）、复用哪些现成机制、分几阶段、验证方式。
 > 设计的"是什么/为什么"不在这里，冲突以设计文档为准。
 
-代码落点：新建 `openprogram/proactive/` 包。
+代码落点：事件层就地升级 `openprogram/agent/event_bus.py`（Event + 类型订阅 + 进程级单例），
+taps 加在各源文件里；`openprogram/proactive/` 包到"新消费者进场"那步（规则层）才新建。
+Event 模型 = 核心三样 + metadata 开放口袋（见设计 `event-layer.md` §1，turn/session 不是固定字段）。
 
 ## 复用的现有机制
 
@@ -41,8 +43,7 @@
 - **agentic 嵌套路径**：`function.py:50-89` 的 `_pre_invocation_hooks`（cancel 检查已在用此
   挂载点）。这是可选挂载点，覆盖率如实声明，不假装全覆盖。
 - gate 对 subagent turn 生效，**独立于 `permission_mode`**，不被 `sub_agent_run.py:88` 的
-  `permission_mode="bypass"` 关掉（堵现有漏洞，见设计 `invariants.md` 不变式 2/4 与
-  `execution-model.md` §2）。
+  `permission_mode="bypass"` 关掉（堵现有漏洞，见设计 `invariants.md` 与 `execution-model.md` §2）。
 
 ## Prepare 接入
 
@@ -55,39 +56,20 @@
 如果审计要靠 DAG 做因果回溯，需先补；本设计改为 `events.jsonl` 独立记全量，DAG 洞列为已知项、
 不阻塞 proactive 落地。
 
-## 分阶段
+## 分阶段（对应 `framework-evolution.md` §4 的五步迁移）
 
-| 阶段 | 内容 | 验收 |
-|---|---|---|
-| **P0** | 设计文档（`docs/design/proactive/`） | 完成 |
-| **P1** | 事件层 + 单写者落盘 + 消费者 + replay(strict)。**纯可观测，无决策** | 普通 chat turn 产出完整可回放轨迹；并发 subagent 按 root_id 正确分片 |
-| **P2** | 双通道引擎 + 三条 policy + budget/熔断 + replay(augmented) | 四条不变式回归测试、故障域降级、gate p99 自身 CPU ≤10ms、observer 对 turn 零延迟 |
-| **P3** | 前端 notice（折叠/展开、明确 system 来源、accept/snooze/dismiss/mute）+ 设置页 + 反馈统计 + 隐式 accept fold + `ApprovalRegistry` 泛化 | 隐式 accept fold 生效；mute 可恢复 |
-| **P4（future）** | 外部框架 adapter（Claude Code hooks HTTP 桥）+ policy-portability 矩阵 | 同一 policy 跑两个框架 + 降级对照 |
-
-P1 把 replay 工具放在决策引擎**之前**交付——评估优先于功能。
-
-## 包结构（建议）
-
-```
-openprogram/proactive/
-  events.py      Event schema + AgentEvent/信封 → Event 转换；单写者 appender（带锁/截断坏行/secret redaction）
-  bus.py         复用 agent/event_bus.py 进程内扇出；独立消费者线程 + 有界队列 + 持久化消费位点
-  state.py       三层 fold；root_id 分片；lazy L2 + derived event 回写
-  policy/        Policy 基类 + 注册；MVP 三条
-  gate.py        同步 gate：critical 独立预算/最先求值/超时归因；冲突取最严
-  observer.py    异步 observer：Inject/Notify/Prepare/Remember 落地 + staleness
-  budget.py      任务段预算 + dedup/cooldown（内存+持久）+ 滑窗熔断 + 隐式 accept
-  replay.py      strict/augmented 回放 + 冷却闭环 + 时钟注入 + 按 node_id DAG 路径折叠
-  audit.py       决策审计
-```
+| 步 | 内容 | 性质 | 验收 |
+|---|---|---|---|
+| **1** | 总线启用 + A 类源接入：升级 EventBus（Event + 类型订阅 + `get_event_bus()` 单例），agent loop / dispatcher / task runner 关键节点并行 emit；env 开关的事件日志订阅者 | 纯加法 | 订阅总线，跑一个真实 chat turn，事件日志里有完整序列 |
+| **2** | 补两个洞：`file.changed`（挂 backup_for_current_turn）；`tool.before` 同步问询点（复用 _approval，对 subagent 生效） | 纯加法 | 改文件收到事件；测试订阅者能真拦下指定命令 |
+| **3** | B 类源桥接：auth / context / channels / memory 各一段单向桥 | 纯加法 | 触发凭据限流 / 压缩，从同一总线收到 |
+| **4** | webui 切换为订阅者：先影子比对，再逐源切断旧直连 | 动旧路 | 影子比对零差异，前端行为不变 |
+| **5** | 新消费者进场：`openprogram/proactive/` 规则层（Policy/挡路/旁观） | 纯加法 | proactive 不碰子系统内部，仅靠订阅工作 |
 
 ## 验证
 
-- **P1**：跑一个真实 chat turn（webui，需 `cd web && npm run build` + `openprogram worker
-  restart`），确认 `events.jsonl` 产出完整轨迹且 `replay --policy noop` 能无损重放；并发 spawn
-  两个 subagent，断言事件按 root_id 分片不交叉污染。
-- **P2**：单测覆盖——proactive 链深度 ≤2 不变式、critical 独立预算超时归因、故障域降级（注入
-  坏行后仍只跑无状态 critical）、gate 对 bypass subagent 生效、滑窗熔断 + 隐式 accept。回放历史
-  会话抽样人工标注 precision。
-- **gate 性能**：构造长/对抗 bash 命令测 p99 自身 CPU 时间 ≤10ms，且不泄漏超时线程。
+每步通用：`py_compile` + 相关单测 + `openprogram worker restart` + `/healthz` 正常 +
+webui 发一条真实消息（前端改动需 `cd web && npm run build`）。
+步 1 专属：`OPENPROGRAM_EVENT_LOG=1` 重启 worker，跑一个带工具调用的 turn，确认日志里
+依序出现 `user.prompt_submitted → model.response_started → tool.before → tool.after →
+model.response_completed → turn.ended`，且 metadata 带 session/turn。

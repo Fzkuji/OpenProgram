@@ -27,6 +27,9 @@
    事件长什么样、两大类事件源（agent 干活 / 系统状态）、总线放哪、跟谁交互。
    **可视化版本：[`event-layer.html`](event-layer.html)**（真 SVG 架构图 + 事件流动画，
    双击用浏览器打开），md 是同内容的文字源。
+2. [`framework-evolution.md`](framework-evolution.md) —— **框架演进：现状 → 目标 → 迁移**。
+   webui 被迫当中枢的现状、总线当中枢的目标、各子系统前后对照、五步渐进迁移。
+   **可视化版本：[`framework-evolution.html`](framework-evolution.html)**。
 
 **再读主动性应用**（建在底座之上的 proactive）：
 
