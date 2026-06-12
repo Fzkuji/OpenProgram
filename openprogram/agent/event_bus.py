@@ -93,6 +93,20 @@ def make_event(
     )
 
 
+def emit_safe(
+    type: str,
+    origin: str,
+    payload: dict | None = None,
+    metadata: dict | None = None,
+) -> None:
+    """Tap helper for sources: build + emit on the process bus, swallowing
+    every failure — the event layer must never break the emitting code path."""
+    try:
+        get_event_bus().emit(make_event(type, origin, payload, metadata))
+    except Exception:
+        pass
+
+
 # ─── Bus ─────────────────────────────────────────────────────────────────────
 
 class EventBus:

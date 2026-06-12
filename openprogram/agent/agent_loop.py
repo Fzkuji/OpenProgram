@@ -22,6 +22,7 @@ from openprogram.providers.types import (
 from openprogram.providers.utils.event_stream import EventStream
 from openprogram.providers.utils.validation import validate_tool_arguments
 
+from .event_bus import emit_safe
 from .types import (
     AgentContext,
     AgentEvent,
@@ -262,6 +263,7 @@ async def _run_loop(
 
             if message.stop_reason in ("error", "aborted"):
                 ev_stream.push(AgentEventTurnEnd(message=message, tool_results=[]))
+                emit_safe("turn.ended", "agent", {"reason": message.stop_reason})
                 ev_stream.push(AgentEventAgentEnd(messages=new_messages))
                 ev_stream.end(new_messages)
                 return
@@ -287,6 +289,7 @@ async def _run_loop(
                     new_messages.append(result)
 
             ev_stream.push(AgentEventTurnEnd(message=message, tool_results=tool_results))
+            emit_safe("turn.ended", "agent", {"tool_results": len(tool_results)})
 
             if steering_after_tools:
                 pending_messages = steering_after_tools
@@ -434,6 +437,7 @@ async def _stream_assistant_response(
             context.messages.append(partial_message)
             added_partial = True
             ev_stream.push(AgentEventMessageStart(message=partial_message))
+            emit_safe("model.response_started", "agent")
 
         elif event.type in (
             "text_start", "text_delta", "text_end",
@@ -457,6 +461,8 @@ async def _stream_assistant_response(
             if not added_partial:
                 ev_stream.push(AgentEventMessageStart(message=final_message))
             ev_stream.push(AgentEventMessageEnd(message=final_message))
+            emit_safe("model.response_completed", "agent",
+                      {"is_error": event.type == "error"})
             if event.type == "done":
                 _memory_sync_turn(messages, final_message)
             return final_message
@@ -506,6 +512,9 @@ async def _execute_tool_calls(
             })
         except Exception:
             pass
+
+        emit_safe("tool.before", "agent",
+                  {"tool": tool_call.name, "args": tool_call.arguments})
 
         result: AgentToolResult
         is_error = False
@@ -565,6 +574,8 @@ async def _execute_tool_calls(
             result=result,
             is_error=is_error,
         ))
+        emit_safe("tool.after", "tool",
+                  {"tool": tool_call.name, "is_error": is_error})
 
         try:
             from openprogram.plugins.hooks import dispatch_hook, HookEvent
