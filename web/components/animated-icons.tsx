@@ -1914,27 +1914,40 @@ export const MonitorCheckIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIco
 );
 MonitorCheckIcon.displayName = "MonitorCheckIcon";
 
-// ─── flame (Effort pill — thinking-effort level) ─────────────────────
-// Carried verbatim from pqoqubbw/icons (icons/flame.tsx): the flame
-// outline draws itself on hover.
-const FLAME_VARIANTS: Variants = {
+// ─── biceps-flexed (Effort pill — thinking-effort level) ─────────────
+// Carried verbatim from pqoqubbw/icons (icons/biceps-flexed.tsx): the
+// arm flexes (rotate + scale pulse, repeating) while hovered.
+const BICEPS_FLEXED_SVG_VARIANTS: Variants = {
   normal: {
-    pathLength: 1,
-    opacity: 1,
-    pathOffset: 0,
+    rotate: 0,
   },
   animate: {
-    opacity: [0, 1],
-    pathLength: [0, 1],
+    rotate: [0, 15, 0],
     transition: {
-      delay: 0.1,
-      duration: 0.4,
-      opacity: { duration: 0.1, delay: 0.1 },
+      duration: 2,
+      ease: "easeInOut",
+      repeat: Number.POSITIVE_INFINITY,
     },
   },
 };
 
-export const FlameIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+const BICEPS_FLEXED_PATH_VARIANTS: Variants = {
+  normal: {
+    rotate: 0,
+    scale: 1,
+  },
+  animate: {
+    rotate: [0, 15, 0],
+    scale: [1, 1.3, 1],
+    transition: {
+      duration: 2,
+      ease: "easeInOut",
+      repeat: Number.POSITIVE_INFINITY,
+    },
+  },
+};
+
+export const BicepsFlexedIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
   ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
     const controls = useAnimation();
     const isControlledRef = useRef(false);
@@ -1969,30 +1982,42 @@ export const FlameIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>
         onMouseLeave={handleMouseLeave}
         {...props}
       >
-        <svg
+        <motion.svg
           fill="none"
           height={size}
           stroke="currentColor"
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth="2"
+          style={{ overflow: "visible" }}
           viewBox="0 0 24 24"
           width={size}
           xmlns="http://www.w3.org/2000/svg"
         >
           <motion.path
             animate={controls}
-            d="M8.9 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
-            fill="none"
+            d="M12.409 13.017A5 5 0 0 1 22 15c0 3.866-4 7-9 7-4.077 0-8.153-.82-10.371-2.462-.426-.316-.631-.832-.62-1.362C2.118 12.723 2.627 2 10 2a3 3 0 0 1 3 3 2 2 0 0 1-2 2c-1.105 0-1.64-.444-2-1"
             initial="normal"
-            variants={FLAME_VARIANTS}
+            variants={BICEPS_FLEXED_PATH_VARIANTS}
           />
-        </svg>
+          <motion.path
+            animate={controls}
+            d="M15 14a5 5 0 0 0-7.584 2"
+            initial="normal"
+            variants={BICEPS_FLEXED_SVG_VARIANTS}
+          />
+          <motion.path
+            animate={controls}
+            d="M9.964 6.825C8.019 7.977 9.5 13 8 15"
+            initial="normal"
+            variants={BICEPS_FLEXED_SVG_VARIANTS}
+          />
+        </motion.svg>
       </div>
     );
   },
 );
-FlameIcon.displayName = "FlameIcon";
+BicepsFlexedIcon.displayName = "BicepsFlexedIcon";
 
 // ─── folder-open (Project chip — working folder) ────────────────────
 // Carried from pqoqubbw/icons (icons/folder-open.tsx): the folder lid

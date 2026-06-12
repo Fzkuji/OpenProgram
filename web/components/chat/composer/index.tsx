@@ -1191,17 +1191,19 @@ export function Composer() {
                 blocked send/run fires a transient top toast instead
                 (see ``promptNeedModel``). */}
             {chatModel && !noEnabledModels ? (
-              <ThinkingEffortPill
-                ref={thinkingTriggerRef}
-                expanded={thinkingMenuOpen}
-                onToggle={() => {
-                  setThinkingMenuOpen((v) => !v);
-                  setPlusMenuOpen(false);
-                }}
-                options={thinkingOptions}
-                value={thinking}
-                onChange={setThinking}
-              />
+              <HoverTip label={text("Thinking effort", "思考力度")}>
+                <ThinkingEffortPill
+                  ref={thinkingTriggerRef}
+                  expanded={thinkingMenuOpen}
+                  onToggle={() => {
+                    setThinkingMenuOpen((v) => !v);
+                    setPlusMenuOpen(false);
+                  }}
+                  options={thinkingOptions}
+                  value={thinking}
+                  onChange={setThinking}
+                />
+              </HoverTip>
             ) : null}
           </div>
           <div className={styles.inputBottomRight}>

@@ -20,14 +20,18 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Slider } from "@/components/ui/slider";
 import {
   type AnimatedNavIconHandle,
-  FlameIcon,
+  BicepsFlexedIcon,
 } from "@/components/animated-icons";
 
 import { CaretIcon } from "../icons";
 
 const capEffort = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
-interface ThinkingEffortPillProps {
+// Extends div attributes so a tooltip trigger (HoverTip / Radix
+// `asChild`) can inject its hover/focus handlers — they must reach the
+// host DOM node or the tip never opens.
+interface ThinkingEffortPillProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "onToggle"> {
   expanded: boolean;
   onToggle: () => void;
   options: { value: string; desc?: string }[];
@@ -39,7 +43,7 @@ export const ThinkingEffortPill = React.forwardRef<
   HTMLDivElement,
   ThinkingEffortPillProps
 >(function ThinkingEffortPill(
-  { expanded, onToggle, options, value, onChange },
+  { expanded, onToggle, options, value, onChange, ...rest },
   ref,
 ) {
   // No options → provider/model exposes no thinking knob (e.g. gpt-4o,
@@ -54,10 +58,11 @@ export const ThinkingEffortPill = React.forwardRef<
     return (
       <div
         ref={ref}
+        {...rest}
         className="effort-pill-fixed inline-flex h-[32px] items-center gap-[5px] rounded-full pl-[14px] pr-[14px] text-[14px] text-text-primary select-none whitespace-nowrap"
         style={{ backgroundColor: "var(--effort-off-bg)" }}
       >
-        <FlameIcon
+        <BicepsFlexedIcon
           size={18}
           className="effort-pill-compact-icon text-text-primary"
           aria-hidden="true"
@@ -81,6 +86,7 @@ export const ThinkingEffortPill = React.forwardRef<
       options={options}
       value={value}
       onChange={onChange}
+      {...rest}
     />
   );
 });
@@ -89,7 +95,19 @@ const ThinkingEffortSliderPill = React.forwardRef<
   HTMLDivElement,
   ThinkingEffortPillProps
 >(function ThinkingEffortSliderPill(
-  { options, value, onChange },
+  {
+    options,
+    value,
+    onChange,
+    onMouseEnter,
+    onMouseLeave,
+    // `expanded` / `onToggle` from the parent are intentionally ignored
+    // (hover-driven, see below) — destructured so they don't leak into
+    // `rest` and onto the DOM node.
+    expanded: _expanded,
+    onToggle: _onToggle,
+    ...rest
+  },
   ref,
 ) {
   // Hover-driven open/close — no click required. The `expanded` /
@@ -102,10 +120,10 @@ const ThinkingEffortSliderPill = React.forwardRef<
     options.findIndex((o) => o.value === value),
   );
   const maxIndex = Math.max(0, options.length - 1);
-  // Flame size scales linearly with effort: from 10px at the
+  // Effort icon size scales linearly with effort: from 10px at the
   // `off` end to 18px at `xhigh`. The icon is rendered at the slider
   // thumb; position and size both encode the current value.
-  const flameSize =
+  const effortIconSize =
     maxIndex > 0
       ? Math.round(10 + (valueIndex / maxIndex) * 8)
       : 10;
@@ -142,7 +160,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // `--slider-active` CSS custom property.
   const activeColor = `color-mix(in srgb, ${warmHue} 72%, transparent)`;
 
-  // Fully-opaque variant for the Flame icon. It stays visually
+  // Fully-opaque variant for the effort icon. It stays visually
   // distinct from the half-alpha `--slider-active` track color.
   const activeColorSolid = warmHue;
 
@@ -151,11 +169,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // footprint regardless of label text — `effort: xhigh` left a
   // ~30px trailing gap. Re-measures whenever the value changes.
   const spacerRef = useRef<HTMLSpanElement>(null);
-  // Flame icons (collapsed chip + slider thumb) are pqoqubbw animated
+  // Effort icons (collapsed chip + slider thumb) are pqoqubbw animated
   // icons, driven from the pill host's hover — same controlled-ref
   // pattern as the sidebar nav rows.
-  const flameChipRef = useRef<AnimatedNavIconHandle>(null);
-  const flameThumbRef = useRef<AnimatedNavIconHandle>(null);
+  const effortIconChipRef = useRef<AnimatedNavIconHandle>(null);
+  const effortIconThumbRef = useRef<AnimatedNavIconHandle>(null);
   const [collapsedWidth, setCollapsedWidth] = useState<number>(120);
   // `measured` gates the width transition. On first mount the pill
   // renders at the 120px placeholder (also what SSR ships), then the
@@ -183,17 +201,20 @@ const ThinkingEffortSliderPill = React.forwardRef<
   return (
     <div
       ref={ref}
+      {...rest}
       className="effort-pill-host relative inline-flex h-[32px] items-center"
       data-effort-expanded={expanded ? "true" : undefined}
-      onMouseEnter={() => {
+      onMouseEnter={(e) => {
+        onMouseEnter?.(e);
         setExpanded(true);
-        flameChipRef.current?.startAnimation?.();
-        flameThumbRef.current?.startAnimation?.();
+        effortIconChipRef.current?.startAnimation?.();
+        effortIconThumbRef.current?.startAnimation?.();
       }}
-      onMouseLeave={() => {
+      onMouseLeave={(e) => {
+        onMouseLeave?.(e);
         setExpanded(false);
-        flameChipRef.current?.stopAnimation?.();
-        flameThumbRef.current?.stopAnimation?.();
+        effortIconChipRef.current?.stopAnimation?.();
+        effortIconThumbRef.current?.stopAnimation?.();
       }}
     >
       {/* Invisible spacer reserves the collapsed pill width in the flex
@@ -236,7 +257,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
           // CSS variables inherited by the slider inside:
           //   --slider-active        →  range / ticks / focus ring
           //                              (soft, ~70% alpha)
-          //   --slider-active-solid  →  Flame thumb
+          //   --slider-active-solid  →  effort-icon thumb
           //                              (opaque, full-strength hue)
           ["--slider-active" as string]: activeColor,
           ["--slider-active-solid" as string]: activeColorSolid,
@@ -248,8 +269,8 @@ const ThinkingEffortSliderPill = React.forwardRef<
             expanded ? "hidden" : "",
           ].join(" ")}
         >
-          <FlameIcon
-            ref={flameChipRef}
+          <BicepsFlexedIcon
+            ref={effortIconChipRef}
             size={18}
             className="effort-pill-compact-icon text-[var(--slider-active-solid)]"
             aria-hidden="true"
@@ -289,13 +310,13 @@ const ThinkingEffortSliderPill = React.forwardRef<
                   aria-hidden="true"
                   className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg-hover border-[3px] border-[color-mix(in_srgb,var(--text-bright)_40%,transparent)] transition-[width,height] duration-150 ease-out"
                   style={{
-                    width: flameSize + 8,
-                    height: flameSize + 8,
+                    width: effortIconSize + 8,
+                    height: effortIconSize + 8,
                   }}
                 />
-                <FlameIcon
-                  ref={flameThumbRef}
-                  size={flameSize}
+                <BicepsFlexedIcon
+                  ref={effortIconThumbRef}
+                  size={effortIconSize}
                   className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active-solid)] pointer-events-none transition-[width,height] duration-150 ease-out"
                   aria-hidden="true"
                 />
