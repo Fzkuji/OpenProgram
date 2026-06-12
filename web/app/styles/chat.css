@@ -1517,11 +1517,19 @@
     width: min(260px, calc(100cqw - 136px)) !important;
   }
 
+  /* Compact collapsed pill mirrors the tool chips: icon pinned left in
+     a 32px circle; hovering widens the pill and slides the caret out
+     the right edge (the chips do the same with their ×). Click opens
+     the slider. 7 + 18 + 7 = 32 collapsed; 7 + 18 + 4 + 10 + 7 = 46
+     hovered. */
   .effort-pill-collapsed {
     position: relative;
-    width: var(--composer-button-size);
-    justify-content: center;
-    padding: 0;
+    width: auto;
+    justify-content: flex-start;
+    /* !important: beats the Tailwind utilities (gap-[5px] / pl-[14px] /
+       pr-[10px]) on the same node, which land later in the cascade. */
+    gap: 0 !important;
+    padding: 0 7px !important;
   }
 
   .effort-pill-fixed {
@@ -1531,19 +1539,42 @@
     padding: 0;
   }
 
-  .effort-pill-collapsed-label,
-  .effort-pill-caret {
+  .effort-pill-collapsed-label {
     display: none;
   }
 
+  .effort-pill-caret {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    width: 0;
+    margin-left: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1),
+                margin-left 180ms cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 180ms ease;
+  }
+
+  .effort-pill-caret svg {
+    flex-shrink: 0;
+  }
+
+  .effort-pill-shell:not([data-expanded="true"]):hover {
+    width: 46px !important;
+  }
+
+  .effort-pill-shell:not([data-expanded="true"]):hover .effort-pill-caret {
+    width: 10px;
+    margin-left: 4px;
+    opacity: 1;
+  }
+
   .effort-pill-compact-icon {
-    display: block;
-    position: absolute;
-    left: 50%;
-    top: 50%;
+    display: inline-flex;
     width: 18px;
     height: 18px;
-    transform: translate(-50%, -50%);
+    flex-shrink: 0;
   }
 
   .effort-pill-expanded {

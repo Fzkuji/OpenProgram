@@ -1,11 +1,13 @@
 /**
  * Effort pill — the trigger IS the picker.
  *
- * Collapsed: a pill that reads `effort: medium ⌄`, sized to its content.
- * Hover to expand.
+ * Collapsed: a pill that reads `effort: medium ⌄`, sized to its content
+ * (compact rows show just the icon; hovering slides out the caret, the
+ * same gesture as the neighbouring tool chips' ×). CLICK to expand —
+ * hover alone never opens the slider.
  *
  * Expanded: the same pill expands to the right and swaps its label for
- * the current value plus an inline slider.
+ * the current value plus an inline slider. Mouse-leave collapses.
  *
  * Layout: the pill is wrapped in a ``position: relative`` host. The
  * visible pill is absolute so expanding it does not resize the row.
@@ -110,10 +112,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
   },
   ref,
 ) {
-  // Hover-driven open/close — no click required. The `expanded` /
-  // `onToggle` props from the parent are intentionally ignored: the
-  // pill manages its own state via mouseenter / mouseleave on the
-  // relative wrapper (so leaving the spacer footprint also collapses).
+  // Click-to-open, leave-to-close. The `expanded` / `onToggle` props
+  // from the parent are intentionally ignored: the pill manages its own
+  // state — click on the collapsed pill opens the slider, mouseleave on
+  // the relative wrapper collapses it. Hover alone only slides out the
+  // caret (chips-style affordance) and animates the icon.
   const [expanded, setExpanded] = useState(false);
   const valueIndex = Math.max(
     0,
@@ -206,7 +209,6 @@ const ThinkingEffortSliderPill = React.forwardRef<
       data-effort-expanded={expanded ? "true" : undefined}
       onMouseEnter={(e) => {
         onMouseEnter?.(e);
-        setExpanded(true);
         effortIconChipRef.current?.startAnimation?.();
         effortIconThumbRef.current?.startAnimation?.();
       }}
@@ -265,9 +267,10 @@ const ThinkingEffortSliderPill = React.forwardRef<
       >
         <div
           className={[
-            "effort-pill-collapsed h-full flex items-center gap-[5px] pl-[14px] pr-[10px] whitespace-nowrap",
+            "effort-pill-collapsed h-full flex items-center gap-[5px] pl-[14px] pr-[10px] whitespace-nowrap cursor-pointer",
             expanded ? "hidden" : "",
           ].join(" ")}
+          onClick={() => setExpanded(true)}
         >
           <BicepsFlexedIcon
             ref={effortIconChipRef}
