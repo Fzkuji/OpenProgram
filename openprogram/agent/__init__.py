@@ -19,7 +19,7 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 
 from .agent import Agent, AgentOptions
 from .agent_loop import agent_loop, agent_loop_continue
-from .event_bus import EventBus, create_event_bus
+from .event_bus import Event, EventBus, create_event_bus, get_event_bus, make_event
 from .exec import ExecOptions, ExecResult, exec_command
 from .messages import (
     BRANCH_SUMMARY_PREFIX,
@@ -83,8 +83,11 @@ __all__ = [
     "compute_backoff_ms",
     "is_retryable_error",
     # Event bus
+    "Event",
     "EventBus",
     "create_event_bus",
+    "get_event_bus",
+    "make_event",
     # Exec
     "ExecOptions",
     "ExecResult",
