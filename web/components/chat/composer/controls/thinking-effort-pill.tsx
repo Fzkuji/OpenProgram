@@ -283,7 +283,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
           <span className="effort-pill-collapsed-label">
             Effort: {capEffort(value)}
           </span>
-          <span className="effort-pill-caret">
+          <span className="effort-pill-caret text-[var(--slider-active-solid)]">
             <ChevronRightIcon ref={caretRef} size={12} />
           </span>
         </div>
