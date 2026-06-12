@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import os
 import time
 from contextvars import ContextVar
 from typing import Callable, Optional
@@ -421,8 +422,13 @@ class agentic_function:
         expose: str = "io",
         render_range: Optional[dict] = None,
         input: Optional[dict] = None,
-        no_tools: bool = False,
         system: Optional[str] = None,
+        # WebUI working-directory picker mode. The decorator itself only
+        # stores it (the value is read out of the SOURCE TEXT by the
+        # webui's AST extractor, openprogram/webui/_functions.py) —
+        # accepting it here is what makes writing the kwarg legal: an
+        # unknown kwarg would TypeError at import and kill the module.
+        workdir_mode: Optional[str] = None,
         # —— shared with @function ——
         # The function-calling refactor unified these names with the
         # @function decorator so an @agentic_function and an @function
@@ -457,10 +463,15 @@ class agentic_function:
                 f"expose must be 'io', 'llm', 'full', or 'hidden', "
                 f"got {expose!r}"
             )
+        if workdir_mode not in (None, "optional", "hidden", "required"):
+            raise ValueError(
+                f"workdir_mode must be 'optional', 'hidden', or 'required', "
+                f"got {workdir_mode!r}"
+            )
         self.expose = expose
         self.render_range = render_range
         self.input_meta = input or {}
-        self.no_tools = no_tools
+        self.workdir_mode = workdir_mode
         self.system = system
         self.as_tool = as_tool
         self.tool_name = name
@@ -954,11 +965,10 @@ def traced(fn):
     """
     sig = inspect.signature(fn)
 
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
+    def _enter(args, kwargs):
         import uuid as _uuid
-        _pending_call_id = _uuid.uuid4().hex[:12]
-        _started_at = time.time()
+        pending_call_id = _uuid.uuid4().hex[:12]
+        started_at = time.time()
 
         try:
             bound = sig.bind(*args, **kwargs)
@@ -969,15 +979,56 @@ def traced(fn):
             bound_args = {}
 
         _append_function_call_entry(
-            pending_id=_pending_call_id,
+            pending_id=pending_call_id,
             function_name=fn.__name__,
             arguments=bound_args,
             expose="io",
             render_range=None,
-            started_at=_started_at,
+            started_at=started_at,
             docstring=inspect.getdoc(fn) or "",
         )
-        _call_token = _call_id.set(_pending_call_id)
+        call_token = _call_id.set(pending_call_id)
+        return pending_call_id, started_at, call_token
+
+    def _exit(pending_call_id, started_at, call_token, output, error, status):
+        _update_function_call_exit(
+            pending_id=pending_call_id,
+            output=output,
+            error=error,
+            status=status,
+            expose="io",
+            started_at=started_at,
+            ended_at=time.time(),
+        )
+        _call_id.reset(call_token)
+
+    # Coroutine functions get an async wrapper — calling fn() without
+    # awaiting would record the coroutine object's repr as the output
+    # and a duration covering only coroutine creation.
+    if inspect.iscoroutinefunction(fn):
+        @functools.wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            pending_call_id, started_at, call_token = _enter(args, kwargs)
+            output = None
+            error = None
+            status = "success"
+            try:
+                output = await fn(*args, **kwargs)
+                return output
+            except Exception as e:
+                error = str(e)
+                status = "error"
+                raise
+            finally:
+                _exit(pending_call_id, started_at, call_token,
+                      output, error, status)
+
+        async_wrapper._is_traced = True
+        return async_wrapper
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        pending_call_id, started_at, call_token = _enter(args, kwargs)
         output = None
         error = None
         status = "success"
@@ -989,16 +1040,8 @@ def traced(fn):
             status = "error"
             raise
         finally:
-            _update_function_call_exit(
-                pending_id=_pending_call_id,
-                output=output,
-                error=error,
-                status=status,
-                expose="io",
-                started_at=_started_at,
-                ended_at=time.time(),
-            )
-            _call_id.reset(_call_token)
+            _exit(pending_call_id, started_at, call_token,
+                  output, error, status)
 
     wrapper._is_traced = True
     return wrapper
