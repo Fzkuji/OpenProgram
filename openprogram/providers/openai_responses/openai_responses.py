@@ -48,21 +48,20 @@ def stream_openai_responses(
             raise ImportError("openai is required: pip install openai")
 
         from openprogram.providers.env_api_keys import resolve_provider_key
+        from openprogram.providers.types import AssistantMessage, Usage
 
-        output: dict[str, Any] = {
-            "role": "assistant",
-            "content": [],
-            "api": model.api,
-            "provider": model.provider,
-            "model": model.id,
-            "usage": {
-                "input": 0, "output": 0, "cache_read": 0, "cache_write": 0,
-                "total_tokens": 0,
-                "cost": {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "total": 0},
-            },
-            "stop_reason": "stop",
-            "timestamp": int(time.time() * 1000),
-        }
+        # AssistantMessage object, NOT a dict — process_responses_stream
+        # (and every consumer downstream) uses attribute access; the codex
+        # provider is the reference shape.
+        output = AssistantMessage(
+            content=[],
+            api=model.api,
+            provider=model.provider,
+            model=model.id,
+            usage=Usage(),
+            stop_reason="stop",
+            timestamp=int(time.time() * 1000),
+        )
 
         try:
             api_key = opts.get("api_key") or resolve_provider_key(model.provider) or ""
@@ -85,18 +84,18 @@ def stream_openai_responses(
                 apply_service_tier_pricing=_apply_service_tier_pricing,
             )
 
-            if output["stop_reason"] in ("aborted", "error"):
+            if output.stop_reason in ("aborted", "error"):
                 raise RuntimeError("stream ended with error stop_reason")
 
-            ev_stream.push({"type": "done", "reason": output["stop_reason"], "message": output})
+            ev_stream.push({"type": "done", "reason": output.stop_reason, "message": output})
             ev_stream.end(output)
 
         except Exception as exc:
-            for b in output["content"]:
+            for b in output.content:
                 if isinstance(b, dict):
                     b.pop("index", None)
-            output["stop_reason"] = "error"
-            output["error_message"] = str(exc)
+            output.stop_reason = "error"
+            output.error_message = str(exc)
             # Use ev_stream.fail() so the consumer's `async for`
             # raises this exception instead of seeing a normal
             # stream end. Previously this provider pushed an "error"

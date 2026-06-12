@@ -49,20 +49,16 @@ def stream_azure_openai_responses(
 
         deployment_name = _resolve_deployment_name(model, opts)
 
-        output: dict[str, Any] = {
-            "role": "assistant",
-            "content": [],
-            "api": "azure-openai-responses",
-            "provider": model.provider,
-            "model": model.id,
-            "usage": {
-                "input": 0, "output": 0, "cache_read": 0, "cache_write": 0,
-                "total_tokens": 0,
-                "cost": {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "total": 0},
-            },
-            "stop_reason": "stop",
-            "timestamp": int(time.time() * 1000),
-        }
+        from openprogram.providers.types import AssistantMessage, Usage
+        output = AssistantMessage(
+            content=[],
+            api="azure-openai-responses",
+            provider=model.provider,
+            model=model.id,
+            usage=Usage(),
+            stop_reason="stop",
+            timestamp=int(time.time() * 1000),
+        )
 
         try:
             from openprogram.providers.env_api_keys import resolve_provider_key
@@ -82,18 +78,18 @@ def stream_azure_openai_responses(
 
             await process_responses_stream(openai_stream, output, ev_stream, model)
 
-            if output["stop_reason"] in ("aborted", "error"):
+            if output.stop_reason in ("aborted", "error"):
                 raise RuntimeError("stream ended with error stop_reason")
 
-            ev_stream.push({"type": "done", "reason": output["stop_reason"], "message": output})
+            ev_stream.push({"type": "done", "reason": output.stop_reason, "message": output})
             ev_stream.end(output)
 
         except Exception as exc:
-            for b in output["content"]:
+            for b in output.content:
                 if isinstance(b, dict):
                     b.pop("index", None)
-            output["stop_reason"] = "error"
-            output["error_message"] = str(exc)
+            output.stop_reason = "error"
+            output.error_message = str(exc)
             # ev_stream.fail() so agent_loop raises instead of seeing
             # a clean stream end (same bug pattern fixed in openai-codex
             # and openai_responses).
