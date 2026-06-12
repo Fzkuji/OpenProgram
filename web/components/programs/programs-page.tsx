@@ -13,11 +13,17 @@
  * same page furniture as /functions so the first real program drops
  * into a familiar frame.
  */
+import { useRef } from "react";
 import styles from "./programs-page.module.css";
 import { useTranslation } from "@/lib/i18n";
+import {
+  MonitorIcon,
+  type AnimatedNavIconHandle,
+} from "../animated-icons";
 
 export function ProgramsPage() {
   const { text } = useTranslation();
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div className={styles.page}>
       <div className={styles.header}>
@@ -30,8 +36,14 @@ export function ProgramsPage() {
         </p>
       </div>
       <div className={styles.grid}>
-        <div className={styles.placeholderCard}>
-          <div className={styles.placeholderIcon}>▣</div>
+        <div
+          className={styles.placeholderCard}
+          onMouseEnter={() => iconRef.current?.startAnimation?.()}
+          onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+        >
+          <div className={styles.placeholderIcon}>
+            <MonitorIcon ref={iconRef} size={22} />
+          </div>
           <div className={styles.placeholderName}>example_program</div>
           <div className={styles.placeholderDesc}>
             {text(
