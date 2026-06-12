@@ -240,11 +240,6 @@ def process_user_turn(
             "type": "chat_ack",
             "data": {"session_id": req.session_id, "msg_id": user_msg_id},
         })
-        emit_safe(
-            "user.prompt_submitted", "user",
-            {"msg_id": user_msg_id, "chars": len(req.user_text or "")},
-            {"session": req.session_id},
-        )
         # Broadcast the inbound user message itself so any UI tailing
         # this session (web sidebar transcript, TUI mirror) shows it
         # in real time — without this, channel-sourced messages
@@ -270,6 +265,14 @@ def process_user_turn(
         # the caller didn't pass a history_override.
         if req.history_override is None:
             history = db.get_branch(req.session_id) or history
+
+    # 事件层 tap：无论哪条持久化路径（webui 先存 / dispatcher 自己存），
+    # "用户消息提交了"都成立，所以放在分支外。
+    emit_safe(
+        "user.prompt_submitted", "user",
+        {"msg_id": user_msg_id, "chars": len(req.user_text or "")},
+        {"session": req.session_id},
+    )
 
     # 3. Attach a Runtime with the session's GraphStore so any
     #    @agentic_function the agent_loop invokes records its
