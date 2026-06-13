@@ -28,83 +28,93 @@ body{
     repeating-linear-gradient(90deg, rgba(154,178,204,.04) 0 1px, transparent 1px 60px);
 }
 nav{
-  position:fixed; left:0; top:0; bottom:0; width:228px; padding:36px 0 0 28px;
+  position:fixed; left:0; top:0; bottom:0; width:236px; padding:34px 0 0 26px;
   border-right:1px solid var(--line); background:rgba(10,19,34,.86); backdrop-filter:blur(8px);
   z-index:50; overflow-y:auto;
 }
 nav .brand{font-family:var(--mono); font-size:11px; letter-spacing:.22em; color:var(--cyan); margin-bottom:6px}
-nav h1{font-family:var(--serif); font-weight:900; font-size:20px; letter-spacing:.04em; margin-bottom:24px; line-height:1.3}
-nav .grp{font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--faint); margin:18px 0 6px}
+nav h1{font-family:var(--serif); font-weight:900; font-size:19px; letter-spacing:.04em; margin-bottom:20px; line-height:1.3}
+nav .grp{font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--faint); margin:16px 0 5px}
 nav a{display:block; padding:5px 0 5px 12px; margin-left:-14px; color:var(--muted); text-decoration:none; font-size:12.5px; border-left:2px solid transparent; transition:all .15s}
 nav a:hover{color:var(--text); border-left-color:var(--cyan)}
-nav a .mono{font-family:var(--mono); font-size:11.5px}
-main{margin-left:228px; padding:0 56px 140px}
-.wrap{max-width:1000px; margin:0 auto}
-header.hero{padding:84px 0 0; opacity:0; transform:translateY(16px)}
+nav a .cnt{font-family:var(--mono); font-size:10px; color:var(--faint); margin-left:5px}
+main{margin-left:236px; padding:0 56px 140px}
+.wrap{max-width:1020px; margin:0 auto}
+header.hero{padding:80px 0 0; opacity:0; transform:translateY(16px)}
 header .sys{font-family:var(--mono); font-size:12px; letter-spacing:.3em; color:var(--muted)}
-header h2.big{font-family:var(--serif); font-weight:900; font-size:44px; line-height:1.3; margin:12px 0 18px}
+header h2.big{font-family:var(--serif); font-weight:900; font-size:42px; line-height:1.3; margin:12px 0 16px}
 header h2.big em{font-style:normal; color:var(--cyan)}
 header .sub{font-size:16px; color:var(--muted); max-width:66ch}
-.stats{display:flex; gap:28px; margin-top:32px; flex-wrap:wrap}
-.stat{border:1px solid var(--line); border-radius:12px; padding:14px 22px; background:rgba(16,29,49,.6)}
-.stat .n{font-family:var(--serif); font-size:30px; font-weight:900; color:var(--cyan)}
-.stat .l{font-size:12px; color:var(--muted); font-family:var(--mono)}
-section{padding-top:72px}
-.kicker{font-family:var(--mono); font-size:11px; letter-spacing:.26em; color:var(--cyan); margin-bottom:8px}
+section{padding-top:64px}
+.kicker{font-family:var(--mono); font-size:11px; letter-spacing:.24em; color:var(--cyan); margin-bottom:8px}
 .kicker.v{color:var(--violet)} .kicker.a{color:var(--amber)} .kicker.g{color:var(--green)}
-h3.sec{font-family:var(--serif); font-weight:900; font-size:28px; letter-spacing:.03em; margin-bottom:8px}
-p.lead{color:var(--muted); max-width:68ch; margin-bottom:8px}
+h3.sec{font-family:var(--serif); font-weight:900; font-size:27px; letter-spacing:.03em; margin-bottom:8px}
+p.lead{color:var(--muted); max-width:70ch; margin-bottom:8px}
 code{font-family:var(--mono); font-size:.88em; color:var(--cyan); background:rgba(86,217,233,.08); padding:1px 6px; border-radius:4px}
 .fileref{font-family:var(--mono); font-size:11px; color:var(--faint)}
 
-/* 搜索框 */
-.search{position:sticky; top:0; z-index:20; background:linear-gradient(180deg, var(--ink) 70%, transparent); padding:16px 0 12px; margin-top:8px}
+/* 框架图 */
+.figure{margin-top:22px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--panel2)}
+.figure svg{display:block; width:100%; height:auto}
+.figure .cap{padding:10px 20px; border-top:1px solid var(--line); font-size:12px; color:var(--faint); font-family:var(--mono)}
+svg text{font-family:var(--sans)}
+svg .mono{font-family:var(--mono)}
+.subbox{cursor:pointer}
+.subbox rect{fill:#101d31;stroke:rgba(154,178,204,.4);stroke-width:1.2;transition:all .15s}
+.subbox:hover rect{stroke:var(--cyan);fill:rgba(86,217,233,.06)}
+.subname{fill:var(--text);font-size:13px;font-weight:600}
+.subev{fill:var(--faint);font-size:10px;font-family:var(--mono)}
+
+/* 搜索 */
+.search{position:sticky; top:0; z-index:20; background:linear-gradient(180deg, var(--ink) 72%, transparent); padding:14px 0 10px; margin-top:6px}
 .search input{width:100%; padding:11px 16px; border-radius:10px; font-size:14px; font-family:var(--mono);
   color:var(--text); background:var(--panel); border:1px solid var(--line-strong); outline:none}
 .search input:focus{border-color:var(--cyan)}
 .search .hint{font-size:11px; color:var(--faint); margin-top:6px; font-family:var(--mono)}
 
-/* 事件卡片 */
-.evgrid{display:flex; flex-direction:column; gap:14px; margin-top:16px}
-.ev{border:1px solid var(--line); border-radius:12px; background:linear-gradient(180deg, rgba(16,29,49,.85), rgba(13,24,40,.85)); overflow:hidden}
+/* 子系统小节 */
+.subsec{margin-top:14px; border:1px solid var(--line); border-radius:14px; background:rgba(16,29,49,.55); overflow:hidden}
+.subsec.hidden{display:none}
+.subsec-head{padding:18px 22px 14px; border-bottom:1px solid var(--line)}
+.subsec-title{display:flex; align-items:baseline; gap:12px}
+.subsec-title h4{font-family:var(--serif); font-size:20px; font-weight:900}
+.subsec-title .where{font-family:var(--mono); font-size:11px; color:var(--faint)}
+.subsec-desc{font-size:13.5px; color:var(--muted); margin-top:6px}
+
+/* 事件条 */
+.ev{border-bottom:1px solid rgba(154,178,204,.1)}
+.ev:last-child{border-bottom:none}
 .ev.hidden{display:none}
-.ev-head{display:flex; align-items:center; gap:12px; padding:14px 18px; cursor:pointer; user-select:none}
+.ev-head{display:flex; align-items:center; gap:11px; padding:13px 22px; cursor:pointer; user-select:none}
 .ev-head:hover{background:rgba(86,217,233,.03)}
-.ev-type{font-family:var(--mono); font-size:14.5px; font-weight:600; color:var(--text)}
-.ev-tag{font-family:var(--mono); font-size:10px; font-weight:700; padding:2px 9px; border-radius:5px; white-space:nowrap}
-.tagA{color:var(--cyan); border:1px solid rgba(86,217,233,.5); background:rgba(86,217,233,.08)}
-.tagB{color:var(--violet); border:1px solid rgba(183,155,245,.5); background:rgba(183,155,245,.08)}
-.tagF{color:var(--amber); border:1px solid rgba(242,181,68,.5); background:rgba(242,181,68,.08)}
-.ev-origin{font-family:var(--mono); font-size:11px; color:var(--faint); margin-left:auto}
-.ev-gate{font-family:var(--mono); font-size:10px; color:var(--red); border:1px solid rgba(240,122,106,.5); border-radius:5px; padding:2px 8px}
-.ev-purpose{padding:0 18px 8px; font-size:13.5px; color:var(--muted)}
-.ev-body{display:none; padding:0 18px 16px; border-top:1px solid var(--line); margin-top:4px; padding-top:14px}
+.ev-type{font-family:var(--mono); font-size:14px; font-weight:600; color:var(--text)}
+.ev-frame-tag{font-family:var(--mono); font-size:9.5px; font-weight:700; color:var(--amber); border:1px solid rgba(242,181,68,.5); border-radius:5px; padding:1px 7px}
+.ev-gate{font-family:var(--mono); font-size:9.5px; font-weight:700; color:var(--red); border:1px solid rgba(240,122,106,.5); border-radius:5px; padding:1px 7px}
+.ev-origin{font-family:var(--mono); font-size:10.5px; color:var(--faint); margin-left:auto}
+.ev-purpose{padding:0 22px 11px; font-size:13px; color:var(--muted)}
+.ev-body{display:none; padding:0 22px 16px}
 .ev.open .ev-body{display:block}
-.ev-body .row{display:flex; gap:10px; margin-bottom:8px; font-size:13px}
-.ev-body .row .k{font-family:var(--mono); font-size:11px; color:var(--faint); width:88px; flex:none; padding-top:2px; letter-spacing:.08em}
-.payload{font-family:var(--mono); font-size:12.5px; color:var(--text); background:#0a1626; border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow-x:auto; white-space:pre}
+.ev-body .row{display:flex; gap:10px; margin-bottom:7px; font-size:13px}
+.ev-body .row .k{font-family:var(--mono); font-size:10.5px; color:var(--faint); width:78px; flex:none; padding-top:3px; letter-spacing:.06em}
+.payload{font-family:var(--mono); font-size:12px; color:var(--muted); background:#0a1626; border:1px solid var(--line); border-radius:8px; padding:9px 12px}
 .fieldtab{width:100%; border-collapse:collapse; font-size:12.5px}
 .fieldtab td{padding:4px 10px; border-bottom:1px solid rgba(154,178,204,.1); vertical-align:top}
-.fieldtab td.fk{font-family:var(--mono); color:var(--cyan); width:140px}
+.fieldtab td.fk{font-family:var(--mono); color:var(--cyan); width:150px}
 .fieldtab td.ft{font-family:var(--mono); color:var(--faint); width:120px}
 
-/* API 块 */
-.api{border:1px solid var(--line); border-radius:12px; background:rgba(16,29,49,.7); padding:20px 22px; margin-bottom:16px}
-.api .nm{font-family:var(--mono); font-size:16px; font-weight:600; color:var(--cyan); margin-bottom:8px}
-.api .sig{font-family:var(--mono); font-size:13px; line-height:1.7; color:var(--text); background:#0a1626; border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto; white-space:pre; margin-bottom:10px}
+/* API / 用法 */
+.api{border:1px solid var(--line); border-radius:12px; background:rgba(16,29,49,.7); padding:18px 22px; margin-bottom:14px}
+.api .nm{font-family:var(--mono); font-size:15px; font-weight:600; color:var(--cyan); margin-bottom:8px}
+.api .sig{font-family:var(--mono); font-size:13px; line-height:1.7; color:var(--text); background:#0a1626; border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto; white-space:pre; margin-bottom:9px}
 .api .desc{font-size:13.5px; color:var(--muted)}
 .api .fileref{margin-top:6px; display:block}
-
-/* 代码示例 */
 .code{border:1px solid var(--line); border-radius:12px; background:#0a1626; padding:18px 20px; font-family:var(--mono); font-size:13px; line-height:1.9; color:var(--muted); overflow-x:auto; white-space:pre; margin:12px 0}
-.code .k{color:var(--violet)} .code .fn{color:var(--cyan)} .code .s{color:var(--amber)} .code .c{color:#54708c} .code .st{color:var(--green)}
-
-.note{margin-top:18px; padding:13px 18px; border:1px dashed var(--line-strong); border-radius:8px; color:var(--muted); font-size:13px; background:rgba(16,29,49,.5)}
-.note b{color:var(--text)}
-.note.warn{border-color:rgba(242,181,68,.5)}
-footer{margin-top:90px; padding-top:24px; border-top:1px solid var(--line); display:flex; justify-content:space-between; font-size:12px; color:var(--faint); font-family:var(--mono)}
+.code .k{color:var(--violet)} .code .fn{color:var(--cyan)} .code .s{color:var(--amber)} .code .c{color:#54708c}
+.note{margin-top:16px; padding:13px 18px; border:1px dashed var(--line-strong); border-radius:8px; color:var(--muted); font-size:13px; background:rgba(16,29,49,.5)}
+.note b{color:var(--text)} .note.warn{border-color:rgba(242,181,68,.5)}
+footer{margin-top:80px; padding-top:24px; border-top:1px solid var(--line); display:flex; justify-content:space-between; font-size:12px; color:var(--faint); font-family:var(--mono)}
 footer a{color:var(--cyan); text-decoration:none}
-@media (max-width:1100px){nav{display:none} main{margin-left:0} header h2.big{font-size:32px}}
+@media (max-width:1100px){nav{display:none} main{margin-left:0} header h2.big{font-size:30px}}
 </style>
 </head>
 <body>
@@ -112,22 +122,28 @@ footer a{color:var(--cyan); text-decoration:none}
 <nav>
   <div class="brand">OPENPROGRAM</div>
   <h1>事件层<br>API Reference</h1>
-  <a href="#overview">总览</a>
+  <a href="#overview">这层是什么</a>
+  <a href="#map">系统框架图</a>
   <a href="#model">Event 数据模型</a>
-  <div class="grp">事件目录 · EVENTS</div>
-  <a href="#events-a"><span class="mono">A 类 · agent 活动</span></a>
-  <a href="#events-b"><span class="mono">B 类 · 系统状态</span></a>
-  <a href="#events-f"><span class="mono">ws.frame · 透传帧</span></a>
+  <div class="grp">事件 · 按子系统</div>
+  <a href="#sub-agentloop">agent 主循环<span class="cnt" id="c-agentloop"></span></a>
+  <a href="#sub-tools">工具<span class="cnt" id="c-tools"></span></a>
+  <a href="#sub-task">子任务<span class="cnt" id="c-task"></span></a>
+  <a href="#sub-auth">凭据 auth<span class="cnt" id="c-auth"></span></a>
+  <a href="#sub-context">上下文<span class="cnt" id="c-context"></span></a>
+  <a href="#sub-memory">记忆<span class="cnt" id="c-memory"></span></a>
+  <a href="#sub-channels">外部通道<span class="cnt" id="c-channels"></span></a>
+  <a href="#sub-worktree">worktree<span class="cnt" id="c-worktree"></span></a>
+  <a href="#sub-registry">技能/插件<span class="cnt" id="c-registry"></span></a>
+  <a href="#sub-ask">发问 ask<span class="cnt" id="c-ask"></span></a>
+  <a href="#sub-bus">总线本身<span class="cnt" id="c-bus"></span></a>
   <div class="grp">API · 核心</div>
-  <a href="#api-bus">总线 API</a>
-  <a href="#api-helpers">发事件 helper</a>
-  <div class="grp">三种用法 · GUIDES</div>
+  <a href="#api-core">总线 API + helper</a>
+  <div class="grp">三种用法</div>
   <a href="#use-observe">① 观察（订阅）</a>
   <a href="#use-gate">② 拦截（tool gate）</a>
   <a href="#use-ask">③ 发问（runtime.ask）</a>
-  <div class="grp">接入 · INTEGRATION</div>
-  <a href="#bridges">桥接（auth → 总线）</a>
-  <a href="#frontend">前端消费</a>
+  <div class="grp">其他</div>
   <a href="#debug">调试（事件日志）</a>
   <a href="#appendix">附录</a>
 </nav>
@@ -136,242 +152,193 @@ footer a{color:var(--cyan); text-decoration:none}
 
 <header class="hero">
   <div class="sys">API REFERENCE · EVENT LAYER</div>
-  <h2 class="big">框架里<em>每一件发生的事</em>，<br>都在这条流上。</h2>
-  <p class="sub">事件层把 OpenProgram 的全部活动（用户消息、模型回复、工具调用、文件改动、凭据限流、上下文压缩…）统一成一条可订阅的事件流。这份文档把<span style="color:var(--text)">所有事件类型、所有 API、三种用法</span>逐一列清，源码为据（每条带 file:line）。</p>
-  <div class="stats">
-    <div class="stat"><div class="n">17</div><div class="l">总线事件类型</div></div>
-    <div class="stat"><div class="n">9</div><div class="l">ws.frame 透传帧</div></div>
-    <div class="stat"><div class="n">3</div><div class="l">交互用法</div></div>
-    <div class="stat"><div class="n">5</div><div class="l">origin 来源</div></div>
-  </div>
+  <h2 class="big">先看<em>它长在框架哪</em>，<br>再看每个部位发什么事件。</h2>
+  <p class="sub">事件层把 OpenProgram 各个子系统的活动统一成一条可订阅的事件流。这份文档先给一张<span style="color:var(--text)">系统框架图</span>——看清事件层连着哪些子系统、事件从哪里冒出来；再点进任意子系统，看那里有哪些事件、每个干什么、怎么用。</p>
 </header>
 
-<!-- ════ 总览 ════ -->
+<!-- 这层是什么 -->
 <section id="overview">
   <div class="kicker">OVERVIEW</div>
-  <h3 class="sec">事件层是什么</h3>
-  <p class="lead">一条<span style="color:var(--text)">进程级单例总线</span>（<code>openprogram/agent/event_bus.py</code>）。框架各处的「源」把事件 <code>emit</code> 进总线；「消费者」按事件类型 <code>subscribe</code>。源和消费者互不认识，只认总线——这就是「统一」。事件分两大类：</p>
-  <div class="note"><b>A 类 · agent 活动</b>：agent 干活过程中发生的（模型回复、工具前后、文件改、turn 结束…），通常带 session/turn 关联。<br><b>B 类 · 系统状态</b>：全局状态变化（凭据限流、上下文压缩、外部消息、技能变更…），可能不属于任何 turn。<br><b>ws.frame</b>：透传信封——外部源把现成的前端 WS 帧经总线送往浏览器，webui 订阅后原样广播。</div>
-  <p class="lead" style="margin-top:14px">配套设计文档：<a href="event-layer.html" style="color:var(--cyan)">event-layer.html</a>（模型与定位）· <a href="framework-evolution.html" style="color:var(--cyan)">framework-evolution.html</a>（框架演进）。</p>
+  <h3 class="sec">这层是什么</h3>
+  <p class="lead">一条<span style="color:var(--text)">进程级单例总线</span>（<code>openprogram/agent/event_bus.py</code>）。各子系统当「源」，发生事情时把事件 <code>emit</code> 进总线；「消费者」（webui、将来的任何功能）按事件类型 <code>subscribe</code>。源和消费者互不认识，只认总线——所以新增一个事件源或一个消费者都不牵动别处。</p>
 </section>
 
-<!-- ════ Event 数据模型 ════ -->
+<!-- 系统框架图 -->
+<section id="map">
+  <div class="kicker">SYSTEM MAP</div>
+  <h3 class="sec">系统框架图</h3>
+  <p class="lead">左边是发事件的<span style="color:var(--text)">子系统</span>（每个方块标着它发的事件、<span style="color:var(--cyan)">可点跳转</span>到详情），中间是<span style="color:var(--text)">总线</span>，右边是<span style="color:var(--text)">消费者</span>。</p>
+  <div class="figure">
+  <svg viewBox="0 0 1180 620" xmlns="http://www.w3.org/2000/svg">
+    <style>
+      .flow{fill:none;stroke:#56d9e9;stroke-width:1.4;stroke-dasharray:6 8;animation:f 1.7s linear infinite;opacity:.8}
+      .flowV{fill:none;stroke:#b79bf5;stroke-width:1.4;stroke-dasharray:6 8;animation:f 2s linear infinite;opacity:.75}
+      .flowA{fill:none;stroke:#f2b544;stroke-width:1.6;stroke-dasharray:4 6;animation:f 1s linear infinite}
+      @keyframes f{to{stroke-dashoffset:-14}}
+      .lbl{fill:#8aa0b8;font-size:11px;letter-spacing:.1em}
+    </style>
+    <rect x="0" y="0" width="1180" height="620" rx="14" fill="#0d1828"/>
+    <g stroke="rgba(154,178,204,.05)">
+      <path d="M0 60H1180M0 120H1180M0 180H1180M0 240H1180M0 300H1180M0 360H1180M0 420H1180M0 480H1180M0 540H1180"/>
+      <path d="M60 0V620M120 0V620M180 0V620M240 0V620M300 0V620M360 0V620M420 0V620M480 0V620M540 0V620M600 0V620M660 0V620M720 0V620M780 0V620M840 0V620M900 0V620M960 0V620M1020 0V620M1080 0V620M1140 0V620"/>
+    </g>
+    <text class="lbl mono" x="32" y="38" style="fill:#56d9e9;letter-spacing:.16em">事件源 · 子系统（点方块跳转）</text>
+
+    <!-- 子系统方块（10 个，左两列） -->
+    <a href="#sub-agentloop"><g class="subbox"><rect x="32" y="56" width="200" height="48" rx="8"/><text class="subname" x="46" y="80">agent 主循环</text><text class="subev" x="46" y="96">model · tool · turn · prompt</text></g></a>
+    <a href="#sub-tools"><g class="subbox"><rect x="32" y="116" width="200" height="44" rx="8"/><text class="subname" x="46" y="138">工具</text><text class="subev" x="46" y="153">file.changed</text></g></a>
+    <a href="#sub-task"><g class="subbox"><rect x="32" y="172" width="200" height="44" rx="8"/><text class="subname" x="46" y="194">子任务 runner</text><text class="subev" x="46" y="209">subagent.* · session_reload</text></g></a>
+    <a href="#sub-auth"><g class="subbox"><rect x="32" y="228" width="200" height="44" rx="8"/><text class="subname" x="46" y="250">凭据 auth</text><text class="subev" x="46" y="265">credential.*（经桥）</text></g></a>
+    <a href="#sub-context"><g class="subbox"><rect x="32" y="284" width="200" height="44" rx="8"/><text class="subname" x="46" y="306">上下文 context</text><text class="subev" x="46" y="321">context.compaction*</text></g></a>
+    <a href="#sub-memory"><g class="subbox"><rect x="252" y="56" width="200" height="44" rx="8"/><text class="subname" x="266" y="78">记忆 memory</text><text class="subev" x="266" y="93">memory.ingest_*</text></g></a>
+    <a href="#sub-channels"><g class="subbox"><rect x="252" y="112" width="200" height="44" rx="8"/><text class="subname" x="266" y="134">外部通道 channels</text><text class="subev" x="266" y="149">channel.* · channel_turn</text></g></a>
+    <a href="#sub-worktree"><g class="subbox"><rect x="252" y="168" width="200" height="44" rx="8"/><text class="subname" x="266" y="190">worktree</text><text class="subev" x="266" y="205">worktree_status</text></g></a>
+    <a href="#sub-registry"><g class="subbox"><rect x="252" y="224" width="200" height="44" rx="8"/><text class="subname" x="266" y="246">技能 / 插件</text><text class="subev" x="266" y="261">skills.changed · programs</text></g></a>
+    <a href="#sub-ask"><g class="subbox"><rect x="252" y="280" width="200" height="48" rx="8" style="stroke:rgba(183,155,245,.5)"/><text class="subname" x="266" y="304">发问 runtime.ask</text><text class="subev" x="266" y="320">question.*</text></g></a>
+
+    <!-- 汇入总线 -->
+    <path class="flow" d="M232 80 C 380 80, 460 250, 556 280"/>
+    <path class="flow" d="M232 138 C 380 138, 470 270, 556 296"/>
+    <path class="flow" d="M232 194 C 380 194, 470 290, 556 312"/>
+    <path class="flowV" d="M232 250 C 380 250, 470 300, 556 328"/>
+    <path class="flowV" d="M232 306 C 380 306, 470 320, 556 344"/>
+    <path class="flow" d="M452 78 C 500 120, 510 300, 556 320"/>
+    <path class="flow" d="M452 134 C 500 160, 510 310, 556 332"/>
+    <path class="flowV" d="M452 190 C 500 220, 510 320, 556 344"/>
+    <path class="flowV" d="M452 246 C 500 280, 510 330, 556 356"/>
+    <path class="flowV" d="M452 304 C 500 330, 520 340, 556 360"/>
+    <text class="lbl mono" x="380" y="200" style="fill:#5f7a90">emit(Event)</text>
+
+    <!-- 总线 -->
+    <rect x="558" y="250" width="184" height="150" rx="14" fill="none" stroke="rgba(86,217,233,.25)" stroke-width="6" opacity=".55"/>
+    <rect x="558" y="250" width="184" height="150" rx="14" fill="rgba(86,217,233,.05)" stroke="#56d9e9" stroke-width="1.6"/>
+    <text class="mono" x="650" y="305" text-anchor="middle" fill="#56d9e9" font-size="18" font-weight="600">EventBus</text>
+    <text class="subev" x="650" y="328" text-anchor="middle" fill="#8aa0b8" style="font-size:11px">进程级单例</text>
+    <text class="subev" x="650" y="350" text-anchor="middle" fill="#8aa0b8" style="font-size:11px">emit / subscribe(types=)</text>
+    <text class="subev" x="650" y="376" text-anchor="middle" fill="#5f7a90" style="font-size:10px">源与消费者互不认识</text>
+
+    <!-- 消费者 -->
+    <text class="lbl mono" x="800" y="38" style="fill:#56d9e9;letter-spacing:.16em">消费者</text>
+    <path class="flow" d="M742 300 C 800 280, 820 220, 868 205"/>
+    <a href="#sub-bus"><g class="subbox"><rect x="870" y="176" width="220" height="58" rx="8"/><text class="subname" x="886" y="200">webui（订阅 ws.frame）</text><text class="subev" x="886" y="218">订阅总线 → 转发前端 WebSocket</text></g></a>
+    <path class="flow" d="M742 340 C 800 340, 820 330, 868 326"/>
+    <g class="subbox"><rect x="870" y="298" width="220" height="52" rx="8" style="stroke-dasharray:4 5"/><text class="subname" x="886" y="320" style="fill:#8aa0b8">将来任何功能</text><text class="subev" x="886" y="338">subscribe(types=…) 接上就有</text></g>
+
+    <!-- 拦截支线 -->
+    <path class="flowA" d="M650 400 C 650 440, 700 460, 752 470"/>
+    <path class="flowA" d="M752 494 C 700 500, 660 480, 624 410"/>
+    <a href="#use-gate"><g class="subbox"><rect x="756" y="446" width="240" height="52" rx="8" style="stroke:rgba(242,181,68,.55)"/><text class="subname" x="772" y="468">tool.before 同步问询点</text><text class="subev" x="772" y="486">唯一可拦截位 · 复用批准机制</text></g></a>
+    <text class="lbl mono" x="660" y="436" style="fill:#f2b544">拦截 · 同步</text>
+
+    <!-- 前端 -->
+    <path class="flow" d="M1090 205 C 1120 205, 1130 205, 1150 205"/>
+    <rect x="1098" y="180" width="74" height="50" rx="8" fill="#101d31" stroke="rgba(154,178,204,.4)" stroke-dasharray="4 5"/>
+    <text class="subname" x="1112" y="202" style="font-size:12px">前端</text>
+    <text class="subev" x="1108" y="218">浏览器</text>
+  </svg>
+  <div class="cap">实线 = 异步观察（事件流）；琥珀虚线 = 同步拦截（仅 tool.before）。点任意子系统方块跳到它的事件详情。</div>
+  </div>
+</section>
+
+<!-- Event 数据模型 -->
 <section id="model">
   <div class="kicker v">DATA MODEL</div>
   <h3 class="sec">Event 数据模型</h3>
-  <p class="lead">每条事件都是一个 frozen dataclass。核心三样（是什么事 + 内容 + 时间）固定，关联信息放进开放的 <code>metadata</code> 口袋。<span class="fileref">openprogram/agent/event_bus.py:39-49</span></p>
+  <p class="lead">每条事件都是一个不可变（frozen）的小数据包。核心三样固定，关联信息放进开放的 <code>metadata</code> 口袋。<span class="fileref">openprogram/agent/event_bus.py:39-49</span></p>
   <div class="api">
     <div class="sig"><span class="k">@dataclass</span>(frozen=<span class="k">True</span>)
 <span class="k">class</span> <span class="fn">Event</span>:
     id: str            <span class="c"># 唯一编号</span>
-    ts: float          <span class="c"># 发生时间（unix 时间戳）</span>
-    type: str          <span class="c"># 事件类型，见下方目录</span>
+    ts: float          <span class="c"># 发生时间</span>
+    type: str          <span class="c"># 事件类型（如 tool.before）</span>
     origin: str        <span class="c"># 谁引起：user/agent/tool/system/proactive</span>
-    payload: dict      <span class="c"># 这件事的内容（每类事件不同）</span>
-    metadata: dict     <span class="c"># 开放口袋：{"session":…, "turn":…}，需要才有</span></div>
-    <div class="desc">不可变（frozen）= 流水账只记不改，多线程共享天然安全。<code>metadata</code> 由 <code>make_event</code> 自动从 ContextVar 填上 session/turn（agent 活动事件有，系统事件通常没有）。</div>
+    payload: dict      <span class="c"># 这件事的内容（每类不同）</span>
+    metadata: dict     <span class="c"># 开放口袋：{"session":…,"turn":…}，需要才有</span></div>
+    <div class="desc"><code>metadata</code> 由发事件时自动从 ContextVar 补上 session/turn——agent 活动事件通常有，系统事件通常没有。</div>
   </div>
 </section>
 
-<!-- ════ 搜索 ════ -->
+<!-- 搜索 -->
 <div class="search">
   <input id="q" type="text" placeholder="搜索事件类型 / 字段 / 用途…（如 tool、credential、压缩）" autocomplete="off">
-  <div class="hint" id="qhint">点任意事件卡片展开 payload 字段与源码位置</div>
+  <div class="hint" id="qhint">下面按子系统分组——点事件展开 payload 字段与源码位置</div>
 </div>
 
-<!-- ════ A 类事件 ════ -->
-<section id="events-a">
-  <div class="kicker">EVENTS · CLASS A</div>
-  <h3 class="sec">A 类事件 · agent 活动</h3>
-  <p class="lead">agent 干活过程中发生，通常带 session/turn 关联。</p>
-  <div class="evgrid" id="grid-a"></div>
-</section>
+<!-- 事件分组容器（JS 填充） -->
+<div id="subsections"></div>
 
-<!-- ════ B 类事件 ════ -->
-<section id="events-b">
-  <div class="kicker v">EVENTS · CLASS B</div>
-  <h3 class="sec">B 类事件 · 系统状态</h3>
-  <p class="lead">全局状态变化，可能不属于任何 turn——对「在某时机响应」往往最有价值。</p>
-  <div class="evgrid" id="grid-b"></div>
-</section>
-
-<!-- ════ ws.frame 帧 ════ -->
-<section id="events-f">
-  <div class="kicker a">EVENTS · WS.FRAME</div>
-  <h3 class="sec">ws.frame 透传帧</h3>
-  <p class="lead">外部源把现成的前端 WS 帧装进 <code>ws.frame</code> 事件经总线送出，webui 订阅后原样广播给浏览器。下面是各源送出的帧（<code>frame.type</code> / <code>frame.data</code>）。</p>
-  <div class="evgrid" id="grid-f"></div>
-</section>
-
-<!-- ════ 总线 API ════ -->
-<section id="api-bus">
+<!-- API -->
+<section id="api-core">
   <div class="kicker g">API · CORE</div>
-  <h3 class="sec">总线 API</h3>
-
-  <div class="api">
-    <div class="nm">get_event_bus()</div>
-    <div class="sig"><span class="k">def</span> <span class="fn">get_event_bus</span>() -> EventBus</div>
-    <div class="desc">取进程级单例总线（双检锁，照 AuthStore/TaskRunner 先例）。同一 worker 进程任意线程拿到同一个实例。所有 emit/subscribe 都从它来。</div>
-    <span class="fileref">openprogram/agent/event_bus.py:241-251</span>
-  </div>
-
-  <div class="api">
-    <div class="nm">EventBus.subscribe(handler, *, types=None)</div>
-    <div class="sig"><span class="k">def</span> <span class="fn">subscribe</span>(
-    self,
-    handler: Callable[[Event], Any],
-    *,
-    types: set[str] | <span class="k">None</span> = <span class="k">None</span>,
-) -> Callable[[], <span class="k">None</span>]</div>
-    <div class="desc">注册一个类型化订阅者。<code>types=None</code> 收所有事件；<code>types={"tool.before","file.changed"}</code> 只收这几类。返回一个 <code>unsubscribe()</code> 函数。handler 在 emit 所在线程被调用（同步函数；async handler 在无 loop 的 worker 线程会被静默跳过）。</div>
-    <span class="fileref">openprogram/agent/event_bus.py:159-178</span>
-  </div>
-
-  <div class="api">
-    <div class="nm">EventBus.emit(event)</div>
-    <div class="sig"><span class="k">def</span> <span class="fn">emit</span>(self, event: Event) -> <span class="k">None</span></div>
-    <div class="desc">把一条 Event 分发给所有匹配的订阅者。fire-and-forget——某个 handler 抛异常不影响其他 handler、不影响 emit 调用方。typed 事件路径与 legacy <code>on(channel)</code> 路径互不串。</div>
-    <span class="fileref">openprogram/agent/event_bus.py（EventBus.emit）</span>
-  </div>
+  <h3 class="sec">总线 API + 发事件 helper</h3>
+  <div class="api"><div class="nm">get_event_bus() → EventBus</div><div class="desc">取进程级单例总线（双检锁）。同一 worker 进程任意线程拿到同一实例。<span class="fileref">event_bus.py:241-251</span></div></div>
+  <div class="api"><div class="nm">EventBus.subscribe(handler, *, types=None) → unsubscribe()</div><div class="desc">注册类型化订阅者。<code>types=None</code> 收全部；<code>types={"tool.before",…}</code> 只收这几类。返回取消订阅函数。<span class="fileref">event_bus.py:159-178</span></div></div>
+  <div class="api"><div class="nm">EventBus.emit(event)</div><div class="desc">分发给所有匹配订阅者。fire-and-forget——某 handler 抛异常不影响其他、不影响 emit 方。</div></div>
+  <div class="api"><div class="nm">emit_safe(type, origin, payload=None, metadata=None)</div><div class="desc">源发事件的便捷入口：构造 Event（自动填 id/ts + ContextVar 关联）并 emit，<b>吞掉一切异常</b>。框架里所有 A/B 类事件都用它。<span class="fileref">event_bus.py:96-107</span></div></div>
+  <div class="api"><div class="nm">emit_ws_frame(frame)</div><div class="desc">外部源用：把现成前端 WS 帧装进 <code>ws.frame</code> 事件送往前端，让源不再 import webui。<span class="fileref">event_bus.py:110-124</span></div></div>
 </section>
 
-<!-- ════ 发事件 helper ════ -->
-<section id="api-helpers">
-  <div class="kicker g">API · HELPERS</div>
-  <h3 class="sec">发事件的 helper（源用这些）</h3>
-
-  <div class="api">
-    <div class="nm">emit_safe(type, origin, payload=None, metadata=None)</div>
-    <div class="sig"><span class="k">def</span> <span class="fn">emit_safe</span>(
-    type: str, origin: str,
-    payload: dict | <span class="k">None</span> = <span class="k">None</span>,
-    metadata: dict | <span class="k">None</span> = <span class="k">None</span>,
-) -> <span class="k">None</span></div>
-    <div class="desc">源发事件的便捷入口：构造 Event（自动填 id/ts + 从 ContextVar 补 session/turn）并 emit，<b>吞掉一切异常</b>——事件层绝不能弄崩发它的业务代码。框架里所有 A/B 类事件都用它发。</div>
-    <span class="fileref">openprogram/agent/event_bus.py:96-107</span>
-  </div>
-
-  <div class="api">
-    <div class="nm">emit_ws_frame(frame)</div>
-    <div class="sig"><span class="k">def</span> <span class="fn">emit_ws_frame</span>(frame: dict) -> <span class="k">None</span></div>
-    <div class="desc">外部源用：把一个现成的前端 WS 帧（<code>{"type":…, "data":…}</code>）装进 <code>ws.frame</code> 事件经总线送往前端。让 task runner / channels / worktree 等不再 import webui。同样吞掉一切异常。</div>
-    <span class="fileref">openprogram/agent/event_bus.py:110-124</span>
-  </div>
-
-  <div class="api">
-    <div class="nm">make_event(type, origin, payload=None, metadata=None)</div>
-    <div class="sig"><span class="k">def</span> <span class="fn">make_event</span>(...) -> Event</div>
-    <div class="desc">底层构造器：生成带 id/ts、自动补 ContextVar 关联的 Event（不 emit）。需要拿到 Event 对象自己处理时用（如 tool.before 既要 emit 又要喂给 gate）。<code>emit_safe</code> 内部就是 <code>emit(make_event(...))</code>。</div>
-    <span class="fileref">openprogram/agent/event_bus.py:80-93</span>
-  </div>
-</section>
-
-<!-- ════ 用法① 观察 ════ -->
+<!-- 用法① -->
 <section id="use-observe">
   <div class="kicker">GUIDE ①</div>
   <h3 class="sec">观察：订阅事件做只读响应</h3>
-  <p class="lead">最常见的用法——盯某几类事件，发生时做点只读的事（统计、日志、转发、触发后台活）。异步、不挡 agent。</p>
+  <p class="lead">最常见——盯某几类事件，发生时做点只读的事。异步、不挡 agent。</p>
   <div class="code"><span class="k">from</span> openprogram.agent.event_bus <span class="k">import</span> get_event_bus
 
 <span class="k">def</span> <span class="fn">on_event</span>(ev):
     <span class="k">if</span> ev.type == <span class="s">"file.changed"</span>:
-        print(<span class="s">"改了"</span>, ev.payload[<span class="s">"path"</span>], <span class="s">"in session"</span>, ev.metadata.get(<span class="s">"session"</span>))
+        print(<span class="s">"改了"</span>, ev.payload[<span class="s">"path"</span>], ev.metadata.get(<span class="s">"session"</span>))
 
-<span class="c"># 只收这两类；返回 unsubscribe()</span>
-unsub = get_event_bus().subscribe(on_event, types={<span class="s">"file.changed"</span>, <span class="s">"tool.after"</span>})
-<span class="c"># ... 用完 unsub() 取消</span></div>
-  <div class="note"><b>防自触发</b>：如果你的订阅者会再 emit 事件，注意别和自己产生的事件绕成环——检查 <code>ev.origin == "proactive"</code> 或因果根来短路（见附录·不变式）。</div>
+unsub = get_event_bus().subscribe(on_event, types={<span class="s">"file.changed"</span>, <span class="s">"tool.after"</span>})</div>
 </section>
 
-<!-- ════ 用法② 拦截 ════ -->
+<!-- 用法② -->
 <section id="use-gate">
   <div class="kicker a">GUIDE ②</div>
   <h3 class="sec">拦截：在工具执行前拦下来</h3>
-  <p class="lead">全框架唯一的<span style="color:var(--text)">同步拦截点</span>，只在 <code>tool.before</code>。注册一个 gate 函数：拿到 tool.before 事件，返回 <code>None</code> 放行 或 一个 deny 理由字符串拦下。deny 理由作为 error tool result 回给模型。多 gate 取最严。对 subagent 同样生效（绕过 permission_mode=bypass）。</p>
+  <p class="lead">全框架唯一的同步拦截点，只在 <code>tool.before</code>。gate 函数返回 <code>None</code> 放行 / deny 理由字符串拦下（理由作为 error tool result 回给模型）。多 gate 取最严，对 subagent 也生效。</p>
   <div class="code"><span class="k">from</span> openprogram.agent.tool_gate <span class="k">import</span> register_tool_gate
 
 <span class="k">def</span> <span class="fn">guard</span>(ev):
-    args = ev.payload.get(<span class="s">"args"</span>) <span class="k">or</span> {}
-    <span class="k">if</span> ev.payload.get(<span class="s">"tool"</span>) == <span class="s">"bash"</span> <span class="k">and</span> <span class="s">"rm -rf /"</span> <span class="k">in</span> str(args.get(<span class="s">"command"</span>, <span class="s">""</span>)):
-        <span class="k">return</span> <span class="s">"危险删除，拦下"</span>      <span class="c"># 非 None = 拦截</span>
-    <span class="k">return</span> <span class="k">None</span>                       <span class="c"># 放行</span>
+    <span class="k">if</span> ev.payload.get(<span class="s">"tool"</span>) == <span class="s">"bash"</span> <span class="k">and</span> <span class="s">"rm -rf /"</span> <span class="k">in</span> str(ev.payload.get(<span class="s">"args"</span>, {}).get(<span class="s">"command"</span>, <span class="s">""</span>)):
+        <span class="k">return</span> <span class="s">"危险删除，拦下"</span>
+    <span class="k">return</span> <span class="k">None</span>
 
 unregister = register_tool_gate(guard)</div>
-  <div class="note warn"><b>gate 必须快</b>：它挡在工具执行的同步路径上，agent 在等它给准话。不要在 gate 里调 LLM / 读网络 / 做慢活。gate 自身抛异常按放行处理（fail-open）。<span class="fileref">openprogram/agent/tool_gate.py</span></div>
+  <div class="note warn"><b>gate 必须快</b>：挡在工具执行同步路径上，agent 在等它。别调 LLM / 读网络。自身抛异常按放行（fail-open）。<span class="fileref">openprogram/agent/tool_gate.py</span></div>
 </section>
 
-<!-- ════ 用法③ 发问 ════ -->
+<!-- 用法③ -->
 <section id="use-ask">
   <div class="kicker v">GUIDE ③</div>
   <h3 class="sec">发问：函数中途停下来问用户</h3>
-  <p class="lead">在任意函数体里调 <code>runtime.ask</code> / <code>runtime.confirm</code>，阻塞到用户在前端回答。底层发出 <code>question.asked</code> 事件（前端弹出问题卡片），用户答后函数 resume。三态显式。</p>
-  <div class="code"><span class="c"># 单选 / 多选 / 自由文本</span>
-answer = runtime.<span class="fn">ask</span>(
-    <span class="s">"用哪个日期库？"</span>,
-    options=[<span class="s">"dayjs"</span>, <span class="s">"luxon"</span>],   <span class="c"># 可选；None = 纯自由文本</span>
-    multi=<span class="k">False</span>,                  <span class="c"># True 返回 list[str]</span>
-    allow_custom=<span class="k">True</span>,             <span class="c"># 允许选项外自由输入</span>
-    timeout=<span class="s">300</span>,                   <span class="c"># 秒，默认 5 分钟</span>
-    default=<span class="k">None</span>,                  <span class="c"># 超时返回它；无 default 超时抛 AskTimeout</span>
-)   <span class="c"># 用户点「拒绝」→ 抛 UserDeclined</span>
+  <p class="lead">在函数体里调 <code>runtime.ask</code> / <code>runtime.confirm</code>，阻塞到用户在前端回答。三态显式。</p>
+  <div class="code">answer = runtime.<span class="fn">ask</span>(<span class="s">"用哪个日期库？"</span>, options=[<span class="s">"dayjs"</span>, <span class="s">"luxon"</span>], timeout=<span class="s">300</span>, default=<span class="k">None</span>)
+<span class="c"># 答了→返回；拒绝→抛 UserDeclined；超时→有 default 返 default 否则抛 AskTimeout</span>
 
-<span class="c"># 是 / 否</span>
 ok = runtime.<span class="fn">confirm</span>(<span class="s">"要归档全部 87 封邮件吗？"</span>, default=<span class="k">False</span>)  <span class="c"># 超时返 default，不抛</span>
 
-<span class="c"># headless（无前端）跑时分支</span>
-<span class="k">if</span> runtime.<span class="fn">can_ask</span>():
+<span class="k">if</span> runtime.<span class="fn">can_ask</span>():  <span class="c"># headless 无前端时为 False</span>
     name = runtime.<span class="fn">ask</span>(<span class="s">"项目名？"</span>)</div>
-  <div class="note"><b>三态</b>：答了→返回答案；用户拒绝→抛 <code>UserDeclined</code>；超时→<code>confirm</code> 返 default、<code>ask</code> 有 default 返 default 否则抛 <code>AskTimeout</code>。替代了旧的「300s 静默返回 None」。<span class="fileref">openprogram/agentic_programming/runtime.py（ask/confirm/can_ask）· openprogram/agent/questions.py（QuestionRegistry）</span></div>
-  <div class="note warn"><b>当前范围</b>：同进程的 <code>@function</code> 工具可用；<code>@agentic_function</code> 跑在子进程，需要 parent→child 答案通道（Phase 2，尚未做）。</div>
+  <div class="note warn"><b>当前范围</b>：同进程 <code>@function</code> 工具可用；<code>@agentic_function</code> 跑子进程需 parent→child 通道（Phase 2 未做）。<span class="fileref">runtime.py（ask/confirm）· agent/questions.py</span></div>
 </section>
 
-<!-- ════ 桥接 ════ -->
-<section id="bridges">
-  <div class="kicker g">INTEGRATION</div>
-  <h3 class="sec">桥接：把已有信号引进总线</h3>
-  <p class="lead">auth 子系统自带规范的 <code>subscribe/_emit</code>，所以走「真桥」：订阅它、翻译成统一 Event 再 emit。worker 启动时装一次。<span class="fileref">openprogram/agent/event_bridges.py · 装于 openprogram/worker/runner.py:263-267</span></p>
-  <table class="fieldtab" style="margin-top:10px">
-    <tr><td class="fk">AuthEventType</td><td>→ 总线事件</td></tr>
-    <tr><td class="fk">POOL_MEMBER_COOLDOWN</td><td><code>credential.cooldown</code></td></tr>
-    <tr><td class="fk">POOL_ROTATED</td><td><code>credential.rotated</code></td></tr>
-    <tr><td class="fk">POOL_EXHAUSTED</td><td><code>credential.exhausted</code></td></tr>
-  </table>
-  <div class="note">只桥这三种「有响应价值」的（限流/轮换/耗尽），登录/刷新/档案生命周期不进总线——遵循「有消费者想响应才是事件」的边界原则，避免事件流变垃圾场。context / channels / memory / skills 是自家代码，直接源头 <code>emit_safe</code>，不经过桥。</div>
-</section>
-
-<!-- ════ 前端消费 ════ -->
-<section id="frontend">
-  <div class="kicker">INTEGRATION</div>
-  <h3 class="sec">前端消费</h3>
-  <p class="lead">webui 是总线的一个订阅者（启动钩子 <code>_subscribe_event_bus</code>，<span class="fileref">openprogram/webui/server.py:1166-1189</span>）：订阅 <code>ws.frame</code> 事件，把里面的原始帧 <code>_broadcast</code> 给所有 WebSocket 客户端。前端 <code>web/lib/use-ws.ts</code> 按帧 <code>type</code> 分发处理——所以「事件 → 浏览器」这条路是通的。前端认识的帧包括 <code>task_status</code>、<code>channel_turn</code>、<code>agent_session_updated</code>、<code>worktree_status</code>、<code>programs:changed</code>、<code>skills:changed</code>、<code>question.asked/replied/rejected</code> 等（见上方 ws.frame 目录）。</p>
-</section>
-
-<!-- ════ 调试 ════ -->
+<!-- 调试 -->
 <section id="debug">
-  <div class="kicker a">INTEGRATION</div>
+  <div class="kicker a">DEBUG</div>
   <h3 class="sec">调试：把事件流打出来看</h3>
-  <p class="lead">设环境变量 <code>OPENPROGRAM_EVENT_LOG</code>，每条事件作为一行 JSON 追加落盘。<code>1</code>/<code>true</code> → <code>/tmp/openprogram-events.jsonl</code>，其他值当作路径。<span class="fileref">openprogram/agent/event_bus.py:256-285</span></p>
-  <div class="code"><span class="c"># 启用事件日志后重启 worker，发一条消息，看完整事件序列</span>
-OPENPROGRAM_EVENT_LOG=1 openprogram worker restart
-<span class="c"># 然后</span>
+  <p class="lead">设 <code>OPENPROGRAM_EVENT_LOG=1</code>（或路径），每条事件作为一行 JSON 落盘。<span class="fileref">event_bus.py:256-285</span></p>
+  <div class="code">OPENPROGRAM_EVENT_LOG=1 openprogram worker restart
 cat /tmp/openprogram-events.jsonl</div>
-  <div class="note">一个普通 chat turn 会依序打出 <code>user.prompt_submitted → model.response_started → tool.before → tool.after → model.response_completed → turn.ended</code>，每条带 metadata 里的 session/turn。这是确认事件层在跑的最快方式。</div>
+  <div class="note">普通 chat turn 会依序打出 <code>user.prompt_submitted → model.response_started → tool.before → tool.after → model.response_completed → turn.ended</code>，带 metadata 里的 session/turn。确认事件层在跑的最快方式。</div>
 </section>
 
-<!-- ════ 附录 ════ -->
+<!-- 附录 -->
 <section id="appendix">
   <div class="kicker">APPENDIX</div>
   <h3 class="sec">附录</h3>
-  <p class="lead"><b>origin 枚举</b>（事件由谁引起）：</p>
-  <table class="fieldtab" style="margin:8px 0 18px">
-    <tr><td class="fk">user</td><td>用户引起（发消息、外部通道来消息、答问题）</td></tr>
-    <tr><td class="fk">agent</td><td>模型/主循环引起（模型回复、工具调用、turn）</td></tr>
-    <tr><td class="fk">tool</td><td>工具引起（工具完成、文件改动）</td></tr>
-    <tr><td class="fk">system</td><td>系统状态引起（凭据、上下文、记忆、技能、子任务）</td></tr>
-    <tr><td class="fk">proactive</td><td>框架主动性自己产生（保留——proactive 策略未激活）</td></tr>
-  </table>
-  <p class="lead"><b>防自触发不变式</b>：<code>origin=proactive</code> 的事件不应再触发会产生新事件的动作，斩断自激环。当前 proactive 策略层未激活，但这条底线在事件层设计里成立。</p>
-  <div class="note"><b>未列入：</b> proactive 策略包（policies / engine）是已写好但<b>未激活</b>的存量，不属于事件层本身，不在本文档范围。许多 webui 内部帧（chat_ack / chat_response / status 等）仍走 webui 直接广播，不是事件层基础设施——本文档只列经事件层流动的部分。</div>
+  <p class="lead"><b>origin 枚举</b>：<code>user</code>（用户）· <code>agent</code>（模型/主循环）· <code>tool</code>（工具）· <code>system</code>（系统状态）· <code>proactive</code>（保留，策略未激活）。</p>
+  <div class="note"><b>不在范围：</b> proactive 策略包（policies/engine）是已写好但<b>未激活</b>的存量，不属于事件层。许多 webui 内部帧（chat_ack/chat_response/status 等）仍走 webui 直接广播，不是事件层基础设施，本文档只列经事件层流动的部分。</div>
 </section>
 
 <footer>
@@ -382,49 +349,74 @@ cat /tmp/openprogram-events.jsonl</div>
 </div></main>
 
 <script>
-// ─── 事件数据（源码采集，零编造）───
+// 子系统定义（顺序 = 页面顺序 = 导航顺序）
+const SUBS = [
+  {id:"agentloop", key:"c-agentloop", title:"agent 主循环", where:"openprogram/agent/agent_loop.py · dispatcher/", desc:"一次对话 turn 的核心：用户消息进来、模型回复、工具调用、turn 结束——事件层最密集的来源，全部带 session/turn 关联。"},
+  {id:"tools", key:"c-tools", title:"工具", where:"openprogram/functions/tools/{write,edit,apply_patch}", desc:"写文件的工具改动磁盘后发出信号，让别处知道某文件被改了。"},
+  {id:"task", key:"c-task", title:"子任务 runner", where:"openprogram/agent/task/runner.py · sub_agent_run.py", desc:"后台子任务（subagent）的生命周期：起、止，以及 spawn 后通知前端重载 DAG。"},
+  {id:"auth", key:"c-auth", title:"凭据 auth", where:"openprogram/agent/event_bridges.py（桥）", desc:"凭据池的限流/轮换/耗尽。auth 自带规范的发布订阅，由一座「桥」翻译进总线（只桥有响应价值的三种）。"},
+  {id:"context", key:"c-context", title:"上下文 context", where:"openprogram/context/engine.py", desc:"上下文预算逼近上限时建议压缩、以及压缩完成。"},
+  {id:"memory", key:"c-memory", title:"记忆 memory", where:"openprogram/memory/session_watcher.py", desc:"空闲会话的 wiki ingest（后台记忆处理）起止。"},
+  {id:"channels", key:"c-channels", title:"外部通道 channels", where:"openprogram/channels/_conversation.py · _broadcast.py", desc:"Telegram/Discord 等外部通道：消息进来，以及一轮对话完成后给前端/TUI 的推送。"},
+  {id:"worktree", key:"c-worktree", title:"worktree", where:"openprogram/worktree/manager.py", desc:"git worktree 的状态转移，供右栏面板显示。"},
+  {id:"registry", key:"c-registry", title:"技能 / 插件", where:"openprogram/webui/server.py · functions/watcher.py", desc:"技能目录变化、插件有新版、运行时发现新 agentic program。"},
+  {id:"ask", key:"c-ask", title:"发问 runtime.ask", where:"openprogram/agentic_programming/runtime.py · agent/questions.py", desc:"函数中途停下来问用户。发问、用户答、用户拒——既进事件流（可观测），也透传成前端问题卡片。"},
+  {id:"bus", key:"c-bus", title:"总线本身 / 透传", where:"openprogram/agent/event_bus.py", desc:"ws.frame 是个透传信封——外部源把现成的前端 WS 帧经总线送往浏览器，webui 订阅后原样广播。"},
+];
+
+// 事件数据（源码采集，零编造）。sub = 归属子系统
 const EVENTS = [
-  // A 类
-  {type:"user.prompt_submitted", cls:"A", origin:"user", gate:false, purpose:"用户提交一条消息 / 开启一轮", when:"持久化用户消息后、agent loop 前", file:"agent/dispatcher/__init__.py:271-274", fields:[["msg_id","str","消息 id"],["chars","int","消息字符数"]]},
-  {type:"model.response_started", cls:"A", origin:"agent", gate:false, purpose:"LLM 开始流式输出回复", when:"provider stream 的 start 事件", file:"agent/agent_loop.py:441", fields:[]},
-  {type:"model.response_completed", cls:"A", origin:"agent", gate:false, purpose:"LLM 回复完成或出错", when:"provider stream 的 done/error", file:"agent/agent_loop.py:465-466", fields:[["is_error","bool","是否以错误结束"]]},
-  {type:"tool.before", cls:"A", origin:"agent", gate:true, purpose:"工具即将执行——异步观察 + 同步 gate 拦截都用它", when:"tool.execute() 之前", file:"agent/agent_loop.py:518-523", fields:[["tool","str","工具名"],["args","dict","工具参数"]]},
-  {type:"tool.after", cls:"A", origin:"tool", gate:false, purpose:"工具执行完成（成功或失败）", when:"tool.execute() 之后", file:"agent/agent_loop.py:586-587", fields:[["tool","str","工具名"],["is_error","bool","是否出错"]]},
-  {type:"turn.ended", cls:"A", origin:"agent", gate:false, purpose:"一轮结束（出错/中止 或 工具结果后）", when:"turn 结束的两个出口", file:"agent/agent_loop.py:267,293", fields:[["reason","str","出错/中止时的原因（出口一）"],["tool_results","int","本轮工具结果数（出口二）"]]},
-  {type:"file.changed", cls:"A", origin:"tool", gate:false, purpose:"文件被 write/edit/apply_patch 改动", when:"写文件成功后", file:"functions/tools/{write,edit,apply_patch}", fields:[["path","str","文件路径"],["op","str","write | edit | delete"]]},
-  {type:"question.asked", cls:"A", origin:"agent", gate:false, purpose:"runtime.ask() 向用户发问（同时发总线事件 + ws.frame 给前端）", when:"runtime.ask/confirm 调用时", file:"agentic_programming/runtime.py:586-599", fields:[["id","str","问题 id"],["session_id","str","会话 id"],["kind","str","ask | confirm"],["prompt","str","问题文本"],["options","list","可选项"],["multi","bool","是否多选"],["allow_custom","bool","是否允许自由输入"],["detail","str","补充说明"],["expires_at","float","超时时刻"]]},
-  // B 类
-  {type:"subagent.started", cls:"B", origin:"system", gate:false, purpose:"后台子任务转入 RUNNING", when:"task 状态转移到 RUNNING", file:"agent/task/runner.py:114-117", fields:[["task_id","str","任务 id"],["label","str","任务标签"]]},
-  {type:"subagent.ended", cls:"B", origin:"system", gate:false, purpose:"后台子任务到达终止态", when:"task 终止（完成/失败/取消）", file:"agent/task/runner.py:120-123", fields:[["task_id","str","任务 id"],["status","str","终止状态"],["error","str","失败时的错误"]]},
-  {type:"channel.message_inbound", cls:"B", origin:"user", gate:false, purpose:"外部通道（Telegram/Discord…）来消息", when:"dispatch_inbound 路由前", file:"channels/_conversation.py:83-85", fields:[["channel","str","通道名"],["peer_kind","str","对端类型"],["chars","int","消息字符数"]]},
-  {type:"context.compaction_recommended", cls:"B", origin:"system", gate:false, purpose:"上下文预算到达建议阈值（70%）", when:"after_turn 时预算超阈值", file:"context/engine.py:450-453", fields:[["budget_pct","float","当前预算占比"]]},
-  {type:"context.compacted", cls:"B", origin:"system", gate:false, purpose:"上下文压缩完成", when:"compact() 完成后", file:"context/engine.py:408-412", fields:[["ok","bool","是否成功"],["tokens_before","int","压缩前 token"],["tokens_after","int","压缩后 token"],["summary_used","int","用到的摘要数"]]},
-  {type:"memory.ingest_started", cls:"B", origin:"system", gate:false, purpose:"空闲会话的 wiki ingest 开始", when:"session_watcher 处理空闲会话", file:"memory/session_watcher.py:138-139", fields:[["messages","int","待处理消息数"]]},
-  {type:"memory.ingest_ended", cls:"B", origin:"system", gate:false, purpose:"wiki ingest 完成", when:"ingest 处理结束", file:"memory/session_watcher.py:109-110", fields:[["ok","bool","是否成功"]]},
-  {type:"skills.changed", cls:"B", origin:"system", gate:false, purpose:"技能目录变化（watcher 检测到）", when:"SKILL.md 文件增删改", file:"webui/server.py:1249", fields:[]},
-  {type:"plugins.update_available", cls:"B", origin:"system", gate:false, purpose:"插件有可用更新", when:"autoupdate 检测到新版", file:"webui/server.py:1275-1276", fields:[["count","int","可更新数量"]]},
-  // ws.frame 透传帧
-  {type:"ws.frame", cls:"F", origin:"system", gate:false, purpose:"透传信封——把现成 WS 帧经总线送往前端（webui 订阅原样广播）", when:"emit_ws_frame 调用时", file:"agent/event_bus.py:110-124", fields:[["frame","dict","{type, data} 原始 WS 帧"]]},
-  {type:"question.asked", cls:"F", origin:"system", gate:false, purpose:"前端弹出 runtime.ask 问题卡片", when:"runtime.ask 同时发的帧", file:"agentic_programming/runtime.py:596", fields:[["frame.type","str","question.asked"],["frame.data","dict","id/session_id/kind/prompt/options/multi/allow_custom/detail/expires_at"]]},
-  {type:"question.replied", cls:"F", origin:"system", gate:false, purpose:"用户答了问题——通知所有客户端收回卡片", when:"question_reply handler", file:"webui/ws_actions/session.py:516-518", fields:[["frame.data.id","str","问题 id"]]},
-  {type:"question.rejected", cls:"F", origin:"system", gate:false, purpose:"用户拒绝问题——通知所有客户端收回卡片", when:"question_reject handler", file:"webui/ws_actions/session.py:516-518", fields:[["frame.data.id","str","问题 id"]]},
-  {type:"channel_turn", cls:"F", origin:"system", gate:false, purpose:"完整 (用户消息, 助手回复) 对，供 TUI/通道实时显示", when:"channel turn 完成", file:"channels/_broadcast.py:37-54", fields:[["session_id","str",""],["agent_id","str",""],["user","dict","{id,text,peer_display,source}"],["assistant","dict","{id,text,source}"]]},
-  {type:"agent_session_updated", cls:"F", origin:"system", gate:false, purpose:"会话被触达——webui 侧栏更新排序", when:"channel session 有更新", file:"channels/_broadcast.py:66-76", fields:[["agent_id","str",""],["session_id","str",""],["title","str",""],["head_id","str",""],["updated_at","str",""],["source","str",""]]},
-  {type:"programs:changed", cls:"F", origin:"system", gate:false, purpose:"运行时发现新 agentic program——UI 刷新函数列表", when:"programs watcher 检测到安装", file:"functions/watcher.py:63", fields:[["added","list[str]","新增的 program"]]},
-  {type:"session_reload", cls:"F", origin:"system", gate:false, purpose:"通知 UI 重载 DAG（task tool spawn 后）", when:"sub-agent spawn 完成", file:"agent/sub_agent_run.py:207-209", fields:[["session_id","str",""],["reason","str","重载原因"]]},
-  {type:"worktree_status", cls:"F", origin:"system", gate:false, purpose:"worktree 状态更新——右栏面板", when:"worktree 状态转移", file:"worktree/manager.py:53-65", fields:[["worktree_id","str",""],["status","str",""],["parent_session","str",""],["branch_name","str",""],["source_repo","str",""],["merge_sha","str",""],["error","str",""],["worktree","dict","完整行"]]},
+  // agent 主循环
+  {sub:"agentloop", type:"user.prompt_submitted", origin:"user", frame:false, gate:false, purpose:"用户提交一条消息 / 开启一轮", when:"持久化用户消息后、agent loop 前", file:"agent/dispatcher/__init__.py:271-274", fields:[["msg_id","str","消息 id"],["chars","int","字符数"]]},
+  {sub:"agentloop", type:"model.response_started", origin:"agent", frame:false, gate:false, purpose:"LLM 开始流式输出回复", when:"provider stream 的 start", file:"agent/agent_loop.py:441", fields:[]},
+  {sub:"agentloop", type:"model.response_completed", origin:"agent", frame:false, gate:false, purpose:"LLM 回复完成或出错", when:"provider stream 的 done/error", file:"agent/agent_loop.py:465-466", fields:[["is_error","bool","是否以错误结束"]]},
+  {sub:"agentloop", type:"tool.before", origin:"agent", frame:false, gate:true, purpose:"工具即将执行——异步观察 + 同步 gate 拦截都用它", when:"tool.execute() 之前", file:"agent/agent_loop.py:518-523", fields:[["tool","str","工具名"],["args","dict","工具参数"]]},
+  {sub:"agentloop", type:"tool.after", origin:"tool", frame:false, gate:false, purpose:"工具执行完成（成功或失败）", when:"tool.execute() 之后", file:"agent/agent_loop.py:586-587", fields:[["tool","str","工具名"],["is_error","bool","是否出错"]]},
+  {sub:"agentloop", type:"turn.ended", origin:"agent", frame:false, gate:false, purpose:"一轮结束（出错/中止 或 工具结果后）", when:"turn 的两个出口", file:"agent/agent_loop.py:267,293", fields:[["reason","str","出错/中止原因（出口一）"],["tool_results","int","本轮工具结果数（出口二）"]]},
+  // 工具
+  {sub:"tools", type:"file.changed", origin:"tool", frame:false, gate:false, purpose:"文件被 write/edit/apply_patch 改动", when:"写文件成功后", file:"functions/tools/{write,edit,apply_patch}", fields:[["path","str","文件路径"],["op","str","write | edit | delete"]]},
+  // 子任务
+  {sub:"task", type:"subagent.started", origin:"system", frame:false, gate:false, purpose:"后台子任务转入 RUNNING", when:"task 状态→RUNNING", file:"agent/task/runner.py:114-117", fields:[["task_id","str",""],["label","str","任务标签"]]},
+  {sub:"task", type:"subagent.ended", origin:"system", frame:false, gate:false, purpose:"后台子任务到达终止态", when:"task 终止（完成/失败/取消）", file:"agent/task/runner.py:120-123", fields:[["task_id","str",""],["status","str","终止状态"],["error","str","失败时的错误"]]},
+  {sub:"task", type:"session_reload", origin:"system", frame:true, gate:false, purpose:"通知 UI 重载 DAG（task tool spawn 后）", when:"sub-agent spawn 完成", file:"agent/sub_agent_run.py:207-209", fields:[["session_id","str",""],["reason","str","重载原因"]]},
+  // auth
+  {sub:"auth", type:"credential.cooldown", origin:"system", frame:false, gate:false, purpose:"凭据被限流进入冷却（429 等）", when:"AuthEvent POOL_MEMBER_COOLDOWN 经桥翻译", file:"agent/event_bridges.py（_AUTH_TYPE_MAP）", fields:[["provider","str",""],["profile","str",""],["credential","str",""],["detail","dict","原始细节"]]},
+  {sub:"auth", type:"credential.rotated", origin:"system", frame:false, gate:false, purpose:"凭据池轮换到下一个", when:"AuthEvent POOL_ROTATED 经桥", file:"agent/event_bridges.py", fields:[["provider","str",""],["profile","str",""],["credential","str",""],["detail","dict",""]]},
+  {sub:"auth", type:"credential.exhausted", origin:"system", frame:false, gate:false, purpose:"凭据池耗尽（都在冷却）", when:"AuthEvent POOL_EXHAUSTED 经桥", file:"agent/event_bridges.py", fields:[["provider","str",""],["profile","str",""],["credential","str",""],["detail","dict",""]]},
+  // context
+  {sub:"context", type:"context.compaction_recommended", origin:"system", frame:false, gate:false, purpose:"上下文预算到建议阈值（70%）", when:"after_turn 时预算超阈值", file:"context/engine.py:450-453", fields:[["budget_pct","float","当前预算占比"]]},
+  {sub:"context", type:"context.compacted", origin:"system", frame:false, gate:false, purpose:"上下文压缩完成", when:"compact() 完成后", file:"context/engine.py:408-412", fields:[["ok","bool","是否成功"],["tokens_before","int","压缩前 token"],["tokens_after","int","压缩后 token"],["summary_used","int","用到的摘要数"]]},
+  // memory
+  {sub:"memory", type:"memory.ingest_started", origin:"system", frame:false, gate:false, purpose:"空闲会话的 wiki ingest 开始", when:"session_watcher 处理空闲会话", file:"memory/session_watcher.py:138-139", fields:[["messages","int","待处理消息数"]]},
+  {sub:"memory", type:"memory.ingest_ended", origin:"system", frame:false, gate:false, purpose:"wiki ingest 完成", when:"ingest 处理结束", file:"memory/session_watcher.py:109-110", fields:[["ok","bool","是否成功"]]},
+  // channels
+  {sub:"channels", type:"channel.message_inbound", origin:"user", frame:false, gate:false, purpose:"外部通道来消息", when:"dispatch_inbound 路由前", file:"channels/_conversation.py:83-85", fields:[["channel","str","通道名"],["peer_kind","str","对端类型"],["chars","int","字符数"]]},
+  {sub:"channels", type:"channel_turn", origin:"system", frame:true, gate:false, purpose:"完整 (用户消息, 助手回复) 对，供 TUI/通道实时显示", when:"channel turn 完成", file:"channels/_broadcast.py:37-54", fields:[["session_id","str",""],["agent_id","str",""],["user","dict","{id,text,peer_display,source}"],["assistant","dict","{id,text,source}"]]},
+  {sub:"channels", type:"agent_session_updated", origin:"system", frame:true, gate:false, purpose:"会话被触达——webui 侧栏更新排序", when:"channel session 有更新", file:"channels/_broadcast.py:66-76", fields:[["agent_id","str",""],["session_id","str",""],["title","str",""],["head_id","str",""],["updated_at","str",""],["source","str",""]]},
+  // worktree
+  {sub:"worktree", type:"worktree_status", origin:"system", frame:true, gate:false, purpose:"worktree 状态更新——右栏面板", when:"worktree 状态转移", file:"worktree/manager.py:53-65", fields:[["worktree_id","str",""],["status","str",""],["parent_session","str",""],["branch_name","str",""],["source_repo","str",""],["merge_sha","str",""],["error","str",""],["worktree","dict","完整行"]]},
+  // 技能/插件
+  {sub:"registry", type:"skills.changed", origin:"system", frame:false, gate:false, purpose:"技能目录变化（watcher 检测）", when:"SKILL.md 增删改", file:"webui/server.py:1249", fields:[]},
+  {sub:"registry", type:"plugins.update_available", origin:"system", frame:false, gate:false, purpose:"插件有可用更新", when:"autoupdate 检测到新版", file:"webui/server.py:1275-1276", fields:[["count","int","可更新数量"]]},
+  {sub:"registry", type:"programs:changed", origin:"system", frame:true, gate:false, purpose:"运行时发现新 agentic program——UI 刷新函数列表", when:"programs watcher 检测到安装", file:"functions/watcher.py:63", fields:[["added","list[str]","新增的 program"]]},
+  // 发问
+  {sub:"ask", type:"question.asked", origin:"agent", frame:false, gate:false, purpose:"runtime.ask() 向用户发问（同时进事件流 + 透传前端卡片）", when:"runtime.ask/confirm 调用时", file:"agentic_programming/runtime.py:586-599", fields:[["id","str","问题 id"],["session_id","str",""],["kind","str","ask | confirm"],["prompt","str","问题文本"],["options","list","可选项"],["multi","bool","是否多选"],["allow_custom","bool","是否允许自由输入"],["detail","str","补充说明"],["expires_at","float","超时时刻"]]},
+  {sub:"ask", type:"question.replied", origin:"system", frame:true, gate:false, purpose:"用户答了问题——通知所有客户端收回卡片", when:"question_reply handler", file:"webui/ws_actions/session.py:516-518", fields:[["id","str","问题 id"]]},
+  {sub:"ask", type:"question.rejected", origin:"system", frame:true, gate:false, purpose:"用户拒绝问题——通知所有客户端收回卡片", when:"question_reject handler", file:"webui/ws_actions/session.py:516-518", fields:[["id","str","问题 id"]]},
+  // 总线本身
+  {sub:"bus", type:"ws.frame", origin:"system", frame:false, gate:false, purpose:"透传信封——把现成 WS 帧经总线送往前端（webui 订阅原样广播）", when:"emit_ws_frame 调用时", file:"agent/event_bus.py:110-124", fields:[["frame","dict","{type, data} 原始 WS 帧"]]},
 ];
 
 function fieldRows(f){
   if(!f.length) return '<div class="payload">（无 payload 字段）</div>';
-  return '<table class="fieldtab">'+f.map(r=>'<tr><td class="fk">'+r[0]+'</td><td class="ft">'+r[1]+'</td><td>'+r[2]+'</td></tr>').join('')+'</table>';
+  return '<table class="fieldtab">'+f.map(r=>'<tr><td class="fk">'+r[0]+'</td><td class="ft">'+r[1]+'</td><td>'+(r[2]||'')+'</td></tr>').join('')+'</table>';
 }
-function card(e){
-  const tag = e.cls==="A"?'<span class="ev-tag tagA">A · agent</span>':e.cls==="B"?'<span class="ev-tag tagB">B · 系统</span>':'<span class="ev-tag tagF">ws.frame</span>';
+function evRow(e){
+  const ftag = e.frame?'<span class="ev-frame-tag">ws.frame</span>':'';
   const gate = e.gate?'<span class="ev-gate">可拦截</span>':'';
   return `<div class="ev" data-s="${(e.type+' '+e.purpose+' '+e.fields.map(x=>x[0]).join(' ')).toLowerCase()}">
     <div class="ev-head" onclick="this.parentNode.classList.toggle('open')">
-      <span class="ev-type">${e.type}</span>${tag}${gate}<span class="ev-origin">origin: ${e.origin}</span>
+      <span class="ev-type">${e.type}</span>${ftag}${gate}<span class="ev-origin">origin: ${e.origin}</span>
     </div>
     <div class="ev-purpose">${e.purpose}</div>
     <div class="ev-body">
@@ -434,22 +426,34 @@ function card(e){
     </div>
   </div>`;
 }
-document.getElementById('grid-a').innerHTML = EVENTS.filter(e=>e.cls==="A").map(card).join('');
-document.getElementById('grid-b').innerHTML = EVENTS.filter(e=>e.cls==="B").map(card).join('');
-document.getElementById('grid-f').innerHTML = EVENTS.filter(e=>e.cls==="F").map(card).join('');
+const cont = document.getElementById('subsections');
+SUBS.forEach(s=>{
+  const evs = EVENTS.filter(e=>e.sub===s.id);
+  document.getElementById(s.key).textContent = '· '+evs.length;
+  cont.insertAdjacentHTML('beforeend', `<section id="sub-${s.id}" class="subsec">
+    <div class="subsec-head">
+      <div class="subsec-title"><h4>${s.title}</h4><span class="where">${s.where}</span></div>
+      <div class="subsec-desc">${s.desc}</div>
+    </div>
+    ${evs.map(evRow).join('')}
+  </section>`);
+});
 
 // 搜索
-const q = document.getElementById('q'), hint = document.getElementById('qhint');
+const q=document.getElementById('q'), hint=document.getElementById('qhint');
 q.addEventListener('input', ()=>{
-  const v = q.value.trim().toLowerCase();
-  let n=0;
-  document.querySelectorAll('.ev').forEach(el=>{
-    const hit = !v || el.dataset.s.includes(v);
-    el.classList.toggle('hidden', !hit);
-    if(hit) n++;
-    if(v && hit) el.classList.add('open'); else if(v) el.classList.remove('open');
+  const v=q.value.trim().toLowerCase(); let n=0;
+  document.querySelectorAll('.subsec').forEach(sec=>{
+    let secHit=0;
+    sec.querySelectorAll('.ev').forEach(el=>{
+      const hit=!v||el.dataset.s.includes(v);
+      el.classList.toggle('hidden',!hit);
+      if(hit){n++;secHit++;}
+      if(v&&hit) el.classList.add('open'); else if(v) el.classList.remove('open');
+    });
+    sec.classList.toggle('hidden', v && secHit===0);
   });
-  hint.textContent = v ? (n+' 个事件匹配') : '点任意事件卡片展开 payload 字段与源码位置';
+  hint.textContent = v ? (n+' 个事件匹配') : '下面按子系统分组——点事件展开 payload 字段与源码位置';
 });
 
 requestAnimationFrame(()=>{const h=document.querySelector('header.hero');h.style.transition='opacity .7s ease, transform .7s ease';h.style.opacity=1;h.style.transform='none';});
