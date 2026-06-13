@@ -169,72 +169,82 @@ footer a{color:var(--cyan); text-decoration:none}
   <h3 class="sec">系统框架图</h3>
   <p class="lead">左侧为发出事件的各<span style="color:var(--text)">子系统</span>（方块内标注其事件，<span style="color:var(--cyan)">点击可跳转</span>至对应详情），中部为<span style="color:var(--text)">总线 EventBus</span>，右侧为<span style="color:var(--text)">消费者</span>。琥珀色支线为唯一的同步拦截点 <code>tool.before</code>。</p>
   <div class="figure">
-  <svg viewBox="0 0 1180 620" xmlns="http://www.w3.org/2000/svg">
+  <svg viewBox="0 0 1440 760" xmlns="http://www.w3.org/2000/svg">
     <style>
-      .flow{fill:none;stroke:#56d9e9;stroke-width:1.4;stroke-dasharray:6 8;animation:f 1.7s linear infinite;opacity:.8}
-      .flowV{fill:none;stroke:#b79bf5;stroke-width:1.4;stroke-dasharray:6 8;animation:f 2s linear infinite;opacity:.75}
-      .flowA{fill:none;stroke:#f2b544;stroke-width:1.6;stroke-dasharray:4 6;animation:f 1s linear infinite}
+      .flow{fill:none;stroke:#56d9e9;stroke-width:1.4;stroke-dasharray:6 8;animation:f 1.7s linear infinite;opacity:.55}
+      .flowV{fill:none;stroke:#b79bf5;stroke-width:1.4;stroke-dasharray:6 8;animation:f 2s linear infinite;opacity:.55}
+      .flowA{fill:none;stroke:#f2b544;stroke-width:1.6;stroke-dasharray:5 6;animation:f 1s linear infinite}
       @keyframes f{to{stroke-dashoffset:-14}}
-      .lbl{fill:#8aa0b8;font-size:11px;letter-spacing:.1em}
+      .lbl{fill:#8aa0b8;font-size:12px;letter-spacing:.12em}
     </style>
-    <rect x="0" y="0" width="1180" height="620" rx="14" fill="#0d1828"/>
-    <g stroke="rgba(154,178,204,.05)">
-      <path d="M0 60H1180M0 120H1180M0 180H1180M0 240H1180M0 300H1180M0 360H1180M0 420H1180M0 480H1180M0 540H1180"/>
-      <path d="M60 0V620M120 0V620M180 0V620M240 0V620M300 0V620M360 0V620M420 0V620M480 0V620M540 0V620M600 0V620M660 0V620M720 0V620M780 0V620M840 0V620M900 0V620M960 0V620M1020 0V620M1080 0V620M1140 0V620"/>
+    <rect x="0" y="0" width="1440" height="760" rx="14" fill="#0d1828"/>
+    <g stroke="rgba(154,178,204,.045)">
+      <path d="M0 80H1440M0 160H1440M0 240H1440M0 320H1440M0 400H1440M0 480H1440M0 560H1440M0 640H1440M0 720H1440"/>
+      <path d="M80 0V760M160 0V760M240 0V760M320 0V760M400 0V760M480 0V760M560 0V760M640 0V760M720 0V760M800 0V760M880 0V760M960 0V760M1040 0V760M1120 0V760M1200 0V760M1280 0V760M1360 0V760"/>
     </g>
-    <text class="lbl mono" x="32" y="38" style="fill:#56d9e9;letter-spacing:.16em">事件源 · 子系统（点方块跳转）</text>
 
-    <!-- 子系统方块（10 个，左两列） -->
-    <a href="#sub-agentloop"><g class="subbox"><rect x="32" y="56" width="200" height="48" rx="8"/><text class="subname" x="46" y="80">agent 主循环</text><text class="subev" x="46" y="96">model · tool · turn · prompt</text></g></a>
-    <a href="#sub-tools"><g class="subbox"><rect x="32" y="116" width="200" height="44" rx="8"/><text class="subname" x="46" y="138">工具</text><text class="subev" x="46" y="153">file.changed</text></g></a>
-    <a href="#sub-task"><g class="subbox"><rect x="32" y="172" width="200" height="44" rx="8"/><text class="subname" x="46" y="194">子任务 runner</text><text class="subev" x="46" y="209">subagent.* · session_reload</text></g></a>
-    <a href="#sub-auth"><g class="subbox"><rect x="32" y="228" width="200" height="44" rx="8"/><text class="subname" x="46" y="250">凭据 auth</text><text class="subev" x="46" y="265">credential.*（经桥）</text></g></a>
-    <a href="#sub-context"><g class="subbox"><rect x="32" y="284" width="200" height="44" rx="8"/><text class="subname" x="46" y="306">上下文 context</text><text class="subev" x="46" y="321">context.compaction*</text></g></a>
-    <a href="#sub-memory"><g class="subbox"><rect x="252" y="56" width="200" height="44" rx="8"/><text class="subname" x="266" y="78">记忆 memory</text><text class="subev" x="266" y="93">memory.ingest_*</text></g></a>
-    <a href="#sub-channels"><g class="subbox"><rect x="252" y="112" width="200" height="44" rx="8"/><text class="subname" x="266" y="134">外部通道 channels</text><text class="subev" x="266" y="149">channel.* · channel_turn</text></g></a>
-    <a href="#sub-worktree"><g class="subbox"><rect x="252" y="168" width="200" height="44" rx="8"/><text class="subname" x="266" y="190">worktree</text><text class="subev" x="266" y="205">worktree_status</text></g></a>
-    <a href="#sub-registry"><g class="subbox"><rect x="252" y="224" width="200" height="44" rx="8"/><text class="subname" x="266" y="246">技能 / 插件</text><text class="subev" x="266" y="261">skills.changed · programs</text></g></a>
-    <a href="#sub-ask"><g class="subbox"><rect x="252" y="280" width="200" height="48" rx="8" style="stroke:rgba(183,155,245,.5)"/><text class="subname" x="266" y="304">发问 runtime.ask</text><text class="subev" x="266" y="320">question.*</text></g></a>
+    <text class="lbl mono" x="1140" y="46" style="fill:#56d9e9;letter-spacing:.16em">消费者</text>
 
-    <!-- 汇入总线 -->
-    <path class="flow" d="M232 80 C 380 80, 460 250, 556 280"/>
-    <path class="flow" d="M232 138 C 380 138, 470 270, 556 296"/>
-    <path class="flow" d="M232 194 C 380 194, 470 290, 556 312"/>
-    <path class="flowV" d="M232 250 C 380 250, 470 300, 556 328"/>
-    <path class="flowV" d="M232 306 C 380 306, 470 320, 556 344"/>
-    <path class="flow" d="M452 78 C 500 120, 510 300, 556 320"/>
-    <path class="flow" d="M452 134 C 500 160, 510 310, 556 332"/>
-    <path class="flowV" d="M452 190 C 500 220, 510 320, 556 344"/>
-    <path class="flowV" d="M452 246 C 500 280, 510 330, 556 356"/>
-    <path class="flowV" d="M452 304 C 500 330, 520 340, 556 360"/>
-    <text class="lbl mono" x="380" y="200" style="fill:#5f7a90">emit(Event)</text>
+    <!-- ── A 类组：agent 活动（青色），上半部 ── -->
+    <rect x="36" y="60" width="356" height="246" rx="12" fill="rgba(86,217,233,.035)" stroke="rgba(86,217,233,.3)" stroke-dasharray="5 5"/>
+    <text class="lbl mono" x="52" y="84" style="fill:#56d9e9;letter-spacing:.14em">A 类 · AGENT 活动（带 turn 关联）</text>
+    <a href="#sub-agentloop"><g class="subbox"><rect x="52" y="98" width="324" height="56" rx="9"/><text class="subname" x="70" y="124">agent 主循环</text><text class="subev" x="70" y="142">model · tool · turn · prompt</text></g></a>
+    <a href="#sub-tools"><g class="subbox"><rect x="52" y="162" width="324" height="56" rx="9"/><text class="subname" x="70" y="188">工具</text><text class="subev" x="70" y="206">file.changed</text></g></a>
+    <a href="#sub-task"><g class="subbox"><rect x="52" y="226" width="324" height="56" rx="9"/><text class="subname" x="70" y="252">子任务 runner</text><text class="subev" x="70" y="270">subagent.* · session_reload</text></g></a>
 
-    <!-- 总线 -->
-    <rect x="558" y="250" width="184" height="150" rx="14" fill="none" stroke="rgba(86,217,233,.25)" stroke-width="6" opacity=".55"/>
-    <rect x="558" y="250" width="184" height="150" rx="14" fill="rgba(86,217,233,.05)" stroke="#56d9e9" stroke-width="1.6"/>
-    <text class="mono" x="650" y="305" text-anchor="middle" fill="#56d9e9" font-size="18" font-weight="600">EventBus</text>
-    <text class="subev" x="650" y="328" text-anchor="middle" fill="#8aa0b8" style="font-size:11px">进程级单例</text>
-    <text class="subev" x="650" y="350" text-anchor="middle" fill="#8aa0b8" style="font-size:11px">emit / subscribe(types=)</text>
-    <text class="subev" x="650" y="376" text-anchor="middle" fill="#5f7a90" style="font-size:10px">源与消费者互不认识</text>
+    <!-- ── B 类组：系统状态（紫色），下半部 ── -->
+    <rect x="36" y="326" width="356" height="394" rx="12" fill="rgba(183,155,245,.03)" stroke="rgba(183,155,245,.3)" stroke-dasharray="5 5"/>
+    <text class="lbl mono" x="52" y="350" style="fill:#b79bf5;letter-spacing:.14em">B 类 · 系统状态（与 turn 无关）</text>
+    <a href="#sub-auth"><g class="subbox"><rect x="52" y="364" width="324" height="50" rx="9"/><text class="subname" x="70" y="388">凭据 auth</text><text class="subev" x="70" y="404">credential.*（经桥）</text></g></a>
+    <a href="#sub-context"><g class="subbox"><rect x="52" y="422" width="324" height="50" rx="9"/><text class="subname" x="70" y="446">上下文 context</text><text class="subev" x="70" y="462">context.compaction*</text></g></a>
+    <a href="#sub-memory"><g class="subbox"><rect x="52" y="480" width="324" height="50" rx="9"/><text class="subname" x="70" y="504">记忆 memory</text><text class="subev" x="70" y="520">memory.ingest_*</text></g></a>
+    <a href="#sub-channels"><g class="subbox"><rect x="52" y="538" width="324" height="50" rx="9"/><text class="subname" x="70" y="562">外部通道 channels</text><text class="subev" x="70" y="578">channel.* · channel_turn</text></g></a>
+    <a href="#sub-worktree"><g class="subbox"><rect x="52" y="596" width="324" height="50" rx="9"/><text class="subname" x="70" y="620">worktree</text><text class="subev" x="70" y="636">worktree_status</text></g></a>
+    <a href="#sub-registry"><g class="subbox"><rect x="52" y="654" width="324" height="50" rx="9"/><text class="subname" x="70" y="678">技能 / 插件</text><text class="subev" x="70" y="694">skills.changed · programs</text></g></a>
 
-    <!-- 消费者 -->
-    <text class="lbl mono" x="800" y="38" style="fill:#56d9e9;letter-spacing:.16em">消费者</text>
-    <path class="flow" d="M742 300 C 800 280, 820 220, 868 205"/>
-    <a href="#sub-bus"><g class="subbox"><rect x="870" y="176" width="220" height="58" rx="8"/><text class="subname" x="886" y="200">webui（订阅 ws.frame）</text><text class="subev" x="886" y="218">订阅总线 → 转发前端 WebSocket</text></g></a>
-    <path class="flow" d="M742 340 C 800 340, 820 330, 868 326"/>
-    <g class="subbox"><rect x="870" y="298" width="220" height="52" rx="8" style="stroke-dasharray:4 5"/><text class="subname" x="886" y="320" style="fill:#8aa0b8">将来任何功能</text><text class="subev" x="886" y="338">subscribe(types=…) 接上就有</text></g>
+    <!-- 组内子系统先各自收到组汇流点（A: 480,183 ; B: 480,523），再两束主干进总线 -->
+    <!-- A 组三条 → A 汇流点 (470,183) -->
+    <path class="flow" d="M376 126 C 420 126, 440 183, 470 183"/>
+    <path class="flow" d="M376 190 C 430 190, 450 183, 470 183"/>
+    <path class="flow" d="M376 254 C 420 254, 440 183, 470 183"/>
+    <!-- B 组六条 → B 汇流点 (470,523) -->
+    <path class="flowV" d="M376 389 C 430 389, 450 523, 470 523"/>
+    <path class="flowV" d="M376 447 C 435 447, 452 523, 470 523"/>
+    <path class="flowV" d="M376 505 C 440 505, 458 523, 470 523"/>
+    <path class="flowV" d="M376 563 C 440 563, 458 523, 470 523"/>
+    <path class="flowV" d="M376 621 C 435 621, 452 523, 470 523"/>
+    <path class="flowV" d="M376 679 C 430 679, 450 523, 470 523"/>
+    <!-- 两束主干汇入总线左缘 (648,384) -->
+    <path class="flow" d="M470 183 C 560 183, 580 360, 648 372" stroke-width="2.2" opacity=".8"/>
+    <path class="flowV" d="M470 523 C 560 523, 580 408, 648 396" stroke-width="2.2" opacity=".8"/>
+    <circle cx="470" cy="183" r="4" fill="#56d9e9"/>
+    <circle cx="470" cy="523" r="4" fill="#b79bf5"/>
+    <text class="lbl mono" x="500" y="300" style="fill:#5f7a90">emit(Event)</text>
 
-    <!-- 拦截支线 -->
-    <path class="flowA" d="M650 400 C 650 440, 700 460, 752 470"/>
-    <path class="flowA" d="M752 494 C 700 500, 660 480, 624 410"/>
-    <a href="#use-gate"><g class="subbox"><rect x="756" y="446" width="240" height="52" rx="8" style="stroke:rgba(242,181,68,.55)"/><text class="subname" x="772" y="468">tool.before 同步问询点</text><text class="subev" x="772" y="486">唯一可拦截位 · 复用批准机制</text></g></a>
-    <text class="lbl mono" x="660" y="436" style="fill:#f2b544">拦截 · 同步</text>
+    <!-- 总线（居中竖向） -->
+    <rect x="648" y="300" width="220" height="168" rx="16" fill="none" stroke="rgba(86,217,233,.22)" stroke-width="7" opacity=".5"/>
+    <rect x="648" y="300" width="220" height="168" rx="16" fill="rgba(86,217,233,.05)" stroke="#56d9e9" stroke-width="1.8"/>
+    <text class="mono" x="758" y="360" text-anchor="middle" fill="#56d9e9" font-size="22" font-weight="600">EventBus</text>
+    <text class="subev" x="758" y="388" text-anchor="middle" fill="#8aa0b8" style="font-size:12px">进程级单例</text>
+    <text class="subev" x="758" y="412" text-anchor="middle" fill="#8aa0b8" style="font-size:12px">emit / subscribe(types=)</text>
+    <text class="subev" x="758" y="442" text-anchor="middle" fill="#5f7a90" style="font-size:11px">源与消费者互不认识</text>
+
+    <!-- 消费者（右侧竖排两个） -->
+    <path class="flow" d="M868 350 C 960 350, 980 300, 1056 290"/>
+    <a href="#sub-bus"><g class="subbox"><rect x="1058" y="258" width="280" height="64" rx="9"/><text class="subname" x="1078" y="286">webui（订阅 ws.frame）</text><text class="subev" x="1078" y="306">订阅总线 → 转发前端 WebSocket</text></g></a>
+    <path class="flow" d="M868 410 C 960 410, 980 420, 1056 424"/>
+    <g class="subbox"><rect x="1058" y="396" width="280" height="60" rx="9" style="stroke-dasharray:4 5"/><text class="subname" x="1078" y="422" style="fill:#8aa0b8">将来任何功能</text><text class="subev" x="1078" y="442">subscribe(types=…) 接上就有</text></g>
 
     <!-- 前端 -->
-    <path class="flow" d="M1090 205 C 1120 205, 1130 205, 1150 205"/>
-    <rect x="1098" y="180" width="74" height="50" rx="8" fill="#101d31" stroke="rgba(154,178,204,.4)" stroke-dasharray="4 5"/>
-    <text class="subname" x="1112" y="202" style="font-size:12px">前端</text>
-    <text class="subev" x="1108" y="218">浏览器</text>
+    <path class="flow" d="M1338 290 C 1370 290, 1380 290, 1392 290"/>
+    <rect x="1340" y="262" width="86" height="56" rx="8" fill="#101d31" stroke="rgba(154,178,204,.4)" stroke-dasharray="4 5"/>
+    <text class="subname" x="1358" y="286" style="font-size:13px">前端</text>
+    <text class="subev" x="1354" y="304">浏览器</text>
+
+    <!-- 拦截支线（总线底部往下连到问询点） -->
+    <text class="lbl mono" x="700" y="510" style="fill:#f2b544">拦截 · 同步（仅 tool.before）</text>
+    <path class="flowA" d="M758 468 C 758 540, 820 580, 900 596"/>
+    <a href="#use-gate"><g class="subbox"><rect x="902" y="568" width="300" height="62" rx="9" style="stroke:rgba(242,181,68,.55)"/><text class="subname" x="922" y="595">tool.before 同步问询点</text><text class="subev" x="922" y="615">唯一可拦截位 · 复用批准机制</text></g></a>
   </svg>
   <div class="cap">实线 = 异步观察（事件流）；琥珀虚线 = 同步拦截（仅 tool.before）。点任意子系统方块跳到它的事件详情。</div>
   </div>
