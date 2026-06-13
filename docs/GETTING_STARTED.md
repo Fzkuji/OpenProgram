@@ -67,15 +67,21 @@ That's it. Your function now **thinks**.
 
 Agentic Programming supports 6 built-in runtimes out of the box. Pick one:
 
-### Option A: Claude Code CLI (Recommended for Getting Started)
+### Option A: Claude subscription via the Meridian proxy (Recommended for Getting Started)
 
-**No API key needed.** Uses your Claude Code subscription.
+**No API key needed.** Uses your Claude Code subscription through a local
+HTTP bridge — the `claude-code` provider talks to a Meridian daemon (which
+routes through the official Claude Code SDK underneath), not a spawned CLI.
 
 **Prerequisites:**
 ```bash
-npm install -g @anthropic-ai/claude-code
-claude login
+# 1. The Claude Code SDK + login (Meridian routes through it)
+npm install -g @anthropic-ai/claude-code && claude login
+# 2. The Meridian proxy daemon — exposes a local OpenAI-compatible endpoint
+npm install -g @rynfar/meridian && meridian        # listens on :3456
 ```
+
+(Override the port with `CLAUDE_MAX_PROXY_URL` if you ran Meridian elsewhere.)
 
 **Usage:**
 ```python
@@ -84,8 +90,9 @@ from openprogram.providers import ClaudeCodeRuntime
 runtime = ClaudeCodeRuntime(model="haiku")
 ```
 
-**Pros:** Zero API key setup, uses existing subscription.
-**Cons:** Slower than direct API (subprocess overhead), text-only.
+**Pros:** Zero API-key setup, uses your existing subscription, full
+multimodal content (unlike the older `claude-max-api-proxy`).
+**Cons:** One extra local daemon; slightly slower than a direct API key.
 
 ---
 
