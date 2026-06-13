@@ -95,6 +95,12 @@ def set_current_session_id(session_id: str):
     return _current_session_id.set(session_id)
 
 
+def get_current_session_id() -> str | None:
+    """The webui session bound to the current worker context, or None when
+    not inside a dispatcher-driven turn (CLI / tests / headless)."""
+    return _current_session_id.get()
+
+
 def reset_current_session_id(token) -> None:
     """Reset the session_id ContextVar using a token from set_current_session_id."""
     try:

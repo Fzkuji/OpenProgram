@@ -564,6 +564,79 @@ class Runtime:
             # DAG bookkeeping failure must not break the LLM call.
             pass
 
+    # --- Asking the user (user-input-requests.md Phase 1) ---
+
+    def _ui_session_id(self) -> str:
+        """前端路由用的 webui session（dispatcher 在执行上下文里设的
+        ContextVar），不是 Runtime 自己的 op-xxx id。无 webui 时为空串。"""
+        try:
+            from openprogram.webui._pause_stop import get_current_session_id
+            return get_current_session_id() or ""
+        except Exception:
+            return ""
+
+    def can_ask(self) -> bool:
+        """当前是否有人能回答（有前端会话连着）。headless 跑时为 False，
+        作者可据此分支（user-input-requests.md API）。"""
+        return bool(self._ui_session_id())
+
+    def _ask_raw(self, *, kind, prompt, options=None, multi=False,
+                 allow_custom=True, detail="", timeout=300.0):
+        from openprogram.agent.questions import ask_blocking
+        from openprogram.agent.event_bus import emit_ws_frame
+
+        def _on_asked(q):
+            # 经事件层把问题广播成前端可见卡片（webui 订阅 ws.frame 转发）。
+            emit_ws_frame({
+                "type": "question.asked",
+                "data": {
+                    "id": q.id, "session_id": q.session_id, "kind": q.kind,
+                    "prompt": q.prompt, "options": q.options, "multi": q.multi,
+                    "allow_custom": q.allow_custom, "detail": q.detail,
+                    "expires_at": q.expires_at,
+                },
+            })
+
+        return ask_blocking(
+            session_id=self._ui_session_id(), kind=kind, prompt=prompt,
+            options=options, multi=multi, allow_custom=allow_custom,
+            detail=detail, timeout=timeout, on_asked=_on_asked,
+        )
+
+    def ask(self, prompt: str, *, options=None, multi: bool = False,
+            allow_custom: bool = True, timeout: float = 300.0, default=None):
+        """问用户一个问题，阻塞到有答案。三态：答了→返回答案
+        （multi=True 返回 list[str]）；用户拒绝→抛 UserDeclined；超时→有
+        default 返回 default，否则抛 AskTimeout。"""
+        from openprogram.agent.questions import UserDeclined, AskTimeout
+        outcome, value = self._ask_raw(
+            kind="ask", prompt=prompt, options=options, multi=multi,
+            allow_custom=allow_custom, timeout=timeout,
+        )
+        if outcome == "answered":
+            return value
+        if outcome == "declined":
+            raise UserDeclined(prompt)
+        # timeout
+        if default is not None:
+            return default
+        raise AskTimeout(prompt)
+
+    def confirm(self, prompt: str, *, detail: str = "",
+                timeout: float = 300.0, default: bool = False) -> bool:
+        """问一个是/否，返回 bool。拒绝=False；超时返回 default（不抛）。"""
+        outcome, value = self._ask_raw(
+            kind="confirm", prompt=prompt, detail=detail,
+            options=["确认", "取消"], allow_custom=False, timeout=timeout,
+        )
+        if outcome == "answered":
+            if isinstance(value, str):
+                return value.strip() in ("确认", "yes", "y", "true", "ok", "是")
+            return bool(value)
+        if outcome == "declined":
+            return False
+        return default  # timeout
+
     # --- Working directory ---
 
     def set_workdir(self, path: str) -> None:

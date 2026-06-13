@@ -1,0 +1,157 @@
+"""User-input requests — 函数中途停下来问用户（runtime.ask / confirm）。
+
+设计：docs/design/runtime/user-input-requests.md（Phase 1）。
+
+机制：函数体里调 runtime.ask(...) → 在本进程级 registry 注册一个
+PendingQuestion + 一个 threading.Event → 经事件层 emit `question.asked`
+（webui 订阅转发成前端可见卡片）→ 函数阻塞在 Event 上 → 用户在前端答 →
+resolve_question 写答案、set Event → 函数返回继续。
+
+三态显式（替代旧的"300s 静默返回 None"）：
+* answered  — 拿到答案
+* declined  — 用户点拒绝 → ask 抛 UserDeclined
+* timeout   — 超时 → confirm 返回 default；ask 无 default 时抛 AskTimeout
+
+registry 是 per-request（按 question id），修掉旧全局 handler 的并发覆盖 bug。
+resolve 是 claim-once（第一个答复者赢，跨多前端去重）。stop 时用哨兵解除。
+"""
+from __future__ import annotations
+
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+
+
+class UserDeclined(Exception):
+    """用户主动拒绝回答（runtime.ask 抛出）。"""
+
+
+class AskTimeout(Exception):
+    """等待超时且没有 default（runtime.ask 抛出）。"""
+
+
+@dataclass
+class PendingQuestion:
+    id: str
+    session_id: str           # webui session（前端路由用），可空
+    kind: str                 # "ask" | "confirm"
+    prompt: str
+    options: list[str] = field(default_factory=list)
+    multi: bool = False
+    allow_custom: bool = True
+    detail: str = ""
+    created_at: float = 0.0
+    expires_at: float = 0.0
+
+
+# resolve 结果：(outcome, value)
+#   outcome ∈ {"answered", "declined"}; value 是答案（answered）或 None（declined）
+_Resolution = tuple[str, object]
+
+
+class QuestionRegistry:
+    """进程级待答问题表。线程安全，claim-once。"""
+
+    def __init__(self) -> None:
+        self._pending: dict[str, PendingQuestion] = {}
+        self._events: dict[str, threading.Event] = {}
+        self._results: dict[str, _Resolution] = {}
+        self._lock = threading.Lock()
+
+    def register(self, q: PendingQuestion) -> threading.Event:
+        ev = threading.Event()
+        with self._lock:
+            self._pending[q.id] = q
+            self._events[q.id] = ev
+        return ev
+
+    def resolve(self, qid: str, outcome: str, value: object = None) -> bool:
+        """写入结果并唤醒等待者。返回该 id 是否存在且未被领取过（claim-once）。"""
+        with self._lock:
+            if qid not in self._events or qid in self._results:
+                return False
+            self._results[qid] = (outcome, value)
+            ev = self._events[qid]
+            self._pending.pop(qid, None)
+        ev.set()
+        return True
+
+    def consume(self, qid: str) -> _Resolution | None:
+        with self._lock:
+            return self._results.pop(qid, None)
+
+    def list_pending(self, session_id: str | None = None) -> list[PendingQuestion]:
+        with self._lock:
+            ps = list(self._pending.values())
+        if session_id is None:
+            return ps
+        return [p for p in ps if p.session_id == session_id]
+
+    def cancel_session(self, session_id: str) -> None:
+        """stop 时解除该 session 所有待答问题（按 declined 处理）。"""
+        with self._lock:
+            ids = [qid for qid, p in self._pending.items()
+                   if p.session_id == session_id]
+        for qid in ids:
+            self.resolve(qid, "declined", None)
+
+
+_registry: QuestionRegistry | None = None
+_registry_lock = threading.Lock()
+
+
+def get_question_registry() -> QuestionRegistry:
+    global _registry
+    if _registry is None:
+        with _registry_lock:
+            if _registry is None:
+                _registry = QuestionRegistry()
+    return _registry
+
+
+def new_question_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def ask_blocking(
+    *,
+    session_id: str,
+    kind: str,
+    prompt: str,
+    options: list[str] | None = None,
+    multi: bool = False,
+    allow_custom: bool = True,
+    detail: str = "",
+    timeout: float = 300.0,
+    on_asked,
+) -> _Resolution:
+    """注册问题、emit、阻塞等答案。返回 (outcome, value)。
+
+    outcome:
+      * "answered" — value 是答案（str 或 list[str]）
+      * "declined" — value 是 None
+      * "timeout"  — value 是 None
+    on_asked(PendingQuestion) 由调用方提供，负责把问题广播到前端（emit 事件）。
+    超时不抛——把 outcome="timeout" 交给上层（runtime.ask/confirm）按各自语义处理。
+    """
+    reg = get_question_registry()
+    now = time.time()
+    q = PendingQuestion(
+        id=new_question_id(), session_id=session_id or "", kind=kind,
+        prompt=prompt, options=list(options or []), multi=multi,
+        allow_custom=allow_custom, detail=detail,
+        created_at=now, expires_at=now + timeout,
+    )
+    ev = reg.register(q)
+    try:
+        on_asked(q)
+    except Exception:
+        pass
+    fired = ev.wait(timeout=timeout)
+    if not fired:
+        # 超时：尽量清理 registry（若期间被答则以答案为准）
+        res = reg.consume(q.id)
+        return res if res is not None else ("timeout", None)
+    res = reg.consume(q.id)
+    return res if res is not None else ("timeout", None)

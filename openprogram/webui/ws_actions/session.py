@@ -507,6 +507,33 @@ async def handle_follow_up_answer(ws, cmd: dict):
         fq.put(answer)
 
 
+def _resolve_question(qid: str, outcome: str, value=None) -> None:
+    """收口：resolve registry + 广播 question.replied/rejected 收回别处 UI。"""
+    from openprogram.agent.questions import get_question_registry
+    from openprogram.agent.event_bus import emit_ws_frame
+    ok = get_question_registry().resolve(qid, outcome, value)
+    if ok:
+        emit_ws_frame({
+            "type": "question.replied" if outcome == "answered" else "question.rejected",
+            "data": {"id": qid},
+        })
+
+
+async def handle_question_reply(ws, cmd: dict):
+    """用户回答了 runtime.ask 的问题（user-input-requests.md Phase 1）。"""
+    qid = cmd.get("id") or ""
+    answer = cmd.get("answer")
+    if qid:
+        _resolve_question(qid, "answered", answer)
+
+
+async def handle_question_reject(ws, cmd: dict):
+    """用户拒绝回答（runtime.ask 抛 UserDeclined / confirm 返回 False）。"""
+    qid = cmd.get("id") or ""
+    if qid:
+        _resolve_question(qid, "declined", None)
+
+
 async def handle_search_messages(ws, cmd: dict):
     """FTS-backed search across past sessions."""
     from openprogram.webui import server as _s
@@ -727,6 +754,8 @@ ACTIONS = {
     "clear_sessions": handle_clear_sessions,
     "load_session": handle_load_session,
     "follow_up_answer": handle_follow_up_answer,
+    "question_reply": handle_question_reply,
+    "question_reject": handle_question_reject,
     "search_messages": handle_search_messages,
     "list_sessions": handle_list_sessions,
 }

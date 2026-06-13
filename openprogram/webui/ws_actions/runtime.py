@@ -190,6 +190,13 @@ async def handle_stop(ws, cmd: dict):
             q.put_nowait({"_cancelled": True})
         except Exception:
             pass
+    # 解除该 session 所有待答 runtime.ask 问题（按 declined 处理），
+    # 否则阻塞在 ask 上的函数会一直等到 timeout。
+    try:
+        from openprogram.agent.questions import get_question_registry
+        get_question_registry().cancel_session(session_id)
+    except Exception:
+        pass
     # Patch any ``status=running`` rows for this session to
     # ``cancelled`` so the chat doesn't show a stuck spinner after
     # refresh. Runs synchronously inside the stop handler — cheap,
