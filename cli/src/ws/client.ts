@@ -49,7 +49,13 @@ export type WsRequest =
     }
   | { action: 'detach_session'; channel: string; account_id: string; peer: string }
   | { action: 'get_settings' }
-  | { action: 'set_setting'; key: string; value: unknown };
+  | { action: 'set_setting'; key: string; value: unknown }
+  // runtime.ask / confirm / approval reply. answer is a string (single
+  // choice / confirm / free text) or string[] (multi). Mirrors the web
+  // composer's question_reply / question_reject (question-mode.tsx) so
+  // both surfaces resolve through the same backend _resolve_question.
+  | { action: 'question_reply'; id: string; answer: string | string[] }
+  | { action: 'question_reject'; id: string; reason?: string };
 
 export interface ChatAck {
   type: 'chat_ack';
@@ -273,10 +279,43 @@ export interface SearchResultsEnvelope {
   };
 }
 
+/**
+ * runtime.ask / confirm / tool-approval — the backend paused a function
+ * and needs the user to decide. `question.asked` carries the request;
+ * `question.replied` / `question.rejected` retract it (answered here,
+ * elsewhere, or stopped). Same `data` shape as the web composer's
+ * PendingDecision (web/lib/session-store.ts) so the TUI reuses the
+ * contract verbatim. Rendered in the input slot as a `question` picker.
+ */
+export interface QuestionAskedEnvelope {
+  type: 'question.asked';
+  data: {
+    id: string;
+    kind?: 'ask' | 'confirm' | 'approval';
+    prompt?: string;
+    options?: string[];
+    multi?: boolean;
+    allow_custom?: boolean;
+    detail?: string;
+    /** approval-only: the gated tool + its args, for the danger summary. */
+    tool?: string;
+    args?: Record<string, unknown>;
+    session_id?: string;
+    [k: string]: unknown;
+  };
+}
+
+export interface QuestionClosedEnvelope {
+  type: 'question.replied' | 'question.rejected';
+  data: { id: string; [k: string]: unknown };
+}
+
 export type WsEnvelope =
   | ChatAck
   | ChatResponse
   | EventEnvelope
+  | QuestionAskedEnvelope
+  | QuestionClosedEnvelope
   | AgentsListEnvelope
   | ConversationsListEnvelope
   | ConversationLoadedEnvelope

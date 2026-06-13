@@ -60,7 +60,33 @@ export type PickerKind =
   | 'channel_action' | 'channel_peer_input' | 'channel_qr_wait'
   | 'channel_overwrite_confirm'
   | 'acct_list' | 'acct_action' | 'acct_rename' | 'acct_add_code'
-  | 'acct_login_name' | 'acct_login_method' | 'acct_login';
+  | 'acct_login_name' | 'acct_login_method' | 'acct_login'
+  // runtime.ask / confirm / approval occupies the input slot — same role
+  // as the web composer's question/approval mode. Driven by the
+  // pendingDecisions queue, not a user slash command.
+  | 'question';
+
+/**
+ * A "system needs a decision" request surfaced in the input slot — the
+ * `data` payload of a question.asked frame (runtime.ask / confirm / tool
+ * approval). Identical to the web composer's PendingDecision
+ * (web/lib/session-store.ts) so both surfaces share one backend
+ * contract. A FIFO queue holds these; the head occupies the input slot
+ * as the `question` picker. See
+ * docs/design/ui/composer-interaction-modes.md.
+ */
+export interface PendingDecision {
+  id: string;
+  kind: 'ask' | 'confirm' | 'approval';
+  prompt: string;
+  options: string[];
+  multi: boolean;
+  allow_custom: boolean;
+  detail?: string;
+  /** approval-only: the gated tool + its args, for the danger summary. */
+  tool?: string;
+  args?: Record<string, unknown>;
+}
 
 /** One branch as returned by ws `list_branches`. */
 export interface BranchRow {

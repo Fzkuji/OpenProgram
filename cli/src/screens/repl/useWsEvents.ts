@@ -17,6 +17,7 @@ import { trimHistoryFile } from '../../utils/history.js';
 import { randomLocalId, renderModel } from './helpers.js';
 import { handleChatResponse } from './wsHandlers/handleChatResponse.js';
 import { handleChannelTurn } from './wsHandlers/handleChannelTurn.js';
+import { decisionFromFrame, enqueueDecision } from './questionDecision.js';
 import type { SettingRow } from '../../components/SettingsPanel.js';
 import type {
   Activity,
@@ -26,6 +27,7 @@ import type {
   ChannelActivity,
   PastConversation,
   PendingAttach,
+  PendingDecision,
   PickerKind,
   SearchResultRow,
   SessionAliasRow,
@@ -70,6 +72,7 @@ export interface WsEventsCtx {
   setQrAscii: React.Dispatch<React.SetStateAction<string | undefined>>;
   setQrStatus: React.Dispatch<React.SetStateAction<string | undefined>>;
   setPickerKind: React.Dispatch<React.SetStateAction<PickerKind>>;
+  setPendingDecisions: React.Dispatch<React.SetStateAction<PendingDecision[]>>;
   setChosenChannel: React.Dispatch<React.SetStateAction<string | undefined>>;
   setChosenAccount: React.Dispatch<React.SetStateAction<string | undefined>>;
   setBranchesList: React.Dispatch<React.SetStateAction<BranchRow[]>>;
@@ -369,6 +372,30 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         }
       } else if (ev.type === 'channel_turn') {
         handleChannelTurn(ev.data, c, markSessionLive);
+      } else if (ev.type === 'question.asked') {
+        // runtime.ask / confirm / approval — backend paused a function
+        // and needs the user to decide. Enqueue (dedupe by id, so a
+        // reconnect replay doesn't double-add) and surface the queue
+        // head in the input slot as the `question` picker. Mirrors the
+        // web composer's enqueueDecision (use-ws.ts).
+        const decision = decisionFromFrame(ev.data);
+        if (decision) {
+          c.setPendingDecisions((arr) => enqueueDecision(arr, decision));
+          c.setPickerKind('question');
+        }
+      } else if (ev.type === 'question.replied' || ev.type === 'question.rejected') {
+        // Resolved here, answered elsewhere, or stopped — drop it from
+        // the queue. If that empties the queue, release the input slot
+        // back to PromptInput; otherwise the next decision surfaces.
+        const id = ev.data?.id ? String(ev.data.id) : '';
+        if (id) {
+          c.setPendingDecisions((arr) => {
+            const next = arr.filter((p) => p.id !== id);
+            c.setPickerKind((pk) =>
+              pk === 'question' && next.length === 0 ? null : pk);
+            return next;
+          });
+        }
       } else if (ev.type === 'error') {
         const data = (ev as { data?: { message?: string } }).data;
         const msg = data?.message ?? 'unknown error';

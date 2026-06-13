@@ -29,6 +29,7 @@ import { BackendClient } from '../../ws/client.js';
 import { tsToDate } from './helpers.js';
 import { buildChannelPicker } from './pickers/channel.js';
 import { buildRegisterPicker } from './pickers/register.js';
+import { buildQuestionPicker } from './pickers/question.js';
 import { buildProviderAccountsPicker, type AccountKind } from './pickers/providerAccounts.js';
 import type { AccountsState, AddStarted } from '../../utils/providerAccounts.js';
 import type { ColorTheme } from '../../theme/themes.js';
@@ -38,6 +39,7 @@ import type {
   ChannelAccountRow,
   PastConversation,
   PendingAttach,
+  PendingDecision,
   PickerKind,
   RegisterForm,
   SearchResultRow,
@@ -54,6 +56,9 @@ export interface PickerCtx {
 
   pickerKind: PickerKind;
   pendingAttach: PendingAttach | null;
+  /** FIFO queue of runtime.ask / confirm / approval requests; the head
+   *  occupies the input slot when pickerKind === 'question'. */
+  pendingDecisions: PendingDecision[];
 
   chosenChannel: string | undefined;
   chosenAccount: string | undefined;
@@ -85,6 +90,7 @@ export interface PickerCtx {
 
   setPickerKind: React.Dispatch<React.SetStateAction<PickerKind>>;
   setPendingAttach: React.Dispatch<React.SetStateAction<PendingAttach | null>>;
+  setPendingDecisions: React.Dispatch<React.SetStateAction<PendingDecision[]>>;
   setChosenChannel: React.Dispatch<React.SetStateAction<string | undefined>>;
   setChosenAccount: React.Dispatch<React.SetStateAction<string | undefined>>;
   setConversationId: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -124,6 +130,20 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     onSubmit,
     sessionAliasesRef,
   } = ctx;
+
+  if (pickerKind === 'question') {
+    // runtime.ask / confirm / approval — render the queue head. On
+    // resolve, pop it; if the queue empties, release the slot back to
+    // PromptInput, else the next decision surfaces. Mirrors the
+    // question.replied/rejected handling in useWsEvents.
+    return buildQuestionPicker(client, ctx.pendingDecisions[0], (id) => {
+      ctx.setPendingDecisions((arr) => {
+        const next = arr.filter((p) => p.id !== id);
+        setPickerKind((pk) => (pk === 'question' && next.length === 0 ? null : pk));
+        return next;
+      });
+    });
+  }
 
   if (pickerKind === 'settings') {
     return (

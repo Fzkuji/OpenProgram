@@ -23,6 +23,7 @@ import type {
   BranchRow,
   ChannelActivity,
   PickerKind,
+  PendingDecision,
   PendingAttach,
   SessionAliasRow,
   ChannelAccountRow,
@@ -99,6 +100,11 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     }>
   >([]);
   const [pickerKind, setPickerKind] = useState<PickerKind>(null);
+  // FIFO queue of system "needs a decision" requests (runtime.ask /
+  // confirm / approval). The head occupies the input slot as the
+  // `question` picker; answering pops it and the next surfaces. Mirrors
+  // the web composer's pendingDecisions. Driven by useWsEvents.
+  const [pendingDecisions, setPendingDecisions] = useState<PendingDecision[]>([]);
   const [pendingAttach, setPendingAttach] = useState<PendingAttach | null>(null);
   const [registerForm, setRegisterForm] = useState<{
     channel?: string;
@@ -187,7 +193,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setSettingsRows,
     setChannelAccounts, setPastConversations,
     setQrAscii, setQrStatus,
-    setPickerKind, setChosenChannel, setChosenAccount,
+    setPickerKind, setPendingDecisions, setChosenChannel, setChosenAccount,
     setConversationTitle, setConnState,
     setToolsOn, setThinkingEffort, setPermissionMode,
     setSearchResults, setContextSearchQuery, setSessionLiveByConv,
@@ -424,7 +430,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   // bundle them through a single ctx object.
   const pickerNode = buildPickerNode({
     client, colors, pushSystem,
-    pickerKind, pendingAttach,
+    pickerKind, pendingAttach, pendingDecisions,
     chosenChannel, chosenAccount, conversationId,
     modelsList, model, agentsList, channelAccounts, branchesList,
     settingsRows,
@@ -432,7 +438,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     contextSearchQuery, searchResults, searchBaseDraft,
     thinkingEffort,
     accountsProviderId, accountsState, accountSelected, accountPendingAdd, accountLogin,
-    setPickerKind, setPendingAttach,
+    setPickerKind, setPendingAttach, setPendingDecisions,
     setChosenChannel, setChosenAccount, setConversationId, setAgent,
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft,
