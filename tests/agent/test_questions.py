@@ -139,3 +139,39 @@ def test_runtime_confirm_declined_false():
 def test_runtime_confirm_timeout_default():
     rt = _FakeRuntime()
     assert rt.confirm("go?", timeout=0.05, default=False) is False
+
+
+# ─── ask_user 内置原语接到 runtime.ask（复活老接口 + clarify 工具）──────────────
+
+def test_ask_user_routes_to_runtime_ask(monkeypatch):
+    """有前端执行上下文（runtime.can_ask）时，ask_user 走 runtime.ask 活链路，
+    不再返回 None。"""
+    import openprogram.functions.agentics.ask_user as A
+    from openprogram.agentic_programming.function import _current_runtime
+
+    # 没有旧全局 handler（webui 路径本来就没注册）
+    A.set_ask_user(None)
+
+    class _RT:
+        def can_ask(self): return True
+        def ask(self, q, **kw): return "来自 runtime.ask 的答案"
+
+    token = _current_runtime.set(_RT())
+    try:
+        assert A.ask_user("随便问点啥？") == "来自 runtime.ask 的答案"
+    finally:
+        _current_runtime.reset(token)
+
+
+def test_ask_user_no_runtime_no_handler_returns_none(monkeypatch):
+    """无 handler、无可问 runtime、非 TTY → 老语义 None（不崩）。"""
+    import openprogram.functions.agentics.ask_user as A
+    from openprogram.agentic_programming.function import _current_runtime
+
+    A.set_ask_user(None)
+    token = _current_runtime.set(None)
+    monkeypatch.setattr(A.sys, "stdin", None)
+    try:
+        assert A.ask_user("没人能答") is None
+    finally:
+        _current_runtime.reset(token)

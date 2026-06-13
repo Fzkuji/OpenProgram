@@ -79,7 +79,7 @@ def ask_user(question: str) -> Optional[str]:
     """
     pending_id = _begin_ask_user_node(question)
 
-    # 1. 全局 handler（给 WebUI / 后台服务用）
+    # 1. 全局 handler（给 CLI / 后台服务用：set_ask_user 注册）
     with _ask_user_lock:
         handler = _ask_user_handler_global
     if handler is not None:
@@ -87,7 +87,24 @@ def ask_user(question: str) -> Optional[str]:
         _finish_ask_user_node(pending_id, answer)
         return answer
 
-    # 2. 终端输入（交互模式最后兜底）
+    # 2. 事件层 runtime.ask：webui 路径走这条活链路（发 question.asked
+    #    事件 → 前端问题卡片 → 用户答 → resume）。仅当处于有前端的执行
+    #    上下文（can_ask）时才用，否则落到 TTY / None。
+    try:
+        from openprogram.agentic_programming.function import _current_runtime
+        rt = _current_runtime.get(None)
+        if rt is not None and rt.can_ask():
+            from openprogram.agent.questions import UserDeclined, AskTimeout
+            try:
+                answer = rt.ask(question)
+            except (UserDeclined, AskTimeout):
+                answer = None
+            _finish_ask_user_node(pending_id, answer)
+            return answer
+    except Exception:
+        pass
+
+    # 3. 终端输入（交互模式最后兜底）
     if sys.stdin is not None and sys.stdin.isatty():
         try:
             answer = input(f"[follow-up] {question}\n> ")
