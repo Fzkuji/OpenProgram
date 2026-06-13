@@ -355,6 +355,10 @@ class Runtime:
         import uuid as _uuid
         self._closed = False  # Set early so __del__ is safe even if __init__ raises.
         self._prompted_functions: set[str] = set()  # Functions whose docstrings have been sent
+        # 提问通道（runtime.ask 的出口）。默认 None → 走事件层（前端卡片 + 总线）。
+        # @agentic_function 跑的子进程里，process_runner 会换成 QueueTransport
+        # （经 mp.Queue 把问题送回父进程）。对齐 logging：通道显式挂在对象上。
+        self._question_transport = None
 
         if max_retries is None:
             max_retries = _default_max_retries()
@@ -580,23 +584,28 @@ class Runtime:
         作者可据此分支（user-input-requests.md API）。"""
         return bool(self._ui_session_id())
 
+    def set_question_transport(self, transport) -> None:
+        """换掉这个 runtime 的提问通道（QuestionTransport）。子进程入口用它
+        装上 QueueTransport，把 runtime.ask 的问题经 mp.Queue 送回父进程。
+        传 None 恢复默认（事件层）。"""
+        self._question_transport = transport
+
     def _ask_raw(self, *, kind, prompt, options=None, multi=False,
                  allow_custom=True, detail="", timeout=300.0):
-        from openprogram.agent.questions import ask_blocking
-        from openprogram.agent.event_bus import emit_ws_frame, emit_safe
+        from openprogram.agent.questions import ask_blocking, emit_question_asked
+
+        transport = getattr(self, "_question_transport", None)  # None → 默认事件层通道
 
         def _on_asked(q):
-            data = {
+            # 经本 runtime 的提问通道把问题送出去：worker 进程默认走事件层
+            # （前端卡片 + 总线）；@agentic_function 跑的子进程被 process_runner
+            # 换成 QueueTransport（经 mp.Queue 送回父进程 registry）。
+            emit_question_asked({
                 "id": q.id, "session_id": q.session_id, "kind": q.kind,
                 "prompt": q.prompt, "options": q.options, "multi": q.multi,
                 "allow_custom": q.allow_custom, "detail": q.detail,
                 "expires_at": q.expires_at,
-            }
-            # 1) 给前端：经 ws.frame 透传成可见卡片（webui 订阅转发）。
-            emit_ws_frame({"type": "question.asked", "data": data})
-            # 2) 进事件层：发一份纯 question.asked 事件，让"发生了一次提问"
-            #    像其他活动一样出现在统一事件流里（可观测/可订阅），不只到前端。
-            emit_safe("question.asked", "agent", data, {"session": q.session_id})
+            }, transport)
 
         return ask_blocking(
             session_id=self._ui_session_id(), kind=kind, prompt=prompt,

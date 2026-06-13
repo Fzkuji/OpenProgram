@@ -114,6 +114,76 @@ def new_question_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+# ─── 提问传输（QuestionTransport）─────────────────────────────────────────────
+#
+# 一次提问要"送到能应答的一侧"。这件事跟 Python logging 的 Handler 同构：
+# logging.Handler.emit(record) 把一条记录送到它的目的地，子类换目的地（文件 /
+# socket / 终端）。这里 QuestionTransport.publish(data) 把一次提问送到它的目的地，
+# 子类换通道：
+#   * EventLayerTransport —— 经事件层把问题发成前端卡片 + 进总线（worker 进程用）。
+#   * QueueTransport      —— 经 mp.Queue 把问题送回父进程（@agentic_function 跑的
+#                             子进程用：子进程的 EventBus 没有订阅者，WS 在父进程，
+#                             直接走事件层等于对空气喊；必须走父子之间唯一的队列）。
+#
+# transport 不是藏在模块里的全局开关——它由 runtime 显式持有（runtime._question_transport），
+# 默认 EventLayerTransport；process_runner 在子进程里给那个 runtime 换成 QueueTransport。
+# 看 runtime.ask 就能看出问题往哪条 transport 走（对齐 logging：handler 显式挂在
+# logger 上，而不是用全局 flag 让 emit 变身）。
+
+
+class QuestionTransport:
+    """把一次提问送到能应答的一侧。子类实现 publish。"""
+
+    def publish(self, data: dict) -> None:  # pragma: no cover - 抽象
+        raise NotImplementedError
+
+
+class EventLayerTransport(QuestionTransport):
+    """默认通道：经事件层把提问发成前端卡片，并进总线（可观测/可订阅）。
+    worker 主进程用——WS 就连在这个进程上。"""
+
+    def publish(self, data: dict) -> None:
+        try:
+            from openprogram.agent.event_bus import emit_ws_frame, emit_safe
+            # 1) 给前端：ws.frame 透传成可见卡片（webui 订阅转发）。
+            emit_ws_frame({"type": "question.asked", "data": data})
+            # 2) 进事件层：发一份纯 question.asked 事件，让"发生了一次提问"像
+            #    其他活动一样出现在统一事件流里（可观测/可订阅）。
+            emit_safe("question.asked", "agent", data,
+                      {"session": data.get("session_id", "")})
+        except Exception:
+            pass
+
+
+class QueueTransport(QuestionTransport):
+    """子进程通道：把提问 envelope 推进父子之间的 mp.Queue，由父进程的 drain
+    线程接走、注册到父进程 registry 并发前端。``__op_question__`` 标记让父进程
+    把它当"提问"拦截，而不是当普通事件透传给 WS。"""
+
+    def __init__(self, queue) -> None:
+        self._queue = queue
+
+    def publish(self, data: dict) -> None:
+        try:
+            self._queue.put({"__op_question__": True, "data": data},
+                            block=False)
+        except Exception:
+            pass
+
+
+_default_transport = EventLayerTransport()
+
+
+def default_question_transport() -> QuestionTransport:
+    """runtime 没被显式装别的 transport 时用的默认通道（事件层）。"""
+    return _default_transport
+
+
+def emit_question_asked(data: dict, transport: "QuestionTransport | None" = None) -> None:
+    """发出一次提问，经给定 transport（不给则用默认事件层通道）送出去。"""
+    (transport or _default_transport).publish(data)
+
+
 def ask_blocking(
     *,
     session_id: str,

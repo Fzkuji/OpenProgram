@@ -58,6 +58,7 @@ def _child_entry(
     result_path: str,
     event_queue: "mp.Queue",
     parent_call_id: Optional[str] = None,
+    answer_queue: "Optional[mp.Queue]" = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
     # takes down every grandchild (browser, subprocess providers, ...).
@@ -65,6 +66,38 @@ def _child_entry(
         os.setpgrp()
     except Exception:
         pass
+
+    # --- user-input subprocess bridge: answer side (user-input-requests.md Phase 2) ---
+    # The child blocks in runtime.ask on its LOCAL QuestionRegistry. The parent
+    # routes the user's reply back through ``answer_queue``; this pump resolves
+    # the local registry so the blocked ask returns. (The ask SIDE — sending the
+    # question UP — is wired below as a QueueTransport on the child's runtime,
+    # once that runtime exists.)
+    if answer_queue is not None:
+        try:
+            from openprogram.agent.questions import get_question_registry
+
+            def _answer_pump() -> None:
+                reg = get_question_registry()
+                while True:
+                    try:
+                        msg = answer_queue.get()
+                    except Exception:
+                        return
+                    if msg is None:  # shutdown sentinel
+                        return
+                    try:
+                        qid = msg.get("id")
+                        outcome = msg.get("outcome") or "declined"
+                        value = msg.get("value")
+                        if qid:
+                            reg.resolve(qid, outcome, value)
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_answer_pump, daemon=True).start()
+        except Exception:
+            pass
     # Marker so the wrapper inside the child uses orig_execute directly
     # instead of recursing into another subprocess.
     os.environ["OPENPROGRAM_IN_AGENTIC_SUBPROCESS"] = "1"
@@ -118,6 +151,18 @@ def _child_entry(
         _set_cid(session_id)
 
         rt = create_runtime()
+        # --- user-input subprocess bridge: ask side ---
+        # Send runtime.ask questions UP to the parent through ``event_queue``
+        # (this child's own EventBus has no WS subscriber). The parent's drain
+        # thread intercepts the ``__op_question__`` envelope, registers it on
+        # the parent registry + draws the frontend card, and routes the answer
+        # back via ``answer_queue`` (picked up by the answer-pump above).
+        if answer_queue is not None and hasattr(rt, "set_question_transport"):
+            try:
+                from openprogram.agent.questions import QueueTransport
+                rt.set_question_transport(QueueTransport(event_queue))
+            except Exception:
+                pass
         if work_dir:
             try:
                 abs_wd = os.path.abspath(os.path.expanduser(work_dir))
@@ -204,6 +249,89 @@ def _child_entry(
 
 
 # ---------------------------------------------------------------------------
+# user-input subprocess bridge (parent side) — Phase 2
+# ---------------------------------------------------------------------------
+#
+# The child raised a runtime.ask question and pushed its envelope up through
+# the event queue. On the parent side we:
+#   1. register it on the PARENT QuestionRegistry (reusing the child's qid so
+#      the WS reply handler routes the answer to the same id),
+#   2. emit it onto the event layer so the frontend draws the question card
+#      (the same default exit runtime.ask uses in the worker process),
+#   3. wait for the parent registry to be resolved (by the WS handler or by a
+#      stop/cancel), then push the answer back to the child via answer_queue.
+#
+# The parent registry's Event is what the WS handler sets via resolve(); a
+# small waiter thread bridges that to the answer_queue the child blocks on.
+
+def _bridge_question_to_parent(data, answer_queue, pending_qids, lock) -> None:
+    try:
+        from openprogram.agent.questions import (
+            PendingQuestion, get_question_registry, emit_question_asked,
+        )
+    except Exception:
+        return
+
+    qid = data.get("id")
+    if not qid:
+        return
+
+    reg = get_question_registry()
+    q = PendingQuestion(
+        id=qid,
+        session_id=data.get("session_id") or "",
+        kind=data.get("kind") or "ask",
+        prompt=data.get("prompt") or "",
+        options=list(data.get("options") or []),
+        multi=bool(data.get("multi")),
+        allow_custom=bool(data.get("allow_custom", True)),
+        detail=data.get("detail") or "",
+        created_at=data.get("created_at") or 0.0,
+        expires_at=data.get("expires_at") or 0.0,
+    )
+    ev = reg.register(q)
+    with lock:
+        pending_qids.add(qid)
+
+    # Draw the frontend card (and put it on the event stream) exactly as an
+    # in-worker runtime.ask would — no transport passed, so this goes through
+    # the default EventLayerTransport.
+    emit_question_asked(data)
+
+    def _wait_and_forward() -> None:
+        try:
+            ev.wait()  # set by registry.resolve() (WS reply / stop)
+            res = reg.consume(qid)
+        except Exception:
+            res = None
+        with lock:
+            pending_qids.discard(qid)
+        outcome, value = res if res is not None else ("declined", None)
+        try:
+            answer_queue.put({"id": qid, "outcome": outcome, "value": value},
+                             block=False)
+        except Exception:
+            pass
+
+    threading.Thread(target=_wait_and_forward, daemon=True).start()
+
+
+def _decline_bridged_question(qid: str) -> None:
+    """Child gone (exited / killed) with a question still open — decline it.
+    resolve() wakes the waiter thread (which then no-ops pushing to a dead
+    child) and the WS broadcast retracts the frontend card."""
+    try:
+        from openprogram.webui.ws_actions.session import _resolve_question
+        _resolve_question(qid, "declined", None)
+    except Exception:
+        try:
+            from openprogram.agent.questions import get_question_registry
+            get_question_registry().resolve(qid, "declined", None)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Parent API
 # ---------------------------------------------------------------------------
 
@@ -231,10 +359,15 @@ def run_agentic_in_subprocess(
     # cost but is rock-stable.
     ctx = mp.get_context("spawn")
     event_queue: mp.Queue = ctx.Queue()
+    # parent→child answer channel (user-input-requests.md Phase 2): the
+    # child blocks in runtime.ask; the parent routes the user's reply back
+    # through this queue so the child's local registry can wake the call.
+    answer_queue: mp.Queue = ctx.Queue()
     p = ctx.Process(
         target=_child_entry,
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
-              work_dir, result_path, event_queue, parent_call_id),
+              work_dir, result_path, event_queue, parent_call_id,
+              answer_queue),
         daemon=False,
     )
     p.start()
@@ -247,6 +380,27 @@ def run_agentic_in_subprocess(
     # while the child runs. Stops when the child exits + the queue
     # drains.
     stop_flag = threading.Event()
+    # qids this subprocess has asked about, so kill/cleanup can decline
+    # them (and their parent-side waiter threads exit).
+    pending_qids: set[str] = set()
+    pending_qids_lock = threading.Lock()
+
+    def _handle(env) -> None:
+        # Intercept the user-input bridge envelope: a question the child
+        # raised via runtime.ask. Register it on the PARENT registry +
+        # broadcast to the frontend, and arrange to route the answer back
+        # through ``answer_queue``.
+        if isinstance(env, dict) and env.get("__op_question__"):
+            _bridge_question_to_parent(
+                env.get("data") or {}, answer_queue,
+                pending_qids, pending_qids_lock,
+            )
+            return
+        try:
+            if on_event:
+                on_event(env)
+        except Exception:
+            pass
 
     def _drain() -> None:
         while not stop_flag.is_set():
@@ -260,17 +414,9 @@ def run_agentic_in_subprocess(
                             env2 = event_queue.get_nowait()
                         except Exception:
                             return
-                        try:
-                            if on_event:
-                                on_event(env2)
-                        except Exception:
-                            pass
+                        _handle(env2)
                 continue
-            try:
-                if on_event:
-                    on_event(env)
-            except Exception:
-                pass
+            _handle(env)
 
     drain_thread = threading.Thread(target=_drain, daemon=True)
     drain_thread.start()
@@ -279,6 +425,13 @@ def run_agentic_in_subprocess(
         p.join()
     finally:
         stop_flag.set()
+        # Child is gone — decline any still-pending questions so their
+        # parent-side waiter threads exit and any open frontend cards get
+        # retracted (question.rejected). Nothing left to answer.
+        with pending_qids_lock:
+            leftover = list(pending_qids)
+        for _qid in leftover:
+            _decline_bridged_question(_qid)
         try:
             drain_thread.join(timeout=0.5)
         except Exception:
