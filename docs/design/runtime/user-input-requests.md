@@ -83,7 +83,9 @@ runtime.can_ask()  # -> bool; False in headless runs so authors can branch
 ```
 
 - `ask_user(question)` stays as a thin alias of `runtime.ask(question)`.
-- The `clarify` built-in tool (LLM-callable) starts working again for free.
+  ✅ 已落地（commit f0894546）：无全局 handler 时回退到 `runtime.ask`，
+  UserDeclined/AskTimeout 归一为 None 保持老语义；CLI 的 set_ask_user 路径不变。
+- The `clarify` built-in tool (LLM-callable) starts working again for free. ✅ 随上条复活。
 - Three explicit outcomes (answered / declined / timeout) — the current
   "300 s silently returns None" behavior is removed.
 - `runtime.form(...)` (MCP-elicitation-style flat schema) is deferred.
