@@ -122,7 +122,7 @@ footer a{color:var(--cyan); text-decoration:none}
 <nav>
   <div class="brand">OPENPROGRAM</div>
   <h1>事件层<br>API Reference</h1>
-  <a href="#overview">这层是什么</a>
+  <a href="#overview">概述</a>
   <a href="#map">系统框架图</a>
   <a href="#model">Event 数据模型</a>
   <div class="grp">事件 · 按子系统</div>
@@ -152,14 +152,14 @@ footer a{color:var(--cyan); text-decoration:none}
 
 <header class="hero">
   <div class="sys">API REFERENCE · EVENT LAYER</div>
-  <h2 class="big">先看<em>它长在框架哪</em>，<br>再看每个部位发什么事件。</h2>
-  <p class="sub">事件层把 OpenProgram 各个子系统的活动统一成一条可订阅的事件流。这份文档先给一张<span style="color:var(--text)">系统框架图</span>——看清事件层连着哪些子系统、事件从哪里冒出来；再点进任意子系统，看那里有哪些事件、每个干什么、怎么用。</p>
+  <h2 class="big">事件层 <em>Event Layer</em><br>参考手册</h2>
+  <p class="sub">事件层将 OpenProgram 各子系统的运行时活动统一为一条可订阅的事件流。本手册分三部分：<span style="color:var(--text)">系统框架图</span>给出事件层在框架中的位置与连接关系；<span style="color:var(--text)">事件目录</span>按子系统列出全部事件类型及其 payload、触发时机、源码位置；<span style="color:var(--text)">API 与用法</span>给出订阅、拦截、发问三类接口的签名与示例。</p>
 </header>
 
-<!-- 这层是什么 -->
+<!-- 概述 -->
 <section id="overview">
   <div class="kicker">OVERVIEW</div>
-  <h3 class="sec">这层是什么</h3>
+  <h3 class="sec">概述</h3>
   <p class="lead">一条<span style="color:var(--text)">进程级单例总线</span>（<code>openprogram/agent/event_bus.py</code>）。各子系统当「源」，发生事情时把事件 <code>emit</code> 进总线；「消费者」（webui、将来的任何功能）按事件类型 <code>subscribe</code>。源和消费者互不认识，只认总线——所以新增一个事件源或一个消费者都不牵动别处。</p>
 </section>
 
@@ -167,7 +167,7 @@ footer a{color:var(--cyan); text-decoration:none}
 <section id="map">
   <div class="kicker">SYSTEM MAP</div>
   <h3 class="sec">系统框架图</h3>
-  <p class="lead">左边是发事件的<span style="color:var(--text)">子系统</span>（每个方块标着它发的事件、<span style="color:var(--cyan)">可点跳转</span>到详情），中间是<span style="color:var(--text)">总线</span>，右边是<span style="color:var(--text)">消费者</span>。</p>
+  <p class="lead">左侧为发出事件的各<span style="color:var(--text)">子系统</span>（方块内标注其事件，<span style="color:var(--cyan)">点击可跳转</span>至对应详情），中部为<span style="color:var(--text)">总线 EventBus</span>，右侧为<span style="color:var(--text)">消费者</span>。琥珀色支线为唯一的同步拦截点 <code>tool.before</code>。</p>
   <div class="figure">
   <svg viewBox="0 0 1180 620" xmlns="http://www.w3.org/2000/svg">
     <style>
@@ -282,7 +282,7 @@ footer a{color:var(--cyan); text-decoration:none}
 <section id="use-observe">
   <div class="kicker">GUIDE ①</div>
   <h3 class="sec">观察：订阅事件做只读响应</h3>
-  <p class="lead">最常见——盯某几类事件，发生时做点只读的事。异步、不挡 agent。</p>
+  <p class="lead">订阅指定类型的事件，在其发生时执行只读逻辑。异步执行，不阻塞 agent 主循环。</p>
   <div class="code"><span class="k">from</span> openprogram.agent.event_bus <span class="k">import</span> get_event_bus
 
 <span class="k">def</span> <span class="fn">on_event</span>(ev):
@@ -326,8 +326,8 @@ ok = runtime.<span class="fn">confirm</span>(<span class="s">"要归档全部 87
 <!-- 调试 -->
 <section id="debug">
   <div class="kicker a">DEBUG</div>
-  <h3 class="sec">调试：把事件流打出来看</h3>
-  <p class="lead">设 <code>OPENPROGRAM_EVENT_LOG=1</code>（或路径），每条事件作为一行 JSON 落盘。<span class="fileref">event_bus.py:256-285</span></p>
+  <h3 class="sec">调试：事件日志</h3>
+  <p class="lead">设置环境变量 <code>OPENPROGRAM_EVENT_LOG=1</code>（或指定路径），每条事件将以一行 JSON 追加落盘。<span class="fileref">event_bus.py:256-285</span></p>
   <div class="code">OPENPROGRAM_EVENT_LOG=1 openprogram worker restart
 cat /tmp/openprogram-events.jsonl</div>
   <div class="note">普通 chat turn 会依序打出 <code>user.prompt_submitted → model.response_started → tool.before → tool.after → model.response_completed → turn.ended</code>，带 metadata 里的 session/turn。确认事件层在跑的最快方式。</div>
