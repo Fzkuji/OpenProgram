@@ -26,6 +26,9 @@
 
 **先读事件底座**（你最近在确认的就是这块——系统到底支不支持"在某时机做某事"）：
 
+0. **[`event-reference.html`](event-reference.html)** —— **官方 API Reference**：所有事件类型
+   （26 个，A/B/ws.frame 三类）逐一列清，每个带 payload 字段表、触发时机、源码 file:line；
+   全部 API、三种用法（观察/拦截/发问）。可搜索、可展开。双击用浏览器打开。**查事件先看它。**
 1. [`event-layer.md`](event-layer.md) —— **统一 Event 模型 + 这层在框架里的定位 + 框架图**。
    事件长什么样、两大类事件源（agent 干活 / 系统状态）、总线放哪、跟谁交互。
    **可视化版本：[`event-layer.html`](event-layer.html)**（真 SVG 架构图 + 事件流动画，
