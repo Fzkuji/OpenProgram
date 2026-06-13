@@ -4,7 +4,8 @@ Status: **Phase 1 + Phase 2 已落地并验证**（2026-06-13）。Phase 1：
 runtime.ask/confirm/can_ask、QuestionRegistry、WS question_reply/reject、前端
 QuestionPrompt 卡片，端到端 + 前端双向验证通过。Phase 2：@agentic_function
 子进程桥——子进程里的 runtime.ask 经 mp.Queue 把问题送回父进程、答案回流
-resume，真 spawn 子进程 e2e 通过。Phase 3（TUI）、4（审批合流+channels+form）待做。
+resume，真 spawn 子进程 e2e 通过。重连恢复也落地（load_session 重放 pending +
+REST /api/questions）。Phase 3（TUI）、4（审批合流+channels+form）待做。
 Companion: [../cli/tui-upgrade.md](../cli/tui-upgrade.md) (TUI surface).
 Research notes:
 [user-input-requests-references.md](user-input-requests-references.md)
@@ -99,11 +100,13 @@ runtime.can_ask()  # -> bool; False in headless runs so authors can branch
    handler slot (fixes the concurrent-session overwrite bug). Resolve is
    atomic claim-once; `handle_stop` puts the cancel sentinel exactly like
    the existing follow-up queues.
-2. **Protocol**: WS broadcast `question.asked / question.replied /
-   question.rejected`; REST `POST /api/questions/{id}/reply`, `.../reject`,
-   and `GET /api/questions?session_id=` for reconnect recovery. Reuses the
-   existing `_broadcast_chat_response` plumbing (its post-stop gag is the
-   behavior we want).
+2. **Protocol** ✅（WS Phase 1；REST commit be6bb102）: WS broadcast
+   `question.asked / question.replied / question.rejected`; REST `GET
+   /api/questions?session_id=` + `POST /api/questions/{id}/reply` /
+   `.../reject` for reconnect recovery (`webui/routes/questions.py`).
+   `handle_load_session` 还在(重)连时重放 still-pending 的 `question.asked`。
+   Reuses the existing `_broadcast_chat_response` plumbing (its post-stop gag
+   is the behavior we want).
 3. **Subprocess bridge** ✅（Phase 2，commit 1c634b5f）: "提问往哪条通道送"
    做成 `QuestionTransport`，对齐 Python logging 的 Handler（`publish` 即
    `Handler.emit`）：`EventLayerTransport`（默认，事件层→前端卡片+总线，worker
@@ -145,7 +148,13 @@ runtime.can_ask()  # -> bool; False in headless runs so authors can branch
   `agent/questions.py`（registry）、`agentic_programming/runtime.py`
   （ask/confirm）、`webui/ws_actions/session.py`（reply/reject handler）、
   `webui/ws_actions/runtime.py`（stop 解除）、`web/components/ui/question-prompt.tsx`
-  （卡片）。REST list/reply 端点（reconnect 恢复）延到后续单元。
+  （卡片）。
+- **重连恢复** ✅（2026-06-13 落地，commit be6bb102）：问题卡片只靠活
+  `question.asked` 帧驱动，刷新/断线后那帧已成过去——`handle_load_session`
+  在(重)连某 session 时把该 session 所有 still-pending 的问题按同一个
+  `question.asked` 帧重放（前端零改动重绘）；REST `GET /api/questions` +
+  `POST /api/questions/{id}/reply|reject`（`webui/routes/questions.py`）给同一
+  registry 的 API 对等，reply/reject 走与 WS 同一收口 `_resolve_question`。
 - **Phase 2 — subprocess bridge** ✅（2026-06-13 落地，commit 1c634b5f）:
   `@agentic_function` bodies can ask (the actual headline use case)。
   `QuestionTransport`（EventLayerTransport / QueueTransport，对齐 logging
